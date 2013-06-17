@@ -1,23 +1,19 @@
-grammar babble;
+grammar Babble;
 
 file: declaration* EOF;
 
-declaration: _package
-           | _class
-           | function
-           | imp;
+declaration: packageDecl
+           | classDecl
+           | functionDecl
+           | importDecl;
 
-_package: PACKAGE ID '(' declaration* ')';
+packageDecl: 'package' ID '(' declaration* ')';
 
-PACKAGE: 'package'; 
- 
-_class: CLASS ID templateDeclaration? '(' declaration* ')';
+classDecl: 'class' ID templateDeclaration? '(' declaration* ')';
 
-CLASS: 'class';
+functionDecl: 'function' ID parametersDeclaration returnTypeDeclaration '->' '(' statement* ')';
 
-function: 'function' ID parametersDeclaration returnTypeDeclaration '->' '(' statement* ')';
-
-imp: 'import' ID ( 'as' ID )?;
+importDecl: 'import' ID ( 'as' ID )?;
 
 parametersDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')'
                      | '(' ')';
@@ -31,14 +27,12 @@ parameterDeclaration: ID ':' type;
 
 statement: ifStatement
          | loopStatement
-         | callStatement
          | defStatement
-         | assignStatement;
+         | assignStatement
+         | expression;
 
 ifStatement: 'if' expression '(' statement* ')'
              ( 'else' '(' statement* ')' )?;
-
-callStatement: ID callParameters;
 
 callParameters: '(' callParameter (',' callParameter)* ')'
               | '(' ')';
@@ -51,14 +45,14 @@ assignStatement: ID '=' expression;
 
 loopStatement: 'while' expression '(' statement* ')';
 
-expression: '(' expression ')'
-          | expression ('*' | '/') expression
-          | expression ('+' | '-') expression
-          | callStatement
-          | ID
-          | INT
-          | FLOAT;
-
+expression: '(' expression ')'                   # paren
+          | expression op=('*' | '/') expression # mul
+          | expression op=('+' | '-') expression # add
+          | expression callParameters            # call
+          | expression '.' ID                    # selector
+          | INT                                  # number
+          | FLOAT                                # number
+          ;
 type: ID
     | ID '(' type (',' type)* ')';
 
