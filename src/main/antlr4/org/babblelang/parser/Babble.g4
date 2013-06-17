@@ -29,6 +29,7 @@ statement: ifStatement
          | loopStatement
          | defStatement
          | assignStatement
+         | returnStatement
          | expression;
 
 ifStatement: 'if' expression '(' statement* ')'
@@ -43,6 +44,8 @@ defStatement: 'def' ID (':' type)? ('=' expression)?;
 
 assignStatement: ID '=' expression;
 
+returnStatement: 'return' expression;
+
 loopStatement: 'while' expression '(' statement* ')';
 
 expression: '(' expression ')'                   # paren
@@ -50,6 +53,7 @@ expression: '(' expression ')'                   # paren
           | expression op=('+' | '-') expression # add
           | expression callParameters            # call
           | expression '.' ID                    # selector
+          | ID                                   # id
           | INT                                  # number
           | FLOAT                                # number
           ;
@@ -59,3 +63,4 @@ type: ID
 ID: [a-zA-Z] [a-zA-Z0-9]*;
 INT: [0-9]+;
 FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;
+WS: [ \t\r\n]+ -> skip;

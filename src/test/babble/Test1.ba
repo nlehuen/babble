@@ -1,0 +1,10 @@
+package toto (
+    function tutu(a:int, b:int) -> (
+        def c = a + b
+        return c
+    )
+)
+
+function main() -> (
+    print(toto.tutu(1,1))
+)
