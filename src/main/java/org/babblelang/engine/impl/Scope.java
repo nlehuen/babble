@@ -59,4 +59,16 @@ public class Scope extends HashMap<String, Object> implements Bindings {
         if (parent == null) throw new IllegalStateException("Too many calls to leave()");
         return parent;
     }
+
+    public Object assign(String key, Object value) {
+        Scope current = this;
+        while (current != null) {
+            if (current.containsKey(key)) {
+                return current.put(key, value);
+            } else {
+                current = current.parent;
+            }
+        }
+        throw new IllegalArgumentException("No such key : " + key);
+    }
 }

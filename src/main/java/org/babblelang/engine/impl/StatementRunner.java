@@ -123,6 +123,13 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitAssignStatement(BabbleParser.AssignStatementContext ctx) {
+        Object value = visit(ctx.expression());
+        scope.assign(ctx.ID().getText(), value);
+        return value;
+    }
+
+    @Override
     public Object visitInteger(BabbleParser.IntegerContext ctx) {
         return Integer.parseInt(ctx.getText());
     }
