@@ -6,10 +6,10 @@ import org.babblelang.parser.BabbleParser;
 
 import java.util.List;
 
-public class StatementRunner extends BabbleBaseVisitor<Object> {
+public class Interpreter extends BabbleBaseVisitor<Object> {
     private Scope scope;
 
-    public StatementRunner(Scope scope) {
+    public Interpreter(Scope scope) {
         this.scope = scope;
     }
 

@@ -19,7 +19,7 @@ public class BabbleCompiledScript extends CompiledScript {
 
     @Override
     public Object eval(ScriptContext context) throws ScriptException {
-        return new StatementRunner(new Scope()).run(file.statement());
+        return new Interpreter(new Scope()).run(file.statement());
     }
 
     @Override

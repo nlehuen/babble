@@ -19,6 +19,6 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
         Scope local = new Scope(scope);
         // TODO : check parameters
         // local.putAll(parameters);
-        return new StatementRunner(local).run(definition.block().statement());
+        return new Interpreter(local).run(definition.block().statement());
     }
 }
