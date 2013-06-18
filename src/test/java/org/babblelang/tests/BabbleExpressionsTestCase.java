@@ -1,10 +1,6 @@
 package org.babblelang.tests;
 
-public class BabbleBasicTestCase extends BabbleTestBase {
-    public void testParser() throws Exception {
-        parse("C:\\local\\Work\\babble\\src\\test\\babble\\Test1.ba");
-    }
-
+public class BabbleExpressionsTestCase extends BabbleTestBase {
     public void testIntegerLiteral() throws Exception {
         assertEquals(1.0, interpret("1"));
     }
@@ -40,6 +36,20 @@ public class BabbleBasicTestCase extends BabbleTestBase {
     }
 
     public void testDef() throws Exception {
-        assertEquals(315.0, interpret("  def a = (12 * 12) + 11 ;;;;; a + a + 5"));
+        assertEquals(315.0, interpret("  def a = (12 * 12) + 11 \n a + a + 5"));
+    }
+
+    public void testComp() throws Exception {
+        assertEquals(1, interpret("  def a = 1 def b = 2 a < b"));
+        assertEquals(1, interpret("  def a = 1 def b = 2 a <= b"));
+        assertEquals(0, interpret("  def a = 1 def b = 2 a == b"));
+        assertEquals(0, interpret("  def a = 1 def b = 2 a >= b"));
+        assertEquals(0, interpret("  def a = 1 def b = 2 a > b"));
+
+        assertEquals(0, interpret("  def a = 1 def b = 2 b < a"));
+        assertEquals(0, interpret("  def a = 1 def b = 2 b <= a"));
+        assertEquals(1, interpret("  def a = 1 def b = 1 b == a"));
+        assertEquals(1, interpret("  def a = 1 def b = 2 b >= a"));
+        assertEquals(1, interpret("  def a = 1 def b = 2 b > a"));
     }
 }

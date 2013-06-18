@@ -65,26 +65,35 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
 
         switch (ctx.op.getType()) {
             case BabbleLexer.MUL:
-                r = a * b;
-                break;
+                return a * b;
 
             case BabbleLexer.DIV:
-                r = a / b;
-                break;
+                return a / b;
 
             case BabbleLexer.PLUS:
-                r = a + b;
-                break;
+                return a + b;
 
             case BabbleLexer.MINUS:
-                r = a - b;
-                break;
+                return a - b;
+
+            case BabbleLexer.LT:
+                return (a < b) ? 1 : 0;
+
+            case BabbleLexer.LTE:
+                return (a <= b) ? 1 : 0;
+
+            case BabbleLexer.EQ:
+                return (a == b) ? 1 : 0;
+
+            case BabbleLexer.GTE:
+                return (a >= b) ? 1 : 0;
+
+            case BabbleLexer.GT:
+                return (a > b) ? 1 : 0;
 
             default:
-                throw new UnsupportedOperationException("Bad op : " + ctx.op);
+                throw new UnsupportedOperationException("Bad op : " + ctx.op.getText());
         }
-
-        return r;
     }
 
     @Override

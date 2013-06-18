@@ -28,6 +28,7 @@ whileStatement: 'while' expression block;
 expression: '(' expression ')'                    # paren
           | expression op=('*' | '/') expression  # binaryOp
           | expression op=('+' | '-') expression  # binaryOp
+          | expression op=('<' | '<=' | '==' | '>=' | '>') expression  # binaryOp
           | functionLiteral                       # fun
           | expression callParameters             # call
           | selector                              # sel
@@ -75,3 +76,8 @@ PLUS: '+';
 MINUS: '-';
 MUL: '*';
 DIV: '/';
+LT: '<';
+LTE: '<=';
+EQ: '==';
+GTE: '>=';
+GT: '>';
