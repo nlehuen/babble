@@ -7,4 +7,8 @@ public class BabbleControlTestCase extends BabbleTestBase {
         // TODO : fix if statement without else
         // assertEquals(null, interpret("if(1 > 2) ( 1 )"));
     }
+
+    public void testWhile() throws Exception {
+        assertEquals(10, interpret("def i = 0 while(i<10) ( i = i + 1 ) i"));
+    }
 }

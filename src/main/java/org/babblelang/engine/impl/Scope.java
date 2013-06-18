@@ -1,10 +1,10 @@
 package org.babblelang.engine.impl;
 
-import javax.script.Bindings;
 import java.util.HashMap;
 
-public class Scope extends HashMap<String, Object> implements Bindings {
+public class Scope {
     private final Scope parent;
+    private HashMap<String, Object> locals = new HashMap<String, Object>();
 
     public Scope() {
         this.parent = null;
@@ -12,42 +12,16 @@ public class Scope extends HashMap<String, Object> implements Bindings {
 
     public Scope(Scope parent) {
         this.parent = parent;
-        put("..", parent);
-    }
-
-    @Override
-    public Object get(Object key) {
-        Object result = super.get(key);
-
-        if (result == null && parent != null) {
-            result = parent.get(key);
-        }
-
-        return result;
-    }
-
-    @Override
-    public boolean isEmpty() {
-        return super.isEmpty() && (parent == null || parent.isEmpty());
-    }
-
-    @Override
-    public boolean containsKey(Object key) {
-        return super.containsKey(key) || (parent != null && parent.containsKey(key));
-    }
-
-    @Override
-    public boolean containsValue(Object value) {
-        return super.containsValue(value) || (parent != null && parent.containsValue(value));
+        locals.put("..", parent);
     }
 
     public Scope enter(String name) {
         Scope newScope;
         if (name != null) {
-            newScope = (Scope) super.get(name);
+            newScope = (Scope) locals.get(name);
             if (newScope == null) {
                 newScope = new Scope(this);
-                put(name, newScope);
+                locals.put(name, newScope);
             }
         } else {
             newScope = new Scope(this);
@@ -60,11 +34,31 @@ public class Scope extends HashMap<String, Object> implements Bindings {
         return parent;
     }
 
+    public Object define(String key, Object value) {
+        if (locals.containsKey(key)) {
+            throw new IllegalArgumentException("Key already defined : " + key);
+        }
+        locals.put(key, value);
+        return value;
+    }
+
     public Object assign(String key, Object value) {
         Scope current = this;
         while (current != null) {
-            if (current.containsKey(key)) {
-                return current.put(key, value);
+            if (current.locals.containsKey(key)) {
+                return current.locals.put(key, value);
+            } else {
+                current = current.parent;
+            }
+        }
+        throw new IllegalArgumentException("No such key : " + key);
+    }
+
+    public Object get(String key) {
+        Scope current = this;
+        while (current != null) {
+            if (current.locals.containsKey(key)) {
+                return current.locals.get(key);
             } else {
                 current = current.parent;
             }

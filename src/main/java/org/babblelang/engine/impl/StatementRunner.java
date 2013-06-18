@@ -38,7 +38,7 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
     public Object visitDefStatement(BabbleParser.DefStatementContext ctx) {
         String id = ctx.ID().getText();
         Object value = visit(ctx.expression());
-        scope.put(id, value);
+        scope.define(id, value);
         return value;
     }
 
@@ -65,11 +65,7 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
             base = (Scope) visit(ctx.selector());
         }
         String name = ctx.ID().getText();
-        if (base.containsKey(name)) {
-            return base.get(name);
-        } else {
-            throw new IllegalArgumentException("ID not found : " + name);
-        }
+        return base.get(name);
     }
 
     @Override
@@ -125,24 +121,32 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
         }
     }
 
+    private boolean test(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        } else if (value instanceof Number) {
+            return ((Number) value).doubleValue() != 0.0;
+        } else {
+            return value != null;
+        }
+    }
+
     @Override
     public Object visitIfStatement(BabbleParser.IfStatementContext ctx) {
-        Object value = visit(ctx.expression());
-
-        boolean result;
-        if (value instanceof Boolean) {
-            result = (Boolean) value;
-        } else if (value instanceof Number) {
-            result = ((Number) value).doubleValue() != 0.0;
-        } else {
-            result = value != null;
-        }
-
-        if (result) {
+        if (test(visit(ctx.expression()))) {
             return visit(ctx.thenBlock);
         } else {
             return visit(ctx.elseBlock);
         }
+    }
+
+    @Override
+    public Object visitWhileStatement(BabbleParser.WhileStatementContext ctx) {
+        Object result = null;
+        while (test(visit(ctx.expression()))) {
+            result = visit(ctx.block());
+        }
+        return result;
     }
 
     @Override
