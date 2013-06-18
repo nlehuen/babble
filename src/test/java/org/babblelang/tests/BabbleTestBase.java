@@ -22,7 +22,11 @@ public abstract class BabbleTestBase extends TestCase {
         return parser.file();
     }
 
-    protected Object interpret(String path) throws Exception {
+    protected Object interpretFile(String path) throws Exception {
         return BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(new FileReader(path));
+    }
+
+    protected Object interpret(String script) throws Exception {
+        return BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(script);
     }
 }

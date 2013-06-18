@@ -9,7 +9,8 @@ statement: packageStatement
          | assignStatement
          | returnStatement
          | block
-         | expression;
+         | expression
+         | ';';
 
 packageStatement: 'package' ID block;
 
@@ -25,8 +26,8 @@ returnStatement: 'return' expression;
 whileStatement: 'while' expression block;
 
 expression: '(' expression ')'                    # paren
-          | expression op=('*' | '/') expression  # binaryMul
-          | expression op=('+' | '-') expression  # binaryAdd
+          | expression op=('*' | '/') expression  # binaryOp
+          | expression op=('+' | '-') expression  # binaryOp
           | functionLiteral                       # fun
           | expression callParameters             # call
           | selector                              # sel
@@ -70,3 +71,7 @@ FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;
 STRING: '"' .*? '"';
 WS: [ \t]+ -> skip;
 NL: '\r'? '\n' -> skip;
+PLUS: '+';
+MINUS: '-';
+MUL: '*';
+DIV: '/';
