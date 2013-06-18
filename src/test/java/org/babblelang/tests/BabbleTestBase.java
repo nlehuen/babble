@@ -5,10 +5,11 @@ import org.antlr.v4.runtime.ANTLRFileStream;
 import org.antlr.v4.runtime.BailErrorStrategy;
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.CommonTokenStream;
+import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
-import org.babblelang.parser.BabbleVisitor;
 
+import java.io.FileReader;
 import java.io.IOException;
 
 public abstract class BabbleTestBase extends TestCase {
@@ -21,7 +22,7 @@ public abstract class BabbleTestBase extends TestCase {
         return parser.file();
     }
 
-    protected <T> T visit(String path, BabbleVisitor<T> visitor) throws IOException {
-        return visitor.visit(parse(path));
+    protected Object interpret(String path) throws Exception {
+        return BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(new FileReader(path));
     }
 }

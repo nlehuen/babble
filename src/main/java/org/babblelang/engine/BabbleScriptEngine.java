@@ -1,4 +1,4 @@
-package org.babblelang.interpreter;
+package org.babblelang.engine;
 
 import org.antlr.v4.runtime.ANTLRInputStream;
 import org.antlr.v4.runtime.BailErrorStrategy;
@@ -13,9 +13,6 @@ import java.io.StringReader;
 
 public class BabbleScriptEngine extends AbstractScriptEngine implements Compilable {
     private final BabbleScriptEngineFactory factory;
-
-    public static void main(String[] args) throws Exception {
-    }
 
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
         super();
@@ -47,7 +44,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             parser.setErrorHandler(new BailErrorStrategy());
             BabbleParser.FileContext file = parser.file();
             return compile(file);
-        } catch(Exception e) {
+        } catch (Exception e) {
             throw new ScriptException(e);
         }
     }

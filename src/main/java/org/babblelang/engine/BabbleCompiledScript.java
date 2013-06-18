@@ -1,4 +1,4 @@
-package org.babblelang.interpreter;
+package org.babblelang.engine;
 
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleParser;
@@ -8,7 +8,7 @@ import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptException;
 
-public class BabbleCompiledScript extends CompiledScript {
+class BabbleCompiledScript extends CompiledScript {
     private final BabbleScriptEngine engine;
     private final BabbleParser.FileContext file;
 

@@ -1,11 +1,13 @@
-package org.babblelang.interpreter;
+package org.babblelang.engine;
 
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
 import java.util.Collections;
 import java.util.List;
 
-class BabbleScriptEngineFactory implements ScriptEngineFactory {
+public class BabbleScriptEngineFactory implements ScriptEngineFactory {
+    public final static BabbleScriptEngineFactory INSTANCE = new BabbleScriptEngineFactory();
+
     @Override
     public String getEngineName() {
         return "Babble";
@@ -53,8 +55,8 @@ class BabbleScriptEngineFactory implements ScriptEngineFactory {
         buffer.append('.');
         buffer.append(m);
         buffer.append('(');
-        for(int i=0,l=args.length;i<l;i++) {
-            if(i>0) {
+        for (int i = 0, l = args.length; i < l; i++) {
+            if (i > 0) {
                 buffer.append(',');
             }
             buffer.append(args[i]);
@@ -71,8 +73,8 @@ class BabbleScriptEngineFactory implements ScriptEngineFactory {
     @Override
     public String getProgram(String... statements) {
         StringBuilder buffer = new StringBuilder();
-        for(int i=0,l=statements.length;i<l;i++) {
-            if(i>0) {
+        for (int i = 0, l = statements.length; i < l; i++) {
+            if (i > 0) {
                 buffer.append('\n');
             }
             buffer.append(statements[i]);
