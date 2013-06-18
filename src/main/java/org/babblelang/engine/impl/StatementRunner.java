@@ -136,7 +136,11 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
         if (test(visit(ctx.expression()))) {
             return visit(ctx.thenBlock);
         } else {
-            return visit(ctx.elseBlock);
+            if (ctx.elseBlock != null) {
+                return visit(ctx.elseBlock);
+            } else {
+                return null;
+            }
         }
     }
 
