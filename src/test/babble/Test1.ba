@@ -1,10 +1,26 @@
-package toto (
-    function tutu(a:int, b:int) -> (
-        def c = a + b
-        return c
+package test1 (
+    def adder = (a:int):(b:int):int -> (
+        return (b:int):int -> (
+            return a + b
+        )
+    )
+
+    def add = (a:int, b:int):int -> (
+        return a + b
     )
 )
 
-function main() -> (
-    print(toto.tutu(1,1))
+def main = () -> (
+    (
+        def local = "world !"
+        print ("Hello,")
+        print (local)
+    )
+
+    print(test1.add(a:1,b:2))
+
+    print(
+        test1.adder(2)
+                     (2)
+    )
 )

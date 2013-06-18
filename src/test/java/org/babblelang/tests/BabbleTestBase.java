@@ -15,8 +15,9 @@ public abstract class BabbleTestBase extends TestCase {
         BabbleLexer lexer = new BabbleLexer(input);
         CommonTokenStream tokenStream = new CommonTokenStream(lexer);
         BabbleParser parser = new BabbleParser(tokenStream);
-        parser.setErrorHandler(new DefaultErrorStrategy());
-        return parser.file();
+        parser.setErrorHandler(new BailErrorStrategy());
+        BabbleParser.FileContext result = parser.file();
+        return result;
     }
 
     protected void parse(String path, BabbleListener listener) throws IOException {

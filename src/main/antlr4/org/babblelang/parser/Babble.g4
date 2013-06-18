@@ -1,44 +1,20 @@
 grammar Babble;
 
-file: declaration* EOF;
+file: statement* EOF;
 
-declaration: packageDecl
-           | classDecl
-           | functionDecl
-           | importDecl;
-
-packageDecl: 'package' ID '(' declaration* ')';
-
-classDecl: 'class' ID templateDeclaration? '(' declaration* ')';
-
-functionDecl: 'function' ID parametersDeclaration returnTypeDeclaration '->' '(' statement* ')';
-
-importDecl: 'import' ID ( 'as' ID )?;
-
-parametersDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')'
-                     | '(' ')';
-
-templateDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')';
-
-returnTypeDeclaration: ':' returnTypeDeclaration
-                     | ;
-
-parameterDeclaration: ID ':' type;
-
-statement: ifStatement
-         | loopStatement
+statement: packageStatement
+         | ifStatement
+         | whileStatement
          | defStatement
          | assignStatement
          | returnStatement
+         | block
          | expression;
 
-ifStatement: 'if' expression '(' statement* ')'
-             ( 'else' '(' statement* ')' )?;
+packageStatement: 'package' ID block;
 
-callParameters: '(' callParameter (',' callParameter)* ')'
-              | '(' ')';
-
-callParameter: (ID ':')? expression;
+ifStatement: 'if' expression block
+             ( 'else' block)?;
 
 defStatement: 'def' ID (':' type)? ('=' expression)?;
 
@@ -46,21 +22,51 @@ assignStatement: ID '=' expression;
 
 returnStatement: 'return' expression;
 
-loopStatement: 'while' expression '(' statement* ')';
+whileStatement: 'while' expression block;
 
-expression: '(' expression ')'                   # paren
-          | expression op=('*' | '/') expression # mul
-          | expression op=('+' | '-') expression # add
-          | expression callParameters            # call
-          | expression '.' ID                    # selector
-          | ID                                   # id
-          | INT                                  # number
-          | FLOAT                                # number
+expression: '(' expression ')'                    # paren
+          | expression op=('*' | '/') expression  # binaryMul
+          | expression op=('+' | '-') expression  # binaryAdd
+          | functionLiteral                       # fun
+          | expression callParameters             # call
+          | selector                              # sel
+          | INT                                   # number
+          | FLOAT                                 # number
+          | STRING                                # string
           ;
-type: ID
-    | ID '(' type (',' type)* ')';
 
+selector: ID
+        | selector '.' ID;
+
+block: '(' ')'
+     | '(' statement+ ')'
+     ;
+
+functionLiteral: functionType '->' block;
+
+functionType: parametersDeclaration returnTypeDeclaration;
+
+parametersDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')'
+                     | '(' ')';
+
+parameterDeclaration: ID ':' type;
+
+returnTypeDeclaration: ':' type
+                     | ;
+
+callParameters: '(' callParameter (',' callParameter)* ')'
+              | '(' ')';
+
+callParameter: (ID ':')? expression;
+
+type: ID
+    | ID '(' type (',' type)* ')'
+    | functionType;
+
+// Tokens
 ID: [a-zA-Z] [a-zA-Z0-9]*;
 INT: [0-9]+;
 FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;
-WS: [ \t\r\n]+ -> skip;
+STRING: '"' .*? '"';
+WS: [ \t]+ -> skip;
+NL: '\r'? '\n' -> skip;
