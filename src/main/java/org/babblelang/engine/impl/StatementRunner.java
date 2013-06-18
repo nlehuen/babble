@@ -64,20 +64,31 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
 
         switch (ctx.op.getType()) {
             case BabbleLexer.MUL:
-                return (Double) a * (Double) b;
+                // TODO : derive operand types
+                if (a instanceof Integer && b instanceof Integer) {
+                    return (Integer) a * (Integer) b;
+                } else {
+                    return ((Number) a).doubleValue() * ((Number) b).doubleValue();
+                }
 
             case BabbleLexer.DIV:
-                return (Double) a / (Double) b;
+                return ((Number) a).doubleValue() / ((Number) b).doubleValue();
 
             case BabbleLexer.PLUS:
                 if (a instanceof String) {
                     return (String) a + b;
+                } else if (a instanceof Integer && b instanceof Integer) {
+                    return (Integer) a + (Integer) b;
                 } else {
-                    return (Double) a + (Double) b;
+                    return ((Number) a).doubleValue() + ((Number) b).doubleValue();
                 }
 
             case BabbleLexer.MINUS:
-                return (Double) a - (Double) b;
+                if (a instanceof Integer && b instanceof Integer) {
+                    return (Integer) a - (Integer) b;
+                } else {
+                    return ((Number) a).doubleValue() - ((Number) b).doubleValue();
+                }
 
             case BabbleLexer.LT:
                 return ((Comparable) a).compareTo(b) < 0;
@@ -100,7 +111,12 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitNumber(BabbleParser.NumberContext ctx) {
+    public Object visitInteger(BabbleParser.IntegerContext ctx) {
+        return Integer.parseInt(ctx.getText());
+    }
+
+    @Override
+    public Object visitDouble(BabbleParser.DoubleContext ctx) {
         return Double.parseDouble(ctx.getText());
     }
 

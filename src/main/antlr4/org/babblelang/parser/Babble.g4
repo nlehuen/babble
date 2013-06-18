@@ -32,8 +32,8 @@ expression: '(' expression ')'                    # paren
           | functionLiteral                       # fun
           | expression callParameters             # call
           | selector                              # sel
-          | INT                                   # number
-          | FLOAT                                 # number
+          | INT                                   # integer
+          | FLOAT                                 # double
           | STRING                                # string
           ;
 

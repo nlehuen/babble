@@ -2,7 +2,7 @@ package org.babblelang.tests;
 
 public class BabbleExpressionsTestCase extends BabbleTestBase {
     public void testIntegerLiteral() throws Exception {
-        assertEquals(1.0, interpret("1"));
+        assertEquals(1, interpret("1"));
     }
 
     public void testNumberLiteral() throws Exception {
@@ -10,38 +10,45 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
     }
 
     public void testMul() throws Exception {
-        assertEquals(144.0, interpret("12 * 12"));
+        assertEquals(144, interpret("12 * 12"));
+        assertEquals(6.0, interpret("12 * 0.5"));
+        assertEquals(0.25, interpret("0.5 * 0.5"));
     }
 
     public void testDiv() throws Exception {
         assertEquals(12.0, interpret("144 / 12"));
+        assertEquals(144.0, interpret("12 / (1 / 12)"));
     }
 
     public void testAdd() throws Exception {
-        assertEquals(23.0, interpret("  12 + 11 "));
+        assertEquals(23, interpret("  12 + 11 "));
+        assertEquals(23.5, interpret("  12 + 11.5 "));
+        assertEquals(24.0, interpret("  12.5 + 11.5 "));
     }
 
     public void testMinus() throws Exception {
-        assertEquals(1.0, interpret("12 - 11"));
+        assertEquals(1, interpret("12 - 11"));
+        assertEquals(1.5, interpret("12.5 - 11"));
+        assertEquals(0.5, interpret("12 - 11.5"));
     }
 
     public void testPrecedence() throws Exception {
-        assertEquals(155.0, interpret("  12 * 12 + 11 "));
-        assertEquals(155.0, interpret("  11 + 12 * 12 "));
+        assertEquals(155, interpret("  12 * 12 + 11 "));
+        assertEquals(155, interpret("  11 + 12 * 12 "));
     }
 
     public void testParen() throws Exception {
-        assertEquals(155.0, interpret("  (12 * 12) + 11 "));
-        assertEquals(276.0, interpret("  12 * (12 + 11) "));
+        assertEquals(155, interpret("  (12 * 12) + 11 "));
+        assertEquals(276, interpret("  12 * (12 + 11) "));
     }
 
     public void testDef() throws Exception {
-        assertEquals(315.0, interpret("  def a = (12 * 12) + 11 \n a + a + 5"));
+        assertEquals(315, interpret("  def a = (12 * 12) + 11 \n a + a + 5"));
     }
 
     public void testStringLiteral() throws Exception {
-        assertEquals("abcd", interpret("  \"ab\" + \"cd\""));
-        assertEquals("ab2.0", interpret("  \"ab\" + 2"));
+        assertEquals("ab6cd", interpret("  \"ab\" + 6 + \"cd\" "));
+        assertEquals("ab2", interpret("  \"ab\" + 2"));
     }
 
     public void testComp() throws Exception {
