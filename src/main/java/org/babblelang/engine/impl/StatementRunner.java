@@ -50,7 +50,10 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitBlock(BabbleParser.BlockContext ctx) {
         scope = scope.enter(null);
-        Object result = super.visitBlock(ctx);
+        Object result = null;
+        for (BabbleParser.StatementContext statement : ctx.statement()) {
+            result = visit(statement);
+        }
         scope = scope.leave();
         return result;
     }
@@ -119,6 +122,26 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
 
             default:
                 throw new UnsupportedOperationException("Bad op : " + ctx.op.getText());
+        }
+    }
+
+    @Override
+    public Object visitIfStatement(BabbleParser.IfStatementContext ctx) {
+        Object value = visit(ctx.expression());
+
+        boolean result;
+        if (value instanceof Boolean) {
+            result = (Boolean) value;
+        } else if (value instanceof Number) {
+            result = ((Number) value).doubleValue() != 0.0;
+        } else {
+            result = value != null;
+        }
+
+        if (result) {
+            return visit(ctx.thenBlock);
+        } else {
+            return visit(ctx.elseBlock);
         }
     }
 

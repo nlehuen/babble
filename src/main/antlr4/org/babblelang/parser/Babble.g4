@@ -14,8 +14,8 @@ statement: packageStatement
 
 packageStatement: 'package' ID '(' statement* ')';
 
-ifStatement: 'if' expression block
-             ( 'else' block)?;
+ifStatement: 'if' expression thenBlock=block
+             ( 'else' elseBlock=block)?;
 
 defStatement: 'def' ID (':' type)? ('=' expression)?;
 
