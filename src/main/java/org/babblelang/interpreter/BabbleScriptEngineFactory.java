@@ -5,13 +5,6 @@ import javax.script.ScriptEngineFactory;
 import java.util.Collections;
 import java.util.List;
 
-/**
-* Created with IntelliJ IDEA.
-* User: Nico
-* Date: 18/06/13
-* Time: 14:50
-* To change this template use File | Settings | File Templates.
-*/
 class BabbleScriptEngineFactory implements ScriptEngineFactory {
     @Override
     public String getEngineName() {
