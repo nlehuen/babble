@@ -59,37 +59,40 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitBinaryOp(BabbleParser.BinaryOpContext ctx) {
-        double a = (Double) visit(ctx.expression(0));
-        double b = (Double) visit(ctx.expression(1));
-        double r;
+        Object a = visit(ctx.expression(0));
+        Object b = visit(ctx.expression(1));
 
         switch (ctx.op.getType()) {
             case BabbleLexer.MUL:
-                return a * b;
+                return (Double) a * (Double) b;
 
             case BabbleLexer.DIV:
-                return a / b;
+                return (Double) a / (Double) b;
 
             case BabbleLexer.PLUS:
-                return a + b;
+                if (a instanceof String) {
+                    return (String) a + b;
+                } else {
+                    return (Double) a + (Double) b;
+                }
 
             case BabbleLexer.MINUS:
-                return a - b;
+                return (Double) a - (Double) b;
 
             case BabbleLexer.LT:
-                return (a < b) ? 1 : 0;
+                return ((Comparable) a).compareTo(b) < 0;
 
             case BabbleLexer.LTE:
-                return (a <= b) ? 1 : 0;
+                return ((Comparable) a).compareTo(b) <= 0;
 
             case BabbleLexer.EQ:
-                return (a == b) ? 1 : 0;
+                return ((Comparable) a).compareTo(b) == 0;
 
             case BabbleLexer.GTE:
-                return (a >= b) ? 1 : 0;
+                return ((Comparable) a).compareTo(b) >= 0;
 
             case BabbleLexer.GT:
-                return (a > b) ? 1 : 0;
+                return ((Comparable) a).compareTo(b) > 0;
 
             default:
                 throw new UnsupportedOperationException("Bad op : " + ctx.op.getText());
@@ -103,6 +106,7 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitString(BabbleParser.StringContext ctx) {
-        return ctx.STRING().getText();
+        String literal = ctx.STRING().getText();
+        return literal.substring(1, literal.length() - 1);
     }
 }

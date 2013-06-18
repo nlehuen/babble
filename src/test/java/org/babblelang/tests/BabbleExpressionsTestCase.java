@@ -39,17 +39,26 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         assertEquals(315.0, interpret("  def a = (12 * 12) + 11 \n a + a + 5"));
     }
 
-    public void testComp() throws Exception {
-        assertEquals(1, interpret("  def a = 1 def b = 2 a < b"));
-        assertEquals(1, interpret("  def a = 1 def b = 2 a <= b"));
-        assertEquals(0, interpret("  def a = 1 def b = 2 a == b"));
-        assertEquals(0, interpret("  def a = 1 def b = 2 a >= b"));
-        assertEquals(0, interpret("  def a = 1 def b = 2 a > b"));
+    public void testStringLiteral() throws Exception {
+        assertEquals("abcd", interpret("  \"ab\" + \"cd\""));
+        assertEquals("ab2.0", interpret("  \"ab\" + 2"));
+    }
 
-        assertEquals(0, interpret("  def a = 1 def b = 2 b < a"));
-        assertEquals(0, interpret("  def a = 1 def b = 2 b <= a"));
-        assertEquals(1, interpret("  def a = 1 def b = 1 b == a"));
-        assertEquals(1, interpret("  def a = 1 def b = 2 b >= a"));
-        assertEquals(1, interpret("  def a = 1 def b = 2 b > a"));
+    public void testComp() throws Exception {
+        assertEquals(true, interpret("  def a = 1 def b = 2 a < b"));
+        assertEquals(true, interpret("  def a = 1 def b = 2 a <= b"));
+        assertEquals(false, interpret("  def a = 1 def b = 2 a == b"));
+        assertEquals(false, interpret("  def a = 1 def b = 2 a >= b"));
+        assertEquals(false, interpret("  def a = 1 def b = 2 a > b"));
+
+        assertEquals(false, interpret("  def a = 1 def b = 2 b < a"));
+        assertEquals(false, interpret("  def a = 1 def b = 2 b <= a"));
+        assertEquals(true, interpret("  def a = 1 def b = 1 b == a"));
+        assertEquals(true, interpret("  def a = 1 def b = 2 b >= a"));
+        assertEquals(true, interpret("  def a = 1 def b = 2 b > a"));
+
+        assertEquals(true, interpret("  \"a\" == \"a\""));
+        assertEquals(false, interpret("  \"b\" >  \"c\""));
+        assertEquals(true, interpret("  \"b\" >  \"a\""));
     }
 }
