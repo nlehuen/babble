@@ -37,6 +37,8 @@
                         </goals>
                         <configuration>
                             <sourceDirectory>src/main/antlr4</sourceDirectory>
+                            <visitor>true</visitor>
+                            <listener>false</listener>
                         </configuration>
                     </execution>
                 </executions>

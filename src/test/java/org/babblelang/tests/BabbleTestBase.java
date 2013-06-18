@@ -1,11 +1,13 @@
 package org.babblelang.tests;
 
 import junit.framework.TestCase;
-import org.antlr.v4.runtime.*;
-import org.antlr.v4.runtime.tree.ParseTreeWalker;
+import org.antlr.v4.runtime.ANTLRFileStream;
+import org.antlr.v4.runtime.BailErrorStrategy;
+import org.antlr.v4.runtime.CharStream;
+import org.antlr.v4.runtime.CommonTokenStream;
 import org.babblelang.parser.BabbleLexer;
-import org.babblelang.parser.BabbleListener;
 import org.babblelang.parser.BabbleParser;
+import org.babblelang.parser.BabbleVisitor;
 
 import java.io.IOException;
 
@@ -16,12 +18,10 @@ public abstract class BabbleTestBase extends TestCase {
         CommonTokenStream tokenStream = new CommonTokenStream(lexer);
         BabbleParser parser = new BabbleParser(tokenStream);
         parser.setErrorHandler(new BailErrorStrategy());
-        BabbleParser.FileContext result = parser.file();
-        return result;
+        return parser.file();
     }
 
-    protected void parse(String path, BabbleListener listener) throws IOException {
-        ParseTreeWalker walker = new ParseTreeWalker();
-        walker.walk(listener, parse(path));
+    protected <T> T visit(String path, BabbleVisitor<T> visitor) throws IOException {
+        return visitor.visit(parse(path));
     }
 }
