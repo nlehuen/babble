@@ -7,7 +7,7 @@ import org.babblelang.parser.BabbleParser;
 import java.util.List;
 
 public class StatementRunner extends BabbleBaseVisitor<Object> {
-    private final Scope scope;
+    private Scope scope;
 
     public StatementRunner(Scope scope) {
         this.scope = scope;
@@ -26,6 +26,15 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitPackageStatement(BabbleParser.PackageStatementContext ctx) {
+        String name = ctx.ID().getText();
+        scope = scope.enter(name);
+        super.visitPackageStatement(ctx);
+        scope = scope.leave();
+        return null;
+    }
+
+    @Override
     public Object visitDefStatement(BabbleParser.DefStatementContext ctx) {
         String id = ctx.ID().getText();
         Object value = visit(ctx.expression());
@@ -40,7 +49,10 @@ public class StatementRunner extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitBlock(BabbleParser.BlockContext ctx) {
-        return new StatementRunner(new Scope(scope)).run(ctx.statement());
+        scope = scope.enter(null);
+        Object result = super.visitBlock(ctx);
+        scope = scope.leave();
+        return result;
     }
 
     @Override

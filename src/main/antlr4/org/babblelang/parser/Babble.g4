@@ -12,7 +12,7 @@ statement: packageStatement
          | expression
          | ';';
 
-packageStatement: 'package' ID block;
+packageStatement: 'package' ID '(' statement* ')';
 
 ifStatement: 'if' expression block
              ( 'else' block)?;

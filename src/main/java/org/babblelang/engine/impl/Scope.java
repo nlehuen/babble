@@ -1,10 +1,7 @@
 package org.babblelang.engine.impl;
 
 import javax.script.Bindings;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
 
 public class Scope extends HashMap<String, Object> implements Bindings {
     private final Scope parent;
@@ -15,6 +12,7 @@ public class Scope extends HashMap<String, Object> implements Bindings {
 
     public Scope(Scope parent) {
         this.parent = parent;
+        put("..", parent);
     }
 
     @Override
@@ -29,35 +27,8 @@ public class Scope extends HashMap<String, Object> implements Bindings {
     }
 
     @Override
-    public Set<String> keySet() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Collection<Object> values() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Set<Map.Entry<String, Object>> entrySet() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
     public boolean isEmpty() {
         return super.isEmpty() && (parent == null || parent.isEmpty());
-    }
-
-    @Override
-    public int size() {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public Object remove(Object key) {
-        throw new UnsupportedOperationException();
-
-
     }
 
     @Override
@@ -70,7 +41,22 @@ public class Scope extends HashMap<String, Object> implements Bindings {
         return super.containsValue(value) || (parent != null && parent.containsValue(value));
     }
 
-    public Scope getParent() {
+    public Scope enter(String name) {
+        Scope newScope;
+        if (name != null) {
+            newScope = (Scope) super.get(name);
+            if (newScope == null) {
+                newScope = new Scope(this);
+                put(name, newScope);
+            }
+        } else {
+            newScope = new Scope(this);
+        }
+        return newScope;
+    }
+
+    public Scope leave() {
+        if (parent == null) throw new IllegalStateException("Too many calls to leave()");
         return parent;
     }
 }
