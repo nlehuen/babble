@@ -33,6 +33,6 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     }
 
     public void testRecursion() throws Exception {
-        assertEquals(120, interpret("def fac = (n:int):int -> ( if(n<=1) ( 1 ) else ( n * fac(n-1) ) ) ; fac(5)"));
+        assertEquals(120, interpret("def fac = (n:int):int -> ( if(n<=1) ( 1 ) else ( n * recurse(n-1) ) ) ; fac(5)"));
     }
 }

@@ -13,7 +13,7 @@ paquet test1 (
         si n < 2 (
             retourne 1
         ) sinon (
-            retourne n * factorielle(n - 1)
+            retourne n * recursionne(n - 1)
         )
     )
 
