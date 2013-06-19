@@ -2,7 +2,6 @@ package org.babblelang.engine.impl.natives;
 
 import org.babblelang.engine.impl.Callable;
 import org.babblelang.engine.impl.Interpreter;
-import org.babblelang.engine.impl.Parameters;
 import org.babblelang.engine.impl.Scope;
 
 import java.io.PrintStream;

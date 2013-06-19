@@ -225,7 +225,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitCall(BabbleParser.CallContext ctx) {
         Callable callable = (Callable) visit(ctx.expression());
-        Parameters params = (Parameters) visit(ctx.callParameters());
+        Callable.Parameters params = (Callable.Parameters) visit(ctx.callParameters());
         Scope beforeCall = scope;
         scope = callable.bindParameters(this, scope, params);
         Object result = callable.call(this, scope);
@@ -236,7 +236,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitCallParameters(BabbleParser.CallParametersContext ctx) {
         int count = 0;
-        Parameters params = new Parameters();
+        Callable.Parameters params = new Callable.Parameters();
         for (BabbleParser.CallParameterContext cp : ctx.callParameter()) {
             String name = "$" + (count++);
             if (cp.ID() != null) {
