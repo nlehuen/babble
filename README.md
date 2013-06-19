@@ -32,7 +32,7 @@ package test1 (
     )
 
     def fac2 = (n:int):int -> (
-        def result = 1;
+        def result = 1
         while n > 1 (
             result = result * n ; n = n - 1
         )
@@ -79,7 +79,7 @@ paquet test1 (
     )
 
     soit factorielle2 = (n:int):int -> (
-        soit resultat = 1;
+        soit resultat = 1
         tant que n > 1 (
             resultat = resultat * n ; n = n - 1
         )
