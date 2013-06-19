@@ -17,7 +17,7 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
     }
 
     @Override
-    public Scope bindParameters(Parameters parameters) {
+    public Scope bindParameters(Interpreter interpreter, Scope parent, Parameters parameters) {
         Scope scope = closure.enter(null);
 
         int count = 0;

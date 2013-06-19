@@ -6,7 +6,7 @@ import org.babblelang.parser.BabbleParser;
 
 import java.util.List;
 
-class Interpreter extends BabbleBaseVisitor<Object> {
+public class Interpreter extends BabbleBaseVisitor<Object> {
     private Scope scope;
 
     public Interpreter(Scope scope) {
@@ -199,7 +199,7 @@ class Interpreter extends BabbleBaseVisitor<Object> {
         Callable callable = (Callable) visit(ctx.expression());
         Parameters params = (Parameters) visit(ctx.callParameters());
         Scope beforeCall = scope;
-        scope = callable.bindParameters(params);
+        scope = callable.bindParameters(this, scope, params);
         Object result = callable.call(this, scope);
         scope = beforeCall;
         return result;

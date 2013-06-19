@@ -1,6 +1,7 @@
 package org.babblelang.engine.impl;
 
 import org.babblelang.engine.BabbleScriptEngine;
+import org.babblelang.engine.impl.natives.PrintFunction;
 import org.babblelang.parser.BabbleParser;
 
 import javax.script.CompiledScript;
@@ -19,7 +20,11 @@ public class BabbleCompiledScript extends CompiledScript {
 
     @Override
     public Object eval(ScriptContext context) throws ScriptException {
-        return new Interpreter(new Scope()).run(file.statement());
+        Scope scope = new Scope();
+        scope.define("print", new PrintFunction(false));
+        scope.define("println", new PrintFunction(true));
+        scope.define("STDOUT", System.out);
+        return new Interpreter(scope).run(file.statement());
     }
 
     @Override

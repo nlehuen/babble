@@ -1,6 +1,7 @@
 package org.babblelang.engine.impl;
 
 import java.util.HashMap;
+import java.util.Map;
 
 public class Scope {
     private final Scope parent;
@@ -40,6 +41,12 @@ public class Scope {
         }
         locals.put(key, value);
         return value;
+    }
+
+    public void defineAll(Map<String, Object> values) {
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            define(entry.getKey(), entry.getValue());
+        }
     }
 
     public Object assign(String key, Object value) {
