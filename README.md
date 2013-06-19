@@ -27,7 +27,7 @@ package test1 (
         if n < 2 (
             1
          ) else (
-            n * fac(n - 1)
+            n * recurse(n - 1)
          )
     )
 
@@ -74,7 +74,7 @@ paquet test1 (
         si n < 2 (
             retourne 1
         ) sinon (
-            retourne n * factorielle(n - 1)
+            retourne n * recurrence(n - 1)
         )
     )
 

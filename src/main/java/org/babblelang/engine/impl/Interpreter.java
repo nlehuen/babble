@@ -42,6 +42,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             value = visit(ctx.expression());
         }
         scope.define(id, value);
+
         return value;
     }
 
@@ -251,5 +252,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             params.put(name, value);
         }
         return params;
+    }
+
+    @Override
+    public Object visitRecurse(BabbleParser.RecurseContext ctx) {
+        return scope.get("$recurse");
     }
 }

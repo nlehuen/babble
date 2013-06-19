@@ -3,16 +3,23 @@ package org.babblelang.engine.impl;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleParser;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class Function extends BabbleBaseVisitor<Object> implements Callable {
     private final BabbleParser.FunctionLiteralContext definition;
     private final Scope closure;
 
     public Function(BabbleParser.FunctionLiteralContext definition, Scope scope) {
         this.definition = definition;
-        this.closure = scope;
+
+        // Compute closure
+        ClosureExtractor closureExtractor = new ClosureExtractor();
+        closureExtractor.visit(definition);
+        closure = scope.closure(closureExtractor.getClosureKeys());
+        closure.define("$recurse", this);
     }
 
-    @Override
     public Scope bindParameters(Interpreter interpreter, Scope parent, Parameters parameters) {
         Scope scope = closure.enter(null);
 
@@ -34,7 +41,6 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
         return scope;
     }
 
-    @Override
     public Object call(Interpreter interpreter, Scope scope) {
         return interpreter.visit(definition.block());
     }
@@ -42,6 +48,75 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
     private void checkType(BabbleParser.ParameterDeclarationContext parameter, Object value) {
         if (value instanceof Scope) {
             throw new IllegalArgumentException("Parameter type mismatch : " + parameter.ID().getText() + " is expected to be of type " + parameter.type().getText() + ", got " + value.getClass().getCanonicalName());
+        }
+    }
+
+    private static class ClosureExtractor extends BabbleBaseVisitor<Void> {
+        private Scope functionScope;
+        private Set<String> closureKeys;
+        private boolean root = true;
+
+        public ClosureExtractor() {
+            functionScope = new Scope();
+            closureKeys = new HashSet<String>();
+        }
+
+        @Override
+        public Void visitPackageStatement(BabbleParser.PackageStatementContext ctx) {
+            functionScope = functionScope.enter(ctx.ID().getText());
+            super.visitPackageStatement(ctx);
+            functionScope = functionScope.leave();
+            return null;
+        }
+
+        @Override
+        public Void visitBlock(BabbleParser.BlockContext ctx) {
+            functionScope = functionScope.enter(null);
+            super.visitBlock(ctx);
+            functionScope = functionScope.leave();
+            return null;
+        }
+
+        @Override
+        public Void visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
+            if (root) {
+                // No need to visit inner functions
+                // Their closure will be computed in time
+                root = false;
+                super.visitFunctionLiteral(ctx);
+            }
+            return null;
+        }
+
+        @Override
+        public Void visitParameterDeclaration(BabbleParser.ParameterDeclarationContext ctx) {
+            functionScope.define(ctx.ID().getText(), true);
+            return super.visitParameterDeclaration(ctx);
+        }
+
+        @Override
+        public Void visitDefStatement(BabbleParser.DefStatementContext ctx) {
+            super.visitDefStatement(ctx);
+            functionScope.define(ctx.ID().getText(), true);
+            return null;
+        }
+
+        @Override
+        public Void visitId(BabbleParser.IdContext ctx) {
+            String name = ctx.ID().getText();
+
+            if (functionScope.isDeclared(name)) {
+                // if the ID has been defined within the function
+                // then we don't need it in the closure
+            } else {
+                closureKeys.add(name);
+            }
+
+            return super.visitId(ctx);
+        }
+
+        private Set<String> getClosureKeys() {
+            return closureKeys;
         }
     }
 }

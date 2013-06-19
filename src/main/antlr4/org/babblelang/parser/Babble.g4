@@ -36,6 +36,7 @@ expression: '(' expression ')'                               # parenthesis
           | ID '=' expression                                # assign
           | NULL                                             # null
           | BOOLEAN                                          # boolean
+          | RECURSE                                          # recurse
           | ID                                               # id
           | INT                                              # integer
           | FLOAT                                            # double
@@ -90,5 +91,6 @@ OR: 'or' | 'ou';
 NULL: 'null' | 'vide';
 NOT: 'not' | 'non';
 BOOLEAN: 'true' | 'false' | 'vrai' | 'faux';
+RECURSE: 'recurse' | 'recurrence';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
 WS: [ \t\r\n]+ -> skip;
