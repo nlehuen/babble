@@ -69,7 +69,7 @@ functionType: parametersDeclaration ( ':' type | );
 // Tokens
 INT: [0-9]+;
 FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;
-STRING: '"' .*? '"';
+STRING: '"' (~[\\"]|'\\\\'|'\\"')*? '"';
 WS: [ \t]+ -> skip;
 NL: '\r'? '\n' -> skip;
 PLUS: '+';

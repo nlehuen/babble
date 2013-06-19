@@ -49,6 +49,8 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
     public void testStringLiteral() throws Exception {
         assertEquals("ab6cd", interpret("  \"ab\" + 6 + \"cd\" "));
         assertEquals("ab2", interpret("  \"ab\" + 2"));
+        assertEquals("ab\"2", interpret("  \"ab\\\"\" + 2"));
+        assertEquals("ab\\2", interpret("  \"ab\\\\\" + 2"));
     }
 
     public void testComp() throws Exception {

@@ -179,7 +179,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitString(BabbleParser.StringContext ctx) {
         String literal = ctx.STRING().getText();
-        return literal.substring(1, literal.length() - 1);
+        literal = literal.substring(1, literal.length() - 1);
+        literal = literal.replace("\\\\", "\\").replace("\\\"", "\"");
+        return literal;
     }
 
 
