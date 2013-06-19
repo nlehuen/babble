@@ -134,6 +134,7 @@ Planned features
 
 Language features :
 
+- [ ] better, more user-friendly error reports. Right now parsing & runtime errors are VERY messy.
 - [ ] default values for function parameters (including closure support).
 - [ ] type checking.
 - [ ] type inference.
