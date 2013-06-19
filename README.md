@@ -59,7 +59,49 @@ main()
 French keywords :
 
 ```
+paquet test1 (
+    soit additionneur = (a:int):(b:int):int -> (
+        retourne (b:int):int -> (
+            retourne a + b
+        )
+    )
 
+    soit additionne = (a:int, b:int):int -> (
+        retourne a + b
+    )
+
+    soit factorielle = (n:int):int -> (
+        si n < 2 (
+            retourne 1
+        ) sinon (
+            retourne n * factorielle(n - 1)
+        )
+    )
+
+    soit factorielle2 = (n:int):int -> (
+        soit resultat = 1;
+        tant que n > 1 (
+            resultat = resultat * n ; n = n - 1
+        )
+        resultat
+    )
+)
+
+soit fonction_principale = () -> (
+    (
+        soit qui = "tout le monde !"
+        afficherc ("Bonjour ", qui)
+    )
+
+    afficherc ("1+2=", test1.additionne(a:1,b:2))
+
+    soit ajoute2 = test1.additionneur(2)
+    soit resultat = ajoute2(2)
+
+    retourne "ok:" + resultat + ":" + test1.factorielle(5) + ":" + test1.factorielle2(6)
+)
+
+fonction_principale()
 ```
 
 
