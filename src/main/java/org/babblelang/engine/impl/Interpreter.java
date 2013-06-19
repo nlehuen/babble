@@ -37,7 +37,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitDefStatement(BabbleParser.DefStatementContext ctx) {
         String id = ctx.ID().getText();
-        Object value = visit(ctx.expression());
+        Object value = null;
+        if (ctx.expression() != null) {
+            value = visit(ctx.expression());
+        }
         scope.define(id, value);
         return value;
     }

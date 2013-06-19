@@ -9,6 +9,13 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         assertEquals(2, interpret("def i = 0 ; ( i = i + 1 ) ; ( def i = i + 1 ) ; i = i + 1 ; i"));
     }
 
+    public void testDef() throws Exception {
+        assertEquals(null, interpret("def i"));
+        assertEquals(null, interpret("def i ; i"));
+        assertEquals(1, interpret("def i ; i = 1"));
+        assertEquals(1, interpret("def i ; i = 1 ; i"));
+    }
+
     public void testAssign() throws Exception {
         assertEquals(0, interpret("def i = 0 ; i"));
         assertEquals(1, interpret("def i = 0 ; i = 1"));
