@@ -32,7 +32,12 @@ public class Scope {
     }
 
     public Scope closure(Set<String> closureKeys) {
-        Scope result = parent != null ? parent.enter(null) : new Scope();
+        // No closure for root scope
+        if (parent == null) {
+            return enter(null);
+        }
+
+        Scope result = parent.enter(null);
         for (String key : closureKeys) {
             if (locals.containsKey(key)) {
                 result.define(key, locals.get(key));

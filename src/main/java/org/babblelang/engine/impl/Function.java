@@ -16,7 +16,7 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
         // Compute closure
         ClosureExtractor closureExtractor = new ClosureExtractor();
         closureExtractor.visit(definition);
-        this.closure = scope.closure(closureExtractor.closureKeys);
+        this.closure = scope.closure(closureExtractor.getClosureKeys());
         this.closure.define("$recurse", this);
     }
 
@@ -109,6 +109,10 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
             }
 
             return super.visitId(ctx);
+        }
+
+        private Set<String> getClosureKeys() {
+            return closureKeys;
         }
     }
 }
