@@ -13,14 +13,12 @@ public class PrintFunction implements Callable {
         this.newLine = newLine;
     }
 
-    @Override
     public Scope bindParameters(Interpreter interpreter, Scope parent, Parameters parameters) {
         Scope scope = parent.enter(null);
         scope.define("...", parameters);
         return scope;
     }
 
-    @Override
     public Object call(Interpreter interpreter, Scope scope) {
         Parameters params = (Parameters) scope.get("...");
 

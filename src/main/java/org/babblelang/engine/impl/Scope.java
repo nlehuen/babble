@@ -2,6 +2,7 @@ package org.babblelang.engine.impl;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 public class Scope {
     private final Scope parent;
@@ -37,6 +38,28 @@ public class Scope {
         return parent;
     }
 
+    public Scope closure(Set<String> closureKeys) {
+        Scope result = findStaticScope().enter(null);
+        for (String key : closureKeys) {
+            result.define(key, get(key));
+        }
+        return result;
+    }
+
+    private Scope findStaticScope() {
+        Scope current = this;
+        Scope result = this;
+
+        while (current != null) {
+            if (current.locals.containsKey("$recurse")) {
+                result = current.parent;
+            }
+            current = current.parent;
+        }
+
+        return result;
+    }
+
     public Object define(String key, Object value) {
         if (locals.containsKey(key)) {
             throw new IllegalArgumentException("Key already defined : " + key);
@@ -45,10 +68,27 @@ public class Scope {
         return value;
     }
 
-    public void defineAll(Map<String, Object> values) {
-        for (Map.Entry<String, Object> entry : values.entrySet()) {
-            define(entry.getKey(), entry.getValue());
+    public boolean isDeclared(String key) {
+        return isDeclaredWithin(null, key);
+    }
+
+    /**
+     * Returns whether the given key has been defined in this scope
+     * or up to the given root.
+     */
+    public boolean isDeclaredWithin(Scope root, String key) {
+        Scope current = this;
+        while (current != null) {
+            if (current.locals.containsKey(key)) {
+                return true;
+            } else {
+                if (current == root) {
+                    break;
+                }
+                current = current.parent;
+            }
         }
+        return false;
     }
 
     public Object assign(String key, Object value) {
@@ -75,4 +115,5 @@ public class Scope {
         }
         throw new IllegalArgumentException("No such key : " + key);
     }
+
 }

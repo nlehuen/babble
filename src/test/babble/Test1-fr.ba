@@ -13,12 +13,12 @@ paquet test1 (
         si n < 2 (
             retourne 1
         ) sinon (
-            retourne n * factorielle(n - 1)
+            retourne n * recurrence(n - 1)
         )
     )
 
     soit factorielle2 = (n:int):int -> (
-        soit resultat = 1;
+        soit resultat = 1
         tant que n > 1 (
             resultat = resultat * n ; n = n - 1
         )
