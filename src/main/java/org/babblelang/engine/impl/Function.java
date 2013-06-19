@@ -12,10 +12,6 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
         this.closure = scope;
     }
 
-    public BabbleParser.FunctionLiteralContext getDefinition() {
-        return definition;
-    }
-
     @Override
     public Scope bindParameters(Interpreter interpreter, Scope parent, Parameters parameters) {
         Scope scope = closure.enter(null);

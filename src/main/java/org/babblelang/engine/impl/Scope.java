@@ -53,7 +53,8 @@ public class Scope {
         Scope current = this;
         while (current != null) {
             if (current.locals.containsKey(key)) {
-                return current.locals.put(key, value);
+                current.locals.put(key, value);
+                return value;
             } else {
                 current = current.parent;
             }
