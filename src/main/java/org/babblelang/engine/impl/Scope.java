@@ -4,13 +4,13 @@ import java.util.HashMap;
 
 public class Scope {
     private final Scope parent;
-    private HashMap<String, Object> locals = new HashMap<String, Object>();
+    private final HashMap<String, Object> locals = new HashMap<String, Object>();
 
     public Scope() {
         this.parent = null;
     }
 
-    public Scope(Scope parent) {
+    private Scope(Scope parent) {
         this.parent = parent;
         locals.put("..", parent);
     }

@@ -6,7 +6,7 @@ import org.babblelang.parser.BabbleParser;
 
 import java.util.List;
 
-public class Interpreter extends BabbleBaseVisitor<Object> {
+class Interpreter extends BabbleBaseVisitor<Object> {
     private Scope scope;
 
     public Interpreter(Scope scope) {
@@ -67,6 +67,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             base = (Scope) visit(expression);
         }
         return base.get(name);
+    }
+
+    @Override
+    public Object visitNull(BabbleParser.NullContext ctx) {
+        return null;
     }
 
     @Override
@@ -184,5 +189,34 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return literal;
     }
 
+    @Override
+    public Object visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
+        return new Function(ctx, scope);
+    }
 
+    @Override
+    public Object visitCall(BabbleParser.CallContext ctx) {
+        Function function = (Function) visit(ctx.expression());
+        Parameters params = (Parameters) visit(ctx.callParameters());
+        Scope beforeCall = scope;
+        scope = function.bindParameters(params);
+        Object result = visit(function.getDefinition().block());
+        scope = beforeCall;
+        return result;
+    }
+
+    @Override
+    public Object visitCallParameters(BabbleParser.CallParametersContext ctx) {
+        int count = 0;
+        Parameters params = new Parameters();
+        for (BabbleParser.CallParameterContext cp : ctx.callParameter()) {
+            String name = "$" + (count++);
+            if (cp.ID() != null) {
+                name = cp.ID().getText();
+            }
+            Object value = visit(cp.expression());
+            params.put(name, value);
+        }
+        return params;
+    }
 }

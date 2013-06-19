@@ -27,6 +27,7 @@ whileStatement: 'while' expression block;
 
 expression: '(' expression ')'                    # parenthesis
           | expression '.' ID                     # selector
+          | expression callParameters             # call
           | expression op=('*' | '/') expression  # binaryOp
           | expression op=('+' | '-') expression  # binaryOp
           | expression op=('<' | '<=' | '=='
@@ -34,7 +35,7 @@ expression: '(' expression ')'                    # parenthesis
           | expression op='and' expression        # binaryOp
           | expression op='or' expression         # binaryOp
           | functionType '->' block               # functionLiteral
-          | expression callParameters             # call
+          | NULL                                  # null
           | ID                                    # id
           | INT                                   # integer
           | FLOAT                                 # double
@@ -49,7 +50,7 @@ block: '(' ')'
 parametersDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')'
                      | '(' ')';
 
-parameterDeclaration: ID ':' type;
+parameterDeclaration: ID (':' type)?;
 
 callParameters: '(' callParameter (',' callParameter)* ')'
               | '(' ')';
@@ -83,4 +84,5 @@ GTE: '>=';
 GT: '>';
 AND: 'and';
 OR: 'or';
+NULL: 'null';
 ID: [a-zA-Z] [a-zA-Z0-9]*;

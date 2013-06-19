@@ -54,17 +54,17 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
     }
 
     public void testComp() throws Exception {
-        assertEquals(true, interpret("  def a = 1 def b = 2 a < b"));
-        assertEquals(true, interpret("  def a = 1 def b = 2 a <= b"));
-        assertEquals(false, interpret("  def a = 1 def b = 2 a == b"));
-        assertEquals(false, interpret("  def a = 1 def b = 2 a >= b"));
-        assertEquals(false, interpret("  def a = 1 def b = 2 a > b"));
+        assertEquals(true, interpret("  def a = 1 ; def b = 2 ; a < b"));
+        assertEquals(true, interpret("  def a = 1 ; def b = 2 ; a <= b"));
+        assertEquals(false, interpret("  def a = 1 ; def b = 2 ; a == b"));
+        assertEquals(false, interpret("  def a = 1 ; def b = 2 ; a >= b"));
+        assertEquals(false, interpret("  def a = 1 ; def b = 2 ; a > b"));
 
-        assertEquals(false, interpret("  def a = 1 def b = 2 b < a"));
-        assertEquals(false, interpret("  def a = 1 def b = 2 b <= a"));
-        assertEquals(true, interpret("  def a = 1 def b = 1 b == a"));
-        assertEquals(true, interpret("  def a = 1 def b = 2 b >= a"));
-        assertEquals(true, interpret("  def a = 1 def b = 2 b > a"));
+        assertEquals(false, interpret("  def a = 1 ; def b = 2 ; b < a"));
+        assertEquals(false, interpret("  def a = 1 ; def b = 2 ; b <= a"));
+        assertEquals(true, interpret("  def a = 1 ; def b = 1 ; b == a"));
+        assertEquals(true, interpret("  def a = 1 ; def b = 2 ; b >= a"));
+        assertEquals(true, interpret("  def a = 1 ; def b = 2 ; b > a"));
 
         assertEquals(true, interpret("  \"a\" == \"a\""));
         assertEquals(false, interpret("  \"b\" >  \"c\""));
