@@ -16,6 +16,15 @@ package test1 (
             n * fac(n - 1)
          )
     )
+
+    def fac2 = (n:int):int -> (
+        def result = 1;
+        while n > 1 (
+            result = result * n
+            n = n - 1
+        )
+        result
+    )
 )
 
 def main = () -> (
@@ -29,7 +38,7 @@ def main = () -> (
     def result = test1.adder(2)
                                       (2)
 
-    "ok:" + result + ":" + test1.fac(5)
+    "ok:" + result + ":" + test1.fac(5) + ":" + test1.fac2(6)
 )
 
 main()

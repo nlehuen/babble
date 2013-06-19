@@ -23,6 +23,8 @@ public class BabbleCompiledScript extends CompiledScript {
         Scope scope = new Scope();
         scope.define("print", new PrintFunction(false));
         scope.define("println", new PrintFunction(true));
+        scope.define("affiche", new PrintFunction(false));
+        scope.define("afficherc", new PrintFunction(true));
         scope.define("STDOUT", System.out);
         return new Interpreter(scope).run(file.statement());
     }

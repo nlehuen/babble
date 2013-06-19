@@ -11,16 +11,16 @@ statement: packageStatement
          | expression
          | ';';
 
-packageStatement: 'package' ID '(' statement* ')';
+packageStatement: ('package' | 'paquet') ID '(' statement* ')';
 
-ifStatement: 'if' expression thenBlock=block
-             ( 'else' elseBlock=block)?;
+ifStatement: ('if' | 'si') expression thenBlock=block
+             ( ('else' | 'sinon') elseBlock=block)?;
 
-defStatement: 'def' ID (':' type)? ('=' expression)?;
+defStatement: ('def' | 'soit') ID (':' type)? ('=' expression)?;
 
-returnStatement: 'return' expression;
+returnStatement: ('return' | 'retourne') expression;
 
-whileStatement: 'while' expression block;
+whileStatement: ('while' | 'tant' 'que') expression block;
 
 expression: '(' expression ')'                               # parenthesis
           | expression '.' ID                                # selector
@@ -30,8 +30,8 @@ expression: '(' expression ')'                               # parenthesis
           | left=expression op=('+' | '-') right=expression  # binaryOp
           | left=expression op=('<' | '<=' | '=='
                        | '>=' | '>') right=expression        # binaryOp
-          | left=expression op='and' right=expression        # booleanOp
-          | left=expression op='or' right=expression         # booleanOp
+          | left=expression op=AND right=expression        # booleanOp
+          | left=expression op=OR right=expression         # booleanOp
           | functionType '->' block                          # functionLiteral
           | ID '=' expression                                # assign
           | NULL                                             # null
@@ -66,7 +66,6 @@ simpleType: ID ('.' ID)*;
 
 functionType: parametersDeclaration ( ':' type | );
 
-
 // Tokens
 INT: [0-9]+;
 FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;
@@ -82,9 +81,9 @@ LTE: '<=';
 EQ: '==';
 GTE: '>=';
 GT: '>';
-AND: 'and';
-OR: 'or';
-NULL: 'null';
-NOT: 'not';
-BOOLEAN: 'true' | 'false';
-ID: [a-zA-Z] [a-zA-Z0-9]*;
+AND: 'and'|'et';
+OR: 'or' | 'ou';
+NULL: 'null' | 'vide';
+NOT: 'not' | 'non';
+BOOLEAN: 'true' | 'false' | 'vrai' | 'faux';
+ID: [_a-zA-Z] [_a-zA-Z0-9]*;
