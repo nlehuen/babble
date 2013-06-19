@@ -67,6 +67,7 @@ Implemented Features
 --------------------
 
 Language features :
+
 - [x] no C-style brackets ! Those are nasty to type on most keyboards, especially on Apple keyboards.
 - [x] in fact, there is only one type of brackets in Babble : parentheses `( )`. The grammar is simple enough, and the parser clever enough (thanks to [ANTLR4](http://www.antlr.org/wiki/display/ANTLR4/Home)) to get away with it.
 - [x] no mandatory semicolons, even for multiple statements on the same line. They are supported to facilitate code reading, though (just like punctuation in human languages !).
@@ -80,6 +81,7 @@ Language features :
 - [x] "native" functions : `print`/`println` (or `affiche`/`afficherc` in French !).
 
 Implementation features :
+
 - [x] interpreted mode running on the AST, like 1.8.x Ruby, A.K.A. SLOW MODE.
 - [x] less than 100 lines of ANTL4 grammar (see [Babble.g4](src/main/antlr4/org.babblelang/parser/Babble.g4)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's AST & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
@@ -89,6 +91,7 @@ Planned features
 ----------------
 
 Language features :
+
 - [ ] default values for function parameters (including closure support).
 - [ ] type checking.
 - [ ] type inference.
@@ -100,4 +103,5 @@ Language features :
 - [ ] functional-style programming : `map`.
 
 Implementation features :
-- [ ] compiled mode with compilation to bytecode using [ASM](http://asm.ow2.org/).
+
+- [ ] compiled mode with compilation to bytecode using [ASM](http://asm.ow2.org/) (big one !).
