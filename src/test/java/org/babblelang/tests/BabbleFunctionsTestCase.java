@@ -32,6 +32,10 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         assertEquals(2005, interpret("def a = 99 ; def c = 1000; def adder = (a:int):(b:int):int -> ( (b:int):int -> ( a + b + c) ) ; def plus1 = adder(1) ; plus1(1) + plus1(2)"));
     }
 
+    public void testClosureMemory() throws Exception {
+        assertEquals(2005, interpret("def a = 99 ; def c = 1000; def adder = (a:int,d:int):(b:int):int -> ( (b:int):int -> ( a + b + c ) ) ; def plus1 = adder(1,0) ; plus1(1) + plus1(2)"));
+    }
+
     public void testRecursion() throws Exception {
         assertEquals(120, interpret("def fac = (n:int):int -> ( if(n<=1) ( 1 ) else ( n * recurse(n-1) ) ) ; fac(5)"));
     }

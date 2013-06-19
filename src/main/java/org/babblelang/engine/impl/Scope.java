@@ -31,26 +31,33 @@ public class Scope {
         return newScope;
     }
 
-    public Scope closure(Set<String> closureKeys) {
-        // No closure for root scope
-        if (parent == null) {
-            return enter(null);
-        }
-
-        Scope result = parent.enter(null);
-        for (String key : closureKeys) {
-            if (locals.containsKey(key)) {
-                result.define(key, locals.get(key));
-            }
-        }
-        return result;
-    }
-
     public Scope leave() {
         if (parent == null) {
             throw new IllegalStateException("Too many calls to leave()");
         }
         return parent;
+    }
+
+    public Scope closure(Set<String> closureKeys) {
+        Scope result = findStaticScope().enter(null);
+        for (String key : closureKeys) {
+            result.define(key, get(key));
+        }
+        return result;
+    }
+
+    private Scope findStaticScope() {
+        Scope current = this;
+        Scope result = this;
+
+        while (current != null) {
+            if (current.locals.containsKey("$recurse")) {
+                result = current.parent;
+            }
+            current = current.parent;
+        }
+
+        return result;
     }
 
     public Object define(String key, Object value) {
@@ -59,16 +66,6 @@ public class Scope {
         }
         locals.put(key, value);
         return value;
-    }
-
-    public void defineAll(Map<String, Object> values) {
-        for (Map.Entry<String, Object> entry : values.entrySet()) {
-            define(entry.getKey(), entry.getValue());
-        }
-    }
-
-    public boolean isLocal(String key) {
-        return locals.containsKey(key);
     }
 
     public boolean isDeclared(String key) {

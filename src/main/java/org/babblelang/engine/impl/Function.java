@@ -16,8 +16,8 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
         // Compute closure
         ClosureExtractor closureExtractor = new ClosureExtractor();
         closureExtractor.visit(definition);
-        this.closure = scope.closure(closureExtractor.getClosureKeys());
-        this.closure.define("$recurse", this);
+        closure = scope.closure(closureExtractor.getClosureKeys());
+        closure.define("$recurse", this);
     }
 
     public Scope bindParameters(Interpreter interpreter, Scope parent, Parameters parameters) {
