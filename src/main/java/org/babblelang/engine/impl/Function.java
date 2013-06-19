@@ -54,6 +54,7 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
     private static class ClosureExtractor extends BabbleBaseVisitor<Void> {
         private Scope functionScope;
         private Set<String> closureKeys;
+        private boolean root = true;
 
         public ClosureExtractor() {
             functionScope = new Scope();
@@ -78,9 +79,12 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
 
         @Override
         public Void visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
-            functionScope = functionScope.enter(null);
-            super.visitFunctionLiteral(ctx);
-            functionScope = functionScope.leave();
+            if (root) {
+                // No need to visit inner functions
+                // Their closure will be computed in time
+                root = false;
+                super.visitFunctionLiteral(ctx);
+            }
             return null;
         }
 
