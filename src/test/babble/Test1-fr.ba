@@ -20,8 +20,7 @@ paquet test1 (
     soit factorielle2 = (n:int):int -> (
         soit resultat = 1;
         tant que n > 1 (
-            resultat = resultat * n
-            n = n - 1
+            resultat = resultat * n ; n = n - 1
         )
         resultat
     )
@@ -33,7 +32,7 @@ soit fonction_principale = () -> (
         afficherc ("Bonjour ", qui)
     )
 
-    afficherc("1+2=", test1.additionne(a:1,b:2))
+    afficherc ("1+2=", test1.additionne(a:1,b:2))
 
     soit ajoute2 = test1.additionneur(2)
     soit resultat = ajoute2(2)
@@ -41,4 +40,4 @@ soit fonction_principale = () -> (
     retourne "ok:" + resultat + ":" + test1.factorielle(5) + ":" + test1.factorielle2(6)
 )
 
-retourne fonction_principale()
+fonction_principale()

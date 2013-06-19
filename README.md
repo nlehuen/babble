@@ -5,3 +5,99 @@ Babble is a toy language running on top of the Java Virtual Machine (in its curr
 
 * to teach myself about parsing, interpreting and later on compiling a simple programming language.
 * to build a simple programming language that in turn can be used to teach programming to beginners.
+
+What does it looks like ?
+-------------------------
+
+English keywords:
+
+```
+package test1 (
+    def adder = (a:int):(b:int):int -> (
+        return (b:int):int -> (
+            a + b
+        )
+    )
+
+    def add = (a:int, b:int):int -> (
+        a + b
+    )
+
+    def fac = (n:int):int -> (
+        if n < 2 (
+            1
+         ) else (
+            n * fac(n - 1)
+         )
+    )
+
+    def fac2 = (n:int):int -> (
+        def result = 1;
+        while n > 1 (
+            result = result * n ; n = n - 1
+        )
+        return result
+    )
+)
+
+def main = () -> (
+    (
+        def local = "world !"
+        println ("Hello, ", local)
+    )
+
+    println("1+2=", test1.add(a:1,b:2))
+
+    def result = test1.adder(2)(2)
+
+    return "ok:" + result + ":" + test1.fac(5) + ":" + test1.fac2(6)
+)
+
+main()
+```
+
+French keywords :
+
+```
+
+```
+
+
+Implemented Features
+--------------------
+
+Language features :
+- [x] no C-style brackets ! Those are nasty to type on most keyboards, especially on Apple keyboards.
+- [x] in fact, there is only one type of brackets in Babble : parentheses `( )`. The grammar is simple enough, and the parser clever enough (thanks to [ANTLR4](http://www.antlr.org/wiki/display/ANTLR4/Home)) to get away with it.
+- [x] no mandatory semicolons, even for multiple statements on the same line. They are supported to facilitate code reading, though (just like punctuation in human languages !).
+- [x] dual English / French keywords, for easier teaching to french-speaking children (see the same script in [English](src/test/babble/Test1.ba) and [French](src/test/babble/Test1-fr.ba)).
+- [x] functions, supporting recursion and poor man's closures.
+- [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
+- [x] anonymous function literals.
+- [x] positional & named parameters in function calls.
+- [x] basic types : boolean, int, double, functions.
+- [x] optional type declaration for variables and parameters, not enforced (for documentation only).
+- [x] "native" functions : `print`/`println` (or `affiche`/`afficherc` in French !).
+
+Implementation features :
+- [x] interpreted mode running on the AST, like 1.8.x Ruby, A.K.A. SLOW MODE.
+- [x] less than 100 lines of ANTL4 grammar (see [Babble.g4](src/main/antlr4/org.babblelang/parser/Babble.g4)).
+- [x] clean separation between grammar and implementation thanks to ANTLR4's AST & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
+- [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
+
+Planned features
+----------------
+
+Language features :
+- [ ] default values for function parameters (including closure support).
+- [ ] type checking.
+- [ ] type inference.
+- [ ] object model (class, method, inheritance).
+- [ ] directly use Java classes from within Babble.
+- [ ] collection classes (mapped from Java).
+- [ ] first-class iterator support (`for` loop).
+- [ ] `yield` keyword : transform functions/method into iterators.
+- [ ] functional-style programming : `map`.
+
+Implementation features :
+- [ ] compiled mode with compilation to bytecode using [ASM](http://asm.ow2.org/).
