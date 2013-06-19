@@ -56,6 +56,8 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
     public void testBooleanExpression() throws Exception {
         assertEquals(true, interpret(" true "));
         assertEquals(false, interpret(" false "));
+        assertEquals(false, interpret(" not true "));
+        assertEquals(true, interpret(" not false "));
 
         assertEquals(false, interpret(" false and false "));
         assertEquals(false, interpret(" false and true "));
@@ -66,6 +68,11 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         assertEquals(true, interpret(" false or true "));
         assertEquals(true, interpret(" true or false "));
         assertEquals(true, interpret(" true or true "));
+
+        assertEquals(false, interpret(" not true or not true "));
+        assertEquals(true, interpret(" not false or not true "));
+        assertEquals(true, interpret(" not true or not false "));
+        assertEquals(true, interpret(" not false or not false "));
     }
 
     public void testBooleanShortcuts() throws Exception {

@@ -25,6 +25,7 @@ whileStatement: 'while' expression block;
 expression: '(' expression ')'                               # parenthesis
           | expression '.' ID                                # selector
           | expression callParameters                        # call
+          | NOT expression                                   # booleanNot
           | left=expression op=('*' | '/') right=expression  # binaryOp
           | left=expression op=('+' | '-') right=expression  # binaryOp
           | left=expression op=('<' | '<=' | '=='
@@ -84,5 +85,6 @@ GT: '>';
 AND: 'and';
 OR: 'or';
 NULL: 'null';
+NOT: 'not';
 BOOLEAN: 'true' | 'false';
 ID: [a-zA-Z] [a-zA-Z0-9]*;

@@ -160,6 +160,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
     }
 
+    @Override
+    public Object visitBooleanNot(BabbleParser.BooleanNotContext ctx) {
+        return !test(visit(ctx.expression()));
+    }
+
     private boolean test(Object value) {
         if (value instanceof Boolean) {
             return (Boolean) value;
