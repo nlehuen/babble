@@ -3,7 +3,7 @@ package org.babblelang.engine.impl;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleParser;
 
-public class Function extends BabbleBaseVisitor<Object> {
+public class Function extends BabbleBaseVisitor<Object> implements Callable {
     private final BabbleParser.FunctionLiteralContext definition;
     private final Scope closure;
 
@@ -16,6 +16,7 @@ public class Function extends BabbleBaseVisitor<Object> {
         return definition;
     }
 
+    @Override
     public Scope bindParameters(Parameters parameters) {
         Scope scope = closure.enter(null);
 
@@ -35,6 +36,11 @@ public class Function extends BabbleBaseVisitor<Object> {
             scope.define(name, value);
         }
         return scope;
+    }
+
+    @Override
+    public Object call(Interpreter interpreter, Scope scope) {
+        return interpreter.visit(definition.block());
     }
 
     private void checkType(BabbleParser.ParameterDeclarationContext parameter, Object value) {

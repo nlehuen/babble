@@ -196,11 +196,11 @@ class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitCall(BabbleParser.CallContext ctx) {
-        Function function = (Function) visit(ctx.expression());
+        Callable callable = (Callable) visit(ctx.expression());
         Parameters params = (Parameters) visit(ctx.callParameters());
         Scope beforeCall = scope;
-        scope = function.bindParameters(params);
-        Object result = visit(function.getDefinition().block());
+        scope = callable.bindParameters(params);
+        Object result = callable.call(this, scope);
         scope = beforeCall;
         return result;
     }
