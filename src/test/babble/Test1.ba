@@ -8,19 +8,28 @@ package test1 (
     def add = (a:int, b:int):int -> (
         return a + b
     )
+
+    def fac = (n:int):int -> (
+        if n < 2 (
+            1
+         ) else (
+            n * fac(n - 1)
+         )
+    )
 )
 
 def main = () -> (
     (
         def local = "world !"
-        print ("Hello,")
-        print (local)
+        println ("Hello, ", local)
     )
 
-    print(test1.add(a:1,b:2))
+    println("1+2=", test1.add(a:1,b:2))
 
-    print(
-        test1.adder(2)
-                     (2)
-    )
+    def result = test1.adder(2)
+                                      (2)
+
+    "ok:" + result + ":" + test1.fac(5)
 )
+
+main()
