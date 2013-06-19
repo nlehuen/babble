@@ -25,48 +25,48 @@ returnStatement: 'return' expression;
 
 whileStatement: 'while' expression block;
 
-expression: '(' expression ')'                    # paren
+expression: '(' expression ')'                    # parenthesis
+          | expression '.' ID                     # selector
           | expression op=('*' | '/') expression  # binaryOp
           | expression op=('+' | '-') expression  # binaryOp
-          | expression op=('<' | '<=' | '==' | '>=' | '>') expression  # binaryOp
-          | functionLiteral                       # fun
+          | expression op=('<' | '<=' | '=='
+                       | '>=' | '>') expression   # binaryOp
+          | expression op='and' expression        # binaryOp
+          | expression op='or' expression         # binaryOp
+          | functionType '->' block               # functionLiteral
           | expression callParameters             # call
-          | selector                              # sel
+          | ID                                    # id
           | INT                                   # integer
           | FLOAT                                 # double
           | STRING                                # string
           ;
 
-selector: ID
-        | selector '.' ID;
-
 block: '(' ')'
      | '(' statement+ ')'
      ;
 
-functionLiteral: functionType '->' block;
-
-functionType: parametersDeclaration returnTypeDeclaration;
 
 parametersDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')'
                      | '(' ')';
 
 parameterDeclaration: ID ':' type;
 
-returnTypeDeclaration: ':' type
-                     | ;
-
 callParameters: '(' callParameter (',' callParameter)* ')'
               | '(' ')';
 
 callParameter: (ID ':')? expression;
 
-type: ID
-    | ID '(' type (',' type)* ')'
-    | functionType;
+type: simpleType
+    | type parametersDeclaration
+    | functionType
+    ;
+
+simpleType: ID ('.' ID)*;
+
+functionType: parametersDeclaration ( ':' type | );
+
 
 // Tokens
-ID: [a-zA-Z] [a-zA-Z0-9]*;
 INT: [0-9]+;
 FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;
 STRING: '"' .*? '"';
@@ -81,3 +81,6 @@ LTE: '<=';
 EQ: '==';
 GTE: '>=';
 GT: '>';
+AND: 'and';
+OR: 'or';
+ID: [a-zA-Z] [a-zA-Z0-9]*;

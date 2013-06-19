@@ -43,7 +43,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitParen(BabbleParser.ParenContext ctx) {
+    public Object visitParenthesis(BabbleParser.ParenthesisContext ctx) {
         return visit(ctx.expression());
     }
 
@@ -61,11 +61,17 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitSelector(BabbleParser.SelectorContext ctx) {
         Scope base = scope;
-        if (ctx.selector() != null) {
-            base = (Scope) visit(ctx.selector());
-        }
         String name = ctx.ID().getText();
+        BabbleParser.ExpressionContext expression = ctx.expression();
+        if (expression != null) {
+            base = (Scope) visit(expression);
+        }
         return base.get(name);
+    }
+
+    @Override
+    public Object visitId(BabbleParser.IdContext ctx) {
+        return scope.get(ctx.getText());
     }
 
     @Override
@@ -175,4 +181,6 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         String literal = ctx.STRING().getText();
         return literal.substring(1, literal.length() - 1);
     }
+
+
 }
