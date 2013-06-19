@@ -11,16 +11,16 @@ statement: packageStatement
          | expression
          | ';';
 
-packageStatement: ('package' | 'paquet') ID '(' statement* ')';
+packageStatement: PACKAGE ID '(' statement* ')';
 
-ifStatement: ('if' | 'si') expression thenBlock=block
-             ( ('else' | 'sinon') elseBlock=block)?;
+ifStatement: IF expression thenBlock=block
+             ( ELSE elseBlock=block)?;
 
-defStatement: ('def' | 'soit') ID (':' type)? ('=' expression)?;
+defStatement: DEF ID (':' type)? ('=' expression)?;
 
-returnStatement: ('return' | 'retourne') expression;
+returnStatement: RETURN expression;
 
-whileStatement: ('while' | 'tant' 'que') expression block;
+whileStatement: WHILE expression block;
 
 expression: '(' expression ')'                               # parenthesis
           | expression '.' ID                                # selector
@@ -30,8 +30,8 @@ expression: '(' expression ')'                               # parenthesis
           | left=expression op=('+' | '-') right=expression  # binaryOp
           | left=expression op=('<' | '<=' | '=='
                        | '>=' | '>') right=expression        # binaryOp
-          | left=expression op=AND right=expression        # booleanOp
-          | left=expression op=OR right=expression         # booleanOp
+          | left=expression op=AND right=expression          # booleanOp
+          | left=expression op=OR right=expression           # booleanOp
           | functionType '->' block                          # functionLiteral
           | ID '=' expression                                # assign
           | NULL                                             # null
@@ -70,8 +70,6 @@ functionType: parametersDeclaration ( ':' type | );
 INT: [0-9]+;
 FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;
 STRING: '"' (~[\\"]|'\\\\'|'\\"')*? '"';
-WS: [ \t]+ -> skip;
-NL: '\r'? '\n' -> skip;
 PLUS: '+';
 MINUS: '-';
 MUL: '*';
@@ -81,9 +79,16 @@ LTE: '<=';
 EQ: '==';
 GTE: '>=';
 GT: '>';
-AND: 'and'|'et';
+PACKAGE: 'package' | 'paquet';
+IF: 'if' | 'si';
+ELSE: 'else' | 'sinon';
+DEF: 'def' | 'soit';
+RETURN: 'return' | 'retourne';
+WHILE: 'while' | 'tant' WS* 'que';
+AND: 'and' | 'et';
 OR: 'or' | 'ou';
 NULL: 'null' | 'vide';
 NOT: 'not' | 'non';
 BOOLEAN: 'true' | 'false' | 'vrai' | 'faux';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
+WS: [ \t\r\n]+ -> skip;

@@ -5,7 +5,7 @@ import java.util.Map;
 
 public class Scope {
     private final Scope parent;
-    private final HashMap<String, Object> locals = new HashMap<String, Object>();
+    private final Map<String, Object> locals = new HashMap<String, Object>();
 
     public Scope() {
         this.parent = null;
@@ -31,7 +31,9 @@ public class Scope {
     }
 
     public Scope leave() {
-        if (parent == null) throw new IllegalStateException("Too many calls to leave()");
+        if (parent == null) {
+            throw new IllegalStateException("Too many calls to leave()");
+        }
         return parent;
     }
 

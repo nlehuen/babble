@@ -6,7 +6,7 @@ import java.util.Collections;
 import java.util.List;
 
 public class BabbleScriptEngineFactory implements ScriptEngineFactory {
-    public final static BabbleScriptEngineFactory INSTANCE = new BabbleScriptEngineFactory();
+    public static final BabbleScriptEngineFactory INSTANCE = new BabbleScriptEngineFactory();
 
     @Override
     public String getEngineName() {

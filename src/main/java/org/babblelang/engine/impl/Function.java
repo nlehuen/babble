@@ -40,8 +40,7 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
     }
 
     private void checkType(BabbleParser.ParameterDeclarationContext parameter, Object value) {
-        // TODO : implement type checks
-        if (false) {
+        if (value instanceof Scope) {
             throw new IllegalArgumentException("Parameter type mismatch : " + parameter.ID().getText() + " is expected to be of type " + parameter.type().getText() + ", got " + value.getClass().getCanonicalName());
         }
     }
