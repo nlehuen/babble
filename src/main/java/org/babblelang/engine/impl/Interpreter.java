@@ -78,14 +78,19 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitBoolean(BabbleParser.BooleanContext ctx) {
+        return Boolean.parseBoolean(ctx.getText());
+    }
+
+    @Override
     public Object visitId(BabbleParser.IdContext ctx) {
         return scope.get(ctx.getText());
     }
 
     @Override
     public Object visitBinaryOp(BabbleParser.BinaryOpContext ctx) {
-        Object a = visit(ctx.expression(0));
-        Object b = visit(ctx.expression(1));
+        Object a = visit(ctx.left);
+        Object b = visit(ctx.right);
 
         switch (ctx.op.getType()) {
             case BabbleLexer.MUL:
@@ -135,6 +140,26 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
     }
 
+    @Override
+    public Object visitBooleanOp(BabbleParser.BooleanOpContext ctx) {
+        int op = ctx.op.getType();
+
+        boolean a = test(visit(ctx.left));
+        if (a) {
+            if (op == BabbleLexer.OR) {
+                return true;
+            } else {
+                return test(visit(ctx.right));
+            }
+        } else {
+            if (op == BabbleLexer.OR) {
+                return test(visit(ctx.right));
+            } else {
+                return false;
+            }
+        }
+    }
+
     private boolean test(Object value) {
         if (value instanceof Boolean) {
             return (Boolean) value;
@@ -168,7 +193,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitAssignStatement(BabbleParser.AssignStatementContext ctx) {
+    public Object visitAssign(BabbleParser.AssignContext ctx) {
         Object value = visit(ctx.expression());
         scope.assign(ctx.ID().getText(), value);
         return value;

@@ -6,7 +6,6 @@ statement: packageStatement
          | ifStatement
          | whileStatement
          | defStatement
-         | assignStatement
          | returnStatement
          | block
          | expression
@@ -19,27 +18,27 @@ ifStatement: 'if' expression thenBlock=block
 
 defStatement: 'def' ID (':' type)? ('=' expression)?;
 
-assignStatement: ID '=' expression;
-
 returnStatement: 'return' expression;
 
 whileStatement: 'while' expression block;
 
-expression: '(' expression ')'                    # parenthesis
-          | expression '.' ID                     # selector
-          | expression callParameters             # call
-          | expression op=('*' | '/') expression  # binaryOp
-          | expression op=('+' | '-') expression  # binaryOp
-          | expression op=('<' | '<=' | '=='
-                       | '>=' | '>') expression   # binaryOp
-          | expression op='and' expression        # binaryOp
-          | expression op='or' expression         # binaryOp
-          | functionType '->' block               # functionLiteral
-          | NULL                                  # null
-          | ID                                    # id
-          | INT                                   # integer
-          | FLOAT                                 # double
-          | STRING                                # string
+expression: '(' expression ')'                               # parenthesis
+          | expression '.' ID                                # selector
+          | expression callParameters                        # call
+          | left=expression op=('*' | '/') right=expression  # binaryOp
+          | left=expression op=('+' | '-') right=expression  # binaryOp
+          | left=expression op=('<' | '<=' | '=='
+                       | '>=' | '>') right=expression        # binaryOp
+          | left=expression op='and' right=expression        # booleanOp
+          | left=expression op='or' right=expression         # booleanOp
+          | functionType '->' block                          # functionLiteral
+          | ID '=' expression                                # assign
+          | NULL                                             # null
+          | BOOLEAN                                          # boolean
+          | ID                                               # id
+          | INT                                              # integer
+          | FLOAT                                            # double
+          | STRING                                           # string
           ;
 
 block: '(' ')'
@@ -85,4 +84,5 @@ GT: '>';
 AND: 'and';
 OR: 'or';
 NULL: 'null';
+BOOLEAN: 'true' | 'false';
 ID: [a-zA-Z] [a-zA-Z0-9]*;

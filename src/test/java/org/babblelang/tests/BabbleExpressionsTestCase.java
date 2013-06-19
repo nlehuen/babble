@@ -53,6 +53,28 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         assertEquals("ab\\2", interpret("  \"ab\\\\\" + 2"));
     }
 
+    public void testBooleanExpression() throws Exception {
+        assertEquals(true, interpret(" true "));
+        assertEquals(false, interpret(" false "));
+
+        assertEquals(false, interpret(" false and false "));
+        assertEquals(false, interpret(" false and true "));
+        assertEquals(false, interpret(" true and false "));
+        assertEquals(true, interpret(" true and true "));
+
+        assertEquals(false, interpret(" false or false "));
+        assertEquals(true, interpret(" false or true "));
+        assertEquals(true, interpret(" true or false "));
+        assertEquals(true, interpret(" true or true "));
+    }
+
+    public void testBooleanShortcuts() throws Exception {
+        assertEquals(1, interpret(" def a = 1 ; a == 0 and a=2 ; a "));
+        assertEquals(2, interpret(" def a = 1 ; a == 0 or a=2 ; a "));
+        assertEquals(2, interpret(" def a = 1 ; a == 1 and a=2 ; a "));
+        assertEquals(1, interpret(" def a = 1 ; a == 1 or a=2 ; a "));
+    }
+
     public void testComp() throws Exception {
         assertEquals(true, interpret("  def a = 1 ; def b = 2 ; a < b"));
         assertEquals(true, interpret("  def a = 1 ; def b = 2 ; a <= b"));
