@@ -125,7 +125,7 @@ Language features :
 Implementation features :
 
 - [x] interpreted mode running on the AST, like 1.8.x Ruby, A.K.A. SLOW MODE.
-- [x] less than 100 lines of ANTL4 grammar (see [Babble.g4](src/main/antlr4/org.babblelang/parser/Babble.g4)).
+- [x] less than 100 lines of ANTL4 grammar (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's AST & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
 
