@@ -5,7 +5,7 @@ import org.babblelang.engine.impl.Scope;
 import java.util.HashSet;
 import java.util.Set;
 
-public class ClosureExtractor {
+public final class ClosureExtractor {
 
     public static Set<String> closures(BabbleParser.FunctionLiteralContext function) {
         Visitor v = new Visitor();
