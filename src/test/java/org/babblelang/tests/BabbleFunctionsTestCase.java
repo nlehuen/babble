@@ -39,4 +39,8 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     public void testRecursion() throws Exception {
         assertEquals(120, interpret("def fac = (n:int):int -> ( if(n<=1) ( 1 ) else ( n * recurse(n-1) ) ) ; fac(5)"));
     }
+
+    public void testMutualRecursion() throws Exception {
+        assertEquals(720, interpret("def fac = (n:int):int -> ( if(n<=1) ( 1 ) else ( n * fac2(n-1) ) ) ; def fac2 = (n:int):int -> ( if(n<=1) ( 1 ) else ( n * fac(n-1) ) ) ; fac(6)"));
+    }
 }

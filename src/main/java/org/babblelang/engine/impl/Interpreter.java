@@ -9,8 +9,8 @@ import java.util.List;
 public class Interpreter extends BabbleBaseVisitor<Object> {
     private Scope scope;
 
-    public Interpreter(Scope scope) {
-        this.scope = scope;
+    public Interpreter(Scope root) {
+        this.scope = root;
     }
 
     public Object run(List<BabbleParser.StatementContext> statements) {
@@ -27,8 +27,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitPackageStatement(BabbleParser.PackageStatementContext ctx) {
-        String name = ctx.ID().getText();
-        scope = scope.enter(name);
+        scope = scope.enter(ctx.ID().getText());
         super.visitPackageStatement(ctx);
         scope = scope.leave();
         return null;
