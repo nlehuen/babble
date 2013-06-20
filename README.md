@@ -124,7 +124,7 @@ Language features :
 - [x] positional & named parameters in function calls.
 - [x] basic types : boolean, int, double, functions.
 - [x] optional type declaration for variables and parameters, not enforced (for documentation only).
-- [x] "native" functions : `print`/`println` (or `affiche`/`afficherc` in French !).
+- [x] "native" functions : `print`/`println` (or `affiche`/`afficherc` in French !), `assert` (or `suppose`).
 
 Implementation features :
 
@@ -138,6 +138,7 @@ Planned features
 
 Language features :
 
+- [ ] interactive mode (since we're interpreted, why not make the most of it ?).
 - [ ] better, more user-friendly error reports. Right now parsing & runtime errors are VERY messy.
 - [ ] default values for function parameters (including closure support).
 - [ ] type checking.
