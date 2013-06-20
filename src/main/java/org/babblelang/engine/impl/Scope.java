@@ -82,7 +82,7 @@ public class Scope {
             if (current.locals.containsKey(key)) {
                 return true;
             } else {
-                if (current == root) {
+                if (current == root) { //NOPMD
                     break;
                 }
                 current = current.parent;

@@ -105,10 +105,9 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
         public Void visitId(BabbleParser.IdContext ctx) {
             String name = ctx.ID().getText();
 
-            if (functionScope.isDeclared(name)) {
-                // if the ID has been defined within the function
-                // then we don't need it in the closure
-            } else {
+            // if the ID has been defined within the function
+            // then we don't need it in the closure
+            if (!functionScope.isDeclared(name)) {
                 closureKeys.add(name);
             }
 
