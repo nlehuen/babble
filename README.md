@@ -118,7 +118,7 @@ Language features :
 - [x] in fact, there is only one type of brackets in Babble : parentheses `( )`. The grammar is simple enough, and the parser clever enough (thanks to [ANTLR4](http://www.antlr.org/wiki/display/ANTLR4/Home)) to get away with it.
 - [x] no mandatory semicolons, even for multiple statements on the same line. They are supported to facilitate code reading, though (just like punctuation in human languages !).
 - [x] dual English / French keywords, for easier teaching to french-speaking children (see the same script in [English](src/test/babble/Test1.ba) and [French](src/test/babble/Test1-fr.ba)).
-- [x] functions, supporting recursion and closures.
+- [x] functions, supporting recursion and poor man's closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] anonymous function literals.
 - [x] positional & named parameters in function calls.
