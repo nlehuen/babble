@@ -5,6 +5,9 @@ import org.antlr.v4.runtime.BailErrorStrategy;
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.babblelang.engine.impl.BabbleCompiledScript;
+import org.babblelang.engine.impl.Scope;
+import org.babblelang.engine.impl.natives.AssertFunction;
+import org.babblelang.engine.impl.natives.PrintFunction;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 
@@ -14,28 +17,38 @@ import java.io.StringReader;
 
 public class BabbleScriptEngine extends AbstractScriptEngine implements Compilable {
     private final BabbleScriptEngineFactory factory;
+    private final Scope implicits;
 
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
         super();
         this.factory = factory;
+
+        implicits = new Scope();
+        implicits.define("print", new PrintFunction(false));
+        implicits.define("println", new PrintFunction(true));
+        implicits.define("affiche", new PrintFunction(false));
+        implicits.define("afficherc", new PrintFunction(true));
+        implicits.define("assert", new AssertFunction());
+        implicits.define("suppose", new AssertFunction());
+        implicits.define("STDOUT", System.out);
     }
 
-    @Override
+    public Scope getImplicits() {
+        return implicits;
+    }
+
     public Object eval(String script, ScriptContext context) throws ScriptException {
         return eval(new StringReader(script), context);
     }
 
-    @Override
     public Object eval(Reader reader, ScriptContext context) throws ScriptException {
         return compile(reader).eval(context);
     }
 
-    @Override
     public CompiledScript compile(String script) throws ScriptException {
         return compile(new StringReader(script));
     }
 
-    @Override
     public CompiledScript compile(Reader script) throws ScriptException {
         try {
             CharStream input = new ANTLRInputStream(script);
@@ -54,12 +67,10 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return new BabbleCompiledScript(this, file);
     }
 
-    @Override
     public Bindings createBindings() {
         return new SimpleBindings();
     }
 
-    @Override
     public ScriptEngineFactory getFactory() {
         return factory;
     }

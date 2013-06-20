@@ -145,16 +145,16 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitBooleanOp(BabbleParser.BooleanOpContext ctx) {
         int op = ctx.op.getType();
 
-        boolean a = test(visit(ctx.left));
+        boolean a = truth(visit(ctx.left));
         if (a) {
             if (op == BabbleLexer.OR) {
                 return true;
             } else {
-                return test(visit(ctx.right));
+                return truth(visit(ctx.right));
             }
         } else {
             if (op == BabbleLexer.OR) {
-                return test(visit(ctx.right));
+                return truth(visit(ctx.right));
             } else {
                 return false;
             }
@@ -163,10 +163,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitBooleanNot(BabbleParser.BooleanNotContext ctx) {
-        return !test(visit(ctx.expression()));
+        return !truth(visit(ctx.expression()));
     }
 
-    private boolean test(Object value) {
+    public boolean truth(Object value) {
         if (value instanceof Boolean) {
             return (Boolean) value;
         } else if (value instanceof Number) {
@@ -178,7 +178,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitIfStatement(BabbleParser.IfStatementContext ctx) {
-        if (test(visit(ctx.expression()))) {
+        if (truth(visit(ctx.expression()))) {
             return visit(ctx.thenBlock);
         } else {
             if (ctx.elseBlock != null) {
@@ -192,7 +192,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitWhileStatement(BabbleParser.WhileStatementContext ctx) {
         Object result = null;
-        while (test(visit(ctx.expression()))) {
+        while (truth(visit(ctx.expression()))) {
             result = visit(ctx.block());
         }
         return result;

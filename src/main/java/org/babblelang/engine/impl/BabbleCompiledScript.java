@@ -1,13 +1,13 @@
 package org.babblelang.engine.impl;
 
 import org.babblelang.engine.BabbleScriptEngine;
-import org.babblelang.engine.impl.natives.PrintFunction;
 import org.babblelang.parser.BabbleParser;
 
 import javax.script.CompiledScript;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptException;
+import java.util.Map;
 
 public class BabbleCompiledScript extends CompiledScript {
     private final BabbleScriptEngine engine;
@@ -20,12 +20,13 @@ public class BabbleCompiledScript extends CompiledScript {
 
     @Override
     public Object eval(ScriptContext context) throws ScriptException {
-        Scope scope = new Scope();
-        scope.define("print", new PrintFunction(false));
-        scope.define("println", new PrintFunction(true));
-        scope.define("affiche", new PrintFunction(false));
-        scope.define("afficherc", new PrintFunction(true));
-        scope.define("STDOUT", System.out);
+        Scope scope = engine.getImplicits().enter(null);
+
+        // TODO : handle ScriptContext.GLOBAL_SCOPE
+        for (Map.Entry<String, Object> binding : context.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {
+            scope.define(binding.getKey(), binding.getValue());
+        }
+
         return new Interpreter(scope).run(file.statement());
     }
 

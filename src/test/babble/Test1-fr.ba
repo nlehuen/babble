@@ -40,4 +40,6 @@ soit fonction_principale = () -> (
     retourne "ok:" + resultat + ":" + test1.factorielle(5) + ":" + test1.factorielle2(6)
 )
 
+suppose (1<2, "Quelque chose ne va pas")
+
 fonction_principale()

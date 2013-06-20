@@ -53,6 +53,8 @@ def main = () -> (
     return "ok:" + result + ":" + test1.fac(5) + ":" + test1.fac2(6)
 )
 
+assert (1 < 2, "Something is wrong")
+
 main()
 ```
 
@@ -100,6 +102,8 @@ soit fonction_principale = () -> (
 
     retourne "ok:" + resultat + ":" + test1.factorielle(5) + ":" + test1.factorielle2(6)
 )
+
+suppose (1<2, "Quelque chose ne va pas")
 
 fonction_principale()
 ```

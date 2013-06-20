@@ -39,4 +39,6 @@ def main = () -> (
     return "ok:" + result + ":" + test1.fac(5) + ":" + test1.fac2(6)
 )
 
+assert (1 < 2, "Something is wrong")
+
 main()
