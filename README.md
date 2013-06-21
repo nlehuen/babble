@@ -56,7 +56,7 @@ def main = () -> (
 assert (1 < 2, "Something is wrong")
 
 assert (test1.apply(1) == 1, "apply is broken")
-assert (test1.apply(1, (v) -> (v+1)) == 1, "apply is broken")
+assert (test1.apply(1, (v) -> (v+1)) == 2, "apply is broken")
 
 main()
 ```
@@ -111,7 +111,7 @@ soit fonction_principale = () -> (
 suppose (1<2, "Quelque chose ne va pas")
 
 suppose (test1.applique(1) == 1, "applique ne fonctionne pas")
-suppose (test1.applique(1, (v) -> (v+1)) == 1, "applique ne fonctionne pas")
+suppose (test1.applique(1, (v) -> (v+1)) == 2, "applique ne fonctionne pas")
 
 fonction_principale()
 ```
