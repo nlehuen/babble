@@ -28,10 +28,11 @@ public final class ClosureExtractor {
             return null;
         }
 
+
         @Override
-        public Void visitParenthesis(BabbleParser.ParenthesisContext ctx) {
+        public Void visitBlock(BabbleParser.BlockContext ctx) {
             functionScope = functionScope.enter(null);
-            super.visitParenthesis(ctx);
+            super.visitBlock(ctx);
             functionScope = functionScope.leave();
             return null;
         }

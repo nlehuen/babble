@@ -1,9 +1,9 @@
 package org.babblelang.tests;
 
-import junit.framework.Assert;
 import org.babblelang.engine.impl.Callable;
 import org.babblelang.engine.impl.Interpreter;
 import org.babblelang.engine.impl.Scope;
+import org.junit.Assert;
 
 import java.util.Iterator;
 

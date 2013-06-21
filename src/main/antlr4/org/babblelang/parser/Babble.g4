@@ -1,18 +1,17 @@
 grammar Babble;
 
-file: sequence EOF;
+file: expression (';'? expression)* EOF;
 
 expression:
-          PACKAGE name=ID '(' packageBlock=sequence ')'      # packageExpression
+          PACKAGE name=ID packageBlock=block                 # packageExpression
           | IF test=expression THEN thenBlock=block
-             ( ELSE elseBlock=block)?                        # ifExpression
+                               (ELSE elseBlock=block)?       # ifExpression
           | DEF name=ID (':' type)? ('=' value=expression)?  # defExpression
           | RETURN expression                                # returnExpression
           | WHILE test=expression THEN whileBlock=block      # whileExpression
           | expression '.' ID                                # selector
           | expression callParameters                        # call
           | block                                            # blockExpression
-          | '(' expression ')'                               # parenthesis
           | NOT expression                                   # booleanNot
           | left=expression op=('*' | '/') right=expression  # binaryOp
           | left=expression op=('+' | '-') right=expression  # binaryOp
@@ -20,7 +19,7 @@ expression:
                        | '>=' | '>') right=expression        # binaryOp
           | left=expression op=AND right=expression          # booleanOp
           | left=expression op=OR right=expression           # booleanOp
-          | functionType '->' block                          # functionLiteral
+          | functionType '->' functionBlock=block            # functionLiteral
           | name=ID '=' value=expression                     # assignExpression
           | NULL                                             # null
           | BOOLEAN                                          # boolean
@@ -32,10 +31,7 @@ expression:
           ;
 
 block: '(' ')'
-     | '(' sequence ')';
-
-sequence:
-        | expression (';'? expression)*;
+     | '(' expression (';'? expression)* ')';
 
 parametersDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')'
                      | '(' ')';

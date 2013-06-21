@@ -13,7 +13,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitFile(BabbleParser.FileContext ctx) {
-        return visit(ctx.sequence());
+        Object result = null;
+        for (BabbleParser.ExpressionContext statement : ctx.expression()) {
+            result = visit(statement);
+        }
+        return result;
     }
 
     @Override
@@ -37,20 +41,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitParenthesis(BabbleParser.ParenthesisContext ctx) {
-        return visit(ctx.expression());
-    }
-
-    @Override
     public Object visitBlock(BabbleParser.BlockContext ctx) {
-        scope = scope.enter(null);
-        Object result = visit(ctx.sequence());
-        scope = scope.leave();
-        return result;
-    }
-
-    @Override
-    public Object visitSequence(BabbleParser.SequenceContext ctx) {
         Object result = null;
         for (BabbleParser.ExpressionContext statement : ctx.expression()) {
             result = visit(statement);

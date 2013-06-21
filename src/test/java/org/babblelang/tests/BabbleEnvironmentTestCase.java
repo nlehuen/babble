@@ -1,21 +1,25 @@
 package org.babblelang.tests;
 
+import org.junit.Assert;
+import org.junit.Test;
+
 public class BabbleEnvironmentTestCase extends BabbleTestBase {
+    @Test
     public void testAssert() throws Exception {
-        assertEquals(true, interpret("assert(1<2)"));
+        Assert.assertEquals(true, interpret("assert(1<2)"));
 
         try {
-            assertEquals(false, interpret("assert(1>2)"));
-            fail("Should fail assertion");
-        } catch (junit.framework.AssertionFailedError e) {
-            assertEquals("null", e.getMessage());
+            Assert.assertEquals(false, interpret("assert(1>2)"));
+            Assert.fail("Should fail assertion");
+        } catch (AssertionError e) {
+            Assert.assertEquals(null, e.getMessage());
         }
 
         try {
-            assertEquals(false, interpret("assert(1>2, \"Something is wrong\")"));
-            fail("Should fail assertion");
-        } catch (junit.framework.AssertionFailedError e) {
-            assertEquals("Something is wrong", e.getMessage());
+            Assert.assertEquals(false, interpret("assert(1>2, \"Something is wrong\")"));
+            Assert.fail("Should fail assertion");
+        } catch (AssertionError e) {
+            Assert.assertEquals("Something is wrong", e.getMessage());
         }
     }
 }

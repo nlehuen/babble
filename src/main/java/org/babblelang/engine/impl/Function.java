@@ -35,7 +35,7 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
     }
 
     public Object call(Interpreter interpreter, Scope scope) {
-        return interpreter.visit(definition.block());
+        return interpreter.visit(definition.functionBlock);
     }
 
     private void checkType(BabbleParser.ParameterDeclarationContext parameter, Object value) {

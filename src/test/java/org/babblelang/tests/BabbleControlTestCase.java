@@ -1,31 +1,39 @@
 package org.babblelang.tests;
 
+import org.junit.Assert;
+import org.junit.Test;
+
 public class BabbleControlTestCase extends BabbleTestBase {
+    @Test
     public void testBooleanIf() throws Exception {
-        assertEquals(1, interpret("if 1 < 2 then ( 1 ) else ( 2 ) "));
-        assertEquals(2, interpret("if 1 > 2 then (1) else (2) "));
-        assertEquals(null, interpret("if 1 > 2 then ( 1 ; 2 )"));
+        Assert.assertEquals(1, interpret("if 1 < 2 then ( 1 ) else ( 2 ) "));
+        Assert.assertEquals(2, interpret("if 1 > 2 then (1) else (2) "));
+        Assert.assertEquals(null, interpret("if 1 > 2 then ( 1 ; 2 )"));
     }
 
+    @Test
     public void testNumberIf() throws Exception {
-        assertEquals(1, interpret("if 1 then ( 1 ) else (2) "));
-        assertEquals(2, interpret("if 0 then ( 1 ) else (2) "));
-        assertEquals(1, interpret("if 1.5 + 1.5 then ( 1 ) else (2) "));
-        assertEquals(2, interpret("if 1.5 - 1.5 then ( 1 ) else (2) "));
+        Assert.assertEquals(1, interpret("if 1 then ( 1 ) else (2) "));
+        Assert.assertEquals(2, interpret("if 0 then ( 1 ) else (2) "));
+        Assert.assertEquals(1, interpret("if 1.5 + 1.5 then ( 1 ) else (2) "));
+        Assert.assertEquals(2, interpret("if 1.5 - 1.5 then ( 1 ) else (2) "));
     }
 
+    @Test
     public void testObjectIf() throws Exception {
-        assertEquals(1, interpret("if \"coucou\" then ( 1 ) else (2) "));
-        assertEquals(2, interpret("if null then ( 1 ) else (2) "));
+        Assert.assertEquals(1, interpret("if \"coucou\" then ( 1 ) else (2) "));
+        Assert.assertEquals(2, interpret("if null then ( 1 ) else (2) "));
     }
 
+    @Test
     public void testIfWithoutElse() throws Exception {
-        assertEquals(null, interpret("if 1 > 2 then ( 3 + 3 + 3 )"));
-        assertEquals(9, interpret("if 1 < 2 then ( 3 + 3 + 3 )"));
-        assertEquals(3, interpret("if 1 < 2 then ( 1 ; 2 ; 3 )"));
+        Assert.assertEquals(null, interpret("if 1 > 2 then ( 3 + 3 + 3 )"));
+        Assert.assertEquals(9, interpret("if 1 < 2 then ( 3 + 3 + 3 )"));
+        Assert.assertEquals(3, interpret("if 1 < 2 then ( 1 ; 2 ; 3 )"));
     }
 
+    @Test
     public void testWhile() throws Exception {
-        assertEquals(10, interpret("def i = 0 ; while i<10 then ( i = i + 1 ) ; i"));
+        Assert.assertEquals(10, interpret("def i = 0 ; while i<10 then ( i = i + 1 ) ; i"));
     }
 }
