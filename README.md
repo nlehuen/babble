@@ -24,7 +24,7 @@ package test1 (
     )
 
     def fac = (n:int):int -> (
-        if n < 2 (
+        if n < 2 then (
             1
          ) else (
             n * recurse(n - 1)
@@ -33,7 +33,7 @@ package test1 (
 
     def fac2 = (n:int):int -> (
         def result = 1
-        while n > 1 (
+        while n > 1 then (
             result = result * n ; n = n - 1
         )
         return result
@@ -41,10 +41,8 @@ package test1 (
 )
 
 def main = () -> (
-    (
-        def local = "world !"
-        println ("Hello, ", local)
-    )
+    def local = "world !"
+    println ("Hello, ", local)
 
     println("1+2=", test1.add(a:1,b:2))
 
@@ -73,7 +71,7 @@ paquet test1 (
     )
 
     soit factorielle = (n:int):int -> (
-        si n < 2 (
+        si n < 2 alors (
             retourne 1
         ) sinon (
             retourne n * recurrence(n - 1)
@@ -82,7 +80,7 @@ paquet test1 (
 
     soit factorielle2 = (n:int):int -> (
         soit resultat = 1
-        tant que n > 1 (
+        tant que n > 1 alors (
             resultat = resultat * n ; n = n - 1
         )
         resultat
