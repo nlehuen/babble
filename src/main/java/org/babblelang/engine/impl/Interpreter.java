@@ -4,8 +4,6 @@ import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 
-import java.util.List;
-
 public class Interpreter extends BabbleBaseVisitor<Object> {
     private Scope scope;
 
@@ -13,29 +11,22 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         this.scope = root;
     }
 
-    public Object run(List<BabbleParser.StatementContext> statements) {
-        Object result = null;
-        for (BabbleParser.StatementContext statement : statements) {
-            result = run(statement);
-        }
-        return result;
-    }
-
-    public Object run(BabbleParser.StatementContext statement) {
-        return visit(statement);
+    @Override
+    public Object visitFile(BabbleParser.FileContext ctx) {
+        return visit(ctx.sequence());
     }
 
     @Override
-    public Object visitPackageStatement(BabbleParser.PackageStatementContext ctx) {
-        scope = scope.enter(ctx.ID().getText());
-        super.visitPackageStatement(ctx);
+    public Object visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
+        scope = scope.enter(ctx.name.getText());
+        visit(ctx.packageBlock);
         scope = scope.leave();
         return null;
     }
 
     @Override
-    public Object visitDefStatement(BabbleParser.DefStatementContext ctx) {
-        String id = ctx.ID().getText();
+    public Object visitDefExpression(BabbleParser.DefExpressionContext ctx) {
+        String id = ctx.name.getText();
         Object value = null;
         if (ctx.expression() != null) {
             value = visit(ctx.expression());
@@ -53,11 +44,17 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitBlock(BabbleParser.BlockContext ctx) {
         scope = scope.enter(null);
+        Object result = visit(ctx.sequence());
+        scope = scope.leave();
+        return result;
+    }
+
+    @Override
+    public Object visitSequence(BabbleParser.SequenceContext ctx) {
         Object result = null;
-        for (BabbleParser.StatementContext statement : ctx.statement()) {
+        for (BabbleParser.ExpressionContext statement : ctx.expression()) {
             result = visit(statement);
         }
-        scope = scope.leave();
         return result;
     }
 
@@ -176,8 +173,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitIfStatement(BabbleParser.IfStatementContext ctx) {
-        if (truth(visit(ctx.expression()))) {
+    public Object visitIfExpression(BabbleParser.IfExpressionContext ctx) {
+        if (truth(visit(ctx.test))) {
             return visit(ctx.thenBlock);
         } else {
             if (ctx.elseBlock != null) {
@@ -189,18 +186,18 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitWhileStatement(BabbleParser.WhileStatementContext ctx) {
+    public Object visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
         Object result = null;
-        while (truth(visit(ctx.expression()))) {
-            result = visit(ctx.block());
+        while (truth(visit(ctx.test))) {
+            result = visit(ctx.whileBlock);
         }
         return result;
     }
 
     @Override
-    public Object visitAssign(BabbleParser.AssignContext ctx) {
-        Object value = visit(ctx.expression());
-        scope.assign(ctx.ID().getText(), value);
+    public Object visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
+        Object value = visit(ctx.value);
+        scope.assign(ctx.name.getText(), value);
         return value;
     }
 

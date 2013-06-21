@@ -27,7 +27,7 @@ public class BabbleCompiledScript extends CompiledScript {
             scope.define(binding.getKey(), binding.getValue());
         }
 
-        return new Interpreter(scope).run(file.statement());
+        return new Interpreter(scope).visit(file);
     }
 
     @Override

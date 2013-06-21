@@ -1,30 +1,18 @@
 grammar Babble;
 
-file: statement* EOF;
+file: sequence EOF;
 
-statement: packageStatement
-         | ifStatement
-         | whileStatement
-         | defStatement
-         | returnStatement
-         | block
-         | expression
-         | ';';
-
-packageStatement: PACKAGE ID '(' statement* ')';
-
-ifStatement: IF expression thenBlock=block
-             ( ELSE elseBlock=block)?;
-
-defStatement: DEF ID (':' type)? ('=' expression)?;
-
-returnStatement: RETURN expression;
-
-whileStatement: WHILE expression block;
-
-expression: '(' expression ')'                               # parenthesis
+expression:
+          PACKAGE name=ID '(' packageBlock=sequence ')'      # packageExpression
+          | IF test=expression THEN thenBlock=block
+             ( ELSE elseBlock=block)?                        # ifExpression
+          | DEF name=ID (':' type)? ('=' value=expression)?  # defExpression
+          | RETURN expression                                # returnExpression
+          | WHILE test=expression THEN whileBlock=block      # whileExpression
           | expression '.' ID                                # selector
           | expression callParameters                        # call
+          | block                                            # blockExpression
+          | '(' expression ')'                               # parenthesis
           | NOT expression                                   # booleanNot
           | left=expression op=('*' | '/') right=expression  # binaryOp
           | left=expression op=('+' | '-') right=expression  # binaryOp
@@ -33,7 +21,7 @@ expression: '(' expression ')'                               # parenthesis
           | left=expression op=AND right=expression          # booleanOp
           | left=expression op=OR right=expression           # booleanOp
           | functionType '->' block                          # functionLiteral
-          | ID '=' expression                                # assign
+          | name=ID '=' value=expression                     # assignExpression
           | NULL                                             # null
           | BOOLEAN                                          # boolean
           | RECURSE                                          # recurse
@@ -44,9 +32,10 @@ expression: '(' expression ')'                               # parenthesis
           ;
 
 block: '(' ')'
-     | '(' statement+ ')'
-     ;
+     | '(' sequence ')';
 
+sequence:
+        | expression (';'? expression)*;
 
 parametersDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')'
                      | '(' ')';
@@ -82,6 +71,7 @@ GTE: '>=';
 GT: '>';
 PACKAGE: 'package' | 'paquet';
 IF: 'if' | 'si';
+THEN: 'then' | 'alors';
 ELSE: 'else' | 'sinon';
 DEF: 'def' | 'soit';
 RETURN: 'return' | 'retourne';

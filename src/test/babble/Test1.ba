@@ -10,7 +10,7 @@ package test1 (
     )
 
     def fac = (n:int):int -> (
-        if n < 2 (
+        if n < 2 then (
             1
          ) else (
             n * recurse(n - 1)
@@ -18,8 +18,8 @@ package test1 (
     )
 
     def fac2 = (n:int):int -> (
-        def result = 1;
-        while n > 1 (
+        def result = 1
+        while n > 1 then (
             result = result * n ; n = n - 1
         )
         return result
@@ -27,10 +27,8 @@ package test1 (
 )
 
 def main = () -> (
-    (
-        def local = "world !"
-        println ("Hello, ", local)
-    )
+    def local = "world !"
+    println ("Hello, ", local)
 
     println("1+2=", test1.add(a:1,b:2))
 

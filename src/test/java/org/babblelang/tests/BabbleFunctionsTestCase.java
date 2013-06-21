@@ -8,16 +8,16 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     }
 
     public void testFunctionCall() throws Exception {
-        assertEquals(2, interpret("def add = (a:int, b:int):int -> ( a + b ) add(1,1)"));
-        assertEquals("ab", interpret("def add = (a, b) -> ( a + b ) add(\"a\",\"b\")"));
+        assertEquals(2, interpret("def add = (a:int, b:int):int -> ( a + b ) ; add(1,1)"));
+        assertEquals("ab", interpret("def add = (a, b) -> ( a + b ) ; add(\"a\",\"b\")"));
     }
 
     public void testParameterPassing() throws Exception {
-        assertEquals("ab", interpret("def add = (a, b) -> ( a + b ) add(a:\"a\",b:\"b\")"));
-        assertEquals("ba", interpret("def add = (a, b) -> ( a + b ) add(b:\"a\",a:\"b\")"));
+        assertEquals("ab", interpret("def add = (a, b) -> ( a + b ) ; add(a:\"a\",b:\"b\")"));
+        assertEquals("ba", interpret("def add = (a, b) -> ( a + b ) ; add(b:\"a\",a:\"b\")"));
 
         try {
-            assertEquals("ba", interpret("def add = (a, b) -> ( a + b ) add(b:\"a\")"));
+            assertEquals("ba", interpret("def add = (a, b) -> ( a + b ) ; add(b:\"a\")"));
             fail("Should report missing parameter");
         } catch (IllegalArgumentException e) {
             assertEquals("Missing parameter : a", e.getMessage());
@@ -37,10 +37,10 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     }
 
     public void testRecursion() throws Exception {
-        assertEquals(120, interpret("def fac = (n:int):int -> ( if(n<=1) ( 1 ) else ( n * recurse(n-1) ) ) ; fac(5)"));
+        assertEquals(120, interpret("def fac = (n:int):int -> ( if(n<=1) then ( 1 ) else ( n * recurse(n-1) ) ) ; fac(5)"));
     }
 
     public void testMutualRecursion() throws Exception {
-        assertEquals(720, interpret("def fac = (n:int):int -> ( if(n<=1) ( 1 ) else ( n * fac2(n-1) ) ) ; def fac2 = (n:int):int -> ( if(n<=1) ( 1 ) else ( n * fac(n-1) ) ) ; fac(6)"));
+        assertEquals(720, interpret("def fac = (n:int):int -> ( if(n<=1) then ( 1 ) else ( n * fac2(n-1) ) ) ; def fac2 = (n:int):int -> ( if(n<=1) then ( 1 ) else ( n * fac(n-1) ) ) ; fac(6)"));
     }
 }

@@ -21,17 +21,17 @@ public final class ClosureExtractor {
         private Scope functionScope = new Scope();
 
         @Override
-        public Void visitPackageStatement(BabbleParser.PackageStatementContext ctx) {
-            functionScope = functionScope.enter(ctx.ID().getText());
-            super.visitPackageStatement(ctx);
+        public Void visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
+            functionScope = functionScope.enter(ctx.name.getText());
+            visit(ctx.packageBlock);
             functionScope = functionScope.leave();
             return null;
         }
 
         @Override
-        public Void visitBlock(BabbleParser.BlockContext ctx) {
+        public Void visitParenthesis(BabbleParser.ParenthesisContext ctx) {
             functionScope = functionScope.enter(null);
-            super.visitBlock(ctx);
+            super.visitParenthesis(ctx);
             functionScope = functionScope.leave();
             return null;
         }
@@ -43,9 +43,9 @@ public final class ClosureExtractor {
         }
 
         @Override
-        public Void visitDefStatement(BabbleParser.DefStatementContext ctx) {
-            super.visitDefStatement(ctx);
-            functionScope.define(ctx.ID().getText(), true);
+        public Void visitDefExpression(BabbleParser.DefExpressionContext ctx) {
+            super.visitDefExpression(ctx);
+            functionScope.define(ctx.name.getText(), true);
             return null;
         }
 

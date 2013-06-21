@@ -43,7 +43,7 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
     }
 
     public void testDef() throws Exception {
-        assertEquals(315, interpret("  def a = (12 * 12) + 11 \n a + a + 5"));
+        assertEquals(315, interpret("  def a = (12 * 12) + 11 ; a + a + 5"));
     }
 
     public void testStringLiteral() throws Exception {

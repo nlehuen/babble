@@ -10,7 +10,7 @@ paquet test1 (
     )
 
     soit factorielle = (n:int):int -> (
-        si n < 2 (
+        si n < 2 alors (
             retourne 1
         ) sinon (
             retourne n * recurrence(n - 1)
@@ -19,7 +19,7 @@ paquet test1 (
 
     soit factorielle2 = (n:int):int -> (
         soit resultat = 1
-        tant que n > 1 (
+        tant que n > 1 alors (
             resultat = resultat * n ; n = n - 1
         )
         resultat
