@@ -38,6 +38,8 @@ package test1 (
         )
         return result
     )
+
+    def apply = (a, f=(v) -> (v)) -> ( f(a) )
 )
 
 def main = () -> (
@@ -52,6 +54,9 @@ def main = () -> (
 )
 
 assert (1 < 2, "Something is wrong")
+
+assert (test1.apply(1) == 1, "apply is broken")
+assert (test1.apply(1, (v) -> (v+1)) == 1, "apply is broken")
 
 main()
 ```
@@ -85,6 +90,8 @@ paquet test1 (
         )
         resultat
     )
+
+    soit applique = (a, f=(v) -> (v)) -> ( f(a) )
 )
 
 soit fonction_principale = () -> (
@@ -103,6 +110,9 @@ soit fonction_principale = () -> (
 
 suppose (1<2, "Quelque chose ne va pas")
 
+suppose (test1.applique(1) == 1, "applique ne fonctionne pas")
+suppose (test1.applique(1, (v) -> (v+1)) == 1, "applique ne fonctionne pas")
+
 fonction_principale()
 ```
 
@@ -120,6 +130,7 @@ Language features :
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] anonymous function literals.
 - [x] positional & named parameters in function calls.
+- [x] default values for function parameters (including closure support).
 - [x] basic types : boolean, int, double, functions.
 - [x] optional type declaration for variables and parameters, not enforced (for documentation only).
 - [x] "native" functions : `print`/`println` (or `affiche`/`afficherc` in French !), `assert` (or `suppose`).
@@ -138,7 +149,6 @@ Language features :
 
 - [ ] interactive mode (since we're interpreted, why not make the most of it ?).
 - [ ] better, more user-friendly error reports. Right now parsing & runtime errors are VERY messy.
-- [ ] default values for function parameters (including closure support).
 - [ ] type checking.
 - [ ] type inference.
 - [ ] object model (class, method, inheritance).

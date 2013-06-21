@@ -24,6 +24,8 @@ package test1 (
         )
         return result
     )
+
+    def apply = (a, f=(v) -> (v)) -> ( f(a) )
 )
 
 def main = () -> (
@@ -38,5 +40,8 @@ def main = () -> (
 )
 
 assert (1 < 2, "Something is wrong")
+
+assert (test1.apply(1) == 1, "apply is broken")
+assert (test1.apply(1, (v) -> (v+1)) == 1, "apply is broken")
 
 main()

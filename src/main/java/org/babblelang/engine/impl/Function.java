@@ -25,6 +25,8 @@ public class Function extends BabbleBaseVisitor<Object> implements Callable {
                 value = parameters.get(name);
             } else if (parameters.containsKey(pos)) {
                 value = parameters.get(pos);
+            } else if (parameter.defaultValue != null) {
+                value = interpreter.visit(parameter.defaultValue);
             } else {
                 throw new IllegalArgumentException("Missing parameter : " + name);
             }

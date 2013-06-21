@@ -30,6 +30,27 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     }
 
     @Test
+    public void testParameterPassingWithDefaults() throws Exception {
+        Assert.assertEquals("ab", interpret("def add = (a=\"hello\", b) -> ( a + b ) ; add(a:\"a\",b:\"b\")"));
+        Assert.assertEquals("hellob", interpret("def add = (a=\"hello\", b) -> ( a + b ) ; add(b:\"b\")"));
+        Assert.assertEquals("ahello", interpret("def add = (a, b=\"hello\") -> ( a + b ) ; add(\"a\")"));
+        Assert.assertEquals("hello world", interpret("def add = (a=\"hello\", b=\" world\") -> ( a + b ) ; add()"));
+
+        try {
+            Assert.assertEquals("ba", interpret("def add = (a=\"b\", b) -> ( a + b ) ; add(a:\"a\")"));
+            Assert.fail("Should report \"Missing parameter : b\"");
+        } catch (IllegalArgumentException e) {
+            Assert.assertEquals("Missing parameter : b", e.getMessage());
+        }
+    }
+
+    @Test
+    public void testParameterPassingWithFunctionDefaults() throws Exception {
+        Assert.assertEquals(1, interpret("def apply = (a, f=(v) -> (v)) -> ( f(a) ) ; apply(1)"));
+        Assert.assertEquals(2, interpret("def apply = (a, f=(v) -> (v+1)) -> ( f(a) ) ; apply(1)"));
+    }
+
+    @Test
     public void testFunctionScope() throws Exception {
         Assert.assertEquals(102, interpret("def a = 99 ; def add = (a:int, b:int):int -> ( a = a + 1 ; a + b ) ; add(1,1) + a"));
     }

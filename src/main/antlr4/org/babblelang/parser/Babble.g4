@@ -36,7 +36,7 @@ block: '(' ')'
 parametersDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')'
                      | '(' ')';
 
-parameterDeclaration: ID (':' type)?;
+parameterDeclaration: ID (':' type)? ('=' defaultValue=expression)?;
 
 callParameters: '(' callParameter (',' callParameter)* ')'
               | '(' ')';
