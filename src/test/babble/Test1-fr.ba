@@ -47,4 +47,4 @@ suppose (1<2, "Quelque chose ne va pas")
 suppose (test1.applique(1) == 1, "applique ne fonctionne pas")
 suppose (test1.applique(1, (v) -> (v+1)) == 2, "applique ne fonctionne pas")
 
-fonction_principale()
+assert(fonction_principale() == "ok:4:120:720", "Test echoué")

@@ -44,4 +44,4 @@ assert (1 < 2, "Something is wrong")
 assert (test1.apply(1) == 1, "apply is broken")
 assert (test1.apply(1, (v) -> (v+1)) == 2, "apply is broken")
 
-main()
+assert("ok:4:120:720" == main(), "Test failed")
