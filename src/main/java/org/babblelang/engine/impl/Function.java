@@ -14,13 +14,11 @@ public class Function implements Callable {
     public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
         Scope scope = closure.enter(null);
         scope.define("$recurse", this);
-
         parameters.bind(interpreter, definition.functionType().parametersDeclaration(), scope);
-
         return scope;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
         return interpreter.visit(definition.functionBlock);
     }
 }

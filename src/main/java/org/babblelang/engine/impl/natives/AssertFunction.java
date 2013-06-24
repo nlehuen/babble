@@ -2,6 +2,7 @@ package org.babblelang.engine.impl.natives;
 
 import org.babblelang.engine.impl.Callable;
 import org.babblelang.engine.impl.Interpreter;
+import org.babblelang.engine.impl.Resolver;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.parser.BabbleParser;
 
@@ -26,9 +27,9 @@ public class AssertFunction implements Callable {
         return scope;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
-        String message = (String) scope.get("message");
-        boolean test = (Boolean) scope.get("test");
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
+        String message = (String) resolver.get("message");
+        boolean test = (Boolean) resolver.get("test");
         if (message == null) {
             assert test : "Assertion failed at line " + callSite.getStart().getLine() + " : " + callSite.callParameters().callParameter(0).expression().getText();
         } else {

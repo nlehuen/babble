@@ -8,6 +8,7 @@ import org.babblelang.engine.impl.BabbleCompiledScript;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.engine.impl.natives.AssertFunction;
 import org.babblelang.engine.impl.natives.PrintFunction;
+import org.babblelang.engine.impl.natives.java.ImportFunction;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 
@@ -24,6 +25,12 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         this.factory = factory;
 
         implicits = new Scope();
+
+        ImportFunction importFunction = new ImportFunction();
+        implicits.define("java", importFunction.getPackage("java"));
+        implicits.define("javax", importFunction.getPackage("javax"));
+        implicits.define("import", importFunction);
+        implicits.define("importe", importFunction);
         implicits.define("print", new PrintFunction(false));
         implicits.define("println", new PrintFunction(true));
         implicits.define("affiche", new PrintFunction(false));

@@ -2,6 +2,7 @@ package org.babblelang.engine.impl.natives;
 
 import org.babblelang.engine.impl.Callable;
 import org.babblelang.engine.impl.Interpreter;
+import org.babblelang.engine.impl.Resolver;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.parser.BabbleParser;
 
@@ -20,12 +21,12 @@ public class PrintFunction implements Callable {
         return scope;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
-        Parameters params = (Parameters) scope.get("...");
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
+        Parameters params = (Parameters) resolver.get("...");
 
         PrintStream ps = (PrintStream) params.remove("to");
         if (ps == null) {
-            ps = (PrintStream) scope.get("STDOUT");
+            ps = (PrintStream) resolver.get("STDOUT");
         }
 
         // TODO : support printf

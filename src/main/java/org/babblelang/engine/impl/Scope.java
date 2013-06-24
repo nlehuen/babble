@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
-public class Scope {
+public class Scope implements Resolver {
     private final Scope parent;
     private final Map<String, Object> locals = new HashMap<String, Object>();
 
@@ -12,7 +12,7 @@ public class Scope {
         this.parent = null;
     }
 
-    private Scope(Scope parent) {
+    protected Scope(Scope parent) {
         this.parent = parent;
         locals.put("..", parent);
     }
@@ -38,7 +38,7 @@ public class Scope {
         return parent;
     }
 
-    public Scope closure(Set<String> closureKeys) {
+    public Resolver closure(Set<String> closureKeys) {
         Scope result = findStaticScope().enter(null);
         for (String key : closureKeys) {
             result.define(key, get(key));
@@ -69,22 +69,11 @@ public class Scope {
     }
 
     public boolean isDeclared(String key) {
-        return isDeclaredWithin(null, key);
-    }
-
-    /**
-     * Returns whether the given key has been defined in this scope
-     * or up to the given root.
-     */
-    public boolean isDeclaredWithin(Scope root, String key) {
         Scope current = this;
         while (current != null) {
             if (current.locals.containsKey(key)) {
                 return true;
             } else {
-                if (current == root) { //NOPMD
-                    break;
-                }
                 current = current.parent;
             }
         }

@@ -1,0 +1,10 @@
+def java = import("java")
+
+assert(java.lang <> null)
+assert(java.lang.Number <> null)
+assert(java.util.ArrayList <> null)
+
+def list = java.util.ArrayList()
+assert(list <> null)
+
+java.lang.System.currentTimeMillis()

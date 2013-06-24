@@ -16,7 +16,7 @@ expression:
           | NOT expression                                   # booleanNot
           | left=expression op=('*' | '/') right=expression  # binaryOp
           | left=expression op=('+' | '-') right=expression  # binaryOp
-          | left=expression op=('<' | '<=' | '=='
+          | left=expression op=('<' | '<=' | '==' | NEQ
                        | '>=' | '>') right=expression        # binaryOp
           | left=expression op=AND right=expression          # booleanOp
           | left=expression op=OR right=expression           # booleanOp
@@ -64,6 +64,7 @@ DIV: '/';
 LT: '<';
 LTE: '<=';
 EQ: '==';
+NEQ: '<>' | '!=';
 GTE: '>=';
 GT: '>';
 COLON: ':';

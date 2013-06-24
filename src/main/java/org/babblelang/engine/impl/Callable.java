@@ -7,7 +7,7 @@ import java.util.LinkedHashMap;
 public interface Callable {
     Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters);
 
-    Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope);
+    Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver);
 
     class Parameters extends LinkedHashMap<String, Object> {
         public void bind(Interpreter interpreter, BabbleParser.ParametersDeclarationContext parametersDeclarationContext, Scope scope) {
@@ -27,6 +27,24 @@ public interface Callable {
                 }
                 scope.define(name, value);
             }
+        }
+
+        public Object[] valuesArray() {
+            Object[] result = new Object[size()];
+            int i = 0;
+            for (Object o : values()) {
+                result[i++] = o;
+            }
+            return result;
+        }
+
+        public Class[] typesArray() {
+            Class[] result = new Class[size()];
+            int i = 0;
+            for (Object o : values()) {
+                result[i++] = o.getClass();
+            }
+            return result;
 
         }
     }

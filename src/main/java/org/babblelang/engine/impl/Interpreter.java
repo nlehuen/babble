@@ -30,7 +30,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
-        Scope object = scope = scope.enter(null);
+        Resolver object = scope = scope.enter(null);
         visit(ctx.createBlock);
         scope = scope.leave();
         return object;
@@ -59,11 +59,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitSelector(BabbleParser.SelectorContext ctx) {
-        Scope base = scope;
+        Resolver base = scope;
         String name = ctx.ID().getText();
         BabbleParser.ExpressionContext expression = ctx.expression();
         if (expression != null) {
-            base = (Scope) visit(expression);
+            base = (Resolver) visit(expression);
         }
         return base.get(name);
     }
@@ -127,6 +127,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                     return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) == 0;
                 } else {
                     return a == b;
+                }
+
+            case BabbleLexer.NEQ:
+                if (a instanceof Comparable) {
+                    return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) != 0;
+                } else {
+                    return a != b;
                 }
 
             case BabbleLexer.GTE:
