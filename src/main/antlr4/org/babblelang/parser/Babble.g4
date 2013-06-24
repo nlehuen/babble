@@ -86,6 +86,6 @@ NULL: 'null' | 'vide';
 NOT: 'not' | 'non';
 BOOLEAN: 'true' | 'false' | 'vrai' | 'faux';
 RECURSE: 'recurse' | 'recurrence';
-OBJECT: 'object';
+OBJECT: 'object' | 'objet';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
 WS: [ \t\r\n]+ -> skip;

@@ -40,6 +40,23 @@ package test1 (
     )
 
     def apply = (a, f=(v) -> (v)) -> ( f(a) )
+
+    def counter = () -> (
+        def c = 0
+
+        () -> (
+            c = c + 1
+        )
+    )
+
+    def counter2 = () -> (
+        object (
+            def v = 0
+            def inc = () -> (
+                v = v + 1
+            )
+        )
+    )
 )
 
 def main = () -> (
@@ -58,7 +75,17 @@ assert (1 < 2, "Something is wrong")
 assert (test1.apply(1) == 1, "apply is broken")
 assert (test1.apply(1, (v) -> (v+1)) == 2, "apply is broken")
 
-main()
+assert("ok:4:120:720" == main(), "Test failed")
+
+def c = test1.counter()
+assert(1 == c())
+assert(2 == c())
+assert(3 == c())
+
+c = test1.counter2()
+assert(1 == c.inc())
+assert(2 == c.inc())
+assert(3 == c.inc())
 ```
 
 French keywords :
@@ -92,6 +119,23 @@ paquet test1 (
     )
 
     soit applique = (a, f=(v) -> (v)) -> ( f(a) )
+
+    def compteur = () -> (
+        def c = 0
+
+        () -> (
+            c = c + 1
+        )
+    )
+
+    def compteur2 = () -> (
+        object (
+            def v = 0
+            def inc = () -> (
+                v = v + 1
+            )
+        )
+    )
 )
 
 soit fonction_principale = () -> (
@@ -113,7 +157,17 @@ suppose (1<2, "Quelque chose ne va pas")
 suppose (test1.applique(1) == 1, "applique ne fonctionne pas")
 suppose (test1.applique(1, (v) -> (v+1)) == 2, "applique ne fonctionne pas")
 
-fonction_principale()
+suppose (fonction_principale() == "ok:4:120:720", "Test echoué")
+
+def c = test1.compteur()
+suppose(c() == 1)
+suppose(c() == 2)
+suppose(c() == 3)
+
+def c2 = test1.compteur2()
+suppose(c2.inc() == 1)
+suppose(c2.inc() == 2)
+suppose(c2.inc() == 3)
 ```
 
 
@@ -132,6 +186,7 @@ Language features :
 - [x] positional & named parameters in function calls.
 - [x] default values for function parameters (including closure support).
 - [x] basic types : boolean, int, double, functions.
+- [x] object literals & scope
 - [x] optional type declaration for variables and parameters, not enforced (for documentation only).
 - [x] "native" functions : `print`/`println` (or `affiche`/`afficherc` in French !), `assert` (or `suppose`).
 

@@ -26,6 +26,23 @@ paquet test1 (
     )
 
     soit applique = (a, f=(v) -> (v)) -> ( f(a) )
+
+    def compteur = () -> (
+        def c = 0
+
+        () -> (
+            c = c + 1
+        )
+    )
+
+    def compteur2 = () -> (
+        retourne objet (
+            def v = 0
+            def inc = () -> (
+                v = v + 1
+            )
+        )
+    )
 )
 
 soit fonction_principale = () -> (
@@ -47,4 +64,14 @@ suppose (1<2, "Quelque chose ne va pas")
 suppose (test1.applique(1) == 1, "applique ne fonctionne pas")
 suppose (test1.applique(1, (v) -> (v+1)) == 2, "applique ne fonctionne pas")
 
-assert(fonction_principale() == "ok:4:120:720", "Test echoué")
+suppose (fonction_principale() == "ok:4:120:720", "Test echoué")
+
+def c = test1.compteur()
+suppose(c() == 1)
+suppose(c() == 2)
+suppose(c() == 3)
+
+def c2 = test1.compteur2()
+suppose(c2.inc() == 1)
+suppose(c2.inc() == 2)
+suppose(c2.inc() == 3)

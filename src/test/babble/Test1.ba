@@ -26,6 +26,23 @@ package test1 (
     )
 
     def apply = (a, f=(v) -> (v)) -> ( f(a) )
+
+    def counter = () -> (
+        def c = 0
+
+        () -> (
+            c = c + 1
+        )
+    )
+
+    def counter2 = () -> (
+        return object (
+            def v = 0
+            def inc = () -> (
+                v = v + 1
+            )
+        )
+    )
 )
 
 def main = () -> (
@@ -45,3 +62,13 @@ assert (test1.apply(1) == 1, "apply is broken")
 assert (test1.apply(1, (v) -> (v+1)) == 2, "apply is broken")
 
 assert("ok:4:120:720" == main(), "Test failed")
+
+def c = test1.counter()
+assert(1 == c())
+assert(2 == c())
+assert(3 == c())
+
+c = test1.counter2()
+assert(1 == c.inc())
+assert(2 == c.inc())
+assert(3 == c.inc())
