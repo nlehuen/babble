@@ -1,11 +1,13 @@
-def java = import("java")
-
 assert(java.lang <> null)
 assert(java.lang.Number <> null)
 assert(java.util.ArrayList <> null)
 
 def list = java.util.ArrayList()
-assert(list <> null)
 assert(list.size() == 0)
 
 java.lang.System.currentTimeMillis()
+
+assert(java.sql.DriverManager.getDrivers() <> null)
+
+def org = import("org")
+def fac = org.babblelang.engine.BabbleScriptEngineFactory()

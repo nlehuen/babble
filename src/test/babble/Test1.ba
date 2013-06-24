@@ -72,3 +72,6 @@ c = test1.counter2()
 assert(1 == c.inc())
 assert(2 == c.inc())
 assert(3 == c.inc())
+
+def list = java.util.ArrayList()
+assert(list.size() == 0)

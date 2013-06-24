@@ -75,3 +75,6 @@ def c2 = test1.compteur2()
 suppose(c2.inc() == 1)
 suppose(c2.inc() == 2)
 suppose(c2.inc() == 3)
+
+def liste = java.util.ArrayList()
+suppose(liste.size() == 0)

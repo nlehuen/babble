@@ -27,14 +27,10 @@ public class JavaPackage implements Resolver {
         if (result == null) {
             String name2 = name + '.' + key;
 
-            if (Package.getPackage(name2) != null) {
+            try {
+                result = new JavaClass(Class.forName(name2));
+            } catch (ClassNotFoundException cnfe) {
                 result = importer.getPackage(name2);
-            } else {
-                try {
-                    result = new JavaClass(Class.forName(name2));
-                } catch (ClassNotFoundException cnfe) {
-                    throw new RuntimeException(cnfe);
-                }
             }
 
             children.put(key, result);

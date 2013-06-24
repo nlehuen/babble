@@ -86,6 +86,9 @@ c = test1.counter2()
 assert(1 == c.inc())
 assert(2 == c.inc())
 assert(3 == c.inc())
+
+def list = java.util.ArrayList()
+assert(list.size() == 0)
 ```
 
 French keywords :
@@ -168,6 +171,9 @@ def c2 = test1.compteur2()
 suppose(c2.inc() == 1)
 suppose(c2.inc() == 2)
 suppose(c2.inc() == 3)
+
+def liste = java.util.ArrayList()
+suppose(liste.size() == 0)
 ```
 
 
@@ -189,6 +195,7 @@ Language features :
 - [x] object literals & scope
 - [x] optional type declaration for variables and parameters, not enforced (for documentation only).
 - [x] "native" functions : `print`/`println` (or `affiche`/`afficherc` in French !), `assert` (or `suppose`).
+- [x] directly use Java classes from within Babble.
 
 Implementation features :
 
@@ -207,7 +214,6 @@ Language features :
 - [ ] type checking.
 - [ ] type inference.
 - [ ] object model (class, method, inheritance).
-- [ ] directly use Java classes from within Babble.
 - [ ] collection classes (mapped from Java).
 - [ ] first-class iterator support (`for` loop).
 - [ ] `yield` keyword : transform functions/method into iterators.
