@@ -14,7 +14,7 @@ import java.util.Map;
 
 class JavaClass implements Resolver, Callable {
     private final Class _class;
-    private Map<String, Object> members = new HashMap<String, Object>();
+    private final Map<String, Object> members = new HashMap<String, Object>();
 
     JavaClass(Class _class) {
         this._class = _class;
@@ -36,7 +36,7 @@ class JavaClass implements Resolver, Callable {
         Constructor constructor = (Constructor) resolver.get("constructor");
         Parameters parameters = (Parameters) resolver.get("parameters");
         try {
-            return constructor.newInstance(parameters.valuesArray());
+            return new JavaObject(this, constructor.newInstance(parameters.valuesArray()));
         } catch (Exception e) {
             throw new IllegalArgumentException(e);
         }

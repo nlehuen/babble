@@ -9,7 +9,7 @@ public class JavaPackage implements Resolver {
     private final ImportFunction importer;
     private final String name;
     private final Package _package;
-    private Map<String, Object> children = new HashMap<String, Object>();
+    private final Map<String, Object> children = new HashMap<String, Object>();
 
     public JavaPackage(ImportFunction importer, String name) {
         this.importer = importer;

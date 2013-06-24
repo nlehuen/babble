@@ -24,6 +24,7 @@ class JavaMethod implements Callable {
             Method method = _class.getMethod(name, parameters.typesArray());
             scope.define("method", method);
             scope.define("parameters", parameters);
+            scope.define("this", _class);
         } catch (NoSuchMethodException nsme) {
             throw new IllegalArgumentException(nsme);
         }
@@ -35,7 +36,7 @@ class JavaMethod implements Callable {
         Method method = (Method) resolver.get("method");
         Parameters parameters = (Parameters) resolver.get("parameters");
         try {
-            return method.invoke(null, parameters.valuesArray());
+            return method.invoke(resolver.get("this"), parameters.valuesArray());
         } catch (Exception e) {
             throw new IllegalArgumentException(e);
         }
