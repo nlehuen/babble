@@ -9,6 +9,7 @@ expression:
           | DEF name=ID (':' type)? ('=' value=expression)?  # defExpression
           | RETURN expression                                # returnExpression
           | WHILE test=expression THEN whileBlock=block      # whileExpression
+          | OBJECT createBlock=block                         # objectExpression
           | expression '.' ID                                # selector
           | expression callParameters                        # call
           | block                                            # blockExpression
@@ -85,5 +86,6 @@ NULL: 'null' | 'vide';
 NOT: 'not' | 'non';
 BOOLEAN: 'true' | 'false' | 'vrai' | 'faux';
 RECURSE: 'recurse' | 'recurrence';
+OBJECT: 'object';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
 WS: [ \t\r\n]+ -> skip;

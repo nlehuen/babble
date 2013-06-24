@@ -1,0 +1,72 @@
+package stack (
+    def create = () -> (
+        object (
+            def size = 0
+            def head = null
+
+            def push = (a) -> (
+                size = size + 1
+                head = object (
+                    def value = a
+                    def next = head
+                )
+            )
+
+            def first = () -> (
+                if head == null then (
+                    null
+                ) else (
+                    head.value
+                )
+            )
+
+            def pop = () -> (
+                if head == null then (
+                    null
+                ) else (
+                    def result = head.value
+                    head = head.next
+                    size = size - 1
+                    result
+                )
+            )
+
+            def join = (sep=" ") -> (
+                def current = head
+                def result = ""
+                def first = true
+
+                while current then (
+                    if first then (
+                        first = false
+                    ) else (
+                        result = result + sep
+                    )
+
+                    result = result + current.value
+                    current = current.next
+                )
+
+                result
+            )
+        )
+    )
+)
+
+def test = () -> (
+    def l = stack.create()
+    assert(l.size == 0)
+    l.push("world")
+    assert(l.size == 1)
+    l.push("hello")
+    assert(l.size == 2)
+    assert("hello/world" == l.join("/"))
+    assert("hello world" == l.join())
+    assert("hello" == l.pop());
+    assert(l.size == 1)
+    assert("world" == l.pop());
+    assert(l.size == 0)
+)
+
+test()
+

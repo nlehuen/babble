@@ -29,6 +29,14 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
+        Scope object = scope = scope.enter(null);
+        visit(ctx.createBlock);
+        scope = scope.leave();
+        return object;
+    }
+
+    @Override
     public Object visitDefExpression(BabbleParser.DefExpressionContext ctx) {
         String id = ctx.name.getText();
         Object value = null;
@@ -86,11 +94,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 if (a instanceof Integer && b instanceof Integer) {
                     return (Integer) a * (Integer) b;
                 } else {
-                    return ((Number) a).doubleValue() * ((Number) b).doubleValue();
+                    return number(a, ctx.left).doubleValue() * number(b, ctx.right).doubleValue();
                 }
 
             case BabbleLexer.DIV:
-                return ((Number) a).doubleValue() / ((Number) b).doubleValue();
+                return number(a, ctx.left).doubleValue() / number(b, ctx.right).doubleValue();
 
             case BabbleLexer.PLUS:
                 if (a instanceof String) {
@@ -98,33 +106,53 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 } else if (a instanceof Integer && b instanceof Integer) {
                     return (Integer) a + (Integer) b;
                 } else {
-                    return ((Number) a).doubleValue() + ((Number) b).doubleValue();
+                    return number(a, ctx.left).doubleValue() + number(b, ctx.right).doubleValue();
                 }
 
             case BabbleLexer.MINUS:
                 if (a instanceof Integer && b instanceof Integer) {
                     return (Integer) a - (Integer) b;
                 } else {
-                    return ((Number) a).doubleValue() - ((Number) b).doubleValue();
+                    return number(a, ctx.left).doubleValue() - number(b, ctx.right).doubleValue();
                 }
 
             case BabbleLexer.LT:
-                return ((Comparable) a).compareTo(b) < 0;
+                return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) < 0;
 
             case BabbleLexer.LTE:
-                return ((Comparable) a).compareTo(b) <= 0;
+                return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) <= 0;
 
             case BabbleLexer.EQ:
-                return ((Comparable) a).compareTo(b) == 0;
+                if (a instanceof Comparable) {
+                    return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) == 0;
+                } else {
+                    return a == b;
+                }
 
             case BabbleLexer.GTE:
-                return ((Comparable) a).compareTo(b) >= 0;
+                return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) >= 0;
 
             case BabbleLexer.GT:
-                return ((Comparable) a).compareTo(b) > 0;
+                return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) > 0;
 
             default:
                 throw new UnsupportedOperationException("Bad op : " + ctx.op.getText());
+        }
+    }
+
+    private Number number(Object a, BabbleParser.ExpressionContext expr) {
+        if (a instanceof Number) {
+            return (Number) a;
+        } else {
+            throw new RuntimeException("Line " + expr.getStart().getLine() + ", not a number : " + expr.getText());
+        }
+    }
+
+    private Comparable comparable(Object a, BabbleParser.ExpressionContext expr) {
+        if (a instanceof Comparable) {
+            return (Comparable) a;
+        } else {
+            throw new RuntimeException("Line " + expr.getStart().getLine() + ", not comparable : " + expr.getText());
         }
     }
 
@@ -217,11 +245,15 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitCall(BabbleParser.CallContext ctx) {
-        Callable callable = (Callable) visit(ctx.expression());
+        Object expr = visit(ctx.expression());
+        if (!(expr instanceof Callable)) {
+            throw new RuntimeException(ctx.expression().getText() + " is not callable");
+        }
+        Callable callable = (Callable) expr;
         Callable.Parameters params = (Callable.Parameters) visit(ctx.callParameters());
         Scope beforeCall = scope;
-        scope = callable.bindParameters(this, scope, params);
-        Object result = callable.call(this, scope);
+        scope = callable.bindParameters(this, ctx, scope, params);
+        Object result = callable.call(this, ctx, scope);
         scope = beforeCall;
         return result;
     }

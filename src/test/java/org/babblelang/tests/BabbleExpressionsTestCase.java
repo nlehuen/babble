@@ -35,6 +35,23 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
     }
 
     @Test
+    public void testWrongTypeAdd() throws Exception {
+        try {
+            Assert.assertEquals(null, interpret("  12 + \"to\" + \"to\" "));
+            Assert.fail("Should report type error");
+        } catch (RuntimeException e) {
+            Assert.assertEquals("Line 1, not a number : \"to\"", e.getMessage());
+        }
+        try {
+            Assert.assertEquals(null, interpret("  null + 12 "));
+            Assert.fail("Should report type error");
+        } catch (RuntimeException e) {
+            Assert.assertEquals("Line 1, not a number : null", e.getMessage());
+        }
+    }
+
+
+    @Test
     public void testMinus() throws Exception {
         Assert.assertEquals(1, interpret("12 - 11"));
         Assert.assertEquals(1.5, interpret("12.5 - 11"));

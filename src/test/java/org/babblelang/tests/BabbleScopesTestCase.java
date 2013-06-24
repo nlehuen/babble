@@ -17,6 +17,13 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     }
 
     @Test
+    public void testPrecedence() throws Exception {
+        Assert.assertEquals(2, interpret("def value = 1; value = value + 1 ; value"));
+        Assert.assertEquals(2, interpret("package test (def value = 1) ; def value = test.value + 1 ; value"));
+        Assert.assertEquals(1, interpret("package test (def value = 1) ; def value ; value = test.value ; value"));
+    }
+
+    @Test
     public void testDef() throws Exception {
         Assert.assertEquals(null, interpret("def i"));
         Assert.assertEquals(null, interpret("def i ; i"));

@@ -25,7 +25,17 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
             Assert.assertEquals("ba", interpret("def add = (a, b) -> ( a + b ) ; add(b:\"a\")"));
             Assert.fail("Should report missing parameter");
         } catch (IllegalArgumentException e) {
-            Assert.assertEquals("Missing parameter : a", e.getMessage());
+            Assert.assertEquals("Line 1, missing parameter : a", e.getMessage());
+        }
+    }
+
+    @Test
+    public void testCallableError() throws Exception {
+        try {
+            Assert.assertEquals(null, interpret("def add = (a, b) -> ( a + b ) ; add(a:\"a\",b:\"b\")(\"foobar\")"));
+            Assert.fail("Should report not callable expression");
+        } catch (RuntimeException e) {
+            Assert.assertEquals("add(a:\"a\",b:\"b\") is not callable", e.getMessage());
         }
     }
 
@@ -40,7 +50,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
             Assert.assertEquals("ba", interpret("def add = (a=\"b\", b) -> ( a + b ) ; add(a:\"a\")"));
             Assert.fail("Should report \"Missing parameter : b\"");
         } catch (IllegalArgumentException e) {
-            Assert.assertEquals("Missing parameter : b", e.getMessage());
+            Assert.assertEquals("Line 1, missing parameter : b", e.getMessage());
         }
     }
 

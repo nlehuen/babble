@@ -12,7 +12,7 @@ public class BabbleEnvironmentTestCase extends BabbleTestBase {
             Assert.assertEquals(false, interpret("assert(1>2)"));
             Assert.fail("Should fail assertion");
         } catch (AssertionError e) {
-            Assert.assertEquals(null, e.getMessage());
+            Assert.assertEquals("Assertion failed at line 1 : 1>2", e.getMessage());
         }
 
         try {
