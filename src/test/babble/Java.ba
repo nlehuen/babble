@@ -1,3 +1,7 @@
+;;(
+    Testing Java imports
+;;)
+
 assert(java.lang <> null)
 assert(java.lang.Number <> null)
 assert(java.util.ArrayList <> null)

@@ -1,3 +1,6 @@
+;;(
+    Implementation of a simple LIFO stack
+;;)
 package stack (
     def create = () -> (
         object (
