@@ -51,16 +51,20 @@ public final class ClosureExtractor {
         }
 
         @Override
-        public Void visitId(BabbleParser.IdContext ctx) {
-            String name = ctx.ID().getText();
+        public Void visitSelector(BabbleParser.SelectorContext ctx) {
+            if (ctx.expression() == null) {
+                String name = ctx.ID().getText();
 
-            // if the ID has been defined within the function
-            // then we don't need it in the closure
-            if (!functionScope.isDeclared(name)) {
-                closureKeys.add(name);
+                // if the ID has been defined within the function
+                // then we don't need it in the closure
+                if (!functionScope.isDeclared(name)) {
+                    closureKeys.add(name);
+                }
+
+                return null;
             }
 
-            return super.visitId(ctx);
+            return super.visitSelector(ctx);
         }
 
         private Set<String> getClosureKeys() {

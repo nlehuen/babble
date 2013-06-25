@@ -30,7 +30,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
-        Resolver object = scope = scope.enter(null);
+        Resolver object = scope = new BabbleObject(scope);
         visit(ctx.createBlock);
         scope = scope.leave();
         return object;
@@ -76,11 +76,6 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitBoolean(BabbleParser.BooleanContext ctx) {
         return Boolean.parseBoolean(ctx.getText());
-    }
-
-    @Override
-    public Object visitId(BabbleParser.IdContext ctx) {
-        return scope.get(ctx.getText());
     }
 
     @Override

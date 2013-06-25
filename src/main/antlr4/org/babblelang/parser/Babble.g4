@@ -11,6 +11,7 @@ expression:
           | WHILE test=expression THEN whileBlock=block      # whileExpression
           | OBJECT createBlock=block                         # objectExpression
           | expression '.' ID                                # selector
+          | ID                                               # selector
           | expression callParameters                        # call
           | block                                            # blockExpression
           | NOT expression                                   # booleanNot
@@ -25,7 +26,6 @@ expression:
           | NULL                                             # null
           | BOOLEAN                                          # boolean
           | RECURSE                                          # recurse
-          | ID                                               # id
           | INT                                              # integer
           | FLOAT                                            # double
           | STRING                                           # string
