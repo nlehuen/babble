@@ -6,11 +6,11 @@ import org.babblelang.engine.impl.Resolver;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.parser.BabbleParser;
 
-public class BindedJavaMethod implements Callable {
+public class BoundJavaMethod implements Callable {
     private final JavaMethod method;
     private final Object _this;
 
-    public BindedJavaMethod(JavaMethod method, Object _this) {
+    public BoundJavaMethod(JavaMethod method, Object _this) {
         this.method = method;
         this._this = _this;
     }

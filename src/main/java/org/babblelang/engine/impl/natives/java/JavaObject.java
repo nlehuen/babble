@@ -17,6 +17,6 @@ public class JavaObject implements Resolver {
 
     public Object get(String key) {
         JavaMethod result = (JavaMethod) _class.get(key);
-        return new BindedJavaMethod(result, value);
+        return new BoundJavaMethod(result, value);
     }
 }
