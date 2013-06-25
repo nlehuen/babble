@@ -89,4 +89,6 @@ BOOLEAN: 'true' | 'false' | 'vrai' | 'faux';
 RECURSE: 'recurse' | 'recurrence';
 OBJECT: 'object' | 'objet';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
+MULTILINECOMMENT: ';;(' .*? ';;)' -> skip;
+COMMENT: ';;' .*? '\n' -> skip;
 WS: [ \t\r\n]+ -> skip;

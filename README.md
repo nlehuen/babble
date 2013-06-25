@@ -12,17 +12,43 @@ What does it looks like ?
 English keywords:
 
 ```
+;; comments
+
+;;(
+    multi-line
+    comments
+;;)
+
+;; a package is just a namespace
 package test1 (
+    def add = (a, b) -> (    ;;
+        a + b                ;; function literal
+    )                        ;;
+
+    ;; optional types
+    def add2 = (a:int, b:int):int -> (
+        a + b
+    )
+
+    ;; function as first-type objects
+    ;; closure support
     def adder = (a:int):(b:int):int -> (
         return (b:int):int -> (
             a + b
         )
     )
 
-    def add = (a:int, b:int):int -> (
-        a + b
+    ;; loops
+    def fac2 = (n:int):int -> (
+        def result = 1
+        while n > 1 then (
+            ;; the semicolon is optional
+            result = result * n ; n = n - 1
+        )
+        return result
     )
 
+    ;; recursion
     def fac = (n:int):int -> (
         if n < 2 then (
             1
@@ -31,16 +57,11 @@ package test1 (
          )
     )
 
-    def fac2 = (n:int):int -> (
-        def result = 1
-        while n > 1 then (
-            result = result * n ; n = n - 1
-        )
-        return result
-    )
-
+    ;; default values, including function literals
     def apply = (a, f=(v) -> (v)) -> ( f(a) )
 
+    ;; using function scopes as poor man's objects
+    ;; like in Javascript
     def counter = () -> (
         def c = 0
 
@@ -49,8 +70,9 @@ package test1 (
         )
     )
 
+    ;; object literals (class-less for the moment)
     def counter2 = () -> (
-        object (
+        return object (
             def v = 0
             def inc = () -> (
                 v = v + 1
@@ -61,15 +83,23 @@ package test1 (
 
 def main = () -> (
     def local = "world !"
+
+    ;; println is a native function
     println ("Hello, ", local)
 
+    ;; positional parameters
+    println("0+1=", test1.add(0,1))
+    ;; named parameters
     println("1+2=", test1.add(a:1,b:2))
+    ;; named parameters can have their order changed
+    println("2+3=", test1.add2(b:3,a:2))
 
     def result = test1.adder(2)(2)
 
     return "ok:" + result + ":" + test1.fac(5) + ":" + test1.fac2(6)
 )
 
+;; Assertions
 assert (1 < 2, "Something is wrong")
 
 assert (test1.apply(1) == 1, "apply is broken")
@@ -77,17 +107,24 @@ assert (test1.apply(1, (v) -> (v+1)) == 2, "apply is broken")
 
 assert("ok:4:120:720" == main(), "Test failed")
 
+;; testing counter
 def c = test1.counter()
 assert(1 == c())
+def c2 = test1.counter()
 assert(2 == c())
+assert(1 == c2())
 assert(3 == c())
 
+;; testing counter2
 c = test1.counter2()
 assert(1 == c.inc())
 assert(2 == c.inc())
 assert(3 == c.inc())
 
+;; importing Java classes and using them in Babble
 def list = java.util.ArrayList()
+;; TODO : find proper methods
+;; list.add(1) ; list.add(2)
 assert(list.size() == 0)
 ```
 
