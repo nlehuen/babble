@@ -4,6 +4,8 @@ import org.babblelang.engine.impl.Function;
 import org.junit.Assert;
 import org.junit.Test;
 
+import javax.script.ScriptException;
+
 public class BabbleFunctionsTestCase extends BabbleTestBase {
     @Test
     public void testFunctionLiteral() throws Exception {
@@ -24,8 +26,8 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         try {
             Assert.assertEquals("ba", interpret("def add = (a, b) -> ( a + b ) ; add(b:\"a\")"));
             Assert.fail("Should report missing parameter");
-        } catch (IllegalArgumentException e) {
-            Assert.assertEquals("Line 1, missing parameter : a", e.getMessage());
+        } catch (ScriptException e) {
+            Assert.assertEquals("java.lang.IllegalArgumentException: Line 1, missing parameter : a in <input> at line number 1", e.getMessage());
         }
     }
 
@@ -34,8 +36,8 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         try {
             Assert.assertEquals(null, interpret("def add = (a, b) -> ( a + b ) ; add(a:\"a\",b:\"b\")(\"foobar\")"));
             Assert.fail("Should report not callable expression");
-        } catch (RuntimeException e) {
-            Assert.assertEquals("add(a:\"a\",b:\"b\") is not callable", e.getMessage());
+        } catch (ScriptException e) {
+            Assert.assertEquals("java.lang.RuntimeException: add(a:\"a\",b:\"b\") is not callable in <input> at line number 1", e.getMessage());
         }
     }
 
@@ -49,8 +51,8 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         try {
             Assert.assertEquals("ba", interpret("def add = (a=\"b\", b) -> ( a + b ) ; add(a:\"a\")"));
             Assert.fail("Should report \"Missing parameter : b\"");
-        } catch (IllegalArgumentException e) {
-            Assert.assertEquals("Line 1, missing parameter : b", e.getMessage());
+        } catch (ScriptException e) {
+            Assert.assertEquals("java.lang.IllegalArgumentException: Line 1, missing parameter : b in <input> at line number 1", e.getMessage());
         }
     }
 

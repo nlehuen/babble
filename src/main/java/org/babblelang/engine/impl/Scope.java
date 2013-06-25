@@ -5,8 +5,8 @@ import java.util.Map;
 import java.util.Set;
 
 public class Scope implements Resolver {
-    private final Scope parent;
-    private final Map<String, Object> locals = new HashMap<String, Object>();
+    protected final Scope parent;
+    protected final Map<String, Object> locals = new HashMap<String, Object>();
 
     public Scope() {
         this.parent = null;

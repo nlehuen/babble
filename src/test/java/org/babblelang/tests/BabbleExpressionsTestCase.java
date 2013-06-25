@@ -3,6 +3,8 @@ package org.babblelang.tests;
 import org.junit.Assert;
 import org.junit.Test;
 
+import javax.script.ScriptException;
+
 public class BabbleExpressionsTestCase extends BabbleTestBase {
     @Test
     public void testIntegerLiteral() throws Exception {
@@ -39,14 +41,14 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         try {
             Assert.assertEquals(null, interpret("  12 + \"to\" + \"to\" "));
             Assert.fail("Should report type error");
-        } catch (RuntimeException e) {
-            Assert.assertEquals("Line 1, not a number : \"to\"", e.getMessage());
+        } catch (ScriptException e) {
+            Assert.assertEquals("java.lang.RuntimeException: Line 1, not a number : \"to\" in <input> at line number 1", e.getMessage());
         }
         try {
             Assert.assertEquals(null, interpret("  null + 12 "));
             Assert.fail("Should report type error");
-        } catch (RuntimeException e) {
-            Assert.assertEquals("Line 1, not a number : null", e.getMessage());
+        } catch (ScriptException e) {
+            Assert.assertEquals("java.lang.RuntimeException: Line 1, not a number : null in <input> at line number 1", e.getMessage());
         }
     }
 

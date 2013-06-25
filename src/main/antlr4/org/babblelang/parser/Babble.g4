@@ -3,32 +3,33 @@ grammar Babble;
 file: expression (';'? expression)* EOF;
 
 expression:
-          PACKAGE name=ID packageBlock=block                 # packageExpression
+          PACKAGE name=ID packageBlock=block                  # packageExpression
           | IF test=expression THEN thenBlock=block
-                               (ELSE elseBlock=block)?       # ifExpression
-          | DEF name=ID (':' type)? ('=' value=expression)?  # defExpression
-          | RETURN expression                                # returnExpression
-          | WHILE test=expression THEN whileBlock=block      # whileExpression
-          | OBJECT createBlock=block                         # objectExpression
-          | expression '.' ID                                # selector
-          | ID                                               # selector
-          | expression callParameters                        # call
-          | block                                            # blockExpression
-          | NOT expression                                   # booleanNot
-          | left=expression op=('*' | '/') right=expression  # binaryOp
-          | left=expression op=('+' | '-') right=expression  # binaryOp
+                               (ELSE elseBlock=block)?        # ifExpression
+          | DEF name=ID (':' type)? ('=' value=expression)?   # defExpression
+          | RETURN expression                                 # returnExpression
+          | WHILE test=expression THEN whileBlock=block       # whileExpression
+          | OBJECT createBlock=block                          # objectExpression
+          | expression '.' ID                                 # selector
+          | ID                                                # selector
+          | expression callParameters                         # call
+          | block                                             # blockExpression
+          | NOT expression                                    # booleanNot
+          | left=expression op=('*' | '/') right=expression   # binaryOp
+          | left=expression op=('+' | '-') right=expression   # binaryOp
           | left=expression op=('<' | '<=' | '==' | NEQ
-                       | '>=' | '>') right=expression        # binaryOp
-          | left=expression op=AND right=expression          # booleanOp
-          | left=expression op=OR right=expression           # booleanOp
-          | functionType '->' functionBlock=block            # functionLiteral
-          | name=ID '=' value=expression                     # assignExpression
-          | NULL                                             # null
-          | BOOLEAN                                          # boolean
-          | RECURSE                                          # recurse
-          | INT                                              # integer
-          | FLOAT                                            # double
-          | STRING                                           # string
+                       | '>=' | '>') right=expression         # binaryOp
+          | left=expression op=AND right=expression           # booleanOp
+          | left=expression op=OR right=expression            # booleanOp
+          | functionType '->' functionBlock=block             # functionLiteral
+          | scope=expression '.' name=ID '=' value=expression # assignExpression
+          | name=ID '=' value=expression                      # assignExpression
+          | NULL                                              # null
+          | BOOLEAN                                           # boolean
+          | RECURSE                                           # recurse
+          | INT                                               # integer
+          | FLOAT                                             # double
+          | STRING                                            # string
           ;
 
 block: '(' ')'

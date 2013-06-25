@@ -5,6 +5,8 @@ import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 import javax.script.Bindings;
+import javax.script.ScriptException;
+import java.io.FileNotFoundException;
 import java.io.FileReader;
 
 @RunWith(JUnit4.class)
@@ -15,11 +17,11 @@ public abstract class BabbleTestBase {
         return b;
     }
 
-    protected Object interpretFile(String path) throws Exception {
+    protected Object interpretFile(String path) throws FileNotFoundException, ScriptException {
         return BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(new FileReader(path), buildBindings());
     }
 
-    protected Object interpret(String script) throws Exception {
+    protected Object interpret(String script) throws ScriptException {
         return BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(script, buildBindings());
     }
 }

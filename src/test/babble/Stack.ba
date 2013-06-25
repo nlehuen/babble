@@ -3,55 +3,55 @@
 ;;)
 package stack (
     def create = () -> (
+        def push = (a) -> (
+            this.size = this.size + 1
+            this.head = object (
+                def value = a
+                def next = this.head
+            )
+        )
+
+        def first = () -> (
+            if this.head == null then (
+                null
+            ) else (
+                this.head.value
+            )
+        )
+
+        def pop = () -> (
+            if this.head == null then (
+                null
+            ) else (
+                def result = this.head.value
+                this.head = this.head.next
+                this.size = this.size - 1
+                result
+            )
+        )
+
+        def join = (sep=" ") -> (
+            def current = this.head
+            def result = ""
+            def first = true
+
+            while current then (
+                if first then (
+                    first = false
+                ) else (
+                    result = result + sep
+                )
+
+                result = result + current.value
+                current = current.next
+            )
+
+            result
+        )
+
         object (
             def size = 0
             def head = null
-
-            def push = (a) -> (
-                size = size + 1
-                head = object (
-                    def value = a
-                    def next = head
-                )
-            )
-
-            def first = () -> (
-                if head == null then (
-                    null
-                ) else (
-                    head.value
-                )
-            )
-
-            def pop = () -> (
-                if head == null then (
-                    null
-                ) else (
-                    def result = head.value
-                    head = head.next
-                    size = size - 1
-                    result
-                )
-            )
-
-            def join = (sep=" ") -> (
-                def current = head
-                def result = ""
-                def first = true
-
-                while current then (
-                    if first then (
-                        first = false
-                    ) else (
-                        result = result + sep
-                    )
-
-                    result = result + current.value
-                    current = current.next
-                )
-
-                result
-            )
         )
     )
 )

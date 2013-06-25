@@ -1,18 +1,25 @@
 package org.babblelang.engine.impl;
 
+import org.antlr.v4.runtime.ParserRuleContext;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 
 public class Interpreter extends BabbleBaseVisitor<Object> {
     private Scope scope;
+    private ParserRuleContext last;
 
     public Interpreter(Scope root) {
         this.scope = root;
     }
 
+    protected ParserRuleContext getLast() {
+        return last;
+    }
+
     @Override
     public Object visitFile(BabbleParser.FileContext ctx) {
+        last = ctx;
         Object result = null;
         for (BabbleParser.ExpressionContext statement : ctx.expression()) {
             result = visit(statement);
@@ -22,66 +29,79 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
+        last = ctx;
         scope = scope.enter(ctx.name.getText());
         visit(ctx.packageBlock);
+        last = ctx;
         scope = scope.leave();
         return null;
     }
 
     @Override
     public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
+        last = ctx;
         Resolver object = scope = new BabbleObject(scope);
         visit(ctx.createBlock);
+        last = ctx;
         scope = scope.leave();
         return object;
     }
 
     @Override
     public Object visitDefExpression(BabbleParser.DefExpressionContext ctx) {
+        last = ctx;
         String id = ctx.name.getText();
         Object value = null;
         if (ctx.expression() != null) {
             value = visit(ctx.expression());
         }
+        last = ctx;
         scope.define(id, value);
-
         return value;
     }
 
     @Override
     public Object visitBlock(BabbleParser.BlockContext ctx) {
+        last = ctx;
         Object result = null;
         for (BabbleParser.ExpressionContext statement : ctx.expression()) {
             result = visit(statement);
         }
+        last = ctx;
         return result;
     }
 
     @Override
     public Object visitSelector(BabbleParser.SelectorContext ctx) {
+        last = ctx;
         Resolver base = scope;
         String name = ctx.ID().getText();
         BabbleParser.ExpressionContext expression = ctx.expression();
         if (expression != null) {
             base = (Resolver) visit(expression);
         }
+        last = ctx;
         return base.get(name);
     }
 
     @Override
     public Object visitNull(BabbleParser.NullContext ctx) {
+        last = ctx;
         return null;
     }
 
     @Override
     public Object visitBoolean(BabbleParser.BooleanContext ctx) {
+        last = ctx;
         return Boolean.parseBoolean(ctx.getText());
     }
 
     @Override
     public Object visitBinaryOp(BabbleParser.BinaryOpContext ctx) {
+        last = ctx;
         Object a = visit(ctx.left);
         Object b = visit(ctx.right);
+        last = ctx;
 
         switch (ctx.op.getType()) {
             case BabbleLexer.MUL:
@@ -160,6 +180,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitBooleanOp(BabbleParser.BooleanOpContext ctx) {
+        last = ctx;
         int op = ctx.op.getType();
 
         boolean a = truth(visit(ctx.left));
@@ -180,6 +201,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitBooleanNot(BabbleParser.BooleanNotContext ctx) {
+        last = ctx;
         return !truth(visit(ctx.expression()));
     }
 
@@ -195,9 +217,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitIfExpression(BabbleParser.IfExpressionContext ctx) {
+        last = ctx;
         if (truth(visit(ctx.test))) {
+            last = ctx;
             return visit(ctx.thenBlock);
         } else {
+            last = ctx;
             if (ctx.elseBlock != null) {
                 return visit(ctx.elseBlock);
             } else {
@@ -208,6 +233,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
+        last = ctx;
         Object result = null;
         while (truth(visit(ctx.test))) {
             result = visit(ctx.whileBlock);
@@ -217,23 +243,33 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
+        last = ctx;
+        Scope scope = this.scope;
+        if (ctx.scope != null) {
+            scope = (Scope) visit(ctx.scope);
+        }
+        last = ctx;
         Object value = visit(ctx.value);
+        last = ctx;
         scope.assign(ctx.name.getText(), value);
         return value;
     }
 
     @Override
     public Object visitInteger(BabbleParser.IntegerContext ctx) {
+        last = ctx;
         return Integer.parseInt(ctx.getText());
     }
 
     @Override
     public Object visitDouble(BabbleParser.DoubleContext ctx) {
+        last = ctx;
         return Double.parseDouble(ctx.getText());
     }
 
     @Override
     public Object visitString(BabbleParser.StringContext ctx) {
+        last = ctx;
         String literal = ctx.STRING().getText();
         literal = literal.substring(1, literal.length() - 1);
         literal = literal.replace("\\\\", "\\").replace("\\\"", "\"");
@@ -242,17 +278,21 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
+        last = ctx;
         return new Function(ctx, scope);
     }
 
     @Override
     public Object visitCall(BabbleParser.CallContext ctx) {
+        last = ctx;
         Object expr = visit(ctx.expression());
+        last = ctx;
         if (!(expr instanceof Callable)) {
             throw new RuntimeException(ctx.expression().getText() + " is not callable");
         }
         Callable callable = (Callable) expr;
         Callable.Parameters params = (Callable.Parameters) visit(ctx.callParameters());
+        last = ctx;
         Scope beforeCall = scope;
         scope = callable.bindParameters(this, ctx, scope, params);
         Object result = callable.call(this, ctx, scope);
@@ -262,6 +302,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitCallParameters(BabbleParser.CallParametersContext ctx) {
+        last = ctx;
         int count = 0;
         Callable.Parameters params = new Callable.Parameters();
         for (BabbleParser.CallParameterContext cp : ctx.callParameter()) {
@@ -270,6 +311,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 name = cp.ID().getText();
             }
             Object value = visit(cp.expression());
+            last = ctx;
             params.put(name, value);
         }
         return params;
@@ -277,6 +319,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitRecurse(BabbleParser.RecurseContext ctx) {
+        last = ctx;
         return scope.get("$recurse");
     }
 }
