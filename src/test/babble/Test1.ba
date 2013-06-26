@@ -39,6 +39,14 @@ package test1 (
         if n < 2 then (
             1
          ) else (
+            ;;(
+                recurse is a keyword evaluating
+                to the current function literal.
+                You could write n * fac(n - 1) here,
+                but for anonymous function literals,
+                recurse is handy.
+            ;;)
+
             n * recurse(n - 1)
          )
     )
