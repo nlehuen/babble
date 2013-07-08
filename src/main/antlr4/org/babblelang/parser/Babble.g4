@@ -21,7 +21,7 @@ expression:
                        | '>=' | '>') right=expression         # binaryOp
           | left=expression op=AND right=expression           # booleanOp
           | left=expression op=OR right=expression            # booleanOp
-          | functionType '->' functionBlock=block             # functionLiteral
+          | parametersDeclaration ( ':' type | ) '->' functionBlock=block             # functionLiteral
           | scope=expression '.' name=ID '=' value=expression # assignExpression
           | name=ID '=' value=expression                      # assignExpression
           | NULL                                              # null
@@ -45,14 +45,9 @@ callParameters: '(' callParameter (',' callParameter)* ')'
 
 callParameter: (ID ':')? expression;
 
-type: simpleType
-    | type parametersDeclaration
-    | functionType
+type: ID ('.' ID)*                           # simpleType
+    | parametersDeclaration ( ':' type | )   # functionType
     ;
-
-simpleType: ID ('.' ID)*;
-
-functionType: parametersDeclaration ( ':' type | );
 
 // Tokens
 INT: [0-9]+;

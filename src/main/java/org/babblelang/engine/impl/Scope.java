@@ -6,7 +6,7 @@ import java.util.Set;
 
 public class Scope implements Resolver {
     protected final Scope parent;
-    protected final Map<String, Object> locals = new HashMap<String, Object>();
+    protected final Map<String, Slot> locals = new HashMap<String, Slot>();
 
     public Scope() {
         this.parent = null;
@@ -14,16 +14,18 @@ public class Scope implements Resolver {
 
     protected Scope(Scope parent) {
         this.parent = parent;
-        locals.put("..", parent);
     }
 
     public Scope enter(String name) {
         Scope newScope;
         if (name != null) {
-            newScope = (Scope) locals.get(name);
-            if (newScope == null) {
+            Slot slot = locals.get(name);
+            if (slot != null) {
+                newScope = (Scope) slot.get();
+            } else {
+                slot = define(name, true);
                 newScope = new Scope(this);
-                locals.put(name, newScope);
+                slot.set(newScope);
             }
         } else {
             newScope = new Scope(this);
@@ -41,7 +43,8 @@ public class Scope implements Resolver {
     public Resolver closure(Set<String> closureKeys) {
         Scope result = findStaticScope().enter(null);
         for (String key : closureKeys) {
-            result.define(key, get(key));
+            Slot slot = get(key);
+            result.locals.put(key, slot);
         }
         return result;
     }
@@ -60,12 +63,13 @@ public class Scope implements Resolver {
         return result;
     }
 
-    public Object define(String key, Object value) {
+    public Slot define(String key, boolean _final) {
         if (locals.containsKey(key)) {
             throw new IllegalArgumentException("Key already defined : " + key);
         }
-        locals.put(key, value);
-        return value;
+        Slot slot = new Slot(key, _final);
+        locals.put(key, slot);
+        return slot;
     }
 
     public boolean isDeclared(String key) {
@@ -80,20 +84,7 @@ public class Scope implements Resolver {
         return false;
     }
 
-    public Object assign(String key, Object value) {
-        Scope current = this;
-        while (current != null) {
-            if (current.locals.containsKey(key)) {
-                current.locals.put(key, value);
-                return value;
-            } else {
-                current = current.parent;
-            }
-        }
-        throw new IllegalArgumentException("No such key : " + key);
-    }
-
-    public Object get(String key) {
+    public Slot get(String key) {
         Scope current = this;
         while (current != null) {
             if (current.locals.containsKey(key)) {

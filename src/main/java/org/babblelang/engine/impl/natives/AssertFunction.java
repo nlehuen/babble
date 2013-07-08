@@ -22,14 +22,14 @@ public class AssertFunction implements Callable {
         if (!(test instanceof Boolean)) {
             throw new IllegalArgumentException("Line " + callSite.getStart().getLine() + ", expression " + callSite.callParameters().callParameter(0).expression().getText() + " : asserts don't rely on truth values, please make sure that the test has a boolean result");
         }
-        scope.define("test", test);
-        scope.define("message", message);
+        scope.define("test", true).set(test);
+        scope.define("message", true).set(message);
         return scope;
     }
 
     public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        String message = (String) resolver.get("message");
-        boolean test = (Boolean) resolver.get("test");
+        String message = (String) resolver.get("message").get();
+        boolean test = (Boolean) resolver.get("test").get();
         if (message == null) {
             assert test : "Assertion failed at line " + callSite.getStart().getLine() + " : " + callSite.callParameters().callParameter(0).expression().getText();
         } else {

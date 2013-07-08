@@ -17,16 +17,16 @@ public class PrintFunction implements Callable {
 
     public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
         Scope scope = parent.enter(null);
-        scope.define("...", parameters);
+        scope.define("...", true).set(parameters);
         return scope;
     }
 
     public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        Parameters params = (Parameters) resolver.get("...");
+        Parameters params = (Parameters) resolver.get("...").get();
 
         PrintStream ps = (PrintStream) params.remove("to");
         if (ps == null) {
-            ps = (PrintStream) resolver.get("STDOUT");
+            ps = (PrintStream) resolver.get("STDOUT").get();
         }
 
         // TODO : support printf

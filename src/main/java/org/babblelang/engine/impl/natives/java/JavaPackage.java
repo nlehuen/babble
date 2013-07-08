@@ -1,6 +1,7 @@
 package org.babblelang.engine.impl.natives.java;
 
 import org.babblelang.engine.impl.Resolver;
+import org.babblelang.engine.impl.Slot;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -8,32 +9,38 @@ import java.util.Map;
 public class JavaPackage implements Resolver {
     private final ImportFunction importer;
     private final String name;
-    private final Package _package;
-    private final Map<String, Object> children = new HashMap<String, Object>();
+    private final Map<String, Slot> locals;
 
     public JavaPackage(ImportFunction importer, String name) {
         this.importer = importer;
         this.name = name;
-        _package = Package.getPackage(name);
+        locals = new HashMap<String, Slot>();
     }
 
     public boolean isDeclared(String key) {
-        return Package.getPackage(name + '.' + key) != null;
+        return get(key) != null;
     }
 
-    public Object get(String key) {
-        Object result = children.get(key);
+    public Slot define(String key, boolean _final) {
+        throw new IllegalStateException("Cannot define anything in a Java package");
+    }
+
+    public Slot get(String key) {
+        Slot result = locals.get(key);
 
         if (result == null) {
+            result = new Slot(key, true);
+            locals.put(name, result);
+
             String name2 = name + '.' + key;
+            Object value;
 
             try {
-                result = new JavaClass(Class.forName(name2));
+                value = new JavaClass(Class.forName(name2));
             } catch (ClassNotFoundException cnfe) {
-                result = importer.getPackage(name2);
+                value = importer.getPackage(name2);
             }
-
-            children.put(key, result);
+            result.set(value);
         }
 
         return result;

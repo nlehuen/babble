@@ -25,7 +25,7 @@ public interface Callable {
                 } else {
                     throw new IllegalArgumentException("Line " + parametersDeclarationContext.getStart().getLine() + ", missing parameter : " + name);
                 }
-                scope.define(name, value);
+                scope.define(name, false).set(value);
             }
         }
 

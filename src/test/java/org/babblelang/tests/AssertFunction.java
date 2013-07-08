@@ -7,8 +7,8 @@ import org.junit.Assert;
 
 public class AssertFunction extends org.babblelang.engine.impl.natives.AssertFunction {
     public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        String message = (String) resolver.get("message");
-        boolean test = (Boolean) resolver.get("test");
+        String message = (String) resolver.get("message").get();
+        boolean test = (Boolean) resolver.get("test").get();
         if (message == null) {
             Assert.assertTrue("Assertion failed at line " + callSite.getStart().getLine() + " : " + callSite.callParameters().callParameter(0).expression().getText(), test);
         } else {

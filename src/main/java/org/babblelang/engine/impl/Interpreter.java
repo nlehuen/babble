@@ -56,7 +56,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             value = visit(ctx.expression());
         }
         last = ctx;
-        scope.define(id, value);
+        scope.define(id, false).set(value);
         return value;
     }
 
@@ -81,7 +81,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             base = (Resolver) visit(expression);
         }
         last = ctx;
-        return base.get(name);
+        return base.get(name).get();
     }
 
     @Override
@@ -251,7 +251,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         Object value = visit(ctx.value);
         last = ctx;
-        scope.assign(ctx.name.getText(), value);
+        scope.get(ctx.name.getText()).set(value);
         return value;
     }
 
@@ -320,6 +320,6 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitRecurse(BabbleParser.RecurseContext ctx) {
         last = ctx;
-        return scope.get("$recurse");
+        return scope.get("$recurse").get();
     }
 }

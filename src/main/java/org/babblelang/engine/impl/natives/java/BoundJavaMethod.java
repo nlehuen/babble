@@ -17,7 +17,7 @@ public class BoundJavaMethod implements Callable {
 
     public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
         Scope result = method.bindParameters(interpreter, callSite, parent, parameters);
-        result.assign("this", _this);
+        result.get("this").set(_this);
         return result;
     }
 

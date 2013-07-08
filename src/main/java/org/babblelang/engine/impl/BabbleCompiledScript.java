@@ -24,7 +24,7 @@ public class BabbleCompiledScript extends CompiledScript {
 
         // TODO : handle ScriptContext.GLOBAL_SCOPE
         for (Map.Entry<String, Object> binding : context.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {
-            scope.define(binding.getKey(), binding.getValue());
+            scope.define(binding.getKey(), false).set(binding.getValue());
         }
 
         Interpreter interpreter = new Interpreter(scope);

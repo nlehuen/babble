@@ -22,9 +22,9 @@ class JavaMethod implements Callable {
 
         try {
             Method method = _class.getMethod(name, parameters.typesArray());
-            scope.define("method", method);
-            scope.define("parameters", parameters);
-            scope.define("this", _class);
+            scope.define("method", true).set(method);
+            scope.define("parameters", true).set(parameters);
+            scope.define("this", false).set(_class);
         } catch (NoSuchMethodException nsme) {
             throw new IllegalArgumentException(nsme);
         }
@@ -33,10 +33,10 @@ class JavaMethod implements Callable {
     }
 
     public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        Method method = (Method) resolver.get("method");
-        Parameters parameters = (Parameters) resolver.get("parameters");
+        Method method = (Method) resolver.get("method").get();
+        Parameters parameters = (Parameters) resolver.get("parameters").get();
         try {
-            return method.invoke(resolver.get("this"), parameters.valuesArray());
+            return method.invoke(resolver.get("this").get(), parameters.valuesArray());
         } catch (Exception e) {
             throw new IllegalArgumentException(e);
         }

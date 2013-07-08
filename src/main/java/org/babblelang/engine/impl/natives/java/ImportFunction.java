@@ -15,12 +15,12 @@ public class ImportFunction implements Callable {
     public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
         Scope scope = parent.enter(null);
         Object first = parameters.values().iterator().next();
-        scope.define("name", first);
+        scope.define("name", true).set(first);
         return scope;
     }
 
     public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        String name = (String) resolver.get("name");
+        String name = (String) resolver.get("name").get();
         return getPackage(name);
     }
 

@@ -6,12 +6,13 @@ public class BabbleObject extends Scope {
     }
 
     @Override
-    public Object get(String key) {
-        Object result = super.get(key);
-        if (result instanceof Function && !locals.containsKey(key)) {
-            Function function = (Function) result;
-            result = new BoundMethod(function, this);
-            define(key, result);
+    public Slot get(String key) {
+        Slot result = super.get(key);
+        Object value = result.get();
+        if (!locals.containsKey(key) && value instanceof Function) {
+            Function function = (Function) value;
+            result = define(key, true);
+            result.set(new BoundMethod(function, this));
         }
         return result;
     }

@@ -13,7 +13,7 @@ public class BoundMethod implements Callable {
 
     public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
         Scope result = function.bindParameters(interpreter, callSite, parent, parameters);
-        result.define("this", object);
+        result.define("this", true).set(object);
         return result;
     }
 

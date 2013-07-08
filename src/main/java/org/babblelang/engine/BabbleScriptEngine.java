@@ -27,17 +27,17 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         implicits = new Scope();
 
         ImportFunction importFunction = new ImportFunction();
-        implicits.define("java", importFunction.getPackage("java"));
-        implicits.define("javax", importFunction.getPackage("javax"));
-        implicits.define("import", importFunction);
-        implicits.define("importe", importFunction);
-        implicits.define("print", new PrintFunction(false));
-        implicits.define("println", new PrintFunction(true));
-        implicits.define("affiche", new PrintFunction(false));
-        implicits.define("afficherc", new PrintFunction(true));
-        implicits.define("assert", new AssertFunction());
-        implicits.define("suppose", new AssertFunction());
-        implicits.define("STDOUT", System.out);
+        implicits.define("java", true).set(importFunction.getPackage("java"));
+        implicits.define("javax", true).set(importFunction.getPackage("javax"));
+        implicits.define("import", true).set(importFunction);
+        implicits.define("importe", true).set(importFunction);
+        implicits.define("print", true).set(new PrintFunction(false));
+        implicits.define("println", true).set(new PrintFunction(true));
+        implicits.define("affiche", true).set(new PrintFunction(false));
+        implicits.define("afficherc", true).set(new PrintFunction(true));
+        implicits.define("assert", true).set(new AssertFunction());
+        implicits.define("suppose", true).set(new AssertFunction());
+        implicits.define("STDOUT", true).set(System.out);
     }
 
     public Scope getImplicits() {
