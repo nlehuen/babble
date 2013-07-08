@@ -1,0 +1,31 @@
+;;(
+    A couple of mutually recursive functions.
+    This tests forward declarations.
+;;)
+
+def fib = (n:int):int  -> (
+    if n < 2 then (
+        1
+    ) else (
+        fib2(n-1) + fib2(n-2)
+    )
+)
+
+def fib2 = (n:int):int  -> (
+    if n < 2 then (
+        1
+    ) else (
+        fib(n-1) + fib(n-2)
+    )
+)
+
+assert(fib(0) == 1)
+assert(fib(1) == 1)
+assert(fib(2) == 2)
+assert(fib(3) == 3)
+assert(fib(4) == 5)
+assert(fib(5) == 8)
+assert(fib(6) == 13)
+assert(fib(7) == 21)
+assert(fib(8) == 34)
+
