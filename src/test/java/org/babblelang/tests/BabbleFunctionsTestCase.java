@@ -27,7 +27,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
             Assert.assertEquals("ba", interpret("def add = (a, b) -> ( a + b ) ; add(b:\"a\")"));
             Assert.fail("Should report missing parameter");
         } catch (ScriptException e) {
-            Assert.assertEquals("java.lang.IllegalArgumentException: Missing parameter : a in <input> at line number 1", e.getMessage());
+            Assert.assertEquals("org.babblelang.engine.BabbleException: Missing parameter : a in <input> at line number 1", e.getMessage());
         }
     }
 
@@ -37,7 +37,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
             Assert.assertEquals(null, interpret("def add = (a, b) -> ( a + b ) ; add(a:\"a\",b:\"b\")(\"foobar\")"));
             Assert.fail("Should report not callable expression");
         } catch (ScriptException e) {
-            Assert.assertEquals("java.lang.RuntimeException: add(a:\"a\",b:\"b\") is not callable in <input> at line number 1", e.getMessage());
+            Assert.assertEquals("org.babblelang.engine.BabbleException: add(a:\"a\",b:\"b\") is not callable in <input> at line number 1", e.getMessage());
         }
     }
 
@@ -52,7 +52,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
             Assert.assertEquals("ba", interpret("def add = (a=\"b\", b) -> ( a + b ) ; add(a:\"a\")"));
             Assert.fail("Should report \"Missing parameter : b\"");
         } catch (ScriptException e) {
-            Assert.assertEquals("java.lang.IllegalArgumentException: Missing parameter : b in <input> at line number 1", e.getMessage());
+            Assert.assertEquals("org.babblelang.engine.BabbleException: Missing parameter : b in <input> at line number 1", e.getMessage());
         }
     }
 

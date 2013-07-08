@@ -1,5 +1,7 @@
 package org.babblelang.engine.impl;
 
+import org.babblelang.engine.BabbleException;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -65,7 +67,7 @@ public class Namespace implements Scope {
 
     public Slot define(String key, boolean _final) {
         if (locals.containsKey(key)) {
-            throw new IllegalArgumentException("Name already defined : " + key);
+            throw new BabbleException("Name already defined : " + key);
         }
         Slot slot = new Slot(key, _final);
         locals.put(key, slot);
@@ -93,7 +95,7 @@ public class Namespace implements Scope {
                 current = current.parent;
             }
         }
-        throw new IllegalArgumentException("No such name : " + key);
+        throw new BabbleException("No such name : " + key);
     }
 
 }

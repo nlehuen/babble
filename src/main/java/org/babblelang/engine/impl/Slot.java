@@ -14,7 +14,7 @@ public class Slot {
     public void set(Object value) {
         if (set) {
             if (_final) {
-                throw new RuntimeException("Slot already set : " + name);
+                throw new IllegalStateException("Slot already set : " + name);
             }
         } else {
             set = true;
@@ -30,7 +30,7 @@ public class Slot {
         if (set) {
             return value;
         } else {
-            throw new RuntimeException("Slot not set : " + name);
+            throw new IllegalStateException("Slot not set : " + name);
         }
     }
 }

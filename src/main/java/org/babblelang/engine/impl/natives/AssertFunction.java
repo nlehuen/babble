@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl.natives;
 
+import org.babblelang.engine.BabbleException;
 import org.babblelang.engine.impl.Callable;
 import org.babblelang.engine.impl.Interpreter;
 import org.babblelang.engine.impl.Namespace;
@@ -20,7 +21,7 @@ public class AssertFunction implements Callable {
             message = it.next();
         }
         if (!(test instanceof Boolean)) {
-            throw new IllegalArgumentException("Line " + callSite.getStart().getLine() + ", expression " + callSite.callParameters().callParameter(0).expression().getText() + " : asserts don't rely on truth values, please make sure that the test has a boolean result");
+            throw new BabbleException("Expression " + callSite.callParameters().callParameter(0).expression().getText() + " : asserts don't rely on truth values, please make sure that the test has a boolean result");
         }
         namespace.define("test", true).set(test);
         namespace.define("message", true).set(message);

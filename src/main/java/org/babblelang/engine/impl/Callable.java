@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl;
 
+import org.babblelang.engine.BabbleException;
 import org.babblelang.parser.BabbleParser;
 
 import java.util.LinkedHashMap;
@@ -23,7 +24,7 @@ public interface Callable {
                 } else if (parameter.defaultValue != null) {
                     value = interpreter.visit(parameter.defaultValue);
                 } else {
-                    throw new IllegalArgumentException("Missing parameter : " + name);
+                    throw new BabbleException("Missing parameter : " + name);
                 }
                 scope.define(name, false).set(value);
             }

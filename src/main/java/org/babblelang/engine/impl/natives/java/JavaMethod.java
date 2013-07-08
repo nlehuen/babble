@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl.natives.java;
 
+import org.babblelang.engine.BabbleException;
 import org.babblelang.engine.impl.Callable;
 import org.babblelang.engine.impl.Interpreter;
 import org.babblelang.engine.impl.Namespace;
@@ -26,7 +27,7 @@ class JavaMethod implements Callable {
             namespace.define("parameters", true).set(parameters);
             namespace.define("this", false).set(_class);
         } catch (NoSuchMethodException nsme) {
-            throw new IllegalArgumentException(nsme);
+            throw new BabbleException(nsme);
         }
 
         return namespace;
@@ -38,7 +39,7 @@ class JavaMethod implements Callable {
         try {
             return method.invoke(scope.get("this").get(), parameters.valuesArray());
         } catch (Exception e) {
-            throw new IllegalArgumentException(e);
+            throw new BabbleException(e);
         }
     }
 }

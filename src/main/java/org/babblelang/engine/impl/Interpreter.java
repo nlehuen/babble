@@ -1,6 +1,7 @@
 package org.babblelang.engine.impl;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.babblelang.engine.BabbleException;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
@@ -158,7 +159,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) > 0;
 
             default:
-                throw new UnsupportedOperationException("Bad op : " + ctx.op.getText());
+                throw new IllegalStateException("Bad op : " + ctx.op.getText());
         }
     }
 
@@ -166,7 +167,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (a instanceof Number) {
             return (Number) a;
         } else {
-            throw new RuntimeException("Line " + expr.getStart().getLine() + ", not a number : " + expr.getText());
+            throw new BabbleException("Not a number : " + expr.getText());
         }
     }
 
@@ -174,7 +175,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (a instanceof Comparable) {
             return (Comparable) a;
         } else {
-            throw new RuntimeException("Line " + expr.getStart().getLine() + ", not comparable : " + expr.getText());
+            throw new BabbleException("Not comparable : " + expr.getText());
         }
     }
 
@@ -288,7 +289,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object expr = visit(ctx.expression());
         last = ctx;
         if (!(expr instanceof Callable)) {
-            throw new RuntimeException(ctx.expression().getText() + " is not callable");
+            throw new BabbleException(ctx.expression().getText() + " is not callable");
         }
         Callable callable = (Callable) expr;
         Callable.Parameters params = (Callable.Parameters) visit(ctx.callParameters());

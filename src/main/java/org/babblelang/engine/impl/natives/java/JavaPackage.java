@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl.natives.java;
 
+import org.babblelang.engine.BabbleException;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.engine.impl.Slot;
 
@@ -22,7 +23,7 @@ public class JavaPackage implements Scope {
     }
 
     public Slot define(String key, boolean _final) {
-        throw new IllegalStateException("Cannot define anything in a Java package");
+        throw new BabbleException("Cannot define anything in a Java package");
     }
 
     public Slot get(String key) {

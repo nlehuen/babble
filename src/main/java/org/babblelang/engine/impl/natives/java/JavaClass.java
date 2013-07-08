@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl.natives.java;
 
+import org.babblelang.engine.BabbleException;
 import org.babblelang.engine.impl.*;
 import org.babblelang.parser.BabbleParser;
 
@@ -25,7 +26,7 @@ class JavaClass implements Scope, Callable {
             namespace.define("parameters", true).set(parameters);
             return namespace;
         } catch (NoSuchMethodException nsme) {
-            throw new IllegalArgumentException(nsme);
+            throw new BabbleException(nsme);
         }
     }
 
@@ -35,12 +36,12 @@ class JavaClass implements Scope, Callable {
         try {
             return new JavaObject(this, constructor.newInstance(parameters.valuesArray()));
         } catch (Exception e) {
-            throw new IllegalArgumentException(e);
+            throw new BabbleException(e);
         }
     }
 
     public Slot define(String key, boolean _final) {
-        throw new IllegalStateException("Cannot define anything in a Java class");
+        throw new BabbleException("Cannot define anything in a Java class");
     }
 
     public boolean isDeclared(String key) {
@@ -71,7 +72,7 @@ class JavaClass implements Scope, Callable {
             }
 
             if (!result.isSet()) {
-                throw new IllegalArgumentException("No such name in " + _class.getCanonicalName() + " : " + key);
+                throw new BabbleException("No such name in " + _class.getCanonicalName() + " : " + key);
             }
         }
 
