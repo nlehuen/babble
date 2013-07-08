@@ -17,12 +17,12 @@ public class PrintFunction implements Callable {
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace namespace = parent.enter(null);
-        namespace.define("...", true).set(parameters);
+        namespace.define("parameters", true).set(parameters);
         return namespace;
     }
 
     public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
-        Parameters params = (Parameters) scope.get("...").get();
+        Parameters params = (Parameters) scope.get("parameters").get();
 
         PrintStream ps = (PrintStream) params.remove("to");
         if (ps == null) {

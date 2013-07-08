@@ -64,6 +64,7 @@ NEQ: '<>' | '!=';
 GTE: '>=';
 GT: '>';
 COLON: ':';
+SEMICOLON: ';';
 ASSIGN: '=';
 DOT: '.';
 ARROW: '->';
