@@ -71,7 +71,7 @@ class JavaClass implements Scope, Callable {
             }
 
             if (!result.isSet()) {
-                throw new IllegalArgumentException("No such key in " + _class.getCanonicalName() + " : " + key);
+                throw new IllegalArgumentException("No such name in " + _class.getCanonicalName() + " : " + key);
             }
         }
 

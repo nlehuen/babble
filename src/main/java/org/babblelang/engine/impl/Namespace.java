@@ -65,7 +65,7 @@ public class Namespace implements Scope {
 
     public Slot define(String key, boolean _final) {
         if (locals.containsKey(key)) {
-            throw new IllegalArgumentException("Key already defined : " + key);
+            throw new IllegalArgumentException("Name already defined : " + key);
         }
         Slot slot = new Slot(key, _final);
         locals.put(key, slot);
@@ -93,7 +93,7 @@ public class Namespace implements Scope {
                 current = current.parent;
             }
         }
-        throw new IllegalArgumentException("No such key : " + key);
+        throw new IllegalArgumentException("No such name : " + key);
     }
 
 }

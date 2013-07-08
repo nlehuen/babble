@@ -23,7 +23,7 @@ public interface Callable {
                 } else if (parameter.defaultValue != null) {
                     value = interpreter.visit(parameter.defaultValue);
                 } else {
-                    throw new IllegalArgumentException("Line " + parametersDeclarationContext.getStart().getLine() + ", missing parameter : " + name);
+                    throw new IllegalArgumentException("Missing parameter : " + name);
                 }
                 scope.define(name, false).set(value);
             }
