@@ -245,8 +245,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         last = ctx;
         Scope scope = this.namespace;
-        if (ctx.scope != null) {
-            scope = (Scope) visit(ctx.scope);
+        if (ctx.namespace != null) {
+            scope = (Scope) visit(ctx.namespace);
         }
         last = ctx;
         Object value = visit(ctx.value);
