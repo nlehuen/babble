@@ -9,7 +9,7 @@ import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
 
-class JavaClass implements Resolver, Callable {
+class JavaClass implements Scope, Callable {
     private final Class _class;
     private final Map<String, Slot> members = new HashMap<String, Slot>();
 
@@ -17,21 +17,21 @@ class JavaClass implements Resolver, Callable {
         this._class = _class;
     }
 
-    public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
-        Scope scope = parent.enter(null);
+    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
+        Namespace namespace = parent.enter(null);
         try {
             Constructor constructor = _class.getConstructor(parameters.typesArray());
-            scope.define("constructor", true).set(constructor);
-            scope.define("parameters", true).set(parameters);
-            return scope;
+            namespace.define("constructor", true).set(constructor);
+            namespace.define("parameters", true).set(parameters);
+            return namespace;
         } catch (NoSuchMethodException nsme) {
             throw new IllegalArgumentException(nsme);
         }
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        Constructor constructor = (Constructor) resolver.get("constructor").get();
-        Parameters parameters = (Parameters) resolver.get("parameters").get();
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+        Constructor constructor = (Constructor) scope.get("constructor").get();
+        Parameters parameters = (Parameters) scope.get("parameters").get();
         try {
             return new JavaObject(this, constructor.newInstance(parameters.valuesArray()));
         } catch (Exception e) {

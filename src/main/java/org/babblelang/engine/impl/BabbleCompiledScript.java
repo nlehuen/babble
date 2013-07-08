@@ -20,14 +20,14 @@ public class BabbleCompiledScript extends CompiledScript {
 
     @Override
     public Object eval(ScriptContext context) throws ScriptException {
-        Scope scope = engine.getImplicits().enter(null);
+        Namespace namespace = engine.getImplicits().enter(null);
 
         // TODO : handle ScriptContext.GLOBAL_SCOPE
         for (Map.Entry<String, Object> binding : context.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {
-            scope.define(binding.getKey(), false).set(binding.getValue());
+            namespace.define(binding.getKey(), false).set(binding.getValue());
         }
 
-        Interpreter interpreter = new Interpreter(scope);
+        Interpreter interpreter = new Interpreter(namespace);
         try {
             return interpreter.visit(file);
         } catch (Exception e) {

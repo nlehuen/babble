@@ -1,7 +1,7 @@
 package org.babblelang.engine.impl;
 
-public class BabbleObject extends Scope {
-    public BabbleObject(Scope parent) {
+public class BabbleObject extends Namespace {
+    public BabbleObject(Namespace parent) {
         super(parent);
     }
 

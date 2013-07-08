@@ -2,7 +2,7 @@ package org.babblelang.engine.impl.natives;
 
 import org.babblelang.engine.impl.Callable;
 import org.babblelang.engine.impl.Interpreter;
-import org.babblelang.engine.impl.Resolver;
+import org.babblelang.engine.impl.Namespace;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.parser.BabbleParser;
 
@@ -15,18 +15,18 @@ public class PrintFunction implements Callable {
         this.newLine = newLine;
     }
 
-    public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
-        Scope scope = parent.enter(null);
-        scope.define("...", true).set(parameters);
-        return scope;
+    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
+        Namespace namespace = parent.enter(null);
+        namespace.define("...", true).set(parameters);
+        return namespace;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        Parameters params = (Parameters) resolver.get("...").get();
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+        Parameters params = (Parameters) scope.get("...").get();
 
         PrintStream ps = (PrintStream) params.remove("to");
         if (ps == null) {
-            ps = (PrintStream) resolver.get("STDOUT").get();
+            ps = (PrintStream) scope.get("STDOUT").get();
         }
 
         // TODO : support printf

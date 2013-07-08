@@ -11,14 +11,14 @@ public class BoundMethod implements Callable {
         this.object = babbleObject;
     }
 
-    public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
-        Scope result = function.bindParameters(interpreter, callSite, parent, parameters);
+    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
+        Namespace result = function.bindParameters(interpreter, callSite, parent, parameters);
         result.define("this", true).set(object);
         return result;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        return function.call(interpreter, callSite, resolver);
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+        return function.call(interpreter, callSite, scope);
     }
 }
 

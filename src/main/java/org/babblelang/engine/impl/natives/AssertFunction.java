@@ -2,15 +2,15 @@ package org.babblelang.engine.impl.natives;
 
 import org.babblelang.engine.impl.Callable;
 import org.babblelang.engine.impl.Interpreter;
-import org.babblelang.engine.impl.Resolver;
+import org.babblelang.engine.impl.Namespace;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.parser.BabbleParser;
 
 import java.util.Iterator;
 
 public class AssertFunction implements Callable {
-    public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
-        Scope scope = parent.enter(null);
+    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
+        Namespace namespace = parent.enter(null);
         assert parameters.size() > 0 : "assert() called without parameters";
         assert parameters.size() <= 2 : "assert() called with too many parameters";
         Iterator<Object> it = parameters.values().iterator();
@@ -22,14 +22,14 @@ public class AssertFunction implements Callable {
         if (!(test instanceof Boolean)) {
             throw new IllegalArgumentException("Line " + callSite.getStart().getLine() + ", expression " + callSite.callParameters().callParameter(0).expression().getText() + " : asserts don't rely on truth values, please make sure that the test has a boolean result");
         }
-        scope.define("test", true).set(test);
-        scope.define("message", true).set(message);
-        return scope;
+        namespace.define("test", true).set(test);
+        namespace.define("message", true).set(message);
+        return namespace;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        String message = (String) resolver.get("message").get();
-        boolean test = (Boolean) resolver.get("test").get();
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+        String message = (String) scope.get("message").get();
+        boolean test = (Boolean) scope.get("test").get();
         if (message == null) {
             assert test : "Assertion failed at line " + callSite.getStart().getLine() + " : " + callSite.callParameters().callParameter(0).expression().getText();
         } else {

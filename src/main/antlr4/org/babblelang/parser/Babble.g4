@@ -22,7 +22,7 @@ expression:
           | left=expression op=AND right=expression           # booleanOp
           | left=expression op=OR right=expression            # booleanOp
           | parametersDeclaration ( ':' type | ) '->' functionBlock=block             # functionLiteral
-          | scope=expression '.' name=ID '=' value=expression # assignExpression
+          | namespace=expression '.' name=ID '=' value=expression # assignExpression
           | name=ID '=' value=expression                      # assignExpression
           | NULL                                              # null
           | BOOLEAN                                           # boolean

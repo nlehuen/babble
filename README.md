@@ -229,7 +229,7 @@ Language features :
 - [x] positional & named parameters in function calls.
 - [x] default values for function parameters (including closure support).
 - [x] basic types : boolean, int, double, functions.
-- [x] object literals & scope
+- [x] object literals & namespace
 - [x] optional type declaration for variables and parameters, not enforced (for documentation only).
 - [x] "native" functions : `print`/`println` (or `affiche`/`afficherc` in French !), `assert` (or `suppose`).
 - [x] directly use Java classes from within Babble.

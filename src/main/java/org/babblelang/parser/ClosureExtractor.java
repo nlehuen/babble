@@ -1,6 +1,6 @@
 package org.babblelang.parser;
 
-import org.babblelang.engine.impl.Scope;
+import org.babblelang.engine.impl.Namespace;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -18,35 +18,35 @@ public final class ClosureExtractor {
 
     private static class Visitor extends BabbleBaseVisitor<Void> {
         private final Set<String> closureKeys = new HashSet<String>();
-        private Scope functionScope = new Scope();
+        private Namespace functionNamespace = new Namespace();
 
         @Override
         public Void visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
-            functionScope = functionScope.enter(ctx.name.getText());
+            functionNamespace = functionNamespace.enter(ctx.name.getText());
             visit(ctx.packageBlock);
-            functionScope = functionScope.leave();
+            functionNamespace = functionNamespace.leave();
             return null;
         }
 
 
         @Override
         public Void visitBlock(BabbleParser.BlockContext ctx) {
-            functionScope = functionScope.enter(null);
+            functionNamespace = functionNamespace.enter(null);
             super.visitBlock(ctx);
-            functionScope = functionScope.leave();
+            functionNamespace = functionNamespace.leave();
             return null;
         }
 
         @Override
         public Void visitParameterDeclaration(BabbleParser.ParameterDeclarationContext ctx) {
-            functionScope.define(ctx.ID().getText(), true);
+            functionNamespace.define(ctx.ID().getText(), true);
             return super.visitParameterDeclaration(ctx);
         }
 
         @Override
         public Void visitDefExpression(BabbleParser.DefExpressionContext ctx) {
             super.visitDefExpression(ctx);
-            functionScope.define(ctx.name.getText(), true);
+            functionNamespace.define(ctx.name.getText(), true);
             return null;
         }
 
@@ -57,7 +57,7 @@ public final class ClosureExtractor {
 
                 // if the ID has been defined within the function
                 // then we don't need it in the closure
-                if (!functionScope.isDeclared(name)) {
+                if (!functionNamespace.isDeclared(name)) {
                     closureKeys.add(name);
                 }
 

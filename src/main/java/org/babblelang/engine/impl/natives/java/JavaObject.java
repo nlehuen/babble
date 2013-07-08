@@ -1,12 +1,12 @@
 package org.babblelang.engine.impl.natives.java;
 
-import org.babblelang.engine.impl.Resolver;
+import org.babblelang.engine.impl.Scope;
 import org.babblelang.engine.impl.Slot;
 
 import java.util.HashMap;
 import java.util.Map;
 
-public class JavaObject implements Resolver {
+public class JavaObject implements Scope {
     private final JavaClass _class;
     private final Object value;
     private final Map<String, Slot> members;

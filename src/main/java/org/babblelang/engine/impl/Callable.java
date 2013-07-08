@@ -5,9 +5,9 @@ import org.babblelang.parser.BabbleParser;
 import java.util.LinkedHashMap;
 
 public interface Callable {
-    Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters);
+    Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters);
 
-    Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver);
+    Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope);
 
     class Parameters extends LinkedHashMap<String, Object> {
         public void bind(Interpreter interpreter, BabbleParser.ParametersDeclarationContext parametersDeclarationContext, Scope scope) {

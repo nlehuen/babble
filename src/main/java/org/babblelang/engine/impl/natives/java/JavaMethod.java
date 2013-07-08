@@ -2,7 +2,7 @@ package org.babblelang.engine.impl.natives.java;
 
 import org.babblelang.engine.impl.Callable;
 import org.babblelang.engine.impl.Interpreter;
-import org.babblelang.engine.impl.Resolver;
+import org.babblelang.engine.impl.Namespace;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.parser.BabbleParser;
 
@@ -17,26 +17,26 @@ class JavaMethod implements Callable {
         this.name = name;
     }
 
-    public Scope bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Scope parent, Parameters parameters) {
-        Scope scope = parent.enter(null);
+    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
+        Namespace namespace = parent.enter(null);
 
         try {
             Method method = _class.getMethod(name, parameters.typesArray());
-            scope.define("method", true).set(method);
-            scope.define("parameters", true).set(parameters);
-            scope.define("this", false).set(_class);
+            namespace.define("method", true).set(method);
+            namespace.define("parameters", true).set(parameters);
+            namespace.define("this", false).set(_class);
         } catch (NoSuchMethodException nsme) {
             throw new IllegalArgumentException(nsme);
         }
 
-        return scope;
+        return namespace;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Resolver resolver) {
-        Method method = (Method) resolver.get("method").get();
-        Parameters parameters = (Parameters) resolver.get("parameters").get();
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+        Method method = (Method) scope.get("method").get();
+        Parameters parameters = (Parameters) scope.get("parameters").get();
         try {
-            return method.invoke(resolver.get("this").get(), parameters.valuesArray());
+            return method.invoke(scope.get("this").get(), parameters.valuesArray());
         } catch (Exception e) {
             throw new IllegalArgumentException(e);
         }

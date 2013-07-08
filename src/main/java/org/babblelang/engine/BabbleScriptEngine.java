@@ -5,7 +5,7 @@ import org.antlr.v4.runtime.BailErrorStrategy;
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.babblelang.engine.impl.BabbleCompiledScript;
-import org.babblelang.engine.impl.Scope;
+import org.babblelang.engine.impl.Namespace;
 import org.babblelang.engine.impl.natives.AssertFunction;
 import org.babblelang.engine.impl.natives.PrintFunction;
 import org.babblelang.engine.impl.natives.java.ImportFunction;
@@ -18,13 +18,13 @@ import java.io.StringReader;
 
 public class BabbleScriptEngine extends AbstractScriptEngine implements Compilable {
     private final BabbleScriptEngineFactory factory;
-    private final Scope implicits;
+    private final Namespace implicits;
 
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
         super();
         this.factory = factory;
 
-        implicits = new Scope();
+        implicits = new Namespace();
 
         ImportFunction importFunction = new ImportFunction();
         implicits.define("java", true).set(importFunction.getPackage("java"));
@@ -40,7 +40,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         implicits.define("STDOUT", true).set(System.out);
     }
 
-    public Scope getImplicits() {
+    public Namespace getImplicits() {
         return implicits;
     }
 

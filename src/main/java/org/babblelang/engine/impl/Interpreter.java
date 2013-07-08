@@ -6,11 +6,11 @@ import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 
 public class Interpreter extends BabbleBaseVisitor<Object> {
-    private Scope scope;
+    private Namespace namespace;
     private ParserRuleContext last;
 
-    public Interpreter(Scope root) {
-        this.scope = root;
+    public Interpreter(Namespace root) {
+        this.namespace = root;
     }
 
     protected ParserRuleContext getLast() {
@@ -30,20 +30,20 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
         last = ctx;
-        scope = scope.enter(ctx.name.getText());
+        namespace = namespace.enter(ctx.name.getText());
         visit(ctx.packageBlock);
         last = ctx;
-        scope = scope.leave();
+        namespace = namespace.leave();
         return null;
     }
 
     @Override
     public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
         last = ctx;
-        Resolver object = scope = new BabbleObject(scope);
+        Scope object = namespace = new BabbleObject(namespace);
         visit(ctx.createBlock);
         last = ctx;
-        scope = scope.leave();
+        namespace = namespace.leave();
         return object;
     }
 
@@ -56,7 +56,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             value = visit(ctx.expression());
         }
         last = ctx;
-        scope.define(id, false).set(value);
+        namespace.define(id, false).set(value);
         return value;
     }
 
@@ -74,11 +74,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitSelector(BabbleParser.SelectorContext ctx) {
         last = ctx;
-        Resolver base = scope;
+        Scope base = namespace;
         String name = ctx.ID().getText();
         BabbleParser.ExpressionContext expression = ctx.expression();
         if (expression != null) {
-            base = (Resolver) visit(expression);
+            base = (Scope) visit(expression);
         }
         last = ctx;
         return base.get(name).get();
@@ -244,7 +244,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         last = ctx;
-        Scope scope = this.scope;
+        Scope scope = this.namespace;
         if (ctx.scope != null) {
             scope = (Scope) visit(ctx.scope);
         }
@@ -279,7 +279,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
         last = ctx;
-        return new Function(ctx, scope);
+        return new Function(ctx, namespace);
     }
 
     @Override
@@ -293,10 +293,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Callable callable = (Callable) expr;
         Callable.Parameters params = (Callable.Parameters) visit(ctx.callParameters());
         last = ctx;
-        Scope beforeCall = scope;
-        scope = callable.bindParameters(this, ctx, scope, params);
-        Object result = callable.call(this, ctx, scope);
-        scope = beforeCall;
+        Namespace beforeCall = namespace;
+        namespace = callable.bindParameters(this, ctx, namespace, params);
+        Object result = callable.call(this, ctx, namespace);
+        namespace = beforeCall;
         return result;
     }
 
@@ -320,6 +320,6 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitRecurse(BabbleParser.RecurseContext ctx) {
         last = ctx;
-        return scope.get("$recurse").get();
+        return namespace.get("$recurse").get();
     }
 }
