@@ -1,8 +1,7 @@
 The Hodor Language [![build status](https://secure.travis-ci.org/nlehuen/babble.png)](http://travis-ci.org/nlehuen/babble)
 ===================
 
-The Hodor language is derived from the [Babble Language](https://github.com/nlehuen/babble). Its main objective is to
-teach programming to [Hodor](http://en.wikipedia.org/wiki/Hodor_(A_Song_of_Ice_and_Fire)#Hodor).
+The Hodor language is derived from the [Babble Language](https://github.com/nlehuen/babble). Its main objective is to teach programming to [Hodor](http://gameofthrones.wikia.com/wiki/Hodor).
 
 What does it looks like ?
 -------------------------
@@ -172,3 +171,10 @@ Language features :
 Implementation features :
 
 - [ ] compiled mode with compilation to bytecode using [ASM](http://asm.ow2.org/) (big one !).
+
+Thanks
+------
+
+Thanks to George R. R. Martin, of course, and to HBO, David Benioff and D. B. Weiss for the excellent TV adaptation of Game of Thrones.
+
+Thanks to JetBrains for the excellent refactoring capabilities of IntelliJ IDEA - turning Babble into Hodor was done in a few minutes.
