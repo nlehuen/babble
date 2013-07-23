@@ -158,7 +158,7 @@ Planned features
 Language features :
 
 - [ ] interactive mode (since we're interpreted, why not make the most of it ?).
-- [ ] better, more user-friendly error reports. Right now parsing & runtime errors are VERY messy.
+- [ ] better, more user-friendly error reports. Right now parsing & runtime errors are VERY messy. A little more HODORing could go a long way towards helping Hodor grasp the delicate concepts of the language.
 - [ ] type checking.
 - [ ] type inference.
 - [ ] object model (class, method, inheritance).
