@@ -1,4 +1,4 @@
-The Hodor Language [![build status](https://secure.travis-ci.org/nlehuen/babble.png)](http://travis-ci.org/nlehuen/babble)
+The Hodor Language [![Build Status](https://travis-ci.org/nlehuen/babble.png?branch=hodor)](https://travis-ci.org/nlehuen/babble)
 ===================
 
 The Hodor language is derived from the [Babble Language](https://github.com/nlehuen/babble). Its main objective is to teach programming to [Hodor](http://gameofthrones.wikia.com/wiki/Hodor).
