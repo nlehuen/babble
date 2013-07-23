@@ -171,6 +171,7 @@ Language features :
 Implementation features :
 
 - [ ] compiled mode with compilation to bytecode using [ASM](http://asm.ow2.org/) (big one !).
+- [ ] Transpiler from Babble to Hodor (easy one).
 
 Thanks
 ------
