@@ -59,15 +59,15 @@ hoDOR: stack (
 hodor: test = () -> (
     hodor: l = stack.create()
     HODORRRR?(l.size == 0)
-    l.push("world")
+    l.push("hodor !")
     HODORRRR?(l.size == 1)
-    l.push("hello")
+    l.push("hodor")
     HODORRRR?(l.size == 2)
-    HODORRRR?("hello/world" == l.join("/"))
-    HODORRRR?("hello world" == l.join())
-    HODORRRR?("hello" == l.pop());
+    HODORRRR?("hodor/hodor !" == l.join("/"))
+    HODORRRR?("hodor hodor !" == l.join())
+    HODORRRR?("hodor" == l.pop());
     HODORRRR?(l.size == 1)
-    HODORRRR?("world" == l.pop());
+    HODORRRR?("hodor !" == l.pop());
     HODORRRR?(l.size == 0)
 )
 
