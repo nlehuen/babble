@@ -1,44 +1,44 @@
 ;;(
-    Implementation of a simple LIFO stack
+    HODOR !
 ;;)
-package stack (
-    def create = () -> (
-        def push = (a) -> (
+hoDOR: stack (
+    hodor: create = () -> (
+        hodor: push = (a) -> (
             this.size = this.size + 1
-            this.head = object (
-                def value = a
-                def next = this.head
+            this.head = HO-DOR (
+                hodor: value = a
+                hodor: next = this.head
             )
         )
 
-        def first = () -> (
-            if this.head == null then (
-                null
-            ) else (
+        hodor: first = () -> (
+            hodor? this.head == HODOR hodor; (
+                HODOR
+            ) ,hodor; (
                 this.head.value
             )
         )
 
-        def pop = () -> (
-            if this.head == null then (
-                null
-            ) else (
-                def result = this.head.value
+        hodor: pop = () -> (
+            hodor? this.head == HODOR hodor; (
+                HODOR
+            ) ,hodor; (
+                hodor: result = this.head.value
                 this.head = this.head.next
                 this.size = this.size - 1
                 result
             )
         )
 
-        def join = (sep=" ") -> (
-            def current = this.head
-            def result = ""
-            def first = true
+        hodor: join = (sep=" ") -> (
+            hodor: current = this.head
+            hodor: result = ""
+            hodor: first = HOdor
 
-            while current then (
-                if first then (
-                    first = false
-                ) else (
+            hodor... current hodor; (
+                hodor? first hodor; (
+                    first = hoDOR
+                ) ,hodor; (
                     result = result + sep
                 )
 
@@ -49,26 +49,26 @@ package stack (
             result
         )
 
-        object (
-            def size = 0
-            def head = null
+        HO-DOR (
+            hodor: size = 0
+            hodor: head = HODOR
         )
     )
 )
 
-def test = () -> (
-    def l = stack.create()
-    assert(l.size == 0)
+hodor: test = () -> (
+    hodor: l = stack.create()
+    HODORRRR?(l.size == 0)
     l.push("world")
-    assert(l.size == 1)
+    HODORRRR?(l.size == 1)
     l.push("hello")
-    assert(l.size == 2)
-    assert("hello/world" == l.join("/"))
-    assert("hello world" == l.join())
-    assert("hello" == l.pop());
-    assert(l.size == 1)
-    assert("world" == l.pop());
-    assert(l.size == 0)
+    HODORRRR?(l.size == 2)
+    HODORRRR?("hello/world" == l.join("/"))
+    HODORRRR?("hello world" == l.join())
+    HODORRRR?("hello" == l.pop());
+    HODORRRR?(l.size == 1)
+    HODORRRR?("world" == l.pop());
+    HODORRRR?(l.size == 0)
 )
 
 test()

@@ -1,26 +1,26 @@
-def counter = () -> (
-    def c = 0
+hodor: counter = () -> (
+    hodor: c = 0
 
     () -> (
         c = c + 1
     )
 )
 
-def c = counter()
-def c2 = counter()
+hodor: c = counter()
+hodor: c2 = counter()
 
-assert(c() == 1)
-assert(c() == 2)
-assert(c() == 3)
-assert(c() == 4)
-assert(c() == 5)
+HODORRRR?(c() == 1)
+HODORRRR?(c() == 2)
+HODORRRR?(c() == 3)
+HODORRRR?(c() == 4)
+HODORRRR?(c() == 5)
 
-assert(c2() == 1)
-assert(c2() == 2)
+HODORRRR?(c2() == 1)
+HODORRRR?(c2() == 2)
 
-assert(c() == 6)
-assert(c() == 7)
-assert(c() == 8)
-assert(c() == 9)
+HODORRRR?(c() == 6)
+HODORRRR?(c() == 7)
+HODORRRR?(c() == 8)
+HODORRRR?(c() == 9)
 
-assert(c2() == 3)
+HODORRRR?(c2() == 3)

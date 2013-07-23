@@ -1,31 +1,31 @@
 ;;(
-    A couple of mutually recursive functions.
-    This tests forward declarations.
+    Hodor hodor hodor, hodor hodor.
+    Hodor hodor !
 ;;)
 
-def fib = (n:int):int  -> (
-    if n < 2 then (
+hodor: fib = (n:int):int  -> (
+    hodor? n < 2 hodor; (
         1
-    ) else (
+    ) ,hodor; (
         fib2(n-1) + fib2(n-2)
     )
 )
 
-def fib2 = (n:int):int  -> (
-    if n < 2 then (
+hodor: fib2 = (n:int):int  -> (
+    hodor? n < 2 hodor; (
         1
-    ) else (
+    ) ,hodor; (
         fib(n-1) + fib(n-2)
     )
 )
 
-assert(fib(0) == 1)
-assert(fib(1) == 1)
-assert(fib(2) == 2)
-assert(fib(3) == 3)
-assert(fib(4) == 5)
-assert(fib(5) == 8)
-assert(fib(6) == 13)
-assert(fib(7) == 21)
-assert(fib(8) == 34)
+HODORRRR?(fib(0) == 1)
+HODORRRR?(fib(1) == 1)
+HODORRRR?(fib(2) == 2)
+HODORRRR?(fib(3) == 3)
+HODORRRR?(fib(4) == 5)
+HODORRRR?(fib(5) == 8)
+HODORRRR?(fib(6) == 13)
+HODORRRR?(fib(7) == 21)
+HODORRRR?(fib(8) == 34)
 

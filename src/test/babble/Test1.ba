@@ -1,122 +1,115 @@
-;; comments
+;; hodor...
 
 ;;(
-    multi-line
-    comments
+    hodor ho-
+    DOR !
 ;;)
 
-;; a package is just a namespace
-package test1 (
-    def add = (a, b) -> (    ;;
-        a + b                ;; function literal
+;; hodor hoDOR
+hoDOR: test1 (
+    hodor: add = (a, b) -> ( ;;
+        a + b                ;; hodor hodor
     )                        ;;
 
-    ;; optional types
-    def add2 = (a:int, b:int):int -> (
+    ;; hodor hodor, ho-dor.
+    hodor: add2 = (a:int, b:int):int -> (
         a + b
     )
 
-    ;; function as first-type objects
-    ;; closure support
-    def adder = (a:int):(b:int):int -> (
-        return (b:int):int -> (
+    ;; ho-dor
+    ;; ho-ho-dor !
+    hodor: adder = (a:int):(b:int):int -> (
+        hodor! (b:int):int -> (
             a + b
         )
     )
 
-    ;; loops
-    def fac2 = (n:int):int -> (
-        def result = 1
-        while n > 1 then (
+    ;; hodor....
+    hodor: fac2 = (n:int):int -> (
+        hodor: result = 1
+        hodor... n > 1 hodor; (
             ;; the semicolon is optional
             result = result * n ; n = n - 1
         )
-        return result
+        hodor! result
     )
 
-    ;; recursion
-    def fac = (n:int):int -> (
-        if n < 2 then (
+    ;; hodor.
+    hodor: fac = (n:int):int -> (
+        hodor? n < 2 hodor; (
             1
-         ) else (
+         ) ,hodor; (
             ;;(
-                recurse is a keyword evaluating
-                to the current function literal.
-                You could write n * fac(n - 1) here,
-                but for anonymous function literals,
-                recurse is handy.
+                hodor HOOOODOR !
             ;;)
 
-            n * recurse(n - 1)
+            n * HOOOODOR(n - 1)
          )
     )
 
-    ;; default values, including function literals
-    def apply = (a, f=(v) -> (v)) -> ( f(a) )
+    ;; hodor ho-dor ho. dor.
+    hodor: HO_DOR = (a, f=(v) -> (v)) -> ( f(a) )
 
-    ;; using function scopes as poor man's objects
-    ;; like in Javascript
-    def counter = () -> (
-        def c = 0
+    ;; ho-dor ? hodor !
+    hodor: counter = () -> (
+        hodor: c = 0
 
         () -> (
             c = c + 1
         )
     )
 
-    ;; object literals (class-less for the moment)
-    def counter2 = () -> (
-        return object (
-            def v = 0
-            def inc = () -> (
+    ;; hodor !
+    hodor: counter2 = () -> (
+        hodor! HO-DOR (
+            hodor: v = 0
+            hodor: inc = () -> (
                 v = v + 1
             )
         )
     )
 )
 
-def main = () -> (
-    def local = "world !"
+hodor: main = () -> (
+    hodor: local = "hodor !"
 
-    ;; println is a native function
-    println ("Hello, ", local)
+    ;; hodor
+    hodOOOR ("HODOR, ", local)
 
-    ;; positional parameters
-    println("0+1=", test1.add(0,1))
-    ;; named parameters
-    println("1+2=", test1.add(a:1,b:2))
-    ;; named parameters can have their order changed
-    println("2+3=", test1.add2(b:3,a:2))
+    ;; hodor, hodor, hodor !
+    hodOOOR("0+1=", test1.add(0,1))
+    ;; hodor !
+    hodOOOR("1+2=", test1.add(a:1,b:2))
+    ;; ho-dor, hodor.
+    hodOOOR("2+3=", test1.add2(b:3,a:2))
 
-    def result = test1.adder(2)(2)
+    hodor: result = test1.adder(2)(2)
 
-    return "ok:" + result + ":" + test1.fac(5) + ":" + test1.fac2(6)
+    hodor! "ok:" + result + ":" + test1.fac(5) + ":" + test1.fac2(6)
 )
 
-;; Assertions
-assert (1 < 2, "Something is wrong")
+;; HO-dor
+HODORRRR? (1 < 2, "Hodor hodor?")
 
-assert (test1.apply(1) == 1, "apply is broken")
-assert (test1.apply(1, (v) -> (v+1)) == 2, "apply is broken")
+HODORRRR? (test1.HO_DOR(1) == 1, "hodor hodor hodor !")
+HODORRRR? (test1.HO_DOR(1, (v) -> (v+1)) == 2, "hodor hodor hodor !")
 
-assert("ok:4:120:720" == main(), "Test failed")
+HODORRRR?("ok:4:120:720" == main(), "hodor, hodor hodor !")
 
-;; testing counter
-def c = test1.counter()
-assert(1 == c())
-def c2 = test1.counter()
-assert(2 == c())
-assert(1 == c2())
-assert(3 == c())
+;; hodor
+hodor: c = test1.counter()
+HODORRRR?(1 == c())
+hodor: c2 = test1.counter()
+HODORRRR?(2 == c())
+HODORRRR?(1 == c2())
+HODORRRR?(3 == c())
 
-;; testing counter2
+;; hodor hodor, hodor. HODOR !
 c = test1.counter2()
-assert(1 == c.inc())
-assert(2 == c.inc())
-assert(3 == c.inc())
+HODORRRR?(1 == c.inc())
+HODORRRR?(2 == c.inc())
+HODORRRR?(3 == c.inc())
 
-;; importing Java classes and using them in Babble
-def list = java.util.ArrayList()
-;; TODO : find proper methods
-;; list.add(1) ; list.add(2)
-assert(list.size() == 0)
+;; HO-DOR ! Ho-DOR !
+hodor: list = java.util.ArrayList()
+HODORRRR?(list.size() == 0)

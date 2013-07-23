@@ -1,17 +1,17 @@
 ;;(
-    Testing Java imports
+    Hodor Java HODOR !
 ;;)
 
-assert(java.lang <> null)
-assert(java.lang.Number <> null)
-assert(java.util.ArrayList <> null)
+HODORRRR?(java.lang <> HODOR)
+HODORRRR?(java.lang.Number <> HODOR)
+HODORRRR?(java.util.ArrayList <> HODOR)
 
-def list = java.util.ArrayList()
-assert(list.size() == 0)
+hodor: list = java.util.ArrayList()
+HODORRRR?(list.size() == 0)
 
 java.lang.System.currentTimeMillis()
 
-assert(java.sql.DriverManager.getDrivers() <> null)
+HODORRRR?(java.sql.DriverManager.getDrivers() <> HODOR)
 
-def org = import("org")
-def fac = org.babblelang.engine.BabbleScriptEngineFactory()
+hodor: org = import("org")
+hodor: fac = org.antlr.v4.runtime.atn.PredictionContextCache()
