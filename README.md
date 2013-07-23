@@ -37,7 +37,7 @@ hoDOR: test1 (
     hodor: fac2 = (n:int):int -> (
         hodor: result = 1
         hodor... n > 1 hodor; (
-            ;; the semicolon is optional
+            ;; hodor ; hodor hodor :)
             result = result * n ; n = n - 1
         )
         hodor! result
