@@ -1,10 +1,18 @@
 package org.babblelang.engine.optimizer;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.misc.NotNull;
 import org.antlr.v4.runtime.tree.ParseTree;
+import org.antlr.v4.runtime.tree.RuleNode;
 import org.babblelang.parser.BabbleBaseVisitor;
 
-public class OptimizerBase extends BabbleBaseVisitor<Object> {
+public class OptimizerBase extends BabbleBaseVisitor<RuleNode> {
+    @Override
+    public RuleNode visitChildren(@NotNull RuleNode node) {
+        super.visitChildren(node);
+        return node;
+    }
+
     protected static void remove(ParserRuleContext ctx1) {
         ctx1.getParent().children.remove(ctx1);
     }

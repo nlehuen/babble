@@ -27,7 +27,7 @@ public abstract class OptimizerTestBase {
         assertEquivalent(code1, code2, null);
     }
 
-    protected void assertEquivalent(String code1, String code2, BabbleBaseVisitor<Object> modifier) {
+    protected <T> void assertEquivalent(String code1, String code2, BabbleBaseVisitor<T> modifier) {
         BabbleParser.FileContext tree1 = parse(code1);
         BabbleParser.FileContext tree2 = parse(code2);
         if (modifier != null) {
