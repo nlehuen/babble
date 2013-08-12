@@ -12,7 +12,9 @@ public class OptimizerTestTest extends OptimizerTestBase {
         assertEquivalent("1 + 1", "1+1");
         assertEquivalent("0 + 1", "0+1");
         assertEquivalent("0 + 0", "1+2", new StupidOptimizer());
+        assertEquivalent("0 + 0 + 0 + 0", "0-0+0-0", new StupidOptimizer());
         assertEquivalent("\"coucou\" + 0", "\"coucou\"+2", new StupidOptimizer());
+        assertEquivalent("\"coucou\" + 0", "\"coucou\"-2", new StupidOptimizer());
     }
 
     @Test(expected = org.junit.ComparisonFailure.class)
