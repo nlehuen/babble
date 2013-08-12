@@ -29,7 +29,7 @@ public class BabbleCompiledScript extends CompiledScript {
 
         Interpreter interpreter = new Interpreter(namespace);
         try {
-            return interpreter.visit(file);
+            return interpreter.visitFile(file);
         } catch (Exception e) {
             throw new ScriptException(e.toString(), "<input>", interpreter.getLast().getStart().getLine());
         }
