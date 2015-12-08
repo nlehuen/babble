@@ -1,4 +1,4 @@
-The Babble Language [![build status](https://secure.travis-ci.org/nlehuen/babble.png)](http://travis-ci.org/nlehuen/babble)
+The Babble Language [![build status](https://secure.travis-ci.org/nlehuen/babble.png)](http://travis-ci.org/nlehuen/babble) [![Coverage Status](https://coveralls.io/repos/nlehuen/babble/badge.svg?branch=master&service=github)](https://coveralls.io/github/nlehuen/babble?branch=master)
 ===================
 
 Babble is a toy language running on top of the Java Virtual Machine (in its current implementation). Its objectives are :
