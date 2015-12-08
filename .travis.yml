@@ -1,5 +1,5 @@
 language: java
-script: mvn clean test jacoco:report coveralls:report
+script: mvn clean test cobertura:cobertura coveralls:report
 jdk:
   - oraclejdk8
   - oraclejdk7
