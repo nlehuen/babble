@@ -3,4 +3,4 @@ script: mvn clean test cobertura:cobertura coveralls:report
 jdk:
   - openjdk7
   - oraclejdk8
-  - oraclejdk9
+
