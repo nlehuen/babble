@@ -1,9 +1,6 @@
 package org.babblelang.engine;
 
-import org.antlr.v4.runtime.ANTLRInputStream;
-import org.antlr.v4.runtime.BailErrorStrategy;
-import org.antlr.v4.runtime.CharStream;
-import org.antlr.v4.runtime.CommonTokenStream;
+import org.antlr.v4.runtime.*;
 import org.babblelang.engine.impl.BabbleCompiledScript;
 import org.babblelang.engine.impl.Namespace;
 import org.babblelang.engine.impl.natives.AssertFunction;
@@ -58,7 +55,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     public CompiledScript compile(Reader script) throws ScriptException {
         try {
-            CharStream input = new ANTLRInputStream(script);
+            CharStream input = CharStreams.fromReader(script);
             BabbleLexer lexer = new BabbleLexer(input);
             CommonTokenStream tokenStream = new CommonTokenStream(lexer);
             BabbleParser parser = new BabbleParser(tokenStream);

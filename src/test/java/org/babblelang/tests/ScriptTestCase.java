@@ -1,9 +1,6 @@
 package org.babblelang.tests;
 
-import org.antlr.v4.runtime.ANTLRInputStream;
-import org.antlr.v4.runtime.BailErrorStrategy;
-import org.antlr.v4.runtime.CharStream;
-import org.antlr.v4.runtime.CommonTokenStream;
+import org.antlr.v4.runtime.*;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.junit.Assert;
@@ -12,7 +9,6 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 
 import java.io.File;
-import java.io.FileReader;
 import java.util.ArrayList;
 import java.util.Collection;
 
@@ -32,8 +28,11 @@ public class ScriptTestCase extends BabbleTestBase {
                 result.add(new Object[]{base.getPath().replace(File.separatorChar, '/')});
             }
         } else {
-            for (File file : base.listFiles()) {
-                findBaFiles(file, result);
+            File[] files = base.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    findBaFiles(file, result);
+                }
             }
         }
         return result;
@@ -47,7 +46,7 @@ public class ScriptTestCase extends BabbleTestBase {
 
     @Test
     public void parse() throws Exception {
-        CharStream input = new ANTLRInputStream(new FileReader(file));
+        CharStream input = CharStreams.fromFileName(file);
         BabbleLexer lexer = new BabbleLexer(input);
         CommonTokenStream tokenStream = new CommonTokenStream(lexer);
         BabbleParser parser = new BabbleParser(tokenStream);

@@ -1,6 +1,5 @@
 package org.babblelang.tests;
 
-import org.antlr.v4.runtime.misc.NotNull;
 import org.antlr.v4.runtime.tree.RuleNode;
 import org.babblelang.engine.optimizer.OptimizerBase;
 import org.babblelang.parser.BabbleLexer;
@@ -14,7 +13,7 @@ public class SimpleBinaryOpsOptimizer extends OptimizerBase {
 
 
     @Override
-    public RuleNode visitBinaryOp(@NotNull BabbleParser.BinaryOpContext ctx) {
+    public RuleNode visitBinaryOp(BabbleParser.BinaryOpContext ctx) {
         RuleNode result = ctx;
         ctx.left = (BabbleParser.ExpressionContext) visit(ctx.left);
         ctx.right = (BabbleParser.ExpressionContext) visit(ctx.right);

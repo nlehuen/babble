@@ -1,14 +1,13 @@
 package org.babblelang.engine.optimizer;
 
 import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.misc.NotNull;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.RuleNode;
 import org.babblelang.parser.BabbleBaseVisitor;
 
 public class OptimizerBase extends BabbleBaseVisitor<RuleNode> {
     @Override
-    public RuleNode visitChildren(@NotNull RuleNode node) {
+    public RuleNode visitChildren(RuleNode node) {
         super.visitChildren(node);
         return node;
     }

@@ -63,6 +63,7 @@
                     <maxmem>256m</maxmem>
                     <!-- aggregated reports for multi-module projects -->
                     <aggregate>true</aggregate>
+                    <check>true</check>
                 </configuration>
             </plugin>
             <plugin>
