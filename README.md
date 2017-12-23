@@ -9,8 +9,6 @@ Babble is a toy language running on top of the Java Virtual Machine (in its curr
 What does it look like ?
 -------------------------
 
-English keywords:
-
 ```
 ;; comments
 
@@ -128,92 +126,6 @@ def list = java.util.ArrayList()
 assert(list.size() == 0)
 ```
 
-French keywords :
-
-```
-paquet test1 (
-    soit additionneur = (a:int):(b:int):int -> (
-        retourne (b:int):int -> (
-            retourne a + b
-        )
-    )
-
-    soit additionne = (a:int, b:int):int -> (
-        retourne a + b
-    )
-
-    soit factorielle = (n:int):int -> (
-        si n < 2 alors (
-            retourne 1
-        ) sinon (
-            retourne n * recurrence(n - 1)
-        )
-    )
-
-    soit factorielle2 = (n:int):int -> (
-        soit resultat = 1
-        tant que n > 1 alors (
-            resultat = resultat * n ; n = n - 1
-        )
-        resultat
-    )
-
-    soit applique = (a, f=(v) -> (v)) -> ( f(a) )
-
-    def compteur = () -> (
-        def c = 0
-
-        () -> (
-            c = c + 1
-        )
-    )
-
-    def compteur2 = () -> (
-        object (
-            def v = 0
-            def inc = () -> (
-                v = v + 1
-            )
-        )
-    )
-)
-
-soit fonction_principale = () -> (
-    (
-        soit qui = "tout le monde !"
-        afficherc ("Bonjour ", qui)
-    )
-
-    afficherc ("1+2=", test1.additionne(a:1,b:2))
-
-    soit ajoute2 = test1.additionneur(2)
-    soit resultat = ajoute2(2)
-
-    retourne "ok:" + resultat + ":" + test1.factorielle(5) + ":" + test1.factorielle2(6)
-)
-
-suppose (1<2, "Quelque chose ne va pas")
-
-suppose (test1.applique(1) == 1, "applique ne fonctionne pas")
-suppose (test1.applique(1, (v) -> (v+1)) == 2, "applique ne fonctionne pas")
-
-suppose (fonction_principale() == "ok:4:120:720", "Test echoué")
-
-def c = test1.compteur()
-suppose(c() == 1)
-suppose(c() == 2)
-suppose(c() == 3)
-
-def c2 = test1.compteur2()
-suppose(c2.inc() == 1)
-suppose(c2.inc() == 2)
-suppose(c2.inc() == 3)
-
-def liste = java.util.ArrayList()
-suppose(liste.size() == 0)
-```
-
-
 Implemented Features
 --------------------
 
@@ -222,7 +134,6 @@ Language features :
 - [x] no C-style brackets ! Those are nasty to type on most keyboards, especially on Apple keyboards.
 - [x] in fact, there is only one type of brackets in Babble : parentheses `( )`. The grammar is simple enough, and the parser clever enough (thanks to [ANTLR4](http://www.antlr.org/wiki/display/ANTLR4/Home)) to get away with it.
 - [x] no mandatory semicolons, even for multiple statements on the same line. They are supported to facilitate code reading, though (just like punctuation in human languages !).
-- [x] dual English / French keywords, for easier teaching to french-speaking children (see the same script in [English](src/test/babble/Test1.ba) and [French](src/test/babble/Test1-fr.ba)).
 - [x] functions, supporting recursion and poor man's closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] anonymous function literals.
