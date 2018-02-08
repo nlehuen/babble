@@ -8,12 +8,12 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class JavaObject implements Scope {
-    private final JavaClass _class;
+    private final JavaClass clazz;
     private final Object value;
     private final Map<String, Slot> members;
 
-    public JavaObject(JavaClass _class, Object value) {
-        this._class = _class;
+    public JavaObject(JavaClass clazz, Object value) {
+        this.clazz = clazz;
         this.value = value;
         members = new HashMap<String, Slot>();
     }
@@ -23,7 +23,7 @@ public class JavaObject implements Scope {
     }
 
     public boolean isDeclared(String key) {
-        return _class.isDeclared(key);
+        return clazz.isDeclared(key);
     }
 
     public Slot get(String key) {
@@ -33,7 +33,7 @@ public class JavaObject implements Scope {
             slot = new Slot(key, true);
             members.put(key, slot);
 
-            JavaMethod result = (JavaMethod) _class.get(key).get();
+            JavaMethod result = (JavaMethod) clazz.get(key).get();
             slot.set(new BoundJavaMethod(result, value));
         }
 

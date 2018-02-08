@@ -11,17 +11,17 @@ import java.util.HashMap;
 import java.util.Map;
 
 class JavaClass implements Scope, Callable {
-    private final Class _class;
+    private final Class clazz;
     private final Map<String, Slot> members = new HashMap<String, Slot>();
 
-    JavaClass(Class _class) {
-        this._class = _class;
+    JavaClass(Class clazz) {
+        this.clazz = clazz;
     }
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace namespace = parent.enter(null);
         try {
-            Constructor constructor = _class.getConstructor(parameters.typesArray());
+            Constructor constructor = clazz.getConstructor(parameters.typesArray());
             namespace.define("constructor", true).set(constructor);
             namespace.define("parameters", true).set(parameters);
             return namespace;
@@ -55,7 +55,7 @@ class JavaClass implements Scope, Callable {
             result = new Slot(key, true);
             members.put(key, result);
 
-            for (Class _class2 : _class.getClasses()) {
+            for (Class _class2 : clazz.getClasses()) {
                 if (Modifier.isPublic(_class2.getModifiers())) {
                     result.set(new JavaClass(_class2));
                     break;
@@ -63,16 +63,16 @@ class JavaClass implements Scope, Callable {
             }
 
             if (!result.isSet()) {
-                for (Method method : _class.getMethods()) {
+                for (Method method : clazz.getMethods()) {
                     if (Modifier.isPublic(method.getModifiers())) {
-                        result.set(new JavaMethod(_class, key));
+                        result.set(new JavaMethod(clazz, key));
                         break;
                     }
                 }
             }
 
             if (!result.isSet()) {
-                throw new BabbleException("No such name in " + _class.getCanonicalName() + " : " + key);
+                throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + key);
             }
         }
 

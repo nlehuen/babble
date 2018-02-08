@@ -8,16 +8,16 @@ import org.babblelang.parser.BabbleParser;
 
 public class BoundJavaMethod implements Callable {
     private final JavaMethod method;
-    private final Object _this;
+    private final Object thiz;
 
-    public BoundJavaMethod(JavaMethod method, Object _this) {
+    public BoundJavaMethod(JavaMethod method, Object thiz) {
         this.method = method;
-        this._this = _this;
+        this.thiz = thiz;
     }
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace result = method.bindParameters(interpreter, callSite, parent, parameters);
-        result.get("this").set(_this);
+        result.get("this").set(thiz);
         return result;
     }
 

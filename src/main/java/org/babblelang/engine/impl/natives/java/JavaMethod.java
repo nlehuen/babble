@@ -10,11 +10,11 @@ import org.babblelang.parser.BabbleParser;
 import java.lang.reflect.Method;
 
 class JavaMethod implements Callable {
-    private final Class _class;
+    private final Class clazz;
     private final String name;
 
-    public JavaMethod(Class _class, String name) {
-        this._class = _class;
+    public JavaMethod(Class clazz, String name) {
+        this.clazz = clazz;
         this.name = name;
     }
 
@@ -22,10 +22,10 @@ class JavaMethod implements Callable {
         Namespace namespace = parent.enter(null);
 
         try {
-            Method method = _class.getMethod(name, parameters.typesArray());
+            Method method = clazz.getMethod(name, parameters.typesArray());
             namespace.define("method", true).set(method);
             namespace.define("parameters", true).set(parameters);
-            namespace.define("this", false).set(_class);
+            namespace.define("this", false).set(clazz);
         } catch (NoSuchMethodException nsme) {
             throw new BabbleException(nsme);
         }
