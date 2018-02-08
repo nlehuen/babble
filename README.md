@@ -142,7 +142,7 @@ Language features :
 - [x] basic types : boolean, int, double, functions.
 - [x] object literals & namespace
 - [x] optional type declaration for variables and parameters, not enforced (for documentation only).
-- [x] "native" functions : `print`/`println` (or `affiche`/`afficherc` in French !), `assert` (or `suppose`).
+- [x] "native" functions : `print`/`println`, `assert` (or `suppose`).
 - [x] directly use Java classes from within Babble.
 
 Implementation features :
