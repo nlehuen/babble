@@ -1,7 +1,9 @@
 language: java
+addons:
+  sonarcloud:
+    organization: "nlehuen-github"
 script:
-  - mvn package
-  - sonar-scanner
+  - mvn clean org.jacoco:jacoco-maven-plugin:prepare-agent package sonar:sonar
 jdk:
   - openjdk7
   - oraclejdk8
