@@ -22,7 +22,7 @@ public class JavaPackage implements Scope {
         return get(key) != null;
     }
 
-    public Slot define(String key, boolean _final) {
+    public Slot define(String key, boolean isFinal) {
         throw new BabbleException("Cannot define anything in a Java package");
     }
 

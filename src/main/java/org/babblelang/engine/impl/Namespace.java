@@ -41,11 +41,11 @@ public class Namespace implements Scope {
         return parent;
     }
 
-    public Slot define(String key, boolean _final) {
+    public Slot define(String key, boolean isFinal) {
         if (locals.containsKey(key)) {
             throw new BabbleException("Name already defined : " + key);
         }
-        Slot slot = new Slot(key, _final);
+        Slot slot = new Slot(key, isFinal);
         locals.put(key, slot);
         return slot;
     }

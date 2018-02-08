@@ -18,7 +18,7 @@ public class JavaObject implements Scope {
         members = new HashMap<String, Slot>();
     }
 
-    public Slot define(String key, boolean _final) {
+    public Slot define(String key, boolean isFinal) {
         throw new BabbleException("Cannot define anything in a Java instance");
     }
 
