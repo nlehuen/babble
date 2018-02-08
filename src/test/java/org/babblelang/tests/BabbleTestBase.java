@@ -11,17 +11,17 @@ import java.io.FileReader;
 
 @RunWith(JUnit4.class)
 public abstract class BabbleTestBase {
-    protected Bindings buildBindings() {
+    private Bindings buildBindings() {
         Bindings b = BabbleScriptEngineFactory.INSTANCE.getScriptEngine().createBindings();
         b.put("assert", new AssertFunction());
         return b;
     }
 
-    protected Object interpretFile(String path) throws FileNotFoundException, ScriptException {
-        return BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(new FileReader(path), buildBindings());
+    void interpretFile(String path) throws FileNotFoundException, ScriptException {
+        BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(new FileReader(path), buildBindings());
     }
 
-    protected Object interpret(String script) throws ScriptException {
+    Object interpret(String script) throws ScriptException {
         return BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(script, buildBindings());
     }
 }

@@ -10,7 +10,7 @@ import org.babblelang.parser.BabbleParser;
 /**
  * Replaces all integers by 0, and minus operators by plus.
  */
-public class StupidOptimizer extends OptimizerBase {
+class StupidOptimizer extends OptimizerBase {
     @Override
     public RuleNode visitInteger(BabbleParser.IntegerContext ctx) {
         ctx.children.set(0, new TerminalNodeImpl(new CommonToken(BabbleLexer.INT, "0")));

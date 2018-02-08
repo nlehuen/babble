@@ -37,7 +37,7 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
     }
 
     @Test
-    public void testWrongTypeAdd() throws Exception {
+    public void testWrongTypeAdd() {
         try {
             Assert.assertEquals(null, interpret("  12 + \"to\" + \"to\" "));
             Assert.fail("Should report type error");

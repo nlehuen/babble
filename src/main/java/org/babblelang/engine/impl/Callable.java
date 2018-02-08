@@ -11,7 +11,7 @@ public interface Callable {
     Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope);
 
     class Parameters extends LinkedHashMap<String, Object> {
-        public void bind(Interpreter interpreter, BabbleParser.ParametersDeclarationContext parametersDeclarationContext, Scope scope) {
+        void bind(Interpreter interpreter, BabbleParser.ParametersDeclarationContext parametersDeclarationContext, Scope scope) {
             int count = 0;
             for (BabbleParser.ParameterDeclarationContext parameter : parametersDeclarationContext.parameterDeclaration()) {
                 String pos = "$" + (count++);

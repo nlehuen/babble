@@ -9,7 +9,7 @@ import org.babblelang.parser.BabbleParser;
  * Very basic optimizer, just to check whether tree manipulations are OK with ANTLR 4.
  * WARNING ! This is a very stupid optimizer, since it doesn't check types.
  */
-public class SimpleBinaryOpsOptimizer extends OptimizerBase {
+class SimpleBinaryOpsOptimizer extends OptimizerBase {
 
 
     @Override

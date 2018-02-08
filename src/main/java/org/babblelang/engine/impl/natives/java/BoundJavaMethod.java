@@ -10,7 +10,7 @@ public class BoundJavaMethod implements Callable {
     private final JavaMethod method;
     private final Object thiz;
 
-    public BoundJavaMethod(JavaMethod method, Object thiz) {
+    BoundJavaMethod(JavaMethod method, Object thiz) {
         this.method = method;
         this.thiz = thiz;
     }

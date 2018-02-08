@@ -13,7 +13,7 @@ class JavaMethod implements Callable {
     private final Class clazz;
     private final String name;
 
-    public JavaMethod(Class clazz, String name) {
+    JavaMethod(Class clazz, String name) {
         this.clazz = clazz;
         this.name = name;
     }

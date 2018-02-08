@@ -14,7 +14,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         this.namespace = root;
     }
 
-    protected ParserRuleContext getLast() {
+    ParserRuleContext getLast() {
         return last;
     }
 
@@ -206,7 +206,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return !truth(visit(ctx.expression()));
     }
 
-    public boolean truth(Object value) {
+    private boolean truth(Object value) {
         if (value instanceof Boolean) {
             return (Boolean) value;
         } else if (value instanceof Number) {

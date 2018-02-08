@@ -38,7 +38,7 @@ public class ScriptTestCase extends BabbleTestBase {
         return result;
     }
 
-    private String file;
+    private final String file;
 
     public ScriptTestCase(String file) {
         this.file = file;
@@ -51,7 +51,7 @@ public class ScriptTestCase extends BabbleTestBase {
         CommonTokenStream tokenStream = new CommonTokenStream(lexer);
         BabbleParser parser = new BabbleParser(tokenStream);
         parser.setErrorHandler(new BailErrorStrategy());
-        BabbleParser.FileContext file = parser.file();
+        parser.file();
     }
 
     @Test

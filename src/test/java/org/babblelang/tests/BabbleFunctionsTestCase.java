@@ -32,7 +32,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     }
 
     @Test
-    public void testCallableError() throws Exception {
+    public void testCallableError() {
         try {
             Assert.assertEquals(null, interpret("def add = (a, b) -> ( a + b ) ; add(a:\"a\",b:\"b\")(\"foobar\")"));
             Assert.fail("Should report not callable expression");

@@ -12,7 +12,7 @@ public class JavaObject implements Scope {
     private final Object value;
     private final Map<String, Slot> members;
 
-    public JavaObject(JavaClass clazz, Object value) {
+    JavaObject(JavaClass clazz, Object value) {
         this.clazz = clazz;
         this.value = value;
         members = new HashMap<String, Slot>();
