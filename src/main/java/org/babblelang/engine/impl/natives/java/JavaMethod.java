@@ -22,6 +22,7 @@ class JavaMethod implements Callable {
         Namespace namespace = parent.enter(null);
 
         try {
+            //noinspection unchecked
             Method method = clazz.getMethod(name, parameters.typesArray());
             namespace.define("method", true).set(method);
             namespace.define("parameters", true).set(parameters);

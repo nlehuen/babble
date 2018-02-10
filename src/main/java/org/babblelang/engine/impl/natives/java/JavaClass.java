@@ -10,9 +10,9 @@ import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
 
-class JavaClass implements Scope, Callable {
+class JavaClass implements Scope<Callable>, Callable<JavaObject> {
     private final Class clazz;
-    private final Map<String, Slot> members = new HashMap<String, Slot>();
+    private final Map<String, Slot<Callable>> members = new HashMap<String, Slot<Callable>>();
 
     JavaClass(Class clazz) {
         this.clazz = clazz;
@@ -21,7 +21,8 @@ class JavaClass implements Scope, Callable {
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace namespace = parent.enter(null);
         try {
-            Constructor constructor = clazz.getConstructor(parameters.typesArray());
+            //noinspection unchecked
+            Constructor<Object> constructor = clazz.getConstructor(parameters.typesArray());
             namespace.define("constructor", true).set(constructor);
             namespace.define("parameters", true).set(parameters);
             return namespace;
@@ -30,7 +31,7 @@ class JavaClass implements Scope, Callable {
         }
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public JavaObject call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
         Constructor constructor = (Constructor) scope.get("constructor").get();
         Parameters parameters = (Parameters) scope.get("parameters").get();
         try {
@@ -40,7 +41,7 @@ class JavaClass implements Scope, Callable {
         }
     }
 
-    public Slot define(String key, boolean isFinal) {
+    public Slot<Callable> define(String key, boolean isFinal) {
         throw new BabbleException("Cannot define anything in a Java class");
     }
 
@@ -48,11 +49,11 @@ class JavaClass implements Scope, Callable {
         return get(key) != null;
     }
 
-    public Slot get(String key) {
-        Slot result = members.get(key);
+    public Slot<Callable> get(String key) {
+        Slot<Callable> result = members.get(key);
 
         if (result == null) {
-            result = new Slot(key, true);
+            result = new Slot<Callable>(key, true);
             members.put(key, result);
 
             for (Class memberClass : clazz.getClasses()) {

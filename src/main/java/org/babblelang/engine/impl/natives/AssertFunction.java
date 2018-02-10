@@ -9,7 +9,7 @@ import org.babblelang.parser.BabbleParser;
 
 import java.util.Iterator;
 
-public class AssertFunction implements Callable {
+public class AssertFunction implements Callable<Boolean> {
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace namespace = parent.enter(null);
         assert parameters.size() > 0 : "assert() called without parameters";
@@ -28,7 +28,7 @@ public class AssertFunction implements Callable {
         return namespace;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public Boolean call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
         String message = (String) scope.get("message").get();
         boolean test = (Boolean) scope.get("test").get();
         if (message == null) {

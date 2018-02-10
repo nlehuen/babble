@@ -1,9 +1,9 @@
 package org.babblelang.engine.impl;
 
-public interface Scope {
+public interface Scope<T> {
     boolean isDeclared(String key);
 
-    Slot define(String key, boolean isFinal);
+    Slot<T> define(String key, boolean isFinal);
 
-    Slot get(String key);
+    Slot<T> get(String key);
 }

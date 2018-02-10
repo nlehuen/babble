@@ -7,18 +7,17 @@ import org.babblelang.engine.impl.Slot;
 import java.util.HashMap;
 import java.util.Map;
 
-public class JavaObject implements Scope {
+public class JavaObject implements Scope<BoundJavaMethod> {
     private final JavaClass clazz;
     private final Object value;
-    private final Map<String, Slot> members;
+    private final Map<String, Slot<BoundJavaMethod>> members = new HashMap<String, Slot<BoundJavaMethod>>();
 
     JavaObject(JavaClass clazz, Object value) {
         this.clazz = clazz;
         this.value = value;
-        members = new HashMap<String, Slot>();
     }
 
-    public Slot define(String key, boolean isFinal) {
+    public Slot<BoundJavaMethod> define(String key, boolean isFinal) {
         throw new BabbleException("Cannot define anything in a Java instance");
     }
 
@@ -26,11 +25,11 @@ public class JavaObject implements Scope {
         return clazz.isDeclared(key);
     }
 
-    public Slot get(String key) {
-        Slot slot = members.get(key);
+    public Slot<BoundJavaMethod> get(String key) {
+        Slot<BoundJavaMethod> slot = members.get(key);
 
         if (slot == null) {
-            slot = new Slot(key, true);
+            slot = new Slot<BoundJavaMethod>(key, true);
             members.put(key, slot);
 
             JavaMethod result = (JavaMethod) clazz.get(key).get();

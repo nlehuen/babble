@@ -9,7 +9,7 @@ import org.babblelang.parser.BabbleParser;
 import java.util.HashMap;
 import java.util.Map;
 
-public class ImportFunction implements Callable {
+public class ImportFunction implements Callable<JavaPackage> {
     private final Map<String, JavaPackage> packages = new HashMap<String, JavaPackage>();
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
@@ -19,7 +19,7 @@ public class ImportFunction implements Callable {
         return namespace;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public JavaPackage call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
         String name = (String) scope.get("name").get();
         return getPackage(name);
     }

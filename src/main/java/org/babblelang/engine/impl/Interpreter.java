@@ -133,13 +133,16 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 }
 
             case BabbleLexer.LT:
+                //noinspection unchecked
                 return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) < 0;
 
             case BabbleLexer.LTE:
+                //noinspection unchecked
                 return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) <= 0;
 
             case BabbleLexer.EQ:
                 if (a instanceof Comparable) {
+                    //noinspection unchecked
                     return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) == 0;
                 } else {
                     return a == b;
@@ -147,15 +150,18 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
             case BabbleLexer.NEQ:
                 if (a instanceof Comparable) {
+                    //noinspection unchecked
                     return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) != 0;
                 } else {
                     return a != b;
                 }
 
             case BabbleLexer.GTE:
+                //noinspection unchecked
                 return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) >= 0;
 
             case BabbleLexer.GT:
+                //noinspection unchecked
                 return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) > 0;
 
             default:
@@ -245,9 +251,14 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         last = ctx;
-        Scope scope = this.namespace;
+        Scope<Object> scope = this.namespace;
         if (ctx.namespace != null) {
-            scope = (Scope) visit(ctx.namespace);
+            try {
+                //noinspection unchecked
+                scope = (Scope<Object>) visit(ctx.namespace);
+            } catch (ClassCastException cce) {
+                throw new BabbleException("Not an assignable scope : " + ctx.namespace.getText());
+            }
         }
         last = ctx;
         Object value = visit(ctx.value);

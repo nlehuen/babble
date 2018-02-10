@@ -5,13 +5,13 @@ import org.babblelang.parser.BabbleParser;
 
 import java.util.LinkedHashMap;
 
-public interface Callable {
+public interface Callable<T> {
     Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters);
 
-    Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope);
+    T call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope);
 
     class Parameters extends LinkedHashMap<String, Object> {
-        void bind(Interpreter interpreter, BabbleParser.ParametersDeclarationContext parametersDeclarationContext, Scope scope) {
+        void bind(Interpreter interpreter, BabbleParser.ParametersDeclarationContext parametersDeclarationContext, Scope<Object> scope) {
             int count = 0;
             for (BabbleParser.ParameterDeclarationContext parameter : parametersDeclarationContext.parameterDeclaration()) {
                 String pos = "$" + (count++);

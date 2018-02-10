@@ -5,9 +5,9 @@ import org.babblelang.engine.BabbleException;
 import java.util.HashMap;
 import java.util.Map;
 
-public class Namespace implements Scope {
+public class Namespace implements Scope<Object> {
     private final Namespace parent;
-    final Map<String, Slot> locals = new HashMap<String, Slot>();
+    final Map<String, Slot<Object>> locals = new HashMap<String, Slot<Object>>();
 
     public Namespace() {
         this.parent = null;
@@ -20,7 +20,7 @@ public class Namespace implements Scope {
     public Namespace enter(String name) {
         Namespace newNamespace;
         if (name != null) {
-            Slot slot = locals.get(name);
+            Slot<Object> slot = locals.get(name);
             if (slot != null) {
                 newNamespace = (Namespace) slot.get();
             } else {
@@ -41,11 +41,11 @@ public class Namespace implements Scope {
         return parent;
     }
 
-    public Slot define(String key, boolean isFinal) {
+    public Slot<Object> define(String key, boolean isFinal) {
         if (locals.containsKey(key)) {
             throw new BabbleException("Name already defined : " + key);
         }
-        Slot slot = new Slot(key, isFinal);
+        Slot<Object> slot = new Slot<Object>(key, isFinal);
         locals.put(key, slot);
         return slot;
     }
@@ -62,7 +62,7 @@ public class Namespace implements Scope {
         return false;
     }
 
-    public Slot get(String key) {
+    public Slot<Object> get(String key) {
         Namespace current = this;
         while (current != null) {
             if (current.locals.containsKey(key)) {

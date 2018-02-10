@@ -1,13 +1,13 @@
 package org.babblelang.engine.impl;
 
 public class BabbleObject extends Namespace {
-    public BabbleObject(Namespace parent) {
+    BabbleObject(Namespace parent) {
         super(parent);
     }
 
     @Override
-    public Slot get(String key) {
-        Slot result = super.get(key);
+    public Slot<Object> get(String key) {
+        Slot<Object> result = super.get(key);
         Object value = result.get();
         if (!locals.containsKey(key) && value instanceof Function) {
             Function function = (Function) value;
