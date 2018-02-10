@@ -303,7 +303,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             throw new BabbleException(ctx.expression().getText() + " is not callable");
         }
         Callable callable = (Callable) expr;
-        Callable.Parameters params = (Callable.Parameters) visit(ctx.callParameters());
+        Parameters params = (Parameters) visit(ctx.callParameters());
         last = ctx;
         Namespace beforeCall = namespace;
         namespace = callable.bindParameters(this, ctx, namespace, params);
@@ -316,7 +316,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitCallParameters(BabbleParser.CallParametersContext ctx) {
         last = ctx;
         int count = 0;
-        Callable.Parameters params = new Callable.Parameters();
+        Parameters params = new Parameters();
         for (BabbleParser.CallParameterContext cp : ctx.callParameter()) {
             String name = "$" + (count++);
             if (cp.ID() != null) {

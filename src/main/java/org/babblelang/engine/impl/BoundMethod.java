@@ -2,11 +2,11 @@ package org.babblelang.engine.impl;
 
 import org.babblelang.parser.BabbleParser;
 
-public class BoundMethod implements Callable {
-    private final Function function;
+public class BoundMethod<R> implements Callable<R> {
+    private final Function<R> function;
     private final BabbleObject object;
 
-    public BoundMethod(Function function, BabbleObject babbleObject) {
+    public BoundMethod(Function<R> function, BabbleObject babbleObject) {
         this.function = function;
         this.object = babbleObject;
     }
@@ -17,7 +17,7 @@ public class BoundMethod implements Callable {
         return result;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public R call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
         return function.call(interpreter, callSite, scope);
     }
 }

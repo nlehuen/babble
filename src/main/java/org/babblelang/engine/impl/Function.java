@@ -2,7 +2,7 @@ package org.babblelang.engine.impl;
 
 import org.babblelang.parser.BabbleParser;
 
-public class Function implements Callable {
+public class Function<R> implements Callable<R> {
     private final BabbleParser.FunctionLiteralContext definition;
     private final Namespace closure;
 
@@ -18,7 +18,7 @@ public class Function implements Callable {
         return namespace;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
-        return interpreter.visit(definition.functionBlock);
+    public R call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+        return (R) interpreter.visit(definition.functionBlock);
     }
 }
