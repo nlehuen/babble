@@ -25,7 +25,6 @@ public class ImportFunction implements Callable<JavaPackage> {
     }
 
     public JavaPackage getPackage(String name) {
-        JavaPackage result = packages.computeIfAbsent(name, name -> new JavaPackage(this, name));
-        return result;
+        return packages.computeIfAbsent(name, n -> new JavaPackage(this, n));
     }
 }
