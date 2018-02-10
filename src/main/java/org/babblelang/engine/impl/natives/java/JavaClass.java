@@ -12,7 +12,7 @@ import java.util.Map;
 
 class JavaClass implements Scope<Callable>, Callable<JavaObject> {
     private final Class clazz;
-    private final Map<String, Slot<Callable>> members = new HashMap<String, Slot<Callable>>();
+    private final Map<String, Slot<Callable>> members = new HashMap<>();
 
     JavaClass(Class clazz) {
         this.clazz = clazz;
@@ -53,7 +53,7 @@ class JavaClass implements Scope<Callable>, Callable<JavaObject> {
         Slot<Callable> result = members.get(key);
 
         if (result == null) {
-            result = new Slot<Callable>(key, true);
+            result = new Slot<>(key, true);
             members.put(key, result);
 
             for (Class memberClass : clazz.getClasses()) {

@@ -8,7 +8,7 @@ import java.util.LinkedHashMap;
 public interface Callable<T> {
     Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters);
 
-    T call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope);
+    T call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope);
 
     class Parameters extends LinkedHashMap<String, Object> {
         void bind(Interpreter interpreter, BabbleParser.ParametersDeclarationContext parametersDeclarationContext, Scope<Object> scope) {

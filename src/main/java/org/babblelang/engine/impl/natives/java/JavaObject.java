@@ -10,7 +10,7 @@ import java.util.Map;
 public class JavaObject implements Scope<BoundJavaMethod> {
     private final JavaClass clazz;
     private final Object value;
-    private final Map<String, Slot<BoundJavaMethod>> members = new HashMap<String, Slot<BoundJavaMethod>>();
+    private final Map<String, Slot<BoundJavaMethod>> members = new HashMap<>();
 
     JavaObject(JavaClass clazz, Object value) {
         this.clazz = clazz;
@@ -29,7 +29,7 @@ public class JavaObject implements Scope<BoundJavaMethod> {
         Slot<BoundJavaMethod> slot = members.get(key);
 
         if (slot == null) {
-            slot = new Slot<BoundJavaMethod>(key, true);
+            slot = new Slot<>(key, true);
             members.put(key, slot);
 
             JavaMethod result = (JavaMethod) clazz.get(key).get();

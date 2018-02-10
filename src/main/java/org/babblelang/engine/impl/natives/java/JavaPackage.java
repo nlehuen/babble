@@ -10,7 +10,7 @@ import java.util.Map;
 public class JavaPackage implements Scope<Scope> {
     private final ImportFunction importer;
     private final String name;
-    private final Map<String, Slot<Scope>> locals = new HashMap<String, Slot<Scope>>();
+    private final Map<String, Slot<Scope>> locals = new HashMap<>();
 
     JavaPackage(ImportFunction importer, String name) {
         this.importer = importer;
@@ -29,7 +29,7 @@ public class JavaPackage implements Scope<Scope> {
         Slot<Scope> result = locals.get(key);
 
         if (result == null) {
-            result = new Slot<Scope>(key, true);
+            result = new Slot<>(key, true);
             locals.put(name, result);
             String name2 = name + '.' + key;
             Scope value;

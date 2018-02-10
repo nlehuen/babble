@@ -1,9 +1,6 @@
 package org.babblelang.engine;
 
 public class BabbleException extends RuntimeException {
-    public BabbleException() {
-        super();
-    }
 
     public BabbleException(String message) {
         super(message);

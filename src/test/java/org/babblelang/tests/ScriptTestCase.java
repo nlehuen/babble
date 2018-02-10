@@ -1,6 +1,9 @@
 package org.babblelang.tests;
 
-import org.antlr.v4.runtime.*;
+import org.antlr.v4.runtime.BailErrorStrategy;
+import org.antlr.v4.runtime.CharStream;
+import org.antlr.v4.runtime.CharStreams;
+import org.antlr.v4.runtime.CommonTokenStream;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.junit.Assert;
@@ -19,7 +22,7 @@ public class ScriptTestCase extends BabbleTestBase {
     public static Collection<Object[]> data() {
         File file = new File("src/test/babble");
         Assert.assertTrue(file.isDirectory());
-        return findBaFiles(file, new ArrayList<Object[]>());
+        return findBaFiles(file, new ArrayList<>());
     }
 
     private static Collection<Object[]> findBaFiles(File base, ArrayList<Object[]> result) {

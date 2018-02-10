@@ -6,7 +6,7 @@ import org.babblelang.parser.BabbleParser;
 import org.junit.Assert;
 
 public class AssertFunction extends org.babblelang.engine.impl.natives.AssertFunction {
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public Boolean call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
         String message = (String) scope.get("message").get();
         boolean test = (Boolean) scope.get("test").get();
         if (message == null) {

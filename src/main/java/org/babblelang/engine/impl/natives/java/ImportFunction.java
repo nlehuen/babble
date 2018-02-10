@@ -10,7 +10,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class ImportFunction implements Callable<JavaPackage> {
-    private final Map<String, JavaPackage> packages = new HashMap<String, JavaPackage>();
+    private final Map<String, JavaPackage> packages = new HashMap<>();
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace namespace = parent.enter(null);
@@ -25,11 +25,7 @@ public class ImportFunction implements Callable<JavaPackage> {
     }
 
     public JavaPackage getPackage(String name) {
-        JavaPackage result = packages.get(name);
-        if (result == null) {
-            result = new JavaPackage(this, name);
-            packages.put(name, result);
-        }
+        JavaPackage result = packages.computeIfAbsent(name, name -> new JavaPackage(this, name));
         return result;
     }
 }

@@ -7,7 +7,7 @@ import java.util.Map;
 
 public class Namespace implements Scope<Object> {
     private final Namespace parent;
-    final Map<String, Slot<Object>> locals = new HashMap<String, Slot<Object>>();
+    final Map<String, Slot<Object>> locals = new HashMap<>();
 
     public Namespace() {
         this.parent = null;
@@ -45,7 +45,7 @@ public class Namespace implements Scope<Object> {
         if (locals.containsKey(key)) {
             throw new BabbleException("Name already defined : " + key);
         }
-        Slot<Object> slot = new Slot<Object>(key, isFinal);
+        Slot<Object> slot = new Slot<>(key, isFinal);
         locals.put(key, slot);
         return slot;
     }

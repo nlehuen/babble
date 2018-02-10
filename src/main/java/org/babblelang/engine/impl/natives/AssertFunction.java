@@ -28,7 +28,7 @@ public class AssertFunction implements Callable<Boolean> {
         return namespace;
     }
 
-    public Boolean call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public Boolean call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
         String message = (String) scope.get("message").get();
         boolean test = (Boolean) scope.get("test").get();
         if (message == null) {
