@@ -1,10 +1,7 @@
 package org.babblelang.engine.impl.natives.java;
 
 import org.babblelang.engine.BabbleException;
-import org.babblelang.engine.impl.Callable;
-import org.babblelang.engine.impl.Interpreter;
-import org.babblelang.engine.impl.Namespace;
-import org.babblelang.engine.impl.Scope;
+import org.babblelang.engine.impl.*;
 import org.babblelang.parser.BabbleParser;
 
 import java.lang.reflect.Method;
