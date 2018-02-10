@@ -9,9 +9,18 @@ assert(java.util.ArrayList <> null)
 def list = java.util.ArrayList()
 assert(list.size() == 0)
 
-java.lang.System.currentTimeMillis()
+println(java.lang.System.currentTimeMillis())
 
 assert(java.sql.DriverManager.getDrivers() <> null)
 
 def org = import("org")
 def fac = org.babblelang.engine.BabbleScriptEngineFactory()
+
+;; Tests using JavaClassDemo
+def JavaClassDemo = org.babblelang.tests.JavaClassDemo
+def demo = JavaClassDemo()
+assert (demo.Method1() == "Method1")
+;; assert (demo.Method2() == "Method2")
+assert (demo.Method3() == "Method3")
+assert (JavaClassDemo.Internal1().toString() == "Internal1")
+assert (JavaClassDemo.Internal3().toString() == "Internal3")

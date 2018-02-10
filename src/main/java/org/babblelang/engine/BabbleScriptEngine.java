@@ -1,6 +1,9 @@
 package org.babblelang.engine;
 
-import org.antlr.v4.runtime.*;
+import org.antlr.v4.runtime.BailErrorStrategy;
+import org.antlr.v4.runtime.CharStream;
+import org.antlr.v4.runtime.CharStreams;
+import org.antlr.v4.runtime.CommonTokenStream;
 import org.babblelang.engine.impl.BabbleCompiledScript;
 import org.babblelang.engine.impl.Namespace;
 import org.babblelang.engine.impl.natives.AssertFunction;

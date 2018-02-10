@@ -55,16 +55,16 @@ class JavaClass implements Scope, Callable {
             result = new Slot(key, true);
             members.put(key, result);
 
-            for (Class _class2 : clazz.getClasses()) {
-                if (Modifier.isPublic(_class2.getModifiers())) {
-                    result.set(new JavaClass(_class2));
+            for (Class memberClass : clazz.getClasses()) {
+                if (memberClass.getSimpleName().equals(key) && Modifier.isPublic(memberClass.getModifiers())) {
+                    result.set(new JavaClass(memberClass));
                     break;
                 }
             }
 
             if (!result.isSet()) {
                 for (Method method : clazz.getMethods()) {
-                    if (Modifier.isPublic(method.getModifiers())) {
+                    if (method.getName().equals(key) && Modifier.isPublic(method.getModifiers())) {
                         result.set(new JavaMethod(clazz, key));
                         break;
                     }
