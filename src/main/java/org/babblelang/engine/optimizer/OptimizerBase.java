@@ -11,7 +11,7 @@ public class OptimizerBase extends BabbleBaseVisitor<RuleNode> {
         return node;
     }
 
-    protected static <T extends ParserRuleContext> T replace(ParserRuleContext ctx1, T ctx2) {
+    protected static <T1 extends ParserRuleContext, T2 extends ParserRuleContext> T2 replace(T1 ctx1, T2 ctx2) {
         ParserRuleContext parent = ctx1.getParent();
         int index = parent.children.indexOf(ctx1);
         ctx2.parent = parent;
