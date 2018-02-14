@@ -26,16 +26,11 @@ public class JavaObject implements Scope<BoundJavaMethod> {
     }
 
     public Slot<BoundJavaMethod> get(String key) {
-        Slot<BoundJavaMethod> slot = members.get(key);
-
-        if (slot == null) {
-            slot = new Slot<>(key, true);
-            members.put(key, slot);
-
-            JavaMethod result = (JavaMethod) clazz.get(key).get();
+        return members.computeIfAbsent(key, k -> {
+            Slot<BoundJavaMethod> slot = new Slot<>(k, true);
+            JavaMethod result = (JavaMethod) clazz.get(k).get();
             slot.set(new BoundJavaMethod(result, value));
-        }
-
-        return slot;
+            return slot;
+        });
     }
 }

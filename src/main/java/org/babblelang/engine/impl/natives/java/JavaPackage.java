@@ -26,12 +26,9 @@ public class JavaPackage implements Scope<Scope> {
     }
 
     public Slot<Scope> get(String key) {
-        Slot<Scope> result = locals.get(key);
-
-        if (result == null) {
-            result = new Slot<>(key, true);
-            locals.put(name, result);
-            String name2 = name + '.' + key;
+        return locals.computeIfAbsent(key, k -> {
+            Slot<Scope> result = new Slot<>(k, true);
+            String name2 = name + '.' + k;
             Scope value;
             try {
                 value = new JavaClass(Class.forName(name2));
@@ -39,8 +36,7 @@ public class JavaPackage implements Scope<Scope> {
                 value = importer.getPackage(name2);
             }
             result.set(value);
-        }
-
-        return result;
+            return result;
+        });
     }
 }

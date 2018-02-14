@@ -50,14 +50,11 @@ class JavaClass implements Scope<Callable>, Callable<JavaObject> {
     }
 
     public Slot<Callable> get(String key) {
-        Slot<Callable> result = members.get(key);
-
-        if (result == null) {
-            result = new Slot<>(key, true);
-            members.put(key, result);
+        return members.computeIfAbsent(key, k -> {
+            Slot<Callable> result = new Slot<>(k, true);
 
             for (Class memberClass : clazz.getClasses()) {
-                if (memberClass.getSimpleName().equals(key) && Modifier.isPublic(memberClass.getModifiers())) {
+                if (memberClass.getSimpleName().equals(k) && Modifier.isPublic(memberClass.getModifiers())) {
                     result.set(new JavaClass(memberClass));
                     break;
                 }
@@ -65,18 +62,18 @@ class JavaClass implements Scope<Callable>, Callable<JavaObject> {
 
             if (!result.isSet()) {
                 for (Method method : clazz.getMethods()) {
-                    if (method.getName().equals(key) && Modifier.isPublic(method.getModifiers())) {
-                        result.set(new JavaMethod(clazz, key));
+                    if (method.getName().equals(k) && Modifier.isPublic(method.getModifiers())) {
+                        result.set(new JavaMethod(clazz, k));
                         break;
                     }
                 }
             }
 
             if (!result.isSet()) {
-                throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + key);
+                throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + k);
             }
-        }
 
-        return result;
+            return result;
+        });
     }
 }
