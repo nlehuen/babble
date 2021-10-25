@@ -1,4 +1,4 @@
-The Babble Language [![build status](https://secure.travis-ci.org/nlehuen/babble.png)](http://travis-ci.org/nlehuen/babble) [![Quality gate](https://sonarcloud.io/api/project_badges/measure?project=org.babblelang%3Ababble&metric=alert_status)](https://sonarcloud.io/dashboard?id=org.babblelang%3Ababble) [![Coverage Status](https://sonarcloud.io/api/project_badges/measure?project=org.babblelang%3Ababble&metric=coverage)](https://sonarcloud.io/dashboard?id=org.babblelang%3Ababble)
+The Babble Language
 ===================
 
 Babble is a toy language running on top of the Java Virtual Machine (in its current implementation). Its objectives are :
