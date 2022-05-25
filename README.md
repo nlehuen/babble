@@ -1,6 +1,8 @@
 The Babble Language
 ===================
 
+[![Build & Test](https://github.com/nlehuen/babble/actions/workflows/maven.yml/badge.svg)](https://github.com/nlehuen/babble/actions/workflows/maven.yml)
+
 Babble is a toy language running on top of the Java Virtual Machine (in its current implementation). Its objectives are :
 
 * to teach myself about parsing, interpreting and later on compiling a simple programming language.
