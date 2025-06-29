@@ -10,12 +10,16 @@ import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
 
-class JavaClass implements Scope<Callable>, Callable<JavaObject> {
+public class JavaClass implements Scope<Callable>, Callable<JavaObject> { // Changed to public
     private final Class clazz;
     private final Map<String, Slot<Callable>> members = new HashMap<>();
 
-    JavaClass(Class clazz) {
+    public JavaClass(Class clazz) { // Changed to public
         this.clazz = clazz;
+    }
+
+    public Class<?> getWrappedClass() { // Added for testing
+        return clazz;
     }
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
@@ -46,34 +50,37 @@ class JavaClass implements Scope<Callable>, Callable<JavaObject> {
     }
 
     public boolean isDeclared(String key) {
-        return get(key) != null;
+        try {
+            return get(key) != null; // If get() doesn't throw and returns non-null slot.
+                                     // The slot itself might contain null if that's how it's set,
+                                     // but get() would throw for non-existent names.
+        } catch (BabbleException e) {
+            return false; // If get() throws (e.g. "No such name"), it's not declared.
+        }
     }
 
     public Slot<Callable> get(String key) {
         return members.computeIfAbsent(key, k -> {
             Slot<Callable> result = new Slot<>(k, true);
 
-            for (Class memberClass : clazz.getClasses()) {
+            // Check for public inner classes
+            for (Class<?> memberClass : clazz.getClasses()) {
                 if (memberClass.getSimpleName().equals(k) && Modifier.isPublic(memberClass.getModifiers())) {
                     result.set(new JavaClass(memberClass));
-                    break;
+                    return result; // Return as soon as found
                 }
             }
 
-            if (!result.isSet()) {
-                for (Method method : clazz.getMethods()) {
-                    if (method.getName().equals(k) && Modifier.isPublic(method.getModifiers())) {
-                        result.set(new JavaMethod(clazz, k));
-                        break;
-                    }
+            // Check for public methods if no inner class was found
+            for (Method method : clazz.getMethods()) {
+                if (method.getName().equals(k) && Modifier.isPublic(method.getModifiers())) {
+                    result.set(new JavaMethod(clazz, k));
+                    return result; // Return as soon as found
                 }
             }
 
-            if (!result.isSet()) {
-                throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + k);
-            }
-
-            return result;
+            // If neither an inner class nor a method was found
+            throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + k);
         });
     }
 }

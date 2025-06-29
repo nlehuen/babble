@@ -12,9 +12,13 @@ public class JavaObject implements Scope<BoundJavaMethod> {
     private final Object value;
     private final Map<String, Slot<BoundJavaMethod>> members = new HashMap<>();
 
-    JavaObject(JavaClass clazz, Object value) {
+    public JavaObject(JavaClass clazz, Object value) { // Changed to public
         this.clazz = clazz;
         this.value = value;
+    }
+
+    public Object getValue() { // Added for testing
+        return value;
     }
 
     public Slot<BoundJavaMethod> define(String key, boolean isFinal) {

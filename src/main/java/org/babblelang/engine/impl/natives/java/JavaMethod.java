@@ -6,11 +6,11 @@ import org.babblelang.parser.BabbleParser;
 
 import java.lang.reflect.Method;
 
-class JavaMethod implements Callable {
+public class JavaMethod implements Callable { // Changed to public
     private final Class clazz;
     private final String name;
 
-    JavaMethod(Class clazz, String name) {
+    public JavaMethod(Class clazz, String name) { // Changed to public
         this.clazz = clazz;
         this.name = name;
     }
