@@ -33,4 +33,12 @@ public class Slot<T> {
             throw new IllegalStateException("Slot not set : " + name);
         }
     }
+
+    public String getName() {
+        return name;
+    }
+
+    public boolean isFinal() {
+        return isFinal;
+    }
 }
