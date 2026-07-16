@@ -13,6 +13,17 @@ Babble is a toy programming language running on the JVM, built as a learning pro
 - Run a single test class: `mvn test -Dtest=BabbleFunctionsTestCase`
 - Run a single test method: `mvn test -Dtest=BabbleFunctionsTestCase#methodName`
 
+### No local Java/Maven: use podman
+
+The host (immutable Fedora) has no Java or Maven installed. Run Maven in a container instead, substituting any `mvn ...` command:
+
+```
+podman run --rm -v /var/home/nlehuen/babble:/work:z -v ~/.m2:/root/.m2:z -w /work \
+    docker.io/library/maven:3.9-eclipse-temurin-11 mvn -B clean test
+```
+
+The image matches CI's JDK 11; mounting `~/.m2` caches dependencies between runs, and the `:z` volume flags are required for SELinux.
+
 The ANTLR lexer/parser/visitor classes (`org.babblelang.parser.*`) are **generated** by the `antlr4-maven-plugin` into `target/generated-sources/antlr4` from `src/main/antlr4/org/babblelang/parser/Babble.g4`. Never edit generated parser code; change the grammar and rebuild. Grammar changes require `mvn generate-sources` (or any build) before the new contexts are visible to Java code.
 
 ## Architecture
