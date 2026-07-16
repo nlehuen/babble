@@ -4,6 +4,8 @@ import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
+import javax.script.ScriptException;
+
 public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testPackageScope() throws Exception {
@@ -68,6 +70,22 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     public void testBlockResult() throws Exception {
         Assert.assertEquals(6, interpret("( 1 + 2 + 3 )"));
         Assert.assertEquals(3, interpret("( 1 ; 2 ; 3 )"));
-        Assert.assertEquals(3, interpret("( 1  2 3 )"));
+        Assert.assertEquals(3, interpret("( 1 \n 2 \n 3 )"));
+    }
+
+    @Test
+    public void testNewlineEndsStatement() throws Exception {
+        // under the old grammar this parsed as the call 1(a + 1)
+        Assert.assertEquals(2, interpret("def a = 1 \n ( a + 1 )"));
+    }
+
+    @Test
+    public void testJuxtapositionIsRejected() throws Exception {
+        try {
+            interpret("( 1  2 3 )");
+            Assert.fail("Statements on the same line require a ';' separator");
+        } catch (ScriptException e) {
+            // expected : juxtaposition without ';' or newline is a parse error
+        }
     }
 }

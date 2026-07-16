@@ -43,7 +43,7 @@ package test1 (
     def fac2 = (n:int):int -> (
         def result = 1
         while n > 1 then (
-            ;; the semicolon is optional
+            ;; use ";" to put several statements on one line
             result = result * n ; n = n - 1
         )
         return result
@@ -136,7 +136,7 @@ Language features :
 
 - [x] no C-style brackets ! Those are nasty to type on most keyboards, especially on Apple keyboards.
 - [x] in fact, there is only one type of brackets in Babble : parentheses `( )`. The grammar is simple enough, and the parser clever enough (thanks to [ANTLR4](http://www.antlr.org/wiki/display/ANTLR4/Home)) to get away with it.
-- [x] no mandatory semicolons, even for multiple statements on the same line. They are supported to facilitate code reading, though (just like punctuation in human languages !).
+- [x] no semicolons at end of line : newlines are significant and end the current statement, except after tokens that call for a continuation (operators, `,`, `=`, `->`, `then`, ...). Semicolons are only needed to separate multiple statements on the same line.
 - [x] functions, supporting recursion and poor man's closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] anonymous function literals.

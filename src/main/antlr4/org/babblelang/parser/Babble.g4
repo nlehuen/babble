@@ -1,29 +1,35 @@
 grammar Babble;
 
-file: expression (';'? expression)* EOF;
+file: sep? expression (sep expression)* sep? EOF;
+
+// Statements are separated by newlines or semicolons.
+// Newlines are ignored only after tokens that require a continuation
+// (operators, commas, '=', '->', 'then', ...), never between an
+// expression and a following '(' : that would be ambiguous with a call.
+sep: (';' | NL)+;
 
 expression:
-          PACKAGE name=ID packageBlock=block                  # packageExpression
-          | IF test=expression THEN thenBlock=block
-                               (ELSE elseBlock=block)?        # ifExpression
-          | DEF name=ID (':' type)? ('=' value=expression)?   # defExpression
+          PACKAGE name=ID NL* packageBlock=block              # packageExpression
+          | IF test=expression THEN NL* thenBlock=block
+                     (NL* ELSE NL* elseBlock=block)?          # ifExpression
+          | DEF name=ID (':' type)? ('=' NL* value=expression)?   # defExpression
           | RETURN expression                                 # returnExpression
-          | WHILE test=expression THEN whileBlock=block       # whileExpression
-          | OBJECT createBlock=block                          # objectExpression
+          | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
+          | OBJECT NL* createBlock=block                      # objectExpression
           | expression '.' ID                                 # selector
           | ID                                                # selector
           | expression callParameters                         # call
           | block                                             # blockExpression
           | NOT expression                                    # booleanNot
-          | left=expression op=('*' | '/') right=expression   # binaryOp
-          | left=expression op=('+' | '-') right=expression   # binaryOp
+          | left=expression op=('*' | '/') NL* right=expression   # binaryOp
+          | left=expression op=('+' | '-') NL* right=expression   # binaryOp
           | left=expression op=('<' | '<=' | '==' | NEQ
-                       | '>=' | '>') right=expression         # binaryOp
-          | left=expression op=AND right=expression           # booleanOp
-          | left=expression op=OR right=expression            # booleanOp
-          | parametersDeclaration ( ':' type | ) '->' functionBlock=block             # functionLiteral
-          | namespace=expression '.' name=ID '=' value=expression # assignExpression
-          | name=ID '=' value=expression                      # assignExpression
+                       | '>=' | '>') NL* right=expression         # binaryOp
+          | left=expression op=AND NL* right=expression           # booleanOp
+          | left=expression op=OR NL* right=expression            # booleanOp
+          | parametersDeclaration ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
+          | namespace=expression '.' name=ID '=' NL* value=expression # assignExpression
+          | name=ID '=' NL* value=expression                  # assignExpression
           | NULL                                              # null
           | BOOLEAN                                           # boolean
           | RECURSE                                           # recurse
@@ -32,16 +38,16 @@ expression:
           | STRING                                            # string
           ;
 
-block: '(' ')'
-     | '(' expression (';'? expression)* ')';
+block: '(' sep? ')'
+     | '(' sep? expression (sep expression)* sep? ')';
 
-parametersDeclaration: '(' parameterDeclaration (',' parameterDeclaration)* ')'
-                     | '(' ')';
+parametersDeclaration: '(' NL* parameterDeclaration (NL* ',' NL* parameterDeclaration)* NL* ')'
+                     | '(' NL* ')';
 
-parameterDeclaration: ID (':' type)? ('=' defaultValue=expression)?;
+parameterDeclaration: ID (':' type)? ('=' NL* defaultValue=expression)?;
 
-callParameters: '(' callParameter (',' callParameter)* ')'
-              | '(' ')';
+callParameters: '(' NL* callParameter (NL* ',' NL* callParameter)* NL* ')'
+              | '(' NL* ')';
 
 callParameter: (ID ':')? expression;
 
@@ -87,5 +93,6 @@ RECURSE: 'recurse';
 OBJECT: 'object';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
 MULTILINECOMMENT: ';;(' .*? ';;)' -> skip;
-COMMENT: ';;' .*? '\n' -> skip;
-WS: [ \t\r\n]+ -> skip;
+COMMENT: ';;' ~[\r\n]* -> skip;
+NL: '\r'? '\n';
+WS: [ \t]+ -> skip;
