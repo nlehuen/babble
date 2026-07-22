@@ -1,7 +1,7 @@
 package org.babblelang.tests;
 
 import org.babblelang.engine.optimizer.SimpleBinaryOpsOptimizer;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
 
 public class SimpleBinaryOpsOptimizerTest extends OptimizerTestBase {
     @Test

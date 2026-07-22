@@ -6,29 +6,26 @@ import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
-import org.junit.Assert;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 
-@RunWith(Parameterized.class)
 public class ScriptTestCase extends BabbleTestBase {
 
-    @Parameterized.Parameters(name = "{0}")
-    public static Collection<Object[]> data() {
+    static Collection<String> data() {
         File file = new File("src/test/babble");
-        Assert.assertTrue(file.isDirectory());
+        Assertions.assertTrue(file.isDirectory());
         return findBaFiles(file, new ArrayList<>());
     }
 
-    private static Collection<Object[]> findBaFiles(File base, ArrayList<Object[]> result) {
+    private static Collection<String> findBaFiles(File base, ArrayList<String> result) {
         if (base.isFile()) {
             if (base.getName().endsWith(".ba")) {
-                result.add(new Object[]{base.getPath().replace(File.separatorChar, '/')});
+                result.add(base.getPath().replace(File.separatorChar, '/'));
             }
         } else {
             File[] files = base.listFiles();
@@ -41,14 +38,9 @@ public class ScriptTestCase extends BabbleTestBase {
         return result;
     }
 
-    private final String file;
-
-    public ScriptTestCase(String file) {
-        this.file = file;
-    }
-
-    @Test
-    public void parse() throws Exception {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("data")
+    public void parse(String file) throws Exception {
         CharStream input = CharStreams.fromFileName(file);
         BabbleLexer lexer = new BabbleLexer(input);
         CommonTokenStream tokenStream = new CommonTokenStream(lexer);
@@ -57,8 +49,9 @@ public class ScriptTestCase extends BabbleTestBase {
         parser.file();
     }
 
-    @Test
-    public void run() throws Exception {
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("data")
+    public void run(String file) throws Exception {
         interpretFile(file);
     }
 }
