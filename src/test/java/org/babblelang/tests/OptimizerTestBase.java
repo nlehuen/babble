@@ -4,11 +4,8 @@ import org.antlr.v4.runtime.*;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
-import org.junit.Assert;
-import org.junit.runner.RunWith;
-import org.junit.runners.JUnit4;
+import org.junit.jupiter.api.Assertions;
 
-@RunWith(JUnit4.class)
 public abstract class OptimizerTestBase {
 
     private BabbleParser.FileContext parse(String code) {
@@ -30,6 +27,6 @@ public abstract class OptimizerTestBase {
         if (modifier != null) {
             modifier.visitFile(tree2);
         }
-        Assert.assertEquals(code1 + " is not equivalent to " + code2 + " after applying " + modifier, tree1.getText(), tree2.getText());
+        Assertions.assertEquals(tree1.getText(), tree2.getText(), code1 + " is not equivalent to " + code2 + " after applying " + modifier);
     }
 }

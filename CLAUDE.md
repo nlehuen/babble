@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Babble is a toy programming language running on the JVM, built as a learning project for parsing/interpreting. It uses ANTLR4 for parsing and currently runs in interpreted mode directly on the ANTLR parse tree (no bytecode compilation yet). Java 8 source level, JUnit 4 for tests.
+Babble is a toy programming language running on the JVM, built as a learning project for parsing/interpreting. It uses ANTLR4 for parsing and currently runs in interpreted mode directly on the ANTLR parse tree (no bytecode compilation yet). Java 21 source level, JUnit 5 (Jupiter) for tests.
 
 ## Commands
 
-- Build & test: `mvn package` (CI runs `mvn -B package` on JDK 11)
+- Build & test: `mvn package` (CI runs `mvn -B package` on JDK 21)
 - Run tests only: `mvn test`
 - Run a single test class: `mvn test -Dtest=BabbleFunctionsTestCase`
 - Run a single test method: `mvn test -Dtest=BabbleFunctionsTestCase#methodName`
@@ -19,10 +19,10 @@ The host (immutable Fedora) has no Java or Maven installed. Run Maven in a conta
 
 ```
 podman run --rm -v /var/home/nlehuen/babble:/work:z -v ~/.m2:/root/.m2:z -w /work \
-    docker.io/library/maven:3.9-eclipse-temurin-11 mvn -B clean test
+    docker.io/library/maven:3.9-eclipse-temurin-21 mvn -B clean test
 ```
 
-The image matches CI's JDK 11; mounting `~/.m2` caches dependencies between runs, and the `:z` volume flags are required for SELinux.
+The image matches CI's JDK 21; mounting `~/.m2` caches dependencies between runs, and the `:z` volume flags are required for SELinux.
 
 The ANTLR lexer/parser/visitor classes (`org.babblelang.parser.*`) are **generated** by the `antlr4-maven-plugin` into `target/generated-sources/antlr4` from `src/main/antlr4/org/babblelang/parser/Babble.g4`. Never edit generated parser code; change the grammar and rebuild. Grammar changes require `mvn generate-sources` (or any build) before the new contexts are visible to Java code.
 

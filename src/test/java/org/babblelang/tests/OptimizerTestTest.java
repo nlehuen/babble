@@ -1,6 +1,9 @@
 package org.babblelang.tests;
 
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.opentest4j.AssertionFailedError;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Tests for the optimizer testing framework.
@@ -17,13 +20,13 @@ public class OptimizerTestTest extends OptimizerTestBase {
         assertEquivalent("\"coucou\" + 0", "\"coucou\"-2", new StupidOptimizer());
     }
 
-    @Test(expected = org.junit.ComparisonFailure.class)
+    @Test
     public void testDifference1() {
-        assertEquivalent("1 + 0", "1+1");
+        assertThrows(AssertionFailedError.class, () -> assertEquivalent("1 + 0", "1+1"));
     }
 
-    @Test(expected = org.junit.ComparisonFailure.class)
+    @Test
     public void testDifference2() {
-        assertEquivalent("1 + 0", "1+1", new StupidOptimizer());
+        assertThrows(AssertionFailedError.class, () -> assertEquivalent("1 + 0", "1+1", new StupidOptimizer()));
     }
 }
