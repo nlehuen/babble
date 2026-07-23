@@ -3,7 +3,7 @@ package org.babblelang.engine.impl.natives.java;
 import org.babblelang.engine.impl.*;
 import org.babblelang.parser.BabbleParser;
 
-public class BoundJavaMethod implements Callable {
+public class BoundJavaMethod implements Callable<Object> {
     private final JavaMethod method;
     private final Object thiz;
 
@@ -18,7 +18,7 @@ public class BoundJavaMethod implements Callable {
         return result;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
         return method.call(interpreter, callSite, scope);
     }
 }

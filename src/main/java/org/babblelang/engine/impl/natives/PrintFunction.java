@@ -5,7 +5,7 @@ import org.babblelang.parser.BabbleParser;
 
 import java.io.PrintStream;
 
-public class PrintFunction implements Callable {
+public class PrintFunction implements Callable<Object> {
     private final boolean newLine;
 
     public PrintFunction(boolean newLine) {
@@ -18,7 +18,7 @@ public class PrintFunction implements Callable {
         return namespace;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
         Parameters params = (Parameters) scope.get("parameters").get();
 
         PrintStream ps = (PrintStream) params.remove("to");

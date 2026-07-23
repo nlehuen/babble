@@ -6,11 +6,11 @@ import org.babblelang.parser.BabbleParser;
 
 import java.lang.reflect.Method;
 
-class JavaMethod implements Callable {
-    private final Class clazz;
+class JavaMethod implements Callable<Object> {
+    private final Class<?> clazz;
     private final String name;
 
-    JavaMethod(Class clazz, String name) {
+    JavaMethod(Class<?> clazz, String name) {
         this.clazz = clazz;
         this.name = name;
     }
@@ -19,7 +19,6 @@ class JavaMethod implements Callable {
         Namespace namespace = parent.enter(null);
 
         try {
-            //noinspection unchecked
             Method method = clazz.getMethod(name, parameters.typesArray());
             namespace.define("method", true).set(method);
             namespace.define("parameters", true).set(parameters);
@@ -31,7 +30,7 @@ class JavaMethod implements Callable {
         return namespace;
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
         Method method = (Method) scope.get("method").get();
         Parameters parameters = (Parameters) scope.get("parameters").get();
         try {
