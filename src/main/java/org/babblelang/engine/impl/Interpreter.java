@@ -41,7 +41,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
         last = ctx;
-        Scope object = namespace = new BabbleObject(namespace);
+        Scope<Object> object = namespace = new BabbleObject(namespace);
         visit(ctx.createBlock);
         last = ctx;
         namespace = namespace.leave();
@@ -75,11 +75,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitSelector(BabbleParser.SelectorContext ctx) {
         last = ctx;
-        Scope base = namespace;
+        Scope<?> base = namespace;
         String name = ctx.ID().getText();
         BabbleParser.ExpressionContext expression = ctx.expression();
         if (expression != null) {
-            base = (Scope) visit(expression);
+            base = (Scope<?>) visit(expression);
         }
         last = ctx;
         return base.get(name).get();
@@ -104,85 +104,90 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object b = visit(ctx.right);
         last = ctx;
 
+        // Arms return rather than yield: a switch expression would apply binary numeric
+        // promotion across the arms and turn integer results into doubles.
         switch (ctx.op.getType()) {
-            case BabbleLexer.MUL:
+            case BabbleLexer.MUL -> {
                 // TODO : derive operand types
-                if (a instanceof Integer && b instanceof Integer) {
-                    return (Integer) a * (Integer) b;
-                } else {
-                    return number(a, ctx.left).doubleValue() * number(b, ctx.right).doubleValue();
+                if (a instanceof Integer ia && b instanceof Integer ib) {
+                    return ia * ib;
                 }
+                return number(a, ctx.left).doubleValue() * number(b, ctx.right).doubleValue();
+            }
 
-            case BabbleLexer.DIV:
+            case BabbleLexer.DIV -> {
                 return number(a, ctx.left).doubleValue() / number(b, ctx.right).doubleValue();
+            }
 
-            case BabbleLexer.PLUS:
-                if (a instanceof String) {
-                    return (String) a + b;
-                } else if (a instanceof Integer && b instanceof Integer) {
-                    return (Integer) a + (Integer) b;
-                } else {
-                    return number(a, ctx.left).doubleValue() + number(b, ctx.right).doubleValue();
+            case BabbleLexer.PLUS -> {
+                if (a instanceof String sa) {
+                    return sa + b;
                 }
-
-            case BabbleLexer.MINUS:
-                if (a instanceof Integer && b instanceof Integer) {
-                    return (Integer) a - (Integer) b;
-                } else {
-                    return number(a, ctx.left).doubleValue() - number(b, ctx.right).doubleValue();
+                if (a instanceof Integer ia && b instanceof Integer ib) {
+                    return ia + ib;
                 }
+                return number(a, ctx.left).doubleValue() + number(b, ctx.right).doubleValue();
+            }
 
-            case BabbleLexer.LT:
-                //noinspection unchecked
-                return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) < 0;
+            case BabbleLexer.MINUS -> {
+                if (a instanceof Integer ia && b instanceof Integer ib) {
+                    return ia - ib;
+                }
+                return number(a, ctx.left).doubleValue() - number(b, ctx.right).doubleValue();
+            }
 
-            case BabbleLexer.LTE:
-                //noinspection unchecked
-                return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) <= 0;
+            case BabbleLexer.LT -> {
+                return compare(a, b, ctx) < 0;
+            }
 
-            case BabbleLexer.EQ:
+            case BabbleLexer.LTE -> {
+                return compare(a, b, ctx) <= 0;
+            }
+
+            case BabbleLexer.EQ -> {
                 if (a instanceof Comparable) {
-                    //noinspection unchecked
-                    return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) == 0;
-                } else {
-                    return a == b;
+                    return compare(a, b, ctx) == 0;
                 }
+                return a == b;
+            }
 
-            case BabbleLexer.NEQ:
+            case BabbleLexer.NEQ -> {
                 if (a instanceof Comparable) {
-                    //noinspection unchecked
-                    return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) != 0;
-                } else {
-                    return a != b;
+                    return compare(a, b, ctx) != 0;
                 }
+                return a != b;
+            }
 
-            case BabbleLexer.GTE:
-                //noinspection unchecked
-                return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) >= 0;
+            case BabbleLexer.GTE -> {
+                return compare(a, b, ctx) >= 0;
+            }
 
-            case BabbleLexer.GT:
-                //noinspection unchecked
-                return comparable(a, ctx.left).compareTo(comparable(b, ctx.right)) > 0;
+            case BabbleLexer.GT -> {
+                return compare(a, b, ctx) > 0;
+            }
 
-            default:
-                throw new IllegalStateException("Bad op : " + ctx.op.getText());
+            default -> throw new IllegalStateException("Bad op : " + ctx.op.getText());
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private int compare(Object a, Object b, BabbleParser.BinaryOpContext ctx) {
+        return comparable(a, ctx.left).compareTo(comparable(b, ctx.right));
     }
 
     private Number number(Object a, BabbleParser.ExpressionContext expr) {
-        if (a instanceof Number) {
-            return (Number) a;
-        } else {
-            throw new BabbleException("Not a number : " + expr.getText());
+        if (a instanceof Number n) {
+            return n;
         }
+        throw new BabbleException("Not a number : " + expr.getText());
     }
 
-    private Comparable comparable(Object a, BabbleParser.ExpressionContext expr) {
+    private Comparable<Object> comparable(Object a, BabbleParser.ExpressionContext expr) {
         if (a instanceof Comparable) {
-            return (Comparable) a;
-        } else {
-            throw new BabbleException("Not comparable : " + expr.getText());
+            //noinspection unchecked
+            return (Comparable<Object>) a;
         }
+        throw new BabbleException("Not comparable : " + expr.getText());
     }
 
     @Override
@@ -213,10 +218,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     private boolean truth(Object value) {
-        if (value instanceof Boolean) {
-            return (Boolean) value;
-        } else if (value instanceof Number) {
-            return ((Number) value).doubleValue() != 0.0;
+        if (value instanceof Boolean bool) {
+            return bool;
+        } else if (value instanceof Number number) {
+            return number.doubleValue() != 0.0;
         } else {
             return value != null;
         }
@@ -291,7 +296,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
         last = ctx;
-        return new Function(ctx, namespace);
+        return new Function<>(ctx, namespace);
     }
 
     @Override
@@ -299,10 +304,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         Object expr = visit(ctx.expression());
         last = ctx;
-        if (!(expr instanceof Callable)) {
+        if (!(expr instanceof Callable<?> callable)) {
             throw new BabbleException(ctx.expression().getText() + " is not callable");
         }
-        Callable callable = (Callable) expr;
         Parameters params = (Parameters) visit(ctx.callParameters());
         last = ctx;
         Namespace beforeCall = namespace;

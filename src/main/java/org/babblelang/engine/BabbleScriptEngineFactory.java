@@ -2,7 +2,6 @@ package org.babblelang.engine;
 
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
-import java.util.Collections;
 import java.util.List;
 
 public class BabbleScriptEngineFactory implements ScriptEngineFactory {
@@ -17,15 +16,15 @@ public class BabbleScriptEngineFactory implements ScriptEngineFactory {
     }
 
     public List<String> getExtensions() {
-        return Collections.singletonList("ba");
+        return List.of("ba");
     }
 
     public List<String> getMimeTypes() {
-        return Collections.singletonList("application/x-babble");
+        return List.of("application/x-babble");
     }
 
     public List<String> getNames() {
-        return Collections.singletonList("babble");
+        return List.of("babble");
     }
 
     public String getLanguageName() {
@@ -41,19 +40,7 @@ public class BabbleScriptEngineFactory implements ScriptEngineFactory {
     }
 
     public String getMethodCallSyntax(String obj, String m, String... args) {
-        StringBuilder buffer = new StringBuilder();
-        buffer.append(obj);
-        buffer.append('.');
-        buffer.append(m);
-        buffer.append('(');
-        for (int i = 0, l = args.length; i < l; i++) {
-            if (i > 0) {
-                buffer.append(',');
-            }
-            buffer.append(args[i]);
-        }
-        buffer.append(')');
-        return buffer.toString();
+        return obj + '.' + m + '(' + String.join(",", args) + ')';
     }
 
     public String getOutputStatement(String toDisplay) {
@@ -61,14 +48,7 @@ public class BabbleScriptEngineFactory implements ScriptEngineFactory {
     }
 
     public String getProgram(String... statements) {
-        StringBuilder buffer = new StringBuilder();
-        for (int i = 0, l = statements.length; i < l; i++) {
-            if (i > 0) {
-                buffer.append('\n');
-            }
-            buffer.append(statements[i]);
-        }
-        return buffer.toString();
+        return String.join("\n", statements);
     }
 
     public ScriptEngine getScriptEngine() {

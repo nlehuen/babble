@@ -16,74 +16,73 @@ public class SimpleBinaryOpsOptimizer extends OptimizerBase {
         ctx.right = (BabbleParser.ExpressionContext) visit(ctx.right);
 
         switch (ctx.op.getType()) {
-            case BabbleLexer.PLUS:
-                if (ctx.left instanceof BabbleParser.IntegerContext && ctx.left.getText().equals("0")) {
+            case BabbleLexer.PLUS -> {
+                if (isIntegerLiteral(ctx.left, "0")) {
                     result = replace(ctx, ctx.right);
-                } else if (ctx.right instanceof BabbleParser.IntegerContext && ctx.right.getText().equals("0")) {
+                } else if (isIntegerLiteral(ctx.right, "0")) {
                     result = replace(ctx, ctx.left);
                 }
-                break;
+            }
 
-            case BabbleLexer.MINUS:
-                if (ctx.right instanceof BabbleParser.IntegerContext && ctx.right.getText().equals("0")) {
+            case BabbleLexer.MINUS -> {
+                if (isIntegerLiteral(ctx.right, "0")) {
                     result = replace(ctx, ctx.left);
                 }
-                break;
+            }
 
-            case BabbleLexer.MUL:
-                if (ctx.left instanceof BabbleParser.IntegerContext) {
-                    if (ctx.left.getText().equals("1")) {
-                        result = replace(ctx, ctx.right);
-                        break;
-                    } else if (ctx.left.getText().equals("0")) {
-                        result = replace(ctx, ctx.left);
-                        break;
-                    }
+            // A left operand that is an integer other than 0 or 1 falls through to the
+            // right-hand checks, so these have to stay a single else-if chain.
+            case BabbleLexer.MUL -> {
+                if (isIntegerLiteral(ctx.left, "1")) {
+                    result = replace(ctx, ctx.right);
+                } else if (isIntegerLiteral(ctx.left, "0")) {
+                    result = replace(ctx, ctx.left);
+                } else if (isIntegerLiteral(ctx.right, "1")) {
+                    result = replace(ctx, ctx.left);
+                } else if (isIntegerLiteral(ctx.right, "0")) {
+                    result = replace(ctx, ctx.right);
                 }
-                if (ctx.right instanceof BabbleParser.IntegerContext) {
-                    if (ctx.right.getText().equals("1")) {
-                        result = replace(ctx, ctx.left);
-                    } else if (ctx.right.getText().equals("0")) {
-                        result = replace(ctx, ctx.right);
-                    }
-                }
-                break;
+            }
 
-            case BabbleLexer.DIV:
-                if (ctx.right instanceof BabbleParser.IntegerContext && ctx.right.getText().equals("1")) {
+            case BabbleLexer.DIV -> {
+                if (isIntegerLiteral(ctx.right, "1")) {
                     result = replace(ctx, ctx.left);
                 }
-                break;
+            }
+
+            default -> {
+                // not a simplifiable operator
+            }
         }
         return result;
+    }
+
+    private static boolean isIntegerLiteral(BabbleParser.ExpressionContext ctx, String text) {
+        return ctx instanceof BabbleParser.IntegerContext && ctx.getText().equals(text);
     }
 
     @Override
     public RuleNode visitBlockExpression(BabbleParser.BlockExpressionContext ctx) {
         RuleNode result = super.visitBlockExpression(ctx);
-        if (!(result instanceof BabbleParser.BlockExpressionContext)) {
+        if (!(result instanceof BabbleParser.BlockExpressionContext block)) {
             return result;
         }
-        ctx = (BabbleParser.BlockExpressionContext) result;
-        if (ctx.block().expression().size() == 1) {
-            return replace(ctx, ctx.block().expression(0));
+        if (block.block().expression().size() == 1) {
+            return replace(block, block.block().expression(0));
         }
-        return ctx;
+        return block;
     }
 
     @Override
     public RuleNode visitBooleanNot(BabbleParser.BooleanNotContext ctx) {
         RuleNode result = super.visitBooleanNot(ctx);
-        if (!(result instanceof BabbleParser.BooleanNotContext)) {
+        if (!(result instanceof BabbleParser.BooleanNotContext not)) {
             return result;
         }
-        ctx = (BabbleParser.BooleanNotContext) result;
-        BabbleParser.ExpressionContext child =
-                ctx.expression();
-        if (child instanceof BabbleParser.BooleanNotContext) {
-            return replace(ctx, ((BabbleParser.BooleanNotContext) ctx.expression()).expression());
+        if (not.expression() instanceof BabbleParser.BooleanNotContext inner) {
+            return replace(not, inner.expression());
         }
         // TODO: replace "not false" with "true", and "not true" with "false".
-        return ctx;
+        return not;
     }
 }

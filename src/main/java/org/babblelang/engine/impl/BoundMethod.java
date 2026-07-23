@@ -17,7 +17,7 @@ public class BoundMethod<R> implements Callable<R> {
         return result;
     }
 
-    public R call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public R call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
         return function.call(interpreter, callSite, scope);
     }
 }

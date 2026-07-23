@@ -9,10 +9,9 @@ public class BabbleObject extends Namespace {
     public Slot<Object> get(String key) {
         Slot<Object> result = super.get(key);
         Object value = result.get();
-        if (!locals.containsKey(key) && value instanceof Function) {
-            Function function = (Function) value;
+        if (!locals.containsKey(key) && value instanceof Function<?> function) {
             result = define(key, true);
-            result.set(new BoundMethod(function, this));
+            result.set(new BoundMethod<>(function, this));
         }
         return result;
     }

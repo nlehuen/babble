@@ -16,7 +16,7 @@ public class ImportFunction implements Callable<JavaPackage> {
         return namespace;
     }
 
-    public JavaPackage call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    public JavaPackage call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
         String name = (String) scope.get("name").get();
         return getPackage(name);
     }

@@ -18,7 +18,9 @@ public class Function<R> implements Callable<R> {
         return namespace;
     }
 
-    public R call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
+    // The interpreter is untyped, so the result type is the caller's assertion.
+    @SuppressWarnings("unchecked")
+    public R call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
         return (R) interpreter.visit(definition.functionBlock);
     }
 }

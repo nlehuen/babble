@@ -11,18 +11,17 @@ import java.util.HashMap;
 import java.util.Map;
 
 class JavaClass implements Scope<Callable>, Callable<JavaObject> {
-    private final Class clazz;
+    private final Class<?> clazz;
     private final Map<String, Slot<Callable>> members = new HashMap<>();
 
-    JavaClass(Class clazz) {
+    JavaClass(Class<?> clazz) {
         this.clazz = clazz;
     }
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace namespace = parent.enter(null);
         try {
-            //noinspection unchecked
-            Constructor<Object> constructor = clazz.getConstructor(parameters.typesArray());
+            Constructor<?> constructor = clazz.getConstructor(parameters.typesArray());
             namespace.define("constructor", true).set(constructor);
             namespace.define("parameters", true).set(parameters);
             return namespace;
@@ -31,8 +30,8 @@ class JavaClass implements Scope<Callable>, Callable<JavaObject> {
         }
     }
 
-    public JavaObject call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope scope) {
-        Constructor constructor = (Constructor) scope.get("constructor").get();
+    public JavaObject call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
+        Constructor<?> constructor = (Constructor<?>) scope.get("constructor").get();
         Parameters parameters = (Parameters) scope.get("parameters").get();
         try {
             return new JavaObject(this, constructor.newInstance(parameters.valuesArray()));
@@ -53,7 +52,7 @@ class JavaClass implements Scope<Callable>, Callable<JavaObject> {
         return members.computeIfAbsent(key, k -> {
             Slot<Callable> result = new Slot<>(k, true);
 
-            for (Class memberClass : clazz.getClasses()) {
+            for (Class<?> memberClass : clazz.getClasses()) {
                 if (memberClass.getSimpleName().equals(k) && Modifier.isPublic(memberClass.getModifiers())) {
                     result.set(new JavaClass(memberClass));
                     break;
