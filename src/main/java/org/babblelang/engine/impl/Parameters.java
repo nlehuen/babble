@@ -28,8 +28,4 @@ public class Parameters extends LinkedHashMap<String, Object> {
     public Object[] valuesArray() {
         return values().toArray();
     }
-
-    public Class<?>[] typesArray() {
-        return values().stream().map(Object::getClass).toArray(Class<?>[]::new);
-    }
 }

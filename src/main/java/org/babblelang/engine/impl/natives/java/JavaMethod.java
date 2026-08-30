@@ -18,14 +18,10 @@ class JavaMethod implements Callable<Object> {
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace namespace = parent.enter(null);
 
-        try {
-            Method method = clazz.getMethod(name, parameters.typesArray());
-            namespace.define("method", true).set(method);
-            namespace.define("parameters", true).set(parameters);
-            namespace.define("this", false).set(clazz);
-        } catch (NoSuchMethodException nsme) {
-            throw new BabbleException(nsme);
-        }
+        Method method = Overloads.resolveMethod(clazz, name, parameters.valuesArray());
+        namespace.define("method", true).set(method);
+        namespace.define("parameters", true).set(parameters);
+        namespace.define("this", false).set(clazz);
 
         return namespace;
     }

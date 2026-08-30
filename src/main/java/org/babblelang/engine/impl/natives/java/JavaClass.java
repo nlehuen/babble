@@ -20,14 +20,10 @@ class JavaClass implements Scope<Callable>, Callable<JavaObject> {
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace namespace = parent.enter(null);
-        try {
-            Constructor<?> constructor = clazz.getConstructor(parameters.typesArray());
-            namespace.define("constructor", true).set(constructor);
-            namespace.define("parameters", true).set(parameters);
-            return namespace;
-        } catch (NoSuchMethodException nsme) {
-            throw new BabbleException(nsme);
-        }
+        Constructor<?> constructor = Overloads.resolveConstructor(clazz, parameters.valuesArray());
+        namespace.define("constructor", true).set(constructor);
+        namespace.define("parameters", true).set(parameters);
+        return namespace;
     }
 
     public JavaObject call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
