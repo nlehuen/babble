@@ -67,6 +67,37 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     }
 
     @Test
+    public void testSelectingFromANonScope() {
+        // A raw ClassCastException used to escape the interpreter here.
+        assertFails("def s = \"hi\" ; s.length", "Not a scope : s");
+        assertFails("def n = 1 ; n.value", "Not a scope : n");
+        // null is not a scope either, and used to surface as a NullPointerException.
+        assertFails("def n = null ; n.value", "Not a scope : n");
+        assertFails("def f = () -> ( 1 ) ; f().value", "Not a scope : f()");
+    }
+
+    @Test
+    public void testAssigningToAMemberOfANonScope() {
+        assertFails("def s = \"hi\" ; s.length = 1", "Not an assignable scope : s");
+    }
+
+    @Test
+    public void testSelectingFromAScopeStillWorks() throws Exception {
+        Assertions.assertEquals(1, interpret("package test ( def value = 1 ) ; test.value"));
+        Assertions.assertEquals(1, interpret("def o = object ( def value = 1 ) ; o.value"));
+    }
+
+    private void assertFails(String script, String message) {
+        try {
+            interpret(script);
+            Assertions.fail("Should report \"" + message + "\"");
+        } catch (ScriptException e) {
+            Assertions.assertEquals("org.babblelang.engine.BabbleException: " + message
+                    + " in <input> at line number 1", e.getMessage());
+        }
+    }
+
+    @Test
     public void testBlockResult() throws Exception {
         Assertions.assertEquals(6, interpret("( 1 + 2 + 3 )"));
         Assertions.assertEquals(3, interpret("( 1 ; 2 ; 3 )"));

@@ -108,7 +108,14 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         String name = ctx.ID().getText();
         BabbleParser.ExpressionContext expression = ctx.expression();
         if (expression != null) {
-            base = (Scope<?>) visit(expression);
+            Object value = visit(expression);
+            last = ctx;
+            // Only namespaces, objects and Java scopes have members. Anything else is a
+            // language-level error, not a ClassCastException escaping the interpreter.
+            if (!(value instanceof Scope<?> scope)) {
+                throw new BabbleException("Not a scope : " + expression.getText());
+            }
+            base = scope;
         }
         last = ctx;
         return base.get(name).get();
@@ -316,12 +323,15 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         Scope<Object> scope = this.namespace;
         if (ctx.namespace != null) {
-            try {
-                //noinspection unchecked
-                scope = (Scope<Object>) visit(ctx.namespace);
-            } catch (ClassCastException cce) {
+            // Testing the value rather than catching the ClassCastException : a cast that
+            // fails deeper inside the expression is not this assignment's problem.
+            Object target = visit(ctx.namespace);
+            last = ctx;
+            if (!(target instanceof Scope<?>)) {
                 throw new BabbleException("Not an assignable scope : " + ctx.namespace.getText());
             }
+            //noinspection unchecked
+            scope = (Scope<Object>) target;
         }
         last = ctx;
         Object value = visit(ctx.value);
