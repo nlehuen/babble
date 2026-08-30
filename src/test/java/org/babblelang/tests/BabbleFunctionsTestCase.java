@@ -125,6 +125,21 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     }
 
     @Test
+    public void testRecursionInAMethodKeepsTheReceiver() throws Exception {
+        // "recurse" used to evaluate to the raw function rather than to the bound method,
+        // so the recursive call lost its receiver and "this" was undefined inside it.
+        Assertions.assertEquals(6, interpret(
+                "def make = () -> (\n"
+                        + "  def down = (n) -> (\n"
+                        + "    if n < 1 then ( this.total ) else ( this.total = this.total + n ; recurse(n - 1) )\n"
+                        + "  )\n"
+                        + "  object ( def total = 0 )\n"
+                        + ")\n"
+                        + "def o = make()\n"
+                        + "o.down(3)\n"));
+    }
+
+    @Test
     public void testMutualRecursion() throws Exception {
         Assertions.assertEquals(720, interpret("def fac = (n:int):int -> ( if(n<=1) then ( 1 ) else ( n * fac2(n-1) ) ) ; def fac2 = (n:int):int -> ( if(n<=1) then ( 1 ) else ( n * fac(n-1) ) ) ; fac(6)"));
     }

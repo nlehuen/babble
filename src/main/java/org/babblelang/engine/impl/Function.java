@@ -12,8 +12,19 @@ public class Function<R> implements Callable<R> {
     }
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
+        return bindParameters(interpreter, parameters, this);
+    }
+
+    /**
+     * Binds the arguments in a fresh scope over the closure, with "$recurse" resolving to
+     * the callable the call actually went through. That is this function, except when it
+     * was reached as a method : a {@link BoundMethod} has to recurse as itself, or the
+     * recursive call would go to the raw function and lose the receiver, leaving "this"
+     * undefined inside it.
+     */
+    Namespace bindParameters(Interpreter interpreter, Parameters parameters, Callable<?> self) {
         Namespace namespace = closure.enter(null);
-        namespace.define("$recurse", true).set(this);
+        namespace.define("$recurse", true).set(self);
         parameters.bind(interpreter, definition.parametersDeclaration(), namespace);
         return namespace;
     }
