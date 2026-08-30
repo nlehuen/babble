@@ -141,4 +141,49 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         Assertions.assertEquals(false, interpret("  \"b\" >  \"c\""));
         Assertions.assertEquals(true, interpret("  \"b\" >  \"a\""));
     }
+
+    @Test
+    public void testMixedNumberComp() throws Exception {
+        Assertions.assertEquals(true, interpret(" 1 == 1.0 "));
+        Assertions.assertEquals(false, interpret(" 1 <> 1.0 "));
+        Assertions.assertEquals(true, interpret(" 1 < 1.5 "));
+        Assertions.assertEquals(true, interpret(" 1.5 > 1 "));
+        Assertions.assertEquals(true, interpret(" 2 >= 2.0 "));
+        Assertions.assertEquals(true, interpret(" 2.0 <= 2 "));
+
+        // "/" always yields a double, so this only holds if Integer and Double compare numerically.
+        Assertions.assertEquals(true, interpret(" 2 == 4 / 2 "));
+    }
+
+    @Test
+    public void testEqualityAcrossUnrelatedTypes() throws Exception {
+        // Equality is total : incomparable operands are simply not equal.
+        Assertions.assertEquals(false, interpret(" 1 == \"x\" "));
+        Assertions.assertEquals(true, interpret(" 1 <> \"x\" "));
+        Assertions.assertEquals(false, interpret(" \"x\" == 1 "));
+        Assertions.assertEquals(false, interpret(" 1 == true "));
+        Assertions.assertEquals(true, interpret(" 1 <> true "));
+
+        Assertions.assertEquals(true, interpret(" null == null "));
+        Assertions.assertEquals(false, interpret(" null <> null "));
+        Assertions.assertEquals(false, interpret(" null == 1 "));
+        Assertions.assertEquals(true, interpret(" 1 <> null "));
+    }
+
+    @Test
+    public void testOrderingAcrossUnrelatedTypes() {
+        // Ordering, unlike equality, stays a type error rather than inventing an answer.
+        try {
+            interpret(" 1 < \"x\" ");
+            Assertions.fail("Should report type error");
+        } catch (ScriptException e) {
+            Assertions.assertEquals("org.babblelang.engine.BabbleException: Not comparable : 1 and \"x\" in <input> at line number 1", e.getMessage());
+        }
+        try {
+            interpret(" null > 1 ");
+            Assertions.fail("Should report type error");
+        } catch (ScriptException e) {
+            Assertions.assertEquals("org.babblelang.engine.BabbleException: Not comparable : null and 1 in <input> at line number 1", e.getMessage());
+        }
+    }
 }
