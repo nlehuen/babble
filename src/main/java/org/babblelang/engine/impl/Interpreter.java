@@ -18,6 +18,22 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return last;
     }
 
+    /**
+     * Evaluates an expression with the interpreter temporarily positioned in the given
+     * namespace, restoring the current one afterwards. Used to keep lexical scoping when
+     * an expression belongs to another scope than the one being executed, e.g. a parameter
+     * default value, which belongs to the callee's closure and not to the call site.
+     */
+    Object evaluateIn(Namespace scope, BabbleParser.ExpressionContext expression) {
+        Namespace before = namespace;
+        namespace = scope;
+        try {
+            return visit(expression);
+        } finally {
+            namespace = before;
+        }
+    }
+
     @Override
     public Object visitFile(BabbleParser.FileContext ctx) {
         last = ctx;

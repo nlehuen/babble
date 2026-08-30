@@ -63,6 +63,18 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     }
 
     @Test
+    public void testParameterDefaultsUseTheClosureScope() throws Exception {
+        // Default values belong to the function's closure, not to the call site.
+        Assertions.assertEquals(1, interpret("def x = 1 ; def f = (p = x) -> ( p ) ; def g = () -> ( def x = 2 ; f() ) ; g()"));
+
+        // The call site does not even need to declare the name.
+        Assertions.assertEquals(1, interpret("def make = () -> ( def x = 1 ; (p = x) -> ( p ) ) ; def f = make() ; f()"));
+
+        // A default value may still refer to the parameters bound before it.
+        Assertions.assertEquals(3, interpret("def add = (a, b = a + 1) -> ( a + b ) ; add(1)"));
+    }
+
+    @Test
     public void testFunctionScope() throws Exception {
         Assertions.assertEquals(102, interpret("def a = 99 ; def add = (a:int, b:int):int -> ( a = a + 1 ; a + b ) ; add(1,1) + a"));
     }
