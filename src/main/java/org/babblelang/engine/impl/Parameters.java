@@ -6,7 +6,7 @@ import org.babblelang.parser.BabbleParser;
 import java.util.LinkedHashMap;
 
 public class Parameters extends LinkedHashMap<String, Object> {
-    void bind(Interpreter interpreter, BabbleParser.ParametersDeclarationContext parametersDeclarationContext, Scope<Object> scope) {
+    void bind(Interpreter interpreter, BabbleParser.ParametersDeclarationContext parametersDeclarationContext, Namespace scope) {
         int count = 0;
         for (BabbleParser.ParameterDeclarationContext parameter : parametersDeclarationContext.parameterDeclaration()) {
             String pos = "$" + (count++);
@@ -17,7 +17,7 @@ public class Parameters extends LinkedHashMap<String, Object> {
             } else if (this.containsKey(pos)) {
                 value = this.get(pos);
             } else if (parameter.defaultValue != null) {
-                value = interpreter.visit(parameter.defaultValue);
+                value = interpreter.evaluateIn(scope, parameter.defaultValue);
             } else {
                 throw new BabbleException("Missing parameter : " + name);
             }
