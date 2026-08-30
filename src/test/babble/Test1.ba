@@ -51,6 +51,17 @@ package test1 (
          )
     )
 
+    ;; an early return abandons the rest of the function body
+    def sign = (n:int):string -> (
+        if n > 0 then (
+            return "positive"
+        )
+        if n < 0 then (
+            return "negative"
+        )
+        "zero"
+    )
+
     ;; default values, including function literals
     def apply = (a, f=(v) -> (v)) -> ( f(a) )
 
@@ -100,6 +111,11 @@ assert (test1.apply(1) == 1, "apply is broken")
 assert (test1.apply(1, (v) -> (v+1)) == 2, "apply is broken")
 
 assert("ok:4:120:720" == main(), "Test failed")
+
+;; early return
+assert("positive" == test1.sign(1), "early return is broken")
+assert("negative" == test1.sign(0 - 1), "early return is broken")
+assert("zero" == test1.sign(0), "return fall-through is broken")
 
 ;; testing counter
 def c = test1.counter()

@@ -38,8 +38,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitFile(BabbleParser.FileContext ctx) {
         last = ctx;
         Object result = null;
-        for (BabbleParser.ExpressionContext statement : ctx.expression()) {
-            result = visit(statement);
+        try {
+            for (BabbleParser.ExpressionContext statement : ctx.expression()) {
+                result = visit(statement);
+            }
+        } catch (ReturnException re) {
+            // Only a function body can absorb a return, so one reaching here has no target.
+            throw new BabbleException("return outside of a function");
         }
         return result;
     }
@@ -75,6 +80,14 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         namespace.define(id, false).set(value);
         return value;
+    }
+
+    @Override
+    public Object visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
+        last = ctx;
+        Object value = visit(ctx.expression());
+        last = ctx;
+        throw new ReturnException(value);
     }
 
     @Override

@@ -75,6 +75,36 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     }
 
     @Test
+    public void testReturn() throws Exception {
+        // A return must abandon the rest of the body, not just evaluate its operand.
+        Assertions.assertEquals("pos", interpret("def f = (n) -> ( if n > 0 then ( return \"pos\" ) ; \"neg\" ) ; f(5)"));
+        Assertions.assertEquals("neg", interpret("def f = (n) -> ( if n > 0 then ( return \"pos\" ) ; \"neg\" ) ; f(0)"));
+
+        // As the last statement of a block, it is equivalent to the bare expression.
+        Assertions.assertEquals(3, interpret("def f = (a, b) -> ( return a + b ) ; f(1,2)"));
+
+        // It unwinds out of a loop...
+        Assertions.assertEquals(3, interpret("def f = () -> ( def i = 0 ; while i < 10 then ( i = i + 1 ; if i == 3 then ( return i ) ) ; 0 - 1 ) ; f()"));
+
+        // ... and out of arbitrarily nested blocks, but only up to the innermost function.
+        Assertions.assertEquals(1, interpret("def f = () -> ( ( ( return 1 ) ) ; 2 ) ; f()"));
+        Assertions.assertEquals(2, interpret("def outer = () -> ( def inner = () -> ( return 1 ) ; inner() + 1 ) ; outer()"));
+
+        // The returned value may be null.
+        Assertions.assertNull(interpret("def f = () -> ( return null ; 1 ) ; f()"));
+    }
+
+    @Test
+    public void testReturnOutsideOfFunction() {
+        try {
+            interpret("def x = 1 ; return x ; 2");
+            Assertions.fail("Should report a return with no enclosing function");
+        } catch (ScriptException e) {
+            Assertions.assertEquals("org.babblelang.engine.BabbleException: return outside of a function in <input> at line number 1", e.getMessage());
+        }
+    }
+
+    @Test
     public void testFunctionScope() throws Exception {
         Assertions.assertEquals(102, interpret("def a = 99 ; def add = (a:int, b:int):int -> ( a = a + 1 ; a + b ) ; add(1,1) + a"));
     }
