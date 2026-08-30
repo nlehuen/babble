@@ -124,10 +124,10 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         Assertions.assertEquals(true, interpret("  def a = 1 ; def b = 1 ; a == b"));
         Assertions.assertEquals(true, interpret("  def a = 1 ; def b = 2 ; a != b"));
         Assertions.assertEquals(false, interpret("  def a = 1 ; def b = 1 ; a != b"));
-        Assertions.assertEquals(false, interpret("  def a = '1' ; def b = '2' ; a == b"));
-        Assertions.assertEquals(true, interpret("  def a = '1' ; def b = '1' ; a == b"));
-        Assertions.assertEquals(true, interpret("  def a = '1' ; def b = '2' ; a != b"));
-        Assertions.assertEquals(false, interpret("  def a = '1' ; def b = '1' ; a != b"));
+        Assertions.assertEquals(false, interpret("  def a = \"1\" ; def b = \"2\" ; a == b"));
+        Assertions.assertEquals(true, interpret("  def a = \"1\" ; def b = \"1\" ; a == b"));
+        Assertions.assertEquals(true, interpret("  def a = \"1\" ; def b = \"2\" ; a != b"));
+        Assertions.assertEquals(false, interpret("  def a = \"1\" ; def b = \"1\" ; a != b"));
         Assertions.assertEquals(false, interpret("  def a = 1 ; def b = 2 ; a >= b"));
         Assertions.assertEquals(false, interpret("  def a = 1 ; def b = 2 ; a > b"));
 
