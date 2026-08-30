@@ -52,20 +52,31 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
         last = ctx;
+        Namespace before = namespace;
         namespace = namespace.enter(ctx.name.getText());
-        visit(ctx.packageBlock);
-        last = ctx;
-        namespace = namespace.leave();
+        try {
+            visit(ctx.packageBlock);
+            last = ctx;
+        } finally {
+            // Restoring the saved namespace rather than calling leave() keeps the
+            // interpreter consistent even when the body unwinds. "last" stays where
+            // the failure happened, so the reported line still points at it.
+            namespace = before;
+        }
         return null;
     }
 
     @Override
     public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
         last = ctx;
+        Namespace before = namespace;
         Scope<Object> object = namespace = new BabbleObject(namespace);
-        visit(ctx.createBlock);
-        last = ctx;
-        namespace = namespace.leave();
+        try {
+            visit(ctx.createBlock);
+            last = ctx;
+        } finally {
+            namespace = before;
+        }
         return object;
     }
 
@@ -378,10 +389,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Parameters params = (Parameters) visit(ctx.callParameters());
         last = ctx;
         Namespace beforeCall = namespace;
-        namespace = callable.bindParameters(this, ctx, namespace, params);
-        Object result = callable.call(this, ctx, namespace);
-        namespace = beforeCall;
-        return result;
+        try {
+            namespace = callable.bindParameters(this, ctx, namespace, params);
+            return callable.call(this, ctx, namespace);
+        } finally {
+            namespace = beforeCall;
+        }
     }
 
     @Override
