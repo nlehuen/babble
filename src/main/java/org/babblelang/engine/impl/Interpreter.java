@@ -145,17 +145,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             }
 
             case BabbleLexer.EQ -> {
-                if (a instanceof Comparable) {
-                    return compare(a, b, ctx) == 0;
-                }
-                return a == b;
+                return equal(a, b);
             }
 
             case BabbleLexer.NEQ -> {
-                if (a instanceof Comparable) {
-                    return compare(a, b, ctx) != 0;
-                }
-                return a != b;
+                return !equal(a, b);
             }
 
             case BabbleLexer.GTE -> {
@@ -170,9 +164,52 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
     }
 
-    @SuppressWarnings("unchecked")
+    /**
+     * Three-way comparison for the ordering operators. Values that have no ordering
+     * relative to each other are a hard error : "1 &lt; \"x\"" is meaningless, and
+     * silently answering true or false would hide the mistake.
+     */
     private int compare(Object a, Object b, BabbleParser.BinaryOpContext ctx) {
-        return comparable(a, ctx.left).compareTo(comparable(b, ctx.right));
+        Integer comparison = compareOrNull(a, b);
+        if (comparison == null) {
+            throw new BabbleException("Not comparable : " + ctx.left.getText() + " and " + ctx.right.getText());
+        }
+        return comparison;
+    }
+
+    /**
+     * Equality never fails : operands that cannot be ordered are simply not equal,
+     * so "1 == \"x\"" is false rather than a type error.
+     */
+    private boolean equal(Object a, Object b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        Integer comparison = compareOrNull(a, b);
+        return comparison != null ? comparison == 0 : a == b;
+    }
+
+    /**
+     * Orders two values, or returns null when they are not comparable to each other.
+     * Numbers are compared numerically across types so that "1 == 1.0" holds; other
+     * values must be Comparable and of compatible runtime types.
+     */
+    private Integer compareOrNull(Object a, Object b) {
+        if (a instanceof Number na && b instanceof Number nb) {
+            if (isIntegral(na) && isIntegral(nb)) {
+                return Long.compare(na.longValue(), nb.longValue());
+            }
+            return Double.compare(na.doubleValue(), nb.doubleValue());
+        }
+        if (a instanceof Comparable<?> && a.getClass().isInstance(b)) {
+            //noinspection unchecked
+            return ((Comparable<Object>) a).compareTo(b);
+        }
+        return null;
+    }
+
+    private static boolean isIntegral(Number n) {
+        return n instanceof Integer || n instanceof Long || n instanceof Short || n instanceof Byte;
     }
 
     private Number number(Object a, BabbleParser.ExpressionContext expr) {
@@ -180,14 +217,6 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             return n;
         }
         throw new BabbleException("Not a number : " + expr.getText());
-    }
-
-    private Comparable<Object> comparable(Object a, BabbleParser.ExpressionContext expr) {
-        if (a instanceof Comparable) {
-            //noinspection unchecked
-            return (Comparable<Object>) a;
-        }
-        throw new BabbleException("Not comparable : " + expr.getText());
     }
 
     @Override
