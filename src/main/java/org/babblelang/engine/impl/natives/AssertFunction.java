@@ -9,8 +9,12 @@ import java.util.Iterator;
 public class AssertFunction implements Callable<Boolean> {
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
         Namespace namespace = parent.enter(null);
-        assert parameters.size() > 0 : "assert() called without parameters";
-        assert parameters.size() <= 2 : "assert() called with too many parameters";
+        if (parameters.isEmpty()) {
+            throw new BabbleException("assert() called without parameters");
+        }
+        if (parameters.size() > 2) {
+            throw new BabbleException("assert() called with too many parameters");
+        }
         Iterator<Object> it = parameters.values().iterator();
         Object test = it.next();
         Object message = null;
@@ -25,13 +29,15 @@ public class AssertFunction implements Callable<Boolean> {
         return namespace;
     }
 
+    // A failing assert throws unconditionally : relying on the Java "assert" statement
+    // made this a no-op whenever the host JVM ran without -ea, which is the default.
     public Boolean call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
         String message = (String) scope.get("message").get();
         boolean test = (Boolean) scope.get("test").get();
-        if (message == null) {
-            assert test : "Assertion failed at line " + callSite.getStart().getLine() + " : " + callSite.callParameters().callParameter(0).expression().getText();
-        } else {
-            assert test : message;
+        if (!test) {
+            throw new BabbleException(message != null
+                    ? message
+                    : "Assertion failed at line " + callSite.getStart().getLine() + " : " + callSite.callParameters().callParameter(0).expression().getText());
         }
         return true;
     }
