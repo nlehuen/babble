@@ -9,6 +9,17 @@ assert(java.util.ArrayList <> null)
 def list = java.util.ArrayList()
 assert(list.size() == 0)
 
+;; methods taking arguments : "add" is declared as add(Object), so the String
+;; argument only matches by assignability, not by exact type
+assert(list.add("a"))
+assert(list.size() == 1)
+assert(list.get(0) == "a")
+
+;; boxing and widening primitive conversions
+assert(java.lang.Math.abs(0 - 5) == 5)
+assert(java.lang.Math.max(2, 3) == 3)
+assert(java.lang.Math.sqrt(4) == 2)
+
 println(java.lang.System.currentTimeMillis())
 
 assert(java.sql.DriverManager.getDrivers() <> null)
@@ -24,3 +35,19 @@ assert (demo.Method1() == "Method1")
 assert (demo.Method3() == "Method3")
 assert (JavaClassDemo.Internal1().toString() == "Internal1")
 assert (JavaClassDemo.Internal3().toString() == "Internal3")
+
+;; the most specific applicable overload wins
+assert (demo.overloaded("a") == "String")
+assert (demo.overloaded(1) == "int")
+assert (demo.overloaded(1.5) == "double")
+assert (demo.overloaded(true) == "Object")
+
+;; a null argument fits any reference parameter
+assert (demo.nullable(null) == "null")
+
+;; constructors are resolved the same way
+assert (JavaClassDemo("named").getName() == "named")
+assert (JavaClassDemo().getName() == "")
+
+;; static methods too
+assert (JavaClassDemo.add(1, 2) == "static:3")
