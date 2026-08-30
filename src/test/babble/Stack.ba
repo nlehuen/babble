@@ -30,6 +30,19 @@ package stack (
             )
         )
 
+        ;;(
+            A recursive method : "recurse" must evaluate to the bound method, so that
+            "this" still designates the receiver in the recursive call.
+        ;;)
+        def clear = () -> (
+            if this.head == null then (
+                this.size
+            ) else (
+                this.pop()
+                recurse()
+            )
+        )
+
         def join = (sep=" ") -> (
             def current = this.head
             def result = ""
@@ -73,3 +86,16 @@ def test = () -> (
 
 test()
 
+
+def testRecursiveMethod = () -> (
+    def l = stack.create()
+    l.push("c")
+    l.push("b")
+    l.push("a")
+    assert(l.size == 3)
+    assert(0 == l.clear())
+    assert(l.size == 0)
+    assert(null == l.first())
+)
+
+testRecursiveMethod()

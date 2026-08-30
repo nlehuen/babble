@@ -12,7 +12,9 @@ public class BoundMethod<R> implements Callable<R> {
     }
 
     public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
-        Namespace result = function.bindParameters(interpreter, callSite, parent, parameters);
+        // Binding through "this" rather than the raw function keeps "recurse" bound to the
+        // receiver, so a method that recurses still sees "this".
+        Namespace result = function.bindParameters(interpreter, parameters, this);
         result.define("this", true).set(object);
         return result;
     }
