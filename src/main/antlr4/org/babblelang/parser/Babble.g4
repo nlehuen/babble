@@ -13,7 +13,6 @@ expression:
           | IF test=expression THEN NL* thenBlock=block
                      (NL* ELSE NL* elseBlock=block)?          # ifExpression
           | DEF name=ID (':' type)? ('=' NL* value=expression)?   # defExpression
-          | RETURN expression                                 # returnExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           | OBJECT NL* createBlock=block                      # objectExpression
           | expression '.' ID                                 # selector
@@ -36,6 +35,10 @@ expression:
           | INT                                               # integer
           | FLOAT                                             # double
           | STRING                                            # string
+          // "return" is a prefix alternative, so its operand is parsed at this
+          // alternative's precedence. It must therefore come last, or "return a + b"
+          // would parse as "(return a) + b".
+          | RETURN expression                                 # returnExpression
           ;
 
 block: '(' sep? ')'
