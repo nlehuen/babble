@@ -13,9 +13,11 @@ Babble is a toy programming language running on the JVM, built as a learning pro
 - Run a single test class: `mvn test -Dtest=BabbleFunctionsTestCase`
 - Run a single test method: `mvn test -Dtest=BabbleFunctionsTestCase#methodName`
 
-### No local Java/Maven: use podman
+### Local toolchain, and podman for CI parity
 
-The host (immutable Fedora) has no Java or Maven installed. Run Maven in a container instead, substituting any `mvn ...` command:
+Maven and a JDK are installed on the host via Homebrew (`/home/linuxbrew/.linuxbrew/bin`), so plain `mvn ...` works and is the fastest way to build and test.
+
+Note the version gap: the host JDK is **26**, CI runs **21**. The build sets `release 21`, so compilation is checked against the right API level either way, but tests execute on whichever JVM runs them. To reproduce CI exactly — or to check a failure that might be JVM-version-specific — run Maven in a container instead, substituting any `mvn ...` command:
 
 ```
 podman run --rm -v /var/home/nlehuen/babble:/work:z -v ~/.m2:/root/.m2:z -w /work \
