@@ -1,4 +1,4 @@
-package org.babblelang.engine.impl.natives.java;
+package org.babblelang.runtime;
 
 import org.babblelang.engine.BabbleException;
 
@@ -8,7 +8,6 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -23,31 +22,11 @@ import java.util.stream.Collectors;
  * Only fixed-arity applicability is implemented : varargs methods are matched on their
  * declared array parameter, not expanded.
  */
-final class Overloads {
-    private static final Map<Class<?>, Class<?>> BOXES = Map.of(
-            boolean.class, Boolean.class,
-            byte.class, Byte.class,
-            char.class, Character.class,
-            short.class, Short.class,
-            int.class, Integer.class,
-            long.class, Long.class,
-            float.class, Float.class,
-            double.class, Double.class,
-            void.class, Void.class);
-
-    /** Widening primitive conversions (JLS 5.1.2), expressed over the wrapper types. */
-    private static final Map<Class<?>, List<Class<?>>> WIDENINGS = Map.of(
-            Byte.class, List.of(Short.class, Integer.class, Long.class, Float.class, Double.class),
-            Short.class, List.of(Integer.class, Long.class, Float.class, Double.class),
-            Character.class, List.of(Integer.class, Long.class, Float.class, Double.class),
-            Integer.class, List.of(Long.class, Float.class, Double.class),
-            Long.class, List.of(Float.class, Double.class),
-            Float.class, List.of(Double.class));
-
+public final class Overloads {
     private Overloads() {
     }
 
-    static Method resolveMethod(Class<?> clazz, String name, Object[] arguments) {
+    public static Method resolveMethod(Class<?> clazz, String name, Object[] arguments) {
         List<Method> candidates = new ArrayList<>();
         for (Method method : clazz.getMethods()) {
             // Bridge and synthetic methods duplicate a real one with erased parameters,
@@ -59,11 +38,11 @@ final class Overloads {
         return resolve(candidates, clazz.getCanonicalName() + "." + name, arguments);
     }
 
-    static Constructor<?> resolveConstructor(Class<?> clazz, Object[] arguments) {
+    public static Constructor<?> resolveConstructor(Class<?> clazz, Object[] arguments) {
         return resolve(Arrays.asList(clazz.getConstructors()), clazz.getCanonicalName(), arguments);
     }
 
-    private static <E extends Executable> E resolve(List<E> candidates, String description, Object[] arguments) {
+    public static <E extends Executable> E resolve(List<E> candidates, String description, Object[] arguments) {
         List<E> applicable = candidates.stream()
                 .filter(candidate -> isApplicable(candidate, arguments))
                 .toList();
@@ -114,6 +93,18 @@ final class Overloads {
         if (argument == null) {
             return !parameterType.isPrimitive();
         }
+        if (argument instanceof JavaValue wrapper) {
+            argument = wrapper.javaValue();
+        }
+        // A Babble instance is applicable where its class's declared Java interfaces are,
+        // since it reaches Java as its face (Values.toJava).
+        if (argument instanceof BabbleInstance instance && instance.babbleClass().isJava(parameterType)) {
+            return true;
+        }
+        // A Babble function converts to any functional interface.
+        if (Values.isBabbleCallable(argument) && JavaTypes.isFunctionalInterface(parameterType)) {
+            return true;
+        }
         if (box(parameterType).isInstance(argument)) {
             return true;
         }
@@ -140,16 +131,16 @@ final class Overloads {
     }
 
     private static boolean isWidening(Class<?> from, Class<?> to) {
-        return WIDENINGS.getOrDefault(from, List.of()).contains(to);
+        return JavaTypes.isWidening(from, to);
     }
 
     private static Class<?> box(Class<?> type) {
-        return type.isPrimitive() ? BOXES.get(type) : type;
+        return JavaTypes.box(type);
     }
 
     private static String signature(Object[] arguments) {
         return Arrays.stream(arguments)
-                .map(argument -> argument == null ? "null" : argument.getClass().getCanonicalName())
+                .map(argument -> argument == null ? "null" : JavaTypes.describe(argument))
                 .collect(Collectors.joining(", ", "(", ")"));
     }
 

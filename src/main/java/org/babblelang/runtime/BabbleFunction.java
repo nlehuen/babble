@@ -11,6 +11,16 @@ public interface BabbleFunction extends Callable {
      */
     Object invoke(Object thiz, ScriptRuntime rt, Object[] args, String[] names, CallSite site);
 
+    /** The number of parameters without a default value, or -1 if unknown. */
+    default int minArity() {
+        return -1;
+    }
+
+    /** The number of parameters, or -1 if unknown. */
+    default int maxArity() {
+        return -1;
+    }
+
     @Override
     default Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         return invoke(Undefined.UNBOUND, rt, args, names, site);

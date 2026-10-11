@@ -14,7 +14,9 @@ import org.babblelang.compiler.BabbleCompiler;
 import org.babblelang.engine.impl.BabbleCompiledScript;
 import org.babblelang.engine.impl.Namespace;
 import org.babblelang.engine.impl.natives.AssertFunction;
+import org.babblelang.engine.impl.natives.ClassofFunction;
 import org.babblelang.engine.impl.natives.PrintFunction;
+import org.babblelang.engine.impl.natives.SameFunction;
 import org.babblelang.engine.impl.natives.java.ImportFunction;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
@@ -81,6 +83,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         implicits.define("afficherc", true).set(new PrintFunction(true));
         implicits.define("assert", true).set(new AssertFunction());
         implicits.define("suppose", true).set(new AssertFunction());
+        implicits.define("same", true).set(new SameFunction());
+        implicits.define("classof", true).set(new ClassofFunction());
     }
 
     public Namespace getImplicits() {
@@ -117,6 +121,22 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return new ScriptRuntime(root, context, this);
     }
 
+    /** The analysis warnings go to the context's error writer, before anything runs. */
+    private static void warn(ScopeAnalysis scopes, String sourceName, ScriptContext context) {
+        Writer errors = context.getErrorWriter();
+        if (errors == null || scopes.warnings().isEmpty()) {
+            return;
+        }
+        try {
+            for (ScopeAnalysis.Warning warning : scopes.warnings()) {
+                errors.write("Warning : " + warning.message() + " in " + sourceName + " at line number " + warning.line() + System.lineSeparator());
+            }
+            errors.flush();
+        } catch (IOException e) {
+            // Warnings that cannot be written are not worth failing the compilation for.
+        }
+    }
+
     /**
      * Output written through a buffered writer must not be lost when a script fails.
      */
@@ -136,7 +156,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     public Object eval(Reader reader, ScriptContext context) throws ScriptException {
-        return compile(reader, sourceName(context)).eval(context);
+        return compile(reader, sourceName(context), context).eval(context);
     }
 
     public CompiledScript compile(String script) throws ScriptException {
@@ -144,7 +164,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     public CompiledScript compile(Reader script) throws ScriptException {
-        return compile(script, sourceName(getContext()));
+        return compile(script, sourceName(getContext()), getContext());
     }
 
     private static String sourceName(ScriptContext context) {
@@ -152,7 +172,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return name != null ? name.toString() : DEFAULT_SOURCE_NAME;
     }
 
-    private CompiledScript compile(Reader script, String sourceName) throws ScriptException {
+    private CompiledScript compile(Reader script, String sourceName, ScriptContext context) throws ScriptException {
         BabbleParser.FileContext file;
         try {
             CharStream input = CharStreams.fromReader(script);
@@ -180,6 +200,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());
         }
+        warn(scopes, sourceName, context);
 
         try {
             return switch (getMode()) {

@@ -75,12 +75,12 @@ package test1 (
         )
     )
 
-    ;; object literals (class-less for the moment)
+    ;; object literals : members are reached through "this"
     def counter2 = () -> (
         return object (
             def v = 0
             def inc = () -> (
-                v = v + 1
+                this.v = this.v + 1
             )
         )
     )

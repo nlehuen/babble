@@ -49,6 +49,16 @@ public class Function implements BabbleFunction {
     }
 
     @Override
+    public int minArity() {
+        return interpreter.scopes().requiredParameters(definition);
+    }
+
+    @Override
+    public int maxArity() {
+        return interpreter.scopes().parameters(definition).length;
+    }
+
+    @Override
     public String toString() {
         String name = ScopeAnalysis.functionName(definition);
         return name != null ? "function " + name : "function";

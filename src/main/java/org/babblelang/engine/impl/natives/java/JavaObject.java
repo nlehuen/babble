@@ -3,12 +3,13 @@ package org.babblelang.engine.impl.natives.java;
 import org.babblelang.engine.BabbleException;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.engine.impl.Slot;
+import org.babblelang.runtime.JavaValue;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
-public class JavaObject implements Scope<BoundJavaMethod> {
+public class JavaObject implements Scope<BoundJavaMethod>, JavaValue {
     private final JavaClass clazz;
     private final Object value;
     private final Map<String, Slot<BoundJavaMethod>> members = new HashMap<>();
@@ -16,6 +17,15 @@ public class JavaObject implements Scope<BoundJavaMethod> {
     JavaObject(JavaClass clazz, Object value) {
         this.clazz = clazz;
         this.value = value;
+    }
+
+    @Override
+    public Object javaValue() {
+        return value;
+    }
+
+    JavaClass javaClass() {
+        return clazz;
     }
 
     public Slot<BoundJavaMethod> define(String key, boolean isFinal) {

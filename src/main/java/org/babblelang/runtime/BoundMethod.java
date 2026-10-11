@@ -14,6 +14,14 @@ public final class BoundMethod implements Callable {
         this.receiver = receiver;
     }
 
+    public BabbleFunction function() {
+        return function;
+    }
+
+    public Object receiver() {
+        return receiver;
+    }
+
     @Override
     public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         return function.invoke(receiver, rt, args, names, site);
@@ -28,5 +36,10 @@ public final class BoundMethod implements Callable {
     @Override
     public int hashCode() {
         return Objects.hash(System.identityHashCode(function), System.identityHashCode(receiver));
+    }
+
+    @Override
+    public String toString() {
+        return "bound " + function;
     }
 }

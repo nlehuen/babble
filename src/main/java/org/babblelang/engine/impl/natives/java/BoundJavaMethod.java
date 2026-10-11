@@ -15,6 +15,6 @@ public class BoundJavaMethod implements Callable {
 
     @Override
     public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
-        return method.invoke(thiz, args);
+        return method.invoke(thiz, args, rt);
     }
 }

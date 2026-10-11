@@ -28,7 +28,7 @@ public class BabbleEqualityTestCase extends BabbleTestBase {
 
     @Test
     public void testSelectingAMethodTwiceGivesEqualValues() throws Exception {
-        Assertions.assertEquals(true, interpret("def mk = () -> ( def m = () -> ( 1 ) ; object ( def v = 1 ) ) ; def o = mk() ; o.m == o.m"));
-        Assertions.assertEquals(false, interpret("def mk = () -> ( def m = () -> ( 1 ) ; object ( def v = 1 ) ) ; mk().m == mk().m"));
+        Assertions.assertEquals(true, interpret("def C = class () ( def m = () -> ( 1 ) ) ; def o = C() ; o.m == o.m"));
+        Assertions.assertEquals(false, interpret("def C = class () ( def m = () -> ( 1 ) ) ; C().m == C().m"));
     }
 }

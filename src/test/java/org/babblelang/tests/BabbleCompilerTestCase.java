@@ -93,6 +93,18 @@ public class BabbleCompilerTestCase {
     }
 
     @Test
+    public void testClassBodiesAreMethodsNamedAfterTheirClass() throws Exception {
+        CompiledBabbleScript script = compile("def Point = value class (x, y) ( def norm = () -> ( this.x + this.y ) ) static ( def o = this(0, 0) )\n"
+                + "def S = interface ( def d = () -> ( 1 ) ) ; def o = object implements S () ; Point(1, 2).norm() + o.d()");
+        List<String> names = methodNames(script);
+        for (String pattern : List.of("cls\\$\\d+\\$Point", "fn\\$\\d+\\$norm", "fn\\$\\d+\\$d", "cls\\$\\d+\\$object")) {
+            Assertions.assertTrue(names.stream().anyMatch(name -> name.matches(pattern)), pattern + " in " + names);
+        }
+        Assertions.assertEquals(4, script.eval(new SimpleBindings()));
+        assertVerifies(script);
+    }
+
+    @Test
     public void testStackTracesShowBabbleLinesAndFunctions() throws Exception {
         List<StackTraceElement> captured = new ArrayList<>();
         Callable capture = (ScriptRuntime rt, Object[] args, String[] names, CallSite site) -> {
@@ -143,8 +155,8 @@ public class BabbleCompilerTestCase {
                 "def a = 1 ; a == 0 and ( a = 2 ) ; a == 1 or ( a = 3 ) ; not a",
                 "def f = (a, b = a + 1, c = () -> ( b )) -> ( a + c() ) ; f(1) + f(1, c: () -> ( 10 ))",
                 "package p ( def x = 1 ; package q ( def y = x + 1 ) ) ; p.q.y",
-                "def mk = () -> ( def m = () -> ( this.v ) ; object ( def v = 4 ) ) ; mk().m()",
-                "def f = () -> ( object ( def v = ( return 2 ) ) ; 3 ) ; f()",
+                "def C = class (def v) ( def m = () -> ( this.v ) ) ; C(4).m()",
+                "def f = () -> ( package p ( def v = ( return 2 ) ) ; 3 ) ; f()",
                 "( def a = 1 ; ( def b = a + 1 ; ( def c = b + 1 ; c ) ) )",
         };
         Object[] expected = {2, 3, 3, false, 14, 2, 4, 2, 3};

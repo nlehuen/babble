@@ -2,13 +2,15 @@
     Implementation of a simple LIFO stack
 ;;)
 package stack (
-    def create = () -> (
+    def Node = class (def value, def next) ()
+
+    def Stack = class () (
+        def size = 0
+        def head = null
+
         def push = (a) -> (
             this.size = this.size + 1
-            this.head = object (
-                def value = a
-                def next = this.head
-            )
+            this.head = Node(a, this.head)
         )
 
         def first = () -> (
@@ -31,8 +33,8 @@ package stack (
         )
 
         ;;(
-            A recursive method : "recurse" must evaluate to the bound method, so that
-            "this" still designates the receiver in the recursive call.
+            A recursive method : "recurse" evaluates to the method bound to the
+            receiver, so that "this" still designates it in the recursive call.
         ;;)
         def clear = () -> (
             if this.head == null then (
@@ -61,12 +63,10 @@ package stack (
 
             result
         )
-
-        object (
-            def size = 0
-            def head = null
-        )
     )
+
+    ;; keeps stack.create() working
+    def create = () -> ( Stack() )
 )
 
 def test = () -> (
@@ -88,7 +88,7 @@ test()
 
 
 def testRecursiveMethod = () -> (
-    def l = stack.create()
+    def l = stack.Stack()
     l.push("c")
     l.push("b")
     l.push("a")

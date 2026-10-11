@@ -71,16 +71,30 @@ package test1 (
         )
     )
 
-    ;; object literals (class-less for the moment)
+    ;; object literals : members are reached through "this"
     def counter2 = () -> (
         return object (
             def v = 0
             def inc = () -> (
-                v = v + 1
+                this.v = this.v + 1
             )
         )
     )
 )
+
+;; classes : the header is the constructor's parameter list, "def" makes a parameter
+;; a member, and members are always reached through "this"
+def Shape = interface (
+    def area : () : double
+    def describe = () -> ( "area " + this.area() )        ;; a default method
+)
+
+def Square = class (def side) implements Shape (
+    def area = () -> ( this.side * this.side )
+)
+
+;; value classes compare by value, and print their fields
+def Point = value class (x, y) ()
 
 def main = () -> (
     def local = "world !"
@@ -144,6 +158,8 @@ Language features :
 - [x] default values for function parameters (including closure support).
 - [x] basic types : boolean, int, double, functions.
 - [x] object literals & namespace
+- [x] object model : classes, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
+- [x] Java interop both ways : Babble functions passed as Java functional interfaces (`list.sort((a, b) -> ( a - b ))`), and Babble classes implementing Java interfaces.
 - [x] optional type declaration for variables and parameters, not enforced (for documentation only).
 - [x] "native" functions : `print`/`println` (writing to the `ScriptContext` writer), `assert` (or `suppose`).
 - [x] directly use Java classes from within Babble.
@@ -166,7 +182,6 @@ Language features :
 - [ ] better, more user-friendly error reports. Right now parsing & runtime errors are VERY messy.
 - [ ] type checking.
 - [ ] type inference.
-- [ ] object model (class, method, inheritance). See the [design doc](docs/design/object-model.md).
 - [ ] collection classes (mapped from Java).
 - [ ] first-class iterator support (`for` loop).
 - [ ] `yield` keyword : transform functions/method into iterators.

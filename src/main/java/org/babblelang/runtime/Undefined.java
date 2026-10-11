@@ -5,5 +5,8 @@ package org.babblelang.runtime;
  */
 public enum Undefined {
     /** The receiver of a function that was not called as a method. */
-    UNBOUND
+    UNBOUND,
+
+    /** A member whose definition has not run yet. */
+    UNDEFINED
 }
