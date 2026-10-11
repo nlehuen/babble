@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), annotations checked at boundaries (§10.3). Deferred: the object model, which needs its own design before phase 2 (§8.2). |
+| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3). Deferred: the object model, which needs its own design before phase 2 (§8.2). |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -140,8 +140,11 @@ to carry that text into the generated code.
   a throwaway namespace.
 * Natives use the parse tree. `assert` builds its message from
   `callSite.callParameters().callParameter(0).expression().getText()` and the call line.
-  `print` looks up `STDOUT` **through the caller's namespace**, which means it is dynamically
-  scoped.
+  `print` looks up `STDOUT` **in the scope where the call is written**: its call namespace is a
+  child of the call site's. A `def STDOUT = buf` inside `f` therefore redirects a `println`
+  written in `f`, but not one inside a function that `f` calls. `STDOUT` itself is the
+  `System.out` captured when the engine was created, and the `ScriptContext` writer is ignored.
+  `print(…, to: stream)` redirects a single call.
 * Java interop resolves overloads through reflection on **every** call (`Overloads`).
 
 ### 2.7 Errors
@@ -253,8 +256,8 @@ public interface Callable {
   String[] argTexts)`. That is exactly what `assert` and `… is not callable` need from the
   parse tree today.
 * `ScriptRuntime` is the per-eval context: the script root `Namespace`, the `ScriptContext`
-  (its writer is the natural home for `print`'s output later), and the engine. It replaces
-  natives digging through the caller's namespace (§8, D6).
+  (its writer is where `print` sends output, §8.4), and the engine. It replaces natives digging
+  through the caller's namespace.
 
 `Function`, `BoundMethod`, `PrintFunction`, `AssertFunction`, `ImportFunction` and the
 `natives.java` classes all implement the new `Callable`. The test-only `AssertFunction` moves
@@ -548,10 +551,10 @@ Each item gets a test that pins the agreed behaviour **in both modes**.
 | D3 | `return` in a parameter default | returns from the *caller* when the default is used | **Decided: compile-time error (§8.3).** |
 | D4 | `def` inside a loop body | fails on the second iteration | **Decided: fixed by D1.** Each iteration gets a fresh scope. |
 | D5 | `obj.x` falling through to lexical scope (`o.println`, `mk().hidden`) | allowed | **Deferred to the object model design (§8.2).** Phase 1 keeps today's behaviour. |
-| D6 | `print` finds `STDOUT` through the **caller's** scope | dynamic scoping | Read `STDOUT` from the script root via `ScriptRuntime`. A script that does `def STDOUT` *inside a function* to redirect output stops doing so. Nothing in the repo does this. |
+| D6 | Where `print` writes by default | `STDOUT` looked up in the scope where the call is written; the `ScriptContext` writer is ignored | **Decided: the eval's `ScriptContext` writer (§8.4).** |
 | D7 | An unqualified name inside an object body after `obj.m` has cached a `BoundMethod` in the object | can resolve to the bound method | In compiled code the name resolves lexically to the raw function. This only matters for code that both calls `obj.m` from outside and refers to plain `m` from inside, and it is not worth replicating. May be overtaken by §8.2. |
 
-D6 is still open. D7 is an edge case written down for completeness.
+D7 is an edge case with a recommendation rather than a decision, and the object model design (§8.2) may overtake it. Everything else is decided.
 
 ### 8.1 Block scope
 
@@ -686,6 +689,38 @@ level it fails at runtime. No test covers either case.
 * Because the code generator never meets such a `return`, neither `run` nor a function
   prologue (§6.3) needs a special case: every `ARETURN` emitted for a `return` is in a
   function body.
+
+### 8.4 Output of `print`
+
+`print` and `println` write to the eval's `ScriptContext.getWriter()`, which they reach through
+the `ScriptRuntime` argument of the calling convention (§5.2). That is the standard JSR-223 way
+for a host to capture a script's output, and it works the same in both modes. Natives no
+longer need to see the caller's scope.
+
+```
+// host
+StringWriter out = new StringWriter();
+ScriptContext ctx = new SimpleScriptContext();
+ctx.setWriter(out);
+engine.eval("println(\"hi\")", ctx);      // out now holds "hi\n"
+```
+
+* **Default behaviour is unchanged for hosts that don't care.** `SimpleScriptContext` starts
+  with a writer on `System.out`, so plain `engine.eval(script)` still prints to the console.
+* **`STDOUT` stays readable,** but it is no longer an engine-wide implicit holding the
+  `System.out` from engine creation. Each eval binds it to the context writer, wrapped as a
+  `PrintWriter` if needed, in a per-eval namespace between the implicits and the script root.
+  A host binding named `STDOUT` shadows it rather than clashing. `BabbleNativesTestCase`
+  (`if STDOUT then …`) keeps passing.
+* **`def STDOUT = …` no longer redirects anything.** It is an ordinary variable. No script or
+  test in the repo relies on the old behaviour.
+* **`to:` still redirects one call.** It now accepts a `Writer`, a `PrintStream` or any
+  `Appendable`. Anything else is a `BabbleException` (`print to: expects a Writer or
+  PrintStream`), where today it is a raw `ClassCastException`.
+* **Flushing.** `CompiledScript.eval` flushes the context writer in a `finally`, so output
+  written through a buffered writer is not lost when the script fails.
+* **Tests.** A new test captures output through `ctx.setWriter`. The differential `.ba` tests
+  (§11) capture output the same way instead of swapping `System.out`.
 
 ## 9. Phases 3 and 4 (outline)
 
@@ -827,7 +862,8 @@ types are enforced (T9):
   both. While phase 1 is in progress, the compiled execution may exclude tests through a short,
   shrinking list in the POM.
 * **Differential tests.** A parameterised test runs every `src/test/babble/*.ba` in both modes
-  and compares the result value, the captured stdout, and the exception class and message.
+  and compares the result value, the output captured through the `ScriptContext` writer, and
+  the exception class and message.
 * **Bytecode checks.** Each class compiled in a test passes through `CheckClassAdapter.verify`.
   `-Dbabble.dumpClasses=target/babble-classes` writes the `.class` files for `javap -c -p`.
   A `-Dbabble.trace=true` switch prints an ASM `Textifier` listing.
@@ -960,7 +996,8 @@ behaviour for bindings and forward references.
 1. Phase 0a: `org.babblelang.runtime` with `Operators`, `Truth`, `Members`. The interpreter
    delegates to them.
 2. Phase 0b: the new `Callable`, `Arguments`, `CallSite`, `ScriptRuntime`. Port the natives,
-   the interop and the test `AssertFunction`. Decide D6.
+   the interop and the test `AssertFunction`. `print` writes to the `ScriptContext` writer
+   (D6, §8.4).
 3. Block scope in the interpreter (§8.1): the `BlockScopes` pass, pre-declared slots, the new
    error message. Enable `testBlockScope`. The same pass rejects a `return` outside a function
    body (D2, D3, §8.3).
