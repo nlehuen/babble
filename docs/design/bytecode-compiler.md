@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3). Deferred: the object model, which needs its own design before phase 2 (§8.2). |
+| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([object-model.md](object-model.md), summarised in §8.2). |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -25,8 +25,8 @@ The work is split into four phases. Each one leaves the build green and can ship
    here is full parity with the interpreter: the same test suite passes in both modes.
 2. **Static scope resolution.** A resolver pass binds each identifier to its declaration at
    compile time. Function locals then become JVM locals, or heap cells when closures capture
-   them. Namespaces are only kept where the language needs them to be reflective: packages,
-   object literals, the script root, and globals.
+   them. Classes and objects become JVM classes (§7.3). Namespaces are only kept where the
+   language needs them to be reflective: packages, the script root, and globals.
 3. **invokedynamic.** Calls, member selection, Java interop and arithmetic go through
    `invokedynamic` call sites with inline caches. Type specialisation driven by the optional
    type annotations becomes possible.
@@ -37,8 +37,10 @@ which is where enforced types pay off (§10).
 
 Decisions so far. Babble gets **real block scope** (§8.1). It lands in the interpreter after
 phase 0 and before phase 1, so the compiler targets the new rules from the start. The **object
-model** gets its own design before phase 2 (§8.2). **Type annotations are checked at runtime
-boundaries** (§10.3).
+model** has its own design ([object-model.md](object-model.md)): class expressions, members reached only through `this` or a
+receiver, interfaces with default methods instead of inheritance, and Babble functions usable
+as Java functional interfaces (§8.2). **Type annotations are checked at runtime boundaries**
+(§10.3).
 
 The bytecode is generated with **ASM**, as the README already plans. The `java.lang.classfile`
 API would need a JDK 24+ baseline (see §12).
@@ -326,7 +328,7 @@ body or the file. In phase 1 the current namespace is always held in one JVM loc
 | `while t then B` | `ACONST_NULL` as the initial result, then a loop: test, `IFEQ` exit, `POP`, body, `GOTO` the head |
 | `( e1 ; e2 ; … )` | each expression, with a `POP` between them. `()` pushes `null`. A block with `def`s of its own first switches `ns` to `ns.enter(null)` with those names pre-declared (§8.1). |
 | `package p ( … )` | `ns2 = ns.enter("p")`, compile the body with `ns := ns2` (a fresh JVM local), `POP`, `ACONST_NULL` |
-| `object ( … )` | `obj = new BabbleObject(ns)`, compile the body with `ns := obj`, `POP`, push `obj` |
+| `object ( … )` | Today's semantics: `obj = new BabbleObject(ns)`, compile the body with `ns := obj`, `POP`, push `obj`. Once the object model lands, `class`/`object` compile against `BabbleInstance` and its member table instead (§8.2). |
 | `(params) -> body` | `INVOKEDYNAMIC` with `LambdaMetafactory` to make a `FunctionBody` from `fn$N`, then `new CompiledFunction(body, ns, paramTable)` |
 | `f(args)` | `f`, then a check that it is callable, then `rt`, the `Object[]` of the arguments, `GETSTATIC names`, `GETSTATIC site`, `INVOKEINTERFACE Callable.call` |
 | `recurse` | `ns.get("$recurse").get()` |
@@ -452,21 +454,22 @@ resolves names at compile time.
 
 `Resolver` is a visitor that runs before code generation. It lives in `org.babblelang.analysis`
 because the type checker uses it too (§10.1). It builds a tree of lexical scopes
-(file, package, object, function) and records a `Binding` for each identifier occurrence in a
+(file, package, class, function, block) and records a `Binding` for each identifier occurrence in a
 `ParseTreeProperty<Binding>`:
 
 | Binding kind | When | Generated code |
 |---|---|---|
-| `LOCAL(i)` | a parameter or `def` of the enclosing function that no nested function or object literal captures | `ALOAD i` / `ASTORE i` |
-| `CELL(i)` | a parameter or `def` of a function that a nested function literal captures, or that a nested object literal can reach (§7.3) | `Cell` in JVM local `i`; the closure gets the `Cell` |
+| `LOCAL(i)` | a parameter or `def` of the enclosing function or block that no nested function literal captures | `ALOAD i` / `ASTORE i` |
+| `CELL(i)` | a parameter or `def` of a function or block that a nested function literal captures | `Cell` in JVM local `i`; the closure gets the `Cell` |
 | `CAPTURED(k)` | a reference to an enclosing function's variable from inside a closure | `self.captured(k)` then `Cell.value` |
-| `MEMBER(scope, "x")` | a `def` in a package, object or file body | `Slot` of that runtime namespace, looked up once per activation and cached in a local |
+| `MEMBER(scope, "x")` | a `def` in a package or file body | `Slot` of that runtime namespace, looked up once per activation and cached in a local |
 | `GLOBAL("x")` | a name not declared lexically anywhere | `root.get("x")`: implicits plus bindings, dynamic, because bindings are only known at `eval` |
 | `THIS` / `RECURSE` | the `this` / `recurse` keywords | §7.4 |
 
 Every block is a scope (§8.1). The resolver starts from the per-scope `def` sets that the
 block-scope pass already computes. A function's parameters and the top level of its body share
-one scope.
+one scope. Class and object members never appear in this table: an unqualified name is never a
+member, and members are only reached as `this.x` or `obj.x` (§7.3).
 
 ### 7.2 Block-local variables
 
@@ -483,52 +486,43 @@ how it is represented:
   fresh cell on every iteration, and closures created in different iterations do not share
   the variable.
 
-Scopes that are not functions or blocks (file, package, object) keep their dynamic `Namespace`
-and `Slot`s. External code reads them through `pkg.x` and `obj.x`, the engine injects bindings
+Scopes that are not functions or blocks (file, package) keep their dynamic `Namespace` and
+`Slot`s. External code reads them through `pkg.x`, the engine injects bindings
 into the root, and top-level forward references (`Forward.ba`) must keep working. The resolver
 still knows their `def` sets statically, so for those it only skips the chain walk.
 
-### 7.3 Object literals that reach into function scope
+### 7.3 Classes and objects
 
-**This subsection depends on the object model design (§8.2).** It is only needed if `obj.x`
-keeps falling through to the creating function's variables. If objects only see their own
-members, it goes away.
+The object model ([object-model.md](object-model.md) §7) gives the details. In summary:
 
-`Stack.ba` depends on `obj.name` falling through to the locals of the function that created the
-object (§2.5). Once those locals are JVM locals, a `BabbleObject` has no parent namespace to
-walk. The compiler bridges the gap:
+* Each `class` and `object` expression compiles to a JVM class whose fields are its members.
+  Its methods are JVM instance methods, with the receiver in local 0. Each `interface`
+  compiles to a JVM interface with `default` methods.
+* `this.x`, and `obj.x` where the type checker knows `obj`'s class, compile to
+  `GETFIELD`/`PUTFIELD`, and a method call on them to `INVOKEVIRTUAL`/`INVOKEINTERFACE`. Any
+  other receiver goes through `Members.select`/`Members.invoke` and the class's member table.
+* Constructor parameters that methods use become hidden fields. Outer variables captured by a
+  class are stored once per class value, not per instance.
 
-* If a function body contains an `object` literal (directly or through nested blocks), the
-  resolver turns **every variable visible at that point** into a `CELL`. That means the
-  function's own variables and any captured ones.
-* At the literal, the generator builds a `FrameScope(String[] names, Cell[] cells, Scope
-  parent)` and makes it the `BabbleObject`'s parent. `FrameScope` implements `Scope<Object>`,
-  so `get` hands back a `Slot` view of a cell. `BabbleObject.get` keeps working as it does
-  today: lookup through the parent chain, wrapping found `Function`s in `BoundMethod`. Assigning
-  through it updates the cell, so `x.inc()` followed by `x.n` sees the new value.
-* Functions without object literals pay nothing.
-
-The alternative is to drop the fall-through and require methods to be members of the object.
-That breaks `Stack.ba` and the README's idiom, and it is one of the questions the object model
-design has to answer (§8.2).
+Members are never reached through the lexical scope chain, so the `FrameScope` bridge an
+earlier draft needed for today's fall-through (D5) is gone.
 
 ### 7.4 `this` and `recurse`
 
-* `recurse` becomes the `self` argument (or `self.recurseTarget(thiz)` for bound calls), with no
-  lookup.
-* Whether a function runs as a method is only known at call time, and `this` falls back
-  **lexically** (§2.5). So every function has an implicit `this` local, initialised from `thiz`.
-  If `thiz` is `UNBOUND`, the local takes the *enclosing* function's `this`, captured like any
-  other variable. If there is no enclosing function, it becomes `GLOBAL("this")`, which
-  normally fails with `No such name : this`, as today. A function that never mentions `this`
-  (and contains no nested function that does) skips all of this.
+* `recurse` becomes the `self` argument, with no lookup. Inside a method it is the method bound
+  to the current receiver.
+* `this` is a keyword, and it is valid only in a class or object body, in a method, or in a
+  function literal nested in a method (object model §5.2). Anywhere else it is a compile-time
+  error. Inside a method, `this` is local 0. A nested function literal captures it like any
+  other variable. No function needs a runtime "unbound" state or a lexical fallback any more.
 
 ### 7.5 Closures
 
 `CompiledFunction` holds `FunctionBody body`, `Object[] captured` (cells, or member
 namespaces/slots), the parameter table and a display name. Phase 2 drops the `Namespace
-closure` field, except for functions whose enclosing scope really is a namespace (file,
-package, object bodies). Those capture that namespace as one entry of `captured`.
+closure` field, except for functions whose enclosing scope really is a namespace (file and
+package bodies). Those capture that namespace as one entry of `captured`. Methods are not
+`CompiledFunction`s: they are instance methods of their class (§7.3).
 
 One optimisation is optional: when a captured variable is never assigned after its `def`, the
 closure can capture the **value** instead of a `Cell`. With block scope, a `def` inside a loop
@@ -536,7 +530,6 @@ body creates a new variable on every iteration, so that case needs no special ha
 
 ### 7.6 Exit criteria
 
-* Phase 2 starts only once the object model design (§8.2) is settled.
 * Both modes pass the full suite.
 * On the benchmarks in §11, phase 2 is clearly ahead of phase 1. The numbers go in the PR.
 
@@ -550,11 +543,11 @@ Each item gets a test that pins the agreed behaviour **in both modes**.
 | D2 | `return` with no enclosing function: at file level, or in a top-level `package`/`object` body | runtime error, only if it runs | **Decided: compile-time error (§8.3).** |
 | D3 | `return` in a parameter default | returns from the *caller* when the default is used | **Decided: compile-time error (§8.3).** |
 | D4 | `def` inside a loop body | fails on the second iteration | **Decided: fixed by D1.** Each iteration gets a fresh scope. |
-| D5 | `obj.x` falling through to lexical scope (`o.println`, `mk().hidden`) | allowed | **Deferred to the object model design (§8.2).** Phase 1 keeps today's behaviour. |
+| D5 | `obj.x` falling through to lexical scope (`o.println`, `mk().hidden`) | allowed | **Decided: no.** `obj.x` sees only the object's members (§8.2). |
 | D6 | Where `print` writes by default | `STDOUT` looked up in the scope where the call is written; the `ScriptContext` writer is ignored | **Decided: the eval's `ScriptContext` writer (§8.4).** |
-| D7 | An unqualified name inside an object body after `obj.m` has cached a `BoundMethod` in the object | can resolve to the bound method | In compiled code the name resolves lexically to the raw function. This only matters for code that both calls `obj.m` from outside and refers to plain `m` from inside, and it is not worth replicating. May be overtaken by §8.2. |
+| D7 | An unqualified name inside an object body after `obj.m` has cached a `BoundMethod` in the object | can resolve to the bound method | **Obsolete.** Unqualified names never reach members, and nothing is bound on the fly any more (§8.2). |
 
-D7 is an edge case with a recommendation rather than a decision, and the object model design (§8.2) may overtake it. Everything else is decided.
+Every item is decided.
 
 ### 8.1 Block scope
 
@@ -563,8 +556,10 @@ This is a language change, made in the interpreter after phase 0 and before phas
 1. **Which blocks are scopes.** A block expression, an `if` branch and a `while` body each open
    a new scope, a child of the enclosing one. Function, package and object bodies do not add a
    second scope: the top level of the body *is* the function's scope (shared with its
-   parameters), the package's namespace or the object. The top level of the file is the script
-   root.
+   parameters), the package's namespace, or the class or object. The top level of the file is
+   the script root. One exception: a class or object body's top-level `def`s declare *members*,
+   which bind no unqualified name (object model §4.2). Constructor parameters are lexical, so
+   `def x = x` there declares the member `x` from the parameter `x`.
 2. **Where a `def` belongs.** A `def` belongs to the nearest enclosing scope. That includes a
    `def` nested inside an expression (`f(def x = 1)`), but not one inside a nested block or
    function literal.
@@ -624,28 +619,35 @@ expected exceptions updated to the current `ScriptException`/`BabbleException` m
 today. A top-level name read before its `def` no longer falls back to an implicit of the same
 name (`println(1) ; def println = …` is now an error).
 
-### 8.2 Object model, designed before phase 2
+### 8.2 Object model
 
-The object model gets its own design (`docs/design/object-model.md`), and it covers the
-README's planned classes, methods and inheritance. Phase 0, block scope and phase 1 do not
-depend on it: phase 1 compiles today's object semantics, which costs nothing because phase 1 is
-backed by namespaces. Phase 2 (§7.3, §7.4) and the object and package types of the type checker
-(T5) wait for it.
+The object model has its own design document, [object-model.md](object-model.md). Its four
+foundational decisions:
 
-The compiler needs these questions answered:
+1. **Class expressions,** `class (params) implements I ( body )`. The header is the
+   constructor's parameter list, the body runs once per instance, and its top-level `def`s are
+   the members. `object ( … )` stays, as an instance of an anonymous class.
+2. **Members only, explicit `this`.** `obj.x` sees only the object's members (this closes D5).
+   Inside a class, members are written `this.x`, and an unqualified name never means a member.
+   `this` is valid only in class bodies and methods.
+3. **No class inheritance.** Classes implement **interfaces** that declare required members and
+   may provide default methods. `implements` must name statically known interfaces.
+4. **Java callbacks.** A Babble function is converted automatically where Java expects a
+   functional interface (`Comparator`, `Runnable`, …).
 
-1. **Lookup.** Does `obj.x` see only the object's members (own and inherited), or does it still
-   fall through to the creating scope (D5)? With members only, §7.3 disappears.
-2. **`this`.** Is `this` bound only by a member call (`obj.m()`), or does it also fall back
-   lexically as today (§7.4)? Does `def m = obj.m` stay bound?
-3. **Representation.** Do classes compile to JVM classes with fields and virtual methods, or do
-   they stay slot maps? Member sets are already static today: only `def` adds a member, and
-   `obj.x = v` on an undeclared `x` fails. So fixed layouts look feasible, and they are the
-   largest performance lever for object-heavy code.
-4. **Classes or prototypes,** inheritance and `super`, and what `recurse` means inside a method.
-5. **Types.** Are object types nominal or structural (T5)? Does an object literal become an
-   instance of an anonymous class?
-6. **Migration.** What do `Stack.ba` and the README's "function scope as a class" idiom become?
+What this means for the compiler:
+
+* **Phase 1** compiles classes and objects backed by `BabbleInstance`, an array of member
+  values with a member table. The object model is implemented in the interpreter first, ideally
+  before §15 step 7, so phase 1 never compiles the old object semantics.
+* **Phase 2** turns classes into JVM classes and interfaces into JVM interfaces (§7.3), and
+  `this` becomes local 0 (§7.4).
+* **Phase 3** adds call sites cached per receiver class, and `LambdaMetafactory` adapters for
+  the Java conversions.
+* **Types:** classes and interfaces are nominal types, which settles T5.
+
+`Stack.ba`, `counter2` in `Test1.ba` and the README, and
+`testRecursionInAMethodKeepsTheReceiver` are migrated in the same change (object model §10).
 
 ### 8.3 `return` outside a function body
 
@@ -735,7 +737,7 @@ get there:
 * **Java interop.** Cache `Overloads` resolution per (receiver class, argument classes) at each
   site. Today every call to a Java method re-runs reflection over all overloads. That is
   probably the single largest cost in interop-heavy scripts.
-* **Member selection.** Cache by receiver kind. For `BabbleObject` it is a slot lookup, and for
+* **Member selection.** Cache by receiver class. For a Babble instance it is a field access, and for
   `JavaPackage`/`JavaClass` the result is constant, so it can be bound once.
 * **Arithmetic.** Guard on `(Integer, Integer)` and inline `Math`-style wrapping `int`
   arithmetic, falling back to `Operators`. Where the type checker has established an enforced
@@ -777,8 +779,7 @@ them nothing. A checker also changes which programs the language accepts, and do
 parity is being established makes every failure ambiguous: is it the compiler, or the new rules?
 
 **Not before block scope and the `Resolver`.** Block scope (§8.1) fixes what each name refers
-to, and the `Resolver` computes it. Object and package types (T5) also wait for the object model
-(§8.2).
+to, and the `Resolver` computes it.
 
 **Before phase 3.** Phase 3 adds guarded call sites to cope with not knowing types: `int`
 arithmetic with fallbacks, overload caches keyed on runtime classes. Where types are known and
@@ -787,7 +788,7 @@ should be designed knowing what types will provide.
 
 So the order is: phase 0, block scope, phase 1, then the `Resolver`, then **the type checker alongside
 phase 2 code generation**, then the runtime checks (T9), then phase 3. The type system
-design (§10.4) depends on none of this, apart from T5, and can start now.
+design (§10.4) depends on none of this and can start now.
 
 ### 10.3 Rollout: gradual, warnings first
 
@@ -820,8 +821,8 @@ design (§10.4) depends on none of this, apart from T5, and can start now.
 | T2 | `null` | `def head = null` is everywhere, and so are `if` without `else` and `def x` without a value | `int`, `double` and `bool` reject `null`, which is what allows unboxing in phase 3. Every other type is nullable, as the runtime already is. A `T?` syntax can come later. |
 | T3 | Operator typing | §2.2 is the specification | `int op int` is `int` (except `/`, which is `double`). Any mix with `double` is `double`. `string + any` is `string`. Comparisons and `and`/`or`/`not` are `bool`. `if`/`while` tests accept any type, because truthiness is defined for all values. |
 | T4 | Function types | Calls bind by name and by position, and parameters can have defaults | Parameter names are part of the type, and each parameter is marked optional or not. The grammar's `functionType` reuses `parametersDeclaration`, which allows default *expressions* in a type. That needs tightening. |
-| T5 | Object and package types | There is no syntax for them, and D5 lets `obj.x` reach the enclosing scope | **Waits for the object model (§8.2).** Until then, objects and packages are `dynamic`. |
-| T6 | `this` | Whether a function runs as a method is only known at call time (§7.4) | `dynamic`. |
+| T5 | Class, object and package types | Objects are a new kind of value with the object model (§8.2) | **Decided by the object model (§8.1 there):** classes and interfaces are nominal types, an object literal has an anonymous class type, and a package has a structural type. `x is T` tests at runtime. |
+| T6 | `this` | Only valid in class bodies and methods (§7.4) | The enclosing class's type. |
 | T7 | Java interop | Reflection gives static types, but generics are erased | Constructor and method result types come from reflection, and erased type parameters become `dynamic`. With the argument types known, overload resolution can happen at check time (§10.5). |
 | T8 | Inference for unannotated `def`s | If `def f = (a:int):int -> …` leaves `f` as `dynamic`, calls to `f` are never checked and the checker is close to useless | An unannotated `def` takes its initialiser's type when the `Resolver` sees no other assignment to it. Members that can be written through `obj.x = …` stay `dynamic` unless annotated. Fuller inference is the README's separate "type inference" item. |
 | T9 | Enforcement | Decides whether phase 3 can trust types (§10.3) | **Decided: runtime checks at boundaries, in `error` mode, in both modes.** |
@@ -902,7 +903,7 @@ types are enforced (T9):
 | Stack-map frames break on unusual expression nesting (`return`/`while` inside arguments) | `COMPUTE_FRAMES`, `CheckClassAdapter` in every test, codegen tests for those shapes |
 | Semantics drift between the two modes | One shared runtime (phase 0), the dual-mode suite and differential `.ba` tests |
 | Block scope breaks user scripts | Only in-repo scripts exist today, and none relies on a `def` escaping its block (§8.1). It lands in the interpreter before the compiler starts. |
-| The object model design stalls phase 2 | Phases 0 and 1 and block scope do not depend on it, and they already remove the tree walking |
+| The object model breaks existing scripts | Only three in-repo users rely on today's objects, and they are migrated in the same change (object model §10) |
 | `getCommonSuperClass` loading classes during generation | Override it (§6.5) |
 | Method or constant-pool size limits on large scripts | Split `run` and `<clinit>` (§6.6, §6.8) |
 | Class-loader leaks in long-lived engines | A loader per compile, no static caches that point at generated classes from runtime code |
@@ -1005,13 +1006,13 @@ behaviour for bindings and forward references.
    operators, `def`, names, blocks (as scopes), `if` and `while`, with interpreter fallback for
    function literals. Add the dual-mode surefire execution.
 5. Compile function literals and calls (prologue, defaults, `return`). Remove the fallback.
-6. Compile `package`, `object` and member access with today's object semantics. Phase 1 is
-   complete: the full suite passes in both modes.
-7. Object model design (§8.2), then its implementation in the interpreter. This can run in
-   parallel with steps 4–6.
+6. The object model in the interpreter (object model §12, steps 1–5): grammar, runtime,
+   analysis checks, Java conversions, migrations. This can run in parallel with steps 4–5.
+7. Compile `package`, `class`, `object`, `interface` and member access, backed by
+   `BabbleInstance`. Phase 1 is complete: the full suite passes in both modes.
 8. Phase 2: grow `BlockScopes` into the `Resolver`, then `LOCAL`/`CELL`/`CAPTURED`, then
-   objects as §8.2 decides, then `this`.
+   JVM classes and interfaces (§7.3), then `this` as local 0.
 9. In parallel with step 8, once the `Resolver` exists: the type checker, in `warn` mode only.
-   The type system design (T1–T8) can start at any time before that, apart from T5.
+   The type system design (T1–T8) can start at any time before that.
 10. Runtime boundary checks (T9) in both modes, and the `error` mode.
 11. Benchmarks, then phase 3 design notes, using enforced types where §10.5 allows.

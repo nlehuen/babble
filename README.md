@@ -164,7 +164,7 @@ Language features :
 - [ ] better, more user-friendly error reports. Right now parsing & runtime errors are VERY messy.
 - [ ] type checking.
 - [ ] type inference.
-- [ ] object model (class, method, inheritance).
+- [ ] object model (class, method, inheritance). See the [design doc](docs/design/object-model.md).
 - [ ] collection classes (mapped from Java).
 - [ ] first-class iterator support (`for` loop).
 - [ ] `yield` keyword : transform functions/method into iterators.
