@@ -634,7 +634,8 @@ foundational decisions:
 3. **No class inheritance.** Classes implement **interfaces** that declare required members and
    may provide default methods. `implements` must name statically known interfaces.
 4. **Java callbacks.** A Babble function is converted automatically where Java expects a
-   functional interface (`Comparator`, `Runnable`, …).
+   functional interface (`Comparator`, `Runnable`, …). Classes can implement Java interfaces,
+   and Babble interfaces can extend them (object model §9.5, §9.6).
 
 What this means for the compiler:
 
