@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. Decided: block scope (§8.1), stray `return` is a compile-time error (D2), annotations checked at boundaries (§10.3). Deferred: the object model, which needs its own design before phase 2 (§8.2). |
+| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), annotations checked at boundaries (§10.3). Deferred: the object model, which needs its own design before phase 2 (§8.2). |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -382,7 +382,8 @@ Two cases are handled before code generation (§8):
   modes, reported by the analysis pass. The code generator never sees one.
 * `return` inside a parameter default. In the interpreter it escapes `bindParameters`, which is
   outside `Function.call`'s `catch`, so it returns **from the caller's** function. Compiled
-  inline, it would return from the callee. The proposal is a compile-time error.
+  inline, it would return from the callee. **Decided (D3):** it is a compile-time error too, so
+  the prologue never contains a `return`.
 
 ### 6.5 Loading classes and LambdaMetafactory
 
@@ -544,13 +545,13 @@ Each item gets a test that pins the agreed behaviour **in both modes**.
 |---|---|---|---|
 | D1 | What a name refers to before its `def` runs | resolves to an outer binding | **Decided: real block scope with hoisting (§8.1).** Reading a name before its `def` is an error. |
 | D2 | `return` with no enclosing function: at file level, or in a top-level `package`/`object` body | runtime error, only if it runs | **Decided: compile-time error (§8.3).** |
-| D3 | `return` in a parameter default | returns from the *caller* | compile-time error |
+| D3 | `return` in a parameter default | returns from the *caller* when the default is used | **Decided: compile-time error (§8.3).** |
 | D4 | `def` inside a loop body | fails on the second iteration | **Decided: fixed by D1.** Each iteration gets a fresh scope. |
 | D5 | `obj.x` falling through to lexical scope (`o.println`, `mk().hidden`) | allowed | **Deferred to the object model design (§8.2).** Phase 1 keeps today's behaviour. |
 | D6 | `print` finds `STDOUT` through the **caller's** scope | dynamic scoping | Read `STDOUT` from the script root via `ScriptRuntime`. A script that does `def STDOUT` *inside a function* to redirect output stops doing so. Nothing in the repo does this. |
 | D7 | An unqualified name inside an object body after `obj.m` has cached a `BoundMethod` in the object | can resolve to the bound method | In compiled code the name resolves lexically to the raw function. This only matters for code that both calls `obj.m` from outside and refers to plain `m` from inside, and it is not worth replicating. May be overtaken by §8.2. |
 
-D3 is still open. D6 and D7 are edge cases written down for completeness.
+D6 is still open. D7 is an edge case written down for completeness.
 
 ### 8.1 Block scope
 
@@ -643,19 +644,35 @@ The compiler needs these questions answered:
    instance of an anonymous class?
 6. **Migration.** What do `Stack.ba` and the README's "function scope as a class" idiom become?
 
-### 8.3 `return` outside a function
+### 8.3 `return` outside a function body
 
-A `return` is accepted only if a function literal encloses it. `package` and `object` bodies do
-not count, because they are not functions: a `return` inside one belongs to whatever function
-encloses *that*. Anything else is rejected before the script runs, in both modes:
+A `return` is accepted only inside the **body** of a function literal. To check it, walk up from
+the `return` to the nearest enclosing function literal:
+
+* If the `return` is in that literal's body, it is accepted and returns from that function.
+  `package` and `object` bodies are not functions, so the walk goes through them: a `return`
+  inside one returns from whatever function encloses it.
+* If the `return` is in one of that literal's parameter defaults, it is rejected with
+  `return in a parameter default` (D3). A default value is an expression to compute, not a place
+  to leave a function. A function literal nested *inside* a default is a function of its own, so
+  a `return` in its body is fine.
+* If there is no enclosing function literal, it is rejected with `return outside of a
+  function` (D2).
+
+The check happens before the script runs, in both modes:
 
 ```
-return 1                         ;; rejected
+return 1                         ;; rejected (D2)
 if false then ( return 1 )       ;; rejected too, though it never runs
 package p ( return 1 )           ;; rejected
 def f = () -> ( return 1 )       ;; fine
 def g = () -> ( object ( def v = ( return 2 ) ) )   ;; fine: returns from g
+def h = (a, b = ( return 99 )) -> ( a )             ;; rejected (D3)
+def k = (a, cb = () -> ( return 1 )) -> ( cb() )    ;; fine: the return belongs to the nested literal
 ```
+
+Today, `h(1)` called from inside a function `g` makes `g` return 99, and called from the top
+level it fails at runtime. No test covers either case.
 
 * The check lives in the `BlockScopes` pass (§8.1), which already walks every scope, so it runs
   at `compile()` time in both modes. The interpreter's runtime check in `visitFile` stays only
@@ -664,9 +681,11 @@ def g = () -> ( object ( def v = ( return 2 ) ) )   ;; fine: returns from g
   as `ScriptException(message, fileName, line)`. They read exactly like runtime errors
   (`… in <input> at line number 1`). The existing `testReturnOutsideOfFunction` therefore passes
   unchanged. It gains a case for a `return` that never runs (`if false then ( return 1 )`),
-  which is accepted today and rejected from now on.
-* Because the code generator never meets such a `return`, `run` needs no special case: every
-  `ARETURN` it emits for a `return` is inside a function method.
+  which is accepted today and rejected from now on. A new test covers D3: a `return` in a
+  default is rejected, and one in a function literal nested inside a default is accepted.
+* Because the code generator never meets such a `return`, neither `run` nor a function
+  prologue (§6.3) needs a special case: every `ARETURN` emitted for a `return` is in a
+  function body.
 
 ## 9. Phases 3 and 4 (outline)
 
@@ -944,12 +963,11 @@ behaviour for bindings and forward references.
    the interop and the test `AssertFunction`. Decide D6.
 3. Block scope in the interpreter (§8.1): the `BlockScopes` pass, pre-declared slots, the new
    error message. Enable `testBlockScope`. The same pass rejects a `return` outside a function
-   (D2, §8.3).
+   body (D2, D3, §8.3).
 4. Add ASM. Add `BabbleCompiler`, `ScriptClassLoader` and the mode switch. Compile literals,
    operators, `def`, names, blocks (as scopes), `if` and `while`, with interpreter fallback for
    function literals. Add the dual-mode surefire execution.
-5. Compile function literals and calls (prologue, defaults, `return`). Decide D3. Remove
-   the fallback.
+5. Compile function literals and calls (prologue, defaults, `return`). Remove the fallback.
 6. Compile `package`, `object` and member access with today's object semantics. Phase 1 is
    complete: the full suite passes in both modes.
 7. Object model design (§8.2), then its implementation in the interpreter. This can run in
