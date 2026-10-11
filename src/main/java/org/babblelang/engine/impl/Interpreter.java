@@ -1,30 +1,66 @@
 package org.babblelang.engine.impl;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.tree.ParseTreeProperty;
+import org.babblelang.analysis.BlockScopes;
+import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.engine.BabbleException;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.Arguments;
+import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Calls;
+import org.babblelang.runtime.Members;
+import org.babblelang.runtime.OpSite;
+import org.babblelang.runtime.Operators;
+import org.babblelang.runtime.ScriptRuntime;
+import org.babblelang.runtime.Truth;
+
+import javax.script.SimpleScriptContext;
+import java.util.List;
 
 public class Interpreter extends BabbleBaseVisitor<Object> {
+    private final ScriptRuntime runtime;
+    private final String sourceName;
+    private ScopeAnalysis scopes;
     private Namespace namespace;
     private ParserRuleContext last;
 
+    // Static descriptions of the sites, built the first time each one runs.
+    private final ParseTreeProperty<OpSite> opSites = new ParseTreeProperty<>();
+    private final ParseTreeProperty<CallSite> callSites = new ParseTreeProperty<>();
+    private final ParseTreeProperty<String[]> callNames = new ParseTreeProperty<>();
+
+    /**
+     * An interpreter on its own, outside of the engine : the block scope analysis runs
+     * when a file is visited, and output goes to a default ScriptContext.
+     */
     public Interpreter(Namespace root) {
-        this.namespace = root;
+        this(new ScriptRuntime(root, new SimpleScriptContext(), null), null, "<input>");
     }
 
-    ParserRuleContext getLast() {
+    public Interpreter(ScriptRuntime runtime, ScopeAnalysis scopes, String sourceName) {
+        this.runtime = runtime;
+        this.scopes = scopes;
+        this.sourceName = sourceName;
+        this.namespace = runtime.root();
+    }
+
+    public ParserRuleContext getLast() {
         return last;
+    }
+
+    ScopeAnalysis scopes() {
+        return scopes;
     }
 
     /**
      * Evaluates an expression with the interpreter temporarily positioned in the given
-     * namespace, restoring the current one afterwards. Used to keep lexical scoping when
-     * an expression belongs to another scope than the one being executed, e.g. a parameter
-     * default value, which belongs to the callee's closure and not to the call site.
+     * namespace, restoring the current one afterwards. Used to run a function body in the
+     * namespace of its call.
      */
-    Object evaluateIn(Namespace scope, BabbleParser.ExpressionContext expression) {
+    Object evaluateIn(Namespace scope, ParserRuleContext expression) {
         Namespace before = namespace;
         namespace = scope;
         try {
@@ -34,16 +70,32 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
     }
 
+    /**
+     * Evaluates a parameter default value in the namespace of the call. An error later in
+     * the binding is about the call, so it is still reported at the call's line.
+     */
+    Object evaluateDefault(Namespace scope, BabbleParser.ExpressionContext expression) {
+        ParserRuleContext call = last;
+        Object value = evaluateIn(scope, expression);
+        last = call;
+        return value;
+    }
+
     @Override
     public Object visitFile(BabbleParser.FileContext ctx) {
         last = ctx;
+        if (scopes == null) {
+            scopes = BlockScopes.analyze(ctx);
+        }
+        namespace.declare(scopes.declared(ctx));
         Object result = null;
         try {
             for (BabbleParser.ExpressionContext statement : ctx.expression()) {
                 result = visit(statement);
             }
         } catch (ReturnException re) {
-            // Only a function body can absorb a return, so one reaching here has no target.
+            // The analysis rejects a return outside of a function body before anything
+            // runs, so this is only a safety net.
             throw new BabbleException("return outside of a function");
         }
         return result;
@@ -53,9 +105,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
         last = ctx;
         Namespace before = namespace;
-        namespace = namespace.enter(ctx.name.getText());
+        namespace = namespace.enterPackage(ctx.name.getText(), scopes.declared(ctx));
         try {
-            visit(ctx.packageBlock);
+            visitStatements(ctx.packageBlock.expression());
             last = ctx;
         } finally {
             // Restoring the saved namespace rather than calling leave() keeps the
@@ -70,9 +122,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
         last = ctx;
         Namespace before = namespace;
-        Scope<Object> object = namespace = new BabbleObject(namespace);
+        BabbleObject object = BabbleObject.create(namespace, scopes.declared(ctx));
+        namespace = object;
         try {
-            visit(ctx.createBlock);
+            visitStatements(ctx.createBlock.expression());
             last = ctx;
         } finally {
             namespace = before;
@@ -85,12 +138,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         String id = ctx.name.getText();
         Object value = null;
-        if (ctx.expression() != null) {
-            value = visit(ctx.expression());
+        if (ctx.value != null) {
+            value = visit(ctx.value);
         }
         last = ctx;
-        namespace.define(id, false).set(value);
-        return value;
+        return namespace.initialize(id, value);
     }
 
     @Override
@@ -101,35 +153,44 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         throw new ReturnException(value);
     }
 
+    /**
+     * A block that defines names gets a namespace of its own. Function, package and
+     * object bodies never do : their owner already provides it.
+     */
     @Override
     public Object visitBlock(BabbleParser.BlockContext ctx) {
         last = ctx;
+        if (!scopes.opensScope(ctx)) {
+            return visitStatements(ctx.expression());
+        }
+        Namespace before = namespace;
+        namespace = namespace.child(scopes.declared(ctx));
+        try {
+            return visitStatements(ctx.expression());
+        } finally {
+            namespace = before;
+        }
+    }
+
+    private Object visitStatements(List<BabbleParser.ExpressionContext> statements) {
         Object result = null;
-        for (BabbleParser.ExpressionContext statement : ctx.expression()) {
+        for (BabbleParser.ExpressionContext statement : statements) {
             result = visit(statement);
         }
-        last = ctx;
         return result;
     }
 
     @Override
     public Object visitSelector(BabbleParser.SelectorContext ctx) {
         last = ctx;
-        Scope<?> base = namespace;
         String name = ctx.ID().getText();
         BabbleParser.ExpressionContext expression = ctx.expression();
-        if (expression != null) {
-            Object value = visit(expression);
-            last = ctx;
-            // Only namespaces, objects and Java scopes have members. Anything else is a
-            // language-level error, not a ClassCastException escaping the interpreter.
-            if (!(value instanceof Scope<?> scope)) {
-                throw new BabbleException("Not a scope : " + expression.getText());
-            }
-            base = scope;
+        if (expression == null) {
+            return namespace.lookup(name);
         }
+        Object value = visit(expression);
         last = ctx;
-        return base.get(name).get();
+        return Members.select(value, name, expression.getText());
     }
 
     @Override
@@ -151,162 +212,48 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object b = visit(ctx.right);
         last = ctx;
 
-        // Arms return rather than yield: a switch expression would apply binary numeric
-        // promotion across the arms and turn integer results into doubles.
-        switch (ctx.op.getType()) {
-            case BabbleLexer.MUL -> {
-                // TODO : derive operand types
-                if (a instanceof Integer ia && b instanceof Integer ib) {
-                    return ia * ib;
-                }
-                return number(a, ctx.left).doubleValue() * number(b, ctx.right).doubleValue();
-            }
+        OpSite site = opSites.get(ctx);
+        if (site == null) {
+            site = new OpSite(ctx.left.getText(), ctx.right.getText());
+            opSites.put(ctx, site);
+        }
 
-            case BabbleLexer.DIV -> {
-                return number(a, ctx.left).doubleValue() / number(b, ctx.right).doubleValue();
-            }
-
-            case BabbleLexer.PLUS -> {
-                if (a instanceof String sa) {
-                    return sa + b;
-                }
-                if (a instanceof Integer ia && b instanceof Integer ib) {
-                    return ia + ib;
-                }
-                return number(a, ctx.left).doubleValue() + number(b, ctx.right).doubleValue();
-            }
-
-            case BabbleLexer.MINUS -> {
-                if (a instanceof Integer ia && b instanceof Integer ib) {
-                    return ia - ib;
-                }
-                return number(a, ctx.left).doubleValue() - number(b, ctx.right).doubleValue();
-            }
-
-            case BabbleLexer.LT -> {
-                return compare(a, b, ctx) < 0;
-            }
-
-            case BabbleLexer.LTE -> {
-                return compare(a, b, ctx) <= 0;
-            }
-
-            case BabbleLexer.EQ -> {
-                return equal(a, b);
-            }
-
-            case BabbleLexer.NEQ -> {
-                return !equal(a, b);
-            }
-
-            case BabbleLexer.GTE -> {
-                return compare(a, b, ctx) >= 0;
-            }
-
-            case BabbleLexer.GT -> {
-                return compare(a, b, ctx) > 0;
-            }
-
+        return switch (ctx.op.getType()) {
+            case BabbleLexer.MUL -> Operators.mul(a, b, site);
+            case BabbleLexer.DIV -> Operators.div(a, b, site);
+            case BabbleLexer.PLUS -> Operators.add(a, b, site);
+            case BabbleLexer.MINUS -> Operators.sub(a, b, site);
+            case BabbleLexer.LT -> Operators.lt(a, b, site);
+            case BabbleLexer.LTE -> Operators.le(a, b, site);
+            case BabbleLexer.EQ -> Operators.eq(a, b, site);
+            case BabbleLexer.NEQ -> Operators.ne(a, b, site);
+            case BabbleLexer.GTE -> Operators.ge(a, b, site);
+            case BabbleLexer.GT -> Operators.gt(a, b, site);
             default -> throw new IllegalStateException("Bad op : " + ctx.op.getText());
-        }
-    }
-
-    /**
-     * Three-way comparison for the ordering operators. Values that have no ordering
-     * relative to each other are a hard error : "1 &lt; \"x\"" is meaningless, and
-     * silently answering true or false would hide the mistake.
-     */
-    private int compare(Object a, Object b, BabbleParser.BinaryOpContext ctx) {
-        Integer comparison = compareOrNull(a, b);
-        if (comparison == null) {
-            throw new BabbleException("Not comparable : " + ctx.left.getText() + " and " + ctx.right.getText());
-        }
-        return comparison;
-    }
-
-    /**
-     * Equality never fails : operands that cannot be ordered are simply not equal,
-     * so "1 == \"x\"" is false rather than a type error.
-     */
-    private boolean equal(Object a, Object b) {
-        if (a == null || b == null) {
-            return a == b;
-        }
-        Integer comparison = compareOrNull(a, b);
-        return comparison != null ? comparison == 0 : a == b;
-    }
-
-    /**
-     * Orders two values, or returns null when they are not comparable to each other.
-     * Numbers are compared numerically across types so that "1 == 1.0" holds; other
-     * values must be Comparable and of compatible runtime types.
-     */
-    private Integer compareOrNull(Object a, Object b) {
-        if (a instanceof Number na && b instanceof Number nb) {
-            if (isIntegral(na) && isIntegral(nb)) {
-                return Long.compare(na.longValue(), nb.longValue());
-            }
-            return Double.compare(na.doubleValue(), nb.doubleValue());
-        }
-        if (a instanceof Comparable<?> && a.getClass().isInstance(b)) {
-            //noinspection unchecked
-            return ((Comparable<Object>) a).compareTo(b);
-        }
-        return null;
-    }
-
-    private static boolean isIntegral(Number n) {
-        return n instanceof Integer || n instanceof Long || n instanceof Short || n instanceof Byte;
-    }
-
-    private Number number(Object a, BabbleParser.ExpressionContext expr) {
-        if (a instanceof Number n) {
-            return n;
-        }
-        throw new BabbleException("Not a number : " + expr.getText());
+        };
     }
 
     @Override
     public Object visitBooleanOp(BabbleParser.BooleanOpContext ctx) {
         last = ctx;
-        int op = ctx.op.getType();
-
-        boolean a = truth(visit(ctx.left));
-        if (a) {
-            if (op == BabbleLexer.OR) {
-                return true;
-            } else {
-                return truth(visit(ctx.right));
-            }
+        boolean a = Truth.test(visit(ctx.left));
+        if (ctx.op.getType() == BabbleLexer.OR) {
+            return a || Truth.test(visit(ctx.right));
         } else {
-            if (op == BabbleLexer.OR) {
-                return truth(visit(ctx.right));
-            } else {
-                return false;
-            }
+            return a && Truth.test(visit(ctx.right));
         }
     }
 
     @Override
     public Object visitBooleanNot(BabbleParser.BooleanNotContext ctx) {
         last = ctx;
-        return !truth(visit(ctx.expression()));
-    }
-
-    private boolean truth(Object value) {
-        if (value instanceof Boolean bool) {
-            return bool;
-        } else if (value instanceof Number number) {
-            return number.doubleValue() != 0.0;
-        } else {
-            return value != null;
-        }
+        return !Truth.test(visit(ctx.expression()));
     }
 
     @Override
     public Object visitIfExpression(BabbleParser.IfExpressionContext ctx) {
         last = ctx;
-        if (truth(visit(ctx.test))) {
+        if (Truth.test(visit(ctx.test))) {
             last = ctx;
             return visit(ctx.thenBlock);
         } else {
@@ -323,7 +270,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
         last = ctx;
         Object result = null;
-        while (truth(visit(ctx.test))) {
+        // The body block opens a fresh scope on every iteration.
+        while (Truth.test(visit(ctx.test))) {
             result = visit(ctx.whileBlock);
         }
         return result;
@@ -332,23 +280,19 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         last = ctx;
-        Scope<Object> scope = this.namespace;
-        if (ctx.namespace != null) {
-            // Testing the value rather than catching the ClassCastException : a cast that
-            // fails deeper inside the expression is not this assignment's problem.
-            Object target = visit(ctx.namespace);
+        String name = ctx.name.getText();
+        if (ctx.namespace == null) {
+            Object value = visit(ctx.value);
             last = ctx;
-            if (!(target instanceof Scope<?>)) {
-                throw new BabbleException("Not an assignable scope : " + ctx.namespace.getText());
-            }
-            //noinspection unchecked
-            scope = (Scope<Object>) target;
+            return namespace.assign(name, value);
         }
+        // The target is checked before the value is evaluated.
+        Object target = visit(ctx.namespace);
         last = ctx;
+        var scope = Members.assignable(target, ctx.namespace.getText());
         Object value = visit(ctx.value);
         last = ctx;
-        scope.get(ctx.name.getText()).set(value);
-        return value;
+        return Members.assign(scope, value, name);
     }
 
     @Override
@@ -366,57 +310,82 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitString(BabbleParser.StringContext ctx) {
         last = ctx;
-        String literal = ctx.STRING().getText();
+        return unescape(ctx.STRING().getText());
+    }
+
+    /**
+     * The value of a string literal, given its source text with the quotes.
+     */
+    public static String unescape(String literal) {
         literal = literal.substring(1, literal.length() - 1);
-        literal = literal.replace("\\\\", "\\").replace("\\\"", "\"");
-        return literal;
+        return literal.replace("\\\\", "\\").replace("\\\"", "\"");
     }
 
     @Override
     public Object visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
         last = ctx;
-        return new Function<>(ctx, namespace);
+        return new Function(ctx, namespace, this);
     }
 
     @Override
     public Object visitCall(BabbleParser.CallContext ctx) {
         last = ctx;
-        Object expr = visit(ctx.expression());
+        Object callee = visit(ctx.expression());
         last = ctx;
-        if (!(expr instanceof Callable<?> callable)) {
-            throw new BabbleException(ctx.expression().getText() + " is not callable");
+        CallSite site = callSite(ctx);
+        var callable = Calls.callable(callee, site);
+
+        List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
+        Object[] args = parameters.isEmpty() ? Arguments.NONE : new Object[parameters.size()];
+        for (int i = 0; i < args.length; i++) {
+            args[i] = visit(parameters.get(i).expression());
         }
-        Parameters params = (Parameters) visit(ctx.callParameters());
         last = ctx;
-        Namespace beforeCall = namespace;
-        try {
-            namespace = callable.bindParameters(this, ctx, namespace, params);
-            return callable.call(this, ctx, namespace);
-        } finally {
-            namespace = beforeCall;
-        }
+        return callable.call(runtime, args, callNames.get(ctx), site);
     }
 
-    @Override
-    public Object visitCallParameters(BabbleParser.CallParametersContext ctx) {
-        last = ctx;
-        int count = 0;
-        Parameters params = new Parameters();
-        for (BabbleParser.CallParameterContext cp : ctx.callParameter()) {
-            String name = "$" + (count++);
-            if (cp.ID() != null) {
-                name = cp.ID().getText();
-            }
-            Object value = visit(cp.expression());
-            last = ctx;
-            params.put(name, value);
+    private CallSite callSite(BabbleParser.CallContext ctx) {
+        CallSite site = callSites.get(ctx);
+        if (site == null) {
+            site = callSite(ctx, sourceName);
+            callSites.put(ctx, site);
+            callNames.put(ctx, callNames(ctx));
         }
-        return params;
+        return site;
+    }
+
+    /**
+     * The static description of a call, as both modes build it.
+     */
+    public static CallSite callSite(BabbleParser.CallContext ctx, String sourceName) {
+        List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
+        String[] argTexts = new String[parameters.size()];
+        for (int i = 0; i < argTexts.length; i++) {
+            argTexts[i] = parameters.get(i).expression().getText();
+        }
+        return new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), argTexts);
+    }
+
+    /**
+     * The names of a call's arguments, parallel to them, or null when none is named.
+     */
+    public static String[] callNames(BabbleParser.CallContext ctx) {
+        List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
+        String[] names = null;
+        for (int i = 0; i < parameters.size(); i++) {
+            if (parameters.get(i).ID() != null) {
+                if (names == null) {
+                    names = new String[parameters.size()];
+                }
+                names[i] = parameters.get(i).ID().getText();
+            }
+        }
+        return names;
     }
 
     @Override
     public Object visitRecurse(BabbleParser.RecurseContext ctx) {
         last = ctx;
-        return namespace.get("$recurse").get();
+        return namespace.lookup("$recurse");
     }
 }

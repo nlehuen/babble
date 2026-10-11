@@ -3,6 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([object-model.md](object-model.md), summarised in §8.2). |
+| **Implemented** | §15 steps 1–5 and 7 with today's object semantics: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, and the phase 1 compiler for the whole grammar (§16). Steps 6 and 8–11 remain. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -1018,3 +1019,48 @@ behaviour for bindings and forward references.
    The type system design (T1–T8) can start at any time before that.
 10. Runtime boundary checks (T9) in both modes, and the `error` mode.
 11. Benchmarks, then phase 3 design notes, using enforced types where §10.5 allows.
+
+## 16. Implementation notes (phase 0 and phase 1)
+
+What landed, and where it departs from the text above.
+
+* **Mode.** `INTERPRET` stays the default. `-Dbabble.mode=compile` or
+  `engine.put(BabbleScriptEngine.MODE, "compile")` selects the compiler. Surefire runs the whole
+  suite twice; the `compiled-tests` execution sets `babble.mode=compile` and `babble.verify=true`,
+  so every class compiled by a test also passes `CheckClassAdapter`. `DifferentialTestCase`
+  runs every `.ba` script and a list of tricky snippets in both modes and compares results,
+  output and errors.
+* **Objects.** The object model (step 6) is not implemented yet, so `object` and `package`
+  compile against today's `BabbleObject`/`Namespace` semantics (§6.2), D5 fall-through included.
+  Step 7 will move them onto `BabbleInstance`.
+* **Constants (§6.6).** The JVM lets only `<clinit>` itself write a `final` static field, so
+  splitting the initialisation into helpers means the constant fields are `private static`
+  without `final`. They only feed error messages and argument binding, so nothing is lost.
+* **Line numbers (§6.7).** A line entry is emitted at each statement and before every operation
+  that can fail, with the line of the construct the interpreter would blame. A function prologue
+  has no line entry, and default values are compiled out of line after the body, so a binding
+  error is reported at the line of the call. The interpreter was aligned with that: after
+  evaluating a default it reports later binding errors at the call too.
+* **D8** landed with phase 0: `Operators.eq` uses `equals()` past null and numbers, `JavaObject`
+  compares the wrapped values, and `BoundMethod` compares receiver and function. `same` and
+  `Values.hash` belong to the object model.
+* **Natives.** `print to:` accepts any `Appendable`. Raw Java objects are still not scopes, so
+  `STDOUT.flush()` is not callable from Babble (pre-existing).
+* **Debugging.** `-Dbabble.dumpClasses=<dir>`, `-Dbabble.trace=true` and `-Dbabble.verify=true`
+  work as in §11; `asm-util` is an optional dependency, only needed by the last two.
+
+**Benchmarks** (`org.babblelang.bench.Benchmarks` in the test sources, median of 10 evals after
+10 warm-ups, JDK 21):
+
+| Benchmark | interpret (ms) | compile (ms) | speed-up |
+|---|---:|---:|---:|
+| fib(25) : calls and arithmetic | 129.7 | 16.6 | 7.8x |
+| while loop : locals and while | 101.9 | 121.1 | 0.8x |
+| Counter.ba closure : captured variables | 104.9 | 73.5 | 1.4x |
+| Stack.ba push/pop : objects and methods | 86.0 | 23.2 | 3.7x |
+| ArrayList add/get : Java interop | 98.0 | 90.7 | 1.1x |
+
+Calls win most, because the visitor frames and `ReturnException` are gone. Loops are even:
+repeated runs put both modes at about 110 ms, as every access is still a `HashMap` lookup along
+the namespace chain in both. That is the cost phase 2 removes. Java interop is dominated by
+the per-call reflection that phase 3 caches.

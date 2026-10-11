@@ -11,6 +11,7 @@
         <maven.compiler.release>21</maven.compiler.release>
         <antlr.version>4.13.2</antlr.version>
         <junit.version>6.1.2</junit.version>
+        <asm.version>9.11</asm.version>
     </properties>
 
     <dependencies>
@@ -18,6 +19,18 @@
             <groupId>org.antlr</groupId>
             <artifactId>antlr4-runtime</artifactId>
             <version>${antlr.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>${asm.version}</version>
+        </dependency>
+        <!-- Only for the babble.trace and babble.verify debugging switches. -->
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-util</artifactId>
+            <version>${asm.version}</version>
+            <optional>true</optional>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -39,6 +52,23 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.6</version>
+                <executions>
+                    <!-- The whole suite runs a second time with scripts compiled to bytecode,
+                         and every generated class checked by ASM's CheckClassAdapter. -->
+                    <execution>
+                        <id>compiled-tests</id>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <reportsDirectory>${project.build.directory}/surefire-reports-compiled</reportsDirectory>
+                            <systemPropertyVariables>
+                                <babble.mode>compile</babble.mode>
+                                <babble.verify>true</babble.verify>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.antlr</groupId>
