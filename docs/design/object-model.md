@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. The foundational choices are decided (§2), including equality (§4.6, §4.7). The open questions are in §11. |
+| **Status** | Draft. All design questions are decided (§2, O1–O15), and every open question in §11 is resolved. Ready to implement (§12). |
 | **Date** | 2026-10-11 |
 | **Depends on** | [bytecode-compiler.md](bytecode-compiler.md): block scope (§8.1), the shared runtime (§5), type checking (§10) |
 | **Unblocks** | Compiler phase 2 (§7), object and package types T5 (§10.4) |
@@ -23,7 +23,8 @@ instance. Every `def` at the top level of the body declares a **member**.
 * **Babble functions can be passed where Java expects a functional interface**
   (`Runnable`, `Comparator`, `java.util.function.*`). They are converted automatically.
 * **Babble classes can implement Java interfaces** (`implements java.util.Iterator`), mixed
-  freely with Babble interfaces. Extending Java classes is out of scope.
+  freely with Babble interfaces. Babble interfaces can extend Java interfaces too, and their
+  defaults can implement the Java methods. Extending Java classes is out of scope.
 * `object ( … )` stays, as a single instance of an anonymous class.
 * **Members are public unless `private`,** and a private member is reachable only as `this.x`.
 * **Class-level members** go in a `static ( … )` block after the body: `Point.origin`,
@@ -56,9 +57,10 @@ nominal types to work with.
 | O12 | Implementing Java interfaces | **Java interfaces only,** with no extending of Java classes. **One Babble method per name** serves every overload. Before compiler phase 2, a **cached `Proxy`** gives each instance its Java face; from phase 2 the generated JVM class implements the interfaces itself (§9.5). |
 | O13 | Structural typing | **None.** Conformance is always declared, object literals included: `object implements Shape ( … )` (§6.2). |
 | O14 | Reaching a class value | **A built-in `classof(v)`** returns any value's class: the creating class value for Babble instances, the Java class for Java objects. It is not privileged: private statics stay with the static block (§4.11). |
+| O15 | Babble interfaces extending Java interfaces | **Allowed,** and Babble defaults may implement the Java interfaces' methods, so a trait can package a Java implementation (§9.6). |
 
-The sections below work out what these imply. Wherever a further choice was needed, the
-section states it as a recommendation and lists the alternative in §11.
+The sections below work out what these imply. §11 records the follow-up questions, all of
+them resolved.
 
 ## 3. Today, and what changes
 
@@ -595,7 +597,8 @@ def Shape = interface (
   no state, so a default must be a function literal. `def size = 0` in an interface is
   rejected.
 * An interface can extend other interfaces: `interface extends Shape, Named ( … )`. It inherits
-  their required members and defaults.
+  their required members and defaults. Java interfaces can appear in `extends` too, and a
+  Babble default can then implement their methods (§9.6).
 
 ### 6.2 Implementing interfaces
 
@@ -641,7 +644,8 @@ The names in `implements` and `extends` must refer, at compile time, to one of t
 
 * **An `interface` expression,** reached through a `def` (possibly through a package, e.g.
   `shapes.Shape`) whose initialiser is an `interface` literal and which is never reassigned.
-* **A Java interface** (in `implements` only, §9.5), reached through a path from `java` or
+* **A Java interface** (in a class's `implements`, §9.5, or an interface's `extends`, §9.6),
+  reached through a path from `java` or
   `javax`, or from a `def` initialised with `import("…")` and a literal argument. The compiler
   loads it through the engine's class loader. A Java class that isn't an interface is rejected
   with `Babble classes can only implement Java interfaces`.
@@ -857,7 +861,6 @@ executor.submit(java.util.concurrent.Callable(() -> ( 1 )))
 * Babble classes do not **extend Java classes**, abstract ones included. That would bring Java
   constructors, `protected` members and inherited state into a model with no class
   inheritance.
-* A Babble `interface` cannot `extends` a Java interface (§11, Q9).
 * A Java functional object received from Java (say, a `java.util.function.Function`) is called
   through its method, `f.apply(x)`, rather than as `f(x)`.
 
@@ -972,6 +975,52 @@ nothing.
 the type checker and for runtime boundary checks (T9). `x is java.util.Iterator` is `true` for
 a `Countdown` in every phase.
 
+### 9.6 Babble interfaces extending Java interfaces
+
+A Babble interface can extend Java interfaces, mixed with Babble ones, and its defaults can
+implement the Java methods. That lets a trait package a reusable implementation of a Java
+interface:
+
+```
+def Ordered = interface extends java.lang.Comparable (
+    def key : () : int
+    def compareTo = (o) -> ( this.key() - o.key() )      ;; implements Comparable.compareTo
+)
+
+def Task = class (def name, def priority) implements Ordered (
+    def key = () -> ( this.priority )
+)
+
+def tasks = java.util.ArrayList()
+tasks.add(Task("write", 2)) ; tasks.add(Task("plan", 1))
+java.util.Collections.sort(tasks)        ;; plan, write: Task is Comparable through Ordered
+Task("x", 1) is java.lang.Comparable     ;; true
+```
+
+* **Required members.** The abstract methods of the extended Java interfaces become required
+  members of the Babble interface, one per name, as in §9.5. Java defaults, statics and the
+  public methods of `Object` are excluded. The Babble interface may also declare them
+  explicitly, to give them a type (`def compareTo : (o) : int`).
+* **Babble defaults may implement them.** A default whose name matches a Java abstract method
+  is that method's implementation. It must pass §9.5's arity check against every overload of
+  the name: `Ordered.compareTo takes 0 arguments, but Comparable.compareTo passes 1`.
+* **Java defaults.** A Babble default with the same name as a Java default overrides it, and it
+  can still call it through `super(java.util.Iterator).forEachRemaining(f)` (§6.5).
+* **Classes.** A class implementing `Ordered` implements `Comparable` too, transitively. That
+  applies to its Java face (§9.5), to `is`, to `Overloads` applicability and to the type
+  checker.
+  - Completeness: every Java abstract method must be covered, by a method of the class or by a
+    default of one of its Babble interfaces.
+  - A class method overrides a Babble default as usual. A default that two interfaces provide
+    under the same name is a conflict (§6.2), whether either side comes from Java or Babble.
+* **Before compiler phase 2,** the proxy handler of §9.5 resolves a Java method by name. It
+  tries the class's method first, then a default of the class's Babble interfaces, then the
+  Java default through `invokeDefault`.
+* **From phase 2,** the Babble interface compiles to a JVM interface that `extends` the Java
+  interfaces. Each Babble default that implements a Java method is emitted as a JVM `default`
+  method with the exact Java signature, bridging to the default's body, one per overload. The
+  JVM then dispatches Java's calls with no help from the runtime.
+
 ## 10. Migration
 
 Three things in the repo depend on today's object behaviour. Each is migrated in the same
@@ -1076,9 +1125,17 @@ New tests cover the following:
   - `same(list.get(0), x)` after a round trip through Java, and `equals`/`hashCode` of a value
     class seen from a `HashSet`;
   - `print` inside a method called by Java, and a Babble error propagating to Java;
-  - `implements` naming a Java class, rejected.
+  - `implements` naming a Java class, rejected;
+- Babble interfaces extending Java interfaces (§9.6):
+  - `Ordered` sorting `Task`s through a Babble default `compareTo`;
+  - the arity check on a default, and a Java default overridden and reached through `super`;
+  - completeness through a default versus through a class method;
+  - Java/Babble default conflicts;
+  - `is java.lang.Comparable` on an implementing class.
 
-## 11. Open questions
+## 11. Questions raised during the design
+
+All of these are resolved. They are kept as a record of what was considered.
 
 | # | Question | Leaning |
 |---|---|---|
@@ -1090,7 +1147,7 @@ New tests cover the following:
 | Q6 | Babble classes implementing Java interfaces | **Resolved:** Java interfaces only, one method per name, `Proxy` until phase 2 (§9.5). |
 | Q7 | Structural typing for object literals passed where an interface is expected | **Resolved:** no. Conformance is always declared (§6.2, O13). |
 | Q8 | A way for instance code to reach its own class value, and its private statics | **Resolved:** `classof(this)` for the class value and public statics. Private statics stay with the static block (§4.11). |
-| Q9 | Babble interfaces extending Java interfaces (`interface extends java.lang.Comparable`) | Later, if needed. Implementing both side by side already covers the use. |
+| Q9 | Babble interfaces extending Java interfaces | **Resolved:** allowed, and Babble defaults may implement the Java methods (§9.6). |
 
 ## 12. Implementation order
 
@@ -1125,7 +1182,9 @@ New tests cover the following:
    - static loading and the completeness and arity checks;
    - inherited Java defaults;
    - the cached proxy face, with `Values.toJava`/`fromJava` at every boundary;
-   - applicability of instances by their declared interfaces.
+   - applicability of instances by their declared interfaces;
+   - Java interfaces in an interface's `extends`, with Babble defaults implementing them
+     (§9.6).
 6. Compiler phase 1 compiles all of this, backed by `BabbleInstance`. Phase 2 moves to
    JVM classes and interfaces (§7), and phase 3 adds `LambdaMetafactory` adapters.
 
