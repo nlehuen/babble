@@ -1,44 +1,35 @@
 package org.babblelang.engine.impl.natives;
 
 import org.babblelang.engine.BabbleException;
-import org.babblelang.engine.impl.*;
-import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.ScriptRuntime;
 
-import java.util.Iterator;
-
-public class AssertFunction implements Callable<Boolean> {
-    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
-        Namespace namespace = parent.enter(null);
-        if (parameters.isEmpty()) {
+public class AssertFunction implements Callable {
+    @Override
+    public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        if (args.length == 0) {
             throw new BabbleException("assert() called without parameters");
         }
-        if (parameters.size() > 2) {
+        if (args.length > 2) {
             throw new BabbleException("assert() called with too many parameters");
         }
-        Iterator<Object> it = parameters.values().iterator();
-        Object test = it.next();
-        Object message = null;
-        if (it.hasNext()) {
-            message = it.next();
+        Object test = args[0];
+        String message = args.length > 1 ? (String) args[1] : null;
+        if (!(test instanceof Boolean bool)) {
+            throw new BabbleException("Expression " + site.argTexts()[0] + " : asserts don't rely on truth values, please make sure that the test has a boolean result");
         }
-        if (!(test instanceof Boolean)) {
-            throw new BabbleException("Expression " + callSite.callParameters().callParameter(0).expression().getText() + " : asserts don't rely on truth values, please make sure that the test has a boolean result");
+        if (!bool) {
+            fail(message != null
+                    ? message
+                    : "Assertion failed at line " + site.line() + " : " + site.argTexts()[0]);
         }
-        namespace.define("test", true).set(test);
-        namespace.define("message", true).set(message);
-        return namespace;
+        return true;
     }
 
     // A failing assert throws unconditionally : relying on the Java "assert" statement
     // made this a no-op whenever the host JVM ran without -ea, which is the default.
-    public Boolean call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
-        String message = (String) scope.get("message").get();
-        boolean test = (Boolean) scope.get("test").get();
-        if (!test) {
-            throw new BabbleException(message != null
-                    ? message
-                    : "Assertion failed at line " + callSite.getStart().getLine() + " : " + callSite.callParameters().callParameter(0).expression().getText());
-        }
-        return true;
+    protected void fail(String message) {
+        throw new BabbleException(message);
     }
 }

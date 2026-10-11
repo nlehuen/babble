@@ -1,38 +1,56 @@
 package org.babblelang.engine.impl.natives;
 
-import org.babblelang.engine.impl.*;
-import org.babblelang.parser.BabbleParser;
+import org.babblelang.engine.BabbleException;
+import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.ScriptRuntime;
 
-import java.io.PrintStream;
+import java.io.IOException;
 
-public class PrintFunction implements Callable<Object> {
+/**
+ * {@code print} and {@code println} : they write their arguments to the writer of the
+ * eval's ScriptContext, or to the {@code to:} argument when one is given.
+ */
+public class PrintFunction implements Callable {
     private final boolean newLine;
 
     public PrintFunction(boolean newLine) {
         this.newLine = newLine;
     }
 
-    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
-        Namespace namespace = parent.enter(null);
-        namespace.define("parameters", true).set(parameters);
-        return namespace;
-    }
-
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
-        Parameters params = (Parameters) scope.get("parameters").get();
-
-        PrintStream ps = (PrintStream) params.remove("to");
-        if (ps == null) {
-            ps = (PrintStream) scope.get("STDOUT").get();
+    @Override
+    public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        Object to = null;
+        boolean redirected = false;
+        if (names != null) {
+            for (int i = 0; i < args.length; i++) {
+                if ("to".equals(names[i])) {
+                    to = args[i];
+                    redirected = true;
+                }
+            }
+        }
+        Appendable out;
+        if (!redirected) {
+            out = rt.writer();
+        } else if (to instanceof Appendable appendable) {
+            out = appendable;
+        } else {
+            throw new BabbleException("print to: expects a Writer or PrintStream");
         }
 
         // TODO : support printf
-        for (Object o : params.values()) {
-            ps.print(o);
-        }
-
-        if (newLine) {
-            ps.println();
+        try {
+            for (int i = 0; i < args.length; i++) {
+                if (names == null || !"to".equals(names[i])) {
+                    out.append(String.valueOf(args[i]));
+                }
+            }
+            if (newLine) {
+                out.append(System.lineSeparator());
+            }
+        } catch (IOException e) {
+            throw new BabbleException(e);
         }
 
         return null;

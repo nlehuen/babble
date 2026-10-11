@@ -1,12 +1,13 @@
 package org.babblelang.engine.impl.natives.java;
 
 import org.babblelang.engine.BabbleException;
-import org.babblelang.engine.impl.*;
-import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.ScriptRuntime;
 
 import java.lang.reflect.Method;
 
-class JavaMethod implements Callable<Object> {
+class JavaMethod implements Callable {
     private final Class<?> clazz;
     private final String name;
 
@@ -15,22 +16,18 @@ class JavaMethod implements Callable<Object> {
         this.name = name;
     }
 
-    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
-        Namespace namespace = parent.enter(null);
-
-        Method method = Overloads.resolveMethod(clazz, name, parameters.valuesArray());
-        namespace.define("method", true).set(method);
-        namespace.define("parameters", true).set(parameters);
-        namespace.define("this", false).set(clazz);
-
-        return namespace;
+    /**
+     * Called through the class, as a static method.
+     */
+    @Override
+    public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        return invoke(clazz, args);
     }
 
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
-        Method method = (Method) scope.get("method").get();
-        Parameters parameters = (Parameters) scope.get("parameters").get();
+    Object invoke(Object thiz, Object[] args) {
+        Method method = Overloads.resolveMethod(clazz, name, args);
         try {
-            return method.invoke(scope.get("this").get(), parameters.valuesArray());
+            return method.invoke(thiz, args);
         } catch (Exception e) {
             throw new BabbleException(e);
         }

@@ -145,12 +145,14 @@ Language features :
 - [x] basic types : boolean, int, double, functions.
 - [x] object literals & namespace
 - [x] optional type declaration for variables and parameters, not enforced (for documentation only).
-- [x] "native" functions : `print`/`println`, `assert` (or `suppose`).
+- [x] "native" functions : `print`/`println` (writing to the `ScriptContext` writer), `assert` (or `suppose`).
 - [x] directly use Java classes from within Babble.
 
 Implementation features :
 
 - [x] interpreted mode running on the AST, like 1.8.x Ruby, A.K.A. SLOW MODE.
+- [x] compiled mode : scripts compiled to JVM bytecode with [ASM](http://asm.ow2.org/), selected with `-Dbabble.mode=compile` (phase 1 of the [design doc](docs/design/bytecode-compiler.md)).
+- [x] block scope : blocks, `if` branches and `while` bodies are scopes, and names are hoisted to the start of their scope.
 - [x] less than 100 lines of ANTL4 grammar (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's AST & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
@@ -172,4 +174,4 @@ Language features :
 
 Implementation features :
 
-- [ ] compiled mode with compilation to bytecode using [ASM](http://asm.ow2.org/) (big one !). See the [design doc](docs/design/bytecode-compiler.md).
+- [ ] faster compiled mode : static scope resolution (JVM locals instead of namespaces) and `invokedynamic` call sites, phases 2 and 3 of the [design doc](docs/design/bytecode-compiler.md).

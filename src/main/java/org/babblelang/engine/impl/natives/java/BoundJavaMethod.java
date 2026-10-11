@@ -1,9 +1,10 @@
 package org.babblelang.engine.impl.natives.java;
 
-import org.babblelang.engine.impl.*;
-import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.ScriptRuntime;
 
-public class BoundJavaMethod implements Callable<Object> {
+public class BoundJavaMethod implements Callable {
     private final JavaMethod method;
     private final Object thiz;
 
@@ -12,13 +13,8 @@ public class BoundJavaMethod implements Callable<Object> {
         this.thiz = thiz;
     }
 
-    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
-        Namespace result = method.bindParameters(interpreter, callSite, parent, parameters);
-        result.get("this").set(thiz);
-        return result;
-    }
-
-    public Object call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
-        return method.call(interpreter, callSite, scope);
+    @Override
+    public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        return method.invoke(thiz, args);
     }
 }

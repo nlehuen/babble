@@ -1,24 +1,18 @@
 package org.babblelang.engine.impl.natives.java;
 
-import org.babblelang.engine.impl.*;
-import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.ScriptRuntime;
 
 import java.util.HashMap;
 import java.util.Map;
 
-public class ImportFunction implements Callable<JavaPackage> {
+public class ImportFunction implements Callable {
     private final Map<String, JavaPackage> packages = new HashMap<>();
 
-    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
-        Namespace namespace = parent.enter(null);
-        Object first = parameters.values().iterator().next();
-        namespace.define("name", true).set(first);
-        return namespace;
-    }
-
-    public JavaPackage call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
-        String name = (String) scope.get("name").get();
-        return getPackage(name);
+    @Override
+    public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        return getPackage((String) args[0]);
     }
 
     public JavaPackage getPackage(String name) {

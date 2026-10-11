@@ -20,7 +20,7 @@ assert(java.lang.Math.abs(0 - 5) == 5)
 assert(java.lang.Math.max(2, 3) == 3)
 assert(java.lang.Math.sqrt(4) == 2)
 
-println(java.lang.System.currentTimeMillis())
+assert(java.lang.System.currentTimeMillis() > 0)
 
 assert(java.sql.DriverManager.getDrivers() <> null)
 

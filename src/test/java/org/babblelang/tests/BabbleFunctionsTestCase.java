@@ -1,6 +1,6 @@
 package org.babblelang.tests;
 
-import org.babblelang.engine.impl.Function;
+import org.babblelang.runtime.BabbleFunction;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -9,7 +9,7 @@ import javax.script.ScriptException;
 public class BabbleFunctionsTestCase extends BabbleTestBase {
     @Test
     public void testFunctionLiteral() throws Exception {
-        Assertions.assertTrue(interpret("def add = (a:int, b:int):int -> ( a + b )") instanceof Function);
+        Assertions.assertTrue(interpret("def add = (a:int, b:int):int -> ( a + b )") instanceof BabbleFunction);
     }
 
     @Test
@@ -102,6 +102,72 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         } catch (ScriptException e) {
             Assertions.assertEquals("org.babblelang.engine.BabbleException: return outside of a function in <input> at line number 1", e.getMessage());
         }
+        // Rejected before running, so even when it would never run.
+        assertRejected("if false then ( return 1 ) ; 2", "return outside of a function", 1);
+        assertRejected("1\npackage p ( return 1 )", "return outside of a function", 2);
+        assertRejected("def o = object ( def v = ( return 2 ) )", "return outside of a function", 1);
+    }
+
+    @Test
+    public void testReturnInsideObjectOrPackageBodyReturnsFromTheFunction() throws Exception {
+        Assertions.assertEquals(2, interpret("def g = () -> ( object ( def v = ( return 2 ) ) ; 3 ) ; g()"));
+        Assertions.assertEquals(4, interpret("def g = () -> ( package p ( return 4 ) ; 3 ) ; g()"));
+    }
+
+    @Test
+    public void testReturnInAParameterDefault() throws Exception {
+        assertRejected("def h = (a, b = ( return 99 )) -> ( a ) ; 1", "return in a parameter default", 1);
+        // A function literal nested in a default is a function of its own.
+        Assertions.assertEquals(1, interpret("def k = (a, cb = () -> ( return 1 )) -> ( cb() ) ; k(0)"));
+    }
+
+    @Test
+    public void testReturnInTheMiddleOfAnExpression() throws Exception {
+        Assertions.assertEquals(2, interpret("def g = (a, b) -> ( a + b ) ; def f = () -> ( g(1, return 2) ) ; f()"));
+        Assertions.assertEquals(5, interpret("def f = () -> ( 1 + ( return 5 ) ) ; f()"));
+        Assertions.assertEquals(7, interpret("def f = () -> ( while true then ( return 7 ) ) ; f()"));
+        Assertions.assertEquals(8, interpret("def f = () -> ( while return 8 then ( 1 ) ) ; f()"));
+    }
+
+    private void assertRejected(String script, String message, int line) {
+        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(script));
+        Assertions.assertEquals("org.babblelang.engine.BabbleException: " + message + " in <input> at line number " + line, e.getMessage());
+    }
+
+    @Test
+    public void testBindingErrorsAreReportedAtTheCall() {
+        ScriptException missing = Assertions.assertThrows(ScriptException.class,
+                () -> interpret("def f = (a) -> (\n  a\n)\n\nf()"));
+        Assertions.assertEquals("org.babblelang.engine.BabbleException: Missing parameter : a in <input> at line number 5", missing.getMessage());
+
+        // Even after a default value on another line was evaluated.
+        ScriptException leftover = Assertions.assertThrows(ScriptException.class,
+                () -> interpret("def f = (a,\n b = 1 +\n 1) -> (\n  a\n)\n\nf(1, c: 2)"));
+        Assertions.assertEquals("org.babblelang.engine.BabbleException: No such parameter : c in <input> at line number 7", leftover.getMessage());
+
+        // An error inside a default value is reported where it is.
+        ScriptException inDefault = Assertions.assertThrows(ScriptException.class,
+                () -> interpret("def f = (a,\n b = a + nosuchname) -> (\n  a\n)\n\nf(1)"));
+        Assertions.assertEquals("org.babblelang.engine.BabbleException: No such name : nosuchname in <input> at line number 2", inDefault.getMessage());
+    }
+
+    @Test
+    public void testErrorsAreReportedAtTheirLine() {
+        // An operator's line is the line where its left operand starts.
+        ScriptException e = Assertions.assertThrows(ScriptException.class,
+                () -> interpret("def f = (a) -> (\n  def b = 1\n  a +\n    \"x\" -\n 2\n)\nf(1)"));
+        Assertions.assertEquals("org.babblelang.engine.BabbleException: Not a number : \"x\" in <input> at line number 3", e.getMessage());
+
+        ScriptException deeper = Assertions.assertThrows(ScriptException.class,
+                () -> interpret("def f = (a) -> (\n  def b = 1\n  b.x\n)\n\nf(1)"));
+        Assertions.assertEquals("org.babblelang.engine.BabbleException: Not a scope : b in <input> at line number 3", deeper.getMessage());
+    }
+
+    @Test
+    public void testNamedArgumentsUseUpTheirPosition() {
+        ScriptException e = Assertions.assertThrows(ScriptException.class,
+                () -> interpret("def f = (a, b) -> ( a ) ; f(1, a: 2)"));
+        Assertions.assertEquals("org.babblelang.engine.BabbleException: Missing parameter : b in <input> at line number 1", e.getMessage());
     }
 
     @Test

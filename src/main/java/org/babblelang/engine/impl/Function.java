@@ -1,42 +1,56 @@
 package org.babblelang.engine.impl;
 
+import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.runtime.Arguments;
+import org.babblelang.runtime.BabbleFunction;
+import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Frames;
+import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.parser.BabbleParser;
 
-public class Function<R> implements Callable<R> {
+/**
+ * An interpreted function : a function literal and the namespace it closes over.
+ */
+public class Function implements BabbleFunction {
     private final BabbleParser.FunctionLiteralContext definition;
     private final Namespace closure;
+    private final Interpreter interpreter;
 
-    public Function(BabbleParser.FunctionLiteralContext definition, Namespace namespace) {
+    Function(BabbleParser.FunctionLiteralContext definition, Namespace namespace, Interpreter interpreter) {
         this.definition = definition;
         this.closure = namespace;
+        this.interpreter = interpreter;
     }
 
-    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
-        return bindParameters(interpreter, parameters, this);
-    }
-
-    /**
-     * Binds the arguments in a fresh scope over the closure, with "$recurse" resolving to
-     * the callable the call actually went through. That is this function, except when it
-     * was reached as a method : a {@link BoundMethod} has to recurse as itself, or the
-     * recursive call would go to the raw function and lose the receiver, leaving "this"
-     * undefined inside it.
-     */
-    Namespace bindParameters(Interpreter interpreter, Parameters parameters, Callable<?> self) {
-        Namespace namespace = closure.enter(null);
-        namespace.define("$recurse", true).set(self);
-        parameters.bind(interpreter, definition.parametersDeclaration(), namespace);
-        return namespace;
-    }
-
-    // The interpreter is untyped, so the result type is the caller's assertion.
-    @SuppressWarnings("unchecked")
-    public R call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
+    @Override
+    public Object invoke(Object thiz, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        Namespace namespace = Frames.enter(closure, recurseTarget(thiz), thiz, interpreter.scopes().declared(definition));
+        String[] parameters = interpreter.scopes().parameters(definition);
+        Arguments.Binder binder = Arguments.binder(parameters, args, names);
+        for (int i = 0; i < parameters.length; i++) {
+            Object value = binder.take(i);
+            if (value == Arguments.MISSING) {
+                BabbleParser.ExpressionContext defaultValue = definition.parametersDeclaration().parameterDeclaration(i).defaultValue;
+                if (defaultValue == null) {
+                    throw binder.missing(i);
+                }
+                // A default value belongs to the function's scope, not to the call site.
+                value = interpreter.evaluateDefault(namespace, defaultValue);
+            }
+            namespace.defineParameter(parameters[i], value);
+        }
+        binder.rejectLeftovers();
         try {
-            return (R) interpreter.visit(definition.functionBlock);
+            return interpreter.evaluateIn(namespace, definition.functionBlock);
         } catch (ReturnException re) {
             // A "return" anywhere in the body unwinds up to here, which is its target.
-            return (R) re.getValue();
+            return re.getValue();
         }
+    }
+
+    @Override
+    public String toString() {
+        String name = ScopeAnalysis.functionName(definition);
+        return name != null ? "function " + name : "function";
     }
 }

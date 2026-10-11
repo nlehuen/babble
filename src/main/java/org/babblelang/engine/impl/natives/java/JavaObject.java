@@ -6,6 +6,7 @@ import org.babblelang.engine.impl.Slot;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public class JavaObject implements Scope<BoundJavaMethod> {
     private final JavaClass clazz;
@@ -32,5 +33,16 @@ public class JavaObject implements Scope<BoundJavaMethod> {
             slot.set(new BoundJavaMethod(result, value));
             return slot;
         });
+    }
+
+    /** Java objects compare with their own equals(), as Babble's "==" does. */
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof JavaObject other && Objects.equals(value, other.value);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(value);
     }
 }

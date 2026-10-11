@@ -1,8 +1,11 @@
 package org.babblelang.engine.impl.natives.java;
 
 import org.babblelang.engine.BabbleException;
-import org.babblelang.engine.impl.*;
-import org.babblelang.parser.BabbleParser;
+import org.babblelang.engine.impl.Scope;
+import org.babblelang.engine.impl.Slot;
+import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.ScriptRuntime;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -10,7 +13,7 @@ import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
 
-class JavaClass implements Scope<Callable>, Callable<JavaObject> {
+class JavaClass implements Scope<Callable>, Callable {
     private final Class<?> clazz;
     private final Map<String, Slot<Callable>> members = new HashMap<>();
 
@@ -18,19 +21,11 @@ class JavaClass implements Scope<Callable>, Callable<JavaObject> {
         this.clazz = clazz;
     }
 
-    public Namespace bindParameters(Interpreter interpreter, BabbleParser.CallContext callSite, Namespace parent, Parameters parameters) {
-        Namespace namespace = parent.enter(null);
-        Constructor<?> constructor = Overloads.resolveConstructor(clazz, parameters.valuesArray());
-        namespace.define("constructor", true).set(constructor);
-        namespace.define("parameters", true).set(parameters);
-        return namespace;
-    }
-
-    public JavaObject call(Interpreter interpreter, BabbleParser.CallContext callSite, Scope<Object> scope) {
-        Constructor<?> constructor = (Constructor<?>) scope.get("constructor").get();
-        Parameters parameters = (Parameters) scope.get("parameters").get();
+    @Override
+    public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        Constructor<?> constructor = Overloads.resolveConstructor(clazz, args);
         try {
-            return new JavaObject(this, constructor.newInstance(parameters.valuesArray()));
+            return new JavaObject(this, constructor.newInstance(args));
         } catch (Exception e) {
             throw new BabbleException(e);
         }
