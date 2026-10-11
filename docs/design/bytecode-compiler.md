@@ -31,8 +31,12 @@ The work is split into four phases. Each one leaves the build green and can ship
    `invokedynamic` call sites with inline caches. Type specialisation driven by the optional
    type annotations becomes possible.
 
+Type checking is a separate front-end pass that both modes run. It reuses the phase 2
+`Resolver`, should land alongside phase 2 code generation, and should come before phase 3,
+which is where enforced types pay off (§10).
+
 The bytecode is generated with **ASM**, as the README already plans. The `java.lang.classfile`
-API would need a JDK 24+ baseline (see §11).
+API would need a JDK 24+ baseline (see §12).
 
 ## 2. Background: what the interpreter does today
 
@@ -157,15 +161,15 @@ assert on that exact message shape, for example
   method names taken from `def` names, and the script name as the `SourceFile`.
 * G4. Support learning and debugging: dump generated classes, verify them in tests, and run
   any test in either mode.
-* G5. Make Babble programs measurably faster than the interpreter (§10). Phase 1 should already
+* G5. Make Babble programs measurably faster than the interpreter (§11). Phase 1 should already
   win; phases 2 and 3 should win by a lot.
 
 **Non-goals (for this design)**
 
 * Ahead-of-time `.class`/`.jar` output and a `babblec` CLI. The class layout is chosen so that
   this is easy later (§9, phase 4).
-* Enforcing the optional type annotations. They stay documentation, and only phase 3 may use
-  them, as guarded hints.
+* Type checking. It is a separate front-end pass with its own design. §10 explains where it
+  fits relative to the compiler phases, and what the compiler gains from it.
 * New language features (block scope, classes, `for`, `yield`). The compiler must not make
   them harder, though. §8 says where they interact.
 * Removing the interpreter.
@@ -173,13 +177,15 @@ assert on that exact message shape, for example
 ## 4. Architecture
 
 ```
-            ┌──────────── BabbleScriptEngine.compile(reader) ────────────┐
-source ──►  │ lex/parse ─► FileContext ─► [optimizers] ─┬─► interpreter   │──► CompiledScript
-            │                                           └─► compiler      │
-            └─────────────────────────────────────────────────────────────┘
+            ┌─────────────────── BabbleScriptEngine.compile(reader) ────────────────────┐
+source ──►  │  lex/parse ─► FileContext ─► [analysis] ─► [optimizers] ─┬─► interpreter  │──► CompiledScript
+            │                                                          └─► compiler     │
+            └───────────────────────────────────────────────────────────────────────────┘
+                         org.babblelang.analysis (phase 2+, both modes)
+          Resolver ─► type checker (§10) ─► bindings + types, read by the compiler
                                                               │
                          org.babblelang.compiler              ▼
-          Resolver (phase 2) ─► CodeGenerator (ASM) ─► byte[] ─► ScriptClassLoader
+                    CodeGenerator (ASM) ─► byte[] ─► ScriptClassLoader
                                                               │
                          org.babblelang.runtime               ▼
           Operators · Truth · Members · Callable · Arguments · CallSite · CompiledFunction · Cell
@@ -191,7 +197,8 @@ source ──►  │ lex/parse ─► FileContext ─► [optimizers] ─┬─
 | Package | Contents |
 |---|---|
 | `org.babblelang.runtime` (new) | Everything generated code calls into: `Operators`, `Truth`, `Members`, `Callable`, `Calls`, `Arguments`, `CallSite`, `CompiledFunction`, `Cell`, `Undefined`, `ScriptRuntime`. It must not depend on ANTLR or the parse tree. |
-| `org.babblelang.compiler` (new) | `BabbleCompiler` (facade), `Resolver`, `CodeGenerator`, `ScriptClassLoader`, `CompiledBabbleScript`. |
+| `org.babblelang.analysis` (new, phase 2) | Front-end passes that both modes run: `Resolver` (§7.1) and, later, the type checker (§10). |
+| `org.babblelang.compiler` (new) | `BabbleCompiler` (facade), `CodeGenerator`, `ScriptClassLoader`, `CompiledBabbleScript`. |
 | `org.babblelang.engine.impl` | The interpreter, `Namespace`/`Slot`/`BabbleObject`, and the natives, moved onto the runtime interfaces. |
 
 ### 4.2 Choosing the mode
@@ -433,7 +440,8 @@ resolves names at compile time.
 
 ### 7.1 Resolver
 
-`Resolver` is a visitor that runs before code generation. It builds a tree of lexical scopes
+`Resolver` is a visitor that runs before code generation. It lives in `org.babblelang.analysis`
+because the type checker uses it too (§10.1). It builds a tree of lexical scopes
 (file, package, object, function) and records a `Binding` for each identifier occurrence in a
 `ParseTreeProperty<Binding>`:
 
@@ -512,7 +520,7 @@ the `def` is not inside a loop, the closure can capture the **value** instead of
 ### 7.6 Exit criteria
 
 * Both modes pass the full suite. D1 is implemented in both.
-* On the benchmarks in §10, phase 2 is clearly ahead of phase 1. The numbers go in the PR.
+* On the benchmarks in §11, phase 2 is clearly ahead of phase 1. The numbers go in the PR.
 
 ## 8. Semantic decisions and divergences
 
@@ -547,15 +555,120 @@ get there:
 * **Member selection.** Cache by receiver kind. For `BabbleObject` it is a slot lookup, and for
   `JavaPackage`/`JavaClass` the result is constant, so it can be bound once.
 * **Arithmetic.** Guard on `(Integer, Integer)` and inline `Math`-style wrapping `int`
-  arithmetic, falling back to `Operators`. Type annotations (`a:int`) can bias the initial
-  guard, but they are never trusted without a check, because they are not enforced (non-goal).
+  arithmetic, falling back to `Operators`. Where the type checker has established an enforced
+  type (§10.5), no guard is needed. Unenforced annotations can only bias the initial guard.
 
 **Phase 4: ahead-of-time compilation (optional).** A `babblec` Maven goal or CLI writes the
 script class plus a `main` that builds the implicits and calls `run`. Hidden runtime state
 (class loader, `ScriptRuntime`) is already explicit, so this is mostly packaging. The jar
 would depend on the Babble runtime and on ANTLR only if interpreter fallback is still used.
 
-## 10. Testing, debugging and benchmarking
+## 10. Type checking
+
+The README lists "type checking" and "type inference" as planned features. Today the
+annotations (`a:int`, `(n:int):string`) are parsed and then ignored: nothing in the interpreter
+reads them. This section covers where a type checker fits relative to the compiler phases, and
+what has to be decided before one can be built. The type system itself needs its own design
+document. The list in §10.4 is the agenda for it, not its content.
+
+### 10.1 Where it sits
+
+The type checker is a **front-end pass**. It runs on the parse tree after parsing, before
+either backend, and in both modes. If it ran only before code generation, whether a program
+is accepted would depend on `babble.mode`, which goes against G1.
+
+* It needs to know which declaration each identifier refers to. That is exactly what the
+  phase 2 `Resolver` (§7.1) computes, so the checker consumes `ParseTreeProperty<Binding>`
+  rather than repeating the analysis. The `Resolver` therefore lives in a shared
+  `org.babblelang.analysis` package, not in the compiler.
+* It records a `Type` per expression in a `ParseTreeProperty<Type>`, which code generation and
+  the optimizers can read later (§10.5).
+* It runs **before** the optimizers. They rewrite the tree, and diagnostics should point at what
+  the user wrote.
+
+### 10.2 Ordering relative to the compiler phases
+
+**Not before phases 0 and 1.** Those phases reproduce the interpreter's dynamic behaviour, and
+their only success criterion is that the same tests pass in both modes. Type information gives
+them nothing. A checker also changes which programs the language accepts, and doing that while
+parity is being established makes every failure ambiguous: is it the compiler, or the new rules?
+
+**Not before D1 and the `Resolver`.** Until D1 is decided, what a name refers to depends on
+timing (§2.3). A checker built on the current rules would be rebuilt when hoisting lands.
+
+**Before phase 3.** Phase 3 adds guarded call sites to cope with not knowing types: `int`
+arithmetic with fallbacks, overload caches keyed on runtime classes. Where types are known and
+trustworthy (§10.3), the compiler can emit direct code instead, so the mix of the two strategies
+should be designed knowing what types will provide.
+
+So the order is: phases 0 and 1, then D1 and the `Resolver`, then **the type checker alongside
+phase 2 code generation**, then the enforcement decision (T9), then phase 3. The type system
+design (§10.4) depends on none of this and can start now.
+
+### 10.3 Rollout: gradual, warnings first
+
+* **Gradual typing.** Anything without an annotation has the type `dynamic`, which is compatible
+  in both directions with every other type. Programs without annotations are therefore accepted
+  as before, and diagnostics come from code that contradicts its own annotations. The exception
+  to watch is inference (T8). A type inferred from an initialiser must not be stricter than what
+  runs today: an inferred object type that leaves out the D5 fall-through members would reject
+  `o.println`, for instance. The in-repo scripts are the test for this.
+* **A switch, `babble.typecheck=off|warn|error`.** The default starts at `off`. The test suite
+  runs with `warn`, and both modes report the same diagnostics. `error` becomes the default once
+  the type system has settled and the in-repo scripts check cleanly.
+* **Diagnostics** are collected with their source line and column. In `error` mode they are
+  raised as a `ScriptException` from `compile()`, before anything runs. In `warn` mode they go
+  to the `ScriptContext`'s error writer.
+* **Enforcement (T9).** A checker alone cannot make types trustworthy, because `dynamic` values
+  flow into annotated code. If annotations are to mean something at runtime, a check is needed
+  wherever a `dynamic` value meets a declared type: arguments of annotated parameters, results
+  of annotated functions, writes to annotated variables and members. That check lives in the
+  shared runtime (`Types.check(value, type, site)`) so both modes fail the same way. Without
+  enforcement, phase 3 can only use types as hints that still need a guard.
+
+### 10.4 Type system questions to settle first
+
+| # | Question | Why it matters | Starting point |
+|---|---|---|---|
+| T1 | Type names | `Test1.ba` uses `int` and `string`, which nothing defines | Built-ins `int`, `double`, `bool`, `string` mapped to their boxed runtime classes. Dotted names (`java.util.List`) resolve to Java classes. |
+| T2 | `null` | `def head = null` is everywhere, and so are `if` without `else` and `def x` without a value | `int`, `double` and `bool` reject `null`, which is what allows unboxing in phase 3. Every other type is nullable, as the runtime already is. A `T?` syntax can come later. |
+| T3 | Operator typing | §2.2 is the specification | `int op int` is `int` (except `/`, which is `double`). Any mix with `double` is `double`. `string + any` is `string`. Comparisons and `and`/`or`/`not` are `bool`. `if`/`while` tests accept any type, because truthiness is defined for all values. |
+| T4 | Function types | Calls bind by name and by position, and parameters can have defaults | Parameter names are part of the type, and each parameter is marked optional or not. The grammar's `functionType` reuses `parametersDeclaration`, which allows default *expressions* in a type. That needs tightening. |
+| T5 | Object and package types | There is no syntax for them, and D5 lets `obj.x` reach the enclosing scope | Infer structural types for object literals and packages from their `def`s. Annotations stay limited to names until the object model arrives. D5 makes the inferred member set awkward, which is an argument for deciding D5 and T5 together. |
+| T6 | `this` | Whether a function runs as a method is only known at call time (§7.4) | `dynamic`. |
+| T7 | Java interop | Reflection gives static types, but generics are erased | Constructor and method result types come from reflection, and erased type parameters become `dynamic`. With the argument types known, overload resolution can happen at check time (§10.5). |
+| T8 | Inference for unannotated `def`s | If `def f = (a:int):int -> …` leaves `f` as `dynamic`, calls to `f` are never checked and the checker is close to useless | An unannotated `def` takes its initialiser's type when the `Resolver` sees no other assignment to it. Members that can be written through `obj.x = …` stay `dynamic` unless annotated. Fuller inference is the README's separate "type inference" item. |
+| T9 | Enforcement | Decides whether phase 3 can trust types (§10.3) | Enforce at the boundaries in `error` mode, in both modes. |
+
+### 10.5 What the compiler gains
+
+Phases 1 and 2 use no type information. In phase 3, where enforced types (T9) are known:
+
+* `int`, `double` and `bool` locals and parameters become unboxed JVM locals. Arithmetic
+  compiles to `IADD`/`IMUL`/…, which wraps around exactly like today's `Integer` arithmetic,
+  and comparisons compile to `IF_ICMPxx`/`DCMPx`.
+* A typed function gets a specialised static entry point with a primitive signature, next to
+  the generic boxed entry. The boxed entry checks and unboxes its arguments, then calls the
+  specialised one. A call site whose callee is statically known (a `def` that the `Resolver`
+  sees is never reassigned) calls the specialised entry directly.
+* A Java call whose receiver and argument types are known is resolved once, at compile time,
+  and emitted as `INVOKEVIRTUAL`/`INVOKESTATIC`/`INVOKEINTERFACE`, with no reflection at all.
+* Code typed `dynamic` keeps the guarded `invokedynamic` sites from §9.
+* `SimpleBinaryOpsOptimizer` folds `x * 0` to `0` without checking types, which is wrong when
+  `x` is a `double` (`0.0`) or a `string` (an error at runtime). With types available, it can
+  restrict those rewrites to `int`.
+
+### 10.6 Testing
+
+* Golden tests in the style of the `Resolver` ones: a snippet, and the diagnostics expected at
+  each line and column.
+* Every `.ba` script in `src/test/babble` must check cleanly in `error` mode, using the
+  annotations it already has. Gradual typing makes that the baseline, and it also catches
+  annotations that are wrong today but go unnoticed because nothing reads them.
+* With T9 in place, both modes must fail the same way when a `dynamic` value reaches an
+  annotated parameter with the wrong type. This joins the differential tests in §11.
+
+## 11. Testing, debugging and benchmarking
 
 * **Dual-mode suite.** `BabbleTestBase` reads `babble.mode`. Surefire gets a second execution,
   `compiled-tests`, that runs the same classes with `-Dbabble.mode=compile`, so `mvn package` runs
@@ -575,7 +688,7 @@ would depend on the Babble runtime and on ANTLR only if interpreter fallback is 
   `ArrayList` add/get loop (Java interop). Each phase's PR includes the before/after table.
   This document does not predict numbers.
 
-## 11. Alternatives considered
+## 12. Alternatives considered
 
 * **`java.lang.classfile` (JEP 484) instead of ASM.** It ships with the JDK (final in 24), needs
   no dependency and always supports the newest class file version. But the build targets
@@ -594,7 +707,7 @@ would depend on the Babble runtime and on ANTLR only if interpreter fallback is 
   beat everything here, but it is a heavyweight framework that sidesteps the learning goal.
   It is noted for completeness.
 
-## 12. Risks
+## 13. Risks
 
 | Risk | Mitigation |
 |---|---|
@@ -604,8 +717,9 @@ would depend on the Babble runtime and on ANTLR only if interpreter fallback is 
 | `getCommonSuperClass` loading classes during generation | Override it (§6.5) |
 | Method or constant-pool size limits on large scripts | Split `run` and `<clinit>` (§6.6, §6.8) |
 | Class-loader leaks in long-lived engines | A loader per compile, no static caches that point at generated classes from runtime code |
+| The type checker rejects programs that run today | Gradual typing (unannotated is `dynamic`), `warn` before `error`, and every in-repo script must check cleanly (§10.3) |
 
-## 13. Appendix: worked example
+## 14. Appendix: worked example
 
 Babble (`Counter.ba`):
 
@@ -688,7 +802,7 @@ final class Script$1 {
 Top-level `counter`, `c` and the global `assert` stay namespace accesses, which keeps the
 behaviour for bindings and forward references.
 
-## 14. Proposed sequence of changes
+## 15. Proposed sequence of changes
 
 1. Phase 0a: `org.babblelang.runtime` with `Operators`, `Truth`, `Members`. The interpreter
    delegates to them.
@@ -702,5 +816,9 @@ behaviour for bindings and forward references.
 5. Compile `package`, `object` and member access. Phase 1 is complete: the full suite passes in
    both modes.
 6. Decide D1 and implement hoisting in the interpreter.
-7. Phase 2: the `Resolver`, then `LOCAL`/`CELL`/`CAPTURED`, then `FrameScope`, then `this`.
-8. Benchmarks, then phase 3 design notes.
+7. Phase 2: the `Resolver` (in `org.babblelang.analysis`), then `LOCAL`/`CELL`/`CAPTURED`,
+   then `FrameScope`, then `this`.
+8. In parallel with step 7, once the `Resolver` exists: the type checker, in `warn` mode only.
+   The type system design (T1–T8) can start at any time before that.
+9. Decide T9 (enforcement), and add the runtime checks to both modes.
+10. Benchmarks, then phase 3 design notes, using enforced types where §10.5 allows.
