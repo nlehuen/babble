@@ -18,7 +18,8 @@ instance. Every `def` at the top level of the body declares a **member**.
   means a member, and it resolves lexically.
 * **No class inheritance.** Classes reuse behaviour by implementing **interfaces**.
   `interface ( … )` declares required members and may provide default methods, so interfaces
-  double as traits.
+  double as traits. An override can call the default it replaces with `super.m()`, or with
+  `super(Shape).m()` when several interfaces provide one.
 * **Babble functions can be passed where Java expects a functional interface**
   (`Runnable`, `Comparator`, `java.util.function.*`). They are converted automatically.
 * `object ( … )` stays, as a single instance of an anonymous class.
@@ -38,12 +39,13 @@ nominal types to work with.
 |---|---|---|
 | O1 | Unit of definition | **Class expressions** with a constructor parameter list in the header. Object literals become one-off anonymous classes. |
 | O2 | Member lookup | **Members only, explicit `this`.** `obj.x` sees only members, and inside a class members must be written `this.x`. This closes D5 in the compiler doc. |
-| O3 | Reuse | **Interfaces with default methods (traits).** There is no class inheritance and no `super`. |
+| O3 | Reuse | **Interfaces with default methods (traits).** There is no class inheritance. `super` reaches interface defaults only (O9). |
 | O4 | Java interop | **Functions convert to Java functional interfaces.** Babble classes do not implement or extend Java types in this design. |
 | O5 | Equality of instances | **Value classes.** `value class` generates `equals`/`hashCode`/`toString` from read-only members, and every other class compares by identity. There is no hand-written `equals`. |
 | O6 | `==` on other values | **Java `equals()`** for every non-number, so lists, maps and sets compare by content. Numbers keep the cross-type rule (`1 == 1.0`). |
 | O7 | Identity | **A built-in `same(a, b)`** native, with no new operator. |
 | O8 | Parameters as members | **`def` in the class header** (`class (def x, def y)`) declares a member initialised from the argument. In a **value class every parameter is a member**, record-style. Header members, like all members, are reached only as `this.x` (§4.8). |
+| O9 | Calling an overridden default | **`super.m()`**, qualified as `super(Shape).m()` when several interfaces provide `m`. Kotlin-style, compiled as Java's `Shape.super.m()` (§6.5). |
 
 The sections below work out what these imply. Wherever a further choice was needed, the
 section states it as a recommendation and lists the alternative in §11.
@@ -93,13 +95,14 @@ parameterDeclaration: DEF? ID (':' type)? ('=' NL* defaultValue=expression)?;   
 | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block                     # interfaceExpression
 | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block                        # objectExpression
 | THIS                                                                       # thisExpression
+| SUPER ('(' NL* type NL* ')')?                                              # superExpression
 | left=expression IS right=expression                                        # isExpression
 
 typeList: type (NL* ',' NL* type)*;
 ```
 
 The new keywords are `class`, `interface`, `implements`, `extends` (only between interfaces,
-§6.4), `is` and `this`. `this` stops being an ordinary name (§5.3). None of them is used as an
+§6.4), `is`, `this` and `super` (§6.5). `this` stops being an ordinary name (§5.3). None of them is used as an
 identifier anywhere in the repo, and they only appear in comments.
 
 A class with no parameters can omit the list: `class ( … )` is `class () ( … )`.
@@ -415,8 +418,8 @@ Square(2.0).describe()    ;; "square of area 4.0", the default method from Shape
   overrides it.
 * **Conflicts must be resolved explicitly.** If two implemented interfaces provide defaults with
   the same name, the class must define that member itself, or it is rejected:
-  `Conflicting defaults for describe : Shape, Named`. There is no `super`, so an override cannot
-  yet call the default it replaces (§11, Q2).
+  `Conflicting defaults for describe : Shape, Named`. The override can still call either
+  default through `super(Shape).describe()` (§6.5).
 * `object implements Shape ( … )` works the same way for one-off objects.
 
 ### 6.3 `implements` must resolve statically
@@ -434,9 +437,57 @@ around dynamically.
 ### 6.4 Why not class inheritance
 
 Declined for this version, by decision O3. Interfaces with defaults cover the main reuse
-cases. They avoid the fragile-base-class problem and `super` chains, and they fit the JVM
-mapping directly (default methods). Class inheritance could still be added later, because
+cases. They avoid the fragile-base-class problem and chains of `super` through class
+hierarchies, and they fit the JVM mapping directly (default methods). `super` exists, but it
+only reaches interface defaults (§6.5). Class inheritance could still be added later, because
 nothing here excludes it.
+
+### 6.5 Calling an overridden default: `super`
+
+An override can call the default method it replaces:
+
+```
+def Square = class (def side:double) implements Shape (
+    def name = "square"
+    def area = () -> ( this.side * this.side )
+    def describe = () -> ( "[" + super.describe() + "]" )     ;; Shape's default
+)
+
+def Labelled = class () implements Shape, Named (
+    …
+    ;; both interfaces provide describe, so the class must define it (§6.2),
+    ;; and each default has to be named
+    def describe = () -> ( super(Shape).describe() + " / " + super(Named).describe() )
+)
+```
+
+* **Unqualified: `super.m(args)`.** This looks for a default named `m` among the interfaces the
+  class lists in `implements`, including the defaults those interfaces inherit through
+  `extends`.
+  - Exactly one distinct default: that is the one called.
+  - None: the call is rejected with `No default describe to call`.
+  - More than one: it is rejected with
+    `Ambiguous super.describe : Shape, Named. Write super(Shape).describe()`.
+* **Qualified: `super(I).m(args)`.** This calls the default that `I` provides, its own or one
+  `I` inherited through `extends`. `I` must be listed **directly** in the class's `implements`,
+  which is also a JVM rule for `invokespecial`. Otherwise the call is rejected with
+  `Shape is not implemented directly by Square`.
+* **Only defaults.** A required member has no body, so `super` can't call it:
+  `Shape.area has no default`. Interfaces have no fields, so `super` only ever selects methods.
+* **Only as a call.** `super` is not a value. It must be followed immediately by `.m(…)`.
+  `def f = super.describe` and a bare `super` are rejected (`super must be called directly`).
+  So no bound method is ever built for a default.
+* **Only inside a method of the implementing class or object,** including function literals
+  nested in that method, where `this` is captured. In a default method of an interface,
+  `super(Base).m()` reaches the defaults of an interface it `extends`. Anywhere else the call is
+  rejected with `super outside of a method`.
+* **The receiver is `this`.** The default runs with the current object as `this`, the arguments
+  bind as for any call. `recurse` inside the default is the default itself, bound to `this`,
+  not the override (§5.3).
+
+All of this is resolved before the program runs, because `implements` is static (§6.3). The
+type checker knows the exact default being called, and therefore its signature.
+
 
 ## 7. Runtime representation and compilation
 
@@ -492,7 +543,11 @@ Each `interface` expression compiles to a JVM interface. Required methods become
 methods, default methods become JVM `default` methods, and required fields become abstract
 accessors. A class's `implements` list becomes its JVM `implements` list, which §6.3 guarantees
 is known statically. So `x is Shape` is an `INSTANCEOF`, and a call to an interface method on a
-receiver typed as that interface is an `INVOKEINTERFACE`.
+receiver typed as that interface is an `INVOKEINTERFACE`. `super(Shape).m()` compiles to
+`INVOKESPECIAL Shape.m` on `this`, which is exactly what javac emits for Java's
+`Shape.super.m()`. When the `super` call sits in a function literal nested in a method, the
+literal's body is compiled as a synthetic instance method of the class, so that
+`INVOKESPECIAL` is legal there. javac does the same for lambdas.
 
 ### 7.4 Bound methods
 
@@ -657,6 +712,10 @@ New tests cover the following:
 - `this` outside a class;
 - interface completeness, default inheritance and conflicts, and statically resolved
   `implements`;
+- `super`: unqualified with exactly one default, the ambiguous case and its message, the
+  qualified form, a default inherited through `extends`, `super` in a nested function literal
+  and in an interface default, and each rejection (no default, required member, interface not
+  implemented directly, not called directly, outside a method);
 - `is`;
 - `toString` in `print` and in concatenation;
 - value classes: generated equality across numeric types, `hashCode` agreeing with `==`, use as
@@ -674,7 +733,7 @@ New tests cover the following:
 | # | Question | Leaning |
 |---|---|---|
 | Q1 | A shorthand for "parameter that is also a member" | **Resolved:** `def` in the class header, and every parameter in a value class (§4.8). |
-| Q2 | Calling an overridden default from the override (no `super`) | Add qualified calls, `Shape.describe(this)`, if the need shows up. |
+| Q2 | Calling an overridden default from the override | **Resolved:** `super.m()`, qualified as `super(I).m()` when ambiguous (§6.5). |
 | Q3 | Value equality | **Resolved:** value classes, Java `equals()` for `==`, and `same` (§4.6, §4.7). Hand-written `equals` remains excluded. Revisit only if a real case needs equality that is not field-wise. |
 | Q4 | Private members | Out of scope. A naming convention (`_x`) until there is demand. |
 | Q5 | Static members on classes | No. Use a package. |
@@ -684,7 +743,7 @@ New tests cover the following:
 ## 12. Implementation order
 
 1. Grammar: `class` (with the contextual `value` modifier), `interface`, `implements`,
-   `extends`, `is`, `this`, and `def` on parameter declarations. Regenerate the parser.
+   `extends`, `is`, `this`, `super`, and `def` on parameter declarations. Regenerate the parser.
 2. Runtime: `BabbleClass`, `BabbleInstance` (an array of member values), `BabbleInterface`,
    bound methods over the new `Callable` (with `equals`). Retire `BabbleObject`'s parent
    fall-through and the on-the-fly binding of free functions.
@@ -698,9 +757,11 @@ New tests cover the following:
    - the `this`/`return` placement checks;
    - static resolution of `implements`/`extends`;
    - completeness and default-conflict checks;
+   - `super` resolution and its placement checks (§6.5);
    - value class rules: read-only members, no hand-written `equals`/`hashCode`, `this` not
      escaping, the warning for `equals` in a regular class.
-4. Interpreter: class and object expressions, construction, member access, `is`, `toString`.
+4. Interpreter: class and object expressions, construction, member access, `is`, `super`,
+   `toString`.
    Migrate `Stack.ba`, `Test1.ba`, the README and the test in §10.
 5. Java: functional-interface applicability in `Overloads`, `Proxy`-based conversion, and
    explicit conversion through a Java interface's class value.
