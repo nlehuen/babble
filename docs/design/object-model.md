@@ -54,6 +54,7 @@ nominal types to work with.
 | O10 | Private members | **A `private` modifier**, on body and header members, and **object-private**: a private member is reachable only as `this.x` (§4.9). |
 | O11 | Static members | **A `static ( … )` block** after the class body, run once when the class expression is evaluated. Its `def`s are members of the class value, and inside it `this` is the class value (§4.10). |
 | O12 | Implementing Java interfaces | **Java interfaces only,** with no extending of Java classes. **One Babble method per name** serves every overload. Before compiler phase 2, a **cached `Proxy`** gives each instance its Java face; from phase 2 the generated JVM class implements the interfaces itself (§9.5). |
+| O13 | Structural typing | **None.** Conformance is always declared, object literals included: `object implements Shape ( … )` (§6.2). |
 
 The sections below work out what these imply. Wherever a further choice was needed, the
 section states it as a recommendation and lists the alternative in §11.
@@ -564,8 +565,8 @@ Square(2.0).describe()    ;; "square of area 4.0", the default method from Shape
 
 * **Conformance is declared, i.e. nominal.** A class satisfies only the interfaces it lists in
   `implements`, including what those interfaces extend. Merely having the right members is not
-  enough. Declaring is what lets `is` (§8.1), the type checker and the JVM mapping (§7.3) all
-  give the same answer cheaply.
+  enough, for any value, object literals included (O13). Declaring is what lets `is` (§8.1),
+  the type checker and the JVM mapping (§7.3) all give the same answer cheaply.
 * **Completeness is checked before the program runs.** A class that lacks a required member and
   doesn't inherit a default for it is rejected: `Square does not implement Shape.area`.
 * **Defaults are inherited** unless the class defines a member with the same name, which
@@ -574,7 +575,20 @@ Square(2.0).describe()    ;; "square of area 4.0", the default method from Shape
   the same name, the class must define that member itself, or it is rejected:
   `Conflicting defaults for describe : Shape, Named`. The override can still call either
   default through `super(Shape).describe()` (§6.5).
-* `object implements Shape ( … )` works the same way for one-off objects.
+* `object implements Shape ( … )` works the same way for one-off objects. A literal without the
+  declaration is not a `Shape`, even where one is expected. In `error` mode the type checker
+  reports it (`object is not a Shape : declare object implements Shape`), and the runtime
+  boundary check fails the same way.
+
+Two alternatives were considered and declined:
+
+* **Target typing.** A literal written where `Shape` is annotated would implicitly implement
+  it. That would make an annotation change runtime behaviour (`is Shape`) even with type
+  checking off, and it would only work where the target happens to be annotated.
+* **Full structural typing,** as in TypeScript or Go. It would make `is` a member-by-member
+  check. Default methods couldn't apply to values that never declared the interface. And
+  interfaces could no longer be JVM interfaces, so `INSTANCEOF` and `INVOKEINTERFACE` would be
+  lost.
 
 ### 6.3 `implements` must resolve statically
 
@@ -1025,7 +1039,7 @@ New tests cover the following:
 | Q4 | Private members | **Resolved:** a `private` modifier, object-private, reachable only through `this` (§4.9). |
 | Q5 | Static members on classes | **Resolved:** a `static ( … )` block, with `this` as the class value (§4.10). |
 | Q6 | Babble classes implementing Java interfaces | **Resolved:** Java interfaces only, one method per name, `Proxy` until phase 2 (§9.5). |
-| Q7 | Structural typing for object literals passed where an interface is expected | No for now (nominal, §6.2). Revisit if declaring `implements` on literals proves tedious. |
+| Q7 | Structural typing for object literals passed where an interface is expected | **Resolved:** no. Conformance is always declared (§6.2, O13). |
 | Q8 | A way for instance code to reach its own class value, and its private statics (`this.class`?) | Wait. Instance code reaches public statics by name, and private statics stay with the static block. |
 | Q9 | Babble interfaces extending Java interfaces (`interface extends java.lang.Comparable`) | Later, if needed. Implementing both side by side already covers the use. |
 
