@@ -69,6 +69,24 @@ public class JavaClassDemo {
         return value == null ? "null" : value.toString();
     }
 
+    // Helpers through which Java calls into Babble objects.
+
+    public static void appendChar(Appendable appendable, char c) throws java.io.IOException {
+        appendable.append(c);
+    }
+
+    public static Object first(java.util.List<?> list) {
+        return list.get(0);
+    }
+
+    public static String describe(Object value) {
+        return value.toString();
+    }
+
+    public static boolean isProxy(Object value) {
+        return java.lang.reflect.Proxy.isProxyClass(value.getClass());
+    }
+
     public static String add(int a, int b) {
         return "static:" + (a + b);
     }

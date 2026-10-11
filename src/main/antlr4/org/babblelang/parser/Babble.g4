@@ -12,9 +12,18 @@ expression:
           PACKAGE name=ID NL* packageBlock=block              # packageExpression
           | IF test=expression THEN NL* thenBlock=block
                      (NL* ELSE NL* elseBlock=block)?          # ifExpression
-          | DEF name=ID (':' type)? ('=' NL* value=expression)?   # defExpression
+          | PRIVATE? DEF name=ID (':' type)? ('=' NL* value=expression)?   # defExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
-          | OBJECT NL* createBlock=block                      # objectExpression
+          // "value class" : the modifier is a contextual keyword, checked by the analysis.
+          // No newline before the body : "class (a)" followed by "(b)" on the next line
+          // would be ambiguous between a header and a body.
+          | modifier=ID? CLASS parametersDeclaration? (IMPLEMENTS typeList)? classBlock=block
+                (NL* STATIC NL* staticBlock=block)?           # classExpression
+          | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block
+                (NL* STATIC NL* staticBlock=block)?           # interfaceExpression
+          | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block   # objectExpression
+          | THIS                                              # thisExpression
+          | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
           | expression '.' ID                                 # selector
           | ID                                                # selector
           | expression callParameters                         # call
@@ -24,6 +33,7 @@ expression:
           | left=expression op=('+' | '-') NL* right=expression   # binaryOp
           | left=expression op=('<' | '<=' | '==' | NEQ
                        | '>=' | '>') NL* right=expression         # binaryOp
+          | left=expression IS NL* right=expression               # isExpression
           | left=expression op=AND NL* right=expression           # booleanOp
           | left=expression op=OR NL* right=expression            # booleanOp
           | parametersDeclaration ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
@@ -47,12 +57,15 @@ block: '(' sep? ')'
 parametersDeclaration: '(' NL* parameterDeclaration (NL* ',' NL* parameterDeclaration)* NL* ')'
                      | '(' NL* ')';
 
-parameterDeclaration: ID (':' type)? ('=' NL* defaultValue=expression)?;
+// PRIVATE and DEF are only accepted in class headers, which the analysis checks.
+parameterDeclaration: PRIVATE? DEF? ID (':' type)? ('=' NL* defaultValue=expression)?;
 
 callParameters: '(' NL* callParameter (NL* ',' NL* callParameter)* NL* ')'
               | '(' NL* ')';
 
 callParameter: (ID ':')? expression;
+
+typeList: type (NL* ',' NL* type)*;
 
 type: ID ('.' ID)*                           # simpleType
     | parametersDeclaration ( ':' type | )   # functionType
@@ -94,6 +107,15 @@ NOT: 'not';
 BOOLEAN: 'true' | 'false';
 RECURSE: 'recurse';
 OBJECT: 'object';
+CLASS: 'class';
+INTERFACE: 'interface';
+IMPLEMENTS: 'implements';
+EXTENDS: 'extends';
+IS: 'is';
+THIS: 'this';
+SUPER: 'super';
+PRIVATE: 'private';
+STATIC: 'static';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
 MULTILINECOMMENT: ';;(' .*? ';;)' -> skip;
 COMMENT: ';;' ~[\r\n]* -> skip;

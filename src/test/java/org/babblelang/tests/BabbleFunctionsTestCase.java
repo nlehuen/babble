@@ -105,13 +105,14 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         // Rejected before running, so even when it would never run.
         assertRejected("if false then ( return 1 ) ; 2", "return outside of a function", 1);
         assertRejected("1\npackage p ( return 1 )", "return outside of a function", 2);
-        assertRejected("def o = object ( def v = ( return 2 ) )", "return outside of a function", 1);
+        assertRejected("def o = object ( def v = ( return 2 ) )", "return in a class body", 1);
     }
 
     @Test
-    public void testReturnInsideObjectOrPackageBodyReturnsFromTheFunction() throws Exception {
-        Assertions.assertEquals(2, interpret("def g = () -> ( object ( def v = ( return 2 ) ) ; 3 ) ; g()"));
+    public void testReturnInsidePackageBodyReturnsFromTheFunction() throws Exception {
         Assertions.assertEquals(4, interpret("def g = () -> ( package p ( return 4 ) ; 3 ) ; g()"));
+        // An object body is a constructor : a return there has nothing to return from.
+        assertRejected("def g = () -> ( object ( def v = ( return 2 ) ) ; 3 ) ; g()", "return in a class body", 1);
     }
 
     @Test
@@ -195,13 +196,12 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         // "recurse" used to evaluate to the raw function rather than to the bound method,
         // so the recursive call lost its receiver and "this" was undefined inside it.
         Assertions.assertEquals(6, interpret(
-                "def make = () -> (\n"
+                "def o = object (\n"
+                        + "  def total = 0\n"
                         + "  def down = (n) -> (\n"
                         + "    if n < 1 then ( this.total ) else ( this.total = this.total + n ; recurse(n - 1) )\n"
                         + "  )\n"
-                        + "  object ( def total = 0 )\n"
                         + ")\n"
-                        + "def o = make()\n"
                         + "o.down(3)\n"));
     }
 

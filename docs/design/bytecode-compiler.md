@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([object-model.md](object-model.md), summarised in §8.2). |
-| **Implemented** | §15 steps 1–5 and 7 with today's object semantics: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, and the phase 1 compiler for the whole grammar (§16). Steps 6 and 8–11 remain. |
+| **Implemented** | §15 steps 1–7: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, and the phase 1 compiler for the whole grammar (§16). Steps 8–11 remain. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -1030,9 +1030,13 @@ What landed, and where it departs from the text above.
   so every class compiled by a test also passes `CheckClassAdapter`. `DifferentialTestCase`
   runs every `.ba` script and a list of tricky snippets in both modes and compares results,
   output and errors.
-* **Objects.** The object model (step 6) is not implemented yet, so `object` and `package`
-  compile against today's `BabbleObject`/`Namespace` semantics (§6.2), D5 fall-through included.
-  Step 7 will move them onto `BabbleInstance`.
+* **Objects.** The object model is implemented (step 6, [object-model.md](object-model.md) §13),
+  and phase 1 compiles it against `BabbleInstance` (step 7). Each class or object expression's
+  constructor is a static method `cls$N$Name(BabbleClass, BabbleInstance, ScriptRuntime, args,
+  names, site)`, adapted to `ClassBody` with `LambdaMetafactory` like function bodies, and its
+  `ClassShape` is a constant. Interface bodies and static blocks run inline. Since an object
+  body is now a constructor, a `return` in it is `return in a class body` rather than a return
+  from the enclosing function (§8.3).
 * **Constants (§6.6).** The JVM lets only `<clinit>` itself write a `final` static field, so
   splitting the initialisation into helpers means the constant fields are `private static`
   without `final`. They only feed error messages and argument binding, so nothing is lost.
@@ -1058,6 +1062,7 @@ What landed, and where it departs from the text above.
 | while loop : locals and while | 101.9 | 121.1 | 0.8x |
 | Counter.ba closure : captured variables | 104.9 | 73.5 | 1.4x |
 | Stack.ba push/pop : objects and methods | 86.0 | 23.2 | 3.7x |
+| Stack.ba push/pop, with the object model | 69.8 | 26.6 | 2.6x |
 | ArrayList add/get : Java interop | 98.0 | 90.7 | 1.1x |
 
 Calls win most, because the visitor frames and `ReturnException` are gone. Loops are even:

@@ -10,18 +10,30 @@ public final class CompiledFunction implements BabbleFunction {
     private final FunctionBody body;
     private final Namespace closure;
     private final String[] params;
+    private final int required;
     private final String name;
 
-    public CompiledFunction(FunctionBody body, Namespace closure, String[] params, String name) {
+    public CompiledFunction(FunctionBody body, Namespace closure, String[] params, int required, String name) {
         this.body = body;
         this.closure = closure;
         this.params = params;
+        this.required = required;
         this.name = name;
     }
 
     /** What compiled code calls to create the value of a function literal. */
-    public static CompiledFunction create(FunctionBody body, Namespace closure, String[] params, String name) {
-        return new CompiledFunction(body, closure, params, name);
+    public static CompiledFunction create(FunctionBody body, Namespace closure, String[] params, int required, String name) {
+        return new CompiledFunction(body, closure, params, required, name);
+    }
+
+    @Override
+    public int minArity() {
+        return required;
+    }
+
+    @Override
+    public int maxArity() {
+        return params.length;
     }
 
     public Namespace closure() {

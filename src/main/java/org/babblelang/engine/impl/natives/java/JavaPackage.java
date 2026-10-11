@@ -31,7 +31,7 @@ public class JavaPackage implements Scope<Scope> {
             String name2 = name + '.' + k;
             Scope value;
             try {
-                value = new JavaClass(Class.forName(name2));
+                value = JavaClass.of(Class.forName(name2));
             } catch (ClassNotFoundException cnfe) {
                 value = importer.getPackage(name2);
             }

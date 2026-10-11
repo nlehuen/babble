@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. All design questions are decided (§2, O1–O15), and every open question in §11 is resolved. Ready to implement (§12). |
+| **Status** | Implemented (§12 steps 1–6, through compiler phase 1), in both the interpreter and the compiler. §13 lists what the implementation decided where this text was silent. |
 | **Date** | 2026-10-11 |
 | **Depends on** | [bytecode-compiler.md](bytecode-compiler.md): block scope (§8.1), the shared runtime (§5), type checking (§10) |
 | **Unblocks** | Compiler phase 2 (§7), object and package types T5 (§10.4) |
@@ -1191,3 +1191,39 @@ All of these are resolved. They are kept as a record of what was considered.
 Steps 1–5 need nothing from the compiler beyond the shared runtime (compiler phase 0) and
 block scope. Ideally they land before compiler phase 1 reaches `object` and member access
 (compiler doc §15, step 7), so phase 1 never has to compile the old object semantics.
+
+## 13. Implementation notes
+
+Everything in §12 steps 1–6 is implemented, in both modes: the interpreter and compiler phase 1
+(compiler doc §16). `BabbleObjectModelTestCase` and `BabbleJavaObjectsTestCase` cover the list in
+§10, and `DifferentialTestCase` checks that both modes agree. Where the text above was silent:
+
+* **Representation before phase 2.** An instance is a `BabbleInstance` (an array of member
+  values, indexed through the class's `ClassShape`), and a method is the function value its
+  `def` creates when the body runs, so each instance holds its own method closures over the
+  constructor's namespace. That is what lets methods read plain constructor parameters (§7.2)
+  without hidden fields. Phase 2 replaces both with JVM fields and methods (§7).
+* **Analysis.** `BlockScopes` (scopes, members, placement of `this`, `return`, `super`, `private`
+  and header `def`s, the value-class rules) is followed by `TypeChecks`, which needs the whole
+  file: `implements`/`extends` resolution, completeness, default conflicts, `super`, and the
+  static checks of private access and value-class assignment.
+* **Static class knowledge.** Until the type checker exists, a receiver's class is known
+  statically only for an object literal, a construction through a name bound to a class
+  literal, or a name bound to one of those, never reassigned. Other receivers get the same
+  errors at runtime.
+* **Messages** the text didn't fix: `this cannot escape a value class under construction`,
+  `An interface can only declare members`, `An interface default must be a function literal : x`,
+  `Interface members cannot be private : x`, `x is not a member of Shape` (a default reaching
+  past its interface), `Interface extends itself : I`, `Base is not extended directly by Shape`
+  (`super(I)` in an interface default), `Not a type : …` (`is` with something else on the
+  right), and `classof : a class has no class` / `an interface` / `a package` for the other
+  kinds of values without a class. The arity message always names the Java overload with its
+  parameters: `Ordered.compareTo takes 0 arguments, but Comparable.compareTo(Object) passes 1`.
+* **Warnings** (a redundant `def` on a value parameter, `equals` in a regular class) are written
+  to the `ScriptContext`'s error writer when the script is compiled.
+* **`return` in an object body** is now `return in a class body`, since an object body is a
+  constructor. The compiler doc's §8.3 had let it return from the enclosing function.
+* **Java values.** `Values.toJava`/`fromJava` sit at every boundary: arguments and results of Java
+  methods and constructors, Java defaults called on instances, callbacks and their results.
+  Raw Java objects returned by methods are still not selectable from Babble (only constructed
+  ones are), as before this change; the tests use constructors where they need to call methods.
