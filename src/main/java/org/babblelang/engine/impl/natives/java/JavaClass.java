@@ -41,34 +41,37 @@ class JavaClass implements Scope<Callable>, Callable<JavaObject> {
     }
 
     public boolean isDeclared(String key) {
-        return get(key) != null;
+        return members.containsKey(key) || resolve(key) != null;
     }
 
     public Slot<Callable> get(String key) {
         return members.computeIfAbsent(key, k -> {
-            Slot<Callable> result = new Slot<>(k, true);
-
-            for (Class<?> memberClass : clazz.getClasses()) {
-                if (memberClass.getSimpleName().equals(k) && Modifier.isPublic(memberClass.getModifiers())) {
-                    result.set(new JavaClass(memberClass));
-                    break;
-                }
-            }
-
-            if (!result.isSet()) {
-                for (Method method : clazz.getMethods()) {
-                    if (method.getName().equals(k) && Modifier.isPublic(method.getModifiers())) {
-                        result.set(new JavaMethod(clazz, k));
-                        break;
-                    }
-                }
-            }
-
-            if (!result.isSet()) {
+            Callable member = resolve(k);
+            if (member == null) {
                 throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + k);
             }
-
+            Slot<Callable> result = new Slot<>(k, true);
+            result.set(member);
             return result;
         });
+    }
+
+    /**
+     * The member named "key", or null when the class has none. Returning null rather than
+     * throwing is what lets isDeclared() answer the question it is asked : the missing
+     * member is the expected case there, not a failure.
+     */
+    private Callable resolve(String key) {
+        for (Class<?> memberClass : clazz.getClasses()) {
+            if (memberClass.getSimpleName().equals(key) && Modifier.isPublic(memberClass.getModifiers())) {
+                return new JavaClass(memberClass);
+            }
+        }
+        for (Method method : clazz.getMethods()) {
+            if (method.getName().equals(key) && Modifier.isPublic(method.getModifiers())) {
+                return new JavaMethod(clazz, key);
+            }
+        }
+        return null;
     }
 }
