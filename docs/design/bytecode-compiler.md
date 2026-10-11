@@ -546,6 +546,7 @@ Each item gets a test that pins the agreed behaviour **in both modes**.
 | D5 | `obj.x` falling through to lexical scope (`o.println`, `mk().hidden`) | allowed | **Decided: no.** `obj.x` sees only the object's members (§8.2). |
 | D6 | Where `print` writes by default | `STDOUT` looked up in the scope where the call is written; the `ScriptContext` writer is ignored | **Decided: the eval's `ScriptContext` writer (§8.4).** |
 | D7 | An unqualified name inside an object body after `obj.m` has cached a `BoundMethod` in the object | can resolve to the bound method | **Obsolete.** Unqualified names never reach members, and nothing is bound on the fly any more (§8.2). |
+| D8 | `==` on non-numbers | `compareTo` for two `Comparable`s of the same class, identity otherwise, so equal Java lists are not `==` | **Decided: Java `equals()`**, with numbers still compared across types, value classes generating their own equality, and `same(a, b)` for identity ([object-model.md](object-model.md) §4.7). It changes `Operators.eq` only, so it can land with phase 0. |
 
 Every item is decided.
 

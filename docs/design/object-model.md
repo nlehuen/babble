@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. The four foundational choices are decided (§2). The open questions are in §11. |
+| **Status** | Draft. The foundational choices are decided (§2), including equality (§4.6, §4.7). The open questions are in §11. |
 | **Date** | 2026-10-11 |
 | **Depends on** | [bytecode-compiler.md](bytecode-compiler.md): block scope (§8.1), the shared runtime (§5), type checking (§10) |
 | **Unblocks** | Compiler phase 2 (§7), object and package types T5 (§10.4) |
@@ -22,6 +22,10 @@ instance. Every `def` at the top level of the body declares a **member**.
 * **Babble functions can be passed where Java expects a functional interface**
   (`Runnable`, `Comparator`, `java.util.function.*`). They are converted automatically.
 * `object ( … )` stays, as a single instance of an anonymous class.
+* **Value classes** (`value class (…) ( … )`) have read-only members and a generated `equals`,
+  `hashCode` and `toString`. Instances of any other class compare by identity.
+* **`==` is value equality:** numeric across types for numbers, Java's `equals()` for everything
+  else. The built-in `same(a, b)` tests identity.
 
 The model is closed: an object's members are fixed by its class. That is what lets compiler
 phase 2 turn a class into a JVM class with fields, an interface into a JVM interface, and a
@@ -36,6 +40,9 @@ nominal types to work with.
 | O2 | Member lookup | **Members only, explicit `this`.** `obj.x` sees only members, and inside a class members must be written `this.x`. This closes D5 in the compiler doc. |
 | O3 | Reuse | **Interfaces with default methods (traits).** There is no class inheritance and no `super`. |
 | O4 | Java interop | **Functions convert to Java functional interfaces.** Babble classes do not implement or extend Java types in this design. |
+| O5 | Equality of instances | **Value classes.** `value class` generates `equals`/`hashCode`/`toString` from read-only members, and every other class compares by identity. There is no hand-written `equals`. |
+| O6 | `==` on other values | **Java `equals()`** for every non-number, so lists, maps and sets compare by content. Numbers keep the cross-type rule (`1 == 1.0`). |
+| O7 | Identity | **A built-in `same(a, b)`** native, with no new operator. |
 
 The sections below work out what these imply. Wherever a further choice was needed, the
 section states it as a recommendation and lists the alternative in §11.
@@ -81,7 +88,7 @@ p.plus(q).x                  ;; 5.0
 Proposed grammar additions, in the style of `Babble.g4`:
 
 ```antlr
-| CLASS parametersDeclaration? (IMPLEMENTS typeList)? NL* classBlock=block   # classExpression
+| modifier=ID? CLASS parametersDeclaration? (IMPLEMENTS typeList)? NL* classBlock=block   # classExpression
 | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block                     # interfaceExpression
 | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block                        # objectExpression
 | THIS                                                                       # thisExpression
@@ -95,6 +102,12 @@ The new keywords are `class`, `interface`, `implements`, `extends` (only between
 identifier anywhere in the repo, and they only appear in comments.
 
 A class with no parameters can omit the list: `class ( … )` is `class () ( … )`.
+
+`value` (§4.6) is a **contextual** keyword: an identifier immediately before `class`. It can't
+be a reserved word, because `value` is a perfectly good member name, and `Stack.ba` uses it.
+The analysis pass accepts `value` as the only modifier and rejects anything else
+(`Unknown class modifier : foo`). An identifier followed by `class` is not valid in any other
+position, so this adds no ambiguity.
 
 ### 4.2 The class body
 
@@ -154,13 +167,119 @@ A `class` expression evaluates to a **class value** (`BabbleClass` at runtime):
   the outer variables it captured. Instances of two such values are distinct classes for `is`
   (§8.1).
 
-### 4.5 `toString`, equality and printing
+### 4.5 `toString` and printing
 
-* If a class has a zero-parameter method `toString`, it is used whenever the instance is turned
-  into a string: by `print`, by `"…" + obj`, and by Java code calling `toString()`. Otherwise
-  the default is `Point@1b6d3586`, which uses the class's display name.
-* `==` on instances stays identity, as it is today for non-comparable values. A protocol for
-  value equality (`equals`/`hashCode` methods) is deliberately left out (§11, Q3).
+If a class has a zero-parameter method `toString`, it is used whenever the instance is turned
+into a string: by `print`, by `"…" + obj`, and by Java code calling `toString()`. Otherwise the
+default is `Point@1b6d3586` (using the class's display name), or, for a value class, the
+generated form `Point(x: 1, y: 2)`.
+
+### 4.6 Value classes
+
+```
+def Point = value class (x, y) (
+    def x = x
+    def y = y
+    def plus = (o) -> ( Point(this.x + o.x, this.y + o.y) )
+)
+
+Point(1, 2) == Point(1, 2)          ;; true
+Point(1, 2) == Point(1.0, 2.0)      ;; true: fields compare with ==, so 1 == 1.0
+Point(1, 2)                         ;; prints Point(x: 1, y: 2)
+Point(1, 2).x = 5                   ;; error: Value members are read-only : x
+
+def seen = java.util.HashSet()
+seen.add(Point(1, 2))
+seen.contains(Point(1, 2))          ;; true: Java collections agree with ==
+```
+
+A value class is an ordinary class (§4) with these differences:
+
+* **Members are read-only.** Each member is set once, by its own `def`. Any assignment to a
+  member, `this.x = …` or `p.x = …`, fails with `Value members are read-only : x`. Where the
+  target is statically known to be a value class, which `this.x` inside one always is, that is
+  a compile-time error. Immutability is **shallow**, as for Java records: a member can hold a
+  mutable Java list.
+* **Equality is generated.** Two instances are equal when they come from the **same class
+  value** (§4.4) and every field is pairwise `==` (§4.7). Methods and hidden constructor-
+  parameter fields (§7.2) don't take part: equality is defined by the declared fields only.
+* **`hashCode` is generated** consistently with that: the fields' hashes are combined in
+  declaration order, `h = 31 * h + hash(field)`, with Babble's `hash` (§4.7) rather than Java's,
+  so that `Point(1, 2)` and `Point(1.0, 2.0)` hash alike.
+* **`toString` is generated** as `Point(x: 1, y: 2)`. A hand-written `toString` method replaces
+  it.
+* **`equals` and `hashCode` cannot be written by hand.** A value class defining a member with
+  either name is rejected: `equals is generated for value classes`.
+* **`this` cannot escape during construction.** Outside its methods, a value class body may use
+  `this` only to read a field it has already defined (`def area = this.w * this.h`). Method
+  calls on `this`, passing `this` anywhere, and storing it are all rejected. A half-built value
+  therefore never escapes, and because fields can't change afterwards, **value objects cannot
+  form cycles**. That guarantees generated `equals`, `hashCode` and `toString` terminate.
+* Value classes can implement interfaces, and they are classes for `is` and for the type
+  checker, like any other.
+
+Generated equality is **deep**. It recurses through fields holding other value objects, so it
+costs time proportional to the structure, and a very long chain of value objects (a linked list
+of 100,000 value nodes) can overflow the stack when compared or hashed. Long linked structures
+should use regular classes, as `Stack.ba`'s `Node` does (§10).
+
+In regular classes, `equals` and `hashCode` are ordinary member names with no special meaning.
+`==` ignores them, and the analysis pass warns: `equals has no effect on == : use a value
+class`. Compiled methods take Babble's calling convention (§7.1), so a member named `equals`
+never accidentally overrides Java's `equals(Object)`.
+
+### 4.7 Equality and identity
+
+`a == b` is decided by a single runtime function, `Operators.eq`, shared by both modes:
+
+1. If either side is `null`, they are equal only if both are.
+2. If both are numbers, they are compared numerically across types, as today: `1 == 1.0`.
+3. Otherwise, the result is `a.equals(b)`.
+
+Step 3 is the change. Today, non-numbers compare with `compareTo` when both are `Comparable`
+and of the same class, and by **identity** otherwise. So today two Java lists with the same
+contents are not `==`; with this rule they are. For strings, booleans and the usual `Comparable`
+Java types, `equals` and `compareTo` agree, so nothing changes. The ordering operators (`<`,
+`<=`, `>`, `>=`) keep using `compareTo`.
+
+What `equals` means for each kind of value:
+
+| Value | `==` compares |
+|---|---|
+| numbers | numeric value, across types |
+| strings, booleans, Java objects | Java `equals` |
+| value class instances | the generated equality (§4.6) |
+| instances of other classes, interfaces, functions, packages, class values | identity, through the default `Object.equals` |
+| bound methods (`obj.m`) | same receiver (identity) and same method, so `obj.m == obj.m` holds even though each selection allocates a new bound method |
+
+**Babble's `hash`.** `Values.hash(v)` is the hash consistent with `==`. Every hash-based
+structure Babble generates uses it, starting with value classes:
+
+* For an integral number, it is `Long.hashCode(n)`.
+* For a `double` with an integral value in `long` range, it is the hash of that `long`, so
+  `hash(1) == hash(1.0)`.
+* For any other `double`, it is `Double.hashCode(d)`.
+* For anything else, it is `v.hashCode()`.
+
+This is exact for all `int`s, and for `long`s up to 2^53. Beyond that, Babble's numeric
+equality is already not transitive, because it goes through `double`.
+
+**A known divergence.** Java collections compare their elements with Java's own `equals`, not
+with Babble's `==`. A Babble number stored *directly* in a Java collection follows Java's rules:
+after `s.add(1)`, `s.contains(1.0)` is `false`, even though `1 == 1.0`. Value objects are not
+affected, because their generated `equals`/`hashCode` apply Babble's rule to their fields. The
+type checker can warn when a `double` is looked up in a collection of `int`s, but nothing at
+runtime can fix it.
+
+**Identity: `same(a, b)`.** This is a built-in native, like `print`:
+
+* For objects, it tests reference identity: `same(Point(1, 2), Point(1, 2))` is `false`, and
+  `same(p, p)` is `true`.
+* For numbers, booleans and strings, which have no meaningful identity, `same` is the same as
+  `==`. Their identity depends on JVM boxing caches and on compiler optimisations (phase 3
+  unboxes `int`s), so answering by reference would make `same(1000, 1000)` change between modes
+  or between runs.
+* `same(null, null)` is `true`.
 
 ## 5. Lookup, `this` and `recurse`
 
@@ -478,6 +597,13 @@ New tests cover the following:
   `implements`;
 - `is`;
 - `toString` in `print` and in concatenation;
+- value classes: generated equality across numeric types, `hashCode` agreeing with `==`, use as
+  `HashSet`/`HashMap` keys, read-only members (statically and at runtime), rejected
+  `equals`/`hashCode` members, `this` not escaping during construction, the generated and the
+  hand-written `toString`;
+- `==` on Java lists and maps by content, bound methods equal to themselves, and the warning for
+  `equals` in a regular class;
+- `same` on objects, on value objects, and on numbers and strings;
 - the Java conversions in §9: `sort`, `Thread`, `removeIf`, the ambiguous `submit`, a
   wrong return type, and wrong arity.
 
@@ -487,7 +613,7 @@ New tests cover the following:
 |---|---|---|
 | Q1 | A shorthand for "parameter that is also a member", to avoid `def x = x` | Wait and see how noisy real code is. A later option is `class (def x, def y) ( … )`. |
 | Q2 | Calling an overridden default from the override (no `super`) | Add qualified calls, `Shape.describe(this)`, if the need shows up. |
-| Q3 | Value equality: `equals`/`hashCode` methods honoured by `==` and Java collections | Worth doing soon, since objects in a `HashMap` are a natural interop case. It needs the semantics of `==` across types revisited. |
+| Q3 | Value equality | **Resolved:** value classes, Java `equals()` for `==`, and `same` (§4.6, §4.7). Hand-written `equals` remains excluded. Revisit only if a real case needs equality that is not field-wise. |
 | Q4 | Private members | Out of scope. A naming convention (`_x`) until there is demand. |
 | Q5 | Static members on classes | No. Use a package. |
 | Q6 | Babble classes implementing Java interfaces (multi-method listeners) | A later design. It needs Java signatures and overloads expressed in Babble. |
@@ -495,15 +621,23 @@ New tests cover the following:
 
 ## 12. Implementation order
 
-1. Grammar: `class`, `interface`, `implements`, `extends`, `is`, `this`. Regenerate the parser.
+1. Grammar: `class` (with the contextual `value` modifier), `interface`, `implements`,
+   `extends`, `is`, `this`. Regenerate the parser.
 2. Runtime: `BabbleClass`, `BabbleInstance` (an array of member values), `BabbleInterface`,
-   bound methods over the new `Callable`. Retire `BabbleObject`'s parent fall-through and the
-   on-the-fly binding of free functions.
+   bound methods over the new `Callable` (with `equals`). Retire `BabbleObject`'s parent
+   fall-through and the on-the-fly binding of free functions.
+   - Equality: `Operators.eq` switches to Java `equals()` for non-numbers.
+   - `Values.hash`, and the generated equality, hash and `toString` for value instances.
+   - The `same` native.
+   The `==` change can land on its own, before the rest, since it only touches
+   `Operators`.
 3. Analysis pass, in the `BlockScopes` pass that grows into the `Resolver`:
    - member tables;
    - the `this`/`return` placement checks;
    - static resolution of `implements`/`extends`;
-   - completeness and default-conflict checks.
+   - completeness and default-conflict checks;
+   - value class rules: read-only members, no hand-written `equals`/`hashCode`, `this` not
+     escaping, the warning for `equals` in a regular class.
 4. Interpreter: class and object expressions, construction, member access, `is`, `toString`.
    Migrate `Stack.ba`, `Test1.ba`, the README and the test in §10.
 5. Java: functional-interface applicability in `Overloads`, `Proxy`-based conversion, and
