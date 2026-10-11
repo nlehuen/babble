@@ -31,7 +31,7 @@ instance. Every `def` at the top level of the body declares a **member**.
 * **Value classes** (`value class (…) ( … )`) have read-only members and a generated `equals`,
   `hashCode` and `toString`. Instances of any other class compare by identity.
 * **`==` is value equality:** numeric across types for numbers, Java's `equals()` for everything
-  else. The built-in `same(a, b)` tests identity.
+  else. The built-in `same(a, b)` tests identity, and `classof(v)` returns a value's class.
 
 The model is closed: an object's members are fixed by its class. That is what lets compiler
 phase 2 turn a class into a JVM class with fields, an interface into a JVM interface, and a
@@ -55,6 +55,7 @@ nominal types to work with.
 | O11 | Static members | **A `static ( … )` block** after the class body, run once when the class expression is evaluated. Its `def`s are members of the class value, and inside it `this` is the class value (§4.10). |
 | O12 | Implementing Java interfaces | **Java interfaces only,** with no extending of Java classes. **One Babble method per name** serves every overload. Before compiler phase 2, a **cached `Proxy`** gives each instance its Java face; from phase 2 the generated JVM class implements the interfaces itself (§9.5). |
 | O13 | Structural typing | **None.** Conformance is always declared, object literals included: `object implements Shape ( … )` (§6.2). |
+| O14 | Reaching a class value | **A built-in `classof(v)`** returns any value's class: the creating class value for Babble instances, the Java class for Java objects. It is not privileged: private statics stay with the static block (§4.11). |
 
 The sections below work out what these imply. Wherever a further choice was needed, the
 section states it as a recommendation and lists the alternative in §11.
@@ -481,7 +482,8 @@ Point(1, 2).origin        ;; error: No such member : origin (statics are not ins
   names are separate, so a static and an instance member may share a name.
 * **Private statics** are object-private to the class value (§4.9): only `this.cache`, inside
   the static block and its methods. Instance methods can't reach them, because their `this` is
-  the instance. If that proves limiting, see §11, Q8.
+  the instance. Instance code can reach its own class value through `classof(this)` (§4.11),
+  but only for public statics: private statics belong to the static block alone.
 * **Interfaces** can have a `static ( … )` block too, for constants and factories
   (`Shape.unit`). As in Java, an interface's statics are not inherited by the classes that
   implement it: `Square.unit` is `No such member`.
@@ -500,6 +502,49 @@ BabbleClass`) whose instance *is* the class value, as in Kotlin's companion obje
 * `Point.parse(s)` with `Point` statically known compiles to an `INVOKEVIRTUAL` on the companion.
 
 The type checker sees the static members as part of the class value's type.
+
+### 4.11 `classof`
+
+`classof(v)` is a built-in native, like `same`. It returns the class of a value:
+
+```
+def p = Point(1, 2)
+classof(p) == Point                   ;; true
+classof(p)(3, 4)                      ;; another Point: construct "one like this"
+classof(p).origin                     ;; a public static, reached from the instance
+
+def plus = (o) -> ( classof(this)(this.x + o.x, this.y + o.y) )   ;; inside Point
+classof(this).created                 ;; error: created is private (classof is not privileged)
+
+classof(java.util.ArrayList()) == java.util.ArrayList    ;; true
+classof("s") == java.lang.String                         ;; true
+```
+
+| `v` | `classof(v)` |
+|---|---|
+| an instance of a Babble class | the **class value that created it** (§4.4). For a class defined inside a function, that is the class value of that particular call, not merely one with the same name. |
+| an object literal | its anonymous class value. It is not callable (`object literals cannot be constructed again`), but it works with `==` and `is`. |
+| a Java object, including strings, numbers and booleans | its Java class, as the same kind of value `java.util.ArrayList` evaluates to. Java class values compare equal when they wrap the same `java.lang.Class`, whichever path produced them. |
+| a Babble instance seen through its Java face (§9.5) | the Babble class: faces are unwrapped first |
+| `null` | `null`, so `classof(x) == Point` is simply `false` for a null `x` |
+| functions, bound methods, class values, interfaces, packages | an error: `classof : a function has no class`. Their runtime representation differs between the interpreter and the compiled phases, and Babble has no metaclasses, so any answer would leak an implementation detail. |
+
+* **Not privileged.** `classof(this).x` is an ordinary selection, so private statics stay
+  reachable only from the static block (§4.9, §4.10). That is the deliberate answer to Q8's
+  privacy half.
+* **Numbers keep their Babble classes.** `classof(1)` is `java.lang.Integer` and `classof(1.5)`
+  is `java.lang.Double`, in every mode. Compiled code that keeps `int`s unboxed (compiler phase
+  3) answers as if they were boxed.
+* **`classof` and `is`.** For Babble classes, which have no inheritance, `x is Point` and
+  `classof(x) == Point` agree. `is` is still the way to test interfaces, Java supertypes and
+  `null` safety, and the type checker narrows types after `is`, not after `classof`.
+* **Equality.** Class values compare by identity (§4.7), so two evaluations of the same class
+  expression give unequal class values. That matches the rule that value-class equality requires
+  the *same* class value (§4.6).
+* **Implementation.** In the interpreter and phase 1, `classof` reads `BabbleInstance`'s class
+  value. In phase 2 it reads the instance's `$class` field (§7.1). For Java objects it goes
+  through a cache keyed by `java.lang.Class`. The type checker types it as the class value of
+  `v`'s static type when known, and as `dynamic` otherwise.
 
 ## 5. Lookup, `this` and `recurse`
 
@@ -992,6 +1037,10 @@ New tests cover the following:
   the same class; private methods and bound private methods; `private` rejected outside
   members and in interfaces; private members against interface requirements and defaults;
   value classes' equality including, and `toString` omitting, private fields;
+- `classof`: Babble instances (including classes defined in a function, giving the right class
+  value), object literals (not callable), Java objects, strings and numbers, unwrapped Java
+  faces, `null`, the error for functions and class values, `classof(this).x` refused for a
+  private static;
 - static members: the block running once per class value (and per call for a class defined
   in a function), `this` as the class value, `this(…)` construction, static methods and
   fields, private statics, statics and instance members kept apart, interface statics not
@@ -1040,7 +1089,7 @@ New tests cover the following:
 | Q5 | Static members on classes | **Resolved:** a `static ( … )` block, with `this` as the class value (§4.10). |
 | Q6 | Babble classes implementing Java interfaces | **Resolved:** Java interfaces only, one method per name, `Proxy` until phase 2 (§9.5). |
 | Q7 | Structural typing for object literals passed where an interface is expected | **Resolved:** no. Conformance is always declared (§6.2, O13). |
-| Q8 | A way for instance code to reach its own class value, and its private statics (`this.class`?) | Wait. Instance code reaches public statics by name, and private statics stay with the static block. |
+| Q8 | A way for instance code to reach its own class value, and its private statics | **Resolved:** `classof(this)` for the class value and public statics. Private statics stay with the static block (§4.11). |
 | Q9 | Babble interfaces extending Java interfaces (`interface extends java.lang.Comparable`) | Later, if needed. Implementing both side by side already covers the use. |
 
 ## 12. Implementation order
@@ -1053,7 +1102,7 @@ New tests cover the following:
    fall-through and the on-the-fly binding of free functions.
    - Equality: `Operators.eq` switches to Java `equals()` for non-numbers.
    - `Values.hash`, and the generated equality, hash and `toString` for value instances.
-   - The `same` native.
+   - The `same` and `classof` natives, and equality of Java class values by their `Class`.
    The `==` change can land on its own, before the rest, since it only touches
    `Operators`.
 3. Analysis pass, in the `BlockScopes` pass that grows into the `Resolver`:
