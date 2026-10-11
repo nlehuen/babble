@@ -23,6 +23,7 @@ instance. Every `def` at the top level of the body declares a **member**.
 * **Babble functions can be passed where Java expects a functional interface**
   (`Runnable`, `Comparator`, `java.util.function.*`). They are converted automatically.
 * `object ( … )` stays, as a single instance of an anonymous class.
+* **Members are public unless `private`,** and a private member is reachable only as `this.x`.
 * **Value classes** (`value class (…) ( … )`) have read-only members and a generated `equals`,
   `hashCode` and `toString`. Instances of any other class compare by identity.
 * **`==` is value equality:** numeric across types for numbers, Java's `equals()` for everything
@@ -46,6 +47,7 @@ nominal types to work with.
 | O7 | Identity | **A built-in `same(a, b)`** native, with no new operator. |
 | O8 | Parameters as members | **`def` in the class header** (`class (def x, def y)`) declares a member initialised from the argument. In a **value class every parameter is a member**, record-style. Header members, like all members, are reached only as `this.x` (§4.8). |
 | O9 | Calling an overridden default | **`super.m()`**, qualified as `super(Shape).m()` when several interfaces provide `m`. Kotlin-style, compiled as Java's `Shape.super.m()` (§6.5). |
+| O10 | Private members | **A `private` modifier**, on body and header members, and **object-private**: a private member is reachable only as `this.x` (§4.9). |
 
 The sections below work out what these imply. Wherever a further choice was needed, the
 section states it as a recommendation and lists the alternative in §11.
@@ -91,7 +93,8 @@ Proposed grammar additions, in the style of `Babble.g4`:
 ```antlr
 | modifier=ID? CLASS parametersDeclaration? (IMPLEMENTS typeList)? NL* classBlock=block   # classExpression
 
-parameterDeclaration: DEF? ID (':' type)? ('=' NL* defaultValue=expression)?;   // DEF: class headers only
+parameterDeclaration: PRIVATE? DEF? ID (':' type)? ('=' NL* defaultValue=expression)?;   // PRIVATE, DEF: class headers only
+// and on defExpression: PRIVATE? DEF …   (PRIVATE only for members, §4.9)
 | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block                     # interfaceExpression
 | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block                        # objectExpression
 | THIS                                                                       # thisExpression
@@ -102,8 +105,9 @@ typeList: type (NL* ',' NL* type)*;
 ```
 
 The new keywords are `class`, `interface`, `implements`, `extends` (only between interfaces,
-§6.4), `is`, `this` and `super` (§6.5). `this` stops being an ordinary name (§5.3). None of them is used as an
-identifier anywhere in the repo, and they only appear in comments.
+§6.4), `is`, `this`, `super` (§6.5) and `private` (§4.9). `this` stops being an ordinary name
+(§5.3). None of them is used as an identifier anywhere in the repo, and they only appear in
+comments.
 
 A class with no parameters can omit the list: `class ( … )` is `class () ( … )`.
 
@@ -155,7 +159,7 @@ The body is an ordinary block, run **once per instance** by the constructor, top
   `obj.cb`, where `cb` is a field, gives the field's value.
 * The member set is fixed. Assigning `obj.w = 1` to an undeclared member fails with
   `No such member : w`, as it effectively does today.
-* There is no visibility control in this version: every member is public. See §11, Q4.
+* Members are public unless declared `private` (§4.9).
 
 ### 4.4 The class value
 
@@ -177,7 +181,7 @@ A `class` expression evaluates to a **class value** (`BabbleClass` at runtime):
 If a class has a zero-parameter method `toString`, it is used whenever the instance is turned
 into a string: by `print`, by `"…" + obj`, and by Java code calling `toString()`. Otherwise the
 default is `Point@1b6d3586` (using the class's display name), or, for a value class, the
-generated form `Point(x: 1, y: 2)`.
+generated form `Point(x: 1, y: 2)`, which lists the public fields only (§4.9).
 
 ### 4.6 Value classes
 
@@ -345,6 +349,83 @@ Range(1, 5).size()            ;; 4
 * A value class cannot take a parameter it doesn't store. When construction needs an input that
   shouldn't be part of the value (a raw string to parse, say), a factory function does the
   work: `def parse = (s) -> ( Range(…, …) )`.
+
+### 4.9 Private members
+
+```
+def Counter = class (private def step = 1) (
+    private def n = 0
+    private def bump = () -> ( this.n = this.n + this.step )
+    def next = () -> ( this.bump() ; this.n )
+)
+
+def c = Counter()
+c.next()          ;; 1
+c.n               ;; error: n is private
+c.bump()          ;; error: bump is private
+```
+
+**Declaring.** `private` goes in front of a member's `def`: in the body, or on a header member
+(`private def step`). In a value class, where every parameter is already a member, `private x`
+is enough. `private` is accepted only on members. On a `def` anywhere else, or on a plain
+parameter (which is already invisible from outside), it is rejected:
+`private only applies to members`.
+
+**Accessing: through `this` only.** Privacy is **object-private**, as in Smalltalk and Ruby. A
+private member can be read, assigned or called only as `this.x`, in the class's own body, its
+methods, and function literals nested in those methods. Every other selection `e.x` of a
+private member is rejected with `x is private`, even inside the class, and even when `e`
+happens to be the same object (`def me = this ; me.n`). The rule is purely syntactic.
+
+```
+def Money = class (private def cents) (
+    def plus = (o) -> ( Money(this.cents + o.cents) )   ;; error: o.cents is private
+)
+```
+
+Two instances therefore can't read each other's private state. Comparison and combination go
+through public members or value classes, whose generated equality does see private fields.
+
+**Why `this`-only.** Whether an access is allowed depends only on how it is written, not on
+who is calling. So:
+
+* `this.x` takes a separate path that may see private members. In the interpreter and in
+  phase 1 that is `Members.selectOwn(this, "x")`. In phase 2 it is a direct `GETFIELD`, or an
+  `INVOKEVIRTUAL` on a JVM `private` method.
+* Every other selection, through `Members.select` and later its `invokedynamic` sites, refuses
+  private members outright. It needs no knowledge of the calling class, and no call site has to
+  carry it.
+* Where the receiver's class is known statically, the analysis pass reports `e.x` as an error
+  before the program runs. Otherwise it is caught at runtime, with the same message.
+
+**Bound private methods.** `this.bump` without a call is allowed inside the class, and it yields
+a bound method that anyone it is handed to can call. Passing it out is a deliberate choice, as
+with a Java method reference to a private method.
+
+**Interfaces.**
+
+* Interface members cannot be private. `private` in an interface body is rejected.
+* A private member cannot satisfy an interface's required member:
+  `Square.area is private and cannot implement Shape.area`.
+* A private member cannot hide a default inherited from an interface either:
+  `describe is private but Shape provides a public describe`.
+* Default methods only ever see the interface's own members (§6.1), so they never touch private
+  members.
+
+**Value classes.** Private fields are part of the value: they take part in the generated
+`equals` and `hashCode`, and they stay read-only. The generated `toString` **omits** them, since
+it is the public view. Two unequal values can therefore print identically, and a hand-written
+`toString` can show more.
+
+**Plain parameters versus private members.** A plain constructor parameter used by methods is
+already private state (§7.2). `private def` is for private state that needs its own initial
+value, or that should read as a member (`this.n`) rather than as a captured variable.
+
+**Types and the JVM.** Private members are not part of a class's type as seen from outside, so
+the type checker only lets `this.x` reach them. In phase 2 they become JVM `private` fields and
+methods. A function literal nested in a method that touches them is compiled as a synthetic
+instance method of the class, as for `super` (§7.3), so the access is legal there. Java code
+sees them as private too, through reflection or otherwise.
 
 ## 5. Lookup, `this` and `recurse`
 
@@ -703,6 +784,11 @@ o.down(3)    ;; 6
 
 New tests cover the following:
 - constructor parameters and defaults, and parameters used from methods;
+- private members: access through `this` in the body, in methods and in nested literals; `obj.x`
+  rejected statically and at runtime, including `me.x` aliasing `this` and another instance of
+  the same class; private methods and bound private methods; `private` rejected outside
+  members and in interfaces; private members against interface requirements and defaults;
+  value classes' equality including, and `toString` omitting, private fields;
 - header members: `def` parameters, their order and types, duplicates with body members, `def`
   rejected outside class headers, value class parameters as members, and the redundant-`def`
   warning;
@@ -735,7 +821,7 @@ New tests cover the following:
 | Q1 | A shorthand for "parameter that is also a member" | **Resolved:** `def` in the class header, and every parameter in a value class (§4.8). |
 | Q2 | Calling an overridden default from the override | **Resolved:** `super.m()`, qualified as `super(I).m()` when ambiguous (§6.5). |
 | Q3 | Value equality | **Resolved:** value classes, Java `equals()` for `==`, and `same` (§4.6, §4.7). Hand-written `equals` remains excluded. Revisit only if a real case needs equality that is not field-wise. |
-| Q4 | Private members | Out of scope. A naming convention (`_x`) until there is demand. |
+| Q4 | Private members | **Resolved:** a `private` modifier, object-private, reachable only through `this` (§4.9). |
 | Q5 | Static members on classes | No. Use a package. |
 | Q6 | Babble classes implementing Java interfaces (multi-method listeners) | A later design. It needs Java signatures and overloads expressed in Babble. |
 | Q7 | Structural typing for object literals passed where an interface is expected | No for now (nominal, §6.2). Revisit if declaring `implements` on literals proves tedious. |
@@ -743,7 +829,8 @@ New tests cover the following:
 ## 12. Implementation order
 
 1. Grammar: `class` (with the contextual `value` modifier), `interface`, `implements`,
-   `extends`, `is`, `this`, `super`, and `def` on parameter declarations. Regenerate the parser.
+   `extends`, `is`, `this`, `super`, `private`, and `def` on parameter declarations. Regenerate
+   the parser.
 2. Runtime: `BabbleClass`, `BabbleInstance` (an array of member values), `BabbleInterface`,
    bound methods over the new `Callable` (with `equals`). Retire `BabbleObject`'s parent
    fall-through and the on-the-fly binding of free functions.
@@ -759,9 +846,11 @@ New tests cover the following:
    - completeness and default-conflict checks;
    - `super` resolution and its placement checks (§6.5);
    - value class rules: read-only members, no hand-written `equals`/`hashCode`, `this` not
-     escaping, the warning for `equals` in a regular class.
-4. Interpreter: class and object expressions, construction, member access, `is`, `super`,
-   `toString`.
+     escaping, the warning for `equals` in a regular class;
+   - private members: placement of `private`, static rejection of `e.x`, the interface rules
+     (§4.9).
+4. Interpreter: class and object expressions, construction, member access (with the separate
+   `this.x` path that may see private members), `is`, `super`, `toString`.
    Migrate `Stack.ba`, `Test1.ba`, the README and the test in §10.
 5. Java: functional-interface applicability in `Overloads`, `Proxy`-based conversion, and
    explicit conversion through a Java interface's class value.
