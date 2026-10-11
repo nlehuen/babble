@@ -172,4 +172,4 @@ Language features :
 
 Implementation features :
 
-- [ ] compiled mode with compilation to bytecode using [ASM](http://asm.ow2.org/) (big one !).
+- [ ] compiled mode with compilation to bytecode using [ASM](http://asm.ow2.org/) (big one !). See the [design doc](docs/design/bytecode-compiler.md).
