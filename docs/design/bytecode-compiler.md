@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft. Decided: block scope (§8.1), annotations checked at boundaries (§10.3). Deferred: the object model, which needs its own design before phase 2 (§8.2). |
+| **Status** | Draft. Decided: block scope (§8.1), stray `return` is a compile-time error (D2), annotations checked at boundaries (§10.3). Deferred: the object model, which needs its own design before phase 2 (§8.2). |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -376,10 +376,10 @@ return. After the `ARETURN`, the generator emits a dead `ACONST_NULL` so that th
 it can be generated as if `return` were an ordinary expression. ASM's `COMPUTE_FRAMES` replaces
 unreachable code with `NOP`s and an `ATHROW`, so the dead code costs nothing.
 
-Two cases need a decision (§8):
+Two cases are handled before code generation (§8):
 
-* `return` at file level. The interpreter fails at runtime, and only if the `return` runs. The
-  proposal is a compile-time error.
+* `return` with no enclosing function. **Decided (D2):** it is a compile-time error in both
+  modes, reported by the analysis pass. The code generator never sees one.
 * `return` inside a parameter default. In the interpreter it escapes `bindParameters`, which is
   outside `Function.call`'s `catch`, so it returns **from the caller's** function. Compiled
   inline, it would return from the callee. The proposal is a compile-time error.
@@ -543,14 +543,14 @@ Each item gets a test that pins the agreed behaviour **in both modes**.
 | # | Topic | Today | Decision or recommendation |
 |---|---|---|---|
 | D1 | What a name refers to before its `def` runs | resolves to an outer binding | **Decided: real block scope with hoisting (§8.1).** Reading a name before its `def` is an error. |
-| D2 | `return` at file level | runtime error, only if it runs | compile-time error |
+| D2 | `return` with no enclosing function: at file level, or in a top-level `package`/`object` body | runtime error, only if it runs | **Decided: compile-time error (§8.3).** |
 | D3 | `return` in a parameter default | returns from the *caller* | compile-time error |
 | D4 | `def` inside a loop body | fails on the second iteration | **Decided: fixed by D1.** Each iteration gets a fresh scope. |
 | D5 | `obj.x` falling through to lexical scope (`o.println`, `mk().hidden`) | allowed | **Deferred to the object model design (§8.2).** Phase 1 keeps today's behaviour. |
 | D6 | `print` finds `STDOUT` through the **caller's** scope | dynamic scoping | Read `STDOUT` from the script root via `ScriptRuntime`. A script that does `def STDOUT` *inside a function* to redirect output stops doing so. Nothing in the repo does this. |
 | D7 | An unqualified name inside an object body after `obj.m` has cached a `BoundMethod` in the object | can resolve to the bound method | In compiled code the name resolves lexically to the raw function. This only matters for code that both calls `obj.m` from outside and refers to plain `m` from inside, and it is not worth replicating. May be overtaken by §8.2. |
 
-D2 and D3 are still open. D6 and D7 are edge cases written down for completeness.
+D3 is still open. D6 and D7 are edge cases written down for completeness.
 
 ### 8.1 Block scope
 
@@ -642,6 +642,31 @@ The compiler needs these questions answered:
 5. **Types.** Are object types nominal or structural (T5)? Does an object literal become an
    instance of an anonymous class?
 6. **Migration.** What do `Stack.ba` and the README's "function scope as a class" idiom become?
+
+### 8.3 `return` outside a function
+
+A `return` is accepted only if a function literal encloses it. `package` and `object` bodies do
+not count, because they are not functions: a `return` inside one belongs to whatever function
+encloses *that*. Anything else is rejected before the script runs, in both modes:
+
+```
+return 1                         ;; rejected
+if false then ( return 1 )       ;; rejected too, though it never runs
+package p ( return 1 )           ;; rejected
+def f = () -> ( return 1 )       ;; fine
+def g = () -> ( object ( def v = ( return 2 ) ) )   ;; fine: returns from g
+```
+
+* The check lives in the `BlockScopes` pass (§8.1), which already walks every scope, so it runs
+  at `compile()` time in both modes. The interpreter's runtime check in `visitFile` stays only
+  as a defensive assertion, because no `return` can reach it any more.
+* All errors found before the script runs, from this check and from rule 4 of §8.1, are raised
+  as `ScriptException(message, fileName, line)`. They read exactly like runtime errors
+  (`… in <input> at line number 1`). The existing `testReturnOutsideOfFunction` therefore passes
+  unchanged. It gains a case for a `return` that never runs (`if false then ( return 1 )`),
+  which is accepted today and rejected from now on.
+* Because the code generator never meets such a `return`, `run` needs no special case: every
+  `ARETURN` it emits for a `return` is inside a function method.
 
 ## 9. Phases 3 and 4 (outline)
 
@@ -918,11 +943,12 @@ behaviour for bindings and forward references.
 2. Phase 0b: the new `Callable`, `Arguments`, `CallSite`, `ScriptRuntime`. Port the natives,
    the interop and the test `AssertFunction`. Decide D6.
 3. Block scope in the interpreter (§8.1): the `BlockScopes` pass, pre-declared slots, the new
-   error message. Enable `testBlockScope`.
+   error message. Enable `testBlockScope`. The same pass rejects a `return` outside a function
+   (D2, §8.3).
 4. Add ASM. Add `BabbleCompiler`, `ScriptClassLoader` and the mode switch. Compile literals,
    operators, `def`, names, blocks (as scopes), `if` and `while`, with interpreter fallback for
    function literals. Add the dual-mode surefire execution.
-5. Compile function literals and calls (prologue, defaults, `return`). Decide D2/D3. Remove
+5. Compile function literals and calls (prologue, defaults, `return`). Decide D3. Remove
    the fallback.
 6. Compile `package`, `object` and member access with today's object semantics. Phase 1 is
    complete: the full suite passes in both modes.
