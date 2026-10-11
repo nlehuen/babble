@@ -43,6 +43,7 @@ nominal types to work with.
 | O5 | Equality of instances | **Value classes.** `value class` generates `equals`/`hashCode`/`toString` from read-only members, and every other class compares by identity. There is no hand-written `equals`. |
 | O6 | `==` on other values | **Java `equals()`** for every non-number, so lists, maps and sets compare by content. Numbers keep the cross-type rule (`1 == 1.0`). |
 | O7 | Identity | **A built-in `same(a, b)`** native, with no new operator. |
+| O8 | Parameters as members | **`def` in the class header** (`class (def x, def y)`) declares a member initialised from the argument. In a **value class every parameter is a member**, record-style. Header members, like all members, are reached only as `this.x` (§4.8). |
 
 The sections below work out what these imply. Wherever a further choice was needed, the
 section states it as a recommendation and lists the alternative in §11.
@@ -72,9 +73,7 @@ object.
 ### 4.1 Syntax
 
 ```
-def Point = class (x:double, y:double) (
-    def x = x
-    def y = y
+def Point = class (def x:double, def y:double) (     ;; def: the parameter is also a member (§4.8)
     def norm = () -> ( java.lang.Math.sqrt(this.x * this.x + this.y * this.y) )
     def plus = (other) -> ( Point(this.x + other.x, this.y + other.y) )
 )
@@ -89,6 +88,8 @@ Proposed grammar additions, in the style of `Babble.g4`:
 
 ```antlr
 | modifier=ID? CLASS parametersDeclaration? (IMPLEMENTS typeList)? NL* classBlock=block   # classExpression
+
+parameterDeclaration: DEF? ID (':' type)? ('=' NL* defaultValue=expression)?;   // DEF: class headers only
 | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block                     # interfaceExpression
 | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block                        # objectExpression
 | THIS                                                                       # thisExpression
@@ -120,10 +121,11 @@ The body is an ordinary block, run **once per instance** by the constructor, top
   initialises it from the constructor parameter `x`. This is the one exception to block-scope
   hoisting (compiler doc §8.1, rule 3): a class or object body is not a lexical scope for its
   own members.
-* **Constructor parameters are ordinary lexical variables,** visible in the whole body,
+* **Plain constructor parameters are ordinary lexical variables,** visible in the whole body,
   including inside methods. A parameter that no method uses is just a constructor local. One
   that a method uses becomes a hidden per-instance field (§7.2). This is how Scala handles
-  class parameters.
+  class parameters. Parameters marked `def`, and every parameter of a value class, are members
+  instead (§4.8).
 * **Nested blocks are block scopes.** A `def` inside `( … )`, an `if` branch or a `while` body in
   the class body is a block-local variable, not a member, exactly as in §8.1 of the compiler doc.
 * **Other expressions are allowed.** The body can validate its arguments, print, or call
@@ -177,9 +179,7 @@ generated form `Point(x: 1, y: 2)`.
 ### 4.6 Value classes
 
 ```
-def Point = value class (x, y) (
-    def x = x
-    def y = y
+def Point = value class (x, y) (                 ;; x and y are members (§4.8)
     def plus = (o) -> ( Point(this.x + o.x, this.y + o.y) )
 )
 
@@ -195,14 +195,17 @@ seen.contains(Point(1, 2))          ;; true: Java collections agree with ==
 
 A value class is an ordinary class (§4) with these differences:
 
-* **Members are read-only.** Each member is set once, by its own `def`. Any assignment to a
+* **Members are read-only.** Each member is set once: a parameter by its argument, a body field
+  by its own `def`. Any assignment to a
   member, `this.x = …` or `p.x = …`, fails with `Value members are read-only : x`. Where the
   target is statically known to be a value class, which `this.x` inside one always is, that is
   a compile-time error. Immutability is **shallow**, as for Java records: a member can hold a
   mutable Java list.
 * **Equality is generated.** Two instances are equal when they come from the **same class
-  value** (§4.4) and every field is pairwise `==` (§4.7). Methods and hidden constructor-
-  parameter fields (§7.2) don't take part: equality is defined by the declared fields only.
+  value** (§4.4) and every field is pairwise `==` (§4.7). The fields are the header parameters
+  plus any fields defined in the body (`def area = this.w * this.h`). Methods don't take part.
+  A value class has no hidden parameter fields (§7.2), because all of its parameters are
+  members.
 * **`hashCode` is generated** consistently with that: the fields' hashes are combined in
   declaration order, `h = 31 * h + hash(field)`, with Babble's `hash` (§4.7) rather than Java's,
   so that `Point(1, 2)` and `Point(1.0, 2.0)` hash alike.
@@ -281,6 +284,65 @@ runtime can fix it.
   or between runs.
 * `same(null, null)` is `true`.
 
+### 4.8 Parameters as members
+
+`def` in front of a parameter in a class header makes it a member, initialised from the
+argument:
+
+```
+def Account = class (def owner:string, def balance:int = 0) (
+    def deposit = (n:int) -> ( this.balance = this.balance + n )
+)
+def a = Account("ann")
+a.deposit(5)
+a.balance             ;; 5
+```
+
+That is exactly the long form below, which remains valid:
+
+```
+def Account = class (owner:string, balance:int = 0) (
+    def owner = owner
+    def balance = balance
+    def deposit = …
+)
+```
+
+* **A header member is a member only.** Like every member it is reached as `this.x` (O2), and
+  it binds **no unqualified name** in the body or in methods. If `x` also stayed visible as a
+  parameter, a method could read a stale copy after `this.x = …`. With one name there is a
+  single storage location and no ambiguity. In the long form above, by contrast, `owner` stays
+  a plain parameter next to the member `this.owner`.
+* **Order.** Header members are initialised from the bound arguments before the body runs, so
+  the body can read them right away (`def area = this.w * this.h`). They come first in the
+  member order, in header order, followed by the body's members. That order is used by the
+  generated `toString`, `equals` and `hashCode` of value classes.
+* **Types and defaults** are those of the parameter: `def balance:int = 0` gives the member the
+  type `int`, and a default when the argument is omitted.
+* **No duplicates.** A body `def` with the same name as a header member is rejected with
+  `Member already defined : balance`.
+* **Only in class headers.** `def` on a function-literal parameter, or in a function type, is
+  rejected with `def parameters are only allowed in a class header`.
+
+**In a value class, every parameter is a member** (O8), as in Java records and Kotlin data
+classes:
+
+```
+def Range = value class (lo:int, hi:int) (
+    def size = () -> ( this.hi - this.lo )
+)
+Range(1, 5) == Range(1, 5)    ;; true
+Range(1, 5).size()            ;; 4
+```
+
+* The header therefore lists the fields that define the value's equality, which is how data
+  reads most naturally. `value class (x, y) ()` is a complete two-field value.
+* Writing `def` on a value class parameter is accepted but redundant, and the analysis pass
+  warns about it.
+* A value class cannot take a parameter it doesn't store. When construction needs an input that
+  shouldn't be part of the value (a raw string to parse, say), a factory function does the
+  work: `def parse = (s) -> ( Range(…, …) )`.
+
 ## 5. Lookup, `this` and `recurse`
 
 ### 5.1 What a name can reach
@@ -335,8 +397,7 @@ def Shape = interface (
 ### 6.2 Implementing interfaces
 
 ```
-def Square = class (side:double) implements Shape (
-    def side = side
+def Square = class (def side:double) implements Shape (
     def name = "square"
     def area = () -> ( this.side * this.side )
 )
@@ -419,7 +480,8 @@ final class Script$7$Point extends BabbleInstanceBase implements Script$7$Shape 
 
 ### 7.2 Constructor parameters used by methods
 
-The resolver knows which constructor parameters each method uses. Those become hidden fields
+This concerns plain parameters only: header members (§4.8) are ordinary fields. The resolver
+knows which plain constructor parameters each method uses. Those become hidden fields
 (`$p$name`), set by the constructor. A method assigning to one updates the field, so a
 parameter is shared mutable state of the instance, consistent with a closure capturing a cell.
 Parameters no method uses stay JVM locals of the constructor.
@@ -535,10 +597,7 @@ change that implements the model, in the interpreter.
 
 ```
 package stack (
-    def Node = class (value, next) (
-        def value = value
-        def next = next
-    )
+    def Node = class (def value, def next) ()
 
     def Stack = class () (
         def size = 0
@@ -589,6 +648,9 @@ o.down(3)    ;; 6
 
 New tests cover the following:
 - constructor parameters and defaults, and parameters used from methods;
+- header members: `def` parameters, their order and types, duplicates with body members, `def`
+  rejected outside class headers, value class parameters as members, and the redundant-`def`
+  warning;
 - reading a member before its `def`, and `return` in a class body;
 - fixed member sets and read-only methods;
 - bound methods and fields holding functions;
@@ -611,7 +673,7 @@ New tests cover the following:
 
 | # | Question | Leaning |
 |---|---|---|
-| Q1 | A shorthand for "parameter that is also a member", to avoid `def x = x` | Wait and see how noisy real code is. A later option is `class (def x, def y) ( … )`. |
+| Q1 | A shorthand for "parameter that is also a member" | **Resolved:** `def` in the class header, and every parameter in a value class (§4.8). |
 | Q2 | Calling an overridden default from the override (no `super`) | Add qualified calls, `Shape.describe(this)`, if the need shows up. |
 | Q3 | Value equality | **Resolved:** value classes, Java `equals()` for `==`, and `same` (§4.6, §4.7). Hand-written `equals` remains excluded. Revisit only if a real case needs equality that is not field-wise. |
 | Q4 | Private members | Out of scope. A naming convention (`_x`) until there is demand. |
@@ -622,7 +684,7 @@ New tests cover the following:
 ## 12. Implementation order
 
 1. Grammar: `class` (with the contextual `value` modifier), `interface`, `implements`,
-   `extends`, `is`, `this`. Regenerate the parser.
+   `extends`, `is`, `this`, and `def` on parameter declarations. Regenerate the parser.
 2. Runtime: `BabbleClass`, `BabbleInstance` (an array of member values), `BabbleInterface`,
    bound methods over the new `Callable` (with `equals`). Retire `BabbleObject`'s parent
    fall-through and the on-the-fly binding of free functions.
