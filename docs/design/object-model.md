@@ -24,6 +24,8 @@ instance. Every `def` at the top level of the body declares a **member**.
   (`Runnable`, `Comparator`, `java.util.function.*`). They are converted automatically.
 * `object ( … )` stays, as a single instance of an anonymous class.
 * **Members are public unless `private`,** and a private member is reachable only as `this.x`.
+* **Class-level members** go in a `static ( … )` block after the body: `Point.origin`,
+  `Point.parse(s)`.
 * **Value classes** (`value class (…) ( … )`) have read-only members and a generated `equals`,
   `hashCode` and `toString`. Instances of any other class compare by identity.
 * **`==` is value equality:** numeric across types for numbers, Java's `equals()` for everything
@@ -48,6 +50,7 @@ nominal types to work with.
 | O8 | Parameters as members | **`def` in the class header** (`class (def x, def y)`) declares a member initialised from the argument. In a **value class every parameter is a member**, record-style. Header members, like all members, are reached only as `this.x` (§4.8). |
 | O9 | Calling an overridden default | **`super.m()`**, qualified as `super(Shape).m()` when several interfaces provide `m`. Kotlin-style, compiled as Java's `Shape.super.m()` (§6.5). |
 | O10 | Private members | **A `private` modifier**, on body and header members, and **object-private**: a private member is reachable only as `this.x` (§4.9). |
+| O11 | Static members | **A `static ( … )` block** after the class body, run once when the class expression is evaluated. Its `def`s are members of the class value, and inside it `this` is the class value (§4.10). |
 
 The sections below work out what these imply. Wherever a further choice was needed, the
 section states it as a recommendation and lists the alternative in §11.
@@ -91,21 +94,25 @@ p.plus(q).x                  ;; 5.0
 Proposed grammar additions, in the style of `Babble.g4`:
 
 ```antlr
-| modifier=ID? CLASS parametersDeclaration? (IMPLEMENTS typeList)? NL* classBlock=block   # classExpression
-
-parameterDeclaration: PRIVATE? DEF? ID (':' type)? ('=' NL* defaultValue=expression)?;   // PRIVATE, DEF: class headers only
-// and on defExpression: PRIVATE? DEF …   (PRIVATE only for members, §4.9)
-| INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block                     # interfaceExpression
+// new alternatives of `expression`
+| modifier=ID? CLASS parametersDeclaration? (IMPLEMENTS typeList)? NL* classBlock=block
+      (NL* STATIC NL* staticBlock=block)?                                    # classExpression
+| INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block
+      (NL* STATIC NL* staticBlock=block)?                                    # interfaceExpression
 | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block                        # objectExpression
 | THIS                                                                       # thisExpression
 | SUPER ('(' NL* type NL* ')')?                                              # superExpression
 | left=expression IS right=expression                                        # isExpression
+// and in defExpression: PRIVATE? DEF …   (PRIVATE only on members, §4.9)
 
 typeList: type (NL* ',' NL* type)*;
+
+// PRIVATE and DEF are accepted in class headers only
+parameterDeclaration: PRIVATE? DEF? ID (':' type)? ('=' NL* defaultValue=expression)?;
 ```
 
 The new keywords are `class`, `interface`, `implements`, `extends` (only between interfaces,
-§6.4), `is`, `this`, `super` (§6.5) and `private` (§4.9). `this` stops being an ordinary name
+§6.4), `is`, `this`, `super` (§6.5), `private` (§4.9) and `static` (§4.10). `this` stops being an ordinary name
 (§5.3). None of them is used as an identifier anywhere in the repo, and they only appear in
 comments.
 
@@ -169,8 +176,7 @@ A `class` expression evaluates to a **class value** (`BabbleClass` at runtime):
   (`Arguments`, compiler doc §5.2).
 * It has a display name, taken from the `def` it is bound to (`Point`), which shows up in
   messages and stack traces.
-* It has no static members. Shared helpers live in a `package` next to the class, as they do
-  today.
+* It has the static members declared in the class's `static ( … )` block, if any (§4.10).
 * A class expression can be evaluated many times: a class defined inside a function is created
   on each call. All those class values share one compiled JVM class (§7.1), but each carries
   the outer variables it captured. Instances of two such values are distinct classes for `is`
@@ -426,6 +432,70 @@ the type checker only lets `this.x` reach them. In phase 2 they become JVM `priv
 methods. A function literal nested in a method that touches them is compiled as a synthetic
 instance method of the class, as for `super` (§7.3), so the access is legal there. Java code
 sees them as private too, through reflection or otherwise.
+
+### 4.10 Static members
+
+```
+def Point = value class (x, y) (
+    def plus = (o) -> ( Point(this.x + o.x, this.y + o.y) )
+) static (
+    def origin = this(0, 0)                 ;; this is the class value
+    private def created = 0                 ;; private static: only this.created
+    def fromPolar = (r, theta) -> (
+        this.created = this.created + 1
+        this(r * java.lang.Math.cos(theta), r * java.lang.Math.sin(theta))
+    )
+    def count = () -> ( this.created )
+)
+
+Point.origin              ;; Point(x: 0, y: 0)
+Point.fromPolar(2.0, 0.0) ;; Point(x: 2.0, y: 0.0)
+Point.count()             ;; 1
+Point(1, 2).origin        ;; error: No such member : origin (statics are not instance members)
+```
+
+* **When it runs.** The `static` block runs **once, when the class expression is evaluated**,
+  after the class value exists and before the expression returns it. A class defined at the
+  top level or in a package gets its statics once. A class defined inside a function gets a
+  fresh class value, with fresh statics, on each call (§4.4).
+* **`this` is the class value** inside the block and inside static methods, so `this(0, 0)`
+  constructs an instance and `this.origin` reads a static. The class's own name can't be used
+  in the block's initialisers: while the block runs, `def Point = …` has not finished, and
+  `Point` is still undefined (compiler doc §8.1, rule 3). Inside static *methods* the name
+  works, because they run later, but `this` reads the same everywhere and is preferred.
+* **Members.** The block's top-level `def`s become members of the class value, following the
+  instance rules:
+  - a function literal is a static method, bound to the class value when selected;
+  - anything else is a static field, mutable even on a value class, because a value class
+    restricts its instances, not its class;
+  - nested blocks are block scopes;
+  - other expressions run in order;
+  - `return` is rejected as in a class body (§4.2).
+* **Access.** From anywhere, statics are reached through the class value: `Point.origin`.
+  Instance methods do the same, by name. Statics are never instance members: `p.origin` is
+  `No such member`, and instance members are never statics: `Point.x` is too. The two sets of
+  names are separate, so a static and an instance member may share a name.
+* **Private statics** are object-private to the class value (§4.9): only `this.cache`, inside
+  the static block and its methods. Instance methods can't reach them, because their `this` is
+  the instance. If that proves limiting, see §11, Q8.
+* **Interfaces** can have a `static ( … )` block too, for constants and factories
+  (`Shape.unit`). As in Java, an interface's statics are not inherited by the classes that
+  implement it: `Square.unit` is `No such member`.
+* **Object literals** have no static block. An object is already a single instance, and its
+  members play that role.
+* **Layout.** `static` may start on the line after the body's closing parenthesis. `static` is
+  a keyword that can't begin a statement, so allowing a newline before it adds no ambiguity.
+
+**Representation.** Statics belong to the class *value*, not to the JVM class. Two evaluations
+of a class expression share one JVM class (§7.1) but must not share statics. A class literal
+with a `static` block therefore gets a **companion JVM class** (`Script$7$Point$Static extends
+BabbleClass`) whose instance *is* the class value, as in Kotlin's companion objects:
+
+* static fields are its fields, and static methods its instance methods;
+* `this` inside them is local 0;
+* `Point.parse(s)` with `Point` statically known compiles to an `INVOKEVIRTUAL` on the companion.
+
+The type checker sees the static members as part of the class value's type.
 
 ## 5. Lookup, `this` and `recurse`
 
@@ -789,6 +859,10 @@ New tests cover the following:
   the same class; private methods and bound private methods; `private` rejected outside
   members and in interfaces; private members against interface requirements and defaults;
   value classes' equality including, and `toString` omitting, private fields;
+- static members: the block running once per class value (and per call for a class defined
+  in a function), `this` as the class value, `this(…)` construction, static methods and
+  fields, private statics, statics and instance members kept apart, interface statics not
+  inherited, `static` on the line after the body;
 - header members: `def` parameters, their order and types, duplicates with body members, `def`
   rejected outside class headers, value class parameters as members, and the redundant-`def`
   warning;
@@ -822,15 +896,16 @@ New tests cover the following:
 | Q2 | Calling an overridden default from the override | **Resolved:** `super.m()`, qualified as `super(I).m()` when ambiguous (§6.5). |
 | Q3 | Value equality | **Resolved:** value classes, Java `equals()` for `==`, and `same` (§4.6, §4.7). Hand-written `equals` remains excluded. Revisit only if a real case needs equality that is not field-wise. |
 | Q4 | Private members | **Resolved:** a `private` modifier, object-private, reachable only through `this` (§4.9). |
-| Q5 | Static members on classes | No. Use a package. |
+| Q5 | Static members on classes | **Resolved:** a `static ( … )` block, with `this` as the class value (§4.10). |
 | Q6 | Babble classes implementing Java interfaces (multi-method listeners) | A later design. It needs Java signatures and overloads expressed in Babble. |
 | Q7 | Structural typing for object literals passed where an interface is expected | No for now (nominal, §6.2). Revisit if declaring `implements` on literals proves tedious. |
+| Q8 | A way for instance code to reach its own class value, and its private statics (`this.class`?) | Wait. Instance code reaches public statics by name, and private statics stay with the static block. |
 
 ## 12. Implementation order
 
 1. Grammar: `class` (with the contextual `value` modifier), `interface`, `implements`,
-   `extends`, `is`, `this`, `super`, `private`, and `def` on parameter declarations. Regenerate
-   the parser.
+   `extends`, `is`, `this`, `super`, `private`, `static`, and `def` on parameter declarations.
+   Regenerate the parser.
 2. Runtime: `BabbleClass`, `BabbleInstance` (an array of member values), `BabbleInterface`,
    bound methods over the new `Callable` (with `equals`). Retire `BabbleObject`'s parent
    fall-through and the on-the-fly binding of free functions.
@@ -848,9 +923,10 @@ New tests cover the following:
    - value class rules: read-only members, no hand-written `equals`/`hashCode`, `this` not
      escaping, the warning for `equals` in a regular class;
    - private members: placement of `private`, static rejection of `e.x`, the interface rules
-     (§4.9).
+     (§4.9);
+   - static blocks: member tables for class values, `return` placement (§4.10).
 4. Interpreter: class and object expressions, construction, member access (with the separate
-   `this.x` path that may see private members), `is`, `super`, `toString`.
+   `this.x` path that may see private members), `is`, `super`, `toString`, static blocks.
    Migrate `Stack.ba`, `Test1.ba`, the README and the test in §10.
 5. Java: functional-interface applicability in `Overloads`, `Proxy`-based conversion, and
    explicit conversion through a Java interface's class value.
