@@ -42,6 +42,7 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<DefTarget> defTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<BabbleParser.TypeContext> superTargets = new ParseTreeProperty<>();
     private final List<Warning> warnings = new ArrayList<>();
+    private Resolution resolution;
 
     void setDeclared(ParserRuleContext owner, String[] names) {
         declared.put(owner, names);
@@ -62,6 +63,15 @@ public final class ScopeAnalysis {
 
     void setSuperTarget(BabbleParser.SuperExpressionContext superExpression, BabbleParser.TypeContext type) {
         superTargets.put(superExpression, type);
+    }
+
+    void setResolution(Resolution resolution) {
+        this.resolution = resolution;
+    }
+
+    /** What each name refers to, for the compiler (phase 2). */
+    public Resolution resolution() {
+        return resolution;
     }
 
     void warn(String message, int line) {

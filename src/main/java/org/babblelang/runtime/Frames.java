@@ -1,5 +1,6 @@
 package org.babblelang.runtime;
 
+import org.babblelang.engine.BabbleException;
 import org.babblelang.engine.impl.Namespace;
 
 public final class Frames {
@@ -20,5 +21,21 @@ public final class Frames {
         }
         namespace.declare(declared);
         return namespace;
+    }
+
+    /**
+     * Reads a JVM local or a cell holding a hoisted definition : using it before its def
+     * has run is an error, as reading an unset namespace slot is.
+     */
+    public static Object defined(Object value, String name) {
+        if (value == Undefined.UNDEFINED) {
+            throw new BabbleException("Name used before definition : " + name);
+        }
+        return value;
+    }
+
+    /** Checks that a variable can be assigned : its definition has run. */
+    public static void checkAssignable(Object current, String name) {
+        defined(current, name);
     }
 }
