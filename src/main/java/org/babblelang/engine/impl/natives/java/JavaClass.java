@@ -24,6 +24,7 @@ public class JavaClass implements Scope<Callable>, Callable, JavaType {
 
     private final Class<?> clazz;
     private final Map<String, Slot<Callable>> members = new HashMap<>();
+    private final Overloads.Cache<Constructor<?>> constructors = new Overloads.Cache<>();
 
     JavaClass(Class<?> clazz) {
         this.clazz = clazz;
@@ -48,7 +49,11 @@ public class JavaClass implements Scope<Callable>, Callable, JavaType {
         if (clazz.isInterface() && args.length == 1 && Values.isBabbleCallable(args[0]) && JavaTypes.isFunctionalInterface(clazz)) {
             return Values.toJava(args[0], clazz, rt);
         }
-        Constructor<?> constructor = Overloads.resolveConstructor(clazz, args);
+        Constructor<?> constructor = constructors.find(args);
+        if (constructor == null) {
+            constructor = Overloads.resolveConstructor(clazz, args);
+            constructors.put(args, constructor);
+        }
         Object[] java = Values.toJava(args, constructor.getParameterTypes(), rt);
         try {
             return new JavaObject(this, constructor.newInstance(java));

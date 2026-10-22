@@ -42,6 +42,84 @@ public final class Overloads {
         return resolve(Arrays.asList(clazz.getConstructors()), clazz.getCanonicalName(), arguments);
     }
 
+    /**
+     * The overloads a Java method or constructor resolved to, by the kinds of the arguments
+     * (compiler phase 3, but the interpreter uses it too) : resolution only depends on
+     * them, so a call with arguments of the same kinds as an earlier one picks the same
+     * overload. A kind is the argument's class, or for a Babble instance its class value,
+     * whose Java interfaces it passes for. Errors are not cached, and only the first
+     * {@link #CACHE_SIZE} kinds of argument lists are.
+     */
+    public static final class Cache<E extends Executable> {
+        private record Entry<E>(Object[] kinds, E executable) {
+        }
+
+        private volatile Entry<E>[] entries = newEntries(0);
+
+        @SuppressWarnings("unchecked")
+        private static <E> Entry<E>[] newEntries(int size) {
+            return (Entry<E>[]) new Entry[size];
+        }
+
+        /** The overload resolved earlier for arguments of these kinds, or null. */
+        public E find(Object[] arguments) {
+            for (Entry<E> entry : entries) {
+                if (matches(entry.kinds(), arguments)) {
+                    return entry.executable();
+                }
+            }
+            return null;
+        }
+
+        public synchronized void put(Object[] arguments, E executable) {
+            Entry<E>[] current = entries;
+            if (current.length >= CACHE_SIZE) {
+                return;
+            }
+            Object[] kinds = new Object[arguments.length];
+            for (int i = 0; i < arguments.length; i++) {
+                kinds[i] = kind(arguments[i]);
+            }
+            Entry<E>[] updated = Arrays.copyOf(current, current.length + 1);
+            updated[current.length] = new Entry<>(kinds, executable);
+            entries = updated;
+        }
+
+        private static boolean matches(Object[] kinds, Object[] arguments) {
+            if (kinds.length != arguments.length) {
+                return false;
+            }
+            for (int i = 0; i < kinds.length; i++) {
+                if (kinds[i] != kind(arguments[i])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    static final int CACHE_SIZE = 8;
+    private static final Object NULL_KIND = new Object();
+    private static final Object OBJECT_CLASS_KIND = new Object();
+
+    /** What the applicability of an argument depends on (see {@link #isApplicable(Class, Object)}). */
+    private static Object kind(Object argument) {
+        if (argument instanceof JavaValue wrapper) {
+            argument = wrapper.javaValue();
+        }
+        if (argument == null) {
+            return NULL_KIND;
+        }
+        if (argument instanceof BabbleInstance instance) {
+            return instance.babbleClass();
+        }
+        // The anonymous class of an object literal can't be called, so it isn't a function.
+        if (argument instanceof BabbleClass babbleClass && !Values.isBabbleCallable(babbleClass)) {
+            return OBJECT_CLASS_KIND;
+        }
+        return argument.getClass();
+    }
+
     public static <E extends Executable> E resolve(List<E> candidates, String description, Object[] arguments) {
         List<E> applicable = candidates.stream()
                 .filter(candidate -> isApplicable(candidate, arguments))

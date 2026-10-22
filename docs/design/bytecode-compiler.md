@@ -730,7 +730,7 @@ engine.eval("println(\"hi\")", ctx);      // out now holds "hi\n"
 ## 9. Phases 3 and 4 (outline)
 
 **Phase 3: invokedynamic and specialisation.** Each of these needs its own design note when we
-get there:
+get there (§18 has what landed):
 
 * **Calls.** `INVOKEDYNAMIC call(Object callee, Object… args)`, bootstrapped by
   `org.babblelang.runtime.Bootstrap`, with a monomorphic inline cache. If the callee is a
@@ -1113,7 +1113,9 @@ Phase 2 (§7) is implemented, apart from compiling interfaces to JVM interfaces 
   so it could emit neither `INVOKEINTERFACE` nor `INSTANCEOF`: `obj.m()` and `is` go through the
   runtime either way. The cost would be default methods reaching the captured variables of the
   right interface value from inside a JVM default method, and exact-signature bridges for each
-  Java overload. Instances keep their `Proxy` face for Java. Both belong with phase 3.
+  Java overload. Instances keep their `Proxy` face for Java. Phase 3 caches selections by
+  receiver class instead (§18), which gets the speed without them; they wait for the type
+  checker.
 * **Loops and on-stack replacement.** Phase 1 kept a `while` loop's running result on the
   operand stack. HotSpot only compiles a running loop (on-stack replacement) when the stack is
   empty at its head, so a function running one long loop, called only a few times, stayed in
@@ -1134,3 +1136,80 @@ Phase 2 (§7) is implemented, apart from compiling interfaces to JVM interfaces 
 Measured along the way: the phase 1 representation with the loop fix gives 8.4x, 14.7x, 9.3x,
 7.2x and 1.0x; phase 2 without JVM classes for class expressions gives the same as above except
 Stack.ba at 12.1x. Java interop stays bound by reflection, which phase 3 caches.
+
+## 18. Implementation notes (phase 3)
+
+Phase 3 (§9) is implemented for calls, member selection and Java overloads. Arithmetic guards
+were measured and left out (below), and so was type specialisation, which needs the type
+checker (§10.5).
+
+* **Direct entry points.** A function literal compiles to `fn$N$name(CompiledFunction self,
+  Object thiz, ScriptRuntime rt, Arguments.Binder binder, Object p0, …)`, one JVM parameter per
+  Babble parameter, and a method of a compiled class to the instance method `m$name(CompiledMethod
+  self, ScriptRuntime rt, Arguments.Binder binder, Object p0, …)`. A parameter the caller didn't
+  give is `Arguments.MISSING`, and gets its default or fails with `Missing parameter`, as
+  before. The array convention survives as an adapter, `fn$N$name$call` / `m$name$call`: it
+  builds the binder, takes every parameter by name or position, and calls the direct entry point
+  with the binder, which rejects the leftovers once the defaults have run, so errors keep their
+  order. A direct call passes a null binder: it has no names and no more arguments than
+  parameters. `FunctionBody` and `MethodBody` wrap the adapters, and `CompiledFunction` and
+  `CompiledMethod` carry the direct entry point as a `MethodHandle` (an `LDC` constant, so every
+  value of the same literal shares it). Functions with more than 200 parameters keep only the
+  array form, to stay within the JVM's 255 parameter slots.
+* **Call sites.** A call evaluates the callee, checks it callable (still before the arguments),
+  then runs `INVOKEDYNAMIC call(Callable, ScriptRuntime, String[] names, CallSite, Object a0,
+  …)`, bootstrapped by `org.babblelang.runtime.Bootstrap`. Each site is a `MutableCallSite`
+  holding a chain of guarded fast paths, the newest first, and its fallback adds one each time a
+  call misses:
+  - a `CompiledFunction` whose direct entry point is the cached one, called by position with no
+    more arguments than parameters: a jump to the direct entry point, padded with `MISSING`;
+  - a `BoundMethod` over such a `CompiledFunction` (interface defaults, methods of classes that
+    keep a namespace), the receiver as `thiz`, or over a `CompiledMethod` (methods of compiled
+    classes), the receiver as the JVM receiver;
+  - any other callee: its own class's `call`, guarded on that class. This one matters more than
+    it looks: when every generic site went through one shared `callee.call(...)`, its type
+    profile was megamorphic and HotSpot inlined nothing, which made class construction 2x slower
+    than phase 2's plain `INVOKEINTERFACE`, whose profile is per site.
+
+  After 4 misses a site goes generic for good. `this.m(args)` in a compiled class doesn't need a
+  site: it was already an `INVOKEVIRTUAL`, now of the direct entry point when the call is
+  positional. Calls with more than 200 arguments keep phase 2's array path.
+* **Member selection.** `obj.x` is `INVOKEDYNAMIC select(Object)Object`, the member's name and
+  the target's text (for errors) as static arguments. A miss first runs `Members.select`, so an
+  error links nothing, then caches by receiver: for an instance of a compiled class, a guard on
+  its JVM class and a read of its field, checked defined, and bound to the receiver for a method;
+  for a `JavaPackage` or `JavaClass`, whose members never change, a guard on the receiver itself
+  and a constant. Private and inherited members, namespaces, class values, interpreted instances
+  and Java objects go generic. So does an instance whose class another script compiled: its
+  fields are package-private to another class loader. `this.x` keeps phase 2's `GETFIELD`.
+* **Java overloads** (`Overloads.Cache`, used by both modes). Every Java call used to run
+  reflection over all the overloads of the method. Resolution only depends on the *kinds* of the
+  arguments: their class, the Babble class of an instance (whose Java interfaces decide where it
+  applies), null, and whether a class value can be called. So each `JavaMethod` and `JavaClass`
+  keeps up to 8 resolved overloads, keyed by kinds and found without allocating; errors are not
+  cached. The interpreter gets the same 4x on the ArrayList benchmark. Overload errors now name
+  an instance's argument kind by its Babble class, the same in both modes, rather than by its JVM
+  class.
+* **Arithmetic: measured, not kept.** An inline `(Integer, Integer)` guard for `+`, `-` and `<`,
+  falling back to `Operators`, made fib 2.45 → 2.7 ms and the loop 1.77 → 1.9 ms. HotSpot
+  already inlines the `Integer` fast paths at the top of `Operators.add` and friends, and boxing
+  the result dominates either way. Unboxing needs types the compiler can trust (§10.5).
+* **Warm-up.** Until the JIT compiles them, `invokedynamic` sites run through interpreted
+  method handle code, which is slower than a plain `INVOKEINTERFACE`. A top-level loop that runs
+  only a few times shows it: Stack.ba took 10 ms instead of phase 2's 6 ms for each of its first
+  10 runs, then 1.2 ms instead of 2.6 ms. The harness now warms up for 50 runs and times 20,
+  for both columns below.
+
+**Benchmarks after phase 3** (same machine, JDK 21; the phase 2 column is master before phase 3,
+under the same harness):
+
+| Benchmark | interpret (ms) | phase 2 (ms) | phase 3 (ms) | phase 3 speed-up |
+|---|---:|---:|---:|---:|
+| fib(25) : calls and arithmetic | 104.7 | 3.5 | 2.8 | 38.0x |
+| while loop : locals and while | 98.6 | 1.7 | 1.8 | 55.8x |
+| Counter.ba closure : captured variables | 106.1 | 5.0 | 4.4 | 24.0x |
+| Stack.ba push/pop : objects and methods | 61.7 | 3.6 | 1.7 | 35.4x |
+| ArrayList add/get : Java interop | 25.3 | 63.9 | 4.8 | 5.2x |
+
+The interpreter column includes the overload cache, which took the ArrayList benchmark from
+97 ms to 25 ms in that mode too.

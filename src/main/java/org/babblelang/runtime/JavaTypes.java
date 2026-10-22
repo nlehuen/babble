@@ -57,6 +57,10 @@ public final class JavaTypes {
         if (value instanceof JavaValue wrapper) {
             value = wrapper.javaValue();
         }
+        // An instance by its Babble class : its JVM class depends on the mode.
+        if (value instanceof BabbleInstance instance) {
+            return instance.babbleClass().name();
+        }
         return value.getClass().getCanonicalName();
     }
 

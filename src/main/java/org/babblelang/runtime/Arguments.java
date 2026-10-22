@@ -36,6 +36,11 @@ public final class Arguments {
         return new Binder(parameters, args, names);
     }
 
+    /** The error of a parameter without a default that no argument matched. */
+    public static BabbleException missing(String parameter) {
+        return new BabbleException("Missing parameter : " + parameter);
+    }
+
     public static final class Binder {
         private final String[] parameters;
         private final Object[] args;
@@ -74,7 +79,7 @@ public final class Arguments {
         }
 
         public BabbleException missing(int index) {
-            return new BabbleException("Missing parameter : " + parameters[index]);
+            return Arguments.missing(parameters[index]);
         }
 
         /**

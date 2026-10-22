@@ -13,6 +13,7 @@ import java.lang.reflect.Method;
 class JavaMethod implements Callable {
     private final Class<?> clazz;
     private final String name;
+    private final Overloads.Cache<Method> overloads = new Overloads.Cache<>();
 
     JavaMethod(Class<?> clazz, String name) {
         this.clazz = clazz;
@@ -32,7 +33,11 @@ class JavaMethod implements Callable {
      * Values.fromJava, so Babble code never sees the Java face of an instance.
      */
     Object invoke(Object thiz, Object[] args, ScriptRuntime rt) {
-        Method method = Overloads.resolveMethod(clazz, name, args);
+        Method method = overloads.find(args);
+        if (method == null) {
+            method = Overloads.resolveMethod(clazz, name, args);
+            overloads.put(args, method);
+        }
         Object[] java = Values.toJava(args, method.getParameterTypes(), rt);
         try {
             return Values.fromJava(method.invoke(thiz, java));
