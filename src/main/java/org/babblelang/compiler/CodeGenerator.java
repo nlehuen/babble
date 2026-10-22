@@ -2,6 +2,7 @@ package org.babblelang.compiler;
 
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
+import org.babblelang.analysis.Resolution;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.engine.impl.Interpreter;
 import org.babblelang.parser.BabbleBaseVisitor;
@@ -27,12 +28,17 @@ import java.util.function.Consumer;
 import static org.objectweb.asm.Opcodes.*;
 
 /**
- * Generates the class of one script (phase 1 of the bytecode compiler design).
+ * Generates the class of one script (phases 1 and 2 of the bytecode compiler design).
  * <p>
- * The generated class keeps the interpreter's data model : every name lives in a
- * {@code Namespace}, held in a JVM local of the method being generated. The one
- * invariant of the generator is that <b>every expression leaves exactly one Object on
- * the operand stack</b>.
+ * Names are resolved statically ({@link Resolution}, phase 2) : the variables of
+ * functions, blocks and class bodies are JVM locals of the method they are compiled into,
+ * or {@link org.babblelang.runtime.Cell}s when a nested function captures them, and a
+ * function or class value carries the cells it captured. The file, packages and interface
+ * bodies keep their runtime {@code Namespace}, as in phase 1, and so does any function or
+ * class body that declares a package : names found there, or nowhere, are looked up in
+ * the namespace held in a JVM local of the method being generated. The one invariant of
+ * the generator is that <b>every expression leaves exactly one Object on the operand
+ * stack</b>.
  * <ul>
  * <li>{@code static Object run(ScriptRuntime rt, Namespace ns)} runs the file. It is split
  * into {@code run$0}, {@code run$1}, ... when the file is large.</li>
@@ -63,6 +69,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private static final String BABBLE_INSTANCE = RUNTIME + "BabbleInstance";
     private static final String BABBLE_INTERFACE = RUNTIME + "BabbleInterface";
     private static final String CLASSES = RUNTIME + "Classes";
+    private static final String CELL = RUNTIME + "Cell";
+    private static final String FRAMES = RUNTIME + "Frames";
 
     static final String RUN_DESCRIPTOR = "(L" + SCRIPT_RUNTIME + ";L" + NAMESPACE + ";)Ljava/lang/Object;";
     private static final String BODY_DESCRIPTOR = "(L" + COMPILED_FUNCTION + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME
@@ -96,6 +104,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private final String className;
     private final String sourceName;
     private final ScopeAnalysis scopes;
+    private final Resolution resolution;
     private final ClassWriter classWriter;
 
     private final List<Constant> constants = new ArrayList<>();
@@ -111,6 +120,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private int nextLocal;
     private int currentLine;
     private List<Runnable> deferred;
+    // The function literal, class or object expression, or file whose method this is.
+    private ParserRuleContext methodOwner;
+    // The JVM local of each frame variable in scope.
+    private Map<Resolution.Variable, Integer> slots;
+    // The captured cells of the method, and the local holding their array.
+    private List<Resolution.Variable> capturedVariables;
+    private int capturedLocal;
+    // The class or interface value a static block defines members of.
+    private int staticTarget = -1;
 
     private record Constant(String field, String descriptor, int estimatedSize, Consumer<MethodVisitor> builder) {
     }
@@ -120,6 +138,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         this.className = className;
         this.sourceName = sourceName;
         this.scopes = scopes;
+        this.resolution = scopes.resolution();
         this.classWriter = new ScriptClassWriter(className, runtimeLoader);
     }
 
@@ -139,14 +158,33 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     // ---------------------------------------------------------------- methods
 
-    private void beginMethod(int access, String name, String descriptor, int firstFreeLocal, int rt, int ns) {
+    private void beginMethod(ParserRuleContext owner, int access, String name, String descriptor, int firstFreeLocal, int rt, int ns) {
         mv = classWriter.visitMethod(access, name, descriptor, null, null);
         mv.visitCode();
+        methodOwner = owner;
         rtLocal = rt;
         nsLocal = ns;
         nextLocal = firstFreeLocal;
         currentLine = -1;
         deferred = new ArrayList<>();
+        slots = new HashMap<>();
+        capturedVariables = resolution.captured(owner);
+        capturedLocal = -1;
+        staticTarget = -1;
+    }
+
+    /**
+     * Loads the captured cells of the method, from the function or class value in local
+     * 0, into a local of their own.
+     */
+    private void loadCapturedCells(String ownerType) {
+        if (capturedVariables.isEmpty()) {
+            return;
+        }
+        capturedLocal = newLocal();
+        mv.visitVarInsn(ALOAD, SELF);
+        mv.visitMethodInsn(INVOKEVIRTUAL, ownerType, "captured", "()[Ljava/lang/Object;", false);
+        mv.visitVarInsn(ASTORE, capturedLocal);
     }
 
     private void endMethod() {
@@ -166,7 +204,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private void generateRun(BabbleParser.FileContext file) {
         List<List<BabbleParser.ExpressionContext>> chunks = splitStatements(file.expression());
 
-        beginMethod(ACC_STATIC, "run", RUN_DESCRIPTOR, 2, 0, 1);
+        beginMethod(file, ACC_STATIC, "run", RUN_DESCRIPTOR, 2, 0, 1);
         // The top-level definitions are declared before anything runs. That fails if a
         // binding has the same name, which is reported at the start of the file.
         line(file);
@@ -190,7 +228,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         endMethod();
 
         for (int i = 0; i < chunks.size(); i++) {
-            beginMethod(ACC_PRIVATE | ACC_STATIC, "run$" + i, RUN_DESCRIPTOR, 2, 0, 1);
+            beginMethod(file, ACC_PRIVATE | ACC_STATIC, "run$" + i, RUN_DESCRIPTOR, 2, 0, 1);
             statements(chunks.get(i));
             mv.visitInsn(ARETURN);
             endMethod();
@@ -238,13 +276,33 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * line, after the body, so that their line numbers don't cover the prologue either.
      */
     private void generateFunction(BabbleParser.FunctionLiteralContext literal, String method, String paramsField) {
-        beginMethod(ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, method, BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        beginMethod(literal, ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, method, BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        loadCapturedCells(COMPILED_FUNCTION);
 
-        mv.visitVarInsn(ALOAD, SELF);
-        mv.visitVarInsn(ALOAD, THIZ);
-        getStringArray(scopes.declared(literal));
-        mv.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "prologue", "(Ljava/lang/Object;[Ljava/lang/String;)L" + NAMESPACE + ";", false);
-        mv.visitVarInsn(ASTORE, FN_NS);
+        if (resolution.isNamespaceScope(literal)) {
+            // Phase 1 : the call's namespace defines recurse, this, the hoisted names and the parameters.
+            mv.visitVarInsn(ALOAD, SELF);
+            mv.visitVarInsn(ALOAD, THIZ);
+            getStringArray(scopes.declared(literal));
+            mv.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "prologue", "(Ljava/lang/Object;[Ljava/lang/String;)L" + NAMESPACE + ";", false);
+            mv.visitVarInsn(ASTORE, FN_NS);
+        } else {
+            // The namespace is the closure's, for names resolved at runtime ; variables are locals.
+            mv.visitVarInsn(ALOAD, SELF);
+            mv.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "closure", "()L" + NAMESPACE + ";", false);
+            mv.visitVarInsn(ASTORE, FN_NS);
+            for (Resolution.Variable variable : declareVariables(literal)) {
+                if (variable.kind() == Resolution.Variable.Kind.THIS && variable.isUsed()) {
+                    mv.visitVarInsn(ALOAD, THIZ);
+                    initVariable(variable);
+                } else if (variable.kind() == Resolution.Variable.Kind.RECURSE && variable.isUsed()) {
+                    mv.visitVarInsn(ALOAD, SELF);
+                    mv.visitVarInsn(ALOAD, THIZ);
+                    mv.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "recurseTarget", "(Ljava/lang/Object;)L" + CALLABLE + ";", false);
+                    initVariable(variable);
+                }
+            }
+        }
 
         bindParameters(paramsField, scopes.parameters(literal), literal.parametersDeclaration().parameterDeclaration(), null);
 
@@ -262,12 +320,25 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      */
     private void generateClassBody(ParserRuleContext ctx, String method, ClassShape shape, BabbleParser.BlockContext body,
                                    List<BabbleParser.ParameterDeclarationContext> declarations) {
-        beginMethod(ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, method, CLASS_BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        beginMethod(ctx, ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, method, CLASS_BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        loadCapturedCells(BABBLE_CLASS);
 
-        mv.visitVarInsn(ALOAD, SELF);
-        mv.visitVarInsn(ALOAD, INSTANCE);
-        mv.visitMethodInsn(INVOKESTATIC, CLASSES, "constructorScope", "(L" + BABBLE_CLASS + ";L" + BABBLE_INSTANCE + ";)L" + NAMESPACE + ";", false);
-        mv.visitVarInsn(ASTORE, FN_NS);
+        if (resolution.isNamespaceScope(ctx)) {
+            mv.visitVarInsn(ALOAD, SELF);
+            mv.visitVarInsn(ALOAD, INSTANCE);
+            mv.visitMethodInsn(INVOKESTATIC, CLASSES, "constructorScope", "(L" + BABBLE_CLASS + ";L" + BABBLE_INSTANCE + ";)L" + NAMESPACE + ";", false);
+            mv.visitVarInsn(ASTORE, FN_NS);
+        } else {
+            mv.visitVarInsn(ALOAD, SELF);
+            mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
+            mv.visitVarInsn(ASTORE, FN_NS);
+            for (Resolution.Variable variable : declareVariables(ctx)) {
+                if (variable.kind() == Resolution.Variable.Kind.THIS && variable.isUsed()) {
+                    mv.visitVarInsn(ALOAD, INSTANCE);
+                    initVariable(variable);
+                }
+            }
+        }
 
         bindParameters(stringArrayField(shape.parameters()), shape.parameters(), declarations, shape);
 
@@ -326,6 +397,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitVarInsn(ALOAD, value);
                 mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "initMember", "(ILjava/lang/Object;)Ljava/lang/Object;", false);
                 mv.visitInsn(POP);
+            } else if (resolution.variable(declarations.get(i)) != null) {
+                Resolution.Variable variable = resolution.variable(declarations.get(i));
+                mv.visitVarInsn(ALOAD, value);
+                if (variable.isCell()) {
+                    storeVariable(variable, true, declarations.get(i));
+                    mv.visitInsn(POP);
+                } else {
+                    initVariable(variable);
+                }
             } else {
                 mv.visitVarInsn(ALOAD, FN_NS);
                 mv.visitLdcInsn(parameters[i]);
@@ -335,6 +415,128 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         mv.visitVarInsn(ALOAD, binder);
         mv.visitMethodInsn(INVOKEVIRTUAL, BINDER, "rejectLeftovers", "()V", false);
+    }
+
+    // ---------------------------------------------------------------- frame variables
+
+    /**
+     * Gives JVM locals to the variables a frame scope declares, and creates its hoisted
+     * definitions as undefined, with the cells of captured parameters. Parameters, this and
+     * recurse are initialised by the caller.
+     */
+    private List<Resolution.Variable> declareVariables(ParserRuleContext scope) {
+        List<Resolution.Variable> variables = resolution.declared(scope);
+        for (Resolution.Variable variable : variables) {
+            int slot = newLocal();
+            slots.put(variable, slot);
+            if (variable.kind() == Resolution.Variable.Kind.DEFINITION || variable.kind() == Resolution.Variable.Kind.PARAMETER && variable.isCell()) {
+                if (variable.isCell()) {
+                    mv.visitMethodInsn(INVOKESTATIC, CELL, "undefined", "()L" + CELL + ";", false);
+                } else {
+                    mv.visitFieldInsn(GETSTATIC, RUNTIME + "Undefined", "UNDEFINED", "L" + RUNTIME + "Undefined;");
+                }
+                mv.visitVarInsn(ASTORE, slot);
+            }
+        }
+        return variables;
+    }
+
+    /** Stores the value on the stack, consumed, as the initial value of a variable. */
+    private void initVariable(Resolution.Variable variable) {
+        if (variable.isCell()) {
+            mv.visitMethodInsn(INVOKESTATIC, CELL, "of", "(Ljava/lang/Object;)L" + CELL + ";", false);
+        }
+        mv.visitVarInsn(ASTORE, slots.get(variable));
+    }
+
+    /** Pushes the cell of a captured variable : a local of this method, or one of the cells it captured. */
+    private void loadCell(Resolution.Variable variable) {
+        if (variable.method() == methodOwner) {
+            mv.visitVarInsn(ALOAD, slots.get(variable));
+        } else {
+            mv.visitVarInsn(ALOAD, capturedLocal);
+            pushInt(mv, capturedVariables.indexOf(variable));
+            mv.visitInsn(AALOAD);
+            mv.visitTypeInsn(CHECKCAST, CELL);
+        }
+    }
+
+    private void loadVariable(Resolution.Variable variable, ParserRuleContext ctx) {
+        if (variable.isCell()) {
+            loadCell(variable);
+            if (variable.mayBeUndefined()) {
+                line(ctx);
+                mv.visitLdcInsn(variable.name());
+                mv.visitMethodInsn(INVOKEVIRTUAL, CELL, "read", "(Ljava/lang/String;)Ljava/lang/Object;", false);
+            } else {
+                mv.visitFieldInsn(GETFIELD, CELL, "value", "Ljava/lang/Object;");
+            }
+            return;
+        }
+        mv.visitVarInsn(ALOAD, slots.get(variable));
+        if (variable.mayBeUndefined()) {
+            line(ctx);
+            mv.visitLdcInsn(variable.name());
+            mv.visitMethodInsn(INVOKESTATIC, FRAMES, "defined", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        }
+    }
+
+    /**
+     * Stores the value on top of the stack into a variable, leaving it there. A definition
+     * always succeeds ; an assignment requires the definition to have run.
+     */
+    private void storeVariable(Resolution.Variable variable, boolean definition, ParserRuleContext ctx) {
+        if (variable.isCell()) {
+            loadCell(variable);
+            mv.visitInsn(SWAP);
+            if (definition) {
+                mv.visitMethodInsn(INVOKEVIRTUAL, CELL, "define", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            } else {
+                mv.visitLdcInsn(variable.name());
+                line(ctx);
+                mv.visitMethodInsn(INVOKEVIRTUAL, CELL, "assign", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            }
+            return;
+        }
+        int slot = slots.get(variable);
+        if (!definition && variable.mayBeUndefined()) {
+            mv.visitVarInsn(ALOAD, slot);
+            mv.visitLdcInsn(variable.name());
+            line(ctx);
+            mv.visitMethodInsn(INVOKESTATIC, FRAMES, "checkAssignable", "(Ljava/lang/Object;Ljava/lang/String;)V", false);
+        }
+        mv.visitInsn(DUP);
+        mv.visitVarInsn(ASTORE, slot);
+    }
+
+    /** Pushes the value of a name : a variable, or a lookup in the current namespace. */
+    private void loadName(ParserRuleContext occurrence, String name) {
+        Resolution.Variable variable = resolution.variable(occurrence);
+        if (variable != null) {
+            loadVariable(variable, occurrence);
+            return;
+        }
+        line(occurrence);
+        mv.visitVarInsn(ALOAD, nsLocal);
+        mv.visitLdcInsn(name);
+        mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "lookup", "(Ljava/lang/String;)Ljava/lang/Object;", false);
+    }
+
+    /** Pushes the cells a function or class value captures, as an Object[]. */
+    private void capturedCells(ParserRuleContext method) {
+        List<Resolution.Variable> captured = resolution.captured(method);
+        if (captured.isEmpty()) {
+            mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "NONE", "[Ljava/lang/Object;");
+            return;
+        }
+        pushInt(mv, captured.size());
+        mv.visitTypeInsn(ANEWARRAY, OBJECT);
+        for (int i = 0; i < captured.size(); i++) {
+            mv.visitInsn(DUP);
+            pushInt(mv, i);
+            loadCell(captured.get(i));
+            mv.visitInsn(AASTORE);
+        }
     }
 
     // ---------------------------------------------------------------- helpers
@@ -552,6 +754,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
         mv.visitFieldInsn(GETSTATIC, className, shapeField(shape), "L" + CLASS_SHAPE + ";");
         mv.visitVarInsn(ALOAD, nsLocal);
+        capturedCells(ctx);
         Type bodyType = Type.getMethodType(CLASS_BODY_DESCRIPTOR);
         mv.visitInvokeDynamicInsn("construct", "()L" + CLASS_BODY + ";", METAFACTORY,
                 bodyType, new Handle(H_INVOKESTATIC, className, method, CLASS_BODY_DESCRIPTOR, false), bodyType);
@@ -565,18 +768,20 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         for (int i = 0; i < types.size(); i++) {
             mv.visitInsn(DUP);
             pushInt(mv, i);
-            type(types.get(i));
+            type(types.get(i), types.get(i));
             mv.visitInsn(AASTORE);
         }
     }
 
-    /** Pushes the value of a statically resolved type : a name, then members. */
-    private void type(BabbleParser.TypeContext type) {
+    /**
+     * Pushes the value of a statically resolved type : a name, then members.
+     *
+     * @param occurrence what the resolution bound the first name of the type for
+     */
+    private void type(BabbleParser.TypeContext type, ParserRuleContext occurrence) {
         List<org.antlr.v4.runtime.tree.TerminalNode> ids = ((BabbleParser.SimpleTypeContext) type).ID();
         line(type);
-        mv.visitVarInsn(ALOAD, nsLocal);
-        mv.visitLdcInsn(ids.get(0).getText());
-        mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "lookup", "(Ljava/lang/String;)Ljava/lang/Object;", false);
+        loadName(occurrence, ids.get(0).getText());
         StringBuilder text = new StringBuilder(ids.get(0).getText());
         for (int i = 1; i < ids.size(); i++) {
             mv.visitLdcInsn(ids.get(i).getText());
@@ -588,7 +793,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitMethodInsn(INVOKESTATIC, CLASSES, "type", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
     }
 
-    /** Runs a static block, with {@code this} as the class or interface value on top of the stack, which stays. */
+    /**
+     * Runs a static block, with {@code this} as the class or interface value on top of the
+     * stack, which stays. Its defs are static members of that value.
+     */
     private void staticBlock(BabbleParser.BlockContext block) {
         if (block == null) {
             return;
@@ -596,13 +804,37 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitInsn(DUP);
         int type = newLocal();
         mv.visitVarInsn(ASTORE, type);
-        mv.visitVarInsn(ALOAD, nsLocal);
-        mv.visitVarInsn(ALOAD, type);
-        mv.visitMethodInsn(INVOKESTATIC, CLASSES, "staticScope", "(L" + NAMESPACE + ";L" + RUNTIME + "BabbleType;)L" + NAMESPACE + ";", false);
-        int namespace = newLocal();
-        mv.visitVarInsn(ASTORE, namespace);
-        withNamespace(namespace, () -> statements(block.expression()));
+        int outerTarget = staticTarget;
+        staticTarget = type;
+        if (resolution.isNamespaceScope(block)) {
+            mv.visitVarInsn(ALOAD, nsLocal);
+            mv.visitVarInsn(ALOAD, type);
+            mv.visitMethodInsn(INVOKESTATIC, CLASSES, "staticScope", "(L" + NAMESPACE + ";L" + RUNTIME + "BabbleType;)L" + NAMESPACE + ";", false);
+            int namespace = newLocal();
+            mv.visitVarInsn(ASTORE, namespace);
+            withNamespace(namespace, () -> statements(block.expression()));
+        } else {
+            inFrameScope(() -> {
+                for (Resolution.Variable variable : declareVariables(block)) {
+                    if (variable.kind() == Resolution.Variable.Kind.THIS && variable.isUsed()) {
+                        mv.visitVarInsn(ALOAD, type);
+                        initVariable(variable);
+                    }
+                }
+                statements(block.expression());
+            });
+        }
+        staticTarget = outerTarget;
         mv.visitInsn(POP);
+    }
+
+    /** Compiles a frame scope inline : its variables' locals are reused past its end. */
+    private void inFrameScope(Runnable body) {
+        int savedNextLocal = nextLocal;
+        Map<Resolution.Variable, Integer> savedSlots = new HashMap<>(slots);
+        body.run();
+        nextLocal = savedNextLocal;
+        slots = savedSlots;
     }
 
     @Override
@@ -612,7 +844,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         classValueArguments(ctx, ctx.classBlock, declarations);
         types(ctx.typeList());
         mv.visitMethodInsn(INVOKESTATIC, CLASSES, "newClass",
-                "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";L" + CLASS_BODY + ";[Ljava/lang/Object;)L" + BABBLE_CLASS + ";", false);
+                "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";[Ljava/lang/Object;L" + CLASS_BODY + ";[Ljava/lang/Object;)L" + BABBLE_CLASS + ";", false);
         staticBlock(ctx.staticBlock);
         return null;
     }
@@ -625,7 +857,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitVarInsn(ALOAD, rtLocal);
         line(ctx);
         mv.visitMethodInsn(INVOKESTATIC, BABBLE_CLASS, "object",
-                "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";L" + CLASS_BODY + ";[Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";)L" + BABBLE_INSTANCE + ";", false);
+                "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";[Ljava/lang/Object;L" + CLASS_BODY + ";[Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";)L" + BABBLE_INSTANCE + ";", false);
         return null;
     }
 
@@ -650,14 +882,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitThisExpression(BabbleParser.ThisExpressionContext ctx) {
-        loadThis();
+        loadName(ctx, "this");
         return null;
-    }
-
-    private void loadThis() {
-        mv.visitVarInsn(ALOAD, nsLocal);
-        mv.visitLdcInsn("this");
-        mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "lookup", "(Ljava/lang/String;)Ljava/lang/Object;", false);
     }
 
     @Override
@@ -680,8 +906,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private void superCall(BabbleParser.CallContext ctx, BabbleParser.SelectorContext selector, BabbleParser.SuperExpressionContext superExpression) {
         String site = callSiteField(ctx);
         String[] names = Interpreter.callNames(ctx);
-        loadThis();
-        type(scopes.superTarget(superExpression));
+        loadName(selector, "this");
+        type(scopes.superTarget(superExpression), superExpression);
         mv.visitLdcInsn(selector.ID().getText());
         mv.visitVarInsn(ALOAD, rtLocal);
         arguments(ctx.callParameters().callParameter());
@@ -738,43 +964,62 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitInsn(ACONST_NULL);
             return null;
         }
-        mv.visitVarInsn(ALOAD, nsLocal);
+        Resolution.Variable variable = resolution.variable(ctx);
+        if (variable != null) {
+            defValue(ctx);
+            storeVariable(variable, true, ctx);
+            return null;
+        }
+        switch (target.kind()) {
+            case MEMBER -> mv.visitVarInsn(ALOAD, INSTANCE);
+            case STATIC -> mv.visitVarInsn(ALOAD, staticTarget);
+            default -> mv.visitVarInsn(ALOAD, nsLocal);
+        }
         if (target.kind() == ScopeAnalysis.DefKind.LEXICAL) {
             mv.visitLdcInsn(ctx.name.getText());
         } else {
             pushInt(mv, target.index());
         }
-        if (ctx.value != null) {
-            visit(ctx.value);
-        } else {
-            mv.visitInsn(ACONST_NULL);
-        }
+        defValue(ctx);
         switch (target.kind()) {
             case LEXICAL -> mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "initialize", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
-            case MEMBER -> mv.visitMethodInsn(INVOKESTATIC, CLASSES, "initMember", "(L" + NAMESPACE + ";ILjava/lang/Object;)Ljava/lang/Object;", false);
-            case STATIC -> mv.visitMethodInsn(INVOKESTATIC, CLASSES, "initStatic", "(L" + NAMESPACE + ";ILjava/lang/Object;)Ljava/lang/Object;", false);
+            case MEMBER -> mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "initMember", "(ILjava/lang/Object;)Ljava/lang/Object;", false);
+            case STATIC -> mv.visitMethodInsn(INVOKEVIRTUAL, RUNTIME + "BabbleType", "initStatic", "(ILjava/lang/Object;)Ljava/lang/Object;", false);
             default -> mv.visitMethodInsn(INVOKESTATIC, CLASSES, "setDefault", "(L" + NAMESPACE + ";ILjava/lang/Object;)Ljava/lang/Object;", false);
         }
         return null;
     }
 
+    private void defValue(BabbleParser.DefExpressionContext ctx) {
+        if (ctx.value != null) {
+            visit(ctx.value);
+        } else {
+            mv.visitInsn(ACONST_NULL);
+        }
+    }
+
     /**
-     * The result of a loop is the value of its last iteration, or null. It stays on the
-     * stack across iterations : the test leaves nothing, and each iteration replaces it.
+     * The result of a loop is the value of its last iteration, or null. It is kept in a
+     * local rather than on the operand stack : HotSpot only compiles a running loop
+     * (on-stack replacement) when the stack is empty at its head, and a function that runs
+     * one long loop is otherwise left in the bytecode interpreter.
      */
     @Override
     public Void visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
         Label head = new Label();
         Label end = new Label();
+        int result = newLocal();
         mv.visitInsn(ACONST_NULL);
+        mv.visitVarInsn(ASTORE, result);
         mv.visitLabel(head);
         visit(ctx.test);
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
         mv.visitJumpInsn(IFEQ, end);
-        mv.visitInsn(POP);
         visit(ctx.whileBlock);
+        mv.visitVarInsn(ASTORE, result);
         mv.visitJumpInsn(GOTO, head);
         mv.visitLabel(end);
+        mv.visitVarInsn(ALOAD, result);
         return null;
     }
 
@@ -799,6 +1044,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      */
     @Override
     public Void visitBlock(BabbleParser.BlockContext ctx) {
+        if (!resolution.declared(ctx).isEmpty()) {
+            // A frame block : its variables are locals, created afresh each time it runs.
+            inFrameScope(() -> {
+                declareVariables(ctx);
+                statements(ctx.expression());
+            });
+            return null;
+        }
         if (!scopes.opensScope(ctx)) {
             statements(ctx.expression());
             return null;
@@ -817,14 +1070,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         String name = ctx.ID().getText();
         BabbleParser.ExpressionContext expression = ctx.expression();
         if (expression == null) {
-            line(ctx);
-            mv.visitVarInsn(ALOAD, nsLocal);
-            mv.visitLdcInsn(name);
-            mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "lookup", "(Ljava/lang/String;)Ljava/lang/Object;", false);
+            loadName(ctx, name);
             return null;
         }
         if (expression instanceof BabbleParser.ThisExpressionContext) {
-            loadThis();
+            visit(expression);
             mv.visitLdcInsn(name);
             line(ctx);
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "selectOwn", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
@@ -941,6 +1191,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitInvokeDynamicInsn("invoke", "()L" + FUNCTION_BODY + ";", METAFACTORY,
                 bodyType, new Handle(H_INVOKESTATIC, className, method, BODY_DESCRIPTOR, false), bodyType);
         mv.visitVarInsn(ALOAD, nsLocal);
+        capturedCells(ctx);
         mv.visitFieldInsn(GETSTATIC, className, paramsField, "[Ljava/lang/String;");
         pushInt(mv, scopes.requiredParameters(ctx));
         if (name != null) {
@@ -949,7 +1200,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitInsn(ACONST_NULL);
         }
         mv.visitMethodInsn(INVOKESTATIC, COMPILED_FUNCTION, "create",
-                "(L" + FUNCTION_BODY + ";L" + NAMESPACE + ";[Ljava/lang/String;ILjava/lang/String;)L" + COMPILED_FUNCTION + ";", false);
+                "(L" + FUNCTION_BODY + ";L" + NAMESPACE + ";[Ljava/lang/Object;[Ljava/lang/String;ILjava/lang/String;)L" + COMPILED_FUNCTION + ";", false);
         return null;
     }
 
@@ -957,6 +1208,12 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     public Void visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         String name = ctx.name.getText();
         if (ctx.namespace == null) {
+            Resolution.Variable variable = resolution.variable(ctx);
+            if (variable != null) {
+                visit(ctx.value);
+                storeVariable(variable, false, ctx);
+                return null;
+            }
             mv.visitVarInsn(ALOAD, nsLocal);
             mv.visitLdcInsn(name);
             visit(ctx.value);
@@ -965,7 +1222,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             return null;
         }
         if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
-            loadThis();
+            visit(ctx.namespace);
             visit(ctx.value);
             mv.visitLdcInsn(name);
             line(ctx);
@@ -998,10 +1255,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitRecurse(BabbleParser.RecurseContext ctx) {
-        line(ctx);
-        mv.visitVarInsn(ALOAD, nsLocal);
-        mv.visitLdcInsn("$recurse");
-        mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "lookup", "(Ljava/lang/String;)Ljava/lang/Object;", false);
+        loadName(ctx, "$recurse");
         return null;
     }
 

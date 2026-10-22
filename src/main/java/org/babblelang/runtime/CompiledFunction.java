@@ -9,21 +9,31 @@ import org.babblelang.engine.impl.Namespace;
 public final class CompiledFunction implements BabbleFunction {
     private final FunctionBody body;
     private final Namespace closure;
+    private final Object[] captured;
     private final String[] params;
     private final int required;
     private final String name;
 
-    public CompiledFunction(FunctionBody body, Namespace closure, String[] params, int required, String name) {
+    /**
+     * @param closure  the nearest enclosing namespace, for names resolved at runtime
+     * @param captured the cells of the variables of enclosing methods the function uses
+     */
+    public CompiledFunction(FunctionBody body, Namespace closure, Object[] captured, String[] params, int required, String name) {
         this.body = body;
         this.closure = closure;
+        this.captured = captured;
         this.params = params;
         this.required = required;
         this.name = name;
     }
 
     /** What compiled code calls to create the value of a function literal. */
-    public static CompiledFunction create(FunctionBody body, Namespace closure, String[] params, int required, String name) {
-        return new CompiledFunction(body, closure, params, required, name);
+    public static CompiledFunction create(FunctionBody body, Namespace closure, Object[] captured, String[] params, int required, String name) {
+        return new CompiledFunction(body, closure, captured, params, required, name);
+    }
+
+    public Object[] captured() {
+        return captured;
     }
 
     @Override

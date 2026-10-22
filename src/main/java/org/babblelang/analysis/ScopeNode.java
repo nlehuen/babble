@@ -5,6 +5,7 @@ import org.babblelang.parser.BabbleParser;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,8 +27,8 @@ final class ScopeNode {
     final Kind kind;
     final ScopeNode parent;
     final ParserRuleContext owner;
-    /** Lexical names : DefExpressionContext or ParameterDeclarationContext. */
-    final Map<String, ParserRuleContext> names = new HashMap<>();
+    /** Lexical names, in declaration order : DefExpressionContext or ParameterDeclarationContext. */
+    final Map<String, ParserRuleContext> names = new LinkedHashMap<>();
     final Map<String, List<BabbleParser.PackageExpressionContext>> packages = new HashMap<>();
     /** The names defined here, declared when the scope is entered (hoisting). */
     final List<String> declared = new ArrayList<>();

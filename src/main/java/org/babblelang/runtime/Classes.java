@@ -21,6 +21,10 @@ public final class Classes {
         return new BabbleClass(shape, closure, body, interfaces);
     }
 
+    public static BabbleClass newClass(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces) {
+        return new BabbleClass(shape, closure, captured, body, interfaces);
+    }
+
     public static BabbleInterface newInterface(ClassShape shape, Object[] parents) {
         return new BabbleInterface(shape, parents);
     }

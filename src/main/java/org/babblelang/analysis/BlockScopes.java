@@ -47,6 +47,10 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     record PendingAssignment(String name, ScopeNode scope) {
     }
 
+    /** A use of a lexical name : a plain name, an unqualified assignment, {@code this} or {@code recurse}. */
+    record Occurrence(ParserRuleContext ctx, String name, ScopeNode scope) {
+    }
+
     final ScopeAnalysis analysis = new ScopeAnalysis();
     final List<TypeNode> types = new ArrayList<>();
     final List<PendingSuper> supers = new ArrayList<>();
@@ -54,6 +58,10 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final List<PendingAssignment> assignments = new ArrayList<>();
     final Map<ParserRuleContext, ScopeNode> definitionScopes = new HashMap<>();
     final Map<ParserRuleContext, TypeNode> typeNodes = new HashMap<>();
+    final Map<ParserRuleContext, ScopeNode> scopeNodes = new HashMap<>();
+    final List<Occurrence> occurrences = new ArrayList<>();
+    final List<BabbleParser.PackageExpressionContext> packages = new ArrayList<>();
+    final Map<BabbleParser.PackageExpressionContext, ScopeNode> packageScopes = new HashMap<>();
 
     private final Deque<ScopeNode> scopes = new ArrayDeque<>();
     private ReturnTarget returnTarget = ReturnTarget.NONE;
@@ -65,6 +73,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         BlockScopes pass = new BlockScopes();
         pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
         new TypeChecks(pass).run();
+        pass.analysis.setResolution(new Resolver(pass).run());
         return pass.analysis;
     }
 
@@ -74,6 +83,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     private ScopeNode inScope(ScopeNode.Kind kind, ParserRuleContext owner, TypeNode type, Runnable body) {
         ScopeNode scope = new ScopeNode(kind, scopes.peek(), owner, type);
+        scopeNodes.put(owner, scope);
         scopes.push(scope);
         try {
             body.run();
@@ -217,6 +227,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
         current().packages.computeIfAbsent(ctx.name.getText(), n -> new ArrayList<>()).add(ctx);
+        packages.add(ctx);
+        packageScopes.put(ctx, current());
         inScope(ScopeNode.Kind.PACKAGE, ctx, null, () -> visitChildren(ctx.packageBlock));
         return null;
     }
@@ -403,7 +415,14 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitRecurse(BabbleParser.RecurseContext ctx) {
+        occurrences.add(new Occurrence(ctx, "$recurse", current()));
+        return null;
+    }
+
+    @Override
     public Void visitThisExpression(BabbleParser.ThisExpressionContext ctx) {
+        occurrences.add(new Occurrence(ctx, "this", current()));
         if (thisScope(current()) == null) {
             throw error("this outside of a class", ctx);
         }
@@ -467,6 +486,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitSelector(BabbleParser.SelectorContext ctx) {
         BabbleParser.ExpressionContext receiver = ctx.expression();
+        if (receiver == null) {
+            occurrences.add(new Occurrence(ctx, ctx.ID().getText(), current()));
+        }
         if (receiver != null && !(receiver instanceof BabbleParser.SuperExpressionContext)) {
             accesses.add(new PendingAccess(ctx, receiver, ctx.ID().getText(), false, current()));
         }
@@ -477,6 +499,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     public Void visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         if (ctx.namespace == null) {
             assignments.add(new PendingAssignment(ctx.name.getText(), current()));
+            occurrences.add(new Occurrence(ctx, ctx.name.getText(), current()));
         } else {
             accesses.add(new PendingAccess(ctx, ctx.namespace, ctx.name.getText(), true, current()));
         }
