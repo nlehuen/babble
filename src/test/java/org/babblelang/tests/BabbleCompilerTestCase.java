@@ -4,7 +4,9 @@ import org.babblelang.compiler.CompiledBabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Arguments;
 import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.CompiledFunction;
 import org.babblelang.runtime.ScriptRuntime;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,7 @@ import javax.script.ScriptException;
 import javax.script.SimpleBindings;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.invoke.MethodType;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -222,6 +225,65 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(methodNames(compiled).contains("run$1"), methodNames(compiled).toString());
         assertVerifies(compiled);
         Assertions.assertEquals(5000 * 4999 / 2, compiled.eval(new SimpleBindings()));
+    }
+
+    @Test
+    public void testFunctionsAndMethodsHaveDirectEntryPoints() throws Exception {
+        CompiledBabbleScript script = compile("def add = (a, b = 1) -> ( a + b ) ; def C = class () ( def m = (x) -> ( x ) ) ; add(1) + add(b: 2, a: 3) + C().m(4)");
+        Assertions.assertEquals(11, script.eval(new SimpleBindings()));
+        assertVerifies(script);
+        // The direct entry point takes the arguments spread ; the $call adapter takes an array.
+        Assertions.assertTrue(methodNames(script).containsAll(List.of("fn$0$add", "fn$0$add$call")), methodNames(script).toString());
+        Map.Entry<String, byte[]> c = script.getClasses().entrySet().stream()
+                .filter(e -> e.getKey().endsWith("$C")).findFirst().orElseThrow();
+        Assertions.assertTrue(methodNames(c.getValue()).containsAll(List.of("m$m", "m$m$call")), methodNames(c.getValue()).toString());
+
+        CompiledFunction add = (CompiledFunction) compile("def add = (a, b = 1) -> ( a + b ) ; add").eval(new SimpleBindings());
+        Assertions.assertEquals(MethodType.methodType(Object.class, CompiledFunction.class, Object.class, ScriptRuntime.class,
+                Arguments.Binder.class, Object.class, Object.class), add.direct().type());
+    }
+
+    @Test
+    public void testFunctionsWithManyParametersKeepTheArrayConvention() throws Exception {
+        // More parameters than a direct entry point takes (CodeGenerator.MAX_SPREAD), and
+        // as many arguments at the call sites.
+        int count = 210;
+        StringBuilder parameters = new StringBuilder();
+        StringBuilder sum = new StringBuilder("0");
+        StringBuilder arguments = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            parameters.append(i > 0 ? ", " : "").append("p").append(i).append(" = 1");
+            sum.append(" + p").append(i);
+            arguments.append(i > 0 ? ", " : "").append(i);
+        }
+        String definitions = "def f = (" + parameters + ") -> ( " + sum + " )\n"
+                + "def C = class () ( def m = (" + parameters + ") -> ( " + sum + " ) ; def n = () -> ( this.m(" + arguments + ") ) )\n";
+        CompiledBabbleScript script = compile(definitions + "f() + f(" + arguments + ") + f(p3: 100) + C().m() + C().n()");
+        assertVerifies(script);
+        Assertions.assertTrue(methodNames(script).contains("fn$0$f") && !methodNames(script).contains("fn$0$f$call"), methodNames(script).toString());
+        int total = count * (count - 1) / 2;
+        Assertions.assertEquals(count + total + (count + 99) + count + total, script.eval(new SimpleBindings()));
+
+        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run("def g = (a) -> ( a ) ; g(" + arguments + ")"));
+        Assertions.assertTrue(e.getMessage().contains("Too many parameters : 1 declared, " + count + " given"), e.getMessage());
+    }
+
+    @Test
+    public void testACallSiteSeesManyFunctions() throws Exception {
+        // More function literals than a site caches, each called many times from the same site.
+        StringBuilder source = new StringBuilder("def fs = java.util.ArrayList()\n");
+        for (int i = 0; i < 10; i++) {
+            source.append("fs.add((x, y = ").append(i).append(") -> ( x * y ))\n");
+        }
+        source.append("def total = 0 ; def i = 0 ; def k = 0\n"
+                + "while i < 1000 then ( total = total + fs.get(k)(i) ; i = i + 1 ; k = if k == 9 then ( 0 ) else ( k + 1 ) ) ; total");
+        long expected = 0;
+        for (int i = 0; i < 1000; i++) {
+            expected += (long) i * (i % 10);
+        }
+        CompiledBabbleScript script = compile(source.toString());
+        Assertions.assertEquals((int) expected, script.eval(new SimpleBindings()));
+        Assertions.assertEquals((int) expected, script.eval(new SimpleBindings()));
     }
 
     @Test

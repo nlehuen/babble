@@ -96,7 +96,32 @@ public class DifferentialTestCase {
                 "def f = (x) -> ( x = x + 1 ; x ) ; f(1)",
                 "suppose(1 == 2)",
                 "suppose(1)",
-                "def f = (n) -> (\n  if n == 0 then (\n    suppose(false, \"deep\")\n  ) else (\n    recurse(n - 1)\n  )\n)\nf(3)"
+                "def f = (n) -> (\n  if n == 0 then (\n    suppose(false, \"deep\")\n  ) else (\n    recurse(n - 1)\n  )\n)\nf(3)",
+                // Phase 3 : sites that see several kinds of callee or receiver, past the depth of their cache.
+                "def fs = java.util.ArrayList() ; fs.add((a, b = 10) -> ( a + b )) ; fs.add((a) -> ( a * 2 )) ; fs.add(java.lang.Math.abs)\n"
+                        + "fs.add((x, y = 1, z = 2) -> ( x + y + z )) ; fs.add(object ( def m = (v) -> ( v - 1 ) ).m) ; fs.add((v) -> ( v ))\n"
+                        + "def i = 0 ; def s = \"\" ; while i < 12 then ( s = s + fs.get(if i < 6 then ( i ) else ( i - 6 ))(i - 3) + \",\" ; i = i + 1 ) ; s",
+                "def f = (x, y = 2) -> ( package p ( def b = x + y ) ; p.b ) ; def i = 0 ; def s = 0 ; while i < 3 then ( s = s + f(i) + f(i, 1) ; i = i + 1 ) ; s",
+                "def call = (h) -> ( h(1, 2) ) ; call((a, b) -> ( b )) + call((a, b, c = 5) -> ( c )) ; call((a) -> ( a ))",
+                "def f = (a, b) -> ( a ) ; def i = 0 ; while i < 3 then ( f(i, i) ; i = i + 1 ) ; f(1)",
+                "def f = (a, b = 2) -> ( a - b ) ; def i = 0 ; def s = 0 ; while i < 5 then ( s = s + f(b: i, a: 10) + f(i) ; i = i + 1 ) ; s",
+                "def C = class (def k) ( def m = (x, y = 1) -> ( this.k * x + y ) ; def n = () -> ( this.m(2) + this.m(2, 0) + this.m(y: 5, x: 1) ) )\n"
+                        + "def c = C(3) ; def i = 0 ; def s = 0 ; while i < 5 then ( s = s + c.m(i) + c.n() ; i = i + 1 ) ; s",
+                "def C = class () ( def m = (x) -> ( x ) ; def n = () -> ( this.m(1, 2) ) ) ; C().n()",
+                "def C = class () ( def m = (x) -> ( x ) ; def n = () -> ( this.m() ) ) ; C().n()",
+                "def S = interface ( def k : int ; def d = (x = 1) -> ( x + this.k ) ) ; def A = class (def k) implements S () ; def B = class () implements S ( def k = 10 )\n"
+                        + "def xs = java.util.ArrayList() ; xs.add(A(1)) ; xs.add(B()) ; xs.add(A(2)) ; def i = 0 ; def s = 0 ; while i < 6 then ( s = s + xs.get(if i < 3 then ( i ) else ( i - 3 )).d() ; i = i + 1 ) ; s",
+                "def A = class () ( def v = 1 ) ; def B = class () ( def v = () -> ( 2 ) ) ; package p ( def v = 3 ) ; def D = class () () static ( def v = 5 )\n"
+                        + "def vs = java.util.ArrayList() ; vs.add(A()) ; vs.add(B()) ; vs.add(object ( def v = 4 )) ; vs.add(p) ; vs.add(D) ; vs.add(A())\n"
+                        + "def get = (o) -> ( o.v ) ; def i = 0 ; def s = 0 ; while i < 6 then ( def v = get(vs.get(i)) ; s = s + (if v is java.lang.Integer then ( v ) else ( v() )) ; i = i + 1 ) ; s",
+                "def peek = (o) -> ( o.b ) ; def C = class (early) ( def a = if early then ( peek(this) ) else ( 0 ) ; def b = 1 ) ; peek(C(false)) + peek(C(false)) ; C(true)",
+                "def A = class () ( def x = 1 ) ; def B = class () ( private def x = 2 ) ; def get = (o) -> ( o.x ) ; get(A()) + get(A()) ; get(B())",
+                "def get = (o) -> ( o.x ) ; get(object ( def x = 1 )) ; get(1)",
+                "def sb = java.lang.StringBuilder() ; def xs = java.util.ArrayList() ; xs.add(1) ; xs.add(\"a\") ; xs.add(2.5) ; xs.add(true) ; xs.add(java.lang.StringBuilder(\"x\"))\n"
+                        + "def i = 0 ; while i < 10 then ( sb.append(xs.get(if i < 5 then ( i ) else ( i - 5 ))) ; i = i + 1 ) ; sb.toString()",
+                "def sb = java.lang.StringBuilder() ; def i = 0 ; while i < 3 then ( sb.append(i) ; i = i + 1 ) ; sb.append(null)",
+                "def R = class () implements java.lang.Runnable ( def run = () -> ( null ) ) ; def P = class () ()\n"
+                        + "def mk = (o) -> ( java.lang.Thread(o) ) ; mk(R()) ; mk(R()) ; mk(P())"
         );
     }
 

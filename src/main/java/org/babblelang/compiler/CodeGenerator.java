@@ -28,7 +28,7 @@ import java.util.function.Consumer;
 import static org.objectweb.asm.Opcodes.*;
 
 /**
- * Generates the class of one script (phases 1 and 2 of the bytecode compiler design).
+ * Generates the class of one script (phases 1 to 3 of the bytecode compiler design).
  * <p>
  * Names are resolved statically ({@link Resolution}, phase 2) : the variables of
  * functions, blocks and class bodies are JVM locals of the method they are compiled into,
@@ -42,8 +42,11 @@ import static org.objectweb.asm.Opcodes.*;
  * <ul>
  * <li>{@code static Object run(ScriptRuntime rt, Namespace ns)} runs the file. It is split
  * into {@code run$0}, {@code run$1}, ... when the file is large.</li>
- * <li>Each function literal becomes a {@code private static} method, adapted to
- * {@code FunctionBody} with LambdaMetafactory.</li>
+ * <li>Each function literal becomes a static method taking its arguments spread, its
+ * direct entry point, with an adapter taking them as an array, which LambdaMetafactory
+ * turns into a {@code FunctionBody}.</li>
+ * <li>Calls and member selections are invokedynamic sites, linked by
+ * {@code runtime.Bootstrap} with an inline cache (phase 3).</li>
  * <li>The static descriptions of call sites, operator sites and parameter tables are
  * static fields, built once in {@code <clinit>}.</li>
  * </ul>
@@ -74,6 +77,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private static final String METHOD_BODY = RUNTIME + "MethodBody";
     private static final String INSTANCE_FACTORY = RUNTIME + "InstanceFactory";
     private static final String FRAMES = RUNTIME + "Frames";
+    private static final String BOOTSTRAP = RUNTIME + "Bootstrap";
 
     static final String RUN_DESCRIPTOR = "(L" + SCRIPT_RUNTIME + ";L" + NAMESPACE + ";)Ljava/lang/Object;";
     private static final String BODY_DESCRIPTOR = "(L" + COMPILED_FUNCTION + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME
@@ -83,6 +87,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     /** A method of a compiled class : an instance method, the receiver in local 0. */
     private static final String METHOD_DESCRIPTOR = "(L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME
             + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
+    /** Calls and member selections : invokedynamic sites with an inline cache (phase 3). */
+    private static final Handle CALL_BOOTSTRAP = new Handle(H_INVOKESTATIC, BOOTSTRAP, "call",
+            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;", false);
+    private static final Handle SELECT_BOOTSTRAP = new Handle(H_INVOKESTATIC, BOOTSTRAP, "select",
+            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/invoke/CallSite;", false);
     private static final Handle METAFACTORY = new Handle(H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory", "metafactory",
             "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
                     + "Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)"
@@ -97,6 +106,13 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private static final int ARGS = 3;
     private static final int NAMES = 4;
     private static final int FN_NS = 6;
+    // The direct entry point of a function or method (phase 3) takes its arguments spread :
+    // the binder of the call when it came through the array entry point, else null, then
+    // one parameter per Babble parameter, then the call's namespace. Calls with more
+    // arguments than this, and functions with more parameters, keep the array convention.
+    private static final int BINDER_LOCAL = 3;
+    private static final int FIRST_PARAMETER = 4;
+    private static final int MAX_SPREAD = 200;
 
     // The top-level statements of a "run" method, counted in parse tree nodes outside of
     // function literals, are kept below this, which keeps the method well under 64 KB.
@@ -147,6 +163,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private ClassGen methodClass;
     private ClassGen constructorClass;
     private int typedThisLocal;
+    // The local of the call's namespace in a function, method or class body ; and the
+    // local of its first parameter in a direct entry point, or -1 when the arguments come
+    // as an array.
+    private int frameNs;
+    private int parameterBase;
 
     /**
      * The JVM class generated for a class or object expression (compiler phase 2) : it
@@ -175,6 +196,19 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
         String methodName(String member) {
             return "m$" + member;
+        }
+
+        /** The literal of a method member of the class. */
+        BabbleParser.FunctionLiteralContext methodLiteral(String member) {
+            BabbleParser.BlockContext body = ctx instanceof BabbleParser.ClassExpressionContext c
+                    ? c.classBlock : ((BabbleParser.ObjectExpressionContext) ctx).createBlock;
+            for (BabbleParser.ExpressionContext expression : body.expression()) {
+                if (expression instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(member)
+                        && def.value instanceof BabbleParser.FunctionLiteralContext literal) {
+                    return literal;
+                }
+            }
+            throw new IllegalStateException("No method " + member + " in " + name);
         }
 
         /** Fields, the constructor, and the member table ; the methods are generated as they come. */
@@ -312,6 +346,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         methodOwner = owner;
         rtLocal = rt;
         nsLocal = ns;
+        frameNs = ns;
+        parameterBase = -1;
         nextLocal = firstFreeLocal;
         currentLine = -1;
         deferred = new ArrayList<>();
@@ -426,28 +462,102 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         return count;
     }
 
+    /** Whether a function literal gets a direct entry point, its parameters spread. */
+    private boolean isSpread(BabbleParser.FunctionLiteralContext literal) {
+        return scopes.parameters(literal).length <= MAX_SPREAD;
+    }
+
+    /** {@code (CompiledFunction self, Object thiz, ScriptRuntime rt, Arguments.Binder binder, Object p0, ...)} */
+    private String functionDirectDescriptor(BabbleParser.FunctionLiteralContext literal) {
+        return "(L" + COMPILED_FUNCTION + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";L" + BINDER + ";"
+                + "Ljava/lang/Object;".repeat(scopes.parameters(literal).length) + ")Ljava/lang/Object;";
+    }
+
+    /** {@code (CompiledMethod self, ScriptRuntime rt, Arguments.Binder binder, Object p0, ...)}, the receiver first. */
+    private String methodDirectDescriptor(BabbleParser.FunctionLiteralContext literal) {
+        return "(L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME + ";L" + BINDER + ";"
+                + "Ljava/lang/Object;".repeat(scopes.parameters(literal).length) + ")Ljava/lang/Object;";
+    }
+
     /**
-     * {@code fn$N(CompiledFunction self, Object thiz, ScriptRuntime rt, Object[] args,
-     * String[] names, CallSite site)}. The prologue creates the call's namespace and binds
-     * the parameters. It has no line numbers, so an error while binding is reported at
-     * the line of the call, as the interpreter does. Default values are compiled out of
-     * line, after the body, so that their line numbers don't cover the prologue either.
+     * {@code fn$N(CompiledFunction self, Object thiz, ScriptRuntime rt, Arguments.Binder
+     * binder, Object p0, ...)}, the direct entry point, and {@code fn$N$call(CompiledFunction
+     * self, Object thiz, ScriptRuntime rt, Object[] args, String[] names, CallSite site)},
+     * which binds an argument array and calls it. A function with too many parameters only
+     * has the second form, under the first name. The prologue creates the call's namespace
+     * and binds the parameters. It has no line numbers, so an error while binding is
+     * reported at the line of the call, as the interpreter does. Default values are
+     * compiled out of line, after the body, so that their line numbers don't cover the
+     * prologue either.
      */
     private void generateFunction(BabbleParser.FunctionLiteralContext literal, String method, String paramsField) {
-        beginMethod(literal, ACC_STATIC | ACC_SYNTHETIC, method, BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        if (isSpread(literal)) {
+            int count = scopes.parameters(literal).length;
+            String direct = functionDirectDescriptor(literal);
+            callAdapter(classWriter, ACC_STATIC | ACC_SYNTHETIC, method + "$call", BODY_DESCRIPTOR, paramsField, count,
+                    () -> mv.visitMethodInsn(INVOKESTATIC, className, method, direct, false));
+            beginMethod(literal, ACC_STATIC | ACC_SYNTHETIC, method, direct, FIRST_PARAMETER + count + 1, FN_RT, FIRST_PARAMETER + count);
+            parameterBase = FIRST_PARAMETER;
+        } else {
+            beginMethod(literal, ACC_STATIC | ACC_SYNTHETIC, method, BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        }
         loadCapturedCells(COMPILED_FUNCTION);
         functionBody(literal, paramsField, COMPILED_FUNCTION);
     }
 
     /**
-     * {@code m$name(CompiledMethod self, ScriptRuntime rt, Object[] args, String[] names,
-     * CallSite site)} : a method of a compiled class, as a JVM instance method of it. Its
-     * closure and captured cells are the class value's, and the constructor's variables it
-     * uses are hidden fields of the instance.
+     * The array entry point of a function or method : it binds the arguments by name and
+     * position, then calls the direct entry point with them and the binder, which rejects
+     * the leftovers once the defaults have run. Its first three parameters are those of the
+     * direct entry point.
+     */
+    private void callAdapter(ClassWriter writer, int access, String name, String descriptor, String paramsField, int count, Runnable callDirect) {
+        mv = writer.visitMethod(access, name, descriptor, null, null);
+        mv.visitCode();
+        // The first local past the parameters, where a function body keeps its namespace.
+        int binder = FN_NS;
+        mv.visitFieldInsn(GETSTATIC, className, paramsField, "[Ljava/lang/String;");
+        mv.visitVarInsn(ALOAD, ARGS);
+        mv.visitVarInsn(ALOAD, NAMES);
+        mv.visitMethodInsn(INVOKESTATIC, ARGUMENTS, "binder", "([Ljava/lang/String;[Ljava/lang/Object;[Ljava/lang/String;)L" + BINDER + ";", false);
+        mv.visitVarInsn(ASTORE, binder);
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitVarInsn(ALOAD, FN_RT);
+        mv.visitVarInsn(ALOAD, binder);
+        for (int i = 0; i < count; i++) {
+            mv.visitVarInsn(ALOAD, binder);
+            pushInt(mv, i);
+            mv.visitMethodInsn(INVOKEVIRTUAL, BINDER, "take", "(I)Ljava/lang/Object;", false);
+        }
+        callDirect.run();
+        mv.visitInsn(ARETURN);
+        mv.visitMaxs(0, 0);
+        mv.visitEnd();
+        mv = null;
+    }
+
+    /**
+     * {@code m$name(CompiledMethod self, ScriptRuntime rt, Arguments.Binder binder, Object
+     * p0, ...)} : a method of a compiled class, as a JVM instance method of it, with its
+     * array entry point {@code m$name$call(CompiledMethod self, ScriptRuntime rt, Object[]
+     * args, String[] names, CallSite site)}, as for a function. Its closure and captured
+     * cells are the class value's, and the constructor's variables it uses are hidden
+     * fields of the instance.
      */
     private void generateMethod(BabbleParser.FunctionLiteralContext literal, ClassGen gen, String paramsField) {
         String member = ((BabbleParser.DefExpressionContext) literal.getParent()).name.getText();
-        beginMethod(gen.writer, literal, ACC_SYNTHETIC, gen.methodName(member), METHOD_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        String method = gen.methodName(member);
+        if (isSpread(literal)) {
+            int count = scopes.parameters(literal).length;
+            String direct = methodDirectDescriptor(literal);
+            callAdapter(gen.writer, ACC_SYNTHETIC, method + "$call", METHOD_DESCRIPTOR, paramsField, count,
+                    () -> mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, method, direct, false));
+            beginMethod(gen.writer, literal, ACC_SYNTHETIC, method, direct, FIRST_PARAMETER + count + 1, FN_RT, FIRST_PARAMETER + count);
+            parameterBase = FIRST_PARAMETER;
+        } else {
+            beginMethod(gen.writer, literal, ACC_SYNTHETIC, method, METHOD_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        }
         selfLocal = 1;
         thizLocal = 0;
         methodClass = gen;
@@ -482,11 +592,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitVarInsn(ALOAD, thizLocal);
             getStringArray(scopes.declared(literal));
             mv.visitMethodInsn(INVOKESTATIC, FRAMES, "enter", "(L" + NAMESPACE + ";L" + CALLABLE + ";Ljava/lang/Object;[Ljava/lang/String;)L" + NAMESPACE + ";", false);
-            mv.visitVarInsn(ASTORE, FN_NS);
+            mv.visitVarInsn(ASTORE, frameNs);
         } else {
             // The namespace is the closure's, for names resolved at runtime ; variables are locals.
             loadClosure();
-            mv.visitVarInsn(ASTORE, FN_NS);
+            mv.visitVarInsn(ASTORE, frameNs);
             for (Resolution.Variable variable : declareVariables(literal)) {
                 if (variable.kind() == Resolution.Variable.Kind.THIS && variable.isUsed()) {
                     mv.visitVarInsn(ALOAD, thizLocal);
@@ -556,22 +666,29 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * instance instead of being defined as names.
      */
     private void bindParameters(String paramsField, String[] parameters, List<BabbleParser.ParameterDeclarationContext> declarations, ClassShape shape) {
-        int binder = newLocal();
-        int value = newLocal();
-        mv.visitFieldInsn(GETSTATIC, className, paramsField, "[Ljava/lang/String;");
-        mv.visitVarInsn(ALOAD, ARGS);
-        mv.visitVarInsn(ALOAD, NAMES);
-        mv.visitMethodInsn(INVOKESTATIC, ARGUMENTS, "binder", "([Ljava/lang/String;[Ljava/lang/Object;[Ljava/lang/String;)L" + BINDER + ";", false);
-        mv.visitVarInsn(ASTORE, binder);
+        // In a direct entry point, the arguments are parameters, MISSING when not given.
+        boolean spread = parameterBase >= 0;
+        int binder = spread ? BINDER_LOCAL : newLocal();
+        int arrayValue = spread ? -1 : newLocal();
+        if (!spread) {
+            mv.visitFieldInsn(GETSTATIC, className, paramsField, "[Ljava/lang/String;");
+            mv.visitVarInsn(ALOAD, ARGS);
+            mv.visitVarInsn(ALOAD, NAMES);
+            mv.visitMethodInsn(INVOKESTATIC, ARGUMENTS, "binder", "([Ljava/lang/String;[Ljava/lang/Object;[Ljava/lang/String;)L" + BINDER + ";", false);
+            mv.visitVarInsn(ASTORE, binder);
+        }
 
         for (int i = 0; i < parameters.length; i++) {
             BabbleParser.ExpressionContext defaultValue = declarations.get(i).defaultValue;
             Label bind = new Label();
+            int value = spread ? parameterBase + i : arrayValue;
 
-            mv.visitVarInsn(ALOAD, binder);
-            pushInt(mv, i);
-            mv.visitMethodInsn(INVOKEVIRTUAL, BINDER, "take", "(I)Ljava/lang/Object;", false);
-            mv.visitVarInsn(ASTORE, value);
+            if (!spread) {
+                mv.visitVarInsn(ALOAD, binder);
+                pushInt(mv, i);
+                mv.visitMethodInsn(INVOKEVIRTUAL, BINDER, "take", "(I)Ljava/lang/Object;", false);
+                mv.visitVarInsn(ASTORE, value);
+            }
             mv.visitVarInsn(ALOAD, value);
             mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
             mv.visitJumpInsn(IF_ACMPNE, bind);
@@ -584,6 +701,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     mv.visitVarInsn(ASTORE, value);
                     mv.visitJumpInsn(GOTO, bind);
                 });
+            } else if (spread) {
+                mv.visitLdcInsn(parameters[i]);
+                mv.visitMethodInsn(INVOKESTATIC, ARGUMENTS, "missing", "(Ljava/lang/String;)Lorg/babblelang/engine/BabbleException;", false);
+                mv.visitInsn(ATHROW);
             } else {
                 mv.visitVarInsn(ALOAD, binder);
                 pushInt(mv, i);
@@ -612,14 +733,21 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     initVariable(variable);
                 }
             } else {
-                mv.visitVarInsn(ALOAD, FN_NS);
+                mv.visitVarInsn(ALOAD, frameNs);
                 mv.visitLdcInsn(parameters[i]);
                 mv.visitVarInsn(ALOAD, value);
                 mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "defineParameter", "(Ljava/lang/String;Ljava/lang/Object;)V", false);
             }
         }
+        // A direct call passes no more arguments than there are parameters, and no names.
+        Label bound = new Label();
+        if (spread) {
+            mv.visitVarInsn(ALOAD, binder);
+            mv.visitJumpInsn(IFNULL, bound);
+        }
         mv.visitVarInsn(ALOAD, binder);
         mv.visitMethodInsn(INVOKEVIRTUAL, BINDER, "rejectLeftovers", "()V", false);
+        mv.visitLabel(bound);
     }
 
     // ---------------------------------------------------------------- frame variables
@@ -1343,8 +1471,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         visit(expression);
         line(ctx);
+        String text = expression.getText();
+        if (text.length() <= MAX_STRING_CONSTANT) {
+            // An invokedynamic site, cached by receiver (Bootstrap.select).
+            mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, name, text);
+            return null;
+        }
         mv.visitLdcInsn(name);
-        pushString(mv, expression.getText());
+        pushString(mv, text);
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
         return null;
     }
@@ -1367,6 +1501,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             int index = gen != null ? gen.shape.memberIndex(member) : -1;
             if (index >= 0 && gen.shape.isMethod(index)) {
                 // A method of this compiled class : a direct call of its JVM method, once its def has run.
+                BabbleParser.FunctionLiteralContext literal = gen.methodLiteral(member);
                 loadThisAs(thisExpression, gen);
                 mv.visitInsn(DUP);
                 mv.visitFieldInsn(GETFIELD, gen.name, member, "Ljava/lang/Object;");
@@ -1375,6 +1510,20 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
                 mv.visitTypeInsn(CHECKCAST, COMPILED_METHOD);
                 mv.visitVarInsn(ALOAD, rtLocal);
+                int count = scopes.parameters(literal).length;
+                if (isSpread(literal) && names == null && parameters.size() <= count) {
+                    // By position, with no more arguments than parameters : the direct entry point.
+                    mv.visitInsn(ACONST_NULL);
+                    for (BabbleParser.CallParameterContext parameter : parameters) {
+                        visit(parameter.expression());
+                    }
+                    for (int i = parameters.size(); i < count; i++) {
+                        mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
+                    }
+                    line(ctx);
+                    mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, gen.methodName(member), methodDirectDescriptor(literal), false);
+                    return null;
+                }
                 arguments(parameters);
                 if (names != null) {
                     getStringArray(names);
@@ -1383,7 +1532,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 }
                 mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
                 line(ctx);
-                mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, gen.methodName(member), METHOD_DESCRIPTOR, false);
+                mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, gen.methodName(member) + (isSpread(literal) ? "$call" : ""), METHOD_DESCRIPTOR, false);
                 return null;
             }
         }
@@ -1395,6 +1544,22 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
 
         mv.visitVarInsn(ALOAD, rtLocal);
+        if (parameters.size() <= MAX_SPREAD) {
+            // An invokedynamic site, the arguments spread (Bootstrap.call).
+            if (names != null) {
+                getStringArray(names);
+            } else {
+                mv.visitInsn(ACONST_NULL);
+            }
+            mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
+            for (BabbleParser.CallParameterContext parameter : parameters) {
+                visit(parameter.expression());
+            }
+            line(ctx);
+            mv.visitInvokeDynamicInsn("call", "(L" + CALLABLE + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/String;L" + CALL_SITE + ";"
+                    + "Ljava/lang/Object;".repeat(parameters.size()) + ")Ljava/lang/Object;", CALL_BOOTSTRAP);
+            return null;
+        }
         arguments(parameters);
         if (names != null) {
             getStringArray(names);
@@ -1481,9 +1646,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         String paramsField = stringArrayField(scopes.parameters(ctx));
         pendingMethods.add(() -> generateFunction(ctx, method, paramsField));
 
+        boolean spread = isSpread(ctx);
         Type bodyType = Type.getMethodType(BODY_DESCRIPTOR);
         mv.visitInvokeDynamicInsn("invoke", "()L" + FUNCTION_BODY + ";", METAFACTORY,
-                bodyType, new Handle(H_INVOKESTATIC, className, method, BODY_DESCRIPTOR, false), bodyType);
+                bodyType, new Handle(H_INVOKESTATIC, className, spread ? method + "$call" : method, BODY_DESCRIPTOR, false), bodyType);
+        if (spread) {
+            mv.visitLdcInsn(new Handle(H_INVOKESTATIC, className, method, functionDirectDescriptor(ctx), false));
+        } else {
+            mv.visitInsn(ACONST_NULL);
+        }
         mv.visitVarInsn(ALOAD, nsLocal);
         capturedCells(ctx);
         mv.visitFieldInsn(GETSTATIC, className, paramsField, "[Ljava/lang/String;");
@@ -1493,8 +1664,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         } else {
             mv.visitInsn(ACONST_NULL);
         }
-        mv.visitMethodInsn(INVOKESTATIC, COMPILED_FUNCTION, "create",
-                "(L" + FUNCTION_BODY + ";L" + NAMESPACE + ";[Ljava/lang/Object;[Ljava/lang/String;ILjava/lang/String;)L" + COMPILED_FUNCTION + ";", false);
+        mv.visitMethodInsn(INVOKESTATIC, COMPILED_FUNCTION, "create", "(L" + FUNCTION_BODY + ";Ljava/lang/invoke/MethodHandle;L" + NAMESPACE
+                + ";[Ljava/lang/Object;[Ljava/lang/String;ILjava/lang/String;)L" + COMPILED_FUNCTION + ";", false);
         return null;
     }
 
@@ -1523,15 +1694,22 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         pendingMethods.add(() -> generateMethod(literal, gen, paramsField));
         String sam = "(Ljava/lang/Object;L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
         String instantiated = "(L" + gen.name + ";L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
+        boolean spread = isSpread(literal);
+        String method = gen.methodName(member);
         return addConstant("METHOD", "L" + COMPILED_METHOD + ";", 32, m -> {
             m.visitTypeInsn(NEW, COMPILED_METHOD);
             m.visitInsn(DUP);
             m.visitInvokeDynamicInsn("invoke", "()L" + METHOD_BODY + ";", METAFACTORY, Type.getMethodType(sam),
-                    new Handle(H_INVOKEVIRTUAL, gen.name, gen.methodName(member), METHOD_DESCRIPTOR, false), Type.getMethodType(instantiated));
+                    new Handle(H_INVOKEVIRTUAL, gen.name, spread ? method + "$call" : method, METHOD_DESCRIPTOR, false), Type.getMethodType(instantiated));
+            if (spread) {
+                m.visitLdcInsn(new Handle(H_INVOKEVIRTUAL, gen.name, method, methodDirectDescriptor(literal), false));
+            } else {
+                m.visitInsn(ACONST_NULL);
+            }
             m.visitFieldInsn(GETSTATIC, className, paramsField, "[Ljava/lang/String;");
             pushInt(m, required);
             m.visitLdcInsn(member);
-            m.visitMethodInsn(INVOKESPECIAL, COMPILED_METHOD, "<init>", "(L" + METHOD_BODY + ";[Ljava/lang/String;ILjava/lang/String;)V", false);
+            m.visitMethodInsn(INVOKESPECIAL, COMPILED_METHOD, "<init>", "(L" + METHOD_BODY + ";Ljava/lang/invoke/MethodHandle;[Ljava/lang/String;ILjava/lang/String;)V", false);
         });
     }
 

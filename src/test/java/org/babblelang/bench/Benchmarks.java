@@ -17,8 +17,8 @@ import java.util.Map;
  * (it reads {@code src/test/babble/Stack.ba}).
  */
 public final class Benchmarks {
-    private static final int WARMUP = 10;
-    private static final int RUNS = 10;
+    private static final int WARMUP = 50;
+    private static final int RUNS = 20;
 
     private Benchmarks() {
     }
