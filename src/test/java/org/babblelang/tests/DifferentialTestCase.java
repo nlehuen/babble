@@ -123,6 +123,10 @@ public class DifferentialTestCase {
         if (value instanceof Namespace) {
             return "<namespace>";
         }
+        // Compiled classes extend BabbleInstance : what matters is that it is an instance.
+        if (value instanceof org.babblelang.runtime.BabbleInstance) {
+            return "<instance>:" + value;
+        }
         return value == null ? "null" : value.getClass().getName() + ":" + value;
     }
 

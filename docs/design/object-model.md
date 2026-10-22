@@ -1198,11 +1198,14 @@ Everything in §12 steps 1–6 is implemented, in both modes: the interpreter an
 (compiler doc §16). `BabbleObjectModelTestCase` and `BabbleJavaObjectsTestCase` cover the list in
 §10, and `DifferentialTestCase` checks that both modes agree. Where the text above was silent:
 
-* **Representation before phase 2.** An instance is a `BabbleInstance` (an array of member
+* **Representation.** In the interpreter, an instance is a `BabbleInstance` (an array of member
   values, indexed through the class's `ClassShape`), and a method is the function value its
   `def` creates when the body runs, so each instance holds its own method closures over the
-  constructor's namespace. That is what lets methods read plain constructor parameters (§7.2)
-  without hidden fields. Phase 2 replaces both with JVM fields and methods (§7).
+  constructor's namespace. Compiler phase 2 generates a JVM class per class or object
+  expression, extending `BabbleInstance`, with a field per member, methods as JVM instance
+  methods, and hidden fields for the constructor parameters methods capture (§7.1, §7.2;
+  compiler doc §17). Babble interfaces are not JVM interfaces yet, and instances still reach
+  Java through a `Proxy` face (§9.5): both wait for the type checker and compiler phase 3.
 * **Analysis.** `BlockScopes` (scopes, members, placement of `this`, `return`, `super`, `private`
   and header `def`s, the value-class rules) is followed by `TypeChecks`, which needs the whole
   file: `implements`/`extends` resolution, completeness, default conflicts, `super`, and the

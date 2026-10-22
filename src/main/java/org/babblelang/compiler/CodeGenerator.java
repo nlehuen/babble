@@ -70,6 +70,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private static final String BABBLE_INTERFACE = RUNTIME + "BabbleInterface";
     private static final String CLASSES = RUNTIME + "Classes";
     private static final String CELL = RUNTIME + "Cell";
+    private static final String COMPILED_METHOD = RUNTIME + "CompiledMethod";
+    private static final String METHOD_BODY = RUNTIME + "MethodBody";
+    private static final String INSTANCE_FACTORY = RUNTIME + "InstanceFactory";
     private static final String FRAMES = RUNTIME + "Frames";
 
     static final String RUN_DESCRIPTOR = "(L" + SCRIPT_RUNTIME + ";L" + NAMESPACE + ";)Ljava/lang/Object;";
@@ -77,16 +80,19 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
     private static final String CLASS_BODY_DESCRIPTOR = "(L" + BABBLE_CLASS + ";L" + BABBLE_INSTANCE + ";L" + SCRIPT_RUNTIME
             + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)V";
+    /** A method of a compiled class : an instance method, the receiver in local 0. */
+    private static final String METHOD_DESCRIPTOR = "(L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME
+            + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
     private static final Handle METAFACTORY = new Handle(H_INVOKESTATIC, "java/lang/invoke/LambdaMetafactory", "metafactory",
             "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
                     + "Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)"
                     + "Ljava/lang/invoke/CallSite;", false);
 
     // Function body locals : the FunctionBody parameters, then the call's namespace. A
-    // class body has the same layout, with the class value and the instance first.
+    // class body has the same layout, with the class value and the instance first, and a
+    // method of a compiled class too, with the receiver and the CompiledMethod first.
     private static final int SELF = 0;
     private static final int INSTANCE = 1;
-    private static final int THIZ = 1;
     private static final int FN_RT = 2;
     private static final int ARGS = 3;
     private static final int NAMES = 4;
@@ -106,6 +112,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private final ScopeAnalysis scopes;
     private final Resolution resolution;
     private final ClassWriter classWriter;
+    private final ClassLoader runtimeLoader;
+    // The JVM classes generated for class and object expressions, and their names.
+    private final Map<ParserRuleContext, ClassGen> classGens = new HashMap<>();
+    private final java.util.Set<String> generatedClasses = new java.util.HashSet<>();
 
     private final List<Constant> constants = new ArrayList<>();
     private final Map<List<String>, String> stringArrays = new HashMap<>();
@@ -129,6 +139,113 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private int capturedLocal;
     // The class or interface value a static block defines members of.
     private int staticTarget = -1;
+    // Where the function value (or CompiledMethod) and the receiver are.
+    private int selfLocal;
+    private int thizLocal;
+    // The compiled class whose method, or constructor, this is ; and the local holding
+    // the instance under construction, typed as that class.
+    private ClassGen methodClass;
+    private ClassGen constructorClass;
+    private int typedThisLocal;
+
+    /**
+     * The JVM class generated for a class or object expression (compiler phase 2) : it
+     * extends BabbleInstance with one field per member, plus a hidden field per variable
+     * of the constructor that a nested function captures, holding its cell. Its methods
+     * are JVM instance methods.
+     */
+    private final class ClassGen {
+        final ParserRuleContext ctx;
+        final String name;
+        final ClassShape shape;
+        final ClassWriter writer;
+        final List<Resolution.Variable> hiddenCells = new ArrayList<>();
+
+        ClassGen(ParserRuleContext ctx, String name, ClassShape shape) {
+            this.ctx = ctx;
+            this.name = name;
+            this.shape = shape;
+            this.writer = new ScriptClassWriter(name, runtimeLoader, className, generatedClasses);
+            for (Resolution.Variable variable : resolution.declared(ctx)) {
+                if (variable.isCell()) {
+                    hiddenCells.add(variable);
+                }
+            }
+        }
+
+        String methodName(String member) {
+            return "m$" + member;
+        }
+
+        /** Fields, the constructor, and the member table ; the methods are generated as they come. */
+        void begin() {
+            writer.visit(V21, ACC_FINAL | ACC_SUPER | ACC_SYNTHETIC, name, null, BABBLE_INSTANCE, null);
+            writer.visitSource(sourceName, null);
+            for (int i = 0; i < shape.memberCount(); i++) {
+                writer.visitField(0, shape.member(i), "Ljava/lang/Object;", null, null).visitEnd();
+            }
+            for (Resolution.Variable variable : hiddenCells) {
+                writer.visitField(0, hiddenField(variable), "Ljava/lang/Object;", null, null).visitEnd();
+            }
+
+            MethodVisitor init = writer.visitMethod(0, "<init>", "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)V", null, null);
+            init.visitCode();
+            init.visitVarInsn(ALOAD, 0);
+            init.visitVarInsn(ALOAD, 1);
+            init.visitVarInsn(ALOAD, 2);
+            init.visitInsn(ICONST_0);
+            init.visitMethodInsn(INVOKESPECIAL, BABBLE_INSTANCE, "<init>", "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";Z)V", false);
+            for (int i = 0; i < shape.memberCount(); i++) {
+                init.visitVarInsn(ALOAD, 0);
+                init.visitFieldInsn(GETSTATIC, RUNTIME + "Undefined", "UNDEFINED", "L" + RUNTIME + "Undefined;");
+                init.visitFieldInsn(PUTFIELD, name, shape.member(i), "Ljava/lang/Object;");
+            }
+            init.visitInsn(RETURN);
+            init.visitMaxs(0, 0);
+            init.visitEnd();
+
+            memberTable("field", "(I)Ljava/lang/Object;", false);
+            memberTable("setField", "(ILjava/lang/Object;)V", true);
+        }
+
+        /** {@code field(int)} or {@code setField(int, Object)} : a switch over the member fields. */
+        private void memberTable(String method, String descriptor, boolean set) {
+            MethodVisitor m = writer.visitMethod(ACC_PROTECTED, method, descriptor, null, null);
+            m.visitCode();
+            Label fallback = new Label();
+            if (shape.memberCount() > 0) {
+                Label[] cases = new Label[shape.memberCount()];
+                for (int i = 0; i < cases.length; i++) {
+                    cases[i] = new Label();
+                }
+                m.visitVarInsn(ILOAD, 1);
+                m.visitTableSwitchInsn(0, cases.length - 1, fallback, cases);
+                for (int i = 0; i < cases.length; i++) {
+                    m.visitLabel(cases[i]);
+                    m.visitVarInsn(ALOAD, 0);
+                    if (set) {
+                        m.visitVarInsn(ALOAD, 2);
+                        m.visitFieldInsn(PUTFIELD, name, shape.member(i), "Ljava/lang/Object;");
+                        m.visitInsn(RETURN);
+                    } else {
+                        m.visitFieldInsn(GETFIELD, name, shape.member(i), "Ljava/lang/Object;");
+                        m.visitInsn(ARETURN);
+                    }
+                }
+            }
+            m.visitLabel(fallback);
+            m.visitTypeInsn(NEW, "java/lang/IndexOutOfBoundsException");
+            m.visitInsn(DUP);
+            m.visitMethodInsn(INVOKESPECIAL, "java/lang/IndexOutOfBoundsException", "<init>", "()V", false);
+            m.visitInsn(ATHROW);
+            m.visitMaxs(0, 0);
+            m.visitEnd();
+        }
+    }
+
+    private static String hiddenField(Resolution.Variable variable) {
+        return "$v$" + variable.name();
+    }
 
     private record Constant(String field, String descriptor, int estimatedSize, Consumer<MethodVisitor> builder) {
     }
@@ -139,10 +256,16 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         this.sourceName = sourceName;
         this.scopes = scopes;
         this.resolution = scopes.resolution();
-        this.classWriter = new ScriptClassWriter(className, runtimeLoader);
+        this.runtimeLoader = runtimeLoader;
+        this.classWriter = new ScriptClassWriter(className, runtimeLoader, className, generatedClasses);
     }
 
-    byte[] generate(BabbleParser.FileContext file) {
+    /**
+     * Generates the script class, then the class of each class or object expression.
+     *
+     * @return the class files, by internal name, the script class first
+     */
+    Map<String, byte[]> generate(BabbleParser.FileContext file) {
         classWriter.visit(V21, ACC_FINAL | ACC_SUPER | ACC_SYNTHETIC, className, null, OBJECT, null);
         classWriter.visitSource(sourceName, null);
 
@@ -153,13 +276,38 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         generateConstants();
 
         classWriter.visitEnd();
-        return classWriter.toByteArray();
+        Map<String, byte[]> classes = new java.util.LinkedHashMap<>();
+        classes.put(className, classWriter.toByteArray());
+        for (ClassGen gen : classGens.values()) {
+            gen.writer.visitEnd();
+            classes.put(gen.name, gen.writer.toByteArray());
+        }
+        return classes;
+    }
+
+    /** The compiled class of a class or object expression, or null when it keeps array-backed instances. */
+    private ClassGen classGen(ParserRuleContext ctx) {
+        if (resolution.isNamespaceScope(ctx)) {
+            return null;
+        }
+        return classGens.computeIfAbsent(ctx, c -> {
+            ClassShape shape = scopes.shape(c);
+            String name = className + "$" + (functionCount++) + "$" + shape.name();
+            generatedClasses.add(name);
+            ClassGen gen = new ClassGen(c, name, shape);
+            gen.begin();
+            return gen;
+        });
     }
 
     // ---------------------------------------------------------------- methods
 
     private void beginMethod(ParserRuleContext owner, int access, String name, String descriptor, int firstFreeLocal, int rt, int ns) {
-        mv = classWriter.visitMethod(access, name, descriptor, null, null);
+        beginMethod(classWriter, owner, access, name, descriptor, firstFreeLocal, rt, ns);
+    }
+
+    private void beginMethod(ClassWriter writer, ParserRuleContext owner, int access, String name, String descriptor, int firstFreeLocal, int rt, int ns) {
+        mv = writer.visitMethod(access, name, descriptor, null, null);
         mv.visitCode();
         methodOwner = owner;
         rtLocal = rt;
@@ -171,6 +319,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         capturedVariables = resolution.captured(owner);
         capturedLocal = -1;
         staticTarget = -1;
+        selfLocal = SELF;
+        thizLocal = 1;
+        methodClass = null;
+        constructorClass = null;
+        typedThisLocal = -1;
     }
 
     /**
@@ -182,7 +335,12 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             return;
         }
         capturedLocal = newLocal();
-        mv.visitVarInsn(ALOAD, SELF);
+        if (methodClass != null) {
+            mv.visitVarInsn(ALOAD, 0);
+            mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "babbleClass", "()L" + BABBLE_CLASS + ";", false);
+        } else {
+            mv.visitVarInsn(ALOAD, SELF);
+        }
         mv.visitMethodInsn(INVOKEVIRTUAL, ownerType, "captured", "()[Ljava/lang/Object;", false);
         mv.visitVarInsn(ASTORE, capturedLocal);
     }
@@ -276,29 +434,65 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * line, after the body, so that their line numbers don't cover the prologue either.
      */
     private void generateFunction(BabbleParser.FunctionLiteralContext literal, String method, String paramsField) {
-        beginMethod(literal, ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, method, BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        beginMethod(literal, ACC_STATIC | ACC_SYNTHETIC, method, BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
         loadCapturedCells(COMPILED_FUNCTION);
+        functionBody(literal, paramsField, COMPILED_FUNCTION);
+    }
 
+    /**
+     * {@code m$name(CompiledMethod self, ScriptRuntime rt, Object[] args, String[] names,
+     * CallSite site)} : a method of a compiled class, as a JVM instance method of it. Its
+     * closure and captured cells are the class value's, and the constructor's variables it
+     * uses are hidden fields of the instance.
+     */
+    private void generateMethod(BabbleParser.FunctionLiteralContext literal, ClassGen gen, String paramsField) {
+        String member = ((BabbleParser.DefExpressionContext) literal.getParent()).name.getText();
+        beginMethod(gen.writer, literal, ACC_SYNTHETIC, gen.methodName(member), METHOD_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
+        selfLocal = 1;
+        thizLocal = 0;
+        methodClass = gen;
+        capturedVariables = resolution.captured(gen.ctx);
+        loadCapturedCells(BABBLE_CLASS);
+        functionBody(literal, paramsField, COMPILED_METHOD);
+    }
+
+    /** Pushes the namespace a function or method closes over. */
+    private void loadClosure() {
+        if (methodClass != null) {
+            mv.visitVarInsn(ALOAD, 0);
+            mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "babbleClass", "()L" + BABBLE_CLASS + ";", false);
+            mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
+        } else {
+            mv.visitVarInsn(ALOAD, SELF);
+            mv.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "closure", "()L" + NAMESPACE + ";", false);
+        }
+    }
+
+    private void loadRecurseTarget(String selfType) {
+        mv.visitVarInsn(ALOAD, selfLocal);
+        mv.visitVarInsn(ALOAD, thizLocal);
+        mv.visitMethodInsn(INVOKEVIRTUAL, selfType, "recurseTarget", "(Ljava/lang/Object;)L" + CALLABLE + ";", false);
+    }
+
+    private void functionBody(BabbleParser.FunctionLiteralContext literal, String paramsField, String selfType) {
         if (resolution.isNamespaceScope(literal)) {
             // Phase 1 : the call's namespace defines recurse, this, the hoisted names and the parameters.
-            mv.visitVarInsn(ALOAD, SELF);
-            mv.visitVarInsn(ALOAD, THIZ);
+            loadClosure();
+            loadRecurseTarget(selfType);
+            mv.visitVarInsn(ALOAD, thizLocal);
             getStringArray(scopes.declared(literal));
-            mv.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "prologue", "(Ljava/lang/Object;[Ljava/lang/String;)L" + NAMESPACE + ";", false);
+            mv.visitMethodInsn(INVOKESTATIC, FRAMES, "enter", "(L" + NAMESPACE + ";L" + CALLABLE + ";Ljava/lang/Object;[Ljava/lang/String;)L" + NAMESPACE + ";", false);
             mv.visitVarInsn(ASTORE, FN_NS);
         } else {
             // The namespace is the closure's, for names resolved at runtime ; variables are locals.
-            mv.visitVarInsn(ALOAD, SELF);
-            mv.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "closure", "()L" + NAMESPACE + ";", false);
+            loadClosure();
             mv.visitVarInsn(ASTORE, FN_NS);
             for (Resolution.Variable variable : declareVariables(literal)) {
                 if (variable.kind() == Resolution.Variable.Kind.THIS && variable.isUsed()) {
-                    mv.visitVarInsn(ALOAD, THIZ);
+                    mv.visitVarInsn(ALOAD, thizLocal);
                     initVariable(variable);
                 } else if (variable.kind() == Resolution.Variable.Kind.RECURSE && variable.isUsed()) {
-                    mv.visitVarInsn(ALOAD, SELF);
-                    mv.visitVarInsn(ALOAD, THIZ);
-                    mv.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "recurseTarget", "(Ljava/lang/Object;)L" + CALLABLE + ";", false);
+                    loadRecurseTarget(selfType);
                     initVariable(variable);
                 }
             }
@@ -329,6 +523,13 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitMethodInsn(INVOKESTATIC, CLASSES, "constructorScope", "(L" + BABBLE_CLASS + ";L" + BABBLE_INSTANCE + ";)L" + NAMESPACE + ";", false);
             mv.visitVarInsn(ASTORE, FN_NS);
         } else {
+            constructorClass = classGens.get(ctx);
+            if (constructorClass != null) {
+                typedThisLocal = newLocal();
+                mv.visitVarInsn(ALOAD, INSTANCE);
+                mv.visitTypeInsn(CHECKCAST, constructorClass.name);
+                mv.visitVarInsn(ASTORE, typedThisLocal);
+            }
             mv.visitVarInsn(ALOAD, SELF);
             mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
             mv.visitVarInsn(ASTORE, FN_NS);
@@ -391,7 +592,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             }
             mv.visitLabel(bind);
             int member = shape != null ? shape.parameterMember(i) : -1;
-            if (member >= 0) {
+            if (member >= 0 && constructorClass != null) {
+                mv.visitVarInsn(ALOAD, typedThisLocal);
+                mv.visitVarInsn(ALOAD, value);
+                mv.visitFieldInsn(PUTFIELD, constructorClass.name, shape.member(member), "Ljava/lang/Object;");
+            } else if (member >= 0) {
                 mv.visitVarInsn(ALOAD, INSTANCE);
                 pushInt(mv, member);
                 mv.visitVarInsn(ALOAD, value);
@@ -436,9 +641,22 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     mv.visitFieldInsn(GETSTATIC, RUNTIME + "Undefined", "UNDEFINED", "L" + RUNTIME + "Undefined;");
                 }
                 mv.visitVarInsn(ASTORE, slot);
+                publishCell(variable);
             }
         }
         return variables;
+    }
+
+    /**
+     * A constructor variable captured by a nested function is also stored in a hidden
+     * field of the instance, where the class's methods find it.
+     */
+    private void publishCell(Resolution.Variable variable) {
+        if (constructorClass != null && variable.isCell() && variable.method() == constructorClass.ctx) {
+            mv.visitVarInsn(ALOAD, typedThisLocal);
+            mv.visitVarInsn(ALOAD, slots.get(variable));
+            mv.visitFieldInsn(PUTFIELD, constructorClass.name, hiddenField(variable), "Ljava/lang/Object;");
+        }
     }
 
     /** Stores the value on the stack, consumed, as the initial value of a variable. */
@@ -447,12 +665,17 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitMethodInsn(INVOKESTATIC, CELL, "of", "(Ljava/lang/Object;)L" + CELL + ";", false);
         }
         mv.visitVarInsn(ASTORE, slots.get(variable));
+        publishCell(variable);
     }
 
     /** Pushes the cell of a captured variable : a local of this method, or one of the cells it captured. */
     private void loadCell(Resolution.Variable variable) {
         if (variable.method() == methodOwner) {
             mv.visitVarInsn(ALOAD, slots.get(variable));
+        } else if (methodClass != null && variable.method() == methodClass.ctx) {
+            mv.visitVarInsn(ALOAD, 0);
+            mv.visitFieldInsn(GETFIELD, methodClass.name, hiddenField(variable), "Ljava/lang/Object;");
+            mv.visitTypeInsn(CHECKCAST, CELL);
         } else {
             mv.visitVarInsn(ALOAD, capturedLocal);
             pushInt(mv, capturedVariables.indexOf(variable));
@@ -688,7 +911,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         int size = 0;
         int helpers = 0;
         for (Constant constant : constants) {
-            classWriter.visitField(ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, constant.field(), constant.descriptor(), null, null).visitEnd();
+            classWriter.visitField(ACC_STATIC | ACC_SYNTHETIC, constant.field(), constant.descriptor(), null, null).visitEnd();
             if (helper != null && size + constant.estimatedSize() > MAX_CONSTANT_BYTES_PER_HELPER) {
                 endHelper(helper);
                 helper = null;
@@ -841,23 +1064,44 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     public Void visitClassExpression(BabbleParser.ClassExpressionContext ctx) {
         List<BabbleParser.ParameterDeclarationContext> declarations = ctx.parametersDeclaration() != null
                 ? ctx.parametersDeclaration().parameterDeclaration() : List.of();
+        ClassGen gen = classGen(ctx);
         classValueArguments(ctx, ctx.classBlock, declarations);
         types(ctx.typeList());
-        mv.visitMethodInsn(INVOKESTATIC, CLASSES, "newClass",
-                "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";[Ljava/lang/Object;L" + CLASS_BODY + ";[Ljava/lang/Object;)L" + BABBLE_CLASS + ";", false);
+        if (gen != null) {
+            instanceFactory(gen);
+            mv.visitMethodInsn(INVOKESTATIC, CLASSES, "newClass",
+                    "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";[Ljava/lang/Object;L" + CLASS_BODY + ";[Ljava/lang/Object;L" + INSTANCE_FACTORY + ";)L" + BABBLE_CLASS + ";", false);
+        } else {
+            mv.visitMethodInsn(INVOKESTATIC, CLASSES, "newClass",
+                    "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";[Ljava/lang/Object;L" + CLASS_BODY + ";[Ljava/lang/Object;)L" + BABBLE_CLASS + ";", false);
+        }
         staticBlock(ctx.staticBlock);
         return null;
+    }
+
+    /** Pushes an InstanceFactory creating instances of a compiled class. */
+    private void instanceFactory(ClassGen gen) {
+        String descriptor = "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)L" + BABBLE_INSTANCE + ";";
+        mv.visitInvokeDynamicInsn("create", "()L" + INSTANCE_FACTORY + ";", METAFACTORY,
+                Type.getMethodType(descriptor),
+                new Handle(H_NEWINVOKESPECIAL, gen.name, "<init>", "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)V", false),
+                Type.getMethodType("(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)L" + gen.name + ";"));
     }
 
     /** An object literal is the single instance of an anonymous class. */
     @Override
     public Void visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
+        ClassGen gen = classGen(ctx);
         classValueArguments(ctx, ctx.createBlock, List.of());
         types(ctx.typeList());
+        if (gen != null) {
+            instanceFactory(gen);
+        }
         mv.visitVarInsn(ALOAD, rtLocal);
         line(ctx);
         mv.visitMethodInsn(INVOKESTATIC, BABBLE_CLASS, "object",
-                "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";[Ljava/lang/Object;L" + CLASS_BODY + ";[Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";)L" + BABBLE_INSTANCE + ";", false);
+                "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";[Ljava/lang/Object;L" + CLASS_BODY + ";[Ljava/lang/Object;"
+                        + (gen != null ? "L" + INSTANCE_FACTORY + ";" : "") + "L" + SCRIPT_RUNTIME + ";)L" + BABBLE_INSTANCE + ";", false);
         return null;
     }
 
@@ -970,6 +1214,13 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             storeVariable(variable, true, ctx);
             return null;
         }
+        if (target.kind() == ScopeAnalysis.DefKind.MEMBER && constructorClass != null) {
+            mv.visitVarInsn(ALOAD, typedThisLocal);
+            defValue(ctx);
+            mv.visitInsn(DUP_X1);
+            mv.visitFieldInsn(PUTFIELD, constructorClass.name, ctx.name.getText(), "Ljava/lang/Object;");
+            return null;
+        }
         switch (target.kind()) {
             case MEMBER -> mv.visitVarInsn(ALOAD, INSTANCE);
             case STATIC -> mv.visitVarInsn(ALOAD, staticTarget);
@@ -1074,6 +1325,16 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             return null;
         }
         if (expression instanceof BabbleParser.ThisExpressionContext) {
+            ClassGen gen = thisClassAt(expression);
+            if (fieldIndex(gen, name) >= 0) {
+                // A field of this compiled class : read directly.
+                loadThisAs(expression, gen);
+                mv.visitFieldInsn(GETFIELD, gen.name, name, "Ljava/lang/Object;");
+                mv.visitLdcInsn(name);
+                line(ctx);
+                mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                return null;
+            }
             visit(expression);
             mv.visitLdcInsn(name);
             line(ctx);
@@ -1098,6 +1359,34 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         String site = callSiteField(ctx);
         String[] names = Interpreter.callNames(ctx);
         List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
+
+        if (ctx.expression() instanceof BabbleParser.SelectorContext selector
+                && selector.expression() instanceof BabbleParser.ThisExpressionContext thisExpression) {
+            ClassGen gen = thisClassAt(thisExpression);
+            String member = selector.ID().getText();
+            int index = gen != null ? gen.shape.memberIndex(member) : -1;
+            if (index >= 0 && gen.shape.isMethod(index)) {
+                // A method of this compiled class : a direct call of its JVM method, once its def has run.
+                loadThisAs(thisExpression, gen);
+                mv.visitInsn(DUP);
+                mv.visitFieldInsn(GETFIELD, gen.name, member, "Ljava/lang/Object;");
+                mv.visitLdcInsn(member);
+                line(ctx);
+                mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                mv.visitTypeInsn(CHECKCAST, COMPILED_METHOD);
+                mv.visitVarInsn(ALOAD, rtLocal);
+                arguments(parameters);
+                if (names != null) {
+                    getStringArray(names);
+                } else {
+                    mv.visitInsn(ACONST_NULL);
+                }
+                mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
+                line(ctx);
+                mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, gen.methodName(member), METHOD_DESCRIPTOR, false);
+                return null;
+            }
+        }
 
         visit(ctx.expression());
         // Checked before the arguments are evaluated.
@@ -1182,6 +1471,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
+        ClassGen owner = methodClassOf(ctx);
+        if (owner != null) {
+            mv.visitFieldInsn(GETSTATIC, className, compiledMethod(ctx, owner), "L" + COMPILED_METHOD + ";");
+            return null;
+        }
         String name = ScopeAnalysis.functionName(ctx);
         String method = "fn$" + (functionCount++) + (name != null ? "$" + name : "");
         String paramsField = stringArrayField(scopes.parameters(ctx));
@@ -1204,6 +1498,77 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         return null;
     }
 
+    /** The compiled class a function literal is a method of, or null. */
+    private ClassGen methodClassOf(BabbleParser.FunctionLiteralContext literal) {
+        if (!(literal.getParent() instanceof BabbleParser.DefExpressionContext def) || def.value != literal
+                || scopes.defTarget(def).kind() != ScopeAnalysis.DefKind.MEMBER) {
+            return null;
+        }
+        for (ParserRuleContext p = def.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof BabbleParser.ClassExpressionContext || p instanceof BabbleParser.ObjectExpressionContext) {
+                return classGens.get(p);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The CompiledMethod of a method literal, a constant : one per method, shared by all
+     * instances, and the JVM method behind it, generated with the class.
+     */
+    private String compiledMethod(BabbleParser.FunctionLiteralContext literal, ClassGen gen) {
+        String member = ((BabbleParser.DefExpressionContext) literal.getParent()).name.getText();
+        String paramsField = stringArrayField(scopes.parameters(literal));
+        int required = scopes.requiredParameters(literal);
+        pendingMethods.add(() -> generateMethod(literal, gen, paramsField));
+        String sam = "(Ljava/lang/Object;L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
+        String instantiated = "(L" + gen.name + ";L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
+        return addConstant("METHOD", "L" + COMPILED_METHOD + ";", 32, m -> {
+            m.visitTypeInsn(NEW, COMPILED_METHOD);
+            m.visitInsn(DUP);
+            m.visitInvokeDynamicInsn("invoke", "()L" + METHOD_BODY + ";", METAFACTORY, Type.getMethodType(sam),
+                    new Handle(H_INVOKEVIRTUAL, gen.name, gen.methodName(member), METHOD_DESCRIPTOR, false), Type.getMethodType(instantiated));
+            m.visitFieldInsn(GETSTATIC, className, paramsField, "[Ljava/lang/String;");
+            pushInt(m, required);
+            m.visitLdcInsn(member);
+            m.visitMethodInsn(INVOKESPECIAL, COMPILED_METHOD, "<init>", "(L" + METHOD_BODY + ";[Ljava/lang/String;ILjava/lang/String;)V", false);
+        });
+    }
+
+    /**
+     * The compiled class {@code this} is an instance of at a {@code this} expression : that
+     * of the class or object body it is in, unless it is in a static block or an interface.
+     */
+    private ClassGen thisClassAt(ParserRuleContext thisExpression) {
+        ParserRuleContext child = thisExpression;
+        for (ParserRuleContext p = thisExpression.getParent(); p != null; child = p, p = p.getParent()) {
+            if (p instanceof BabbleParser.ClassExpressionContext c) {
+                return child == c.classBlock || child == c.parametersDeclaration() ? classGens.get(c) : null;
+            }
+            if (p instanceof BabbleParser.ObjectExpressionContext o) {
+                return child == o.createBlock ? classGens.get(o) : null;
+            }
+            if (p instanceof BabbleParser.InterfaceExpressionContext) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** The index of a field member of {@code this}'s compiled class, or -1 to go through Members. */
+    private int fieldIndex(ClassGen gen, String member) {
+        if (gen == null) {
+            return -1;
+        }
+        int index = gen.shape.memberIndex(member);
+        return index >= 0 && !gen.shape.isMethod(index) ? index : -1;
+    }
+
+    private void loadThisAs(BabbleParser.ExpressionContext thisExpression, ClassGen gen) {
+        visit(thisExpression);
+        mv.visitTypeInsn(CHECKCAST, gen.name);
+    }
+
     @Override
     public Void visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         String name = ctx.name.getText();
@@ -1222,6 +1587,23 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             return null;
         }
         if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
+            ClassGen gen = thisClassAt(ctx.namespace);
+            if (fieldIndex(gen, name) >= 0 && !gen.shape.isValue()) {
+                // A field of this compiled class : checked defined, then written directly.
+                loadThisAs(ctx.namespace, gen);
+                visit(ctx.value);
+                mv.visitInsn(SWAP);
+                mv.visitInsn(DUP);
+                mv.visitFieldInsn(GETFIELD, gen.name, name, "Ljava/lang/Object;");
+                mv.visitLdcInsn(name);
+                line(ctx);
+                mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                mv.visitInsn(POP);
+                mv.visitInsn(SWAP);
+                mv.visitInsn(DUP_X1);
+                mv.visitFieldInsn(PUTFIELD, gen.name, name, "Ljava/lang/Object;");
+                return null;
+            }
             visit(ctx.namespace);
             visit(ctx.value);
             mv.visitLdcInsn(name);
@@ -1293,13 +1675,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * classes instead, and never tries to load the class being generated.
      */
     private static final class ScriptClassWriter extends ClassWriter {
-        private final String className;
+        private final String scriptClass;
         private final ClassLoader runtimeLoader;
+        private final java.util.Set<String> generatedClasses;
 
-        ScriptClassWriter(String className, ClassLoader runtimeLoader) {
+        ScriptClassWriter(String className, ClassLoader runtimeLoader, String scriptClass, java.util.Set<String> generatedClasses) {
             super(COMPUTE_FRAMES);
-            this.className = className;
+            this.scriptClass = scriptClass;
             this.runtimeLoader = runtimeLoader;
+            this.generatedClasses = generatedClasses;
         }
 
         @Override
@@ -1309,8 +1693,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
         @Override
         protected String getCommonSuperClass(String type1, String type2) {
-            if (type1.equals(className) || type2.equals(className)) {
+            if (type1.equals(scriptClass) || type2.equals(scriptClass)) {
                 return OBJECT;
+            }
+            // The compiled classes of class expressions all extend BabbleInstance.
+            if (generatedClasses.contains(type1)) {
+                type1 = BABBLE_INSTANCE;
+            }
+            if (generatedClasses.contains(type2)) {
+                type2 = BABBLE_INSTANCE;
             }
             try {
                 Class<?> class1 = Class.forName(type1.replace('/', '.'), false, runtimeLoader);

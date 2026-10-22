@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([object-model.md](object-model.md), summarised in §8.2). |
-| **Implemented** | §15 steps 1–7: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, and the phase 1 compiler for the whole grammar (§16). Steps 8–11 remain. |
+| **Implemented** | §15 steps 1–8: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, and phase 2 (§16, §17), apart from JVM interfaces. Steps 9–11 remain. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -1065,7 +1065,72 @@ What landed, and where it departs from the text above.
 | Stack.ba push/pop, with the object model | 69.8 | 26.6 | 2.6x |
 | ArrayList add/get : Java interop | 98.0 | 90.7 | 1.1x |
 
-Calls win most, because the visitor frames and `ReturnException` are gone. Loops are even:
-repeated runs put both modes at about 110 ms, as every access is still a `HashMap` lookup along
-the namespace chain in both. That is the cost phase 2 removes. Java interop is dominated by
-the per-call reflection that phase 3 caches.
+Calls win most, because the visitor frames and `ReturnException` are gone. Loops were even,
+but not for the reason first assumed (namespace lookups) : the compiled loop never left the
+bytecode interpreter. §17 explains, and gives the numbers after phase 2. Java interop is
+dominated by the per-call reflection that phase 3 caches.
+
+## 17. Implementation notes (phase 2)
+
+Phase 2 (§7) is implemented, apart from compiling interfaces to JVM interfaces (below).
+
+* **Resolver** (`org.babblelang.analysis.Resolver`, result in `Resolution`). It runs after
+  `BlockScopes` and `TypeChecks` on the scope tree they build, and only the compiler uses it.
+  Every use of a name (a plain name, an unqualified assignment, `this`, `recurse`, a lexical
+  `def`, a parameter, the first name of a type in an implements list or `super` call) is bound
+  to a `Variable`, or to nothing, meaning a runtime lookup.
+* **Frames and namespaces.** The variables of functions, blocks, class bodies (constructor
+  parameters and `this`) and static blocks are JVM locals of the method they are compiled into
+  (`LOCAL`), or `Cell`s when a nested method captures them (`CELL`); a nested method reaches
+  them through the cells it captured (`CAPTURED`). `this` and `recurse` are variables like any
+  other: a method's `this` comes from its receiver argument, `recurse` from the function value.
+  The file, packages and interface bodies keep their namespace (`MEMBER`/`GLOBAL` of §7.1 both
+  compile to the phase 1 lookup), and so does any function, class body or static block that
+  declares a `package` somewhere in it, which the design didn't consider: a package needs a
+  namespace to live in, and keeping the phase 1 representation for that whole scope keeps its
+  semantics exact. `ResolverTestCase` has the golden tests of §11.
+* **Undefined.** A hoisted definition starts as `Undefined.UNDEFINED`, and reading or assigning
+  it before its `def` runs is `Name used before definition`, as in the interpreter.
+* **Parameter defaults.** A default can't see the parameters from its own onwards (they are
+  not bound yet when it runs, and in the interpreter the name resolves outward), so the resolver
+  binds such a name outward too. A captured parameter gets its cell before any default runs,
+  so that a function literal in an earlier default can capture it. One divergence remains:
+  calling, *while the defaults are still being evaluated*, a function from an earlier default
+  that reads a later parameter fails with `Name used before definition` where the interpreter
+  looks the name up outward. Nothing written that way can be meaningful.
+* **Classes and objects as JVM classes** (§7.3). A class or object expression whose body keeps
+  no namespace compiles to its own class, `Script$N$k$Point extends BabbleInstance`:
+  - one field per member, and a `field(int)`/`setField(int, Object)` switch for everything that
+    goes through `Members` (the interpreter's `BabbleInstance` keeps its array);
+  - methods are JVM instance methods, the receiver in local 0, behind one shared
+    `CompiledMethod` per method literal;
+  - a constructor parameter captured by a method lives in a hidden field holding its cell
+    (`$v$start`), and outer variables are captured once per class value;
+  - `this.x` compiles to `GETFIELD`/`PUTFIELD`, with the undefined check, and `this.m(args)` to
+    a direct `INVOKEVIRTUAL` of the method.
+* **Not done: interfaces as JVM interfaces, and Java interfaces implemented by the generated
+  class itself.** Without the type checker, the compiler never knows a receiver's static type,
+  so it could emit neither `INVOKEINTERFACE` nor `INSTANCEOF`: `obj.m()` and `is` go through the
+  runtime either way. The cost would be default methods reaching the captured variables of the
+  right interface value from inside a JVM default method, and exact-signature bridges for each
+  Java overload. Instances keep their `Proxy` face for Java. Both belong with phase 3.
+* **Loops and on-stack replacement.** Phase 1 kept a `while` loop's running result on the
+  operand stack. HotSpot only compiles a running loop (on-stack replacement) when the stack is
+  empty at its head, so a function running one long loop, called only a few times, stayed in
+  the bytecode interpreter: that, not namespace lookups, is why phase 1 loops were no faster than
+  the tree-walking interpreter. The result now lives in a local. With that fix alone, the phase 1
+  representation runs the loop benchmark about 15x faster than the interpreter.
+
+**Benchmarks after phase 2** (same harness and machine, JDK 21):
+
+| Benchmark | interpret (ms) | compile (ms) | speed-up |
+|---|---:|---:|---:|
+| fib(25) : calls and arithmetic | 100.1 | 3.3 | 30.2x |
+| while loop : locals and while | 98.4 | 2.3 | 42.5x |
+| Counter.ba closure : captured variables | 109.7 | 5.3 | 20.6x |
+| Stack.ba push/pop : objects and methods | 63.5 | 4.6 | 13.8x |
+| ArrayList add/get : Java interop | 93.0 | 67.7 | 1.4x |
+
+Measured along the way: the phase 1 representation with the loop fix gives 8.4x, 14.7x, 9.3x,
+7.2x and 1.0x; phase 2 without JVM classes for class expressions gives the same as above except
+Stack.ba at 12.1x. Java interop stays bound by reflection, which phase 3 caches.
