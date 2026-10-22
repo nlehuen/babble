@@ -25,6 +25,22 @@ public final class Classes {
         return new BabbleClass(shape, closure, captured, body, interfaces);
     }
 
+    public static BabbleClass newClass(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces,
+                                       InstanceFactory factory) {
+        return new BabbleClass(shape, closure, captured, body, interfaces, factory);
+    }
+
+    /**
+     * Reads a member field of a compiled class directly ({@code this.x}) : using it before
+     * its def has run is an error, as through {@link Members}.
+     */
+    public static Object member(Object value, String name) {
+        if (value == Undefined.UNDEFINED) {
+            throw Members.usedBeforeDefinition(name);
+        }
+        return value;
+    }
+
     public static BabbleInterface newInterface(ClassShape shape, Object[] parents) {
         return new BabbleInterface(shape, parents);
     }

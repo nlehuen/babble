@@ -13,6 +13,8 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -42,20 +44,33 @@ public final class BabbleCompiler {
     public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName) {
         String internalName = PACKAGE + "Script$" + COUNTER.incrementAndGet();
         ClassLoader runtimeLoader = BabbleCompiler.class.getClassLoader();
-        byte[] bytes = new CodeGenerator(internalName, sourceName, scopes, runtimeLoader).generate(file);
+        Map<String, byte[]> classes = new CodeGenerator(internalName, sourceName, scopes, runtimeLoader).generate(file);
 
         String dump = System.getProperty(DUMP_CLASSES);
-        if (dump != null) {
-            dump(Path.of(dump), internalName, bytes);
-        }
-        if (Boolean.getBoolean(TRACE)) {
-            Debugging.trace(bytes);
-        }
-        if (Boolean.getBoolean(VERIFY)) {
-            Debugging.verify(bytes, runtimeLoader);
+        Map<String, byte[]> byBinaryName = new LinkedHashMap<>();
+        for (Map.Entry<String, byte[]> generated : classes.entrySet()) {
+            if (dump != null) {
+                dump(Path.of(dump), generated.getKey(), generated.getValue());
+            }
+            if (Boolean.getBoolean(TRACE)) {
+                Debugging.trace(generated.getValue());
+            }
+            byBinaryName.put(generated.getKey().replace('/', '.'), generated.getValue());
         }
 
-        Class<?> scriptClass = new ScriptClassLoader(runtimeLoader).define(internalName.replace('/', '.'), bytes);
+        ScriptClassLoader loader = new ScriptClassLoader(runtimeLoader, byBinaryName);
+        Class<?> scriptClass;
+        try {
+            scriptClass = loader.loadClass(internalName.replace('/', '.'));
+        } catch (ClassNotFoundException e) {
+            throw new BabbleException("Cannot load the compiled script", e);
+        }
+        if (Boolean.getBoolean(VERIFY)) {
+            // After loading : the verifier resolves the compiled classes through their loader.
+            for (byte[] bytes : classes.values()) {
+                Debugging.verify(bytes, loader);
+            }
+        }
         MethodHandle run;
         try {
             run = MethodHandles.privateLookupIn(scriptClass, MethodHandles.lookup())
@@ -63,7 +78,7 @@ public final class BabbleCompiler {
         } catch (ReflectiveOperationException e) {
             throw new BabbleException("Cannot load the compiled script", e);
         }
-        return new CompiledBabbleScript(engine, scriptClass, bytes, run, sourceName, file.getStart().getLine());
+        return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, file.getStart().getLine());
     }
 
     private static void dump(Path directory, String internalName, byte[] bytes) {

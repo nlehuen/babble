@@ -20,6 +20,7 @@ public final class BabbleClass extends BabbleType implements Callable {
     private final Namespace closure;
     private final Object[] captured;
     private final ClassBody body;
+    private final InstanceFactory factory;
     private final Object[] interfaces;
     private final Map<String, BabbleFunction> defaults = new LinkedHashMap<>();
     private final Class<?>[] javaInterfaces;
@@ -38,10 +39,19 @@ public final class BabbleClass extends BabbleType implements Callable {
      *                 (compiled code) : stored once per class value, not per instance
      */
     public BabbleClass(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces) {
+        this(shape, closure, captured, body, interfaces, BabbleInstance::new);
+    }
+
+    /**
+     * @param factory creates the instances : the class the compiler generated for the
+     *                class expression, when it did
+     */
+    public BabbleClass(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces, InstanceFactory factory) {
         super(shape);
         this.closure = closure;
         this.captured = captured;
         this.body = body;
+        this.factory = factory;
         this.interfaces = interfaces;
 
         Map<String, BabbleFunction> inherited = new LinkedHashMap<>();
@@ -79,7 +89,7 @@ public final class BabbleClass extends BabbleType implements Callable {
     }
 
     public BabbleInstance construct(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
-        BabbleInstance instance = new BabbleInstance(this, rt);
+        BabbleInstance instance = factory.create(this, rt);
         body.construct(this, instance, rt, args, names, site);
         return instance;
     }
@@ -91,6 +101,11 @@ public final class BabbleClass extends BabbleType implements Callable {
 
     public static BabbleInstance object(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces, ScriptRuntime rt) {
         return new BabbleClass(shape, closure, captured, body, interfaces).construct(rt, Arguments.NONE, null, null);
+    }
+
+    public static BabbleInstance object(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces,
+                                        InstanceFactory factory, ScriptRuntime rt) {
+        return new BabbleClass(shape, closure, captured, body, interfaces, factory).construct(rt, Arguments.NONE, null, null);
     }
 
     /** The default method an implemented interface provides for a name the class doesn't define. */

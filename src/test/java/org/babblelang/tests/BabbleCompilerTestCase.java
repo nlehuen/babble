@@ -25,6 +25,7 @@ import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Tests of compiled mode itself : whatever the babble.mode property, these compile.
@@ -59,9 +60,11 @@ public class BabbleCompilerTestCase {
     }
 
     private static void assertVerifies(CompiledBabbleScript script) {
-        StringWriter problems = new StringWriter();
-        CheckClassAdapter.verify(new ClassReader(script.getClassBytes()), BabbleCompilerTestCase.class.getClassLoader(), false, new PrintWriter(problems));
-        Assertions.assertEquals("", problems.toString());
+        for (byte[] classFile : script.getClasses().values()) {
+            StringWriter problems = new StringWriter();
+            CheckClassAdapter.verify(new ClassReader(classFile), script.getScriptClass().getClassLoader(), false, new PrintWriter(problems));
+            Assertions.assertEquals("", problems.toString());
+        }
     }
 
     @Test
@@ -92,15 +95,56 @@ public class BabbleCompilerTestCase {
         assertVerifies(script);
     }
 
+    private static List<String> methodNames(byte[] classFile) {
+        List<String> names = new ArrayList<>();
+        new ClassReader(classFile).accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+                names.add(name);
+                return null;
+            }
+        }, 0);
+        return names;
+    }
+
+    private static List<String> fieldNames(byte[] classFile) {
+        List<String> names = new ArrayList<>();
+        new ClassReader(classFile).accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            public org.objectweb.asm.FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+                names.add(name);
+                return null;
+            }
+        }, 0);
+        return names;
+    }
+
     @Test
-    public void testClassBodiesAreMethodsNamedAfterTheirClass() throws Exception {
+    public void testClassesCompileToJvmClasses() throws Exception {
         CompiledBabbleScript script = compile("def Point = value class (x, y) ( def norm = () -> ( this.x + this.y ) ) static ( def o = this(0, 0) )\n"
                 + "def S = interface ( def d = () -> ( 1 ) ) ; def o = object implements S () ; Point(1, 2).norm() + o.d()");
+        Assertions.assertEquals(4, script.eval(new SimpleBindings()));
+        assertVerifies(script);
+
+        // The script class holds the constructors, and function literals that aren't methods.
         List<String> names = methodNames(script);
-        for (String pattern : List.of("cls\\$\\d+\\$Point", "fn\\$\\d+\\$norm", "fn\\$\\d+\\$d", "cls\\$\\d+\\$object")) {
+        for (String pattern : List.of("cls\\$\\d+\\$Point", "fn\\$\\d+\\$d", "cls\\$\\d+\\$object")) {
             Assertions.assertTrue(names.stream().anyMatch(name -> name.matches(pattern)), pattern + " in " + names);
         }
-        Assertions.assertEquals(4, script.eval(new SimpleBindings()));
+        // Each class expression has its own class, with a field per member and its methods.
+        Map.Entry<String, byte[]> point = script.getClasses().entrySet().stream()
+                .filter(e -> e.getKey().endsWith("$Point")).findFirst().orElseThrow();
+        Assertions.assertEquals(List.of("x", "y", "norm"), fieldNames(point.getValue()));
+        Assertions.assertTrue(methodNames(point.getValue()).containsAll(List.of("<init>", "field", "setField", "m$norm")), methodNames(point.getValue()).toString());
+        Assertions.assertEquals(3, script.getClasses().size());
+    }
+
+    @Test
+    public void testConstructorVariablesCapturedByMethodsAreHiddenFields() throws Exception {
+        CompiledBabbleScript script = compile("def C = class (start) ( def next = () -> ( start = start + 1 ) ) ; def c = C(10) ; c.next() ; c.next()");
+        Assertions.assertEquals(12, script.eval(new SimpleBindings()));
+        byte[] c = script.getClasses().entrySet().stream().filter(e -> e.getKey().endsWith("$C")).findFirst().orElseThrow().getValue();
+        Assertions.assertEquals(List.of("next", "$v$start"), fieldNames(c));
         assertVerifies(script);
     }
 

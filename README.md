@@ -301,7 +301,7 @@ Language features :
 Implementation features :
 
 - [x] interpreted mode running on the parse tree, like 1.8.x Ruby, A.K.A. SLOW MODE.
-- [x] compiled mode : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API (phase 1 of the [bytecode compiler design](docs/design/bytecode-compiler.md)).
+- [x] compiled mode : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals and classes are JVM classes (phases 1 and 2 of the [bytecode compiler design](docs/design/bytecode-compiler.md)) : 20 to 40 times faster than the interpreter on calls, loops and closures in the benchmarks.
 - [x] errors found before running : redefined names, misplaced `return`, `this` or `super`, incomplete or conflicting interface implementations, private members reached from outside.
 - [x] about 100 lines of ANTLR4 grammar (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's parse tree & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
@@ -322,4 +322,4 @@ Language features :
 
 Implementation features :
 
-- [ ] faster compiled mode : static scope resolution (JVM locals and fields instead of namespaces) and `invokedynamic` call sites, phases 2 and 3 of the [bytecode compiler design](docs/design/bytecode-compiler.md).
+- [ ] faster compiled mode : `invokedynamic` call sites and type specialisation, phase 3 of the [bytecode compiler design](docs/design/bytecode-compiler.md), which mostly matters for Java interop.
