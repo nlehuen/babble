@@ -38,6 +38,13 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      */
     public static final String MODE = "babble.mode";
 
+    /**
+     * The name of the system property, and of the engine attribute, that turns the type
+     * checker on : {@code off} (the default) or {@code warn}, which reports its diagnostics
+     * to the context's error writer. The attribute wins.
+     */
+    public static final String TYPECHECK = "babble.typecheck";
+
     /** How a script is run : by the tree-walking interpreter, or as JVM bytecode. */
     public enum Mode {
         INTERPRET, COMPILE;
@@ -103,6 +110,20 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return mode == null ? Mode.INTERPRET : Mode.parse(mode);
     }
 
+    /** Whether {@link #compile} runs the type checker : the {@link #TYPECHECK} attribute, else the system property. */
+    public boolean isTypechecking() {
+        Object value = get(TYPECHECK);
+        if (value == null) {
+            value = System.getProperty(TYPECHECK);
+        }
+        String setting = value == null ? "off" : String.valueOf(value).trim().toLowerCase(Locale.ROOT);
+        return switch (setting) {
+            case "off" -> false;
+            case "warn" -> true;
+            default -> throw new BabbleException("Unknown " + TYPECHECK + " : " + value + " (expected off or warn)");
+        };
+    }
+
     /**
      * Builds the namespaces of one eval : the engine's implicits, then a namespace binding
      * {@code STDOUT} to the context's writer, then the script root, which holds the
@@ -129,7 +150,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
         try {
             for (ScopeAnalysis.Warning warning : scopes.warnings()) {
-                errors.write("Warning : " + warning.message() + " in " + sourceName + " at line number " + warning.line() + System.lineSeparator());
+                errors.write("Warning : " + warning.message() + " in " + sourceName + " at line number " + warning.line()
+                        + (warning.column() > 0 ? ", column " + warning.column() : "") + System.lineSeparator());
             }
             errors.flush();
         } catch (IOException e) {
@@ -194,8 +216,14 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
 
         ScopeAnalysis scopes;
+        boolean typecheck;
         try {
-            scopes = BlockScopes.analyze(file);
+            typecheck = isTypechecking();
+        } catch (BabbleException e) {
+            throw new ScriptException(e);
+        }
+        try {
+            scopes = BlockScopes.analyze(file, typecheck);
         } catch (AnalysisException e) {
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());

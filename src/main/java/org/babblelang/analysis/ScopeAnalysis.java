@@ -32,7 +32,8 @@ public final class ScopeAnalysis {
     public record DefTarget(DefKind kind, int index) {
     }
 
-    public record Warning(String message, int line) {
+    /** A warning, at a line, and at a column (from 1) when it has one, else -1. */
+    public record Warning(String message, int line, int column) {
     }
 
     private final ParseTreeProperty<String[]> declared = new ParseTreeProperty<>();
@@ -75,7 +76,11 @@ public final class ScopeAnalysis {
     }
 
     void warn(String message, int line) {
-        warnings.add(new Warning(message, line));
+        warn(message, line, -1);
+    }
+
+    void warn(String message, int line, int column) {
+        warnings.add(new Warning(message, line, column));
     }
 
     /**

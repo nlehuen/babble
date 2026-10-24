@@ -70,10 +70,25 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     public static ScopeAnalysis analyze(BabbleParser.FileContext file) {
+        return analyze(file, false);
+    }
+
+    /**
+     * @param typecheck whether to run the type checker, whose diagnostics are warnings
+     */
+    public static ScopeAnalysis analyze(BabbleParser.FileContext file, boolean typecheck) {
         BlockScopes pass = new BlockScopes();
         pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
         new TypeChecks(pass).run();
         pass.analysis.setResolution(new Resolver(pass).run());
+        if (typecheck) {
+            try {
+                new TypeChecker(pass).run(file);
+            } catch (RuntimeException e) {
+                // In warn mode, the checker never stops a script that would otherwise run.
+                pass.analysis.warn("The type checker failed : " + e, file.getStart().getLine());
+            }
+        }
         return pass.analysis;
     }
 
