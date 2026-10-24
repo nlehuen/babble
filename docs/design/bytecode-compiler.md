@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([object-model.md](object-model.md), summarised in §8.2). |
-| **Implemented** | §15 steps 1–8: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, and phase 2 (§16, §17), apart from JVM interfaces. Steps 9–11 remain. |
+| **Implemented** | §15 steps 1–9 and 11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker in `warn` mode ([type-system.md](type-system.md)). Step 10 (`error` mode and T9) remains. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -756,8 +756,9 @@ would depend on the Babble runtime and on ANTLR only if interpreter fallback is 
 The README lists "type checking" and "type inference" as planned features. Today the
 annotations (`a:int`, `(n:int):string`) are parsed and then ignored: nothing in the interpreter
 reads them. This section covers where a type checker fits relative to the compiler phases, and
-what has to be decided before one can be built. The type system itself needs its own design
-document. The list in §10.4 is the agenda for it, not its content.
+what has to be decided before one can be built. The type system itself has its own design
+document, [type-system.md](type-system.md), which settles T1–T8; the list in §10.4 is the agenda
+it answers. The checker is implemented in `warn` mode.
 
 ### 10.1 Where it sits
 

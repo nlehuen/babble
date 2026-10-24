@@ -52,6 +52,12 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.6</version>
+                <configuration>
+                    <!-- The type checker runs in warn mode on everything the suite compiles. -->
+                    <systemPropertyVariables>
+                        <babble.typecheck>warn</babble.typecheck>
+                    </systemPropertyVariables>
+                </configuration>
                 <executions>
                     <!-- The whole suite runs a second time with scripts compiled to bytecode,
                          and every generated class checked by ASM's CheckClassAdapter. -->
@@ -65,6 +71,7 @@
                             <systemPropertyVariables>
                                 <babble.mode>compile</babble.mode>
                                 <babble.verify>true</babble.verify>
+                                <babble.typecheck>warn</babble.typecheck>
                             </systemPropertyVariables>
                         </configuration>
                     </execution>
