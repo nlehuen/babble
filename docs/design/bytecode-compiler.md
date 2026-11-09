@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([object-model.md](object-model.md), summarised in §8.2). |
-| **Implemented** | §15 steps 1–9 and 11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker in `warn` mode ([type-system.md](type-system.md)). Step 10 (`error` mode and T9) remains. |
+| **Implemented** | §15 steps 1–11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker in `warn` and `error` modes with runtime checks (T9) ([type-system.md](type-system.md)). Typed code generation (§10.5) and phase 4 remain. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -812,10 +812,11 @@ design (§10.4) depends on none of this and can start now.
   trustworthy, because `dynamic` values flow into annotated code. So a runtime check runs
   wherever a `dynamic` value meets a declared type: arguments of annotated parameters, results
   of annotated functions, writes to annotated variables and members. The check lives in the
-  shared runtime (`Types.check(value, type, site)`), so both modes fail the same way, with
-  `Type error : expected int, got String` and the line of the boundary. The checks are active in
-  `error` mode. In `off` and `warn` modes annotations have no effect at runtime, and phase 3
-  only relies on types when the script was compiled in `error` mode.
+  shared runtime (`Types.check(value, type)`), so both modes fail the same way, with
+  `Type error : expected int, got string` and the line of the boundary. The checks are active in
+  `error` mode. In `off` and `warn` modes annotations have no effect at runtime, and typed code
+  generation only relies on types when the script was compiled in `error` mode. Implemented as
+  described in type-system.md §5.
 
 ### 10.4 Type system questions to settle first
 

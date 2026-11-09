@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Implemented in `warn` mode (`org.babblelang.analysis.TypeChecker`). `error` mode and runtime checks (T9) are not. |
+| **Status** | Implemented : `warn` mode (`org.babblelang.analysis.TypeChecker`), and `error` mode with runtime checks at boundaries (T9, §5, `org.babblelang.runtime.Types`). |
 | **Depends on** | [bytecode-compiler.md](bytecode-compiler.md) §10 (where the checker sits, the T1–T9 agenda), [object-model.md](object-model.md) §8 (classes and interfaces are types) |
-| **Unblocks** | `error` mode and boundary checks (T9), then typed code generation (bytecode-compiler.md §10.5) |
+| **Unblocks** | Typed code generation (bytecode-compiler.md §10.5) |
 
 ## 1. Summary
 
@@ -17,10 +17,14 @@ gradually:
   except for calls and member accesses that are certain to fail.
 * **Front end, both modes.** The checker is the fourth pass of the analysis, after `BlockScopes`,
   `TypeChecks` and the `Resolver`, on the parse tree. Both modes get the same diagnostics.
-* **Warnings only.** `babble.typecheck=warn` (system property or engine attribute) turns it on.
-  Its diagnostics go to the context's error writer before the script runs, as
-  `Warning : Type error : expected int, got string in <input> at line number 3, column 15`. The
-  default is `off`. The test suite runs with `warn`.
+* **Three settings.** `babble.typecheck` (system property or engine attribute):
+  - `off`, the default: annotations mean nothing;
+  - `warn`: the diagnostics go to the context's error writer before the script runs, as
+    `Warning : Type error : expected int, got string in <input> at line number 3, column 15`;
+  - `error`: the same diagnostics, labelled `Error`, and the first one fails `compile()` with a
+    `ScriptException` at its line and column. Declared types are also checked at runtime (§5).
+
+  The test suite runs with `warn`, plus dedicated tests in `error` mode.
 * **Wording.** Every diagnostic that predicts a runtime error uses the runtime's message
   (`Missing parameter : b`, `No such member : x`, `Not a number : "a"`), so the warning and the
   failure read the same.
@@ -120,21 +124,70 @@ The value of an `if` is the join of its branches: the same type, `double` for `i
 `double`, a nullable type for `null` and that type, and `dynamic` otherwise. A `while` loop's
 value is the join of its body's value and `null`.
 
-## 5. Not done yet
+## 5. Runtime checks (T9)
 
-* **`error` mode and runtime checks (T9).** Step 10 of the compiler's plan: in `error` mode the
-  diagnostics fail `compile()`, and `Types.check` runs where a `dynamic` value meets a declared
-  type, in both modes.
+A checker alone can't make types trustworthy, since `dynamic` values flow into annotated code:
+`f(id("s"))` passes the checker for `f = (n : int) -> …`. So in `error` mode, and only then,
+declared types are also checked when the program runs, in both modes, by
+`org.babblelang.runtime.Types`. A failure reads like a static one,
+`Type error : expected int, got string`, at the line of the boundary.
+
+* **Where.**
+  - Arguments of annotated parameters, of functions and class headers, defaults included.
+    They are checked as they are bound, so an error is at the line of the call, like
+    `Missing parameter`.
+  - Results of functions with an annotated result: each `return`, at its line, and the last
+    statement, at its line.
+  - Annotated `def`s (lexical, members, statics) and unqualified assignments to annotated
+    names, at their line.
+  - Assignments to annotated members and statics through a receiver (`obj.x = …`,
+    `this.x = …`, `C.s = …`). The class shape carries their declared types for that.
+* **What a type accepts.**
+  - `int`, `double`, `bool` accept their values and never `null`; `string` accepts strings and
+    `null`.
+  - An `int` reaching a `double` is widened: `def d : double = id(1)` holds `1.0`. This is
+    the one conversion, and it makes the value what the type says, which typed code
+    generation will rely on.
+  - A function type accepts any callable value (or `null`); its parameters aren't checked.
+  - A Java type accepts instances of the class, Babble instances whose class implements it,
+    and, for a functional interface, Babble functions, which convert when they reach Java.
+  - A class or interface type accepts `null` and the instances of the classes the
+    *expression* creates, or that implement an interface it creates. This is nominal by
+    expression, as the checker is, not by class value. So for a class defined inside a
+    function, the classes two calls create are one type. `is` compares values, and still
+    tells them apart.
+* **How.** The analysis records, at each boundary, a descriptor of the declared type
+  (`int|int|`, `babble|Point|T12`, …). Every class or interface expression has an id for
+  that. The interpreter checks with `Types.check(value, descriptor)`. Compiled code holds each
+  type as a constant and calls `Types.check` inline, so a script with no annotations has no
+  checks at all. In `off` and `warn` modes no descriptor is recorded, and annotations have
+  no effect at runtime.
+
+The in-repo scripts pass in `error` mode, and run with their types enforced
+(`DifferentialTestCase`).
+
+## 6. Not done yet
+
+* **`error` as the default.** bytecode-compiler.md §10.3 makes it the default once the type
+  system has settled. That changes which programs run, so it is left as a separate decision.
 * **Narrowing after `is`.** `if x is Point then ( x.norm() )` doesn't narrow `x`.
 * **Result inference** from function bodies, and generics.
 * **Interface members' declared types** against the implementing methods' signatures.
 * **Types for the compiler.** The checker keeps a type per expression, but doesn't publish it:
   typed code generation (bytecode-compiler.md §10.5) only makes sense once types are enforced.
 
-## 6. Testing
+## 7. Testing
 
 `TypeCheckerTestCase` has the golden tests of bytecode-compiler.md §10.6: a snippet, and the
 diagnostics expected at each line and column. It also checks that every `.ba` script in
 `src/test/babble` checks cleanly, and that the engine switch reports the same diagnostics in
 both modes. The whole suite runs with `babble.typecheck=warn`. Every warning the existing tests
 trigger matches a runtime error those tests expect.
+
+For `error` mode:
+* `TypeCheckerTestCase` checks that the first diagnostic fails the compilation, with all of them
+  on the error writer, and that only `error` mode checks at runtime.
+* `DifferentialTestCase` runs a list of typed snippets in both modes and compares results,
+  output and errors. They cover dynamic values reaching every kind of boundary and type, the
+  widening, null, and nominal checks. It also runs every `.ba` script in `error` mode, which
+  must succeed.

@@ -77,6 +77,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private static final String METHOD_BODY = RUNTIME + "MethodBody";
     private static final String INSTANCE_FACTORY = RUNTIME + "InstanceFactory";
     private static final String FRAMES = RUNTIME + "Frames";
+    private static final String TYPES = RUNTIME + "Types";
+    private static final String TYPES_TYPE = RUNTIME + "Types$Type";
     private static final String BOOTSTRAP = RUNTIME + "Bootstrap";
 
     static final String RUN_DESCRIPTOR = "(L" + SCRIPT_RUNTIME + ";L" + NAMESPACE + ";)Ljava/lang/Object;";
@@ -135,6 +137,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private final List<Constant> constants = new ArrayList<>();
     private final Map<List<String>, String> stringArrays = new HashMap<>();
+    private final Map<String, String> typeFields = new HashMap<>();
     // Methods to generate once the current one is finished : function and class bodies.
     private final Deque<Runnable> pendingMethods = new ArrayDeque<>();
     private int functionCount = 0;
@@ -610,7 +613,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
         bindParameters(paramsField, scopes.parameters(literal), literal.parametersDeclaration().parameterDeclaration(), null);
 
-        statements(literal.functionBlock.expression());
+        List<BabbleParser.ExpressionContext> body = literal.functionBlock.expression();
+        statements(body);
+        String resultType = scopes.checkedType(literal);
+        if (resultType != null) {
+            // In error mode, the result of the last statement is checked at its line (T9).
+            line(body.isEmpty() ? literal.functionBlock : body.get(body.size() - 1));
+            checkType(resultType);
+        }
         mv.visitInsn(ARETURN);
         endMethod();
     }
@@ -712,6 +722,13 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitInsn(ATHROW);
             }
             mv.visitLabel(bind);
+            String declaredType = scopes.checkedType(declarations.get(i));
+            if (declaredType != null) {
+                // In error mode, checked as it is bound : an error is at the line of the call (T9).
+                mv.visitVarInsn(ALOAD, value);
+                checkType(declaredType);
+                mv.visitVarInsn(ASTORE, value);
+            }
             int member = shape != null ? shape.parameterMember(i) : -1;
             if (member >= 0 && constructorClass != null) {
                 mv.visitVarInsn(ALOAD, typedThisLocal);
@@ -1375,6 +1392,34 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         } else {
             mv.visitInsn(ACONST_NULL);
         }
+        String declaredType = scopes.checkedType(ctx);
+        if (declaredType != null) {
+            line(ctx);
+            checkType(declaredType);
+        }
+    }
+
+    /**
+     * Checks the value on top of the stack against a declared type, in error mode (T9) :
+     * it stays there, an int widened for a double.
+     */
+    private void checkType(String descriptor) {
+        String field = typeFields.computeIfAbsent(descriptor, d -> addConstant("TYPE", "L" + TYPES_TYPE + ";", 16, m -> {
+            pushString(m, d);
+            m.visitMethodInsn(INVOKESTATIC, TYPES, "parse", "(Ljava/lang/String;)L" + TYPES_TYPE + ";", false);
+        }));
+        mv.visitFieldInsn(GETSTATIC, className, field, "L" + TYPES_TYPE + ";");
+        mv.visitMethodInsn(INVOKESTATIC, TYPES, "check", "(Ljava/lang/Object;L" + TYPES_TYPE + ";)Ljava/lang/Object;", false);
+    }
+
+    /** The result type to check at a return, from its function literal. */
+    private String resultTypeAt(ParserRuleContext ctx) {
+        for (ParserRuleContext p = ctx.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof BabbleParser.FunctionLiteralContext function) {
+                return scopes.checkedType(function);
+            }
+        }
+        return null;
     }
 
     /**
@@ -1405,6 +1450,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
         visit(ctx.expression());
+        String resultType = resultTypeAt(ctx);
+        if (resultType != null) {
+            line(ctx);
+            checkType(resultType);
+        }
         mv.visitInsn(ARETURN);
         // Dead code, so that the code around a return in the middle of an expression can
         // be generated as if it were any other expression. ASM replaces it.
@@ -1752,8 +1802,13 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         String name = ctx.name.getText();
         if (ctx.namespace == null) {
             Resolution.Variable variable = resolution.variable(ctx);
+            String declaredType = scopes.checkedType(ctx);
             if (variable != null) {
                 visit(ctx.value);
+                if (declaredType != null) {
+                    line(ctx);
+                    checkType(declaredType);
+                }
                 storeVariable(variable, false, ctx);
                 return null;
             }
@@ -1761,6 +1816,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitLdcInsn(name);
             visit(ctx.value);
             line(ctx);
+            if (declaredType != null) {
+                checkType(declaredType);
+            }
             mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "assign", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
             return null;
         }
@@ -1778,6 +1836,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
                 mv.visitInsn(POP);
                 mv.visitInsn(SWAP);
+                String declaredType = gen.shape.memberType(gen.shape.memberIndex(name));
+                if (declaredType != null) {
+                    checkType(declaredType);
+                }
                 mv.visitInsn(DUP_X1);
                 mv.visitFieldInsn(PUTFIELD, gen.name, name, "Ljava/lang/Object;");
                 return null;

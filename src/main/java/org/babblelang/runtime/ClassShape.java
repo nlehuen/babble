@@ -1,5 +1,8 @@
 package org.babblelang.runtime;
 
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -12,6 +15,10 @@ import java.util.Map;
  * and its static members. Every class value created by the same expression shares it.
  * <p>
  * It is encoded as a string so that compiled code can hold it as a single constant.
+ * <p>
+ * Its id names the expression for nominal type checks (T9) : instances of every class
+ * value an expression creates have that type. Members and statics declared with a type
+ * carry its descriptor ({@link Types}), which an assignment checks in {@code error} mode.
  */
 public final class ClassShape {
     public enum Kind {
@@ -31,6 +38,9 @@ public final class ClassShape {
     private final int requiredParameters;
     private final String[] statics;
     private final int[] staticFlags;
+    private final String id;
+    private final String[] memberTypes;
+    private final String[] staticTypes;
     private final Map<String, Integer> memberIndex = new HashMap<>();
     private final Map<String, Integer> staticIndex = new HashMap<>();
 
@@ -40,6 +50,20 @@ public final class ClassShape {
      */
     public ClassShape(Kind kind, String name, String[] members, int[] flags, String[] parameters, int[] parameterMembers,
                       int requiredParameters, String[] statics, int[] staticFlags) {
+        this(kind, name, members, flags, parameters, parameterMembers, requiredParameters, statics, staticFlags, "",
+                new String[members.length], new String[statics.length]);
+    }
+
+    /**
+     * @param id          a name for the expression, unique within the JVM
+     * @param memberTypes for each member, the descriptor of its declared type, or null
+     * @param staticTypes the same for statics
+     */
+    public ClassShape(Kind kind, String name, String[] members, int[] flags, String[] parameters, int[] parameterMembers,
+                      int requiredParameters, String[] statics, int[] staticFlags, String id, String[] memberTypes, String[] staticTypes) {
+        this.id = id;
+        this.memberTypes = memberTypes;
+        this.staticTypes = staticTypes;
         this.kind = kind;
         this.name = name;
         this.members = members;
@@ -118,12 +142,50 @@ public final class ClassShape {
         return (staticFlags[index] & PRIVATE) != 0;
     }
 
+    public String id() {
+        return id;
+    }
+
+    /** The descriptor of a member's declared type, checked when it is assigned, or null. */
+    public String memberType(int index) {
+        return memberTypes[index];
+    }
+
+    public String staticType(int index) {
+        return staticTypes[index];
+    }
+
     // ------------------------------------------------------------------ encoding
 
-    /** {@code KIND;name;required;m:f,m:f;p:i,p:i;s:f,s:f}, names being Babble identifiers. */
+    /**
+     * {@code KIND;name;required;m:f,m:f;p:i,p:i;s:f,s:f;id;t,t;t,t}, names being Babble
+     * identifiers, and type descriptors URL-encoded, empty for none.
+     */
     public String encode() {
         return kind + ";" + name + ";" + requiredParameters + ";" + pairs(members, flags) + ";" + pairs(parameters, parameterMembers)
-                + ";" + pairs(statics, staticFlags);
+                + ";" + pairs(statics, staticFlags) + ";" + id + ";" + typeList(memberTypes) + ";" + typeList(staticTypes);
+    }
+
+    private static String typeList(String[] types) {
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < types.length; i++) {
+            if (i > 0) {
+                result.append(',');
+            }
+            if (types[i] != null) {
+                result.append(URLEncoder.encode(types[i], StandardCharsets.UTF_8));
+            }
+        }
+        return result.toString();
+    }
+
+    private static String[] decodeTypes(String encoded, int count) {
+        String[] result = new String[count];
+        String[] parts = encoded.split(",", -1);
+        for (int i = 0; i < count && i < parts.length; i++) {
+            result[i] = parts[i].isEmpty() ? null : URLDecoder.decode(parts[i], StandardCharsets.UTF_8);
+        }
+        return result;
     }
 
     private static String pairs(String[] names, int[] values) {
@@ -150,7 +212,8 @@ public final class ClassShape {
         unpair(parts[5], statics, staticFlags);
         return new ClassShape(Kind.valueOf(parts[0]), parts[1], members.toArray(new String[0]), ints(flags),
                 parameters.toArray(new String[0]), ints(parameterMembers), Integer.parseInt(parts[2]),
-                statics.toArray(new String[0]), ints(staticFlags));
+                statics.toArray(new String[0]), ints(staticFlags), parts[6],
+                decodeTypes(parts[7], members.size()), decodeTypes(parts[8], statics.size()));
     }
 
     private static void unpair(String encoded, List<String> names, List<Integer> values) {

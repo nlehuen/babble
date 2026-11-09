@@ -33,7 +33,7 @@ public class TypeCheckerTestCase {
         BabbleParser parser = new BabbleParser(new CommonTokenStream(new BabbleLexer(CharStreams.fromString(source))));
         parser.setErrorHandler(new BailErrorStrategy());
         ScopeAnalysis analysis = BlockScopes.analyze(parser.file(), true);
-        return analysis.warnings().stream().map(w -> w.line() + ":" + w.column() + " " + w.message()).toList();
+        return analysis.typeDiagnostics().stream().map(w -> w.line() + ":" + w.column() + " " + w.message()).toList();
     }
 
     private static void assertDiagnostics(String source, String... expected) {
@@ -213,7 +213,46 @@ public class TypeCheckerTestCase {
             Assertions.assertEquals("", errors(script, mode, "off"), mode);
         }
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> errors(script, "interpret", "loud"));
-        Assertions.assertTrue(e.getMessage().contains("Unknown babble.typecheck : loud (expected off or warn)"), e.getMessage());
+        Assertions.assertTrue(e.getMessage().contains("Unknown babble.typecheck : loud (expected off, warn or error)"), e.getMessage());
+    }
+
+    @Test
+    public void testErrorModeFailsTheCompilation() {
+        // Every diagnostic is written as an error, and the first one fails the compilation.
+        String script = "def a : int = \"s\"\ndef f = (n : int) -> ( n )\nf(true)";
+        for (String mode : List.of("interpret", "compile")) {
+            StringWriter errors = new StringWriter();
+            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(script, mode, "error", errors));
+            Assertions.assertEquals("org.babblelang.engine.BabbleException: Type error : expected int, got string in <input> at line number 1 at column number 15",
+                    e.getMessage(), mode);
+            Assertions.assertEquals(1, e.getLineNumber());
+            Assertions.assertEquals(15, e.getColumnNumber());
+            Assertions.assertEquals("Error : Type error : expected int, got string in <input> at line number 1, column 15" + System.lineSeparator()
+                    + "Error : Type error : expected int, got bool in <input> at line number 3, column 3"
+                    + System.lineSeparator(), errors.toString(), mode);
+        }
+    }
+
+    @Test
+    public void testOnlyErrorModeChecksAtRuntime() throws Exception {
+        // A dynamic value of the wrong type : nothing static to report.
+        String script = "def id = (x) -> ( x )\ndef f = (n : int) -> ( n )\nf(id(\"s\"))";
+        for (String mode : List.of("interpret", "compile")) {
+            Assertions.assertEquals("s", run(script, mode, "off", new StringWriter()), mode);
+            Assertions.assertEquals("s", run(script, mode, "warn", new StringWriter()), mode);
+            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(script, mode, "error", new StringWriter()));
+            Assertions.assertEquals("org.babblelang.engine.BabbleException: Type error : expected int, got string in <input> at line number 3", e.getMessage(), mode);
+        }
+    }
+
+    private static Object run(String script, String mode, String typecheck, StringWriter errors) throws ScriptException {
+        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.MODE, mode);
+        engine.put(BabbleScriptEngine.TYPECHECK, typecheck);
+        ScriptContext context = new SimpleScriptContext();
+        context.setErrorWriter(errors);
+        context.setWriter(new StringWriter());
+        return engine.eval(script, context);
     }
 
     private static String errors(String script, String mode, String typecheck) throws ScriptException {

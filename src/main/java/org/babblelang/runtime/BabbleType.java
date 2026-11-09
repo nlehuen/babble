@@ -65,6 +65,6 @@ public abstract class BabbleType implements HasMembers {
         if (statics[index] == Undefined.UNDEFINED) {
             throw Members.usedBeforeDefinition(name);
         }
-        statics[index] = value;
+        statics[index] = Types.check(value, shape.staticType(index));
     }
 }
