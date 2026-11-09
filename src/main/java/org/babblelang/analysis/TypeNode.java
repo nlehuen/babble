@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * A class, object or interface expression, as the analysis sees it.
@@ -38,7 +39,11 @@ final class TypeNode {
         }
     }
 
+    private static final AtomicLong IDS = new AtomicLong();
+
     final ParserRuleContext ctx;
+    /** Unique within the JVM : the nominal type the expression defines (T9). */
+    final String id = "T" + IDS.incrementAndGet();
     final ClassShape.Kind kind;
     final String name;
     /** Where the expression is evaluated. */
@@ -55,6 +60,9 @@ final class TypeNode {
     final List<Object> parents = new ArrayList<>();
     /** For interfaces : the defaults it provides, its own and inherited ones. */
     Map<String, TypeChecks.Provider> defaults;
+    /** In error mode, the declared types of members and statics, by name, as Types descriptors. */
+    final Map<String, String> memberTypes = new LinkedHashMap<>();
+    final Map<String, String> staticTypes = new LinkedHashMap<>();
     boolean resolving;
 
     TypeNode(ParserRuleContext ctx, ClassShape.Kind kind, String name, ScopeNode scope, List<BabbleParser.TypeContext> parentTypes) {
@@ -76,17 +84,22 @@ final class TypeNode {
     ClassShape shape() {
         String[] memberNames = new String[members.size()];
         int[] flags = new int[members.size()];
+        String[] memberTypeDescriptors = new String[members.size()];
         for (Member member : members.values()) {
             memberNames[member.index] = member.name;
             flags[member.index] = member.flags;
+            memberTypeDescriptors[member.index] = memberTypes.get(member.name);
         }
         String[] staticNames = new String[statics.size()];
         int[] staticFlags = new int[statics.size()];
+        String[] staticTypeDescriptors = new String[statics.size()];
         for (Member member : statics.values()) {
             staticNames[member.index] = member.name;
             staticFlags[member.index] = member.flags;
+            staticTypeDescriptors[member.index] = staticTypes.get(member.name);
         }
         return new ClassShape(kind, name, memberNames, flags, parameters.toArray(new String[0]),
-                parameterMembers.stream().mapToInt(Integer::intValue).toArray(), requiredParameters, staticNames, staticFlags);
+                parameterMembers.stream().mapToInt(Integer::intValue).toArray(), requiredParameters, staticNames, staticFlags,
+                id, memberTypeDescriptors, staticTypeDescriptors);
     }
 }

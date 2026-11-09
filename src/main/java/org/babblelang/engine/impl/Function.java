@@ -6,7 +6,10 @@ import org.babblelang.runtime.BabbleFunction;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Frames;
 import org.babblelang.runtime.ScriptRuntime;
+import org.babblelang.runtime.Types;
 import org.babblelang.parser.BabbleParser;
+
+import java.util.List;
 
 /**
  * An interpreted function : a function literal and the namespace it closes over.
@@ -37,15 +40,27 @@ public class Function implements BabbleFunction {
                 // A default value belongs to the function's scope, not to the call site.
                 value = interpreter.evaluateDefault(namespace, defaultValue);
             }
+            // In error mode, a declared parameter type is checked at the call (T9).
+            value = Types.check(value, interpreter.scopes().checkedType(definition.parametersDeclaration().parameterDeclaration(i)));
             namespace.defineParameter(parameters[i], value);
         }
         binder.rejectLeftovers();
+        String resultType = interpreter.scopes().checkedType(definition);
+        Object result;
         try {
-            return interpreter.evaluateIn(namespace, definition.functionBlock);
+            result = interpreter.evaluateIn(namespace, definition.functionBlock);
         } catch (ReturnException re) {
-            // A "return" anywhere in the body unwinds up to here, which is its target.
-            return re.getValue();
+            // A "return" anywhere in the body unwinds up to here, which is its target. Its
+            // result is checked at the return.
+            return Types.check(re.getValue(), resultType);
         }
+        if (resultType != null) {
+            // The result of the last statement, checked at its line.
+            List<BabbleParser.ExpressionContext> statements = definition.functionBlock.expression();
+            interpreter.at(statements.isEmpty() ? definition.functionBlock : statements.get(statements.size() - 1));
+            result = Types.check(result, resultType);
+        }
+        return result;
     }
 
     @Override

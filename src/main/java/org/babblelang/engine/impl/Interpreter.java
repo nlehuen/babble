@@ -24,6 +24,7 @@ import org.babblelang.runtime.Operators;
 import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.runtime.Supers;
 import org.babblelang.runtime.Truth;
+import org.babblelang.runtime.Types;
 import org.babblelang.runtime.Values;
 
 import javax.script.SimpleScriptContext;
@@ -62,6 +63,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     ScopeAnalysis scopes() {
         return scopes;
+    }
+
+    /** Positions the interpreter at a node, for the line of an error raised now. */
+    void at(ParserRuleContext ctx) {
+        last = ctx;
     }
 
     /**
@@ -231,6 +237,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                     }
                     value = evaluateDefault(scope, defaultValue);
                 }
+                value = Types.check(value, scopes.checkedType(((BabbleParser.ClassExpressionContext) ctx).parametersDeclaration().parameterDeclaration(i)));
                 int member = shape.parameterMember(i);
                 if (member >= 0) {
                     instance.initMember(member, value);
@@ -275,6 +282,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             value = visit(ctx.value);
         }
         last = ctx;
+        value = Types.check(value, scopes.checkedType(ctx));
         ScopeAnalysis.DefTarget target = scopes.defTarget(ctx);
         return switch (target.kind()) {
             case LEXICAL -> namespace.initialize(id, value);
@@ -427,7 +435,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (ctx.namespace == null) {
             Object value = visit(ctx.value);
             last = ctx;
-            return namespace.assign(name, value);
+            return namespace.assign(name, Types.check(value, scopes.checkedType(ctx)));
         }
         if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
             Object thiz = namespace.lookup("this");

@@ -77,6 +77,19 @@ public final class BabbleInterface extends BabbleType {
         }
     }
 
+    /** Whether this interface was created by the expression with that id, or extends one that was. */
+    boolean extendsId(String typeId) {
+        if (shape().id().equals(typeId)) {
+            return true;
+        }
+        for (Object parent : parents) {
+            if (parent instanceof BabbleInterface babble && babble.extendsId(typeId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether this interface is {@code type} or extends it, directly or not. */
     public boolean extendsType(Object type) {
         if (type == this) {

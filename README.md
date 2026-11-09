@@ -265,7 +265,15 @@ area(2, "3")    ;; Warning : Type error : expected int, got string ... at line n
 area(2)         ;; Warning : Missing parameter : h ...
 ```
 
-Unannotated code is `dynamic`, and gets no type warnings.
+Unannotated code is `dynamic`, and gets no type warnings. With `-Dbabble.typecheck=error`, the
+same diagnostics are errors that stop the script from compiling, and declared types are also
+checked at runtime, where an untyped value reaches them :
+
+```
+def id = (x) -> ( x )
+def half = (n : int) : double -> ( n / 2 )
+half(id("4"))   ;; Type error : expected int, got string, at line number 3
+```
 
 Building and running
 --------------------
@@ -291,7 +299,8 @@ Output goes to the `ScriptContext`'s writer, so a host can capture it with
 `engine.put("babble.mode", "compile")`, compiles them to bytecode instead. For a look at what
 the compiler generates, `-Dbabble.dumpClasses=<dir>` writes the class files for `javap -c -p`.
 `-Dbabble.typecheck=warn`, or `engine.put("babble.typecheck", "warn")`, turns the type checker
-on : its warnings go to the context's error writer.
+on : its warnings go to the context's error writer. `error` makes them errors, and enforces
+declared types at runtime.
 
 Implemented Features
 --------------------
@@ -310,7 +319,7 @@ Language features :
 - [x] packages as namespaces.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java interfaces.
-- [x] optional type declarations for variables and parameters, checked by a gradual type checker in warn mode (`-Dbabble.typecheck=warn`, see the [design doc](docs/design/type-system.md)) : it reports values of the wrong type, calls that don't match a signature, missing members and the like, before the script runs. Annotations are not enforced at runtime yet.
+- [x] optional type declarations for variables and parameters, checked by a gradual type checker (`-Dbabble.typecheck=warn` or `error`, see the [design doc](docs/design/type-system.md)) : it reports values of the wrong type, calls that don't match a signature, missing members and the like, before the script runs. In error mode, declared types are also enforced at runtime, where untyped values reach them.
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import`, `same`, `classof`.
 
 Implementation features :
@@ -329,7 +338,7 @@ Language features :
 
 - [ ] interactive mode.
 - [ ] better, more user-friendly error reports.
-- [ ] type checking in error mode, with annotations enforced at runtime, then fuller type inference.
+- [ ] fuller type inference, narrowing after `is`, and error mode by default.
 - [ ] collection classes (mapped from Java).
 - [ ] first-class iterator support (`for` loop).
 - [ ] `yield` keyword : transform functions/method into iterators.

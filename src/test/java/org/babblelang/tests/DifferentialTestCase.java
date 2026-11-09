@@ -126,8 +126,16 @@ public class DifferentialTestCase {
     }
 
     private static Outcome run(String mode, String script) {
+        return run(mode, script, null);
+    }
+
+    /** @param typecheck the type checker setting, or null for the default */
+    private static Outcome run(String mode, String script, String typecheck) {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
+        if (typecheck != null) {
+            engine.put(BabbleScriptEngine.TYPECHECK, typecheck);
+        }
         ScriptContext context = new SimpleScriptContext();
         context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
         context.setAttribute("assert", new AssertFunction(), ScriptContext.ENGINE_SCOPE);
@@ -161,6 +169,49 @@ public class DifferentialTestCase {
         Assertions.assertEquals(interpreted, compiled, script);
     }
 
+    /** In error mode, with declared types checked at runtime (T9). */
+    private static Outcome assertSameTypedOutcome(String script) {
+        Outcome interpreted = run("interpret", script, "error");
+        Outcome compiled = run("compile", script, "error");
+        Assertions.assertEquals(interpreted, compiled, script);
+        return interpreted;
+    }
+
+    /**
+     * Error mode : dynamic values reaching declared types, and the conversions and
+     * acceptances that must not fail.
+     */
+    static List<String> typedSnippets() {
+        String id = "def id = (x) -> ( x )\n";
+        return List.of(
+                id + "def f = (a : int, b : string = \"\") : int -> ( a ) ; f(1) + f(id(2), id(\"s\")) + f(b: id(null), a: 3)",
+                id + "def f = (a : int) -> ( a ) ;\nf(\n  id(\"x\")\n)",
+                id + "def f = (a : int, b : string = id(3)) -> ( a )\nf(1)",
+                id + "def g = (a) : int -> (\n  def t = 1\n  id(a)\n)\ng(1) + g(2)\ng(\"s\")",
+                id + "def g = (a) : string -> (\n  if a == 0 then ( return id(1) )\n  \"s\"\n)\ng(1)\ng(0)",
+                id + "def d : double = id(1) ; def e : double = id(2.5) ; \"\" + d + \" \" + e",
+                id + "def n : int = 1\nn = id(2)\nn = id(\"x\")",
+                id + "def b : bool = id(null)",
+                id + "def s : string = id(null) ; s",
+                id + "def P = class (def x : int, y : double = 0) ( def label : string = \"p\" ; def set = (v) -> ( this.label = v ) ) ; def p = P(1, id(2)) ; p.set(id(\"q\")) ; p.label + p.x\np.set(id(2))",
+                id + "def P = class (def x : int) () ; P(id(\"a\"))",
+                id + "def P = class () ( def n : int = 0 ) ; def p = P() ; p.n = id(5) ; p.n = id(\"z\")",
+                id + "def P = value class (x : int, y : int) () ; P(1, 2) == P(id(1), 2)\nP(1, id(2.5))",
+                id + "def S = interface ( def area : () : double )\ndef Sq = class (def s) implements S ( def area = () -> ( 1.0 * this.s * this.s ) )\n"
+                        + "def T = class () ()\ndef f = (s : S) : double -> ( s.area() )\nf(Sq(2)) + f(id(Sq(3)))\nf(id(T()))",
+                id + "def S = interface ( def k : int ) ; def o = object implements S ( def k = 1 ) ; def f = (s : S) -> ( s.k ) ; f(id(o))\nf(id(object ()))",
+                id + "def f = (l : java.util.List) -> ( l.size() ) ; f(id(java.util.ArrayList()))\nf(id(1))",
+                id + "def R = class () implements java.lang.Runnable ( def run = () -> ( null ) ) ; def f = (r : java.lang.Runnable) -> ( 1 ) ; f(id(R())) + f(id(() -> ( 2 )))\nf(id(\"no\"))",
+                id + "def h = (f : (x : int) : int) -> ( f(1) ) ; h(id((y) -> ( y + 1 ))) + h(id(java.lang.Math.abs))\nh(id(3))",
+                id + "def C = class () () static ( def s : int = 1 ) ; C.s = id(2) ; C.s\nC.s = id(\"q\")",
+                // Nominal by expression : the classes two calls create are one type.
+                id + "def mk = () -> ( def C = class (def n : int) () ; object ( def make = () -> ( C(1) ) ; def take = (c : C) -> ( c.n ) ) )\n"
+                        + "def a = mk() ; def b = mk() ; a.take(id(b.make()))\na.take(id(a))",
+                "def fac = (n : int) : int -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) ) ; fac(10)",
+                id + "def x : int = \"s\"\n1"
+        );
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("files")
     public void testFile(String file) throws Exception {
@@ -171,5 +222,19 @@ public class DifferentialTestCase {
     @MethodSource("snippets")
     public void testSnippet(String snippet) {
         assertSameOutcome(snippet);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("typedSnippets")
+    public void testTypedSnippet(String snippet) {
+        assertSameTypedOutcome(snippet);
+    }
+
+    /** The in-repo scripts pass the type checker in error mode, and run with their types enforced. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("files")
+    public void testFileWithTypesEnforced(String file) throws Exception {
+        Outcome outcome = assertSameTypedOutcome(Files.readString(Path.of(file)));
+        Assertions.assertNull(outcome.error(), file);
     }
 }

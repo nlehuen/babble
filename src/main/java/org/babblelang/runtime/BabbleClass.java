@@ -146,6 +146,22 @@ public final class BabbleClass extends BabbleType implements Callable {
         return false;
     }
 
+    /**
+     * Whether instances have the type a class or interface expression defines, by its
+     * shape's id : they were created by it, or implement an interface it created.
+     */
+    public boolean conformsTo(String typeId) {
+        if (shape().id().equals(typeId)) {
+            return true;
+        }
+        for (Object implemented : interfaces) {
+            if (implemented instanceof BabbleInterface babble && babble.extendsId(typeId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Whether the class implements {@code type}, a Babble interface or a Java one. */
     public boolean implementsType(Object type) {
         if (type instanceof Class<?> java) {

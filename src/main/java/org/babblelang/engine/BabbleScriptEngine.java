@@ -40,8 +40,9 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     /**
      * The name of the system property, and of the engine attribute, that turns the type
-     * checker on : {@code off} (the default) or {@code warn}, which reports its diagnostics
-     * to the context's error writer. The attribute wins.
+     * checker on : {@code off} (the default) ; {@code warn}, which reports its diagnostics
+     * to the context's error writer ; or {@code error}, which fails the compilation on them
+     * and checks declared types at runtime (T9). The attribute wins.
      */
     public static final String TYPECHECK = "babble.typecheck";
 
@@ -110,17 +111,18 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return mode == null ? Mode.INTERPRET : Mode.parse(mode);
     }
 
-    /** Whether {@link #compile} runs the type checker : the {@link #TYPECHECK} attribute, else the system property. */
-    public boolean isTypechecking() {
+    /** What {@link #compile} does with types : the {@link #TYPECHECK} attribute, else the system property. */
+    public ScopeAnalysis.Typecheck getTypecheck() {
         Object value = get(TYPECHECK);
         if (value == null) {
             value = System.getProperty(TYPECHECK);
         }
         String setting = value == null ? "off" : String.valueOf(value).trim().toLowerCase(Locale.ROOT);
         return switch (setting) {
-            case "off" -> false;
-            case "warn" -> true;
-            default -> throw new BabbleException("Unknown " + TYPECHECK + " : " + value + " (expected off or warn)");
+            case "off" -> ScopeAnalysis.Typecheck.OFF;
+            case "warn" -> ScopeAnalysis.Typecheck.WARN;
+            case "error" -> ScopeAnalysis.Typecheck.ERROR;
+            default -> throw new BabbleException("Unknown " + TYPECHECK + " : " + value + " (expected off, warn or error)");
         };
     }
 
@@ -142,21 +144,32 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return new ScriptRuntime(root, context, this);
     }
 
-    /** The analysis warnings go to the context's error writer, before anything runs. */
-    private static void warn(ScopeAnalysis scopes, String sourceName, ScriptContext context) {
+    /**
+     * The analysis warnings go to the context's error writer, before anything runs, and so
+     * do the type checker's diagnostics : as warnings, or in error mode, as errors.
+     */
+    private static void report(ScopeAnalysis scopes, ScopeAnalysis.Typecheck typecheck, String sourceName, ScriptContext context) {
         Writer errors = context.getErrorWriter();
-        if (errors == null || scopes.warnings().isEmpty()) {
+        if (errors == null || scopes.warnings().isEmpty() && scopes.typeDiagnostics().isEmpty()) {
             return;
         }
+        String typeLabel = typecheck == ScopeAnalysis.Typecheck.ERROR ? "Error" : "Warning";
         try {
             for (ScopeAnalysis.Warning warning : scopes.warnings()) {
-                errors.write("Warning : " + warning.message() + " in " + sourceName + " at line number " + warning.line()
-                        + (warning.column() > 0 ? ", column " + warning.column() : "") + System.lineSeparator());
+                errors.write(line("Warning", warning, sourceName));
+            }
+            for (ScopeAnalysis.Warning diagnostic : scopes.typeDiagnostics()) {
+                errors.write(line(typeLabel, diagnostic, sourceName));
             }
             errors.flush();
         } catch (IOException e) {
             // Warnings that cannot be written are not worth failing the compilation for.
         }
+    }
+
+    private static String line(String label, ScopeAnalysis.Warning warning, String sourceName) {
+        return label + " : " + warning.message() + " in " + sourceName + " at line number " + warning.line()
+                + (warning.column() > 0 ? ", column " + warning.column() : "") + System.lineSeparator();
     }
 
     /**
@@ -216,9 +229,9 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
 
         ScopeAnalysis scopes;
-        boolean typecheck;
+        ScopeAnalysis.Typecheck typecheck;
         try {
-            typecheck = isTypechecking();
+            typecheck = getTypecheck();
         } catch (BabbleException e) {
             throw new ScriptException(e);
         }
@@ -228,7 +241,12 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());
         }
-        warn(scopes, sourceName, context);
+        report(scopes, typecheck, sourceName, context);
+        if (typecheck == ScopeAnalysis.Typecheck.ERROR && !scopes.typeDiagnostics().isEmpty()) {
+            // Every diagnostic went to the error writer ; the first one fails the compilation.
+            ScopeAnalysis.Warning first = scopes.typeDiagnostics().get(0);
+            throw new ScriptException(new BabbleException(first.message()).toString(), sourceName, first.line(), first.column());
+        }
 
         try {
             return switch (getMode()) {

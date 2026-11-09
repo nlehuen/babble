@@ -108,7 +108,7 @@ public class BabbleInstance implements HasMembers {
         if (field(index) == Undefined.UNDEFINED) {
             throw Members.usedBeforeDefinition(name);
         }
-        setField(index, value);
+        setField(index, Types.check(value, shape.memberType(index)));
     }
 
     /**

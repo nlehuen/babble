@@ -32,6 +32,14 @@ public final class ScopeAnalysis {
     public record DefTarget(DefKind kind, int index) {
     }
 
+    /**
+     * What the type checker does (docs/design/type-system.md) : nothing, report its
+     * diagnostics as warnings, or fail on them and check declared types at runtime (T9).
+     */
+    public enum Typecheck {
+        OFF, WARN, ERROR
+    }
+
     /** A warning, at a line, and at a column (from 1) when it has one, else -1. */
     public record Warning(String message, int line, int column) {
     }
@@ -43,6 +51,8 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<DefTarget> defTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<BabbleParser.TypeContext> superTargets = new ParseTreeProperty<>();
     private final List<Warning> warnings = new ArrayList<>();
+    private final List<Warning> typeDiagnostics = new ArrayList<>();
+    private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
     private Resolution resolution;
 
     void setDeclared(ParserRuleContext owner, String[] names) {
@@ -81,6 +91,32 @@ public final class ScopeAnalysis {
 
     void warn(String message, int line, int column) {
         warnings.add(new Warning(message, line, column));
+    }
+
+    void typeDiagnostic(String message, int line, int column) {
+        typeDiagnostics.add(new Warning(message, line, column));
+    }
+
+    void setCheckedType(ParserRuleContext ctx, String descriptor) {
+        checkedTypes.put(ctx, descriptor);
+    }
+
+    /**
+     * The type checker's diagnostics : warnings in {@code warn} mode, errors in
+     * {@code error} mode.
+     */
+    public List<Warning> typeDiagnostics() {
+        return typeDiagnostics;
+    }
+
+    /**
+     * In {@code error} mode, the declared type to check at runtime (a {@code Types}
+     * descriptor), or null for none : for a parameter declaration, the argument ; for a
+     * function literal, its result ; for a def, its value ; for an unqualified assignment,
+     * the value assigned.
+     */
+    public String checkedType(ParserRuleContext ctx) {
+        return checkedTypes.get(ctx);
     }
 
     /**

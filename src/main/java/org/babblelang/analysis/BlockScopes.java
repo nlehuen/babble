@@ -70,23 +70,29 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     public static ScopeAnalysis analyze(BabbleParser.FileContext file) {
-        return analyze(file, false);
+        return analyze(file, ScopeAnalysis.Typecheck.OFF);
     }
 
-    /**
-     * @param typecheck whether to run the type checker, whose diagnostics are warnings
-     */
+    /** With the type checker in warn mode, or off. */
     public static ScopeAnalysis analyze(BabbleParser.FileContext file, boolean typecheck) {
+        return analyze(file, typecheck ? ScopeAnalysis.Typecheck.WARN : ScopeAnalysis.Typecheck.OFF);
+    }
+
+    public static ScopeAnalysis analyze(BabbleParser.FileContext file, ScopeAnalysis.Typecheck typecheck) {
         BlockScopes pass = new BlockScopes();
         pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
         new TypeChecks(pass).run();
         pass.analysis.setResolution(new Resolver(pass).run());
-        if (typecheck) {
+        if (typecheck != ScopeAnalysis.Typecheck.OFF) {
             try {
-                new TypeChecker(pass).run(file);
+                new TypeChecker(pass, typecheck == ScopeAnalysis.Typecheck.ERROR).run(file);
             } catch (RuntimeException e) {
-                // In warn mode, the checker never stops a script that would otherwise run.
+                // The checker never stops a script that would otherwise run.
                 pass.analysis.warn("The type checker failed : " + e, file.getStart().getLine());
+            }
+            // The shapes now carry the declared types of members and statics.
+            for (TypeNode type : pass.types) {
+                pass.analysis.setShape(type.ctx, type.shape());
             }
         }
         return pass.analysis;

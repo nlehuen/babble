@@ -51,8 +51,15 @@ final class TypeChecker {
     private final Set<Diagnostic> diagnostics = new TreeSet<>(ORDER);
     private final Typer typer = new Typer();
 
-    TypeChecker(BlockScopes pass) {
+    private final boolean enforce;
+
+    /**
+     * @param enforce error mode : also record, for the backends, the declared types to
+     *                check at runtime (T9)
+     */
+    TypeChecker(BlockScopes pass, boolean enforce) {
         this.pass = pass;
+        this.enforce = enforce;
     }
 
     void run(BabbleParser.FileContext file) {
@@ -69,7 +76,7 @@ final class TypeChecker {
             checkResult(function);
         }
         for (Diagnostic diagnostic : diagnostics) {
-            pass.analysis.warn(diagnostic.message(), diagnostic.line(), diagnostic.column());
+            pass.analysis.typeDiagnostic(diagnostic.message(), diagnostic.line(), diagnostic.column());
         }
     }
 
@@ -90,12 +97,77 @@ final class TypeChecker {
         if (tree instanceof BabbleParser.ExpressionContext || tree instanceof BabbleParser.BlockContext) {
             typeOf((ParserRuleContext) tree);
         }
+        if (enforce) {
+            recordCheck(tree);
+        }
         if (tree instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.defaultValue != null && parameter.type() != null) {
             expect(typeOf(parameter.defaultValue), annotation(parameter.type(), scopeOf(parameter)), parameter.defaultValue);
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
             walk(tree.getChild(i));
         }
+    }
+
+    // ---------------------------------------------------------------- runtime checks (T9)
+
+    /**
+     * Records the declared type each boundary checks at runtime : parameters of functions
+     * and class headers, results of functions, defs, and unqualified assignments to
+     * annotated names. Members and statics also carry theirs in the class shape, for
+     * assignments through a receiver.
+     */
+    private void recordCheck(ParseTree tree) {
+        if (tree instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.type() != null) {
+            String descriptor = descriptor(annotation(parameter.type(), scopeOf(parameter)));
+            pass.analysis.setCheckedType(parameter, descriptor);
+            if (parameter.getParent().getParent() instanceof BabbleParser.ClassExpressionContext cls
+                    && (parameter.DEF() != null || pass.typeNodes.get(cls).kind == org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS)) {
+                putType(pass.typeNodes.get(cls).memberTypes, parameter.ID().getText(), descriptor);
+            }
+        } else if (tree instanceof BabbleParser.FunctionLiteralContext function && function.type() != null) {
+            pass.analysis.setCheckedType(function, descriptor(annotation(function.type(), scopeOf(function))));
+        } else if (tree instanceof BabbleParser.DefExpressionContext def && def.type() != null) {
+            ScopeAnalysis.DefKind kind = pass.analysis.defTarget(def).kind();
+            if (kind == ScopeAnalysis.DefKind.DEFAULT || kind == ScopeAnalysis.DefKind.REQUIRED) {
+                return;
+            }
+            String descriptor = descriptor(annotation(def.type(), scopeOf(def)));
+            pass.analysis.setCheckedType(def, descriptor);
+            if (kind == ScopeAnalysis.DefKind.MEMBER) {
+                putType(scopeOf(def).type.memberTypes, def.name.getText(), descriptor);
+            } else if (kind == ScopeAnalysis.DefKind.STATIC) {
+                putType(scopeOf(def).type.staticTypes, def.name.getText(), descriptor);
+            }
+        } else if (tree instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == null
+                && resolveName(assign, assign.name.getText(), occurrenceScopes.get(assign)) instanceof ParserRuleContext declaration) {
+            Type declared = declaredType(declaration);
+            if (declared != null) {
+                pass.analysis.setCheckedType(assign, descriptor(declared));
+            }
+        }
+    }
+
+    private static void putType(Map<String, String> types, String name, String descriptor) {
+        if (descriptor != null) {
+            types.put(name, descriptor);
+        }
+    }
+
+    /** How the runtime checks a type ({@code Types}), or null when it needs no check. */
+    private static String descriptor(Type type) {
+        if (type == Type.INT || type == Type.DOUBLE || type == Type.BOOL || type == Type.STRING) {
+            return type + "|" + type + "|";
+        }
+        if (type instanceof Type.Function) {
+            return "fn|" + type + "|";
+        }
+        if (type instanceof Type.Instance instance) {
+            return "babble|" + instance.node().name + "|" + instance.node().id;
+        }
+        if (type instanceof Type.JavaInstance java) {
+            return "java|" + java.type().getName() + "|" + java.type().getName();
+        }
+        return null;
     }
 
     // ---------------------------------------------------------------- scopes and names
