@@ -278,21 +278,25 @@ half(id("4"))   ;; Type error : expected int, got string, at line number 3
 Ray tracing demo
 ----------------
 
-[raytracer/raytracer.ba](raytracer/raytracer.ba) is a port of
+[examples/raytracer-fable/raytracer.ba](examples/raytracer-fable/raytracer.ba) is a port of
 [_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
 to Babble : vectors as a value class, spheres and materials as classes implementing
 interfaces, a camera with depth of field, and the final scene of the book. This image was
 rendered by it, in compiled mode :
 
-![The final scene of Ray Tracing in One Weekend, rendered by Babble](raytracer/demo.png)
+![The final scene of Ray Tracing in One Weekend, rendered by Babble](examples/raytracer-fable/demo.png)
 
 The ray tracer itself is all Babble, using the JDK for maths, random numbers, threads and the
-PNG file. The only Java code is [a dozen lines](raytracer/Run.java) that hand the script to
+PNG file. The only Java code is [a dozen lines](examples/raytracer-fable/Run.java) that hand the script to
 the engine. To render the image again :
 
 ```
-raytracer/render.sh
+examples/raytracer-fable/render.sh
 ```
+
+[examples/raytracer-argon](examples/raytracer-argon/README.md) is another port of the same book,
+which uses no Java at all : it has its own square root, trigonometry and random numbers, and a
+bounding volume hierarchy.
 
 Building and running
 --------------------
@@ -371,7 +375,7 @@ Implementation features :
 TODO : lessons from the ray tracer
 ----------------------------------
 
-Writing [the ray tracer](raytracer/raytracer.ba) showed where Babble gets in the way. In rough
+Writing [the ray tracer](examples/raytracer-fable/raytracer.ba) showed where Babble gets in the way. In rough
 order of how much each would improve that code :
 
 - [ ] unary minus : `-x` and `-1.0` have to be written `0 - x` and `0 - 1.0`.
@@ -396,7 +400,7 @@ order of how much each would improve that code :
 - [ ] parse errors with a line, a column and a message : a syntax error such as using the keyword
   `object` as a name is reported as a bare `ParseCancellationException`.
 - [ ] command-line launcher : a `main` class in the jar to run a `.ba` file, with script arguments,
-  instead of [a launcher per project](raytracer/Run.java).
+  instead of [a launcher per project](examples/raytracer-fable/Run.java).
 - [ ] thread safety : the ray tracer found a race in the Java member caches, now fixed, but nothing
   tests scripts running on several threads.
 - [ ] unboxed arithmetic for typed code (also planned above) : the ray tracer spends its time
