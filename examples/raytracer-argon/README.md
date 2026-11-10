@@ -6,8 +6,7 @@ A complete implementation of [*Ray Tracing in One Weekend*](https://raytracing.g
 
 ![Ray Tracing in One Weekend — Final Scene rendered in 100% pure Babble](scene.png)
 
-- **Raw PPM output**: [scene.ppm](scene.ppm) (`P3` ASCII PPM emitted directly by `raytracer.ba`)
-- **PNG conversion**: [scene.png](scene.png) (`400 × 225`, 20 samples/pixel, max bounce depth 12)
+*Rendered at `400 × 225` (`20` samples/pixel, max bounce depth `12`). Raw `P3` ASCII PPM output emitted by `raytracer.ba`: [scene.ppm](scene.ppm).*
 
 ### Scene Description (`raytracer.Scenes.finalScene`)
 The rendered scene implements the Chapter 14 cover scene from *Ray Tracing in One Weekend*:
