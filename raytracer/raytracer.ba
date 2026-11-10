@@ -1,0 +1,404 @@
+;;(
+    Ray Tracing in One Weekend, in Babble.
+
+    A port of https://raytracing.github.io/books/RayTracingInOneWeekend.html, following the
+    book's structure : vec3, ray, hittable, sphere, hittable_list, material, camera, and the
+    final scene of chapter 14.
+
+    What differs from the C++ of the book :
+    - a hit or a scatter is returned as a record, or null, instead of filling an out parameter ;
+    - the image is written as a PNG through javax.imageio, instead of a PPM on standard output ;
+    - scanlines are shared between threads, each with its own random generator, so functions
+      that need random numbers take it as their "rng" parameter.
+
+    Run it from the root of the repository with raytracer/render.sh.
+;;)
+
+;; ---------------------------------------------------------------- Settings
+
+def output = "raytracer/demo.png"
+def imageWidth = 800            ;; the book renders 1200 pixels wide...
+def samplesPerPixel = 100       ;; ...with 500 samples per pixel
+def maxDepth = 50
+;; one thread per processor : the common pool keeps one of them for its caller
+def threads = java.util.concurrent.ForkJoinPool.getCommonPoolParallelism() + 1
+
+;; ---------------------------------------------------------------- Utilities
+
+def Math = java.lang.Math
+def infinity = java.lang.Double.parseDouble("Infinity")
+def pi = Math.acos(0 - 1)
+
+def degreesToRadians = (degrees) -> ( degrees * pi / 180.0 )
+
+;; A random real in [min, max)
+def randomDouble = (rng, min = 0.0, max = 1.0) -> ( min + (max - min) * rng.nextDouble() )
+
+;; ---------------------------------------------------------------- vec3
+
+;; Points, directions and colors. Babble has no operator overloading, hence the methods.
+def Vec3 = value class (x, y, z) (
+    def neg = () -> ( Vec3(0 - this.x, 0 - this.y, 0 - this.z) )
+    def plus = (v) -> ( Vec3(this.x + v.x, this.y + v.y, this.z + v.z) )
+    def minus = (v) -> ( Vec3(this.x - v.x, this.y - v.y, this.z - v.z) )
+    def mul = (v) -> ( Vec3(this.x * v.x, this.y * v.y, this.z * v.z) )
+    def times = (t) -> ( Vec3(this.x * t, this.y * t, this.z * t) )
+    def div = (t) -> ( Vec3(this.x / t, this.y / t, this.z / t) )
+
+    def dot = (v) -> ( this.x * v.x + this.y * v.y + this.z * v.z )
+    def cross = (v) -> (
+        Vec3(this.y * v.z - this.z * v.y,
+             this.z * v.x - this.x * v.z,
+             this.x * v.y - this.y * v.x)
+    )
+    def lengthSquared = () -> ( this.x * this.x + this.y * this.y + this.z * this.z )
+    def length = () -> ( Math.sqrt(this.lengthSquared()) )
+    def unit = () -> ( this.div(this.length()) )
+
+    ;; true if the vector is close to zero in all dimensions
+    def nearZero = () -> (
+        def s = 0.00000001
+        Math.abs(this.x) < s and Math.abs(this.y) < s and Math.abs(this.z) < s
+    )
+
+    def reflect = (n) -> ( this.minus(n.times(2 * this.dot(n))) )
+    def refract = (n, etaiOverEtat) -> (
+        def cosTheta = Math.min(this.neg().dot(n), 1.0)
+        def perp = this.plus(n.times(cosTheta)).times(etaiOverEtat)
+        def parallel = n.times(0 - Math.sqrt(Math.abs(1.0 - perp.lengthSquared())))
+        perp.plus(parallel)
+    )
+)
+static (
+    def random = (rng, min = 0.0, max = 1.0) -> (
+        Vec3(randomDouble(rng, min, max), randomDouble(rng, min, max), randomDouble(rng, min, max))
+    )
+
+    ;; a random direction, by rejection of the points outside the unit sphere
+    def randomUnit = (rng) -> (
+        def p = Vec3.random(rng, 0 - 1.0, 1.0)
+        def lensq = p.lengthSquared()
+        if 0.0 < lensq and lensq <= 1.0 then (
+            p.div(Math.sqrt(lensq))
+        ) else (
+            recurse(rng)
+        )
+    )
+
+    def randomInUnitDisk = (rng) -> (
+        def p = Vec3(randomDouble(rng, 0 - 1.0, 1.0), randomDouble(rng, 0 - 1.0, 1.0), 0.0)
+        if p.lengthSquared() < 1.0 then ( p ) else ( recurse(rng) )
+    )
+)
+
+;; ---------------------------------------------------------------- ray
+
+def Ray = value class (origin, direction) (
+    def at = (t) -> ( this.origin.plus(this.direction.times(t)) )
+)
+
+;; ---------------------------------------------------------------- hittable
+
+;; Where a ray hit a surface. The normal always points against the ray, and frontFace
+;; tells whether the ray came from outside the surface.
+def HitRecord = class (r, def p, def t, outwardNormal, def material) (
+    def frontFace = r.direction.dot(outwardNormal) < 0
+    def normal = if this.frontFace then ( outwardNormal ) else ( outwardNormal.neg() )
+)
+
+def Hittable = interface (
+    ;; the closest hit of the ray with tmin < t < tmax, or null
+    def hit : (r, tmin, tmax)
+)
+
+;; ---------------------------------------------------------------- sphere
+
+def Sphere = class (def center, def radius, def material) implements Hittable (
+    def hit = (r, tmin, tmax) -> (
+        def oc = this.center.minus(r.origin)
+        def a = r.direction.lengthSquared()
+        def h = r.direction.dot(oc)
+        def c = oc.lengthSquared() - this.radius * this.radius
+
+        def discriminant = h * h - a * c
+        if discriminant < 0 then ( return null )
+
+        def sqrtd = Math.sqrt(discriminant)
+
+        ;; find the nearest root that lies in the acceptable range
+        def root = (h - sqrtd) / a
+        if root <= tmin or tmax <= root then (
+            root = (h + sqrtd) / a
+            if root <= tmin or tmax <= root then ( return null )
+        )
+
+        def p = r.at(root)
+        HitRecord(r, p, root, p.minus(this.center).div(this.radius), this.material)
+    )
+)
+
+;; ---------------------------------------------------------------- hittable_list
+
+def HittableList = class () implements Hittable (
+    ;; a linked list of objects
+    private def Node = class (def item, def next) ()
+    private def objects = null
+
+    def add = (item) -> ( this.objects = this.Node(item, this.objects) )
+
+    def hit = (r, tmin, tmax) -> (
+        def closest = null
+        def closestSoFar = tmax
+        def node = this.objects
+        while node <> null then (
+            def rec = node.item.hit(r, tmin, closestSoFar)
+            if rec <> null then (
+                closest = rec
+                closestSoFar = rec.t
+            )
+            node = node.next
+        )
+        closest
+    )
+)
+
+;; ---------------------------------------------------------------- material
+
+;; What a material does with a ray : the scattered ray and how much it is attenuated.
+def Scatter = class (def attenuation, def scattered) ()
+
+def Material = interface (
+    ;; a Scatter, or null when the ray is absorbed
+    def scatter : (rIn, rec, rng)
+)
+
+def Lambertian = class (def albedo) implements Material (
+    def scatter = (rIn, rec, rng) -> (
+        def direction = rec.normal.plus(Vec3.randomUnit(rng))
+        ;; catch degenerate scatter direction
+        if direction.nearZero() then ( direction = rec.normal )
+        Scatter(this.albedo, Ray(rec.p, direction))
+    )
+)
+
+def Metal = class (def albedo, fuzz) implements Material (
+    def fuzz = Math.min(fuzz, 1.0)
+
+    def scatter = (rIn, rec, rng) -> (
+        def reflected = rIn.direction.reflect(rec.normal)
+        reflected = reflected.unit().plus(Vec3.randomUnit(rng).times(this.fuzz))
+        if reflected.dot(rec.normal) > 0 then (
+            Scatter(this.albedo, Ray(rec.p, reflected))
+        ) else (
+            null
+        )
+    )
+)
+
+def Dielectric = class (def refractionIndex) implements Material (
+    ;; Schlick's approximation for reflectance
+    private def reflectance = (cosine, refractionIndex) -> (
+        def r0 = (1 - refractionIndex) / (1 + refractionIndex)
+        r0 = r0 * r0
+        r0 + (1 - r0) * Math.pow(1 - cosine, 5)
+    )
+
+    def scatter = (rIn, rec, rng) -> (
+        def ri = if rec.frontFace then ( 1.0 / this.refractionIndex ) else ( this.refractionIndex )
+
+        def unitDirection = rIn.direction.unit()
+        def cosTheta = Math.min(unitDirection.neg().dot(rec.normal), 1.0)
+        def sinTheta = Math.sqrt(1.0 - cosTheta * cosTheta)
+
+        def cannotRefract = ri * sinTheta > 1.0
+        def direction = if cannotRefract or this.reflectance(cosTheta, ri) > rng.nextDouble() then (
+            unitDirection.reflect(rec.normal)
+        ) else (
+            unitDirection.refract(rec.normal, ri)
+        )
+
+        Scatter(Vec3(1.0, 1.0, 1.0), Ray(rec.p, direction))
+    )
+)
+
+;; ---------------------------------------------------------------- camera
+
+def Camera = class (
+    def aspectRatio = 1.0,                  ;; ratio of image width over height
+    def imageWidth = 100,                   ;; rendered image width in pixel count
+    def samplesPerPixel = 10,               ;; count of random samples for each pixel
+    def maxDepth = 10,                      ;; maximum number of ray bounces into scene
+    def vfov = 90,                          ;; vertical view angle (field of view)
+    def lookFrom = Vec3(0.0, 0.0, 0.0),     ;; point camera is looking from
+    def lookAt = Vec3(0.0, 0.0, 0 - 1.0),   ;; point camera is looking at
+    def vup = Vec3(0.0, 1.0, 0.0),          ;; camera-relative "up" direction
+    def defocusAngle = 0,                   ;; variation angle of rays through each pixel
+    def focusDist = 10                      ;; distance from lookFrom to plane of perfect focus
+) (
+    def imageHeight = Math.max(1, Math.toIntExact(Math.round(Math.floor(this.imageWidth / this.aspectRatio))))
+    private def center = this.lookFrom
+
+    ;; determine viewport dimensions
+    private def theta = degreesToRadians(this.vfov)
+    private def viewportHeight = 2 * Math.tan(this.theta / 2) * this.focusDist
+    private def viewportWidth = this.viewportHeight * this.imageWidth / this.imageHeight
+
+    ;; calculate the u,v,w unit basis vectors for the camera coordinate frame
+    private def w = this.lookFrom.minus(this.lookAt).unit()
+    private def u = this.vup.cross(this.w).unit()
+    private def v = this.w.cross(this.u)
+
+    ;; calculate the vectors across the horizontal and down the vertical viewport edges
+    private def viewportU = this.u.times(this.viewportWidth)
+    private def viewportV = this.v.neg().times(this.viewportHeight)
+
+    ;; calculate the horizontal and vertical delta vectors from pixel to pixel
+    private def pixelDeltaU = this.viewportU.div(this.imageWidth)
+    private def pixelDeltaV = this.viewportV.div(this.imageHeight)
+
+    ;; calculate the location of the upper left pixel
+    private def viewportUpperLeft = this.center.minus(this.w.times(this.focusDist)).minus(this.viewportU.div(2)).minus(this.viewportV.div(2))
+    private def pixel00 = this.viewportUpperLeft.plus(this.pixelDeltaU.plus(this.pixelDeltaV).times(0.5))
+
+    ;; calculate the camera defocus disk basis vectors
+    private def defocusRadius = this.focusDist * Math.tan(degreesToRadians(this.defocusAngle / 2))
+    private def defocusDiskU = this.u.times(this.defocusRadius)
+    private def defocusDiskV = this.v.times(this.defocusRadius)
+
+    ;; a random point in the camera defocus disk
+    private def defocusDiskSample = (rng) -> (
+        def p = Vec3.randomInUnitDisk(rng)
+        this.center.plus(this.defocusDiskU.times(p.x)).plus(this.defocusDiskV.times(p.y))
+    )
+
+    ;; a camera ray originating from the defocus disk and directed at a randomly
+    ;; sampled point around the pixel location i, j
+    private def getRay = (i, j, rng) -> (
+        def pixelSample = this.pixel00.plus(this.pixelDeltaU.times(i + rng.nextDouble() - 0.5)).plus(this.pixelDeltaV.times(j + rng.nextDouble() - 0.5))
+        def origin = if this.defocusAngle <= 0 then ( this.center ) else ( this.defocusDiskSample(rng) )
+        Ray(origin, pixelSample.minus(origin))
+    )
+
+    private def rayColor = (r, depth, world, rng) -> (
+        ;; if we've exceeded the ray bounce limit, no more light is gathered
+        if depth <= 0 then ( return Vec3(0.0, 0.0, 0.0) )
+
+        ;; tmin is 0.001 to ignore hits very close to the origin of the ray : no shadow acne
+        def rec = world.hit(r, 0.001, infinity)
+        if rec <> null then (
+            def s = rec.material.scatter(r, rec, rng)
+            if s == null then ( return Vec3(0.0, 0.0, 0.0) )
+            return s.attenuation.mul(this.rayColor(s.scattered, depth - 1, world, rng))
+        )
+
+        ;; the sky
+        def a = 0.5 * (r.direction.unit().y + 1.0)
+        Vec3(1.0, 1.0, 1.0).times(1.0 - a).plus(Vec3(0.5, 0.7, 1.0).times(a))
+    )
+
+    ;; a linear color component as a gamma 2 byte
+    private def toByte = (linear) -> (
+        def gamma = if linear > 0 then ( Math.sqrt(linear) ) else ( 0.0 )
+        Math.toIntExact(Math.round(Math.floor(256 * Math.max(0.0, Math.min(gamma, 0.999)))))
+    )
+
+    ;; Renders the world to a java.awt.image.BufferedImage. The threads take scanlines
+    ;; from a shared counter until none is left.
+    def render = (world, threads = 1) -> (
+        def image = java.awt.image.BufferedImage(this.imageWidth, this.imageHeight, 1)  ;; 1 is TYPE_INT_RGB
+        def nextLine = java.util.concurrent.atomic.AtomicInteger()
+
+        def renderLines = () -> (
+            def rng = java.util.Random()
+            def j = nextLine.getAndIncrement()
+            while j < this.imageHeight then (
+                def i = 0
+                while i < this.imageWidth then (
+                    def color = Vec3(0.0, 0.0, 0.0)
+                    def sample = 0
+                    while sample < this.samplesPerPixel then (
+                        color = color.plus(this.rayColor(this.getRay(i, j, rng), this.maxDepth, world, rng))
+                        sample = sample + 1
+                    )
+                    color = color.div(this.samplesPerPixel)
+                    image.setRGB(i, j, 65536 * this.toByte(color.x) + 256 * this.toByte(color.y) + this.toByte(color.z))
+                    i = i + 1
+                )
+                j = nextLine.getAndIncrement()
+            )
+        )
+
+        ;; start the other threads, render on this one too, then wait for the others
+        def start = (n) -> (
+            if n > 1 then (
+                def thread = java.lang.Thread(renderLines)
+                thread.start()
+                start(n - 1)
+                thread.join()
+            ) else (
+                renderLines()
+            )
+        )
+        start(threads)
+        image
+    )
+)
+
+;; ---------------------------------------------------------------- main
+
+def world = HittableList()
+
+world.add(Sphere(Vec3(0.0, 0 - 1000.0, 0.0), 1000.0, Lambertian(Vec3(0.5, 0.5, 0.5))))
+
+def rng = java.util.Random(20)   ;; a fixed seed : the same scene every time
+def a = 0 - 11
+while a < 11 then (
+    def b = 0 - 11
+    while b < 11 then (
+        def chooseMat = rng.nextDouble()
+        def center = Vec3(a + 0.9 * rng.nextDouble(), 0.2, b + 0.9 * rng.nextDouble())
+
+        if center.minus(Vec3(4.0, 0.2, 0.0)).length() > 0.9 then (
+            if chooseMat < 0.8 then (
+                ;; diffuse
+                def albedo = Vec3.random(rng).mul(Vec3.random(rng))
+                world.add(Sphere(center, 0.2, Lambertian(albedo)))
+            ) else (
+                if chooseMat < 0.95 then (
+                    ;; metal
+                    def albedo = Vec3.random(rng, 0.5, 1.0)
+                    def fuzz = randomDouble(rng, 0.0, 0.5)
+                    world.add(Sphere(center, 0.2, Metal(albedo, fuzz)))
+                ) else (
+                    ;; glass
+                    world.add(Sphere(center, 0.2, Dielectric(1.5)))
+                )
+            )
+        )
+        b = b + 1
+    )
+    a = a + 1
+)
+
+world.add(Sphere(Vec3(0.0, 1.0, 0.0), 1.0, Dielectric(1.5)))
+world.add(Sphere(Vec3(0 - 4.0, 1.0, 0.0), 1.0, Lambertian(Vec3(0.4, 0.2, 0.1))))
+world.add(Sphere(Vec3(4.0, 1.0, 0.0), 1.0, Metal(Vec3(0.7, 0.6, 0.5), 0.0)))
+
+def camera = Camera(
+    aspectRatio: 16.0 / 9.0,
+    imageWidth: imageWidth,
+    samplesPerPixel: samplesPerPixel,
+    maxDepth: maxDepth,
+    vfov: 20,
+    lookFrom: Vec3(13.0, 2.0, 3.0),
+    lookAt: Vec3(0.0, 0.0, 0.0),
+    vup: Vec3(0.0, 1.0, 0.0),
+    defocusAngle: 0.6,
+    focusDist: 10.0
+)
+
+println("Rendering ", camera.imageWidth, "x", camera.imageHeight, ", ", samplesPerPixel, " samples per pixel, on ", threads, " threads")
+def started = java.lang.System.currentTimeMillis()
+def image = camera.render(world, threads)
+javax.imageio.ImageIO.write(image, "png", java.io.File(output))
+println("Wrote ", output, " in ", (java.lang.System.currentTimeMillis() - started) / 1000, " s")

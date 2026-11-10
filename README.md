@@ -275,6 +275,25 @@ def half = (n : int) : double -> ( n / 2 )
 half(id("4"))   ;; Type error : expected int, got string, at line number 3
 ```
 
+Ray tracing demo
+----------------
+
+[raytracer/raytracer.ba](raytracer/raytracer.ba) is a port of
+[_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
+to Babble : vectors as a value class, spheres and materials as classes implementing
+interfaces, a camera with depth of field, and the final scene of the book. This image was
+rendered by it, in compiled mode :
+
+![The final scene of Ray Tracing in One Weekend, rendered by Babble](raytracer/demo.png)
+
+The ray tracer itself is all Babble, using the JDK for maths, random numbers, threads and the
+PNG file. The only Java code is [a dozen lines](raytracer/Run.java) that hand the script to
+the engine. To render the image again :
+
+```
+raytracer/render.sh
+```
+
 Building and running
 --------------------
 
