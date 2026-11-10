@@ -18,10 +18,9 @@
 
 def output = "raytracer/demo.png"
 def imageWidth = 800            ;; the book renders 1200 pixels wide...
-def samplesPerPixel = 100       ;; ...with 500 samples per pixel
+def samplesPerPixel = 20        ;; ...with 500 samples per pixel
 def maxDepth = 50
-;; one thread per processor : the common pool keeps one of them for its caller
-def threads = java.util.concurrent.ForkJoinPool.getCommonPoolParallelism() + 1
+def threads = 16
 
 ;; ---------------------------------------------------------------- Utilities
 
