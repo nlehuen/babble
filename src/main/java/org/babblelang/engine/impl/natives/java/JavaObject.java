@@ -5,14 +5,14 @@ import org.babblelang.engine.impl.Scope;
 import org.babblelang.engine.impl.Slot;
 import org.babblelang.runtime.JavaValue;
 
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.Objects;
 
 public class JavaObject implements Scope<BoundJavaMethod>, JavaValue {
     private final JavaClass clazz;
     private final Object value;
-    private final Map<String, Slot<BoundJavaMethod>> members = new HashMap<>();
+    private final Map<String, Slot<BoundJavaMethod>> members = new ConcurrentHashMap<>();
 
     JavaObject(JavaClass clazz, Object value) {
         this.clazz = clazz;
