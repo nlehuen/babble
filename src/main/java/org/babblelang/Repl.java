@@ -1,18 +1,13 @@
 package org.babblelang;
 
-import org.babblelang.engine.BabbleScriptEngine;
-import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.engine.BabbleSession;
 import org.babblelang.engine.TypeCheckException;
 import org.babblelang.engine.impl.Namespace;
 import org.babblelang.runtime.JavaValue;
 
-import javax.script.ScriptContext;
 import javax.script.ScriptException;
-import javax.script.SimpleScriptContext;
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 
 /**
@@ -20,8 +15,7 @@ import java.io.PrintWriter;
  * {@link BabbleSession}, prints its value, and starts again. An input spans several lines
  * when it stops in the middle of something, an open parenthesis for instance.
  * <p>
- * The mode and the type checker are the engine's : {@code -Dbabble.mode=compile},
- * {@code -Dbabble.typecheck=warn|error}.
+ * {@link Main} starts it, on its own or after a script.
  */
 public final class Repl {
     static final String PROMPT = ">> ";
@@ -53,17 +47,6 @@ public final class Repl {
         this.in = in;
         this.out = out;
         this.prompts = prompts;
-    }
-
-    public static void main(String[] args) throws IOException {
-        PrintWriter out = new PrintWriter(System.out, true);
-        BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        ScriptContext context = new SimpleScriptContext();
-        context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
-        context.setWriter(out);
-        context.setErrorWriter(out);
-        new Repl(engine.newSession(context), in, out, System.console() != null).run();
     }
 
     /** Reads and evaluates inputs until {@code :quit} or the end of the input. */
@@ -158,7 +141,12 @@ public final class Repl {
                 message = message.substring(0, suffix);
             }
         }
-        message = message.replaceFirst("^(?:[\\w.$]+(?:Exception|Error): )+", "");
+        message = withoutClassNames(message);
         return e.getLineNumber() > 1 ? message + " (line " + e.getLineNumber() + ")" : message;
+    }
+
+    /** An exception's message without the class names it starts with. */
+    static String withoutClassNames(String message) {
+        return message.replaceFirst("^(?:[\\w.$]+(?:Exception|Error): )+", "");
     }
 }

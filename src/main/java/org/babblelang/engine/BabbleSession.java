@@ -81,7 +81,13 @@ public final class BabbleSession {
      * running keeps what it defined until then.
      */
     public Object eval(String source) throws ScriptException {
-        String sourceName = BabbleScriptEngine.sourceName(context);
+        return eval(source, BabbleScriptEngine.sourceName(context));
+    }
+
+    /**
+     * @param sourceName what errors call the input : a file's name, when it is one
+     */
+    public Object eval(String source, String sourceName) throws ScriptException {
         BabbleParser.FileContext file;
         try {
             file = BabbleScriptEngine.parse(CharStreams.fromString(source));

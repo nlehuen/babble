@@ -19,6 +19,14 @@ public class JavaObject implements Scope<BoundJavaMethod>, JavaValue {
         this.value = value;
     }
 
+    /**
+     * A Java object a host hands to a script, as if the script had constructed it : its
+     * methods can be called. Its class must be public, as they are found through it.
+     */
+    public static JavaObject of(Object value) {
+        return new JavaObject(JavaClass.of(value.getClass()), value);
+    }
+
     @Override
     public Object javaValue() {
         return value;
