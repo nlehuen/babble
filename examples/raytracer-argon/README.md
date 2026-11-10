@@ -1,13 +1,13 @@
 # Ray Tracing in One Weekend — Pure Babble (`raytracer-argon`)
 
-A complete implementation of [*Ray Tracing in One Weekend*](https://raytracing.github.io/books/RayTracingInOneWeekend.html) (Peter Shirley, Trevor David Black, Steve Hollasch) in [raytracer.ba](file:///home/nlehuen/babble/examples/raytracer-argon/raytracer.ba), written in **100% pure Babble with zero Java builtins** (`java.*`, `javax.*`, or `import` are never called).
+A complete implementation of [*Ray Tracing in One Weekend*](https://raytracing.github.io/books/RayTracingInOneWeekend.html) (Peter Shirley, Trevor David Black, Steve Hollasch) in [raytracer.ba](raytracer.ba), written in **100% pure Babble with zero Java builtins** (`java.*`, `javax.*`, or `import` are never called).
 
 ## Rendered Scene
 
 ![Ray Tracing in One Weekend — Final Scene rendered in 100% pure Babble](scene.png)
 
-- **Raw PPM output**: [scene.ppm](file:///home/nlehuen/babble/examples/raytracer-argon/scene.ppm) (`P3` ASCII PPM emitted directly by `raytracer.ba`)
-- **PNG conversion**: [scene.png](file:///home/nlehuen/babble/examples/raytracer-argon/scene.png) (`400 × 225`, 20 samples/pixel, max bounce depth 12)
+- **Raw PPM output**: [scene.ppm](scene.ppm) (`P3` ASCII PPM emitted directly by `raytracer.ba`)
+- **PNG conversion**: [scene.png](scene.png) (`400 × 225`, 20 samples/pixel, max bounce depth 12)
 
 ### Scene Description (`raytracer.Scenes.finalScene`)
 The rendered scene implements the Chapter 14 cover scene from *Ray Tracing in One Weekend*:
@@ -61,7 +61,7 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
 
 ## Running
 
-Compile and execute [raytracer.ba](file:///home/nlehuen/babble/examples/raytracer-argon/raytracer.ba) via Babble's `ScriptEngine` (`compile` mode with strict type checking enabled) to produce `scene.ppm`:
+Compile and execute [raytracer.ba](raytracer.ba) via Babble's `ScriptEngine` (`compile` mode with strict type checking enabled) to produce `scene.ppm`:
 
 ```bash
 mvn test-compile exec:java \
