@@ -367,3 +367,37 @@ Implementation features :
 
 - [ ] type specialisation in compiled mode (unboxed arithmetic), once the type checker can vouch for the types.
 - [ ] ahead-of-time compilation to a jar, phase 4 of the [bytecode compiler design](docs/design/bytecode-compiler.md).
+
+TODO : lessons from the ray tracer
+----------------------------------
+
+Writing [the ray tracer](raytracer/raytracer.ba) showed where Babble gets in the way. In rough
+order of how much each would improve that code :
+
+- [ ] unary minus : `-x` and `-1.0` have to be written `0 - x` and `0 - 1.0`.
+- [ ] operator methods : let `a + b * t` call `plus` and `times` members, so vector maths doesn't
+  read `a.plus(b.times(t))`.
+- [ ] members of Java values returned by Java calls : only objects constructed in Babble accept
+  method calls, so `list.get(0).size()` or `Runtime.getRuntime().availableProcessors()` fail with
+  `Not a scope`. This is why the ray tracer has its own linked list.
+- [ ] static fields of Java classes : `java.lang.Math.PI` or `BufferedImage.TYPE_INT_RGB` are
+  not reachable.
+- [ ] bare names for a class's own members in its body, or at least for `def` header parameters :
+  a plain header parameter can be read as `x` in the body, a `def` one only as `this.x`.
+- [ ] `for` loops over ranges and collections (also in the planned features above) : every loop
+  is a `while` with a counter and an increment that is easy to forget.
+- [ ] `else if`, without nesting a block : `else ( if … then ( … ) else ( … ) )`.
+- [ ] `break` and `continue` in loops.
+- [ ] compound assignment : `+=`, `-=`, `*=`, `/=`.
+- [ ] number conversions : an `int(x)` native or an integer division operator, instead of
+  `Math.toIntExact(Math.round(Math.floor(x)))`.
+- [ ] line continuation before `.`, to break long method chains across lines.
+- [ ] importing other Babble files : `import` only reaches Java packages, so a program is one file.
+- [ ] parse errors with a line, a column and a message : a syntax error such as using the keyword
+  `object` as a name is reported as a bare `ParseCancellationException`.
+- [ ] command-line launcher : a `main` class in the jar to run a `.ba` file, with script arguments,
+  instead of [a launcher per project](raytracer/Run.java).
+- [ ] thread safety : the ray tracer found a race in the Java member caches, now fixed, but nothing
+  tests scripts running on several threads.
+- [ ] unboxed arithmetic for typed code (also planned above) : the ray tracer spends its time
+  boxing doubles and allocating vectors, about 150 ns per ray-sphere test.
