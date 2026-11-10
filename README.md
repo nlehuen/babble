@@ -316,6 +316,7 @@ that call each other go in one input. To change a variable they see, assign it :
 
 `:help` lists the few commands (`:cancel` drops an unfinished input, `:quit` leaves). The
 switches below work here too : `java -Dbabble.mode=compile -Dbabble.typecheck=error -jar …`.
+`java -jar … -keep-alive script.ba` runs a script first, and starts with what it defined.
 There is no line editing or history ; `rlwrap java -jar …` adds both. The
 [design note](docs/design/repl.md) has the details.
 
@@ -352,8 +353,38 @@ mvn package
 ```
 
 That builds the jar, with its dependencies next to it in `target/lib`, and runs the test suite
-twice : once interpreted, once compiled to bytecode. `java -jar target/babble-1.0-SNAPSHOT.jar`
-starts the interactive mode. From Java, Babble is used through the standard
+twice : once interpreted, once compiled to bytecode. The jar is Babble's command line :
+
+```
+java -jar target/babble-1.0-SNAPSHOT.jar                              # the interactive mode
+java -jar target/babble-1.0-SNAPSHOT.jar script.ba [arguments...]     # runs a script
+java -jar target/babble-1.0-SNAPSHOT.jar -keep-alive script.ba ...    # runs it, then the interactive mode
+```
+
+A script finds its arguments in `args`, a `java.util.List` of strings :
+
+```
+;; hello.ba
+def i = 0
+while i < args.size() then (
+    println("Hello, ", args.get(i))
+    i = i + 1
+)
+```
+
+```
+$ java -jar target/babble-1.0-SNAPSHOT.jar hello.ba Ada Grace
+Hello, Ada
+Hello, Grace
+```
+
+Its output goes to the standard output, and its errors and warnings to the error stream. The
+exit status is 1 when the script fails, and 2 when it can't be read. With `-keep-alive`, the
+interactive mode starts once the script is done, or has failed, with everything it defined :
+handy to try out the functions of a file. Options go before the script ; what follows it is the
+script's.
+
+From Java, Babble is used through the standard
 [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) `javax.script` API :
 
 ```java
@@ -408,6 +439,7 @@ Implementation features :
 - [x] clean separation between grammar and implementation thanks to ANTLR4's parse tree & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
 - [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker (see the [design note](docs/design/repl.md)).
+- [x] command line : `java -jar babble.jar script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
 - [x] syntax errors that say what was unexpected, and where.
 
 Planned features
@@ -456,8 +488,9 @@ order of how much each would improve that code :
 - [x] parse errors with a line, a column and a message : a syntax error such as using the keyword
   `object` as a name was reported as a bare `ParseCancellationException`. It is now
   `Syntax error : unexpected 'object'`, at its line and column.
-- [ ] command-line launcher : a `main` class in the jar to run a `.ba` file, with script arguments,
-  instead of [a launcher per project](examples/raytracer-fable/Run.java).
+- [x] command-line launcher : a `main` class in the jar to run a `.ba` file, with script arguments,
+  instead of [a launcher per project](examples/raytracer-fable/Run.java) :
+  `java -jar target/babble-1.0-SNAPSHOT.jar script.ba arguments...`, see *Building and running*.
 - [ ] thread safety : the ray tracer found a race in the Java member caches, now fixed, but nothing
   tests scripts running on several threads.
 - [ ] unboxed arithmetic for typed code (also planned above) : the ray tracer spends its time
