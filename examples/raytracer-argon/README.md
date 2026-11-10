@@ -60,12 +60,54 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
 
 ## Running
 
-Compile and execute [raytracer.ba](raytracer.ba) via Babble's `ScriptEngine` (`compile` mode with strict type checking enabled) to produce `scene.ppm`:
+### 1. Render `scene.ppm`
+
+[raytracer.ba](raytracer.ba) writes a standard `P3` (ASCII RGB) Portable PixMap stream to `STDOUT` (`println(..., to: out)`). Compile the project and evaluate `raytracer.ba` through `BabbleScriptEngineFactory` with `babble.mode=compile` and `babble.typecheck=error`:
 
 ```bash
-mvn test-compile exec:java \
-  -Dbabble.mode=compile \
-  -Dbabble.typecheck=error \
-  -Dexec.mainClass=org.babblelang.Runner \
-  -Dexec.args="examples/raytracer-argon/raytracer.ba" > examples/raytracer-argon/scene.ppm
+mvn test-compile
+jshell -J-Dbabble.mode=compile -J-Dbabble.typecheck=error -J-Dbabble.verify=true \
+  --class-path "$(mvn -q dependency:build-classpath -Dmdep.outputFile=/dev/stdout):target/classes" - <<'EOF'
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
+import javax.script.*;
+import org.babblelang.engine.BabbleScriptEngineFactory;
+
+var engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+var compiled = ((Compilable) engine).compile(Files.readString(Path.of("examples/raytracer-argon/raytracer.ba")));
+try (var out = Files.newBufferedWriter(Path.of("examples/raytracer-argon/scene.ppm"), StandardCharsets.US_ASCII)) {
+    engine.getContext().setWriter(out);
+    compiled.eval();
+}
+/exit
+EOF
+```
+
+### 2. Convert `scene.ppm` to `scene.png`
+
+Because web browsers and GitHub Markdown do not render `.ppm` (`image/x-portable-pixmap`) files inline inside `<img>` tags, [scene.ppm](scene.ppm) is converted losslessly to [scene.png](scene.png) for embedding in this README.
+
+Using **ImageMagick** (or **FFmpeg**):
+
+```bash
+magick examples/raytracer-argon/scene.ppm examples/raytracer-argon/scene.png
+# or:
+ffmpeg -y -i examples/raytracer-argon/scene.ppm examples/raytracer-argon/scene.png
+```
+
+Or using **pure Java (`javax.imageio.ImageIO`)** with no external tools:
+
+```java
+try (var scanner = new java.util.Scanner(Path.of("examples/raytracer-argon/scene.ppm"))) {
+    scanner.next(); // "P3"
+    int width = scanner.nextInt(), height = scanner.nextInt(), maxVal = scanner.nextInt();
+    var image = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB);
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            int r = scanner.nextInt(), g = scanner.nextInt(), b = scanner.nextInt();
+            image.setRGB(x, y, ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF));
+        }
+    }
+    javax.imageio.ImageIO.write(image, "png", Path.of("examples/raytracer-argon/scene.png").toFile());
+}
 ```
