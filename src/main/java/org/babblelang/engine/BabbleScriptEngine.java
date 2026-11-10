@@ -5,8 +5,15 @@ import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
+import org.antlr.v4.runtime.IntStream;
+import org.antlr.v4.runtime.Lexer;
+import org.antlr.v4.runtime.LexerNoViableAltException;
 import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
+import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.misc.Interval;
+import org.antlr.v4.runtime.misc.ParseCancellationException;
+import org.babblelang.analysis.AnalysisSession;
 import org.babblelang.analysis.AnalysisException;
 import org.babblelang.analysis.BlockScopes;
 import org.babblelang.analysis.ScopeAnalysis;
@@ -67,7 +74,11 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private static final BaseErrorListener FAIL_ON_LEXICAL_ERROR = new BaseErrorListener() {
         @Override
         public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line, int charPositionInLine, String msg, RecognitionException e) {
-            throw new BabbleException("Lexical error at line " + line + ":" + charPositionInLine + " : " + msg);
+            // A string still open where the text stops : more text could close it.
+            boolean atEnd = recognizer instanceof Lexer lexer && e instanceof LexerNoViableAltException noViableAlt
+                    && lexer.getInputStream().LA(1) == IntStream.EOF
+                    && lexer.getInputStream().getText(Interval.of(noViableAlt.getStartIndex(), noViableAlt.getStartIndex())).equals("\"");
+            throw new ParseFailure("Lexical error at line " + line + ":" + charPositionInLine + " : " + msg, line, charPositionInLine + 1, true, atEnd);
         }
     };
 
@@ -202,32 +213,64 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return compile(script, sourceName(getContext()), getContext());
     }
 
-    private static String sourceName(ScriptContext context) {
+    static String sourceName(ScriptContext context) {
         Object name = context.getAttribute(ScriptEngine.FILENAME);
         return name != null ? name.toString() : DEFAULT_SOURCE_NAME;
+    }
+
+    /** A lexer that fails on the first character it doesn't recognise. */
+    static BabbleLexer lexer(CharStream input) {
+        BabbleLexer lexer = new BabbleLexer(input);
+        // An error strategy only governs the parser : without this the lexer reports to
+        // ANTLR's ConsoleErrorListener, which prints to stderr, skips the offending
+        // character and lets compilation succeed on a mangled token stream.
+        lexer.removeErrorListeners();
+        lexer.addErrorListener(FAIL_ON_LEXICAL_ERROR);
+        return lexer;
+    }
+
+    /**
+     * @throws ParseFailure on a lexical or syntax error
+     */
+    static BabbleParser.FileContext parse(CharStream input) {
+        BabbleParser parser = new BabbleParser(new CommonTokenStream(lexer(input)));
+        // BailErrorStrategy already aborts on a syntax error ; dropping the default
+        // listener just stops it printing to stderr on the way out.
+        parser.removeErrorListeners();
+        parser.setErrorHandler(new BailErrorStrategy());
+        try {
+            return parser.file();
+        } catch (ParseCancellationException e) {
+            Token token = e.getCause() instanceof RecognitionException recognition && recognition.getOffendingToken() != null
+                    ? recognition.getOffendingToken() : parser.getCurrentToken();
+            String found = switch (token.getType()) {
+                case Token.EOF -> "end of input";
+                case BabbleLexer.NL -> "end of line";
+                default -> "'" + token.getText() + "'";
+            };
+            throw new ParseFailure("Syntax error : unexpected " + found, token.getLine(), token.getCharPositionInLine() + 1,
+                    false, token.getType() == Token.EOF);
+        }
     }
 
     private CompiledScript compile(Reader script, String sourceName, ScriptContext context) throws ScriptException {
         BabbleParser.FileContext file;
         try {
-            CharStream input = CharStreams.fromReader(script);
-            BabbleLexer lexer = new BabbleLexer(input);
-            // An error strategy only governs the parser : without this the lexer reports to
-            // ANTLR's ConsoleErrorListener, which prints to stderr, skips the offending
-            // character and lets compilation succeed on a mangled token stream.
-            lexer.removeErrorListeners();
-            lexer.addErrorListener(FAIL_ON_LEXICAL_ERROR);
-            CommonTokenStream tokenStream = new CommonTokenStream(lexer);
-            BabbleParser parser = new BabbleParser(tokenStream);
-            // BailErrorStrategy already aborts on a syntax error ; dropping the default
-            // listener just stops it printing to stderr on the way out.
-            parser.removeErrorListeners();
-            parser.setErrorHandler(new BailErrorStrategy());
-            file = parser.file();
+            file = parse(CharStreams.fromReader(script));
+        } catch (ParseFailure e) {
+            throw e.toScriptException(sourceName);
         } catch (Exception e) {
             throw new ScriptException(e);
         }
+        return script(file, analyze(file, sourceName, context, null), sourceName);
+    }
 
+    /**
+     * Runs the analysis, and reports its warnings and the type checker's diagnostics.
+     *
+     * @param session the interactive session the file is an input of, or null
+     */
+    ScopeAnalysis analyze(BabbleParser.FileContext file, String sourceName, ScriptContext context, AnalysisSession session) throws ScriptException {
         ScopeAnalysis scopes;
         ScopeAnalysis.Typecheck typecheck;
         try {
@@ -236,7 +279,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             throw new ScriptException(e);
         }
         try {
-            scopes = BlockScopes.analyze(file, typecheck);
+            scopes = BlockScopes.analyze(file, typecheck, session);
         } catch (AnalysisException e) {
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());
@@ -245,9 +288,13 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         if (typecheck == ScopeAnalysis.Typecheck.ERROR && !scopes.typeDiagnostics().isEmpty()) {
             // Every diagnostic went to the error writer ; the first one fails the compilation.
             ScopeAnalysis.Warning first = scopes.typeDiagnostics().get(0);
-            throw new ScriptException(new BabbleException(first.message()).toString(), sourceName, first.line(), first.column());
+            throw new TypeCheckException(new BabbleException(first.message()).toString(), sourceName, first.line(), first.column());
         }
+        return scopes;
+    }
 
+    /** The script of an analysed file, for the engine's mode. */
+    BabbleScript script(BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName) throws ScriptException {
         try {
             return switch (getMode()) {
                 case INTERPRET -> new BabbleCompiledScript(this, file, scopes, sourceName);
@@ -257,6 +304,18 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             // A bad mode, or code the compiler cannot generate (a method over 64 KB).
             throw new ScriptException(e);
         }
+    }
+
+    /**
+     * An interactive session : successive inputs, each seeing the definitions of the
+     * previous ones. Its output goes to the engine's context.
+     */
+    public BabbleSession newSession() {
+        return newSession(getContext());
+    }
+
+    public BabbleSession newSession(ScriptContext context) {
+        return new BabbleSession(this, context);
     }
 
     public Bindings createBindings() {

@@ -10,7 +10,16 @@ Babble is a toy language running on top of the Java Virtual Machine. Its objecti
 * to build a simple programming language that in turn can be used to teach programming to beginners.
 
 Scripts run either in a tree-walking interpreter, or compiled to JVM bytecode. Both modes
-give the same results, and the whole test suite runs in both.
+give the same results, and the whole test suite runs in both. There is an interactive mode
+to try things out :
+
+```
+$ mvn package
+$ java -jar target/babble-1.0-SNAPSHOT.jar
+Babble. :help for help, :quit to leave.
+>> "Hello, " + "world"
+"Hello, world"
+```
 
 What does it look like ?
 -------------------------
@@ -275,6 +284,41 @@ def half = (n : int) : double -> ( n / 2 )
 half(id("4"))   ;; Type error : expected int, got string, at line number 3
 ```
 
+### Interactive mode
+
+`java -jar target/babble-1.0-SNAPSHOT.jar` reads an input, evaluates it, prints its value, and
+starts again. An input continues on the next line while it is incomplete : inside
+parentheses, or after an operator, a comma, `=`, `->`, `then` or `else`.
+
+```
+>> def twice = (f, v) -> (
+..   f(f(v))
+.. )
+function twice
+>> twice((n) -> ( n + 1 ), 5)
+7
+>> def name = "world"
+"world"
+>> println("Hello, ", name)
+Hello, world
+>> def Point = value class (x, y) ()
+class Point
+>> Point(1, 2)
+Point(x: 1, y: 2)
+>> name + nosuch
+Error : No such name : nosuch
+```
+
+Each input sees what the previous ones defined, classes and interfaces included, and goes
+through the same checks as a script. Defining a name again replaces it for what you type
+next ; functions defined before keep the definition they were written against, so functions
+that call each other go in one input. To change a variable they see, assign it : `name = …`.
+
+`:help` lists the few commands (`:cancel` drops an unfinished input, `:quit` leaves). The
+switches below work here too : `java -Dbabble.mode=compile -Dbabble.typecheck=error -jar …`.
+There is no line editing or history ; `rlwrap java -jar …` adds both. The
+[design note](docs/design/repl.md) has the details.
+
 Ray tracing demo
 ----------------
 
@@ -307,9 +351,10 @@ Babble needs Java 21 and Maven :
 mvn package
 ```
 
-That builds the jar and runs the test suite twice : once interpreted, once compiled to
-bytecode. Babble is used through the standard [JSR 223](http://www.jcp.org/en/jsr/detail?id=223)
-`javax.script` API :
+That builds the jar, with its dependencies next to it in `target/lib`, and runs the test suite
+twice : once interpreted, once compiled to bytecode. `java -jar target/babble-1.0-SNAPSHOT.jar`
+starts the interactive mode. From Java, Babble is used through the standard
+[JSR 223](http://www.jcp.org/en/jsr/detail?id=223) `javax.script` API :
 
 ```java
 ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
@@ -324,6 +369,15 @@ the compiler generates, `-Dbabble.dumpClasses=<dir>` writes the class files for 
 `-Dbabble.typecheck=warn`, or `engine.put("babble.typecheck", "warn")`, turns the type checker
 on : its warnings go to the context's error writer. `error` makes them errors, and enforces
 declared types at runtime.
+
+A host can also keep a session, whose inputs see each other's definitions, as the
+interactive mode does :
+
+```java
+BabbleSession session = ((BabbleScriptEngine) engine).newSession();
+session.eval("def double = (n) -> ( n * 2 )");
+session.eval("double(21)");    // 42
+```
 
 Implemented Features
 --------------------
@@ -353,13 +407,15 @@ Implementation features :
 - [x] about 100 lines of ANTLR4 grammar (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's parse tree & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
+- [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker (see the [design note](docs/design/repl.md)).
+- [x] syntax errors that say what was unexpected, and where.
 
 Planned features
 ----------------
 
 Language features :
 
-- [ ] interactive mode.
+- [ ] line editing, history and completion in the interactive mode.
 - [ ] better, more user-friendly error reports.
 - [ ] fuller type inference, narrowing after `is`, and error mode by default.
 - [ ] collection classes (mapped from Java).
@@ -397,8 +453,9 @@ order of how much each would improve that code :
   `Math.toIntExact(Math.round(Math.floor(x)))`.
 - [ ] line continuation before `.`, to break long method chains across lines.
 - [ ] importing other Babble files : `import` only reaches Java packages, so a program is one file.
-- [ ] parse errors with a line, a column and a message : a syntax error such as using the keyword
-  `object` as a name is reported as a bare `ParseCancellationException`.
+- [x] parse errors with a line, a column and a message : a syntax error such as using the keyword
+  `object` as a name was reported as a bare `ParseCancellationException`. It is now
+  `Syntax error : unexpected 'object'`, at its line and column.
 - [ ] command-line launcher : a `main` class in the jar to run a `.ba` file, with script arguments,
   instead of [a launcher per project](examples/raytracer-fable/Run.java).
 - [ ] thread safety : the ray tracer found a race in the Java member caches, now fixed, but nothing
