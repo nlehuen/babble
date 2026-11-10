@@ -331,12 +331,13 @@ rendered by it, in compiled mode :
 
 ![The final scene of Ray Tracing in One Weekend, rendered by Babble](examples/raytracer-fable/demo.png)
 
-The ray tracer itself is all Babble, using the JDK for maths, random numbers, threads and the
-PNG file. The only Java code is [a dozen lines](examples/raytracer-fable/Run.java) that hand the script to
-the engine. To render the image again :
+It is all Babble, using the JDK for maths, random numbers, threads and the PNG file : there is
+no Java code of its own, and no launcher. To render the image again, build the jar and hand it
+the script :
 
 ```
-examples/raytracer-fable/render.sh
+mvn package
+java -Dbabble.mode=compile -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
 ```
 
 [examples/raytracer-argon](examples/raytracer-argon/README.md) is another port of the same book,
@@ -489,8 +490,8 @@ order of how much each would improve that code :
   `object` as a name was reported as a bare `ParseCancellationException`. It is now
   `Syntax error : unexpected 'object'`, at its line and column.
 - [x] command-line launcher : a `main` class in the jar to run a `.ba` file, with script arguments,
-  instead of [a launcher per project](examples/raytracer-fable/Run.java) :
-  `java -jar target/babble-1.0-SNAPSHOT.jar script.ba arguments...`, see *Building and running*.
+  instead of a launcher per project : `java -jar target/babble-1.0-SNAPSHOT.jar script.ba arguments...`,
+  see *Building and running*. The ray tracers run that way, and their launchers are gone.
 - [ ] thread safety : the ray tracer found a race in the Java member caches, now fixed, but nothing
   tests scripts running on several threads.
 - [ ] unboxed arithmetic for typed code (also planned above) : the ray tracer spends its time
