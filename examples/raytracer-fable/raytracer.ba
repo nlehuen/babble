@@ -11,12 +11,12 @@
     - scanlines are shared between threads, each with its own random generator, so functions
       that need random numbers take it as their "rng" parameter.
 
-    Run it from the root of the repository with raytracer/render.sh.
+    Run it from the root of the repository with examples/raytracer-fable/render.sh.
 ;;)
 
 ;; ---------------------------------------------------------------- Settings
 
-def output = "raytracer/demo.png"
+def output = "examples/raytracer-fable/demo.png"
 def imageWidth = 800            ;; the book renders 1200 pixels wide...
 def samplesPerPixel = 20        ;; ...with 500 samples per pixel
 def maxDepth = 50
