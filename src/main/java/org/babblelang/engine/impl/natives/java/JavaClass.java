@@ -15,7 +15,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -23,7 +22,7 @@ public class JavaClass implements Scope<Callable>, Callable, JavaType {
     private static final Map<Class<?>, JavaClass> CLASSES = new ConcurrentHashMap<>();
 
     private final Class<?> clazz;
-    private final Map<String, Slot<Callable>> members = new HashMap<>();
+    private final Map<String, Slot<Callable>> members = new ConcurrentHashMap<>();
     private final Overloads.Cache<Constructor<?>> constructors = new Overloads.Cache<>();
 
     JavaClass(Class<?> clazz) {

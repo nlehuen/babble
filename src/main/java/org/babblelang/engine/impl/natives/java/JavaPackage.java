@@ -4,13 +4,13 @@ import org.babblelang.engine.BabbleException;
 import org.babblelang.engine.impl.Scope;
 import org.babblelang.engine.impl.Slot;
 
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
 public class JavaPackage implements Scope<Scope> {
     private final ImportFunction importer;
     private final String name;
-    private final Map<String, Slot<Scope>> locals = new HashMap<>();
+    private final Map<String, Slot<Scope>> locals = new ConcurrentHashMap<>();
 
     JavaPackage(ImportFunction importer, String name) {
         this.importer = importer;
