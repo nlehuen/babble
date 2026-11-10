@@ -52,6 +52,7 @@ final class TypeChecker {
     private final Typer typer = new Typer();
 
     private final boolean enforce;
+    private BabbleParser.FileContext file;
 
     /**
      * @param enforce error mode : also record, for the backends, the declared types to
@@ -63,6 +64,11 @@ final class TypeChecker {
     }
 
     void run(BabbleParser.FileContext file) {
+        this.file = file;
+        if (pass.session != null) {
+            occurrenceScopes.putAll(pass.session.occurrenceScopes);
+            reassigned.addAll(pass.session.reassigned);
+        }
         for (BlockScopes.Occurrence occurrence : pass.occurrences) {
             occurrenceScopes.put(occurrence.ctx(), occurrence.scope());
         }
@@ -81,7 +87,19 @@ final class TypeChecker {
     }
 
     private void warn(String message, ParserRuleContext at) {
+        if (!inFile(at)) {
+            // In a session, typing a name can lead into an earlier input, reported when it was one.
+            return;
+        }
         diagnostics.add(new Diagnostic(at.getStart().getLine(), at.getStart().getCharPositionInLine() + 1, message));
+    }
+
+    private boolean inFile(ParserRuleContext ctx) {
+        ParserRuleContext root = ctx;
+        while (root.getParent() != null) {
+            root = root.getParent();
+        }
+        return root == file;
     }
 
     /** Types every expression and block, and resolves every annotation, in source order. */
@@ -176,6 +194,9 @@ final class TypeChecker {
     private ScopeNode scopeOf(ParserRuleContext ctx) {
         for (ParserRuleContext p = ctx; p != null; p = p.getParent()) {
             ScopeNode scope = pass.scopeNodes.get(p);
+            if (scope == null && pass.session != null) {
+                scope = pass.session.scopeNodes.get(p);
+            }
             if (scope != null) {
                 return scope;
             }
@@ -604,7 +625,9 @@ final class TypeChecker {
 
         @Override
         public Type visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
-            functions.add(ctx);
+            if (inFile(ctx)) {
+                functions.add(ctx);
+            }
             return signature(ctx);
         }
 

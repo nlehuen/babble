@@ -1,11 +1,9 @@
 package org.babblelang.compiler;
 
+import org.babblelang.engine.BabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.runtime.ScriptRuntime;
 
-import javax.script.CompiledScript;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
 import javax.script.ScriptException;
 import java.lang.invoke.MethodHandle;
 import java.util.Map;
@@ -14,8 +12,7 @@ import java.util.Map;
  * A script compiled to a JVM class. The class holds no state of its own, so it serves
  * every eval : each one gets fresh namespaces and its own ScriptRuntime.
  */
-public final class CompiledBabbleScript extends CompiledScript {
-    private final BabbleScriptEngine engine;
+public final class CompiledBabbleScript extends BabbleScript {
     private final Class<?> scriptClass;
     private final Map<String, byte[]> classes;
     private final MethodHandle run;
@@ -23,7 +20,7 @@ public final class CompiledBabbleScript extends CompiledScript {
     private final int firstLine;
 
     CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine) {
-        this.engine = engine;
+        super(engine);
         this.scriptClass = scriptClass;
         this.classes = classes;
         this.run = run;
@@ -50,8 +47,7 @@ public final class CompiledBabbleScript extends CompiledScript {
     }
 
     @Override
-    public Object eval(ScriptContext context) throws ScriptException {
-        ScriptRuntime runtime = engine.createRuntime(context);
+    public Object eval(ScriptRuntime runtime) throws ScriptException {
         try {
             return (Object) run.invokeExact(runtime, runtime.root());
         } catch (Exception e) {
@@ -61,7 +57,7 @@ public final class CompiledBabbleScript extends CompiledScript {
         } catch (Throwable t) {
             throw new ScriptException(t.toString(), sourceName, lineOf(t));
         } finally {
-            BabbleScriptEngine.flush(context);
+            BabbleScriptEngine.flush(runtime.context());
         }
     }
 
@@ -82,10 +78,5 @@ public final class CompiledBabbleScript extends CompiledScript {
             }
         }
         return firstLine;
-    }
-
-    @Override
-    public ScriptEngine getEngine() {
-        return engine;
     }
 }

@@ -63,10 +63,23 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final List<BabbleParser.PackageExpressionContext> packages = new ArrayList<>();
     final Map<BabbleParser.PackageExpressionContext, ScopeNode> packageScopes = new HashMap<>();
 
+    /** The interactive session the file is an input of, or null. */
+    final AnalysisSession session;
+    ScopeNode fileScope;
+
     private final Deque<ScopeNode> scopes = new ArrayDeque<>();
     private ReturnTarget returnTarget = ReturnTarget.NONE;
 
-    private BlockScopes() {
+    private BlockScopes(AnalysisSession session) {
+        this.session = session;
+        if (session != null) {
+            // What earlier inputs defined is found like what the file defines.
+            typeNodes.putAll(session.typeNodes);
+            definitionScopes.putAll(session.definitionScopes);
+            if (session.scope != null) {
+                scopes.push(session.scope);
+            }
+        }
     }
 
     public static ScopeAnalysis analyze(BabbleParser.FileContext file) {
@@ -79,8 +92,18 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     public static ScopeAnalysis analyze(BabbleParser.FileContext file, ScopeAnalysis.Typecheck typecheck) {
-        BlockScopes pass = new BlockScopes();
-        pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
+        return analyze(file, typecheck, null);
+    }
+
+    /**
+     * @param session the interactive session the file is an input of, whose earlier inputs
+     *                it sees the definitions of, or null. The session only changes when
+     *                the result is {@link AnalysisSession#commit committed}.
+     */
+    public static ScopeAnalysis analyze(BabbleParser.FileContext file, ScopeAnalysis.Typecheck typecheck, AnalysisSession session) {
+        BlockScopes pass = new BlockScopes(session);
+        pass.analysis.setPass(pass);
+        pass.fileScope = pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
         new TypeChecks(pass).run();
         pass.analysis.setResolution(new Resolver(pass).run());
         if (typecheck != ScopeAnalysis.Typecheck.OFF) {

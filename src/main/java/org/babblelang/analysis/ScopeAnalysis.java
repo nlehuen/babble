@@ -54,6 +54,7 @@ public final class ScopeAnalysis {
     private final List<Warning> typeDiagnostics = new ArrayList<>();
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
     private Resolution resolution;
+    private BlockScopes pass;
 
     void setDeclared(ParserRuleContext owner, String[] names) {
         declared.put(owner, names);
@@ -74,6 +75,15 @@ public final class ScopeAnalysis {
 
     void setSuperTarget(BabbleParser.SuperExpressionContext superExpression, BabbleParser.TypeContext type) {
         superTargets.put(superExpression, type);
+    }
+
+    void setPass(BlockScopes pass) {
+        this.pass = pass;
+    }
+
+    /** The pass that produced the analysis, for a session to remember. */
+    BlockScopes pass() {
+        return pass;
     }
 
     void setResolution(Resolution resolution) {

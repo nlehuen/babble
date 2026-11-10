@@ -25,6 +25,11 @@ public class JavaPackage implements Scope<Scope> {
         throw new BabbleException("Cannot define anything in a Java package");
     }
 
+    @Override
+    public String toString() {
+        return "package " + name;
+    }
+
     public Slot<Scope> get(String key) {
         return locals.computeIfAbsent(key, k -> {
             Slot<Scope> result = new Slot<>(k, true);

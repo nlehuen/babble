@@ -51,6 +51,9 @@ final class TypeChecks {
     TypeChecks(BlockScopes pass) {
         this.pass = pass;
         this.analysis = pass.analysis;
+        if (pass.session != null) {
+            reassigned.addAll(pass.session.reassigned);
+        }
     }
 
     void run() {
@@ -92,7 +95,7 @@ final class TypeChecks {
     // ---------------------------------------------------------------- name resolution
 
     /** The definition a name refers to from a scope : a def or a parameter, or null. */
-    private static ParserRuleContext resolveName(String name, ScopeNode scope) {
+    static ParserRuleContext resolveName(String name, ScopeNode scope) {
         for (ScopeNode s = scope; s != null; s = s.parent) {
             ParserRuleContext definition = s.names.get(name);
             if (definition != null) {
