@@ -11,7 +11,8 @@
     - scanlines are shared between threads, each with its own random generator, so functions
       that need random numbers take it as their "rng" parameter.
 
-    Run it from the root of the repository with examples/raytracer-fable/render.sh.
+    Run it from the root of the repository, once "mvn package" has built the jar :
+        java -Dbabble.mode=compile -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
 ;;)
 
 ;; ---------------------------------------------------------------- Settings

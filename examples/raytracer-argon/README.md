@@ -62,25 +62,12 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
 
 ### 1. Render `scene.ppm`
 
-[raytracer.ba](raytracer.ba) writes a standard `P3` (ASCII RGB) Portable PixMap stream to `STDOUT` (`println(..., to: out)`). Compile the project and evaluate `raytracer.ba` through `BabbleScriptEngineFactory` with `babble.mode=compile` and `babble.typecheck=error`:
+From the root of the repository, build Babble's jar, then hand it [raytracer.ba](raytracer.ba) (`compile` mode with strict type checking enabled) to produce `scene.ppm`:
 
 ```bash
-mvn test-compile
-jshell -J-Dbabble.mode=compile -J-Dbabble.typecheck=error -J-Dbabble.verify=true \
-  --class-path "$(mvn -q dependency:build-classpath -Dmdep.outputFile=/dev/stdout):target/classes" - <<'EOF'
-import java.nio.charset.StandardCharsets;
-import java.nio.file.*;
-import javax.script.*;
-import org.babblelang.engine.BabbleScriptEngineFactory;
-
-var engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-var compiled = ((Compilable) engine).compile(Files.readString(Path.of("examples/raytracer-argon/raytracer.ba")));
-try (var out = Files.newBufferedWriter(Path.of("examples/raytracer-argon/scene.ppm"), StandardCharsets.US_ASCII)) {
-    engine.getContext().setWriter(out);
-    compiled.eval();
-}
-/exit
-EOF
+mvn package
+java -Dbabble.mode=compile -Dbabble.typecheck=error \
+  -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-argon/raytracer.ba > examples/raytracer-argon/scene.ppm
 ```
 
 ### 2. Convert `scene.ppm` to `scene.png`
