@@ -331,11 +331,14 @@ final class TypeChecker {
             }
         }
         if (resolved instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
+            // What a module exports is not known statically : a type from a module is dynamic.
+            Type fromModule = fromModule(def.value, scopeOf(def), 0) ? Type.DYNAMIC : null;
             if (path.size() == 1) {
-                return classType(def.value);
+                Type type1 = classType(def.value);
+                return type1 != null ? type1 : fromModule;
             }
             String imported = importedPackage(def.value);
-            return imported != null ? javaType(imported + "." + String.join(".", path.subList(1, path.size()))) : null;
+            return imported != null ? javaType(imported + "." + String.join(".", path.subList(1, path.size()))) : fromModule;
         }
         if (resolved instanceof List<?> packages) {
             @SuppressWarnings("unchecked")
@@ -346,6 +349,31 @@ final class TypeChecker {
             return javaType(String.join(".", path));
         }
         return null;
+    }
+
+    /**
+     * Whether a value is {@code import("file.ba")}, or selected from a never-reassigned def
+     * of such a value : {@code def shapes = import("shapes.ba") ; def Circle = shapes.Circle}.
+     */
+    private boolean fromModule(BabbleParser.ExpressionContext value, ScopeNode scope, int depth) {
+        if (value == null || depth > 16) {
+            return false;
+        }
+        if (value instanceof BabbleParser.CallContext call) {
+            return call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
+                    && callee.ID().getText().equals("import")
+                    && call.callParameters().callParameter().size() == 1
+                    && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string
+                    && org.babblelang.engine.impl.Interpreter.unescape(string.getText()).endsWith(".ba");
+        }
+        if (value instanceof BabbleParser.SelectorContext selector) {
+            if (selector.expression() != null) {
+                return fromModule(selector.expression(), scope, depth + 1);
+            }
+            return resolveName(null, selector.ID().getText(), scope) instanceof BabbleParser.DefExpressionContext def
+                    && !reassigned.contains(def) && fromModule(def.value, scopeOf(def), depth + 1);
+        }
+        return false;
     }
 
     private Type classType(BabbleParser.ExpressionContext value) {
@@ -380,7 +408,9 @@ final class TypeChecker {
                 && callee.ID().getText().equals("import")
                 && call.callParameters().callParameter().size() == 1
                 && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
-            return org.babblelang.engine.impl.Interpreter.unescape(string.getText());
+            String name = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
+            // A file name imports a Babble module, whose members are not known statically.
+            return name.endsWith(".ba") ? null : name;
         }
         return null;
     }

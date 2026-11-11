@@ -78,7 +78,7 @@ public final class BabbleCompiler {
         } catch (ReflectiveOperationException e) {
             throw new BabbleException("Cannot load the compiled script", e);
         }
-        return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, file.getStart().getLine());
+        return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, file.getStart().getLine(), scopes.exports());
     }
 
     private static void dump(Path directory, String internalName, byte[] bytes) {

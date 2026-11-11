@@ -187,7 +187,9 @@ final class TypeChecks {
                 && callee.ID().getText().equals("import")
                 && call.callParameters().callParameter().size() == 1
                 && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
-            return org.babblelang.engine.impl.Interpreter.unescape(string.getText());
+            String name = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
+            // A file name imports a Babble module, whose members are not known statically.
+            return name.endsWith(".ba") ? null : name;
         }
         return null;
     }

@@ -21,6 +21,9 @@ public abstract class BabbleScript extends CompiledScript {
     /** Runs the script in the root namespace of a runtime. */
     public abstract Object eval(ScriptRuntime runtime) throws ScriptException;
 
+    /** The names the script exports : what a module importing it can read. */
+    public abstract String[] exports();
+
     @Override
     public Object eval(ScriptContext context) throws ScriptException {
         return eval(engine.createRuntime(context));

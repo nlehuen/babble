@@ -1,0 +1,39 @@
+;;(
+    Testing modules : import("file.ba") runs a file once, and gives its exports.
+;;)
+
+def shapes = import("modules/shapes.ba")
+def vectors = import("modules/vectors.ba")
+
+;; exported definitions are members of the module
+def s = shapes.Square(vectors.Vec(1, 2), 3)
+assert(s.area() == 9)
+assert(s.opposite() == vectors.Vec(4, 5))
+assert(s is shapes.Shape)
+assert(s.describe() == "shape of area 9")
+assert(vectors.origin == vectors.Vec(0, 0))
+
+;; a class of a module can be given a local name
+def Vec = vectors.Vec
+assert(Vec(1, 1).plus(Vec(2, 2)) == Vec(3, 3))
+
+;; a module has its own state, shared by everything that imports it
+assert(shapes.count() == 0)
+shapes.unitSquare() ; shapes.unitSquare()
+assert(shapes.count() == 2)
+assert(same(import("modules/shapes.ba"), shapes))
+assert(import("modules/shapes.ba").count() == 2)
+
+;; shapes.ba imported vectors.ba itself : it got the same module, so the same class
+assert(shapes.unitSquare().corner is Vec)
+
+;; exported packages
+assert(shapes.units.m == 100 * shapes.units.cm)
+
+;; modules importing each other
+def even = import("modules/even.ba")
+assert(even.isEven(10))
+assert(not even.isEven(7))
+
+;; Java packages are imported as before
+assert(import("java").util.ArrayList().size() == 0)

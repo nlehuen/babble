@@ -24,6 +24,11 @@ public class BabbleCompiledScript extends BabbleScript {
     }
 
     @Override
+    public String[] exports() {
+        return scopes.exports();
+    }
+
+    @Override
     public Object eval(ScriptRuntime runtime) throws ScriptException {
         Interpreter interpreter = new Interpreter(runtime, scopes, sourceName);
         try {
