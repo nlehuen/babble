@@ -18,9 +18,11 @@ public final class CompiledBabbleScript extends BabbleScript {
     private final MethodHandle run;
     private final String sourceName;
     private final int firstLine;
+    private final String[] exports;
 
-    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine) {
+    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports) {
         super(engine);
+        this.exports = exports;
         this.scriptClass = scriptClass;
         this.classes = classes;
         this.run = run;
@@ -44,6 +46,11 @@ public final class CompiledBabbleScript extends BabbleScript {
      */
     public Map<String, byte[]> getClasses() {
         return java.util.Collections.unmodifiableMap(classes);
+    }
+
+    @Override
+    public String[] exports() {
+        return exports.clone();
     }
 
     @Override

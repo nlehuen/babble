@@ -131,6 +131,11 @@ public class DifferentialTestCase {
 
     /** @param typecheck the type checker setting, or null for the default */
     private static Outcome run(String mode, String script, String typecheck) {
+        return run(mode, script, typecheck, null);
+    }
+
+    /** @param file the name of the script's file, which its relative imports are resolved against, or null */
+    private static Outcome run(String mode, String script, String typecheck, String file) {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
         if (typecheck != null) {
@@ -139,6 +144,9 @@ public class DifferentialTestCase {
         ScriptContext context = new SimpleScriptContext();
         context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
         context.setAttribute("assert", new AssertFunction(), ScriptContext.ENGINE_SCOPE);
+        if (file != null) {
+            context.setAttribute(ScriptEngine.FILENAME, file, ScriptContext.ENGINE_SCOPE);
+        }
         StringWriter out = new StringWriter();
         context.setWriter(out);
         try {
@@ -215,7 +223,10 @@ public class DifferentialTestCase {
     @ParameterizedTest(name = "{0}")
     @MethodSource("files")
     public void testFile(String file) throws Exception {
-        assertSameOutcome(Files.readString(Path.of(file)));
+        String script = Files.readString(Path.of(file));
+        Outcome interpreted = run("interpret", script, null, file);
+        Assertions.assertEquals(interpreted, run("compile", script, null, file), file);
+        Assertions.assertNull(interpreted.error(), file);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -234,7 +245,9 @@ public class DifferentialTestCase {
     @ParameterizedTest(name = "{0}")
     @MethodSource("files")
     public void testFileWithTypesEnforced(String file) throws Exception {
-        Outcome outcome = assertSameTypedOutcome(Files.readString(Path.of(file)));
+        String script = Files.readString(Path.of(file));
+        Outcome outcome = run("interpret", script, "error", file);
+        Assertions.assertEquals(outcome, run("compile", script, "error", file), file);
         Assertions.assertNull(outcome.error(), file);
     }
 }

@@ -270,6 +270,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
+        export(ctx.EXPORT(), ctx.name);
         current().packages.computeIfAbsent(ctx.name.getText(), n -> new ArrayList<>()).add(ctx);
         packages.add(ctx);
         packageScopes.put(ctx, current());
@@ -378,6 +379,17 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     // ---------------------------------------------------------------- definitions
 
+    /** {@code export def} and {@code export package} : only for the names of the file itself. */
+    private void export(org.antlr.v4.runtime.tree.TerminalNode export, Token name) {
+        if (export == null) {
+            return;
+        }
+        if (current().kind != ScopeNode.Kind.FILE) {
+            throw error("export only applies to the top-level definitions of a file : " + name.getText(), export.getSymbol());
+        }
+        analysis.addExport(name.getText());
+    }
+
     @Override
     public Void visitDefExpression(BabbleParser.DefExpressionContext ctx) {
         ScopeNode scope = current();
@@ -385,6 +397,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             throw error("Definition in a while test : " + ctx.name.getText(), ctx.name);
         }
         checkPlainParameters(ctx.type());
+        export(ctx.EXPORT(), ctx.name);
         boolean isPrivate = ctx.PRIVATE() != null;
         BabbleParser.FunctionLiteralContext function = ctx.value instanceof BabbleParser.FunctionLiteralContext literal ? literal : null;
         int flags = (function != null ? ClassShape.METHOD : 0) | (isPrivate ? ClassShape.PRIVATE : 0);

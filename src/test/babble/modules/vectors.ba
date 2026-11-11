@@ -1,0 +1,16 @@
+;;(
+    A module : the definitions marked "export" are what import("vectors.ba") gives access to.
+;;)
+
+;; not exported : only this file can use it
+def square = (n) -> ( n * n )
+
+export def Vec = value class (x, y) (
+    def plus = (o) -> ( Vec(this.x + o.x, this.y + o.y) )
+    def lengthSquared = () -> ( square(this.x) + square(this.y) )
+)
+
+export def origin = Vec(0, 0)
+
+;; a module is a script like any other : it can check itself when it loads
+assert(Vec(3, 4).lengthSquared() == 25)

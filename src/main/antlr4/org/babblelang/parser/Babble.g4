@@ -9,10 +9,11 @@ file: sep? expression (sep expression)* sep? EOF;
 sep: (';' | NL)+;
 
 expression:
-          PACKAGE name=ID NL* packageBlock=block              # packageExpression
+          // "export" is only accepted at the top level of a file, which the analysis checks.
+          EXPORT? PACKAGE name=ID NL* packageBlock=block      # packageExpression
           | IF test=expression THEN NL* thenBlock=block
                      (NL* ELSE NL* elseBlock=block)?          # ifExpression
-          | PRIVATE? DEF name=ID (':' type)? ('=' NL* value=expression)?   # defExpression
+          | (EXPORT | PRIVATE)? DEF name=ID (':' type)? ('=' NL* value=expression)?   # defExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           // "value class" : the modifier is a contextual keyword, checked by the analysis.
           // No newline before the body : "class (a)" followed by "(b)" on the next line
@@ -116,6 +117,7 @@ THIS: 'this';
 SUPER: 'super';
 PRIVATE: 'private';
 STATIC: 'static';
+EXPORT: 'export';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
 MULTILINECOMMENT: ';;(' .*? ';;)' -> skip;
 COMMENT: ';;' ~[\r\n]* -> skip;

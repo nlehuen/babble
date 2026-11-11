@@ -27,6 +27,7 @@ import org.babblelang.engine.impl.natives.SameFunction;
 import org.babblelang.engine.impl.natives.java.ImportFunction;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.Module;
 import org.babblelang.runtime.ScriptRuntime;
 
 import javax.script.*;
@@ -35,6 +36,10 @@ import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.StringReader;
 import java.io.Writer;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 
@@ -68,6 +73,9 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             }
         }
     }
+
+    /** {@code import} takes a name with this extension for a Babble file, any other for a Java package. */
+    public static final String MODULE_EXTENSION = ".ba";
 
     private static final String DEFAULT_SOURCE_NAME = "<input>";
 
@@ -143,6 +151,10 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      * ENGINE_SCOPE bindings and the script's own top-level definitions.
      */
     public ScriptRuntime createRuntime(ScriptContext context) {
+        return createRuntime(context, new HashMap<>());
+    }
+
+    private ScriptRuntime createRuntime(ScriptContext context, Map<Path, Module> modules) {
         Namespace output = implicits.enter(null);
         Writer writer = context.getWriter();
         output.define("STDOUT", true).set(writer == null || writer instanceof PrintWriter ? writer : new PrintWriter(writer));
@@ -152,7 +164,73 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         for (Map.Entry<String, Object> binding : context.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {
             root.define(binding.getKey(), false).set(binding.getValue());
         }
-        return new ScriptRuntime(root, context, this);
+        return new ScriptRuntime(root, context, this, modules);
+    }
+
+    /**
+     * {@code import("path.ba")} : the module of a Babble file. A relative path is resolved
+     * against the directory of the importing file when its source name is a file (see
+     * {@link ScriptEngine#FILENAME}), else against the working directory.
+     * <p>
+     * A file runs once per eval, in the mode of the engine, with a root of its own : every
+     * import of it gets the same module. The module is registered before the file runs,
+     * so files may import each other ; what such a cycle cannot do is read an export
+     * before its definition ran.
+     */
+    public Module importModule(ScriptRuntime rt, String name, String importerName) {
+        Path file = resolveModule(name, importerName);
+        Path key;
+        try {
+            key = file.toRealPath();
+        } catch (IOException e) {
+            throw new BabbleException("Cannot import " + name + " : no such file : " + file);
+        }
+        Map<Path, Module> modules = rt.modules();
+        synchronized (modules) {
+            Module module = modules.get(key);
+            if (module != null) {
+                return module;
+            }
+            try {
+                BabbleScript script;
+                try (Reader reader = Files.newBufferedReader(key)) {
+                    script = (BabbleScript) compile(reader, file.toString(), rt.context());
+                } catch (IOException e) {
+                    throw new BabbleException("Cannot import " + name + " : " + e);
+                }
+                ScriptRuntime runtime = createRuntime(rt.context(), modules);
+                module = new Module(file.toString(), runtime.root(), script.exports());
+                modules.put(key, module);
+                try {
+                    script.eval(runtime);
+                } catch (ScriptException | RuntimeException e) {
+                    modules.remove(key);
+                    throw e;
+                }
+                return module;
+            } catch (ScriptException e) {
+                // The message ends with the file and line of the module : the importing
+                // script then adds its own, which reads as a trace.
+                String message = e.getMessage();
+                String prefix = BabbleException.class.getName() + ": ";
+                throw new BabbleException(message.startsWith(prefix) ? message.substring(prefix.length()) : message);
+            }
+        }
+    }
+
+    private static Path resolveModule(String name, String importerName) {
+        try {
+            Path path = Path.of(name);
+            if (!path.isAbsolute() && importerName != null) {
+                Path directory = Path.of(importerName).getParent();
+                if (directory != null && Files.isDirectory(directory)) {
+                    path = directory.resolve(path);
+                }
+            }
+            return path.normalize();
+        } catch (InvalidPathException e) {
+            throw new BabbleException("Cannot import " + name + " : " + e.getMessage());
+        }
     }
 
     /**

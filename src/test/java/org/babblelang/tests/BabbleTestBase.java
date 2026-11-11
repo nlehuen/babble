@@ -15,7 +15,10 @@ public abstract class BabbleTestBase {
     }
 
     void interpretFile(String path) throws FileNotFoundException, ScriptException {
-        BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(new FileReader(path), buildBindings());
+        Bindings bindings = buildBindings();
+        // The name of the file is what its relative imports are resolved against.
+        bindings.put(javax.script.ScriptEngine.FILENAME, path);
+        BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(new FileReader(path), bindings);
     }
 
     Object interpret(String script) throws ScriptException {
