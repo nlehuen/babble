@@ -254,6 +254,37 @@ java.util.Collections.sort(wallet)                 ;; Java calls Money.compareTo
 assert(wallet.get(0) == Money(20))
 ```
 
+### Modules
+
+A file is a module : `export` marks the definitions it shares, and `import("file.ba")` runs
+the file and gives its exports. The path is relative to the importing file.
+
+```
+;; shapes.ba
+def pi = 3.14159                                   ;; not exported : private to this file
+export def Circle = class (def r) (
+    def area = () -> ( pi * this.r * this.r )
+)
+export def unit = Circle(1)
+```
+
+```
+;; main.ba
+def shapes = import("shapes.ba")
+def Circle = shapes.Circle                         ;; a local name for an export
+
+assert(Circle(2).area() > shapes.unit.area())
+assert(same(import("shapes.ba"), shapes))          ;; a file runs once, however often it is imported
+```
+
+A module has its own top-level names : it sees neither the names of the scripts importing it
+nor those of other modules, and only its exports can be read from outside, where they are
+read-only. Packages can be exported too (`export package units ( … )`), and files may import
+each other, as long as none reads an export of another before its definition has run.
+
+The type checker does not look into imported files yet : a module and what it exports are
+`dynamic`, so a type annotation naming an imported class is accepted but not checked.
+
 ### Optional types
 
 Annotations are optional. With `-Dbabble.typecheck=warn`, a gradual type checker reads them
@@ -317,6 +348,10 @@ engine.put("name", "world");
 engine.eval("println(\"Hello, \", name)");
 ```
 
+A script that imports modules by relative paths needs its own file name, which the host gives
+with `engine.put(ScriptEngine.FILENAME, path)` ; without it, paths are relative to the working
+directory.
+
 Output goes to the `ScriptContext`'s writer, so a host can capture it with
 `context.setWriter(...)`. Scripts are interpreted by default ; `-Dbabble.mode=compile`, or
 `engine.put("babble.mode", "compile")`, compiles them to bytecode instead. For a look at what
@@ -340,10 +375,11 @@ Language features :
 - [x] positional & named parameters in function calls, and default values for parameters.
 - [x] basic types : boolean, int, double, string, functions.
 - [x] packages as namespaces.
+- [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java interfaces.
 - [x] optional type declarations for variables and parameters, checked by a gradual type checker (`-Dbabble.typecheck=warn` or `error`, see the [design doc](docs/design/type-system.md)) : it reports values of the wrong type, calls that don't match a signature, missing members and the like, before the script runs. In error mode, declared types are also enforced at runtime, where untyped values reach them.
-- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import`, `same`, `classof`.
+- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`.
 
 Implementation features :
 
@@ -362,6 +398,7 @@ Language features :
 - [ ] interactive mode.
 - [ ] better, more user-friendly error reports.
 - [ ] fuller type inference, narrowing after `is`, and error mode by default.
+- [ ] type checking across modules : the exports of an imported file are `dynamic` for now.
 - [ ] collection classes (mapped from Java).
 - [ ] first-class iterator support (`for` loop).
 - [ ] `yield` keyword : transform functions/method into iterators.
@@ -396,7 +433,7 @@ order of how much each would improve that code :
 - [ ] number conversions : an `int(x)` native or an integer division operator, instead of
   `Math.toIntExact(Math.round(Math.floor(x)))`.
 - [ ] line continuation before `.`, to break long method chains across lines.
-- [ ] importing other Babble files : `import` only reaches Java packages, so a program is one file.
+- [x] importing other Babble files : `export` and `import("file.ba")`.
 - [ ] parse errors with a line, a column and a message : a syntax error such as using the keyword
   `object` as a name is reported as a bare `ParseCancellationException`.
 - [ ] command-line launcher : a `main` class in the jar to run a `.ba` file, with script arguments,

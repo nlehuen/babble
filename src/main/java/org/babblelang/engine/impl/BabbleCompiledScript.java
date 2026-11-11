@@ -13,7 +13,7 @@ import javax.script.ScriptException;
 /**
  * A script run by the interpreter.
  */
-public class BabbleCompiledScript extends CompiledScript {
+public class BabbleCompiledScript extends CompiledScript implements BabbleScriptEngine.Script {
     private final BabbleScriptEngine engine;
     private final BabbleParser.FileContext file;
     private final ScopeAnalysis scopes;
@@ -28,14 +28,25 @@ public class BabbleCompiledScript extends CompiledScript {
 
     @Override
     public Object eval(ScriptContext context) throws ScriptException {
-        ScriptRuntime runtime = engine.createRuntime(context);
+        try {
+            return run(engine.createRuntime(context));
+        } finally {
+            BabbleScriptEngine.flush(context);
+        }
+    }
+
+    @Override
+    public String[] exports() {
+        return scopes.exports();
+    }
+
+    @Override
+    public Object run(ScriptRuntime runtime) throws ScriptException {
         Interpreter interpreter = new Interpreter(runtime, scopes, sourceName);
         try {
             return interpreter.visitFile(file);
         } catch (Exception e) {
             throw new ScriptException(e.toString(), sourceName, interpreter.getLast().getStart().getLine());
-        } finally {
-            BabbleScriptEngine.flush(context);
         }
     }
 

@@ -1,0 +1,30 @@
+;;(
+    A module importing another one. The path is relative to this file.
+;;)
+
+def vectors = import("vectors.ba")
+def Vec = vectors.Vec
+
+export def Shape = interface (
+    def area : () : double
+    def describe = () -> ( "shape of area " + this.area() )
+)
+
+export def Square = class (def corner, def side) implements Shape (
+    def area = () -> ( this.side * this.side )
+    def opposite = () -> ( this.corner.plus(Vec(this.side, this.side)) )
+)
+
+;; state private to the module, reached through exported functions
+def created = 0
+export def unitSquare = () -> (
+    created = created + 1
+    Square(vectors.origin, 1)
+)
+export def count = () -> ( created )
+
+;; a package can be exported too
+export package units (
+    def cm = 1
+    def m = 100
+)

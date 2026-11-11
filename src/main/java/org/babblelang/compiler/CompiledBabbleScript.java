@@ -14,15 +14,17 @@ import java.util.Map;
  * A script compiled to a JVM class. The class holds no state of its own, so it serves
  * every eval : each one gets fresh namespaces and its own ScriptRuntime.
  */
-public final class CompiledBabbleScript extends CompiledScript {
+public final class CompiledBabbleScript extends CompiledScript implements BabbleScriptEngine.Script {
     private final BabbleScriptEngine engine;
     private final Class<?> scriptClass;
     private final Map<String, byte[]> classes;
     private final MethodHandle run;
     private final String sourceName;
     private final int firstLine;
+    private final String[] exports;
 
-    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine) {
+    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports) {
+        this.exports = exports;
         this.engine = engine;
         this.scriptClass = scriptClass;
         this.classes = classes;
@@ -51,7 +53,20 @@ public final class CompiledBabbleScript extends CompiledScript {
 
     @Override
     public Object eval(ScriptContext context) throws ScriptException {
-        ScriptRuntime runtime = engine.createRuntime(context);
+        try {
+            return run(engine.createRuntime(context));
+        } finally {
+            BabbleScriptEngine.flush(context);
+        }
+    }
+
+    @Override
+    public String[] exports() {
+        return exports.clone();
+    }
+
+    @Override
+    public Object run(ScriptRuntime runtime) throws ScriptException {
         try {
             return (Object) run.invokeExact(runtime, runtime.root());
         } catch (Exception e) {
@@ -60,8 +75,6 @@ public final class CompiledBabbleScript extends CompiledScript {
             throw e;
         } catch (Throwable t) {
             throw new ScriptException(t.toString(), sourceName, lineOf(t));
-        } finally {
-            BabbleScriptEngine.flush(context);
         }
     }
 

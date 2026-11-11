@@ -53,7 +53,17 @@ public final class ScopeAnalysis {
     private final List<Warning> warnings = new ArrayList<>();
     private final List<Warning> typeDiagnostics = new ArrayList<>();
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
+    private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
     private Resolution resolution;
+
+    void addExport(String name) {
+        exports.add(name);
+    }
+
+    /** The names the file exports, in source order : what a module importing it can read. */
+    public String[] exports() {
+        return exports.toArray(NONE);
+    }
 
     void setDeclared(ParserRuleContext owner, String[] names) {
         declared.put(owner, names);
