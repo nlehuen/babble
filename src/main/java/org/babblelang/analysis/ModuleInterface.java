@@ -17,6 +17,7 @@ public final class ModuleInterface {
     private final Set<String> exports;
     private String name = "<module>";
     private TypeChecks checks;
+    private TypeChecker checker;
 
     ModuleInterface(BlockScopes pass) {
         this.exports = Set.of(pass.analysis.exports());
@@ -37,6 +38,16 @@ public final class ModuleInterface {
 
     void complete(TypeChecks checks) {
         this.checks = checks;
+    }
+
+    /** With the type checker on : the file's checker, once it ran, which types its exports. */
+    void typed(TypeChecker checker) {
+        this.checker = checker;
+    }
+
+    /** The file's type checker, or null : the checker is off, or the file is still being analysed (a cycle). */
+    TypeChecker checker() {
+        return checker;
     }
 
     /**

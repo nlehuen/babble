@@ -189,7 +189,7 @@ public class BabbleModulesTestCase {
     }
 
     @Test
-    public void typesFromModulesAreDynamic() throws Exception {
+    public void typesFromModulesAreCheckedInErrorMode() throws Exception {
         file("lib.ba", "export def Circle = class (def r : int) ()\nexport package geo ( def Point = value class (x, y) () )");
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.TYPECHECK, "error");
@@ -418,6 +418,149 @@ public class BabbleModulesTestCase {
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, script + "peek(P())"), mode);
             Assertions.assertTrue(e.getMessage().contains("secret is private"), e.getMessage());
         }
+    }
+
+    // ---------------------------------------------------------------- types across modules (M3)
+
+    /** The type diagnostics of a script, in warn mode, without running it : "line:column message", file names dropped. */
+    private java.util.List<String> typeWarnings(String script) throws Exception {
+        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.TYPECHECK, "warn");
+        ScriptContext context = new SimpleScriptContext();
+        context.setAttribute(ScriptEngine.FILENAME, directory.resolve("main.ba").toString(), ScriptContext.ENGINE_SCOPE);
+        StringWriter warnings = new StringWriter();
+        context.setErrorWriter(warnings);
+        engine.setContext(context);
+        ((javax.script.Compilable) engine).compile(script);
+        java.util.List<String> result = new java.util.ArrayList<>();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("Warning : (.*) in (\\S+) at line number (\\d+)(?:, column (\\d+))?").matcher(warnings.toString());
+        while (m.find()) {
+            String file = java.nio.file.Path.of(m.group(2)).getFileName().toString();
+            result.add(file + ":" + m.group(3) + ":" + m.group(4) + " " + m.group(1));
+        }
+        return result;
+    }
+
+    private static final String LIB = "export def half = (n : int) : double -> ( n / 2 )\n"
+            + "export def Circle = class (def r : int) ( def area = () : double -> ( 3.14 * this.r * this.r ) )\n"
+            + "export def Square = class (def side : int) ()\n"
+            + "export def count = 1\n"
+            + "export package geo ( def Point = value class (x : int, y : int) () )\n";
+
+    @Test
+    public void exportsHaveTheirTypes() throws Exception {
+        file("lib.ba", LIB);
+        Assertions.assertEquals(java.util.List.of(
+                "main.ba:2:10 Type error : expected int, got string",
+                "main.ba:3:18 Type error : expected string, got double",
+                "main.ba:4:18 Type error : expected string, got int"),
+                typeWarnings("def lib = import(\"lib.ba\")\n"
+                        + "lib.half(\"x\")\n"
+                        + "def h : string = lib.half(2)\n"
+                        + "def c : string = lib.count"));
+    }
+
+    @Test
+    public void importedClassesAreTyped() throws Exception {
+        file("lib.ba", LIB);
+        Assertions.assertEquals(java.util.List.of(
+                "main.ba:3:8 Type error : expected int, got string",
+                "main.ba:4:1 Missing parameter : r",
+                "main.ba:5:1 No such member : nope",
+                "main.ba:6:18 Type error : expected string, got double"),
+                typeWarnings("def lib = import(\"lib.ba\")\n"
+                        + "def Circle = lib.Circle\n"
+                        + "Circle(\"wide\")\n"
+                        + "lib.Circle()\n"
+                        + "Circle(1).nope\n"
+                        + "def a : string = Circle(1).area()"));
+    }
+
+    @Test
+    public void importedClassesAreTypes() throws Exception {
+        file("lib.ba", LIB);
+        Assertions.assertEquals(java.util.List.of(
+                "main.ba:3:22 Type error : expected Circle, got Square",
+                "main.ba:4:18 Type error : expected Circle, got int",
+                "main.ba:5:25 Type error : expected Point, got Circle",
+                "main.ba:6:9 Unknown type : lib.Nope",
+                "main.ba:7:9 Unknown type : lib.count"),
+                typeWarnings("def lib = import(\"lib.ba\")\n"
+                        + "def Circle = lib.Circle\n"
+                        + "def a : lib.Circle = lib.Square(1)\n"
+                        + "def b : Circle = 1\n"
+                        + "def p : lib.geo.Point = Circle(1)\n"
+                        + "def x : lib.Nope = 1\n"
+                        + "def y : lib.count = 1\n"
+                        + "def ok : lib.Circle = Circle(2) ; def pt : lib.geo.Point = lib.geo.Point(1, 2)"));
+    }
+
+    @Test
+    public void importedInterfacesAreTypes() throws Exception {
+        file("shapes.ba", SHAPES);
+        Assertions.assertEquals(java.util.List.of(
+                "main.ba:5:9 Type error : expected Shape, got Other",
+                "main.ba:6:18 Type error : expected string, got double"),
+                typeWarnings("def shapes = import(\"shapes.ba\")\n"
+                        + "def Sq = class () implements shapes.Shape ( def area = () -> ( 1.0 ) )\n"
+                        + "def Other = class () ()\n"
+                        + "def measure = (s : shapes.Shape) : double -> ( s.area() )\n"
+                        + "measure(Other())\n"
+                        + "def d : string = measure(Sq())\n"
+                        + "Sq().describe()"));
+    }
+
+    @Test
+    public void typesFollowReExports() throws Exception {
+        file("lib.ba", LIB);
+        file("all.ba", "export def lib = import(\"lib.ba\")\nexport def Circle = import(\"lib.ba\").Circle");
+        Assertions.assertEquals(java.util.List.of(
+                "main.ba:2:12 Type error : expected int, got string",
+                "main.ba:3:22 Type error : expected Circle, got int"),
+                typeWarnings("def all = import(\"all.ba\")\n"
+                        + "all.Circle(\"x\")\n"
+                        + "def c : all.Circle = 1\n"
+                        + "def d : all.lib.Circle = all.Circle(1)"));
+    }
+
+    @Test
+    public void filesInACycleAreDynamicToEachOther() throws Exception {
+        file("a.ba", "def b = import(\"b.ba\")\nexport def f = (n : int) -> ( n )\nexport def g = () -> ( b.h(\"x\") )");
+        file("b.ba", "def a = import(\"a.ba\")\nexport def h = (n : int) -> ( a.f(\"y\") )");
+        // b is checked while a is still being analysed : a is dynamic to it. a sees b's types.
+        Assertions.assertEquals(java.util.List.of("a.ba:3:28 Type error : expected int, got string"),
+                typeWarnings("import(\"a.ba\")"));
+    }
+
+    @Test
+    public void errorModeChecksImportedTypesAtRuntime() throws Exception {
+        file("lib.ba", LIB);
+        for (String mode : new String[]{"interpret", "compile"}) {
+            ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            engine.put(BabbleScriptEngine.MODE, mode);
+            engine.put(BabbleScriptEngine.TYPECHECK, "error");
+            String script = "def lib = import(\"lib.ba\")\ndef id = (x) -> ( x )\n";
+            Assertions.assertEquals(2, run(engine, script + "def c : lib.Circle = id(lib.Circle(2))\nc.r"), mode);
+            ScriptException e = Assertions.assertThrows(ScriptException.class,
+                    () -> run(engine, script + "def c : lib.Circle = id(lib.Square(2))"), mode);
+            Assertions.assertTrue(e.getMessage().contains("Type error : expected Circle, got Square"), e.getMessage());
+        }
+    }
+
+    /** A known limit (docs/design/modules.md §8.2), with a message that says what likely happened. */
+    @Test
+    public void aModuleChangedAfterCompilationIsNamedInTypeErrors() throws Exception {
+        file("lib.ba", "export def C = class () ()");
+        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.TYPECHECK, "error");
+        engine.put(ScriptEngine.FILENAME, directory.resolve("main.ba").toString());
+        javax.script.CompiledScript script = ((javax.script.Compilable) engine)
+                .compile("def lib = import(\"lib.ba\")\ndef id = (x) -> ( x )\ndef c : lib.C = id(lib.C())\n\"ok\"");
+        Assertions.assertEquals("ok", script.eval());
+        file("lib.ba", "export def C = class () ( def x = 1 )");
+        ScriptException e = Assertions.assertThrows(ScriptException.class, script::eval);
+        Assertions.assertTrue(e.getMessage().contains("expected C, got C, from another class expression of that name"), e.getMessage());
     }
 
     @Test

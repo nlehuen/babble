@@ -139,7 +139,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         pass.analysis.setResolution(new Resolver(pass).run());
         if (typecheck != ScopeAnalysis.Typecheck.OFF) {
             try {
-                new TypeChecker(pass, typecheck == ScopeAnalysis.Typecheck.ERROR).run(file);
+                TypeChecker checker = new TypeChecker(pass, typecheck == ScopeAnalysis.Typecheck.ERROR);
+                checker.run(file);
+                self.typed(checker);
             } catch (RuntimeException e) {
                 // The checker never stops a script that would otherwise run.
                 pass.analysis.warn("The type checker failed : " + e, file.getStart().getLine());

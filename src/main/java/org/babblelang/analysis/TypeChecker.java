@@ -50,6 +50,11 @@ final class TypeChecker {
     private final List<BabbleParser.FunctionLiteralContext> functions = new ArrayList<>();
     private final Set<Diagnostic> diagnostics = new TreeSet<>(ORDER);
     private final Typer typer = new Typer();
+    /**
+     * The checkers of the files this one imports statically, transitively, by file : what
+     * this file uses from another is typed by that file's checker (docs/design/modules.md §8.2).
+     */
+    private final Map<ParserRuleContext, TypeChecker> owners = new HashMap<>();
 
     private final boolean enforce;
     private BabbleParser.FileContext file;
@@ -65,6 +70,13 @@ final class TypeChecker {
 
     void run(BabbleParser.FileContext file) {
         this.file = file;
+        for (ModuleInterface module : pass.modules.values()) {
+            TypeChecker checker = module.checker();
+            if (checker != null) {
+                owners.put(checker.file, checker);
+                owners.putAll(checker.owners);
+            }
+        }
         if (pass.session != null) {
             occurrenceScopes.putAll(pass.session.occurrenceScopes);
             reassigned.addAll(pass.session.reassigned);
@@ -191,6 +203,25 @@ final class TypeChecker {
     // ---------------------------------------------------------------- scopes and names
 
     /** The innermost scope a node is in. */
+    /**
+     * A question about a construct of another file, answered by that file's checker : null
+     * when that file has none (the checker is off, or it is in an import cycle with this one).
+     * The checker is shared by every file importing its file, so it answers one at a time.
+     */
+    private <T> T ask(ParserRuleContext ctx, java.util.function.Function<TypeChecker, T> question) {
+        ParserRuleContext root = ctx;
+        while (root.getParent() != null) {
+            root = root.getParent();
+        }
+        TypeChecker owner = owners.get(root);
+        if (owner == null) {
+            return null;
+        }
+        synchronized (owner) {
+            return question.apply(owner);
+        }
+    }
+
     /** Whether a construct is part of what this pass analysed, rather than of an imported file. */
     private boolean isLocal(ParserRuleContext ctx) {
         for (ParserRuleContext p = ctx; p != null; p = p.getParent()) {
@@ -251,6 +282,10 @@ final class TypeChecker {
 
     /** The type of a def or parameter : its annotation, or for a def never reassigned, its value's (T8). */
     private Type typeOfDeclaration(ParserRuleContext declaration) {
+        if (!isLocal(declaration)) {
+            Type type = ask(declaration, owner -> owner.typeOfDeclaration(declaration));
+            return type != null ? type : Type.DYNAMIC;
+        }
         Type cached = declarationTypes.get(declaration);
         if (cached != null) {
             return cached;
@@ -283,6 +318,9 @@ final class TypeChecker {
 
     /** The annotation a def or parameter declares, or null. */
     private Type declaredType(ParserRuleContext declaration) {
+        if (!isLocal(declaration)) {
+            return ask(declaration, owner -> owner.declaredType(declaration));
+        }
         if (declaration instanceof BabbleParser.DefExpressionContext def && def.type() != null) {
             return annotation(def.type(), scopeOf(def));
         }
@@ -341,14 +379,21 @@ final class TypeChecker {
             }
         }
         if (resolved instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
-            // What a module exports is not known statically : a type from a module is dynamic.
-            Type fromModule = fromModule(def.value, scopeOf(def), 0) ? Type.DYNAMIC : null;
             if (path.size() == 1) {
-                Type type1 = classType(def.value);
-                return type1 != null ? type1 : fromModule;
+                Type local = classType(def.value);
+                if (local != null) {
+                    return local;
+                }
+            } else {
+                String imported = importedPackage(def.value);
+                if (imported != null) {
+                    return javaType(imported + "." + String.join(".", path.subList(1, path.size())));
+                }
             }
-            String imported = importedPackage(def.value);
-            return imported != null ? javaType(imported + "." + String.join(".", path.subList(1, path.size()))) : fromModule;
+            if (fromModule(def.value, scopeOf(def), 0)) {
+                return typeThroughModule(typeOfDeclaration(def), path);
+            }
+            return null;
         }
         if (resolved instanceof List<?> packages) {
             @SuppressWarnings("unchecked")
@@ -384,6 +429,28 @@ final class TypeChecker {
                     && !reassigned.contains(def) && fromModule(def.value, scopeOf(def), depth + 1);
         }
         return false;
+    }
+
+    /**
+     * A type named through a module : {@code shapes.Circle}, {@code lib.geo.Point}, or
+     * {@code Circle} after {@code def Circle = shapes.Circle}. The class or interface the path
+     * ends on, as its own file types it ; dynamic when a file on the way can't be typed (a
+     * cycle) ; null when the path names no class or interface.
+     */
+    private Type typeThroughModule(Type type, List<String> path) {
+        for (int i = 1; i < path.size() && type != null && type != Type.DYNAMIC; i++) {
+            if (type instanceof Type.Module module) {
+                type = exportType(module.module(), path.get(i));
+            } else if (type instanceof Type.Package pkg) {
+                type = packageMember(pkg, path.get(i));
+            } else {
+                return null;
+            }
+        }
+        if (type == Type.DYNAMIC) {
+            return Type.DYNAMIC;
+        }
+        return type instanceof Type.ClassValue value ? new Type.Instance(value.node()) : null;
     }
 
     private Type classType(BabbleParser.ExpressionContext value) {
@@ -481,6 +548,10 @@ final class TypeChecker {
     // ---------------------------------------------------------------- expressions
 
     private Type typeOf(ParserRuleContext ctx) {
+        if (!isLocal(ctx)) {
+            Type type = ask(ctx, owner -> owner.typeOf(ctx));
+            return type != null ? type : Type.DYNAMIC;
+        }
         Type cached = types.get(ctx);
         if (cached != null) {
             return cached;
@@ -620,6 +691,10 @@ final class TypeChecker {
             Type callee = typeOf(ctx.expression());
             for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
                 typeOf(argument.expression());
+            }
+            ModuleInterface module = pass.modules.get(ctx);
+            if (module != null) {
+                return new Type.Module(module);
             }
             return call(callee, ctx);
         }
@@ -774,6 +849,11 @@ final class TypeChecker {
         if (receiver instanceof Type.Package pkg) {
             return packageMember(pkg, name);
         }
+        if (receiver instanceof Type.Module module) {
+            // A missing export is TypeChecks' to report.
+            Type export = exportType(module.module(), name);
+            return export != null ? export : Type.DYNAMIC;
+        }
         if (receiver instanceof Type.JavaPackage pkg) {
             String qualified = pkg.name() + "." + name;
             Class<?> java = loadTopLevel(qualified);
@@ -859,14 +939,40 @@ final class TypeChecker {
     /** A member's annotation, or a method's signature : members are otherwise dynamic, since obj.x = … can change them. */
     private Type memberType(TypeNode.Member member) {
         if (!isLocal(member.declaration)) {
-            // A member of an interface another file exports : types across files are M3.
-            return Type.DYNAMIC;
+            Type type = ask(member.declaration, owner -> owner.memberType(member));
+            return type != null ? type : Type.DYNAMIC;
         }
         Type declared = declaredType(member.declaration);
         if (declared != null) {
             return declared;
         }
         return member.function != null ? typeOf(member.function) : Type.DYNAMIC;
+    }
+
+    /**
+     * The type of a module's export : as its own file's checker types it. Null when the
+     * module doesn't export the name ; dynamic when its file can't be typed (a cycle).
+     */
+    private static Type exportType(ModuleInterface module, String name) {
+        if (!module.exports().contains(name)) {
+            return null;
+        }
+        TypeChecker checker = module.checker();
+        if (checker == null) {
+            return Type.DYNAMIC;
+        }
+        synchronized (checker) {
+            return checker.typeOfExport(name);
+        }
+    }
+
+    private Type typeOfExport(String name) {
+        ParserRuleContext definition = pass.fileScope.names.get(name);
+        if (definition != null) {
+            return typeOfDeclaration(definition);
+        }
+        List<BabbleParser.PackageExpressionContext> packages = pass.fileScope.packages.get(name);
+        return packages != null ? new Type.Package(name, packages) : Type.DYNAMIC;
     }
 
     private Type packageMember(Type.Package pkg, String name) {
@@ -917,9 +1023,10 @@ final class TypeChecker {
         if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
             TypeNode node = value.node();
             if (node.ctx instanceof BabbleParser.ClassExpressionContext cls) {
-                List<Type.Parameter> parameters = cls.parametersDeclaration() != null
-                        ? parameters(cls.parametersDeclaration(), scopeOf(cls)) : List.of();
-                bind(parameters, arguments, ctx);
+                List<Type.Parameter> parameters = constructorParameters(cls);
+                if (parameters != null) {
+                    bind(parameters, arguments, ctx);
+                }
             }
             return new Type.Instance(node);
         }
@@ -951,6 +1058,14 @@ final class TypeChecker {
         }
         warn(ctx.expression().getText() + " is not callable", ctx);
         return Type.DYNAMIC;
+    }
+
+    /** A class's constructor parameters, or null when they are another file's that can't be typed. */
+    private List<Type.Parameter> constructorParameters(BabbleParser.ClassExpressionContext cls) {
+        if (!isLocal(cls)) {
+            return ask(cls, owner -> owner.constructorParameters(cls));
+        }
+        return cls.parametersDeclaration() != null ? parameters(cls.parametersDeclaration(), scopeOf(cls)) : List.of();
     }
 
     private static boolean isFunction(Type type) {

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §13 were decided as recommended. Steps M1 and M2 (§12) are implemented ; M3 to M5 are not. |
+| **Status** | Accepted : the questions of §13 were decided as recommended. Steps M1 to M3 (§12) are implemented ; M4 and M5 are not. |
 | **Depends on** | [object-model.md](object-model.md) (member access, `HasMembers`), [type-system.md](type-system.md) (what a module's type is), [bytecode-compiler.md](bytecode-compiler.md) §4 (the file scope keeps a namespace) and phase 4 (ahead-of-time compilation) |
 | **Unblocks** | Programs in several files, a standard library written in Babble, the AOT jar |
 
@@ -256,7 +256,6 @@ parsing and analysing the imported file, which in turn may have static imports.
   cycle too. Its interfaces are not, since its `TypeChecks` have not run : implementing one
   fails with `implements needs a statically known interface : a.ba is still being analysed (an
   import cycle)`. A cycle's interfaces go in a file outside the cycle.
-* The type checker treats a member of an interface from another file as `dynamic`, until M3.
 
 The analysis of a file is cached with its compilation (§9), so a file imported by ten others
 is analysed once.
@@ -275,7 +274,25 @@ New type : `Type.Module(interface)`, with the exports as members.
   per class expression in the JVM (type-system.md §5). The descriptor of the importing file
   therefore needs the id that the imported file's compilation gave the class, which is one more
   reason to cache compilations per engine (§9).
-* A dynamic import is `dynamic`. So is, in step M1, every module.
+* A dynamic import is `dynamic`. So is a module in an import cycle, to the files of the cycle
+  analysed before it : its own types are not computed yet.
+
+How it is done : each file keeps its own checker, and is typed by it alone. A static import's
+type is `Type.Module`, and the module's interface carries the imported file's checker once it
+ran. When the importing file's checker needs the type of something another file defines (an
+export, a member of an imported class, a constructor's parameters, a method's signature), it
+asks that file's checker, which answers from what it computed when it checked its own file.
+A checker serves every file that imports its file, one question at a time. So types cross
+files without any file being checked twice, and diagnostics are reported once, by the file they
+are in.
+
+One limit : a compiled script refers to the class ids of the modules it was analysed against.
+If a module file changes between the compilation of a script and its eval, the eval imports the
+recompiled module, whose classes have new ids, and an `error` mode check of an annotation naming
+one of them fails, with `expected C, got C, from another class expression of that name (a
+module that changed since the script was compiled ?)`. Compiling again fixes it ; pinning a
+compiled script to the module versions it was analysed against would avoid it, if it ever
+matters.
 
 ### 8.3 Compiler
 
@@ -355,7 +372,7 @@ eval.
 |---|---|---|
 | **M1** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
 | **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | Done, with tests in both modes and in sessions. |
-| **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks in `error` mode (§8.2). | |
+| **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks in `error` mode (§8.2). | Done, with tests in both modes. |
 | **M4** | Module sources for hosts (§11). | |
 | **M5** | AOT : a jar closed over static imports. | |
 
@@ -364,8 +381,9 @@ and `examples/raytracer-argon`, were split into files after M1 as the acceptance
 feature, each interface sharing a file with the classes implementing it. After M2 they no
 longer have to : the fable one has the files of the book (`hittable.ba`, `sphere.ba`,
 `hittable_list.ba`, …), and the argon one separates its interfaces, materials and hittables.
-The fable one gets types after M3 ; the argon one is typed already, and M3 makes its types
-hold across its files.
+The argon one is typed throughout : after M3 its types hold across its files, and it checks
+cleanly in `error` mode, with its runtime checks. The fable one is not typed : annotating it is
+left as an exercise.
 
 ## 13. Decisions
 
@@ -423,4 +441,7 @@ what the first did to its modules, which no other part of the engine does.
   to exports as warnings and as errors in `error` mode, a script's own `import`, and the cache :
   one analysis per file until it or a dependency changes. `ReplTestCase` checks static imports
   across the inputs of a session.
-* M3 adds golden tests of diagnostics across files to `TypeCheckerTestCase`.
+* M3 adds, to `BabbleModulesTestCase`, golden tests of type diagnostics across files (exports'
+  types, imported classes' constructors, members and methods, imported classes and interfaces as
+  types, re-exports, cycles), and runtime checks of imported types in `error` mode, in both
+  modes.

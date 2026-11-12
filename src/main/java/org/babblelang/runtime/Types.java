@@ -145,7 +145,13 @@ public final class Types {
     /** Checks a value against a declared type, and returns what to store. */
     public static Object check(Object value, Type type) {
         if (!type.accepts(value)) {
-            throw new BabbleException("Type error : expected " + type + ", got " + describe(value));
+            String got = describe(value);
+            if (type instanceof NominalType && got.equals(type.toString())) {
+                // Two class expressions with one name : most likely a module whose file changed
+                // after the script was compiled (docs/design/modules.md §8.2).
+                got += ", from another class expression of that name (a module that changed since the script was compiled ?)";
+            }
+            throw new BabbleException("Type error : expected " + type + ", got " + got);
         }
         return type.convert(value);
     }
