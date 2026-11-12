@@ -69,6 +69,14 @@ sealed interface Type {
         }
     }
 
+    /** A module imported statically : its exports are its members (docs/design/modules.md §8.2). */
+    record Module(ModuleInterface module) implements Type {
+        @Override
+        public String toString() {
+            return "module " + module.name();
+        }
+    }
+
     record JavaPackage(String name) implements Type {
         @Override
         public String toString() {

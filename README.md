@@ -303,9 +303,10 @@ export def Square = class (def side) implements shapes.Shape (
 )
 ```
 
-An engine compiles each file once, until it or a file it imports changes. The type checker does
-not look at the types of imported files yet : a module and what it exports are `dynamic`, so a
-type annotation naming an imported class is accepted but not checked.
+An engine compiles each file once, until it or a file it imports changes. The type checker
+sees the types of what modules export : `def c : shapes.Square = shapes.Square(2)` checks the
+constructor's arguments and the annotation, and in error mode, the annotation is also checked at
+runtime.
 
 ### Optional types
 
@@ -502,7 +503,6 @@ Language features :
 - [ ] line editing, history and completion in the interactive mode.
 - [ ] better, more user-friendly error reports.
 - [ ] fuller type inference, narrowing after `is`, and error mode by default.
-- [ ] type checking across modules : the exports of an imported file are `dynamic` for now.
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module, an object or a package, instead of one `def` per name.
 - [ ] collection classes (mapped from Java).
