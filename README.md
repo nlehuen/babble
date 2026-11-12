@@ -291,8 +291,21 @@ nor those of other modules, and only its exports can be read from outside, where
 read-only. Packages can be exported too (`export package units ( … )`), and files may import
 each other, as long as none reads an export of another before its definition has run.
 
-The type checker does not look into imported files yet : a module and what it exports are
-`dynamic`, so a type annotation naming an imported class is accepted but not checked.
+When the path is a string literal, the import is static : the file is read when the importing
+script is compiled, so a missing or broken file, or a missing export, is reported before anything
+runs, and classes can implement the interfaces it exports :
+
+```
+;; square.ba
+def shapes = import("shapes.ba")
+export def Square = class (def side) implements shapes.Shape (
+    def area = () -> ( this.side * this.side )
+)
+```
+
+An engine compiles each file once, until it or a file it imports changes. The type checker does
+not look at the types of imported files yet : a module and what it exports are `dynamic`, so a
+type annotation naming an imported class is accepted but not checked.
 
 ### Optional types
 
@@ -359,7 +372,7 @@ Ray tracing demo
 to Babble : vectors as a value class, spheres and materials as classes implementing
 interfaces, a camera with depth of field, and the final scene of the book. It is split into
 modules along the files of the book (`rtweekend.ba`, `vec3.ba`, `ray.ba`, `hittable.ba`,
-`material.ba`, `camera.ba`), and `raytracer.ba` is its main. This image was rendered by it, in
+`sphere.ba`, `hittable_list.ba`, `material.ba`, `camera.ba`), and `raytracer.ba` is its main. This image was rendered by it, in
 compiled mode :
 
 ![The final scene of Ray Tracing in One Weekend, rendered by Babble](examples/raytracer-fable/demo.png)

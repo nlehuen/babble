@@ -46,11 +46,13 @@ final class TypeChecks {
 
     private final BlockScopes pass;
     private final ScopeAnalysis analysis;
+    private final ScopeAnalysis.Typecheck typecheck;
     private final Set<ParserRuleContext> reassigned = new HashSet<>();
 
-    TypeChecks(BlockScopes pass) {
+    TypeChecks(BlockScopes pass, ScopeAnalysis.Typecheck typecheck) {
         this.pass = pass;
         this.analysis = pass.analysis;
+        this.typecheck = typecheck;
         if (pass.session != null) {
             reassigned.addAll(pass.session.reassigned);
         }
@@ -133,16 +135,7 @@ final class TypeChecks {
         List<String> path = simple.ID().stream().map(Object::toString).toList();
         ParserRuleContext definition = resolveName(path.get(0), scope);
         if (definition != null) {
-            if (definition instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
-                if (path.size() == 1 && def.value instanceof BabbleParser.InterfaceExpressionContext iface) {
-                    return pass.typeNodes.get(iface);
-                }
-                String imported = importedPackage(def.value);
-                if (imported != null) {
-                    return loadJava(imported + "." + String.join(".", path.subList(1, path.size())), type, forInterface);
-                }
-            }
-            throw notStatic(type);
+            return resolveDefinition(definition, path, 1, type, forInterface, 0);
         }
         List<BabbleParser.PackageExpressionContext> packages = resolvePackage(path.get(0), scope);
         if (packages != null) {
@@ -152,6 +145,105 @@ final class TypeChecks {
             return loadJava(String.join(".", path), type, forInterface);
         }
         throw notStatic(type);
+    }
+
+    /**
+     * The interface {@code path[index…]} names inside what a definition holds : the
+     * definition itself when the path ends there, else a member of a Java package or of a
+     * module it holds.
+     */
+    private Object resolveDefinition(ParserRuleContext definition, List<String> path, int index, BabbleParser.TypeContext type,
+                                     boolean forInterface, int depth) {
+        if (!(definition instanceof BabbleParser.DefExpressionContext def) || reassigned.contains(def) || def.value == null || depth > 16) {
+            throw notStatic(type);
+        }
+        BabbleParser.ExpressionContext value = def.value;
+        if (index == path.size() && value instanceof BabbleParser.InterfaceExpressionContext iface) {
+            return pass.typeNodes.get(iface);
+        }
+        String imported = importedPackage(value);
+        if (imported != null && index < path.size()) {
+            return loadJava(imported + "." + String.join(".", path.subList(index, path.size())), type, forInterface);
+        }
+        ScopeNode scope = pass.definitionScopes.get(def);
+        // def Shape = shapes.Shape, or import("shapes.ba").Shape : an export of a module.
+        if (value instanceof BabbleParser.SelectorContext selector && selector.expression() != null) {
+            ModuleInterface module = moduleOf(selector.expression(), scope, depth + 1);
+            if (module != null) {
+                List<String> rest = new ArrayList<>();
+                rest.add(selector.ID().getText());
+                rest.addAll(path.subList(index, path.size()));
+                return module.resolveType(rest, 0, type, forInterface);
+            }
+        }
+        // def Shape = Other, a never-reassigned alias.
+        if (value instanceof BabbleParser.SelectorContext alias && alias.expression() == null) {
+            ParserRuleContext target = resolveName(alias.ID().getText(), scope);
+            if (target != null) {
+                return resolveDefinition(target, path, index, type, forInterface, depth + 1);
+            }
+        }
+        ModuleInterface module = moduleOf(value, scope, depth + 1);
+        if (module != null && index < path.size()) {
+            return module.resolveType(path, index, type, forInterface);
+        }
+        throw notStatic(type);
+    }
+
+    /**
+     * For a file imported statically : the interface {@code path[index…]} names among its
+     * exports. Only exported names are reachable.
+     */
+    Object resolveExport(List<String> path, int index, BabbleParser.TypeContext type, boolean forInterface) {
+        String name = path.get(index);
+        if (!analysis.exportsName(name)) {
+            throw notStatic(type);
+        }
+        ParserRuleContext definition = pass.fileScope.names.get(name);
+        if (definition != null) {
+            return resolveDefinition(definition, path, index + 1, type, forInterface, 0);
+        }
+        List<BabbleParser.PackageExpressionContext> packages = pass.fileScope.packages.get(name);
+        if (packages != null) {
+            return resolveInPackages(packages, path, index + 1, type);
+        }
+        throw notStatic(type);
+    }
+
+    /**
+     * The module an expression holds, when it is known statically : a static import, a
+     * never-reassigned def holding one, or an export of a module that is one.
+     */
+    private ModuleInterface moduleOf(BabbleParser.ExpressionContext expression, ScopeNode scope, int depth) {
+        if (depth > 16 || expression == null) {
+            return null;
+        }
+        if (expression instanceof BabbleParser.CallContext call) {
+            return pass.modules.get(call);
+        }
+        if (expression instanceof BabbleParser.SelectorContext selector) {
+            if (selector.expression() != null) {
+                ModuleInterface module = moduleOf(selector.expression(), scope, depth + 1);
+                return module != null ? module.exportedModule(selector.ID().getText(), depth + 1) : null;
+            }
+            BabbleParser.DefExpressionContext def = definitionOf(selector, scope);
+            if (def != null) {
+                return moduleOf(def.value, pass.definitionScopes.get(def), depth + 1);
+            }
+        }
+        return null;
+    }
+
+    /** For a file imported statically : the module one of its exports holds, or null. */
+    ModuleInterface exportedModule(String export, int depth) {
+        if (!analysis.exportsName(export)) {
+            return null;
+        }
+        ParserRuleContext definition = pass.fileScope.names.get(export);
+        if (definition instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
+            return moduleOf(def.value, pass.definitionScopes.get(def), depth + 1);
+        }
+        return null;
     }
 
     private Object resolveInPackages(List<BabbleParser.PackageExpressionContext> packages, List<String> path, int index,
@@ -487,6 +579,11 @@ final class TypeChecks {
             }
             return;
         }
+        ModuleInterface module = moduleOf(access.receiver(), access.scope(), 0);
+        if (module != null) {
+            checkExport(access, module);
+            return;
+        }
         TypeNode type = staticClassOf(access.receiver(), access.scope(), 0);
         if (type == null) {
             return;
@@ -500,6 +597,30 @@ final class TypeChecks {
         }
         if (access.assignment() && type.kind == ClassShape.Kind.VALUE_CLASS) {
             throw new AnalysisException("Value members are read-only : " + access.member(), line);
+        }
+    }
+
+    /**
+     * {@code m.x} on a module known statically : a missing export, or an assignment to one,
+     * is bound to fail at runtime. Like the type checker's bound-to-fail diagnostics, it is
+     * a warning, and an error in error mode (docs/design/modules.md §8.1).
+     */
+    private void checkExport(BlockScopes.PendingAccess access, ModuleInterface module) {
+        String member = access.member();
+        String message;
+        if (!module.exports().contains(member)) {
+            message = "No such export : " + member + " in " + module.name();
+        } else if (access.assignment()) {
+            message = "Cannot assign to an export : " + member;
+        } else {
+            return;
+        }
+        org.antlr.v4.runtime.Token token = access.ctx() instanceof BabbleParser.SelectorContext selector ? selector.ID().getSymbol()
+                : ((BabbleParser.AssignExpressionContext) access.ctx()).name;
+        if (typecheck == ScopeAnalysis.Typecheck.ERROR) {
+            analysis.typeDiagnostic(message, token.getLine(), token.getCharPositionInLine() + 1);
+        } else {
+            analysis.warn(message, token.getLine(), token.getCharPositionInLine() + 1);
         }
     }
 

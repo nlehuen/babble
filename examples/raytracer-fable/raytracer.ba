@@ -12,7 +12,7 @@
       that need random numbers take it as their "rng" parameter.
 
     The program is split into modules along the files of the book : rtweekend, vec3, ray,
-    hittable (with sphere and hittable_list), material and camera. This file is main.cc.
+    hittable, sphere, hittable_list, material and camera. This file is main.cc.
 
     Run it from the root of the repository, once "mvn package" has built the jar :
         java -Dbabble.mode=compile -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
@@ -30,9 +30,8 @@ def threads = 16
 
 def randomDouble = import("rtweekend.ba").randomDouble
 def Vec3 = import("vec3.ba").Vec3
-def hittable = import("hittable.ba")
-def HittableList = hittable.HittableList
-def Sphere = hittable.Sphere
+def HittableList = import("hittable_list.ba").HittableList
+def Sphere = import("sphere.ba").Sphere
 def material = import("material.ba")
 def Lambertian = material.Lambertian
 def Metal = material.Metal

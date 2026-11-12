@@ -1,11 +1,11 @@
 def Rng = import("rng.ba").Rng
 def Vec3 = import("vec3.ba").Vec3
-def Dielectric = import("hittable.ba").Dielectric
-def HittableList = import("hittable.ba").HittableList
-def Lambertian = import("hittable.ba").Lambertian
-def Material = import("hittable.ba").Material
-def Metal = import("hittable.ba").Metal
-def Sphere = import("hittable.ba").Sphere
+def Dielectric = import("materials.ba").Dielectric
+def HittableList = import("hittables.ba").HittableList
+def Lambertian = import("materials.ba").Lambertian
+def Material = import("interfaces.ba").Material
+def Metal = import("materials.ba").Metal
+def Sphere = import("hittables.ba").Sphere
 
 ;; ------------------------------------------------------------------------
 ;; 2.11 Scene Builders (Book 1 Chapter 13 Three-Spheres & Chapter 14 Final Scene)

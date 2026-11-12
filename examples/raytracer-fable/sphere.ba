@@ -1,0 +1,29 @@
+;; sphere.h
+
+def Math = import("rtweekend.ba").Math
+def hittable = import("hittable.ba")
+def HitRecord = hittable.HitRecord
+
+export def Sphere = class (def center, def radius, def material) implements hittable.Hittable (
+    def hit = (r, tmin, tmax) -> (
+        def oc = this.center.minus(r.origin)
+        def a = r.direction.lengthSquared()
+        def h = r.direction.dot(oc)
+        def c = oc.lengthSquared() - this.radius * this.radius
+
+        def discriminant = h * h - a * c
+        if discriminant < 0 then ( return null )
+
+        def sqrtd = Math.sqrt(discriminant)
+
+        ;; find the nearest root that lies in the acceptable range
+        def root = (h - sqrtd) / a
+        if root <= tmin or tmax <= root then (
+            root = (h + sqrtd) / a
+            if root <= tmin or tmax <= root then ( return null )
+        )
+
+        def p = r.at(root)
+        HitRecord(r, p, root, p.minus(this.center).div(this.radius), this.material)
+    )
+)

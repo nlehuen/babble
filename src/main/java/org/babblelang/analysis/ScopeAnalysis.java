@@ -55,10 +55,24 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
     private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
     private Resolution resolution;
+    private ModuleInterface moduleInterface;
+
+    void setModuleInterface(ModuleInterface moduleInterface) {
+        this.moduleInterface = moduleInterface;
+    }
+
+    /** What a file importing this one knows of it : its exports, and the interfaces among them. */
+    public ModuleInterface moduleInterface() {
+        return moduleInterface;
+    }
     private BlockScopes pass;
 
     void addExport(String name) {
         exports.add(name);
+    }
+
+    boolean exportsName(String name) {
+        return exports.contains(name);
     }
 
     /** The names the file exports, in source order : what a module importing it can read. */

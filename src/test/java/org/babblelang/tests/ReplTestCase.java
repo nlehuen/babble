@@ -55,6 +55,20 @@ public class ReplTestCase {
 
     // ---------------------------------------------------------------- sessions
 
+    /** A module an earlier input imported is known statically to the inputs that follow. */
+    @Test
+    public void staticImportsAcrossInputs(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+        java.nio.file.Path shapes = directory.resolve("shapes.ba");
+        java.nio.file.Files.writeString(shapes, "export def Shape = interface ( def area : () : double ; def describe = () -> ( \"area \" + this.area() ) )");
+        StringWriter errors = new StringWriter();
+        BabbleSession session = session("off", errors);
+        session.eval("def shapes = import(\"" + shapes.toString().replace("\\", "\\\\") + "\")");
+        session.eval("def Square = class () implements shapes.Shape ( def area = () -> ( 4 ) )");
+        Assertions.assertEquals("area 4", session.eval("Square().describe()"));
+        assertFails(session, "shapes.nope", "No such export : nope");
+        Assertions.assertTrue(errors.toString().contains("Warning : No such export : nope"), errors.toString());
+    }
+
     @Test
     public void testInputsSeeEarlierDefinitions() throws Exception {
         BabbleSession session = session();

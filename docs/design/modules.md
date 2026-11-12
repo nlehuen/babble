@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §13 were decided as recommended. Step M1 (§12) is implemented ; M2 to M5 are not. |
+| **Status** | Accepted : the questions of §13 were decided as recommended. Steps M1 and M2 (§12) are implemented ; M3 to M5 are not. |
 | **Depends on** | [object-model.md](object-model.md) (member access, `HasMembers`), [type-system.md](type-system.md) (what a module's type is), [bytecode-compiler.md](bytecode-compiler.md) §4 (the file scope keeps a namespace) and phase 4 (ahead-of-time compilation) |
 | **Unblocks** | Programs in several files, a standard library written in Babble, the AOT jar |
 
@@ -236,16 +236,27 @@ parsing and analysing the imported file, which in turn may have static imports.
 * For `def shapes = import("shapes.ba")` where `shapes` is never reassigned, `shapes.nope` is
   reported like a missing member : `No such export : nope in shapes.ba`. It is a warning with
   the checker off or in `warn` mode, like the "bound to fail" diagnostics of type-system.md §4,
-  and an error in `error` mode.
+  and an error in `error` mode. The same goes for `m.x = v` : `Cannot assign to an export : x`. The receiver is known to be
+  a module when it is a static import, a never-reassigned def holding one, or an export of
+  such a module that holds one in turn.
 * `implements`, `extends` and `super(I)` accept an interface exported by a statically imported
   file : the analysis resolves them statically (object-model.md), so it needs the imported
-  interface's shape. In M1 it does not have it, and
-  `class () implements import("shapes.ba").Shape ( … )` fails with
-  `implements needs a statically known interface`. Splitting the ray tracers ran into this :
-  their interfaces had to stay in the same file as the classes implementing them.
+  interface's resolved parents and defaults. The path may go through a def holding the module
+  (`implements shapes.Shape`), a def holding the export (`def Shape = shapes.Shape`), an export
+  that is itself an import or a re-export, or an exported package (`implements lib.geo.Solid`).
+  Only exported names are reachable. Completeness, default conflicts and `super` resolution then
+  work as for a local interface. In M1 the analysis did not have the imported interface, and
+  splitting the ray tracers ran into it : their interfaces had to stay in the same file as the
+  classes implementing them.
+* Imports run in the importing file's analysis after its pass 1 and before `TypeChecks`, so an
+  import anywhere in a file, inside a function included, counts. A script that defines its own
+  `import` calls that one : its calls are not imports.
 * Cycles : the interface of a file being analysed is requested again. Its exported names are
-  known after pass 1, before any type is, so the names are answered and the types are
-  `dynamic` for the files of a cycle. This is sound, and loses precision only inside cycles.
+  known after pass 1, so the names are answered, and `No such export` is reported inside a
+  cycle too. Its interfaces are not, since its `TypeChecks` have not run : implementing one
+  fails with `implements needs a statically known interface : a.ba is still being analysed (an
+  import cycle)`. A cycle's interfaces go in a file outside the cycle.
+* The type checker treats a member of an interface from another file as `dynamic`, until M3.
 
 The analysis of a file is cached with its compilation (§9), so a file imported by ten others
 is analysed once.
@@ -287,10 +298,16 @@ selection's inline cache, guarded on the module, would recover it without static
 Compiling a file is much more expensive than running most of them, and a host that evals a
 script repeatedly would recompile its modules every time. The engine keeps a cache :
 
-* key : real path ; validity : last-modified time and size, plus mode and typecheck setting ;
-* value : the compiled script (either mode), its analysis and its interface ;
-* invalidation also follows dependencies : an entry records the static imports it was analysed
-  against, and is stale when one of them is.
+* key : real path ; validity : the mode and typecheck setting, and the content of every file
+  the analysis read : the file itself and, transitively, the files it imports statically ;
+* value : the compiled script (either mode) and its interface ;
+* so invalidation follows dependencies : a file implementing an interface of another is
+  re-analysed when that one changes, and fails if it no longer implements it.
+
+Content rather than last-modified time and size : a file rewritten within the same
+millisecond with the same length is common in tests and editors, and these files are small.
+Both static and runtime imports go through the cache, which a lock guards : an engine compiles
+one module at a time.
 
 A cached compilation carries no state : compiled classes hold none
 (`CompiledBabbleScript`), and neither does a parse tree. State lives in the namespaces of an
@@ -298,7 +315,10 @@ eval.
 
 ## 10. Errors
 
-* Loading : `Cannot import x.ba : no such file : /abs/x.ba`.
+* Loading : `Cannot import x.ba : no such file : /abs/x.ba`. For a static import, it is an error
+  of the importing script at the line of the import, found before anything runs ; so is a
+  module that does not parse or fails its analysis, with the module's own file and line in
+  the message. A dynamic import fails when it runs.
 * An error while a module runs is reported with the module's file and line, and the importing
   script then adds its own, which reads as a trace :
   `…BabbleException: Not a number : null in lib/shapes.ba at line number 12 in main.ba at line number 3`.
@@ -328,15 +348,18 @@ eval.
 | Step | Content | State |
 |---|---|---|
 | **M1** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
-| **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | |
+| **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | Done, with tests in both modes and in sessions. |
 | **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks in `error` mode (§8.2). | |
 | **M4** | Module sources for hosts (§11). | |
 | **M5** | AOT : a jar closed over static imports. | |
 
 Each step leaves both modes passing the whole suite. Both ray tracers, `examples/raytracer-fable`
-and `examples/raytracer-argon`, are split into files after M1 as the acceptance test of the
-feature (done : each interface shares a file with the classes implementing it, until M2). The fable one gets types after M3 ; the argon one is typed already, and M3 makes its
-types hold across its files.
+and `examples/raytracer-argon`, were split into files after M1 as the acceptance test of the
+feature, each interface sharing a file with the classes implementing it. After M2 they no
+longer have to : the fable one has the files of the book (`hittable.ba`, `sphere.ba`,
+`hittable_list.ba`, …), and the argon one separates its interfaces, materials and hittables.
+The fable one gets types after M3 ; the argon one is typed already, and M3 makes its types
+hold across its files.
 
 ## 13. Decisions
 
@@ -387,5 +410,11 @@ what the first did to its modules, which no other part of the engine does.
   packages and classes, the type checker's settings, Java packages still imported.
 * `src/test/babble/Modules.ba` and `src/test/babble/modules/` : run by `ScriptTestCase` and
   by `DifferentialTestCase` in both modes, with and without enforced types.
-* M2 and M3 add golden tests of diagnostics across files to `TypeCheckerTestCase`, and tests
-  that a changed module invalidates the cached compilations of its importers.
+* M2 adds, to `BabbleModulesTestCase` : missing and broken files found before running, dynamic
+  imports still resolved at runtime, classes, objects and interfaces implementing or extending
+  imported interfaces (through defs, re-exports and exported packages), `super(I)` with an
+  imported qualifier, unexported and cyclic interfaces rejected, missing exports and assignments
+  to exports as warnings and as errors in `error` mode, a script's own `import`, and the cache :
+  one analysis per file until it or a dependency changes. `ReplTestCase` checks static imports
+  across the inputs of a session.
+* M3 adds golden tests of diagnostics across files to `TypeCheckerTestCase`.

@@ -47,6 +47,10 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     record PendingAssignment(String name, ScopeNode scope) {
     }
 
+    /** {@code import("file.ba")} : a static import (docs/design/modules.md §4.2). */
+    record PendingImport(BabbleParser.CallContext ctx, String name, ScopeNode scope) {
+    }
+
     /** A use of a lexical name : a plain name, an unqualified assignment, {@code this} or {@code recurse}. */
     record Occurrence(ParserRuleContext ctx, String name, ScopeNode scope) {
     }
@@ -62,6 +66,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final List<Occurrence> occurrences = new ArrayList<>();
     final List<BabbleParser.PackageExpressionContext> packages = new ArrayList<>();
     final Map<BabbleParser.PackageExpressionContext, ScopeNode> packageScopes = new HashMap<>();
+    final List<PendingImport> imports = new ArrayList<>();
+    /** The interfaces of the files imported statically, by import call. */
+    final Map<BabbleParser.CallContext, ModuleInterface> modules = new HashMap<>();
 
     /** The interactive session the file is an input of, or null. */
     final AnalysisSession session;
@@ -76,6 +83,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             // What earlier inputs defined is found like what the file defines.
             typeNodes.putAll(session.typeNodes);
             definitionScopes.putAll(session.definitionScopes);
+            modules.putAll(session.modules);
             if (session.scope != null) {
                 scopes.push(session.scope);
             }
@@ -101,10 +109,33 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
      *                the result is {@link AnalysisSession#commit committed}.
      */
     public static ScopeAnalysis analyze(BabbleParser.FileContext file, ScopeAnalysis.Typecheck typecheck, AnalysisSession session) {
+        return analyze(file, typecheck, session, null);
+    }
+
+    /**
+     * @param loader what loads the files the file imports statically, or null to leave
+     *               every import to runtime
+     */
+    public static ScopeAnalysis analyze(BabbleParser.FileContext file, ScopeAnalysis.Typecheck typecheck, AnalysisSession session,
+                                        ModuleLoader loader) {
         BlockScopes pass = new BlockScopes(session);
         pass.analysis.setPass(pass);
         pass.fileScope = pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
-        new TypeChecks(pass).run();
+        // The exported names are known : a file importing this one back, in a cycle, sees them.
+        ModuleInterface self = new ModuleInterface(pass);
+        if (loader != null) {
+            loader.started(self);
+            for (PendingImport pending : pass.imports) {
+                // A script that defines its own import calls it, not the implicit one.
+                if (TypeChecks.resolveName("import", pending.scope()) == null) {
+                    pass.modules.put(pending.ctx(), loader.load(pending.name(), pending.ctx().getStart().getLine()));
+                }
+            }
+        }
+        TypeChecks checks = new TypeChecks(pass, typecheck);
+        checks.run();
+        self.complete(checks);
+        pass.analysis.setModuleInterface(self);
         pass.analysis.setResolution(new Resolver(pass).run());
         if (typecheck != ScopeAnalysis.Typecheck.OFF) {
             try {
@@ -537,6 +568,28 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             checkPlainParameters(ctx.qualifier);
         }
         supers.add(new PendingSuper(ctx, owner, current(), selector.ID().getText()));
+        return null;
+    }
+
+    @Override
+    public Void visitCall(BabbleParser.CallContext ctx) {
+        String name = staticImport(ctx);
+        if (name != null) {
+            imports.add(new PendingImport(ctx, name, current()));
+        }
+        return visitChildren(ctx);
+    }
+
+    /** The file a call imports statically : {@code import("….ba")} with a string literal, or null. */
+    static String staticImport(BabbleParser.CallContext call) {
+        if (call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
+                && callee.ID().getText().equals("import")
+                && call.callParameters().callParameter().size() == 1
+                && call.callParameters().callParameter(0).ID() == null
+                && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
+            String name = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
+            return name.endsWith(".ba") ? name : null;
+        }
         return null;
     }
 
