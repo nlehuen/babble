@@ -488,6 +488,8 @@ Language features :
 - [ ] better, more user-friendly error reports.
 - [ ] fuller type inference, narrowing after `is`, and error mode by default.
 - [ ] type checking across modules : the exports of an imported file are `dynamic` for now.
+- [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
+  a module, an object or a package, instead of one `def` per name.
 - [ ] collection classes (mapped from Java).
 - [ ] first-class iterator support (`for` loop).
 - [ ] `yield` keyword : transform functions/method into iterators.
