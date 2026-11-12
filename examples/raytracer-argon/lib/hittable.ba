@@ -1,0 +1,322 @@
+;; Interfaces, materials and hittables (sections 2.6 to 2.8). They are one module because
+;; a class can only implement an interface defined in its own file for now : the analysis does
+;; not read imported files yet (docs/design/modules.md, M2).
+
+def math = import("math.ba")
+def Rng = import("rng.ba").Rng
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+def Interval = import("interval.ba").Interval
+def AABB = import("aabb.ba").AABB
+
+;; ------------------------------------------------------------------------
+;; 2.6 Interfaces, HitRecord, and ScatterResult
+;; Showcases Babble interfaces, extends, default methods, and super calls.
+;; ------------------------------------------------------------------------
+export def Describable = interface (
+    def kind : () : string
+    def describe = () : string -> (
+        "<" + this.kind() + ">"
+    )
+)
+
+export def ScatterResult = value class (attenuation: Vec3, scattered: Ray) ()
+
+export def Material = interface extends Describable (
+    def scatter : (rIn: Ray, rec: HitRecord, rng: Rng) : ScatterResult
+    def kind = () : string -> ( "material" )
+)
+
+export def HitRecord = value class (
+    p: Vec3,
+    normal: Vec3,
+    mat: Material,
+    t: double,
+    frontFace: bool
+) ()
+static (
+    def create = (r: Ray, p: Vec3, outwardNormal: Vec3, t: double, mat: Material) : HitRecord -> (
+        def frontFace : bool = r.dir.dot(outwardNormal) < 0.0
+        def normal : Vec3 = if frontFace then ( outwardNormal ) else ( outwardNormal.neg() )
+        this(p, normal, mat, t, frontFace)
+    )
+)
+
+export def Hittable = interface extends Describable (
+    def hit : (r: Ray, rayT: Interval) : HitRecord
+    def boundingBox = () : AABB -> ( AABB.empty )
+    def kind = () : string -> ( "hittable" )
+)
+
+;; Object literal implementing a Babble interface
+export def emptyHittable = object implements Hittable (
+    def hit = (r: Ray, rayT: Interval) : HitRecord -> ( null )
+    def boundingBox = () : AABB -> ( AABB.empty )
+    def kind = () : string -> ( "empty" )
+)
+
+;; ------------------------------------------------------------------------
+;; 2.7 Materials: Lambertian (diffuse), Metal (reflective), Dielectric (glass)
+;; ------------------------------------------------------------------------
+export def Lambertian = class (def albedo: Vec3) implements Material (
+    def scatter = (rIn: Ray, rec: HitRecord, rng: Rng) : ScatterResult -> (
+        def scatterDirection : Vec3 = rec.normal.plus(Vec3.randomUnitVector(rng))
+        if scatterDirection.nearZero() then (
+            scatterDirection = rec.normal
+        )
+        ScatterResult(this.albedo, Ray(rec.p, scatterDirection))
+    )
+
+    def kind = () : string -> ( "lambertian" )
+
+    def describe = () : string -> (
+        super.describe() + "(" + this.albedo + ")"
+    )
+)
+
+export def Metal = class (def albedo: Vec3, fuzzIn: double = 0.0) implements Material (
+    def fuzz : double = if fuzzIn < 1.0 then ( math.max(0.0, fuzzIn) ) else ( 1.0 )
+
+    def scatter = (rIn: Ray, rec: HitRecord, rng: Rng) : ScatterResult -> (
+        def reflected : Vec3 = rIn.dir.reflect(rec.normal)
+        reflected = reflected.unit().plus(Vec3.randomUnitVector(rng).scale(this.fuzz))
+        if reflected.dot(rec.normal) > 0.0 then (
+            ScatterResult(this.albedo, Ray(rec.p, reflected))
+        ) else (
+            null
+        )
+    )
+
+    def kind = () : string -> ( "metal" )
+
+    def describe = () : string -> (
+        super.describe() + "(fuzz=" + this.fuzz + ")"
+    )
+)
+
+export def Dielectric = class (def refractionIndex: double) implements Material (
+    def scatter = (rIn: Ray, rec: HitRecord, rng: Rng) : ScatterResult -> (
+        def ri : double = if rec.frontFace then (
+            1.0 / this.refractionIndex
+        ) else (
+            this.refractionIndex
+        )
+        def unitDirection : Vec3 = rIn.dir.unit()
+        def cosTheta : double = math.min(unitDirection.neg().dot(rec.normal), 1.0)
+        def sinTheta : double = math.sqrt(math.max(0.0, 1.0 - cosTheta * cosTheta))
+        def cannotRefract : bool = ri * sinTheta > 1.0
+        def direction : Vec3 = if cannotRefract or Dielectric.reflectance(cosTheta, ri) > rng.nextDouble() then (
+            unitDirection.reflect(rec.normal)
+        ) else (
+            unitDirection.refract(rec.normal, ri)
+        )
+        ScatterResult(Vec3.one, Ray(rec.p, direction))
+    )
+
+    def kind = () : string -> ( "dielectric" )
+)
+static (
+    ;; Schlick's approximation for reflectance
+    def reflectance = (cosine: double, refractionIndex: double) : double -> (
+        def r0 : double = (1.0 - refractionIndex) / (1.0 + refractionIndex)
+        r0 = r0 * r0
+        r0 + (1.0 - r0) * math.powInt(1.0 - cosine, 5)
+    )
+)
+
+;; ------------------------------------------------------------------------
+;; 2.8 Sphere & Pure-Babble HittableList + BVHNode
+;; ------------------------------------------------------------------------
+export def Sphere = class (def center: Vec3, def radius: double, def mat: Material) implements Hittable, Describable (
+    private def radiusSq : double = this.radius * this.radius
+    private def invRadius : double = 1.0 / this.radius
+    private def rAbs : double = math.abs(this.radius)
+    private def rVec : Vec3 = Vec3(this.rAbs, this.rAbs, this.rAbs)
+    private def bbox : AABB = AABB.fromPoints(this.center.minus(this.rVec), this.center.plus(this.rVec))
+
+    def boundingBox = () : AABB -> (
+        this.bbox
+    )
+
+    def hit = (r: Ray, rayT: Interval) : HitRecord -> (
+        def oc : Vec3 = this.center.minus(r.origin)
+        def a : double = r.dir.lengthSquared()
+        def h : double = r.dir.dot(oc)
+        def c : double = oc.lengthSquared() - this.radiusSq
+        def discriminant : double = h * h - a * c
+        if discriminant < 0.0 then (
+            return null
+        )
+        def sqrtd : double = math.sqrt(discriminant)
+        def root : double = (h - sqrtd) / a
+        if not rayT.surrounds(root) then (
+            root = (h + sqrtd) / a
+            if not rayT.surrounds(root) then (
+                return null
+            )
+        )
+        def p : Vec3 = r.at(root)
+        def outwardNormal : Vec3 = p.minus(this.center).scale(this.invRadius)
+        HitRecord.create(r, p, outwardNormal, root, this.mat)
+    )
+
+    def kind = () : string -> ( "sphere" )
+
+    def describe = () : string -> (
+        super(Hittable).describe() + "(r=" + this.radius + ")"
+    )
+)
+
+;; Linked-list node for HittableList (replaces java.util.ArrayList)
+export def HittableNode = class (def item: Hittable, def next: HittableNode = null) ()
+
+export def HittableList = class () implements Hittable (
+    def size : int = 0
+    private def head : HittableNode = null
+    private def bbox : AABB = AABB.empty
+
+    def add = (item: Hittable) -> (
+        this.head = HittableNode(item, this.head)
+        this.size = this.size + 1
+        this.bbox = AABB.enclose(this.bbox, item.boundingBox())
+    )
+
+    def clear = () -> (
+        this.head = null
+        this.size = 0
+        this.bbox = AABB.empty
+    )
+
+    def headNode = () : HittableNode -> (
+        this.head
+    )
+
+    def first = () : Hittable -> (
+        if this.head == null then ( emptyHittable ) else ( this.head.item )
+    )
+
+    def second = () : Hittable -> (
+        if this.head == null or this.head.next == null then (
+            emptyHittable
+        ) else (
+            this.head.next.item
+        )
+    )
+
+    def boundingBox = () : AABB -> (
+        this.bbox
+    )
+
+    ;; Higher-order iteration over all hittables in the list
+    def forEach = (fn: (item: Hittable) : dynamic) -> (
+        def cur : HittableNode = this.head
+        while cur != null then (
+            fn(cur.item)
+            cur = cur.next
+        )
+    )
+
+    ;; Higher-order predicate counter using a closure over a mutable local
+    def countWhere = (pred: (item: Hittable) : bool) : int -> (
+        def matched : int = 0
+        this.forEach((item: Hittable) -> (
+            if pred(item) then (
+                matched = matched + 1
+            )
+        ))
+        matched
+    )
+
+    def hit = (r: Ray, rayT: Interval) : HitRecord -> (
+        def closestRecord : HitRecord = null
+        def closestSoFar : double = rayT.max
+        def cur : HittableNode = this.head
+        while cur != null then (
+            def tempRec : HitRecord = cur.item.hit(r, Interval(rayT.min, closestSoFar))
+            if tempRec != null then (
+                closestSoFar = tempRec.t
+                closestRecord = tempRec
+            )
+            cur = cur.next
+        )
+        closestRecord
+    )
+
+    def kind = () : string -> ( "hittable_list" )
+)
+
+;; Pure-Babble Bounding Volume Hierarchy (BVH) Node
+export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: AABB) implements Hittable (
+    def boundingBox = () : AABB -> (
+        this.bbox
+    )
+
+    def hit = (r: Ray, rayT: Interval) : HitRecord -> (
+        if not this.bbox.hit(r, rayT) then (
+            return null
+        )
+        def hitLeft : HitRecord = this.left.hit(r, rayT)
+        def rightT : Interval = if hitLeft != null then ( Interval(rayT.min, hitLeft.t) ) else ( rayT )
+        def hitRight : HitRecord = this.right.hit(r, rightT)
+        if hitRight != null then ( hitRight ) else ( hitLeft )
+    )
+
+    def kind = () : string -> ( "bvh_node" )
+)
+static (
+    ;; Recursively partitions a HittableList into a balanced BVH tree
+    def fromList = (list: HittableList) : Hittable -> (
+        if list.size == 0 then (
+            return emptyHittable
+        )
+        if list.size == 1 then (
+            return list.first()
+        )
+        if list.size == 2 then (
+            return this(list.first(), list.second(), list.boundingBox())
+        )
+        def box : AABB = list.boundingBox()
+        def cbox : AABB = AABB.empty
+        def cur : HittableNode = list.headNode()
+        while cur != null then (
+            cbox = cbox.expandPoint(cur.item.boundingBox().center())
+            cur = cur.next
+        )
+        def axis : int = cbox.longestAxis()
+        def splitVal : double = cbox.centroid(axis)
+
+        def leftList : HittableList = HittableList()
+        def rightList : HittableList = HittableList()
+        cur = list.headNode()
+        while cur != null then (
+            def item : Hittable = cur.item
+            if item.boundingBox().centroid(axis) < splitVal then (
+                leftList.add(item)
+            ) else (
+                rightList.add(item)
+            )
+            cur = cur.next
+        )
+
+        ;; Fallback even/odd partition when all centroids coincide
+        if leftList.size == 0 or rightList.size == 0 then (
+            leftList.clear()
+            rightList.clear()
+            def goLeft : bool = true
+            cur = list.headNode()
+            while cur != null then (
+                if goLeft then (
+                    leftList.add(cur.item)
+                ) else (
+                    rightList.add(cur.item)
+                )
+                goLeft = not goLeft
+                cur = cur.next
+            )
+        )
+
+        def leftChild : Hittable = recurse(leftList)
+        def rightChild : Hittable = recurse(rightList)
+        this(leftChild, rightChild, box)
+    )
+)

@@ -1,0 +1,121 @@
+def math = import("math.ba")
+def Rng = import("rng.ba").Rng
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+def Interval = import("interval.ba").Interval
+def HitRecord = import("hittable.ba").HitRecord
+def Hittable = import("hittable.ba").Hittable
+def ScatterResult = import("hittable.ba").ScatterResult
+def Color = import("color.ba").Color
+
+;; ------------------------------------------------------------------------
+;; 2.10 Positionable Camera with Antialiasing & Defocus Blur (Depth of Field)
+;; ------------------------------------------------------------------------
+export def Camera = class (
+    def aspectRatio: double = 16.0 / 9.0,
+    def imageWidth: int = 400,
+    def samplesPerPixel: int = 10,
+    def maxDepth: int = 10,
+    def vfov: double = 20.0,
+    def lookfrom: Vec3 = Vec3(13.0, 2.0, 3.0),
+    def lookat: Vec3 = Vec3(0.0, 0.0, 0.0),
+    def vup: Vec3 = Vec3(0.0, 1.0, 0.0),
+    def defocusAngle: double = 0.6,
+    def focusDist: double = 10.0
+) (
+    def imageHeight : int = math.maxInt(1, math.toInt(this.imageWidth / this.aspectRatio))
+    private def pixelSamplesScale : double = 1.0 / this.samplesPerPixel
+    private def center : Vec3 = this.lookfrom
+
+    ;; Viewport dimensions
+    private def theta : double = math.degreesToRadians(this.vfov)
+    private def h : double = math.tan(this.theta / 2.0)
+    private def viewportHeight : double = 2.0 * this.h * this.focusDist
+    private def viewportWidth : double = this.viewportHeight * (1.0 * this.imageWidth / this.imageHeight)
+
+    ;; Orthonormal camera basis vectors (u, v, w)
+    def w : Vec3 = this.lookfrom.minus(this.lookat).unit()
+    def u : Vec3 = this.vup.cross(this.w).unit()
+    def v : Vec3 = this.w.cross(this.u)
+
+    ;; Viewport edge and pixel delta vectors
+    private def viewportU : Vec3 = this.u.scale(this.viewportWidth)
+    private def viewportV : Vec3 = this.v.neg().scale(this.viewportHeight)
+    private def pixelDeltaU : Vec3 = this.viewportU.div(1.0 * this.imageWidth)
+    private def pixelDeltaV : Vec3 = this.viewportV.div(1.0 * this.imageHeight)
+
+    ;; Upper-left pixel location
+    private def viewportUpperLeft : Vec3 = this.center.minus(this.w.scale(this.focusDist)).minus(this.viewportU.div(2.0)).minus(this.viewportV.div(2.0))
+    def pixel00Loc : Vec3 = this.viewportUpperLeft.plus(this.pixelDeltaU.plus(this.pixelDeltaV).scale(0.5))
+
+    ;; Defocus disk basis vectors
+    private def defocusRadius : double = this.focusDist * math.tan(math.degreesToRadians(this.defocusAngle / 2.0))
+    private def defocusDiskU : Vec3 = this.u.scale(this.defocusRadius)
+    private def defocusDiskV : Vec3 = this.v.scale(this.defocusRadius)
+
+    private def sampleSquare = (rng: Rng) : Vec3 -> (
+        Vec3(rng.nextDouble() - 0.5, rng.nextDouble() - 0.5, 0.0)
+    )
+
+    private def defocusDiskSample = (rng: Rng) : Vec3 -> (
+        def p : Vec3 = Vec3.randomInUnitDisk(rng)
+        this.center.plus(this.defocusDiskU.scale(p.x)).plus(this.defocusDiskV.scale(p.y))
+    )
+
+    def getRay = (i: int, j: int, rng: Rng) : Ray -> (
+        def offset : Vec3 = this.sampleSquare(rng)
+        def pixelSample : Vec3 = this.pixel00Loc.plus(this.pixelDeltaU.scale(i + offset.x)).plus(this.pixelDeltaV.scale(j + offset.y))
+        def rayOrigin : Vec3 = if this.defocusAngle <= 0.0 then (
+            this.center
+        ) else (
+            this.defocusDiskSample(rng)
+        )
+        def rayDirection : Vec3 = pixelSample.minus(rayOrigin)
+        Ray(rayOrigin, rayDirection)
+    )
+
+    ;; Recursive path tracer using Babble's "recurse" keyword
+    def rayColor = (r: Ray, depth: int, world: Hittable, rng: Rng) : Vec3 -> (
+        if depth <= 0 then (
+            return Vec3.zero
+        )
+        def rec : HitRecord = world.hit(r, Interval(0.001, math.infinity))
+        if rec != null then (
+            def scatter : ScatterResult = rec.mat.scatter(r, rec, rng)
+            if scatter != null then (
+                return scatter.attenuation.mul(recurse(scatter.scattered, depth - 1, world, rng))
+            )
+            return Vec3.zero
+        )
+        def unitDirection : Vec3 = r.dir.unit()
+        def a : double = 0.5 * (unitDirection.y + 1.0)
+        Vec3.one.scale(1.0 - a).plus(Vec3(0.5, 0.7, 1.0).scale(a))
+    )
+
+    def renderPixel = (i: int, j: int, world: Hittable, rng: Rng) : Vec3 -> (
+        def pixelColor : Vec3 = Vec3.zero
+        def sample : int = 0
+        while sample < this.samplesPerPixel then (
+            def r : Ray = this.getRay(i, j, rng)
+            pixelColor = pixelColor.plus(this.rayColor(r, this.maxDepth, world, rng))
+            sample = sample + 1
+        )
+        pixelColor.scale(this.pixelSamplesScale)
+    )
+
+    def render = (world: Hittable, rng: Rng = Rng(1337), out = STDOUT) -> (
+        println("P3", to: out)
+        println(this.imageWidth, " ", this.imageHeight, to: out)
+        println(255, to: out)
+        def j : int = 0
+        while j < this.imageHeight then (
+            def i : int = 0
+            while i < this.imageWidth then (
+                def pixelColor : Vec3 = this.renderPixel(i, j, world, rng)
+                println(Color.formatPpm(pixelColor), to: out)
+                i = i + 1
+            )
+            j = j + 1
+        )
+    )
+)

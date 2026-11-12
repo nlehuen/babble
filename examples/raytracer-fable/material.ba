@@ -1,0 +1,62 @@
+;; material.h
+
+def Math = import("rtweekend.ba").Math
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+
+;; What a material does with a ray : the scattered ray and how much it is attenuated.
+export def Scatter = class (def attenuation, def scattered) ()
+
+export def Material = interface (
+    ;; a Scatter, or null when the ray is absorbed
+    def scatter : (rIn, rec, rng)
+)
+
+export def Lambertian = class (def albedo) implements Material (
+    def scatter = (rIn, rec, rng) -> (
+        def direction = rec.normal.plus(Vec3.randomUnit(rng))
+        ;; catch degenerate scatter direction
+        if direction.nearZero() then ( direction = rec.normal )
+        Scatter(this.albedo, Ray(rec.p, direction))
+    )
+)
+
+export def Metal = class (def albedo, fuzz) implements Material (
+    def fuzz = Math.min(fuzz, 1.0)
+
+    def scatter = (rIn, rec, rng) -> (
+        def reflected = rIn.direction.reflect(rec.normal)
+        reflected = reflected.unit().plus(Vec3.randomUnit(rng).times(this.fuzz))
+        if reflected.dot(rec.normal) > 0 then (
+            Scatter(this.albedo, Ray(rec.p, reflected))
+        ) else (
+            null
+        )
+    )
+)
+
+export def Dielectric = class (def refractionIndex) implements Material (
+    ;; Schlick's approximation for reflectance
+    private def reflectance = (cosine, refractionIndex) -> (
+        def r0 = (1 - refractionIndex) / (1 + refractionIndex)
+        r0 = r0 * r0
+        r0 + (1 - r0) * Math.pow(1 - cosine, 5)
+    )
+
+    def scatter = (rIn, rec, rng) -> (
+        def ri = if rec.frontFace then ( 1.0 / this.refractionIndex ) else ( this.refractionIndex )
+
+        def unitDirection = rIn.direction.unit()
+        def cosTheta = Math.min(unitDirection.neg().dot(rec.normal), 1.0)
+        def sinTheta = Math.sqrt(1.0 - cosTheta * cosTheta)
+
+        def cannotRefract = ri * sinTheta > 1.0
+        def direction = if cannotRefract or this.reflectance(cosTheta, ri) > rng.nextDouble() then (
+            unitDirection.reflect(rec.normal)
+        ) else (
+            unitDirection.refract(rec.normal, ri)
+        )
+
+        Scatter(Vec3(1.0, 1.0, 1.0), Ray(rec.p, direction))
+    )
+)

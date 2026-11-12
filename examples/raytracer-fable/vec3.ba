@@ -1,0 +1,60 @@
+;; vec3.h : points, directions and colors.
+
+def rtweekend = import("rtweekend.ba")
+def Math = rtweekend.Math
+def randomDouble = rtweekend.randomDouble
+
+;; Points, directions and colors. Babble has no operator overloading, hence the methods.
+export def Vec3 = value class (x, y, z) (
+    def neg = () -> ( Vec3(0 - this.x, 0 - this.y, 0 - this.z) )
+    def plus = (v) -> ( Vec3(this.x + v.x, this.y + v.y, this.z + v.z) )
+    def minus = (v) -> ( Vec3(this.x - v.x, this.y - v.y, this.z - v.z) )
+    def mul = (v) -> ( Vec3(this.x * v.x, this.y * v.y, this.z * v.z) )
+    def times = (t) -> ( Vec3(this.x * t, this.y * t, this.z * t) )
+    def div = (t) -> ( Vec3(this.x / t, this.y / t, this.z / t) )
+
+    def dot = (v) -> ( this.x * v.x + this.y * v.y + this.z * v.z )
+    def cross = (v) -> (
+        Vec3(this.y * v.z - this.z * v.y,
+             this.z * v.x - this.x * v.z,
+             this.x * v.y - this.y * v.x)
+    )
+    def lengthSquared = () -> ( this.x * this.x + this.y * this.y + this.z * this.z )
+    def length = () -> ( Math.sqrt(this.lengthSquared()) )
+    def unit = () -> ( this.div(this.length()) )
+
+    ;; true if the vector is close to zero in all dimensions
+    def nearZero = () -> (
+        def s = 0.00000001
+        Math.abs(this.x) < s and Math.abs(this.y) < s and Math.abs(this.z) < s
+    )
+
+    def reflect = (n) -> ( this.minus(n.times(2 * this.dot(n))) )
+    def refract = (n, etaiOverEtat) -> (
+        def cosTheta = Math.min(this.neg().dot(n), 1.0)
+        def perp = this.plus(n.times(cosTheta)).times(etaiOverEtat)
+        def parallel = n.times(0 - Math.sqrt(Math.abs(1.0 - perp.lengthSquared())))
+        perp.plus(parallel)
+    )
+)
+static (
+    def random = (rng, min = 0.0, max = 1.0) -> (
+        Vec3(randomDouble(rng, min, max), randomDouble(rng, min, max), randomDouble(rng, min, max))
+    )
+
+    ;; a random direction, by rejection of the points outside the unit sphere
+    def randomUnit = (rng) -> (
+        def p = Vec3.random(rng, 0 - 1.0, 1.0)
+        def lensq = p.lengthSquared()
+        if 0.0 < lensq and lensq <= 1.0 then (
+            p.div(Math.sqrt(lensq))
+        ) else (
+            recurse(rng)
+        )
+    )
+
+    def randomInUnitDisk = (rng) -> (
+        def p = Vec3(randomDouble(rng, 0 - 1.0, 1.0), randomDouble(rng, 0 - 1.0, 1.0), 0.0)
+        if p.lengthSquared() < 1.0 then ( p ) else ( recurse(rng) )
+    )
+)

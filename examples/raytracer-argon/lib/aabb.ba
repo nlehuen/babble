@@ -1,0 +1,94 @@
+def math = import("math.ba")
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+def Interval = import("interval.ba").Interval
+
+;; ------------------------------------------------------------------------
+;; 2.5 Axis-Aligned Bounding Box (AABB) Value Class for BVH Acceleration
+;; ------------------------------------------------------------------------
+export def AABB = value class (x: Interval, y: Interval, z: Interval) (
+    def centroid = (axis: int) : double -> (
+        if axis == 0 then (
+            this.x.midpoint()
+        ) else (
+            if axis == 1 then ( this.y.midpoint() ) else ( this.z.midpoint() )
+        )
+    )
+
+    def center = () : Vec3 -> (
+        Vec3(this.x.midpoint(), this.y.midpoint(), this.z.midpoint())
+    )
+
+    def expandPoint = (p: Vec3) : AABB -> (
+        AABB(
+            Interval(math.min(this.x.min, p.x), math.max(this.x.max, p.x)),
+            Interval(math.min(this.y.min, p.y), math.max(this.y.max, p.y)),
+            Interval(math.min(this.z.min, p.z), math.max(this.z.max, p.z))
+        )
+    )
+
+    def longestAxis = () : int -> (
+        def sx : double = this.x.size()
+        def sy : double = this.y.size()
+        def sz : double = this.z.size()
+        if sx >= sy and sx >= sz then (
+            0
+        ) else (
+            if sy >= sz then ( 1 ) else ( 2 )
+        )
+    )
+
+    def hit = (r: Ray, rayT: Interval) : bool -> (
+        def tMin : double = rayT.min
+        def tMax : double = rayT.max
+
+        def invX : double = 1.0 / r.dir.x
+        def tx0 : double = (this.x.min - r.origin.x) * invX
+        def tx1 : double = (this.x.max - r.origin.x) * invX
+        if invX < 0.0 then (
+            def tmpX : double = tx0 ; tx0 = tx1 ; tx1 = tmpX
+        )
+        if tx0 > tMin then ( tMin = tx0 )
+        if tx1 < tMax then ( tMax = tx1 )
+        if tMax <= tMin then ( return false )
+
+        def invY : double = 1.0 / r.dir.y
+        def ty0 : double = (this.y.min - r.origin.y) * invY
+        def ty1 : double = (this.y.max - r.origin.y) * invY
+        if invY < 0.0 then (
+            def tmpY : double = ty0 ; ty0 = ty1 ; ty1 = tmpY
+        )
+        if ty0 > tMin then ( tMin = ty0 )
+        if ty1 < tMax then ( tMax = ty1 )
+        if tMax <= tMin then ( return false )
+
+        def invZ : double = 1.0 / r.dir.z
+        def tz0 : double = (this.z.min - r.origin.z) * invZ
+        def tz1 : double = (this.z.max - r.origin.z) * invZ
+        if invZ < 0.0 then (
+            def tmpZ : double = tz0 ; tz0 = tz1 ; tz1 = tmpZ
+        )
+        if tz0 > tMin then ( tMin = tz0 )
+        if tz1 < tMax then ( tMax = tz1 )
+        tMax > tMin
+    )
+)
+static (
+    def empty : AABB = this(Interval.empty, Interval.empty, Interval.empty)
+
+    def fromPoints = (a: Vec3, b: Vec3) : AABB -> (
+        this(
+            Interval(math.min(a.x, b.x), math.max(a.x, b.x)),
+            Interval(math.min(a.y, b.y), math.max(a.y, b.y)),
+            Interval(math.min(a.z, b.z), math.max(a.z, b.z))
+        )
+    )
+
+    def enclose = (box0: AABB, box1: AABB) : AABB -> (
+        this(
+            Interval.enclose(box0.x, box1.x),
+            Interval.enclose(box0.y, box1.y),
+            Interval.enclose(box0.z, box1.z)
+        )
+    )
+)

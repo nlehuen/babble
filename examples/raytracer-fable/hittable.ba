@@ -1,0 +1,68 @@
+;; hittable.h, sphere.h and hittable_list.h. They are one file because a class can only
+;; implement an interface defined in its own file for now : the analysis does not read
+;; imported files yet (docs/design/modules.md, M2).
+
+def Math = import("rtweekend.ba").Math
+
+;; Where a ray hit a surface. The normal always points against the ray, and frontFace
+;; tells whether the ray came from outside the surface.
+export def HitRecord = class (r, def p, def t, outwardNormal, def material) (
+    def frontFace = r.direction.dot(outwardNormal) < 0
+    def normal = if this.frontFace then ( outwardNormal ) else ( outwardNormal.neg() )
+)
+
+export def Hittable = interface (
+    ;; the closest hit of the ray with tmin < t < tmax, or null
+    def hit : (r, tmin, tmax)
+)
+
+;; ---------------------------------------------------------------- sphere
+
+export def Sphere = class (def center, def radius, def material) implements Hittable (
+    def hit = (r, tmin, tmax) -> (
+        def oc = this.center.minus(r.origin)
+        def a = r.direction.lengthSquared()
+        def h = r.direction.dot(oc)
+        def c = oc.lengthSquared() - this.radius * this.radius
+
+        def discriminant = h * h - a * c
+        if discriminant < 0 then ( return null )
+
+        def sqrtd = Math.sqrt(discriminant)
+
+        ;; find the nearest root that lies in the acceptable range
+        def root = (h - sqrtd) / a
+        if root <= tmin or tmax <= root then (
+            root = (h + sqrtd) / a
+            if root <= tmin or tmax <= root then ( return null )
+        )
+
+        def p = r.at(root)
+        HitRecord(r, p, root, p.minus(this.center).div(this.radius), this.material)
+    )
+)
+
+;; ---------------------------------------------------------------- hittable_list
+
+export def HittableList = class () implements Hittable (
+    ;; a linked list of objects
+    private def Node = class (def item, def next) ()
+    private def objects = null
+
+    def add = (item) -> ( this.objects = this.Node(item, this.objects) )
+
+    def hit = (r, tmin, tmax) -> (
+        def closest = null
+        def closestSoFar = tmax
+        def node = this.objects
+        while node <> null then (
+            def rec = node.item.hit(r, tmin, closestSoFar)
+            if rec <> null then (
+                closest = rec
+                closestSoFar = rec.t
+            )
+            node = node.next
+        )
+        closest
+    )
+)

@@ -1,0 +1,82 @@
+def Rng = import("rng.ba").Rng
+def Vec3 = import("vec3.ba").Vec3
+def Dielectric = import("hittable.ba").Dielectric
+def HittableList = import("hittable.ba").HittableList
+def Lambertian = import("hittable.ba").Lambertian
+def Material = import("hittable.ba").Material
+def Metal = import("hittable.ba").Metal
+def Sphere = import("hittable.ba").Sphere
+
+;; ------------------------------------------------------------------------
+;; 2.11 Scene Builders (Book 1 Chapter 13 Three-Spheres & Chapter 14 Final Scene)
+;; ------------------------------------------------------------------------
+export def Scenes = object (
+    ;; Chapter 13: Hollow glass sphere + Lambertian center + Metal right
+    def threeSpheres = () : HittableList -> (
+        def world : HittableList = HittableList()
+        def matGround : Material = Lambertian(Vec3(0.8, 0.8, 0.0))
+        def matCenter : Material = Lambertian(Vec3(0.1, 0.2, 0.5))
+        def matLeft : Material = Dielectric(1.50)
+        def matBubble : Material = Dielectric(1.00 / 1.50)
+        def matRight : Material = Metal(Vec3(0.8, 0.6, 0.2), 1.0)
+
+        world.add(Sphere(Vec3(0.0, 0.0 - 100.5, 0.0 - 1.0), 100.0, matGround))
+        world.add(Sphere(Vec3(0.0, 0.0, 0.0 - 1.2), 0.5, matCenter))
+        world.add(Sphere(Vec3(0.0 - 1.0, 0.0, 0.0 - 1.0), 0.5, matLeft))
+        world.add(Sphere(Vec3(0.0 - 1.0, 0.0, 0.0 - 1.0), 0.4, matBubble))
+        world.add(Sphere(Vec3(1.0, 0.0, 0.0 - 1.0), 0.5, matRight))
+        world
+    )
+
+    ;; Chapter 14: "Where Next?" Final Cover Scene
+    def finalScene = (rng: Rng = Rng(42), gridRadius: int = 11) : HittableList -> (
+        def world : HittableList = HittableList()
+
+        def groundMaterial : Material = Lambertian(Vec3(0.5, 0.5, 0.5))
+        world.add(Sphere(Vec3(0.0, 0.0 - 1000.0, 0.0), 1000.0, groundMaterial))
+
+        def a : int = 0 - gridRadius
+        while a < gridRadius then (
+            def b : int = 0 - gridRadius
+            while b < gridRadius then (
+                def chooseMat : double = rng.nextDouble()
+                def center : Vec3 = Vec3(
+                    a + 0.9 * rng.nextDouble(),
+                    0.2,
+                    b + 0.9 * rng.nextDouble()
+                )
+
+                if center.minus(Vec3(4.0, 0.2, 0.0)).length() > 0.9 then (
+                    if chooseMat < 0.8 then (
+                        ;; Diffuse
+                        def albedo : Vec3 = Vec3.random(rng).mul(Vec3.random(rng))
+                        world.add(Sphere(center, 0.2, Lambertian(albedo)))
+                    ) else (
+                        if chooseMat < 0.95 then (
+                            ;; Metal
+                            def albedo : Vec3 = Vec3.randomRange(rng, 0.5, 1.0)
+                            def fuzz : double = rng.nextRange(0.0, 0.5)
+                            world.add(Sphere(center, 0.2, Metal(albedo, fuzz)))
+                        ) else (
+                            ;; Glass
+                            world.add(Sphere(center, 0.2, Dielectric(1.5)))
+                        )
+                    )
+                )
+                b = b + 1
+            )
+            a = a + 1
+        )
+
+        def material1 : Material = Dielectric(1.5)
+        world.add(Sphere(Vec3(0.0, 1.0, 0.0), 1.0, material1))
+
+        def material2 : Material = Lambertian(Vec3(0.4, 0.2, 0.1))
+        world.add(Sphere(Vec3(0.0 - 4.0, 1.0, 0.0), 1.0, material2))
+
+        def material3 : Material = Metal(Vec3(0.7, 0.6, 0.5), 0.0)
+        world.add(Sphere(Vec3(4.0, 1.0, 0.0), 1.0, material3))
+
+        world
+    )
+)

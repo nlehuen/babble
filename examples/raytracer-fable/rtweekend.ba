@@ -1,0 +1,10 @@
+;; Constants and utility functions : rtweekend.h in the book.
+
+export def Math = java.lang.Math
+export def infinity = java.lang.Double.parseDouble("Infinity")
+export def pi = Math.acos(0 - 1)
+
+export def degreesToRadians = (degrees) -> ( degrees * pi / 180.0 )
+
+;; A random real in [min, max)
+export def randomDouble = (rng, min = 0.0, max = 1.0) -> ( min + (max - min) * rng.nextDouble() )

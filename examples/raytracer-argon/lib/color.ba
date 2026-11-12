@@ -1,0 +1,28 @@
+def math = import("math.ba")
+def Vec3 = import("vec3.ba").Vec3
+def Interval = import("interval.ba").Interval
+
+;; ------------------------------------------------------------------------
+;; 2.9 Color Conversion Object (Gamma 2.0 & PPM Formatting)
+;; ------------------------------------------------------------------------
+export def Color = object (
+    def intensity : Interval = Interval(0.000, 0.999)
+
+    def linearToGamma = (linearComponent: double) : double -> (
+        if linearComponent > 0.0 then (
+            math.sqrt(linearComponent)
+        ) else (
+            0.0
+        )
+    )
+
+    def formatPpm = (pixelColor: Vec3) : string -> (
+        def r : double = this.linearToGamma(pixelColor.x)
+        def g : double = this.linearToGamma(pixelColor.y)
+        def b : double = this.linearToGamma(pixelColor.z)
+        def ir : int = math.toByte(256.0 * this.intensity.clamp(r))
+        def ig : int = math.toByte(256.0 * this.intensity.clamp(g))
+        def ib : int = math.toByte(256.0 * this.intensity.clamp(b))
+        "" + ir + " " + ig + " " + ib
+    )
+)

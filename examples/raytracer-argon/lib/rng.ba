@@ -1,0 +1,19 @@
+;; ------------------------------------------------------------------------
+;; 2.1 Deterministic 32-bit LCG Pseudo-Random Number Generator (no java.util.Random)
+;; Exploits Babble's 32-bit signed integer wrap-around on int * int + int.
+;; ------------------------------------------------------------------------
+export def Rng = class (private def seed: int = 1337) (
+    def nextDouble = () : double -> (
+        this.seed = this.seed * 1664525 + 1013904223
+        def u : double = if this.seed < 0 then (
+            this.seed + 2147483648.0
+        ) else (
+            1.0 * this.seed
+        )
+        u / 2147483648.0
+    )
+
+    def nextRange = (minVal: double, maxVal: double) : double -> (
+        minVal + (maxVal - minVal) * this.nextDouble()
+    )
+)

@@ -1,0 +1,123 @@
+def math = import("math.ba")
+def Rng = import("rng.ba").Rng
+
+;; ------------------------------------------------------------------------
+;; 2.2 Vec3 Value Class (3D points, vectors, and RGB colors)
+;; ------------------------------------------------------------------------
+export def Vec3 = value class (x: double, y: double, z: double) (
+    def neg = () : Vec3 -> (
+        Vec3(0.0 - this.x, 0.0 - this.y, 0.0 - this.z)
+    )
+
+    def plus = (v: Vec3) : Vec3 -> (
+        Vec3(this.x + v.x, this.y + v.y, this.z + v.z)
+    )
+
+    def minus = (v: Vec3) : Vec3 -> (
+        Vec3(this.x - v.x, this.y - v.y, this.z - v.z)
+    )
+
+    def mul = (v: Vec3) : Vec3 -> (
+        Vec3(this.x * v.x, this.y * v.y, this.z * v.z)
+    )
+
+    def scale = (t: double) : Vec3 -> (
+        Vec3(this.x * t, this.y * t, this.z * t)
+    )
+
+    def div = (t: double) : Vec3 -> (
+        this.scale(1.0 / t)
+    )
+
+    def dot = (v: Vec3) : double -> (
+        this.x * v.x + this.y * v.y + this.z * v.z
+    )
+
+    def cross = (v: Vec3) : Vec3 -> (
+        Vec3(
+            this.y * v.z - this.z * v.y,
+            this.z * v.x - this.x * v.z,
+            this.x * v.y - this.y * v.x
+        )
+    )
+
+    def lengthSquared = () : double -> (
+        this.x * this.x + this.y * this.y + this.z * this.z
+    )
+
+    def length = () : double -> (
+        math.sqrt(this.lengthSquared())
+    )
+
+    def unit = () : Vec3 -> (
+        this.div(this.length())
+    )
+
+    def nearZero = () : bool -> (
+        def s : double = 0.00000001
+        math.abs(this.x) < s and math.abs(this.y) < s and math.abs(this.z) < s
+    )
+
+    ;; Specular reflection of incident vector about unit normal n
+    def reflect = (n: Vec3) : Vec3 -> (
+        this.minus(n.scale(2.0 * this.dot(n)))
+    )
+
+    ;; Snell's law refraction of unit incident vector about normal n
+    def refract = (n: Vec3, etaiOverEtat: double) : Vec3 -> (
+        def cosTheta : double = math.min(this.neg().dot(n), 1.0)
+        def rOutPerp : Vec3 = this.plus(n.scale(cosTheta)).scale(etaiOverEtat)
+        def rOutParallel : Vec3 = n.scale(0.0 - math.sqrt(math.abs(1.0 - rOutPerp.lengthSquared())))
+        rOutPerp.plus(rOutParallel)
+    )
+)
+static (
+    def zero : Vec3 = this(0.0, 0.0, 0.0)
+    def one : Vec3 = this(1.0, 1.0, 1.0)
+
+    def random = (rng: Rng) : Vec3 -> (
+        this(rng.nextDouble(), rng.nextDouble(), rng.nextDouble())
+    )
+
+    def randomRange = (rng: Rng, minVal: double, maxVal: double) : Vec3 -> (
+        this(
+            rng.nextRange(minVal, maxVal),
+            rng.nextRange(minVal, maxVal),
+            rng.nextRange(minVal, maxVal)
+        )
+    )
+
+    def randomUnitVector = (rng: Rng) : Vec3 -> (
+        while true then (
+            def p : Vec3 = this.randomRange(rng, 0.0 - 1.0, 1.0)
+            def lensq : double = p.lengthSquared()
+            if lensq > 0.000000000001 and lensq <= 1.0 then (
+                return p.div(math.sqrt(lensq))
+            )
+        )
+        this.zero
+    )
+
+    def randomOnHemisphere = (rng: Rng, normal: Vec3) : Vec3 -> (
+        def onUnitSphere : Vec3 = this.randomUnitVector(rng)
+        if onUnitSphere.dot(normal) > 0.0 then (
+            onUnitSphere
+        ) else (
+            onUnitSphere.neg()
+        )
+    )
+
+    def randomInUnitDisk = (rng: Rng) : Vec3 -> (
+        while true then (
+            def p : Vec3 = this(
+                rng.nextRange(0.0 - 1.0, 1.0),
+                rng.nextRange(0.0 - 1.0, 1.0),
+                0.0
+            )
+            if p.lengthSquared() < 1.0 then (
+                return p
+            )
+        )
+        this.zero
+    )
+)

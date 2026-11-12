@@ -1,0 +1,23 @@
+;; Everything the ray tracer is made of, re-exported : what used to be "package raytracer".
+
+export def Rng = import("rng.ba").Rng
+export def Vec3 = import("vec3.ba").Vec3
+export def Ray = import("ray.ba").Ray
+export def Interval = import("interval.ba").Interval
+export def AABB = import("aabb.ba").AABB
+export def Describable = import("hittable.ba").Describable
+export def ScatterResult = import("hittable.ba").ScatterResult
+export def Material = import("hittable.ba").Material
+export def HitRecord = import("hittable.ba").HitRecord
+export def Hittable = import("hittable.ba").Hittable
+export def emptyHittable = import("hittable.ba").emptyHittable
+export def Lambertian = import("hittable.ba").Lambertian
+export def Metal = import("hittable.ba").Metal
+export def Dielectric = import("hittable.ba").Dielectric
+export def Sphere = import("hittable.ba").Sphere
+export def HittableNode = import("hittable.ba").HittableNode
+export def HittableList = import("hittable.ba").HittableList
+export def BVHNode = import("hittable.ba").BVHNode
+export def Color = import("color.ba").Color
+export def Camera = import("camera.ba").Camera
+export def Scenes = import("scenes.ba").Scenes

@@ -1,6 +1,6 @@
 # Ray Tracing in One Weekend — Pure Babble (`raytracer-argon`)
 
-A complete implementation of [*Ray Tracing in One Weekend*](https://raytracing.github.io/books/RayTracingInOneWeekend.html) (Peter Shirley, Trevor David Black, Steve Hollasch) in [raytracer.ba](raytracer.ba), written in **100% pure Babble with zero Java builtins** (`java.*`, `javax.*`, or `import` are never called).
+A complete implementation of [*Ray Tracing in One Weekend*](https://raytracing.github.io/books/RayTracingInOneWeekend.html) (Peter Shirley, Trevor David Black, Steve Hollasch) in [raytracer.ba](raytracer.ba) and the modules of [lib/](lib), written in **100% pure Babble with zero Java builtins** (`java.*` and `javax.*` are never called ; `import` only loads the Babble modules of `lib/`).
 
 ## Rendered Scene
 
@@ -44,7 +44,7 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
   - Outputs standard ASCII `P3` PPM image data via Babble's built-in `println(..., to: out)` (defaulting to `STDOUT`).
 
 ### Babble Language Features Exercised
-- **Packages**: `package math` and `package raytracer`.
+- **Modules**: one file per part of the ray tracer in [lib/](lib) (`math`, `rng`, `vec3`, `ray`, `interval`, `aabb`, `hittable`, `color`, `camera`, `scenes`), with `export def` and `import("….ba")`. `lib/raytracer.ba` re-exports them all, so [raytracer.ba](raytracer.ba) reaches them as `raytracer.Vec3`, `raytracer.Camera`… The interfaces, materials and hittables share `lib/hittable.ba`, because a class can only implement an interface defined in its own file until the analysis reads imported files (step M2 of the [modules design](../../docs/design/modules.md)).
 - **Value classes (`value class`)**: `Vec3`, `Ray`, `Interval`, `AABB`, `HitRecord`, `ScatterResult` (using generated structural `==`, `hashCode`, `toString`, and read-only members).
 - **Classes (`class`)**: `Rng`, `Lambertian`, `Metal`, `Dielectric`, `Sphere`, `HittableNode`, `HittableList`, `BVHNode`, `Camera` (using header `def` and `private def` members, constructor-local parameters, and `private` body fields).
 - **Static blocks (`static ( ... )`)**: `Vec3.zero`, `Vec3.one`, `Vec3.random*`, `Interval.empty`, `Interval.universe`, `Interval.enclose`, `AABB.empty`, `AABB.fromPoints`, `AABB.enclose`, `HitRecord.create`, `Dielectric.reflectance`, `BVHNode.fromList` (using `this(...)` inside `static` blocks to invoke the class constructor).
