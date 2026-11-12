@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed. A prototype of step M1 (§12) exists on the branch that carries this document ; nothing here is decided until the questions of §13 are. |
+| **Status** | Accepted : the questions of §13 were decided as recommended. Step M1 (§12) is implemented ; M2 to M5 are not. |
 | **Depends on** | [object-model.md](object-model.md) (member access, `HasMembers`), [type-system.md](type-system.md) (what a module's type is), [bytecode-compiler.md](bytecode-compiler.md) §4 (the file scope keeps a namespace) and phase 4 (ahead-of-time compilation) |
 | **Unblocks** | Programs in several files, a standard library written in Babble, the AOT jar |
 
@@ -315,24 +315,27 @@ eval.
 
 | Step | Content | State |
 |---|---|---|
-| **M1** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Prototyped on this branch, with tests in both modes. |
+| **M1** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
 | **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running. Compilation cache (§9). | |
 | **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks in `error` mode (§8.2). | |
-| **M4** | Module sources for hosts (§11). A command-line launcher in the jar. | |
+| **M4** | Module sources for hosts (§11). | |
 | **M5** | AOT : a jar closed over static imports. | |
 
-Each step leaves both modes passing the whole suite. The fable ray tracer is split into files
-after M1 as the acceptance test of the feature, and its files get types after M3.
+Each step leaves both modes passing the whole suite. Both ray tracers, `examples/raytracer-fable`
+and `examples/raytracer-argon`, are split into files after M1 as the acceptance test of the
+feature. The fable one gets types after M3 ; the argon one is typed already, and M3 makes its
+types hold across its files.
 
-## 13. Open questions
+## 13. Decisions
 
-Each has a recommendation, which the rest of this document assumes.
+These were open questions, each with a recommendation. All were decided as recommended, in the
+review of the pull request that brought this document ; the rest of the document assumes them.
 
 **Q1. `export` modifier, or one of the alternatives of §3.2 ?**
-Recommended : the modifier.
+Decided : the modifier.
 
 **Q2. Keep the `import` function for files, or add an import declaration (§4.3) ?**
-Recommended : the function, with the literal-argument rule for static imports. The risk is
+Decided : the function, with the literal-argument rule for static imports. The risk is
 that "static if the argument is a literal" is a rule people have to learn ; the precedent is
 that Java package imports already work this way.
 
@@ -340,27 +343,28 @@ that Java package imports already work this way.
 `def shapes = import(…)` followed by one `def` per name is verbose for a file that uses ten
 names of another. Options : (a) nothing ; (b) a destructuring `def (Circle, unit) = expr`,
 which binds the named members of any value with members, modules included ; (c) an import
-declaration. Recommended : (a) now, (b) as its own small proposal, because it is useful beyond
-modules and keeps `def` the only way to define a name.
+declaration. Decided : (a) now, (b) as its own small proposal, because it is useful beyond
+modules and keeps `def` the only way to define a name. It is on the planned features of the
+README.
 
 **Q4. Do modules see the host's bindings ?**
-Recommended : yes (§6.2). The alternative, modules that only see the implicits, is purer but
+Decided : yes (§6.2). The alternative, modules that only see the implicits, is purer but
 forces hosts to thread their services through every call.
 
 **Q5. A search path, and a standard library.**
-Recommended : not now. When it comes, a path that does not start with `.` or `/` and is not
+Decided : not now. When it comes, a path that does not start with `.` or `/` and is not
 found next to the importer could be looked up in a list of roots (`babble.path`), and a
 `std/…` prefix reserved for modules shipped in the jar.
 
 **Q6. Module sources : in M1 or M4 ?**
-Recommended : M4. It is an API to get right once the needs of AOT are clear.
+Decided : M4. It is an API to get right once the needs of AOT are clear.
 
 **Q7. Should exports be assignable from outside ?**
-Recommended : no. Read-only exports are what lets the checker trust the type of
+Decided : no. Read-only exports are what lets the checker trust the type of
 `shapes.Circle`, and the compiler bind it.
 
 **Q8. Per-eval or per-engine module state ?**
-Recommended : per eval (§6.3). Per-engine state would make a second eval of a script observe
+Decided : per eval (§6.3). Per-engine state would make a second eval of a script observe
 what the first did to its modules, which no other part of the engine does.
 
 ## 14. Testing
