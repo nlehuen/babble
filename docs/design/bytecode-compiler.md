@@ -1027,7 +1027,9 @@ behaviour for bindings and forward references.
 What landed, and where it departs from the text above.
 
 * **Mode.** `INTERPRET` stays the default. `-Dbabble.mode=compile` or
-  `engine.put(BabbleScriptEngine.MODE, "compile")` selects the compiler. Surefire runs the whole
+  `engine.put(BabbleScriptEngine.MODE, "compile")` selects the compiler. (Later, `COMPILE`
+  became the default ; `-Dbabble.mode=interpret` selects the interpreter, and the first Surefire
+  execution sets it.) Surefire runs the whole
   suite twice; the `compiled-tests` execution sets `babble.mode=compile` and `babble.verify=true`,
   so every class compiled by a test also passes `CheckClassAdapter`. `DifferentialTestCase`
   runs every `.ba` script and a list of tricky snippets in both modes and compares results,

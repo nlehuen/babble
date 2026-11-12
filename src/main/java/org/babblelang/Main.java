@@ -29,7 +29,8 @@ import java.util.List;
  * java -jar babble.jar -keep-alive script.ba ...    runs it, then continues in the interactive mode
  * </pre>
  * A script finds its arguments in {@code args}, a {@code java.util.List} of strings. The
- * mode and the type checker are the engine's : {@code -Dbabble.mode=compile},
+ * mode and the type checker are the engine's : {@code -Dbabble.mode=interpret} (scripts are
+ * compiled by default),
  * {@code -Dbabble.typecheck=warn|error}.
  */
 public final class Main {

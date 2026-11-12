@@ -53,8 +53,11 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.6</version>
                 <configuration>
-                    <!-- The type checker runs in warn mode on everything the suite compiles. -->
+                    <!-- The first run interprets scripts, which is not the default mode : the
+                         interpreter is the reference the compiled run is compared with. The type
+                         checker runs in warn mode on everything the suite compiles. -->
                     <systemPropertyVariables>
+                        <babble.mode>interpret</babble.mode>
                         <babble.typecheck>warn</babble.typecheck>
                     </systemPropertyVariables>
                 </configuration>
