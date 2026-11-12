@@ -401,6 +401,25 @@ public class BabbleModulesTestCase {
         Assertions.assertEquals("", errors.toString());
     }
 
+    /**
+     * The selection cache reads the fields of another file's compiled class with private
+     * access to it (docs/design/modules.md §8.3) : Babble's private members stay private.
+     */
+    @Test
+    public void privateMembersOfImportedClassesStayPrivateOnceCached() throws Exception {
+        file("lib.ba", "export def P = class () ( def open = 1 ; private def secret = 2 )");
+        for (String mode : new String[]{"interpret", "compile"}) {
+            ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            engine.put(BabbleScriptEngine.MODE, mode);
+            String script = "def P = import(\"lib.ba\").P\n"
+                    + "def read = (o) -> ( o.open )\ndef peek = (o) -> ( o.secret )\n"
+                    + "def i = 0 ; def s = 0 ; while i < 10000 then ( s = s + read(P()) ; i = i + 1 )\n";
+            Assertions.assertEquals(10000, run(engine, script + "s"), mode);
+            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, script + "peek(P())"), mode);
+            Assertions.assertTrue(e.getMessage().contains("secret is private"), e.getMessage());
+        }
+    }
+
     @Test
     public void javaPackagesAreStillImported() throws Exception {
         Assertions.assertEquals(0, run("def util = import(\"java\").util ; util.ArrayList().size()"));
