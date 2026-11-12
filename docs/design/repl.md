@@ -131,7 +131,7 @@ then `.. ` for a continuation.
 ## 6. The command line
 
 `Main` is the main class of the jar. The jar also names its dependencies in `lib/`, where the
-build copies them, so `java -jar` needs nothing else. `-Dbabble.mode=compile` and
+build copies them, so `java -jar` needs nothing else. `-Dbabble.mode=interpret` and
 `-Dbabble.typecheck=warn|error` work as for the engine.
 
 ```

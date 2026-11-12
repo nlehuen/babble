@@ -140,14 +140,15 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     /**
      * The mode {@link #compile} uses : the {@link #MODE} engine attribute, else the system
-     * property, else {@link Mode#INTERPRET}.
+     * property, else {@link Mode#COMPILE}. The interpreter is kept as the reference
+     * implementation the test suite checks the compiler against.
      */
     public Mode getMode() {
         Object mode = get(MODE);
         if (mode == null) {
             mode = System.getProperty(MODE);
         }
-        return mode == null ? Mode.INTERPRET : Mode.parse(mode);
+        return mode == null ? Mode.COMPILE : Mode.parse(mode);
     }
 
     /** What {@link #compile} does with types : the {@link #TYPECHECK} attribute, else the system property. */

@@ -66,7 +66,7 @@ From the root of the repository, build Babble's jar, then hand it [raytracer.ba]
 
 ```bash
 mvn package
-java -Dbabble.mode=compile -Dbabble.typecheck=error \
+java -Dbabble.typecheck=error \
   -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-argon/raytracer.ba > examples/raytracer-argon/scene.ppm
 ```
 

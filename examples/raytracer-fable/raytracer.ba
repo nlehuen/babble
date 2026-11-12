@@ -15,7 +15,7 @@
     hittable, sphere, hittable_list, material and camera. This file is main.cc.
 
     Run it from the root of the repository, once "mvn package" has built the jar :
-        java -Dbabble.mode=compile -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
+        java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
 ;;)
 
 ;; ---------------------------------------------------------------- Settings

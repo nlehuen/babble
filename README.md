@@ -360,7 +360,7 @@ next ; functions defined before keep the definition they were written against, s
 that call each other go in one input. To change a variable they see, assign it : `name = …`.
 
 `:help` lists the few commands (`:cancel` drops an unfinished input, `:quit` leaves). The
-switches below work here too : `java -Dbabble.mode=compile -Dbabble.typecheck=error -jar …`.
+switches below work here too : `java -Dbabble.typecheck=error -jar …`.
 `java -jar … -keep-alive script.ba` runs a script first, and starts with what it defined.
 There is no line editing or history ; `rlwrap java -jar …` adds both. The
 [design note](docs/design/repl.md) has the details.
@@ -384,7 +384,7 @@ the script :
 
 ```
 mvn package
-java -Dbabble.mode=compile -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
+java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
 ```
 
 [examples/raytracer-argon](examples/raytracer-argon/README.md) is another port of the same book,
@@ -446,8 +446,9 @@ with `engine.put(ScriptEngine.FILENAME, path)` ; without it, paths are relative 
 directory.
 
 Output goes to the `ScriptContext`'s writer, so a host can capture it with
-`context.setWriter(...)`. Scripts are interpreted by default ; `-Dbabble.mode=compile`, or
-`engine.put("babble.mode", "compile")`, compiles them to bytecode instead. For a look at what
+`context.setWriter(...)`. Scripts are compiled to bytecode by default ; `-Dbabble.mode=interpret`,
+or `engine.put("babble.mode", "interpret")`, runs them in the interpreter instead, which is much
+slower but kept as the reference the compiler is tested against. For a look at what
 the compiler generates, `-Dbabble.dumpClasses=<dir>` writes the class files for `javap -c -p`.
 `-Dbabble.typecheck=warn`, or `engine.put("babble.typecheck", "warn")`, turns the type checker
 on : its warnings go to the context's error writer. `error` makes them errors, and enforces
@@ -485,8 +486,8 @@ Language features :
 
 Implementation features :
 
-- [x] interpreted mode running on the parse tree, like 1.8.x Ruby, A.K.A. SLOW MODE.
-- [x] compiled mode : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals and classes are JVM classes, and calls and member accesses are `invokedynamic` sites with inline caches (phases 1 to 3 of the [bytecode compiler design](docs/design/bytecode-compiler.md)) : 25 to 55 times faster than the interpreter on calls, loops, closures and objects in the benchmarks, and Java calls no longer re-resolve overloads each time.
+- [x] interpreted mode running on the parse tree, like 1.8.x Ruby, A.K.A. SLOW MODE : no longer the default, it is the reference implementation the compiler is tested against, and runs scripts on one thread only.
+- [x] compiled mode, the default : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals and classes are JVM classes, and calls and member accesses are `invokedynamic` sites with inline caches (phases 1 to 3 of the [bytecode compiler design](docs/design/bytecode-compiler.md)) : 25 to 55 times faster than the interpreter on calls, loops, closures and objects in the benchmarks, and Java calls no longer re-resolve overloads each time.
 - [x] errors found before running : redefined names, misplaced `return`, `this` or `super`, incomplete or conflicting interface implementations, private members reached from outside.
 - [x] about 100 lines of ANTLR4 grammar (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's parse tree & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).

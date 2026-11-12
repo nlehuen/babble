@@ -83,10 +83,27 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testTheSystemPropertySelectsTheDefaultBackend() throws Exception {
-        // Surefire runs the whole suite a second time with -Dbabble.mode=compile.
+        // Surefire runs the suite with -Dbabble.mode=interpret, then with -Dbabble.mode=compile.
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        boolean compiling = "compile".equals(System.getProperty(BabbleScriptEngine.MODE));
+        boolean compiling = !"interpret".equals(System.getProperty(BabbleScriptEngine.MODE));
         Assertions.assertEquals(compiling, engine.compile("1") instanceof CompiledBabbleScript);
+    }
+
+    @Test
+    public void testScriptsAreCompiledByDefault() throws Exception {
+        String previous = System.getProperty(BabbleScriptEngine.MODE);
+        System.clearProperty(BabbleScriptEngine.MODE);
+        try {
+            BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            Assertions.assertEquals(BabbleScriptEngine.Mode.COMPILE, engine.getMode());
+            Assertions.assertInstanceOf(CompiledBabbleScript.class, engine.compile("1"));
+            engine.put(BabbleScriptEngine.MODE, "interpret");
+            Assertions.assertFalse(engine.compile("1") instanceof CompiledBabbleScript);
+        } finally {
+            if (previous != null) {
+                System.setProperty(BabbleScriptEngine.MODE, previous);
+            }
+        }
     }
 
     @Test
