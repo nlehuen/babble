@@ -1,0 +1,146 @@
+;; Mathematics without java.lang.Math : constants, abs, min, max, clamp, sqrt (Newton),
+;; sin, cos, tan (Taylor series), powInt and float-to-int conversions.
+
+export def pi : double = 3.141592653589793
+export def twoPi : double = 6.283185307179586
+export def halfPi : double = 1.5707963267948966
+export def infinity : double = 1.0 / 0.0
+export def negInfinity : double = (0.0 - 1.0) / 0.0
+
+export def abs = (x: double) : double -> (
+    if x < 0.0 then ( 0.0 - x ) else ( x )
+)
+
+export def min = (a: double, b: double) : double -> (
+    if a < b then ( a ) else ( b )
+)
+
+export def max = (a: double, b: double) : double -> (
+    if a > b then ( a ) else ( b )
+)
+
+export def minInt = (a: int, b: int) : int -> (
+    if a < b then ( a ) else ( b )
+)
+
+export def maxInt = (a: int, b: int) : int -> (
+    if a > b then ( a ) else ( b )
+)
+
+export def clamp = (x: double, lo: double, hi: double) : double -> (
+    if x < lo then (
+        lo
+    ) else (
+        if x > hi then ( hi ) else ( x )
+    )
+)
+
+export def degreesToRadians = (degrees: double) : double -> (
+    degrees * pi / 180.0
+)
+
+;; Integer power via Babble's built-in "recurse" keyword
+export def powInt = (base: double, exp: int) : double -> (
+    if exp <= 0 then (
+        1.0
+    ) else (
+        base * recurse(base, exp - 1)
+    )
+)
+
+;; Square root via range scaling + Newton-Raphson (Heron's method)
+export def sqrt = (x: double) : double -> (
+    if x <= 0.0 then (
+        return 0.0
+    )
+    def g : double = if x > 1.0 then ( x * 0.5 ) else ( 1.0 )
+    while g * g > x * 16.0 then (
+        g = g * 0.25
+    )
+    while g * g * 16.0 < x then (
+        g = g * 4.0
+    )
+    def i : int = 0
+    while i < 10 then (
+        g = 0.5 * (g + x / g)
+        i = i + 1
+    )
+    g
+)
+
+;; Angle reduction into [-pi, pi]
+export def wrapAngle = (x: double) : double -> (
+    def a : double = x
+    while a > pi then ( a = a - twoPi )
+    while a < 0.0 - pi then ( a = a + twoPi )
+    a
+)
+
+;; Taylor series for sin(x)
+export def sin = (x: double) : double -> (
+    def a : double = wrapAngle(x)
+    def x2 : double = a * a
+    def term : double = a
+    def sum : double = a
+    def n : int = 1
+    while n <= 10 then (
+        def denom : double = (2 * n) * (2 * n + 1)
+        term = (0.0 - term) * x2 / denom
+        sum = sum + term
+        n = n + 1
+    )
+    sum
+)
+
+;; Taylor series for cos(x)
+export def cos = (x: double) : double -> (
+    def a : double = wrapAngle(x)
+    def x2 : double = a * a
+    def term : double = 1.0
+    def sum : double = 1.0
+    def n : int = 1
+    while n <= 10 then (
+        def denom : double = (2 * n - 1) * (2 * n)
+        term = (0.0 - term) * x2 / denom
+        sum = sum + term
+        n = n + 1
+    )
+    sum
+)
+
+export def tan = (x: double) : double -> (
+    sin(x) / cos(x)
+)
+
+;; Fast conversion of a clamped [0.0, 256.0) channel value to an int in [0, 255]
+export def toByte = (x: double) : int -> (
+    def v : double = clamp(x, 0.0, 255.999)
+    def res : int = 0
+    if v >= 128.0 then ( res = res + 128 ; v = v - 128.0 )
+    if v >= 64.0  then ( res = res + 64  ; v = v - 64.0 )
+    if v >= 32.0  then ( res = res + 32  ; v = v - 32.0 )
+    if v >= 16.0  then ( res = res + 16  ; v = v - 16.0 )
+    if v >= 8.0   then ( res = res + 8   ; v = v - 8.0 )
+    if v >= 4.0   then ( res = res + 4   ; v = v - 4.0 )
+    if v >= 2.0   then ( res = res + 2   ; v = v - 2.0 )
+    if v >= 1.0   then ( res = res + 1 )
+    res
+)
+
+;; Recursive binary decomposition to truncate any non-negative double to int
+export def toIntPos = (x: double, bit: int) : int -> (
+    if x < bit then (
+        0
+    ) else (
+        def higher : int = if x >= bit * 2.0 then ( recurse(x, bit * 2) ) else ( 0 )
+        if x - higher >= bit then ( higher + bit ) else ( higher )
+    )
+)
+
+export def toInt = (x: double) : int -> (
+    if x < 0.0 then (
+        0 - toIntPos(0.0 - x, 1)
+    ) else (
+        toIntPos(x, 1)
+    )
+)

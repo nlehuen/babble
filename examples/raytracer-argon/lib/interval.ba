@@ -1,0 +1,43 @@
+def math = import("math.ba")
+
+;; ------------------------------------------------------------------------
+;; 2.4 Interval Value Class
+;; ------------------------------------------------------------------------
+export def Interval = value class (min: double, max: double) (
+    def size = () : double -> (
+        this.max - this.min
+    )
+
+    def midpoint = () : double -> (
+        0.5 * (this.min + this.max)
+    )
+
+    def contains = (x: double) : bool -> (
+        this.min <= x and x <= this.max
+    )
+
+    def surrounds = (x: double) : bool -> (
+        this.min < x and x < this.max
+    )
+
+    def clamp = (x: double) : double -> (
+        if x < this.min then (
+            this.min
+        ) else (
+            if x > this.max then ( this.max ) else ( x )
+        )
+    )
+
+    def expand = (delta: double) : Interval -> (
+        def padding : double = delta / 2.0
+        Interval(this.min - padding, this.max + padding)
+    )
+)
+static (
+    def empty : Interval = this(math.infinity, math.negInfinity)
+    def universe : Interval = this(math.negInfinity, math.infinity)
+
+    def enclose = (a: Interval, b: Interval) : Interval -> (
+        this(math.min(a.min, b.min), math.max(a.max, b.max))
+    )
+)

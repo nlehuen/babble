@@ -237,6 +237,12 @@ parsing and analysing the imported file, which in turn may have static imports.
   reported like a missing member : `No such export : nope in shapes.ba`. It is a warning with
   the checker off or in `warn` mode, like the "bound to fail" diagnostics of type-system.md §4,
   and an error in `error` mode.
+* `implements`, `extends` and `super(I)` accept an interface exported by a statically imported
+  file : the analysis resolves them statically (object-model.md), so it needs the imported
+  interface's shape. In M1 it does not have it, and
+  `class () implements import("shapes.ba").Shape ( … )` fails with
+  `implements needs a statically known interface`. Splitting the ray tracers ran into this :
+  their interfaces had to stay in the same file as the classes implementing them.
 * Cycles : the interface of a file being analysed is requested again. Its exported names are
   known after pass 1, before any type is, so the names are answered and the types are
   `dynamic` for the files of a cycle. This is sound, and loses precision only inside cycles.
@@ -269,6 +275,12 @@ any other.
 Later, for a static import bound to a never-reassigned def, `m.x` can be compiled as a
 constant call site bound to the export's slot, and `m.f(…)` as a guarded direct call. This is
 an optimisation with no change of semantics, worth doing when a benchmark asks for it.
+
+One already has : split into modules, the argon ray tracer renders in about 70 s instead of
+50 s in compiled mode. The likely cause, not yet profiled, is that its hot `math.sqrt(…)` calls
+went from a package member, which the selection cache treats as a constant, to a module member,
+which takes the generic path (`Module.getMember`, a set and a map lookup per call). Caching module members in the
+selection's inline cache, guarded on the module, would recover it without static imports.
 
 ## 9. Compilation cache
 
@@ -316,14 +328,14 @@ eval.
 | Step | Content | State |
 |---|---|---|
 | **M1** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
-| **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running. Compilation cache (§9). | |
+| **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | |
 | **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks in `error` mode (§8.2). | |
 | **M4** | Module sources for hosts (§11). | |
 | **M5** | AOT : a jar closed over static imports. | |
 
 Each step leaves both modes passing the whole suite. Both ray tracers, `examples/raytracer-fable`
 and `examples/raytracer-argon`, are split into files after M1 as the acceptance test of the
-feature. The fable one gets types after M3 ; the argon one is typed already, and M3 makes its
+feature (done : each interface shares a file with the classes implementing it, until M2). The fable one gets types after M3 ; the argon one is typed already, and M3 makes its
 types hold across its files.
 
 ## 13. Decisions

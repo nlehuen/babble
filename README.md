@@ -354,11 +354,13 @@ There is no line editing or history ; `rlwrap java -jar …` adds both. The
 Ray tracing demo
 ----------------
 
-[examples/raytracer-fable/raytracer.ba](examples/raytracer-fable/raytracer.ba) is a port of
+[examples/raytracer-fable](examples/raytracer-fable/raytracer.ba) is a port of
 [_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
 to Babble : vectors as a value class, spheres and materials as classes implementing
-interfaces, a camera with depth of field, and the final scene of the book. This image was
-rendered by it, in compiled mode :
+interfaces, a camera with depth of field, and the final scene of the book. It is split into
+modules along the files of the book (`rtweekend.ba`, `vec3.ba`, `ray.ba`, `hittable.ba`,
+`material.ba`, `camera.ba`), and `raytracer.ba` is its main. This image was rendered by it, in
+compiled mode :
 
 ![The final scene of Ray Tracing in One Weekend, rendered by Babble](examples/raytracer-fable/demo.png)
 
@@ -373,7 +375,7 @@ java -Dbabble.mode=compile -jar target/babble-1.0-SNAPSHOT.jar examples/raytrace
 
 [examples/raytracer-argon](examples/raytracer-argon/README.md) is another port of the same book,
 which uses no Java at all : it has its own square root, trigonometry and random numbers, and a
-bounding volume hierarchy.
+bounding volume hierarchy. It is split into modules too, in its `lib/` directory.
 
 Building and running
 --------------------
@@ -532,6 +534,8 @@ order of how much each would improve that code :
   instead of a launcher per project : `java -jar target/babble-1.0-SNAPSHOT.jar script.ba arguments...`,
   see *Building and running*. The ray tracers run that way, and their launchers are gone.
 - [ ] thread safety : the ray tracer found a race in the Java member caches, now fixed, but nothing
-  tests scripts running on several threads.
+  tests scripts running on several threads. And the interpreter cannot run a script's functions
+  on several threads at all, since it keeps the current scope in a field : the fable ray tracer
+  only renders in compiled mode.
 - [ ] unboxed arithmetic for typed code (also planned above) : the ray tracer spends its time
   boxing doubles and allocating vectors, about 150 ns per ray-sphere test.

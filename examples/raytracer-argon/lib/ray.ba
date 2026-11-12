@@ -1,0 +1,10 @@
+def Vec3 = import("vec3.ba").Vec3
+
+;; ------------------------------------------------------------------------
+;; 2.3 Ray Value Class
+;; ------------------------------------------------------------------------
+export def Ray = value class (origin: Vec3, dir: Vec3) (
+    def at = (t: double) : Vec3 -> (
+        this.origin.plus(this.dir.scale(t))
+    )
+)
