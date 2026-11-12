@@ -287,11 +287,17 @@ Later, for a static import bound to a never-reassigned def, `m.x` can be compile
 constant call site bound to the export's slot, and `m.f(…)` as a guarded direct call. This is
 an optimisation with no change of semantics, worth doing when a benchmark asks for it.
 
-One already has : split into modules, the argon ray tracer renders in about 70 s instead of
-50 s in compiled mode. The likely cause, not yet profiled, is that its hot `math.sqrt(…)` calls
-went from a package member, which the selection cache treats as a constant, to a module member,
-which takes the generic path (`Module.getMember`, a set and a map lookup per call). Caching module members in the
-selection's inline cache, guarded on the module, would recover it without static imports.
+One case did not wait : split into modules, the argon ray tracer rendered in 71 s instead of
+49 s in compiled mode. The first guess, that module members such as `math.sqrt` took a slower
+path than package members, was wrong : a micro-benchmark calls through either just as fast.
+The cause was the inline cache of member selections (`obj.x`, `obj.m`) : on an instance of a
+compiled class, it reads the member's field directly, but it looked the field up with the
+calling class's access. The classes of each file are loaded by a class loader of their own,
+and are package-private, so a file using a class another file compiled could not reach its
+fields : the selection went to the generic path for good. Every `Vec3` the ray tracer used
+outside `vec3.ba` paid for it. The cache now looks the field up with access to the instance's
+own class (`MethodHandles.privateLookupIn`), and the split ray tracer renders as fast as the
+single file did (60 s and 67 s, on the same machine).
 
 ## 9. Compilation cache
 

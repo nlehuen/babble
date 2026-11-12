@@ -235,18 +235,16 @@ public final class Bootstrap {
      * the target's source text, for errors, are static arguments.
      */
     public static java.lang.invoke.CallSite select(MethodHandles.Lookup lookup, String name, MethodType type, String member, String targetText) {
-        return new SelectCache(lookup, type, member, targetText);
+        return new SelectCache(type, member, targetText);
     }
 
     static final class SelectCache extends MutableCallSite {
-        private final MethodHandles.Lookup lookup;
         private final String member;
         private final MethodHandle generic;
         private int depth;
 
-        SelectCache(MethodHandles.Lookup lookup, MethodType type, String member, String targetText) {
+        SelectCache(MethodType type, String member, String targetText) {
             super(type);
-            this.lookup = lookup;
             this.member = member;
             this.generic = MethodHandles.insertArguments(SELECT_GENERIC, 1, member, targetText).asType(type);
             setTarget(SELECT_FALLBACK.bindTo(this).asType(type));
@@ -281,8 +279,9 @@ public final class Bootstrap {
         /**
          * A public member of a compiled class : a read of its field, checked defined, and
          * for a method, bound to the receiver. Null when the member isn't one of the class's
-         * own, or when its field can't be reached from the calling class (a class compiled by
-         * another script, in another class loader).
+         * own. The field is looked up with access to the instance's class rather than the
+         * caller's : a class another file compiled is in another class loader, whose
+         * package-private fields the caller can't reach (an imported module's class).
          */
         private MethodHandle instanceMember(BabbleInstance instance) {
             ClassShape shape = instance.babbleClass().shape();
@@ -292,7 +291,7 @@ public final class Bootstrap {
             }
             MethodHandle getter;
             try {
-                getter = lookup.findGetter(instance.getClass(), member, Object.class);
+                getter = MethodHandles.privateLookupIn(instance.getClass(), LOOKUP).findGetter(instance.getClass(), member, Object.class);
             } catch (ReflectiveOperationException | SecurityException e) {
                 return null;
             }
