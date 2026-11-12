@@ -3,9 +3,9 @@ def Rng = import("rng.ba").Rng
 def Vec3 = import("vec3.ba").Vec3
 def Ray = import("ray.ba").Ray
 def Interval = import("interval.ba").Interval
-def HitRecord = import("hittable.ba").HitRecord
-def Hittable = import("hittable.ba").Hittable
-def ScatterResult = import("hittable.ba").ScatterResult
+def HitRecord = import("interfaces.ba").HitRecord
+def Hittable = import("interfaces.ba").Hittable
+def ScatterResult = import("interfaces.ba").ScatterResult
 def Color = import("color.ba").Color
 
 ;; ------------------------------------------------------------------------

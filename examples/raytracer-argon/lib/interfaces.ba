@@ -1,0 +1,51 @@
+def Rng = import("rng.ba").Rng
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+def Interval = import("interval.ba").Interval
+def AABB = import("aabb.ba").AABB
+
+;; ------------------------------------------------------------------------
+;; 2.6 Interfaces, HitRecord, and ScatterResult
+;; Showcases Babble interfaces, extends, default methods, and super calls.
+;; ------------------------------------------------------------------------
+export def Describable = interface (
+    def kind : () : string
+    def describe = () : string -> (
+        "<" + this.kind() + ">"
+    )
+)
+
+export def ScatterResult = value class (attenuation: Vec3, scattered: Ray) ()
+
+export def Material = interface extends Describable (
+    def scatter : (rIn: Ray, rec: HitRecord, rng: Rng) : ScatterResult
+    def kind = () : string -> ( "material" )
+)
+
+export def HitRecord = value class (
+    p: Vec3,
+    normal: Vec3,
+    mat: Material,
+    t: double,
+    frontFace: bool
+) ()
+static (
+    def create = (r: Ray, p: Vec3, outwardNormal: Vec3, t: double, mat: Material) : HitRecord -> (
+        def frontFace : bool = r.dir.dot(outwardNormal) < 0.0
+        def normal : Vec3 = if frontFace then ( outwardNormal ) else ( outwardNormal.neg() )
+        this(p, normal, mat, t, frontFace)
+    )
+)
+
+export def Hittable = interface extends Describable (
+    def hit : (r: Ray, rayT: Interval) : HitRecord
+    def boundingBox = () : AABB -> ( AABB.empty )
+    def kind = () : string -> ( "hittable" )
+)
+
+;; Object literal implementing a Babble interface
+export def emptyHittable = object implements Hittable (
+    def hit = (r: Ray, rayT: Interval) : HitRecord -> ( null )
+    def boundingBox = () : AABB -> ( AABB.empty )
+    def kind = () : string -> ( "empty" )
+)

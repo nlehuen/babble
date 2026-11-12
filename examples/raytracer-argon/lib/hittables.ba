@@ -1,128 +1,13 @@
-;; Interfaces, materials and hittables (sections 2.6 to 2.8). They are one module because
-;; a class can only implement an interface defined in its own file for now : the analysis does
-;; not read imported files yet (docs/design/modules.md, M2).
-
 def math = import("math.ba")
-def Rng = import("rng.ba").Rng
 def Vec3 = import("vec3.ba").Vec3
 def Ray = import("ray.ba").Ray
 def Interval = import("interval.ba").Interval
 def AABB = import("aabb.ba").AABB
-
-;; ------------------------------------------------------------------------
-;; 2.6 Interfaces, HitRecord, and ScatterResult
-;; Showcases Babble interfaces, extends, default methods, and super calls.
-;; ------------------------------------------------------------------------
-export def Describable = interface (
-    def kind : () : string
-    def describe = () : string -> (
-        "<" + this.kind() + ">"
-    )
-)
-
-export def ScatterResult = value class (attenuation: Vec3, scattered: Ray) ()
-
-export def Material = interface extends Describable (
-    def scatter : (rIn: Ray, rec: HitRecord, rng: Rng) : ScatterResult
-    def kind = () : string -> ( "material" )
-)
-
-export def HitRecord = value class (
-    p: Vec3,
-    normal: Vec3,
-    mat: Material,
-    t: double,
-    frontFace: bool
-) ()
-static (
-    def create = (r: Ray, p: Vec3, outwardNormal: Vec3, t: double, mat: Material) : HitRecord -> (
-        def frontFace : bool = r.dir.dot(outwardNormal) < 0.0
-        def normal : Vec3 = if frontFace then ( outwardNormal ) else ( outwardNormal.neg() )
-        this(p, normal, mat, t, frontFace)
-    )
-)
-
-export def Hittable = interface extends Describable (
-    def hit : (r: Ray, rayT: Interval) : HitRecord
-    def boundingBox = () : AABB -> ( AABB.empty )
-    def kind = () : string -> ( "hittable" )
-)
-
-;; Object literal implementing a Babble interface
-export def emptyHittable = object implements Hittable (
-    def hit = (r: Ray, rayT: Interval) : HitRecord -> ( null )
-    def boundingBox = () : AABB -> ( AABB.empty )
-    def kind = () : string -> ( "empty" )
-)
-
-;; ------------------------------------------------------------------------
-;; 2.7 Materials: Lambertian (diffuse), Metal (reflective), Dielectric (glass)
-;; ------------------------------------------------------------------------
-export def Lambertian = class (def albedo: Vec3) implements Material (
-    def scatter = (rIn: Ray, rec: HitRecord, rng: Rng) : ScatterResult -> (
-        def scatterDirection : Vec3 = rec.normal.plus(Vec3.randomUnitVector(rng))
-        if scatterDirection.nearZero() then (
-            scatterDirection = rec.normal
-        )
-        ScatterResult(this.albedo, Ray(rec.p, scatterDirection))
-    )
-
-    def kind = () : string -> ( "lambertian" )
-
-    def describe = () : string -> (
-        super.describe() + "(" + this.albedo + ")"
-    )
-)
-
-export def Metal = class (def albedo: Vec3, fuzzIn: double = 0.0) implements Material (
-    def fuzz : double = if fuzzIn < 1.0 then ( math.max(0.0, fuzzIn) ) else ( 1.0 )
-
-    def scatter = (rIn: Ray, rec: HitRecord, rng: Rng) : ScatterResult -> (
-        def reflected : Vec3 = rIn.dir.reflect(rec.normal)
-        reflected = reflected.unit().plus(Vec3.randomUnitVector(rng).scale(this.fuzz))
-        if reflected.dot(rec.normal) > 0.0 then (
-            ScatterResult(this.albedo, Ray(rec.p, reflected))
-        ) else (
-            null
-        )
-    )
-
-    def kind = () : string -> ( "metal" )
-
-    def describe = () : string -> (
-        super.describe() + "(fuzz=" + this.fuzz + ")"
-    )
-)
-
-export def Dielectric = class (def refractionIndex: double) implements Material (
-    def scatter = (rIn: Ray, rec: HitRecord, rng: Rng) : ScatterResult -> (
-        def ri : double = if rec.frontFace then (
-            1.0 / this.refractionIndex
-        ) else (
-            this.refractionIndex
-        )
-        def unitDirection : Vec3 = rIn.dir.unit()
-        def cosTheta : double = math.min(unitDirection.neg().dot(rec.normal), 1.0)
-        def sinTheta : double = math.sqrt(math.max(0.0, 1.0 - cosTheta * cosTheta))
-        def cannotRefract : bool = ri * sinTheta > 1.0
-        def direction : Vec3 = if cannotRefract or Dielectric.reflectance(cosTheta, ri) > rng.nextDouble() then (
-            unitDirection.reflect(rec.normal)
-        ) else (
-            unitDirection.refract(rec.normal, ri)
-        )
-        ScatterResult(Vec3.one, Ray(rec.p, direction))
-    )
-
-    def kind = () : string -> ( "dielectric" )
-)
-static (
-    ;; Schlick's approximation for reflectance
-    def reflectance = (cosine: double, refractionIndex: double) : double -> (
-        def r0 : double = (1.0 - refractionIndex) / (1.0 + refractionIndex)
-        r0 = r0 * r0
-        r0 + (1.0 - r0) * math.powInt(1.0 - cosine, 5)
-    )
-)
+def Describable = import("interfaces.ba").Describable
+def HitRecord = import("interfaces.ba").HitRecord
+def Hittable = import("interfaces.ba").Hittable
+def Material = import("interfaces.ba").Material
+def emptyHittable = import("interfaces.ba").emptyHittable
 
 ;; ------------------------------------------------------------------------
 ;; 2.8 Sphere & Pure-Babble HittableList + BVHNode

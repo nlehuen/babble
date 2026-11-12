@@ -16,6 +16,8 @@ import org.antlr.v4.runtime.misc.ParseCancellationException;
 import org.babblelang.analysis.AnalysisSession;
 import org.babblelang.analysis.AnalysisException;
 import org.babblelang.analysis.BlockScopes;
+import org.babblelang.analysis.ModuleInterface;
+import org.babblelang.analysis.ModuleLoader;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.compiler.BabbleCompiler;
 import org.babblelang.engine.impl.BabbleCompiledScript;
@@ -92,6 +94,24 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     private final BabbleScriptEngineFactory factory;
     private final Namespace implicits;
+
+    /**
+     * A compiled module, as the cache keeps it (docs/design/modules.md §9) : for the mode and
+     * typecheck setting it was compiled with, and the sources of every file its analysis
+     * read, its own included. It is stale when one of them changed.
+     */
+    private record CompiledModule(Mode mode, ScopeAnalysis.Typecheck typecheck, Map<Path, String> sources,
+                                  BabbleScript script, ModuleInterface moduleInterface) {
+    }
+
+    /** A file whose analysis is under way : a file importing it back, in a cycle, gets this. */
+    private record InProgress(ModuleInterface moduleInterface, String source) {
+    }
+
+    /** Guards the module cache and the analyses in progress : modules compile one at a time. */
+    private final Object moduleLock = new Object();
+    private final Map<Path, CompiledModule> moduleCache = new HashMap<>();
+    private final Map<Path, InProgress> inProgress = new HashMap<>();
 
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
         super();
@@ -179,12 +199,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      */
     public Module importModule(ScriptRuntime rt, String name, String importerName) {
         Path file = resolveModule(name, importerName);
-        Path key;
-        try {
-            key = file.toRealPath();
-        } catch (IOException e) {
-            throw new BabbleException("Cannot import " + name + " : no such file : " + file);
-        }
+        Path key = realPath(name, file);
         Map<Path, Module> modules = rt.modules();
         synchronized (modules) {
             Module module = modules.get(key);
@@ -192,12 +207,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 return module;
             }
             try {
-                BabbleScript script;
-                try (Reader reader = Files.newBufferedReader(key)) {
-                    script = (BabbleScript) compile(reader, file.toString(), rt.context());
-                } catch (IOException e) {
-                    throw new BabbleException("Cannot import " + name + " : " + e);
-                }
+                BabbleScript script = compiledModule(name, key, file.toString(), rt.context()).script();
                 ScriptRuntime runtime = createRuntime(rt.context(), modules);
                 module = new Module(file.toString(), runtime.root(), script.exports());
                 modules.put(key, module);
@@ -214,6 +224,127 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 String message = e.getMessage();
                 String prefix = BabbleException.class.getName() + ": ";
                 throw new BabbleException(message.startsWith(prefix) ? message.substring(prefix.length()) : message);
+            }
+        }
+    }
+
+    private static Path realPath(String name, Path file) {
+        try {
+            return file.toRealPath();
+        } catch (IOException e) {
+            throw new BabbleException("Cannot import " + name + " : no such file : " + file);
+        }
+    }
+
+    /**
+     * The compiled module of a file, from the cache when nothing it was compiled from
+     * changed. Compiling it analyses the files it imports statically, through this cache.
+     */
+    private CompiledModule compiledModule(String name, Path key, String sourceName, ScriptContext context) throws ScriptException {
+        synchronized (moduleLock) {
+            String source = read(name, key);
+            Mode mode = getMode();
+            ScopeAnalysis.Typecheck typecheck;
+            try {
+                typecheck = getTypecheck();
+            } catch (BabbleException e) {
+                throw new ScriptException(e);
+            }
+            CompiledModule cached = moduleCache.get(key);
+            if (cached != null && cached.mode() == mode && cached.typecheck() == typecheck && isFresh(cached)) {
+                return cached;
+            }
+            BabbleParser.FileContext file;
+            try {
+                file = parse(CharStreams.fromString(source, sourceName));
+            } catch (ParseFailure e) {
+                throw e.toScriptException(sourceName);
+            }
+            Loader loader = new Loader(sourceName, context, key, source);
+            ScopeAnalysis scopes;
+            try {
+                scopes = analyze(file, sourceName, context, null, loader);
+            } finally {
+                inProgress.remove(key);
+            }
+            loader.sources.put(key, source);
+            CompiledModule module = new CompiledModule(mode, typecheck, Map.copyOf(loader.sources),
+                    script(file, scopes, sourceName), scopes.moduleInterface());
+            moduleCache.put(key, module);
+            return module;
+        }
+    }
+
+    private static boolean isFresh(CompiledModule module) {
+        for (Map.Entry<Path, String> source : module.sources().entrySet()) {
+            try {
+                if (!Files.readString(source.getKey()).equals(source.getValue())) {
+                    return false;
+                }
+            } catch (IOException e) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static String read(String name, Path file) {
+        try {
+            return Files.readString(file);
+        } catch (IOException e) {
+            throw new BabbleException("Cannot import " + name + " : " + e);
+        }
+    }
+
+    /**
+     * What the analysis of one file loads its static imports with : their paths are relative
+     * to that file. It notes the sources of the files it read, for the cache.
+     */
+    private final class Loader implements ModuleLoader {
+        private final String importerName;
+        private final ScriptContext context;
+        /** The file being analysed, when it is a module, else null. */
+        private final Path self;
+        private final String selfSource;
+        final Map<Path, String> sources = new HashMap<>();
+
+        Loader(String importerName, ScriptContext context, Path self, String selfSource) {
+            this.importerName = importerName;
+            this.context = context;
+            this.self = self;
+            this.selfSource = selfSource;
+        }
+
+        @Override
+        public void started(ModuleInterface moduleInterface) {
+            moduleInterface.setName(importerName);
+            if (self != null) {
+                inProgress.put(self, new InProgress(moduleInterface, selfSource));
+            }
+        }
+
+        @Override
+        public ModuleInterface load(String name, int line) {
+            synchronized (moduleLock) {
+                try {
+                    Path file = resolveModule(name, importerName);
+                    Path key = realPath(name, file);
+                    InProgress pending = inProgress.get(key);
+                    if (pending != null) {
+                        sources.put(key, pending.source());
+                        return pending.moduleInterface();
+                    }
+                    CompiledModule module = compiledModule(name, key, file.toString(), context);
+                    sources.putAll(module.sources());
+                    return module.moduleInterface();
+                } catch (BabbleException e) {
+                    throw new AnalysisException(e.getMessage(), line);
+                } catch (ScriptException e) {
+                    // The message ends with the module's file and line ; the importing file adds its own.
+                    String message = e.getMessage();
+                    String prefix = BabbleException.class.getName() + ": ";
+                    throw new AnalysisException(message.startsWith(prefix) ? message.substring(prefix.length()) : message, line);
+                }
             }
         }
     }
@@ -340,7 +471,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         } catch (Exception e) {
             throw new ScriptException(e);
         }
-        return script(file, analyze(file, sourceName, context, null), sourceName);
+        return script(file, analyze(file, sourceName, context, null, null), sourceName);
     }
 
     /**
@@ -349,6 +480,15 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      * @param session the interactive session the file is an input of, or null
      */
     ScopeAnalysis analyze(BabbleParser.FileContext file, String sourceName, ScriptContext context, AnalysisSession session) throws ScriptException {
+        return analyze(file, sourceName, context, session, null);
+    }
+
+    /**
+     * @param loader what loads the file's static imports, or null for one relative to
+     *               {@code sourceName}
+     */
+    private ScopeAnalysis analyze(BabbleParser.FileContext file, String sourceName, ScriptContext context, AnalysisSession session,
+                                  Loader loader) throws ScriptException {
         ScopeAnalysis scopes;
         ScopeAnalysis.Typecheck typecheck;
         try {
@@ -357,7 +497,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             throw new ScriptException(e);
         }
         try {
-            scopes = BlockScopes.analyze(file, typecheck, session);
+            scopes = BlockScopes.analyze(file, typecheck, session, loader != null ? loader : new Loader(sourceName, context, null, null));
         } catch (AnalysisException e) {
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());

@@ -191,6 +191,16 @@ final class TypeChecker {
     // ---------------------------------------------------------------- scopes and names
 
     /** The innermost scope a node is in. */
+    /** Whether a construct is part of what this pass analysed, rather than of an imported file. */
+    private boolean isLocal(ParserRuleContext ctx) {
+        for (ParserRuleContext p = ctx; p != null; p = p.getParent()) {
+            if (pass.scopeNodes.containsKey(p) || pass.session != null && pass.session.scopeNodes.containsKey(p)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private ScopeNode scopeOf(ParserRuleContext ctx) {
         for (ParserRuleContext p = ctx; p != null; p = p.getParent()) {
             ScopeNode scope = pass.scopeNodes.get(p);
@@ -848,6 +858,10 @@ final class TypeChecker {
 
     /** A member's annotation, or a method's signature : members are otherwise dynamic, since obj.x = … can change them. */
     private Type memberType(TypeNode.Member member) {
+        if (!isLocal(member.declaration)) {
+            // A member of an interface another file exports : types across files are M3.
+            return Type.DYNAMIC;
+        }
         Type declared = declaredType(member.declaration);
         if (declared != null) {
             return declared;

@@ -1,0 +1,26 @@
+;; hittable_list.h
+
+def Hittable = import("hittable.ba").Hittable
+
+export def HittableList = class () implements Hittable (
+    ;; a linked list of objects
+    private def Node = class (def item, def next) ()
+    private def objects = null
+
+    def add = (item) -> ( this.objects = this.Node(item, this.objects) )
+
+    def hit = (r, tmin, tmax) -> (
+        def closest = null
+        def closestSoFar = tmax
+        def node = this.objects
+        while node <> null then (
+            def rec = node.item.hit(r, tmin, closestSoFar)
+            if rec <> null then (
+                closest = rec
+                closestSoFar = rec.t
+            )
+            node = node.next
+        )
+        closest
+    )
+)

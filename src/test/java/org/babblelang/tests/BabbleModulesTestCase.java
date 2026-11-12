@@ -206,6 +206,201 @@ public class BabbleModulesTestCase {
         Assertions.assertTrue(e.getMessage().contains("Type error : expected int, got string"), e.getMessage());
     }
 
+    // ---------------------------------------------------------------- static imports (M2)
+
+    /** One engine for several evals : what its module cache keeps between them. */
+    private Object run(ScriptEngine engine, String script) throws ScriptException {
+        ScriptContext context = new SimpleScriptContext();
+        context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
+        context.setAttribute(ScriptEngine.FILENAME, directory.resolve("main.ba").toString(), ScriptContext.ENGINE_SCOPE);
+        context.setWriter(output);
+        context.setErrorWriter(errors);
+        return engine.eval(script, context);
+    }
+
+    private static final String SHAPES = "export def Shape = interface (\n"
+            + "    def area : () : double\n"
+            + "    def describe = () -> ( \"area \" + this.area() )\n"
+            + ")\n";
+
+    @Test
+    public void aMissingFileIsFoundBeforeRunning() {
+        String message = failure("println(\"started\")\nimport(\"nowhere.ba\")");
+        Assertions.assertTrue(message.contains("Cannot import nowhere.ba : no such file"), message);
+        Assertions.assertTrue(message.endsWith("main.ba at line number 2"), message);
+        Assertions.assertEquals("", output.toString());
+    }
+
+    @Test
+    public void aDynamicImportIsResolvedWhenItRuns() {
+        String message = failure("println(\"started\")\ndef name = \"nowhere\"\nimport(name + \".ba\")");
+        Assertions.assertTrue(message.contains("Cannot import nowhere.ba : no such file"), message);
+        Assertions.assertEquals("started" + System.lineSeparator(), output.toString());
+    }
+
+    @Test
+    public void aBrokenModuleIsFoundBeforeRunning() throws Exception {
+        file("syntax.ba", "export def x = 1\ndef = 2");
+        String message = failure("println(\"started\")\nimport(\"syntax.ba\")");
+        Assertions.assertTrue(message.contains("Syntax error"), message);
+        Assertions.assertTrue(message.contains("syntax.ba at line number 2"), message);
+        Assertions.assertTrue(message.endsWith("main.ba at line number 2"), message);
+        Assertions.assertFalse(message.contains("BabbleException: org.babblelang"), message);
+
+        file("misplaced.ba", "export def x = 1\nreturn x");
+        message = failure("import(\"misplaced.ba\")");
+        Assertions.assertTrue(message.contains("misplaced.ba at line number 2"), message);
+        Assertions.assertEquals("", output.toString());
+    }
+
+    @Test
+    public void aClassImplementsAnImportedInterface() throws Exception {
+        file("shapes.ba", SHAPES);
+        Assertions.assertEquals("area 9 area 4 area 1", run("def shapes = import(\"shapes.ba\")\n"
+                + "def Square = class (def side) implements shapes.Shape ( def area = () -> ( this.side * this.side ) )\n"
+                + "def Shape = shapes.Shape\n"
+                + "def Rect = class (def w, def h) implements Shape ( def area = () -> ( this.w * this.h ) )\n"
+                + "def Unit = import(\"shapes.ba\").Shape\n"
+                + "def u = object implements Unit ( def area = () -> ( 1 ) )\n"
+                + "assert(Square(3) is Shape and u is shapes.Shape)\n"
+                + "Square(3).describe() + \" \" + Rect(2, 2).describe() + \" \" + u.describe()"));
+        Assertions.assertEquals("", errors.toString());
+    }
+
+    @Test
+    public void anImportedInterfaceIsCheckedLikeALocalOne() throws Exception {
+        file("shapes.ba", SHAPES);
+        String message = failure("println(\"started\")\ndef shapes = import(\"shapes.ba\")\n"
+                + "def Empty = class () implements shapes.Shape ( )");
+        Assertions.assertTrue(message.contains("Empty does not implement Shape.area"), message);
+        Assertions.assertTrue(message.endsWith("main.ba at line number 3"), message);
+        Assertions.assertEquals("", output.toString());
+    }
+
+    @Test
+    public void interfacesExtendAndCallImportedInterfaces() throws Exception {
+        file("shapes.ba", SHAPES);
+        Assertions.assertEquals("square, area 4 / area 9", run("def shapes = import(\"shapes.ba\")\n"
+                + "def Named = interface extends shapes.Shape ( def name : () : string )\n"
+                + "def Square = class () implements Named (\n"
+                + "    def area = () -> ( 4 )\n"
+                + "    def name = () -> ( \"square\" )\n"
+                + "    def describe = () -> ( this.name() + \", \" + super.describe() )\n"
+                + ")\n"
+                + "def Big = class () implements shapes.Shape (\n"
+                + "    def area = () -> ( 9 )\n"
+                + "    def describe = () -> ( super(shapes.Shape).describe() )\n"
+                + ")\n"
+                + "Square().describe() + \" / \" + Big().describe()"));
+    }
+
+    @Test
+    public void reExportsAndExportedPackagesHoldInterfaces() throws Exception {
+        file("shapes.ba", SHAPES);
+        file("lib/all.ba", "export def Shape = import(\"../shapes.ba\").Shape\n"
+                + "export def shapes = import(\"../shapes.ba\")\n"
+                + "export package geo ( def Solid = interface ( def volume : () : double ) )");
+        Assertions.assertEquals(8, run("def all = import(\"lib/all.ba\")\n"
+                + "def A = class () implements all.Shape ( def area = () -> ( 1 ) )\n"
+                + "def B = class () implements all.shapes.Shape ( def area = () -> ( 2 ) )\n"
+                + "def C = class () implements all.geo.Solid ( def volume = () -> ( 5 ) )\n"
+                + "A().area() + B().area() + C().volume()"));
+    }
+
+    @Test
+    public void onlyExportedInterfacesCanBeImplemented() throws Exception {
+        file("hidden.ba", "def Shape = interface ( def area : () : double )\nexport def x = 1");
+        String message = failure("def hidden = import(\"hidden.ba\")\ndef C = class () implements hidden.Shape ( def area = () -> ( 1 ) )");
+        Assertions.assertTrue(message.contains("implements needs a statically known interface"), message);
+    }
+
+    @Test
+    public void anInterfaceOfAFileInACycleIsNotKnownStatically() throws Exception {
+        file("a.ba", "def b = import(\"b.ba\")\nexport def Shape = interface ( def area : () : double )");
+        file("b.ba", "def a = import(\"a.ba\")\nexport def Square = class () implements a.Shape ( def area = () -> ( 1 ) )");
+        String message = failure("import(\"a.ba\")");
+        Assertions.assertTrue(message.contains("is still being analysed (an import cycle)"), message);
+        Assertions.assertTrue(message.contains("b.ba at line number 2"), message);
+    }
+
+    @Test
+    public void missingExportsAreReportedBeforeRunning() throws Exception {
+        file("lib.ba", "export def answer = 42\ndef secret = 1");
+        String message = failure("def lib = import(\"lib.ba\")\nprintln(\"started\")\nlib.secret");
+        Assertions.assertTrue(errors.toString().startsWith("Warning : No such export : secret in " + directory.resolve("lib.ba")), errors.toString());
+        Assertions.assertTrue(errors.toString().contains("main.ba at line number 3, column 5"), errors.toString());
+        // A warning : the script runs, and fails where the warning said it would.
+        Assertions.assertEquals("started" + System.lineSeparator(), output.toString());
+        Assertions.assertTrue(message.contains("No such export : secret"), message);
+
+        errors.getBuffer().setLength(0);
+        failure("def lib = import(\"lib.ba\")\nlib.answer = 1");
+        Assertions.assertTrue(errors.toString().startsWith("Warning : Cannot assign to an export : answer"), errors.toString());
+
+        errors.getBuffer().setLength(0);
+        failure("import(\"lib.ba\").nope");
+        Assertions.assertTrue(errors.toString().startsWith("Warning : No such export : nope"), errors.toString());
+    }
+
+    @Test
+    public void missingExportsAreErrorsInErrorMode() throws Exception {
+        file("lib.ba", "export def answer = 42");
+        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.TYPECHECK, "error");
+        ScriptException e = Assertions.assertThrows(ScriptException.class,
+                () -> run(engine, "def lib = import(\"lib.ba\")\nprintln(\"started\")\nlib.anwser"));
+        Assertions.assertTrue(e.getMessage().contains("No such export : anwser"), e.getMessage());
+        Assertions.assertEquals("", output.toString());
+    }
+
+    @Test
+    public void aScriptDefiningImportCallsItsOwn() throws Exception {
+        Assertions.assertEquals("got nowhere.ba", run("def import = (n) -> ( \"got \" + n )\nimport(\"nowhere.ba\")"));
+    }
+
+    @Test
+    public void anEngineCompilesAModuleOnceUntilItChanges() throws Exception {
+        // The module warns when it is analysed : the warnings count its analyses.
+        file("lib.ba", "def other = import(\"other.ba\")\nexport def f = () -> ( other.nope )");
+        file("other.ba", "export def x = 1");
+        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        run(engine, "import(\"lib.ba\")");
+        run(engine, "import(\"lib.ba\") ; import(\"./lib.ba\")");
+        Assertions.assertEquals(1, errors.toString().split("No such export : nope", -1).length - 1, errors.toString());
+
+        // A change to a file it depends on recompiles it.
+        file("other.ba", "export def x = 2");
+        run(engine, "import(\"lib.ba\")");
+        Assertions.assertEquals(2, errors.toString().split("No such export : nope", -1).length - 1, errors.toString());
+    }
+
+    @Test
+    public void aChangedInterfaceRechecksTheFilesImplementingIt() throws Exception {
+        file("shapes.ba", SHAPES);
+        file("square.ba", "def shapes = import(\"shapes.ba\")\n"
+                + "export def Square = class () implements shapes.Shape ( def area = () -> ( 4 ) )");
+        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        Assertions.assertEquals(4, run(engine, "import(\"square.ba\").Square().area()"));
+        file("shapes.ba", SHAPES.replace("def area : () : double", "def area : () : double\n    def perimeter : () : double"));
+        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, "import(\"square.ba\").Square().area()"));
+        Assertions.assertTrue(e.getMessage().contains("Square does not implement Shape.perimeter"), e.getMessage());
+    }
+
+    @Test
+    public void staticImportsWorkInBothModesAndWithTypes() throws Exception {
+        file("shapes.ba", "export def Shape = interface ( def area : () : double ; def twice = () : double -> ( 2 * this.area() ) )");
+        for (String mode : new String[]{"interpret", "compile"}) {
+            ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            engine.put(BabbleScriptEngine.MODE, mode);
+            engine.put(BabbleScriptEngine.TYPECHECK, "error");
+            Object result = run(engine, "def shapes = import(\"shapes.ba\")\n"
+                    + "def Sq = class (def s : double) implements shapes.Shape ( def area = () : double -> ( this.s * this.s ) )\n"
+                    + "def t : double = Sq(1.5).twice()\nt");
+            Assertions.assertEquals(4.5, result, mode);
+        }
+        Assertions.assertEquals("", errors.toString());
+    }
+
     @Test
     public void javaPackagesAreStillImported() throws Exception {
         Assertions.assertEquals(0, run("def util = import(\"java\").util ; util.ArrayList().size()"));

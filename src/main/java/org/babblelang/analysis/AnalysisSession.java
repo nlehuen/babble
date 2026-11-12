@@ -29,6 +29,8 @@ public final class AnalysisSession {
     final Map<ParserRuleContext, ScopeNode> definitionScopes = new HashMap<>();
     final Map<ParserRuleContext, ScopeNode> scopeNodes = new HashMap<>();
     final Map<ParserRuleContext, ScopeNode> occurrenceScopes = new HashMap<>();
+    /** The interfaces of the files earlier inputs imported statically, by import call. */
+    final Map<org.babblelang.parser.BabbleParser.CallContext, ModuleInterface> modules = new HashMap<>();
     /** The definitions some input assigned : nothing static is known of them any more. */
     final Set<ParserRuleContext> reassigned = new HashSet<>();
 
@@ -43,6 +45,7 @@ public final class AnalysisSession {
         typeNodes.putAll(pass.typeNodes);
         definitionScopes.putAll(pass.definitionScopes);
         scopeNodes.putAll(pass.scopeNodes);
+        modules.putAll(pass.modules);
         for (BlockScopes.Occurrence occurrence : pass.occurrences) {
             occurrenceScopes.put(occurrence.ctx(), occurrence.scope());
         }
