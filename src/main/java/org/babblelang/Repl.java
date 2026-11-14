@@ -2,7 +2,7 @@ package org.babblelang;
 
 import org.babblelang.engine.BabbleSession;
 import org.babblelang.engine.TypeCheckException;
-import org.babblelang.engine.impl.Namespace;
+import org.babblelang.runtime.Namespace;
 import org.babblelang.runtime.JavaValue;
 
 import javax.script.ScriptException;

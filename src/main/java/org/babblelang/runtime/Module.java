@@ -1,7 +1,6 @@
 package org.babblelang.runtime;
 
 import org.babblelang.engine.BabbleException;
-import org.babblelang.engine.impl.Namespace;
 
 import java.util.Set;
 
@@ -12,6 +11,9 @@ import java.util.Set;
  * other early use.
  */
 public final class Module implements HasMembers {
+    /** {@code import} takes a name with this extension for a Babble file, any other for a Java package. */
+    public static final String EXTENSION = ".ba";
+
     private final String name;
     private final Namespace root;
     private final Set<String> exports;

@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl;
 
+import org.babblelang.runtime.Namespace;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTreeProperty;
 import org.babblelang.analysis.BlockScopes;
@@ -47,7 +48,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
      * when a file is visited, and output goes to a default ScriptContext.
      */
     public Interpreter(Namespace root) {
-        this(new ScriptRuntime(root, new SimpleScriptContext(), null), null, "<input>");
+        this(new ScriptRuntime(root, new SimpleScriptContext().getWriter(), null), null, "<input>");
     }
 
     public Interpreter(ScriptRuntime runtime, ScopeAnalysis scopes, String sourceName) {

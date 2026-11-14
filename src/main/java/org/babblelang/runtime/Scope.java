@@ -1,4 +1,4 @@
-package org.babblelang.engine.impl;
+package org.babblelang.runtime;
 
 public interface Scope<T> {
     boolean isDeclared(String key);

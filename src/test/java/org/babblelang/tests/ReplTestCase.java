@@ -55,6 +55,19 @@ public class ReplTestCase {
 
     // ---------------------------------------------------------------- sessions
 
+    /** A session is one long eval : a module imported by several inputs is loaded once, and keeps its state. */
+    @Test
+    public void aModuleIsLoadedOncePerSession(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+        java.nio.file.Path counter = directory.resolve("counter.ba");
+        java.nio.file.Files.writeString(counter, "println(\"loading\")\ndef n = 0\nexport def next = () -> ( n = n + 1 )");
+        String path = counter.toString().replace("\\", "\\\\");
+        StringWriter output = new StringWriter();
+        BabbleSession session = session("off", output);
+        session.eval("import(\"" + path + "\").next()");
+        Assertions.assertEquals(2, session.eval("import(\"" + path + "\").next()"));
+        Assertions.assertEquals("loading" + System.lineSeparator(), output.toString());
+    }
+
     /** A module an earlier input imported is known statically to the inputs that follow. */
     @Test
     public void staticImportsAcrossInputs(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {

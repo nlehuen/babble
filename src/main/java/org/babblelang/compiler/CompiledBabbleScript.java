@@ -64,7 +64,7 @@ public final class CompiledBabbleScript extends BabbleScript {
         } catch (Throwable t) {
             throw new ScriptException(t.toString(), sourceName, lineOf(t));
         } finally {
-            BabbleScriptEngine.flush(runtime.context());
+            BabbleScriptEngine.flush(runtime.writer());
         }
     }
 

@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl;
 
+import org.babblelang.runtime.Namespace;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.runtime.Arguments;
 import org.babblelang.runtime.BabbleFunction;

@@ -36,7 +36,7 @@ public class BabbleCompiledScript extends BabbleScript {
         } catch (Exception e) {
             throw new ScriptException(e.toString(), sourceName, interpreter.getLast().getStart().getLine());
         } finally {
-            BabbleScriptEngine.flush(runtime.context());
+            BabbleScriptEngine.flush(runtime.writer());
         }
     }
 }

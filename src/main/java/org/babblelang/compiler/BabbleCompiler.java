@@ -3,7 +3,7 @@ package org.babblelang.compiler;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.engine.BabbleException;
 import org.babblelang.engine.BabbleScriptEngine;
-import org.babblelang.engine.impl.Namespace;
+import org.babblelang.runtime.Namespace;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ScriptRuntime;
 

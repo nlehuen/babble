@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-import org.babblelang.engine.impl.Namespace;
 
 import java.lang.invoke.MethodHandle;
 
