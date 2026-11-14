@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-import org.babblelang.engine.BabbleException;
 
 public final class Calls {
     private Calls() {

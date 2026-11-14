@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-import org.babblelang.engine.BabbleException;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;

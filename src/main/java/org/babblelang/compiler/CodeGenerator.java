@@ -713,12 +713,12 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 });
             } else if (spread) {
                 mv.visitLdcInsn(parameters[i]);
-                mv.visitMethodInsn(INVOKESTATIC, ARGUMENTS, "missing", "(Ljava/lang/String;)Lorg/babblelang/engine/BabbleException;", false);
+                mv.visitMethodInsn(INVOKESTATIC, ARGUMENTS, "missing", "(Ljava/lang/String;)Lorg/babblelang/runtime/BabbleException;", false);
                 mv.visitInsn(ATHROW);
             } else {
                 mv.visitVarInsn(ALOAD, binder);
                 pushInt(mv, i);
-                mv.visitMethodInsn(INVOKEVIRTUAL, BINDER, "missing", "(I)Lorg/babblelang/engine/BabbleException;", false);
+                mv.visitMethodInsn(INVOKEVIRTUAL, BINDER, "missing", "(I)Lorg/babblelang/runtime/BabbleException;", false);
                 mv.visitInsn(ATHROW);
             }
             mv.visitLabel(bind);

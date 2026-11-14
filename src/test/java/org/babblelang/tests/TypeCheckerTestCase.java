@@ -223,7 +223,7 @@ public class TypeCheckerTestCase {
         for (String mode : List.of("interpret", "compile")) {
             StringWriter errors = new StringWriter();
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(script, mode, "error", errors));
-            Assertions.assertEquals("org.babblelang.engine.BabbleException: Type error : expected int, got string in <input> at line number 1 at column number 15",
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Type error : expected int, got string in <input> at line number 1 at column number 15",
                     e.getMessage(), mode);
             Assertions.assertEquals(1, e.getLineNumber());
             Assertions.assertEquals(15, e.getColumnNumber());
@@ -241,7 +241,7 @@ public class TypeCheckerTestCase {
             Assertions.assertEquals("s", run(script, mode, "off", new StringWriter()), mode);
             Assertions.assertEquals("s", run(script, mode, "warn", new StringWriter()), mode);
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(script, mode, "error", new StringWriter()));
-            Assertions.assertEquals("org.babblelang.engine.BabbleException: Type error : expected int, got string in <input> at line number 3", e.getMessage(), mode);
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Type error : expected int, got string in <input> at line number 3", e.getMessage(), mode);
         }
     }
 

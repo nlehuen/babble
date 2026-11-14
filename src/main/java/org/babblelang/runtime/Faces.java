@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-import org.babblelang.engine.BabbleException;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;

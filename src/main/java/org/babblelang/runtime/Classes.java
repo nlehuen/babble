@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-import org.babblelang.engine.BabbleException;
 
 /**
  * What both modes call to evaluate class, object and interface expressions.

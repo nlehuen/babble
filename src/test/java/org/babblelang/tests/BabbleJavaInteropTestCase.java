@@ -51,7 +51,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
             Assertions.fail("Should report that no overload applies");
         } catch (ScriptException e) {
             Assertions.assertTrue(
-                    e.getMessage().startsWith("org.babblelang.engine.BabbleException: No applicable overload of "
+                    e.getMessage().startsWith("org.babblelang.runtime.BabbleException: No applicable overload of "
                             + "org.babblelang.tests.JavaClassDemo.nullable for (java.lang.Integer, java.lang.Integer)"),
                     e.getMessage());
         }
@@ -64,7 +64,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
             Assertions.fail("Should report that no overload applies");
         } catch (ScriptException e) {
             Assertions.assertTrue(
-                    e.getMessage().startsWith("org.babblelang.engine.BabbleException: No applicable overload of "
+                    e.getMessage().startsWith("org.babblelang.runtime.BabbleException: No applicable overload of "
                             + "java.lang.Math.abs for (null)"),
                     e.getMessage());
         }
@@ -79,7 +79,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
             Assertions.fail("Should report an ambiguous call");
         } catch (ScriptException e) {
             Assertions.assertTrue(
-                    e.getMessage().startsWith("org.babblelang.engine.BabbleException: Ambiguous call to "
+                    e.getMessage().startsWith("org.babblelang.runtime.BabbleException: Ambiguous call to "
                             + "org.babblelang.tests.JavaClassDemo.ambiguous for (null)"),
                     e.getMessage());
         }

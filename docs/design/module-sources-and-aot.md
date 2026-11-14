@@ -110,12 +110,12 @@ Before either feature, the split of §2 is made explicit, with no change of beha
 * **`javax.script` leaves the runtime.** `ScriptRuntime` holds the writer `print` uses, not a
   `ScriptContext`, and the `Modules`, not a `ScriptEngine`. The engine adapts its context when it
   creates a runtime. The runtime then needs `java.base` alone.
-* **`Namespace`, `Scope` and `Slot` move to the runtime package** : their package,
-  `engine.impl`, also holds the interpreter. The built-ins keep their packages,
-  `engine.impl.natives` and `engine.impl.natives.java`, which hold nothing else, and
-  `BabbleException` stays in `engine` : its name is part of every error message
-  (`org.babblelang.engine.BabbleException: …`), which hosts and tests read. The runtime is
-  those packages and that class.
+* **`Namespace`, `Scope`, `Slot` and `BabbleException` move to the runtime package** : their
+  packages, `engine.impl` and `engine`, also hold the interpreter and the engine. Moving
+  `BabbleException` changes every error message, which starts with its name
+  (`org.babblelang.runtime.BabbleException: …`) : a breaking change, accepted since Babble has
+  no users to break. The built-ins keep their packages, `engine.impl.natives` and
+  `engine.impl.natives.java`, which hold nothing else. The runtime is those packages.
 * **A test keeps the boundary.** `RuntimeBoundaryTestCase` reads the constant pool of every
   runtime class file and fails on a reference to the parser, the analysis, the compiler, the
   interpreter, the engine, a library, or a JDK package outside `java.base`. Run against the code

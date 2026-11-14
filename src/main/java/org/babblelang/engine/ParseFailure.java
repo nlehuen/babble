@@ -1,5 +1,6 @@
 package org.babblelang.engine;
 
+import org.babblelang.runtime.BabbleException;
 import javax.script.ScriptException;
 
 /**

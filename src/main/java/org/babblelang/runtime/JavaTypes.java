@@ -137,7 +137,7 @@ public final class JavaTypes {
         } else if (value == null || type.isInstance(value)) {
             return value;
         }
-        throw new org.babblelang.engine.BabbleException("Type error : " + description + " must return " + type.getSimpleName()
+        throw new org.babblelang.runtime.BabbleException("Type error : " + description + " must return " + type.getSimpleName()
                 + ", got " + (value == null ? "null" : value.getClass().getSimpleName()));
     }
 

@@ -47,7 +47,7 @@ public class BabbleLexerErrorTestCase extends BabbleTestBase {
     @Test
     public void testSyntaxErrorsSayWhatAndWhere() {
         ScriptException e = assertRejected("def a = 1\ndef = 2");
-        Assertions.assertEquals("org.babblelang.engine.BabbleException: Syntax error : unexpected '=' in <input> at line number 2 at column number 5", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Syntax error : unexpected '=' in <input> at line number 2 at column number 5", e.getMessage());
         Assertions.assertEquals(2, e.getLineNumber());
         Assertions.assertEquals(5, e.getColumnNumber());
         Assertions.assertTrue(assertRejected("def a = (1 +").getMessage().contains("Syntax error : unexpected end of input"));

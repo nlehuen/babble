@@ -113,7 +113,6 @@
                             <includes>
                                 <include>org/babblelang/runtime/**</include>
                                 <include>org/babblelang/engine/impl/natives/**</include>
-                                <include>org/babblelang/engine/BabbleException.class</include>
                             </includes>
                         </configuration>
                     </execution>

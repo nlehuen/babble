@@ -1,4 +1,4 @@
-package org.babblelang.engine;
+package org.babblelang.runtime;
 
 public class BabbleException extends RuntimeException {
 
