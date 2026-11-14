@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. Nothing is decided until the questions of §10 are. |
+| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. Not implemented yet. |
 | **Depends on** | [modules.md](modules.md) (static imports, the module cache, module types), [bytecode-compiler.md](bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
 | **Unblocks** | Babble programs shipped as a jar, hosts serving modules from anywhere, module tests without temporary files |
 
@@ -286,38 +286,41 @@ tracers compiled into jars and run on a JRE without Babble on the class path : a
 * Incremental compilation in `babblec`, or a Maven plugin : the CLI first.
 * Changing what a module is, or how imports bind (modules.md).
 
-## 10. Open questions
+## 10. Decisions
 
-Each has a recommendation, which the rest of this document assumes.
+These were open questions, each with a recommendation. All were decided as recommended ; the
+rest of the document assumes them.
 
 **Q1. One Maven module with a runtime classifier jar, or a multi-module build ?**
-Recommended : the classifier jar and the boundary test. A multi-module build enforces the
+Decided : the classifier jar and the boundary test. A multi-module build enforces the
 boundary by construction, but moves every file and every path in the docs for a guarantee the
 test already gives.
 
 **Q2. Remove `javax.script` from the runtime ?**
-Recommended : yes, in R1. It is two fields, and `java.base` alone is what makes a `jlink`ed or
+Decided : yes, in R1. It is two fields, and `java.base` alone is what makes a `jlink`ed or
 native runtime simplest.
 
 **Q3. Copy the runtime into each compiled jar, or reference the runtime jar from the manifest ?**
-Recommended : copy it. It is under 200 KB, and `java -jar app.jar` with nothing else is the point of
+Decided : copy it. It is under 200 KB, and `java -jar app.jar` with nothing else is the point of
 M5.
 
 **Q4. Dynamic imports in a compiled program : fail, or compile when Babble is present ?**
-Recommended : the index first, then compile when a module compiler is on the class path, else
+Decided : the index first, then compile when a module compiler is on the class path, else
 fail with a message that says why.
 
 **Q5. Stable type ids in the engine too, or only in `babblec` ?**
-Recommended : in both. One scheme is simpler to test, and the engine's stale-module case gets
+Decided : in both. One scheme is simpler to test, and the engine's stale-module case gets
 rarer.
 
 **Q6. `babblec`'s type checking : the engine's setting, or error mode by default ?**
-Recommended : the engine's setting, off by default, like every other entry point. A program
+Decided : the engine's setting, off by default, like every other entry point. A program
 built for distribution can pass `-Dbabble.typecheck=error`.
 
 **Q7. What `ModuleSource` gets : the name as written, or a path already resolved ?**
-Recommended : the name as written, and the importer's identity. Resolution is part of where
+Decided : the name as written, and the importer's identity. Resolution is part of where
 modules come from.
 
 **Q8. A `babblec` Maven goal ?**
-Recommended : not now. The CLI covers the need, and a goal can call it later.
+Decided : not now ; later. A goal has to be an artifact of its own (packaging `maven-plugin`),
+so it cannot be a classifier of the single module Q1 keeps. When it comes, it is a separate
+`babble-maven-plugin` build depending on the babble artifact, or the reason to revisit Q1.
