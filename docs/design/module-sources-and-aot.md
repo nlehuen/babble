@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. Not implemented yet. |
+| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3) is implemented ; M4 and M5 are not. |
 | **Depends on** | [modules.md](modules.md) (static imports, the module cache, module types), [bytecode-compiler.md](bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
 | **Unblocks** | Babble programs shipped as a jar, hosts serving modules from anywhere, module tests without temporary files |
 
@@ -97,9 +97,12 @@ Before either feature, the split of §2 is made explicit, with no change of beha
 
   ```java
   public interface Modules {
-      Module load(String name, ModuleId importer, ScriptRuntime rt);
+      Module load(String name, String importer, ScriptRuntime rt);
   }
   ```
+
+  The importer is the importing file's source name, as `import` resolves relative names
+  today ; M4 turns it into a `ModuleId` (§4.1).
 
   `ImportFunction` calls it for names ending in `.ba`. The engine implements it by compiling
   (today's `importModule`, through its cache) ; the AOT launcher implements it from the jar's
@@ -107,16 +110,24 @@ Before either feature, the split of §2 is made explicit, with no change of beha
 * **`javax.script` leaves the runtime.** `ScriptRuntime` holds the writer `print` uses, not a
   `ScriptContext`, and the `Modules`, not a `ScriptEngine`. The engine adapts its context when it
   creates a runtime. The runtime then needs `java.base` alone.
-* **The classes move to the runtime package** : `Namespace`, `Scope`, `Slot`,
-  `BabbleException`, the built-ins and the Java interop classes of `impl.natives.java`. These are moves, with
-  forwarding left where a public API names them (`BabbleException` is thrown to hosts).
-* **A test keeps the boundary.** It reads every class of `org.babblelang.runtime` with ASM
-  (a test dependency already) and fails on a reference to the parser, the analysis, the
-  compiler, the engine, ANTLR or ASM, or to a JDK module other than `java.base`. Without it,
+* **`Namespace`, `Scope` and `Slot` move to the runtime package** : their package,
+  `engine.impl`, also holds the interpreter. The built-ins keep their packages,
+  `engine.impl.natives` and `engine.impl.natives.java`, which hold nothing else, and
+  `BabbleException` stays in `engine` : its name is part of every error message
+  (`org.babblelang.engine.BabbleException: …`), which hosts and tests read. The runtime is
+  those packages and that class.
+* **A test keeps the boundary.** `RuntimeBoundaryTestCase` reads the constant pool of every
+  runtime class file and fails on a reference to the parser, the analysis, the compiler, the
+  interpreter, the engine, a library, or a JDK package outside `java.base`. Run against the code
+  before R1, it reports exactly the edges R1 removes. Without it,
   the next convenience import puts the compiler back into every jar.
 * **A runtime jar.** The build also produces `babble-<version>-runtime.jar`, the runtime
-  package alone, with a classifier : a second artifact of the same module, rather than a Maven
-  multi-module build (Q1).
+  alone (68 classes, 100 KB), with a classifier : a second artifact of the same module, rather
+  than a Maven multi-module build (Q1). A script compiled by the engine runs with that jar alone
+  on the class path.
+* **Sessions keep their modules.** An interactive session keeps one `Modules` for its
+  lifetime, as one long eval : a module imported by several inputs is loaded once. Before R1,
+  each input loaded its modules afresh.
 
 ## 4. M4 : module sources
 
@@ -255,14 +266,14 @@ needed at runtime. A type error found by the analysis fails the compilation, as 
 
 ## 7. Steps
 
-| Step | Content |
-|---|---|
-| **R1** | The runtime boundary (§3) : `Implicits`, `Modules`, `ScriptRuntime` without `javax.script`, the moves, the boundary test, the runtime jar. No change of behaviour. |
-| **M4a** | `ModuleSource`, `ModuleId`, `FileModuleSource` as the default ; the engine's cache keyed by `ModuleId` and versions. |
-| **M4b** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. |
-| **M5a** | Stable class names, type ids and source names (§5.2), in the engine too. |
-| **M5b** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. |
-| **M5c** | Dynamic imports in a compiled program : the index, then a module compiler through `ServiceLoader`, else the error of §5.4. |
+| Step | Content | State |
+|---|---|---|
+| **R1** | The runtime boundary (§3) : `Implicits`, `Modules`, `ScriptRuntime` without `javax.script`, the moves, the boundary test, the runtime jar. No change of behaviour but sessions loading a module once. | Done. |
+| **M4a** | `ModuleSource`, `ModuleId`, `FileModuleSource` as the default ; the engine's cache keyed by `ModuleId` and versions. | |
+| **M4b** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. | |
+| **M5a** | Stable class names, type ids and source names (§5.2), in the engine too. | |
+| **M5b** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. | |
+| **M5c** | Dynamic imports in a compiled program : the index, then a module compiler through `ServiceLoader`, else the error of §5.4. | |
 
 Each step leaves both modes passing the whole suite. The acceptance test of M5 is both ray
 tracers compiled into jars and run on a JRE without Babble on the class path : argon's
