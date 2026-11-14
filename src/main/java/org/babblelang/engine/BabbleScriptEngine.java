@@ -21,20 +21,16 @@ import org.babblelang.analysis.ModuleLoader;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.compiler.BabbleCompiler;
 import org.babblelang.engine.impl.BabbleCompiledScript;
-import org.babblelang.engine.impl.Namespace;
-import org.babblelang.engine.impl.natives.AssertFunction;
-import org.babblelang.engine.impl.natives.ClassofFunction;
-import org.babblelang.engine.impl.natives.PrintFunction;
-import org.babblelang.engine.impl.natives.SameFunction;
-import org.babblelang.engine.impl.natives.java.ImportFunction;
+import org.babblelang.runtime.Namespace;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.Implicits;
 import org.babblelang.runtime.Module;
+import org.babblelang.runtime.Modules;
 import org.babblelang.runtime.ScriptRuntime;
 
 import javax.script.*;
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.StringReader;
 import java.io.Writer;
@@ -77,7 +73,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /** {@code import} takes a name with this extension for a Babble file, any other for a Java package. */
-    public static final String MODULE_EXTENSION = ".ba";
+    public static final String MODULE_EXTENSION = Module.EXTENSION;
 
     private static final String DEFAULT_SOURCE_NAME = "<input>";
 
@@ -117,21 +113,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         super();
         this.factory = factory;
 
-        implicits = new Namespace();
-
-        ImportFunction importFunction = new ImportFunction();
-        implicits.define("java", true).set(importFunction.getPackage("java"));
-        implicits.define("javax", true).set(importFunction.getPackage("javax"));
-        implicits.define("import", true).set(importFunction);
-        implicits.define("importe", true).set(importFunction);
-        implicits.define("print", true).set(new PrintFunction(false));
-        implicits.define("println", true).set(new PrintFunction(true));
-        implicits.define("affiche", true).set(new PrintFunction(false));
-        implicits.define("afficherc", true).set(new PrintFunction(true));
-        implicits.define("assert", true).set(new AssertFunction());
-        implicits.define("suppose", true).set(new AssertFunction());
-        implicits.define("same", true).set(new SameFunction());
-        implicits.define("classof", true).set(new ClassofFunction());
+        implicits = Implicits.create();
     }
 
     public Namespace getImplicits() {
@@ -172,20 +154,41 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      * ENGINE_SCOPE bindings and the script's own top-level definitions.
      */
     public ScriptRuntime createRuntime(ScriptContext context) {
-        return createRuntime(context, new HashMap<>());
+        return createRuntime(context, newModules(context));
     }
 
-    private ScriptRuntime createRuntime(ScriptContext context, Map<Path, Module> modules) {
-        Namespace output = implicits.enter(null);
-        Writer writer = context.getWriter();
-        output.define("STDOUT", true).set(writer == null || writer instanceof PrintWriter ? writer : new PrintWriter(writer));
-        Namespace root = output.enter(null);
+    private ScriptRuntime createRuntime(ScriptContext context, Modules modules) {
+        Namespace root = Implicits.withOutput(implicits, context.getWriter()).enter(null);
 
         // TODO : handle ScriptContext.GLOBAL_SCOPE
         for (Map.Entry<String, Object> binding : context.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {
             root.define(binding.getKey(), false).set(binding.getValue());
         }
-        return new ScriptRuntime(root, context, this, modules);
+        return new ScriptRuntime(root, context.getWriter(), modules);
+    }
+
+    /**
+     * The modules of one eval, or of one interactive session : each file is loaded at most
+     * once, compiled through the engine's cache, and run on a runtime of its own under the
+     * same context.
+     */
+    Modules newModules(ScriptContext context) {
+        return new EvalModules(context);
+    }
+
+    private final class EvalModules implements Modules {
+        private final ScriptContext context;
+        /** The modules loaded so far, by real path. */
+        private final Map<Path, Module> loaded = new HashMap<>();
+
+        EvalModules(ScriptContext context) {
+            this.context = context;
+        }
+
+        @Override
+        public Module load(String name, String importer, ScriptRuntime rt) {
+            return importModule(this, context, loaded, name, importer);
+        }
     }
 
     /**
@@ -198,18 +201,17 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      * so files may import each other ; what such a cycle cannot do is read an export
      * before its definition ran.
      */
-    public Module importModule(ScriptRuntime rt, String name, String importerName) {
+    private Module importModule(Modules evalModules, ScriptContext context, Map<Path, Module> modules, String name, String importerName) {
         Path file = resolveModule(name, importerName);
         Path key = realPath(name, file);
-        Map<Path, Module> modules = rt.modules();
         synchronized (modules) {
             Module module = modules.get(key);
             if (module != null) {
                 return module;
             }
             try {
-                BabbleScript script = compiledModule(name, key, file.toString(), rt.context()).script();
-                ScriptRuntime runtime = createRuntime(rt.context(), modules);
+                BabbleScript script = compiledModule(name, key, file.toString(), context).script();
+                ScriptRuntime runtime = createRuntime(context, evalModules);
                 module = new Module(file.toString(), runtime.root(), script.exports());
                 modules.put(key, module);
                 try {
@@ -397,7 +399,10 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      * Output written through a buffered writer must not be lost when a script fails.
      */
     public static void flush(ScriptContext context) {
-        Writer writer = context.getWriter();
+        flush(context.getWriter());
+    }
+
+    public static void flush(Writer writer) {
         if (writer != null) {
             try {
                 writer.flush();

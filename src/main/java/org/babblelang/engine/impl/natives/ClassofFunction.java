@@ -1,7 +1,7 @@
 package org.babblelang.engine.impl.natives;
 
 import org.babblelang.engine.BabbleException;
-import org.babblelang.engine.impl.Namespace;
+import org.babblelang.runtime.Namespace;
 import org.babblelang.engine.impl.natives.java.JavaClass;
 import org.babblelang.engine.impl.natives.java.JavaPackage;
 import org.babblelang.runtime.BabbleClass;

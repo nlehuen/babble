@@ -4,9 +4,10 @@ import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.Token;
 import org.babblelang.analysis.AnalysisSession;
 import org.babblelang.analysis.ScopeAnalysis;
-import org.babblelang.engine.impl.Namespace;
+import org.babblelang.runtime.Namespace;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.Modules;
 import org.babblelang.runtime.ScriptRuntime;
 
 import javax.script.ScriptContext;
@@ -37,11 +38,15 @@ public final class BabbleSession {
     private final ScriptContext context;
     private final AnalysisSession analysis = new AnalysisSession();
     private Namespace namespace;
+    /** The modules of the whole session : an input sees the modules earlier inputs imported. */
+    private final Modules modules;
 
     BabbleSession(BabbleScriptEngine engine, ScriptContext context) {
         this.engine = engine;
         this.context = context;
-        this.namespace = engine.createRuntime(context).root();
+        ScriptRuntime first = engine.createRuntime(context);
+        this.namespace = first.root();
+        this.modules = first.modules();
     }
 
     /**
@@ -99,6 +104,6 @@ public final class BabbleSession {
         if (analysis.commit(scopes)) {
             namespace = namespace.enter(null);
         }
-        return script.eval(new ScriptRuntime(namespace, context, engine));
+        return script.eval(new ScriptRuntime(namespace, context.getWriter(), modules));
     }
 }

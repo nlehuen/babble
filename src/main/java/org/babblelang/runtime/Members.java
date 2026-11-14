@@ -1,7 +1,6 @@
 package org.babblelang.runtime;
 
 import org.babblelang.engine.BabbleException;
-import org.babblelang.engine.impl.Scope;
 
 /**
  * Member selection, {@code target.name}, and member assignment, {@code target.name = v}.

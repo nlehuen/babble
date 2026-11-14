@@ -1,7 +1,6 @@
 package org.babblelang.runtime;
 
 import org.babblelang.engine.BabbleException;
-import org.babblelang.engine.impl.Namespace;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;

@@ -5,7 +5,7 @@ import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.babblelang.engine.BabbleException;
 import org.babblelang.engine.impl.Interpreter;
-import org.babblelang.engine.impl.Namespace;
+import org.babblelang.runtime.Namespace;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.junit.jupiter.api.Assertions;

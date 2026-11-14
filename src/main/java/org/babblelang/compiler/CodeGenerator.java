@@ -56,7 +56,7 @@ import static org.objectweb.asm.Opcodes.*;
 final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private static final String OBJECT = "java/lang/Object";
     private static final String STRING = "java/lang/String";
-    private static final String NAMESPACE = "org/babblelang/engine/impl/Namespace";
+    private static final String NAMESPACE = "org/babblelang/runtime/Namespace";
     private static final String RUNTIME = "org/babblelang/runtime/";
     private static final String SCRIPT_RUNTIME = RUNTIME + "ScriptRuntime";
     private static final String CALL_SITE = RUNTIME + "CallSite";

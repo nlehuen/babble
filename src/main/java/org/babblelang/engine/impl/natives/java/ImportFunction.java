@@ -1,9 +1,9 @@
 package org.babblelang.engine.impl.natives.java;
 
 import org.babblelang.engine.BabbleException;
-import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.Module;
 import org.babblelang.runtime.ScriptRuntime;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -21,11 +21,11 @@ public class ImportFunction implements Callable {
         if (args.length != 1 || !(args[0] instanceof String name)) {
             throw new BabbleException("import expects one name : a Java package, or a .ba file");
         }
-        if (name.endsWith(BabbleScriptEngine.MODULE_EXTENSION)) {
-            if (!(rt.engine() instanceof BabbleScriptEngine engine)) {
-                throw new BabbleException("Cannot import " + name + " without an engine");
+        if (name.endsWith(Module.EXTENSION)) {
+            if (rt.modules() == null) {
+                throw new BabbleException("Cannot import " + name + " : this runtime has no modules");
             }
-            return engine.importModule(rt, name, site != null ? site.sourceName() : null);
+            return rt.modules().load(name, site != null ? site.sourceName() : null, rt);
         }
         return getPackage(name);
     }
