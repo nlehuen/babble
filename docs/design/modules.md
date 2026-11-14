@@ -373,8 +373,8 @@ eval.
 | **M1** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
 | **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | Done, with tests in both modes and in sessions. |
 | **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks in `error` mode (§8.2). | Done, with tests in both modes. |
-| **M4** | Module sources for hosts (§11). | |
-| **M5** | AOT : a jar closed over static imports. | |
+| **M4** | Module sources for hosts (§11). Designed with M5 in [module-sources-and-aot.md](module-sources-and-aot.md). | |
+| **M5** | AOT : a jar closed over static imports. Designed in [module-sources-and-aot.md](module-sources-and-aot.md). | |
 
 Each step leaves both modes passing the whole suite. Both ray tracers, `examples/raytracer-fable`
 and `examples/raytracer-argon`, were split into files after M1 as the acceptance test of the
