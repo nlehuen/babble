@@ -1,6 +1,6 @@
 package org.babblelang.compiler;
 
-import org.babblelang.engine.BabbleException;
+import org.babblelang.runtime.BabbleException;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.CheckClassAdapter;
 import org.objectweb.asm.util.TraceClassVisitor;

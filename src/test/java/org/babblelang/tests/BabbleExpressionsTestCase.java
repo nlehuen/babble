@@ -42,13 +42,13 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
             Assertions.assertEquals(null, interpret("  12 + \"to\" + \"to\" "));
             Assertions.fail("Should report type error");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.engine.BabbleException: Not a number : \"to\" in <input> at line number 1", e.getMessage());
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a number : \"to\" in <input> at line number 1", e.getMessage());
         }
         try {
             Assertions.assertEquals(null, interpret("  null + 12 "));
             Assertions.fail("Should report type error");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.engine.BabbleException: Not a number : null in <input> at line number 1", e.getMessage());
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a number : null in <input> at line number 1", e.getMessage());
         }
     }
 
@@ -177,13 +177,13 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
             interpret(" 1 < \"x\" ");
             Assertions.fail("Should report type error");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.engine.BabbleException: Not comparable : 1 and \"x\" in <input> at line number 1", e.getMessage());
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not comparable : 1 and \"x\" in <input> at line number 1", e.getMessage());
         }
         try {
             interpret(" null > 1 ");
             Assertions.fail("Should report type error");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.engine.BabbleException: Not comparable : null and 1 in <input> at line number 1", e.getMessage());
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not comparable : null and 1 in <input> at line number 1", e.getMessage());
         }
     }
 }

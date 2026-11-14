@@ -1,6 +1,6 @@
 package org.babblelang.engine.impl.natives.java;
 
-import org.babblelang.engine.BabbleException;
+import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.Scope;
 import org.babblelang.runtime.Slot;
 

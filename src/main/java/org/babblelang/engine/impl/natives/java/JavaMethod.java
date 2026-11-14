@@ -1,6 +1,6 @@
 package org.babblelang.engine.impl.natives.java;
 
-import org.babblelang.engine.BabbleException;
+import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.Overloads;

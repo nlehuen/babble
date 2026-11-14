@@ -33,22 +33,22 @@ public class BabbleNativesTestCase extends BabbleTestBase {
         // Must fail even though the JVM may be running without -ea.
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(1 == 2) "));
         // ANTLR's getText() concatenates tokens, so the reported expression has no spaces.
-        Assertions.assertEquals("org.babblelang.engine.BabbleException: Assertion failed at line 1 : 1==2 in <input> at line number 1", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Assertion failed at line 1 : 1==2 in <input> at line number 1", e.getMessage());
     }
 
     @Test
     public void testBuiltinAssertFailsWithMessage() {
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(1 == 2, \"one is not two\") "));
-        Assertions.assertEquals("org.babblelang.engine.BabbleException: one is not two in <input> at line number 1", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: one is not two in <input> at line number 1", e.getMessage());
     }
 
     @Test
     public void testBuiltinAssertArity() {
         ScriptException none = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose() "));
-        Assertions.assertEquals("org.babblelang.engine.BabbleException: assert() called without parameters in <input> at line number 1", none.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: assert() called without parameters in <input> at line number 1", none.getMessage());
 
         ScriptException tooMany = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(true, \"a\", \"b\") "));
-        Assertions.assertEquals("org.babblelang.engine.BabbleException: assert() called with too many parameters in <input> at line number 1", tooMany.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: assert() called with too many parameters in <input> at line number 1", tooMany.getMessage());
     }
 
     @Test

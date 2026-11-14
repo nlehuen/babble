@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-import org.babblelang.engine.BabbleException;
 
 /**
  * The binary operators, shared by the interpreter and compiled code.

@@ -22,7 +22,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     private void assertFails(String script, String message, int line) {
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(script));
-        Assertions.assertEquals("org.babblelang.engine.BabbleException: " + message + " in <input> at line number " + line, e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: " + message + " in <input> at line number " + line, e.getMessage());
     }
 
     private static final String POINT = "def Point = class (def x, def y) (\n"

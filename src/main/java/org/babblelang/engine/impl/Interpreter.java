@@ -5,7 +5,7 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTreeProperty;
 import org.babblelang.analysis.BlockScopes;
 import org.babblelang.analysis.ScopeAnalysis;
-import org.babblelang.engine.BabbleException;
+import org.babblelang.runtime.BabbleException;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;

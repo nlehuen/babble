@@ -22,9 +22,8 @@ import java.util.stream.Stream;
  * The runtime boundary (docs/design/module-sources-and-aot.md §3) : what a compiled Babble
  * program needs to run references nothing of the front end (parser, analysis, compiler,
  * interpreter, engine), no third-party library, and no JDK module but {@code java.base}.
- * The runtime is the {@code runtime} package, the built-ins of {@code engine.impl.natives}
- * and {@code engine.impl.natives.java}, and {@code BabbleException}, kept in the engine
- * package for its name in error messages.
+ * The runtime is the {@code runtime} package and the built-ins of {@code engine.impl.natives}
+ * and {@code engine.impl.natives.java}.
  */
 public class RuntimeBoundaryTestCase {
     private static final Pattern DESCRIPTOR_CLASS = Pattern.compile("L([A-Za-z_$][\\w/$]*);");
@@ -32,8 +31,7 @@ public class RuntimeBoundaryTestCase {
 
     static boolean isRuntime(String internalName) {
         return internalName.startsWith("org/babblelang/runtime/")
-                || internalName.startsWith("org/babblelang/engine/impl/natives/")
-                || internalName.equals("org/babblelang/engine/BabbleException");
+                || internalName.startsWith("org/babblelang/engine/impl/natives/");
     }
 
     private static Path classesDirectory() throws URISyntaxException {

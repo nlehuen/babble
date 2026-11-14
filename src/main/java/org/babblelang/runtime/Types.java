@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-import org.babblelang.engine.BabbleException;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

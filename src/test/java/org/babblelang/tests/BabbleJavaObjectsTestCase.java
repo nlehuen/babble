@@ -19,7 +19,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     private void assertFails(String script, String message, int line) {
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(script));
-        Assertions.assertEquals("org.babblelang.engine.BabbleException: " + message + " in <input> at line number " + line, e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: " + message + " in <input> at line number " + line, e.getMessage());
     }
 
     private static String output(String script) throws ScriptException {
@@ -99,7 +99,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
                 + ")\n"
                 + "def l = java.util.ArrayList() ; l.add(Broken()) ; l.add(Broken()) ; java.util.Collections.sort(l)";
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(broken));
-        Assertions.assertTrue(e.getMessage().startsWith("org.babblelang.engine.BabbleException: No such name : nosuchname"), e.getMessage());
+        Assertions.assertTrue(e.getMessage().startsWith("org.babblelang.runtime.BabbleException: No such name : nosuchname"), e.getMessage());
     }
 
     private static final String LOG = "def Log = class () implements java.lang.Appendable (\n"

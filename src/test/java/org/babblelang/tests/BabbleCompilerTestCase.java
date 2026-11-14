@@ -196,7 +196,7 @@ public class BabbleCompilerTestCase {
         Bindings bindings = engine.createBindings();
         bindings.put(ScriptEngine.FILENAME, "named.ba");
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> engine.eval("1\nnosuchname", bindings));
-        Assertions.assertEquals("org.babblelang.engine.BabbleException: No such name : nosuchname in named.ba at line number 2", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such name : nosuchname in named.ba at line number 2", e.getMessage());
     }
 
     @Test

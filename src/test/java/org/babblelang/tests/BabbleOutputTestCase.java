@@ -67,7 +67,7 @@ public class BabbleOutputTestCase {
     public void testToRejectsWhatCannotBeWrittenTo() {
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> engine.eval("print(\"a\", to: 1)", context(new StringWriter())));
-        Assertions.assertEquals("org.babblelang.engine.BabbleException: print to: expects a Writer or PrintStream in <input> at line number 1", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: print to: expects a Writer or PrintStream in <input> at line number 1", e.getMessage());
     }
 
     @Test

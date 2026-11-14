@@ -3,7 +3,7 @@ package org.babblelang.tests;
 import org.antlr.v4.runtime.BailErrorStrategy;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
-import org.babblelang.engine.BabbleException;
+import org.babblelang.runtime.BabbleException;
 import org.babblelang.engine.impl.Interpreter;
 import org.babblelang.runtime.Namespace;
 import org.babblelang.parser.BabbleLexer;

@@ -129,7 +129,7 @@ public class BabbleScopesTestCase extends BabbleTestBase {
             interpret(script);
             Assertions.fail("Should report \"" + message + "\"");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.engine.BabbleException: " + message
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: " + message
                     + " in <input> at line number 1", e.getMessage());
         }
     }

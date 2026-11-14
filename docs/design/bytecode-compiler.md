@@ -155,7 +155,7 @@ to carry that text into the generated code.
 `Interpreter` records the last visited context in `last`. `BabbleCompiledScript` turns any
 exception into `ScriptException(e.toString(), "<input>", last.getStart().getLine())`. Tests
 assert on that exact message shape, for example
-`org.babblelang.engine.BabbleException: Not a scope : s in <input> at line number 1`.
+`org.babblelang.runtime.BabbleException: Not a scope : s in <input> at line number 1`.
 
 ## 3. Goals and non-goals
 
