@@ -39,9 +39,8 @@ public final class Formatter {
     /** The least space between code and the comment ending its line. */
     private static final int BEFORE_COMMENT = 2;
 
-    // In the lexer, "(" is RPAREN and ")" is LPAREN.
-    private static final int OPEN = BabbleLexer.RPAREN;
-    private static final int CLOSE = BabbleLexer.LPAREN;
+    private static final int OPEN = BabbleLexer.LPAREN;
+    private static final int CLOSE = BabbleLexer.RPAREN;
 
     /** What a newline does. The first is the default, for a text with no tree : only comments. */
     private static final byte SEPARATES = 0;
