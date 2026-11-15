@@ -160,6 +160,22 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testJavaFieldsAndResults() {
+        assertDiagnostics("def pi : double = java.lang.Math.PI\n"
+                        + "def bad : int = java.lang.Math.PI\n"
+                        + "def n : int = java.lang.Runtime.getRuntime().availableProcessors()\n"
+                        + "java.lang.Runtime.getRuntime().nope()\n"
+                        + "java.lang.StringBuilder().append(\"a\").nope\n"
+                        + "java.lang.Math.NOPE\n"
+                        // An interface's results stay dynamic : a Babble instance may come back as itself.
+                        + "java.util.List.of(1).iterator().nope",
+                "2:17 Type error : expected int, got double",
+                "4:1 No such name in java.lang.Runtime : nope",
+                "5:1 No such name in java.lang.StringBuilder : nope",
+                "6:1 No such name in java.lang.Math : NOPE");
+    }
+
+    @Test
     public void testInterfacesAreNominal() {
         String shape = "def Shape = interface ( def area : () : double ; def describe = () : string -> ( \"area \" + this.area() ) )\n"
                 + "def Sq = class (def s) implements Shape ( def area = () -> ( 1.0 * this.s * this.s ) )\n";

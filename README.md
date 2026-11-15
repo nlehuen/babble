@@ -237,10 +237,14 @@ same name, is rejected before the script runs.
 ### Java interop
 
 Java packages are reachable from `java` and `javax`, and any other one through
-`import("org")`. Babble functions convert to Java functional interfaces, and Babble classes
-can implement Java interfaces.
+`import("org")`. Java objects have their public methods, whether Babble constructed them or a
+Java call returned them, and Java classes their public static fields. Babble functions convert
+to Java functional interfaces, and Babble classes can implement Java interfaces.
 
 ```
+def cores = java.lang.Runtime.getRuntime().availableProcessors()
+def circle = 2 * java.lang.Math.PI
+
 def list = java.util.ArrayList()
 list.add(3) ; list.add(1) ; list.add(2)
 list.removeIf((v) -> ( v > 2 ))                   ;; a Predicate
@@ -600,11 +604,12 @@ order of how much each would improve that code :
 - [ ] unary minus : `-x` and `-1.0` have to be written `0 - x` and `0 - 1.0`.
 - [ ] operator methods : let `a + b * t` call `plus` and `times` members, so vector maths doesn't
   read `a.plus(b.times(t))`.
-- [ ] members of Java values returned by Java calls : only objects constructed in Babble accept
-  method calls, so `list.get(0).size()` or `Runtime.getRuntime().availableProcessors()` fail with
-  `Not a scope`. This is why the ray tracer has its own linked list.
-- [ ] static fields of Java classes : `java.lang.Math.PI` or `BufferedImage.TYPE_INT_RGB` are
-  not reachable.
+- [x] members of Java values returned by Java calls : only objects constructed in Babble accepted
+  method calls, so `list.get(0).size()` or `Runtime.getRuntime().availableProcessors()` failed with
+  `Not a scope`. This is why the ray tracer has its own linked list. Any Java object now has its
+  methods, however it was obtained, and the type checker follows chained calls.
+- [x] static fields of Java classes : `java.lang.Math.PI` or `BufferedImage.TYPE_INT_RGB` were
+  not reachable. They are now, with their types.
 - [ ] bare names for a class's own members in its body, or at least for `def` header parameters :
   a plain header parameter can be read as `x` in the body, a `def` one only as `this.x`.
 - [ ] `for` loops over ranges and collections (also in the planned features above) : every loop

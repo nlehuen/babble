@@ -9,10 +9,10 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-public class JavaObject implements Scope<BoundJavaMethod>, JavaValue {
+public class JavaObject implements Scope<Object>, JavaValue {
     private final JavaClass clazz;
     private final Object value;
-    private final Map<String, Slot<BoundJavaMethod>> members = new ConcurrentHashMap<>();
+    private final Map<String, Slot<Object>> methods = new ConcurrentHashMap<>();
 
     JavaObject(JavaClass clazz, Object value) {
         this.clazz = clazz;
@@ -36,7 +36,7 @@ public class JavaObject implements Scope<BoundJavaMethod>, JavaValue {
         return clazz;
     }
 
-    public Slot<BoundJavaMethod> define(String key, boolean isFinal) {
+    public Slot<Object> define(String key, boolean isFinal) {
         throw new BabbleException("Cannot define anything in a Java instance");
     }
 
@@ -44,13 +44,34 @@ public class JavaObject implements Scope<BoundJavaMethod>, JavaValue {
         return clazz.isDeclared(key);
     }
 
-    public Slot<BoundJavaMethod> get(String key) {
-        return members.computeIfAbsent(key, k -> {
-            Slot<BoundJavaMethod> slot = new Slot<>(k, true);
-            JavaMethod result = (JavaMethod) clazz.get(k).get();
-            slot.set(new BoundJavaMethod(result, value));
-            return slot;
-        });
+    public Slot<Object> get(String key) {
+        Slot<Object> method = methods.get(key);
+        if (method != null) {
+            return method;
+        }
+        Slot<Object> slot = new Slot<>(key, true);
+        Object member = member(clazz, value, key);
+        slot.set(member);
+        // A bound method is the same every time ; a static field may not be.
+        return member instanceof BoundJavaMethod ? methods.computeIfAbsent(key, k -> slot) : slot;
+    }
+
+    /**
+     * {@code value.name} on any Java object, wrapped or not (as Java calls return them) : a
+     * method bound to it, or a member of its class, a static field or a member class.
+     */
+    public static Object member(Object value, String name) {
+        return member(JavaClass.of(value.getClass()), value, name);
+    }
+
+    private static Object member(JavaClass clazz, Object value, String name) {
+        Object member = clazz.get(name).get();
+        return member instanceof JavaMethod method ? new BoundJavaMethod(method, value) : member;
+    }
+
+    @Override
+    public String toString() {
+        return String.valueOf(value);
     }
 
     /** Java objects compare with their own equals(), as Babble's "==" does. */
