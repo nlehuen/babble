@@ -10,6 +10,8 @@ Section references such as "§5.3.1" point into `purity.md`.
 
 ## 1. Soundness bugs
 
+> **Status:** addressed in `purity.md` after this review. In short: result reuse needs a deeply immutable result, and deeply immutable arguments for memoization and folding (1.1, 1.6); wrapping `int` arithmetic is no longer `monotone`, and the §8.3 example computes in `double` (1.2); typed parameters a profile relies on are checked on entry in every mode, and `nothrow` is conditional on conforming arguments (1.3); plain `mut` promises no `noalias`, which now comes only from `unique mut` (1.4); `unique` means deep ownership, and `freeze` yields a `frozen T` type backed by a runtime frozen bit or wrapper (1.5); identity-derived `hashCode`/`toString` are `pure` but not `deterministic` (1.7); ownership is tracked for uncaptured locals only (1.8). The findings below are kept as written, against the original text. Sections 2 to 5 are still open.
+
 ### 1.1 CSE and memoization of functions returning fresh mutable objects
 
 `buildIndex` (§4.1) is `pure deterministic` with a `unique HashMap` return. §5.3.1 collapses two occurrences of `f(a, b)` into one call when `f` is `pure deterministic`. Applied to `buildIndex`, that aliases two graphs that were each promised to be `unique`: a mutation of one shows up in the other, and `same` tells them apart from the unoptimized program.
