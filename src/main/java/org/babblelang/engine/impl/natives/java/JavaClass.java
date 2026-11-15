@@ -12,17 +12,26 @@ import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.runtime.Values;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class JavaClass implements Scope<Callable>, Callable, JavaType {
+/**
+ * A Java class as a Babble value : calling it constructs an instance, and its members are its
+ * public member classes, methods and static fields, looked up in that order. A static
+ * final field is a constant ; another static field is read each time it is selected.
+ */
+public class JavaClass implements Scope<Object>, Callable, JavaType {
     private static final Map<Class<?>, JavaClass> CLASSES = new ConcurrentHashMap<>();
 
     private final Class<?> clazz;
-    private final Map<String, Slot<Callable>> members = new ConcurrentHashMap<>();
+    /** The members that never change : classes, methods and static final fields' values. */
+    private final Map<String, Slot<Object>> members = new ConcurrentHashMap<>();
+    /** The static fields that aren't final, read when selected. */
+    private final Map<String, Field> fields = new ConcurrentHashMap<>();
     private final Overloads.Cache<Constructor<?>> constructors = new Overloads.Cache<>();
 
     JavaClass(Class<?> clazz) {
@@ -82,7 +91,7 @@ public class JavaClass implements Scope<Callable>, Callable, JavaType {
         return clazz.getName();
     }
 
-    public Slot<Callable> define(String key, boolean isFinal) {
+    public Slot<Object> define(String key, boolean isFinal) {
         throw new BabbleException("Cannot define anything in a Java class");
     }
 
@@ -90,31 +99,74 @@ public class JavaClass implements Scope<Callable>, Callable, JavaType {
         return get(key) != null;
     }
 
-    public Slot<Callable> get(String key) {
-        return members.computeIfAbsent(key, k -> {
-            Slot<Callable> result = new Slot<>(k, true);
-
-            for (Class<?> memberClass : clazz.getClasses()) {
-                if (memberClass.getSimpleName().equals(k) && Modifier.isPublic(memberClass.getModifiers())) {
-                    result.set(JavaClass.of(memberClass));
-                    break;
-                }
+    public Slot<Object> get(String key) {
+        Slot<Object> member = members.get(key);
+        if (member != null) {
+            return member;
+        }
+        Field field = fields.get(key);
+        if (field == null) {
+            Object found = find(key);
+            if (found instanceof Field mutable) {
+                fields.putIfAbsent(key, mutable);
+                field = mutable;
+            } else {
+                Slot<Object> slot = new Slot<>(key, true);
+                slot.set(found);
+                member = members.putIfAbsent(key, slot);
+                return member != null ? member : slot;
             }
+        }
+        Slot<Object> slot = new Slot<>(key, true);
+        slot.set(read(field));
+        return slot;
+    }
 
-            if (!result.isSet()) {
-                for (Method method : clazz.getMethods()) {
-                    if (method.getName().equals(k) && Modifier.isPublic(method.getModifiers())) {
-                        result.set(new JavaMethod(clazz, k));
-                        break;
-                    }
-                }
+    /**
+     * Whether a member selected once is the same value every time, as classes, methods and
+     * static final fields are : what {@code invokedynamic} sites may keep.
+     */
+    public boolean isConstant(String key) {
+        return !fields.containsKey(key);
+    }
+
+    /** A member's value, or a static field that isn't final, to read when selected. */
+    private Object find(String key) {
+        for (Class<?> memberClass : clazz.getClasses()) {
+            if (memberClass.getSimpleName().equals(key) && Modifier.isPublic(memberClass.getModifiers())) {
+                return JavaClass.of(memberClass);
             }
-
-            if (!result.isSet()) {
-                throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + k);
+        }
+        for (Method method : clazz.getMethods()) {
+            if (method.getName().equals(key) && Modifier.isPublic(method.getModifiers())) {
+                return new JavaMethod(clazz, key);
             }
+        }
+        Field field = staticField(clazz, key);
+        if (field != null) {
+            return Modifier.isFinal(field.getModifiers()) ? read(field) : field;
+        }
+        throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + key);
+    }
 
-            return result;
-        });
+    /** A public static field, declared or inherited, that Babble can read. Null if none. */
+    static Field staticField(Class<?> clazz, String name) {
+        try {
+            Field field = clazz.getField(name);
+            if (Modifier.isStatic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())) {
+                return field;
+            }
+        } catch (NoSuchFieldException e) {
+            // None : no member of that name.
+        }
+        return null;
+    }
+
+    private static Object read(Field field) {
+        try {
+            return Values.fromJava(field.get(null));
+        } catch (IllegalAccessException e) {
+            throw new BabbleException(e);
+        }
     }
 }

@@ -589,12 +589,17 @@ final class TypeChecker {
     }
 
     /**
-     * The type of what a Java method returns. Results come back unwrapped, so apart from
-     * numbers, booleans and strings, nothing more is known of them.
+     * The type of what a Java method returns, or a Java field holds : an instance of its
+     * class, whose members are checked. Not for an interface, as a Babble instance passed to
+     * Java comes back as itself where its interface is declared, nor for an array, or a class
+     * whose members Babble reaches through others : those are {@code dynamic}.
      */
     private static Type javaResult(Class<?> java) {
         Type type = fromJava(java);
-        return type instanceof Type.JavaInstance ? Type.DYNAMIC : type;
+        if (type instanceof Type.JavaInstance && (java.isInterface() || java.isArray() || !JavaTypes.isAccessible(java))) {
+            return Type.DYNAMIC;
+        }
+        return type;
     }
 
     // ---------------------------------------------------------------- expressions
@@ -1245,10 +1250,10 @@ final class TypeChecker {
                     return new Type.JavaClassValue(memberClass);
                 }
             }
-            return javaMethod(value.type(), name, at);
+            return javaMember(value.type(), name, at);
         }
         if (receiver instanceof Type.JavaInstance instance) {
-            return javaMethod(instance.type(), name, at);
+            return javaMember(instance.type(), name, at);
         }
         // Numbers, booleans, strings, null, functions : nothing has members but objects,
         // classes, packages and Java values.
@@ -1379,11 +1384,20 @@ final class TypeChecker {
         }
     }
 
-    private Type javaMethod(Class<?> java, String name, ParserRuleContext at) {
+    /** A method or a public static field of a Java class, as {@code JavaClass} looks them up. */
+    private Type javaMember(Class<?> java, String name, ParserRuleContext at) {
         for (Method method : java.getMethods()) {
             if (method.getName().equals(name)) {
                 return new Type.JavaMethod(java, name);
             }
+        }
+        try {
+            java.lang.reflect.Field field = java.getField(name);
+            if (Modifier.isStatic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())) {
+                return javaResult(field.getType());
+            }
+        } catch (NoSuchFieldException e) {
+            // Not a field either.
         }
         warn("No such name in " + java.getCanonicalName() + " : " + name, at);
         return Type.DYNAMIC;

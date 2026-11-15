@@ -45,6 +45,52 @@ public final class JavaTypes {
     private JavaTypes() {
     }
 
+    /**
+     * Whether code outside a class's module can call its public members : the class and
+     * every class enclosing it are public, and its package is exported. Objects Java
+     * returns are often of classes that aren't, as {@code List.of()}'s are.
+     */
+    public static boolean isAccessible(Class<?> type) {
+        for (Class<?> c = type; c != null; c = c.getEnclosingClass()) {
+            if (!Modifier.isPublic(c.getModifiers())) {
+                return false;
+            }
+        }
+        return type.getModule().isExported(type.getPackageName());
+    }
+
+    /**
+     * A method that can be invoked from Babble : the method itself when its class is
+     * accessible, else the method it implements or overrides in an accessible superclass or
+     * interface, which dispatches to it. Null when there is none.
+     */
+    public static Method accessible(Method method) {
+        if (isAccessible(method.getDeclaringClass())) {
+            return method;
+        }
+        java.util.ArrayDeque<Class<?>> types = new java.util.ArrayDeque<>();
+        java.util.Set<Class<?>> seen = new java.util.HashSet<>();
+        types.add(method.getDeclaringClass());
+        while (!types.isEmpty()) {
+            Class<?> type = types.poll();
+            if (!seen.add(type)) {
+                continue;
+            }
+            if (type != method.getDeclaringClass() && isAccessible(type)) {
+                try {
+                    return type.getMethod(method.getName(), method.getParameterTypes());
+                } catch (NoSuchMethodException e) {
+                    // Not one of this type's : look further up.
+                }
+            }
+            if (type.getSuperclass() != null) {
+                types.add(type.getSuperclass());
+            }
+            types.addAll(java.util.Arrays.asList(type.getInterfaces()));
+        }
+        return null;
+    }
+
     public static Class<?> box(Class<?> type) {
         return type.isPrimitive() ? BOXES.get(type) : type;
     }

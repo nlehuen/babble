@@ -1,5 +1,6 @@
 package org.babblelang.runtime;
 
+import org.babblelang.engine.impl.natives.java.JavaObject;
 
 /**
  * Member selection, {@code target.name}, and member assignment, {@code target.name = v}.
@@ -12,18 +13,33 @@ public final class Members {
     }
 
     /**
-     * Only objects, class and interface values, namespaces and Java scopes have members.
-     * Anything else is a language-level error, not a ClassCastException escaping the
+     * Objects, class and interface values, namespaces, Java scopes and Java objects have
+     * members. Babble's own values (null, numbers, booleans, strings, functions) have none :
+     * selecting on them is a language-level error, not a ClassCastException escaping the
      * runtime.
      */
     public static Object select(Object target, String name, String targetText) {
         if (target instanceof HasMembers members) {
             return members.getMember(name, false);
         }
-        if (!(target instanceof Scope<?> scope)) {
-            throw new BabbleException("Not a scope : " + targetText);
+        if (target instanceof Scope<?> scope) {
+            return scope.get(name).get();
         }
-        return scope.get(name).get();
+        if (isJavaObject(target)) {
+            // As Java calls return them : not wrapped, but their methods are as callable.
+            return JavaObject.member(target, name);
+        }
+        throw new BabbleException("Not a scope : " + targetText);
+    }
+
+    /**
+     * A Java object with Java members, as opposed to a value of Babble's own : null, its
+     * numbers, booleans and strings, and its callables. Other Java numbers ({@code long},
+     * {@code BigInteger}) and characters are Java objects.
+     */
+    private static boolean isJavaObject(Object target) {
+        return target != null && !(target instanceof Integer) && !(target instanceof Double)
+                && !(target instanceof Boolean) && !(target instanceof String) && !(target instanceof Callable);
     }
 
     /** {@code this.name} */

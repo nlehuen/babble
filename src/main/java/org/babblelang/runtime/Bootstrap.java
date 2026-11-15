@@ -260,8 +260,8 @@ public final class Bootstrap {
             }
             MethodHandle test = null;
             MethodHandle fast = null;
-            if (target instanceof JavaPackage || target instanceof JavaClass) {
-                // Their members never change.
+            if (target instanceof JavaPackage || target instanceof JavaClass javaClass && javaClass.isConstant(member)) {
+                // Their members never change, except a Java class's static fields that aren't final.
                 test = IS_SAME.bindTo(target);
                 fast = MethodHandles.dropArguments(MethodHandles.constant(Object.class, result), 0, Object.class);
             } else if (target instanceof BabbleInstance instance && target.getClass() != BabbleInstance.class) {

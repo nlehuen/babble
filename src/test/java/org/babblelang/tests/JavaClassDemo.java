@@ -87,6 +87,19 @@ public class JavaClassDemo {
         return java.lang.reflect.Proxy.isProxyClass(value.getClass());
     }
 
+    /** A static field that isn't final : read each time it is selected. */
+    public static int counter;
+
+    public static final String GREETING = "hello";
+
+    public static void bump() {
+        counter++;
+    }
+
+    public static void reset() {
+        counter = 0;
+    }
+
     public static String add(int a, int b) {
         return "static:" + (a + b);
     }
