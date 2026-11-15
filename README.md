@@ -319,8 +319,11 @@ area(2, "3")    ;; Error : Type error : expected int, got string ... at line num
 area(2)         ;; Error : Missing parameter : h ...
 ```
 
-Unannotated code is `dynamic`, and gets no static type errors. Declared types are also checked at
-runtime, where an untyped value reaches them :
+Unannotated code is `dynamic`, and gets no static type errors. Bidirectional local inference
+infers types of unannotated `def`s that are not reassigned, function return types from their
+bodies, lambda parameter types from expected function or Java functional interface types, and
+flow-sensitive types narrowed by `is` (`if x is Point then ( … )`, `and`/`or`, and early-return
+guards). Declared types are also checked at runtime, where an untyped value reaches them :
 
 ```
 def id = (x) -> ( x )
@@ -540,7 +543,7 @@ Language features :
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java interfaces.
-- [x] optional type declarations for variables and parameters, checked by a gradual type checker (see the [design doc](docs/design/type-system.md)) : it reports values of the wrong type, calls that don't match a signature, missing members and the like as errors before the script runs, and enforces declared types at runtime where untyped values reach them.
+- [x] optional type declarations for variables and parameters, checked by a gradual type checker with bidirectional local inference (see the [design doc](docs/design/type-system.md)) : it infers function return types from bodies, contextually types lambda parameters, narrows non-reassigned bindings after `is`, reports values of the wrong type, calls that don't match a signature, missing members and the like as errors before the script runs, and enforces declared types at runtime where untyped values reach them.
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`.
 
 Implementation features :
@@ -564,7 +567,7 @@ Language features :
 
 - [ ] line editing, history and completion in the interactive mode.
 - [ ] better, more user-friendly error reports.
-- [ ] fuller type inference and narrowing after `is`.
+- [ ] generics, union types and structural object types.
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module, an object or a package, instead of one `def` per name.
 - [ ] collection classes (mapped from Java).

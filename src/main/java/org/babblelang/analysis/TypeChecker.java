@@ -10,16 +10,21 @@ import org.babblelang.runtime.JavaTypes;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
@@ -31,11 +36,24 @@ import java.util.stream.Collectors;
  * <p>
  * Typing is gradual : whatever is unannotated and can't be inferred is {@link Type#DYNAMIC},
  * which never produces an error. An unannotated def that is never reassigned takes the
- * type of its value (T8). Declared types are also recorded so the backends check them at
- * runtime where dynamic values cross into typed code (T9).
+ * type of its value, unannotated function literals infer their result from their body and
+ * receive parameter types from context where an expected function or functional interface
+ * type is known, and {@code is} checks narrow non-reassigned lexical bindings along
+ * control-flow branches (T8). Declared types are also recorded so the backends check them
+ * at runtime where dynamic values cross into typed code (T9).
  */
 final class TypeChecker {
     private record Diagnostic(int line, int column, String message) {
+    }
+
+    private record Narrowing(
+            Map<ParserRuleContext, Type> whenTrue,
+            Map<ParserRuleContext, Type> whenFalse) {
+        static final Narrowing EMPTY = new Narrowing(Map.of(), Map.of());
+
+        Narrowing invert() {
+            return new Narrowing(whenFalse, whenTrue);
+        }
     }
 
     private static final Comparator<Diagnostic> ORDER = Comparator.comparingInt(Diagnostic::line)
@@ -48,9 +66,17 @@ final class TypeChecker {
     private final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
     private final Map<BabbleParser.TypeContext, Type> annotations = new HashMap<>();
     private final Set<ParserRuleContext> inProgress = new HashSet<>();
-    private final List<BabbleParser.FunctionLiteralContext> functions = new ArrayList<>();
+    private final Set<BabbleParser.FunctionLiteralContext> functions = new LinkedHashSet<>();
     private final Set<Diagnostic> diagnostics = new TreeSet<>(ORDER);
     private final Typer typer = new Typer();
+    private final Map<ParserRuleContext, Type> expectedTypes = new IdentityHashMap<>();
+    private final Map<BabbleParser.FunctionLiteralContext, Type> contextualReturnTypes = new IdentityHashMap<>();
+    private final Map<BabbleParser.FunctionLiteralContext, List<BabbleParser.ReturnExpressionContext>> functionReturns = new IdentityHashMap<>();
+    private final Deque<BabbleParser.FunctionLiteralContext> inferenceStack = new ArrayDeque<>();
+    private final Set<BabbleParser.FunctionLiteralContext> inferringResult = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<BabbleParser.FunctionLiteralContext> recursiveFunctions = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<BabbleParser.FunctionLiteralContext, Type> provisionalResults = new IdentityHashMap<>();
+    private final Deque<Map<ParserRuleContext, Type>> narrowings = new ArrayDeque<>();
     /**
      * The checkers of the files this one imports statically, transitively, by file : what
      * this file uses from another is typed by that file's checker (docs/design/modules.md §8.2).
@@ -84,6 +110,7 @@ final class TypeChecker {
                 reassigned.add(declaration);
             }
         }
+        new ReturnFinder().visit(file);
         walk(file);
         for (BabbleParser.FunctionLiteralContext function : functions) {
             checkResult(function);
@@ -91,6 +118,26 @@ final class TypeChecker {
         for (Diagnostic diagnostic : diagnostics) {
             pass.analysis.typeDiagnostic(diagnostic.message(), diagnostic.line(), diagnostic.column());
         }
+    }
+
+    private final class ReturnFinder extends BabbleBaseVisitor<Void> {
+        @Override
+        public Void visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
+            BabbleParser.FunctionLiteralContext function = enclosingFunction(ctx);
+            if (function != null) {
+                functionReturns.computeIfAbsent(function, k -> new ArrayList<>()).add(ctx);
+            }
+            return super.visitReturnExpression(ctx);
+        }
+    }
+
+    private static BabbleParser.FunctionLiteralContext enclosingFunction(ParserRuleContext ctx) {
+        for (ParserRuleContext p = ctx.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof BabbleParser.FunctionLiteralContext function) {
+                return function;
+            }
+        }
+        return null;
     }
 
     private void warn(String message, ParserRuleContext at) {
@@ -124,7 +171,8 @@ final class TypeChecker {
         }
         recordCheck(tree);
         if (tree instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.defaultValue != null && parameter.type() != null) {
-            expect(typeOf(parameter.defaultValue), annotation(parameter.type(), scopeOf(parameter)), parameter.defaultValue);
+            Type declared = annotation(parameter.type(), scopeOf(parameter));
+            expect(typeOf(parameter.defaultValue, declared), declared, parameter.defaultValue);
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
             walk(tree.getChild(i));
@@ -284,6 +332,13 @@ final class TypeChecker {
             return cached;
         }
         if (!inProgress.add(declaration)) {
+            if (declaration instanceof BabbleParser.DefExpressionContext def
+                    && def.type() == null && !reassigned.contains(def)) {
+                BabbleParser.FunctionLiteralContext literal = unwrapFunctionLiteral(def.value);
+                if (literal != null && (inferringResult.contains(literal) || provisionalResults.containsKey(literal))) {
+                    return recursiveSignature(literal);
+                }
+            }
             return Type.DYNAMIC;
         }
         try {
@@ -292,6 +347,10 @@ final class TypeChecker {
                 if (def.type() != null) {
                     type = annotation(def.type(), scopeOf(def));
                 } else if (def.value != null && !reassigned.contains(def)) {
+                    BabbleParser.FunctionLiteralContext literal = unwrapFunctionLiteral(def.value);
+                    if (literal != null && (inferringResult.contains(literal) || provisionalResults.containsKey(literal))) {
+                        return recursiveSignature(literal);
+                    }
                     type = inferred(typeOf(def.value));
                 }
             } else if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.type() != null) {
@@ -540,6 +599,20 @@ final class TypeChecker {
 
     // ---------------------------------------------------------------- expressions
 
+    private Type typeOf(ParserRuleContext ctx, Type expected) {
+        if (ctx == null) {
+            return Type.DYNAMIC;
+        }
+        if (expected != null && expected != Type.DYNAMIC && !types.containsKey(ctx)) {
+            expectedTypes.put(ctx, expected);
+        }
+        return typeOf(ctx);
+    }
+
+    private Type expectedType(ParserRuleContext ctx) {
+        return expectedTypes.get(ctx);
+    }
+
     private Type typeOf(ParserRuleContext ctx) {
         if (!isLocal(ctx)) {
             Type type = ask(ctx, owner -> owner.typeOf(ctx));
@@ -550,6 +623,10 @@ final class TypeChecker {
             return cached;
         }
         if (!inProgress.add(ctx)) {
+            if (ctx instanceof BabbleParser.FunctionLiteralContext literal
+                    && (inferringResult.contains(literal) || provisionalResults.containsKey(literal))) {
+                return recursiveSignature(literal);
+            }
             return Type.DYNAMIC;
         }
         try {
@@ -564,11 +641,176 @@ final class TypeChecker {
         }
     }
 
-    /** The type of a function literal : its parameters and annotated result. Its body isn't looked at. */
+    /** The type of a function literal : its parameters and annotated or inferred result. */
     private Type.Function signature(BabbleParser.FunctionLiteralContext literal) {
+        applyContextualType(literal);
+        List<Type.Parameter> params = functionParameters(literal);
+        typeDefaultValues(literal);
+        Type result;
+        if (literal.type() != null) {
+            result = annotation(literal.type(), scopeOf(literal));
+        } else if (provisionalResults.containsKey(literal)) {
+            result = provisionalResults.get(literal);
+        } else if (inferringResult.contains(literal)) {
+            return recursiveSignature(literal);
+        } else {
+            result = inferFunctionResult(literal);
+        }
+        return new Type.Function(params, result);
+    }
+
+    private Type.Function recursiveSignature(BabbleParser.FunctionLiteralContext literal) {
+        List<Type.Parameter> params = functionParameters(literal);
+        if (provisionalResults.containsKey(literal)) {
+            return new Type.Function(params, provisionalResults.get(literal));
+        }
+        if (!inferenceStack.isEmpty() && inferenceStack.peek() == literal) {
+            recursiveFunctions.add(literal);
+            return new Type.Function(params, Type.NOTHING);
+        }
+        return new Type.Function(params, Type.DYNAMIC);
+    }
+
+    private List<Type.Parameter> functionParameters(BabbleParser.FunctionLiteralContext literal) {
         ScopeNode scope = scopeOf(literal);
-        return new Type.Function(parameters(literal.parametersDeclaration(), scope),
-                literal.type() != null ? annotation(literal.type(), scope) : Type.DYNAMIC);
+        List<Type.Parameter> result = new ArrayList<>();
+        for (BabbleParser.ParameterDeclarationContext parameter : literal.parametersDeclaration().parameterDeclaration()) {
+            Type type = parameter.type() != null
+                    ? annotation(parameter.type(), scope)
+                    : declarationTypes.getOrDefault(parameter, Type.DYNAMIC);
+            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null));
+        }
+        return result;
+    }
+
+    private void typeDefaultValues(BabbleParser.FunctionLiteralContext literal) {
+        ScopeNode scope = scopeOf(literal);
+        for (BabbleParser.ParameterDeclarationContext parameter : literal.parametersDeclaration().parameterDeclaration()) {
+            if (parameter.defaultValue != null && !types.containsKey(parameter.defaultValue)) {
+                Type expected = parameter.type() != null
+                        ? annotation(parameter.type(), scope)
+                        : declarationTypes.get(parameter);
+                typeOf(parameter.defaultValue, expected);
+            }
+        }
+    }
+
+    private void applyContextualType(BabbleParser.FunctionLiteralContext literal) {
+        Type expected = expectedType(literal);
+        if (expected == null && literal.getParent() instanceof BabbleParser.DefExpressionContext def
+                && def.value == literal && def.type() != null) {
+            expected = annotation(def.type(), scopeOf(def));
+        }
+        if (expected == null) {
+            return;
+        }
+        List<Type> expectedParamTypes = null;
+        Type expectedResult = null;
+        if (expected instanceof Type.Function fn) {
+            expectedParamTypes = fn.parameters().stream().map(Type.Parameter::type).toList();
+            expectedResult = fn.result();
+        } else if (expected instanceof Type.JavaInstance java) {
+            Method sam = JavaTypes.functionalMethod(java.type());
+            if (sam != null) {
+                expectedParamTypes = Arrays.stream(sam.getParameterTypes()).map(TypeChecker::fromJava).toList();
+                expectedResult = fromJava(sam.getReturnType());
+            }
+        }
+        if (expectedParamTypes == null) {
+            return;
+        }
+        List<BabbleParser.ParameterDeclarationContext> params = literal.parametersDeclaration().parameterDeclaration();
+        int required = 0;
+        for (BabbleParser.ParameterDeclarationContext param : params) {
+            if (param.defaultValue == null) {
+                required++;
+            }
+        }
+        if (required <= expectedParamTypes.size() && params.size() >= expectedParamTypes.size()) {
+            for (int i = 0; i < expectedParamTypes.size(); i++) {
+                BabbleParser.ParameterDeclarationContext param = params.get(i);
+                if (param.type() == null && !declarationTypes.containsKey(param)) {
+                    Type paramType = expectedParamTypes.get(i);
+                    if (paramType != null && paramType != Type.DYNAMIC) {
+                        declarationTypes.put(param, paramType);
+                    }
+                }
+            }
+        }
+        if (literal.type() == null && expectedResult != null
+                && expectedResult != Type.DYNAMIC && expectedResult != Type.NULL && expectedResult != Type.NOTHING) {
+            contextualReturnTypes.putIfAbsent(literal, expectedResult);
+        }
+    }
+
+    private Type expectedReturnType(BabbleParser.FunctionLiteralContext function) {
+        if (function.type() != null) {
+            return annotation(function.type(), scopeOf(function));
+        }
+        return contextualReturnTypes.get(function);
+    }
+
+    private Type inferFunctionResult(BabbleParser.FunctionLiteralContext literal) {
+        if (literal.functionBlock == null) {
+            return Type.DYNAMIC;
+        }
+        List<Diagnostic> savedDiagnostics = new ArrayList<>(diagnostics);
+        inferringResult.add(literal);
+        inferenceStack.push(literal);
+        Type expectedReturn = contextualReturnTypes.get(literal);
+        Type pass1;
+        try {
+            pass1 = computeBodyResult(literal, expectedReturn);
+        } finally {
+            inferenceStack.pop();
+            inferringResult.remove(literal);
+        }
+        Type candidate = inferred(pass1);
+        if (recursiveFunctions.remove(literal) && candidate != Type.DYNAMIC) {
+            diagnostics.clear();
+            diagnostics.addAll(savedDiagnostics);
+            clearSubtreeTypes(literal.functionBlock);
+            provisionalResults.put(literal, candidate);
+            inferenceStack.push(literal);
+            try {
+                Type pass2 = computeBodyResult(literal, expectedReturn);
+                candidate = inferred(pass2);
+            } finally {
+                inferenceStack.pop();
+                provisionalResults.remove(literal);
+            }
+        }
+        return candidate;
+    }
+
+    private Type computeBodyResult(BabbleParser.FunctionLiteralContext literal, Type expectedReturn) {
+        Type result = typeOf(literal.functionBlock, expectedReturn);
+        for (BabbleParser.ReturnExpressionContext ret : functionReturns.getOrDefault(literal, List.of())) {
+            Type retType = ret.expression() != null ? typeOf(ret.expression(), expectedReturn) : Type.NULL;
+            result = join(result, retType);
+        }
+        return result;
+    }
+
+    private void clearSubtreeTypes(ParseTree tree) {
+        if (tree instanceof ParserRuleContext ctx) {
+            types.remove(ctx);
+            expectedTypes.remove(ctx);
+            contextualReturnTypes.remove(ctx);
+            if (ctx instanceof BabbleParser.DefExpressionContext || ctx instanceof BabbleParser.ParameterDeclarationContext) {
+                declarationTypes.remove(ctx);
+            }
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            clearSubtreeTypes(tree.getChild(i));
+        }
+    }
+
+    private static BabbleParser.FunctionLiteralContext unwrapFunctionLiteral(BabbleParser.ExpressionContext expr) {
+        while (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
+            expr = block.block().expression(0);
+        }
+        return expr instanceof BabbleParser.FunctionLiteralContext literal ? literal : null;
     }
 
     /** A function's value, its last statement, must match its annotated result. */
@@ -592,6 +834,103 @@ final class TypeChecker {
         }
     }
 
+    // ---------------------------------------------------------------- flow-sensitive narrowing
+
+    private <T> T withNarrowing(Map<ParserRuleContext, Type> scope, Supplier<T> action) {
+        if (scope.isEmpty()) {
+            return action.get();
+        }
+        narrowings.push(scope);
+        try {
+            return action.get();
+        } finally {
+            narrowings.pop();
+        }
+    }
+
+    private Type narrowedType(ParserRuleContext declaration) {
+        if (reassigned.contains(declaration)) {
+            return null;
+        }
+        for (Map<ParserRuleContext, Type> scope : narrowings) {
+            Type narrowed = scope.get(declaration);
+            if (narrowed != null) {
+                return narrowed;
+            }
+        }
+        return null;
+    }
+
+    private Narrowing extractNarrowing(BabbleParser.ExpressionContext expr) {
+        if (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
+            return extractNarrowing(block.block().expression(0));
+        }
+        if (expr instanceof BabbleParser.BooleanNotContext notCtx) {
+            return extractNarrowing(notCtx.expression()).invert();
+        }
+        if (expr instanceof BabbleParser.BooleanOpContext opCtx) {
+            Narrowing left = extractNarrowing(opCtx.left);
+            Narrowing right = extractNarrowing(opCtx.right);
+            if (opCtx.op.getType() == BabbleLexer.AND) {
+                return new Narrowing(mergeNarrowings(left.whenTrue(), right.whenTrue()), Map.of());
+            }
+            return new Narrowing(Map.of(), mergeNarrowings(left.whenFalse(), right.whenFalse()));
+        }
+        if (expr instanceof BabbleParser.IsExpressionContext isCtx) {
+            ParserRuleContext decl = narrowableDeclaration(isCtx.left);
+            if (decl == null) {
+                return Narrowing.EMPTY;
+            }
+            Type target = instanceTypeOfTypeValue(typeOf(isCtx.right));
+            Type current = typeOf(isCtx.left);
+            if (target == null || target == Type.DYNAMIC
+                    || (current != Type.DYNAMIC && current != Type.NOTHING && assignable(current, target))) {
+                return Narrowing.EMPTY;
+            }
+            return new Narrowing(Map.of(decl, target), Map.of());
+        }
+        return Narrowing.EMPTY;
+    }
+
+    private static Map<ParserRuleContext, Type> mergeNarrowings(
+            Map<ParserRuleContext, Type> first,
+            Map<ParserRuleContext, Type> second) {
+        if (first.isEmpty()) {
+            return second;
+        }
+        if (second.isEmpty()) {
+            return first;
+        }
+        Map<ParserRuleContext, Type> merged = new IdentityHashMap<>(first);
+        merged.putAll(second);
+        return merged;
+    }
+
+    private ParserRuleContext narrowableDeclaration(BabbleParser.ExpressionContext expr) {
+        while (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
+            expr = block.block().expression(0);
+        }
+        if (expr instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
+            Object resolved = resolveName(selector, selector.ID().getText(), occurrenceScopes.get(selector));
+            if ((resolved instanceof BabbleParser.DefExpressionContext
+                    || resolved instanceof BabbleParser.ParameterDeclarationContext)
+                    && !reassigned.contains((ParserRuleContext) resolved)) {
+                return (ParserRuleContext) resolved;
+            }
+        }
+        return null;
+    }
+
+    private static Type instanceTypeOfTypeValue(Type typeValue) {
+        if (typeValue instanceof Type.ClassValue cv) {
+            return new Type.Instance(cv.node());
+        }
+        if (typeValue instanceof Type.JavaClassValue jcv) {
+            return fromJava(jcv.type());
+        }
+        return null;
+    }
+
     /** The type of {@code this} : the class or interface whose body or method it is in, or the class value in a static block. */
     private Type thisType(ScopeNode scope) {
         ScopeNode thisScope = BlockScopes.thisScope(scope);
@@ -610,7 +949,13 @@ final class TypeChecker {
         @Override
         public Type visitIfExpression(BabbleParser.IfExpressionContext ctx) {
             typeOf(ctx.test);
-            return join(typeOf(ctx.thenBlock), ctx.elseBlock != null ? typeOf(ctx.elseBlock) : Type.NULL);
+            Narrowing narrowing = extractNarrowing(ctx.test);
+            Type expected = expectedType(ctx);
+            Type thenType = withNarrowing(narrowing.whenTrue(), () -> typeOf(ctx.thenBlock, expected));
+            Type elseType = ctx.elseBlock != null
+                    ? withNarrowing(narrowing.whenFalse(), () -> typeOf(ctx.elseBlock, expected))
+                    : Type.NULL;
+            return join(thenType, elseType);
         }
 
         @Override
@@ -619,9 +964,10 @@ final class TypeChecker {
             if (kind == ScopeAnalysis.DefKind.REQUIRED) {
                 return Type.NULL;
             }
-            Type value = ctx.value != null ? typeOf(ctx.value) : Type.NULL;
-            if (ctx.type() != null) {
-                expect(value, annotation(ctx.type(), scopeOf(ctx)), ctx.value != null ? ctx.value : ctx);
+            Type declared = ctx.type() != null ? annotation(ctx.type(), scopeOf(ctx)) : null;
+            Type value = ctx.value != null ? typeOf(ctx.value, declared) : Type.NULL;
+            if (declared != null) {
+                expect(value, declared, ctx.value != null ? ctx.value : ctx);
             }
             return value;
         }
@@ -629,7 +975,8 @@ final class TypeChecker {
         @Override
         public Type visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
             typeOf(ctx.test);
-            return join(typeOf(ctx.whileBlock), Type.NULL);
+            Narrowing narrowing = extractNarrowing(ctx.test);
+            return join(withNarrowing(narrowing.whenTrue(), () -> typeOf(ctx.whileBlock)), Type.NULL);
         }
 
         @Override
@@ -664,7 +1011,8 @@ final class TypeChecker {
             if (receiver == null) {
                 Object resolved = resolveName(ctx, name, occurrenceScopes.get(ctx));
                 if (resolved instanceof ParserRuleContext declaration) {
-                    return typeOfDeclaration(declaration);
+                    Type narrowed = narrowedType(declaration);
+                    return narrowed != null ? narrowed : typeOfDeclaration(declaration);
                 }
                 if (resolved instanceof List<?> packages) {
                     @SuppressWarnings("unchecked")
@@ -682,28 +1030,61 @@ final class TypeChecker {
         @Override
         public Type visitCall(BabbleParser.CallContext ctx) {
             Type callee = typeOf(ctx.expression());
-            for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
-                typeOf(argument.expression());
-            }
             ModuleInterface module = pass.modules.get(ctx);
+            Type result;
             if (module != null) {
-                return new Type.Module(module);
+                for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
+                    typeOf(argument.expression());
+                }
+                result = new Type.Module(module);
+            } else {
+                result = call(callee, ctx);
+                for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
+                    typeOf(argument.expression());
+                }
             }
-            return call(callee, ctx);
+            return result;
         }
 
         @Override
         public Type visitBlockExpression(BabbleParser.BlockExpressionContext ctx) {
-            return typeOf(ctx.block());
+            return typeOf(ctx.block(), expectedType(ctx));
         }
 
         @Override
         public Type visitBlock(BabbleParser.BlockContext ctx) {
-            Type type = Type.NULL;
-            for (BabbleParser.ExpressionContext statement : ctx.expression()) {
-                type = typeOf(statement);
+            Type expected = expectedType(ctx);
+            List<BabbleParser.ExpressionContext> statements = ctx.expression();
+            if (statements.isEmpty()) {
+                return Type.NULL;
             }
-            return type;
+            Type type = Type.NULL;
+            int pushedGuards = 0;
+            try {
+                for (int i = 0; i < statements.size(); i++) {
+                    BabbleParser.ExpressionContext statement = statements.get(i);
+                    type = i == statements.size() - 1 ? typeOf(statement, expected) : typeOf(statement);
+                    if (i < statements.size() - 1 && statement instanceof BabbleParser.IfExpressionContext ifCtx) {
+                        Type thenType = typeOf(ifCtx.thenBlock);
+                        Type elseType = ifCtx.elseBlock != null ? typeOf(ifCtx.elseBlock) : Type.NULL;
+                        Map<ParserRuleContext, Type> guard = Map.of();
+                        if (thenType == Type.NOTHING && elseType != Type.NOTHING) {
+                            guard = extractNarrowing(ifCtx.test).whenFalse();
+                        } else if (elseType == Type.NOTHING && thenType != Type.NOTHING) {
+                            guard = extractNarrowing(ifCtx.test).whenTrue();
+                        }
+                        if (!guard.isEmpty()) {
+                            narrowings.push(guard);
+                            pushedGuards++;
+                        }
+                    }
+                }
+                return type;
+            } finally {
+                for (int i = 0; i < pushedGuards; i++) {
+                    narrowings.pop();
+                }
+            }
         }
 
         @Override
@@ -727,7 +1108,10 @@ final class TypeChecker {
         @Override
         public Type visitBooleanOp(BabbleParser.BooleanOpContext ctx) {
             typeOf(ctx.left);
-            typeOf(ctx.right);
+            Narrowing leftNarrowing = extractNarrowing(ctx.left);
+            Map<ParserRuleContext, Type> rightScope =
+                    ctx.op.getType() == BabbleLexer.AND ? leftNarrowing.whenTrue() : leftNarrowing.whenFalse();
+            withNarrowing(rightScope, () -> typeOf(ctx.right));
             return Type.BOOL;
         }
 
@@ -736,12 +1120,15 @@ final class TypeChecker {
             if (inFile(ctx)) {
                 functions.add(ctx);
             }
-            return signature(ctx);
+            Type.Function sig = signature(ctx);
+            if (ctx.functionBlock != null && !types.containsKey(ctx.functionBlock)) {
+                typeOf(ctx.functionBlock, expectedReturnType(ctx));
+            }
+            return sig;
         }
 
         @Override
         public Type visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
-            Type value = typeOf(ctx.value);
             String name = ctx.name.getText();
             Type declared = null;
             if (ctx.namespace == null) {
@@ -751,6 +1138,7 @@ final class TypeChecker {
             } else {
                 declared = assignedMemberType(typeOf(ctx.namespace), name, ctx.namespace instanceof BabbleParser.ThisExpressionContext, ctx);
             }
+            Type value = typeOf(ctx.value, declared);
             if (declared != null) {
                 expect(value, declared, ctx.value);
             }
@@ -769,12 +1157,14 @@ final class TypeChecker {
 
         @Override
         public Type visitRecurse(BabbleParser.RecurseContext ctx) {
-            for (ParserRuleContext p = ctx.getParent(); p != null; p = p.getParent()) {
-                if (p instanceof BabbleParser.FunctionLiteralContext function) {
-                    return signature(function);
-                }
+            BabbleParser.FunctionLiteralContext function = enclosingFunction(ctx);
+            if (function == null) {
+                return Type.DYNAMIC;
             }
-            return Type.DYNAMIC;
+            if (inferringResult.contains(function) || provisionalResults.containsKey(function)) {
+                return recursiveSignature(function);
+            }
+            return signature(function);
         }
 
         @Override
@@ -799,14 +1189,11 @@ final class TypeChecker {
 
         @Override
         public Type visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
-            Type value = typeOf(ctx.expression());
-            for (ParserRuleContext p = ctx.getParent(); p != null; p = p.getParent()) {
-                if (p instanceof BabbleParser.FunctionLiteralContext function) {
-                    if (function.type() != null) {
-                        expect(value, annotation(function.type(), scopeOf(function)), ctx.expression());
-                    }
-                    break;
-                }
+            BabbleParser.FunctionLiteralContext function = enclosingFunction(ctx);
+            Type expected = function != null ? expectedReturnType(function) : null;
+            Type value = ctx.expression() != null ? typeOf(ctx.expression(), expected) : Type.NULL;
+            if (function != null && function.type() != null) {
+                expect(value, annotation(function.type(), scopeOf(function)), ctx.expression());
             }
             return Type.NOTHING;
         }
@@ -1025,9 +1412,12 @@ final class TypeChecker {
         }
         if (callee instanceof Type.JavaClassValue value) {
             Class<?> java = value.type();
-            if (java.isInterface() && arguments.size() == 1 && isFunction(typeOf(arguments.get(0).expression()))
+            if (java.isInterface() && arguments.size() == 1 && arguments.get(0).ID() == null
                     && JavaTypes.isFunctionalInterface(java)) {
-                return Type.DYNAMIC;
+                Type expectedSam = new Type.JavaInstance(java);
+                if (isFunction(typeOf(arguments.get(0).expression(), expectedSam))) {
+                    return expectedSam;
+                }
             }
             javaCall(Arrays.asList(java.getConstructors()), java.getCanonicalName(), arguments, ctx);
             return new Type.JavaInstance(java);
@@ -1098,7 +1488,7 @@ final class TypeChecker {
                 continue;
             }
             BabbleParser.ExpressionContext argument = arguments.get(found).expression();
-            expect(typeOf(argument), parameter.type(), argument);
+            expect(typeOf(argument, parameter.type()), parameter.type(), argument);
         }
         if (!named) {
             if (count > parameters.size()) {
@@ -1133,26 +1523,55 @@ final class TypeChecker {
      */
     private <E extends Executable> List<E> javaCall(List<E> candidates, String description, List<BabbleParser.CallParameterContext> arguments,
                                                     BabbleParser.CallContext ctx) {
-        List<Type> argumentTypes = arguments.stream().map(a -> typeOf(a.expression())).toList();
-        List<E> applicable = new ArrayList<>();
+        List<E> matching = new ArrayList<>();
         for (E candidate : candidates) {
-            Class<?>[] parameterTypes = candidate.getParameterTypes();
-            if (parameterTypes.length != argumentTypes.size()) {
-                continue;
-            }
-            boolean fits = true;
-            for (int i = 0; i < parameterTypes.length && fits; i++) {
-                fits = applicable(parameterTypes[i], argumentTypes.get(i));
-            }
-            if (fits) {
-                applicable.add(candidate);
+            if (candidate.getParameterCount() == arguments.size()) {
+                matching.add(candidate);
             }
         }
-        if (applicable.isEmpty() && !candidates.isEmpty()) {
+        List<Type> argumentTypes = new ArrayList<>(arguments.size());
+        for (int i = 0; i < arguments.size(); i++) {
+            BabbleParser.ExpressionContext argument = arguments.get(i).expression();
+            Type expected = expectedJavaArgumentType(matching, i, argument);
+            Type actual = typeOf(argument, expected);
+            argumentTypes.add(actual);
+            final int index = i;
+            matching.removeIf(candidate -> !applicable(candidate.getParameterTypes()[index], actual));
+        }
+        if (matching.isEmpty() && !candidates.isEmpty()) {
             warn("No applicable overload of " + description + " for "
                     + argumentTypes.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")")), ctx);
         }
-        return applicable;
+        return matching;
+    }
+
+    private static <E extends Executable> Type expectedJavaArgumentType(
+            List<E> candidates, int index, BabbleParser.ExpressionContext argument) {
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        Set<Class<?>> paramTypes = new LinkedHashSet<>();
+        for (E candidate : candidates) {
+            paramTypes.add(candidate.getParameterTypes()[index]);
+        }
+        if (paramTypes.size() == 1) {
+            return fromJava(paramTypes.iterator().next());
+        }
+        if (unwrapFunctionLiteral(argument) != null) {
+            Class<?> sam = null;
+            for (Class<?> candidateType : paramTypes) {
+                if (JavaTypes.isFunctionalInterface(candidateType)) {
+                    if (sam != null && sam != candidateType) {
+                        return null;
+                    }
+                    sam = candidateType;
+                }
+            }
+            if (sam != null) {
+                return new Type.JavaInstance(sam);
+            }
+        }
+        return null;
     }
 
     /** The overload more specific than all the others, as {@code Overloads.resolve} finds it, or null. */
@@ -1210,12 +1629,13 @@ final class TypeChecker {
 
     private Type binaryOp(BabbleParser.BinaryOpContext ctx, Type left, Type right) {
         int op = ctx.op.getType();
+        boolean seeding = !inferenceStack.isEmpty() && recursiveFunctions.contains(inferenceStack.peek());
         switch (op) {
             case BabbleLexer.PLUS:
                 if (left == Type.STRING) {
                     return Type.STRING;
                 }
-                if (isUnknown(left)) {
+                if (isUnknown(left) && !(seeding && left == Type.NOTHING && isNumber(right))) {
                     return Type.DYNAMIC;
                 }
                 // Fall through : anything but a string on the left adds numbers.
@@ -1225,6 +1645,14 @@ final class TypeChecker {
                 boolean numbers = number(left, ctx.left) & number(right, ctx.right);
                 if (op == BabbleLexer.DIV) {
                     return Type.DOUBLE;
+                }
+                if (seeding && numbers) {
+                    if (left == Type.NOTHING && isNumber(right)) {
+                        return right;
+                    }
+                    if (right == Type.NOTHING && isNumber(left)) {
+                        return left;
+                    }
                 }
                 if (!numbers || isUnknown(left) || isUnknown(right)) {
                     return Type.DYNAMIC;
@@ -1239,6 +1667,10 @@ final class TypeChecker {
                 }
                 return Type.BOOL;
         }
+    }
+
+    private static boolean isNumber(Type type) {
+        return type == Type.INT || type == Type.DOUBLE;
     }
 
     private static boolean isUnknown(Type type) {
