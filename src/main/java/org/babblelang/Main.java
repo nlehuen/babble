@@ -27,6 +27,8 @@ import java.util.List;
  * java -jar babble.jar                              the interactive mode
  * java -jar babble.jar script.ba [arguments...]     runs a script
  * java -jar babble.jar -keep-alive script.ba ...    runs it, then continues in the interactive mode
+ * java -jar babble.jar -compile main.ba [-o app.jar] [-root dir]
+ *                                                   compiles a program into a jar (babblec)
  * </pre>
  * A script finds its arguments in {@code args}, a {@code java.util.List} of strings. The
  * mode and the type checker are the engine's : {@code -Dbabble.mode=interpret} (scripts are
@@ -39,7 +41,11 @@ public final class Main {
               Without a script, starts the interactive mode.
               With one, runs it. Its arguments are in the list "args" : args.size(), args.get(0).
               -keep-alive   after the script, continue in the interactive mode, with what it defined
-              -help         this text""";
+              -help         this text
+            Or : java -jar babble.jar -compile main.ba [-o app.jar] [-root dir]
+              Compiles a program, main.ba and the modules it imports, into a jar that runs on a plain JRE :
+              java -jar app.jar [arguments...]. Modules are under -root, by default main.ba's directory ;
+              the jar is main.jar there unless -o names it.""";
 
     /** The exit statuses : a script that failed, and a command line that can't be used. */
     static final int FAILED = 1;
@@ -62,6 +68,9 @@ public final class Main {
      * @return the exit status
      */
     static int run(String[] args, BufferedReader in, PrintWriter out, PrintWriter err, boolean console) throws IOException {
+        if (args.length > 0 && (args[0].equals("-compile") || args[0].equals("--compile"))) {
+            return compile(args, out, err);
+        }
         boolean keepAlive = false;
         int first = 0;
         // Options come before the script : what follows it is the script's.
@@ -116,6 +125,65 @@ public final class Main {
             return 0;
         }
         return status;
+    }
+
+    /** {@code -compile main.ba [-o app.jar] [-root dir]} : babblec. */
+    private static int compile(String[] args, PrintWriter out, PrintWriter err) throws IOException {
+        Path main = null;
+        Path jar = null;
+        Path root = null;
+        for (int i = 1; i < args.length; i++) {
+            String option = args[i];
+            if ((option.equals("-o") || option.equals("-root")) && i + 1 < args.length) {
+                Path value = Path.of(args[++i]);
+                if (option.equals("-o")) {
+                    jar = value;
+                } else {
+                    root = value;
+                }
+            } else if (!option.startsWith("-") && main == null) {
+                main = Path.of(option);
+            } else {
+                err.println("Unknown option : " + option);
+                err.println(USAGE);
+                err.flush();
+                return USAGE_ERROR;
+            }
+        }
+        if (main == null) {
+            err.println("-compile needs a script");
+            err.println(USAGE);
+            err.flush();
+            return USAGE_ERROR;
+        }
+        Path directory = main.toAbsolutePath().normalize().getParent();
+        if (root == null) {
+            root = directory;
+        }
+        if (jar == null) {
+            String name = main.getFileName().toString();
+            jar = directory.resolve((name.endsWith(".ba") ? name.substring(0, name.length() - 3) : name) + ".jar");
+        }
+        if (!Files.isRegularFile(main)) {
+            err.println("Cannot read " + main + " : no such file");
+            err.flush();
+            return USAGE_ERROR;
+        }
+        ScriptContext context = new SimpleScriptContext();
+        context.setWriter(out);
+        context.setErrorWriter(err);
+        try {
+            org.babblelang.runtime.ProgramIndex index = org.babblelang.compiler.Babblec.compile(main, root, jar, context);
+            out.println("Wrote " + jar + " : " + index.modules().size() + (index.modules().size() == 1 ? " module" : " modules"));
+            out.flush();
+            return 0;
+        } catch (TypeCheckException e) {
+            // Its diagnostics are already written.
+        } catch (ScriptException e) {
+            err.println("Error : " + Repl.withoutClassNames(e.getMessage()));
+        }
+        err.flush();
+        return FAILED;
     }
 
     /** Runs a script as the first input of a session, and reports its error, if any. */

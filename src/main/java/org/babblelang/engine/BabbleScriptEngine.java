@@ -21,6 +21,7 @@ import org.babblelang.analysis.ModuleInterface;
 import org.babblelang.analysis.ModuleLoader;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.compiler.BabbleCompiler;
+import org.babblelang.compiler.CompiledBabbleScript;
 import org.babblelang.engine.impl.BabbleCompiledScript;
 import org.babblelang.runtime.Namespace;
 import org.babblelang.parser.BabbleLexer;
@@ -38,7 +39,9 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -330,6 +333,45 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             moduleCache.put(id.key(), module);
             return module;
         }
+    }
+
+    /** A module of a program compiled ahead of time : what {@code babblec} writes into the jar. */
+    public record ProgramModule(ModuleId id, String[] exports, CompiledBabbleScript script) {
+    }
+
+    /**
+     * Compiles a program ahead of time (docs/design/module-sources-and-aot.md §5) : its main
+     * script, as a module of the source, and every module it imports statically, transitively,
+     * in this engine's typecheck setting. The main module comes first, the others by key.
+     * Modules it only imports dynamically are not compiled.
+     */
+    public List<ProgramModule> compileProgram(ModuleSource source, String mainName) throws ScriptException {
+        if (getMode() != Mode.COMPILE) {
+            throw new ScriptException("A program compiles to bytecode : " + MODE + " must be compile");
+        }
+        ModuleId main = source.identify(mainName);
+        if (main == null) {
+            throw new ScriptException("Cannot compile " + mainName + " : not a module of " + source);
+        }
+        synchronized (moduleLock) {
+            CompiledModule program;
+            try {
+                program = compiledModule(source, mainName, main, getContext());
+            } catch (BabbleException e) {
+                throw new ScriptException(e.getMessage());
+            }
+            List<ProgramModule> result = new ArrayList<>();
+            result.add(programModule(main, program));
+            program.versions().keySet().stream()
+                    .filter(id -> !id.key().equals(main.key()))
+                    .sorted(java.util.Comparator.comparing(ModuleId::key))
+                    .forEach(id -> result.add(programModule(id, moduleCache.get(id.key()))));
+            return result;
+        }
+    }
+
+    private static ProgramModule programModule(ModuleId id, CompiledModule module) {
+        return new ProgramModule(id, module.script().exports(), (CompiledBabbleScript) module.script());
     }
 
     private static boolean isFresh(CompiledModule module) {

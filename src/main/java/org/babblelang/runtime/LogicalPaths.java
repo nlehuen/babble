@@ -1,14 +1,15 @@
-package org.babblelang.engine;
+package org.babblelang.runtime;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
 
 /**
  * Module paths that are not files : "/"-separated, relative to a root, with "." and ".."
- * resolved and no way above the root. What {@link MapModuleSource}, {@link ClassPathModuleSource}
- * and a rooted {@link FileModuleSource} use for keys and display names.
+ * resolved and no way above the root. What the engine's {@code MapModuleSource},
+ * {@code ClassPathModuleSource} and rooted {@code FileModuleSource} use for keys and display
+ * names, and what a compiled program resolves its imports with (docs/design/module-sources-and-aot.md §5.4).
  */
-final class LogicalPaths {
+public final class LogicalPaths {
     private LogicalPaths() {
     }
 
@@ -17,13 +18,13 @@ final class LogicalPaths {
      * directory, or to the root when the name starts with "/" or there is no importer. Null
      * when the name goes above the root.
      */
-    static String resolve(String name, String importer) {
+    public static String resolve(String name, String importer) {
         String base = name.startsWith("/") || importer == null ? "" : directory(importer);
         return normalize(base + name);
     }
 
     /** "a/./b/../c.ba" as "a/c.ba", without a leading "/", or null when it goes above the root or names nothing. */
-    static String normalize(String path) {
+    public static String normalize(String path) {
         Deque<String> parts = new ArrayDeque<>();
         for (String part : path.replace('\\', '/').split("/")) {
             if (part.equals("..")) {

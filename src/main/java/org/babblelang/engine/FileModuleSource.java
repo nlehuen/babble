@@ -1,5 +1,6 @@
 package org.babblelang.engine;
 
+import org.babblelang.runtime.LogicalPaths;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
