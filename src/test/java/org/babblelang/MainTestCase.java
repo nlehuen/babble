@@ -142,8 +142,7 @@ public class MainTestCase {
         Assertions.assertEquals(new Run(0, List.of("Wrote " + jar + " : 2 modules"), List.of()), run);
         Assertions.assertTrue(Files.isRegularFile(jar));
 
-        Path other = directory.resolve("out/other.jar");
-        Files.createDirectories(other.getParent());
+        Path other = directory.resolve("other.jar");
         run = run("", "-compile", directory.resolve("main.ba").toString(), "-o", other.toString(), "-root", directory.toString());
         Assertions.assertEquals(new Run(0, List.of("Wrote " + other + " : 2 modules"), List.of()), run);
         Assertions.assertArrayEquals(Files.readAllBytes(jar), Files.readAllBytes(other));

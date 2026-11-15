@@ -444,8 +444,10 @@ Hello, Ada
 
 The jar holds the program's classes and a copy of Babble's runtime (about 100 KB), and no
 parser or compiler : it starts in about half the time, and a dynamic import only finds the
-modules the program imports statically. Imports may not leave the root, the script's directory
-by default. See the [design doc](docs/design/module-sources-and-aot.md) (§5).
+modules the program imports statically. With Babble on the class path,
+`java -cp hello.jar:target/babble-1.0-SNAPSHOT.jar org.babblelang.runtime.Launcher Ada`, the
+others are compiled from their files when they are imported. Imports may not leave the root,
+the script's directory by default (`-Dbabble.root=dir` tells a jar moved away from it). See the [design doc](docs/design/module-sources-and-aot.md) (§5).
 
 ### Formatting code
 
@@ -576,7 +578,6 @@ Language features :
 Implementation features :
 
 - [ ] type specialisation in compiled mode (unboxed arithmetic), once the type checker can vouch for the types.
-- [ ] dynamic imports, in a compiled jar, of modules the program does not import statically, when Babble is on the class path (M5c of the [design doc](docs/design/module-sources-and-aot.md)).
 - [ ] a Maven goal for ahead-of-time compilation.
 
 TODO : lessons from the ray tracer

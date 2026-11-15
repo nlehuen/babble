@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3), M4 (§4), M5a (§5.2) and M5b (§5.1, §5.3, the index part of §5.4) are implemented ; M5c is not. |
+| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3), M4 (§4) and M5 (§5) are implemented. |
 | **Depends on** | [modules.md](modules.md) (static imports, the module cache, module types), [bytecode-compiler.md](bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
 | **Unblocks** | Babble programs shipped as a jar, hosts serving modules from anywhere, module tests without temporary files |
 
@@ -228,7 +228,8 @@ exports, compiled script), the main one first.
 * one class (and its nested classes) per module of the program : the main script and every
   module it imports statically, transitively ;
 * `babble/modules.index`, an index from module keys to display names, classes and exports
-  (§5.4), and the main module's key (`runtime.ProgramIndex`, a tab-separated text resource : a
+  (§5.4), the main module's key, and the program's root relative to the jar's directory (`.`
+  by default, for modules compiled while running, §5.4) (`runtime.ProgramIndex`, a tab-separated text resource : a
   generated class was the first draft, a resource is simpler to write and to read, and the
   launcher reads it once) ;
 * the runtime classes of §3, copied in (Q3) from wherever the runtime was loaded (the
@@ -291,8 +292,27 @@ render takes 60 s from its jar against 68 s through the engine, with the same `s
   `Modules` looks for the name in the index first, so a dynamic import of a module the program
   also imports statically works (M5b). Otherwise the import fails with
   `Cannot import x.ba : a compiled program only has the modules it imports statically` ; M5c
-  will first ask `ServiceLoader` for a module compiler, which the full Babble jar provides, so
-  that with Babble on the class path the module is compiled from the file system as today.
+  first asks `ServiceLoader` for a module compiler (M5c).
+* **The module compiler** is `runtime.ModuleCompiler` : `compile(root, key)` returns the
+  module's script class, display name and exports, which the launcher runs as it runs the
+  jar's. The full Babble jar provides one, `compiler.FileModuleCompiler` (registered in
+  `META-INF/services`, which the runtime jar and a program's jar don't have) : an engine per
+  root, in compile mode with `babble.typecheck` from the system property, compiling through
+  `compileProgram` and a `FileModuleSource.rooted(root)`. So with Babble on the class path,
+
+  ```
+  java -cp app.jar:babble.jar org.babblelang.runtime.Launcher arguments...
+  ```
+
+  a dynamic import of a module the jar doesn't hold is compiled from its file, as the engine
+  would. The root is the system property `babble.root`, else the index's root resolved from
+  the jar's directory (`-o out/app.jar` records `..`), else the working directory.
+* A compiled module's static imports are analysed from their files (the sources must be
+  there, even of modules the jar holds), but at runtime an import the jar holds is the jar's
+  module : it runs once, and its state is shared with the rest of the program. Their type ids
+  are the same (§5.2), so the types agree, as long as the files are those the jar was compiled
+  from. Errors read as in the engine (`Cannot import lib/x.ba : no such file : /root/lib/x.ba`,
+  `Syntax error : …`), and lines in compiled modules are reported like the jar's.
 * **Once per eval, cycles, read-only exports** : unchanged, they are the runtime's `Module` and
   the per-eval table, which do not care where a module's class came from.
 
@@ -327,7 +347,7 @@ needed at runtime. A type error found by the analysis fails the compilation, as 
 | **M4b** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. | Done : `BabbleModulesTestCase` runs in memory, `FileModulesTestCase` keeps what is particular to files and the class path. |
 | **M5a** | Stable class names, type ids and source names (§5.2), in the engine too. | Done. |
 | **M5b** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. | Done, with dynamic imports of indexed modules ; the index is a text resource rather than a class (§5.1). `BabblecTestCase` runs the jars in fresh JVMs. |
-| **M5c** | Dynamic imports in a compiled program of modules it does not index : a module compiler through `ServiceLoader`, else the error of §5.4. | |
+| **M5c** | Dynamic imports in a compiled program of modules it does not index : a module compiler through `ServiceLoader`, else the error of §5.4. | Done : `runtime.ModuleCompiler`, `compiler.FileModuleCompiler`, the root in the index and `babble.root`. |
 
 Each step leaves both modes passing the whole suite. The acceptance test of M5 is both ray
 tracers compiled into jars and run on a JRE without Babble on the class path : argon's

@@ -48,12 +48,36 @@ public class BabblecTestCase {
 
     /** {@code java -jar <jar> args…}, from another directory, with nothing else on the class path. */
     private Run run(String jar, String... args) throws Exception {
-        Path elsewhere = Files.createDirectories(directory.resolve("elsewhere"));
         List<String> command = new ArrayList<>();
-        command.add(ProcessHandle.current().info().command().orElse("java"));
         command.add("-jar");
         command.add(directory.resolve(jar).toString());
         Collections.addAll(command, args);
+        return java(command);
+    }
+
+    /**
+     * {@code java [-Dproperty…] -cp <jar>:<Babble> org.babblelang.runtime.Launcher args…} : with
+     * Babble on the class path, as this test runs with it. Properties are the arguments that start
+     * with "-D".
+     */
+    private Run runWithBabble(String jar, String... args) throws Exception {
+        List<String> command = new ArrayList<>();
+        int i = 0;
+        for (; i < args.length && args[i].startsWith("-D"); i++) {
+            command.add(args[i]);
+        }
+        command.add("-cp");
+        command.add(directory.resolve(jar) + java.io.File.pathSeparator + System.getProperty("java.class.path"));
+        command.add("org.babblelang.runtime.Launcher");
+        command.addAll(List.of(args).subList(i, args.length));
+        return java(command);
+    }
+
+    private Run java(List<String> arguments) throws Exception {
+        Path elsewhere = Files.createDirectories(directory.resolve("elsewhere"));
+        List<String> command = new ArrayList<>();
+        command.add(ProcessHandle.current().info().command().orElse("java"));
+        command.addAll(arguments);
         ProcessBuilder builder = new ProcessBuilder(command).directory(elsewhere.toFile());
         builder.environment().remove("JAVA_TOOL_OPTIONS");
         builder.environment().remove("CLASSPATH");
@@ -161,5 +185,77 @@ public class BabblecTestCase {
         e = Assertions.assertThrows(ScriptException.class,
                 () -> Babblec.compile(directory.resolve("app/main.ba"), directory.resolve("app"), directory.resolve("app.jar"), context));
         Assertions.assertTrue(e.getMessage().contains("Cannot import ../outside.ba : no such module"), e.getMessage());
+    }
+
+    /** A program whose main script imports b, c or what it is told, dynamically. */
+    private void dynamicProgram() throws IOException {
+        file("lib/a.ba", "println(\"loading a\")\ndef n = 0\nexport def next = () -> ( n = n + 1 )");
+        file("lib/b.ba", "def a = import(\"a.ba\")\ndef c = import(\"c.ba\")\nexport def name = \"b, \" + c.name + \", a at \" + a.next()");
+        file("lib/c.ba", "export def name = \"c\"\nexport def fail = () -> (\n    1 + null\n)");
+        file("main.ba", "def a = import(\"lib/a.ba\")\n"
+                + "a.next()\n"
+                + "def load = (n) -> ( import(\"lib/\" + n + \".ba\") )\n"
+                + "def i = 0\n"
+                + "while i < args.size() then ( println(load(args.get(i)).name) ; i = i + 1 )\n");
+    }
+
+    @Test
+    public void withBabbleOnTheClassPathDynamicImportsCompile() throws Exception {
+        dynamicProgram();
+        compile("main.ba", "app.jar");
+        Run run = runWithBabble("app.jar", "b", "b", "c");
+        Assertions.assertEquals(0, run.status(), run.err());
+        // lib/b.ba is compiled from its file, and imports lib/c.ba, compiled too, and lib/a.ba,
+        // which is the jar's : it runs once, and its state is the one the main script saw.
+        Assertions.assertEquals(String.join(System.lineSeparator(), "loading a", "b, c, a at 2", "b, c, a at 2", "c", ""), run.out());
+
+        // Without Babble, the same jar can't.
+        run = run("app.jar", "b");
+        Assertions.assertEquals(1, run.status());
+        Assertions.assertTrue(run.err().contains("Cannot import lib/b.ba : a compiled program only has the modules it imports statically"), run.err());
+    }
+
+    @Test
+    public void compiledModulesFailLikeTheOthers() throws Exception {
+        dynamicProgram();
+        file("lib/bad.ba", "export def x = (\n");
+        file("main.ba", "import(\"lib/\" + args.get(0) + \".ba\").fail()\n");
+        compile("main.ba", "app.jar");
+        Run run = runWithBabble("app.jar", "c");
+        Assertions.assertEquals(1, run.status());
+        Assertions.assertTrue(run.err().contains("Error : Not a number : null in lib/c.ba at line number 3"), run.err());
+
+        run = runWithBabble("app.jar", "bad");
+        Assertions.assertEquals(1, run.status());
+        Assertions.assertTrue(run.err().contains("Error : Cannot import lib/bad.ba : Syntax error : unexpected end of input in lib/bad.ba at line number 2"), run.err());
+
+        run = runWithBabble("app.jar", "nope");
+        Assertions.assertEquals(1, run.status());
+        Assertions.assertTrue(run.err().contains("Error : Cannot import lib/nope.ba : no such file : "), run.err());
+
+        run = runWithBabble("app.jar", "../../outside");
+        Assertions.assertEquals(1, run.status());
+        Assertions.assertTrue(run.err().contains("Error : Cannot import lib/../../outside.ba : no such module"), run.err());
+    }
+
+    @Test
+    public void theRootIsFoundFromTheJar() throws Exception {
+        dynamicProgram();
+        // The jar elsewhere : the index says where the root is, relative to it.
+        ScriptContext context = new SimpleScriptContext();
+        context.setErrorWriter(errors);
+        ProgramIndex index = Babblec.compile(directory.resolve("main.ba"), directory, directory.resolve("out/bin/app.jar"), context);
+        Assertions.assertEquals("../..", index.root());
+        Assertions.assertEquals("c" + System.lineSeparator(), runWithBabble("out/bin/app.jar", "c").out().replace("loading a" + System.lineSeparator(), ""));
+
+        // Moved : the root is told.
+        Path moved = Files.createDirectories(directory.resolve("moved"));
+        Files.copy(directory.resolve("out/bin/app.jar"), moved.resolve("app.jar"));
+        Run run = runWithBabble("moved/app.jar", "c");
+        Assertions.assertEquals(1, run.status());
+        Assertions.assertTrue(run.err().contains("Cannot import lib/c.ba : no such file"), run.err());
+        run = runWithBabble("moved/app.jar", "-Dbabble.root=" + directory, "c");
+        Assertions.assertEquals(0, run.status(), run.err());
+        Assertions.assertTrue(run.out().endsWith("c" + System.lineSeparator()), run.out());
     }
 }
