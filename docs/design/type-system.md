@@ -98,23 +98,40 @@ gradually:
     `dynamic`, and `Object` is `dynamic` everywhere (generics are erased).
   - Babble functions and class values are assignable to functional interfaces, and Babble
     instances to the Java interfaces their class implements.
-* **T8, inference.** An unannotated `def` that is never assigned with `x = …` has its value's
-  type, except that `null` (and `return`) infer `dynamic`: `def head = null` says nothing about
-  what `head` holds later. So `def f = (a : int) -> …` gives `f` a function type, and
-  `def p = Point(1, 2)` gives `p` the type `Point`. Results are not inferred from function
-  bodies: an unannotated result is `dynamic`. An unannotated function's parameter list is
-  still known, so its calls get arity checks, but not type checks.
+* **T8, bidirectional local inference.**
+  - An unannotated `def` that is never assigned with `x = …` has its value's type, except that
+    `null` (and `return`) infer `dynamic`: `def head = null` says nothing about what `head`
+    holds later. So `def f = (a : int) -> …` gives `f` a function type, and `def p = Point(1, 2)`
+    gives `p` the type `Point`.
+  - Unannotated function literals infer their result type by joining the types of their `return`
+    expressions and the last statement of their body (falling back to `dynamic` if that yields
+    `null` or `nothing`). Direct self-recursion (`recurse`, or calling the function's own
+    unreassigned `def` name or `this.method`) is inferred in two passes when the body fixes a
+    concrete result type. An unannotated parameter still defaults to `dynamic` when no contextual
+    type applies, so calls get arity checks without constraining caller types.
+  - Contextual typing flows downward from declared `def` types, assignments, parameter defaults,
+    annotated function results (`return` and last expression), Babble call/constructor parameters,
+    and unambiguous Java functional interface targets (`IntUnaryOperator`, `Callable`, single
+    matching functional overloads), propagating through blocks and `if` branches into unannotated
+    function literal parameters and return expressions.
+  - Flow-sensitive narrowing after `is`: when a non-reassigned lexical binding or parameter is
+    tested with `x is T` (a Babble class/interface or a Java class/interface), `x` is narrowed
+    to `T` in the `then` branch (or `else` under `not`), inside `while x is T`, on the right-hand
+    side of short-circuit `and` / `or` (`x is T and …`, `not (x is T) or …`), and for subsequent
+    statements in a block after an early-exit guard (`if not (x is T) then ( return … )`).
 
 ## 4. What is checked
 
 * A `def`'s value, a parameter's default, an assignment (`x = …`, `obj.x = …`, `this.x = …`) and
-  each call argument, against the declared type.
+  each call argument, against the declared type (with contextual parameter typing for function
+  literal arguments, assignments and definitions).
 * A function's result, against its annotation: each `return`'s value, and the value of its last
   statement. An `if` without `else` may be `null`, so `(n : int) : int -> ( if … then ( n ) )`
   is `dynamic` and not reported.
 * Calls to non-callable values (`1()`, an instance, a string): `X is not callable`.
 * Member selection on values that have no members (numbers, booleans, strings, null,
-  functions): `Not a scope : x`.
+  functions): `Not a scope : x`. Narrowed lexical bindings use their narrowed type in branches,
+  short-circuit operators and post-guard block statements.
 * Operators (T3), members (T5), Java calls (T7).
 
 The value of an `if` is the join of its branches: the same type, `double` for `int` and
@@ -163,8 +180,7 @@ The in-repo scripts pass type checking and run with their types enforced (`Diffe
 
 ## 6. Not done yet
 
-* **Narrowing after `is`.** `if x is Point then ( x.norm() )` doesn't narrow `x`.
-* **Result inference** from function bodies, and generics.
+* **Generics**, union type syntax, and structural object types.
 * **Interface members' declared types** against the implementing methods' signatures.
 * **Types for the compiler.** The checker keeps a type per expression, but doesn't publish it yet
   for typed code generation (bytecode-compiler.md §10.5).

@@ -110,7 +110,8 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         assertStaticFails("def n = 1 ; n.value", "Not a scope : n", 13);
         // null is not a scope either, and used to surface as a NullPointerException.
         assertFails("def n = null ; n.value", "Not a scope : n");
-        assertFails("def f = () -> ( 1 ) ; f().value", "Not a scope : f()");
+        assertStaticFails("def f = () -> ( 1 ) ; f().value", "Not a scope : f()", 23);
+        assertFails("def f = (x) -> ( x ) ; f(1).value", "Not a scope : f(1)");
     }
 
     @Test
