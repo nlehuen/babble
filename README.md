@@ -142,6 +142,24 @@ def last = while i < 3 then ( i = i + 1 ; i * 10 )
 assert(last == 30)
 ```
 
+### Numbers
+
+Numbers are `int`s (32 bits) or `double`s. `+`, `-` and `*` on two `int`s give an `int`, wrapping
+on overflow; any other mix gives a `double`. `/` always gives a `double`, even between two `int`s,
+and dividing by zero gives an infinity or `NaN` rather than an error. Comparisons and `==`
+compare an `int` and a `double` by value. (On instances, these operators call methods : see
+*Value classes* below.)
+
+```
+assert(7 / 2 == 3.5)
+assert(4 / 2 == 2)              ;; 2.0, equal to 2
+assert(1 / 0 == 1.0 / 0)        ;; Infinity
+assert(2147483647 + 1 == -2147483648)
+```
+
+There is no integer division operator yet : `java.lang.Math.floorDiv(7, 2)` and `floorMod` do
+it through Java.
+
 ### Block scope
 
 Blocks, `if` branches and `while` bodies are scopes. A name defined in a scope is visible
