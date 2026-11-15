@@ -36,7 +36,7 @@ import java.io.Reader;
 import java.io.StringReader;
 import java.io.Writer;
 import java.nio.file.Files;
-import java.nio.file.InvalidPathException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Locale;
@@ -76,6 +76,12 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     /** {@code import} takes a name with this extension for a Babble file, any other for a Java package. */
     public static final String MODULE_EXTENSION = Module.EXTENSION;
 
+    /**
+     * The name of the engine attribute holding the {@link ModuleSource} imports read modules
+     * from. Without it, modules are files ({@link FileModuleSource}).
+     */
+    public static final String MODULE_SOURCE = "babble.moduleSource";
+
     private static final String DEFAULT_SOURCE_NAME = "<input>";
 
     private static final BaseErrorListener FAIL_ON_LEXICAL_ERROR = new BaseErrorListener() {
@@ -93,22 +99,28 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private final Namespace implicits;
 
     /**
-     * A compiled module, as the cache keeps it (docs/design/modules.md §9) : for the mode and
-     * typecheck setting it was compiled with, and the sources of every file its analysis
-     * read, its own included. It is stale when one of them changed.
+     * A compiled module, as the cache keeps it (docs/design/modules.md §9) : for the source,
+     * mode and typecheck setting it was compiled with, and the versions of every module its
+     * analysis read, its own included. It is stale when one of them changed.
      */
-    private record CompiledModule(Mode mode, ScopeAnalysis.Typecheck typecheck, Map<Path, String> sources,
+    private record CompiledModule(ModuleSource source, Mode mode, ScopeAnalysis.Typecheck typecheck, Map<ModuleId, String> versions,
                                   BabbleScript script, ModuleInterface moduleInterface) {
     }
 
-    /** A file whose analysis is under way : a file importing it back, in a cycle, gets this. */
-    private record InProgress(ModuleInterface moduleInterface, String source) {
+    /** A module whose analysis is under way : a module importing it back, in a cycle, gets this. */
+    private record InProgress(ModuleInterface moduleInterface, String version) {
     }
 
     /** Guards the module cache and the analyses in progress : modules compile one at a time. */
     private final Object moduleLock = new Object();
-    private final Map<Path, CompiledModule> moduleCache = new HashMap<>();
-    private final Map<Path, InProgress> inProgress = new HashMap<>();
+    /** By module key. */
+    private final Map<String, CompiledModule> moduleCache = new HashMap<>();
+    private final Map<String, InProgress> inProgress = new HashMap<>();
+    /**
+     * The identity of each module compiled, by the source name it was compiled with : what
+     * an import inside it, which only knows its file's source name, is resolved from.
+     */
+    private final Map<String, ModuleId> compiledAs = new HashMap<>();
 
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
         super();
@@ -169,7 +181,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * The modules of one eval, or of one interactive session : each file is loaded at most
+     * The modules of one eval, or of one interactive session : each module is loaded at most
      * once, compiled through the engine's cache, and run on a runtime of its own under the
      * same context.
      */
@@ -177,76 +189,109 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return new EvalModules(context);
     }
 
+    /** Where imported modules come from : the {@link #MODULE_SOURCE} attribute, else files. */
+    public ModuleSource getModuleSource() {
+        Object source = get(MODULE_SOURCE);
+        if (source == null) {
+            return FileModuleSource.INSTANCE;
+        }
+        if (source instanceof ModuleSource moduleSource) {
+            return moduleSource;
+        }
+        throw new BabbleException(MODULE_SOURCE + " is not a ModuleSource : " + source);
+    }
+
     private final class EvalModules implements Modules {
         private final ScriptContext context;
-        /** The modules loaded so far, by real path. */
-        private final Map<Path, Module> loaded = new HashMap<>();
+        /** The modules loaded so far, by key. */
+        private final Map<String, Module> loaded = new HashMap<>();
 
         EvalModules(ScriptContext context) {
             this.context = context;
         }
 
+        /**
+         * {@code import("x.ba")} : a module runs once per eval, in the mode of the engine, with
+         * a root of its own : every import of it gets the same module. The module is
+         * registered before it runs, so modules may import each other ; what such a cycle
+         * cannot do is read an export before its definition ran.
+         */
         @Override
         public Module load(String name, String importer, ScriptRuntime rt) {
-            return importModule(this, context, loaded, name, importer);
-        }
-    }
-
-    /**
-     * {@code import("path.ba")} : the module of a Babble file. A relative path is resolved
-     * against the directory of the importing file when its source name is a file (see
-     * {@link ScriptEngine#FILENAME}), else against the working directory.
-     * <p>
-     * A file runs once per eval, in the mode of the engine, with a root of its own : every
-     * import of it gets the same module. The module is registered before the file runs,
-     * so files may import each other ; what such a cycle cannot do is read an export
-     * before its definition ran.
-     */
-    private Module importModule(Modules evalModules, ScriptContext context, Map<Path, Module> modules, String name, String importerName) {
-        Path file = resolveModule(name, importerName);
-        Path key = realPath(name, file);
-        synchronized (modules) {
-            Module module = modules.get(key);
-            if (module != null) {
-                return module;
-            }
-            try {
-                BabbleScript script = compiledModule(name, key, file.toString(), context).script();
-                ScriptRuntime runtime = createRuntime(context, evalModules);
-                module = new Module(file.toString(), runtime.root(), script.exports());
-                modules.put(key, module);
-                try {
-                    script.eval(runtime);
-                } catch (ScriptException | RuntimeException e) {
-                    modules.remove(key);
-                    throw e;
+            ModuleSource source = getModuleSource();
+            ModuleId id = resolve(source, name, importerId(source, importer));
+            synchronized (loaded) {
+                Module module = loaded.get(id.key());
+                if (module != null) {
+                    return module;
                 }
-                return module;
-            } catch (ScriptException e) {
-                // The message ends with the file and line of the module : the importing
-                // script then adds its own, which reads as a trace.
-                String message = e.getMessage();
-                String prefix = BabbleException.class.getName() + ": ";
-                throw new BabbleException(message.startsWith(prefix) ? message.substring(prefix.length()) : message);
+                try {
+                    BabbleScript script = compiledModule(source, name, id, context).script();
+                    ScriptRuntime runtime = createRuntime(context, this);
+                    module = new Module(id.displayName(), runtime.root(), script.exports());
+                    loaded.put(id.key(), module);
+                    try {
+                        script.eval(runtime);
+                    } catch (ScriptException | RuntimeException e) {
+                        loaded.remove(id.key());
+                        throw e;
+                    }
+                    return module;
+                } catch (ScriptException e) {
+                    // The message ends with the module's name and line : the importing script
+                    // then adds its own, which reads as a trace.
+                    throw new BabbleException(withoutClassName(e));
+                }
             }
         }
     }
 
-    private static Path realPath(String name, Path file) {
+    private static String withoutClassName(ScriptException e) {
+        String message = e.getMessage();
+        String prefix = BabbleException.class.getName() + ": ";
+        return message.startsWith(prefix) ? message.substring(prefix.length()) : message;
+    }
+
+    /** The module an import names, or a BabbleException saying why there is none. */
+    private static ModuleId resolve(ModuleSource source, String name, ModuleId importer) {
+        ModuleId id;
         try {
-            return file.toRealPath();
+            id = source.resolve(name, importer);
+        } catch (NoSuchFileException e) {
+            throw new BabbleException("Cannot import " + name + " : no such file : " + e.getFile());
         } catch (IOException e) {
-            throw new BabbleException("Cannot import " + name + " : no such file : " + file);
+            throw new BabbleException("Cannot import " + name + " : " + e.getMessage());
         }
+        if (id == null) {
+            throw new BabbleException("Cannot import " + name + " : no such module");
+        }
+        return id;
     }
 
     /**
-     * The compiled module of a file, from the cache when nothing it was compiled from
-     * changed. Compiling it analyses the files it imports statically, through this cache.
+     * The identity of the module a source name is : a module this engine compiled under that
+     * name, else what the source resolves the name to, from nowhere (the main script's file),
+     * else none.
      */
-    private CompiledModule compiledModule(String name, Path key, String sourceName, ScriptContext context) throws ScriptException {
+    private ModuleId importerId(ModuleSource source, String sourceName) {
+        if (sourceName == null) {
+            return null;
+        }
         synchronized (moduleLock) {
-            String source = read(name, key);
+            ModuleId compiled = compiledAs.get(sourceName);
+            if (compiled != null) {
+                return compiled;
+            }
+        }
+        return source.identify(sourceName);
+    }
+
+    /**
+     * The compiled module, from the cache when nothing it was compiled from changed.
+     * Compiling it analyses the modules it imports statically, through this cache.
+     */
+    private CompiledModule compiledModule(ModuleSource source, String name, ModuleId id, ScriptContext context) throws ScriptException {
+        synchronized (moduleLock) {
             Mode mode = getMode();
             ScopeAnalysis.Typecheck typecheck;
             try {
@@ -254,76 +299,78 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             } catch (BabbleException e) {
                 throw new ScriptException(e);
             }
-            CompiledModule cached = moduleCache.get(key);
-            if (cached != null && cached.mode() == mode && cached.typecheck() == typecheck && isFresh(cached)) {
+            CompiledModule cached = moduleCache.get(id.key());
+            if (cached != null && cached.source() == source && cached.mode() == mode && cached.typecheck() == typecheck && isFresh(cached)) {
                 return cached;
             }
+            ModuleText text;
+            try {
+                text = source.read(id);
+            } catch (IOException e) {
+                throw new BabbleException("Cannot import " + name + " : " + e.getMessage());
+            }
+            String sourceName = id.displayName();
             BabbleParser.FileContext file;
             try {
-                file = parse(CharStreams.fromString(source, sourceName));
+                file = parse(CharStreams.fromString(text.text(), sourceName));
             } catch (ParseFailure e) {
                 throw e.toScriptException(sourceName);
             }
-            Loader loader = new Loader(sourceName, context, key, source);
+            compiledAs.put(sourceName, id);
+            Loader loader = new Loader(sourceName, context, source, id, text.version());
             ScopeAnalysis scopes;
             try {
                 scopes = analyze(file, sourceName, context, null, loader);
             } finally {
-                inProgress.remove(key);
+                inProgress.remove(id.key());
             }
-            loader.sources.put(key, source);
-            CompiledModule module = new CompiledModule(mode, typecheck, Map.copyOf(loader.sources),
+            loader.versions.put(id, text.version());
+            CompiledModule module = new CompiledModule(source, mode, typecheck, Map.copyOf(loader.versions),
                     script(file, scopes, sourceName), scopes.moduleInterface());
-            moduleCache.put(key, module);
+            moduleCache.put(id.key(), module);
             return module;
         }
     }
 
     private static boolean isFresh(CompiledModule module) {
-        for (Map.Entry<Path, String> source : module.sources().entrySet()) {
+        for (Map.Entry<ModuleId, String> version : module.versions().entrySet()) {
             try {
-                if (!Files.readString(source.getKey()).equals(source.getValue())) {
+                if (!module.source().version(version.getKey()).equals(version.getValue())) {
                     return false;
                 }
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {
                 return false;
             }
         }
         return true;
     }
 
-    private static String read(String name, Path file) {
-        try {
-            return Files.readString(file);
-        } catch (IOException e) {
-            throw new BabbleException("Cannot import " + name + " : " + e);
-        }
-    }
-
     /**
-     * What the analysis of one file loads its static imports with : their paths are relative
-     * to that file. It notes the sources of the files it read, for the cache.
+     * What the analysis of one file loads its static imports with : names are resolved from
+     * that file's module. It notes the versions of the modules it read, for the cache.
      */
     private final class Loader implements ModuleLoader {
         private final String importerName;
         private final ScriptContext context;
-        /** The file being analysed, when it is a module, else null. */
-        private final Path self;
-        private final String selfSource;
-        final Map<Path, String> sources = new HashMap<>();
+        private final ModuleSource source;
+        /** The module being analysed, or null for a script that is not one of the source's modules. */
+        private final ModuleId self;
+        private final String selfVersion;
+        final Map<ModuleId, String> versions = new HashMap<>();
 
-        Loader(String importerName, ScriptContext context, Path self, String selfSource) {
+        Loader(String importerName, ScriptContext context, ModuleSource source, ModuleId self, String selfVersion) {
             this.importerName = importerName;
             this.context = context;
+            this.source = source;
             this.self = self;
-            this.selfSource = selfSource;
+            this.selfVersion = selfVersion;
         }
 
         @Override
         public void started(ModuleInterface moduleInterface) {
             moduleInterface.setName(importerName);
             if (self != null) {
-                inProgress.put(self, new InProgress(moduleInterface, selfSource));
+                inProgress.put(self.key(), new InProgress(moduleInterface, selfVersion));
             }
         }
 
@@ -331,40 +378,23 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         public ModuleInterface load(String name, int line) {
             synchronized (moduleLock) {
                 try {
-                    Path file = resolveModule(name, importerName);
-                    Path key = realPath(name, file);
-                    InProgress pending = inProgress.get(key);
+                    ModuleId importer = self != null ? self : importerId(source, importerName);
+                    ModuleId id = resolve(source, name, importer);
+                    InProgress pending = inProgress.get(id.key());
                     if (pending != null) {
-                        sources.put(key, pending.source());
+                        versions.put(id, pending.version());
                         return pending.moduleInterface();
                     }
-                    CompiledModule module = compiledModule(name, key, file.toString(), context);
-                    sources.putAll(module.sources());
+                    CompiledModule module = compiledModule(source, name, id, context);
+                    versions.putAll(module.versions());
                     return module.moduleInterface();
                 } catch (BabbleException e) {
                     throw new AnalysisException(e.getMessage(), line);
                 } catch (ScriptException e) {
-                    // The message ends with the module's file and line ; the importing file adds its own.
-                    String message = e.getMessage();
-                    String prefix = BabbleException.class.getName() + ": ";
-                    throw new AnalysisException(message.startsWith(prefix) ? message.substring(prefix.length()) : message, line);
+                    // The message ends with the module's name and line ; the importing file adds its own.
+                    throw new AnalysisException(withoutClassName(e), line);
                 }
             }
-        }
-    }
-
-    private static Path resolveModule(String name, String importerName) {
-        try {
-            Path path = Path.of(name);
-            if (!path.isAbsolute() && importerName != null) {
-                Path directory = Path.of(importerName).getParent();
-                if (directory != null && Files.isDirectory(directory)) {
-                    path = directory.resolve(path);
-                }
-            }
-            return path.normalize();
-        } catch (InvalidPathException e) {
-            throw new BabbleException("Cannot import " + name + " : " + e.getMessage());
         }
     }
 
@@ -498,13 +528,15 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                                   Loader loader) throws ScriptException {
         ScopeAnalysis scopes;
         ScopeAnalysis.Typecheck typecheck;
+        ModuleSource source;
         try {
             typecheck = getTypecheck();
+            source = getModuleSource();
         } catch (BabbleException e) {
             throw new ScriptException(e);
         }
         try {
-            scopes = BlockScopes.analyze(file, typecheck, session, loader != null ? loader : new Loader(sourceName, context, null, null));
+            scopes = BlockScopes.analyze(file, typecheck, session, loader != null ? loader : new Loader(sourceName, context, source, null, null));
         } catch (AnalysisException e) {
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());

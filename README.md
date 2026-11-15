@@ -452,7 +452,9 @@ slower but kept as the reference the compiler is tested against. For a look at w
 the compiler generates, `-Dbabble.dumpClasses=<dir>` writes the class files for `javap -c -p`.
 `-Dbabble.typecheck=warn`, or `engine.put("babble.typecheck", "warn")`, turns the type checker
 on : its warnings go to the context's error writer. `error` makes them errors, and enforces
-declared types at runtime.
+declared types at runtime. Imported modules are files by default ; a host can serve them from
+elsewhere, memory or a database, with `engine.put("babble.moduleSource", source)` and its own
+`org.babblelang.engine.ModuleSource`.
 
 A host can also keep a session, whose inputs see each other's definitions, as the
 interactive mode does :
