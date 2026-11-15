@@ -7,7 +7,7 @@ export def HittableList = class () implements Hittable (
     private def Node = class (def item, def next) ()
     private def objects = null
 
-    def add = (item) -> ( this.objects = this.Node(item, this.objects) )
+    def add = (item) -> (this.objects = this.Node(item, this.objects))
 
     def hit = (r, tmin, tmax) -> (
         def closest = null

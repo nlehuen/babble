@@ -3,11 +3,11 @@
 ;;)
 
 ;; not exported : only this file can use it
-def square = (n) -> ( n * n )
+def square = (n) -> (n * n)
 
 export def Vec = value class (x, y) (
-    def plus = (o) -> ( Vec(this.x + o.x, this.y + o.y) )
-    def lengthSquared = () -> ( square(this.x) + square(this.y) )
+    def plus = (o) -> (Vec(this.x + o.x, this.y + o.y))
+    def lengthSquared = () -> (square(this.x) + square(this.y))
 )
 
 export def origin = Vec(0, 0)

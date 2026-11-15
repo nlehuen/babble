@@ -12,7 +12,7 @@ export def Sphere = class (def center, def radius, def material) implements hitt
         def c = oc.lengthSquared() - this.radius * this.radius
 
         def discriminant = h * h - a * c
-        if discriminant < 0 then ( return null )
+        if discriminant < 0 then (return null)
 
         def sqrtd = Math.sqrt(discriminant)
 
@@ -20,7 +20,7 @@ export def Sphere = class (def center, def radius, def material) implements hitt
         def root = (h - sqrtd) / a
         if root <= tmin or tmax <= root then (
             root = (h + sqrtd) / a
-            if root <= tmin or tmax <= root then ( return null )
+            if root <= tmin or tmax <= root then (return null)
         )
 
         def p = r.at(root)

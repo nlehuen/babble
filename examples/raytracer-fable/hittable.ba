@@ -4,10 +4,10 @@
 ;; tells whether the ray came from outside the surface.
 export def HitRecord = class (r, def p, def t, outwardNormal, def material) (
     def frontFace = r.direction.dot(outwardNormal) < 0
-    def normal = if this.frontFace then ( outwardNormal ) else ( outwardNormal.neg() )
+    def normal = if this.frontFace then (outwardNormal) else (outwardNormal.neg())
 )
 
 export def Hittable = interface (
     ;; the closest hit of the ray with tmin < t < tmax, or null
-    def hit : (r, tmin, tmax)
+    def hit: (r, tmin, tmax)
 )

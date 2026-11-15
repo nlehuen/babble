@@ -36,8 +36,8 @@ def runTests = () -> (
 
     ;; Value class semantics: structural ==, cross-number ==, identity via same(), classof()
     def Vec3 = raytracer.Vec3
-    def v1 : raytracer.Vec3 = Vec3(1.0, 2.0, 3.0)
-    def v2 : raytracer.Vec3 = Vec3(1, 2, 3)
+    def v1: raytracer.Vec3 = Vec3(1.0, 2.0, 3.0)
+    def v2: raytracer.Vec3 = Vec3(1, 2, 3)
     assert(v1 == v2, "value class equality failed")
     assert(not same(v1, v2), "same() should be false for distinct value instances")
     assert(v1 is Vec3 and classof(v1) == Vec3, "is / classof failed on Vec3")
@@ -47,56 +47,56 @@ def runTests = () -> (
     assert(Vec3(3.0, 4.0, 0.0).length() == 5.0, "Vec3.length failed")
 
     ;; Reflection and refraction
-    def normal : raytracer.Vec3 = Vec3(0.0, 1.0, 0.0)
+    def normal: raytracer.Vec3 = Vec3(0.0, 1.0, 0.0)
     assert(Vec3(1.0, 0.0 - 1.0, 0.0).reflect(normal) == Vec3(1.0, 1.0, 0.0), "Vec3.reflect failed")
 
     ;; Ray, Interval, Sphere, HittableList, BVHNode, and Materials
-    def r : raytracer.Ray = raytracer.Ray(Vec3(0.0, 0.0, 0.0), Vec3(0.0, 0.0, 0.0 - 1.0))
-    def mat : raytracer.Material = raytracer.Lambertian(Vec3(0.8, 0.3, 0.3))
-    def s : raytracer.Sphere = raytracer.Sphere(Vec3(0.0, 0.0, 0.0 - 1.0), 0.5, mat)
+    def r: raytracer.Ray = raytracer.Ray(Vec3(0.0, 0.0, 0.0), Vec3(0.0, 0.0, 0.0 - 1.0))
+    def mat: raytracer.Material = raytracer.Lambertian(Vec3(0.8, 0.3, 0.3))
+    def s: raytracer.Sphere = raytracer.Sphere(Vec3(0.0, 0.0, 0.0 - 1.0), 0.5, mat)
     assert(s is raytracer.Hittable and s is raytracer.Describable, "Sphere interface conformance failed")
     assert(s.describe() == "<sphere>(r=0.5)", "super(Hittable).describe() failed")
     assert(mat.describe() == "<lambertian>(Vec3(x: 0.8, y: 0.3, z: 0.3))", "super.describe() failed")
 
-    def hit : raytracer.HitRecord = s.hit(r, raytracer.Interval(0.001, math.infinity))
+    def hit: raytracer.HitRecord = s.hit(r, raytracer.Interval(0.001, math.infinity))
     assert(hit != null and hit.frontFace, "Sphere hit failed")
     assert(math.abs(hit.t - 0.5) < 0.00000001, "Sphere hit t failed")
     assert(hit.p == Vec3(0.0, 0.0, 0.0 - 0.5), "Sphere hit point failed")
     assert(hit.normal == Vec3(0.0, 0.0, 1.0), "Sphere outward normal failed")
 
     ;; Verify Material scattering (Lambertian, Metal, Dielectric) and HittableList / BVHNode parity
-    def rng : raytracer.Rng = raytracer.Rng(99)
-    def scatterDiff : raytracer.ScatterResult = mat.scatter(r, hit, rng)
+    def rng: raytracer.Rng = raytracer.Rng(99)
+    def scatterDiff: raytracer.ScatterResult = mat.scatter(r, hit, rng)
     assert(scatterDiff != null and scatterDiff.attenuation == Vec3(0.8, 0.3, 0.3), "Lambertian scatter failed")
-    def metalMat : raytracer.Material = raytracer.Metal(Vec3(0.7, 0.6, 0.5), 0.1)
-    def scatterMetal : raytracer.ScatterResult = metalMat.scatter(r, hit, rng)
+    def metalMat: raytracer.Material = raytracer.Metal(Vec3(0.7, 0.6, 0.5), 0.1)
+    def scatterMetal: raytracer.ScatterResult = metalMat.scatter(r, hit, rng)
     assert(scatterMetal != null and scatterMetal.attenuation == Vec3(0.7, 0.6, 0.5), "Metal scatter failed")
-    def glassMat : raytracer.Material = raytracer.Dielectric(1.5)
-    def scatterGlass : raytracer.ScatterResult = glassMat.scatter(r, hit, rng)
+    def glassMat: raytracer.Material = raytracer.Dielectric(1.5)
+    def scatterGlass: raytracer.ScatterResult = glassMat.scatter(r, hit, rng)
     assert(scatterGlass != null and scatterGlass.attenuation == Vec3.one, "Dielectric scatter failed")
 
-    def list : raytracer.HittableList = raytracer.Scenes.threeSpheres()
+    def list: raytracer.HittableList = raytracer.Scenes.threeSpheres()
     assert(list.size == 5, "threeSpheres size failed")
-    assert(list.countWhere((h: raytracer.Hittable) : bool -> ( h is raytracer.Sphere )) == 5, "countWhere failed")
-    def bvh : raytracer.Hittable = raytracer.BVHNode.fromList(list)
-    def hitList : raytracer.HitRecord = list.hit(r, raytracer.Interval(0.001, math.infinity))
-    def hitBvh : raytracer.HitRecord = bvh.hit(r, raytracer.Interval(0.001, math.infinity))
+    assert(list.countWhere((h: raytracer.Hittable): bool -> (h is raytracer.Sphere)) == 5, "countWhere failed")
+    def bvh: raytracer.Hittable = raytracer.BVHNode.fromList(list)
+    def hitList: raytracer.HitRecord = list.hit(r, raytracer.Interval(0.001, math.infinity))
+    def hitBvh: raytracer.HitRecord = bvh.hit(r, raytracer.Interval(0.001, math.infinity))
     assert(hitList == hitBvh, "BVH and HittableList diverged")
 
     ;; Verify Color gamma encoding
     assert(raytracer.Color.formatPpm(Vec3(0.0, 0.25, 1.0)) == "0 128 255", "Color.formatPpm failed")
 
     ;; Verify full Scene + Camera raytracing with named parameters
-    def worldList : raytracer.HittableList = raytracer.Scenes.finalScene(rng: raytracer.Rng(7), gridRadius: 2)
-    def world : raytracer.Hittable = raytracer.BVHNode.fromList(worldList)
-    def cam : raytracer.Camera = raytracer.Camera(
+    def worldList: raytracer.HittableList = raytracer.Scenes.finalScene(rng: raytracer.Rng(7), gridRadius: 2)
+    def world: raytracer.Hittable = raytracer.BVHNode.fromList(worldList)
+    def cam: raytracer.Camera = raytracer.Camera(
         aspectRatio: 16.0 / 9.0,
         imageWidth: 32,
         samplesPerPixel: 4,
         maxDepth: 8
     )
     assert(cam.imageHeight == 18, "Camera aspect ratio height calculation failed")
-    def centerPixel : raytracer.Vec3 = cam.renderPixel(16, 9, world, raytracer.Rng(123))
+    def centerPixel: raytracer.Vec3 = cam.renderPixel(16, 9, world, raytracer.Rng(123))
     assert(centerPixel.x >= 0.0 and centerPixel.y >= 0.0 and centerPixel.z >= 0.0, "Invalid pixel color")
 )
 
@@ -106,10 +106,10 @@ runTests()
 ;; 4. Render the Final Scene in PPM Format to STDOUT
 ;; ============================================================================
 def renderMain = () -> (
-    def rng : raytracer.Rng = raytracer.Rng(2026)
-    def worldList : raytracer.HittableList = raytracer.Scenes.finalScene(rng: rng, gridRadius: 11)
-    def world : raytracer.Hittable = raytracer.BVHNode.fromList(worldList)
-    def camera : raytracer.Camera = raytracer.Camera(
+    def rng: raytracer.Rng = raytracer.Rng(2026)
+    def worldList: raytracer.HittableList = raytracer.Scenes.finalScene(rng: rng, gridRadius: 11)
+    def world: raytracer.Hittable = raytracer.BVHNode.fromList(worldList)
+    def camera: raytracer.Camera = raytracer.Camera(
         aspectRatio: 16.0 / 9.0,
         imageWidth: 400,
         samplesPerPixel: 20,

@@ -2,4 +2,4 @@
 ;; before they are defined.
 def odd = import("odd.ba")
 
-export def isEven = (n) -> ( if n == 0 then ( true ) else ( odd.isOdd(n - 1) ) )
+export def isEven = (n) -> (if n == 0 then (true) else (odd.isOdd(n - 1)))

@@ -9,14 +9,14 @@ export def Scatter = class (def attenuation, def scattered) ()
 
 export def Material = interface (
     ;; a Scatter, or null when the ray is absorbed
-    def scatter : (rIn, rec, rng)
+    def scatter: (rIn, rec, rng)
 )
 
 export def Lambertian = class (def albedo) implements Material (
     def scatter = (rIn, rec, rng) -> (
         def direction = rec.normal.plus(Vec3.randomUnit(rng))
         ;; catch degenerate scatter direction
-        if direction.nearZero() then ( direction = rec.normal )
+        if direction.nearZero() then (direction = rec.normal)
         Scatter(this.albedo, Ray(rec.p, direction))
     )
 )
@@ -44,7 +44,7 @@ export def Dielectric = class (def refractionIndex) implements Material (
     )
 
     def scatter = (rIn, rec, rng) -> (
-        def ri = if rec.frontFace then ( 1.0 / this.refractionIndex ) else ( this.refractionIndex )
+        def ri = if rec.frontFace then (1.0 / this.refractionIndex) else (this.refractionIndex)
 
         def unitDirection = rIn.direction.unit()
         def cosTheta = Math.min(unitDirection.neg().dot(rec.normal), 1.0)

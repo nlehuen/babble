@@ -7,38 +7,38 @@
 
 ;; a package is just a namespace
 package test1 (
-    def add = (a, b) -> (    ;;
-        a + b                ;; function literal
-    )                        ;;
+    def add = (a, b) -> (  ;;
+        a + b              ;; function literal
+    )                      ;;
 
     ;; optional types
-    def add2 = (a:int, b:int):int -> (
+    def add2 = (a: int, b: int): int -> (
         a + b
     )
 
     ;; function as first-type objects
     ;; closure support
-    def adder = (a:int):(b:int):int -> (
-        return (b:int):int -> (
+    def adder = (a: int): (b: int): int -> (
+        return (b: int): int -> (
             a + b
         )
     )
 
     ;; loops
-    def fac2 = (n:int):int -> (
+    def fac2 = (n: int): int -> (
         def result = 1
         while n > 1 then (
             ;; use ";" to put several statements on one line
-            result = result * n ; n = n - 1
+            result = result * n; n = n - 1
         )
         return result
     )
 
     ;; recursion
-    def fac = (n:int):int -> (
+    def fac = (n: int): int -> (
         if n < 2 then (
             1
-         ) else (
+        ) else (
             ;;(
                 recurse is a keyword evaluating
                 to the current function literal.
@@ -48,11 +48,11 @@ package test1 (
             ;;)
 
             n * recurse(n - 1)
-         )
+        )
     )
 
     ;; an early return abandons the rest of the function body
-    def sign = (n:int):string -> (
+    def sign = (n: int): string -> (
         if n > 0 then (
             return "positive"
         )
@@ -63,7 +63,7 @@ package test1 (
     )
 
     ;; default values, including function literals
-    def apply = (a, f=(v) -> (v)) -> ( f(a) )
+    def apply = (a, f = (v) -> (v)) -> (f(a))
 
     ;; using function scopes as poor man's objects
     ;; like in Javascript
@@ -90,14 +90,14 @@ def main = () -> (
     def local = "world !"
 
     ;; println is a native function
-    println ("Hello, ", local)
+    println("Hello, ", local)
 
     ;; positional parameters
-    println("0+1=", test1.add(0,1))
+    println("0+1=", test1.add(0, 1))
     ;; named parameters
-    println("1+2=", test1.add(a:1,b:2))
+    println("1+2=", test1.add(a: 1, b: 2))
     ;; named parameters can have their order changed
-    println("2+3=", test1.add2(b:3,a:2))
+    println("2+3=", test1.add2(b: 3, a: 2))
 
     def result = test1.adder(2)(2)
 
@@ -105,10 +105,10 @@ def main = () -> (
 )
 
 ;; Assertions
-assert (1 < 2, "Something is wrong")
+assert(1 < 2, "Something is wrong")
 
-assert (test1.apply(1) == 1, "apply is broken")
-assert (test1.apply(1, (v) -> (v+1)) == 2, "apply is broken")
+assert(test1.apply(1) == 1, "apply is broken")
+assert(test1.apply(1, (v) -> (v + 1)) == 2, "apply is broken")
 
 assert("ok:4:120:720" == main(), "Test failed")
 
