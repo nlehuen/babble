@@ -1,5 +1,6 @@
 package org.babblelang.runtime;
 
+import org.babblelang.engine.impl.natives.java.JavaClass;
 import org.babblelang.engine.impl.natives.java.JavaObject;
 
 /**
@@ -55,7 +56,7 @@ public final class Members {
      * evaluated, as the target comes first in the source.
      */
     public static Object assignable(Object target, String targetText) {
-        if (!(target instanceof HasMembers) && !(target instanceof Scope<?>)) {
+        if (!(target instanceof HasMembers) && !(target instanceof Scope<?>) && !isJavaObject(target)) {
             throw new BabbleException("Not an assignable scope : " + targetText);
         }
         return target;
@@ -65,6 +66,9 @@ public final class Members {
     public static Object assign(Object target, Object value, String name) {
         if (target instanceof HasMembers members) {
             members.setMember(name, value, false);
+        } else if (target instanceof JavaClass || target instanceof JavaValue || isJavaObject(target)) {
+            // A Java field : a class's static one, or an object's.
+            JavaObject.assign(target, name, value);
         } else {
             ((Scope<Object>) target).get(name).assign(value);
         }

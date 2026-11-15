@@ -176,6 +176,26 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testJavaInstanceFields() {
+        assertDiagnostics("def p = java.awt.Point(1, 2)\n"
+                        + "def x : int = p.x\n"
+                        + "p.x = \"a\"\n"
+                        + "java.awt.Point.x\n"
+                        + "java.awt.Point.x = 1\n"
+                        + "java.lang.Math.PI = 3\n"
+                        + "p.nope = 1\n"
+                        + "java.lang.Thread().uncaughtExceptionHandler = 1\n"
+                        + "def s : string = p.y",
+                "3:7 Type error : expected int, got string",
+                "4:1 Not a static field : java.awt.Point.x",
+                "5:1 Not a static field : java.awt.Point.x",
+                "6:1 Cannot assign final field : java.lang.Math.PI",
+                "7:1 No such field in java.awt.Point : nope",
+                "8:1 No such field in java.lang.Thread : uncaughtExceptionHandler",
+                "9:18 Type error : expected string, got int");
+    }
+
+    @Test
     public void testInterfacesAreNominal() {
         String shape = "def Shape = interface ( def area : () : double ; def describe = () : string -> ( \"area \" + this.area() ) )\n"
                 + "def Sq = class (def s) implements Shape ( def area = () -> ( 1.0 * this.s * this.s ) )\n";

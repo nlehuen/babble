@@ -87,6 +87,15 @@ public class JavaClassDemo {
         return java.lang.reflect.Proxy.isProxyClass(value.getClass());
     }
 
+    /** Public instance fields : read and assigned on an instance. */
+    public int count;
+    public Runnable action;
+    public final String label = "demo";
+
+    public void runAction() {
+        action.run();
+    }
+
     /** A static field that isn't final : read each time it is selected. */
     public static int counter;
 

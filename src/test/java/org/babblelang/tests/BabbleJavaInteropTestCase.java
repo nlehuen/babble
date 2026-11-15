@@ -132,4 +132,34 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
     public void testConstructedJavaObjectsPrintAsThemselves() throws Exception {
         Assertions.assertEquals("x", interpret("\"\" + java.lang.StringBuilder(\"x\")"));
     }
+
+    @Test
+    public void testInstanceFields() throws Exception {
+        Assertions.assertEquals("java.awt.Point[x=11,y=2]", interpret("def p = java.awt.Point(1, 2) ; p.x = p.x + 10 ; \"\" + p"));
+        Assertions.assertEquals(28, interpret("def d = java.awt.Dimension(3, 4) ; d.width = 7 ; d.width * d.height"));
+        Assertions.assertEquals(3, interpret(DEMO + "def d = Demo() ; d.count = 3 ; d.count"));
+        Assertions.assertEquals("demo", interpret(DEMO + "Demo().label"));
+        // A static field that isn't final can be assigned too.
+        Assertions.assertEquals(5, interpret(DEMO + "Demo.counter = 5 ; Demo.counter"));
+        // A function goes to a functional interface's field once converted.
+        Assertions.assertEquals(1, interpret(DEMO + "def d = Demo() ; def n = 0 ; d.action = java.lang.Runnable(() -> ( n = n + 1 )) ; d.runAction() ; n"));
+    }
+
+    @Test
+    public void testFieldErrors() {
+        // Through a parameter, the type checker can't tell : found when it runs.
+        String[][] cases = {
+                {"java.awt.Point(1, 2)", "o.x = 2.5", "Cannot assign java.lang.Double to java.awt.Point.x : expected int"},
+                {"java.lang.Math", "o.PI = 3", "Cannot assign final field : java.lang.Math.PI"},
+                {"java.awt.Point", "o.x", "Not a static field : java.awt.Point.x"},
+                {"java.awt.Point", "o.x = 1", "Not a static field : java.awt.Point.x"},
+                {"java.util.ArrayList()", "o.size = 1", "No such field in java.util.ArrayList : size"},
+                {"java.util.ArrayList()", "o.nope", "No such name in java.util.ArrayList : nope"},
+                {"Demo()", "o.action = () -> ( 1 )", "Cannot assign a function to org.babblelang.tests.JavaClassDemo.action : convert it first, as Runnable(f)"},
+        };
+        for (String[] c : cases) {
+            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(DEMO + "def f = (o) -> ( " + c[1] + " ) ; f(" + c[0] + ")"));
+            Assertions.assertTrue(e.getMessage().contains(c[2]), c[1] + " : " + e.getMessage());
+        }
+    }
 }
