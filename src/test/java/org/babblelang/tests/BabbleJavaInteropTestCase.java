@@ -1,5 +1,9 @@
 package org.babblelang.tests;
 
+import org.babblelang.engine.impl.natives.java.ImportFunction;
+import org.babblelang.engine.impl.natives.java.JavaClass;
+import org.babblelang.engine.impl.natives.java.JavaObject;
+import org.babblelang.engine.impl.natives.java.JavaPackage;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -170,5 +174,34 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
         Assertions.assertEquals('b', interpret("java.lang.StringBuilder(\"abc\").charAt(1)"));
         // Generic bridges still add no ambiguity : compareTo(Object) beside compareTo(String).
         Assertions.assertEquals(-1, interpret("java.math.BigInteger.ONE.compareTo(java.math.BigInteger.TWO)"));
+    }
+
+    @Test
+    public void testJavaPackagesDeclareOnlyWhatExists() {
+        JavaPackage java = new ImportFunction().getPackage("java");
+        Assertions.assertTrue(java.isDeclared("util"));
+        Assertions.assertFalse(java.isDeclared("nosuchpackage"));
+        JavaPackage util = new ImportFunction().getPackage("java.util");
+        Assertions.assertTrue(util.isDeclared("ArrayList"));
+        Assertions.assertTrue(util.isDeclared("concurrent"));
+        Assertions.assertFalse(util.isDeclared("NoSuchClass"));
+        // Asking doesn't make the name exist.
+        Assertions.assertFalse(util.isDeclared("NoSuchClass"));
+        // Packages of the class path, not only the JDK's.
+        JavaPackage babble = new ImportFunction().getPackage("org.babblelang");
+        Assertions.assertTrue(babble.isDeclared("tests"));
+        Assertions.assertFalse(babble.isDeclared("nosuchpackage"));
+    }
+
+    @Test
+    public void testJavaClassesDeclareOnlyTheirMembers() {
+        JavaClass list = JavaClass.of(java.util.ArrayList.class);
+        Assertions.assertTrue(list.isDeclared("add"));
+        Assertions.assertFalse(list.isDeclared("nosuchmethod"));
+        Assertions.assertTrue(JavaClass.of(Integer.class).isDeclared("MAX_VALUE"));
+        Assertions.assertTrue(JavaClass.of(java.util.Map.class).isDeclared("Entry"));
+        JavaObject instance = JavaObject.of(new java.util.ArrayList<>());
+        Assertions.assertTrue(instance.isDeclared("size"));
+        Assertions.assertFalse(instance.isDeclared("nosuchmethod"));
     }
 }
