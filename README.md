@@ -324,7 +324,10 @@ the file and gives its exports. The path is relative to the importing file.
 ```
 ;; shapes.ba
 def pi = 3.14159                                   ;; not exported : private to this file
-export def Circle = class (def r) (
+export def Shape = interface (
+    def area : () : double
+)
+export def Circle = class (def r) implements Shape (
     def area = () -> ( pi * this.r * this.r )
 )
 export def unit = Circle(1)
@@ -357,7 +360,7 @@ export def Square = class (def side) implements shapes.Shape (
 ```
 
 An engine compiles each file once, until it or a file it imports changes. The type checker
-sees the types of what modules export : `def c : shapes.Square = shapes.Square(2)` checks the
+sees the types of what modules export : `def c : shapes.Circle = shapes.Circle(2)` checks the
 constructor's arguments and the annotation, and the annotation is also checked at
 runtime.
 
@@ -452,7 +455,7 @@ java -jar target/babble-1.0-SNAPSHOT.jar -compile examples/raytracer-argon/raytr
 java -jar argon.jar > scene.ppm
 ```
 
-`argon.jar` is 244 KB for its 14 modules and the runtime, and renders the same image, byte for
+`argon.jar` is 273 KB for its 14 modules and the runtime, and renders the same image, byte for
 byte, in about the same minute as through the engine : a jar saves the start-up, not the work.
 
 Building and running
@@ -506,7 +509,7 @@ $ java -jar hello.jar Ada
 Hello, Ada
 ```
 
-The jar holds the program's classes and a copy of Babble's runtime (about 100 KB), and
+The jar holds the program's classes and a copy of Babble's runtime (about 120 KB), and
 nothing but `java.base` : no parser, no compiler, no ANTLR or ASM. It starts in about half the
 time (a hello world in 100 to 140 ms, against 200 to 270 ms through the engine), compiling the
 same program twice gives the same bytes, and errors read as they do through the engine. A
@@ -546,7 +549,7 @@ def fac=(n:int):int->(          def fac = (n: int): int -> (
 
 - four spaces for each level of parentheses, and one more level for a line continuing an
   expression (after an operator, `=`, ...) ;
-- one space around binary operators, `=` and `->`, after `,` and `:`, none inside parentheses
+- one space around binary operators, `=` (and `+=`, `-=`, `*=`, `/=`) and `->`, after `,` and `:`, none inside parentheses
   nor before a call's ;
 - a block's `(` comes back on the line of its `if`, `while`, function, class..., as do `else` and
   `static` ;
