@@ -69,6 +69,13 @@ mvn package
 java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-argon/raytracer.ba > examples/raytracer-argon/scene.ppm
 ```
 
+Or compile it ahead of time into a jar that runs on a plain JRE, without Babble, and gives the same `scene.ppm`, byte for byte :
+
+```bash
+java -jar target/babble-1.0-SNAPSHOT.jar -compile examples/raytracer-argon/raytracer.ba -o argon.jar
+java -jar argon.jar > examples/raytracer-argon/scene.ppm
+```
+
 ### 2. Convert `scene.ppm` to `scene.png`
 
 Because web browsers and GitHub Markdown do not render `.ppm` (`image/x-portable-pixmap`) files inline inside `<img>` tags, [scene.ppm](scene.ppm) is converted losslessly to [scene.png](scene.png) for embedding in this README.

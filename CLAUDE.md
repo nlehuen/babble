@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Babble is a toy programming language running on the JVM, built as a learning project for parsing/interpreting/compiling. It uses ANTLR4 for parsing and runs either compiled to JVM bytecode with ASM (the default) or interpreted directly on the ANTLR parse tree (`-Dbabble.mode=interpret`; the interpreter is the reference implementation the compiler is tested against, and is single-threaded). Java 21 source level, JUnit 5 (Jupiter) for tests. The compiler follows `docs/design/bytecode-compiler.md` (phases 1 to 3 done; §16 to §18 there list what landed).
+Babble is a toy programming language running on the JVM, built as a learning project for parsing/interpreting/compiling. It uses ANTLR4 for parsing and runs either compiled to JVM bytecode with ASM (the default) or interpreted directly on the ANTLR parse tree (`-Dbabble.mode=interpret`; the interpreter is the reference implementation the compiler is tested against, and is single-threaded). Java 21 source level, JUnit 5 (Jupiter) for tests. The compiler follows `docs/design/bytecode-compiler.md` (phases 1 to 3 done; §16 to §18 there list what landed; phase 4, ahead-of-time compilation into a jar, was done as M5 of `docs/design/module-sources-and-aot.md`).
 
 ## Commands
 

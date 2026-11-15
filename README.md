@@ -391,7 +391,16 @@ java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
 
 [examples/raytracer-argon](examples/raytracer-argon/README.md) is another port of the same book,
 which uses no Java at all : it has its own square root, trigonometry and random numbers, and a
-bounding volume hierarchy. It is split into modules too, in its `lib/` directory.
+bounding volume hierarchy. It is split into modules too, in its `lib/` directory. Either ray
+tracer can also be compiled ahead of time into a jar of its own (see *Building and running*) :
+
+```
+java -jar target/babble-1.0-SNAPSHOT.jar -compile examples/raytracer-argon/raytracer.ba -o argon.jar
+java -jar argon.jar > scene.ppm
+```
+
+`argon.jar` is 244 KB for its 14 modules and the runtime, and renders the same image, byte for
+byte, in 60 s rather than 68 s through the engine.
 
 Building and running
 --------------------
@@ -444,9 +453,11 @@ $ java -jar hello.jar Ada
 Hello, Ada
 ```
 
-The jar holds the program's classes and a copy of Babble's runtime (about 100 KB), and no
-parser or compiler : it starts in about half the time, and a dynamic import only finds the
-modules the program imports statically. With Babble on the class path,
+The jar holds the program's classes and a copy of Babble's runtime (about 100 KB), and
+nothing but `java.base` : no parser, no compiler, no ANTLR or ASM. It starts in about half the
+time (a hello world in 100 to 140 ms, against 200 to 270 ms through the engine), compiling the
+same program twice gives the same bytes, and errors read as they do through the engine. A
+dynamic import only finds the modules the program imports statically. With Babble on the class path,
 `java -cp hello.jar:target/babble-1.0-SNAPSHOT.jar org.babblelang.runtime.Launcher Ada`, the
 others are compiled from their files when they are imported. Imports may not leave the root,
 the script's directory by default (`-Dbabble.root=dir` tells a jar moved away from it). See the [design doc](docs/design/module-sources-and-aot.md) (§5).

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([object-model.md](object-model.md), summarised in §8.2). |
-| **Implemented** | §15 steps 1–11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker with runtime checks (T9) ([type-system.md](type-system.md)), always enabled and rejecting type errors before execution. Typed code generation (§10.5) and phase 4 remain. |
+| **Implemented** | §15 steps 1–11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker with runtime checks (T9) ([type-system.md](type-system.md)), always enabled and rejecting type errors before execution. Phase 4, ahead-of-time compilation, was designed and done as M5 of [module-sources-and-aot.md](module-sources-and-aot.md) (`-compile`). Typed code generation (§10.5) remains. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -178,7 +178,8 @@ assert on that exact message shape, for example
 **Non-goals (for this design)**
 
 * Ahead-of-time `.class`/`.jar` output and a `babblec` CLI. The class layout is chosen so that
-  this is easy later (§9, phase 4).
+  this is easy later (§9, phase 4 ; since done, as M5 of
+  [module-sources-and-aot.md](module-sources-and-aot.md)).
 * Type checking. It is a separate front-end pass with its own design. §10 explains where it
   fits relative to the compiler phases, and what the compiler gains from it.
 * New language features (classes, `for`, `yield`). The compiler must not make them harder,
@@ -750,6 +751,10 @@ get there (§18 has what landed):
 script class plus a `main` that builds the implicits and calls `run`. Hidden runtime state
 (class loader, `ScriptRuntime`) is already explicit, so this is mostly packaging. The jar
 would depend on the Babble runtime and on ANTLR only if interpreter fallback is still used.
+*Done* as M5 of [module-sources-and-aot.md](module-sources-and-aot.md), with modules : a CLI,
+`-compile`, writes a jar of the program's modules, an index, the runtime and a launcher ; it
+depends on `java.base` only, and compiles imports it doesn't hold only when Babble is on its
+class path. The Maven goal is left for later.
 
 ## 10. Type checking
 
