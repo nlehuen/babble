@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3) is implemented ; M4 and M5 are not. |
+| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3) and M4a are implemented ; M4b and M5 are not. |
 | **Depends on** | [modules.md](modules.md) (static imports, the module cache, module types), [bytecode-compiler.md](bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
 | **Unblocks** | Babble programs shipped as a jar, hosts serving modules from anywhere, module tests without temporary files |
 
@@ -138,8 +138,11 @@ public interface ModuleSource {
     /** The module an import names, from the module importing it, or null when there is none. */
     ModuleId resolve(String name, ModuleId importer) throws IOException;
 
+    /** The identity of a script the host evaluates, from its source name, or null. */
+    default ModuleId identify(String sourceName) { … resolve(sourceName, null), null on failure … }
+
     /** The text of a module, and its version. */
-    Source read(ModuleId module) throws IOException;
+    ModuleText read(ModuleId module) throws IOException;
 
     /** The current version of a module, to tell whether a compilation of it is stale. */
     default String version(ModuleId module) throws IOException {
@@ -148,7 +151,7 @@ public interface ModuleSource {
 }
 
 public record ModuleId(String key, String displayName) { }
-public record Source(String text, String version) { }
+public record ModuleText(String text, String version) { }
 ```
 
 * The engine attribute `babble.moduleSource` holds one ; the default is the file system.
@@ -161,9 +164,19 @@ public record Source(String text, String version) { }
 * **A version is opaque.** The cache compares the versions of every module an analysis read,
   as it compares file contents today (modules.md §9) : a content hash for files, a row version
   or timestamp for a database. `version` may be cheaper than `read`.
-* **The main script has an identity too.** Today it is its `ScriptEngine.FILENAME`. The engine
-  asks the source to resolve that name with no importer, and a source that does not know it
-  gives none : the script then imports as today, relative to the working directory for files.
+* **The main script has an identity too**, from its `ScriptEngine.FILENAME` : the source's
+  `identify`. By default it is what `resolve` gives for the name with no importer. A script
+  named after a file need not be one, as when a host evaluates a string under a file's name,
+  so `FileModuleSource` gives an identity to a path that does not exist, and its imports are
+  resolved from that path's directory, as before M4. A source that does not know the name gives
+  none, and the script's imports are resolved from nowhere in particular (for files, the working
+  directory).
+* **The importer stays a source name at runtime.** `Modules.load` (§3) gets the importing
+  file's source name, which is all generated code knows. The engine maps it back to an identity
+  : the module it compiled under that name (its display name), else what `identify` gives. M5
+  makes source names portable (§5.2) ; until then, this keeps generated code unchanged.
+* The types are in `org.babblelang.engine`, with `FileModuleSource.INSTANCE` the default. A
+  value of the attribute that is not a `ModuleSource` fails `compile()`.
 
 ### 4.2 Sources provided
 
@@ -269,7 +282,7 @@ needed at runtime. A type error found by the analysis fails the compilation, as 
 | Step | Content | State |
 |---|---|---|
 | **R1** | The runtime boundary (§3) : `Implicits`, `Modules`, `ScriptRuntime` without `javax.script`, the moves, the boundary test, the runtime jar. No change of behaviour but sessions loading a module once. | Done. |
-| **M4a** | `ModuleSource`, `ModuleId`, `FileModuleSource` as the default ; the engine's cache keyed by `ModuleId` and versions. | |
+| **M4a** | `ModuleSource`, `ModuleId`, `FileModuleSource` as the default ; the engine's cache keyed by `ModuleId` and versions. | Done. |
 | **M4b** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. | |
 | **M5a** | Stable class names, type ids and source names (§5.2), in the engine too. | |
 | **M5b** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. | |
