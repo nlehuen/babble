@@ -15,17 +15,39 @@ import java.util.HexFormat;
  * A module's key is its real path, so every spelling of a file, through {@code ..} or a
  * symbolic link, is one module ; its display name is the path as resolved ; its version, a
  * hash of its content.
+ * <p>
+ * {@link #rooted} gives a source confined to a directory, whose keys and display names are
+ * paths relative to it ({@code lib/vec3.ba}), the same on every machine.
  */
 public final class FileModuleSource implements ModuleSource {
-    public static final FileModuleSource INSTANCE = new FileModuleSource();
+    public static final FileModuleSource INSTANCE = new FileModuleSource(null);
 
     private static final String SCHEME = "file:";
 
-    private FileModuleSource() {
+    /** The real path of the directory modules are confined to, or null. */
+    private final Path root;
+
+    private FileModuleSource(Path root) {
+        this.root = root;
+    }
+
+    /**
+     * The modules under a directory (docs/design/module-sources-and-aot.md §4.2), for a host
+     * that confines imports, and for ahead-of-time compilation. Names are resolved as by
+     * {@link MapModuleSource} : relative to the importing module's directory, or from the root
+     * when they start with "/" ; an import that would leave the directory, through ".." or a
+     * symbolic link, finds nothing. Keys and display names are "/"-separated paths relative to
+     * the root.
+     */
+    public static FileModuleSource rooted(Path root) throws IOException {
+        return new FileModuleSource(root.toRealPath());
     }
 
     @Override
     public ModuleId resolve(String name, ModuleId importer) throws IOException {
+        if (root != null) {
+            return resolveUnderRoot(name, importer);
+        }
         Path path;
         try {
             path = Path.of(name);
@@ -46,8 +68,29 @@ public final class FileModuleSource implements ModuleSource {
      * A script named after a file need not be one, as when a host evaluates a string under a
      * file's name : its imports are still resolved from that file's directory.
      */
+    private ModuleId resolveUnderRoot(String name, ModuleId importer) throws IOException {
+        String path = LogicalPaths.resolve(name, importer != null ? importer.key() : null);
+        if (path == null) {
+            return null;
+        }
+        Path real = root.resolve(path).toRealPath();
+        if (!real.startsWith(root)) {
+            // A symbolic link out of the root.
+            return null;
+        }
+        String relative = relative(real);
+        return new ModuleId(relative, relative);
+    }
+
+    private String relative(Path path) {
+        return root.relativize(path).toString().replace(path.getFileSystem().getSeparator(), "/");
+    }
+
     @Override
     public ModuleId identify(String sourceName) {
+        if (root != null) {
+            return identifyUnderRoot(sourceName);
+        }
         Path path;
         try {
             path = Path.of(sourceName).normalize();
@@ -61,13 +104,37 @@ public final class FileModuleSource implements ModuleSource {
         }
     }
 
+    /** A script's name : a path under the root, absolute or relative to it, whether it exists or not. */
+    private ModuleId identifyUnderRoot(String sourceName) {
+        String path;
+        try {
+            Path given = Path.of(sourceName);
+            if (given.isAbsolute()) {
+                Path normalized = given.normalize();
+                Path real = Files.exists(normalized) ? normalized.toRealPath() : normalized;
+                if (!real.startsWith(root)) {
+                    return null;
+                }
+                path = LogicalPaths.normalize(relative(real));
+            } else {
+                path = LogicalPaths.normalize(sourceName);
+            }
+        } catch (InvalidPathException | IOException e) {
+            return null;
+        }
+        return path != null ? new ModuleId(path, path) : null;
+    }
+
     @Override
     public ModuleText read(ModuleId module) throws IOException {
         String text = Files.readString(file(module));
         return new ModuleText(text, hash(text));
     }
 
-    private static Path file(ModuleId module) throws IOException {
+    private Path file(ModuleId module) throws IOException {
+        if (root != null) {
+            return root.resolve(module.key());
+        }
         if (!module.key().startsWith(SCHEME)) {
             throw new IOException("Not a file module : " + module.key());
         }
@@ -84,6 +151,6 @@ public final class FileModuleSource implements ModuleSource {
 
     @Override
     public String toString() {
-        return "files";
+        return root != null ? "files under " + root : "files";
     }
 }

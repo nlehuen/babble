@@ -2,42 +2,43 @@ package org.babblelang.tests;
 
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
+import org.babblelang.engine.MapModuleSource;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptException;
 import javax.script.SimpleScriptContext;
-import java.io.IOException;
 import java.io.StringWriter;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 /**
- * Modules : {@code export} and {@code import("file.ba")}. Each test writes its files to a
- * temporary directory and runs a main script named {@code main.ba} there.
+ * Modules : {@code export} and {@code import("file.ba")}. Each test puts its modules in a
+ * {@link MapModuleSource} and runs a main script named {@code main.ba}, at its root. What is
+ * particular to files is {@code FileModulesTestCase}'s.
  */
 public class BabbleModulesTestCase {
-    @TempDir
-    Path directory;
-
+    private final MapModuleSource source = new MapModuleSource();
     private final StringWriter output = new StringWriter();
     private final StringWriter errors = new StringWriter();
 
-    private void file(String name, String content) throws IOException {
-        Path path = directory.resolve(name);
-        Files.createDirectories(path.getParent());
-        Files.writeString(path, content);
+    private void file(String name, String content) {
+        source.put(name, content);
+    }
+
+    /** An engine reading modules from this test's source. */
+    private ScriptEngine newEngine() {
+        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.MODULE_SOURCE, source);
+        return engine;
     }
 
     private Object run(String script) throws ScriptException {
-        return run(script, directory.resolve("main.ba").toString());
+        return run(script, "main.ba");
     }
 
     private Object run(String script, String fileName) throws ScriptException {
-        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        ScriptEngine engine = newEngine();
         ScriptContext context = new SimpleScriptContext();
         context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
         if (fileName != null) {
@@ -64,7 +65,7 @@ public class BabbleModulesTestCase {
         file("lib.ba", "def secret = 1\nexport def open = () -> ( secret + 1 )");
         Assertions.assertEquals(2, run("import(\"lib.ba\").open()"));
         String message = failure("def lib = import(\"lib.ba\")\nlib.secret");
-        Assertions.assertTrue(message.contains("No such export : secret in " + directory.resolve("lib.ba")), message);
+        Assertions.assertTrue(message.contains("No such export : secret in lib.ba"), message);
         Assertions.assertTrue(message.endsWith("at line number 2"), message);
         // The names of a module are not names of the script importing it, and conversely.
         Assertions.assertTrue(failure("import(\"lib.ba\") ; open()").contains("No such name : open"));
@@ -97,9 +98,8 @@ public class BabbleModulesTestCase {
         file("lib/branch.ba", "export def leaf = import(\"deep/leaf.ba\")\nexport def up = import(\"../top.ba\")");
         file("top.ba", "export def name = \"top\"");
         Assertions.assertEquals("leaf top", run("def b = import(\"lib/branch.ba\") ; b.leaf.name + \" \" + b.up.name"));
-        // An absolute path works from anywhere, and so does a script without a file name.
-        String absolute = directory.resolve("top.ba").toString().replace("\\", "\\\\");
-        Assertions.assertEquals("top", run("import(\"" + absolute + "\").name", null));
+        // A path from the root works from anywhere, and so does a script without a file name.
+        Assertions.assertEquals("top", run("import(\"/top.ba\").name", null));
     }
 
     @Test
@@ -129,7 +129,7 @@ public class BabbleModulesTestCase {
     public void errorsNameTheModule() throws Exception {
         file("broken.ba", "export def x = 1\nexport def y = 1 + null");
         String message = failure("\nimport(\"broken.ba\")");
-        Assertions.assertTrue(message.contains(directory.resolve("broken.ba") + " at line number 2"), message);
+        Assertions.assertTrue(message.contains("broken.ba at line number 2"), message);
         Assertions.assertTrue(message.endsWith("main.ba at line number 2"), message);
         Assertions.assertFalse(message.contains("BabbleException: org.babblelang"), message);
 
@@ -137,7 +137,7 @@ public class BabbleModulesTestCase {
         Assertions.assertThrows(ScriptException.class, () -> run("import(\"syntax.ba\")"));
 
         String missing = failure("import(\"nowhere.ba\")");
-        Assertions.assertTrue(missing.contains("Cannot import nowhere.ba : no such file"), missing);
+        Assertions.assertTrue(missing.contains("Cannot import nowhere.ba : no such module"), missing);
     }
 
     @Test
@@ -178,10 +178,10 @@ public class BabbleModulesTestCase {
     @Test
     public void modulesRunInTheModeOfTheEngineWithItsTypeChecker() throws Exception {
         file("typed.ba", "export def half = (n : int) : double -> ( n / 2 )\nhalf(\"x\")");
-        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        ScriptEngine engine = newEngine();
         engine.put(BabbleScriptEngine.TYPECHECK, "error");
         ScriptContext context = new SimpleScriptContext();
-        context.setAttribute(ScriptEngine.FILENAME, directory.resolve("main.ba").toString(), ScriptContext.ENGINE_SCOPE);
+        context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
         context.setErrorWriter(errors);
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> engine.eval("import(\"typed.ba\")", context));
         Assertions.assertTrue(e.getMessage().contains("Type error : expected int, got string"), e.getMessage());
@@ -191,10 +191,10 @@ public class BabbleModulesTestCase {
     @Test
     public void typesFromModulesAreCheckedInErrorMode() throws Exception {
         file("lib.ba", "export def Circle = class (def r : int) ()\nexport package geo ( def Point = value class (x, y) () )");
-        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        ScriptEngine engine = newEngine();
         engine.put(BabbleScriptEngine.TYPECHECK, "error");
         ScriptContext context = new SimpleScriptContext();
-        context.setAttribute(ScriptEngine.FILENAME, directory.resolve("main.ba").toString(), ScriptContext.ENGINE_SCOPE);
+        context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
         context.setErrorWriter(errors);
         Object result = engine.eval("def lib = import(\"lib.ba\") ; def Circle = lib.Circle\n"
                 + "def a : lib.Circle = Circle(1) ; def b : Circle = lib.Circle(2) ; def p : lib.geo.Point = lib.geo.Point(1, 2)\n"
@@ -212,7 +212,7 @@ public class BabbleModulesTestCase {
     private Object run(ScriptEngine engine, String script) throws ScriptException {
         ScriptContext context = new SimpleScriptContext();
         context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
-        context.setAttribute(ScriptEngine.FILENAME, directory.resolve("main.ba").toString(), ScriptContext.ENGINE_SCOPE);
+        context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
         context.setWriter(output);
         context.setErrorWriter(errors);
         return engine.eval(script, context);
@@ -226,7 +226,7 @@ public class BabbleModulesTestCase {
     @Test
     public void aMissingFileIsFoundBeforeRunning() {
         String message = failure("println(\"started\")\nimport(\"nowhere.ba\")");
-        Assertions.assertTrue(message.contains("Cannot import nowhere.ba : no such file"), message);
+        Assertions.assertTrue(message.contains("Cannot import nowhere.ba : no such module"), message);
         Assertions.assertTrue(message.endsWith("main.ba at line number 2"), message);
         Assertions.assertEquals("", output.toString());
     }
@@ -234,7 +234,7 @@ public class BabbleModulesTestCase {
     @Test
     public void aDynamicImportIsResolvedWhenItRuns() {
         String message = failure("println(\"started\")\ndef name = \"nowhere\"\nimport(name + \".ba\")");
-        Assertions.assertTrue(message.contains("Cannot import nowhere.ba : no such file"), message);
+        Assertions.assertTrue(message.contains("Cannot import nowhere.ba : no such module"), message);
         Assertions.assertEquals("started" + System.lineSeparator(), output.toString());
     }
 
@@ -327,7 +327,7 @@ public class BabbleModulesTestCase {
     public void missingExportsAreReportedBeforeRunning() throws Exception {
         file("lib.ba", "export def answer = 42\ndef secret = 1");
         String message = failure("def lib = import(\"lib.ba\")\nprintln(\"started\")\nlib.secret");
-        Assertions.assertTrue(errors.toString().startsWith("Warning : No such export : secret in " + directory.resolve("lib.ba")), errors.toString());
+        Assertions.assertTrue(errors.toString().startsWith("Warning : No such export : secret in lib.ba"), errors.toString());
         Assertions.assertTrue(errors.toString().contains("main.ba at line number 3, column 5"), errors.toString());
         // A warning : the script runs, and fails where the warning said it would.
         Assertions.assertEquals("started" + System.lineSeparator(), output.toString());
@@ -345,7 +345,7 @@ public class BabbleModulesTestCase {
     @Test
     public void missingExportsAreErrorsInErrorMode() throws Exception {
         file("lib.ba", "export def answer = 42");
-        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        ScriptEngine engine = newEngine();
         engine.put(BabbleScriptEngine.TYPECHECK, "error");
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> run(engine, "def lib = import(\"lib.ba\")\nprintln(\"started\")\nlib.anwser"));
@@ -363,7 +363,7 @@ public class BabbleModulesTestCase {
         // The module warns when it is analysed : the warnings count its analyses.
         file("lib.ba", "def other = import(\"other.ba\")\nexport def f = () -> ( other.nope )");
         file("other.ba", "export def x = 1");
-        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        ScriptEngine engine = newEngine();
         run(engine, "import(\"lib.ba\")");
         run(engine, "import(\"lib.ba\") ; import(\"./lib.ba\")");
         Assertions.assertEquals(1, errors.toString().split("No such export : nope", -1).length - 1, errors.toString());
@@ -379,7 +379,7 @@ public class BabbleModulesTestCase {
         file("shapes.ba", SHAPES);
         file("square.ba", "def shapes = import(\"shapes.ba\")\n"
                 + "export def Square = class () implements shapes.Shape ( def area = () -> ( 4 ) )");
-        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        ScriptEngine engine = newEngine();
         Assertions.assertEquals(4, run(engine, "import(\"square.ba\").Square().area()"));
         file("shapes.ba", SHAPES.replace("def area : () : double", "def area : () : double\n    def perimeter : () : double"));
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, "import(\"square.ba\").Square().area()"));
@@ -390,7 +390,7 @@ public class BabbleModulesTestCase {
     public void staticImportsWorkInBothModesAndWithTypes() throws Exception {
         file("shapes.ba", "export def Shape = interface ( def area : () : double ; def twice = () : double -> ( 2 * this.area() ) )");
         for (String mode : new String[]{"interpret", "compile"}) {
-            ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            ScriptEngine engine = newEngine();
             engine.put(BabbleScriptEngine.MODE, mode);
             engine.put(BabbleScriptEngine.TYPECHECK, "error");
             Object result = run(engine, "def shapes = import(\"shapes.ba\")\n"
@@ -409,7 +409,7 @@ public class BabbleModulesTestCase {
     public void privateMembersOfImportedClassesStayPrivateOnceCached() throws Exception {
         file("lib.ba", "export def P = class () ( def open = 1 ; private def secret = 2 )");
         for (String mode : new String[]{"interpret", "compile"}) {
-            ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            ScriptEngine engine = newEngine();
             engine.put(BabbleScriptEngine.MODE, mode);
             String script = "def P = import(\"lib.ba\").P\n"
                     + "def read = (o) -> ( o.open )\ndef peek = (o) -> ( o.secret )\n"
@@ -424,10 +424,12 @@ public class BabbleModulesTestCase {
 
     /** The type diagnostics of a script, in warn mode, without running it : "line:column message", file names dropped. */
     private java.util.List<String> typeWarnings(String script) throws Exception {
-        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        engine.put(BabbleScriptEngine.TYPECHECK, "warn");
+        ScriptEngine engine = newEngine();
+        // The engine's attributes live in its context : the new one carries them.
         ScriptContext context = new SimpleScriptContext();
-        context.setAttribute(ScriptEngine.FILENAME, directory.resolve("main.ba").toString(), ScriptContext.ENGINE_SCOPE);
+        context.setAttribute(BabbleScriptEngine.TYPECHECK, "warn", ScriptContext.ENGINE_SCOPE);
+        context.setAttribute(BabbleScriptEngine.MODULE_SOURCE, source, ScriptContext.ENGINE_SCOPE);
+        context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
         StringWriter warnings = new StringWriter();
         context.setErrorWriter(warnings);
         engine.setContext(context);
@@ -537,7 +539,7 @@ public class BabbleModulesTestCase {
     public void errorModeChecksImportedTypesAtRuntime() throws Exception {
         file("lib.ba", LIB);
         for (String mode : new String[]{"interpret", "compile"}) {
-            ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            ScriptEngine engine = newEngine();
             engine.put(BabbleScriptEngine.MODE, mode);
             engine.put(BabbleScriptEngine.TYPECHECK, "error");
             String script = "def lib = import(\"lib.ba\")\ndef id = (x) -> ( x )\n";
@@ -552,9 +554,9 @@ public class BabbleModulesTestCase {
     @Test
     public void aModuleChangedAfterCompilationIsNamedInTypeErrors() throws Exception {
         file("lib.ba", "export def C = class () ()");
-        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        ScriptEngine engine = newEngine();
         engine.put(BabbleScriptEngine.TYPECHECK, "error");
-        engine.put(ScriptEngine.FILENAME, directory.resolve("main.ba").toString());
+        engine.put(ScriptEngine.FILENAME, "main.ba");
         javax.script.CompiledScript script = ((javax.script.Compilable) engine)
                 .compile("def lib = import(\"lib.ba\")\ndef id = (x) -> ( x )\ndef c : lib.C = id(lib.C())\n\"ok\"");
         Assertions.assertEquals("ok", script.eval());

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3) and M4a are implemented ; M4b and M5 are not. |
+| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3) and M4 (§4) are implemented ; M5 is not. |
 | **Depends on** | [modules.md](modules.md) (static imports, the module cache, module types), [bytecode-compiler.md](bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
 | **Unblocks** | Babble programs shipped as a jar, hosts serving modules from anywhere, module tests without temporary files |
 
@@ -183,13 +183,18 @@ public record ModuleText(String text, String version) { }
 * `FileModuleSource`, the default : today's behaviour. Keys are real paths (`file:/abs/a.ba`),
   display names the path as it was resolved, versions content hashes, and relative names
   resolve against the importer's directory.
-* `FileModuleSource(root)` : keys and display names relative to a root directory
-  (`lib/vec3.ba`), and imports cannot leave it. It is what `babblec` uses (§5.2), and what a host
-  sandboxing imports would use.
+* `FileModuleSource.rooted(root)` : keys and display names relative to a root directory
+  (`lib/vec3.ba`), and imports cannot leave it, through `..` or a symbolic link. Names resolve as
+  in a map (below) : a name starting with `/` is from the root, not from the file system's ; a
+  script's source name may be absolute inside the root, or relative to it. It is what `babblec`
+  uses (§5.2), and what a host sandboxing imports would use.
 * `MapModuleSource` : modules given as a map from logical path to text, `/`-separated, relative
-  names resolved against the importer's directory within the map. Tests use it instead of
-  temporary files ; hosts use it for modules they generate or keep in memory.
-* `ClassPathModuleSource(loader, prefix)` : modules shipped as resources, for libraries in jars.
+  names resolved against the importer's directory within the map, `/` from the root, nothing
+  above it. Paths are keys and display names ; versions hash the text, so `put` with a new text
+  recompiles. Tests use it instead of temporary files ; hosts use it for modules they generate or
+  keep in memory.
+* `ClassPathModuleSource(loader, prefix)` : modules shipped as resources under a prefix, for
+  libraries in jars. Paths as in a map ; keys are `classpath:` and the path.
 
 ### 4.3 What changes in the engine
 
@@ -283,7 +288,7 @@ needed at runtime. A type error found by the analysis fails the compilation, as 
 |---|---|---|
 | **R1** | The runtime boundary (§3) : `Implicits`, `Modules`, `ScriptRuntime` without `javax.script`, the moves, the boundary test, the runtime jar. No change of behaviour but sessions loading a module once. | Done. |
 | **M4a** | `ModuleSource`, `ModuleId`, `FileModuleSource` as the default ; the engine's cache keyed by `ModuleId` and versions. | Done. |
-| **M4b** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. | |
+| **M4b** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. | Done : `BabbleModulesTestCase` runs in memory, `FileModulesTestCase` keeps what is particular to files and the class path. |
 | **M5a** | Stable class names, type ids and source names (§5.2), in the engine too. | |
 | **M5b** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. | |
 | **M5c** | Dynamic imports in a compiled program : the index, then a module compiler through `ServiceLoader`, else the error of §5.4. | |
