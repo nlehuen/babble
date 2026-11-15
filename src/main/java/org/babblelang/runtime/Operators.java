@@ -18,6 +18,11 @@ public final class Operators {
         return number(a, site.leftText()).doubleValue() * number(b, site.rightText()).doubleValue();
     }
 
+    /**
+     * {@code a / b} : always a double, even between two ints, unlike {@code +}, {@code -} and
+     * {@code *}. Dividing by zero gives an infinity or NaN (IEEE 754), not an error; only a
+     * non-number fails. On two numbers the type checker types it {@code double}.
+     */
     public static Object div(Object a, Object b, OpSite site) {
         return number(a, site.leftText()).doubleValue() / number(b, site.rightText()).doubleValue();
     }

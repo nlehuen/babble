@@ -159,6 +159,17 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
     }
 
     @Test
+    public void testDivisionAlwaysGivesADouble() throws Exception {
+        // Unlike +, - and *, "/" is a double division even between two ints, and never throws.
+        Assertions.assertEquals(2.0, interpret(" 4 / 2 "));
+        Assertions.assertEquals(3.5, interpret(" 7 / 2 "));
+        Assertions.assertEquals(Double.POSITIVE_INFINITY, interpret(" 1 / 0 "));
+        Assertions.assertEquals(Double.NEGATIVE_INFINITY, interpret(" -1 / 0 "));
+        Assertions.assertTrue(Double.isNaN((Double) interpret(" 0 / 0 ")));
+        Assertions.assertEquals(4, interpret(" 2 * 2 "));
+    }
+
+    @Test
     public void testEqualityAcrossUnrelatedTypes() throws Exception {
         // Equality is total : incomparable operands are simply not equal.
         Assertions.assertEquals(false, interpret(" 1 == \"x\" "));
