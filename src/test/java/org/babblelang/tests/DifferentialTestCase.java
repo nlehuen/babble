@@ -121,7 +121,24 @@ public class DifferentialTestCase {
                         + "def i = 0 ; while i < 10 then ( sb.append(xs.get(if i < 5 then ( i ) else ( i - 5 ))) ; i = i + 1 ) ; sb.toString()",
                 "def sb = java.lang.StringBuilder() ; def i = 0 ; while i < 3 then ( sb.append(i) ; i = i + 1 ) ; sb.append(null)",
                 "def R = class () implements java.lang.Runnable ( def run = () -> ( null ) ) ; def P = class () ()\n"
-                        + "def mk = (o) -> ( java.lang.Thread(o) ) ; mk(R()) ; mk(R()) ; mk(P())"
+                        + "def mk = (o) -> ( java.lang.Thread(o) ) ; mk(R()) ; mk(R()) ; mk(P())",
+                // Java calls' fast paths : one site, called again and again, with arguments
+                // of kinds picking other overloads, receivers of other classes, and failures.
+                "def Demo = import(\"org\").babblelang.tests.JavaClassDemo\ndef d = Demo() ; def vs = java.util.ArrayList() ; vs.add(1) ; vs.add(\"a\") ; vs.add(1.5) ; vs.add(true) ; vs.add(null) ; vs.add(2) ; vs.add(\"b\") ; vs.add(java.lang.StringBuilder(\"w\"))\n"
+                        + "def over = (v) -> ( d.overloaded(v) ) ; def i = 0 ; def s = \"\" ; while i < 16 then ( s = s + over(vs.get(if i < 8 then ( i ) else ( i - 8 ))) + \",\" ; i = i + 1 ) ; s",
+                "def first = (l) -> ( l.get(0) ) ; def a = java.util.ArrayList() ; a.add(1) ; def k = java.util.LinkedList() ; k.add(2)\n"
+                        + "def ls = java.util.ArrayList() ; ls.add(a) ; ls.add(k) ; ls.add(java.util.List.of(3)) ; ls.add(a) ; ls.add(java.util.Collections.singletonList(4))\n"
+                        + "def i = 0 ; def s = 0 ; while i < 10 then ( s = s * 10 + first(ls.get(if i < 5 then ( i ) else ( i - 5 ))) ; i = i + 1 ) ; s",
+                "def root = (v) -> ( java.lang.Math.sqrt(v) ) ; def big = (v) -> ( java.lang.Math.max(v, 2) ) ; def i = 0 ; def s = \"\"\n"
+                        + "while i < 4 then ( s = s + root(4) + root(9.0) + big(1) + big(3.5) + big(java.lang.Long.MAX_VALUE) + \";\" ; i = i + 1 ) ; s",
+                "def sb = java.lang.StringBuilder() ; def add = (v) -> ( sb.append(v) ) ; def i = 0\n"
+                        + "while i < 3 then ( add(i) ; add(\"-\") ; add(sb.length()) ; add(sb.charAt(0)) ; add(java.lang.StringBuilder(\"x\")) ; add(object ( def toString = () -> ( \"o\" ) )) ; i = i + 1 ) ; sb.toString()",
+                "def Demo = import(\"org\").babblelang.tests.JavaClassDemo\ndef put = (d, v) -> ( d.nullable(v) ) ; def d = Demo() ; def i = 0 ; def s = \"\" ; while i < 4 then ( s = s + put(d, null) + put(d, \"x\") ; i = i + 1 ) ; s",
+                "def l = java.util.ArrayList() ; def put = (v) -> ( l.add(v) ) ; def clear = () -> ( l.clear() ) ; def i = 0 ; while i < 3 then ( put(i) ; clear() ; put(i) ; i = i + 1 ) ; l.toString() + clear()",
+                "def at = (l, i) -> ( l.get(i) ) ; def l = java.util.ArrayList() ; l.add(\"a\") ; def i = 0 ; while i < 5 then ( at(l, 0) ; i = i + 1 ) ; at(l, 3)",
+                "def parse = (s) -> ( java.lang.Integer.parseInt(s) ) ; def i = 0 ; def n = 0 ; while i < 5 then ( n = n + parse(\"12\") ; i = i + 1 ) ; parse(\"nope\")",
+                "def each = (l, f) -> ( l.forEach(f) ) ; def l = java.util.ArrayList() ; l.add(1) ; l.add(0) ; def i = 0 ; while i < 3 then ( each(l, (v) -> ( java.lang.Integer.parseInt(\"x\" + v) )) ; i = i + 1 )",
+                "def each = (l) -> ( l.forEach((v) -> ( suppose(v > 0, \"positive\") )) ) ; def l = java.util.ArrayList() ; l.add(1) ; def i = 0 ; while i < 3 then ( each(l) ; i = i + 1 ) ; l.add(0) ; each(l)"
         );
     }
 

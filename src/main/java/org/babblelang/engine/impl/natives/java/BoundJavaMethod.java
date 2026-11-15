@@ -5,8 +5,8 @@ import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.ScriptRuntime;
 
 public class BoundJavaMethod implements Callable {
-    private final JavaMethod method;
-    private final Object thiz;
+    final JavaMethod method;
+    final Object thiz;
 
     BoundJavaMethod(JavaMethod method, Object thiz) {
         this.method = method;

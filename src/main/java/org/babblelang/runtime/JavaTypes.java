@@ -91,6 +91,29 @@ public final class JavaTypes {
         return null;
     }
 
+    /**
+     * The methods of that name a call may resolve to. Bridge and synthetic methods
+     * duplicate a real one with erased parameters, and would only ever add spurious
+     * ambiguity, except a bridge that makes public a method a non-public superclass declares
+     * ({@code StringBuilder.length()}, from {@code AbstractStringBuilder}) : it is the
+     * method's only accessible form, and no real method of that name has its arity.
+     */
+    public static List<Method> methods(Class<?> type, String name) {
+        List<Method> real = new ArrayList<>();
+        List<Method> bridges = new ArrayList<>();
+        for (Method method : type.getMethods()) {
+            if (method.getName().equals(name)) {
+                (method.isBridge() || method.isSynthetic() ? bridges : real).add(method);
+            }
+        }
+        for (Method bridge : bridges) {
+            if (real.stream().noneMatch(m -> m.getParameterCount() == bridge.getParameterCount())) {
+                real.add(bridge);
+            }
+        }
+        return real;
+    }
+
     public static Class<?> box(Class<?> type) {
         return type.isPrimitive() ? BOXES.get(type) : type;
     }

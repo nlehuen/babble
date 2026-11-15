@@ -1488,12 +1488,7 @@ final class TypeChecker {
             return new Type.JavaInstance(java);
         }
         if (callee instanceof Type.JavaMethod method) {
-            List<Method> candidates = new ArrayList<>();
-            for (Method candidate : method.owner().getMethods()) {
-                if (candidate.getName().equals(method.name()) && !candidate.isBridge() && !candidate.isSynthetic()) {
-                    candidates.add(candidate);
-                }
-            }
+            List<Method> candidates = JavaTypes.methods(method.owner(), method.name());
             List<Method> applicable = javaCall(candidates, method.owner().getCanonicalName() + "." + method.name(), arguments, ctx);
             Set<Class<?>> results = applicable.stream().map(Method::getReturnType).collect(Collectors.toSet());
             if (results.size() == 1) {

@@ -162,4 +162,13 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
             Assertions.assertTrue(e.getMessage().contains(c[2]), c[1] + " : " + e.getMessage());
         }
     }
+
+    @Test
+    public void testMethodsInheritedFromANonPublicSuperclass() throws Exception {
+        // StringBuilder makes AbstractStringBuilder's length() public through a bridge method.
+        Assertions.assertEquals(3, interpret("java.lang.StringBuilder(\"abc\").length()"));
+        Assertions.assertEquals('b', interpret("java.lang.StringBuilder(\"abc\").charAt(1)"));
+        // Generic bridges still add no ambiguity : compareTo(Object) beside compareTo(String).
+        Assertions.assertEquals(-1, interpret("java.math.BigInteger.ONE.compareTo(java.math.BigInteger.TWO)"));
+    }
 }

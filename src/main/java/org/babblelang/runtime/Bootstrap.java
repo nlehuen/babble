@@ -1,6 +1,7 @@
 package org.babblelang.runtime;
 
 import org.babblelang.engine.impl.natives.java.JavaClass;
+import org.babblelang.engine.impl.natives.java.JavaLinker;
 import org.babblelang.engine.impl.natives.java.JavaPackage;
 
 import java.lang.invoke.MethodHandle;
@@ -95,7 +96,7 @@ public final class Bootstrap {
             return type().parameterCount() - 4;
         }
 
-        synchronized void relink(Callable callee, String[] names) {
+        synchronized void relink(Callable callee, String[] names, Object[] args) {
             if (depth > MAX_DEPTH) {
                 return;
             }
@@ -104,9 +105,14 @@ public final class Bootstrap {
                 return;
             }
             MethodHandle test = names == null ? callTest(callee, arguments()) : null;
+            MethodHandle[] java = test == null && names == null ? JavaLinker.call(callee, args, type()) : null;
             MethodHandle fast;
             if (test != null) {
                 fast = MethodHandles.dropArguments(callTarget(callee, arguments()), 2, String[].class, CallSite.class);
+            } else if (java != null) {
+                // A Java method, for arguments of these kinds : its method handle.
+                test = java[0];
+                fast = java[1];
             } else {
                 // Any other callee : its own call method, for callees of its class only, so
                 // that each site has its own profile instead of sharing callGeneric's.
@@ -123,7 +129,7 @@ public final class Bootstrap {
         String[] names = (String[]) all[2];
         CallSite site = (CallSite) all[3];
         Object[] args = all.length == 4 ? Arguments.NONE : Arrays.copyOfRange(all, 4, all.length);
-        cache.relink(callee, names);
+        cache.relink(callee, names, args);
         return callee.call(rt, args, names, site);
     }
 
@@ -267,6 +273,13 @@ public final class Bootstrap {
             } else if (target instanceof BabbleInstance instance && target.getClass() != BabbleInstance.class) {
                 test = IS_CLASS.bindTo(target.getClass());
                 fast = instanceMember(instance);
+            } else {
+                // A Java object's method, bound to it.
+                MethodHandle[] java = JavaLinker.select(target, result);
+                if (java != null) {
+                    test = java[0];
+                    fast = java[1];
+                }
             }
             if (fast == null || ++depth > MAX_DEPTH) {
                 depth = MAX_DEPTH + 1;

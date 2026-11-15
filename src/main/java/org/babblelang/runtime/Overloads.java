@@ -27,16 +27,12 @@ public final class Overloads {
 
     public static Method resolveMethod(Class<?> clazz, String name, Object[] arguments) {
         List<Method> candidates = new ArrayList<>();
-        for (Method method : clazz.getMethods()) {
-            // Bridge and synthetic methods duplicate a real one with erased parameters,
-            // and would only ever add spurious ambiguity.
-            if (method.getName().equals(name) && !method.isBridge() && !method.isSynthetic()) {
-                // An object of a class Babble can't reach, as Java returns some, is called
-                // through the public type the method comes from.
-                Method accessible = JavaTypes.accessible(method);
-                if (accessible != null && !candidates.contains(accessible)) {
-                    candidates.add(accessible);
-                }
+        for (Method method : JavaTypes.methods(clazz, name)) {
+            // An object of a class Babble can't reach, as Java returns some, is called
+            // through the public type the method comes from.
+            Method accessible = JavaTypes.accessible(method);
+            if (accessible != null && !candidates.contains(accessible)) {
+                candidates.add(accessible);
             }
         }
         return resolve(candidates, clazz.getCanonicalName() + "." + name, arguments);
