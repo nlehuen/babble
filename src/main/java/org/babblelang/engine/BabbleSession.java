@@ -69,7 +69,9 @@ public final class BabbleSession {
         BabbleLexer lexer = BabbleScriptEngine.lexer(CharStreams.fromString(source));
         try {
             for (Token token = lexer.nextToken(); token.getType() != Token.EOF; token = lexer.nextToken()) {
-                if (token.getType() != BabbleLexer.NL && token.getType() != BabbleLexer.SEMICOLON) {
+                // Comments are tokens too, on a channel the parser does not read.
+                if (token.getChannel() == Token.DEFAULT_CHANNEL && token.getType() != BabbleLexer.NL
+                        && token.getType() != BabbleLexer.SEMICOLON) {
                     return true;
                 }
             }

@@ -546,6 +546,20 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
     }
 
+    /**
+     * Parses a source text, without analysing it : what tools working on the text, such as
+     * the formatter, start from.
+     *
+     * @throws ScriptException on a lexical or syntax error, worded as {@code compile} does
+     */
+    public static BabbleParser.FileContext parseSource(String text, String sourceName) throws ScriptException {
+        try {
+            return parse(CharStreams.fromString(text, sourceName));
+        } catch (ParseFailure e) {
+            throw e.toScriptException(sourceName);
+        }
+    }
+
     private CompiledScript compile(Reader script, String sourceName, ScriptContext context) throws ScriptException {
         BabbleParser.FileContext file;
         try {
