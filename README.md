@@ -193,14 +193,18 @@ assert(origin.x == 0)
 
 ### Value classes
 
-A value class compares by value, prints its fields, and its members are read-only.
+A value class compares by value, prints its fields, and its members are read-only. On any
+instance, the arithmetic operators call methods : `a + b` is `a.plus(b)`, and `-`, `*`, `/` and
+unary `-` call `minus`, `times`, `div` and `neg`. The left operand decides : `2 * p` is an error.
 
 ```
 def Point = value class (x, y) (
     def plus = (o) -> ( Point(this.x + o.x, this.y + o.y) )
+    def times = (k) -> ( Point(this.x * k, this.y * k) )
 )
 
 assert(Point(1, 2).plus(Point(3, 4)) == Point(4, 6))
+assert(Point(1, 2) + Point(3, 4) * 2 == Point(7, 10))
 assert(Point(1, 2) == Point(1.0, 2.0))        ;; numbers compare across types
 assert(not same(Point(1, 2), Point(1, 2)))    ;; same() tests identity
 assert("" + Point(1, 2) == "Point(x: 1, y: 2)")
@@ -605,7 +609,7 @@ Writing [the ray tracer](examples/raytracer-fable/raytracer.ba) showed where Bab
 order of how much each would improve that code :
 
 - [x] unary minus : `-x` and `-1.0` had to be written `0 - x` and `0 - 1.0`.
-- [ ] operator methods : let `a + b * t` call `plus` and `times` members, so vector maths doesn't
+- [x] operator methods : let `a + b * t` call `plus` and `times` members, so vector maths doesn't
   read `a.plus(b.times(t))`.
 - [x] members of Java values returned by Java calls : only objects constructed in Babble accepted
   method calls, so `list.get(0).size()` or `Runtime.getRuntime().availableProcessors()` failed with

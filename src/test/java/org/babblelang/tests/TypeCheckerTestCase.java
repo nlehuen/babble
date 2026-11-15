@@ -160,6 +160,28 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testOperatorMethods() {
+        assertDiagnostics("def V = value class (x : double) ( def plus = (o : V) : V -> ( V(this.x + o.x) ) ; def times = (k : double) : V -> ( V(this.x * k) ) ; def neg = () : V -> ( this * -1.0 ) )\n"
+                        + "def a = V(1.0)\n"
+                        + "def b : V = a + a * 2.0 + -a\n"
+                        + "def c : double = a + a\n"
+                        + "a + 1\n"
+                        + "a * a\n"
+                        + "a - a\n"
+                        + "def P = class () ( def plus = (p, q) -> ( p ) ; def times = 3 )\n"
+                        + "P() + 1\n"
+                        + "P() * 2\n" // an unannotated member is dynamic : found when it runs
+                        + "-P()\n"
+                        + "def d = (x) -> ( x - a )",
+                "4:18 Type error : expected double, got V",
+                "5:5 Type error : expected V, got int",
+                "6:5 Type error : expected double, got V",
+                "7:1 No such member : minus",
+                "9:1 Missing parameter : q",
+                "11:1 No such member : neg");
+    }
+
+    @Test
     public void testUnaryMinusAndElseIf() {
         assertDiagnostics("def a : int = -1\n"
                         + "def b : double = -1\n"

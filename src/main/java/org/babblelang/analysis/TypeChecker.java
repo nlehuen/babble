@@ -6,6 +6,7 @@ import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.JavaTypes;
+import org.babblelang.runtime.Operators;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
@@ -1101,6 +1102,9 @@ final class TypeChecker {
             if (operand == Type.NOTHING) {
                 return Type.NOTHING;
             }
+            if (operand instanceof Type.Instance) {
+                return operatorCall(operand, Operators.NEGATE, null, null, ctx, ctx.operand);
+            }
             if (!number(operand, ctx.operand) || isUnknown(operand)) {
                 return Type.DYNAMIC;
             }
@@ -1705,6 +1709,10 @@ final class TypeChecker {
     private Type binaryOp(BabbleParser.BinaryOpContext ctx, Type left, Type right) {
         int op = ctx.op.getType();
         boolean seeding = !inferenceStack.isEmpty() && recursiveFunctions.contains(inferenceStack.peek());
+        String method = Operators.method(ctx.op.getText());
+        if (method != null && left instanceof Type.Instance) {
+            return operatorCall(left, method, ctx.right, right, ctx, ctx.left);
+        }
         switch (op) {
             case BabbleLexer.PLUS:
                 if (left == Type.STRING) {
@@ -1717,6 +1725,10 @@ final class TypeChecker {
             case BabbleLexer.MINUS:
             case BabbleLexer.MUL:
             case BabbleLexer.DIV:
+                if (left == Type.DYNAMIC) {
+                    // Maybe an instance with the operator's method : the right operand is its argument.
+                    return Type.DYNAMIC;
+                }
                 boolean numbers = number(left, ctx.left) & number(right, ctx.right);
                 if (op == BabbleLexer.DIV) {
                     return Type.DOUBLE;
@@ -1773,6 +1785,31 @@ final class TypeChecker {
         Class<?> leftClass = javaClassOf(left);
         Class<?> rightClass = javaClassOf(right);
         return leftClass != null && rightClass != null && Comparable.class.isAssignableFrom(leftClass) && leftClass.isAssignableFrom(rightClass);
+    }
+
+    /**
+     * {@code a + b}, or {@code -a}, on an instance of a class or interface : typed as the call
+     * of its operator method, {@code a.plus(b)} ({@code argument} null for {@code a.neg()}).
+     */
+    private Type operatorCall(Type receiver, String method, BabbleParser.ExpressionContext argument, Type argumentType,
+                              ParserRuleContext at, BabbleParser.ExpressionContext receiverExpression) {
+        Type callee = member(receiver, method, false, at, receiverExpression);
+        if (!(callee instanceof Type.Function function)) {
+            if (!isUnknown(callee) && !isFunction(callee)) {
+                warn(receiverExpression.getText() + "." + method + " is not callable", at);
+            }
+            return Type.DYNAMIC;
+        }
+        List<Type.Parameter> parameters = function.parameters();
+        int given = argument == null ? 0 : 1;
+        if (given < parameters.size() && !parameters.get(given).optional()) {
+            warn("Missing parameter : " + parameters.get(given).name(), at);
+        } else if (given > parameters.size()) {
+            warn("Too many parameters : " + parameters.size() + " declared, " + given + " given", at);
+        } else if (argument != null) {
+            expect(argumentType, parameters.get(0).type(), argument);
+        }
+        return function.result();
     }
 
     // ---------------------------------------------------------------- assignability

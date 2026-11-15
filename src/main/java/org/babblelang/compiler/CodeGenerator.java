@@ -9,6 +9,7 @@ import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Operators;
 import org.babblelang.runtime.ClassShape;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
@@ -1654,11 +1655,36 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             case BabbleLexer.GT -> "gt";
             default -> throw new IllegalStateException("Bad op : " + ctx.op.getText());
         };
+        String operatorMethod = Operators.method(ctx.op.getText());
+        if (operatorMethod == null) {
+            visit(ctx.left);
+            visit(ctx.right);
+            mv.visitFieldInsn(GETSTATIC, className, opSiteField(ctx), "L" + OP_SITE + ";");
+            line(ctx);
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Operators", method, "(Ljava/lang/Object;Ljava/lang/Object;L" + OP_SITE + ";)Ljava/lang/Object;", false);
+            return null;
+        }
+        // Arithmetic : on a Babble instance, its operator method ; on anything else, Operators.
+        int left = newLocal();
+        int right = newLocal();
         visit(ctx.left);
+        mv.visitVarInsn(ASTORE, left);
         visit(ctx.right);
+        mv.visitVarInsn(ASTORE, right);
+        Label numbers = new Label();
+        Label end = new Label();
+        mv.visitVarInsn(ALOAD, left);
+        mv.visitTypeInsn(INSTANCEOF, RUNTIME + "BabbleInstance");
+        mv.visitJumpInsn(IFEQ, numbers);
+        operatorCall(ctx, ctx.left, operatorMethod, ctx.right, left, right);
+        mv.visitJumpInsn(GOTO, end);
+        mv.visitLabel(numbers);
+        mv.visitVarInsn(ALOAD, left);
+        mv.visitVarInsn(ALOAD, right);
         mv.visitFieldInsn(GETSTATIC, className, opSiteField(ctx), "L" + OP_SITE + ";");
         line(ctx);
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Operators", method, "(Ljava/lang/Object;Ljava/lang/Object;L" + OP_SITE + ";)Ljava/lang/Object;", false);
+        mv.visitLabel(end);
         return null;
     }
 
@@ -1890,11 +1916,56 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             integer(ctx, "-" + literal.getText());
             return null;
         }
+        int operand = newLocal();
         visit(ctx.operand);
+        mv.visitVarInsn(ASTORE, operand);
+        Label number = new Label();
+        Label end = new Label();
+        mv.visitVarInsn(ALOAD, operand);
+        mv.visitTypeInsn(INSTANCEOF, RUNTIME + "BabbleInstance");
+        mv.visitJumpInsn(IFEQ, number);
+        operatorCall(ctx, ctx.operand, Operators.NEGATE, null, operand, -1);
+        mv.visitJumpInsn(GOTO, end);
+        mv.visitLabel(number);
+        mv.visitVarInsn(ALOAD, operand);
         mv.visitLdcInsn(ctx.operand.getText());
         line(ctx);
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Operators", "negate", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitLabel(end);
         return null;
+    }
+
+    /**
+     * An operator on a Babble instance : {@code a + b} compiles as {@code a.plus(b)} does,
+     * through the same select and call sites and their fast paths, with the operands already
+     * evaluated in their locals ({@code argument} -1 for {@code -a}, {@code a.neg()}).
+     */
+    private void operatorCall(ParserRuleContext ctx, BabbleParser.ExpressionContext receiver, String method,
+                              BabbleParser.ExpressionContext argumentText, int receiverLocal, int argument) {
+        CallSite site = Interpreter.operatorSite(ctx, receiver, method, argumentText, sourceName);
+        String field = addConstant("CS", "L" + CALL_SITE + ";", 24 + estimateSize(site.argTexts()), m -> {
+            m.visitTypeInsn(NEW, CALL_SITE);
+            m.visitInsn(DUP);
+            pushString(m, site.sourceName());
+            pushInt(m, site.line());
+            pushString(m, site.calleeText());
+            pushStringArray(m, site.argTexts());
+            m.visitMethodInsn(INVOKESPECIAL, CALL_SITE, "<init>", "(Ljava/lang/String;ILjava/lang/String;[Ljava/lang/String;)V", false);
+        });
+        mv.visitVarInsn(ALOAD, receiverLocal);
+        line(ctx);
+        mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, method, receiver.getText());
+        mv.visitFieldInsn(GETSTATIC, className, field, "L" + CALL_SITE + ";");
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
+        mv.visitVarInsn(ALOAD, rtLocal);
+        mv.visitInsn(ACONST_NULL);
+        mv.visitFieldInsn(GETSTATIC, className, field, "L" + CALL_SITE + ";");
+        if (argument >= 0) {
+            mv.visitVarInsn(ALOAD, argument);
+        }
+        line(ctx);
+        mv.visitInvokeDynamicInsn("call", "(L" + CALLABLE + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/String;L" + CALL_SITE + ";"
+                + (argument >= 0 ? "Ljava/lang/Object;" : "") + ")Ljava/lang/Object;", CALL_BOOTSTRAP);
     }
 
     @Override
