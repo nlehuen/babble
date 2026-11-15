@@ -20,4 +20,13 @@ public interface ModuleLoader {
      *                           analysis : an error of the importing file, at the import
      */
     ModuleInterface load(String name, int line);
+
+    /**
+     * The key of the module being analysed, or null when it is not one (a script a host
+     * evaluates, an interactive input) : its types' ids derive from it, so that they are the
+     * same every time the module is compiled.
+     */
+    default String moduleKey() {
+        return null;
+    }
 }

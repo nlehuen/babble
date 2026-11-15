@@ -550,9 +550,12 @@ public class BabbleModulesTestCase {
         }
     }
 
-    /** A known limit (docs/design/modules.md §8.2), with a message that says what likely happened. */
+    /**
+     * A module's types keep their ids when it is compiled again (docs/design/module-sources-and-aot.md
+     * §5.2) : a script compiled before the module changed still recognises its classes.
+     */
     @Test
-    public void aModuleChangedAfterCompilationIsNamedInTypeErrors() throws Exception {
+    public void aModuleChangedAfterCompilationKeepsItsTypes() throws Exception {
         file("lib.ba", "export def C = class () ()");
         ScriptEngine engine = newEngine();
         engine.put(BabbleScriptEngine.TYPECHECK, "error");
@@ -560,9 +563,20 @@ public class BabbleModulesTestCase {
         javax.script.CompiledScript script = ((javax.script.Compilable) engine)
                 .compile("def lib = import(\"lib.ba\")\ndef id = (x) -> ( x )\ndef c : lib.C = id(lib.C())\n\"ok\"");
         Assertions.assertEquals("ok", script.eval());
-        file("lib.ba", "export def C = class () ( def x = 1 )");
-        ScriptException e = Assertions.assertThrows(ScriptException.class, script::eval);
-        Assertions.assertTrue(e.getMessage().contains("expected C, got C, from another class expression of that name"), e.getMessage());
+        file("lib.ba", "def Other = class () ()\nexport def C = class () ( def x = 1 )");
+        Assertions.assertEquals("ok", script.eval());
+    }
+
+    /** Two classes of one name, from two modules : the type error names them by their ids. */
+    @Test
+    public void twoClassesOfOneNameAreToldApartByTheirIds() throws Exception {
+        file("a.ba", "export def C = class () ()");
+        file("b.ba", "export def C = class () ()");
+        ScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.TYPECHECK, "error");
+        ScriptException e = Assertions.assertThrows(ScriptException.class,
+                () -> run(engine, "def a = import(\"a.ba\")\ndef id = (x) -> ( x )\ndef c : a.C = id(import(\"b.ba\").C())"));
+        Assertions.assertTrue(e.getMessage().contains("Type error : expected C, got C (expected a.ba#C, got b.ba#C)"), e.getMessage());
     }
 
     @Test

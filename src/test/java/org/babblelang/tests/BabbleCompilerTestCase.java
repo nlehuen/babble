@@ -318,4 +318,67 @@ public class BabbleCompilerTestCase {
         Assertions.assertEquals(3000 * 2999 / 2, compiled.eval(new SimpleBindings()));
         Assertions.assertEquals(longString, run("\"" + longString + "\""));
     }
+
+    // ---------------------------------------------------------------- stable names (M5a)
+
+    @Test
+    public void moduleClassesAreNamedAfterTheirKeys() {
+        Assertions.assertEquals("babble/lib/vec3$ba", org.babblelang.compiler.BabbleCompiler.className("lib/vec3.ba"));
+        Assertions.assertEquals("babble/tmp/a_b/v1$2/x$ba", org.babblelang.compiler.BabbleCompiler.className("file:/tmp/a b/v1.2/x.ba"));
+        Assertions.assertEquals("babble/lib/x-y$ba", org.babblelang.compiler.BabbleCompiler.className("classpath:lib/x-y.ba"));
+    }
+
+    private static ScriptEngine moduleEngine(org.babblelang.engine.MapModuleSource source) {
+        ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleScriptEngine.TYPECHECK, "error");
+        engine.put(BabbleScriptEngine.MODULE_SOURCE, source);
+        engine.put(ScriptEngine.FILENAME, "main.ba");
+        return engine;
+    }
+
+    private static final String VEC3 = "export def Vec3 = value class (x : double, y : double) (\n"
+            + "    def plus = (o : Vec3) : Vec3 -> ( Vec3(this.x + o.x, this.y + o.y) )\n"
+            + ")\n"
+            + "export def zero = Vec3(0.0, 0.0)\n";
+
+    @Test
+    public void aModulesClassesCarryItsName() throws Exception {
+        org.babblelang.engine.MapModuleSource source = new org.babblelang.engine.MapModuleSource().put("lib/vec3.ba", VEC3);
+        Object vec = moduleEngine(source).eval("import(\"lib/vec3.ba\").zero");
+        String name = vec.getClass().getName();
+        Assertions.assertTrue(name.startsWith("babble.lib.vec3$ba$") && name.endsWith("$Vec3"), name);
+    }
+
+    @Test
+    public void aModuleCompilesToTheSameClassesEveryTime() throws Exception {
+        java.nio.file.Path first = java.nio.file.Files.createTempDirectory("babble-dump");
+        java.nio.file.Path second = java.nio.file.Files.createTempDirectory("babble-dump");
+        String previous = System.getProperty(org.babblelang.compiler.BabbleCompiler.DUMP_CLASSES);
+        try {
+            for (java.nio.file.Path dump : List.of(first, second)) {
+                System.setProperty(org.babblelang.compiler.BabbleCompiler.DUMP_CLASSES, dump.toString());
+                // A new engine and source each time : nothing is shared but the module's text.
+                moduleEngine(new org.babblelang.engine.MapModuleSource().put("lib/vec3.ba", VEC3)).eval("import(\"lib/vec3.ba\").zero");
+            }
+        } finally {
+            if (previous == null) {
+                System.clearProperty(org.babblelang.compiler.BabbleCompiler.DUMP_CLASSES);
+            } else {
+                System.setProperty(org.babblelang.compiler.BabbleCompiler.DUMP_CLASSES, previous);
+            }
+        }
+        java.nio.file.Path module = java.nio.file.Path.of("babble", "lib");
+        List<String> classes;
+        try (var files = java.nio.file.Files.list(first.resolve(module))) {
+            classes = files.map(f -> f.getFileName().toString()).sorted().toList();
+        }
+        Assertions.assertTrue(classes.contains("vec3$ba.class"), classes.toString());
+        Assertions.assertTrue(classes.size() >= 2, classes.toString());
+        for (String file : classes) {
+            Assertions.assertArrayEquals(java.nio.file.Files.readAllBytes(first.resolve(module).resolve(file)),
+                    java.nio.file.Files.readAllBytes(second.resolve(module).resolve(file)), file);
+        }
+    }
+
 }

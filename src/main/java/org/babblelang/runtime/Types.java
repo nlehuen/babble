@@ -145,10 +145,9 @@ public final class Types {
     public static Object check(Object value, Type type) {
         if (!type.accepts(value)) {
             String got = describe(value);
-            if (type instanceof NominalType && got.equals(type.toString())) {
-                // Two class expressions with one name : most likely a module whose file changed
-                // after the script was compiled (docs/design/modules.md §8.2).
-                got += ", from another class expression of that name (a module that changed since the script was compiled ?)";
+            if (type instanceof NominalType nominal && got.equals(type.toString()) && value instanceof BabbleInstance instance) {
+                // Two classes of one name, as two modules may define : their ids tell which.
+                got += " (expected " + nominal.id + ", got " + instance.babbleClass().shape().id() + ")";
             }
             throw new BabbleException("Type error : expected " + type + ", got " + got);
         }

@@ -42,7 +42,16 @@ public final class BabbleCompiler {
     }
 
     public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName) {
-        String internalName = PACKAGE + "Script$" + COUNTER.incrementAndGet();
+        return compile(engine, file, scopes, sourceName, null);
+    }
+
+    /**
+     * @param moduleKey the key of the module compiled, which names its classes, or null for a
+     *                  script that is not a module, whose classes get a name of their own
+     */
+    public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
+                                               String moduleKey) {
+        String internalName = moduleKey != null ? className(moduleKey) : PACKAGE + "Script$" + COUNTER.incrementAndGet();
         ClassLoader runtimeLoader = BabbleCompiler.class.getClassLoader();
         Map<String, byte[]> classes = new CodeGenerator(internalName, sourceName, scopes, runtimeLoader).generate(file);
 
@@ -79,6 +88,34 @@ public final class BabbleCompiler {
             throw new BabbleException("Cannot load the compiled script", e);
         }
         return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, file.getStart().getLine(), scopes.exports());
+    }
+
+    /**
+     * The internal name of a module's script class, from its key : the same every time the
+     * module is compiled (docs/design/module-sources-and-aot.md §5.2). {@code lib/vec3.ba} is
+     * {@code babble/lib/vec3$ba} ; a scheme ({@code file:}, {@code classpath:}) is dropped, each
+     * "." becomes "$", and a character a class name can't hold, "_".
+     */
+    public static String className(String moduleKey) {
+        String path = moduleKey.replaceFirst("^[a-z]+:", "");
+        StringBuilder name = new StringBuilder("babble");
+        for (String segment : path.split("/")) {
+            if (segment.isEmpty()) {
+                continue;
+            }
+            name.append('/');
+            for (int i = 0; i < segment.length(); i++) {
+                char c = segment.charAt(i);
+                if (c == '.') {
+                    name.append('$');
+                } else if (Character.isLetterOrDigit(c) || c == '_' || c == '-' || c == '$') {
+                    name.append(c);
+                } else {
+                    name.append('_');
+                }
+            }
+        }
+        return name.toString();
     }
 
     private static void dump(Path directory, String internalName, byte[] bytes) {
