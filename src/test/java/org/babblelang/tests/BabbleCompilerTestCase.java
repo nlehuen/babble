@@ -331,7 +331,6 @@ public class BabbleCompilerTestCase {
     private static ScriptEngine moduleEngine(org.babblelang.engine.MapModuleSource source) {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, "compile");
-        engine.put(BabbleScriptEngine.TYPECHECK, "error");
         engine.put(BabbleScriptEngine.MODULE_SOURCE, source);
         engine.put(ScriptEngine.FILENAME, "main.ba");
         return engine;

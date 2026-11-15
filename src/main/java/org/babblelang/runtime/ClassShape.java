@@ -18,7 +18,7 @@ import java.util.Map;
  * <p>
  * Its id names the expression for nominal type checks (T9) : instances of every class
  * value an expression creates have that type. Members and statics declared with a type
- * carry its descriptor ({@link Types}), which an assignment checks in {@code error} mode.
+ * carry its descriptor ({@link Types}), which an assignment checks.
  */
 public final class ClassShape {
     public enum Kind {

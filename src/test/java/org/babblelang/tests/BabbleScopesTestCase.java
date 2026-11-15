@@ -79,7 +79,7 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         assertFails("def a = 1 ; def f = () -> ( def b = a ; def a = 2 ; b + a ) ; f()", "Name used before definition : a");
         assertFails("def f = () -> ( x = 1 ; def x = 2 ) ; f()", "Name used before definition : x");
         // At the top level, an implicit of the same name is shadowed too.
-        assertFails("println(1) ; def println = 2", "Name used before definition : println");
+        assertFails("println(1) ; def println = (x) -> ( x )", "Name used before definition : println");
     }
 
     @Test
@@ -106,8 +106,8 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testSelectingFromANonScope() {
         // A raw ClassCastException used to escape the interpreter here.
-        assertFails("def s = \"hi\" ; s.length", "Not a scope : s");
-        assertFails("def n = 1 ; n.value", "Not a scope : n");
+        assertStaticFails("def s = \"hi\" ; s.length", "Not a scope : s", 16);
+        assertStaticFails("def n = 1 ; n.value", "Not a scope : n", 13);
         // null is not a scope either, and used to surface as a NullPointerException.
         assertFails("def n = null ; n.value", "Not a scope : n");
         assertFails("def f = () -> ( 1 ) ; f().value", "Not a scope : f()");
@@ -131,6 +131,16 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         } catch (ScriptException e) {
             Assertions.assertEquals("org.babblelang.runtime.BabbleException: " + message
                     + " in <input> at line number 1", e.getMessage());
+        }
+    }
+
+    private void assertStaticFails(String script, String message, int column) {
+        try {
+            interpret(script);
+            Assertions.fail("Should report \"" + message + "\"");
+        } catch (ScriptException e) {
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: " + message
+                    + " in <input> at line number 1 at column number " + column, e.getMessage());
         }
     }
 

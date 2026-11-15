@@ -305,23 +305,22 @@ export def Square = class (def side) implements shapes.Shape (
 
 An engine compiles each file once, until it or a file it imports changes. The type checker
 sees the types of what modules export : `def c : shapes.Square = shapes.Square(2)` checks the
-constructor's arguments and the annotation, and in error mode, the annotation is also checked at
+constructor's arguments and the annotation, and the annotation is also checked at
 runtime.
 
 ### Optional types
 
-Annotations are optional. With `-Dbabble.typecheck=warn`, a gradual type checker reads them
-before the script runs, and reports what contradicts them, or is bound to fail, as warnings :
+Annotations are optional. Before the script runs, a gradual type checker reads them and reports
+what contradicts them, or is bound to fail, as errors that stop the script from compiling :
 
 ```
 def area = (w : int, h : int) : int -> ( w * h )
-area(2, "3")    ;; Warning : Type error : expected int, got string ... at line number 2, column 9
-area(2)         ;; Warning : Missing parameter : h ...
+area(2, "3")    ;; Error : Type error : expected int, got string ... at line number 2, column 9
+area(2)         ;; Error : Missing parameter : h ...
 ```
 
-Unannotated code is `dynamic`, and gets no type warnings. With `-Dbabble.typecheck=error`, the
-same diagnostics are errors that stop the script from compiling, and declared types are also
-checked at runtime, where an untyped value reaches them :
+Unannotated code is `dynamic`, and gets no static type errors. Declared types are also checked at
+runtime, where an untyped value reaches them :
 
 ```
 def id = (x) -> ( x )
@@ -360,7 +359,7 @@ next ; functions defined before keep the definition they were written against, s
 that call each other go in one input. To change a variable they see, assign it : `name = …`.
 
 `:help` lists the few commands (`:cancel` drops an unfinished input, `:quit` leaves). The
-switches below work here too : `java -Dbabble.typecheck=error -jar …`.
+switches below work here too : `java -Dbabble.mode=interpret -jar …`.
 `java -jar … -keep-alive script.ba` runs a script first, and starts with what it defined.
 There is no line editing or history ; `rlwrap java -jar …` adds both. The
 [design note](docs/design/repl.md) has the details.
@@ -510,9 +509,7 @@ Output goes to the `ScriptContext`'s writer, so a host can capture it with
 or `engine.put("babble.mode", "interpret")`, runs them in the interpreter instead, which is much
 slower but kept as the reference the compiler is tested against. For a look at what
 the compiler generates, `-Dbabble.dumpClasses=<dir>` writes the class files for `javap -c -p`.
-`-Dbabble.typecheck=warn`, or `engine.put("babble.typecheck", "warn")`, turns the type checker
-on : its warnings go to the context's error writer. `error` makes them errors, and enforces
-declared types at runtime. Imported modules are files by default ; a host can serve them from
+Type checking is always on, and declared types are enforced at runtime. Imported modules are files by default ; a host can serve them from
 elsewhere, memory or a database, with `engine.put("babble.moduleSource", source)` and its own
 `org.babblelang.engine.ModuleSource`.
 
@@ -543,7 +540,7 @@ Language features :
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java interfaces.
-- [x] optional type declarations for variables and parameters, checked by a gradual type checker (`-Dbabble.typecheck=warn` or `error`, see the [design doc](docs/design/type-system.md)) : it reports values of the wrong type, calls that don't match a signature, missing members and the like, before the script runs. In error mode, declared types are also enforced at runtime, where untyped values reach them.
+- [x] optional type declarations for variables and parameters, checked by a gradual type checker (see the [design doc](docs/design/type-system.md)) : it reports values of the wrong type, calls that don't match a signature, missing members and the like as errors before the script runs, and enforces declared types at runtime where untyped values reach them.
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`.
 
 Implementation features :
@@ -567,7 +564,7 @@ Language features :
 
 - [ ] line editing, history and completion in the interactive mode.
 - [ ] better, more user-friendly error reports.
-- [ ] fuller type inference, narrowing after `is`, and error mode by default.
+- [ ] fuller type inference and narrowing after `is`.
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module, an object or a package, instead of one `def` per name.
 - [ ] collection classes (mapped from Java).

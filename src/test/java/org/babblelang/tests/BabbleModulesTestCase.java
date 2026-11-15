@@ -66,7 +66,7 @@ public class BabbleModulesTestCase {
         Assertions.assertEquals(2, run("import(\"lib.ba\").open()"));
         String message = failure("def lib = import(\"lib.ba\")\nlib.secret");
         Assertions.assertTrue(message.contains("No such export : secret in lib.ba"), message);
-        Assertions.assertTrue(message.endsWith("at line number 2"), message);
+        Assertions.assertTrue(message.contains("at line number 2"), message);
         // The names of a module are not names of the script importing it, and conversely.
         Assertions.assertTrue(failure("import(\"lib.ba\") ; open()").contains("No such name : open"));
         file("needy.ba", "export def get = () -> ( mine )");
@@ -179,7 +179,6 @@ public class BabbleModulesTestCase {
     public void modulesRunInTheModeOfTheEngineWithItsTypeChecker() throws Exception {
         file("typed.ba", "export def half = (n : int) : double -> ( n / 2 )\nhalf(\"x\")");
         ScriptEngine engine = newEngine();
-        engine.put(BabbleScriptEngine.TYPECHECK, "error");
         ScriptContext context = new SimpleScriptContext();
         context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
         context.setErrorWriter(errors);
@@ -189,10 +188,9 @@ public class BabbleModulesTestCase {
     }
 
     @Test
-    public void typesFromModulesAreCheckedInErrorMode() throws Exception {
+    public void typesFromModulesAreChecked() throws Exception {
         file("lib.ba", "export def Circle = class (def r : int) ()\nexport package geo ( def Point = value class (x, y) () )");
         ScriptEngine engine = newEngine();
-        engine.put(BabbleScriptEngine.TYPECHECK, "error");
         ScriptContext context = new SimpleScriptContext();
         context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
         context.setErrorWriter(errors);
@@ -324,33 +322,23 @@ public class BabbleModulesTestCase {
     }
 
     @Test
-    public void missingExportsAreReportedBeforeRunning() throws Exception {
+    public void missingExportsAreErrorsBeforeRunning() throws Exception {
         file("lib.ba", "export def answer = 42\ndef secret = 1");
         String message = failure("def lib = import(\"lib.ba\")\nprintln(\"started\")\nlib.secret");
-        Assertions.assertTrue(errors.toString().startsWith("Warning : No such export : secret in lib.ba"), errors.toString());
+        Assertions.assertTrue(errors.toString().startsWith("Error : No such export : secret in lib.ba"), errors.toString());
         Assertions.assertTrue(errors.toString().contains("main.ba at line number 3, column 5"), errors.toString());
-        // A warning : the script runs, and fails where the warning said it would.
-        Assertions.assertEquals("started" + System.lineSeparator(), output.toString());
+        Assertions.assertEquals("", output.toString());
         Assertions.assertTrue(message.contains("No such export : secret"), message);
 
         errors.getBuffer().setLength(0);
-        failure("def lib = import(\"lib.ba\")\nlib.answer = 1");
-        Assertions.assertTrue(errors.toString().startsWith("Warning : Cannot assign to an export : answer"), errors.toString());
+        message = failure("def lib = import(\"lib.ba\")\nlib.answer = 1");
+        Assertions.assertTrue(errors.toString().startsWith("Error : Cannot assign to an export : answer"), errors.toString());
+        Assertions.assertTrue(message.contains("Cannot assign to an export : answer"), message);
 
         errors.getBuffer().setLength(0);
-        failure("import(\"lib.ba\").nope");
-        Assertions.assertTrue(errors.toString().startsWith("Warning : No such export : nope"), errors.toString());
-    }
-
-    @Test
-    public void missingExportsAreErrorsInErrorMode() throws Exception {
-        file("lib.ba", "export def answer = 42");
-        ScriptEngine engine = newEngine();
-        engine.put(BabbleScriptEngine.TYPECHECK, "error");
-        ScriptException e = Assertions.assertThrows(ScriptException.class,
-                () -> run(engine, "def lib = import(\"lib.ba\")\nprintln(\"started\")\nlib.anwser"));
-        Assertions.assertTrue(e.getMessage().contains("No such export : anwser"), e.getMessage());
-        Assertions.assertEquals("", output.toString());
+        message = failure("import(\"lib.ba\").nope");
+        Assertions.assertTrue(errors.toString().startsWith("Error : No such export : nope"), errors.toString());
+        Assertions.assertTrue(message.contains("No such export : nope"), message);
     }
 
     @Test
@@ -361,17 +349,17 @@ public class BabbleModulesTestCase {
     @Test
     public void anEngineCompilesAModuleOnceUntilItChanges() throws Exception {
         // The module warns when it is analysed : the warnings count its analyses.
-        file("lib.ba", "def other = import(\"other.ba\")\nexport def f = () -> ( other.nope )");
+        file("lib.ba", "def other = import(\"other.ba\")\nexport def P = value class (def x) ()\nexport def f = () -> ( other.x )");
         file("other.ba", "export def x = 1");
         ScriptEngine engine = newEngine();
         run(engine, "import(\"lib.ba\")");
         run(engine, "import(\"lib.ba\") ; import(\"./lib.ba\")");
-        Assertions.assertEquals(1, errors.toString().split("No such export : nope", -1).length - 1, errors.toString());
+        Assertions.assertEquals(1, errors.toString().split("def is redundant on a value class parameter : x", -1).length - 1, errors.toString());
 
         // A change to a file it depends on recompiles it.
         file("other.ba", "export def x = 2");
         run(engine, "import(\"lib.ba\")");
-        Assertions.assertEquals(2, errors.toString().split("No such export : nope", -1).length - 1, errors.toString());
+        Assertions.assertEquals(2, errors.toString().split("def is redundant on a value class parameter : x", -1).length - 1, errors.toString());
     }
 
     @Test
@@ -392,7 +380,6 @@ public class BabbleModulesTestCase {
         for (String mode : new String[]{"interpret", "compile"}) {
             ScriptEngine engine = newEngine();
             engine.put(BabbleScriptEngine.MODE, mode);
-            engine.put(BabbleScriptEngine.TYPECHECK, "error");
             Object result = run(engine, "def shapes = import(\"shapes.ba\")\n"
                     + "def Sq = class (def s : double) implements shapes.Shape ( def area = () : double -> ( this.s * this.s ) )\n"
                     + "def t : double = Sq(1.5).twice()\nt");
@@ -422,21 +409,21 @@ public class BabbleModulesTestCase {
 
     // ---------------------------------------------------------------- types across modules (M3)
 
-    /** The type diagnostics of a script, in warn mode, without running it : "line:column message", file names dropped. */
-    private java.util.List<String> typeWarnings(String script) throws Exception {
+    /** The type errors of a script, without running it : "file:line:column message". */
+    private java.util.List<String> typeErrors(String script) {
         ScriptEngine engine = newEngine();
         // The engine's attributes live in its context : the new one carries them.
         ScriptContext context = new SimpleScriptContext();
-        context.setAttribute(BabbleScriptEngine.TYPECHECK, "warn", ScriptContext.ENGINE_SCOPE);
         context.setAttribute(BabbleScriptEngine.MODULE_SOURCE, source, ScriptContext.ENGINE_SCOPE);
         context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
-        StringWriter warnings = new StringWriter();
-        context.setErrorWriter(warnings);
+        StringWriter diagnostics = new StringWriter();
+        context.setErrorWriter(diagnostics);
         engine.setContext(context);
-        ((javax.script.Compilable) engine).compile(script);
+        Assertions.assertThrows(ScriptException.class,
+                () -> ((javax.script.Compilable) engine).compile(script));
         java.util.List<String> result = new java.util.ArrayList<>();
         java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("Warning : (.*) in (\\S+) at line number (\\d+)(?:, column (\\d+))?").matcher(warnings.toString());
+                .compile("Error : (.*) in (\\S+) at line number (\\d+)(?:, column (\\d+))?").matcher(diagnostics.toString());
         while (m.find()) {
             String file = java.nio.file.Path.of(m.group(2)).getFileName().toString();
             result.add(file + ":" + m.group(3) + ":" + m.group(4) + " " + m.group(1));
@@ -457,7 +444,7 @@ public class BabbleModulesTestCase {
                 "main.ba:2:10 Type error : expected int, got string",
                 "main.ba:3:18 Type error : expected string, got double",
                 "main.ba:4:18 Type error : expected string, got int"),
-                typeWarnings("def lib = import(\"lib.ba\")\n"
+                typeErrors("def lib = import(\"lib.ba\")\n"
                         + "lib.half(\"x\")\n"
                         + "def h : string = lib.half(2)\n"
                         + "def c : string = lib.count"));
@@ -471,7 +458,7 @@ public class BabbleModulesTestCase {
                 "main.ba:4:1 Missing parameter : r",
                 "main.ba:5:1 No such member : nope",
                 "main.ba:6:18 Type error : expected string, got double"),
-                typeWarnings("def lib = import(\"lib.ba\")\n"
+                typeErrors("def lib = import(\"lib.ba\")\n"
                         + "def Circle = lib.Circle\n"
                         + "Circle(\"wide\")\n"
                         + "lib.Circle()\n"
@@ -488,7 +475,7 @@ public class BabbleModulesTestCase {
                 "main.ba:5:25 Type error : expected Point, got Circle",
                 "main.ba:6:9 Unknown type : lib.Nope",
                 "main.ba:7:9 Unknown type : lib.count"),
-                typeWarnings("def lib = import(\"lib.ba\")\n"
+                typeErrors("def lib = import(\"lib.ba\")\n"
                         + "def Circle = lib.Circle\n"
                         + "def a : lib.Circle = lib.Square(1)\n"
                         + "def b : Circle = 1\n"
@@ -504,7 +491,7 @@ public class BabbleModulesTestCase {
         Assertions.assertEquals(java.util.List.of(
                 "main.ba:5:9 Type error : expected Shape, got Other",
                 "main.ba:6:18 Type error : expected string, got double"),
-                typeWarnings("def shapes = import(\"shapes.ba\")\n"
+                typeErrors("def shapes = import(\"shapes.ba\")\n"
                         + "def Sq = class () implements shapes.Shape ( def area = () -> ( 1.0 ) )\n"
                         + "def Other = class () ()\n"
                         + "def measure = (s : shapes.Shape) : double -> ( s.area() )\n"
@@ -520,7 +507,7 @@ public class BabbleModulesTestCase {
         Assertions.assertEquals(java.util.List.of(
                 "main.ba:2:12 Type error : expected int, got string",
                 "main.ba:3:22 Type error : expected Circle, got int"),
-                typeWarnings("def all = import(\"all.ba\")\n"
+                typeErrors("def all = import(\"all.ba\")\n"
                         + "all.Circle(\"x\")\n"
                         + "def c : all.Circle = 1\n"
                         + "def d : all.lib.Circle = all.Circle(1)"));
@@ -532,16 +519,15 @@ public class BabbleModulesTestCase {
         file("b.ba", "def a = import(\"a.ba\")\nexport def h = (n : int) -> ( a.f(\"y\") )");
         // b is checked while a is still being analysed : a is dynamic to it. a sees b's types.
         Assertions.assertEquals(java.util.List.of("a.ba:3:28 Type error : expected int, got string"),
-                typeWarnings("import(\"a.ba\")"));
+                typeErrors("import(\"a.ba\")"));
     }
 
     @Test
-    public void errorModeChecksImportedTypesAtRuntime() throws Exception {
+    public void importedTypesAreCheckedAtRuntime() throws Exception {
         file("lib.ba", LIB);
         for (String mode : new String[]{"interpret", "compile"}) {
             ScriptEngine engine = newEngine();
             engine.put(BabbleScriptEngine.MODE, mode);
-            engine.put(BabbleScriptEngine.TYPECHECK, "error");
             String script = "def lib = import(\"lib.ba\")\ndef id = (x) -> ( x )\n";
             Assertions.assertEquals(2, run(engine, script + "def c : lib.Circle = id(lib.Circle(2))\nc.r"), mode);
             ScriptException e = Assertions.assertThrows(ScriptException.class,
@@ -558,7 +544,6 @@ public class BabbleModulesTestCase {
     public void aModuleChangedAfterCompilationKeepsItsTypes() throws Exception {
         file("lib.ba", "export def C = class () ()");
         ScriptEngine engine = newEngine();
-        engine.put(BabbleScriptEngine.TYPECHECK, "error");
         engine.put(ScriptEngine.FILENAME, "main.ba");
         javax.script.CompiledScript script = ((javax.script.Compilable) engine)
                 .compile("def lib = import(\"lib.ba\")\ndef id = (x) -> ( x )\ndef c : lib.C = id(lib.C())\n\"ok\"");
@@ -573,7 +558,6 @@ public class BabbleModulesTestCase {
         file("a.ba", "export def C = class () ()");
         file("b.ba", "export def C = class () ()");
         ScriptEngine engine = newEngine();
-        engine.put(BabbleScriptEngine.TYPECHECK, "error");
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> run(engine, "def a = import(\"a.ba\")\ndef id = (x) -> ( x )\ndef c : a.C = id(import(\"b.ba\").C())"));
         Assertions.assertTrue(e.getMessage().contains("Type error : expected C, got C (expected a.ba#C, got b.ba#C)"), e.getMessage());

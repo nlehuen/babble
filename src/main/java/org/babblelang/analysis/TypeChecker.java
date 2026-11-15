@@ -23,15 +23,16 @@ import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
- * The type checker (docs/design/type-system.md), in warn mode : the fourth pass of the
- * analysis, after {@link Resolver}. It types every expression of the file and reports, as
- * warnings, what contradicts the annotations or is bound to fail at runtime : a value of
- * the wrong type where a type is declared, calls that don't match a known signature,
- * members that don't exist, operators applied to values they reject.
+ * The type checker (docs/design/type-system.md) : the fourth pass of the analysis, after
+ * {@link Resolver}. It types every expression of the file and reports, as errors, what
+ * contradicts the annotations or is bound to fail at runtime : a value of the wrong type
+ * where a type is declared, calls that don't match a known signature, members that don't
+ * exist, operators applied to values they reject.
  * <p>
  * Typing is gradual : whatever is unannotated and can't be inferred is {@link Type#DYNAMIC},
- * which never produces a warning. An unannotated def that is never reassigned takes the
- * type of its value (T8).
+ * which never produces an error. An unannotated def that is never reassigned takes the
+ * type of its value (T8). Declared types are also recorded so the backends check them at
+ * runtime where dynamic values cross into typed code (T9).
  */
 final class TypeChecker {
     private record Diagnostic(int line, int column, String message) {
@@ -56,16 +57,10 @@ final class TypeChecker {
      */
     private final Map<ParserRuleContext, TypeChecker> owners = new HashMap<>();
 
-    private final boolean enforce;
     private BabbleParser.FileContext file;
 
-    /**
-     * @param enforce error mode : also record, for the backends, the declared types to
-     *                check at runtime (T9)
-     */
-    TypeChecker(BlockScopes pass, boolean enforce) {
+    TypeChecker(BlockScopes pass) {
         this.pass = pass;
-        this.enforce = enforce;
     }
 
     void run(BabbleParser.FileContext file) {
@@ -127,9 +122,7 @@ final class TypeChecker {
         if (tree instanceof BabbleParser.ExpressionContext || tree instanceof BabbleParser.BlockContext) {
             typeOf((ParserRuleContext) tree);
         }
-        if (enforce) {
-            recordCheck(tree);
-        }
+        recordCheck(tree);
         if (tree instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.defaultValue != null && parameter.type() != null) {
             expect(typeOf(parameter.defaultValue), annotation(parameter.type(), scopeOf(parameter)), parameter.defaultValue);
         }

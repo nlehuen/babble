@@ -5,10 +5,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The runtime side of declared types (T9, docs/design/type-system.md) : in {@code error}
- * mode, wherever a value meets a declared type (an argument, a result, a definition or an
- * assignment), both modes check it here, and fail the same way :
- * {@code Type error : expected int, got string}.
+ * The runtime side of declared types (T9, docs/design/type-system.md) : wherever a value
+ * meets a declared type (an argument, a result, a definition or an assignment), both
+ * modes check it here, and fail the same way : {@code Type error : expected int, got string}.
  * <p>
  * The analysis describes each declared type with a string, {@code kind|display|payload} :
  * <ul>

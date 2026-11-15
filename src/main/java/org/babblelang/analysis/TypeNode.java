@@ -69,7 +69,7 @@ final class TypeNode {
     final List<Object> parents = new ArrayList<>();
     /** For interfaces : the defaults it provides, its own and inherited ones. */
     Map<String, TypeChecks.Provider> defaults;
-    /** In error mode, the declared types of members and statics, by name, as Types descriptors. */
+    /** The declared types of members and statics, by name, as Types descriptors. */
     final Map<String, String> memberTypes = new LinkedHashMap<>();
     final Map<String, String> staticTypes = new LinkedHashMap<>();
     boolean resolving;

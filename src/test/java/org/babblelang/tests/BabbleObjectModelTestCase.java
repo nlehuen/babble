@@ -25,6 +25,11 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         Assertions.assertEquals("org.babblelang.runtime.BabbleException: " + message + " in <input> at line number " + line, e.getMessage());
     }
 
+    private void assertStaticFails(String script, String message, int line, int column) {
+        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(script));
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: " + message + " in <input> at line number " + line + " at column number " + column, e.getMessage());
+    }
+
     private static final String POINT = "def Point = class (def x, def y) (\n"
             + "    def norm2 = () -> ( this.x * this.x + this.y * this.y )\n"
             + "    def plus = (other) -> ( Point(this.x + other.x, this.y + other.y) )\n"
@@ -45,7 +50,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
                 + ")\n";
         Assertions.assertEquals(5, interpret(account + "def a = Account(\"ann\") ; a.deposit(5) ; a.balance"));
         Assertions.assertEquals(12, interpret(account + "def a = Account(\"ann\", balance: 7) ; a.deposit(5)"));
-        assertFails(account + "Account()", "Missing parameter : owner", 4);
+        assertStaticFails(account + "Account()", "Missing parameter : owner", 4, 1);
     }
 
     @Test
@@ -55,7 +60,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
                 + "    def next = () -> ( start = start + step )\n"
                 + ")\n";
         Assertions.assertEquals(14, interpret(counter + "def c = Counter(10, 2) ; c.next() ; c.next()"));
-        assertFails(counter + "Counter(1).start", "No such member : start", 4);
+        assertStaticFails(counter + "Counter(1).start", "No such member : start", 4, 1);
         // The long form of a header member : a body def initialised from the parameter.
         Assertions.assertEquals("ann", interpret("def A = class (owner) ( def owner = owner ) ; A(\"ann\").owner"));
     }
@@ -72,13 +77,13 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testMembersAreReachedThroughThisOnly() {
         assertFails("def C = class () ( def size = 0 ; def get = () -> ( size ) ) ; C().get()", "No such name : size");
         // obj.x sees the object's members, and nothing of the scope that created it.
-        assertFails("def hidden = 1 ; def o = object ( def v = 1 ) ; o.hidden", "No such member : hidden");
-        assertFails("def o = object ( def v = 1 ) ; o.println", "No such member : println");
+        assertStaticFails("def hidden = 1 ; def o = object ( def v = 1 ) ; o.hidden", "No such member : hidden", 1, 49);
+        assertStaticFails("def o = object ( def v = 1 ) ; o.println", "No such member : println", 1, 32);
     }
 
     @Test
     public void testFixedMemberSetAndReadOnlyMethods() {
-        assertFails("def o = object ( def v = 1 ) ; o.w = 2", "No such member : w");
+        assertStaticFails("def o = object ( def v = 1 ) ; o.w = 2", "No such member : w", 1, 32);
         assertFails("def o = object ( def m = () -> ( 1 ) ) ; o.m = 2", "Cannot assign method : m");
     }
 
@@ -208,8 +213,8 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         Assertions.assertEquals("Point(x: 0, y: 0)", interpret(STATIC_POINT + "\"\" + Point.origin"));
         Assertions.assertEquals(2, interpret(STATIC_POINT + "Point.make(1, 2) ; Point.make(3, 4) ; Point.count()"));
         assertFails(STATIC_POINT + "Point.created", "created is private", 13);
-        assertFails(STATIC_POINT + "Point(1, 2).origin", "No such member : origin", 13);
-        assertFails(STATIC_POINT + "Point.x", "No such member : x", 13);
+        assertStaticFails(STATIC_POINT + "Point(1, 2).origin", "No such member : origin", 13, 1);
+        assertStaticFails(STATIC_POINT + "Point.x", "No such member : x", 13, 1);
         assertFails(STATIC_POINT + "classof(Point(1, 2)).created", "created is private", 13);
         Assertions.assertEquals("Point(x: 0, y: 0)", interpret(STATIC_POINT + "\"\" + classof(Point(1, 2)).origin"));
     }
@@ -231,7 +236,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         String shape = "def S = interface ( def area : () : int ) static ( def unit = 1 )\n"
                 + "def Sq = class () implements S ( def area = () -> ( 1 ) )\n";
         Assertions.assertEquals(1, interpret(shape + "S.unit"));
-        assertFails(shape + "Sq.unit", "No such member : unit", 3);
+        assertStaticFails(shape + "Sq.unit", "No such member : unit", 3, 1);
     }
 
     // ---------------------------------------------------------------- classof, is, same

@@ -40,12 +40,12 @@ public final class ModuleInterface {
         this.checks = checks;
     }
 
-    /** With the type checker on : the file's checker, once it ran, which types its exports. */
+    /** The file's checker, once it ran, which types its exports. */
     void typed(TypeChecker checker) {
         this.checker = checker;
     }
 
-    /** The file's type checker, or null : the checker is off, or the file is still being analysed (a cycle). */
+    /** The file's type checker, or null if the file is still being analysed (a cycle). */
     TypeChecker checker() {
         return checker;
     }

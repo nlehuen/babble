@@ -23,8 +23,8 @@ function twice
 * **A session, under the loop.** `BabbleSession` evaluates successive inputs, each seeing the
   definitions of the previous ones. The loop only reads lines and prints. A host can use a
   session without it: `engine.newSession(context).eval("…")`.
-* **Both modes, and the type checker.** A session runs in the engine's mode, so each input is
-  interpreted, or compiled to its own class. `babble.typecheck` applies as for a script.
+* **Both modes, and the type checker.** A session runs in the engine's execution mode, so each
+  input is interpreted, or compiled to its own class. Type checking applies as for a script.
 * **Nothing is weakened.** An input goes through the same analysis as a file. What an earlier
   input defined is known to it, statically.
 
@@ -84,9 +84,8 @@ reject. Nesting keeps every static fact true, at the price of mutual recursion a
    column. Scripts get the same message: before, a syntax error was a bare
    `ParseCancellationException`.
 2. **Analyse,** as an input of the session. An error (`Name already defined`, an incomplete
-   implementation, a type error in `error` mode) rejects the input, and the session is as if it
-   had never been typed. In `error` mode the engine writes every type diagnostic, then throws a
-   `TypeCheckException`.
+   implementation, or a type error) rejects the input, and the session is as if it had never been
+   typed. The engine writes every type diagnostic, then throws a `TypeCheckException`.
 3. **Commit** the analysis to the session, and nest a namespace if the input defines names.
 4. **Run.** An input that fails while running keeps what it defined until then. A name whose
    `def` didn't run is declared but unset, and using it is `Name used before definition`, as in
@@ -131,8 +130,8 @@ then `.. ` for a continuation.
 ## 6. The command line
 
 `Main` is the main class of the jar. The jar also names its dependencies in `lib/`, where the
-build copies them, so `java -jar` needs nothing else. `-Dbabble.mode=interpret` and
-`-Dbabble.typecheck=warn|error` work as for the engine.
+build copies them, so `java -jar` needs nothing else. `-Dbabble.mode=interpret` works as for
+the engine.
 
 ```
 java -jar babble.jar                              the interactive mode
@@ -167,8 +166,8 @@ its arguments, failing and empty scripts, the type checker's settings, and comma
 * sessions: earlier definitions, shadowing and assignment, functions not seeing later
   definitions, inputs rejected or failing midway;
 * classes and interfaces across inputs, with the static checks;
-* the type checker across inputs: warnings only for the input being typed, error mode with
-  classes of earlier inputs as types, inference following assignments;
+* the type checker across inputs: diagnostics only for the input being typed, classes of
+  earlier inputs as types, runtime boundary enforcement, inference following assignments;
 * `classify`, and the loop: values, multi-line inputs, errors, commands, prompts.
 
 ## 8. Not done

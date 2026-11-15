@@ -41,7 +41,7 @@ public class Function implements BabbleFunction {
                 // A default value belongs to the function's scope, not to the call site.
                 value = interpreter.evaluateDefault(namespace, defaultValue);
             }
-            // In error mode, a declared parameter type is checked at the call (T9).
+            // A declared parameter type is checked at the call (T9).
             value = Types.check(value, interpreter.scopes().checkedType(definition.parametersDeclaration().parameterDeclaration(i)));
             namespace.defineParameter(parameters[i], value);
         }

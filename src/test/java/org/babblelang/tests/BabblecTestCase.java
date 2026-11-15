@@ -137,13 +137,13 @@ public class BabblecTestCase {
 
     @Test
     public void aProgramThatFailsSaysWhereAndExitsWithOne() throws Exception {
-        file("lib/broken.ba", "export def x = 1\nexport def y = () -> ( 1 + null )");
+        file("lib/broken.ba", "def id = (v) -> ( v )\nexport def y = () -> ( 1 + id(null) )");
         file("main.ba", "println(\"started\")\nimport(\"lib/broken.ba\").y()");
         compile("main.ba", "app.jar");
         Run run = run("app.jar");
         Assertions.assertEquals(1, run.status());
         Assertions.assertEquals("started" + System.lineSeparator(), run.out());
-        Assertions.assertTrue(run.err().contains("Error : Not a number : null in lib/broken.ba at line number 2"), run.err());
+        Assertions.assertTrue(run.err().contains("Error : Not a number : id(null) in lib/broken.ba at line number 2"), run.err());
     }
 
     @Test
@@ -191,7 +191,7 @@ public class BabblecTestCase {
     private void dynamicProgram() throws IOException {
         file("lib/a.ba", "println(\"loading a\")\ndef n = 0\nexport def next = () -> ( n = n + 1 )");
         file("lib/b.ba", "def a = import(\"a.ba\")\ndef c = import(\"c.ba\")\nexport def name = \"b, \" + c.name + \", a at \" + a.next()");
-        file("lib/c.ba", "export def name = \"c\"\nexport def fail = () -> (\n    1 + null\n)");
+        file("lib/c.ba", "export def name = \"c\"\ndef id = (v) -> ( v )\nexport def fail = () -> ( 1 + id(null) )");
         file("main.ba", "def a = import(\"lib/a.ba\")\n"
                 + "a.next()\n"
                 + "def load = (n) -> ( import(\"lib/\" + n + \".ba\") )\n"
@@ -223,7 +223,7 @@ public class BabblecTestCase {
         compile("main.ba", "app.jar");
         Run run = runWithBabble("app.jar", "c");
         Assertions.assertEquals(1, run.status());
-        Assertions.assertTrue(run.err().contains("Error : Not a number : null in lib/c.ba at line number 3"), run.err());
+        Assertions.assertTrue(run.err().contains("Error : Not a number : id(null) in lib/c.ba at line number 3"), run.err());
 
         run = runWithBabble("app.jar", "bad");
         Assertions.assertEquals(1, run.status());

@@ -33,9 +33,8 @@ import java.util.List;
  *                                                   formats source files (babblefmt, {@link Babblefmt})
  * </pre>
  * A script finds its arguments in {@code args}, a {@code java.util.List} of strings. The
- * mode and the type checker are the engine's : {@code -Dbabble.mode=interpret} (scripts are
- * compiled by default),
- * {@code -Dbabble.typecheck=warn|error}.
+ * mode is the engine's : {@code -Dbabble.mode=interpret} (scripts are compiled by
+ * default).
  */
 public final class Main {
     static final String USAGE = """
