@@ -400,7 +400,7 @@ java -jar argon.jar > scene.ppm
 ```
 
 `argon.jar` is 244 KB for its 14 modules and the runtime, and renders the same image, byte for
-byte, in 60 s rather than 68 s through the engine.
+byte, in about the same minute as through the engine : a jar saves the start-up, not the work.
 
 Building and running
 --------------------
