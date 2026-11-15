@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-Babble captures **function effects and algebraic properties** directly in its type system and compiler IR so the compiler can both **secure computation** (preventing unintended state mutation, data races, and ambient I/O leaks) and **optimize computation** (reordering, common subexpression elimination (CSE) / memoization, parallel execution, zero-copy thread sharing, predicate push-down/push-up, tree reductions, and safe automatic retries).
+Babble captures **function effects and algebraic properties** directly in its static type system and parse-tree analysis (`ScopeAnalysis`) so the compiler can both **secure computation** (preventing unintended state mutation, data races, and ambient I/O leaks) and **optimize computation** (reordering, common subexpression elimination (CSE) / memoization, parallel execution, zero-copy thread sharing, predicate push-down/push-up, tree reductions, and safe automatic retries).
 
 Rather than creating parallel "trusted" vs "checked" keyword hierarchies (e.g., `pure` vs `trusted_pure`), Babble uses **one composable property vocabulary** paired with **three derivation modes**:
 
@@ -25,7 +25,7 @@ A single binary `pure` / `impure` distinction is too coarse for modern compilers
 
 * A time-reading function (`Instant.now()`) mutates no memory yet cannot be memoized or cached (`pure`, **not** `deterministic`).
 * A builder helper mutates a caller-passed buffer without doing any global I/O (effects strictly scoped to its `mut` parameter, not `pure`!).
-* Division (`a / b`) is `pure deterministic` yet cannot be speculatively hoisted past `b != 0` (`nothrow` is false).
+* Parsing an integer (`Integer.parseInt(s)`), asserting a precondition (`assert(x > 0)`), or dereferencing a nullable receiver (`a.x`) can be `pure deterministic` yet cannot be speculatively hoisted ahead of a guard (`nothrow` is false; note that Babble's `a / b` is IEEE-754 `double` division and never throws).
 * A parallel accumulator (`ConcurrentHashMap.newKeySet().add(x)`) mutates shared state, yet is safe across threads, order-independent, and retry-safe (`mut idempotent commutative threadsafe`).
 * String concatenation (`a + b`) is `associative` (parallel tree-reducible) without being `commutative`, whereas integer addition is both.
 
@@ -38,10 +38,10 @@ Every property in the model is justified by concrete security guarantees or comp
 | Compiler / Runtime Capability | Required Properties (Contract) | Example Transformation |
 |---|---|---|
 | **Common Subexpression Elimination (CSE), Memoization & Constant Folding** | `pure deterministic` + deeply immutable result; memoization and folding also need deeply immutable arguments (§5.3.1) | Cache `f(x)` across repeated calls; fold `f(const)` at compile time. |
-| **Loop-Invariant Code Motion (LICM)** | `pure deterministic` (+ `nothrow` if guarded) | Hoist `normalize(cfg)` out of a loop body. |
-| **`@NOALIAS` Register Promotion & SIMD** | `unique mut` parameter (exclusively owned graph, §3.2) | Hoist `src` loads past `mut dst` stores; auto-vectorize loops without alias checks. |
-| **Expression & Filter Reordering** | `pure` (+ `nothrow` for guarded/short-circuit swaps) | Reorder `filter(p) \|> filter(q)` by estimated cost/selectivity. |
-| **Predicate Push-Down & Push-Up** | `pure deterministic nothrow` (+ `monotone` / `injective` for inversion/projection pushdown) | Push `filter(p)` ahead of `map(f)` (`filter(x -> p(f(x))) \|> map(f)`), invert `monotone` bounds, push equality past `injective` projections, factor common filters above `union`. |
+| **Loop-Invariant Code Motion (LICM)** | `pure deterministic` (+ `nothrow` and `@TERMINATING` whenever the loop may execute zero times or the call is hoisted across a guard) | Hoist `normalize(cfg)` out of a loop body. |
+| **`@NOALIAS` Local/Field Load Hoisting & Redundant-Load Elimination** | `unique mut` parameter (exclusively owned graph, §3.2) | Keep `src` fields in JVM locals and hoist invariant `src` reads across `unique mut dst` updates without alias checks. |
+| **Expression & Filter Reordering** | `pure` (+ `nothrow` for guarded/short-circuit swaps) | Reorder `xs.filter(p).filter(q)` by estimated cost/selectivity. |
+| **Predicate Push-Down & Push-Up** | `pure deterministic nothrow` (+ `monotone` / `injective` for inversion/projection pushdown) | Push `filter(p)` ahead of `map(f)` (`xs.filter(x -> p(f(x))).map(f)` when `p(f(x))` simplifies via `monotone`/`injective` or `f` is cheap/CSE'd), invert `monotone` bounds, push equality past `injective` projections, factor common filters above `union`. |
 | **Parallel `map` / `filter`** | `pure threadsafe` (automatically implied by `pure deterministic` on immutable/`freeze` inputs) | Evaluate elements independently across worker threads without locks. |
 | **Zero-Copy Builder $\to$ Parallel Read** | `unique` return + `freeze` | Build a large mutable graph/index locally, then `freeze` zero-copy into deeply immutable `threadsafe` data. |
 | **Zero-Copy Thread Handoff & In-Place Reuse** | `unique` + `move` (single live owner) | Transfer mutable buffers between threads lock-free, or lower `sort(move xs)` into in-place mutation (FBIP) with zero I/O/globals. |
@@ -104,11 +104,11 @@ Every callable in Babble (function literal, method, constructor, or imported Jav
 2. **Verified Mode (explicit effect modifiers *without* `axiom`, e.g., `pure deterministic (x: int) -> (...)`):**
    * Declared modifiers become **compile-time obligations**: the compiler verifies that the body, all expressions, and all callees satisfy every declared property and mutates **only** declared `mut` parameters / `mut` `this` / `@FRESH` local objects.
    * Any violation is a compile-time type/effect error (`TypeCheckException`) pointing to the offending expression.
-   * Meanwhile, *additional* unmentioned properties (like `nothrow`) can still be inferred quietly for the optimizer without cluttering the user's signature.
+   * Meanwhile, *additional* unmentioned properties (like `nothrow` or `@TERMINATING`) can still be inferred quietly for intra-module optimization of this function body, while callers' own verification checks rely strictly on the explicitly declared modifiers so callers never depend on accidental implementation properties.
 3. **Axiomatic Mode (`axiom <modifiers> ...`, e.g., `axiom pure deterministic`, `axiom associative commutative`):**
    * Tells the compiler to **assume** the listed properties for this function or Java target without verifying the implementation.
    * All `axiom` declarations are tagged with an auditable metadata flag (`@AXIOMATIC`) so security reviewers, linters, or strict sandbox policies can inspect every trust boundary—analogous to auditing `unsafe` in Rust.
-   * If a property *is* still partially verifiable alongside an `axiom` (or if the user mixes `axiom` on one function called by a non-`axiom` caller), callers rely on the declared `axiom` contract normally.
+   * **Host sandbox policy (`engine.allowAxioms(false)`):** Embedding hosts can disable in-script `axiom` and `impure` declarations altogether via `BabbleScriptEngine.allowAxioms(false)` (§6.2), causing `TypeChecker` to reject any script-level `axiom` with a `TypeCheckException` so untrusted scripts may only use effects statically proved by the compiler or pre-registered by the host.
 
 ```
 Function declaration / Java target
@@ -122,13 +122,13 @@ Function declaration / Java target
 
 #### Axis 1 — Memory, Aliasing, and Ownership Effects
 * **`pure` (Strictly effect-free — no weak purity):**
-  * Performs **no I/O** (`print`, sockets, files, FFI).
+  * Performs **no output or mutating I/O** (`print`, socket/file writes, mutating FFI). Read-only environment queries (`axiom pure Files.readString`, `axiom pure Instant.now`) and reads of mutable outer state perform no writes and may be `pure`, but are **not** `deterministic`.
   * Mutates **no global/outer variables, static fields, or external objects**.
   * Mutates **no parameters and not `this`**: **`pure` cannot be combined with `mut`** on parameters or `this` (`pure (mut x)` and `pure mut` are rejected).
   * *Fresh local builders:* Inside a `pure` function, mutating **newly allocated `@FRESH` local objects** (`def tmp = Counter(0); tmp.add(1)`) *is* allowed whenever the called `mut` method/helper is inferred (or axiomatized via `axiom mut`) to have **no global/I/O side effects** (tracked internally as `@NO_GLOBAL_EFFECTS`, without calling mutating functions "`pure`" in surface syntax).
 * **`mut` + Call-Site Exclusivity (`@NOALIAS`):**
   * Written on a parameter (`(mut target: List, item: string)`) or on the function itself (`mut` before parameters) to indicate **`this` may be mutated**. Mutually exclusive with `pure`.
-  * Absent `mut`, inside any `pure` (or verified/effect-typed) scope, that parameter or `this` is **read-only borrowed**: field assignments (`p.x = ...`), calling `mut` methods on `p`, and passing `p` as a `mut` argument are forbidden.
+  * Absent `mut`, a parameter or `this` is **read-only borrowed** across all typed functions (whether annotated or unannotated): field assignments (`p.x = ...`), calling `mut` methods on `p`, and passing `p` as a `mut` argument are forbidden unless `mut` is declared on `p` (or inferred on an unannotated function's parameter).
   * **Law of Exclusivity (two strengths):**
     * *Plain `mut` (shallow, a bug catcher):* whenever an argument (or receiver) is passed to a `mut` slot, **no other argument or `this` at the same call site may be the same object** (checked statically for distinct variables/paths, with a runtime `same` check where dynamic). This is an identity check only. Two distinct objects can still share mutable state (`Vec(data)` and `Vec(data)` over one list), and the callee can still reach the object through a captured variable or a global. **Plain `mut` therefore grants permission to mutate and nothing else: neither the callee nor the caller may assume `@NOALIAS` from it.**
     * *`unique mut` (deep, the optimizer's `@NOALIAS`):* a `unique` parameter receives a graph that nothing else can reach (see `unique` below), so it is disjoint from every other argument, from `this`, from captured variables and from globals **by construction**, with no alias check at all. All `@NOALIAS` transformations (§5.3.2) key on `unique mut`, never on plain `mut`.
@@ -138,7 +138,7 @@ Function declaration / Java target
   * Written (or automatically inferred) on a parameter `(noescape p: Point)` or receiver: guarantees the function never stores `p` (or mutable references reachable from `p`) into `this`, another parameter, a global, a captured closure, or its return value.
   * Unlocks **scalar replacement / stack unboxing** of wrapper objects (`Point`, temporary buffers, lambda captures) across call boundaries.
 * **`unique`, `move`, and `freeze` (Single-owner graph ownership & zero-copy transition):**
-  * **`unique`** on a parameter `(unique mut buf: Buffer)` or return type `unique (...) : Index` asserts **deep ownership**: every *mutable* object reachable from the reference is reachable **only** through it (Pony `iso` / Rust owned value). Deeply immutable values (primitives, strings, `frozen T`, deep `value class`es) may be shared freely inside a unique graph, since sharing them is unobservable.
+  * **`unique`** on a parameter `(unique mut buf: Buffer)` or return type `(...) : unique Index` asserts **deep ownership**: every *mutable* object reachable from the reference is reachable **only** through it (Pony `iso` / Rust owned value). Deeply immutable values (primitives, strings, `frozen T`, deep `value class`es) may be shared freely inside a unique graph, since sharing them is unobservable.
     * *Keeping a graph unique:* a `@UNIQUE` object stays unique only while every reference stored into it is itself `@UNIQUE` (moved in) or deeply immutable. Storing a parameter, an outer variable, a `dynamic` value or anything else demotes it to merely `@FRESH`: still new, still mutable without breaking `pure`, but no longer movable, freezable or returnable as `unique` (§5.2). Arguments passed to a Java method are assumed stored in the receiver unless the method's axiom marks that parameter `noescape`.
     * *Consume vs. borrow:* a `unique` parameter **consumes** its argument (the callee may store it). A `unique noescape` parameter is an **exclusive borrow** (Rust `&mut`): the callee may not store it, so the caller's binding is usable again, and still `@UNIQUE`, after the call.
   * **`move x`** explicitly transfers a `@UNIQUE` variable to a `unique` consumer (`channel.send(move buf)`, `sortInPlace(move list)`), triggering **definite-unassignment** on `x` in the caller (cannot be used after moving; omitted automatically on a binding's provable last use).
@@ -166,21 +166,21 @@ Function declaration / Java target
   * Forbids calling non-`deterministic` functions (`System.nanoTime()`, `Math.random()`), reading non-`final` Java statics, reading reassigned/mutable outer bindings, or depending on unordered hash iteration.
   * *Why separate from `pure`?* A function reading an external config file (`axiom pure Files.readString`) or clock (`axiom pure Instant.now`) mutates nothing (`pure`), yet is **not** `deterministic` across time—so optimizers may reorder unused calls or discard them (if `nothrow`), **but must not memoize or CSE them across time**.
 * **`nothrow` (Exception-freedom):**
-  * Guaranteed never to throw a runtime error or exception (`throw`, `assert`, `/ 0`, null member dereference, failing dynamic cast/typecheck).
-  * Essential for **speculative evaluation**, **hoisting out of guarded branches** (`if b != 0 then f(a, b)`), and **reordering short-circuiting predicates**.
+  * Guaranteed never to throw a runtime error or exception (`assert` / `suppose`, null member dereference, failing dynamic cast/typecheck, or throwing Java callee; note that Babble has no `throw` statement and `a / b` is non-throwing IEEE-754 `double` division).
+  * Essential for **speculative evaluation**, **hoisting out of guarded branches** (`if a != null then f(a)`), and **reordering short-circuiting predicates**.
   * `nothrow` is a property of calls with **conforming arguments** (see *Soundness premise* below): the entry check of a typed parameter may itself fail. A call site may use the callee's `nothrow` only when it statically proves every argument conforms to the declared parameter type; otherwise the call is treated as may-throw.
 * **`@TERMINATING` *(Phase 2 / optimizer flag, or combined as `@TOTAL` = `nothrow` + `@TERMINATING`)*:**
-  * Guaranteed to finish in finite steps (no unbounded `while` loops or unguarded recursion). Required only when dropping dead calls whose infinite loop would otherwise prevent termination.
+  * Guaranteed to finish in finite steps (no unbounded `while` loops or unguarded recursion). Required only when dropping dead calls whose infinite loop would otherwise prevent termination. Inferred in `TypeChecker` for functions whose body contains no `while` loops and no recursive calls (`recurse` or same-SCC callees) and calls only `@TERMINATING` callees.
 
 #### Axis 3 — Algebraic & Relational Properties
 * **`idempotent`:**
-  * Repeating the call with the same arguments/state produces the same result and the same state as calling it once:
-    * For pure value endofunctions ($T \to T$): $f(f(x)) = f(x)$ (e.g., `abs`, `String.trim`, canonicalizers). Enables $f(f(x)) \to f(x)$ elimination.
-    * For `mut` / stateful functions: executing `f(args)` twice consecutively yields the exact same post-state as once (e.g., `Files.createDirectories`, `set.add`, `latch.set()`, `upsert`). Enables **safe automatic retries** and duplicate suppression.
-    * *Important:* Unlike the old purity draft, `idempotent` does **not** implicitly claim `commutative`.
+  * Has two distinct forms distinguished by the callable's signature (*Signature applicability rules* below):
+    * **Value projection form** (`pure` unary endofunction `(T) : T`): $f(f(x)) = f(x)$ (e.g., `abs`, `String.trim`, canonicalizers). Enables $f(f(x)) \to f(x)$ elimination.
+    * **Effect / retry form** (`mut` or effectful `axiom` function): executing the call twice consecutively with the same arguments produces the exact same observable **post-state** as calling it once, **ignoring the return value** (e.g., `Files.createDirectories`, `set.add`—which returns `true` then `false`—`latch.set()`, `upsert`). Enables **safe automatic retries** and duplicate suppression when the return value is unused.
+  * *Important:* `idempotent` is orthogonal to `commutative` (`map.put(k, v)` is `idempotent` without being `commutative`; `counter.add(n)` is `commutative` without being `idempotent`).
 * **`commutative`:**
-  * **Value form** ($\ge 2$ symmetric parameters): reordering arguments yields the same result, $f(a, b) = f(b, a)$ (e.g., `int +`, `min`, `max`, `==`). Enables canonical operand ordering and argument-order-independent CSE.
-  * **Effect form** (`mut` methods/functions on same target): two consecutive calls with different arguments commute, $s.f(a); s.f(b) \equiv s.f(b); s.f(a)$ (e.g., `AtomicInteger.add(k)`, `ConcurrentHashMap.newKeySet().add(k)`). Together with `threadsafe` (and `idempotent` for retries), enables **lock-free unordered parallel accumulation**.
+  * **Value form** (`pure` binary `(T, T) : R` with two parameters of the same type `T`): reordering arguments yields the same result, $f(a, b) = f(b, a)$ (e.g., `int +`, `min`, `max`, `==`). Enables canonical operand ordering and argument-order-independent CSE.
+  * **Effect form** (`mut` method on receiver `S` or function taking `mut target: S`): two calls on the same `mut` target with different arguments produce the exact same observable **post-state**, $s.f(a); s.f(b) \equiv_{\text{state}} s.f(b); s.f(a)$, **ignoring return values** (e.g., `AtomicInteger.addAndGet(k)`, `ConcurrentSkipListSet.add(k)`). Together with `threadsafe` (and `idempotent` for retries), enables **lock-free unordered parallel accumulation**.
 * **`associative`** *(binary combiners `(T, T) : T`)*:
   * $(a \oplus b) \oplus c = a \oplus (b \oplus c)$ (e.g., integer `+`, `*`, `min`, `max`, string `+`, list concat). Enables **parallel tree reductions (`parallelReduce`)**, loop reassociation, and streaming partition merges.
   * Note: Adding an optional identity/monoid tag (e.g., `identity(0)` in future extensions) lets `parallelReduce` run without a caller-supplied seed.
@@ -188,6 +188,7 @@ Function declaration / Java target
   * $x \le y \implies f(x) \le f(y)$ over the whole declared domain (e.g., `double` `x + k`, `double` `x * k` for `k >= 0`, monotonic timestamp/ID buckets). **Wrapping `int` arithmetic is not monotone** (`x + 1` wraps at the maximum), so `int` `x + k` and `x * k` never get the property; see §4.6. Enables **zone-map / min-max range pruning** and pushing range predicates ($f(x) > c$) down into storage scans.
 * **`injective`:**
   * $x \ne y \implies f(x) \ne f(y)$ (one-to-one mapping, e.g., bijective encodings, lossless wrappers `UserId(id)`, wrapping `int` `x + k`, wrapping `int` `x * k` for **odd** `k` only). Enables pushing **`distinct`**, **`groupBy`**, and **`f(x) == f(y)`** through projections directly onto underlying keys.
+* **Signature applicability rules (`TypeChecker`):** Every algebraic modifier is validated against the declaration's parameter and return types: `associative` requires a `pure` binary `(T, T) : T` signature; value `commutative` requires a `pure` binary `(T, T) : R` signature with identical parameter types; effect `commutative` requires `mut` on `this` or a parameter; value `idempotent` requires a `pure` unary `(T) : T` signature while effect `idempotent` requires `mut` or an effectful `axiom`; `monotone` requires ordered first-parameter and return types (`int`, `double`, `bool`, `string`, or Java `Comparable`); and `injective` requires at least one parameter and a non-`null` return type. Any mismatch is a compile-time `TypeCheckException`.
 
 #### Soundness premise — declared parameter types are enforced
 
@@ -209,7 +210,7 @@ Because static checking faces fundamental computability bounds (Rice's theorem),
 | **`unique`** (return & moved params) | **Yes** for `@UNIQUE` local builders & returns (deep ownership, §5.2) | **Yes** (definite-unassignment + no shared mutable object stored into the graph) | Needed when Java methods allocate/return isolated graphs (`axiom pure unique parse(...)`) |
 | **`deterministic`** | **Yes** (fixed-point; forbids clocks/RNG/mutable globals) | **Yes** (sound) | Only for benign lazy memoization (`String.hashCode`) or Java |
 | **`threadsafe`** | **Derived** for verified `pure deterministic` on `value`/`freeze` data | **Derived** (or rejects concurrent mutable sharing) | Required for lock-free / concurrent mutating Java (`ConcurrentHashMap`, `AtomicInteger`) |
-| **`nothrow`** | **Yes** (conservative: no `throw`, `assert`, `/`, nullable/dynamic calls) | **Yes** (conservative) | Needed when invariants prevent failure (e.g. proven non-zero divisor / bounds-checked indexing) |
+| **`nothrow`** | **Yes** (conservative: no `assert`/`suppose`, nullable member access, or throwing/dynamic calls) | **Yes** (conservative) | Needed when invariants prevent failure (e.g. bounds-checked Java indexing `list.get(i)` or validated `Integer.parseInt`) |
 | **`idempotent`** | Trivial forwarding only | Trivial forwarding / invariant overwrite only | **Yes** (`axiom pure deterministic idempotent abs`, `axiom mut idempotent set.add`) |
 | **`commutative`** | Direct single-op wrapper only | Direct single-op wrapper only | **Yes** (`axiom ... commutative`) |
 | **`associative`** | Direct single-op wrapper only | Direct single-op wrapper only | **Yes** (`axiom ... associative`) |
@@ -228,10 +229,10 @@ For a function signature `(p1: T1, ..., mut noescape unique pk: Tk) : R` with ef
   * `pure deterministic nothrow (noescape x: Point) : unique Path` `<:` `pure deterministic (x: Point) : Path` `<:` `(x: Point) : Path`.
 * **Mutability & Ownership contravariance-of-permission:**
   * Because `pure` forbids all `mut` parameters and `mut` `this`, `pure` is strictly disjoint from `mut` (`pure` signatures never carry `mut`).
-  * Whenever `target` carries *any* effect modifier (e.g. `deterministic`, `nothrow`, `mut`, etc.), `actual` may only declare `mut` on a parameter (or `this`) if `target` also declares `mut` on that parameter (or `this`):
+  * Across **all** `Type.Function` signatures (whether or not function-level effect modifiers are present), absence of `mut` on a parameter (or `this`) means that parameter (or `this`) is **not mutated**: `actual` may declare `mut` on parameter $i$ (or `this`) only if `target` also declares `mut` on parameter $i$ (or `this`). Adding an orthogonal modifier like `nothrow` to `(x: List) : int` therefore never changes the meaning of absent `mut`:
     * `pure deterministic (x: List) : int` `<:` `deterministic (mut x: List) : int`, **not** the reverse! (Promising no mutation at all satisfies a caller slot that permits mutating `x` without global effects.)
   * On parameters, demanding ownership (`unique p`) is *stricter* on the caller: a callee taking an ordinary borrowed `(p: T)` satisfies a slot expecting `(unique p: T)` (`pure (p: Vec) <: pure (unique p: Vec)`), **not** the reverse!
-* **Gradual / Legacy Compatibility (unconstrained only):** An **unconstrained** function type `(x: T) : R` (empty effect set, no `mut`/`noescape`/`unique`) acts as the top function type for gradual Babble compatibility—any callable or `dynamic` value matches it (checked at runtime via `Types.check`'s existing `fn|` descriptor), while callers receive no optimization or aliasing guarantees. Conversely, an **effect-constrained** function type (any non-empty effect set or `mut`/`noescape`/`unique` modifier) **cannot be satisfied by `dynamic`** (nor by `null` when `nothrow` is required): `TypeChecker` requires a statically known `Type.Function` whose effects and parameter modes satisfy the target (which inline lambdas and un-reassigned `def`s automatically have via T8).
+* **Gradual / Legacy Compatibility (unconstrained only):** An **unconstrained** function type `(x: T) : R` (empty effect set, no `mut`/`noescape`/`unique`) accepts non-`mut` callables with arbitrary global/non-deterministic effects as well as `dynamic` values (checked at runtime via `Types.check`'s existing `fn|` descriptor), while callers receive no optimization or aliasing guarantees; mutating parameter $i$ still requires `(mut x: T) : R` uniformly across all `Type.Function`s. Conversely, an **effect-constrained** function type (any non-empty effect set or `mut`/`noescape`/`unique` modifier) **cannot be satisfied by `dynamic`** (nor by `null` when `nothrow` is required): `TypeChecker` requires a statically known `Type.Function` whose effects and parameter modes satisfy the target (which inline lambdas and un-reassigned `def`s automatically have via bidirectional local type inference).
 
 ---
 
@@ -242,6 +243,11 @@ For a function signature `(p1: T1, ..., mut noescape unique pk: Tk) : R` with ef
 Effects compose naturally in front of function literals, parameter declarations, function types, and external Java declarations:
 
 ```babble
+;; Host axioms declared before use (within a file, TypeChecker collects axioms order-independently in a pre-pass):
+axiom pure deterministic nothrow threadsafe java.lang.Math.sqrt
+axiom pure deterministic java.util.HashMap
+axiom mut deterministic java.util.HashMap.put
+
 ;; 1. Verified function literals (compiler proves all listed properties):
 def hypot = pure deterministic (a: double, b: double) : double -> (
     java.lang.Math.sqrt(a * a + b * b)
@@ -255,7 +261,7 @@ def appendAll = deterministic (mut dst: ArrayList, noescape src: List) -> (
 
 def buildIndex = pure deterministic (n: int) : unique HashMap -> (
     def m = java.util.HashMap()
-    ... ;; calling `axiom mut deterministic` methods on fresh local `m` stays `pure deterministic`!
+    ... ;; calling `axiom mut deterministic` methods (`HashMap.put`) on fresh local `m` stays `pure deterministic`!
     ... ;; `m` stays @UNIQUE because only primitives (deeply immutable) are stored into it
     m
 )
@@ -275,15 +281,14 @@ def square = (x: int) : int -> ( x * x )   ;; inferred: pure deterministic nothr
 
 ;; 4. Axiomatic declarations (trusted contract, no proof checked on body/target):
 def fastFib = axiom pure deterministic (n: int) : int -> ( ... )   ;; single-threaded cache (NOT threadsafe!)
-axiom pure deterministic nothrow threadsafe java.lang.Math.sqrt
-axiom mut idempotent commutative threadsafe my.CrdtSet.add
+axiom mut idempotent commutative threadsafe java.util.concurrent.ConcurrentSkipListSet.add
 
 ;; 5. Explicit opt-out (suppresses inference / opts out value defaults):
 def debugLog = impure (msg: string) -> ( ... )
 impure java.net.URL.equals
 
 ;; 6. Function types & ownership handoff (`move` / `freeze`):
-def parallelMap = axiom pure threadsafe (items: List, fn: pure deterministic threadsafe (x: int) : int) : List -> ( ... )
+def parallelMap = axiom pure threadsafe (items: List, fn: pure threadsafe (x: int) : int) : List -> ( ... )
 def parallelReduce = axiom pure threadsafe (items: List, combine: pure deterministic threadsafe associative (a: int, b: int) : int) : int -> ( ... )
 def frozenIndex = freeze(buildIndex(1000))      ;; zero-copy conversion; type `frozen HashMap`, `threadsafe`
 def sortedCopy = (n: int) : unique List -> (
@@ -293,15 +298,17 @@ def sortedCopy = (n: int) : unique List -> (
 ```
 
 **Grammar additions (`Babble.g4`):**
-* Contextual or reserved effect keywords: `axiom`, `pure`, `mut`, `noescape`, `unique`, `move`, `freeze`, `frozen`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `threadsafe`, `monotone`, `injective`, `impure`.
+* Contextual effect keywords: `axiom`, `pure`, `mut`, `noescape`, `unique`, `move`, `freeze`, `frozen`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `threadsafe`, `monotone`, `injective`, `impure`.
 * `# simpleType`: `FROZEN? ID ('.' ID)*` (the `frozen T` type of §3.2).
-* `# functionLiteral`: `AXIOM? effectModifier* parametersDeclaration (':' UNIQUE? type)? '->' NL* block`
-* `# parameterDeclaration`: `PRIVATE? DEF? MUT? NOESCAPE? UNIQUE? ID (':' type)? ('=' NL* expression)?`
+* `# functionLiteral`: `(AXIOM effectModifier+ | effectModifier*) parametersDeclaration (':' UNIQUE? type)? '->' NL* block`
+* `# parameterDeclaration`: `PRIVATE? DEF? (MUT | NOESCAPE | UNIQUE)* ID (':' type)? ('=' NL* expression)?`
 * `# functionType`: `effectModifier* parametersDeclaration (':' UNIQUE? type)?` (note: `axiom` and `impure` are invalid inside function types—`axiom` is a definition-site mechanism, never part of a caller-visible type!).
 * `# effectDeclaration`: `EXPORT? AXIOM effectModifier+ expression` (plus `EXPORT? IMPURE expression` for opting out defaults).
-* `# moveExpression`: `MOVE expression` (alongside built-in `freeze(expr)`).
+* `# moveExpression`: `MOVE ID` (alongside built-in `freeze(expr)`).
 
-> **Syntax order:** `axiom` (when present) appears first before effect modifiers; `impure` stands alone and cannot combine with `axiom` or positive effects; **`pure` and `mut` (on receiver or parameters) cannot be combined**. Effect modifiers (`pure`, `deterministic`, etc.) may appear in canonical or arbitrary order and are normalized into an `EffectSet`.
+> **Syntax order:** `axiom` (when present) appears first before one or more effect modifiers (requiring at least one modifier or `mut` parameter); `impure` stands alone and cannot combine with `axiom` or positive effects; **`pure` and `mut` (on receiver or parameters) cannot be combined**. Function-level `effectModifier`s (`pure`, `deterministic`, etc.) and parameter modifiers (`(mut | noescape | unique)*`) may each appear in arbitrary order and are normalized into an `EffectSet` and `Type.Parameter` flags (`unique noescape` is an exclusive borrow; plain `unique` consumes).
+>
+> **Grammar disambiguation:** All effect keywords remain valid contextual identifiers outside their syntactic positions so existing code continues to parse. In expression position, `effectModifier` tokens match `#functionLiteral` only when followed by `parametersDeclaration (':' UNIQUE? type)? '->'` (so `pure(x)` still parses as a function call, unambiguous in ANTLR4 ALL(*) with no newline before `(`); `#moveExpression` matches `MOVE ID` specifically (never binary subtraction); and in type position (`:` prefix), `#simpleType` starts with `FROZEN? ID` while `#functionType` starts with `effectModifier* '('`, leaving the two alternatives disjoint. `freeze(expr)` is a regular built-in function call.
 
 ### 4.2 Local State, Fresh Objects, Exclusivity, Ownership, and Outer State
 
@@ -324,21 +331,21 @@ Inside any function whose checked or inferred effect includes **`pure`** (and ac
    * Only function-local bindings that no closure captures can be `@UNIQUE` and moved. Top-level, package, static and captured bindings are `@EXTERNAL`; `move` on them is rejected (`Cannot move x : not a local variable`).
    * Inside a function declaring `(noescape p: T)`, assigning `p` (or any mutable sub-reference of `p`) to fields of `this`, another parameter, an outer/global variable, a returning closure, or returning `p` directly is rejected at compile time.
 6. **Outer variables and global mutable singletons:**
-   * **Writing** any outer `def`, mutable `object` singleton field, or `static` field is forbidden in `pure`.
-   * **Reading** a reassigned outer `def`, non-`final` Java static field, or mutable outer singleton/field (even reached transitively through an outer `value class`) is forbidden in **`deterministic`** (and in checked **`pure`** unless explicitly mediated via an `axiom pure` reader—blocking accidental unsynchronized global state reads and data races).
+   * **Writing** any outer `def`, mutable `object` singleton field, or `static` field is forbidden in `pure` (clears `@NO_GLOBAL_EFFECTS`), except when a frame-local (`noescape`) helper closure reassigns an unescaped local `def` or mutates a `@FRESH` local of its enclosing function `F` (§4.5).
+   * **Reading** a reassigned outer `def`, non-`final` Java static field, or mutable outer singleton/field (even reached transitively through an outer `value class`) performs no observable write: it stays valid in **`pure`**, but is forbidden in **`deterministic`** (and therefore blocks auto-deriving `threadsafe`).
    * Reading immutable outer `def`s (never reassigned and deeply `value class` / `freeze` / primitive / `pure` function) is valid in both `pure` and `deterministic`.
 
 ### 4.3 `value class`es, `object` Singletons, `static` Blocks, and Standard Value Protocol
 
 1. **`value class` defaults:**
-   * A `value class` constructor is **enforced `pure deterministic`** (its parameter defaults and top-level `classBlock` expressions must satisfy `pure deterministic`; fields are read-only at runtime in `BabbleInstance.setMember`).
-   * Instance methods of a `value class` **default to `pure deterministic`** (or stronger inferred properties) unless explicitly opted out with `impure` or marked `axiom`—avoiding boilerplate on immutable data types.
+   * A `value class` constructor is **verified `pure deterministic`** (its parameter defaults and top-level `classBlock` expressions must satisfy `pure deterministic`; fields are read-only at runtime in `BabbleInstance.setMember`).
+   * Unannotated instance methods of a `value class` use **Inferred Mode** (§3.1)—they automatically infer `pure deterministic` (and `nothrow` / `threadsafe` where applicable) when their body avoids I/O and mutable globals, while unannotated methods that call `println` or performing Java I/O silently infer unconstrained rather than failing compilation, preserving backward compatibility for unannotated scripts (§1.3). Explicitly annotated methods on a `value class` are verified normally.
    * Note: Because `value class` instances may hold references to mutable objects passed in at construction time, transitivity checks inspect field types when deciding `threadsafe` (deeply immutable `value class` vs shallow wrapper). The same distinction applies to the built-in structural `hashCode`/`toString`: they hash and print the fields, so they are `deterministic` only for a deeply immutable `value class` (a field holding a non-value instance contributes an identity hash).
 2. **Standard Value Protocol (`equals`, `hashCode`, `compareTo`, `toString`):**
-   * Operators `==`, `!=`, `<`, `<=`, `>`, `>=` and string `+` invoke `equals`, `compareTo`, and `toString` implicitly (`Operators.java`, `BabbleInstance.toString()`).
-   * `equals` and `compareTo` **default to `pure deterministic`** on any Babble `class` or Java class (identity equality is a function of its two arguments).
-   * `hashCode` and `toString` **default to `pure deterministic` only where they do not derive from object identity**: on a Java class that overrides them (declaring class other than `java.lang.Object`), on a deeply immutable `value class`, and on a Babble class that defines its own verified `toString`. The inherited `Object.hashCode`/`Object.toString` and the built-in ones of a non-value Babble instance are identity-derived and differ between runs: they default to **`pure` only**, so nothing that reaches them is folded at compile time or memoized.
-   * Explicit `impure java.net.URL.equals` / `impure` opt-out stays available when an override performs DNS or mutates external state.
+   * Babble's `==` and `!=` (`Operators.equal`) use structural field equality on `value class`es, object identity on regular `BabbleInstance`s, and `Object.equals` on Java objects—never invoking a user-defined Babble `equals`, `hashCode`, or `compareTo` method. Ordering operators (`<`, `<=`, `>`, `>=`) operate on primitives, `string`, or Java `Comparable` instances of the same class. Only `toString` is user-definable on Babble classes (`string + x` invokes `BabbleInstance.toString()`, which delegates to a 0-arg `toString` method if defined).
+   * Consequently, on **Java classes**, `equals` and `compareTo` **default to `pure deterministic`** (while Babble's built-in `value class` structural equality and `BabbleInstance` identity equality are intrinsically `pure deterministic nothrow`).
+   * On Java `hashCode` and Java/Babble `toString`, defaults are **`pure deterministic` only where they do not derive from object identity**: on a Java class that overrides them (declaring class other than `java.lang.Object`), on a deeply immutable `value class`, and on a Babble class defining a verified/inferred `pure deterministic` `toString`. The inherited `Object.hashCode`/`Object.toString` and the default ones of a non-value `BabbleInstance` are identity-derived and differ between runs: they default to **`pure` only**, so nothing that reaches them is folded at compile time or memoized.
+   * Explicit `impure java.net.URL.equals` / `impure` opt-out stays available when a Java override performs DNS or mutates external state.
    * For a `value class`, `TypeChecker` determines whether the built-in structural `toString()` / `hashCode()` is `pure deterministic` or `pure`-only by inspecting the declared field types statically (deeply immutable `value class` $\to$ `pure deterministic`; fields that may hold non-value instances $\to$ `pure` only; fields whose own `toString` may be unconstrained $\to$ unconstrained). No runtime effect propagation inside `BabbleInstance.toString()` is needed.
 3. **Inline `object (...)` and `static` blocks:**
    * An `object (...)` expression or nested `class`/`interface` `static` block executed inside a `pure` or `deterministic` function is checked under the enclosing function's active constraints (cannot secretly print or mutate globals during class initialization).
@@ -365,21 +372,27 @@ Every function literal creates its own effect context (`inferred`, `verified`, o
 
 * **Constructing a less-constrained closure inside a `pure deterministic` function** (e.g., returning an `impure` logger closure `() -> ( println(msg) )`) is `pure deterministic` itself (building the closure has no side effects and captures immutable `msg`), **provided** the inner closure does not capture a `mut` mutation of the enclosing function's non-`mut` parameters or `this`.
 * **Calling** that closure inside the enclosing `pure deterministic` function requires its effect profile to satisfy the enclosing requirement (`actual <: enclosing`).
+* **Frame-local (`noescape`) helper closures:** When a closure literal defined inside function `F` never escapes `F` (it is only invoked directly inside `F` or passed to `noescape` parameters within `F`), any reads or reassignments of `F`'s otherwise-uncaptured local `def`s and any mutations of `F`'s `@FRESH` locals performed by that helper closure are attributed to `F`'s own local frame rather than `@EXTERNAL` outer state—allowing `F` to use local helper closures and stay `pure deterministic`.
+* **Higher-order helpers & call-site specialization:** Rather than introducing Koka-style effect-row variables into Babble's gradual type signatures, small higher-order Babble helpers whose effects depend on a parameter call `f(...)` (e.g., `def apply = (f, x) -> ( f(x) )`) can be evaluated in `TypeChecker` via call-site specialization whenever the caller supplies a statically known `Type.Function` or contextual lambda.
 
 ### 4.6 Built-ins, Operators, and Numeric Semantics
 
 | Built-in / Operator | Intrinsic Effect Profile | Notes |
 |---|---|---|
-| `same(a, b)`, `classof(v)` | `pure deterministic nothrow` | Pointer/class inspection only (`same` is also `commutative` and `noescape`). |
+| `same(a, b)`, `classof(v)`, `x is T` | `pure deterministic nothrow` | Pointer/class/type inspection only (`same` is also `commutative` and `noescape`; `x is T` also establishes flow-sensitive `Narrowing`). |
 | `freeze(unique v)` | `pure deterministic nothrow threadsafe` | Consumes a `@UNIQUE` mutable graph and yields a `frozen T` (purely static type transition; identity no-op at runtime, §3.2). |
 | `assert(cond, msg?)` / `suppose` | `pure deterministic` | **Not `nothrow`** (throws on false); arguments checked under enclosing mode. |
-| `print(...)`, `println(...)`, `import(...)` | Unconstrained (`impure`) | I/O / module loading side effects. |
+| `print(...)`, `println(...)`, `import(...)` | Unconstrained (`impure`) | I/O / module loading side effects (static `import("...ba")` still resolves `ModuleInterface` types at compile time). |
 | `int +`, `int *` | `pure deterministic nothrow associative commutative` | Two's-complement wraparound is associative and commutative, but **not `monotone`** (overflow wraps). `x + k` is `injective`; `x * k` is `injective` only for odd `k`. |
-| `double +`, `double *` | `pure deterministic nothrow commutative` | **Not `associative`** (IEEE-754 rounding). Parallel reduction over `double` requires explicit `axiom associative` or ordered fold. `x + k` and `x * k` (`k >= 0`) are `monotone` (rounding preserves order) but not `injective`; `int` to `double` conversion is exact, `monotone` and `injective`. |
-| `string +` (when both operands are `string`) | `pure deterministic nothrow associative` | **Not `commutative`**; **`injective`?** No (`"ab" + "c" == "a" + "bc"`). |
-| `a / b` | `pure deterministic` | **Not `nothrow`** (`DivisionByZero` when `b == 0`); cannot be speculatively hoisted past `b != 0`. |
-| `==`, `!=` (on value/primitive types) | `pure deterministic nothrow commutative` | Delegates to `equals` (checked for custom classes). |
-| `<`, `<=`, `>`, `>=` | `pure deterministic` (+ `nothrow` for primitives) | Flip-duality (`a < b <=> b > a`) built into optimizer. |
+| unary `-x`, binary `a - b` (`int`) | `pure deterministic nothrow` | Not `associative` or `commutative`; not `monotone` (wraps); unary `-x` and `x - k` are `injective`. |
+| `double +`, `double *`, unary `-x`, binary `a - b` (and mixed `int`/`double`) | `pure deterministic nothrow` (`+`, `*` are `commutative`) | **Not `associative`** (IEEE-754 rounding). Mixed `int`/`double` promotes `int` cleanly (`int` to `double` conversion is exact, `monotone`, and `injective`). `x + k`, `x - k`, and `x * k` (`k >= 0`) are `monotone` (not `injective`). |
+| `a / b` (on `int` or `double`) | `pure deterministic nothrow` | In `Operators.div`, division is always IEEE-754 `double` division (`1 / 0 == Infinity`), so it never throws. |
+| `string +` (both operands `string`) | `pure deterministic nothrow associative` | **Not `commutative`**; not `injective` (`"ab" + "c" == "a" + "bc"`). |
+| `string + non-string` / `non-string + string` | Inherits static `toString()` profile of non-string operand | `pure deterministic nothrow` for primitives/`string`/deep `value class`; `pure deterministic` for overridden Java `toString` or verified Babble `toString`; `pure` for non-value `BabbleInstance`/`Object.toString`; unconstrained for `dynamic` or unconstrained `toString`. |
+| `==`, `!=` | `pure deterministic nothrow commutative` on primitives, `string`, `value class`es, and `BabbleInstance` identity; Java objects inherit `equals` profile (default `pure deterministic`) | `Operators.equal` uses structural equality on `value class`es and identity on regular `BabbleInstance`s (never calling a Babble `equals` method). |
+| `<`, `<=`, `>`, `>=` | `pure deterministic nothrow` on `int`, `double`, `bool`, `string`; Java `Comparable` inherits `compareTo` profile (default `pure deterministic`) | Flip-duality (`a < b <=> b > a`) built into optimizer. |
+| `not a`, short-circuit `a and b`, `a or b` | `pure deterministic nothrow` (when `bool` operands are `pure deterministic nothrow`) | `a and b` / `a or b` only evaluate `b` conditionally; `b` is checked under flow-sensitive `Narrowing` established by `a`. |
+| Member selection `a.x` | `pure deterministic` (+ `nothrow` iff `a` is statically non-null); unconstrained if `a` is `dynamic` | Null dereference throws; flow-sensitive `a != null` or `a is T` narrowing proves non-nullability for `nothrow`. |
 
 ---
 
@@ -389,25 +402,26 @@ Every function literal creates its own effect context (`inferred`, `verified`, o
 
 To minimize annotation burden, Babble maximizes inference across unannotated functions in the active compilation unit:
 
-1. **Call-Graph Construction:** Build a static call graph over all functions, methods, constructors, closures, and `value class` bodies in `TypeChecker` (after `BlockScopes`, `TypeChecks`, and `Resolver`, where expression `Type`s, `ClassShape`s, and static module `ModuleInterface` types are always available).
+1. **Call-Graph Construction:** Build a static call graph over all functions, methods, constructors, closures, and `value class` bodies in `TypeChecker` (after `BlockScopes`, `TypeChecks`, and `Resolver`, alongside bidirectional local type inference—inferred function return types, contextual lambda parameter/return typing, and flow-sensitive `is`/`!= null` `Narrowing`—where expression `Type`s, `ClassShape`s, and static module `ModuleInterface` types are always available).
 2. **SCC Condensation (Bottom-Up Fixed Point):** Partition into Strongly Connected Components (handling direct and mutual recursion in `recurse` or mutually recursive functions).
 3. **Optimistic Initialization (per unannotated node):**
-   * Start with `{@NO_GLOBAL_EFFECTS, deterministic, nothrow}`, `mutParams = {}`, `noescapeParams = allParams`, `mutThis = false`, `uniqueReturn = true`. (`pure` holds after convergence iff `@NO_GLOBAL_EFFECTS && mutParams.isEmpty() && !mutThis`.)
+   * Start with `{@NO_GLOBAL_EFFECTS, deterministic, nothrow, threadsafe}`, `mutParams = {}`, `noescapeParams = allParams`, `mutThis = false`, `uniqueReturn = true`, and (for Phase 2 optimizer flags) `@TERMINATING`. (`pure` holds after convergence iff `@NO_GLOBAL_EFFECTS && mutParams.isEmpty() && !mutThis`.)
    * Functions explicitly marked `impure` start and stay at `{}` (`@NO_GLOBAL_EFFECTS = false`, `noescapeParams = {}`, `uniqueReturn = false`).
    * Functions marked `axiom` are initialized directly to their declared `axiom` `EffectSet` / parameter flags (`axiom pure ...` and `axiom mut ...` set `@NO_GLOBAL_EFFECTS`) and excluded from downward weakening.
 4. **Transfer & Monotone Fixed-Point Iteration:**
    * **Field writes / calls to `mut` / dynamic callees:** If target is `@FRESH`, keep `@NO_GLOBAL_EFFECTS` and `mutParams` unchanged (provided the called `mut` method/helper itself has `@NO_GLOBAL_EFFECTS`!); if target is `@PARAM(i)` or `@THIS`, add $i$ / `this` to `mutParams`/`mutThis` (which automatically prevents `pure`); if target is `@EXTERNAL`, an un-blessed/I/O Java method, or a call to an untyped `dynamic` value / reassigned untyped `def` (not typed as a constrained `Type.Function`), clear `@NO_GLOBAL_EFFECTS` (dropping `pure`), `deterministic`, `nothrow`, and `threadsafe`. Consequently, any callback invoked inside a verified `pure` or `deterministic` function must carry a constrained function type—which `TypeChecker` enforces statically at all call sites (disallowing `dynamic` coercion, §3.4). Also check shallow call-site **`mut` exclusivity** across arguments, and that every argument to a `unique` slot is a `@UNIQUE` local.
    * **Finalize `pure`:** After convergence, `pure` is set iff `@NO_GLOBAL_EFFECTS && mutParams.isEmpty() && !mutThis` (so `pure` **always** implies zero external mutation).
    * **Escape & uniqueness transfer:** Storing `@PARAM(i)` into `this`, another parameter, a global, a closure, or returning it removes $i$ from `noescapeParams`. Returning any expression that may alias `@EXTERNAL`, non-`unique` `@PARAM`, or `@THIS`, or a local that is `@FRESH` but no longer `@UNIQUE` (something shared was stored into it), drops `uniqueReturn`.
-   * **Reads / non-determinism:** If expression reads a reassigned outer `def`, non-`final` static field, mutable singleton field, or calls a non-`deterministic` callee, drop `deterministic`.
-   * **Exceptions:** If expression executes `throw`, `assert`, `/`, nullable/dynamic call, an operator or member access on a `dynamic` (unannotated) operand, a call whose arguments are not statically proved to conform to the callee's parameter types, or calls a non-`nothrow` callee, drop `nothrow`.
+   * **Reads / non-determinism:** If expression reads a reassigned outer `def` (outside a frame-local `noescape` closure, §4.5), non-`final` static field, mutable singleton field, or calls a non-`deterministic` callee, drop `deterministic`.
+   * **Exceptions:** If expression executes `assert`/`suppose`, a member access or call on a nullable receiver (unless proven non-null by flow narrowing), an operator or member access on a `dynamic` (unannotated) operand, a call whose arguments are not statically proved to conform to the callee's parameter types, or calls a non-`nothrow` callee, drop `nothrow`.
    * **Typed parameters:** declared parameter types are unconditionally enforced on entry by Babble's runtime boundary checks (`Types.check`, §3.2 soundness premise); call sites where `TypeChecker` statically proves argument conformance can elide the entry check and rely on `nothrow`.
    * **Compositional algebraic propagation:**
      * Composition $f(g(x))$ where both $f$ and $g$ are `monotone` $\implies$ `monotone`; same for `injective`.
      * Single-op wrapper `(a, b) -> ( op(a, b) )` inherits `commutative` / `associative` from `op`.
-   * **Derived `threadsafe`:** After SCC converges, a verified/inferred function is marked `threadsafe` iff it is `pure deterministic`, every parameter/captured variable has a deeply immutable type (deep `value class`, `frozen T`, primitives, strings), **and** every callee is already `threadsafe` (with any `mut` helpers confined strictly to `@FRESH` locals). Functions carrying `axiom` without `threadsafe` never auto-derive `threadsafe`.
+   * **Derived `threadsafe` (in-SCC monotone rule):** `threadsafe` stays set across SCC fixed-point iteration iff `@NO_GLOBAL_EFFECTS` and `deterministic` hold, `mutParams` is empty and `!mutThis` (unless explicitly annotated `threadsafe`), every parameter and captured variable has a deeply immutable type (deep `value class`, `frozen T`, primitives, strings—or is an exclusively borrowed `unique noescape` parameter), **and** every callee retains `threadsafe` (with any `mut` helpers confined strictly to `@FRESH` locals). Because `threadsafe` iterates inside the SCC fixed point, direct and mutual recursion over deeply immutable data naturally converges with `threadsafe`. Functions carrying `axiom` without `threadsafe` never auto-derive `threadsafe`.
+   * **`@TERMINATING` *(Phase 2)*:** Dropped if the body contains any `while` loop, calls `recurse` or another function in the same cyclic SCC, or calls any non-`@TERMINATING` callee.
 5. **Verification Check (Verified Mode):**
-   * For every function with explicit non-`axiom` annotations, verify `inferred.satisfies(declared)` (including `declared.noescape ⊆ inferred.noescape`, `declared.uniqueReturn => inferred.uniqueReturn`) and `inferred.mutSet ⊆ declared.mutSet`, plus definite-unassignment after `move`/`freeze`. Emit targeted diagnostics if any obligation fails—while retaining *extra* inferred properties for downstream optimization!
+   * For every function with explicit non-`axiom` annotations, verify `inferred.satisfies(declared)` (including `declared.noescape ⊆ inferred.noescape`, `declared.uniqueReturn => inferred.uniqueReturn`) and `inferred.mutSet ⊆ declared.mutSet`, plus definite-unassignment after `move`/`freeze`. Emit targeted diagnostics if any obligation fails—while retaining *extra* inferred properties strictly for intra-module optimization of that function (callers' own verification relies only on the declared signature, §3.1).
 
 > **What is fixed-point iteration?**  
 > Because functions can be directly or mutually recursive (`f` calls `g` and `g` calls `f`), a single top-down or bottom-up pass cannot always know every callee's effect summary upfront. Fixed-point iteration solves these cyclic dependencies by treating the call graph as a system of constraints $\mathbf{S} = F(\mathbf{S})$: starting from optimistic initial guesses, a worklist loop repeatedly recomputes each function's summary from its body and callees' current summaries until a full iteration produces no further changes (a **fixed point**, $F(\mathbf{S}) = \mathbf{S}$). Because transfer rules only shrink finite effect sets monotonically (and never re-add dropped guarantees), termination is guaranteed in finite steps—producing the tightest sound summary permitted by the lattice.  
@@ -419,35 +433,49 @@ To minimize annotation burden, Babble maximizes inference across unannotated fun
 
 ### 5.2 Escape, Uniqueness (`unique`), and Exclusivity Analysis
 
-A function like:
+A completely unannotated function like:
 ```babble
-def buildStats = (noescape xs: List) : unique Stats -> (
+axiom pure deterministic nothrow noescape java.util.List.size
+def Stats = class (def count: int = 0, def total: int = 0) (
+    def add = mut deterministic nothrow (v: int) -> (
+        this.count = this.count + 1
+        this.total = this.total + v
+    )
+)
+def buildStats = (xs: java.util.List) -> (
     def s = Stats(0, 0)
     s.add(xs.size())
     s
 )
 ```
-infers **`pure deterministic`** (`xs` is untouched and `noescape`, **not** `mut`) AND **`unique` return**—because `s` was freshly constructed inside `buildStats`, `xs` never leaked into `s`, and zero aliases to `s` remain in `buildStats`.
+has its return type `Stats` inferred by bidirectional local type inference, and automatically infers **`pure deterministic nothrow`**, **`noescape xs`** (`xs` is untouched and never escapes), AND **`unique` return** (`: unique Stats`)—because `s` was freshly constructed inside `buildStats`, `xs.size()` yields a primitive `int` rather than escaping `xs`, and zero aliases to `s` remain in `buildStats`.
 
-Babble tracks these local points-to / ownership states per binding in `TypeChecker` (only for function-local bindings that no closure captures; every other binding is `@EXTERNAL`):
+Babble tracks these local points-to / ownership states per binding in `TypeChecker` (only for function-local bindings that no escaping closure captures; every other binding is `@EXTERNAL`):
 * **`@FRESH`:** Bound solely to a `pure` constructor, `object` literal, `unique` return, or `unique` parameter; calling a `@NO_GLOBAL_EFFECTS` `mut` helper/method on it leaves `@NO_GLOBAL_EFFECTS` and `mutParams` untouched (so the caller stays `pure`!). The object is new, but its contents may be shared.
-* **`@UNIQUE`** (a `@FRESH` binding that is also deeply owned): everything stored into it so far was `@UNIQUE` (moved in) or deeply immutable. Only a `@UNIQUE` binding may be passed to `move`, a `unique` slot or `freeze(...)`, or returned as `unique`. Storing a `@PARAM`, `@EXTERNAL`, `@FRESH`-but-not-`@UNIQUE` or `dynamic` value into it (directly, or as an argument a Java method may retain) demotes it to `@FRESH` for the rest of the function.
-* **`@PARAM(i)` / `@THIS`:** Aliases parameter $i$ or `this`. Any mutation marks $i$ / `this` as `mut`; escaping it into `this`, another parameter, an outer variable, a closure, or the return value clears `noescape(i)`.
+* **`@UNIQUE`** *(substate of `@FRESH` — deeply owned)*: everything stored into it so far was `@UNIQUE` (moved in) or deeply immutable. Only a `@UNIQUE` binding may be passed to `move`, a `unique` slot or `freeze(...)`, or returned as `unique`. Storing a `@PARAM`, `@EXTERNAL`, `@FRESH`-but-not-`@UNIQUE` or `dynamic` value into it (directly, or as an argument a Java method may retain) demotes it to `@FRESH` for the rest of the function.
+* **`@PARAM(i)` / `@THIS`:** Aliases parameter $i$ or `this`. Any mutation marks $i$ / `this` as `mut`; escaping it into `this`, another parameter, an outer variable, an escaping closure, or the return value clears `noescape(i)`.
+* **Sub-reference derivation (`p.child`, `xs.get(0)`):** Reading a non-deeply-immutable field or element from `@PARAM(i)` or `@THIS` inherits `@PARAM(i)` / `@THIS` on the derived value, so mutating or escaping `p.child` is tracked back to parameter $i$ / `this` (forbidding hidden mutation through aliases of non-`mut` parameters). Reading a field from `@UNIQUE` stays inside that owned graph (mutating it preserves `@FRESH`/`@UNIQUE`, while storing it externally demotes the root to `@FRESH`); reading a mutable reference out of a merely `@FRESH` (non-`@UNIQUE`) local yields `@EXTERNAL`.
 * **`@FROZEN`:** Any binding whose type is deeply immutable (`frozen T` from `freeze(expr)`, deep `value class`, primitive, string); **`threadsafe`** for zero-copy concurrent sharing. Unlike the other states this one is carried by the type, so it holds for parameters, fields and top-level `def`s too.
-* **`@MOVED` / `@EXTERNAL`:** After `move x` or `freeze(x)` (including implicit last-use move), `x` transitions to `@MOVED` (definite-unassignment rejects any later use of `x`); any reference escaping to/from globals becomes `@EXTERNAL`.
+* **`@MOVED`:** After `move x` or `freeze(x)` (including implicit last-use move), `x` transitions to `@MOVED`; definite-unassignment rejects any subsequent read or write to `x`.
+* **`@EXTERNAL`:** Any reference stored to or loaded from top-level, package, static, or escaping-closure bindings, returned from an unconstrained call, or read out of a non-`@UNIQUE` `@FRESH` container becomes `@EXTERNAL` (cannot be mutated in `pure` or returned as `unique`).
+* **Control-flow merge join ($\sqcup$):** At `if`/`else` joins and loop back-edges, local ownership states join monotonically:
+  * `@UNIQUE` $\sqcup$ `@UNIQUE` = `@UNIQUE`; `@UNIQUE` $\sqcup$ `@FRESH` = `@FRESH`;
+  * `@MOVED` $\sqcup$ *any state* = `@MOVED` (a binding moved on either branch cannot be used after the merge until reassigned);
+  * `@PARAM(i)` $\sqcup$ `@PARAM(j)` = `@PARAM({i, j})` (subsequent mutation or escape taints all potentially aliased parameters);
+  * joining `@EXTERNAL` (or mixing `@FRESH` with `@PARAM(i)`) yields `@EXTERNAL` while preserving `@PARAM(i)` tainting.
 * **Call-site `mut` exclusivity:** At `callee(a0, a1, ...)`, every `mut` argument `ai` must be a different object from every other `aj` and `this`—checked statically across distinct variables/paths/frozen values and guarded dynamically if dynamic aliasing is possible. The check is shallow; only a `@UNIQUE` argument in a `unique mut` slot is deeply disjoint (§3.2).
 
 ### 5.3 Concrete Compiler Optimizations Unlocked
 
-With resolved `EffectSet`, `mut`/`noescape`, and `unique` metadata attached to AST / `TypeNode` / bytecode IR (`org.babblelang.engine.optimizer` and future passes), the compiler enables:
+With resolved `EffectSet`, `mut`/`noescape`, and `unique` metadata recorded in `ScopeAnalysis` per parse-tree node and consumed by `CodeGenerator`, bytecode passes in `org.babblelang.compiler.optimizer.OptimizerBase`, and parallel collection combinators, the compiler enables:
 
 1. **CSE, Memoization & LICM:**
    * All result reuse requires `f` to be **`pure deterministic`** and its **result type to be deeply immutable** (primitive, string, `frozen T`, deep `value class`). A function returning a new mutable object (any `unique` return, e.g. `buildIndex`) is never reused: two calls must yield two distinct objects, or a mutation of one would show in the other and `same` would change its answer. Such calls can still be reordered or dropped.
-   * **CSE:** two occurrences of `f(a, b)` in one function collapse into one call when, in addition, the state the first call read is unchanged at the second: either all arguments are deeply immutable, or nothing in between may write to a graph reachable from them (no assignment through them, no plain-`mut` or unconstrained call that could reach them; see the caller-side rule in §3.2). With **`commutative`**, `f(b, a)` additionally matches `f(a, b)`.
+   * **CSE:** two occurrences of `f(a, b)` in one function collapse into one call when, in addition, the state the first call read is unchanged at the second: either all arguments are deeply immutable, or nothing in between may write to a graph reachable from them (no assignment through them, no plain-`mut` or unconstrained call that could reach them; see the caller-side rule in §3.2). When `f` is additionally **`commutative`** (on top of `pure deterministic`), `f(b, a)` also matches `f(a, b)`.
    * **Memoization across calls and compile-time folding:** additionally require **all arguments to be deeply immutable**, so that equal keys mean equal states for the lifetime of the cache. A call that can reach an identity-derived value (§4.3) is not `deterministic` and is never folded.
-   * Repeated nested calls `norm(norm(s))` collapse to `norm(s)` iff `norm` is **`pure deterministic idempotent`** (same conditions on `s` and the result).
-2. **`@NOALIAS` Register Promotion, Store-to-Load Hoisting & SIMD Vectorization:**
-   * Because a **`unique mut dst`** parameter owns its whole graph, it shares no mutable object with `src`, `this`, captured variables or globals; loops writing `dst` can safely keep `src` fields in registers, hoist invariant `src` reads, eliminate redundant loads, and vectorize without runtime alias guards. Plain `mut dst` gives none of this: the shallow identity check does not exclude shared interior state.
+   * Repeated nested calls `norm(norm(s))` collapse to `norm(s)` iff `norm` is **`pure deterministic idempotent`** (value projection form `(T) : T`, with the same conditions on `s` and the result).
+2. **`@NOALIAS` Local/Field Load Hoisting & Redundant-Load Elimination:**
+   * Because a **`unique mut dst`** parameter owns its whole graph, it shares no mutable object with `src`, `this`, captured variables or globals; loops writing `dst` can safely keep `src` fields in JVM locals, hoist invariant `src` reads out of loops, and eliminate redundant loads without runtime alias guards. Plain `mut dst` gives none of this: the shallow identity check does not exclude shared interior state.
 3. **Predicate Push-Down & Push-Up (Stream / Query Pipelines):**
    * **Guard-safe filter swap:** `if p(x) and q(x)` $\leftrightarrow$ `if q(x) and p(x)` (put cheaper/more selective filter first) iff `p` and `q` are **`pure` and `nothrow`** (or `q` never faults when `p` is false).
    * **Push filter below expensive `map` / `join`:** `xs.map(f).filter(p)` can invert/evaluate `p` on raw keys before a costly step (`xs.filter(x -> p'(x)).map(f)` or `join(xs, ys).filter(p_on_x)` $\to$ `join(xs.filter(p_on_x), ys)`) iff `f` and `p` are **`pure deterministic`** and **`nothrow`**. Inverted range predicates (`f(x) > c`) rely on **`monotone`**, and equality / `distinct` push-down (`f(x) == f(y) <=> x == y`) relies on **`injective`**.
@@ -461,7 +489,7 @@ With resolved `EffectSet`, `mut`/`noescape`, and `unique` metadata attached to A
 6. **Parallel Execution & Concurrent Data Sharing:**
    * **`parallelMap` / `parallelFilter`:** Safe whenever callback is **`pure threadsafe`** (automatically inferred for verified `pure deterministic` code on deeply immutable inputs). Data shared between workers must be deeply immutable, or `@UNIQUE` in the caller and exclusively borrowed by the combinator for its duration; `@THREAD_COMPATIBLE` data that is neither is rejected, since nothing rules out a concurrent writer.
    * **`parallelReduce`:** Safe divide-and-conquer tree fold whenever combiner is **`pure deterministic threadsafe associative`** (preserving partition order if not `commutative`, or arbitrary work-stealing if **`commutative`**).
-   * **`parallelForEach`:** Safe concurrent accumulation whenever callback's `mut` writes use **`commutative threadsafe`** operations (and retryable on worker failure if **`idempotent`**).
+   * **`parallelForEach`:** Safe concurrent accumulation whenever callback's `mut` writes on the shared accumulator target use **`commutative threadsafe`** operations (and retryable on worker failure if **`idempotent`** in effect form).
 7. **Reassociation & Dead-Code Elimination:**
    * Reassociate `(x + c1) + c2` $\to$ `x + (c1 + c2)` when `+` is **`pure deterministic nothrow associative`** (valid for `int` / `string`, skipped for IEEE-754 `double`!).
    * Eliminate unused expression `f(x); e` when `f` is **`pure nothrow`** (and `@TERMINATING`).
@@ -470,7 +498,8 @@ With resolved `EffectSet`, `mut`/`noescape`, and `unique` metadata attached to A
 
 While `axiom` tells the compiler to skip compile-time proof, semantic axioms (`deterministic`, `idempotent`, `commutative`, `associative`, `monotone`, `injective`, `nothrow`) are ideal targets for **automated property-based testing** in a future `babble.checkAxioms` test mode:
 
-* For `axiom commutative`: sample pairs $(a, b)$ and assert `f(a, b) == f(b, a)`.
+* **Input generators:** `checkAxioms` provides built-in boundary and pseudo-random generators for primitives and core types (`int`, `double`, `bool`, `string`, and standard Java collections of generator-supported elements) and recursively constructs Babble `value class` instances whose fields have generator-supported types; functions with unsupported parameter types either use a test-registered generator or skip fuzzing with a diagnostic.
+* For `axiom commutative`: sample pairs $(a, b)$ and assert `f(a, b) == f(b, a)` (or post-state equality on fresh `mut` receivers).
 * For `axiom associative`: sample triples $(a, b, c)$ and assert `f(f(a, b), c) == f(a, f(b, c))`.
 * For `axiom idempotent`: assert `f(f(x)) == f(x)` (or post-state equality after 1 vs 2 calls on fresh `mut` state).
 * For `axiom deterministic`: invoke twice with equal cloned inputs and assert identical outputs.
@@ -481,7 +510,7 @@ This turns unchecked mathematical assumptions into continuously fuzz-tested inva
 
 ## 6. Java Interop and Bytecode Analysis
 
-Java methods and classes default to **unconstrained** (`EffectSet.EMPTY`, conservative `mut` assumed on mutable receivers/args), **except** the standard value protocol: `equals` and `compareTo` default to `pure deterministic`, and so do `hashCode` and `toString` when the class overrides them; the identity-derived `Object.hashCode`/`Object.toString` default to `pure` only (§4.3). All can be opted out via `impure`.
+Java methods and classes default to **unconstrained** (`EffectSet.EMPTY`, conservative `mut` assumed on mutable receivers/args), **except** the standard value protocol (§4.3.2): on Java classes, `equals` and `compareTo` default to `pure deterministic`, and so do `hashCode` and `toString` when overridden (while the identity-derived `Object.hashCode`/`Object.toString` default to `pure` only). All can be opted out via `impure`.
 
 ### 6.1 In-Babble `axiom` and `impure` Declarations
 
@@ -495,7 +524,7 @@ axiom pure threadsafe java.nio.file.Files.readString                 ;; pure & r
 def mkdirs = axiom idempotent threadsafe java.nio.file.Files.createDirectories
 axiom mut commutative threadsafe java.util.concurrent.atomic.AtomicInteger.addAndGet
 
-;; Class-level axioms (marks constructor + all public methods; individual methods can refine):
+;; Class-level axioms (marks all public constructors and methods; individual methods can refine):
 def BigDecimal = axiom pure deterministic threadsafe import("java.math.BigDecimal")
 
 ;; Module re-export & per-runtime isolation:
@@ -506,8 +535,10 @@ impure java.net.URL.equals
 impure java.net.URL.hashCode
 ```
 
-* Resolved at **compile time** by `TypeChecker`: file-level `axiom` / `impure` declarations are recorded in `ScopeAnalysis` (and `AnalysisSession` for REPL sessions, or `ModuleInterface` when exported via `export axiom`), never in `ScriptRuntime` or global singletons.
-* `axiom` declarations on Java targets are forbidden inside verified `pure`/`deterministic` function bodies (must appear at module/top/impure scope).
+* **Compile-time resolution:** `TypeChecker` resolves all `axiom` / `impure` declarations purely at compile time via `ScopeAnalysis` (and `AnalysisSession` across REPL inputs, or `ModuleInterface` for exported module axioms), never in `ScriptRuntime` or global singletons.
+* **Order-independent within a file:** `TypeChecker` collects all top-level and `package`-level `axiom` / `impure` declarations in a pre-pass before building the SCC call graph, so declaring an axiom before or after a caller in the same file has the exact same effect. `axiom` declarations are forbidden inside verified `pure`/`deterministic` function bodies (must appear at top-level, `package`, or unconstrained scope).
+* **Overloads and instance methods:** A method-level target (`java.lang.Math.max`, `java.util.HashMap.put`) applies uniformly to **all overloads** of that method name on the target Java class (for instance methods, `mut` applies to the receiver `this`, and `noescape` on the declaration applies to `this` and all reference parameters). A class-level declaration (`def BigDecimal = axiom ... import("java.math.BigDecimal")`) applies to **all public constructors and public methods** of that class, while method-level overrides on the same class take priority (§6.2).
+* **`export axiom` in `ModuleInterface`:** `export axiom ... <target>` does not introduce a runtime value binding; instead, `ModuleInterface` carries an exported axiom table mapping `(Class<?>, memberName | "*") -> EffectSet`, which `TypeChecker` imports into the caller's `ScopeAnalysis` on static `import("...ba")`.
 
 ### 6.2 Host-Side Java Annotations & `BabbleScriptEngine` API
 
@@ -523,9 +554,10 @@ public final class Geo {
 }
 ```
 
-Or embedded hosts can register trusted JDK/third-party methods programmatically on `BabbleScriptEngine` (isolated per engine instance and read by `TypeChecker` at compile time):
+Embedded hosts can register trusted JDK/third-party methods programmatically on `BabbleScriptEngine` (isolated per engine instance and read by `TypeChecker` at compile time), and optionally forbid untrusted scripts from declaring in-script axioms via `allowAxioms(false)`:
 
 ```java
+engine.allowAxioms(false); // optional sandbox policy: reject script-level axiom/impure declarations
 engine.assumeEffects(Math.class, "sqrt", Effect.PURE, Effect.DETERMINISTIC, Effect.NOTHROW);
 engine.assumeEffects(Files.class, "readString", Effect.PURE); // read-only, non-deterministic
 engine.assumeEffects(Files.class, "createDirectories", Effect.IDEMPOTENT);
@@ -571,7 +603,7 @@ In `org.babblelang.analysis.Type`:
 * **`Type.Frozen(Type of)`**: the `frozen T` type produced by `freeze` (simplified to `of` when `of.isDeeplyImmutable()`). Member reads and non-`mut` `noescape` method calls on `Frozen(T)` wrap their result `U` in `Frozen(U)`; `Frozen(T)` is not assignable to `DYNAMIC` or plain `T`, `DYNAMIC` is not assignable to `Frozen(T)`, and `Frozen(DYNAMIC)` (from erased Java returns such as `HashMap.get`) is assignable only to deeply immutable concrete types (verified at runtime by `Types.check`). `Type.isDeeplyImmutable()` holds for primitives, strings, `Frozen`, and `value class`es whose field types all satisfy it.
 * **`Type.Function(List<Parameter> parameters, Type result, EffectSet effects)`**:
   * Invariant: `effects.contains(PURE)` implies `effects.noGlobalEffects && !effects.mutThis` and no parameter in `parameters` has `mut`.
-  * Assignability (`TypeChecker`): if `target` is constrained (non-empty `effects` or any parameter with `mut`/`noescape`/`unique`), `actual` must be a `Type.Function` (never `DYNAMIC`, and never nullable if `NOTHROW` is required) satisfying `actual.effects.satisfies(target.effects)`, `target.noescapeThis => actual.noescapeThis`, `target.uniqueResult => actual.uniqueResult`, `actual.mutThis => target.mutThis`, and per parameter: `target.noescape(i) => actual.noescape(i)`, `actual.mut(i) => target.mut(i)`, `actual.uniqueParam(i) => target.uniqueParam(i)`. Unconstrained `(A) : B` stays top for gradual compatibility.
+  * Assignability (`TypeChecker`): `actual.mut(i) => target.mut(i)` and `actual.mutThis => target.mutThis` hold uniformly across **all** `Type.Function`s (even when `target.effects` is empty, so absent `mut` always means read-only, §3.4). When `target` is unconstrained (empty `effects` and no `mut`/`noescape`/`unique`), it accepts any non-`mut` `Type.Function` with arbitrary global/non-deterministic effects as well as `DYNAMIC`. Conversely, when `target` is constrained (non-empty `effects` or any parameter/`this` modifier), `actual` must be a `Type.Function` (never `DYNAMIC`, and never nullable if `NOTHROW` is required) satisfying `actual.effects.satisfies(target.effects)`, `target.noescapeThis => actual.noescapeThis`, `target.uniqueResult => actual.uniqueResult`, `target.noescape(i) => actual.noescape(i)`, and `actual.uniqueParam(i) => target.uniqueParam(i)`.
 
 ### 7.2 Zero Runtime Effect Machinery (`Types`, `babble-runtime`)
 
@@ -597,11 +629,13 @@ axiom pure deterministic nothrow threadsafe java.lang.Math.sin
 axiom pure deterministic nothrow threadsafe java.lang.Math.cos
 axiom pure deterministic nothrow threadsafe java.lang.Math.sqrt
 axiom pure threadsafe java.nio.file.Files.readString   ;; side-effect-free & race-free, NOT deterministic!
-axiom pure deterministic nothrow threadsafe java.nio.file.Path.of
+axiom pure deterministic threadsafe java.nio.file.Path.of  ;; may throw InvalidPathException (not `nothrow`)
 
 package math (
-    ;; Verified: compiler checks body satisfies `pure deterministic` (also infers `nothrow`?
-    ;; No: divides by `g`, so `nothrow` is not inferred unless proven/axiomatized)
+    ;; Verified: compiler checks body satisfies `pure deterministic`.
+    ;; Because `/` on `double` is IEEE-754 division (`Operators.div`) and never throws, `TypeChecker` also
+    ;; infers `nothrow` and `threadsafe` quietly for intra-module optimization (while external callers
+    ;; rely only on the explicitly declared `pure deterministic` signature, §3.1).
     export def sqrtApprox = pure deterministic (x: double) : double -> (
         if x <= 0.0 then ( return 0.0 )
         def g : double = x
@@ -676,27 +710,28 @@ def nonNegative = (raw: int) : bool -> ( raw >= 0 )            ;; inferred: pure
 ### 8.4 Parallel `map`, Tree `reduce` (`associative`), and Retry-Safe Accumulation
 
 ```babble
-axiom mut idempotent commutative threadsafe my.CrdtSet.add
+axiom pure deterministic java.util.concurrent.ConcurrentSkipListSet
+axiom mut idempotent commutative threadsafe java.util.concurrent.ConcurrentSkipListSet.add
 axiom idempotent threadsafe java.nio.file.Files.createDirectories
 
-def sumInt = axiom pure deterministic nothrow threadsafe associative commutative (a: int, b: int) : int -> ( a + b )
+def sumInt = (a: int, b: int) : int -> ( a + b )   ;; inferred: pure deterministic nothrow threadsafe associative commutative (single-op `int +` wrapper)
 def fibCached = axiom pure deterministic (n: int) : int -> ( ... )  ;; unsynchronized HashMap cache: @THREAD_UNSAFE (NO `threadsafe`!)
 
-def parallelMap = axiom pure threadsafe (xs: List, f: pure deterministic threadsafe (x: int) : int) : List -> ( ... )
+def parallelMap = axiom pure threadsafe (xs: List, f: pure threadsafe (x: int) : int) : List -> ( ... )
 def parallelReduce = axiom pure threadsafe (xs: List, seed: int, op: pure deterministic threadsafe associative (a: int, b: int) : int) : int -> ( ... )
-def parallelForEach = axiom (xs: List, f: commutative threadsafe (x: string)) -> ( ... )
+def parallelForEach = axiom threadsafe (mut acc: java.util.concurrent.ConcurrentSkipListSet, xs: List, f: idempotent commutative threadsafe (mut s: java.util.concurrent.ConcurrentSkipListSet, x: string)) -> ( ... )
 
-;; 1) Safe parallel map + tree reduction:
-def totalSq = parallelReduce(parallelMap(items, (x: int) -> ( x * x )), 0, sumInt)
+;; 1) Safe parallel map + tree reduction (contextual lambda typing infers `x: int` and `: int`):
+def totalSq = parallelReduce(parallelMap(items, (x) -> ( x * x )), 0, sumInt)
 ;; parallelMap(items, fibCached)  ;; REJECTED: `fibCached` omits `threadsafe` (may hide unsynchronized cache)!
 
-;; 2) Safe unordered concurrent accumulation + retry (idempotent + commutative + threadsafe):
-def collector = my.CrdtSet()
-def ensureAndTrack = axiom idempotent commutative threadsafe (dir: string) -> (
+;; 2) Safe unordered concurrent accumulation + retry (mut target + idempotent + commutative + threadsafe):
+def collector = java.util.concurrent.ConcurrentSkipListSet()
+def ensureAndTrack = axiom idempotent commutative threadsafe (mut s: java.util.concurrent.ConcurrentSkipListSet, dir: string) -> (
     java.nio.file.Files.createDirectories(java.nio.file.Path.of(dir))
-    collector.add(dir)
+    s.add(dir)
 )
-parallelForEach(dirs, ensureAndTrack)
+parallelForEach(collector, dirs, ensureAndTrack)
 ```
 
 ### 8.5 Exclusivity (`@NOALIAS`), `unique` / `move` / `freeze`, and `noescape`
@@ -706,7 +741,7 @@ def Vec = class (def data: java.util.ArrayList) ( ... )
 
 ;; 1) Deep exclusivity (@NOALIAS) through an exclusive borrow (`unique noescape mut`):
 def addScaled = deterministic (mut noescape unique dst: Vec, noescape src: Vec, k: double) -> (
-    ... ;; `dst` owns its whole graph: it shares nothing with `src` -> safe SIMD / register hoisting!
+    ... ;; `dst` owns its whole graph: it shares nothing with `src` -> safe invariant-load hoisting & redundant-load elimination!
 )
 def scaleDemo = (src: Vec) -> (
     def v = Vec(java.util.ArrayList())  ;; @UNIQUE local: a fresh Vec over a fresh list
@@ -720,8 +755,9 @@ def scaleDemo = (src: Vec) -> (
 ;; compiler would assume nothing about aliasing: two distinct Vecs may share one `data` list.
 
 ;; 2) Imperative local builder -> zero-copy `freeze` -> concurrent parallel reads:
-axiom mut deterministic java.util.HashMap.put   ;; mutates only `this` (@NO_GLOBAL_EFFECTS); retains its arguments
-axiom pure deterministic java.util.HashMap.get
+axiom pure deterministic java.util.HashMap            ;; pure constructor (creates a fresh empty map)
+axiom mut deterministic java.util.HashMap.put         ;; mutates only `this` (@NO_GLOBAL_EFFECTS); retains its arguments
+axiom pure deterministic threadsafe java.util.HashMap.get   ;; safe across concurrent readers once frozen/unmodified
 def buildLookup = pure deterministic (n: int) : unique java.util.HashMap -> (
     def m = java.util.HashMap()
     def i : int = 0
@@ -765,21 +801,21 @@ def distSq = pure deterministic nothrow (noescape p: Point, noescape q: Point) :
 
 ### 9.1 Open Design Questions
 
-1. **Short-circuiting `and` / `or` and predicate push-down:** In `a != null and a.x > 0`, `a.x` is **not** `nothrow` unconditionally—it is only safe *after* `a != null`. Should optimizers treat short-circuit guards via path-sensitive nullability, leaving unconditional reordering strictly for two mutually `nothrow` predicates? *(Recommended: Yes—never reorder a non-`nothrow` right-hand side ahead of a guard.)*
+1. **Short-circuiting `and` / `or` and predicate push-down:** In `a != null and a.x > 0`, `a.x` is **not** `nothrow` unconditionally—it is only safe *after* `a != null`. Should optimizers treat short-circuit guards via path-sensitive nullability (building on `TypeChecker`'s existing flow-sensitive `Narrowing` for `!= null` and `is T` across `if`, `while`, and short-circuit `and`/`or`), leaving unconditional reordering strictly for two mutually `nothrow` predicates? *(Recommended: Yes—never reorder a non-`nothrow` right-hand side ahead of a guard.)*
 2. **Module exports and inferred vs explicit contracts:** Should `export def f = (x) -> (...)` export `f`'s **inferred** effects across module boundaries, or should cross-module public contracts require explicit annotations unless opted into inference? *(Exporting inferred effects maximizes optimization across modules, while explicit `impure` lets library authors hide unstable implementation properties.)*
 3. **Zero / Identity elements for `associative` (`monoid`):** Should `parallelReduce` allow an optional identity annotation (e.g., `axiom associative identity(0)`) or take `seed` explicitly as in §8.4? *(Taking `seed` in Phase 1 keeps the annotation language small; `identity` can be added as an optional Phase 3 attribute.)*
 4. **Local `axiom (...)` expression blocks:** Like Rust `unsafe { ... }`, should a verified `pure deterministic` function be allowed to enclose a tiny verified-safe internal mutation cache in an inline `axiom ( ... )` block, or should `axiom` stay strictly at function/declaration granularity? *(Starting at declaration granularity keeps trust boundaries crisp and grep-able.)*
 
 ### 9.2 Phased Implementation Roadmap
 
-1. **Phase 1 — Unified Core Model, Verification & `axiom`:**
-   * Grammar (`Babble.g4`): add `axiom`, `pure`, `mut`, `noescape`, `unique`, `move`, `freeze`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `threadsafe`, `monotone`, `injective`, `impure` on function literals, parameters, function types, expressions, and top-level/exported Java `axiom` / `impure` targets.
-   * Type system & analysis (`EffectSet`, `Type.Parameter(..., mut, noescape, unique)`, `Type.Function`, `Type.Frozen`, `TypeChecker`): verify `pure`, `mut` parameter/`this` + shallow call-site exclusivity, `noescape` checks, `unique`/`move`/`freeze` ownership (deep, locals only) + definite-unassignment, purely static `frozen T` and effect-constrained `Type.Function` (disallowing `dynamic` coercion, zero `babble-runtime` changes), `deterministic` (outer mutable & `axiom` non-deterministic checks), conservative `nothrow`, default `pure deterministic` on `value class` and standard value protocol (`equals`, `hashCode`, `toString`, `compareTo`), interface conformance (`actual <: required`), and covariance/contravariance subtyping.
-   * Engine & Compiler (`BabbleScriptEngine`, `ModuleInterface`, `Interpreter`, `CodeGenerator`): compile-time Java effect registries on `BabbleScriptEngine` and `ModuleInterface`, composable Java annotations (`@Pure`, `@Mut`, `@Noescape`, `@Unique`, `@Deterministic`, ...), and no-op `freeze` intrinsic.
-2. **Phase 2 — Fixed-Point Inference & Core Optimizations:**
-   * Implement SCC bottom-up fixed-point inference in `TypeChecker` for `{pure, mut, noescape, unique, deterministic, nothrow}`, derived `threadsafe`, implicit last-use `move`, and compositional `monotone` / `injective`.
-   * Expose `EffectSet`, `noescape`, and `unique` metadata on IR/bytecode and wire compiler optimization passes: CSE / constant folding (`pure deterministic`), `@NOALIAS` hoisting & SIMD (`unique mut` parameters), scalar replacement/unboxing (`noescape`), zero-copy `freeze` / FBIP reuse (`unique`), predicate reordering & hoisting (`pure deterministic nothrow`), loop reassociation (`associative`), and parallel collection combinators (`parallelMap`, `parallelReduce`, `parallelForEach`).
+1. **Phase 1 — Core Effect Model, SCC Fixed-Point Inference, Verification & `axiom`:**
+   * Grammar (`Babble.g4`): add disambiguated contextual keywords `axiom`, `pure`, `mut`, `noescape`, `unique`, `move`, `freeze`, `frozen`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `threadsafe`, `monotone`, `injective`, `impure` on function literals, parameters, function types, `move` / `frozen` expressions/types, and top-level/`package`/exported Java `axiom` / `impure` targets.
+   * Type system, inference & verification (`EffectSet`, `Type.Parameter(..., mut, noescape, unique)`, `Type.Function`, `TypeChecker`): enforce uniform absent `mut` across all `Type.Function`s, implement SCC bottom-up fixed-point inference and verification (integrated with bidirectional local type inference and flow-sensitive `Narrowing`) for `{pure, mut, noescape, deterministic, nothrow, threadsafe}`, single-op/compositional algebraic properties + signature applicability validation, frame-local `noescape` closure attribution, call-site specialization for small higher-order helpers, conservative `nothrow`, standard value protocol defaults (`equals`, `hashCode`, `toString`, `compareTo`), `value class` constructor checks, effect-constrained `Type.Function` assignability (disallowing `dynamic` coercion, zero `babble-runtime` changes), interface conformance (`actual <: required`), and covariance/contravariance subtyping.
+   * Engine & Registries (`BabbleScriptEngine`, `ModuleInterface`, `AnalysisSession`, `ScopeAnalysis`): order-independent pre-pass collection of file/`package` `axiom` and `impure` declarations, compile-time Java effect registries (`assumeEffects`, `markImpure`, `allowAxioms(false)`), exported axiom tables in `ModuleInterface`, and composable Java annotations (`@Pure`, `@Mut`, `@Noescape`, `@Unique`, `@Deterministic`, ...).
+2. **Phase 2 — Deep Ownership (`unique` / `move` / `freeze`), `@TERMINATING`, and Core Optimizations:**
+   * Implement `@FRESH`/`@UNIQUE`/`@PARAM(i)`/`@THIS`/`@MOVED`/`@EXTERNAL` ownership lattice, sub-reference propagation, control-flow merge joins, definite-unassignment, implicit last-use `move`, purely static `Type.Frozen` (`freeze` zero-cost identity no-op in `Interpreter`/`CodeGenerator`), and `@TERMINATING` inference.
+   * Publish `EffectSet`, `noescape`, `unique`, and `@TERMINATING` metadata in `ScopeAnalysis` and wire `CodeGenerator`, bytecode passes in `org.babblelang.compiler.optimizer.OptimizerBase`, and parallel combinators: CSE / constant folding (`pure deterministic` on deeply immutable args/results), `@NOALIAS` invariant load hoisting & redundant-load elimination (`unique mut` parameters), scalar replacement/unboxing (`noescape`), zero-copy `freeze` / FBIP reuse (`unique`), predicate reordering & hoisting (`pure deterministic nothrow`), dead-code elimination (`pure nothrow` + `@TERMINATING`), loop reassociation (`associative`), and parallel collection combinators (`parallelMap`, `parallelReduce`, `parallelForEach`).
 3. **Phase 3 — Algebraic Rewrite Rules, ASM Bytecode Suggester & Axiom Fuzzing:**
    * Add `monotone` range inversion and `injective` projection push-down in pipeline optimizers.
    * Add opt-in ASM bytecode analyzer (`ClassLoader` + escape analysis + seeded JVM `native` intrinsics) to suggest/auto-derive `pure`/`mut`/`deterministic`/`nothrow` on closed Java helpers.
-   * Add property-based test harness (`checkAxioms`) to fuzz-test `axiom commutative`, `associative`, `idempotent`, and `deterministic` declarations in CI.
+   * Add property-based test harness (`babble.checkAxioms`) with built-in primitive, collection, and recursive `value class` generators to fuzz-test `axiom commutative`, `associative`, `idempotent`, and `deterministic` declarations in CI.
