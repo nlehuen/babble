@@ -29,6 +29,8 @@ import java.util.List;
  * java -jar babble.jar -keep-alive script.ba ...    runs it, then continues in the interactive mode
  * java -jar babble.jar -compile main.ba [-o app.jar] [-root dir]
  *                                                   compiles a program into a jar (babblec)
+ * java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
+ *                                                   formats source files (babblefmt, {@link Babblefmt})
  * </pre>
  * A script finds its arguments in {@code args}, a {@code java.util.List} of strings. The
  * mode and the type checker are the engine's : {@code -Dbabble.mode=interpret} (scripts are
@@ -45,7 +47,9 @@ public final class Main {
             Or : java -jar babble.jar -compile main.ba [-o app.jar] [-root dir]
               Compiles a program, main.ba and the modules it imports, into a jar that runs on a plain JRE :
               java -jar app.jar [arguments...]. Modules are under -root, by default main.ba's directory ;
-              the jar is main.jar there unless -o names it.""";
+              the jar is main.jar there unless -o names it.
+            Or : java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
+              Formats source files : see java -jar babble.jar -format -help.""";
 
     /** The exit statuses : a script that failed, and a command line that can't be used. */
     static final int FAILED = 1;
@@ -70,6 +74,9 @@ public final class Main {
     static int run(String[] args, BufferedReader in, PrintWriter out, PrintWriter err, boolean console) throws IOException {
         if (args.length > 0 && (args[0].equals("-compile") || args[0].equals("--compile"))) {
             return compile(args, out, err);
+        }
+        if (args.length > 0 && (args[0].equals("-format") || args[0].equals("--format"))) {
+            return Babblefmt.run(Arrays.copyOfRange(args, 1, args.length), in, out, err);
         }
         boolean keepAlive = false;
         int first = 0;

@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.BufferedReader;
 import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
@@ -11,7 +12,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * The formatter's command line : the standard input, files and directories, and its options.
+ * The formatter's command line, {@code -format} : the standard input, files and directories,
+ * and its options.
  */
 public class BabblefmtTestCase {
     private static final String UNFORMATTED = "def f=(a)->(\na+1\n)\n";
@@ -26,7 +28,10 @@ public class BabblefmtTestCase {
     private static Run run(String input, String... args) throws Exception {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
-        int status = Babblefmt.run(args, new StringReader(input), new PrintWriter(out), new PrintWriter(err));
+        String[] command = new String[args.length + 1];
+        command[0] = "-format";
+        System.arraycopy(args, 0, command, 1, args.length);
+        int status = Main.run(command, new BufferedReader(new StringReader(input)), new PrintWriter(out), new PrintWriter(err), false);
         return new Run(status, out.toString().replace(System.lineSeparator(), "\n"), err.toString().replace(System.lineSeparator(), "\n"));
     }
 
@@ -89,7 +94,7 @@ public class BabblefmtTestCase {
     public void testTheCommandLine() throws Exception {
         Run help = run("", "-help");
         Assertions.assertEquals(0, help.status());
-        Assertions.assertTrue(help.out().startsWith("Usage : babblefmt"));
+        Assertions.assertTrue(help.out().startsWith("Usage : java -jar babble.jar -format"));
         Run unknown = run("", "-x");
         Assertions.assertEquals(Babblefmt.USAGE_ERROR, unknown.status());
         Assertions.assertTrue(unknown.err().startsWith("Unknown option : -x\n"));
