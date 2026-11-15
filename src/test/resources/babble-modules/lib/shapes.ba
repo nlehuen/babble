@@ -1,0 +1,2 @@
+;; A module shipped as a resource, for ModuleSourcesTestCase's class path tests.
+export def Shape = interface ( def area : () : double ; def describe = () -> ( "area " + this.area() ) )

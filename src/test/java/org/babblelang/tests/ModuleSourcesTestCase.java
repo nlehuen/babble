@@ -203,6 +203,24 @@ public class ModuleSourcesTestCase {
     }
 
     @Test
+    public void aMapResolvesPathsLikeDirectories() throws Exception {
+        org.babblelang.engine.MapModuleSource map = new org.babblelang.engine.MapModuleSource()
+                .put("app/lib/a.ba", "export def x = 1")
+                .put("./top.ba", "export def y = 2");
+        ModuleId a = map.resolve("lib/a.ba", map.identify("app/main.ba"));
+        Assertions.assertEquals(new ModuleId("app/lib/a.ba", "app/lib/a.ba"), a);
+        Assertions.assertEquals(a, map.resolve("../app/./lib/a.ba", map.identify("app/main.ba")));
+        Assertions.assertEquals(new ModuleId("top.ba", "top.ba"), map.resolve("/top.ba", a));
+        Assertions.assertEquals(new ModuleId("top.ba", "top.ba"), map.resolve("../../top.ba", a));
+        // Nothing above the root, and nothing the map doesn't hold.
+        Assertions.assertNull(map.resolve("../../../top.ba", a));
+        Assertions.assertNull(map.resolve("b.ba", a));
+        Assertions.assertEquals("export def x = 1", map.read(a).text());
+        Assertions.assertNotEquals(map.read(a).version(), map.put("app/lib/a.ba", "export def x = 3").read(a).version());
+        Assertions.assertThrows(IllegalArgumentException.class, () -> map.put("..", "x"));
+    }
+
+    @Test
     public void theAttributeMustBeAModuleSource() {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODULE_SOURCE, "files please");
