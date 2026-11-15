@@ -32,6 +32,17 @@ public final class Operators {
         return number(a, site.leftText()).doubleValue() + number(b, site.rightText()).doubleValue();
     }
 
+    /**
+     * {@code -a} : an int stays an int (wrapping, as {@code +} and {@code -} do), any other
+     * number becomes a double.
+     */
+    public static Object negate(Object a, String text) {
+        if (a instanceof Integer i) {
+            return -i;
+        }
+        return -number(a, text).doubleValue();
+    }
+
     public static Object sub(Object a, Object b, OpSite site) {
         if (a instanceof Integer ia && b instanceof Integer ib) {
             return ia - ib;

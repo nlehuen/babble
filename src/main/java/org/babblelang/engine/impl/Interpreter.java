@@ -403,6 +403,18 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitNegate(BabbleParser.NegateContext ctx) {
+        if (ctx.operand instanceof BabbleParser.IntegerContext literal) {
+            // A literal : "-2147483648" is an int, though "2147483648" isn't.
+            last = ctx;
+            return Integer.parseInt("-" + literal.getText());
+        }
+        Object value = visit(ctx.operand);
+        last = ctx;
+        return Operators.negate(value, ctx.operand.getText());
+    }
+
+    @Override
     public Object visitIfExpression(BabbleParser.IfExpressionContext ctx) {
         last = ctx;
         if (Truth.test(visit(ctx.test))) {
@@ -412,6 +424,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             last = ctx;
             if (ctx.elseBlock != null) {
                 return visit(ctx.elseBlock);
+            } else if (ctx.elseIf != null) {
+                return visit(ctx.elseIf);
             } else {
                 return null;
             }

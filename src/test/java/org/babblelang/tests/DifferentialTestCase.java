@@ -122,6 +122,20 @@ public class DifferentialTestCase {
                 "def sb = java.lang.StringBuilder() ; def i = 0 ; while i < 3 then ( sb.append(i) ; i = i + 1 ) ; sb.append(null)",
                 "def R = class () implements java.lang.Runnable ( def run = () -> ( null ) ) ; def P = class () ()\n"
                         + "def mk = (o) -> ( java.lang.Thread(o) ) ; mk(R()) ; mk(R()) ; mk(P())",
+                // Unary minus, "else if" and lines starting with a dot.
+                "def x = 3 ; def d = 2.5 ; \"\" + -x + \" \" + -d + \" \" + -2147483648 + \" \" + -x * 2 + \" \" + (5 - -x) + \" \" + -(-x) + \" \" + -java.lang.Long.MAX_VALUE",
+                "def id = (v) -> ( v ) ; -id(-2147483648)",
+                "def id = (v) -> ( v ) ; -id(\"a\")",
+                "def neg = (v) -> ( -v ) ; neg(1) + neg(1.5) + neg(java.math.BigInteger.TEN)",
+                "-2147483649",
+                "def a = 1\n-a",
+                "def sign = (n) -> (\n  if n < 0 then (\"-\")\n  else if n == 0 then (\"0\")\n  else if n < 10 then (\"s\")\n  else (\"l\")\n)\nsign(-5) + sign(0) + sign(3) + sign(42)",
+                "def f = (n) -> ( if n == 1 then (\"a\") else if n == 2 then (\"b\") ) ; \"\" + f(1) + f(2) + f(3)",
+                "def f = (n) -> ( if n == 1 then (10) else if n == 2 then (20) else (30) + 1 ) ; f(1) + f(2) + f(3)",
+                "def f = (n) -> ( if n == 1 then ( def x = 1 ; x ) else if n == 2 then ( def x = 2 ; x ) else ( def x = 3 ; x ) ) ; f(1) * 100 + f(2) * 10 + f(3)",
+                "if true then (1) else x",
+                "def s = java.lang.StringBuilder()\n  .append(\"a\")\n\n  .append(-1)\n  .toString()\ns",
+                "def o = object ( def v = 1 )\no\n  .v = 2\no.v",
                 // Java calls' fast paths : one site, called again and again, with arguments
                 // of kinds picking other overloads, receivers of other classes, and failures.
                 "def Demo = import(\"org\").babblelang.tests.JavaClassDemo\ndef d = Demo() ; def vs = java.util.ArrayList() ; vs.add(1) ; vs.add(\"a\") ; vs.add(1.5) ; vs.add(true) ; vs.add(null) ; vs.add(2) ; vs.add(\"b\") ; vs.add(java.lang.StringBuilder(\"w\"))\n"

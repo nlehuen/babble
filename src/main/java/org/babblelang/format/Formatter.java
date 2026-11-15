@@ -57,6 +57,8 @@ public final class Formatter {
     /** The semicolons to keep : those between two expressions of one line. */
     private final boolean[] keptSemicolons;
     private final boolean[] callParentheses;
+    /** The "-" of a negation, which sticks to its operand : {@code -x}. */
+    private final boolean[] unaryMinus;
     /** For each "(", the token whose line gives the indentation of what it encloses. */
     private final int[] anchors;
 
@@ -90,6 +92,7 @@ public final class Formatter {
         newlines = new byte[tokens.size()];
         keptSemicolons = new boolean[tokens.size()];
         callParentheses = new boolean[tokens.size()];
+        unaryMinus = new boolean[tokens.size()];
         anchors = new int[tokens.size()];
         lineOf = new Line[tokens.size()];
         if (file != null) {
@@ -165,6 +168,8 @@ public final class Formatter {
             ParseTree parent = terminal.getParent();
             if (token.getType() == BabbleLexer.NL) {
                 newlines[index] = newline(parent);
+            } else if (token.getType() == BabbleLexer.MINUS) {
+                unaryMinus[index] = parent instanceof BabbleParser.NegateContext;
             } else if (token.getType() == OPEN) {
                 callParentheses[index] = parent instanceof BabbleParser.CallParametersContext
                         || parent instanceof BabbleParser.SuperExpressionContext;
@@ -374,7 +379,8 @@ public final class Formatter {
         }
         int type = token.getType();
         if (before.getType() == OPEN || type == CLOSE || type == BabbleLexer.COMMA || type == BabbleLexer.SEMICOLON
-                || type == BabbleLexer.COLON || type == BabbleLexer.DOT || before.getType() == BabbleLexer.DOT) {
+                || type == BabbleLexer.COLON || type == BabbleLexer.DOT || before.getType() == BabbleLexer.DOT
+                || before.getType() == BabbleLexer.MINUS && unaryMinus[before.getTokenIndex()] && type != BabbleLexer.MINUS) {
             return false;
         }
         return type != OPEN || !callParentheses[token.getTokenIndex()];

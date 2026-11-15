@@ -130,11 +130,12 @@ A short tour
 ### Everything is an expression
 
 Blocks, `if` and `while` all have a value : a block is worth its last expression, `if`
-without `else` is `null` when the test fails, and `while` is worth its last iteration.
+without `else` is `null` when the test fails, and `while` is worth its last iteration. An
+`else` is followed by a block, or by another `if`.
 
 ```
-def sign = (n) -> ( if n > 0 then ( "positive" ) else ( if n < 0 then ( "negative" ) else ( "zero" ) ) )
-assert(sign(0 - 3) == "negative")
+def sign = (n) -> ( if n > 0 then ( "positive" ) else if n < 0 then ( "negative" ) else ( "zero" ) )
+assert(sign(-3) == "negative")
 
 def i = 0
 def last = while i < 3 then ( i = i + 1 ; i * 10 )
@@ -603,7 +604,7 @@ TODO : lessons from the ray tracer
 Writing [the ray tracer](examples/raytracer-fable/raytracer.ba) showed where Babble gets in the way. In rough
 order of how much each would improve that code :
 
-- [ ] unary minus : `-x` and `-1.0` have to be written `0 - x` and `0 - 1.0`.
+- [x] unary minus : `-x` and `-1.0` had to be written `0 - x` and `0 - 1.0`.
 - [ ] operator methods : let `a + b * t` call `plus` and `times` members, so vector maths doesn't
   read `a.plus(b.times(t))`.
 - [x] members of Java values returned by Java calls : only objects constructed in Babble accepted
@@ -618,12 +619,13 @@ order of how much each would improve that code :
   a plain header parameter can be read as `x` in the body, a `def` one only as `this.x`.
 - [ ] `for` loops over ranges and collections (also in the planned features above) : every loop
   is a `while` with a counter and an increment that is easy to forget.
-- [ ] `else if`, without nesting a block : `else ( if … then ( … ) else ( … ) )`.
+- [x] `else if`, without nesting a block : `else ( if … then ( … ) else ( … ) )`.
 - [ ] `break` and `continue` in loops.
 - [ ] compound assignment : `+=`, `-=`, `*=`, `/=`.
 - [ ] number conversions : an `int(x)` native or an integer division operator, instead of
   `Math.toIntExact(Math.round(Math.floor(x)))`.
-- [ ] line continuation before `.`, to break long method chains across lines.
+- [x] line continuation before `.`, to break long method chains across lines : a line may start
+  with `.`, continuing the expression above it.
 - [x] importing other Babble files : `export` and `import("file.ba")`.
 - [x] parse errors with a line, a column and a message : a syntax error such as using the keyword
   `object` as a name was reported as a bare `ParseCancellationException`. It is now
