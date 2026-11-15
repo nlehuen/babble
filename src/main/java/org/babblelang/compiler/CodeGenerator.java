@@ -1338,6 +1338,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitLabel(otherwise);
         if (ctx.elseBlock != null) {
             visit(ctx.elseBlock);
+        } else if (ctx.elseIf != null) {
+            visit(ctx.elseIf);
         } else {
             mv.visitInsn(ACONST_NULL);
         }
@@ -1882,8 +1884,26 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitNegate(BabbleParser.NegateContext ctx) {
+        if (ctx.operand instanceof BabbleParser.IntegerContext literal) {
+            // A literal : "-2147483648" is an int, though "2147483648" isn't.
+            integer(ctx, "-" + literal.getText());
+            return null;
+        }
+        visit(ctx.operand);
+        mv.visitLdcInsn(ctx.operand.getText());
+        line(ctx);
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Operators", "negate", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        return null;
+    }
+
+    @Override
     public Void visitInteger(BabbleParser.IntegerContext ctx) {
-        String text = ctx.getText();
+        integer(ctx, ctx.getText());
+        return null;
+    }
+
+    private void integer(ParserRuleContext ctx, String text) {
         try {
             pushInt(mv, Integer.parseInt(text));
         } catch (NumberFormatException e) {
@@ -1893,7 +1913,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "parseInt", "(Ljava/lang/String;)I", false);
         }
         mv.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-        return null;
     }
 
     @Override

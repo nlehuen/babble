@@ -160,6 +160,22 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testUnaryMinusAndElseIf() {
+        assertDiagnostics("def a : int = -1\n"
+                        + "def b : double = -1\n"
+                        + "def c : int = -1.5\n"
+                        + "def d = -\"s\"\n"
+                        + "def e : int = -a * 2\n"
+                        + "def f = (n : int) : string -> ( if n < 0 then (\"-\") else if n == 0 then (\"0\") else (\"+\") )\n"
+                        + "def g = (n : int) : string -> ( if n < 0 then (\"-\") else if n == 0 then (0) else (\"+\") )\n"
+                        + "def h = (v) -> ( if v is java.lang.Integer then (v + 1) else if v is java.lang.String then (v.nope) else (0) )",
+                "3:15 Type error : expected int, got double",
+                "4:10 Not a number : \"s\"",
+                // Narrowed through "else if" : a string has no members.
+                "8:93 Not a scope : v");
+    }
+
+    @Test
     public void testJavaFieldsAndResults() {
         assertDiagnostics("def pi : double = java.lang.Math.PI\n"
                         + "def bad : int = java.lang.Math.PI\n"

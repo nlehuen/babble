@@ -32,6 +32,44 @@ public class FormatterTestCase {
     }
 
     @Test
+    public void testUnaryMinusElseIfAndLeadingDots() throws Exception {
+        // A unary minus sticks to its operand ; a binary one is spaced.
+        assertFormats("def x = -3 - -y * f(-1, - -z)\n", "def x = - 3--y*f(- 1,- - z)");
+        // An "else if" chain is brought back on the lines of its parentheses, as "else" is.
+        assertFormats("""
+                def sign = (n) -> (
+                    if n < 0 then (
+                        "negative"
+                    ) else if n == 0 then ("zero") else if n < 10 then (
+                        "small"
+                    ) else ("large")
+                )
+                """, """
+                def sign = (n) -> (
+                if n < 0 then (
+                "negative"
+                ) else
+                if n == 0 then ( "zero" )
+                else if n < 10 then (
+                "small"
+                ) else ( "large" )
+                )
+                """);
+        // A line starting with a dot continues the expression above it.
+        assertFormats("""
+                def s = java.lang.StringBuilder()
+                    .append("a")
+                    .append(-1)
+                    .toString()
+                """, """
+                def s = java.lang.StringBuilder()
+                .append("a")
+                        .append(-1)
+                  .toString()
+                """);
+    }
+
+    @Test
     public void testClassesAndInterfaces() throws Exception {
         assertFormats("""
                 def Point = value class (def x: double, private def y = 0.0) implements Shape, java.lang.Runnable (

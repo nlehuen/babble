@@ -957,8 +957,9 @@ final class TypeChecker {
             Narrowing narrowing = extractNarrowing(ctx.test);
             Type expected = expectedType(ctx);
             Type thenType = withNarrowing(narrowing.whenTrue(), () -> typeOf(ctx.thenBlock, expected));
-            Type elseType = ctx.elseBlock != null
-                    ? withNarrowing(narrowing.whenFalse(), () -> typeOf(ctx.elseBlock, expected))
+            ParserRuleContext otherwise = ctx.elseBlock != null ? ctx.elseBlock : ctx.elseIf;
+            Type elseType = otherwise != null
+                    ? withNarrowing(narrowing.whenFalse(), () -> typeOf(otherwise, expected))
                     : Type.NULL;
             return join(thenType, elseType);
         }
@@ -1071,7 +1072,8 @@ final class TypeChecker {
                     type = i == statements.size() - 1 ? typeOf(statement, expected) : typeOf(statement);
                     if (i < statements.size() - 1 && statement instanceof BabbleParser.IfExpressionContext ifCtx) {
                         Type thenType = typeOf(ifCtx.thenBlock);
-                        Type elseType = ifCtx.elseBlock != null ? typeOf(ifCtx.elseBlock) : Type.NULL;
+                        ParserRuleContext otherwise = ifCtx.elseBlock != null ? ifCtx.elseBlock : ifCtx.elseIf;
+                        Type elseType = otherwise != null ? typeOf(otherwise) : Type.NULL;
                         Map<ParserRuleContext, Type> guard = Map.of();
                         if (thenType == Type.NOTHING && elseType != Type.NOTHING) {
                             guard = extractNarrowing(ifCtx.test).whenFalse();
@@ -1090,6 +1092,19 @@ final class TypeChecker {
                     narrowings.pop();
                 }
             }
+        }
+
+        /** As {@code Operators.negate} : an int stays an int, another number is a double. */
+        @Override
+        public Type visitNegate(BabbleParser.NegateContext ctx) {
+            Type operand = typeOf(ctx.operand);
+            if (operand == Type.NOTHING) {
+                return Type.NOTHING;
+            }
+            if (!number(operand, ctx.operand) || isUnknown(operand)) {
+                return Type.DYNAMIC;
+            }
+            return operand == Type.INT ? Type.INT : Type.DOUBLE;
         }
 
         @Override

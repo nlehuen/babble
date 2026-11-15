@@ -13,6 +13,11 @@ expression:
           EXPORT? PACKAGE name=ID NL* packageBlock=block      # packageExpression
           | IF test=expression THEN NL* thenBlock=block
                      (NL* ELSE NL* elseBlock=block)?          # ifExpression
+          // "else if" chains, without a block around each "if" : elseIf is an if expression,
+          // which the predicate makes sure of. As the alternative ends with it, it is parsed
+          // at this alternative's precedence : "… else (c) + 1" adds to the whole chain.
+          | IF test=expression THEN NL* thenBlock=block
+                     NL* ELSE NL* {_input.LA(1) == IF}? elseIf=expression   # ifExpression
           | (EXPORT | PRIVATE)? DEF name=ID (':' type)? ('=' NL* value=expression)?   # defExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           // "value class" : the modifier is a contextual keyword, checked by the analysis.
@@ -25,11 +30,15 @@ expression:
           | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block   # objectExpression
           | THIS                                              # thisExpression
           | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
-          | expression '.' ID                                 # selector
+          // A newline may come before the dot : a chain of calls can go on the next lines.
+          | expression NL* '.' ID                             # selector
           | ID                                                # selector
           | expression callParameters                         # call
           | block                                             # blockExpression
           | NOT expression                                    # booleanNot
+          // Unary minus binds tighter than any binary operator : "-a * b" is "(-a) * b". A
+          // newline before it separates : "a" then "-b" on the next line are two expressions.
+          | '-' operand=expression                            # negate
           | left=expression op=('*' | '/') NL* right=expression   # binaryOp
           | left=expression op=('+' | '-') NL* right=expression   # binaryOp
           | left=expression op=('<' | '<=' | '==' | NEQ
@@ -38,7 +47,7 @@ expression:
           | left=expression op=AND NL* right=expression           # booleanOp
           | left=expression op=OR NL* right=expression            # booleanOp
           | parametersDeclaration ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
-          | namespace=expression '.' name=ID '=' NL* value=expression # assignExpression
+          | namespace=expression NL* '.' name=ID '=' NL* value=expression # assignExpression
           | name=ID '=' NL* value=expression                  # assignExpression
           | NULL                                              # null
           | BOOLEAN                                           # boolean
