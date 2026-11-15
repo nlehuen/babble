@@ -46,7 +46,7 @@ export def Scenes = object (
                     b + 0.9 * rng.nextDouble()
                 )
 
-                if center.minus(Vec3(4.0, 0.2, 0.0)).length() > 0.9 then (
+                if (center - Vec3(4.0, 0.2, 0.0)).length() > 0.9 then (
                     if chooseMat < 0.8 then (
                         ;; Diffuse
                         def albedo: Vec3 = Vec3.random(rng).mul(Vec3.random(rng))

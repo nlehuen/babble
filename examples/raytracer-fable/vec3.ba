@@ -21,7 +21,7 @@ export def Vec3 = value class (x, y, z) (
     )
     def lengthSquared = () -> (this.x * this.x + this.y * this.y + this.z * this.z)
     def length = () -> (Math.sqrt(this.lengthSquared()))
-    def unit = () -> (this.div(this.length()))
+    def unit = () -> (this / this.length())
 
     ;; true if the vector is close to zero in all dimensions
     def nearZero = () -> (
@@ -29,12 +29,12 @@ export def Vec3 = value class (x, y, z) (
         Math.abs(this.x) < s and Math.abs(this.y) < s and Math.abs(this.z) < s
     )
 
-    def reflect = (n) -> (this.minus(n.times(2 * this.dot(n))))
+    def reflect = (n) -> (this - n * (2 * this.dot(n)))
     def refract = (n, etaiOverEtat) -> (
-        def cosTheta = Math.min(this.neg().dot(n), 1.0)
-        def perp = this.plus(n.times(cosTheta)).times(etaiOverEtat)
-        def parallel = n.times(-Math.sqrt(Math.abs(1.0 - perp.lengthSquared())))
-        perp.plus(parallel)
+        def cosTheta = Math.min((-this).dot(n), 1.0)
+        def perp = (this + n * cosTheta) * etaiOverEtat
+        def parallel = n * -Math.sqrt(Math.abs(1.0 - perp.lengthSquared()))
+        perp + parallel
     )
 ) static (
     def random = (rng, min = 0.0, max = 1.0) -> (
@@ -46,7 +46,7 @@ export def Vec3 = value class (x, y, z) (
         def p = Vec3.random(rng, -1.0, 1.0)
         def lensq = p.lengthSquared()
         if 0.0 < lensq and lensq <= 1.0 then (
-            p.div(Math.sqrt(lensq))
+            p / Math.sqrt(lensq)
         ) else (
             recurse(rng)
         )

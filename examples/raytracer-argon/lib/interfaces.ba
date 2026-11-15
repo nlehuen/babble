@@ -31,7 +31,7 @@ export def HitRecord = value class (
 ) () static (
     def create = (r: Ray, p: Vec3, outwardNormal: Vec3, t: double, mat: Material): HitRecord -> (
         def frontFace: bool = r.dir.dot(outwardNormal) < 0.0
-        def normal: Vec3 = if frontFace then (outwardNormal) else (outwardNormal.neg())
+        def normal: Vec3 = if frontFace then (outwardNormal) else (-outwardNormal)
         this(p, normal, mat, t, frontFace)
     )
 )

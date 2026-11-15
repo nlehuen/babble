@@ -17,14 +17,14 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
     private def invRadius: double = 1.0 / this.radius
     private def rAbs: double = math.abs(this.radius)
     private def rVec: Vec3 = Vec3(this.rAbs, this.rAbs, this.rAbs)
-    private def bbox: AABB = AABB.fromPoints(this.center.minus(this.rVec), this.center.plus(this.rVec))
+    private def bbox: AABB = AABB.fromPoints(this.center - this.rVec, this.center + this.rVec)
 
     def boundingBox = (): AABB -> (
         this.bbox
     )
 
     def hit = (r: Ray, rayT: Interval): HitRecord -> (
-        def oc: Vec3 = this.center.minus(r.origin)
+        def oc: Vec3 = this.center - r.origin
         def a: double = r.dir.lengthSquared()
         def h: double = r.dir.dot(oc)
         def c: double = oc.lengthSquared() - this.radiusSq
@@ -41,7 +41,7 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
             )
         )
         def p: Vec3 = r.at(root)
-        def outwardNormal: Vec3 = p.minus(this.center).scale(this.invRadius)
+        def outwardNormal: Vec3 = (p - this.center) * this.invRadius
         HitRecord.create(r, p, outwardNormal, root, this.mat)
     )
 
