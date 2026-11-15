@@ -52,7 +52,7 @@ while a < 11 then (
         def chooseMat = rng.nextDouble()
         def center = Vec3(a + 0.9 * rng.nextDouble(), 0.2, b + 0.9 * rng.nextDouble())
 
-        if center.minus(Vec3(4.0, 0.2, 0.0)).length() > 0.9 then (
+        if (center - Vec3(4.0, 0.2, 0.0)).length() > 0.9 then (
             if chooseMat < 0.8 then (
                 ;; diffuse
                 def albedo = Vec3.random(rng).mul(Vec3.random(rng))

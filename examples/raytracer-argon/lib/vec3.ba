@@ -21,12 +21,12 @@ export def Vec3 = value class (x: double, y: double, z: double) (
         Vec3(this.x * v.x, this.y * v.y, this.z * v.z)
     )
 
-    def scale = (t: double): Vec3 -> (
+    def times = (t: double): Vec3 -> (
         Vec3(this.x * t, this.y * t, this.z * t)
     )
 
     def div = (t: double): Vec3 -> (
-        this.scale(1.0 / t)
+        this * (1.0 / t)
     )
 
     def dot = (v: Vec3): double -> (
@@ -50,7 +50,7 @@ export def Vec3 = value class (x: double, y: double, z: double) (
     )
 
     def unit = (): Vec3 -> (
-        this.div(this.length())
+        this / this.length()
     )
 
     def nearZero = (): bool -> (
@@ -60,15 +60,15 @@ export def Vec3 = value class (x: double, y: double, z: double) (
 
     ;; Specular reflection of incident vector about unit normal n
     def reflect = (n: Vec3): Vec3 -> (
-        this.minus(n.scale(2.0 * this.dot(n)))
+        this - n * (2.0 * this.dot(n))
     )
 
     ;; Snell's law refraction of unit incident vector about normal n
     def refract = (n: Vec3, etaiOverEtat: double): Vec3 -> (
-        def cosTheta: double = math.min(this.neg().dot(n), 1.0)
-        def rOutPerp: Vec3 = this.plus(n.scale(cosTheta)).scale(etaiOverEtat)
-        def rOutParallel: Vec3 = n.scale(-math.sqrt(math.abs(1.0 - rOutPerp.lengthSquared())))
-        rOutPerp.plus(rOutParallel)
+        def cosTheta: double = math.min((-this).dot(n), 1.0)
+        def rOutPerp: Vec3 = (this + n * cosTheta) * etaiOverEtat
+        def rOutParallel: Vec3 = n * -math.sqrt(math.abs(1.0 - rOutPerp.lengthSquared()))
+        rOutPerp + rOutParallel
     )
 ) static (
     def zero: Vec3 = this(0.0, 0.0, 0.0)
@@ -91,7 +91,7 @@ export def Vec3 = value class (x: double, y: double, z: double) (
             def p: Vec3 = this.randomRange(rng, -1.0, 1.0)
             def lensq: double = p.lengthSquared()
             if lensq > 0.000000000001 and lensq <= 1.0 then (
-                return p.div(math.sqrt(lensq))
+                return p / math.sqrt(lensq)
             )
         )
         this.zero
@@ -102,7 +102,7 @@ export def Vec3 = value class (x: double, y: double, z: double) (
         if onUnitSphere.dot(normal) > 0.0 then (
             onUnitSphere
         ) else (
-            onUnitSphere.neg()
+            -onUnitSphere
         )
     )
 

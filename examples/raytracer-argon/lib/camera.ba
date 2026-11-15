@@ -34,27 +34,25 @@ export def Camera = class (
     private def viewportWidth: double = this.viewportHeight * (1.0 * this.imageWidth / this.imageHeight)
 
     ;; Orthonormal camera basis vectors (u, v, w)
-    def w: Vec3 = this.lookfrom.minus(this.lookat).unit()
+    def w: Vec3 = (this.lookfrom - this.lookat).unit()
     def u: Vec3 = this.vup.cross(this.w).unit()
     def v: Vec3 = this.w.cross(this.u)
 
     ;; Viewport edge and pixel delta vectors
-    private def viewportU: Vec3 = this.u.scale(this.viewportWidth)
-    private def viewportV: Vec3 = this.v.neg().scale(this.viewportHeight)
-    private def pixelDeltaU: Vec3 = this.viewportU.div(1.0 * this.imageWidth)
-    private def pixelDeltaV: Vec3 = this.viewportV.div(1.0 * this.imageHeight)
+    private def viewportU: Vec3 = this.u * this.viewportWidth
+    private def viewportV: Vec3 = -this.v * this.viewportHeight
+    private def pixelDeltaU: Vec3 = this.viewportU / (1.0 * this.imageWidth)
+    private def pixelDeltaV: Vec3 = this.viewportV / (1.0 * this.imageHeight)
 
     ;; Upper-left pixel location
-    private def viewportUpperLeft: Vec3 = this.center
-        .minus(this.w.scale(this.focusDist))
-        .minus(this.viewportU.div(2.0))
-        .minus(this.viewportV.div(2.0))
-    def pixel00Loc: Vec3 = this.viewportUpperLeft.plus(this.pixelDeltaU.plus(this.pixelDeltaV).scale(0.5))
+    private def viewportUpperLeft: Vec3 = this.center - this.w * this.focusDist -
+        this.viewportU / 2.0 - this.viewportV / 2.0
+    def pixel00Loc: Vec3 = this.viewportUpperLeft + (this.pixelDeltaU + this.pixelDeltaV) * 0.5
 
     ;; Defocus disk basis vectors
     private def defocusRadius: double = this.focusDist * math.tan(math.degreesToRadians(this.defocusAngle / 2.0))
-    private def defocusDiskU: Vec3 = this.u.scale(this.defocusRadius)
-    private def defocusDiskV: Vec3 = this.v.scale(this.defocusRadius)
+    private def defocusDiskU: Vec3 = this.u * this.defocusRadius
+    private def defocusDiskV: Vec3 = this.v * this.defocusRadius
 
     private def sampleSquare = (rng: Rng): Vec3 -> (
         Vec3(rng.nextDouble() - 0.5, rng.nextDouble() - 0.5, 0.0)
@@ -62,20 +60,20 @@ export def Camera = class (
 
     private def defocusDiskSample = (rng: Rng): Vec3 -> (
         def p: Vec3 = Vec3.randomInUnitDisk(rng)
-        this.center.plus(this.defocusDiskU.scale(p.x)).plus(this.defocusDiskV.scale(p.y))
+        this.center + this.defocusDiskU * p.x + this.defocusDiskV * p.y
     )
 
     def getRay = (i: int, j: int, rng: Rng): Ray -> (
         def offset: Vec3 = this.sampleSquare(rng)
-        def pixelSample: Vec3 = this.pixel00Loc
-            .plus(this.pixelDeltaU.scale(i + offset.x))
-            .plus(this.pixelDeltaV.scale(j + offset.y))
+        def pixelSample: Vec3 = this.pixel00Loc +
+            this.pixelDeltaU * (i + offset.x) +
+            this.pixelDeltaV * (j + offset.y)
         def rayOrigin: Vec3 = if this.defocusAngle <= 0.0 then (
             this.center
         ) else (
             this.defocusDiskSample(rng)
         )
-        def rayDirection: Vec3 = pixelSample.minus(rayOrigin)
+        def rayDirection: Vec3 = pixelSample - rayOrigin
         Ray(rayOrigin, rayDirection)
     )
 
@@ -94,7 +92,7 @@ export def Camera = class (
         )
         def unitDirection: Vec3 = r.dir.unit()
         def a: double = 0.5 * (unitDirection.y + 1.0)
-        Vec3.one.scale(1.0 - a).plus(Vec3(0.5, 0.7, 1.0).scale(a))
+        Vec3.one * (1.0 - a) + Vec3(0.5, 0.7, 1.0) * a
     )
 
     def renderPixel = (i: int, j: int, world: Hittable, rng: Rng): Vec3 -> (
@@ -102,10 +100,10 @@ export def Camera = class (
         def sample: int = 0
         while sample < this.samplesPerPixel then (
             def r: Ray = this.getRay(i, j, rng)
-            pixelColor = pixelColor.plus(this.rayColor(r, this.maxDepth, world, rng))
+            pixelColor = pixelColor + this.rayColor(r, this.maxDepth, world, rng)
             sample = sample + 1
         )
-        pixelColor.scale(this.pixelSamplesScale)
+        pixelColor * this.pixelSamplesScale
     )
 
     def render = (world: Hittable, rng: Rng = Rng(1337), out = STDOUT) -> (

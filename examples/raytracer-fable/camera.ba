@@ -28,44 +28,42 @@ export def Camera = class (
     private def viewportWidth = this.viewportHeight * this.imageWidth / this.imageHeight
 
     ;; calculate the u,v,w unit basis vectors for the camera coordinate frame
-    private def w = this.lookFrom.minus(this.lookAt).unit()
+    private def w = (this.lookFrom - this.lookAt).unit()
     private def u = this.vup.cross(this.w).unit()
     private def v = this.w.cross(this.u)
 
     ;; calculate the vectors across the horizontal and down the vertical viewport edges
-    private def viewportU = this.u.times(this.viewportWidth)
-    private def viewportV = this.v.neg().times(this.viewportHeight)
+    private def viewportU = this.u * this.viewportWidth
+    private def viewportV = -this.v * this.viewportHeight
 
     ;; calculate the horizontal and vertical delta vectors from pixel to pixel
-    private def pixelDeltaU = this.viewportU.div(this.imageWidth)
-    private def pixelDeltaV = this.viewportV.div(this.imageHeight)
+    private def pixelDeltaU = this.viewportU / this.imageWidth
+    private def pixelDeltaV = this.viewportV / this.imageHeight
 
     ;; calculate the location of the upper left pixel
-    private def viewportUpperLeft = this.center
-        .minus(this.w.times(this.focusDist))
-        .minus(this.viewportU.div(2))
-        .minus(this.viewportV.div(2))
-    private def pixel00 = this.viewportUpperLeft.plus(this.pixelDeltaU.plus(this.pixelDeltaV).times(0.5))
+    private def viewportUpperLeft = this.center - this.w * this.focusDist -
+        this.viewportU / 2 - this.viewportV / 2
+    private def pixel00 = this.viewportUpperLeft + (this.pixelDeltaU + this.pixelDeltaV) * 0.5
 
     ;; calculate the camera defocus disk basis vectors
     private def defocusRadius = this.focusDist * Math.tan(degreesToRadians(this.defocusAngle / 2))
-    private def defocusDiskU = this.u.times(this.defocusRadius)
-    private def defocusDiskV = this.v.times(this.defocusRadius)
+    private def defocusDiskU = this.u * this.defocusRadius
+    private def defocusDiskV = this.v * this.defocusRadius
 
     ;; a random point in the camera defocus disk
     private def defocusDiskSample = (rng) -> (
         def p = Vec3.randomInUnitDisk(rng)
-        this.center.plus(this.defocusDiskU.times(p.x)).plus(this.defocusDiskV.times(p.y))
+        this.center + this.defocusDiskU * p.x + this.defocusDiskV * p.y
     )
 
     ;; a camera ray originating from the defocus disk and directed at a randomly
     ;; sampled point around the pixel location i, j
     private def getRay = (i, j, rng) -> (
-        def pixelSample = this.pixel00
-            .plus(this.pixelDeltaU.times(i + rng.nextDouble() - 0.5))
-            .plus(this.pixelDeltaV.times(j + rng.nextDouble() - 0.5))
+        def pixelSample = this.pixel00 +
+            this.pixelDeltaU * (i + rng.nextDouble() - 0.5) +
+            this.pixelDeltaV * (j + rng.nextDouble() - 0.5)
         def origin = if this.defocusAngle <= 0 then (this.center) else (this.defocusDiskSample(rng))
-        Ray(origin, pixelSample.minus(origin))
+        Ray(origin, pixelSample - origin)
     )
 
     private def rayColor = (r, depth, world, rng) -> (
@@ -82,7 +80,7 @@ export def Camera = class (
 
         ;; the sky
         def a = 0.5 * (r.direction.unit().y + 1.0)
-        Vec3(1.0, 1.0, 1.0).times(1.0 - a).plus(Vec3(0.5, 0.7, 1.0).times(a))
+        Vec3(1.0, 1.0, 1.0) * (1.0 - a) + Vec3(0.5, 0.7, 1.0) * a
     )
 
     ;; a linear color component as a gamma 2 byte
@@ -106,10 +104,10 @@ export def Camera = class (
                     def color = Vec3(0.0, 0.0, 0.0)
                     def sample = 0
                     while sample < this.samplesPerPixel then (
-                        color = color.plus(this.rayColor(this.getRay(i, j, rng), this.maxDepth, world, rng))
+                        color = color + this.rayColor(this.getRay(i, j, rng), this.maxDepth, world, rng)
                         sample = sample + 1
                     )
-                    color = color.div(this.samplesPerPixel)
+                    color = color / this.samplesPerPixel
                     image.setRGB(i, j, 65536 * this.toByte(color.x) + 256 * this.toByte(color.y) + this.toByte(color.z))
                     i = i + 1
                 )

@@ -6,7 +6,7 @@ def HitRecord = hittable.HitRecord
 
 export def Sphere = class (def center, def radius, def material) implements hittable.Hittable (
     def hit = (r, tmin, tmax) -> (
-        def oc = this.center.minus(r.origin)
+        def oc = this.center - r.origin
         def a = r.direction.lengthSquared()
         def h = r.direction.dot(oc)
         def c = oc.lengthSquared() - this.radius * this.radius
@@ -24,6 +24,6 @@ export def Sphere = class (def center, def radius, def material) implements hitt
         )
 
         def p = r.at(root)
-        HitRecord(r, p, root, p.minus(this.center).div(this.radius), this.material)
+        HitRecord(r, p, root, (p - this.center) / this.radius, this.material)
     )
 )
