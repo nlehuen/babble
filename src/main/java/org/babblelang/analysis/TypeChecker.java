@@ -1141,7 +1141,19 @@ final class TypeChecker {
                     declared = declaredType(declaration);
                 }
             } else {
-                declared = assignedMemberType(typeOf(ctx.namespace), name, ctx.namespace instanceof BabbleParser.ThisExpressionContext, ctx);
+                Type receiver = typeOf(ctx.namespace);
+                java.lang.reflect.Field field = assignedJavaField(receiver, name, ctx);
+                if (field != null) {
+                    Type value = typeOf(ctx.value);
+                    if (isFunction(value) && JavaTypes.isFunctionalInterface(field.getType())) {
+                        warn("Cannot assign a function to " + field.getDeclaringClass().getCanonicalName() + "." + name
+                                + " : convert it first, as " + field.getType().getSimpleName() + "(f)", ctx.value);
+                    } else {
+                        expect(value, fromJava(field.getType()), ctx.value);
+                    }
+                    return value;
+                }
+                declared = assignedMemberType(receiver, name, ctx.namespace instanceof BabbleParser.ThisExpressionContext, ctx);
             }
             Type value = typeOf(ctx.value, declared);
             if (declared != null) {
@@ -1250,10 +1262,10 @@ final class TypeChecker {
                     return new Type.JavaClassValue(memberClass);
                 }
             }
-            return javaMember(value.type(), name, at);
+            return javaMember(value.type(), name, true, at);
         }
         if (receiver instanceof Type.JavaInstance instance) {
-            return javaMember(instance.type(), name, at);
+            return javaMember(instance.type(), name, false, at);
         }
         // Numbers, booleans, strings, null, functions : nothing has members but objects,
         // classes, packages and Java values.
@@ -1384,23 +1396,62 @@ final class TypeChecker {
         }
     }
 
-    /** A method or a public static field of a Java class, as {@code JavaClass} looks them up. */
-    private Type javaMember(Class<?> java, String name, ParserRuleContext at) {
+    /**
+     * A method or a public field of a Java class, as {@code JavaClass} looks them up : through
+     * the class itself, only a static field.
+     */
+    private Type javaMember(Class<?> java, String name, boolean onClass, ParserRuleContext at) {
         for (Method method : java.getMethods()) {
             if (method.getName().equals(name)) {
                 return new Type.JavaMethod(java, name);
             }
         }
-        try {
-            java.lang.reflect.Field field = java.getField(name);
-            if (Modifier.isStatic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())) {
-                return javaResult(field.getType());
+        java.lang.reflect.Field field = javaField(java, name);
+        if (field != null) {
+            if (onClass && !Modifier.isStatic(field.getModifiers())) {
+                warn("Not a static field : " + java.getCanonicalName() + "." + name, at);
+                return Type.DYNAMIC;
             }
-        } catch (NoSuchFieldException e) {
-            // Not a field either.
+            return javaResult(field.getType());
         }
         warn("No such name in " + java.getCanonicalName() + " : " + name, at);
         return Type.DYNAMIC;
+    }
+
+    /** A public field Babble can reach, static or not, or null. */
+    private static java.lang.reflect.Field javaField(Class<?> java, String name) {
+        try {
+            java.lang.reflect.Field field = java.getField(name);
+            return JavaTypes.isAccessible(field.getDeclaringClass()) ? field : null;
+        } catch (NoSuchFieldException e) {
+            return null;
+        }
+    }
+
+    /**
+     * The field {@code receiver.name = value} assigns, when the receiver is a Java class or
+     * object, reporting what {@code JavaClass.assign} would refuse. Null when it isn't Java,
+     * or the field can't be assigned.
+     */
+    private java.lang.reflect.Field assignedJavaField(Type receiver, String name, ParserRuleContext at) {
+        boolean onClass = receiver instanceof Type.JavaClassValue;
+        Class<?> java = onClass ? ((Type.JavaClassValue) receiver).type()
+                : receiver instanceof Type.JavaInstance instance ? instance.type() : null;
+        if (java == null) {
+            return null;
+        }
+        java.lang.reflect.Field field = javaField(java, name);
+        String description = java.getCanonicalName() + "." + name;
+        if (field == null) {
+            warn("No such field in " + java.getCanonicalName() + " : " + name, at);
+        } else if (onClass && !Modifier.isStatic(field.getModifiers())) {
+            warn("Not a static field : " + description, at);
+        } else if (Modifier.isFinal(field.getModifiers())) {
+            warn("Cannot assign final field : " + description, at);
+        } else {
+            return field;
+        }
+        return null;
     }
 
     // ---------------------------------------------------------------- calls

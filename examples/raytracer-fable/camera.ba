@@ -89,7 +89,7 @@ export def Camera = class (
     ;; Renders the world to a java.awt.image.BufferedImage. The threads take scanlines
     ;; from a shared counter until none is left.
     def render = (world, threads = 1) -> (
-        def image = java.awt.image.BufferedImage(this.imageWidth, this.imageHeight, 1)  ;; 1 is TYPE_INT_RGB
+        def image = java.awt.image.BufferedImage(this.imageWidth, this.imageHeight, java.awt.image.BufferedImage.TYPE_INT_RGB)
         def nextLine = java.util.concurrent.atomic.AtomicInteger()
 
         def renderLines = () -> (

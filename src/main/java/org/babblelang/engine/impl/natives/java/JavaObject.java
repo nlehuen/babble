@@ -65,8 +65,21 @@ public class JavaObject implements Scope<Object>, JavaValue {
     }
 
     private static Object member(JavaClass clazz, Object value, String name) {
-        Object member = clazz.get(name).get();
+        Object member = clazz.value(value, name);
         return member instanceof JavaMethod method ? new BoundJavaMethod(method, value) : member;
+    }
+
+    /**
+     * {@code target.name = value} on a Java class (a static field), or on a Java object,
+     * wrapped or not (a field of it, or a static one).
+     */
+    public static void assign(Object target, String name, Object value) {
+        if (target instanceof JavaClass clazz) {
+            clazz.assign(null, name, value);
+            return;
+        }
+        Object receiver = target instanceof JavaValue wrapper ? wrapper.javaValue() : target;
+        JavaClass.of(receiver.getClass()).assign(receiver, name, value);
     }
 
     @Override
