@@ -447,6 +447,50 @@ parser or compiler : it starts in about half the time, and a dynamic import only
 modules the program imports statically. Imports may not leave the root, the script's directory
 by default. See the [design doc](docs/design/module-sources-and-aot.md) (§5).
 
+### Formatting code
+
+`babblefmt` formats Babble source files :
+
+```
+bin/babblefmt < script.ba            # formats the standard input to the standard output
+bin/babblefmt script.ba              # prints the file, formatted
+bin/babblefmt -w script.ba examples  # rewrites the files that change ; a directory stands for its .ba files
+bin/babblefmt -l examples            # lists the files that would change
+bin/babblefmt -check examples        # lists them, and exits with status 1 if there are any
+```
+
+`bin/babblefmt` runs `java -cp target/babble-1.0-SNAPSHOT.jar org.babblelang.Babblefmt` ; from
+Java, it is `org.babblelang.format.Formatter.format(source)`.
+
+It keeps your line breaks, and settles the rest :
+
+```
+def fac=(n:int):int->(          def fac = (n: int): int -> (
+  if n<2 then                       if n < 2 then (
+  (                                     1  ;; done
+    1 ;; done                       ) else (
+  )                                     n * recurse(n - 1)
+  else (                            )
+      n*recurse( n-1 );         )
+  )
+
+)
+```
+
+- four spaces for each level of parentheses, and one more level for a line continuing an
+  expression (after an operator, `=`, ...) ;
+- one space around binary operators, `=` and `->`, after `,` and `:`, none inside parentheses
+  nor before a call's ;
+- a block's `(` comes back on the line of its `if`, `while`, function, class..., as do `else` and
+  `static` ;
+- one blank line at most, and none at the start or at the end of a block ;
+- semicolons only where they separate two expressions of one line ;
+- no trailing spaces, comments ending consecutive lines aligned, and one newline at the end of
+  the file.
+
+A file with a syntax error is reported and left as it is. The formatter parses its result, and
+refuses to produce a text whose parse tree differs from the source's.
+
 From Java, Babble is used through the standard
 [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) `javax.script` API :
 
@@ -513,6 +557,7 @@ Implementation features :
 - [x] command line : `java -jar babble.jar script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
 - [x] ahead-of-time compilation : `-compile script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see the [design doc](docs/design/module-sources-and-aot.md)).
 - [x] syntax errors that say what was unexpected, and where.
+- [x] a code formatter : `babblefmt`.
 
 Planned features
 ----------------

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Babble's code formatter : babblefmt -help. Needs the jar "mvn package" builds.
+jar="$(dirname "$0")/../target/babble-1.0-SNAPSHOT.jar"
+if [ ! -f "$jar" ]; then
+    echo "babblefmt : $jar not found, run \"mvn package\" first" >&2
+    exit 2
+fi
+exec java -cp "$jar" org.babblelang.Babblefmt "$@"

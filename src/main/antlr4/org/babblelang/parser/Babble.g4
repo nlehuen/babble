@@ -119,7 +119,8 @@ PRIVATE: 'private';
 STATIC: 'static';
 EXPORT: 'export';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
-MULTILINECOMMENT: ';;(' .*? ';;)' -> skip;
-COMMENT: ';;' ~[\r\n]* -> skip;
+// Comments are kept, on the hidden channel : the parser does not see them, the formatter does.
+MULTILINECOMMENT: ';;(' .*? ';;)' -> channel(HIDDEN);
+COMMENT: ';;' ~[\r\n]* -> channel(HIDDEN);
 NL: '\r'? '\n';
 WS: [ \t]+ -> skip;
