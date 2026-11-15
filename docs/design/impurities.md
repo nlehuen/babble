@@ -10,7 +10,7 @@ Section references such as "§5.3.1" point into `purity.md`.
 
 ## 1. Soundness bugs
 
-> **Status:** addressed in `purity.md` after this review. In short: result reuse needs a deeply immutable result, and deeply immutable arguments for memoization and folding (1.1, 1.6); wrapping `int` arithmetic is no longer `monotone`, and the §8.3 example computes in `double` (1.2); declared types are now always enforced statically and at runtime (`babble.typecheck` modes removed), and `nothrow` at a call site is conditional on statically conforming arguments (1.3); plain `mut` promises no `noalias`, which now comes only from `unique mut` (1.4); `unique` means deep ownership, and `freeze` yields a purely static `frozen T` type that cannot erase to `dynamic` (1.5); identity-derived `hashCode`/`toString` are `pure` but not `deterministic` (1.7); ownership is tracked for uncaptured locals only (1.8). The findings below are kept as written, against the original text. Sections 2 to 5 are still open.
+> **Status:** addressed in `purity.md` after this review. In short: result reuse needs a deeply immutable result, and deeply immutable arguments for memoization and folding (1.1, 1.6); wrapping `int` arithmetic is no longer `monotone`, and the §8.3 example computes in `double` (1.2); declared types are now always enforced statically and at runtime (`babble.typecheck` modes removed), and `nothrow` at a call site is conditional on statically conforming arguments (1.3); plain `mut` promises no `noalias`, which now comes only from `unique mut` (1.4); `unique` means deep ownership, and `freeze` yields a purely static `frozen T` type that cannot erase to `dynamic` (1.5); identity-derived `hashCode`/`toString` are `pure` but not `deterministic` (1.7); ownership is tracked for uncaptured locals only (1.8). The findings below are kept as written, against the original text. In Sections 2 to 5, items §2.5, §3.4 (bullet 3), §3.8 (partially), §3.9, §3.10 (bullet 3), §4 (partially), §5.1 (dynamic callees), §5.2 (`ScriptRuntime` & `ModuleInterface` storage), and §5.5 are also resolved as noted inline; the remaining items are still open.
 
 ### 1.1 CSE and memoization of functions returning fresh mutable objects
 
@@ -102,6 +102,8 @@ It is defined for `mut` methods on a target (§3.2, Axis 3), and §1.2 requires 
 
 ### 3.4 Syntax order
 
+> **Status:** bullet 3 resolved (§3.2 defines `unique noescape` as an exclusive borrow, whereas plain `unique` consumes); bullets 1 and 2 are still open.
+
 - Parameters: the grammar says `MUT? NOESCAPE? UNIQUE?` (§4.1); the examples write `unique mut xs` (§3.2, §4.1, §8.5).
 - Returns: §3.2 writes `unique (...) : Index`; the grammar and every other example put `unique` after the `:`.
 - `noescape unique` on one parameter (§3.4) is allowed by the grammar but contradictory: a `unique` parameter hands over ownership, so the callee may store it.
@@ -120,13 +122,19 @@ It is derived "after the SCC converges" from callees that are "already `threadsa
 
 ### 3.8 The ownership state lattice
 
+> **Status:** partially addressed (§5.2 separates `@FRESH` and `@UNIQUE` and removes the "four states" count); control-flow merge joins and sub-reference states (`p.child`, `xs.get(0)`) are still open.
+
 §5.2 announces four states and lists six names (`FRESH`/`UNIQUE`, `PARAM(i)`/`THIS`, `FROZEN`, `MOVED`/`EXTERNAL`), with `MOVED` and `EXTERNAL` lumped although unrelated; the fifth bullet is not a state. No join is defined at control-flow merges, and there is no state for values derived from a parameter (`p.child`, `xs.get(0)`), which is where "mutating a non-`mut` parameter through an alias" actually happens.
 
 ### 3.9 Three representations of mutated parameters
 
+> **Status:** resolved. `Type.Parameter.mut` on `Type.Function` (§7.1) is now the sole representation; the `EffectSet` invariant was moved to `Type.Function` and the §7.3 runtime mask was removed along with runtime effect descriptors.
+
 `Type.Parameter.mut` (§7.1), an `EffectSet` invariant that mentions `mutParams` although the set does not contain it (§7.1), and a `BitSet`/`long` mask (§7.3).
 
 ### 3.10 Phasing
+
+> **Status:** bullet 3 partially addressed (`freeze`, `Faces`, `Bootstrap`, and `Types.check` runtime effect machinery have been removed); bullets 1 and 2 are still open.
 
 - Phase 1 "verifies", but verification is defined as `inferred.satisfies(declared)` (§5.1.5) and inference is Phase 2. Without inference every unannotated callee is unconstrained, so Phase 1 verified code needs annotations everywhere: the "attribute soup" the doc sets out to avoid.
 - `terminating` / `total` is required for dead-code elimination, LICM and constant folding, but it is never inferred, not in the grammar keyword list, and absent from the roadmap (§3.2 says "Phase 2", §9.2 does not mention it).
@@ -144,6 +152,8 @@ It is derived "after the SCC converges" from callees that are "already `threadsa
 
 ## 4. Examples that fail under the doc's own rules
 
+> **Status:** partially addressed (`§8.5` now declares `axiom mut deterministic java.util.HashMap.put`, `axiom pure deterministic java.util.HashMap.get`, and `: int` on the `readOnlyLookup` lambda; `encodeScore` in `§8.3` now uses `double`, where `injective` is not inferred and needs `axiom`). The remaining example issues below are still open.
+
 | Example | Problem |
 |---|---|
 | `buildIndex` (§4.1), `buildLookup` (§8.5) | `java.util.HashMap()` has no pure-constructor axiom, so `m` is not `FRESH`. `axiom mut java.util.HashMap.put` lacks `deterministic`, so `pure deterministic` verification fails. |
@@ -160,14 +170,18 @@ It is derived "after the SCC converges" from callees that are "already `threadsa
 
 ### 5.1 No effect polymorphism
 
+> **Status:** dynamic and reassigned-`def` callee transfer rule resolved (§5.1.4 drops `pure`, `deterministic`, `nothrow`, and `threadsafe`, and §3.4 disallows `dynamic` coercion into effect-constrained function types); higher-order effect polymorphism is still open.
+
 `apply = (f, x) -> ( f(x) )`, and any Java higher-order function, cannot say "pure if the callback is". The doc dismisses Koka-style rows (§2) but offers nothing in their place, so every combinator is either an `axiom` or unconstrained. The transfer rules (§5.1.4) also do not say what an unknown or `dynamic` callee does to `pure` and `deterministic` (only `nothrow` is covered), nor what happens for calls through reassigned `def`s.
 
 ### 5.2 Axiom scoping and timing
 
-- Axioms are "stored in the active `ScriptRuntime`" (§6.1) but consumed by static analysis at `compile()`, before a runtime exists. `engine.assumeEffects` (§6.2) is engine-level, a third scope.
+> **Status:** `ScriptRuntime` and `ModuleInterface` storage resolved (§6.1–§6.2 resolve axioms purely at compile time in `TypeChecker` across `ScopeAnalysis`, `ModuleInterface` for `export axiom`, `AnalysisSession`, and `BabbleScriptEngine`, with zero runtime state). Declaration order, overloads, instance-method targets, and how `export axiom` binds in `ModuleInterface` remain open.
+
+- Axioms were "stored in the active `ScriptRuntime`" (§6.1) but consumed by static analysis at `compile()`, before a runtime exists. `engine.assumeEffects` (§6.2) was engine-level, a third scope.
 - Unspecified: declaration order (axiom after use), REPL sessions, overloads (`Math.max` has four, `Files.readString` two), and instance-method targets reached through a class (`java.util.HashMap.put`).
 - `export axiom ... java.lang.Math.sin` exports no name, and modules export names.
-- Static `import("...ba")` calls are now analysed and typed at compile time (`ModuleInterface` / `Type.Module`), whereas dynamic `import(expr)` calls and import cycles still type as `dynamic`. However, `ModuleInterface` does not yet carry a module's `axiom` declarations or inferred effect profiles at compile time, and conversely a per-runtime axiom in a module still leaks trust into every importer at runtime.
+- Modules were compiled at import time, after the importer was analysed, and typed as `dynamic` (now addressed for static `import("...ba")` via M2/M3 `ModuleInterface` and compile-time `export axiom` resolution, though dynamic `import(expr)` and import cycles still type as `dynamic`).
 
 ### 5.3 The security claim
 
@@ -179,9 +193,11 @@ Enforced-pure value-class constructors and default-pure value-class methods (§4
 
 ### 5.5 Runtime enforcement
 
-- Propagating active requirements "via thread/frame context" (§6.3, §7.3.3) conflicts with "zero steady-state per-call overhead" (§7.3.2), and the context is lost on `parallelStream` worker threads, the very case §6.3 uses.
-- Linkage-time checks cover the four guarded fast paths; megamorphic sites that went generic need a check per call.
-- What `Calls.callWithEffects` does on a mismatch (which error, which wording) is undefined.
+> **Status:** resolved. All runtime effect enforcement and descriptors have been removed from `purity.md` (`Faces` thread/frame context, `Interpreter` and `BabbleInstance.toString()` active-effect tracking, `Bootstrap` linkage checks, `Calls.callWithEffects`, and `Types.check` `fx|` descriptors). Calling an untyped `dynamic` value drops `pure`/`deterministic`/`nothrow`/`threadsafe` statically in `TypeChecker` (§5.1.4), and effect-constrained `Type.Function` slots reject `dynamic` coercion at compile time (§3.4, §6.3, §7.2, §7.3), leaving `babble-runtime.jar` with zero effect code.
+
+- Propagating active requirements "via thread/frame context" (§6.3, §7.3.3) conflicted with "zero steady-state per-call overhead" (§7.3.2), and the context was lost on `parallelStream` worker threads, the very case §6.3 used.
+- Linkage-time checks covered the four guarded fast paths; megamorphic sites that went generic needed a check per call.
+- What `Calls.callWithEffects` did on a mismatch (which error, which wording) was undefined.
 
 ### 5.6 Local closures
 
