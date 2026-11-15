@@ -286,13 +286,11 @@ A checker serves every file that imports its file, one question at a time. So ty
 files without any file being checked twice, and diagnostics are reported once, by the file they
 are in.
 
-One limit : a compiled script refers to the class ids of the modules it was analysed against.
-If a module file changes between the compilation of a script and its eval, the eval imports the
-recompiled module, whose classes have new ids, and an `error` mode check of an annotation naming
-one of them fails, with `expected C, got C, from another class expression of that name (a
-module that changed since the script was compiled ?)`. Compiling again fixes it ; pinning a
-compiled script to the module versions it was analysed against would avoid it, if it ever
-matters.
+A compiled script refers to the class ids of the modules it was analysed against. Since M5a
+(module-sources-and-aot.md §5.2) a module's ids are its key and the class's name
+(`lib.ba#C`), the same every time it is compiled : a module changed after a script was compiled
+keeps its classes' identity. Two classes of one name from two modules are still two types, and
+a type error between them gives both ids : `expected C, got C (expected a.ba#C, got b.ba#C)`.
 
 ### 8.3 Compiler
 

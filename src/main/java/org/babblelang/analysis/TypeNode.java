@@ -41,9 +41,18 @@ final class TypeNode {
 
     private static final AtomicLong IDS = new AtomicLong();
 
+    /** An id unique within the JVM, for a type of a script that is not a module. */
+    static String nextId() {
+        return "T" + IDS.incrementAndGet();
+    }
+
     final ParserRuleContext ctx;
-    /** Unique within the JVM : the nominal type the expression defines (T9). */
-    final String id = "T" + IDS.incrementAndGet();
+    /**
+     * The nominal type the expression defines (T9). In a module, its key and the type's name,
+     * {@code lib/vec3.ba#Vec3}, the same every time the module is compiled ; elsewhere, unique
+     * within the JVM (docs/design/module-sources-and-aot.md §5.2).
+     */
+    final String id;
     final ClassShape.Kind kind;
     final String name;
     /** Where the expression is evaluated. */
@@ -65,8 +74,9 @@ final class TypeNode {
     final Map<String, String> staticTypes = new LinkedHashMap<>();
     boolean resolving;
 
-    TypeNode(ParserRuleContext ctx, ClassShape.Kind kind, String name, ScopeNode scope, List<BabbleParser.TypeContext> parentTypes) {
+    TypeNode(ParserRuleContext ctx, String id, ClassShape.Kind kind, String name, ScopeNode scope, List<BabbleParser.TypeContext> parentTypes) {
         this.ctx = ctx;
+        this.id = id;
         this.kind = kind;
         this.name = name;
         this.scope = scope;

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3) and M4 (§4) are implemented ; M5 is not. |
+| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3), M4 (§4) and M5a (§5.2) are implemented ; M5b and M5c are not. |
 | **Depends on** | [modules.md](modules.md) (static imports, the module cache, module types), [bytecode-compiler.md](bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
 | **Unblocks** | Babble programs shipped as a jar, hosts serving modules from anywhere, module tests without temporary files |
 
@@ -229,16 +229,26 @@ Nothing in it parses, analyses or generates code. ANTLR and ASM are not in it.
 The compiler names things from counters that restart with each JVM : that is fine when the
 classes live and die with one run, not in a jar.
 
-* **Class names** come from the module key : `lib/vec3.ba` becomes `babble/lib/vec3$ba`, its
-  class expressions `babble/lib/vec3$ba$k$Vec3` as today. Two modules never share a name, and
-  compiling twice gives the same names.
-* **Type ids** (`T17`, from `TypeNode`'s JVM-wide counter) become the module key and the class
-  expression's index in its file : `lib/vec3.ba#0`. They are embedded in class shapes and in the
-  descriptors of error mode, so classes compiled separately must agree on them. The engine can
-  use the same scheme, which also makes the stale-module message of modules.md §8.2 rarer.
-* **Source names** in `CallSite`s and the `SourceFile` attribute are display names relative to
-  the program root (`FileModuleSource(root)`), not the build machine's absolute paths : error
-  messages and stack traces read the same on every machine.
+* **Class names** come from the module key (`BabbleCompiler.className`) : `lib/vec3.ba` becomes
+  `babble/lib/vec3$ba`, its class expressions `babble/lib/vec3$ba$k$Vec3` as before. A scheme
+  (`file:`, `classpath:`) is dropped, each `.` becomes `$`, and a character a class name can't
+  hold, `_`. Two modules practically never share a name (only through names differing in those
+  characters), and compiling twice gives the same names. A script that is not a module (a string
+  a host evaluates, an interactive input) keeps a name of its own, `org/babblelang/generated/Script$N`.
+* **Type ids** (`T17`, from `TypeNode`'s JVM-wide counter) become the module key and the type's
+  name : `lib/vec3.ba#Vec3`, then `lib/vec3.ba#Vec3#1` for a second type of that name in the
+  file (anonymous ones are named `class`, `object` or `interface`). The name rather than the
+  index the first draft proposed : with an index, a class inserted earlier would change every
+  id after it, and a different class taking a slot would pass the checks meant for the old
+  one. Ids are embedded in class shapes and in the descriptors of error mode, so classes
+  compiled separately must agree on them. The engine uses the same scheme : a module changed
+  after a script was compiled keeps its classes' identity (modules.md §8.2), and a type error
+  between two classes of one name gives both ids. Scripts that are not modules keep `T17`.
+* **Source names** in `CallSite`s and the `SourceFile` attribute are the modules' display names,
+  which `FileModuleSource.rooted` makes relative to the program root, not the build machine's
+  absolute paths : error messages and stack traces read the same on every machine.
+* **Determinism** : the same module compiled twice, by two engines, gives byte-identical
+  classes (`BabbleCompilerTestCase`).
 
 ### 5.3 The launcher
 
@@ -289,7 +299,7 @@ needed at runtime. A type error found by the analysis fails the compilation, as 
 | **R1** | The runtime boundary (§3) : `Implicits`, `Modules`, `ScriptRuntime` without `javax.script`, the moves, the boundary test, the runtime jar. No change of behaviour but sessions loading a module once. | Done. |
 | **M4a** | `ModuleSource`, `ModuleId`, `FileModuleSource` as the default ; the engine's cache keyed by `ModuleId` and versions. | Done. |
 | **M4b** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. | Done : `BabbleModulesTestCase` runs in memory, `FileModulesTestCase` keeps what is particular to files and the class path. |
-| **M5a** | Stable class names, type ids and source names (§5.2), in the engine too. | |
+| **M5a** | Stable class names, type ids and source names (§5.2), in the engine too. | Done. |
 | **M5b** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. | |
 | **M5c** | Dynamic imports in a compiled program : the index, then a module compiler through `ServiceLoader`, else the error of §5.4. | |
 

@@ -77,6 +77,11 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     private final Deque<ScopeNode> scopes = new ArrayDeque<>();
     private ReturnTarget returnTarget = ReturnTarget.NONE;
 
+    /** The key of the module analysed, its types' ids derive from, or null : see {@link ModuleLoader#moduleKey}. */
+    private String moduleKey;
+    /** How many types of each name the module has so far, for their ids. */
+    private final Map<String, Integer> typeNames = new HashMap<>();
+
     private BlockScopes(AnalysisSession session) {
         this.session = session;
         if (session != null) {
@@ -119,6 +124,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     public static ScopeAnalysis analyze(BabbleParser.FileContext file, ScopeAnalysis.Typecheck typecheck, AnalysisSession session,
                                         ModuleLoader loader) {
         BlockScopes pass = new BlockScopes(session);
+        pass.moduleKey = loader != null ? loader.moduleKey() : null;
         pass.analysis.setPass(pass);
         pass.fileScope = pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
         // The exported names are known : a file importing this one back, in a cycle, sees them.
@@ -248,9 +254,18 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return name != null ? name : anonymous;
     }
 
+    /** {@code lib/vec3.ba#Vec3}, then {@code lib/vec3.ba#Vec3#1} for a second type of that name, in a module. */
+    private String typeId(String name) {
+        if (moduleKey == null) {
+            return TypeNode.nextId();
+        }
+        int seen = typeNames.merge(name, 1, Integer::sum) - 1;
+        return moduleKey + "#" + name + (seen > 0 ? "#" + seen : "");
+    }
+
     private TypeNode newType(ParserRuleContext ctx, ClassShape.Kind kind, String name, BabbleParser.TypeListContext typeList) {
         List<BabbleParser.TypeContext> parentTypes = typeList != null ? typeList.type() : List.of();
-        TypeNode type = new TypeNode(ctx, kind, name, current(), parentTypes);
+        TypeNode type = new TypeNode(ctx, typeId(name), kind, name, current(), parentTypes);
         types.add(type);
         typeNodes.put(ctx, type);
         for (BabbleParser.TypeContext parentType : parentTypes) {

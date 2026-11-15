@@ -326,7 +326,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             }
             loader.versions.put(id, text.version());
             CompiledModule module = new CompiledModule(source, mode, typecheck, Map.copyOf(loader.versions),
-                    script(file, scopes, sourceName), scopes.moduleInterface());
+                    script(file, scopes, sourceName, id), scopes.moduleInterface());
             moduleCache.put(id.key(), module);
             return module;
         }
@@ -364,6 +364,11 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             this.source = source;
             this.self = self;
             this.selfVersion = selfVersion;
+        }
+
+        @Override
+        public String moduleKey() {
+            return self != null ? self.key() : null;
         }
 
         @Override
@@ -552,10 +557,15 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     /** The script of an analysed file, for the engine's mode. */
     BabbleScript script(BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName) throws ScriptException {
+        return script(file, scopes, sourceName, null);
+    }
+
+    /** @param module the module compiled, whose key names its classes, or null for a script that is not one */
+    private BabbleScript script(BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName, ModuleId module) throws ScriptException {
         try {
             return switch (getMode()) {
                 case INTERPRET -> new BabbleCompiledScript(this, file, scopes, sourceName);
-                case COMPILE -> BabbleCompiler.compile(this, file, scopes, sourceName);
+                case COMPILE -> BabbleCompiler.compile(this, file, scopes, sourceName, module != null ? module.key() : null);
             };
         } catch (RuntimeException e) {
             // A bad mode, or code the compiler cannot generate (a method over 64 KB).
