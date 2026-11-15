@@ -449,18 +449,17 @@ by default. See the [design doc](docs/design/module-sources-and-aot.md) (§5).
 
 ### Formatting code
 
-`babblefmt` formats Babble source files :
+`-format` formats Babble source files :
 
 ```
-bin/babblefmt < script.ba            # formats the standard input to the standard output
-bin/babblefmt script.ba              # prints the file, formatted
-bin/babblefmt -w script.ba examples  # rewrites the files that change ; a directory stands for its .ba files
-bin/babblefmt -l examples            # lists the files that would change
-bin/babblefmt -check examples        # lists them, and exits with status 1 if there are any
+java -jar target/babble-1.0-SNAPSHOT.jar -format < script.ba            # formats the standard input to the standard output
+java -jar target/babble-1.0-SNAPSHOT.jar -format script.ba              # prints the file, formatted
+java -jar target/babble-1.0-SNAPSHOT.jar -format -w script.ba examples  # rewrites the files that change ; a directory stands for its .ba files
+java -jar target/babble-1.0-SNAPSHOT.jar -format -l examples            # lists the files that would change
+java -jar target/babble-1.0-SNAPSHOT.jar -format -check examples        # lists them, and exits with status 1 if there are any
 ```
 
-`bin/babblefmt` runs `java -cp target/babble-1.0-SNAPSHOT.jar org.babblelang.Babblefmt` ; from
-Java, it is `org.babblelang.format.Formatter.format(source)`.
+From Java, it is `org.babblelang.format.Formatter.format(source)`.
 
 It keeps your line breaks, and settles the rest :
 
@@ -557,7 +556,7 @@ Implementation features :
 - [x] command line : `java -jar babble.jar script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
 - [x] ahead-of-time compilation : `-compile script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see the [design doc](docs/design/module-sources-and-aot.md)).
 - [x] syntax errors that say what was unexpected, and where.
-- [x] a code formatter : `babblefmt`.
+- [x] a code formatter : `java -jar babble.jar -format`.
 
 Planned features
 ----------------

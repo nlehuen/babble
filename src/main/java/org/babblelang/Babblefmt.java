@@ -4,11 +4,9 @@ import org.babblelang.format.Formatter;
 
 import javax.script.ScriptException;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -17,18 +15,19 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * The command line of Babble's formatter ({@link Formatter}) :
+ * babblefmt, the command line of Babble's formatter ({@link Formatter}) : what follows
+ * {@code -format} on Babble's command line ({@link Main}).
  * <pre>
- * babblefmt                       formats the standard input to the standard output
- * babblefmt file.ba directory     prints the files, formatted ; directories stand for their .ba files
- * babblefmt -w ...                rewrites the files that change
- * babblefmt -l ...                lists the files that would change
- * babblefmt -check ...            lists them, and fails if there are any
+ * java -jar babble.jar -format                       formats the standard input to the standard output
+ * java -jar babble.jar -format file.ba directory     prints the files, formatted ; directories stand for their .ba files
+ * java -jar babble.jar -format -w ...                rewrites the files that change
+ * java -jar babble.jar -format -l ...                lists the files that would change
+ * java -jar babble.jar -format -check ...            lists them, and fails if there are any
  * </pre>
  */
-public final class Babblefmt {
+final class Babblefmt {
     static final String USAGE = """
-            Usage : babblefmt [-w] [-l] [-check] [file.ba | directory]...
+            Usage : java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
               Formats Babble source files. Without a file, formats the standard input.
               A directory stands for the .ba files in it, at any depth.
               Without an option, the formatted text goes to the standard output.
@@ -42,16 +41,6 @@ public final class Babblefmt {
     static final int USAGE_ERROR = 2;
 
     private Babblefmt() {
-    }
-
-    public static void main(String[] args) throws IOException {
-        PrintWriter out = new PrintWriter(System.out, false, StandardCharsets.UTF_8);
-        int status = run(args, new InputStreamReader(System.in, StandardCharsets.UTF_8), out,
-                new PrintWriter(System.err, true, StandardCharsets.UTF_8));
-        out.flush();
-        if (status != 0) {
-            System.exit(status);
-        }
     }
 
     /** @return the exit status */
