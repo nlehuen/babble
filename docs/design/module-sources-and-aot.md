@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3), M4 (§4) and M5a (§5.2) are implemented ; M5b and M5c are not. |
+| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3), M4 (§4), M5a (§5.2) and M5b (§5.1, §5.3, the index part of §5.4) are implemented ; M5c is not. |
 | **Depends on** | [modules.md](modules.md) (static imports, the module cache, module types), [bytecode-compiler.md](bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
 | **Unblocks** | Babble programs shipped as a jar, hosts serving modules from anywhere, module tests without temporary files |
 
@@ -214,15 +214,31 @@ java -jar babble.jar -compile examples/raytracer-argon/raytracer.ba -o argon.jar
 java -jar argon.jar > scene.ppm
 ```
 
+`-compile main.ba [-o app.jar] [-root dir]` : the jar defaults to `main.jar` next to the script,
+the root (of `FileModuleSource.rooted`, so of module keys and display names) to the script's
+directory ; imports may not leave the root. It prints `Wrote app.jar : N modules` and exits with
+0, or 1 when the program does not compile (a syntax, import or analysis error ; type
+diagnostics in error mode), 2 for a bad command line. The API is `compiler.Babblec.compile(main,
+root, jar, context)`, over `BabbleScriptEngine.compileProgram(source, mainName)`, which compiles
+a program through the engine's module cache and returns its modules (`ProgramModule` : id,
+exports, compiled script), the main one first.
+
 `argon.jar` holds :
 
 * one class (and its nested classes) per module of the program : the main script and every
   module it imports statically, transitively ;
-* `babble/Modules`, an index from module keys to classes and exports (§5.4) ;
-* the runtime classes of §3, copied in (Q3), so the jar runs on a plain JRE ;
-* a manifest with `Main-Class: org.babblelang.runtime.Launcher` and the main module's key.
+* `babble/modules.index`, an index from module keys to display names, classes and exports
+  (§5.4), and the main module's key (`runtime.ProgramIndex`, a tab-separated text resource : a
+  generated class was the first draft, a resource is simpler to write and to read, and the
+  launcher reads it once) ;
+* the runtime classes of §3, copied in (Q3) from wherever the runtime was loaded (the
+  classes directory or a jar), so the jar runs on a plain JRE ;
+* a manifest with `Main-Class: org.babblelang.runtime.Launcher` (the main key is in the index).
 
-Nothing in it parses, analyses or generates code. ANTLR and ASM are not in it.
+Nothing in it parses, analyses or generates code. ANTLR and ASM are not in it. The jar is
+reproducible : entries sorted, the manifest and the index first, every time stamp fixed
+(2000-01-01), so compiling a program twice gives byte-identical jars. The runtime adds about
+100 KB : a hello world jar is 109 KB, argon's (14 modules) 241 KB.
 
 ### 5.2 Stable names
 
@@ -252,21 +268,31 @@ classes live and die with one run, not in a jar.
 
 ### 5.3 The launcher
 
-`org.babblelang.runtime.Launcher`, in the runtime : reads the main module from the manifest,
+`org.babblelang.runtime.Launcher`, in the runtime : reads the index from its class loader,
 builds the implicits (§3), binds `args` as `Main` does, creates a `ScriptRuntime` whose writer is
 `System.out` and whose `Modules` is the jar's index, runs the main class, and exits like `Main` :
-1 when the script fails, with the message on standard error.
+1 when the script fails, with the message on standard error, worded as `Main` words it
+(`Error : Not a number : null in lib/broken.ba at line number 2`, the line from the innermost
+frame of a program class ; `Error : Stack overflow in main.ba`).
+
+Start-up, for a hello world on the test machine : 100 to 140 ms from the jar, 200 to 270 ms
+through the engine (which loads ANTLR and ASM, parses, analyses and generates code). argon's
+render takes 60 s from its jar against 68 s through the engine, with the same `scene.ppm`.
 
 ### 5.4 Imports in a compiled program
 
-* **Static imports** were resolved by `babblec` : the index maps each module key to its class,
-  exports and the keys its own imports resolved to. `import` looks the key up : nothing is read.
+* **Static imports** were resolved by `babblec` : the index maps each module key to its class
+  and exports. At runtime, `import` resolves the name from the importing module's key with the
+  rules every logical source shares (`runtime.LogicalPaths`, moved from the engine : relative to
+  the importer's directory, `/` for the root, `..` never above it), then looks the key up :
+  nothing is read. The index does not record what each import resolved to : the same rules give
+  the same key, and that serves dynamic imports too.
 * **Dynamic imports** (`import(name + ".ba")`) cannot be known before running (Q4). In the jar,
   `Modules` looks for the name in the index first, so a dynamic import of a module the program
-  also imports statically works. Otherwise it asks `ServiceLoader` for a module compiler, which
-  the full Babble jar provides : with Babble on the class path, the module is compiled from the
-  file system as today ; without it, the import fails with
-  `Cannot import x.ba : a compiled program only has the modules it imports statically`.
+  also imports statically works (M5b). Otherwise the import fails with
+  `Cannot import x.ba : a compiled program only has the modules it imports statically` ; M5c
+  will first ask `ServiceLoader` for a module compiler, which the full Babble jar provides, so
+  that with Babble on the class path the module is compiled from the file system as today.
 * **Once per eval, cycles, read-only exports** : unchanged, they are the runtime's `Module` and
   the per-eval table, which do not care where a module's class came from.
 
@@ -300,8 +326,8 @@ needed at runtime. A type error found by the analysis fails the compilation, as 
 | **M4a** | `ModuleSource`, `ModuleId`, `FileModuleSource` as the default ; the engine's cache keyed by `ModuleId` and versions. | Done. |
 | **M4b** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. | Done : `BabbleModulesTestCase` runs in memory, `FileModulesTestCase` keeps what is particular to files and the class path. |
 | **M5a** | Stable class names, type ids and source names (§5.2), in the engine too. | Done. |
-| **M5b** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. | |
-| **M5c** | Dynamic imports in a compiled program : the index, then a module compiler through `ServiceLoader`, else the error of §5.4. | |
+| **M5b** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. | Done, with dynamic imports of indexed modules ; the index is a text resource rather than a class (§5.1). `BabblecTestCase` runs the jars in fresh JVMs. |
+| **M5c** | Dynamic imports in a compiled program of modules it does not index : a module compiler through `ServiceLoader`, else the error of §5.4. | |
 
 Each step leaves both modes passing the whole suite. The acceptance test of M5 is both ray
 tracers compiled into jars and run on a JRE without Babble on the class path : argon's

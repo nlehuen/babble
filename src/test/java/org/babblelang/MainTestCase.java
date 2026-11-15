@@ -132,4 +132,29 @@ public class MainTestCase {
         Run help = run("1\n", "-help");
         Assertions.assertEquals(new Run(0, List.of(Main.USAGE.split("\\R")), List.of()), help);
     }
+
+    @Test
+    public void testCompile() throws Exception {
+        script("main.ba", "def lib = import(\"lib.ba\")\nprintln(lib.greeting, \" \", args.size())");
+        script("lib.ba", "export def greeting = \"hello\"");
+        Run run = run("", "-compile", directory.resolve("main.ba").toString());
+        Path jar = directory.resolve("main.jar");
+        Assertions.assertEquals(new Run(0, List.of("Wrote " + jar + " : 2 modules"), List.of()), run);
+        Assertions.assertTrue(Files.isRegularFile(jar));
+
+        Path other = directory.resolve("out/other.jar");
+        Files.createDirectories(other.getParent());
+        run = run("", "-compile", directory.resolve("main.ba").toString(), "-o", other.toString(), "-root", directory.toString());
+        Assertions.assertEquals(new Run(0, List.of("Wrote " + other + " : 2 modules"), List.of()), run);
+        Assertions.assertArrayEquals(Files.readAllBytes(jar), Files.readAllBytes(other));
+
+        String failing = script("failing.ba", "import(\"nowhere.ba\")");
+        run = run("", "-compile", failing);
+        Assertions.assertEquals(Main.FAILED, run.status());
+        Assertions.assertTrue(run.err().get(0).startsWith("Error : Cannot import nowhere.ba : no such file"), run.err().toString());
+
+        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile").status());
+        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile", directory.resolve("missing.ba").toString()).status());
+        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile", failing, "-x").status());
+    }
 }

@@ -432,6 +432,21 @@ interactive mode starts once the script is done, or has failed, with everything 
 handy to try out the functions of a file. Options go before the script ; what follows it is the
 script's.
 
+A program can also be compiled ahead of time, with the modules it imports, into a jar that runs
+on a plain JRE, without Babble :
+
+```
+$ java -jar target/babble-1.0-SNAPSHOT.jar -compile hello.ba        # or -o app.jar, -root dir
+Wrote /home/ada/hello.jar : 1 module
+$ java -jar hello.jar Ada
+Hello, Ada
+```
+
+The jar holds the program's classes and a copy of Babble's runtime (about 100 KB), and no
+parser or compiler : it starts in about half the time, and a dynamic import only finds the
+modules the program imports statically. Imports may not leave the root, the script's directory
+by default. See the [design doc](docs/design/module-sources-and-aot.md) (§5).
+
 From Java, Babble is used through the standard
 [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) `javax.script` API :
 
@@ -496,6 +511,7 @@ Implementation features :
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
 - [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker (see the [design note](docs/design/repl.md)).
 - [x] command line : `java -jar babble.jar script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
+- [x] ahead-of-time compilation : `-compile script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see the [design doc](docs/design/module-sources-and-aot.md)).
 - [x] syntax errors that say what was unexpected, and where.
 
 Planned features
@@ -516,7 +532,8 @@ Language features :
 Implementation features :
 
 - [ ] type specialisation in compiled mode (unboxed arithmetic), once the type checker can vouch for the types.
-- [ ] ahead-of-time compilation to a jar, phase 4 of the [bytecode compiler design](docs/design/bytecode-compiler.md).
+- [ ] dynamic imports, in a compiled jar, of modules the program does not import statically, when Babble is on the class path (M5c of the [design doc](docs/design/module-sources-and-aot.md)).
+- [ ] a Maven goal for ahead-of-time compilation.
 
 TODO : lessons from the ray tracer
 ----------------------------------
