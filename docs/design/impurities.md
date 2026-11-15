@@ -10,7 +10,7 @@ Section references such as "§5.3.1" point into `purity.md`.
 
 ## 1. Soundness bugs
 
-> **Status:** addressed in `purity.md` after this review. In short: result reuse needs a deeply immutable result, and deeply immutable arguments for memoization and folding (1.1, 1.6); wrapping `int` arithmetic is no longer `monotone`, and the §8.3 example computes in `double` (1.2); typed parameters a profile relies on are checked on entry in every mode, and `nothrow` is conditional on conforming arguments (1.3); plain `mut` promises no `noalias`, which now comes only from `unique mut` (1.4); `unique` means deep ownership, and `freeze` yields a `frozen T` type backed by a runtime frozen bit or wrapper (1.5); identity-derived `hashCode`/`toString` are `pure` but not `deterministic` (1.7); ownership is tracked for uncaptured locals only (1.8). The findings below are kept as written, against the original text. Sections 2 to 5 are still open.
+> **Status:** addressed in `purity.md` after this review. In short: result reuse needs a deeply immutable result, and deeply immutable arguments for memoization and folding (1.1, 1.6); wrapping `int` arithmetic is no longer `monotone`, and the §8.3 example computes in `double` (1.2); declared types are now always enforced statically and at runtime (`babble.typecheck` modes removed), and `nothrow` at a call site is conditional on statically conforming arguments (1.3); plain `mut` promises no `noalias`, which now comes only from `unique mut` (1.4); `unique` means deep ownership, and `freeze` yields a `frozen T` type backed by a runtime frozen bit or wrapper (1.5); identity-derived `hashCode`/`toString` are `pure` but not `deterministic` (1.7); ownership is tracked for uncaptured locals only (1.8). The findings below are kept as written, against the original text. Sections 2 to 5 are still open.
 
 ### 1.1 CSE and memoization of functions returning fresh mutable objects
 
@@ -76,11 +76,13 @@ The doc uses things the language does not have: `throw`, `|>`, `List(3, 1, 2)`, 
 
 ### 2.5 Which pass, which mode
 
-Inference is placed in `BlockScopes` + `TypeChecks` (§5.1 title), `TypeChecks` (§5.2) and `TypeChecker` (§7.1). These differ in an important way:
+> **Status:** resolved. `babble.typecheck=off|warn|error` has been removed (`TypeChecker` now runs unconditionally, fails compilation with `TypeCheckException` on any diagnostic, and always enforces declared types at runtime via `Types.check`), and `purity.md` now places effect inference, ownership tracking, and verification uniformly in `TypeChecker`.
 
-- `TypeChecker` only runs in `warn`/`error`, and a checker crash becomes a warning. Optimizations cannot rest on it.
-- Violations are specified as hard `AnalysisException`s (§3.1), which is the `TypeChecks` style.
-- With `typecheck=off` there are no types to decide whether a constructor is `FRESH`, which callee a call reaches, or whether a value class is deeply immutable. Yet §7.2 promises enforcement in `off`.
+Inference was originally split across `BlockScopes` + `TypeChecks` (§5.1 title), `TypeChecks` (§5.2) and `TypeChecker` (§7.1), which differed in an important way before mandatory type checking:
+
+- `TypeChecker` only ran in `warn`/`error`, and a checker crash became a warning. Optimizations could not rest on it.
+- Violations were specified as hard `AnalysisException`s (§3.1), which was the `TypeChecks` style.
+- With `typecheck=off` there were no types to decide whether a constructor was `FRESH`, which callee a call reached, or whether a value class was deeply immutable, yet §7.2 promised enforcement in `off`.
 
 ---
 
@@ -165,7 +167,7 @@ It is derived "after the SCC converges" from callees that are "already `threadsa
 - Axioms are "stored in the active `ScriptRuntime`" (§6.1) but consumed by static analysis at `compile()`, before a runtime exists. `engine.assumeEffects` (§6.2) is engine-level, a third scope.
 - Unspecified: declaration order (axiom after use), REPL sessions, overloads (`Math.max` has four, `Files.readString` two), and instance-method targets reached through a class (`java.util.HashMap.put`).
 - `export axiom ... java.lang.Math.sin` exports no name, and modules export names.
-- Modules are compiled at import time, after the importer was analysed, and type as `dynamic`. The importer's verification cannot see a module's axioms, and open question 2 (§9.1) presupposes module typing that does not exist. Conversely, a per-runtime axiom in a module leaks trust into every importer.
+- Static `import("...ba")` calls are now analysed and typed at compile time (`ModuleInterface` / `Type.Module`), whereas dynamic `import(expr)` calls and import cycles still type as `dynamic`. However, `ModuleInterface` does not yet carry a module's `axiom` declarations or inferred effect profiles at compile time, and conversely a per-runtime axiom in a module still leaks trust into every importer at runtime.
 
 ### 5.3 The security claim
 

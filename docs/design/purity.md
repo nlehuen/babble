@@ -103,7 +103,7 @@ Every callable in Babble (function literal, method, constructor, or imported Jav
    * An explicitly marked **`impure`** function suppresses inference and locks the signature to unconstrained (used to prevent callers from depending on accidental purity, or to opt out default-pure value methods like `URL.equals`).
 2. **Verified Mode (explicit effect modifiers *without* `axiom`, e.g., `pure deterministic (x: int) -> (...)`):**
    * Declared modifiers become **compile-time obligations**: the compiler verifies that the body, all expressions, and all callees satisfy every declared property and mutates **only** declared `mut` parameters / `mut` `this` / `@FRESH` local objects.
-   * Any violation is a compile-time `AnalysisException` pointing to the offending expression.
+   * Any violation is a compile-time type/effect error (`TypeCheckException`) pointing to the offending expression.
    * Meanwhile, *additional* unmentioned properties (like `nothrow`) can still be inferred quietly for the optimizer without cluttering the user's signature.
 3. **Axiomatic Mode (`axiom <modifiers> ...`, e.g., `axiom pure deterministic`, `axiom associative commutative`):**
    * Tells the compiler to **assume** the listed properties for this function or Java target without verifying the implementation.
@@ -188,11 +188,11 @@ Function declaration / Java target
 
 #### Soundness premise — declared parameter types are enforced
 
-Every profile, inferred or verified, is derived assuming the arguments conform to the declared parameter types. That assumption is not free: declared types are otherwise only checked at runtime in `babble.typecheck=error`, and with a non-conforming argument even `x + y` can run arbitrary code (`"a" + obj` calls `obj.toString()`).
+Every profile, inferred or verified, is derived assuming the arguments conform to the declared parameter types. Because Babble always enforces declared types both statically (`TypeChecker`) and at runtime boundaries (`Types.check`, `type-system.md` §5), that assumption is an unconditional language invariant:
 
-* **Entry checks:** whenever a function's profile relies on a parameter's declared type, the function checks that parameter on entry (`Types.check`) **in every `babble.typecheck` mode**. A failed check throws before the body runs, so `pure`, `deterministic` and the other properties hold for every call that gets past it. A site that statically proves conformance links to an entry point that skips the check.
-* **Unannotated parameters are `dynamic`:** nothing is assumed about them. Operators and member accesses on them may throw and may dispatch to arbitrary `toString`/Java code, so they drop `nothrow` and, unless the operation is known to be closed over primitives, `pure`/`deterministic` too.
-* **`nothrow` is conditional on conformance**, as stated under `nothrow` above.
+* **Typed parameters are guaranteed on entry:** Static mismatches are rejected at compile time, and calls crossing a `dynamic` boundary check declared parameter types on entry via `Types.check` before the body runs (so inside `(x: int, y: int) -> ( x + y )`, `x + y` can never dispatch to an arbitrary `obj.toString()`). A call site that statically proves conformance can link to an entry point that skips the redundant `Types.check`.
+* **Unannotated parameters are `dynamic`:** Because Babble's type system is gradual, nothing is assumed about unannotated (`dynamic`) parameters. Operators and member accesses on them may throw and may dispatch to arbitrary `toString`/Java code, so they drop `nothrow` and, unless the operation is known to be closed over primitives, `pure`/`deterministic` too.
+* **`nothrow` at call sites is conditional on static conformance:** While a `nothrow` function body never throws once entered with conforming arguments, the runtime `Types.check` on entry can still throw `Type error` if a caller passes an unverified `dynamic` argument. A call site may therefore rely on the callee's `nothrow` only when `TypeChecker` statically proves every argument conforms to the declared parameter type.
 
 ### 3.3 Exact Verification vs. `axiom` Matrix
 
@@ -382,11 +382,11 @@ Every function literal creates its own effect context (`inferred`, `verified`, o
 
 ## 5. Inference Engine, Verification, and Optimizations
 
-### 5.1 Fixed-Point Effect Inference (`BlockScopes` + Call-Graph SCC + `TypeChecks`)
+### 5.1 Fixed-Point Effect Inference (Call-Graph SCC in `TypeChecker`)
 
 To minimize annotation burden, Babble maximizes inference across unannotated functions in the active compilation unit:
 
-1. **Call-Graph Construction:** Build a static call graph over all functions, methods, constructors, closures, and `value class` bodies in `ScopeAnalysis`.
+1. **Call-Graph Construction:** Build a static call graph over all functions, methods, constructors, closures, and `value class` bodies in `TypeChecker` (after `BlockScopes`, `TypeChecks`, and `Resolver`, where expression `Type`s, `ClassShape`s, and static module `ModuleInterface` types are always available).
 2. **SCC Condensation (Bottom-Up Fixed Point):** Partition into Strongly Connected Components (handling direct and mutual recursion in `recurse` or mutually recursive functions).
 3. **Optimistic Initialization (per unannotated node):**
    * Start with `{@NO_GLOBAL_EFFECTS, deterministic, nothrow}`, `mutParams = {}`, `noescapeParams = allParams`, `mutThis = false`, `uniqueReturn = true`. (`pure` holds after convergence iff `@NO_GLOBAL_EFFECTS && mutParams.isEmpty() && !mutThis`.)
@@ -398,7 +398,7 @@ To minimize annotation burden, Babble maximizes inference across unannotated fun
    * **Escape & uniqueness transfer:** Storing `@PARAM(i)` into `this`, another parameter, a global, a closure, or returning it removes $i$ from `noescapeParams`. Returning any expression that may alias `@EXTERNAL`, non-`unique` `@PARAM`, or `@THIS`, or a local that is `@FRESH` but no longer `@UNIQUE` (something shared was stored into it), drops `uniqueReturn`.
    * **Reads / non-determinism:** If expression reads a reassigned outer `def`, non-`final` static field, mutable singleton field, or calls a non-`deterministic` callee, drop `deterministic`.
    * **Exceptions:** If expression executes `throw`, `assert`, `/`, nullable/dynamic call, an operator or member access on a `dynamic` (unannotated) operand, a call whose arguments are not statically proved to conform to the callee's parameter types, or calls a non-`nothrow` callee, drop `nothrow`.
-   * **Typed parameters:** every parameter whose declared type any retained property relies on is recorded as *entry-checked* (§3.2 soundness premise); the check is emitted in all `babble.typecheck` modes.
+   * **Typed parameters:** declared parameter types are unconditionally enforced on entry by Babble's runtime boundary checks (`Types.check`, §3.2 soundness premise); call sites where `TypeChecker` statically proves argument conformance can elide the entry check and rely on `nothrow`.
    * **Compositional algebraic propagation:**
      * Composition $f(g(x))$ where both $f$ and $g$ are `monotone` $\implies$ `monotone`; same for `injective`.
      * Single-op wrapper `(a, b) -> ( op(a, b) )` inherits `commutative` / `associative` from `op`.
@@ -426,7 +426,7 @@ def buildStats = (noescape xs: List) : unique Stats -> (
 ```
 infers **`pure deterministic`** (`xs` is untouched and `noescape`, **not** `mut`) AND **`unique` return**—because `s` was freshly constructed inside `buildStats`, `xs` never leaked into `s`, and zero aliases to `s` remain in `buildStats`.
 
-Babble tracks these local points-to / ownership states per binding in `TypeChecks` (only for function-local bindings that no closure captures; every other binding is `@EXTERNAL`):
+Babble tracks these local points-to / ownership states per binding in `TypeChecker` (only for function-local bindings that no closure captures; every other binding is `@EXTERNAL`):
 * **`@FRESH`:** Bound solely to a `pure` constructor, `object` literal, `unique` return, or `unique` parameter; calling a `@NO_GLOBAL_EFFECTS` `mut` helper/method on it leaves `@NO_GLOBAL_EFFECTS` and `mutParams` untouched (so the caller stays `pure`!). The object is new, but its contents may be shared.
 * **`@UNIQUE`** (a `@FRESH` binding that is also deeply owned): everything stored into it so far was `@UNIQUE` (moved in) or deeply immutable. Only a `@UNIQUE` binding may be passed to `move`, a `unique` slot or `freeze(...)`, or returned as `unique`. Storing a `@PARAM`, `@EXTERNAL`, `@FRESH`-but-not-`@UNIQUE` or `dynamic` value into it (directly, or as an argument a Java method may retain) demotes it to `@FRESH` for the rest of the function.
 * **`@PARAM(i)` / `@THIS`:** Aliases parameter $i$ or `this`. Any mutation marks $i$ / `this` as `mut`; escaping it into `this`, another parameter, an outer variable, a closure, or the return value clears `noescape(i)`.
@@ -569,9 +569,9 @@ In `org.babblelang.analysis.Type`:
 * **`Type.Function(List<Parameter> parameters, Type result, EffectSet effects)`**:
   * Assignability (`TypeChecker`): if `target.effects` is constrained (non-empty or any `mut`/`noescape`/`unique`), enforce `actual.effects.satisfies(target.effects)`, `target.noescapeThis => actual.noescapeThis`, `target.uniqueResult => actual.uniqueResult`, `actual.mutThis => target.mutThis`, and per parameter: `target.noescape(i) => actual.noescape(i)`, `actual.mut(i) => target.mut(i)`, `actual.uniqueParam(i) => target.uniqueParam(i)`. Unconstrained `(A) : B` stays top for gradual compatibility.
 
-### 7.2 Dynamic Boundary Checks (`Types` in `error` mode)
+### 7.2 Dynamic Boundary Checks (`Types`)
 
-In `babble.typecheck=error` mode (`type-system.md` §5), function descriptors encode required effects (`fx|<effects>|<display>|`), checking `callable.effects(runtime).satisfies(required)` when crossing dynamic boundaries into effect-constrained parameters or fields. Even in `off`/`warn` mode, call sites inside verified functions enforce callee compatibility before dispatch, entry checks are emitted for the typed parameters a profile relies on (§3.2 soundness premise), and the frozen bit / frozen `JavaObject` wrapper rejects mutation of frozen values.
+Because Babble always enforces declared types at runtime boundaries (`Types.check`, `type-system.md` §5), function type descriptors encode required effects (`fx|<effects>|<display>|`), checking `callable.effects(runtime).satisfies(required)` whenever a `dynamic` value crosses into an effect-constrained parameter, return, `def`, or field. Call sites inside verified functions whose callee is `dynamic` likewise enforce callee compatibility before dispatch, and the frozen bit / frozen `JavaObject` wrapper rejects mutation of `frozen T` values when they flow through `dynamic` code or Java.
 
 ### 7.3 Compiler (`CodeGenerator`, `Bootstrap`) and Interpreter Integration
 
@@ -769,10 +769,10 @@ def distSq = pure deterministic nothrow (noescape p: Point, noescape q: Point) :
 
 1. **Phase 1 — Unified Core Model, Verification & `axiom`:**
    * Grammar (`Babble.g4`): add `axiom`, `pure`, `mut`, `noescape`, `unique`, `move`, `freeze`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `threadsafe`, `monotone`, `injective`, `impure` on function literals, parameters, function types, expressions, and top-level/exported Java `axiom` / `impure` targets.
-   * Type system & analysis (`EffectSet`, `Type.Parameter(..., mut, noescape, unique)`, `Type.Function`, `BlockScopes`, `TypeChecks`, `TypeChecker`, `Types`): verify `pure`, `mut` parameter/`this` + shallow call-site exclusivity, `noescape` checks, `unique`/`move`/`freeze` ownership (deep, locals only) + definite-unassignment, the `frozen T` type with its runtime frozen bit/wrapper, entry checks on typed parameters, `deterministic` (outer mutable & `axiom` non-deterministic checks), conservative `nothrow`, default `pure deterministic` on `value class` and standard value protocol (`equals`, `hashCode`, `toString`, `compareTo`), interface conformance (`actual <: required`), and covariance/contravariance subtyping.
+   * Type system & analysis (`EffectSet`, `Type.Parameter(..., mut, noescape, unique)`, `Type.Function`, `TypeChecker`, `Types`): verify `pure`, `mut` parameter/`this` + shallow call-site exclusivity, `noescape` checks, `unique`/`move`/`freeze` ownership (deep, locals only) + definite-unassignment, the `frozen T` type with its runtime frozen bit/wrapper, effect-constrained function descriptors in `Types.check`, `deterministic` (outer mutable & `axiom` non-deterministic checks), conservative `nothrow`, default `pure deterministic` on `value class` and standard value protocol (`equals`, `hashCode`, `toString`, `compareTo`), interface conformance (`actual <: required`), and covariance/contravariance subtyping.
    * Runtime & Compiler (`Callable`, `ScriptRuntime`, `JavaClass`, `JavaMethod`, `BabbleScriptEngine`, `Faces`, `Operators`, `Interpreter`, `CodeGenerator`, `Bootstrap`): isolated per-runtime `EffectSet` registries, composable Java annotations (`@Pure`, `@Mut`, `@Noescape`, `@Unique`, `@Deterministic`, ...), `Faces` proxy checks, `freeze` support, and `Bootstrap` linkage enforcement.
 2. **Phase 2 — Fixed-Point Inference & Core Optimizations:**
-   * Implement SCC bottom-up fixed-point inference in `TypeChecks` for `{pure, mut, noescape, unique, deterministic, nothrow}`, derived `threadsafe`, implicit last-use `move`, and compositional `monotone` / `injective`.
+   * Implement SCC bottom-up fixed-point inference in `TypeChecker` for `{pure, mut, noescape, unique, deterministic, nothrow}`, derived `threadsafe`, implicit last-use `move`, and compositional `monotone` / `injective`.
    * Expose `EffectSet`, `noescape`, and `unique` metadata on IR/bytecode and wire compiler optimization passes: CSE / constant folding (`pure deterministic`), `@NOALIAS` hoisting & SIMD (`unique mut` parameters), scalar replacement/unboxing (`noescape`), zero-copy `freeze` / FBIP reuse (`unique`), predicate reordering & hoisting (`pure deterministic nothrow`), loop reassociation (`associative`), and parallel collection combinators (`parallelMap`, `parallelReduce`, `parallelForEach`).
 3. **Phase 3 — Algebraic Rewrite Rules, ASM Bytecode Suggester & Axiom Fuzzing:**
    * Add `monotone` range inversion and `injective` projection push-down in pipeline optimizers.
