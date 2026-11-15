@@ -368,7 +368,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         String method = Operators.method(ctx.op.getText());
         if (method != null && a instanceof BabbleInstance) {
             // An operator method : a + b is a.plus(b).
-            return operatorCall(a, method, ctx.left, ctx.right, b, ctx);
+            return operatorCall(a, method, ctx.left.getText(), ctx.right.getText(), b, ctx);
         }
 
         OpSite site = opSites.get(ctx);
@@ -419,28 +419,54 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object value = visit(ctx.operand);
         last = ctx;
         if (value instanceof BabbleInstance) {
-            return operatorCall(value, Operators.NEGATE, ctx.operand, null, null, ctx);
+            return operatorCall(value, Operators.NEGATE, ctx.operand.getText(), null, null, ctx);
         }
         return Operators.negate(value, ctx.operand.getText());
     }
 
     /** {@code a.method(b)}, or {@code a.method()} without an argument, for an operator. */
-    private Object operatorCall(Object a, String method, BabbleParser.ExpressionContext receiver,
-                                BabbleParser.ExpressionContext argument, Object b, ParserRuleContext ctx) {
+    private Object operatorCall(Object a, String method, String receiver, String argument, Object b, ParserRuleContext ctx) {
         CallSite site = operatorSite(ctx, receiver, method, argument, sourceName);
-        Callable callable = Calls.callable(Members.select(a, method, receiver.getText()), site);
+        Callable callable = Calls.callable(Members.select(a, method, receiver), site);
         last = ctx;
         return callable.call(runtime, argument == null ? Arguments.NONE : new Object[]{b}, null, site);
     }
 
     /**
      * The call an operator on a Babble instance makes, for its messages : {@code a + b} is
-     * {@code a.plus(b)}.
+     * {@code a.plus(b)}, given the source texts of the receiver and the argument (null for
+     * {@code -a}, {@code a.neg()}).
      */
-    public static CallSite operatorSite(ParserRuleContext ctx, BabbleParser.ExpressionContext receiver, String method,
-                                        BabbleParser.ExpressionContext argument, String sourceName) {
-        String[] argTexts = argument == null ? new String[0] : new String[]{argument.getText()};
-        return new CallSite(sourceName, ctx.getStart().getLine(), receiver.getText() + "." + method, argTexts);
+    public static CallSite operatorSite(ParserRuleContext ctx, String receiver, String method, String argument, String sourceName) {
+        String[] argTexts = argument == null ? new String[0] : new String[]{argument};
+        return new CallSite(sourceName, ctx.getStart().getLine(), receiver + "." + method, argTexts);
+    }
+
+    /**
+     * The source text of an assignment's target : {@code x}, or {@code obj.x}, which is the
+     * left operand of the operator a compound assignment applies.
+     */
+    public static String targetText(BabbleParser.AssignExpressionContext ctx) {
+        return ctx.namespace == null ? ctx.name.getText() : ctx.namespace.getText() + "." + ctx.name.getText();
+    }
+
+    /**
+     * {@code x op= v} : {@code x op v}, given the target's current value. An operator method on
+     * a Babble instance, as for {@code a + b}.
+     */
+    private Object compound(BabbleParser.AssignExpressionContext ctx, String operator, Object current, Object value) {
+        last = ctx;
+        String target = targetText(ctx);
+        String method = Operators.method(operator);
+        if (current instanceof BabbleInstance) {
+            return operatorCall(current, method, target, ctx.value.getText(), value, ctx);
+        }
+        OpSite site = opSites.get(ctx);
+        if (site == null) {
+            site = new OpSite(target, ctx.value.getText());
+            opSites.put(ctx, site);
+        }
+        return Operators.arithmetic(operator, current, value, site);
     }
 
     @Override
@@ -476,14 +502,24 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         last = ctx;
         String name = ctx.name.getText();
+        // For x op= v, the target's value is read before v is evaluated, as in x = x op v.
+        String operator = Operators.compound(ctx.op.getText());
         if (ctx.namespace == null) {
+            Object current = operator == null ? null : namespace.lookup(name);
             Object value = visit(ctx.value);
+            if (operator != null) {
+                value = compound(ctx, operator, current, value);
+            }
             last = ctx;
             return namespace.assign(name, Types.check(value, scopes.checkedType(ctx)));
         }
         if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
             Object thiz = namespace.lookup("this");
+            Object current = operator == null ? null : Members.selectOwn(thiz, name);
             Object value = visit(ctx.value);
+            if (operator != null) {
+                value = compound(ctx, operator, current, value);
+            }
             last = ctx;
             return Members.assignOwn(thiz, value, name);
         }
@@ -491,7 +527,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object target = visit(ctx.namespace);
         last = ctx;
         Object scope = Members.assignable(target, ctx.namespace.getText());
+        Object current = operator == null ? null : Members.select(scope, name, ctx.namespace.getText());
         Object value = visit(ctx.value);
+        if (operator != null) {
+            value = compound(ctx, operator, current, value);
+        }
         last = ctx;
         return Members.assign(scope, value, name);
     }

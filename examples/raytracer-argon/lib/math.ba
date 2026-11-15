@@ -53,15 +53,15 @@ export def sqrt = (x: double): double -> (
     )
     def g: double = if x > 1.0 then (x * 0.5) else (1.0)
     while g * g > x * 16.0 then (
-        g = g * 0.25
+        g *= 0.25
     )
     while g * g * 16.0 < x then (
-        g = g * 4.0
+        g *= 4.0
     )
     def i: int = 0
     while i < 10 then (
         g = 0.5 * (g + x / g)
-        i = i + 1
+        i += 1
     )
     g
 )
@@ -69,8 +69,8 @@ export def sqrt = (x: double): double -> (
 ;; Angle reduction into [-pi, pi]
 export def wrapAngle = (x: double): double -> (
     def a: double = x
-    while a > pi then (a = a - twoPi)
-    while a < -pi then (a = a + twoPi)
+    while a > pi then (a -= twoPi)
+    while a < -pi then (a += twoPi)
     a
 )
 
@@ -84,8 +84,8 @@ export def sin = (x: double): double -> (
     while n <= 10 then (
         def denom: double = (2 * n) * (2 * n + 1)
         term = -term * x2 / denom
-        sum = sum + term
-        n = n + 1
+        sum += term
+        n += 1
     )
     sum
 )
@@ -100,8 +100,8 @@ export def cos = (x: double): double -> (
     while n <= 10 then (
         def denom: double = (2 * n - 1) * (2 * n)
         term = -term * x2 / denom
-        sum = sum + term
-        n = n + 1
+        sum += term
+        n += 1
     )
     sum
 )
@@ -110,35 +110,8 @@ export def tan = (x: double): double -> (
     sin(x) / cos(x)
 )
 
-;; Fast conversion of a clamped [0.0, 256.0) channel value to an int in [0, 255]
-export def toByte = (x: double): int -> (
-    def v: double = clamp(x, 0.0, 255.999)
-    def res: int = 0
-    if v >= 128.0 then (res = res + 128; v = v - 128.0)
-    if v >= 64.0 then (res = res + 64; v = v - 64.0)
-    if v >= 32.0 then (res = res + 32; v = v - 32.0)
-    if v >= 16.0 then (res = res + 16; v = v - 16.0)
-    if v >= 8.0 then (res = res + 8; v = v - 8.0)
-    if v >= 4.0 then (res = res + 4; v = v - 4.0)
-    if v >= 2.0 then (res = res + 2; v = v - 2.0)
-    if v >= 1.0 then (res = res + 1)
-    res
-)
+;; A clamped [0.0, 256.0) channel value as an int in [0, 255]
+export def toByte = (x: double): int -> (int(clamp(x, 0.0, 255.999)))
 
-;; Recursive binary decomposition to truncate any non-negative double to int
-export def toIntPos = (x: double, bit: int): int -> (
-    if x < bit then (
-        0
-    ) else (
-        def higher: int = if x >= bit * 2.0 then (recurse(x, bit * 2)) else (0)
-        if x - higher >= bit then (higher + bit) else (higher)
-    )
-)
-
-export def toInt = (x: double): int -> (
-    if x < 0.0 then (
-        -toIntPos(-x, 1)
-    ) else (
-        toIntPos(x, 1)
-    )
-)
+;; Truncates towards zero
+export def toInt = (x: double): int -> (int(x))

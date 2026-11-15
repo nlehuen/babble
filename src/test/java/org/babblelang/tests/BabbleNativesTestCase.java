@@ -56,4 +56,28 @@ public class BabbleNativesTestCase extends BabbleTestBase {
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(1) "));
         Assertions.assertTrue(e.getMessage().contains("asserts don't rely on truth values"), e.getMessage());
     }
+
+    @Test
+    public void testNumberConversions() throws Exception {
+        Assertions.assertEquals(2, interpret(" int(2.7) "));
+        Assertions.assertEquals(-2, interpret(" int(-2.7) "));
+        Assertions.assertEquals(42, interpret(" int(\"42\") "));
+        Assertions.assertEquals(3.0, interpret(" double(3) "));
+        Assertions.assertEquals(-0.5, interpret(" double(\"-0.5\") "));
+    }
+
+    @Test
+    public void testNumberConversionErrors() {
+        assertError("Out of the int range : 1/0 = Infinity", " int(1 / 0) ");
+        assertError("Out of the int range : x = 3.0E9", " def x = 3.0E9 ; int(x) ");
+        assertError("Not an int : \"2.5\"", " int(\"2.5\") ");
+        assertError("Not a double : \"x\"", " double(\"x\") ");
+        assertError("Not a number : true", " int(true) ");
+        assertError("int() takes 1 argument, 0 given", " def f = int ; f = f ; f() ");
+    }
+
+    private void assertError(String message, String source) {
+        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(source), source);
+        Assertions.assertTrue(e.getMessage().contains(message), e.getMessage());
+    }
 }

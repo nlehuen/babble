@@ -27,6 +27,7 @@ public class FormatterTestCase {
         assertFormats("def add: (a: int, b: int): int = (a: int, b: int = 1): int -> (a + b)\n",
                 "def add:(a:int,b:int):int=(a:int,b:int=1):int->( a+b )");
         assertFormats("def f = () -> ()\n", "def f=()->( )");
+        assertFormats("x += 1\no.n -= int(2.5)\ny *= 2; z /= 3\n", "x+=1\no . n-=int( 2.5 )\ny*=2;z/=3");
         assertFormats("x is java.util.List and x <> null or y != 1.5\n", "x  is java . util . List and x<>null or y!=1.5");
         assertFormats("return (a)\n", "return(a)");
     }

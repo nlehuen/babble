@@ -1020,8 +1020,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     private String opSiteField(BabbleParser.BinaryOpContext ctx) {
-        String left = ctx.left.getText();
-        String right = ctx.right.getText();
+        return opSiteField(ctx.left.getText(), ctx.right.getText());
+    }
+
+    private String opSiteField(String left, String right) {
         return addConstant("OP", "L" + OP_SITE + ";", 16, m -> {
             m.visitTypeInsn(NEW, OP_SITE);
             m.visitInsn(DUP);
@@ -1664,28 +1666,53 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Operators", method, "(Ljava/lang/Object;Ljava/lang/Object;L" + OP_SITE + ";)Ljava/lang/Object;", false);
             return null;
         }
-        // Arithmetic : on a Babble instance, its operator method ; on anything else, Operators.
         int left = newLocal();
         int right = newLocal();
         visit(ctx.left);
         mv.visitVarInsn(ASTORE, left);
         visit(ctx.right);
         mv.visitVarInsn(ASTORE, right);
+        arithmetic(ctx, ctx.op.getText(), ctx.left.getText(), ctx.right.getText(), left, right);
+        return null;
+    }
+
+    /**
+     * Arithmetic on two operands already in their locals, given the operator and their source
+     * texts : on a Babble instance, its operator method ; on anything else, Operators.
+     */
+    private void arithmetic(ParserRuleContext ctx, String operator, String leftText, String rightText, int left, int right) {
+        String method = switch (operator) {
+            case "*" -> "mul";
+            case "/" -> "div";
+            case "+" -> "add";
+            case "-" -> "sub";
+            default -> throw new IllegalStateException("Bad op : " + operator);
+        };
         Label numbers = new Label();
         Label end = new Label();
         mv.visitVarInsn(ALOAD, left);
         mv.visitTypeInsn(INSTANCEOF, RUNTIME + "BabbleInstance");
         mv.visitJumpInsn(IFEQ, numbers);
-        operatorCall(ctx, ctx.left, operatorMethod, ctx.right, left, right);
+        operatorCall(ctx, leftText, Operators.method(operator), rightText, left, right);
         mv.visitJumpInsn(GOTO, end);
         mv.visitLabel(numbers);
         mv.visitVarInsn(ALOAD, left);
         mv.visitVarInsn(ALOAD, right);
-        mv.visitFieldInsn(GETSTATIC, className, opSiteField(ctx), "L" + OP_SITE + ";");
+        mv.visitFieldInsn(GETSTATIC, className, opSiteField(leftText, rightText), "L" + OP_SITE + ";");
         line(ctx);
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Operators", method, "(Ljava/lang/Object;Ljava/lang/Object;L" + OP_SITE + ";)Ljava/lang/Object;", false);
         mv.visitLabel(end);
-        return null;
+    }
+
+    /**
+     * {@code x op= v}, with the target's current value already in its local : evaluates
+     * {@code v}, then leaves {@code x op v} on the stack.
+     */
+    private void compound(BabbleParser.AssignExpressionContext ctx, String operator, int current) {
+        int value = newLocal();
+        visit(ctx.value);
+        mv.visitVarInsn(ASTORE, value);
+        arithmetic(ctx, operator, Interpreter.targetText(ctx), ctx.value.getText(), current, value);
     }
 
     /**
@@ -1827,6 +1854,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
+        String operator = Operators.compound(ctx.op.getText());
+        if (operator != null) {
+            compoundAssignment(ctx, operator);
+            return null;
+        }
         String name = ctx.name.getText();
         if (ctx.namespace == null) {
             Resolution.Variable variable = resolution.variable(ctx);
@@ -1891,6 +1923,95 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         return null;
     }
 
+    /**
+     * {@code x op= v} : as {@code x = x op v}, reading the target before evaluating {@code v},
+     * with the receiver of {@code obj.x op= v} evaluated once. The value assigned is left on
+     * the stack.
+     */
+    private void compoundAssignment(BabbleParser.AssignExpressionContext ctx, String operator) {
+        String name = ctx.name.getText();
+        int current = newLocal();
+        if (ctx.namespace == null) {
+            Resolution.Variable variable = resolution.variable(ctx);
+            String declaredType = scopes.checkedType(ctx);
+            loadName(ctx, name);
+            mv.visitVarInsn(ASTORE, current);
+            compound(ctx, operator, current);
+            if (declaredType != null) {
+                line(ctx);
+                checkType(declaredType);
+            }
+            if (variable != null) {
+                storeVariable(variable, false, ctx);
+                return;
+            }
+            mv.visitVarInsn(ALOAD, nsLocal);
+            mv.visitInsn(SWAP);
+            mv.visitLdcInsn(name);
+            mv.visitInsn(SWAP);
+            line(ctx);
+            mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "assign", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
+            return;
+        }
+        if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
+            ClassGen gen = thisClassAt(ctx.namespace);
+            if (fieldIndex(gen, name) >= 0 && !gen.shape.isValue()) {
+                // A field of this compiled class : read, checked defined, then written directly.
+                loadThisAs(ctx.namespace, gen);
+                mv.visitFieldInsn(GETFIELD, gen.name, name, "Ljava/lang/Object;");
+                mv.visitLdcInsn(name);
+                line(ctx);
+                mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                mv.visitVarInsn(ASTORE, current);
+                compound(ctx, operator, current);
+                String declaredType = gen.shape.memberType(gen.shape.memberIndex(name));
+                if (declaredType != null) {
+                    line(ctx);
+                    checkType(declaredType);
+                }
+                loadThisAs(ctx.namespace, gen);
+                mv.visitInsn(SWAP);
+                mv.visitInsn(DUP_X1);
+                mv.visitFieldInsn(PUTFIELD, gen.name, name, "Ljava/lang/Object;");
+                return;
+            }
+            int thiz = newLocal();
+            visit(ctx.namespace);
+            mv.visitVarInsn(ASTORE, thiz);
+            mv.visitVarInsn(ALOAD, thiz);
+            mv.visitLdcInsn(name);
+            line(ctx);
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "selectOwn", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            mv.visitVarInsn(ASTORE, current);
+            compound(ctx, operator, current);
+            mv.visitVarInsn(ALOAD, thiz);
+            mv.visitInsn(SWAP);
+            mv.visitLdcInsn(name);
+            line(ctx);
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignOwn", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            return;
+        }
+        // The target is checked, then read, before the value is evaluated.
+        int scope = newLocal();
+        visit(ctx.namespace);
+        line(ctx);
+        pushString(mv, ctx.namespace.getText());
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignable", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitVarInsn(ASTORE, scope);
+        mv.visitVarInsn(ALOAD, scope);
+        mv.visitLdcInsn(name);
+        pushString(mv, ctx.namespace.getText());
+        line(ctx);
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitVarInsn(ASTORE, current);
+        compound(ctx, operator, current);
+        mv.visitVarInsn(ALOAD, scope);
+        mv.visitInsn(SWAP);
+        mv.visitLdcInsn(name);
+        line(ctx);
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assign", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+    }
+
     @Override
     public Void visitNull(BabbleParser.NullContext ctx) {
         mv.visitInsn(ACONST_NULL);
@@ -1924,7 +2045,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitVarInsn(ALOAD, operand);
         mv.visitTypeInsn(INSTANCEOF, RUNTIME + "BabbleInstance");
         mv.visitJumpInsn(IFEQ, number);
-        operatorCall(ctx, ctx.operand, Operators.NEGATE, null, operand, -1);
+        operatorCall(ctx, ctx.operand.getText(), Operators.NEGATE, null, operand, -1);
         mv.visitJumpInsn(GOTO, end);
         mv.visitLabel(number);
         mv.visitVarInsn(ALOAD, operand);
@@ -1940,8 +2061,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * through the same select and call sites and their fast paths, with the operands already
      * evaluated in their locals ({@code argument} -1 for {@code -a}, {@code a.neg()}).
      */
-    private void operatorCall(ParserRuleContext ctx, BabbleParser.ExpressionContext receiver, String method,
-                              BabbleParser.ExpressionContext argumentText, int receiverLocal, int argument) {
+    private void operatorCall(ParserRuleContext ctx, String receiver, String method,
+                              String argumentText, int receiverLocal, int argument) {
         CallSite site = Interpreter.operatorSite(ctx, receiver, method, argumentText, sourceName);
         String field = addConstant("CS", "L" + CALL_SITE + ";", 24 + estimateSize(site.argTexts()), m -> {
             m.visitTypeInsn(NEW, CALL_SITE);
@@ -1954,7 +2075,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         });
         mv.visitVarInsn(ALOAD, receiverLocal);
         line(ctx);
-        mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, method, receiver.getText());
+        mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, method, receiver);
         mv.visitFieldInsn(GETSTATIC, className, field, "L" + CALL_SITE + ";");
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
         mv.visitVarInsn(ALOAD, rtLocal);

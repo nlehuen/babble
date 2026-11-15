@@ -100,8 +100,8 @@ export def Camera = class (
         def sample: int = 0
         while sample < this.samplesPerPixel then (
             def r: Ray = this.getRay(i, j, rng)
-            pixelColor = pixelColor + this.rayColor(r, this.maxDepth, world, rng)
-            sample = sample + 1
+            pixelColor += this.rayColor(r, this.maxDepth, world, rng)
+            sample += 1
         )
         pixelColor * this.pixelSamplesScale
     )
@@ -116,9 +116,9 @@ export def Camera = class (
             while i < this.imageWidth then (
                 def pixelColor: Vec3 = this.renderPixel(i, j, world, rng)
                 println(Color.formatPpm(pixelColor), to: out)
-                i = i + 1
+                i += 1
             )
-            j = j + 1
+            j += 1
         )
     )
 )

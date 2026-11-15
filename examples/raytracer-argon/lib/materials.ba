@@ -69,7 +69,7 @@ export def Dielectric = class (def refractionIndex: double) implements Material 
     ;; Schlick's approximation for reflectance
     def reflectance = (cosine: double, refractionIndex: double): double -> (
         def r0: double = (1.0 - refractionIndex) / (1.0 + refractionIndex)
-        r0 = r0 * r0
+        r0 *= r0
         r0 + (1.0 - r0) * math.powInt(1.0 - cosine, 5)
     )
 )
