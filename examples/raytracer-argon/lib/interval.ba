@@ -23,9 +23,7 @@ export def Interval = value class (min: double, max: double) (
     def clamp = (x: double): double -> (
         if x < this.min then (
             this.min
-        ) else (
-            if x > this.max then (this.max) else (x)
-        )
+        ) else if x > this.max then (this.max) else (x)
     )
 
     def expand = (delta: double): Interval -> (

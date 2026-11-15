@@ -10,9 +10,7 @@ export def AABB = value class (x: Interval, y: Interval, z: Interval) (
     def centroid = (axis: int): double -> (
         if axis == 0 then (
             this.x.midpoint()
-        ) else (
-            if axis == 1 then (this.y.midpoint()) else (this.z.midpoint())
-        )
+        ) else if axis == 1 then (this.y.midpoint()) else (this.z.midpoint())
     )
 
     def center = (): Vec3 -> (
@@ -33,9 +31,7 @@ export def AABB = value class (x: Interval, y: Interval, z: Interval) (
         def sz: double = this.z.size()
         if sx >= sy and sx >= sz then (
             0
-        ) else (
-            if sy >= sz then (1) else (2)
-        )
+        ) else if sy >= sz then (1) else (2)
     )
 
     def hit = (r: Ray, rayT: Interval): bool -> (
