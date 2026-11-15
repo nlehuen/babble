@@ -96,8 +96,9 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
         throw new BabbleException("Cannot define anything in a Java class");
     }
 
+    /** Whether the class has a member of that name, as {@link #get} would find it ; never throws. */
     public boolean isDeclared(String key) {
-        return get(key) != null;
+        return members.containsKey(key) || fields.containsKey(key) || lookup(key) != null;
     }
 
     public Slot<Object> get(String key) {
@@ -186,6 +187,21 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
 
     /** A member's value, or a static field that isn't final, to read when selected. */
     private Object find(String key) {
+        Object found = lookup(key);
+        if (found == null) {
+            throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + key);
+        }
+        if (found instanceof Field field && Modifier.isStatic(field.getModifiers()) && Modifier.isFinal(field.getModifiers())) {
+            return read(field, null);
+        }
+        return found;
+    }
+
+    /**
+     * What a name is in the class, without reading anything : its public member class, a
+     * {@link JavaMethod}, or its field. Null if it has no such member.
+     */
+    private Object lookup(String key) {
         for (Class<?> memberClass : clazz.getClasses()) {
             if (memberClass.getSimpleName().equals(key) && Modifier.isPublic(memberClass.getModifiers())) {
                 return JavaClass.of(memberClass);
@@ -196,12 +212,7 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
                 return new JavaMethod(clazz, key);
             }
         }
-        Field field = field(clazz, key);
-        if (field != null) {
-            boolean constant = Modifier.isStatic(field.getModifiers()) && Modifier.isFinal(field.getModifiers());
-            return constant ? read(field, null) : field;
-        }
-        throw new BabbleException("No such name in " + clazz.getCanonicalName() + " : " + key);
+        return field(clazz, key);
     }
 
     /** A public field, static or not, declared or inherited, that Babble can reach. Null if none. */
