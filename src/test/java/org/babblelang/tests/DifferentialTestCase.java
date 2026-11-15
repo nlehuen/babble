@@ -136,6 +136,20 @@ public class DifferentialTestCase {
                 "if true then (1) else x",
                 "def s = java.lang.StringBuilder()\n  .append(\"a\")\n\n  .append(-1)\n  .toString()\ns",
                 "def o = object ( def v = 1 )\no\n  .v = 2\no.v",
+                // Operator methods : a + b is a.plus(b) on a Babble instance.
+                "def V = value class (x, y) ( def plus = (o) -> ( V(this.x + o.x, this.y + o.y) ) ; def minus = (o) -> ( V(this.x - o.x, this.y - o.y) )\n" + "  def times = (k) -> ( V(this.x * k, this.y * k) ) ; def div = (k) -> ( this * (1.0 / k) ) ; def neg = () -> ( V(-this.x, -this.y) ) )\ndef a = V(1, 2) ; def b = V(3, 5) ; \"\" + (a + b) + (a - b * 2) + -a + (a + b) / 2 + -(-a) + (\"<\" + a + \">\")",
+                "def V = value class (x, y) ( def plus = (o) -> ( V(this.x + o.x, this.y + o.y) ) ; def minus = (o) -> ( V(this.x - o.x, this.y - o.y) )\n" + "  def times = (k) -> ( V(this.x * k, this.y * k) ) ; def div = (k) -> ( this * (1.0 / k) ) ; def neg = () -> ( V(-this.x, -this.y) ) )\ndef i = 0 ; def s = V(0, 0) ; while i < 5 then ( s = s + V(i, 1) * 2 - V(1, 1) ; i = i + 1 ) ; s",
+                "def V = value class (x, y) ( def plus = (o) -> ( V(this.x + o.x, this.y + o.y) ) ; def minus = (o) -> ( V(this.x - o.x, this.y - o.y) )\n" + "  def times = (k) -> ( V(this.x * k, this.y * k) ) ; def div = (k) -> ( this * (1.0 / k) ) ; def neg = () -> ( V(-this.x, -this.y) ) )\ndef add = (p, q) -> ( p + q ) ; def i = 0 ; def s = \"\" ; while i < 4 then ( s = s + add(V(i, i), V(1, 1)) + add(i, 1) + add(\"x\", i) ; i = i + 1 ) ; s",
+                "def C = class (def n) ( def plus = (o) -> ( C(this.n + o) ) ; def get = () -> ( this.n ) ; def twice = () -> ( (this + this.n).get() ) ) ; (C(2) + 3).get() + C(5).twice()",
+                "def o = object ( def plus = (x) -> ( x * 10 ) ; def neg = () -> ( \"negated\" ) ) ; \"\" + (o + 4) + -o",
+                "def S = interface ( def n : int ; def plus = (o) -> ( this.n + o.n ) ) ; def A = class (def n) implements S () ; A(1) + A(2)",
+                "def P = class () () ; P() + 1",
+                "def f = (p) -> ( -p ) ; def P = class () () ; f(P())",
+                "def f = (p) -> ( 1 + p ) ; def P = class () ( def plus = (o) -> ( o ) ) ; f(P())",
+                "def f = (p) -> ( p + 1 ) ; def P = class () ( private def plus = (o) -> ( o ) ) ; f(P())",
+                "def f = (p) -> ( p * 2 ) ; def P = class () ( def times = 3 ) ; f(P())",
+                "def f = (p) -> ( p - 2 ) ; def P = class () ( def minus = (a, b) -> ( a ) ) ; f(P())",
+                "def f = (p) -> ( p / 2 ) ; def P = class () ( def div = (k) -> ( suppose(k > 2, \"too small\") ) ) ; f(P())",
                 // Java calls' fast paths : one site, called again and again, with arguments
                 // of kinds picking other overloads, receivers of other classes, and failures.
                 "def Demo = import(\"org\").babblelang.tests.JavaClassDemo\ndef d = Demo() ; def vs = java.util.ArrayList() ; vs.add(1) ; vs.add(\"a\") ; vs.add(1.5) ; vs.add(true) ; vs.add(null) ; vs.add(2) ; vs.add(\"b\") ; vs.add(java.lang.StringBuilder(\"w\"))\n"

@@ -32,6 +32,24 @@ public final class Operators {
         return number(a, site.leftText()).doubleValue() + number(b, site.rightText()).doubleValue();
     }
 
+    /** The method {@code -a} calls on a Babble instance : {@code a.neg()}. */
+    public static final String NEGATE = "neg";
+
+    /**
+     * The method an arithmetic operator calls when its left operand is a Babble instance :
+     * {@code a + b} is {@code a.plus(b)}, then {@code minus}, {@code times} and {@code div}.
+     * Null for the other operators.
+     */
+    public static String method(String operator) {
+        return switch (operator) {
+            case "+" -> "plus";
+            case "-" -> "minus";
+            case "*" -> "times";
+            case "/" -> "div";
+            default -> null;
+        };
+    }
+
     /**
      * {@code -a} : an int stays an int (wrapping, as {@code +} and {@code -} do), any other
      * number becomes a double.

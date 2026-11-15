@@ -15,6 +15,7 @@ import org.babblelang.runtime.BabbleInstance;
 import org.babblelang.runtime.BabbleInterface;
 import org.babblelang.runtime.BabbleType;
 import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.Calls;
 import org.babblelang.runtime.ClassBody;
 import org.babblelang.runtime.ClassShape;
@@ -364,6 +365,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object b = visit(ctx.right);
         last = ctx;
 
+        String method = Operators.method(ctx.op.getText());
+        if (method != null && a instanceof BabbleInstance) {
+            // An operator method : a + b is a.plus(b).
+            return operatorCall(a, method, ctx.left, ctx.right, b, ctx);
+        }
+
         OpSite site = opSites.get(ctx);
         if (site == null) {
             site = new OpSite(ctx.left.getText(), ctx.right.getText());
@@ -411,7 +418,29 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
         Object value = visit(ctx.operand);
         last = ctx;
+        if (value instanceof BabbleInstance) {
+            return operatorCall(value, Operators.NEGATE, ctx.operand, null, null, ctx);
+        }
         return Operators.negate(value, ctx.operand.getText());
+    }
+
+    /** {@code a.method(b)}, or {@code a.method()} without an argument, for an operator. */
+    private Object operatorCall(Object a, String method, BabbleParser.ExpressionContext receiver,
+                                BabbleParser.ExpressionContext argument, Object b, ParserRuleContext ctx) {
+        CallSite site = operatorSite(ctx, receiver, method, argument, sourceName);
+        Callable callable = Calls.callable(Members.select(a, method, receiver.getText()), site);
+        last = ctx;
+        return callable.call(runtime, argument == null ? Arguments.NONE : new Object[]{b}, null, site);
+    }
+
+    /**
+     * The call an operator on a Babble instance makes, for its messages : {@code a + b} is
+     * {@code a.plus(b)}.
+     */
+    public static CallSite operatorSite(ParserRuleContext ctx, BabbleParser.ExpressionContext receiver, String method,
+                                        BabbleParser.ExpressionContext argument, String sourceName) {
+        String[] argTexts = argument == null ? new String[0] : new String[]{argument.getText()};
+        return new CallSite(sourceName, ctx.getStart().getLine(), receiver.getText() + "." + method, argTexts);
     }
 
     @Override
