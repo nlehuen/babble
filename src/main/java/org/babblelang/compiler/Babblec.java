@@ -71,10 +71,30 @@ public final class Babblec {
                 files.put(file.getKey() + ".class", file.getValue());
             }
         }
-        ProgramIndex index = new ProgramIndex(modules.get(0).id().key(), entries);
+        ProgramIndex index = new ProgramIndex(modules.get(0).id().key(), relativeRoot(root, jar), entries);
         files.putAll(runtimeClasses());
         write(jar, index, files);
         return index;
+    }
+
+    /**
+     * The root seen from the jar's directory, for the modules the jar doesn't hold, compiled
+     * when Babble is on the class path : "." when the jar is next to the main script, as by
+     * default. None when there is no relative path between them.
+     */
+    private static String relativeRoot(Path root, Path jar) throws IOException {
+        Path directory = jar.toAbsolutePath().normalize().getParent();
+        if (directory == null) {
+            return null;
+        }
+        Files.createDirectories(directory);
+        try {
+            String relative = directory.toRealPath().relativize(root.toRealPath()).toString()
+                    .replace(directory.getFileSystem().getSeparator(), "/");
+            return relative.isEmpty() ? "." : relative;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private static void write(Path jar, ProgramIndex index, Map<String, byte[]> files) throws IOException {
