@@ -46,13 +46,11 @@ final class TypeChecks {
 
     private final BlockScopes pass;
     private final ScopeAnalysis analysis;
-    private final ScopeAnalysis.Typecheck typecheck;
     private final Set<ParserRuleContext> reassigned = new HashSet<>();
 
-    TypeChecks(BlockScopes pass, ScopeAnalysis.Typecheck typecheck) {
+    TypeChecks(BlockScopes pass) {
         this.pass = pass;
         this.analysis = pass.analysis;
-        this.typecheck = typecheck;
         if (pass.session != null) {
             reassigned.addAll(pass.session.reassigned);
         }
@@ -603,7 +601,7 @@ final class TypeChecks {
     /**
      * {@code m.x} on a module known statically : a missing export, or an assignment to one,
      * is bound to fail at runtime. Like the type checker's bound-to-fail diagnostics, it is
-     * a warning, and an error in error mode (docs/design/modules.md §8.1).
+     * an error (docs/design/modules.md §8.1).
      */
     private void checkExport(BlockScopes.PendingAccess access, ModuleInterface module) {
         String member = access.member();
@@ -617,11 +615,7 @@ final class TypeChecks {
         }
         org.antlr.v4.runtime.Token token = access.ctx() instanceof BabbleParser.SelectorContext selector ? selector.ID().getSymbol()
                 : ((BabbleParser.AssignExpressionContext) access.ctx()).name;
-        if (typecheck == ScopeAnalysis.Typecheck.ERROR) {
-            analysis.typeDiagnostic(message, token.getLine(), token.getCharPositionInLine() + 1);
-        } else {
-            analysis.warn(message, token.getLine(), token.getCharPositionInLine() + 1);
-        }
+        analysis.typeDiagnostic(message, token.getLine(), token.getCharPositionInLine() + 1);
     }
 
     /** What {@code this.x} can reach in a default method : the interface's own members, inherited ones included. */

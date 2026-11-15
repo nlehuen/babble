@@ -52,14 +52,6 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      */
     public static final String MODE = "babble.mode";
 
-    /**
-     * The name of the system property, and of the engine attribute, that turns the type
-     * checker on : {@code off} (the default) ; {@code warn}, which reports its diagnostics
-     * to the context's error writer ; or {@code error}, which fails the compilation on them
-     * and checks declared types at runtime (T9). The attribute wins.
-     */
-    public static final String TYPECHECK = "babble.typecheck";
-
     /** How a script is run : by the tree-walking interpreter, or as JVM bytecode. */
     public enum Mode {
         INTERPRET, COMPILE;
@@ -102,11 +94,11 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private final Namespace implicits;
 
     /**
-     * A compiled module, as the cache keeps it (docs/design/modules.md §9) : for the source,
-     * mode and typecheck setting it was compiled with, and the versions of every module its
-     * analysis read, its own included. It is stale when one of them changed.
+     * A compiled module, as the cache keeps it (docs/design/modules.md §9) : for the source
+     * and mode it was compiled with, and the versions of every module its analysis read, its
+     * own included. It is stale when one of them changed.
      */
-    private record CompiledModule(ModuleSource source, Mode mode, ScopeAnalysis.Typecheck typecheck, Map<ModuleId, String> versions,
+    private record CompiledModule(ModuleSource source, Mode mode, Map<ModuleId, String> versions,
                                   BabbleScript script, ModuleInterface moduleInterface) {
     }
 
@@ -147,21 +139,6 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             mode = System.getProperty(MODE);
         }
         return mode == null ? Mode.COMPILE : Mode.parse(mode);
-    }
-
-    /** What {@link #compile} does with types : the {@link #TYPECHECK} attribute, else the system property. */
-    public ScopeAnalysis.Typecheck getTypecheck() {
-        Object value = get(TYPECHECK);
-        if (value == null) {
-            value = System.getProperty(TYPECHECK);
-        }
-        String setting = value == null ? "off" : String.valueOf(value).trim().toLowerCase(Locale.ROOT);
-        return switch (setting) {
-            case "off" -> ScopeAnalysis.Typecheck.OFF;
-            case "warn" -> ScopeAnalysis.Typecheck.WARN;
-            case "error" -> ScopeAnalysis.Typecheck.ERROR;
-            default -> throw new BabbleException("Unknown " + TYPECHECK + " : " + value + " (expected off, warn or error)");
-        };
     }
 
     /**
@@ -296,14 +273,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private CompiledModule compiledModule(ModuleSource source, String name, ModuleId id, ScriptContext context) throws ScriptException {
         synchronized (moduleLock) {
             Mode mode = getMode();
-            ScopeAnalysis.Typecheck typecheck;
-            try {
-                typecheck = getTypecheck();
-            } catch (BabbleException e) {
-                throw new ScriptException(e);
-            }
             CompiledModule cached = moduleCache.get(id.key());
-            if (cached != null && cached.source() == source && cached.mode() == mode && cached.typecheck() == typecheck && isFresh(cached)) {
+            if (cached != null && cached.source() == source && cached.mode() == mode && isFresh(cached)) {
                 return cached;
             }
             ModuleText text;
@@ -328,7 +299,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 inProgress.remove(id.key());
             }
             loader.versions.put(id, text.version());
-            CompiledModule module = new CompiledModule(source, mode, typecheck, Map.copyOf(loader.versions),
+            CompiledModule module = new CompiledModule(source, mode, Map.copyOf(loader.versions),
                     script(file, scopes, sourceName, id), scopes.moduleInterface());
             moduleCache.put(id.key(), module);
             return module;
@@ -341,9 +312,9 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     /**
      * Compiles a program ahead of time (docs/design/module-sources-and-aot.md §5) : its main
-     * script, as a module of the source, and every module it imports statically, transitively,
-     * in this engine's typecheck setting. The main module comes first, the others by key.
-     * Modules it only imports dynamically are not compiled.
+     * script, as a module of the source, and every module it imports statically, transitively.
+     * The main module comes first, the others by key. Modules it only imports dynamically
+     * are not compiled.
      */
     public List<ProgramModule> compileProgram(ModuleSource source, String mainName) throws ScriptException {
         if (getMode() != Mode.COMPILE) {
@@ -446,25 +417,24 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * The analysis warnings go to the context's error writer, before anything runs, and so
-     * do the type checker's diagnostics : as warnings, or in error mode, as errors.
+     * The analysis warnings go to the context's error writer before anything runs, and so
+     * do the type checker's diagnostics, as errors.
      */
-    private static void report(ScopeAnalysis scopes, ScopeAnalysis.Typecheck typecheck, String sourceName, ScriptContext context) {
+    private static void report(ScopeAnalysis scopes, String sourceName, ScriptContext context) {
         Writer errors = context.getErrorWriter();
         if (errors == null || scopes.warnings().isEmpty() && scopes.typeDiagnostics().isEmpty()) {
             return;
         }
-        String typeLabel = typecheck == ScopeAnalysis.Typecheck.ERROR ? "Error" : "Warning";
         try {
             for (ScopeAnalysis.Warning warning : scopes.warnings()) {
                 errors.write(line("Warning", warning, sourceName));
             }
             for (ScopeAnalysis.Warning diagnostic : scopes.typeDiagnostics()) {
-                errors.write(line(typeLabel, diagnostic, sourceName));
+                errors.write(line("Error", diagnostic, sourceName));
             }
             errors.flush();
         } catch (IOException e) {
-            // Warnings that cannot be written are not worth failing the compilation for.
+            // Diagnostics that cannot be written are not worth failing the compilation for.
         }
     }
 
@@ -588,22 +558,20 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private ScopeAnalysis analyze(BabbleParser.FileContext file, String sourceName, ScriptContext context, AnalysisSession session,
                                   Loader loader) throws ScriptException {
         ScopeAnalysis scopes;
-        ScopeAnalysis.Typecheck typecheck;
         ModuleSource source;
         try {
-            typecheck = getTypecheck();
             source = getModuleSource();
         } catch (BabbleException e) {
             throw new ScriptException(e);
         }
         try {
-            scopes = BlockScopes.analyze(file, typecheck, session, loader != null ? loader : new Loader(sourceName, context, source, null, null));
+            scopes = BlockScopes.analyze(file, session, loader != null ? loader : new Loader(sourceName, context, source, null, null));
         } catch (AnalysisException e) {
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());
         }
-        report(scopes, typecheck, sourceName, context);
-        if (typecheck == ScopeAnalysis.Typecheck.ERROR && !scopes.typeDiagnostics().isEmpty()) {
+        report(scopes, sourceName, context);
+        if (!scopes.typeDiagnostics().isEmpty()) {
             // Every diagnostic went to the error writer ; the first one fails the compilation.
             ScopeAnalysis.Warning first = scopes.typeDiagnostics().get(0);
             throw new TypeCheckException(new BabbleException(first.message()).toString(), sourceName, first.line(), first.column());

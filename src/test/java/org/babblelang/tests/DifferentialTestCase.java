@@ -129,18 +129,10 @@ public class DifferentialTestCase {
         return run(mode, script, null);
     }
 
-    /** @param typecheck the type checker setting, or null for the default */
-    private static Outcome run(String mode, String script, String typecheck) {
-        return run(mode, script, typecheck, null);
-    }
-
     /** @param file the name of the script's file, which its relative imports are resolved against, or null */
-    private static Outcome run(String mode, String script, String typecheck, String file) {
+    private static Outcome run(String mode, String script, String file) {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
-        if (typecheck != null) {
-            engine.put(BabbleScriptEngine.TYPECHECK, typecheck);
-        }
         ScriptContext context = new SimpleScriptContext();
         context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
         context.setAttribute("assert", new AssertFunction(), ScriptContext.ENGINE_SCOPE);
@@ -177,17 +169,9 @@ public class DifferentialTestCase {
         Assertions.assertEquals(interpreted, compiled, script);
     }
 
-    /** In error mode, with declared types checked at runtime (T9). */
-    private static Outcome assertSameTypedOutcome(String script) {
-        Outcome interpreted = run("interpret", script, "error");
-        Outcome compiled = run("compile", script, "error");
-        Assertions.assertEquals(interpreted, compiled, script);
-        return interpreted;
-    }
-
     /**
-     * Error mode : dynamic values reaching declared types, and the conversions and
-     * acceptances that must not fail.
+     * Declared types checked at runtime (T9) : dynamic values reaching declared types,
+     * and the conversions and acceptances that must not fail.
      */
     static List<String> typedSnippets() {
         String id = "def id = (x) -> ( x )\n";
@@ -224,8 +208,8 @@ public class DifferentialTestCase {
     @MethodSource("files")
     public void testFile(String file) throws Exception {
         String script = Files.readString(Path.of(file));
-        Outcome interpreted = run("interpret", script, null, file);
-        Assertions.assertEquals(interpreted, run("compile", script, null, file), file);
+        Outcome interpreted = run("interpret", script, file);
+        Assertions.assertEquals(interpreted, run("compile", script, file), file);
         Assertions.assertNull(interpreted.error(), file);
     }
 
@@ -238,16 +222,6 @@ public class DifferentialTestCase {
     @ParameterizedTest(name = "{0}")
     @MethodSource("typedSnippets")
     public void testTypedSnippet(String snippet) {
-        assertSameTypedOutcome(snippet);
-    }
-
-    /** The in-repo scripts pass the type checker in error mode, and run with their types enforced. */
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("files")
-    public void testFileWithTypesEnforced(String file) throws Exception {
-        String script = Files.readString(Path.of(file));
-        Outcome outcome = run("interpret", script, "error", file);
-        Assertions.assertEquals(outcome, run("compile", script, "error", file), file);
-        Assertions.assertNull(outcome.error(), file);
+        assertSameOutcome(snippet);
     }
 }

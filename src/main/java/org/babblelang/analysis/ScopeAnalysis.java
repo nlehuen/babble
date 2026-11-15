@@ -32,14 +32,6 @@ public final class ScopeAnalysis {
     public record DefTarget(DefKind kind, int index) {
     }
 
-    /**
-     * What the type checker does (docs/design/type-system.md) : nothing, report its
-     * diagnostics as warnings, or fail on them and check declared types at runtime (T9).
-     */
-    public enum Typecheck {
-        OFF, WARN, ERROR
-    }
-
     /** A warning, at a line, and at a column (from 1) when it has one, else -1. */
     public record Warning(String message, int line, int column) {
     }
@@ -136,18 +128,16 @@ public final class ScopeAnalysis {
     }
 
     /**
-     * The type checker's diagnostics : warnings in {@code warn} mode, errors in
-     * {@code error} mode.
+     * The type checker's diagnostics, reported as errors before execution.
      */
     public List<Warning> typeDiagnostics() {
         return typeDiagnostics;
     }
 
     /**
-     * In {@code error} mode, the declared type to check at runtime (a {@code Types}
-     * descriptor), or null for none : for a parameter declaration, the argument ; for a
-     * function literal, its result ; for a def, its value ; for an unqualified assignment,
-     * the value assigned.
+     * The declared type to check at runtime (a {@code Types} descriptor), or null for
+     * none : for a parameter declaration, the argument ; for a function literal, its
+     * result ; for a def, its value ; for an unqualified assignment, the value assigned.
      */
     public String checkedType(ParserRuleContext ctx) {
         return checkedTypes.get(ctx);

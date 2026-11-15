@@ -19,7 +19,7 @@ import java.util.Set;
  * analysed against.
  * <p>
  * An input is analysed with {@link BlockScopes#analyze(org.babblelang.parser.BabbleParser.FileContext,
- * ScopeAnalysis.Typecheck, AnalysisSession)}, then {@link #commit committed} if it is
+ * ScopeAnalysis)}, then {@link #commit committed} if it is
  * going to run.
  */
 public final class AnalysisSession {

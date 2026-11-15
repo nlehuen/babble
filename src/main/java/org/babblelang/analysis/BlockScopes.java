@@ -96,16 +96,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     public static ScopeAnalysis analyze(BabbleParser.FileContext file) {
-        return analyze(file, ScopeAnalysis.Typecheck.OFF);
-    }
-
-    /** With the type checker in warn mode, or off. */
-    public static ScopeAnalysis analyze(BabbleParser.FileContext file, boolean typecheck) {
-        return analyze(file, typecheck ? ScopeAnalysis.Typecheck.WARN : ScopeAnalysis.Typecheck.OFF);
-    }
-
-    public static ScopeAnalysis analyze(BabbleParser.FileContext file, ScopeAnalysis.Typecheck typecheck) {
-        return analyze(file, typecheck, null);
+        return analyze(file, null);
     }
 
     /**
@@ -113,16 +104,15 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
      *                it sees the definitions of, or null. The session only changes when
      *                the result is {@link AnalysisSession#commit committed}.
      */
-    public static ScopeAnalysis analyze(BabbleParser.FileContext file, ScopeAnalysis.Typecheck typecheck, AnalysisSession session) {
-        return analyze(file, typecheck, session, null);
+    public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session) {
+        return analyze(file, session, null);
     }
 
     /**
      * @param loader what loads the files the file imports statically, or null to leave
      *               every import to runtime
      */
-    public static ScopeAnalysis analyze(BabbleParser.FileContext file, ScopeAnalysis.Typecheck typecheck, AnalysisSession session,
-                                        ModuleLoader loader) {
+    public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session, ModuleLoader loader) {
         BlockScopes pass = new BlockScopes(session);
         pass.moduleKey = loader != null ? loader.moduleKey() : null;
         pass.analysis.setPass(pass);
@@ -138,24 +128,17 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 }
             }
         }
-        TypeChecks checks = new TypeChecks(pass, typecheck);
+        TypeChecks checks = new TypeChecks(pass);
         checks.run();
         self.complete(checks);
         pass.analysis.setModuleInterface(self);
         pass.analysis.setResolution(new Resolver(pass).run());
-        if (typecheck != ScopeAnalysis.Typecheck.OFF) {
-            try {
-                TypeChecker checker = new TypeChecker(pass, typecheck == ScopeAnalysis.Typecheck.ERROR);
-                checker.run(file);
-                self.typed(checker);
-            } catch (RuntimeException e) {
-                // The checker never stops a script that would otherwise run.
-                pass.analysis.warn("The type checker failed : " + e, file.getStart().getLine());
-            }
-            // The shapes now carry the declared types of members and statics.
-            for (TypeNode type : pass.types) {
-                pass.analysis.setShape(type.ctx, type.shape());
-            }
+        TypeChecker checker = new TypeChecker(pass);
+        checker.run(file);
+        self.typed(checker);
+        // The shapes now carry the declared types of members and statics.
+        for (TypeNode type : pass.types) {
+            pass.analysis.setShape(type.ctx, type.shape());
         }
         return pass.analysis;
     }

@@ -32,7 +32,7 @@ not have ?
 1. Compile every script of `src/test/babble/`, both ray tracers, and everything the test suite
    compiles, with `-Dbabble.dumpClasses` : 1 104 generated classes in all, which exercise the
    whole language (closures, classes, interfaces, value classes, modules, Java interop, typed
-   code in error mode).
+   code with runtime checks).
 2. `jdeps -filter:none -verbose:class` on those classes : the Babble and JDK classes they
    reference directly. (`-filter:none` matters : by default `jdeps` hides dependencies within a
    package, and a first count without it missed half the runtime.)
@@ -75,7 +75,7 @@ infrastructure :
 | Inline caches | `Bootstrap` and its call sites | the `invokedynamic` bootstraps generated code links against |
 | Functions | `BabbleFunction`, `CompiledFunction`, `FunctionBody`, `BoundMethod`, `Cell` | function values, closures' captured cells, methods bound to receivers |
 | Object model | `BabbleClass`, `BabbleInstance`, `BabbleInterface`, `BabbleType`, `ClassShape`, `Classes`, `Supers`, `Members`, `HasMembers`, `CompiledMethod`, `ClassBody`, `MethodBody`, `InstanceFactory` | classes as values, interfaces with defaults, value classes, privacy, `super` |
-| Types | `Types` | the runtime checks of error mode, from string descriptors |
+| Types | `Types` | runtime boundary type checks, from string descriptors |
 | Java interop | `JavaPackage`, `JavaClass`, `JavaMethod`, `BoundJavaMethod`, `JavaObject`, `JavaType`, `JavaValue`, `JavaDefaultCall`, `Overloads`, `JavaTypes`, `Faces` | Babble's overload resolution, functions as functional interfaces, instances as Java interfaces |
 | Scopes and errors | `Namespace`, `Scope`, `Slot`, `BabbleException` | the file scope and packages, which compiled code keeps as namespaces ; the language's errors |
 | Modules | `Module`, `ScriptRuntime` | the module value, and the per-eval state |
@@ -217,8 +217,8 @@ java -jar argon.jar > scene.ppm
 `-compile main.ba [-o app.jar] [-root dir]` : the jar defaults to `main.jar` next to the script,
 the root (of `FileModuleSource.rooted`, so of module keys and display names) to the script's
 directory ; imports may not leave the root. It prints `Wrote app.jar : N modules` and exits with
-0, or 1 when the program does not compile (a syntax, import or analysis error ; type
-diagnostics in error mode), 2 for a bad command line. The API is `compiler.Babblec.compile(main,
+0, or 1 when the program does not compile (a syntax, import, analysis, or type error),
+2 for a bad command line. The API is `compiler.Babblec.compile(main,
 root, jar, context)`, over `BabbleScriptEngine.compileProgram(source, mainName)`, which compiles
 a program through the engine's module cache and returns its modules (`ProgramModule` : id,
 exports, compiled script), the main one first.
@@ -257,7 +257,7 @@ classes live and die with one run, not in a jar.
   file (anonymous ones are named `class`, `object` or `interface`). The name rather than the
   index the first draft proposed : with an index, a class inserted earlier would change every
   id after it, and a different class taking a slot would pass the checks meant for the old
-  one. Ids are embedded in class shapes and in the descriptors of error mode, so classes
+  one. Ids are embedded in class shapes and in type descriptors, so classes
   compiled separately must agree on them. The engine uses the same scheme : a module changed
   after a script was compiled keeps its classes' identity (modules.md §8.2), and a type error
   between two classes of one name gives both ids. Scripts that are not modules keep `T17`.
@@ -297,7 +297,7 @@ render takes 60 s from its jar against 68 s through the engine, with the same `s
   module's script class, display name and exports, which the launcher runs as it runs the
   jar's. The full Babble jar provides one, `compiler.FileModuleCompiler` (registered in
   `META-INF/services`, which the runtime jar and a program's jar don't have) : an engine per
-  root, in compile mode with `babble.typecheck` from the system property, compiling through
+  root, in compile mode, compiling through
   `compileProgram` and a `FileModuleSource.rooted(root)`. So with Babble on the class path,
 
   ```
@@ -318,9 +318,9 @@ render takes 60 s from its jar against 68 s through the engine, with the same `s
 
 ### 5.5 Types
 
-`babblec` analyses with the engine's `babble.typecheck` setting (`off` by default ; Q6). In error
-mode, the runtime checks are already in the classes, as descriptors : nothing of the analysis is
-needed at runtime. A type error found by the analysis fails the compilation, as `compile()` does.
+`babblec` always runs type checking and fails compilation on any type error, as `compile()` does.
+Runtime checks are already in the classes, as descriptors : nothing of the analysis is needed at
+runtime.
 
 ### 5.6 What is not compiled ahead of time
 
@@ -398,8 +398,8 @@ Decided : in both. One scheme is simpler to test, and the engine's stale-module 
 rarer.
 
 **Q6. `babblec`'s type checking : the engine's setting, or error mode by default ?**
-Decided : the engine's setting, off by default, like every other entry point. A program
-built for distribution can pass `-Dbabble.typecheck=error`.
+Superseded : optional typecheck modes were removed. Type checking is always enforced across every
+entry point, including `babblec`.
 
 **Q7. What `ModuleSource` gets : the name as written, or a path already resolved ?**
 Decided : the name as written, and the importer's identity. Resolution is part of where

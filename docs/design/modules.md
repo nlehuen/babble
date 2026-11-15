@@ -234,9 +234,8 @@ parsing and analysing the imported file, which in turn may have static imports.
   `Cannot import shapes.ba : no such file`. So is a file that does not parse or fails its own
   analysis, reported with its own file and line.
 * For `def shapes = import("shapes.ba")` where `shapes` is never reassigned, `shapes.nope` is
-  reported like a missing member : `No such export : nope in shapes.ba`. It is a warning with
-  the checker off or in `warn` mode, like the "bound to fail" diagnostics of type-system.md §4,
-  and an error in `error` mode. The same goes for `m.x = v` : `Cannot assign to an export : x`. The receiver is known to be
+  reported like a missing member : `No such export : nope in shapes.ba`, as a static type error
+  like the "bound to fail" diagnostics of type-system.md §4. The same goes for `m.x = v` : `Cannot assign to an export : x`. The receiver is known to be
   a module when it is a static import, a never-reassigned def holding one, or an export of
   such a module that holds one in turn.
 * `implements`, `extends` and `super(I)` accept an interface exported by a statically imported
@@ -270,7 +269,7 @@ New type : `Type.Module(interface)`, with the exports as members.
   `def Circle = shapes.Circle`, `def c : Circle`. Both name the nominal type of the class
   expression in `shapes.ba`. Nominal identity is by class expression, and a file runs once per
   eval, so the static type and the runtime class agree.
-* In `error` mode the runtime check of such an annotation uses the class's id, which is unique
+* The runtime check of such an annotation uses the class's id, which is unique
   per class expression in the JVM (type-system.md §5). The descriptor of the importing file
   therefore needs the id that the imported file's compilation gave the class, which is one more
   reason to cache compilations per engine (§9).
@@ -319,7 +318,7 @@ single file did (60 s and 67 s, on the same machine).
 Compiling a file is much more expensive than running most of them, and a host that evals a
 script repeatedly would recompile its modules every time. The engine keeps a cache :
 
-* key : real path ; validity : the mode and typecheck setting, and the content of every file
+* key : real path ; validity : the execution mode, and the content of every file
   the analysis read : the file itself and, transitively, the files it imports statically ;
 * value : the compiled script (either mode) and its interface ;
 * so invalidation follows dependencies : a file implementing an interface of another is
@@ -346,7 +345,7 @@ eval.
   The `ScriptException`'s file name and line number are those of the main script, since that is
   the script the host evaluated.
 * Analysis warnings and type diagnostics of a module go to the error writer with the module's
-  file name. In `error` mode a diagnostic in a module fails the compilation of the script that
+  file name. A type diagnostic in a module fails the compilation of the script that
   statically imports it.
 
 ## 11. Host API and ahead-of-time compilation
@@ -370,7 +369,7 @@ eval.
 |---|---|---|
 | **M1** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
 | **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | Done, with tests in both modes and in sessions. |
-| **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks in `error` mode (§8.2). | Done, with tests in both modes. |
+| **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks (§8.2). | Done, with tests in both modes. |
 | **M4** | Module sources for hosts (§11). Designed with M5 in [module-sources-and-aot.md](module-sources-and-aot.md). | Done (M4a, M4b). |
 | **M5** | AOT : a jar closed over static imports. Designed in [module-sources-and-aot.md](module-sources-and-aot.md). | Done (M5a to M5c) : `-compile`. |
 
@@ -379,8 +378,8 @@ and `examples/raytracer-argon`, were split into files after M1 as the acceptance
 feature, each interface sharing a file with the classes implementing it. After M2 they no
 longer have to : the fable one has the files of the book (`hittable.ba`, `sphere.ba`,
 `hittable_list.ba`, …), and the argon one separates its interfaces, materials and hittables.
-The argon one is typed throughout : after M3 its types hold across its files, and it checks
-cleanly in `error` mode, with its runtime checks. The fable one is not typed : annotating it is
+The argon one is typed throughout : after M3 its types hold across its files, and it passes
+type checking cleanly, with its runtime checks. The fable one is dynamic : annotating it is
 left as an exercise.
 
 ## 13. Decisions
@@ -429,17 +428,17 @@ what the first did to its modules, which no other part of the engine does.
 * `BabbleModulesTestCase` : files written to a temporary directory, one behaviour per test :
   visibility, read-only exports, once per eval, relative paths, imports inside functions,
   cycles, early reads in cycles, error wording, failed loads, misplaced `export`, exported
-  packages and classes, the type checker's settings, Java packages still imported.
+  packages and classes, static type checks, Java packages still imported.
 * `src/test/babble/Modules.ba` and `src/test/babble/modules/` : run by `ScriptTestCase` and
-  by `DifferentialTestCase` in both modes, with and without enforced types.
+  by `DifferentialTestCase` in both modes, with enforced types.
 * M2 adds, to `BabbleModulesTestCase` : missing and broken files found before running, dynamic
   imports still resolved at runtime, classes, objects and interfaces implementing or extending
   imported interfaces (through defs, re-exports and exported packages), `super(I)` with an
   imported qualifier, unexported and cyclic interfaces rejected, missing exports and assignments
-  to exports as warnings and as errors in `error` mode, a script's own `import`, and the cache :
+  to exports as errors, a script's own `import`, and the cache :
   one analysis per file until it or a dependency changes. `ReplTestCase` checks static imports
   across the inputs of a session.
 * M3 adds, to `BabbleModulesTestCase`, golden tests of type diagnostics across files (exports'
   types, imported classes' constructors, members and methods, imported classes and interfaces as
-  types, re-exports, cycles), and runtime checks of imported types in `error` mode, in both
+  types, re-exports, cycles), and runtime checks of imported types, in both execution
   modes.

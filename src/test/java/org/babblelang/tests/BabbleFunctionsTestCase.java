@@ -27,7 +27,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
             Assertions.assertEquals("ba", interpret("def add = (a, b) -> ( a + b ) ; add(b:\"a\")"));
             Assertions.fail("Should report missing parameter");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : a in <input> at line number 1", e.getMessage());
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : a in <input> at line number 1 at column number 33", e.getMessage());
         }
     }
 
@@ -52,7 +52,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
             Assertions.assertEquals("ba", interpret("def add = (a=\"b\", b) -> ( a + b ) ; add(a:\"a\")"));
             Assertions.fail("Should report \"Missing parameter : b\"");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : b in <input> at line number 1", e.getMessage());
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : b in <input> at line number 1 at column number 37", e.getMessage());
         }
     }
 
@@ -139,12 +139,12 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     public void testBindingErrorsAreReportedAtTheCall() {
         ScriptException missing = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = (a) -> (\n  a\n)\n\nf()"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : a in <input> at line number 5", missing.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : a in <input> at line number 5 at column number 1", missing.getMessage());
 
         // Even after a default value on another line was evaluated.
         ScriptException leftover = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = (a,\n b = 1 +\n 1) -> (\n  a\n)\n\nf(1, c: 2)"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such parameter : c in <input> at line number 7", leftover.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such parameter : c in <input> at line number 7 at column number 1", leftover.getMessage());
 
         // An error inside a default value is reported where it is.
         ScriptException inDefault = Assertions.assertThrows(ScriptException.class,
@@ -161,14 +161,14 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
 
         ScriptException deeper = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = (a) -> (\n  def b = 1\n  b.x\n)\n\nf(1)"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a scope : b in <input> at line number 3", deeper.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a scope : b in <input> at line number 3 at column number 3", deeper.getMessage());
     }
 
     @Test
     public void testNamedArgumentsUseUpTheirPosition() {
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = (a, b) -> ( a ) ; f(1, a: 2)"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : b in <input> at line number 1", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : b in <input> at line number 1 at column number 27", e.getMessage());
     }
 
     @Test
@@ -214,31 +214,31 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     public void testUnknownNamedParameter() {
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = (a) -> ( a ) ; f(a:1, zzz:99)"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such parameter : zzz in <input> at line number 1", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such parameter : zzz in <input> at line number 1 at column number 24", e.getMessage());
 
         // A typo is most dangerous when the real parameter has a default : the call
         // used to succeed quietly, using the default and dropping the supplied value.
         ScriptException typo = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = (verbose = false) -> ( verbose ) ; f(verbsoe:true)"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such parameter : verbsoe in <input> at line number 1", typo.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such parameter : verbsoe in <input> at line number 1 at column number 44", typo.getMessage());
     }
 
     @Test
     public void testSeveralUnknownNamedParameters() {
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = (a) -> ( a ) ; f(a:1, yyy:2, zzz:3)"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such parameter : yyy, zzz in <input> at line number 1", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such parameter : yyy, zzz in <input> at line number 1 at column number 24", e.getMessage());
     }
 
     @Test
     public void testTooManyPositionalParameters() {
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = (a) -> ( a ) ; f(1, 2)"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Too many parameters : 1 declared, 2 given in <input> at line number 1", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Too many parameters : 1 declared, 2 given in <input> at line number 1 at column number 24", e.getMessage());
 
         ScriptException none = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = () -> ( 1 ) ; f(1)"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Too many parameters : 0 declared, 1 given in <input> at line number 1", none.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Too many parameters : 0 declared, 1 given in <input> at line number 1 at column number 23", none.getMessage());
     }
 
     @Test

@@ -22,9 +22,8 @@ import java.util.List;
  * it runs interpreted, then compiled.
  */
 public class ReplTestCase {
-    private static BabbleSession session(String typecheck, StringWriter output) {
+    private static BabbleSession session(StringWriter output) {
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        engine.put(BabbleScriptEngine.TYPECHECK, typecheck);
         ScriptContext context = new SimpleScriptContext();
         context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
         context.setWriter(output);
@@ -33,7 +32,7 @@ public class ReplTestCase {
     }
 
     private static BabbleSession session() {
-        return session("off", new StringWriter());
+        return session(new StringWriter());
     }
 
     private static void assertFails(BabbleSession session, String input, String message) {
@@ -42,15 +41,11 @@ public class ReplTestCase {
     }
 
     /** What the loop prints for these lines, without prompts. */
-    private static List<String> typedTranscript(String typecheck, String... lines) throws Exception {
+    private static List<String> transcript(String... lines) throws Exception {
         StringWriter output = new StringWriter();
         PrintWriter out = new PrintWriter(output);
-        new Repl(session(typecheck, output), new BufferedReader(new StringReader(String.join("\n", lines))), out, false).run();
+        new Repl(session(output), new BufferedReader(new StringReader(String.join("\n", lines))), out, false).run();
         return output.toString().isEmpty() ? List.of() : List.of(output.toString().split("\\R"));
-    }
-
-    private static List<String> transcript(String... lines) throws Exception {
-        return typedTranscript("off", lines);
     }
 
     // ---------------------------------------------------------------- sessions
@@ -62,7 +57,7 @@ public class ReplTestCase {
         java.nio.file.Files.writeString(counter, "println(\"loading\")\ndef n = 0\nexport def next = () -> ( n = n + 1 )");
         String path = counter.toString().replace("\\", "\\\\");
         StringWriter output = new StringWriter();
-        BabbleSession session = session("off", output);
+        BabbleSession session = session(output);
         session.eval("import(\"" + path + "\").next()");
         Assertions.assertEquals(2, session.eval("import(\"" + path + "\").next()"));
         Assertions.assertEquals("loading" + System.lineSeparator(), output.toString());
@@ -74,12 +69,12 @@ public class ReplTestCase {
         java.nio.file.Path shapes = directory.resolve("shapes.ba");
         java.nio.file.Files.writeString(shapes, "export def Shape = interface ( def area : () : double ; def describe = () -> ( \"area \" + this.area() ) )");
         StringWriter errors = new StringWriter();
-        BabbleSession session = session("off", errors);
+        BabbleSession session = session(errors);
         session.eval("def shapes = import(\"" + shapes.toString().replace("\\", "\\\\") + "\")");
         session.eval("def Square = class () implements shapes.Shape ( def area = () -> ( 4 ) )");
         Assertions.assertEquals("area 4", session.eval("Square().describe()"));
         assertFails(session, "shapes.nope", "No such export : nope");
-        Assertions.assertTrue(errors.toString().contains("Warning : No such export : nope"), errors.toString());
+        Assertions.assertTrue(errors.toString().contains("Error : No such export : nope"), errors.toString());
     }
 
     @Test
@@ -166,25 +161,24 @@ public class ReplTestCase {
     // ---------------------------------------------------------------- the type checker
 
     @Test
-    public void testWarningsAreForTheInputBeingTyped() throws Exception {
+    public void testDiagnosticsAreForTheInputBeingTyped() throws Exception {
         StringWriter output = new StringWriter();
-        BabbleSession session = session("warn", output);
+        BabbleSession session = session(output);
         session.eval("def f = (n : int) : int -> ( n )");
-        session.eval("def a : int = \"s\"");
-        Assertions.assertEquals("Warning : Type error : expected int, got string in <input> at line number 1, column 15" + System.lineSeparator(), output.toString());
+        assertFails(session, "def a : int = \"s\"", "Type error : expected int, got string");
+        Assertions.assertEquals("Error : Type error : expected int, got string in <input> at line number 1, column 15" + System.lineSeparator(), output.toString());
         output.getBuffer().setLength(0);
-        // Using the earlier definitions doesn't report them again.
-        session.eval("a ; f(1)");
+        // Valid inputs after a failed one carry no earlier diagnostics.
+        Assertions.assertEquals(1, session.eval("f(1)"));
         Assertions.assertEquals("", output.toString());
-        session.eval("f(\"s\")");
-        session.eval("def s : string = f(2)");
-        Assertions.assertEquals("Warning : Type error : expected int, got string in <input> at line number 1, column 3" + System.lineSeparator()
-                + "Warning : Type error : expected string, got int in <input> at line number 1, column 18" + System.lineSeparator(), output.toString());
+        assertFails(session, "f(\"s\")\ndef s : string = f(2)", "Type error : expected int, got string");
+        Assertions.assertEquals("Error : Type error : expected int, got string in <input> at line number 1, column 3" + System.lineSeparator()
+                + "Error : Type error : expected string, got int in <input> at line number 2, column 18" + System.lineSeparator(), output.toString());
     }
 
     @Test
-    public void testErrorModeAcrossInputs() throws Exception {
-        BabbleSession session = session("error", new StringWriter());
+    public void testTypesAcrossInputs() throws Exception {
+        BabbleSession session = session(new StringWriter());
         assertFails(session, "def x : int = \"s\"", "Type error : expected int, got string");
         assertFails(session, "x", "No such name : x");
         // A class of an earlier input, as a type : checked statically, and at runtime.
@@ -204,7 +198,7 @@ public class ReplTestCase {
 
     @Test
     public void testInferenceFollowsAssignments() throws Exception {
-        BabbleSession session = session("error", new StringWriter());
+        BabbleSession session = session(new StringWriter());
         session.eval("def n = 1");
         assertFails(session, "def s : string = n", "Type error : expected string, got int");
         // Once assigned, nothing is known of n any more.
@@ -249,7 +243,7 @@ public class ReplTestCase {
     @Test
     public void testErrorsDoNotEndTheLoop() throws Exception {
         Assertions.assertEquals(List.of("Error : No such name : nosuch", "Error : Syntax error : unexpected '='", "Error : Lexical error at line 1:2 : token recognition error at: '#'",
-                        "Error : Not a number : true (line 2)", "function r", "Error : Stack overflow", "1"),
+                        "Error : Not a number : true in <input> at line number 2, column 7", "function r", "Error : Stack overflow", "1"),
                 transcript("nosuch", "def = 3", "1 # 2", "def a = (", "  1 + true", ")", "def r = (n) -> ( recurse(n + 1) )", "r(1)", "1"));
     }
 
@@ -266,7 +260,7 @@ public class ReplTestCase {
     public void testPrompts() throws Exception {
         StringWriter output = new StringWriter();
         String input = "def f = (n) -> (\n  n * 2\n)\nf(21)\n";
-        new Repl(session("off", output), new BufferedReader(new StringReader(input)), new PrintWriter(output), true).run();
+        new Repl(session(output), new BufferedReader(new StringReader(input)), new PrintWriter(output), true).run();
         String nl = System.lineSeparator();
         Assertions.assertEquals("Babble. :help for help, :quit to leave." + nl
                 + ">> .. .. function f" + nl
@@ -276,11 +270,8 @@ public class ReplTestCase {
 
     @Test
     public void testTypeErrorsInTheLoop() throws Exception {
-        // In error mode the diagnostics are the errors : the input doesn't run.
+        // Diagnostics are errors : the bad input doesn't run, the loop keeps going.
         Assertions.assertEquals(List.of("function half", "Error : Type error : expected int, got string in <input> at line number 1, column 6", "2.0"),
-                typedTranscript("error", "def half = (n : int) : double -> ( n / 2 )", "half(\"4\")", "half(4)"));
-        Assertions.assertEquals(List.of("function half", "Warning : Type error : expected int, got string in <input> at line number 1, column 6",
-                        "Error : Not a number : n", "2.0"),
-                typedTranscript("warn", "def half = (n : int) : double -> ( n / 2 )", "half(\"4\")", "half(4)"));
+                transcript("def half = (n : int) : double -> ( n / 2 )", "half(\"4\")", "half(4)"));
     }
 }

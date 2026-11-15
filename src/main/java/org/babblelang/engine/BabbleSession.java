@@ -16,7 +16,7 @@ import javax.script.ScriptException;
 /**
  * An interactive session (docs/design/repl.md) : successive inputs, each a small script
  * that sees what the previous ones defined. It runs in the engine's mode, interpreted or
- * compiled, and with its type checker setting.
+ * compiled.
  * <p>
  * Each input that defines names runs in a namespace nested in the previous one's, and is
  * analysed the same way. So defining a name again shadows the earlier definition for the

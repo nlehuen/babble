@@ -93,22 +93,8 @@ public class MainTestCase {
     @Test
     public void testTheTypeCheckerAppliesToScripts() throws Exception {
         String typed = script("typed.ba", "def x : int = \"s\"\nprintln(\"ran\")");
-        String before = System.getProperty(BabbleScriptEngine.TYPECHECK);
-        try {
-            System.setProperty(BabbleScriptEngine.TYPECHECK, "warn");
-            Assertions.assertEquals(new Run(0, List.of("ran"), List.of("Warning : Type error : expected int, got string in " + typed + " at line number 1, column 15")),
-                    run("", typed));
-            // In error mode the script doesn't run, and its diagnostics are reported once.
-            System.setProperty(BabbleScriptEngine.TYPECHECK, "error");
-            Assertions.assertEquals(new Run(Main.FAILED, List.of(), List.of("Error : Type error : expected int, got string in " + typed + " at line number 1, column 15")),
-                    run("", typed));
-        } finally {
-            if (before == null) {
-                System.clearProperty(BabbleScriptEngine.TYPECHECK);
-            } else {
-                System.setProperty(BabbleScriptEngine.TYPECHECK, before);
-            }
-        }
+        Assertions.assertEquals(new Run(Main.FAILED, List.of(), List.of("Error : Type error : expected int, got string in " + typed + " at line number 1, column 15")),
+                run("", typed));
     }
 
     @Test

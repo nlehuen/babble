@@ -617,7 +617,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         statements(body);
         String resultType = scopes.checkedType(literal);
         if (resultType != null) {
-            // In error mode, the result of the last statement is checked at its line (T9).
+            // The result of the last statement is checked at its line (T9).
             line(body.isEmpty() ? literal.functionBlock : body.get(body.size() - 1));
             checkType(resultType);
         }
@@ -724,7 +724,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitLabel(bind);
             String declaredType = scopes.checkedType(declarations.get(i));
             if (declaredType != null) {
-                // In error mode, checked as it is bound : an error is at the line of the call (T9).
+                // Checked as it is bound : an error is at the line of the call (T9).
                 mv.visitVarInsn(ALOAD, value);
                 checkType(declaredType);
                 mv.visitVarInsn(ASTORE, value);
@@ -1400,8 +1400,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     /**
-     * Checks the value on top of the stack against a declared type, in error mode (T9) :
-     * it stays there, an int widened for a double.
+     * Checks the value on top of the stack against a declared type (T9) : it stays there,
+     * an int widened for a double.
      */
     private void checkType(String descriptor) {
         String field = typeFields.computeIfAbsent(descriptor, d -> addConstant("TYPE", "L" + TYPES_TYPE + ";", 16, m -> {

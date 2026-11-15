@@ -624,9 +624,7 @@ Square(2.0).describe()    ;; "square of area 4.0", the default method from Shape
   `Conflicting defaults for describe : Shape, Named`. The override can still call either
   default through `super(Shape).describe()` (§6.5).
 * `object implements Shape ( … )` works the same way for one-off objects. A literal without the
-  declaration is not a `Shape`, even where one is expected. In `error` mode the type checker
-  reports it (`object is not a Shape : declare object implements Shape`), and the runtime
-  boundary check fails the same way.
+  declaration is not a `Shape`, even where one is expected. The type checker reports it (`object is not a Shape : declare object implements Shape`), and the runtime boundary check fails the same way.
 
 Two alternatives were considered and declined:
 
@@ -792,7 +790,7 @@ This settles T5 in the compiler doc.
 * **Member types** come from annotations on member `def`s (`def size : int = 0`) and from
   method literals' signatures. Unannotated members are `dynamic`.
 * **Type positions must resolve statically,** like `implements` (§6.3). A type name that
-  doesn't resolve to a class or interface literal is an error in `warn`/`error` mode.
+  doesn't resolve to a class or interface literal is an error.
 * **`x is T` tests membership at runtime,** with `T` a class or interface value. It is an
   `INSTANCEOF` in compiled code. For a class defined in a function, the test also compares the
   `BabbleClass` value. `x is java.lang.String` works for Java classes too.

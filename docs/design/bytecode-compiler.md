@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([object-model.md](object-model.md), summarised in §8.2). |
-| **Implemented** | §15 steps 1–11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker in `warn` and `error` modes with runtime checks (T9) ([type-system.md](type-system.md)). Typed code generation (§10.5) and phase 4 remain. |
+| **Implemented** | §15 steps 1–11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker with runtime checks (T9) ([type-system.md](type-system.md)), always enabled and rejecting type errors before execution. Typed code generation (§10.5) and phase 4 remain. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -743,8 +743,8 @@ get there (§18 has what landed):
 * **Member selection.** Cache by receiver class. For a Babble instance it is a field access, and for
   `JavaPackage`/`JavaClass` the result is constant, so it can be bound once.
 * **Arithmetic.** Guard on `(Integer, Integer)` and inline `Math`-style wrapping `int`
-  arithmetic, falling back to `Operators`. Where the type checker has established an enforced
-  type (§10.5), no guard is needed. Unenforced annotations can only bias the initial guard.
+  arithmetic, falling back to `Operators`. Where the type checker has established a static
+  type (§10.5), no guard is needed.
 
 **Phase 4: ahead-of-time compilation (optional).** A `babblec` Maven goal or CLI writes the
 script class plus a `main` that builds the implicits and calls `run`. Hidden runtime state
@@ -758,7 +758,7 @@ annotations (`a:int`, `(n:int):string`) are parsed and then ignored: nothing in 
 reads them. This section covers where a type checker fits relative to the compiler phases, and
 what has to be decided before one can be built. The type system itself has its own design
 document, [type-system.md](type-system.md), which settles T1–T8; the list in §10.4 is the agenda
-it answers. The checker is implemented in `warn` mode.
+it answers. The checker and runtime boundary enforcement are implemented.
 
 ### 10.1 Where it sits
 
@@ -802,20 +802,18 @@ design (§10.4) depends on none of this and can start now.
   to watch is inference (T8). A type inferred from an initialiser must not be stricter than what
   runs today: an inferred object type that leaves out the D5 fall-through members would reject
   `o.println`, for instance. The in-repo scripts are the test for this.
-* **A switch, `babble.typecheck=off|warn|error`.** The default starts at `off`. The test suite
-  runs with `warn`, and both modes report the same diagnostics. `error` becomes the default once
-  the type system has settled and the in-repo scripts check cleanly.
-* **Diagnostics** are collected with their source line and column. In `error` mode they are
-  raised as a `ScriptException` from `compile()`, before anything runs. In `warn` mode they go
-  to the `ScriptContext`'s error writer.
+* **Always enforced.** (Originally gated behind a `babble.typecheck=off|warn|error` switch; once
+  the type system settled and all in-repo scripts checked cleanly, optional modes were removed.)
+* **Diagnostics** are collected with their source line and column, written to the
+  `ScriptContext`'s error writer as `Error : ...`, and raised as a `TypeCheckException` (a
+  `ScriptException`) from `compile()`, before anything runs.
 * **Enforcement (T9, decided: checked at boundaries).** A checker alone cannot make types
   trustworthy, because `dynamic` values flow into annotated code. So a runtime check runs
   wherever a `dynamic` value meets a declared type: arguments of annotated parameters, results
   of annotated functions, writes to annotated variables and members. The check lives in the
   shared runtime (`Types.check(value, type)`), so both modes fail the same way, with
-  `Type error : expected int, got string` and the line of the boundary. The checks are active in
-  `error` mode. In `off` and `warn` modes annotations have no effect at runtime, and typed code
-  generation only relies on types when the script was compiled in `error` mode. Implemented as
+  `Type error : expected int, got string` and the line of the boundary. The checks are always
+  active, and typed code generation can rely on checked types. Implemented as
   described in type-system.md §5.
 
 ### 10.4 Type system questions to settle first
@@ -830,12 +828,11 @@ design (§10.4) depends on none of this and can start now.
 | T6 | `this` | Only valid in class bodies and methods (§7.4) | The enclosing class's type. |
 | T7 | Java interop | Reflection gives static types, but generics are erased | Constructor and method result types come from reflection, and erased type parameters become `dynamic`. With the argument types known, overload resolution can happen at check time (§10.5). |
 | T8 | Inference for unannotated `def`s | If `def f = (a:int):int -> …` leaves `f` as `dynamic`, calls to `f` are never checked and the checker is close to useless | An unannotated `def` takes its initialiser's type when the `Resolver` sees no other assignment to it. Members that can be written through `obj.x = …` stay `dynamic` unless annotated. Fuller inference is the README's separate "type inference" item. |
-| T9 | Enforcement | Decides whether phase 3 can trust types (§10.3) | **Decided: runtime checks at boundaries, in `error` mode, in both modes.** |
+| T9 | Enforcement | Decides whether phase 3 can trust types (§10.3) | **Decided: runtime checks at boundaries, always active, in both modes.** |
 
 ### 10.5 What the compiler gains
 
-Phases 1 and 2 use no type information. In phase 3, for scripts compiled in `error` mode, where
-types are enforced (T9):
+Phases 1 and 2 use no type information. In phase 3, where types are enforced (T9):
 
 * `int`, `double` and `bool` locals and parameters become unboxed JVM locals. Arithmetic
   compiles to `IADD`/`IMUL`/…, which wraps around exactly like today's `Integer` arithmetic,
@@ -855,7 +852,7 @@ types are enforced (T9):
 
 * Golden tests in the style of the `Resolver` ones: a snippet, and the diagnostics expected at
   each line and column.
-* Every `.ba` script in `src/test/babble` must check cleanly in `error` mode, using the
+* Every `.ba` script in `src/test/babble` must check cleanly, using the
   annotations it already has. Gradual typing makes that the baseline, and it also catches
   annotations that are wrong today but go unnoticed because nothing reads them.
 * With T9 in place, both modes must fail the same way when a `dynamic` value reaches an
@@ -912,7 +909,7 @@ types are enforced (T9):
 | `getCommonSuperClass` loading classes during generation | Override it (§6.5) |
 | Method or constant-pool size limits on large scripts | Split `run` and `<clinit>` (§6.6, §6.8) |
 | Class-loader leaks in long-lived engines | A loader per compile, no static caches that point at generated classes from runtime code |
-| The type checker rejects programs that run today | Gradual typing (unannotated is `dynamic`), `warn` before `error`, and every in-repo script must check cleanly (§10.3) |
+| The type checker rejects programs that run today | Gradual typing (unannotated is `dynamic`), phased rollout (`warn` before always-on enforcement), and every in-repo script must check cleanly (§10.3) |
 
 ## 14. Appendix: worked example
 
@@ -1017,9 +1014,9 @@ behaviour for bindings and forward references.
    `BabbleInstance`. Phase 1 is complete: the full suite passes in both modes.
 8. Phase 2: grow `BlockScopes` into the `Resolver`, then `LOCAL`/`CELL`/`CAPTURED`, then
    JVM classes and interfaces (§7.3), then `this` as local 0.
-9. In parallel with step 8, once the `Resolver` exists: the type checker, in `warn` mode only.
-   The type system design (T1–T8) can start at any time before that.
-10. Runtime boundary checks (T9) in both modes, and the `error` mode.
+9. In parallel with step 8, once the `Resolver` exists: the type checker (`warn` mode initially,
+   now always-on errors). The type system design (T1–T8) can start at any time before that.
+10. Runtime boundary checks (T9) in both modes, and full error enforcement (done; optional modes removed).
 11. Benchmarks, then phase 3 design notes, using enforced types where §10.5 allows.
 
 ## 16. Implementation notes (phase 0 and phase 1)

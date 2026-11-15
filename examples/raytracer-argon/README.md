@@ -56,18 +56,17 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
 - **First-class functions & closures**: `HittableList.forEach` and `HittableList.countWhere`, plus `recurse` in functions, methods, and static methods.
 - **Named arguments & default parameters**: `Camera(...)`, `Scenes.finalScene(...)`, `println(..., to: out)`.
 - **Runtime type introspection & equality**: `is`, `classof`, `same`, `==`, `assert`.
-- **Gradual typing (`-Dbabble.typecheck=error`)**: Every parameter, return type, and member is annotated so the script passes `babble.typecheck=warn` and `babble.typecheck=error` cleanly with zero diagnostics.
+- **Type annotations**: Every parameter, return type, and member is annotated and checked statically and at runtime.
 
 ## Running
 
 ### 1. Render `scene.ppm`
 
-From the root of the repository, build Babble's jar, then hand it [raytracer.ba](raytracer.ba) (`compile` mode with strict type checking enabled) to produce `scene.ppm`:
+From the root of the repository, build Babble's jar, then hand it [raytracer.ba](raytracer.ba) to produce `scene.ppm`:
 
 ```bash
 mvn package
-java -Dbabble.typecheck=error \
-  -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-argon/raytracer.ba > examples/raytracer-argon/scene.ppm
+java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-argon/raytracer.ba > examples/raytracer-argon/scene.ppm
 ```
 
 ### 2. Convert `scene.ppm` to `scene.png`

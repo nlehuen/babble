@@ -55,10 +55,6 @@ public final class Babblec {
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.setContext(context);
         engine.put(BabbleScriptEngine.MODE, "compile");
-        String typecheck = System.getProperty(BabbleScriptEngine.TYPECHECK);
-        if (typecheck != null && context.getAttribute(BabbleScriptEngine.TYPECHECK) == null) {
-            engine.put(BabbleScriptEngine.TYPECHECK, typecheck);
-        }
         FileModuleSource source = FileModuleSource.rooted(root);
         List<BabbleScriptEngine.ProgramModule> modules = engine.compileProgram(source, main.toAbsolutePath().normalize().toString());
 
