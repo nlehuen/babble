@@ -70,6 +70,7 @@ Babble synthesizes ideas from four distinct communities: typed functional/effect
 | **D** | Strong vs weak `pure`, `@safe`, `nothrow`, `@nogc` | `+` Weak `pure` (no global mutation, local/param mutation allowed) is huge for imperative ergonomics.<br>`-` **"Attribute soup"** (`pure @safe nothrow @nogc const`) overwhelms readers without inference. |
 | **Koka / Flix / Eff** | Algebraic effect rows (`<exn, div, console>`) + inference | `+` Effect inference avoids boilerplate.<br>`-` Higher-order effect polymorphism adds steep type-signature complexity for a gradual JVM language. |
 | **Rust / Pony** | `&T` / `&mut T`, `Send` / `Sync`, `unsafe`; Pony `val`/`iso`/`box`/`ref` | `+` Distinguishing shared read (`&T` / `box`) vs exclusive mutation (`&mut T`) + immutable data (`val`) makes thread sharing safe.<br>`+` Explicit `unsafe` boundary concentrates audits. |
+| **Google C++ / Abseil** | *Thread-Safe* vs *Thread-Compatible* vs *Thread-Unsafe* | `+` Explicitly separates race-free under concurrent writes (*thread-safe*) from race-free under concurrent `const` reads (*thread-compatible*, most standard containers) vs racy hidden `mutable` caches (*thread-unsafe*). |
 | **Java Checker Framework** | `@SideEffectFree`, `@Deterministic`, `@Pure` (`@SideEffectFree` + `@Deterministic`) | `+` Crucial separation: `@SideEffectFree` (no external mutation, e.g. `System.nanoTime()`) vs `@Deterministic` (same inputs $\implies$ same output). Both are needed together for memoization/CSE! |
 | **PostgreSQL / GCC & Clang** | PG `IMMUTABLE` / `STABLE` / `VOLATILE`; GCC `__attribute__((const))` / `((pure))` | `+` `IMMUTABLE` $\approx$ `pure deterministic`; `STABLE` $\approx$ `pure` reading snapshot state (reorderable within statement, not foldable forever). |
 | **Apache Calcite / Spark Catalyst / DuckDB** | `deterministic`, `strict` (null-preserving), `monotonic`, `injective`, `nothrow` | `+` Query optimizers show *which* properties unlock **predicate push-down/push-up**: `deterministic` + `nothrow` allow reordering across guards; `monotone` enables range pruning; `injective` pushes `distinct`/`==` across projections. |
@@ -85,6 +86,7 @@ Babble synthesizes ideas from four distinct communities: typed functional/effect
 4. **Never conflate `idempotent` with `commutative`:** `map.put(k, v)` is `idempotent` (retry-safe) without being `commutative`; `counter.add(n)` is `commutative threadsafe` without being `idempotent`; CRDT set union (`set.add(x)`) has **both**. Keeping them independent makes the algebra exact.
 5. **Distinguish `pure` from `nothrow`:** Predicate push-down and hoisting across `if`/loop guards require proving no runtime exception can be introduced.
 6. **Respect Java bytecode & numeric limits:** Native/FFI calls (`System.arraycopy`) and floating-point non-associativity must be handled conservatively unless `axiom` says otherwise.
+7. **Distinguish Thread-Safe vs. Thread-Compatible vs. Thread-Unsafe (Google C++ model):** Verified Babble `class`es forbid C++ `mutable`-style backdoors in non-`mut` `pure` methods, making every verified `class` **thread-compatible** by construction; meanwhile, `axiom pure deterministic` without `threadsafe` may hide unsynchronized lazy caches (**thread-unsafe**) and must never be auto-promoted to `threadsafe`.
 
 ---
 
@@ -133,9 +135,13 @@ Function declaration / Java target
   * **`unique`** on a parameter `(unique mut buf: Buffer)` or return type `unique (...) : Index` asserts that **zero other aliases exist** to the object graph outside that parameter/return value (Pony `iso` / Rust owned value).
   * **`move x`** explicitly transfers a `unique` or `FRESH` variable to a `unique` consumer (`channel.send(move buf)`, `sortInPlace(move list)`), triggering **definite-unassignment** on `x` in the caller (cannot be used after moving; omitted automatically on a binding's provable last use).
   * **`freeze(expr)`** consumes a `unique` (or `FRESH`) mutable graph and produces a **deeply immutable (`threadsafe`) read-only value** with **zero runtime copying**—allowing imperatively built indexes, graphs, and maps to immediately enter parallel pipelines.
-* **`threadsafe` (Concurrent execution safety):**
-  * Safe to invoke simultaneously from multiple threads without external locking or data races.
-  * **Automatically derived** when a function is **strongly `pure` + `deterministic`** and every parameter/captured variable is deeply immutable (`value class`, `freeze` result, primitive) or read-only without concurrent writers. Must otherwise be granted via `axiom threadsafe` (e.g., `ConcurrentHashMap`, `AtomicInteger`).
+* **`threadsafe` (Concurrent execution safety — Google C++ 3-tier alignment):**
+  * Means **no data races occur** when invoked simultaneously from multiple threads on shared state (not scheduling determinism—use `commutative` for order independence):
+    1. **Thread-Safe (`threadsafe`):** Safe under arbitrary concurrent calls—even alongside concurrent writes on `mut threadsafe` targets (`AtomicInteger`, `ConcurrentHashMap`), or across stateless/immutable `pure deterministic threadsafe` functions.
+       * **Derived automatically *only* for verified/inferred code** that is strongly `pure deterministic`, captures/accepts deeply immutable data (`value class`, `freeze` result, primitives), and calls **only** `threadsafe` callees.
+       * **Never auto-derived from `axiom`s omitting `threadsafe`:** An `axiom pure deterministic` function may conceal an unsynchronized lazy memoization cache (**Thread-Unsafe**) and therefore is **not** `threadsafe` unless explicitly tagged `axiom ... threadsafe`.
+    2. **Thread-Compatible (default for verified Babble `class`es & read-only containers):** Verified non-`mut` `pure` methods cannot mutate `this` secretly (unlike C++ `const` + `mutable`), so concurrent non-`mut` reads on the same instance are race-free *provided* no thread holds a concurrent `mut` writer (`freeze` or a read-only parallel borrow phase); `mut` calls still require exclusive ownership (`FRESH` / `unique`) or external synchronization.
+    3. **Thread-Unsafe:** `axiom` functions lacking `threadsafe` (e.g., unsynchronized caches, `SimpleDateFormat`) or `impure` globals; confined to a single thread unless externally locked.
 
 #### Axis 2 — Evaluation & Safety Guarantees
 * **`deterministic` (Functional dependence on visible inputs):**
@@ -239,8 +245,8 @@ def Counter = class (def count: int = 0) (
 def square = (x: int) : int -> ( x * x )   ;; inferred: pure deterministic nothrow threadsafe
 
 ;; 4. Axiomatic declarations (trusted contract, no proof checked on body/target):
-def fastFib = axiom pure deterministic (n: int) : int -> ( ... )
-axiom pure deterministic nothrow java.lang.Math.sqrt
+def fastFib = axiom pure deterministic (n: int) : int -> ( ... )   ;; single-threaded cache (NOT threadsafe!)
+axiom pure deterministic nothrow threadsafe java.lang.Math.sqrt
 axiom mut idempotent commutative threadsafe my.CrdtSet.add
 
 ;; 5. Explicit opt-out (suppresses inference / opts out value defaults):
@@ -248,8 +254,8 @@ def debugLog = impure (msg: string) -> ( ... )
 impure java.net.URL.equals
 
 ;; 6. Function types & ownership handoff (`move` / `freeze`):
-def parallelMap = axiom pure threadsafe (items: List, fn: pure deterministic (x: int) : int) : List -> ( ... )
-def parallelReduce = axiom pure threadsafe (items: List, combine: pure deterministic associative (a: int, b: int) : int) : int -> ( ... )
+def parallelMap = axiom pure threadsafe (items: List, fn: pure deterministic threadsafe (x: int) : int) : List -> ( ... )
+def parallelReduce = axiom pure threadsafe (items: List, combine: pure deterministic threadsafe associative (a: int, b: int) : int) : int -> ( ... )
 def frozenIndex = freeze(buildIndex(1000))      ;; zero-copy conversion to threadsafe immutable
 def sorted = sortPure(move myList)              ;; transfers ownership; `myList` unusable afterward
 ```
@@ -359,7 +365,7 @@ To minimize annotation burden, Babble maximizes inference across unannotated fun
    * **Compositional algebraic propagation:**
      * Composition $f(g(x))$ where both $f$ and $g$ are `monotone` $\implies$ `monotone`; same for `injective`.
      * Single-op wrapper `(a, b) -> ( op(a, b) )` inherits `commutative` / `associative` from `op`.
-   * **Derived `threadsafe`:** After SCC converges, any strongly `pure deterministic` function whose parameter/captured types are deeply immutable (`value class`, `freeze` result, primitives, immutable strings) is marked `threadsafe`.
+   * **Derived `threadsafe`:** After SCC converges, a verified/inferred function is marked `threadsafe` iff it is strongly `pure deterministic`, every parameter/captured variable is deeply immutable (`value class`, `freeze` result, primitives, immutable strings) or accessed solely in a read-only thread-compatible borrow phase, **and** every callee is already `threadsafe`. Functions carrying `axiom` without `threadsafe` never auto-derive `threadsafe`.
 5. **Verification Check (Verified Mode):**
    * For every function with explicit non-`axiom` annotations, verify `inferred.satisfies(declared)` (including `declared.noescape ⊆ inferred.noescape`, `declared.uniqueReturn => inferred.uniqueReturn`) and `inferred.mutSet ⊆ declared.mutSet`, plus definite-unassignment after `move`/`freeze`. Emit targeted diagnostics if any obligation fails—while retaining *extra* inferred properties for downstream optimization!
 
@@ -410,8 +416,8 @@ With resolved `EffectSet`, `mut`/`noescape`, and `unique` metadata attached to A
 5. **Stack Unboxing / Scalar Replacement (`noescape`):**
    * Temporary `value class` arguments or closure captures passed into `noescape` parameters can be unboxed into primitive JVM locals/registers across call boundaries in `CodeGenerator`, avoiding heap allocation even when JIT inlining stops.
 6. **Parallel Execution & Concurrent Data Sharing:**
-   * **`parallelMap` / `parallelFilter`:** Safe whenever callback is **`pure threadsafe`** (automatically true for strong `pure deterministic` on `value class`/`freeze`/primitive inputs).
-   * **`parallelReduce`:** Safe divide-and-conquer tree fold whenever combiner is **`pure deterministic associative`** (preserving partition order if not `commutative`, or arbitrary work-stealing if **`commutative`**).
+   * **`parallelMap` / `parallelFilter`:** Safe whenever callback is **`pure threadsafe`** (automatically inferred for verified strong `pure deterministic` code on `value class`/`freeze`/primitive inputs or **thread-compatible** read-only borrows where no concurrent `mut` writer exists).
+   * **`parallelReduce`:** Safe divide-and-conquer tree fold whenever combiner is **`pure deterministic threadsafe associative`** (preserving partition order if not `commutative`, or arbitrary work-stealing if **`commutative`**).
    * **`parallelForEach`:** Safe concurrent accumulation whenever callback's `mut` writes use **`commutative threadsafe`** operations (and retryable on worker failure if **`idempotent`**).
 7. **Reassociation & Dead-Code Elimination:**
    * Reassociate `(x + c1) + c2` $\to$ `x + (c1 + c2)` when `+` is **`pure deterministic nothrow associative`** (valid for `int` / `string`, skipped for IEEE-754 `double`!).
@@ -438,19 +444,19 @@ Java methods and classes default to **unconstrained** (`EffectSet.EMPTY`, conser
 
 ```babble
 ;; Method-level axioms:
-axiom pure deterministic nothrow java.lang.Math.sqrt
-axiom pure deterministic nothrow associative commutative java.lang.Integer.sum
-axiom pure deterministic commutative java.lang.Math.addExact  ;; throws on overflow (not `nothrow`, not associative across overflow)
-axiom pure deterministic nothrow commutative java.lang.Math.max
-axiom pure java.nio.file.Files.readString                 ;; pure (no writes), NOT deterministic!
-def mkdirs = axiom idempotent java.nio.file.Files.createDirectories
+axiom pure deterministic nothrow threadsafe java.lang.Math.sqrt
+axiom pure deterministic nothrow threadsafe associative commutative java.lang.Integer.sum
+axiom pure deterministic threadsafe commutative java.lang.Math.addExact  ;; throws on overflow (not `nothrow`, not associative across overflow)
+axiom pure deterministic nothrow threadsafe commutative java.lang.Math.max
+axiom pure threadsafe java.nio.file.Files.readString                 ;; pure & race-free read, NOT deterministic!
+def mkdirs = axiom idempotent threadsafe java.nio.file.Files.createDirectories
 axiom mut commutative threadsafe java.util.concurrent.atomic.AtomicInteger.addAndGet
 
 ;; Class-level axioms (marks constructor + all public methods; individual methods can refine):
-def BigDecimal = axiom pure deterministic import("java.math.BigDecimal")
+def BigDecimal = axiom pure deterministic threadsafe import("java.math.BigDecimal")
 
 ;; Module re-export & per-runtime isolation:
-export axiom pure deterministic nothrow java.lang.Math.sin
+export axiom pure deterministic nothrow threadsafe java.lang.Math.sin
 
 ;; Opting out default-pure value protocol methods:
 impure java.net.URL.equals
@@ -542,11 +548,11 @@ In `babble.typecheck=error` mode (`type-system.md` §5), function descriptors en
 
 ```babble
 ;; Declare trusted host axioms explicitly:
-axiom pure deterministic nothrow java.lang.Math.sin
-axiom pure deterministic nothrow java.lang.Math.cos
-axiom pure deterministic nothrow java.lang.Math.sqrt
-axiom pure java.nio.file.Files.readString   ;; side-effect-free, NOT deterministic!
-axiom pure deterministic nothrow java.nio.file.Path.of
+axiom pure deterministic nothrow threadsafe java.lang.Math.sin
+axiom pure deterministic nothrow threadsafe java.lang.Math.cos
+axiom pure deterministic nothrow threadsafe java.lang.Math.sqrt
+axiom pure threadsafe java.nio.file.Files.readString   ;; side-effect-free & race-free, NOT deterministic!
+axiom pure deterministic nothrow threadsafe java.nio.file.Path.of
 
 package math (
     ;; Verified: compiler checks body satisfies `pure deterministic` (also infers `nothrow`?
@@ -623,16 +629,18 @@ def nonNegative = (raw: int) : bool -> ( raw >= 0 )            ;; inferred: pure
 
 ```babble
 axiom mut idempotent commutative threadsafe my.CrdtSet.add
-axiom idempotent java.nio.file.Files.createDirectories
+axiom idempotent threadsafe java.nio.file.Files.createDirectories
 
-def sumInt = axiom pure deterministic nothrow associative commutative (a: int, b: int) : int -> ( a + b )
+def sumInt = axiom pure deterministic nothrow threadsafe associative commutative (a: int, b: int) : int -> ( a + b )
+def fibCached = axiom pure deterministic (n: int) : int -> ( ... )  ;; unsynchronized HashMap cache: Thread-Unsafe (NO `threadsafe`!)
 
-def parallelMap = axiom pure threadsafe (xs: List, f: pure deterministic (x: int) : int) : List -> ( ... )
-def parallelReduce = axiom pure threadsafe (xs: List, seed: int, op: pure deterministic associative (a: int, b: int) : int) : int -> ( ... )
+def parallelMap = axiom pure threadsafe (xs: List, f: pure deterministic threadsafe (x: int) : int) : List -> ( ... )
+def parallelReduce = axiom pure threadsafe (xs: List, seed: int, op: pure deterministic threadsafe associative (a: int, b: int) : int) : int -> ( ... )
 def parallelForEach = axiom (xs: List, f: commutative threadsafe (x: string)) -> ( ... )
 
 ;; 1) Safe parallel map + tree reduction:
 def totalSq = parallelReduce(parallelMap(items, (x: int) -> ( x * x )), 0, sumInt)
+;; parallelMap(items, fibCached)  ;; REJECTED: `fibCached` omits `threadsafe` (may hide unsynchronized cache)!
 
 ;; 2) Safe unordered concurrent accumulation + retry (idempotent + commutative + threadsafe):
 def collector = my.CrdtSet()
