@@ -21,8 +21,8 @@
 ;; ---------------------------------------------------------------- Settings
 
 def output = "examples/raytracer-fable/demo.png"
-def imageWidth = 800            ;; the book renders 1200 pixels wide...
-def samplesPerPixel = 20        ;; ...with 500 samples per pixel
+def imageWidth = 800      ;; the book renders 1200 pixels wide...
+def samplesPerPixel = 20  ;; ...with 500 samples per pixel
 def maxDepth = 50
 def threads = 16
 
@@ -44,7 +44,7 @@ def world = HittableList()
 
 world.add(Sphere(Vec3(0.0, 0 - 1000.0, 0.0), 1000.0, Lambertian(Vec3(0.5, 0.5, 0.5))))
 
-def rng = java.util.Random(20)   ;; a fixed seed : the same scene every time
+def rng = java.util.Random(20)  ;; a fixed seed : the same scene every time
 def a = 0 - 11
 while a < 11 then (
     def b = 0 - 11

@@ -13,41 +13,41 @@ def emptyHittable = import("interfaces.ba").emptyHittable
 ;; 2.8 Sphere & Pure-Babble HittableList + BVHNode
 ;; ------------------------------------------------------------------------
 export def Sphere = class (def center: Vec3, def radius: double, def mat: Material) implements Hittable, Describable (
-    private def radiusSq : double = this.radius * this.radius
-    private def invRadius : double = 1.0 / this.radius
-    private def rAbs : double = math.abs(this.radius)
-    private def rVec : Vec3 = Vec3(this.rAbs, this.rAbs, this.rAbs)
-    private def bbox : AABB = AABB.fromPoints(this.center.minus(this.rVec), this.center.plus(this.rVec))
+    private def radiusSq: double = this.radius * this.radius
+    private def invRadius: double = 1.0 / this.radius
+    private def rAbs: double = math.abs(this.radius)
+    private def rVec: Vec3 = Vec3(this.rAbs, this.rAbs, this.rAbs)
+    private def bbox: AABB = AABB.fromPoints(this.center.minus(this.rVec), this.center.plus(this.rVec))
 
-    def boundingBox = () : AABB -> (
+    def boundingBox = (): AABB -> (
         this.bbox
     )
 
-    def hit = (r: Ray, rayT: Interval) : HitRecord -> (
-        def oc : Vec3 = this.center.minus(r.origin)
-        def a : double = r.dir.lengthSquared()
-        def h : double = r.dir.dot(oc)
-        def c : double = oc.lengthSquared() - this.radiusSq
-        def discriminant : double = h * h - a * c
+    def hit = (r: Ray, rayT: Interval): HitRecord -> (
+        def oc: Vec3 = this.center.minus(r.origin)
+        def a: double = r.dir.lengthSquared()
+        def h: double = r.dir.dot(oc)
+        def c: double = oc.lengthSquared() - this.radiusSq
+        def discriminant: double = h * h - a * c
         if discriminant < 0.0 then (
             return null
         )
-        def sqrtd : double = math.sqrt(discriminant)
-        def root : double = (h - sqrtd) / a
+        def sqrtd: double = math.sqrt(discriminant)
+        def root: double = (h - sqrtd) / a
         if not rayT.surrounds(root) then (
             root = (h + sqrtd) / a
             if not rayT.surrounds(root) then (
                 return null
             )
         )
-        def p : Vec3 = r.at(root)
-        def outwardNormal : Vec3 = p.minus(this.center).scale(this.invRadius)
+        def p: Vec3 = r.at(root)
+        def outwardNormal: Vec3 = p.minus(this.center).scale(this.invRadius)
         HitRecord.create(r, p, outwardNormal, root, this.mat)
     )
 
-    def kind = () : string -> ( "sphere" )
+    def kind = (): string -> ("sphere")
 
-    def describe = () : string -> (
+    def describe = (): string -> (
         super(Hittable).describe() + "(r=" + this.radius + ")"
     )
 )
@@ -56,9 +56,9 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
 export def HittableNode = class (def item: Hittable, def next: HittableNode = null) ()
 
 export def HittableList = class () implements Hittable (
-    def size : int = 0
-    private def head : HittableNode = null
-    private def bbox : AABB = AABB.empty
+    def size: int = 0
+    private def head: HittableNode = null
+    private def bbox: AABB = AABB.empty
 
     def add = (item: Hittable) -> (
         this.head = HittableNode(item, this.head)
@@ -72,15 +72,15 @@ export def HittableList = class () implements Hittable (
         this.bbox = AABB.empty
     )
 
-    def headNode = () : HittableNode -> (
+    def headNode = (): HittableNode -> (
         this.head
     )
 
-    def first = () : Hittable -> (
-        if this.head == null then ( emptyHittable ) else ( this.head.item )
+    def first = (): Hittable -> (
+        if this.head == null then (emptyHittable) else (this.head.item)
     )
 
-    def second = () : Hittable -> (
+    def second = (): Hittable -> (
         if this.head == null or this.head.next == null then (
             emptyHittable
         ) else (
@@ -88,13 +88,13 @@ export def HittableList = class () implements Hittable (
         )
     )
 
-    def boundingBox = () : AABB -> (
+    def boundingBox = (): AABB -> (
         this.bbox
     )
 
     ;; Higher-order iteration over all hittables in the list
-    def forEach = (fn: (item: Hittable) : dynamic) -> (
-        def cur : HittableNode = this.head
+    def forEach = (fn: (item: Hittable): dynamic) -> (
+        def cur: HittableNode = this.head
         while cur != null then (
             fn(cur.item)
             cur = cur.next
@@ -102,8 +102,8 @@ export def HittableList = class () implements Hittable (
     )
 
     ;; Higher-order predicate counter using a closure over a mutable local
-    def countWhere = (pred: (item: Hittable) : bool) : int -> (
-        def matched : int = 0
+    def countWhere = (pred: (item: Hittable): bool): int -> (
+        def matched: int = 0
         this.forEach((item: Hittable) -> (
             if pred(item) then (
                 matched = matched + 1
@@ -112,12 +112,12 @@ export def HittableList = class () implements Hittable (
         matched
     )
 
-    def hit = (r: Ray, rayT: Interval) : HitRecord -> (
-        def closestRecord : HitRecord = null
-        def closestSoFar : double = rayT.max
-        def cur : HittableNode = this.head
+    def hit = (r: Ray, rayT: Interval): HitRecord -> (
+        def closestRecord: HitRecord = null
+        def closestSoFar: double = rayT.max
+        def cur: HittableNode = this.head
         while cur != null then (
-            def tempRec : HitRecord = cur.item.hit(r, Interval(rayT.min, closestSoFar))
+            def tempRec: HitRecord = cur.item.hit(r, Interval(rayT.min, closestSoFar))
             if tempRec != null then (
                 closestSoFar = tempRec.t
                 closestRecord = tempRec
@@ -127,30 +127,29 @@ export def HittableList = class () implements Hittable (
         closestRecord
     )
 
-    def kind = () : string -> ( "hittable_list" )
+    def kind = (): string -> ("hittable_list")
 )
 
 ;; Pure-Babble Bounding Volume Hierarchy (BVH) Node
 export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: AABB) implements Hittable (
-    def boundingBox = () : AABB -> (
+    def boundingBox = (): AABB -> (
         this.bbox
     )
 
-    def hit = (r: Ray, rayT: Interval) : HitRecord -> (
+    def hit = (r: Ray, rayT: Interval): HitRecord -> (
         if not this.bbox.hit(r, rayT) then (
             return null
         )
-        def hitLeft : HitRecord = this.left.hit(r, rayT)
-        def rightT : Interval = if hitLeft != null then ( Interval(rayT.min, hitLeft.t) ) else ( rayT )
-        def hitRight : HitRecord = this.right.hit(r, rightT)
-        if hitRight != null then ( hitRight ) else ( hitLeft )
+        def hitLeft: HitRecord = this.left.hit(r, rayT)
+        def rightT: Interval = if hitLeft != null then (Interval(rayT.min, hitLeft.t)) else (rayT)
+        def hitRight: HitRecord = this.right.hit(r, rightT)
+        if hitRight != null then (hitRight) else (hitLeft)
     )
 
-    def kind = () : string -> ( "bvh_node" )
-)
-static (
+    def kind = (): string -> ("bvh_node")
+) static (
     ;; Recursively partitions a HittableList into a balanced BVH tree
-    def fromList = (list: HittableList) : Hittable -> (
+    def fromList = (list: HittableList): Hittable -> (
         if list.size == 0 then (
             return emptyHittable
         )
@@ -160,21 +159,21 @@ static (
         if list.size == 2 then (
             return this(list.first(), list.second(), list.boundingBox())
         )
-        def box : AABB = list.boundingBox()
-        def cbox : AABB = AABB.empty
-        def cur : HittableNode = list.headNode()
+        def box: AABB = list.boundingBox()
+        def cbox: AABB = AABB.empty
+        def cur: HittableNode = list.headNode()
         while cur != null then (
             cbox = cbox.expandPoint(cur.item.boundingBox().center())
             cur = cur.next
         )
-        def axis : int = cbox.longestAxis()
-        def splitVal : double = cbox.centroid(axis)
+        def axis: int = cbox.longestAxis()
+        def splitVal: double = cbox.centroid(axis)
 
-        def leftList : HittableList = HittableList()
-        def rightList : HittableList = HittableList()
+        def leftList: HittableList = HittableList()
+        def rightList: HittableList = HittableList()
         cur = list.headNode()
         while cur != null then (
-            def item : Hittable = cur.item
+            def item: Hittable = cur.item
             if item.boundingBox().centroid(axis) < splitVal then (
                 leftList.add(item)
             ) else (
@@ -187,7 +186,7 @@ static (
         if leftList.size == 0 or rightList.size == 0 then (
             leftList.clear()
             rightList.clear()
-            def goLeft : bool = true
+            def goLeft: bool = true
             cur = list.headNode()
             while cur != null then (
                 if goLeft then (
@@ -200,8 +199,8 @@ static (
             )
         )
 
-        def leftChild : Hittable = recurse(leftList)
-        def rightChild : Hittable = recurse(rightList)
+        def leftChild: Hittable = recurse(leftList)
+        def rightChild: Hittable = recurse(rightList)
         this(leftChild, rightChild, box)
     )
 )

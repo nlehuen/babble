@@ -1,5 +1,5 @@
 ;; ray.h
 
 export def Ray = value class (origin, direction) (
-    def at = (t) -> ( this.origin.plus(this.direction.times(t)) )
+    def at = (t) -> (this.origin.plus(this.direction.times(t)))
 )

@@ -19,7 +19,7 @@ assert(Vec(1, 1).plus(Vec(2, 2)) == Vec(3, 3))
 
 ;; a module has its own state, shared by everything that imports it
 assert(shapes.count() == 0)
-shapes.unitSquare() ; shapes.unitSquare()
+shapes.unitSquare(); shapes.unitSquare()
 assert(shapes.count() == 2)
 assert(same(import("modules/shapes.ba"), shapes))
 assert(import("modules/shapes.ba").count() == 2)

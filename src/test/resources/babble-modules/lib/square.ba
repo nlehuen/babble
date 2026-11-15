@@ -1,2 +1,2 @@
 def shapes = import("shapes.ba")
-export def Square = class (def side) implements shapes.Shape ( def area = () -> ( this.side * this.side ) )
+export def Square = class (def side) implements shapes.Shape (def area = () -> (this.side * this.side))

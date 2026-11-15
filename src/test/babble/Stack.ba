@@ -45,7 +45,7 @@ package stack (
             )
         )
 
-        def join = (sep=" ") -> (
+        def join = (sep = " ") -> (
             def current = this.head
             def result = ""
             def first = true
@@ -66,7 +66,7 @@ package stack (
     )
 
     ;; keeps stack.create() working
-    def create = () -> ( Stack() )
+    def create = () -> (Stack())
 )
 
 def test = () -> (
@@ -78,14 +78,13 @@ def test = () -> (
     assert(l.size == 2)
     assert("hello/world" == l.join("/"))
     assert("hello world" == l.join())
-    assert("hello" == l.pop());
+    assert("hello" == l.pop())
     assert(l.size == 1)
-    assert("world" == l.pop());
+    assert("world" == l.pop())
     assert(l.size == 0)
 )
 
 test()
-
 
 def testRecursiveMethod = () -> (
     def l = stack.Stack()
