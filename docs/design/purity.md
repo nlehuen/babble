@@ -231,7 +231,7 @@ For a function signature `(p1: T1, ..., mut noescape unique pk: Tk) : R` with ef
   * Whenever `target` carries *any* effect modifier (e.g. `deterministic`, `nothrow`, `mut`, etc.), `actual` may only declare `mut` on a parameter (or `this`) if `target` also declares `mut` on that parameter (or `this`):
     * `pure deterministic (x: List) : int` `<:` `deterministic (mut x: List) : int`, **not** the reverse! (Promising no mutation at all satisfies a caller slot that permits mutating `x` without global effects.)
   * On parameters, demanding ownership (`unique p`) is *stricter* on the caller: a callee taking an ordinary borrowed `(p: T)` satisfies a slot expecting `(unique p: T)` (`pure (p: Vec) <: pure (unique p: Vec)`), **not** the reverse!
-* **Gradual / Legacy Compatibility:** An **unconstrained** function type `(x: T) : R` (empty effect set, no explicit `mut`/`unique`) acts as the top type for gradual Babble compatibility—any callable matches it, while callers receive no optimization or aliasing guarantees.
+* **Gradual / Legacy Compatibility (unconstrained only):** An **unconstrained** function type `(x: T) : R` (empty effect set, no `mut`/`noescape`/`unique`) acts as the top function type for gradual Babble compatibility—any callable or `dynamic` value matches it (checked at runtime via `Types.check`'s existing `fn|` descriptor), while callers receive no optimization or aliasing guarantees. Conversely, an **effect-constrained** function type (any non-empty effect set or `mut`/`noescape`/`unique` modifier) **cannot be satisfied by `dynamic`** (nor by `null` when `nothrow` is required): `TypeChecker` requires a statically known `Type.Function` whose effects and parameter modes satisfy the target (which inline lambdas and un-reassigned `def`s automatically have via T8).
 
 ---
 
@@ -339,7 +339,7 @@ Inside any function whose checked or inferred effect includes **`pure`** (and ac
    * `equals` and `compareTo` **default to `pure deterministic`** on any Babble `class` or Java class (identity equality is a function of its two arguments).
    * `hashCode` and `toString` **default to `pure deterministic` only where they do not derive from object identity**: on a Java class that overrides them (declaring class other than `java.lang.Object`), on a deeply immutable `value class`, and on a Babble class that defines its own verified `toString`. The inherited `Object.hashCode`/`Object.toString` and the built-in ones of a non-value Babble instance are identity-derived and differ between runs: they default to **`pure` only**, so nothing that reaches them is folded at compile time or memoized.
    * Explicit `impure java.net.URL.equals` / `impure` opt-out stays available when an override performs DNS or mutates external state.
-   * `BabbleInstance.toString()` propagates active effect checks recursively through nested fields when called inside a `pure` / `deterministic` scope.
+   * For a `value class`, `TypeChecker` determines whether the built-in structural `toString()` / `hashCode()` is `pure deterministic` or `pure`-only by inspecting the declared field types statically (deeply immutable `value class` $\to$ `pure deterministic`; fields that may hold non-value instances $\to$ `pure` only; fields whose own `toString` may be unconstrained $\to$ unconstrained). No runtime effect propagation inside `BabbleInstance.toString()` is needed.
 3. **Inline `object (...)` and `static` blocks:**
    * An `object (...)` expression or nested `class`/`interface` `static` block executed inside a `pure` or `deterministic` function is checked under the enclosing function's active constraints (cannot secretly print or mutate globals during class initialization).
 
@@ -396,7 +396,7 @@ To minimize annotation burden, Babble maximizes inference across unannotated fun
    * Functions explicitly marked `impure` start and stay at `{}` (`@NO_GLOBAL_EFFECTS = false`, `noescapeParams = {}`, `uniqueReturn = false`).
    * Functions marked `axiom` are initialized directly to their declared `axiom` `EffectSet` / parameter flags (`axiom pure ...` and `axiom mut ...` set `@NO_GLOBAL_EFFECTS`) and excluded from downward weakening.
 4. **Transfer & Monotone Fixed-Point Iteration:**
-   * **Field writes / calls to `mut`:** If target is `@FRESH`, keep `@NO_GLOBAL_EFFECTS` and `mutParams` unchanged (provided the called `mut` method/helper itself has `@NO_GLOBAL_EFFECTS`!); if target is `@PARAM(i)` or `@THIS`, add $i$ / `this` to `mutParams`/`mutThis` (which automatically prevents `pure`); if target is `@EXTERNAL` or an un-blessed/I/O Java method, clear `@NO_GLOBAL_EFFECTS` (dropping `pure` as well). Also check shallow call-site **`mut` exclusivity** across arguments, and that every argument to a `unique` slot is a `@UNIQUE` local.
+   * **Field writes / calls to `mut` / dynamic callees:** If target is `@FRESH`, keep `@NO_GLOBAL_EFFECTS` and `mutParams` unchanged (provided the called `mut` method/helper itself has `@NO_GLOBAL_EFFECTS`!); if target is `@PARAM(i)` or `@THIS`, add $i$ / `this` to `mutParams`/`mutThis` (which automatically prevents `pure`); if target is `@EXTERNAL`, an un-blessed/I/O Java method, or a call to an untyped `dynamic` value / reassigned untyped `def` (not typed as a constrained `Type.Function`), clear `@NO_GLOBAL_EFFECTS` (dropping `pure`), `deterministic`, `nothrow`, and `threadsafe`. Consequently, any callback invoked inside a verified `pure` or `deterministic` function must carry a constrained function type—which `TypeChecker` enforces statically at all call sites (disallowing `dynamic` coercion, §3.4). Also check shallow call-site **`mut` exclusivity** across arguments, and that every argument to a `unique` slot is a `@UNIQUE` local.
    * **Finalize `pure`:** After convergence, `pure` is set iff `@NO_GLOBAL_EFFECTS && mutParams.isEmpty() && !mutThis` (so `pure` **always** implies zero external mutation).
    * **Escape & uniqueness transfer:** Storing `@PARAM(i)` into `this`, another parameter, a global, a closure, or returning it removes $i$ from `noescapeParams`. Returning any expression that may alias `@EXTERNAL`, non-`unique` `@PARAM`, or `@THIS`, or a local that is `@FRESH` but no longer `@UNIQUE` (something shared was stored into it), drops `uniqueReturn`.
    * **Reads / non-determinism:** If expression reads a reassigned outer `def`, non-`final` static field, mutable singleton field, or calls a non-`deterministic` callee, drop `deterministic`.
@@ -506,7 +506,7 @@ impure java.net.URL.equals
 impure java.net.URL.hashCode
 ```
 
-* Stored in the active `ScriptRuntime` (never mutating global `JavaClass.CACHE` singletons) so separate `BabbleScriptEngine` instances stay strictly isolated.
+* Resolved at **compile time** by `TypeChecker`: file-level `axiom` / `impure` declarations are recorded in `ScopeAnalysis` (and `AnalysisSession` for REPL sessions, or `ModuleInterface` when exported via `export axiom`), never in `ScriptRuntime` or global singletons.
 * `axiom` declarations on Java targets are forbidden inside verified `pure`/`deterministic` function bodies (must appear at module/top/impure scope).
 
 ### 6.2 Host-Side Java Annotations & `BabbleScriptEngine` API
@@ -523,7 +523,7 @@ public final class Geo {
 }
 ```
 
-Or embedded hosts can register trusted JDK/third-party methods programmatically via `BabbleScriptEngine`:
+Or embedded hosts can register trusted JDK/third-party methods programmatically on `BabbleScriptEngine` (isolated per engine instance and read by `TypeChecker` at compile time):
 
 ```java
 engine.assumeEffects(Math.class, "sqrt", Effect.PURE, Effect.DETERMINISTIC, Effect.NOTHROW);
@@ -532,20 +532,20 @@ engine.assumeEffects(Files.class, "createDirectories", Effect.IDEMPOTENT);
 engine.markImpure(URL.class, "equals", "hashCode");
 ```
 
-Resolution priority (`JavaMethod.effects(ScriptRuntime)` / `JavaClass.effects(ScriptRuntime)`):
-1. Per-runtime method override (`ScriptRuntime` via Babble `axiom` / `impure` or `BabbleScriptEngine`), else
-2. Java method annotations (`@Pure`, `@Deterministic`, ...), else
-3. Per-runtime class override, else
-4. Java class annotations, else
-5. Default value protocol (`equals`, `compareTo`, and overridden `hashCode`/`toString` $\to$ `{PURE, DETERMINISTIC}`; `Object`'s own `hashCode`/`toString` $\to$ `{PURE}`), else
-6. Unconstrained (`EffectSet.EMPTY`).
+Compile-time resolution priority in `TypeChecker`:
+1. File / imported `ModuleInterface` / `AnalysisSession` method override (`axiom` / `impure`), else
+2. Engine-level `BabbleScriptEngine` method override (`assumeEffects` / `markImpure`), else
+3. Java method annotations (`@Pure`, `@Deterministic`, ...), else
+4. File / module / session or engine class override, else
+5. Java class annotations, else
+6. Default value protocol (`equals`, `compareTo`, and overridden `hashCode`/`toString` $\to$ `{PURE, DETERMINISTIC}`; `Object`'s own `hashCode`/`toString` $\to$ `{PURE}`), else
+7. Unconstrained (`EffectSet.EMPTY`).
 
 ### 6.3 Java Callbacks and Interface Proxies (`Faces`)
 
-When a verified `pure deterministic` Babble function passes a Babble `Callable` or `BabbleInstance` (wrapped via `Faces.function` or `Faces.create` into `Function`, `Predicate`, `Comparator`, etc.) to a Java HOF such as `list.parallelStream().map(fn)`:
+When a verified `pure deterministic` Babble function passes a Babble `Callable` or `BabbleInstance` (wrapped via `Faces.function` or `Faces.create` into `Function`, `Predicate`, `Comparator`, etc.) to an axiomatized Java higher-order function such as `list.parallelStream().map(fn)`:
 
-* **Static check (`TypeChecker`):** Functional-interface arguments inside constrained scopes must satisfy the enclosing call's effect requirements (e.g., passing an unconstrained `(x) -> ( println(x) )` to `parallelStream().map(...)` inside a `pure` caller is rejected statically).
-* **Runtime check (`Faces.FunctionHandler` & `Faces.FaceHandler`):** Active effect requirements (`pure`, `deterministic`, `nothrow`) propagate via thread/frame context into Java proxies so dynamic Babble callbacks cannot smuggle side effects back through `axiom` Java libraries.
+* **Checked purely statically (`TypeChecker`):** Functional-interface arguments inside constrained scopes must have a statically known `Type.Function` (or implementing `BabbleClass`) whose effects satisfy the enclosing call's requirements (e.g., passing an unconstrained `(x) -> ( println(x) )` or an untyped `dynamic` value to `parallelStream().map(...)` inside a `pure` caller is rejected at compile time). `Faces.FunctionHandler` and `Faces.FaceHandler` require zero effect-checking logic or thread/frame context and work seamlessly across `parallelStream` worker threads.
 
 ### 6.4 Automatic Static Analysis of Java Bytecode via ASM (Feasibility & Limits)
 
@@ -566,23 +566,24 @@ Babble already depends on `org.ow2.asm:asm` (`pom.xml`), raising the question: c
 
 In `org.babblelang.analysis.Type`:
 
-* **`EffectSet`** (immutable bitmask / enum set over `{PURE, DETERMINISTIC, NOTHROW, IDEMPOTENT, COMMUTATIVE, ASSOCIATIVE, THREADSAFE, MONOTONE, INJECTIVE}` + internal compiler flags `boolean noGlobalEffects` [`@NO_GLOBAL_EFFECTS`], `boolean mutThis`, `boolean noescapeThis`, `boolean uniqueResult`, and explicit `boolean impureOptOut`). `PURE` implies `noGlobalEffects && !mutThis && mutParams.isEmpty()`.
-* **`Type.Parameter(String name, Type type, boolean optional, boolean mut, boolean noescape, boolean unique)`**: encodes per-parameter mutability, escape guarantee, and ownership (`(mut noescape unique dst: Buffer, noescape src: List)`).
+* **`EffectSet`** (immutable bitmask / enum set over `{PURE, DETERMINISTIC, NOTHROW, IDEMPOTENT, COMMUTATIVE, ASSOCIATIVE, THREADSAFE, MONOTONE, INJECTIVE}` + internal compiler flags `boolean noGlobalEffects` [`@NO_GLOBAL_EFFECTS`], `boolean mutThis`, `boolean noescapeThis`, `boolean uniqueResult`, and explicit `boolean impureOptOut`).
+* **`Type.Parameter(String name, Type type, boolean optional, boolean mut, boolean noescape, boolean unique)`**: the single representation of per-parameter mutability, escape guarantee, and ownership (`(mut noescape unique dst: Buffer, noescape src: List)`).
 * **`Type.Frozen(Type of)`**: the `frozen T` type produced by `freeze` (simplified to `of` when `of.isDeeplyImmutable()`). Member reads and non-`mut` `noescape` method calls on `Frozen(T)` wrap their result `U` in `Frozen(U)`; `Frozen(T)` is not assignable to `DYNAMIC` or plain `T`, `DYNAMIC` is not assignable to `Frozen(T)`, and `Frozen(DYNAMIC)` (from erased Java returns such as `HashMap.get`) is assignable only to deeply immutable concrete types (verified at runtime by `Types.check`). `Type.isDeeplyImmutable()` holds for primitives, strings, `Frozen`, and `value class`es whose field types all satisfy it.
 * **`Type.Function(List<Parameter> parameters, Type result, EffectSet effects)`**:
-  * Assignability (`TypeChecker`): if `target.effects` is constrained (non-empty or any `mut`/`noescape`/`unique`), enforce `actual.effects.satisfies(target.effects)`, `target.noescapeThis => actual.noescapeThis`, `target.uniqueResult => actual.uniqueResult`, `actual.mutThis => target.mutThis`, and per parameter: `target.noescape(i) => actual.noescape(i)`, `actual.mut(i) => target.mut(i)`, `actual.uniqueParam(i) => target.uniqueParam(i)`. Unconstrained `(A) : B` stays top for gradual compatibility.
+  * Invariant: `effects.contains(PURE)` implies `effects.noGlobalEffects && !effects.mutThis` and no parameter in `parameters` has `mut`.
+  * Assignability (`TypeChecker`): if `target` is constrained (non-empty `effects` or any parameter with `mut`/`noescape`/`unique`), `actual` must be a `Type.Function` (never `DYNAMIC`, and never nullable if `NOTHROW` is required) satisfying `actual.effects.satisfies(target.effects)`, `target.noescapeThis => actual.noescapeThis`, `target.uniqueResult => actual.uniqueResult`, `actual.mutThis => target.mutThis`, and per parameter: `target.noescape(i) => actual.noescape(i)`, `actual.mut(i) => target.mut(i)`, `actual.uniqueParam(i) => target.uniqueParam(i)`. Unconstrained `(A) : B` stays top for gradual compatibility.
 
-### 7.2 Dynamic Boundary Checks (`Types`)
+### 7.2 Zero Runtime Effect Machinery (`Types`, `babble-runtime`)
 
-Because Babble always enforces declared types at runtime boundaries (`Types.check`, `type-system.md` §5), function type descriptors encode required effects (`fx|<effects>|<display>|`), checking `callable.effects(runtime).satisfies(required)` whenever a `dynamic` value crosses into an effect-constrained parameter, return, `def`, or field, and call sites inside verified functions whose callee is `dynamic` enforce callee compatibility before dispatch. Because `frozen T` cannot widen to or from `dynamic`, `freeze` requires no runtime descriptor, bit, or wrapper.
+Because `TypeChecker` disallows coercing `dynamic` into `frozen T` (§3.2) or into an effect-constrained `Type.Function` (§3.4), and rejects calling untyped `dynamic` values inside constrained functions (§5.1.4), **the entire effect and ownership system is enforced at compile time with zero effect code in `org.babblelang.runtime` (`babble-runtime.jar`)**:
 
-### 7.3 Compiler (`CodeGenerator`, `Bootstrap`) and Interpreter Integration
+* `Types.check` keeps its existing `fn|<display>|` check (`value instanceof Callable`) for unconstrained function types and requires no `fx|` or `frozen` descriptors.
+* `Callable`, `Function`, `CompiledFunction`, `CompiledMethod`, `JavaMethod`, `BabbleInstance`, `ScriptRuntime`, `Bootstrap`, `Calls`, `Faces`, and `Operators` carry no runtime `EffectSet` fields or effect-checking hooks.
 
-1. **Callable & `ScriptRuntime`:** `Callable.effects(ScriptRuntime)` returns the runtime `EffectSet` (including `mutThis` and `BitSet`/`long` mask of mutated param indices); `ScriptRuntime` holds isolated per-engine Java class/method effect overrides (`assumeEffects`, `markImpure`).
-2. **`CodeGenerator`:**
-   * Stores resolved `EffectSet` metadata on `CompiledFunction` / `CompiledMethod` and AST/IR nodes so optimizer passes (`OptimizerBase` extensions) can query `effects(node)` directly.
-   * For `invokedynamic` call sites inside verified scopes, encodes the required `EffectSet` in `Bootstrap`: linkage checks `target.effects(runtime).satisfies(required)` **once at inline-cache linkage time** (zero steady-state per-call overhead), falling back to `Calls.callWithEffects(...)` on mismatch.
-3. **Interpreter:** Propagates active verified `EffectSet` requirements across call sites, operators (`+`, `==`, `!=`, `<`, `<=`, `>`, `>=`), `BabbleInstance.toString()`, and `Faces` callbacks.
+### 7.3 Compiler (`CodeGenerator`) and Optimizer Integration
+
+1. **`freeze` intrinsic:** `Interpreter` and `CodeGenerator` evaluate `freeze(expr)` as a zero-cost identity no-op (`expr`).
+2. **`CodeGenerator` & Optimizers:** `TypeChecker` publishes resolved `Type.Function` / `EffectSet`, `noescape`, and `unique` metadata in `ScopeAnalysis` so `CodeGenerator` and bytecode optimizer passes (`org.babblelang.compiler.optimizer.OptimizerBase` extensions) can query `effects(ctx)` directly without re-running analysis.
 
 ---
 
@@ -773,8 +774,8 @@ def distSq = pure deterministic nothrow (noescape p: Point, noescape q: Point) :
 
 1. **Phase 1 — Unified Core Model, Verification & `axiom`:**
    * Grammar (`Babble.g4`): add `axiom`, `pure`, `mut`, `noescape`, `unique`, `move`, `freeze`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `threadsafe`, `monotone`, `injective`, `impure` on function literals, parameters, function types, expressions, and top-level/exported Java `axiom` / `impure` targets.
-   * Type system & analysis (`EffectSet`, `Type.Parameter(..., mut, noescape, unique)`, `Type.Function`, `Type.Frozen`, `TypeChecker`, `Types`): verify `pure`, `mut` parameter/`this` + shallow call-site exclusivity, `noescape` checks, `unique`/`move`/`freeze` ownership (deep, locals only) + definite-unassignment, the purely static `frozen T` type (disallowing `dynamic` erasure, zero runtime cost), effect-constrained function descriptors in `Types.check`, `deterministic` (outer mutable & `axiom` non-deterministic checks), conservative `nothrow`, default `pure deterministic` on `value class` and standard value protocol (`equals`, `hashCode`, `toString`, `compareTo`), interface conformance (`actual <: required`), and covariance/contravariance subtyping.
-   * Runtime & Compiler (`Callable`, `ScriptRuntime`, `JavaClass`, `JavaMethod`, `BabbleScriptEngine`, `Faces`, `Operators`, `Interpreter`, `CodeGenerator`, `Bootstrap`): isolated per-runtime `EffectSet` registries, composable Java annotations (`@Pure`, `@Mut`, `@Noescape`, `@Unique`, `@Deterministic`, ...), `Faces` proxy checks, no-op `freeze` intrinsic, and `Bootstrap` linkage enforcement.
+   * Type system & analysis (`EffectSet`, `Type.Parameter(..., mut, noescape, unique)`, `Type.Function`, `Type.Frozen`, `TypeChecker`): verify `pure`, `mut` parameter/`this` + shallow call-site exclusivity, `noescape` checks, `unique`/`move`/`freeze` ownership (deep, locals only) + definite-unassignment, purely static `frozen T` and effect-constrained `Type.Function` (disallowing `dynamic` coercion, zero `babble-runtime` changes), `deterministic` (outer mutable & `axiom` non-deterministic checks), conservative `nothrow`, default `pure deterministic` on `value class` and standard value protocol (`equals`, `hashCode`, `toString`, `compareTo`), interface conformance (`actual <: required`), and covariance/contravariance subtyping.
+   * Engine & Compiler (`BabbleScriptEngine`, `ModuleInterface`, `Interpreter`, `CodeGenerator`): compile-time Java effect registries on `BabbleScriptEngine` and `ModuleInterface`, composable Java annotations (`@Pure`, `@Mut`, `@Noescape`, `@Unique`, `@Deterministic`, ...), and no-op `freeze` intrinsic.
 2. **Phase 2 — Fixed-Point Inference & Core Optimizations:**
    * Implement SCC bottom-up fixed-point inference in `TypeChecker` for `{pure, mut, noescape, unique, deterministic, nothrow}`, derived `threadsafe`, implicit last-use `move`, and compositional `monotone` / `injective`.
    * Expose `EffectSet`, `noescape`, and `unique` metadata on IR/bytecode and wire compiler optimization passes: CSE / constant folding (`pure deterministic`), `@NOALIAS` hoisting & SIMD (`unique mut` parameters), scalar replacement/unboxing (`noescape`), zero-copy `freeze` / FBIP reuse (`unique`), predicate reordering & hoisting (`pure deterministic nothrow`), loop reassociation (`associative`), and parallel collection combinators (`parallelMap`, `parallelReduce`, `parallelForEach`).
