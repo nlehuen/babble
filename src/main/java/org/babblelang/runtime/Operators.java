@@ -56,6 +56,31 @@ public final class Operators {
     }
 
     /**
+     * The operator a compound assignment applies : {@code x += v} is {@code x = x + v}, then
+     * {@code -=}, {@code *=} and {@code /=}. Null for a plain {@code =}.
+     */
+    public static String compound(String assignment) {
+        return switch (assignment) {
+            case "+=" -> "+";
+            case "-=" -> "-";
+            case "*=" -> "*";
+            case "/=" -> "/";
+            default -> null;
+        };
+    }
+
+    /** An arithmetic operator, {@code +}, {@code -}, {@code *} or {@code /}, on two values that aren't Babble instances. */
+    public static Object arithmetic(String operator, Object a, Object b, OpSite site) {
+        return switch (operator) {
+            case "+" -> add(a, b, site);
+            case "-" -> sub(a, b, site);
+            case "*" -> mul(a, b, site);
+            case "/" -> div(a, b, site);
+            default -> throw new IllegalArgumentException("Not an arithmetic operator : " + operator);
+        };
+    }
+
+    /**
      * {@code -a} : an int stays an int (wrapping, as {@code +} and {@code -} do), any other
      * number becomes a double.
      */

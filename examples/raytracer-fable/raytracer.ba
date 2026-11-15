@@ -67,9 +67,9 @@ while a < 11 then (
                 world.add(Sphere(center, 0.2, Dielectric(1.5)))
             )
         )
-        b = b + 1
+        b += 1
     )
-    a = a + 1
+    a += 1
 )
 
 world.add(Sphere(Vec3(0.0, 1.0, 0.0), 1.0, Dielectric(1.5)))

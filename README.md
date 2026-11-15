@@ -157,8 +157,31 @@ assert(1 / 0 == 1.0 / 0)        ;; Infinity
 assert(2147483647 + 1 == -2147483648)
 ```
 
-There is no integer division operator yet : `java.lang.Math.floorDiv(7, 2)` and `floorMod` do
-it through Java.
+`int(x)` and `double(x)` convert : `int` truncates a `double` towards zero, and fails on one
+out of the `int` range, an infinity or `NaN` ; `double` widens an `int`. Both parse a string.
+There is no integer division operator : `int(a / b)` truncates the quotient, and
+`java.lang.Math.floorDiv(a, b)` and `floorMod` round it down.
+
+```
+assert(int(2.7) == 2 and int(-2.7) == -2)
+assert(int(7 / 2) == 3)
+assert(int("42") + double("0.5") == 42.5)
+```
+
+Compound assignment applies an operator to a variable or a member : `x += v` is `x = x + v`,
+and so are `-=`, `*=` and `/=`. The target is read before `v` is evaluated, and the receiver of
+`obj.x += v` is evaluated once. Its value is the value assigned, checked against the target's
+declared type as any assignment's is : `def n : int = 1 ; n /= 2` is a type error.
+
+```
+def total = 0
+def i = 0
+while i < 4 then (
+    i += 1
+    total += i
+)
+assert(total == 10)
+```
 
 ### Block scope
 
@@ -188,7 +211,7 @@ def Account = class (def owner, def balance = 0) (     ;; "def" : the parameter 
 
     def deposit = (n) -> (
         this.history.add(n)
-        this.balance = this.balance + n
+        this.balance += n
     )
     def operations = () -> ( this.history.size() )
 )
@@ -213,7 +236,8 @@ assert(origin.x == 0)
 
 A value class compares by value, prints its fields, and its members are read-only. On any
 instance, the arithmetic operators call methods : `a + b` is `a.plus(b)`, and `-`, `*`, `/` and
-unary `-` call `minus`, `times`, `div` and `neg`. The left operand decides : `2 * p` is an error.
+unary `-` call `minus`, `times`, `div` and `neg`, and so do `+=`, `-=`, `*=` and `/=` : `p += q`
+is `p = p.plus(q)`. The left operand decides : `2 * p` is an error.
 
 ```
 def Point = value class (x, y) (
@@ -584,7 +608,7 @@ Language features :
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java interfaces.
 - [x] optional type declarations for variables and parameters, checked by a gradual type checker with bidirectional local inference (see the [design doc](docs/design/type-system.md)) : it infers function return types from bodies, contextually types lambda parameters, narrows non-reassigned bindings after `is`, reports values of the wrong type, calls that don't match a signature, missing members and the like as errors before the script runs, and enforces declared types at runtime where untyped values reach them.
-- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`.
+- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
 
 Implementation features :
 
@@ -643,9 +667,10 @@ order of how much each would improve that code :
   is a `while` with a counter and an increment that is easy to forget.
 - [x] `else if`, without nesting a block : `else ( if … then ( … ) else ( … ) )`.
 - [ ] `break` and `continue` in loops.
-- [ ] compound assignment : `+=`, `-=`, `*=`, `/=`.
-- [ ] number conversions : an `int(x)` native or an integer division operator, instead of
-  `Math.toIntExact(Math.round(Math.floor(x)))`.
+- [x] compound assignment : `+=`, `-=`, `*=`, `/=`, on variables and members, calling operator
+  methods on instances. The ray tracers' counters and accumulators use them.
+- [x] number conversions : `int(x)` and `double(x)`, instead of
+  `Math.toIntExact(Math.round(Math.floor(x)))` or a binary decomposition in Babble.
 - [x] line continuation before `.`, to break long method chains across lines : a line may start
   with `.`, continuing the expression above it.
 - [x] importing other Babble files : `export` and `import("file.ba")`.

@@ -1026,7 +1026,7 @@ final class TypeChecker {
                     List<BabbleParser.PackageExpressionContext> list = (List<BabbleParser.PackageExpressionContext>) packages;
                     return new Type.Package(name, list);
                 }
-                return name.equals("java") || name.equals("javax") ? new Type.JavaPackage(name) : Type.DYNAMIC;
+                return implicitType(name);
             }
             if (receiver instanceof BabbleParser.SuperExpressionContext) {
                 return Type.DYNAMIC;
@@ -1103,7 +1103,7 @@ final class TypeChecker {
                 return Type.NOTHING;
             }
             if (operand instanceof Type.Instance) {
-                return operatorCall(operand, Operators.NEGATE, null, null, ctx, ctx.operand);
+                return operatorCall(operand, Operators.NEGATE, null, null, ctx, ctx.operand.getText());
             }
             if (!number(operand, ctx.operand) || isUnknown(operand)) {
                 return Type.DYNAMIC;
@@ -1153,6 +1153,10 @@ final class TypeChecker {
 
         @Override
         public Type visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
+            String operator = Operators.compound(ctx.op.getText());
+            if (operator != null) {
+                return compoundAssignment(ctx, operator);
+            }
             String name = ctx.name.getText();
             Type declared = null;
             if (ctx.namespace == null) {
@@ -1179,6 +1183,41 @@ final class TypeChecker {
                 expect(value, declared, ctx.value);
             }
             return value;
+        }
+
+        /**
+         * {@code x op= v} : typed as {@code x = x op v}, the operator's result checked against
+         * what the target declares.
+         */
+        private Type compoundAssignment(BabbleParser.AssignExpressionContext ctx, String operator) {
+            String name = ctx.name.getText();
+            Type declared = null;
+            Type current = Type.DYNAMIC;
+            if (ctx.namespace == null) {
+                if (resolveName(ctx, name, occurrenceScopes.get(ctx)) instanceof ParserRuleContext declaration) {
+                    declared = declaredType(declaration);
+                    Type narrowed = narrowedType(declaration);
+                    current = narrowed != null ? narrowed : typeOfDeclaration(declaration);
+                }
+            } else {
+                Type receiver = typeOf(ctx.namespace);
+                java.lang.reflect.Field field = assignedJavaField(receiver, name, ctx);
+                if (field != null) {
+                    declared = fromJava(field.getType());
+                } else {
+                    declared = assignedMemberType(receiver, name, ctx.namespace instanceof BabbleParser.ThisExpressionContext, ctx);
+                }
+                if (declared != null) {
+                    current = declared;
+                }
+            }
+            Type value = typeOf(ctx.value);
+            Type result = binaryOp(arithmeticToken(operator), operator, ctx, org.babblelang.engine.impl.Interpreter.targetText(ctx), ctx, current,
+                    ctx.value.getText(), ctx.value, value);
+            if (declared != null) {
+                expect(result, declared, ctx);
+            }
+            return result;
         }
 
         @Override
@@ -1239,6 +1278,11 @@ final class TypeChecker {
 
     /** {@code receiver.name}, read. */
     private Type member(Type receiver, String name, boolean own, ParserRuleContext at, BabbleParser.ExpressionContext receiverExpression) {
+        return member(receiver, name, own, at, receiverExpression.getText());
+    }
+
+    /** {@code receiver.name}, read, given the receiver's source text. */
+    private Type member(Type receiver, String name, boolean own, ParserRuleContext at, String receiverText) {
         if (receiver == Type.DYNAMIC || receiver == Type.NOTHING) {
             return Type.DYNAMIC;
         }
@@ -1288,7 +1332,7 @@ final class TypeChecker {
         }
         // Numbers, booleans, strings, null, functions : nothing has members but objects,
         // classes, packages and Java values.
-        warn("Not a scope : " + receiverExpression.getText(), at);
+        warn("Not a scope : " + receiverText, at);
         return Type.DYNAMIC;
     }
 
@@ -1707,11 +1751,19 @@ final class TypeChecker {
     // ---------------------------------------------------------------- operators
 
     private Type binaryOp(BabbleParser.BinaryOpContext ctx, Type left, Type right) {
-        int op = ctx.op.getType();
+        return binaryOp(ctx.op.getType(), ctx.op.getText(), ctx, ctx.left.getText(), ctx.left, left, ctx.right.getText(), ctx.right, right);
+    }
+
+    /**
+     * {@code left op right}, given the operands' source texts and where to report each : the
+     * operands of a binary expression, or the target and the value of a compound assignment.
+     */
+    private Type binaryOp(int op, String operator, ParserRuleContext ctx, String leftText, ParserRuleContext leftAt, Type left,
+                          String rightText, ParserRuleContext rightAt, Type right) {
         boolean seeding = !inferenceStack.isEmpty() && recursiveFunctions.contains(inferenceStack.peek());
-        String method = Operators.method(ctx.op.getText());
+        String method = Operators.method(operator);
         if (method != null && left instanceof Type.Instance) {
-            return operatorCall(left, method, ctx.right, right, ctx, ctx.left);
+            return operatorCall(left, method, rightAt, right, ctx, leftText);
         }
         switch (op) {
             case BabbleLexer.PLUS:
@@ -1729,7 +1781,7 @@ final class TypeChecker {
                     // Maybe an instance with the operator's method : the right operand is its argument.
                     return Type.DYNAMIC;
                 }
-                boolean numbers = number(left, ctx.left) & number(right, ctx.right);
+                boolean numbers = number(left, leftText, leftAt) & number(right, rightText, rightAt);
                 if (op == BabbleLexer.DIV) {
                     return Type.DOUBLE;
                 }
@@ -1750,10 +1802,38 @@ final class TypeChecker {
                 return Type.BOOL;
             default:
                 if (!comparable(left, right)) {
-                    warn("Not comparable : " + ctx.left.getText() + " and " + ctx.right.getText(), ctx);
+                    warn("Not comparable : " + leftText + " and " + rightText, ctx);
                 }
                 return Type.BOOL;
         }
+    }
+
+    private static final Type.Function INT_CONVERSION = new Type.Function(List.of(new Type.Parameter("value", Type.DYNAMIC, false)), Type.INT);
+    private static final Type.Function DOUBLE_CONVERSION = new Type.Function(List.of(new Type.Parameter("value", Type.DYNAMIC, false)), Type.DOUBLE);
+
+    /**
+     * A name the analysis doesn't declare : a root Java package, a number conversion
+     * ({@code int(x)}, {@code double(x)}), or something dynamic (the other implicits, the
+     * script's bindings).
+     */
+    private static Type implicitType(String name) {
+        return switch (name) {
+            case "java", "javax" -> new Type.JavaPackage(name);
+            case "int" -> INT_CONVERSION;
+            case "double" -> DOUBLE_CONVERSION;
+            default -> Type.DYNAMIC;
+        };
+    }
+
+    /** The lexer's token for an arithmetic operator. */
+    private static int arithmeticToken(String operator) {
+        return switch (operator) {
+            case "+" -> BabbleLexer.PLUS;
+            case "-" -> BabbleLexer.MINUS;
+            case "*" -> BabbleLexer.MUL;
+            case "/" -> BabbleLexer.DIV;
+            default -> throw new IllegalArgumentException(operator);
+        };
     }
 
     private static boolean isNumber(Type type) {
@@ -1766,11 +1846,15 @@ final class TypeChecker {
 
     /** Whether an operand can be a number, reporting it when it can't. */
     private boolean number(Type type, BabbleParser.ExpressionContext operand) {
+        return number(type, operand.getText(), operand);
+    }
+
+    private boolean number(Type type, String text, ParserRuleContext at) {
         if (isUnknown(type) || type == Type.INT || type == Type.DOUBLE
                 || type instanceof Type.JavaInstance instance && Number.class.isAssignableFrom(instance.type())) {
             return true;
         }
-        warn("Not a number : " + operand.getText(), operand);
+        warn("Not a number : " + text, at);
         return false;
     }
 
@@ -1791,12 +1875,12 @@ final class TypeChecker {
      * {@code a + b}, or {@code -a}, on an instance of a class or interface : typed as the call
      * of its operator method, {@code a.plus(b)} ({@code argument} null for {@code a.neg()}).
      */
-    private Type operatorCall(Type receiver, String method, BabbleParser.ExpressionContext argument, Type argumentType,
-                              ParserRuleContext at, BabbleParser.ExpressionContext receiverExpression) {
-        Type callee = member(receiver, method, false, at, receiverExpression);
+    private Type operatorCall(Type receiver, String method, ParserRuleContext argument, Type argumentType,
+                              ParserRuleContext at, String receiverText) {
+        Type callee = member(receiver, method, false, at, receiverText);
         if (!(callee instanceof Type.Function function)) {
             if (!isUnknown(callee) && !isFunction(callee)) {
-                warn(receiverExpression.getText() + "." + method + " is not callable", at);
+                warn(receiverText + "." + method + " is not callable", at);
             }
             return Type.DYNAMIC;
         }

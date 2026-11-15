@@ -62,7 +62,7 @@ export def HittableList = class () implements Hittable (
 
     def add = (item: Hittable) -> (
         this.head = HittableNode(item, this.head)
-        this.size = this.size + 1
+        this.size += 1
         this.bbox = AABB.enclose(this.bbox, item.boundingBox())
     )
 
@@ -106,7 +106,7 @@ export def HittableList = class () implements Hittable (
         def matched: int = 0
         this.forEach((item: Hittable) -> (
             if pred(item) then (
-                matched = matched + 1
+                matched += 1
             )
         ))
         matched

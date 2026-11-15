@@ -3,7 +3,7 @@
     https://raytracing.github.io/books/RayTracingInOneWeekend.html
 
     Implemented in 100% pure Babble with ZERO Java builtins (no java.* or javax.*).
-    Every mathematical function (sqrt, sin, cos, tan, pow, float-to-int conversion),
+    Every mathematical function (sqrt, sin, cos, tan, pow),
     random number generator (LCG), data structure (linked HittableList and Bounding
     Volume Hierarchy BVHNode), vector/ray/AABB geometry, material model (Lambertian,
     Metal, Dielectric with Schlick approximation), positionable defocus-blur Camera,

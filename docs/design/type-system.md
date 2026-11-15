@@ -133,6 +133,11 @@ gradually:
   functions): `Not a scope : x`. Narrowed lexical bindings use their narrowed type in branches,
   short-circuit operators and post-guard block statements.
 * Operators (T3), members (T5), Java calls (T7).
+* Compound assignment (`x += v`, `obj.x -= v`, `this.x *= v`, `/=`) is typed as `x = x op v`:
+  the operator on the target's type (its declaration, or `dynamic`) and `v`'s, operator methods
+  included, and its result against the target's declared type, reported at the assignment.
+* The number conversions `int(x)` and `double(x)`, when no `def` shadows them, are functions of
+  one `dynamic` parameter returning `int` and `double`.
 
 The value of an `if` is the join of its branches: the same type, `double` for `int` and
 `double`, a nullable type for `null` and that type, and `dynamic` otherwise. A `while` loop's

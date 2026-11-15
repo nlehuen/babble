@@ -33,7 +33,7 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
   - `math.sqrt(x)`: Range-scaling + 10-iteration Newton-Raphson (Heron's method) to full IEEE-754 `double` precision.
   - `math.sin(x)`, `math.cos(x)`, `math.tan(x)`: Angle wrapping into $[-\pi, \pi]$ followed by 10-term Taylor series expansion.
   - `math.powInt(base, exp)`: Recursive exponentiation using Babble's `recurse` keyword (for Schlick's glass reflectance polynomial).
-  - `math.toInt(x)` and `math.toByte(x)`: Recursive binary bit-decomposition (`toIntPos` via `recurse`) and 8-bit unrolled branch decomposition to convert `double` values into exact Babble `int` values without `Double.intValue()`.
+  - `math.toInt(x)` and `math.toByte(x)`: truncate a `double` to an `int` with Babble's built-in `int(x)` (`toByte` clamps to `[0, 255]` first). They once did it in Babble itself, by recursive binary bit-decomposition and an unrolled 8-bit branch cascade, before the language had `int(x)`.
   - `math.infinity` (`1.0 / 0.0`), `math.negInfinity`, `math.pi`, `math.degreesToRadians`, `math.abs`, `math.min`, `math.max`, `math.clamp`.
 - **`raytracer.Rng` (no `java.util.Random`)**:
   - 32-bit Linear Congruential Generator (`seed * 1664525 + 1013904223`) leveraging Babble's 32-bit signed integer wrap-around on `int` arithmetic.

@@ -47,8 +47,10 @@ expression:
           | left=expression op=AND NL* right=expression           # booleanOp
           | left=expression op=OR NL* right=expression            # booleanOp
           | parametersDeclaration ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
-          | namespace=expression NL* '.' name=ID '=' NL* value=expression # assignExpression
-          | name=ID '=' NL* value=expression                  # assignExpression
+          // Compound assignment : "x += v" is "x = x + v" (and -=, *=, /=), with the target's
+          // receiver evaluated once.
+          | namespace=expression NL* '.' name=ID op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression # assignExpression
+          | name=ID op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression   # assignExpression
           | NULL                                              # null
           | BOOLEAN                                           # boolean
           | RECURSE                                           # recurse
@@ -98,6 +100,10 @@ GT: '>';
 COLON: ':';
 SEMICOLON: ';';
 ASSIGN: '=';
+PLUS_ASSIGN: '+=';
+MINUS_ASSIGN: '-=';
+MUL_ASSIGN: '*=';
+DIV_ASSIGN: '/=';
 DOT: '.';
 ARROW: '->';
 LPAREN: '(';

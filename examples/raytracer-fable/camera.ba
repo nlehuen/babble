@@ -19,7 +19,7 @@ export def Camera = class (
     def defocusAngle = 0,                ;; variation angle of rays through each pixel
     def focusDist = 10                   ;; distance from lookFrom to plane of perfect focus
 ) (
-    def imageHeight = Math.max(1, Math.toIntExact(Math.round(Math.floor(this.imageWidth / this.aspectRatio))))
+    def imageHeight = Math.max(1, int(this.imageWidth / this.aspectRatio))
     private def center = this.lookFrom
 
     ;; determine viewport dimensions
@@ -86,7 +86,7 @@ export def Camera = class (
     ;; a linear color component as a gamma 2 byte
     private def toByte = (linear) -> (
         def gamma = if linear > 0 then (Math.sqrt(linear)) else (0.0)
-        Math.toIntExact(Math.round(Math.floor(256 * Math.max(0.0, Math.min(gamma, 0.999)))))
+        int(256 * Math.max(0.0, Math.min(gamma, 0.999)))
     )
 
     ;; Renders the world to a java.awt.image.BufferedImage. The threads take scanlines
@@ -104,12 +104,12 @@ export def Camera = class (
                     def color = Vec3(0.0, 0.0, 0.0)
                     def sample = 0
                     while sample < this.samplesPerPixel then (
-                        color = color + this.rayColor(this.getRay(i, j, rng), this.maxDepth, world, rng)
-                        sample = sample + 1
+                        color += this.rayColor(this.getRay(i, j, rng), this.maxDepth, world, rng)
+                        sample += 1
                     )
-                    color = color / this.samplesPerPixel
+                    color /= this.samplesPerPixel
                     image.setRGB(i, j, 65536 * this.toByte(color.x) + 256 * this.toByte(color.y) + this.toByte(color.z))
-                    i = i + 1
+                    i += 1
                 )
                 j = nextLine.getAndIncrement()
             )

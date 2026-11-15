@@ -18,7 +18,7 @@ export def HittableList = class () implements Hittable (
                 closest = rec
                 closestSoFar = rec.t
             )
-            i = i + 1
+            i += 1
         )
         closest
     )

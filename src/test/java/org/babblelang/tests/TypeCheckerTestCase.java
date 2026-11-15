@@ -131,6 +131,30 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testNumberConversions() {
+        assertDiagnostics("def a : int = int(2.5)\ndef b : double = double(\"1\")\ndef c : string = int(1.5)\ndef d : int = double(1)\nint(1, 2)",
+                "3:18 Type error : expected string, got int",
+                "4:15 Type error : expected int, got double",
+                "5:1 Too many parameters : 1 declared, 2 given");
+    }
+
+    @Test
+    public void testCompoundAssignment() {
+        // Typed as x = x op v : the result against what the target declares, the operands as for op.
+        assertDiagnostics("def a : int = 1\na += 2\na *= 2.0\na /= 2\ndef s : string = \"x\"\ns += 1\ns -= 1\ndef d : double = 1.0\nd /= 3",
+                "3:1 Type error : expected int, got double",
+                "4:1 Type error : expected int, got double",
+                "7:1 Not a number : s");
+        assertDiagnostics("def C = class () ( def n : int = 0 ; def m = () -> ( this.n /= 2 ) )\ndef c = C()\nc.n += 1\nc.n += \"x\"\nc.q += 1",
+                "1:54 Type error : expected int, got double",
+                "4:8 Not a number : \"x\"",
+                "5:1 No such member : q");
+        assertDiagnostics("def V = value class (x) ( def plus = (o : V) : V -> ( V(this.x + o.x) ) )\ndef v : V = V(1)\nv += V(2)\nv += 1\nv -= V(1)",
+                "4:6 Type error : expected V, got int",
+                "5:1 No such member : minus");
+    }
+
+    @Test
     public void testOperators() {
         assertDiagnostics("def a : int = 1 + 2\ndef b : int = 1 + 2.0\ndef c : int = 4 / 2\ndef d : string = \"a\" + 1\ndef e : bool = 1 < 2",
                 "2:15 Type error : expected int, got double",
