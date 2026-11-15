@@ -8,16 +8,16 @@ def Vec3 = import("vec3.ba").Vec3
 def Ray = import("ray.ba").Ray
 
 export def Camera = class (
-    def aspectRatio = 1.0,                 ;; ratio of image width over height
-    def imageWidth = 100,                  ;; rendered image width in pixel count
-    def samplesPerPixel = 10,              ;; count of random samples for each pixel
-    def maxDepth = 10,                     ;; maximum number of ray bounces into scene
-    def vfov = 90,                         ;; vertical view angle (field of view)
-    def lookFrom = Vec3(0.0, 0.0, 0.0),    ;; point camera is looking from
-    def lookAt = Vec3(0.0, 0.0, 0 - 1.0),  ;; point camera is looking at
-    def vup = Vec3(0.0, 1.0, 0.0),         ;; camera-relative "up" direction
-    def defocusAngle = 0,                  ;; variation angle of rays through each pixel
-    def focusDist = 10                     ;; distance from lookFrom to plane of perfect focus
+    def aspectRatio = 1.0,               ;; ratio of image width over height
+    def imageWidth = 100,                ;; rendered image width in pixel count
+    def samplesPerPixel = 10,            ;; count of random samples for each pixel
+    def maxDepth = 10,                   ;; maximum number of ray bounces into scene
+    def vfov = 90,                       ;; vertical view angle (field of view)
+    def lookFrom = Vec3(0.0, 0.0, 0.0),  ;; point camera is looking from
+    def lookAt = Vec3(0.0, 0.0, -1.0),   ;; point camera is looking at
+    def vup = Vec3(0.0, 1.0, 0.0),       ;; camera-relative "up" direction
+    def defocusAngle = 0,                ;; variation angle of rays through each pixel
+    def focusDist = 10                   ;; distance from lookFrom to plane of perfect focus
 ) (
     def imageHeight = Math.max(1, Math.toIntExact(Math.round(Math.floor(this.imageWidth / this.aspectRatio))))
     private def center = this.lookFrom
@@ -41,7 +41,10 @@ export def Camera = class (
     private def pixelDeltaV = this.viewportV.div(this.imageHeight)
 
     ;; calculate the location of the upper left pixel
-    private def viewportUpperLeft = this.center.minus(this.w.times(this.focusDist)).minus(this.viewportU.div(2)).minus(this.viewportV.div(2))
+    private def viewportUpperLeft = this.center
+        .minus(this.w.times(this.focusDist))
+        .minus(this.viewportU.div(2))
+        .minus(this.viewportV.div(2))
     private def pixel00 = this.viewportUpperLeft.plus(this.pixelDeltaU.plus(this.pixelDeltaV).times(0.5))
 
     ;; calculate the camera defocus disk basis vectors
@@ -58,7 +61,9 @@ export def Camera = class (
     ;; a camera ray originating from the defocus disk and directed at a randomly
     ;; sampled point around the pixel location i, j
     private def getRay = (i, j, rng) -> (
-        def pixelSample = this.pixel00.plus(this.pixelDeltaU.times(i + rng.nextDouble() - 0.5)).plus(this.pixelDeltaV.times(j + rng.nextDouble() - 0.5))
+        def pixelSample = this.pixel00
+            .plus(this.pixelDeltaU.times(i + rng.nextDouble() - 0.5))
+            .plus(this.pixelDeltaV.times(j + rng.nextDouble() - 0.5))
         def origin = if this.defocusAngle <= 0 then (this.center) else (this.defocusDiskSample(rng))
         Ray(origin, pixelSample.minus(origin))
     )

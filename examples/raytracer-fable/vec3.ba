@@ -6,7 +6,7 @@ def randomDouble = rtweekend.randomDouble
 
 ;; Points, directions and colors. Babble has no operator overloading, hence the methods.
 export def Vec3 = value class (x, y, z) (
-    def neg = () -> (Vec3(0 - this.x, 0 - this.y, 0 - this.z))
+    def neg = () -> (Vec3(-this.x, -this.y, -this.z))
     def plus = (v) -> (Vec3(this.x + v.x, this.y + v.y, this.z + v.z))
     def minus = (v) -> (Vec3(this.x - v.x, this.y - v.y, this.z - v.z))
     def mul = (v) -> (Vec3(this.x * v.x, this.y * v.y, this.z * v.z))
@@ -33,7 +33,7 @@ export def Vec3 = value class (x, y, z) (
     def refract = (n, etaiOverEtat) -> (
         def cosTheta = Math.min(this.neg().dot(n), 1.0)
         def perp = this.plus(n.times(cosTheta)).times(etaiOverEtat)
-        def parallel = n.times(0 - Math.sqrt(Math.abs(1.0 - perp.lengthSquared())))
+        def parallel = n.times(-Math.sqrt(Math.abs(1.0 - perp.lengthSquared())))
         perp.plus(parallel)
     )
 ) static (
@@ -43,7 +43,7 @@ export def Vec3 = value class (x, y, z) (
 
     ;; a random direction, by rejection of the points outside the unit sphere
     def randomUnit = (rng) -> (
-        def p = Vec3.random(rng, 0 - 1.0, 1.0)
+        def p = Vec3.random(rng, -1.0, 1.0)
         def lensq = p.lengthSquared()
         if 0.0 < lensq and lensq <= 1.0 then (
             p.div(Math.sqrt(lensq))
@@ -53,7 +53,7 @@ export def Vec3 = value class (x, y, z) (
     )
 
     def randomInUnitDisk = (rng) -> (
-        def p = Vec3(randomDouble(rng, 0 - 1.0, 1.0), randomDouble(rng, 0 - 1.0, 1.0), 0.0)
+        def p = Vec3(randomDouble(rng, -1.0, 1.0), randomDouble(rng, -1.0, 1.0), 0.0)
         if p.lengthSquared() < 1.0 then (p) else (recurse(rng))
     )
 )

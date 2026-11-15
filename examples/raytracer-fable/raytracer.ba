@@ -42,12 +42,12 @@ def Camera = import("camera.ba").Camera
 
 def world = HittableList()
 
-world.add(Sphere(Vec3(0.0, 0 - 1000.0, 0.0), 1000.0, Lambertian(Vec3(0.5, 0.5, 0.5))))
+world.add(Sphere(Vec3(0.0, -1000.0, 0.0), 1000.0, Lambertian(Vec3(0.5, 0.5, 0.5))))
 
 def rng = java.util.Random(20)  ;; a fixed seed : the same scene every time
-def a = 0 - 11
+def a = -11
 while a < 11 then (
-    def b = 0 - 11
+    def b = -11
     while b < 11 then (
         def chooseMat = rng.nextDouble()
         def center = Vec3(a + 0.9 * rng.nextDouble(), 0.2, b + 0.9 * rng.nextDouble())
@@ -57,16 +57,14 @@ while a < 11 then (
                 ;; diffuse
                 def albedo = Vec3.random(rng).mul(Vec3.random(rng))
                 world.add(Sphere(center, 0.2, Lambertian(albedo)))
+            ) else if chooseMat < 0.95 then (
+                ;; metal
+                def albedo = Vec3.random(rng, 0.5, 1.0)
+                def fuzz = randomDouble(rng, 0.0, 0.5)
+                world.add(Sphere(center, 0.2, Metal(albedo, fuzz)))
             ) else (
-                if chooseMat < 0.95 then (
-                    ;; metal
-                    def albedo = Vec3.random(rng, 0.5, 1.0)
-                    def fuzz = randomDouble(rng, 0.0, 0.5)
-                    world.add(Sphere(center, 0.2, Metal(albedo, fuzz)))
-                ) else (
-                    ;; glass
-                    world.add(Sphere(center, 0.2, Dielectric(1.5)))
-                )
+                ;; glass
+                world.add(Sphere(center, 0.2, Dielectric(1.5)))
             )
         )
         b = b + 1
@@ -75,7 +73,7 @@ while a < 11 then (
 )
 
 world.add(Sphere(Vec3(0.0, 1.0, 0.0), 1.0, Dielectric(1.5)))
-world.add(Sphere(Vec3(0 - 4.0, 1.0, 0.0), 1.0, Lambertian(Vec3(0.4, 0.2, 0.1))))
+world.add(Sphere(Vec3(-4.0, 1.0, 0.0), 1.0, Lambertian(Vec3(0.4, 0.2, 0.1))))
 world.add(Sphere(Vec3(4.0, 1.0, 0.0), 1.0, Metal(Vec3(0.7, 0.6, 0.5), 0.0)))
 
 def camera = Camera(

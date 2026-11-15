@@ -6,7 +6,7 @@ def Rng = import("rng.ba").Rng
 ;; ------------------------------------------------------------------------
 export def Vec3 = value class (x: double, y: double, z: double) (
     def neg = (): Vec3 -> (
-        Vec3(0.0 - this.x, 0.0 - this.y, 0.0 - this.z)
+        Vec3(-this.x, -this.y, -this.z)
     )
 
     def plus = (v: Vec3): Vec3 -> (
@@ -67,7 +67,7 @@ export def Vec3 = value class (x: double, y: double, z: double) (
     def refract = (n: Vec3, etaiOverEtat: double): Vec3 -> (
         def cosTheta: double = math.min(this.neg().dot(n), 1.0)
         def rOutPerp: Vec3 = this.plus(n.scale(cosTheta)).scale(etaiOverEtat)
-        def rOutParallel: Vec3 = n.scale(0.0 - math.sqrt(math.abs(1.0 - rOutPerp.lengthSquared())))
+        def rOutParallel: Vec3 = n.scale(-math.sqrt(math.abs(1.0 - rOutPerp.lengthSquared())))
         rOutPerp.plus(rOutParallel)
     )
 ) static (
@@ -88,7 +88,7 @@ export def Vec3 = value class (x: double, y: double, z: double) (
 
     def randomUnitVector = (rng: Rng): Vec3 -> (
         while true then (
-            def p: Vec3 = this.randomRange(rng, 0.0 - 1.0, 1.0)
+            def p: Vec3 = this.randomRange(rng, -1.0, 1.0)
             def lensq: double = p.lengthSquared()
             if lensq > 0.000000000001 and lensq <= 1.0 then (
                 return p.div(math.sqrt(lensq))
@@ -109,8 +109,8 @@ export def Vec3 = value class (x: double, y: double, z: double) (
     def randomInUnitDisk = (rng: Rng): Vec3 -> (
         while true then (
             def p: Vec3 = this(
-                rng.nextRange(0.0 - 1.0, 1.0),
-                rng.nextRange(0.0 - 1.0, 1.0),
+                rng.nextRange(-1.0, 1.0),
+                rng.nextRange(-1.0, 1.0),
                 0.0
             )
             if p.lengthSquared() < 1.0 then (

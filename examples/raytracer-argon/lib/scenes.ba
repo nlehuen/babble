@@ -20,11 +20,11 @@ export def Scenes = object (
         def matBubble: Material = Dielectric(1.00 / 1.50)
         def matRight: Material = Metal(Vec3(0.8, 0.6, 0.2), 1.0)
 
-        world.add(Sphere(Vec3(0.0, 0.0 - 100.5, 0.0 - 1.0), 100.0, matGround))
-        world.add(Sphere(Vec3(0.0, 0.0, 0.0 - 1.2), 0.5, matCenter))
-        world.add(Sphere(Vec3(0.0 - 1.0, 0.0, 0.0 - 1.0), 0.5, matLeft))
-        world.add(Sphere(Vec3(0.0 - 1.0, 0.0, 0.0 - 1.0), 0.4, matBubble))
-        world.add(Sphere(Vec3(1.0, 0.0, 0.0 - 1.0), 0.5, matRight))
+        world.add(Sphere(Vec3(0.0, -100.5, -1.0), 100.0, matGround))
+        world.add(Sphere(Vec3(0.0, 0.0, -1.2), 0.5, matCenter))
+        world.add(Sphere(Vec3(-1.0, 0.0, -1.0), 0.5, matLeft))
+        world.add(Sphere(Vec3(-1.0, 0.0, -1.0), 0.4, matBubble))
+        world.add(Sphere(Vec3(1.0, 0.0, -1.0), 0.5, matRight))
         world
     )
 
@@ -33,11 +33,11 @@ export def Scenes = object (
         def world: HittableList = HittableList()
 
         def groundMaterial: Material = Lambertian(Vec3(0.5, 0.5, 0.5))
-        world.add(Sphere(Vec3(0.0, 0.0 - 1000.0, 0.0), 1000.0, groundMaterial))
+        world.add(Sphere(Vec3(0.0, -1000.0, 0.0), 1000.0, groundMaterial))
 
-        def a: int = 0 - gridRadius
+        def a: int = -gridRadius
         while a < gridRadius then (
-            def b: int = 0 - gridRadius
+            def b: int = -gridRadius
             while b < gridRadius then (
                 def chooseMat: double = rng.nextDouble()
                 def center: Vec3 = Vec3(
@@ -51,16 +51,14 @@ export def Scenes = object (
                         ;; Diffuse
                         def albedo: Vec3 = Vec3.random(rng).mul(Vec3.random(rng))
                         world.add(Sphere(center, 0.2, Lambertian(albedo)))
+                    ) else if chooseMat < 0.95 then (
+                        ;; Metal
+                        def albedo: Vec3 = Vec3.randomRange(rng, 0.5, 1.0)
+                        def fuzz: double = rng.nextRange(0.0, 0.5)
+                        world.add(Sphere(center, 0.2, Metal(albedo, fuzz)))
                     ) else (
-                        if chooseMat < 0.95 then (
-                            ;; Metal
-                            def albedo: Vec3 = Vec3.randomRange(rng, 0.5, 1.0)
-                            def fuzz: double = rng.nextRange(0.0, 0.5)
-                            world.add(Sphere(center, 0.2, Metal(albedo, fuzz)))
-                        ) else (
-                            ;; Glass
-                            world.add(Sphere(center, 0.2, Dielectric(1.5)))
-                        )
+                        ;; Glass
+                        world.add(Sphere(center, 0.2, Dielectric(1.5)))
                     )
                 )
                 b = b + 1
@@ -72,7 +70,7 @@ export def Scenes = object (
         world.add(Sphere(Vec3(0.0, 1.0, 0.0), 1.0, material1))
 
         def material2: Material = Lambertian(Vec3(0.4, 0.2, 0.1))
-        world.add(Sphere(Vec3(0.0 - 4.0, 1.0, 0.0), 1.0, material2))
+        world.add(Sphere(Vec3(-4.0, 1.0, 0.0), 1.0, material2))
 
         def material3: Material = Metal(Vec3(0.7, 0.6, 0.5), 0.0)
         world.add(Sphere(Vec3(4.0, 1.0, 0.0), 1.0, material3))

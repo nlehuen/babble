@@ -5,10 +5,10 @@ export def pi: double = 3.141592653589793
 export def twoPi: double = 6.283185307179586
 export def halfPi: double = 1.5707963267948966
 export def infinity: double = 1.0 / 0.0
-export def negInfinity: double = (0.0 - 1.0) / 0.0
+export def negInfinity: double = -1.0 / 0.0
 
 export def abs = (x: double): double -> (
-    if x < 0.0 then (0.0 - x) else (x)
+    if x < 0.0 then (-x) else (x)
 )
 
 export def min = (a: double, b: double): double -> (
@@ -30,9 +30,7 @@ export def maxInt = (a: int, b: int): int -> (
 export def clamp = (x: double, lo: double, hi: double): double -> (
     if x < lo then (
         lo
-    ) else (
-        if x > hi then (hi) else (x)
-    )
+    ) else if x > hi then (hi) else (x)
 )
 
 export def degreesToRadians = (degrees: double): double -> (
@@ -72,7 +70,7 @@ export def sqrt = (x: double): double -> (
 export def wrapAngle = (x: double): double -> (
     def a: double = x
     while a > pi then (a = a - twoPi)
-    while a < 0.0 - pi then (a = a + twoPi)
+    while a < -pi then (a = a + twoPi)
     a
 )
 
@@ -85,7 +83,7 @@ export def sin = (x: double): double -> (
     def n: int = 1
     while n <= 10 then (
         def denom: double = (2 * n) * (2 * n + 1)
-        term = (0.0 - term) * x2 / denom
+        term = -term * x2 / denom
         sum = sum + term
         n = n + 1
     )
@@ -101,7 +99,7 @@ export def cos = (x: double): double -> (
     def n: int = 1
     while n <= 10 then (
         def denom: double = (2 * n - 1) * (2 * n)
-        term = (0.0 - term) * x2 / denom
+        term = -term * x2 / denom
         sum = sum + term
         n = n + 1
     )
@@ -139,7 +137,7 @@ export def toIntPos = (x: double, bit: int): int -> (
 
 export def toInt = (x: double): int -> (
     if x < 0.0 then (
-        0 - toIntPos(0.0 - x, 1)
+        -toIntPos(-x, 1)
     ) else (
         toIntPos(x, 1)
     )

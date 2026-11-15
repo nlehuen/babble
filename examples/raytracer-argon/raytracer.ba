@@ -23,7 +23,7 @@ def raytracer = import("lib/raytracer.ba")
 ;; ============================================================================
 def runTests = () -> (
     ;; Math checks
-    assert(math.abs(0.0 - 3.5) == 3.5, "abs failed")
+    assert(math.abs(-3.5) == 3.5, "abs failed")
     assert(math.min(2.0, 5.0) == 2.0 and math.max(2.0, 5.0) == 5.0, "min/max failed")
     assert(math.abs(math.sqrt(9.0) - 3.0) < 0.000000001, "sqrt(9) failed")
     assert(math.abs(math.sqrt(2.0) - 1.41421356237) < 0.00000001, "sqrt(2) failed")
@@ -31,7 +31,7 @@ def runTests = () -> (
     assert(math.abs(math.sin(0.0)) < 0.000000001, "sin(0) failed")
     assert(math.abs(math.cos(0.0) - 1.0) < 0.000000001, "cos(0) failed")
     assert(math.abs(math.sin(math.halfPi) - 1.0) < 0.00000001, "sin(pi/2) failed")
-    assert(math.toInt(225.8) == 225 and math.toInt(0.0 - 42.9) == 0 - 42, "toInt failed")
+    assert(math.toInt(225.8) == 225 and math.toInt(-42.9) == -42, "toInt failed")
     assert(math.toByte(0.0) == 0 and math.toByte(128.4) == 128 and math.toByte(300.0) == 255, "toByte failed")
 
     ;; Value class semantics: structural ==, cross-number ==, identity via same(), classof()
@@ -48,12 +48,12 @@ def runTests = () -> (
 
     ;; Reflection and refraction
     def normal: raytracer.Vec3 = Vec3(0.0, 1.0, 0.0)
-    assert(Vec3(1.0, 0.0 - 1.0, 0.0).reflect(normal) == Vec3(1.0, 1.0, 0.0), "Vec3.reflect failed")
+    assert(Vec3(1.0, -1.0, 0.0).reflect(normal) == Vec3(1.0, 1.0, 0.0), "Vec3.reflect failed")
 
     ;; Ray, Interval, Sphere, HittableList, BVHNode, and Materials
-    def r: raytracer.Ray = raytracer.Ray(Vec3(0.0, 0.0, 0.0), Vec3(0.0, 0.0, 0.0 - 1.0))
+    def r: raytracer.Ray = raytracer.Ray(Vec3(0.0, 0.0, 0.0), Vec3(0.0, 0.0, -1.0))
     def mat: raytracer.Material = raytracer.Lambertian(Vec3(0.8, 0.3, 0.3))
-    def s: raytracer.Sphere = raytracer.Sphere(Vec3(0.0, 0.0, 0.0 - 1.0), 0.5, mat)
+    def s: raytracer.Sphere = raytracer.Sphere(Vec3(0.0, 0.0, -1.0), 0.5, mat)
     assert(s is raytracer.Hittable and s is raytracer.Describable, "Sphere interface conformance failed")
     assert(s.describe() == "<sphere>(r=0.5)", "super(Hittable).describe() failed")
     assert(mat.describe() == "<lambertian>(Vec3(x: 0.8, y: 0.3, z: 0.3))", "super.describe() failed")
@@ -61,7 +61,7 @@ def runTests = () -> (
     def hit: raytracer.HitRecord = s.hit(r, raytracer.Interval(0.001, math.infinity))
     assert(hit != null and hit.frontFace, "Sphere hit failed")
     assert(math.abs(hit.t - 0.5) < 0.00000001, "Sphere hit t failed")
-    assert(hit.p == Vec3(0.0, 0.0, 0.0 - 0.5), "Sphere hit point failed")
+    assert(hit.p == Vec3(0.0, 0.0, -0.5), "Sphere hit point failed")
     assert(hit.normal == Vec3(0.0, 0.0, 1.0), "Sphere outward normal failed")
 
     ;; Verify Material scattering (Lambertian, Metal, Dielectric) and HittableList / BVHNode parity

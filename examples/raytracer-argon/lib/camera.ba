@@ -45,7 +45,10 @@ export def Camera = class (
     private def pixelDeltaV: Vec3 = this.viewportV.div(1.0 * this.imageHeight)
 
     ;; Upper-left pixel location
-    private def viewportUpperLeft: Vec3 = this.center.minus(this.w.scale(this.focusDist)).minus(this.viewportU.div(2.0)).minus(this.viewportV.div(2.0))
+    private def viewportUpperLeft: Vec3 = this.center
+        .minus(this.w.scale(this.focusDist))
+        .minus(this.viewportU.div(2.0))
+        .minus(this.viewportV.div(2.0))
     def pixel00Loc: Vec3 = this.viewportUpperLeft.plus(this.pixelDeltaU.plus(this.pixelDeltaV).scale(0.5))
 
     ;; Defocus disk basis vectors
@@ -64,7 +67,9 @@ export def Camera = class (
 
     def getRay = (i: int, j: int, rng: Rng): Ray -> (
         def offset: Vec3 = this.sampleSquare(rng)
-        def pixelSample: Vec3 = this.pixel00Loc.plus(this.pixelDeltaU.scale(i + offset.x)).plus(this.pixelDeltaV.scale(j + offset.y))
+        def pixelSample: Vec3 = this.pixel00Loc
+            .plus(this.pixelDeltaU.scale(i + offset.x))
+            .plus(this.pixelDeltaV.scale(j + offset.y))
         def rayOrigin: Vec3 = if this.defocusAngle <= 0.0 then (
             this.center
         ) else (
