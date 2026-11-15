@@ -1196,6 +1196,17 @@ checker (§10.5).
   cached. The interpreter gets the same 4x on the ArrayList benchmark. Overload errors now name
   an instance's argument kind by its Babble class, the same in both modes, rather than by its JVM
   class.
+* **Java calls** (`JavaLinker`, later). A call site whose callee is a Java method, called with
+  positional arguments, links a guard on what resolution depends on (the same `JavaMethod`, so a
+  receiver of the class that selected it, and arguments of the same kinds) and the resolved
+  method's `MethodHandle`, with each argument converted as `Values.toJava` does (unboxed and
+  widened for a primitive parameter), the result as `Values.fromJava` does, and anything thrown
+  reported as reflection reports it. An argument whose kind isn't its JVM class (a Babble
+  instance or class) or that may need the runtime to convert (a Babble function) gets no fast
+  path. A select site whose member is a Java method binds it to receivers of the same class,
+  wrapped or not. On a loop calling `list.get(n)`, a Java call went from 25 to 40 ns over the
+  loop's own cost to about 5 ns, and the fable ray tracer, which walks a `java.util.ArrayList`
+  of about 480 spheres for every ray, renders as fast as with a Babble linked list.
 * **Arithmetic: measured, not kept.** An inline `(Integer, Integer)` guard for `+`, `-` and `<`,
   falling back to `Operators`, made fib 2.45 → 2.7 ms and the loop 1.77 → 1.9 ms. HotSpot
   already inlines the `Integer` fast paths at the top of `Operators.add` and friends, and boxing
