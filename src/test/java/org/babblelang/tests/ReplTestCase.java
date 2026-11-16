@@ -82,8 +82,8 @@ public class ReplTestCase {
         BabbleSession session = session();
         Assertions.assertEquals(5, session.eval("def x = 5"));
         Assertions.assertEquals(10, session.eval("x * 2"));
-        session.eval("def twice = (f, v) -> ( f(f(v)) )");
-        Assertions.assertEquals(7, session.eval("twice((n) -> ( n + 1 ), x)"));
+        session.eval("def twice = (f : (n : int) : int, v : int) : int -> ( f(f(v)) )");
+        Assertions.assertEquals(7, session.eval("twice((n : int) : int -> ( n + 1 ), x)"));
         session.eval("package p ( def a = 1 )");
         Assertions.assertEquals(1, session.eval("p.a"));
         Assertions.assertNull(session.eval("println(x)"));
@@ -110,12 +110,16 @@ public class ReplTestCase {
     @Test
     public void testAFunctionDoesNotSeeLaterDefinitions() throws Exception {
         BabbleSession session = session();
-        session.eval("def even = (n) -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )");
-        session.eval("def odd = (n) -> ( if n == 0 then ( false ) else ( even(n - 1) ) )");
-        assertFails(session, "even(2)", "No such name : odd");
+        if (BabbleTestBase.isStrict()) {
+            assertFails(session, "def even = (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )", "odd is not callable");
+        } else {
+            session.eval("def even = (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )");
+            session.eval("def odd = (n : int) : bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )");
+            assertFails(session, "even(2)", "No such name : odd");
+        }
         // Functions that call each other go in one input.
-        session.eval("def even = (n) -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
-                + "def odd = (n) -> ( if n == 0 then ( false ) else ( even(n - 1) ) )");
+        session.eval("def even = (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
+                + "def odd = (n : int) : bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )");
         Assertions.assertEquals(true, session.eval("even(10)"));
     }
 
@@ -141,8 +145,8 @@ public class ReplTestCase {
     public void testClassesAndInterfacesAcrossInputs() throws Exception {
         BabbleSession session = session();
         session.eval("def Shape = interface ( def area : () : double ; def describe = () -> ( \"area \" + this.area() ) )");
-        session.eval("def Sq = class (def s) implements Shape ( def area = () -> ( this.s * this.s ) ; def describe = () -> ( \"[\" + super.describe() + \"]\" ) )");
-        Assertions.assertEquals("[area 4]", session.eval("Sq(2).describe()"));
+        session.eval("def Sq = class (def s : int) implements Shape ( def area = () : double -> ( this.s * this.s ) ; def describe = () -> ( \"[\" + super.describe() + \"]\" ) )");
+        Assertions.assertEquals("[area 4.0]", session.eval("Sq(2).describe()"));
         Assertions.assertEquals(true, session.eval("Sq(2) is Shape"));
         // The static checks know the interface of an earlier input.
         assertFails(session, "def Bad = class () implements Shape ()", "Bad does not implement Shape.area");
@@ -154,8 +158,14 @@ public class ReplTestCase {
         Assertions.assertEquals(2, session.eval("c.next() ; c.next()"));
         // Once assigned, a name is no longer a statically known interface.
         session.eval("def I = interface ( def m = () -> ( 1 ) )");
-        session.eval("I = 3");
-        assertFails(session, "class () implements I ()", "implements needs a statically known interface");
+        if (BabbleTestBase.isStrict()) {
+            assertFails(session, "I = 3", "Type error : expected interface I, got int");
+            session.eval("def id = (x : any) : any -> ( x ) ; def J : any = id(I)");
+            assertFails(session, "class () implements J ()", "implements needs a statically known interface");
+        } else {
+            session.eval("I = 3");
+            assertFails(session, "class () implements I ()", "implements needs a statically known interface");
+        }
     }
 
     // ---------------------------------------------------------------- the type checker
@@ -184,10 +194,10 @@ public class ReplTestCase {
         // A class of an earlier input, as a type : checked statically, and at runtime.
         session.eval("def P = class (def x : int) ()");
         session.eval("def f = (p : P) -> ( p.x )");
-        session.eval("def id = (v) -> ( v )");
+        session.eval("def id = (v : any) : any -> ( v )");
         Assertions.assertEquals(1, session.eval("f(P(1))"));
         assertFails(session, "f(3)", "Type error : expected P, got int");
-        assertFails(session, "f(id(3))", "Type error : expected P, got int");
+        assertFails(session, "f(id(3) as P)", "Type error : expected P, got int");
         assertFails(session, "def q : Q = 1", "Unknown type : Q");
         // A new P is another type : f still takes the one it was written against.
         session.eval("def Old = P");
@@ -201,9 +211,14 @@ public class ReplTestCase {
         BabbleSession session = session(new StringWriter());
         session.eval("def n = 1");
         assertFails(session, "def s : string = n", "Type error : expected string, got int");
-        // Once assigned, nothing is known of n any more.
-        session.eval("n = \"x\"");
-        Assertions.assertEquals("x", session.eval("def s : string = n"));
+        if (BabbleTestBase.isStrict()) {
+            assertFails(session, "n = \"x\"", "Type error : expected int, got string");
+            Assertions.assertEquals(1, session.eval("n"));
+        } else {
+            // Once assigned, nothing is known of n any more.
+            session.eval("n = \"x\"");
+            Assertions.assertEquals("x", session.eval("def s : string = n"));
+        }
     }
 
     // ---------------------------------------------------------------- reading inputs
@@ -228,23 +243,23 @@ public class ReplTestCase {
     public void testValuesAreShown() throws Exception {
         Assertions.assertEquals(List.of("3", "\"a\\\"b\"", "1.5", "true", "function f", "function", "class P", "P(x: 1, y: 2)", "interface I", "[1]", "package java.util",
                         "java.lang.Math", "package", "hi"),
-                transcript("1 + 2", "\"a\\\"b\"", "1.5", "1 < 2", "def f = () -> ( 1 )", "() -> ( 1 )", "def P = value class (x, y) ()", "P(1, 2)", "def I = interface ()",
+                transcript("1 + 2", "\"a\\\"b\"", "1.5", "1 < 2", "def f = () -> ( 1 )", "() -> ( 1 )", "def P = value class (x : int, y : int) ()", "P(1, 2)", "def I = interface ()",
                         "def l = java.util.ArrayList() ; l.add(1) ; l", "java.util", "java.lang.Math", "package p ( def a = 1 ) ; p",
                         // null is not shown, and output is.
-                        "null", "def n", "println(\"hi\")"));
+                        "null", "def n : any", "println(\"hi\")"));
     }
 
     @Test
     public void testInputsSpanLines() throws Exception {
         Assertions.assertEquals(List.of("function twice", "7", "3", "\"a", "b\""),
-                transcript("def twice = (f, v) -> (", "  f(f(v))", "", ")", "twice((n) -> ( n + 1 ), 5)", "1 +", "  2", ";; nothing", "", "\"a", "b\""));
+                transcript("def twice = (f : (n : int) : int, v : int) : int -> (", "  f(f(v))", "", ")", "twice((n : int) : int -> ( n + 1 ), 5)", "1 +", "  2", ";; nothing", "", "\"a", "b\""));
     }
 
     @Test
     public void testErrorsDoNotEndTheLoop() throws Exception {
         Assertions.assertEquals(List.of("Error : No such name : nosuch", "Error : Syntax error : unexpected '='", "Error : Lexical error at line 1:2 : token recognition error at: '#'",
                         "Error : Not a number : true in <input> at line number 2, column 7", "function r", "Error : Stack overflow", "1"),
-                transcript("nosuch", "def = 3", "1 # 2", "def a = (", "  1 + true", ")", "def r = (n) -> ( recurse(n + 1) )", "r(1)", "1"));
+                transcript("nosuch", "def = 3", "1 # 2", "def a = (", "  1 + true", ")", "def r = (n : int) : int -> ( recurse(n + 1) )", "r(1)", "1"));
     }
 
     @Test
@@ -259,7 +274,7 @@ public class ReplTestCase {
     @Test
     public void testPrompts() throws Exception {
         StringWriter output = new StringWriter();
-        String input = "def f = (n) -> (\n  n * 2\n)\nf(21)\n";
+        String input = "def f = (n : int) : int -> (\n  n * 2\n)\nf(21)\n";
         new Repl(session(output), new BufferedReader(new StringReader(input)), new PrintWriter(output), true).run();
         String nl = System.lineSeparator();
         Assertions.assertEquals("Babble. :help for help, :quit to leave." + nl

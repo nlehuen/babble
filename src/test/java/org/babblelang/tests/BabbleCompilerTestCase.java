@@ -143,6 +143,7 @@ public class BabbleCompilerTestCase {
         org.babblelang.engine.MapModuleSource source = new org.babblelang.engine.MapModuleSource()
                 .put("lib.ba", "export def f = (x) -> ( x + 1 )\n");
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.TYPING, "gradual");
         engine.put(BabbleScriptEngine.MODULE_SOURCE, source);
         engine.put(ScriptEngine.FILENAME, "main.ba");
         Assertions.assertEquals(2, engine.eval("import(\"lib.ba\").f(1)"));
@@ -154,7 +155,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testMethodsAreNamedAfterTheirDefinitions() throws Exception {
-        CompiledBabbleScript script = compile("def add = (a, b) -> ( a + b ) ; def twice = (f) -> ( () -> ( f() + f() ) ) ; add(1, 2)");
+        CompiledBabbleScript script = compile("def add = (a : int, b : int) -> ( a + b ) ; def twice = (f : () : int) -> ( () -> ( f() + f() ) ) ; add(1, 2)");
         List<String> names = methodNames(script);
         Assertions.assertTrue(names.containsAll(List.of("run", "fn$0$add", "fn$1$twice", "fn$2", "<clinit>")), names.toString());
         Assertions.assertEquals(3, script.eval(new SimpleBindings()));
@@ -187,7 +188,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testClassesCompileToJvmClasses() throws Exception {
-        CompiledBabbleScript script = compile("def Point = value class (x, y) ( def norm = () -> ( this.x + this.y ) ) static ( def o = this(0, 0) )\n"
+        CompiledBabbleScript script = compile("def Point = value class (x : int, y : int) ( def norm = () -> ( this.x + this.y ) ) static ( def o = this(0, 0) )\n"
                 + "def S = interface ( def d = () -> ( 1 ) ) ; def o = object implements S () ; Point(1, 2).norm() + o.d()");
         Assertions.assertEquals(4, script.eval(new SimpleBindings()));
         assertVerifies(script);
@@ -207,7 +208,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testConstructorVariablesCapturedByMethodsAreHiddenFields() throws Exception {
-        CompiledBabbleScript script = compile("def C = class (start) ( def next = () -> ( start = start + 1 ) ) ; def c = C(10) ; c.next() ; c.next()");
+        CompiledBabbleScript script = compile("def C = class (start : int) ( def next = () -> ( start = start + 1 ) ) ; def c = C(10) ; c.next() ; c.next()");
         Assertions.assertEquals(12, script.eval(new SimpleBindings()));
         byte[] c = script.getClasses().entrySet().stream().filter(e -> e.getKey().endsWith("$C")).findFirst().orElseThrow().getValue();
         Assertions.assertEquals(List.of("next", "$v$start"), fieldNames(c));
@@ -217,15 +218,12 @@ public class BabbleCompilerTestCase {
     @Test
     public void testStackTracesShowBabbleLinesAndFunctions() throws Exception {
         List<StackTraceElement> captured = new ArrayList<>();
-        Callable capture = (ScriptRuntime rt, Object[] args, String[] names, CallSite site) -> {
-            captured.addAll(Arrays.asList(new Throwable().getStackTrace()));
-            return null;
-        };
+        Runnable capture = () -> captured.addAll(Arrays.asList(new Throwable().getStackTrace()));
         ScriptEngine engine = compilingEngine();
         Bindings bindings = engine.createBindings();
         bindings.put("capture", capture);
         bindings.put(ScriptEngine.FILENAME, "trace.ba");
-        engine.eval("def inner = () -> (\n  capture()\n)\ndef outer = () -> (\n  1\n  inner()\n)\nouter()", bindings);
+        engine.eval("def inner = () -> (\n  (capture as java.lang.Runnable).run()\n)\ndef outer = () -> (\n  1\n  inner()\n)\nouter()", bindings);
 
         StackTraceElement inner = captured.stream().filter(e -> e.getMethodName().equals("fn$0$inner")).findFirst().orElseThrow();
         Assertions.assertEquals(2, inner.getLineNumber());
@@ -247,7 +245,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testACompiledScriptCanBeEvaluatedManyTimes() throws Exception {
-        CompiledBabbleScript script = compile("def counter = () -> ( def c = 0 ; () -> ( c = c + 1 ) ) ; def c = counter() ; c() ; c() + start");
+        CompiledBabbleScript script = compile("def counter = () -> ( def c = 0 ; () -> ( c = c + 1 ) ) ; def c = counter() ; c() ; c() + (start as int)");
         Bindings first = new SimpleBindings();
         first.put("start", 10);
         Bindings second = new SimpleBindings();
@@ -259,17 +257,17 @@ public class BabbleCompilerTestCase {
     @Test
     public void testTrickyShapesVerify() throws Exception {
         String[] scripts = {
-                "def g = (a, b) -> ( a + b ) ; def f = () -> ( g(1, return 2) ) ; f()",
-                "def f = (n) -> ( def r = 0 ; while n > 0 then ( if n == 3 then ( return n ) ; r = r + n ; n = n - 1 ) ) ; f(5)",
-                "def i = 0 ; while i < 3 then ( i = i + 1 )",
-                "def a = 1 ; a == 0 and ( a = 2 ) ; a == 1 or ( a = 3 ) ; not a",
-                "def f = (a, b = a + 1, c = () -> ( b )) -> ( a + c() ) ; f(1) + f(1, c: () -> ( 10 ))",
+                "def g = (a : int, b : int) -> ( a + b ) ; def f = () : int -> ( g(1, return 2) ) ; f()",
+                "def f = (n : int) : int -> ( def r = 0 ; while n > 0 then ( if n == 3 then ( return n ) ; r = r + n ; n = n - 1 ) ; r ) ; f(5)",
+                "def i = 0 ; while i < 3 then ( i = i + 1 ) ; null",
+                "def a = 1 ; a == 0 and ( a = 2 ; true ) ; a == 1 or ( a = 3 ; true ) ; not (a == 1)",
+                "def f = (a : int, b = a + 1, c : () : int = () -> ( b )) -> ( a + c() ) ; f(1) + f(1, c: () -> ( 10 ))",
                 "package p ( def x = 1 ; package q ( def y = x + 1 ) ) ; p.q.y",
-                "def C = class (def v) ( def m = () -> ( this.v ) ) ; C(4).m()",
+                "def C = class (def v : int) ( def m = () -> ( this.v ) ) ; C(4).m()",
                 "def f = () -> ( package p ( def v = ( return 2 ) ) ; 3 ) ; f()",
                 "( def a = 1 ; ( def b = a + 1 ; ( def c = b + 1 ; c ) ) )",
         };
-        Object[] expected = {2, 3, 3, false, 14, 2, 4, 2, 3};
+        Object[] expected = {2, 3, null, false, 14, 2, 4, 2, 3};
         for (int i = 0; i < scripts.length; i++) {
             CompiledBabbleScript script = compile(scripts[i]);
             assertVerifies(script);
@@ -292,7 +290,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testFunctionsAndMethodsHaveDirectEntryPoints() throws Exception {
-        CompiledBabbleScript script = compile("def add = (a, b = 1) -> ( a + b ) ; def C = class () ( def m = (x) -> ( x ) ) ; add(1) + add(b: 2, a: 3) + C().m(4)");
+        CompiledBabbleScript script = compile("def add = (a : int, b = 1) -> ( a + b ) ; def C = class () ( def m = (x : int) -> ( x ) ) ; add(1) + add(b: 2, a: 3) + C().m(4)");
         Assertions.assertEquals(11, script.eval(new SimpleBindings()));
         assertVerifies(script);
         // The direct entry point takes the arguments spread ; the $call adapter takes an array.
@@ -301,7 +299,7 @@ public class BabbleCompilerTestCase {
                 .filter(e -> e.getKey().endsWith("$C")).findFirst().orElseThrow();
         Assertions.assertTrue(methodNames(c.getValue()).containsAll(List.of("m$m", "m$m$call")), methodNames(c.getValue()).toString());
 
-        CompiledFunction add = (CompiledFunction) compile("def add = (a, b = 1) -> ( a + b ) ; add").eval(new SimpleBindings());
+        CompiledFunction add = (CompiledFunction) compile("def add = (a : int, b = 1) -> ( a + b ) ; add").eval(new SimpleBindings());
         Assertions.assertEquals(MethodType.methodType(Object.class, CompiledFunction.class, Object.class, ScriptRuntime.class,
                 Arguments.Binder.class, Object.class, Object.class), add.direct().type());
     }
@@ -327,19 +325,19 @@ public class BabbleCompilerTestCase {
         int total = count * (count - 1) / 2;
         Assertions.assertEquals(count + total + (count + 99) + count + total, script.eval(new SimpleBindings()));
 
-        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run("def g = (a) -> ( a ) ; g(" + arguments + ")"));
+        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run("def g = (a : int) -> ( a ) ; g(" + arguments + ")"));
         Assertions.assertTrue(e.getMessage().contains("Too many parameters : 1 declared, " + count + " given"), e.getMessage());
     }
 
     @Test
     public void testACallSiteSeesManyFunctions() throws Exception {
         // More function literals than a site caches, each called many times from the same site.
-        StringBuilder source = new StringBuilder("def fs = java.util.ArrayList()\n");
+        StringBuilder source = new StringBuilder("def Box = class (def f : (x : int) : int) ()\ndef fs = java.util.ArrayList()\n");
         for (int i = 0; i < 10; i++) {
-            source.append("fs.add((x, y = ").append(i).append(") -> ( x * y ))\n");
+            source.append("fs.add(Box((x : int, y : int = ").append(i).append(") -> ( x * y )))\n");
         }
         source.append("def total = 0 ; def i = 0 ; def k = 0\n"
-                + "while i < 1000 then ( total = total + fs.get(k)(i) ; i = i + 1 ; k = if k == 9 then ( 0 ) else ( k + 1 ) ) ; total");
+                + "while i < 1000 then ( total = total + (fs.get(k) as Box).f(i) ; i = i + 1 ; k = if k == 9 then ( 0 ) else ( k + 1 ) ) ; total");
         long expected = 0;
         for (int i = 0; i < 1000; i++) {
             expected += (long) i * (i % 10);
@@ -351,9 +349,9 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testManyCallSitesAndLongTexts() throws Exception {
-        StringBuilder source = new StringBuilder("def f = (a) -> ( a )\ndef n = 0\n");
+        StringBuilder source = new StringBuilder("def f = (a : any) : any -> ( a )\ndef n = 0\n");
         for (int i = 0; i < 3000; i++) {
-            source.append("n = n + f(").append(i).append(")\n");
+            source.append("n = n + (f(").append(i).append(") as int)\n");
         }
         // Longer than a constant pool string can hold, as a literal and as a call argument's text.
         String longString = "y".repeat(70000);

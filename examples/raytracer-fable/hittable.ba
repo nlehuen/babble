@@ -1,13 +1,16 @@
 ;; hittable.h
 
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+
 ;; Where a ray hit a surface. The normal always points against the ray, and frontFace
 ;; tells whether the ray came from outside the surface.
-export def HitRecord = class (r, def p, def t, outwardNormal, def material) (
-    def frontFace = r.direction.dot(outwardNormal) < 0
-    def normal = if this.frontFace then (outwardNormal) else (-outwardNormal)
+export def HitRecord = class (r: Ray, def p: Vec3, def t: double, outwardNormal: Vec3, def material: any) (
+    def frontFace: bool = r.direction.dot(outwardNormal) < 0
+    def normal: Vec3 = if this.frontFace then (outwardNormal) else (-outwardNormal)
 )
 
 export def Hittable = interface (
     ;; the closest hit of the ray with tmin < t < tmax, or null
-    def hit: (r, tmin, tmax)
+    def hit: (r: Ray, tmin: double, tmax: double): HitRecord
 )

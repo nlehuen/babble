@@ -24,4 +24,8 @@ public abstract class BabbleTestBase {
     Object interpret(String script) throws ScriptException {
         return BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval(script, buildBindings());
     }
+
+    protected static boolean isStrict() {
+        return "strict".equalsIgnoreCase(System.getProperty(org.babblelang.engine.BabbleScriptEngine.TYPING));
+    }
 }

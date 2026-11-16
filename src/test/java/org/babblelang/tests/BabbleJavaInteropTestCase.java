@@ -54,9 +54,10 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
             interpret(DEMO + "Demo().nullable(1, 2)");
             Assertions.fail("Should report that no overload applies");
         } catch (ScriptException e) {
+            String args = isStrict() ? "(int, int)" : "(java.lang.Integer, java.lang.Integer)";
             Assertions.assertTrue(
                     e.getMessage().startsWith("org.babblelang.runtime.BabbleException: No applicable overload of "
-                            + "org.babblelang.tests.JavaClassDemo.nullable for (java.lang.Integer, java.lang.Integer)"),
+                            + "org.babblelang.tests.JavaClassDemo.nullable for " + args),
                     e.getMessage());
         }
     }
@@ -92,14 +93,14 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
     @Test
     public void testMembersOfReturnedJavaObjects() throws Exception {
         Assertions.assertEquals(true, interpret("java.lang.Runtime.getRuntime().availableProcessors() > 0"));
-        Assertions.assertEquals(1, interpret("def l = java.util.ArrayList() ; def m = java.util.ArrayList() ; m.add(1) ; l.add(m) ; l.get(0).size()"));
+        Assertions.assertEquals(1, interpret("def l = java.util.ArrayList() ; def m = java.util.ArrayList() ; m.add(1) ; l.add(m) ; (l.get(0) as java.util.List).size()"));
         Assertions.assertEquals("ab", interpret("java.lang.StringBuilder().append(\"a\").append(\"b\").toString()"));
         // Of a class Babble can't reach : called through the public interface, List.
         Assertions.assertEquals(2, interpret("java.util.List.of(1, 2, 3).get(1)"));
         // Java numbers other than Babble's own have their members.
         Assertions.assertEquals(101, interpret("java.math.BigInteger.valueOf(2).pow(100).bitLength()"));
         // A callback gets Java objects it can call too.
-        Assertions.assertEquals(1, interpret("def l = java.util.ArrayList() ; l.add(java.util.ArrayList()) ; l.forEach((x) -> ( x.add(1) )) ; l.get(0).size()"));
+        Assertions.assertEquals(1, interpret("def l = java.util.ArrayList() ; l.add(java.util.ArrayList()) ; l.forEach((x : any) -> ( (x as java.util.List).add(1) )) ; (l.get(0) as java.util.List).size()"));
         // A returned object is the Java object itself, unwrapped : equal, printed and compared as Java does.
         Assertions.assertEquals("[1, 2]", interpret("\"\" + java.util.List.of(1, 2)"));
         Assertions.assertEquals(true, interpret("java.math.BigInteger.ONE.add(java.math.BigInteger.ONE) == java.math.BigInteger.TWO"));
@@ -108,9 +109,9 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
 
     @Test
     public void testBabbleValuesHaveNoJavaMembers() {
-        // Unknown to the type checker : found when it runs.
-        for (String value : new String[]{"\"abc\"", "1", "1.5", "true", "null", "(x) -> ( x )"}) {
-            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret("def f = (v) -> ( v.toString() ) ; f(" + value + ")"));
+        // Unknown to the type checker : found when it runs (in gradual), or rejected statically on any (in strict).
+        for (String value : new String[]{"\"abc\"", "1", "1.5", "true", "null", "(x : any) -> ( x )"}) {
+            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret("def f = (v : any) -> ( v.toString() ) ; f(" + value + ")"));
             Assertions.assertTrue(e.getMessage().contains("Not a scope : v"), value + " : " + e.getMessage());
         }
     }
@@ -151,6 +152,22 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
 
     @Test
     public void testFieldErrors() {
+        if (isStrict()) {
+            String[][] staticCases = {
+                    {"def o = java.awt.Point(1, 2) ; o.x = 2.5", "Type error : expected int, got double"},
+                    {"java.lang.Math.PI = 3", "Cannot assign final field : java.lang.Math.PI"},
+                    {"java.awt.Point.x", "Not a static field : java.awt.Point.x"},
+                    {"java.awt.Point.x = 1", "Not a static field : java.awt.Point.x"},
+                    {"java.util.ArrayList().size = 1", "No such field in java.util.ArrayList : size"},
+                    {"java.util.ArrayList().nope", "No such name in java.util.ArrayList : nope"},
+                    {"Demo().action = () -> ( 1 )", "Cannot assign a function to org.babblelang.tests.JavaClassDemo.action : convert it first, as Runnable(f)"},
+            };
+            for (String[] c : staticCases) {
+                ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(DEMO + c[0]));
+                Assertions.assertTrue(e.getMessage().contains(c[1]), c[0] + " : " + e.getMessage());
+            }
+            return;
+        }
         // Through a parameter, the type checker can't tell : found when it runs.
         String[][] cases = {
                 {"java.awt.Point(1, 2)", "o.x = 2.5", "Cannot assign java.lang.Double to java.awt.Point.x : expected int"},

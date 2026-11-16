@@ -34,25 +34,25 @@ What does it look like ?
 
 ;; a package is just a namespace
 package test1 (
-    def add = (a, b) -> (    ;;
-        a + b                ;; function literal
-    )                        ;;
+    def add = (a: int, b: int) -> (    ;;
+        a + b                          ;; function literal
+    )                                  ;;
 
-    ;; optional types
-    def add2 = (a:int, b:int):int -> (
+    ;; explicit return type
+    def add2 = (a: int, b: int): int -> (
         a + b
     )
 
     ;; function as first-type objects
     ;; closure support
-    def adder = (a:int):(b:int):int -> (
-        return (b:int):int -> (
+    def adder = (a: int): (b: int): int -> (
+        return (b: int): int -> (
             a + b
         )
     )
 
     ;; loops
-    def fac2 = (n:int):int -> (
+    def fac2 = (n: int): int -> (
         def result = 1
         while n > 1 then (
             ;; use ";" to put several statements on one line
@@ -62,7 +62,7 @@ package test1 (
     )
 
     ;; recursion
-    def fac = (n:int):int -> (
+    def fac = (n: int): int -> (
         if n < 2 then (
             1
          ) else (
@@ -71,7 +71,7 @@ package test1 (
     )
 
     ;; default values, including function literals
-    def apply = (a, f=(v) -> (v)) -> ( f(a) )
+    def apply = (a: int, f: (v: int): int = (v) -> (v)) -> ( f(a) )
 
     ;; closures
     def counter = () -> (
@@ -120,7 +120,7 @@ assert(3 == c())
 ;; using Java classes from Babble
 def list = java.util.ArrayList()
 list.add(3) ; list.add(1) ; list.add(2)
-list.sort((a, b) -> ( a - b ))      ;; a Babble function passed as a Comparator
+list.sort((a: any, b: any): int -> ( (a as int) - (b as int) ))  ;; a Babble function passed as a Comparator
 assert(list.get(0) == 1)
 ```
 
@@ -134,7 +134,7 @@ without `else` is `null` when the test fails, and `while` is worth its last iter
 `else` is followed by a block, or by another `if`.
 
 ```
-def sign = (n) -> ( if n > 0 then ( "positive" ) else if n < 0 then ( "negative" ) else ( "zero" ) )
+def sign = (n: int) -> ( if n > 0 then ( "positive" ) else if n < 0 then ( "negative" ) else ( "zero" ) )
 assert(sign(-3) == "negative")
 
 def i = 0
@@ -206,17 +206,17 @@ once per instance, and every `def` at the top of the body is a member. Members a
 reached through `this` or a receiver : a bare name is never a member.
 
 ```
-def Account = class (def owner, def balance = 0) (     ;; "def" : the parameter is also a member
+def Account = class (def owner: string, def balance = 0) (     ;; "def" : the parameter is also a member
     private def history = java.util.ArrayList()        ;; private : only reachable as this.history
 
-    def deposit = (n) -> (
+    def deposit = (n: int) -> (
         this.history.add(n)
         this.balance += n
     )
     def operations = () -> ( this.history.size() )
 )
 static (
-    def open = (owner) -> ( this(owner) )              ;; in a static block, this is the class
+    def open = (owner: string) -> ( this(owner) )              ;; in a static block, this is the class
 )
 
 def a = Account.open("ann")
@@ -240,16 +240,16 @@ unary `-` call `minus`, `times`, `div` and `neg`, and so do `+=`, `-=`, `*=` and
 is `p = p.plus(q)`. The left operand decides : `2 * p` is an error.
 
 ```
-def Point = value class (x, y) (
-    def plus = (o) -> ( Point(this.x + o.x, this.y + o.y) )
-    def times = (k) -> ( Point(this.x * k, this.y * k) )
+def Point = value class (x: double, y: double) (
+    def plus = (o: Point): Point -> ( Point(this.x + o.x, this.y + o.y) )
+    def times = (k: double): Point -> ( Point(this.x * k, this.y * k) )
 )
 
 assert(Point(1, 2).plus(Point(3, 4)) == Point(4, 6))
 assert(Point(1, 2) + Point(3, 4) * 2 == Point(7, 10))
-assert(Point(1, 2) == Point(1.0, 2.0))        ;; numbers compare across types
+assert(Point(1, 2) == Point(1.0, 2.0))        ;; ints widen to double
 assert(not same(Point(1, 2), Point(1, 2)))    ;; same() tests identity
-assert("" + Point(1, 2) == "Point(x: 1, y: 2)")
+assert("" + Point(1, 2) == "Point(x: 1.0, y: 2.0)")
 ```
 
 ### Interfaces
@@ -264,17 +264,17 @@ def Shape = interface (
     def describe = () -> ( "area " + this.area() )           ;; a default method
 )
 
-def Square = class (def side) implements Shape (
-    def area = () -> ( this.side * this.side )
+def Square = class (def side: int) implements Shape (
+    def area = (): double -> ( this.side * this.side )
 )
 
-def Circle = class (def r) implements Shape (
-    def area = () -> ( 3 * this.r * this.r )
+def Circle = class (def r: int) implements Shape (
+    def area = (): double -> ( 3 * this.r * this.r )
     def describe = () -> ( "round, " + super.describe() )
 )
 
-assert(Square(2).describe() == "area 4")
-assert(Circle(1).describe() == "round, area 3")
+assert(Square(2).describe() == "area 4.0")
+assert(Circle(1).describe() == "round, area 3.0")
 assert(Square(2) is Shape)
 ```
 
@@ -296,10 +296,10 @@ point.x = point.x + 10
 
 def list = java.util.ArrayList()
 list.add(3) ; list.add(1) ; list.add(2)
-list.removeIf((v) -> ( v > 2 ))                   ;; a Predicate
+list.removeIf((v) -> ( (v as int) > 2 ))          ;; a Predicate
 assert(list.size() == 2)
 
-def Countdown = class (private def n) implements java.util.Iterator (
+def Countdown = class (private def n: int) implements java.util.Iterator (
     def hasNext = () -> ( this.n > 0 )
     def next = () -> ( this.n = this.n - 1 ; this.n + 1 )
 )
@@ -307,8 +307,8 @@ def seen = java.util.ArrayList()
 Countdown(3).forEachRemaining((v) -> ( seen.add(v) ))   ;; a Java default method
 assert(seen.toString() == "[3, 2, 1]")
 
-def Money = value class (cents) implements java.lang.Comparable (
-    def compareTo = (o) -> ( this.cents - o.cents )
+def Money = value class (cents: int) implements java.lang.Comparable (
+    def compareTo = (o: any): int -> ( this.cents - (o as Money).cents )
 )
 def wallet = java.util.ArrayList()
 wallet.add(Money(500)) ; wallet.add(Money(20))
@@ -327,7 +327,7 @@ def pi = 3.14159                                   ;; not exported : private to 
 export def Shape = interface (
     def area : () : double
 )
-export def Circle = class (def r) implements Shape (
+export def Circle = class (def r: double) implements Shape (
     def area = () -> ( pi * this.r * this.r )
 )
 export def unit = Circle(1)
@@ -354,7 +354,7 @@ runs, and classes can implement the interfaces it exports :
 ```
 ;; square.ba
 def shapes = import("shapes.ba")
-export def Square = class (def side) implements shapes.Shape (
+export def Square = class (def side: double) implements shapes.Shape (
     def area = () -> ( this.side * this.side )
 )
 ```
@@ -364,28 +364,32 @@ sees the types of what modules export : `def c : shapes.Circle = shapes.Circle(2
 constructor's arguments and the annotation, and the annotation is also checked at
 runtime.
 
-### Optional types
+### Types
 
-Annotations are optional. Before the script runs, a gradual type checker reads them and reports
-what contradicts them, or is bound to fail, as errors that stop the script from compiling :
+Function and class parameters need type annotations unless a default value or an expected
+function type gives them. Bindings, members and function results are inferred from their values
+and assignments (including widening `int` to `double`), and every expression is checked before
+the script runs :
 
 ```
-def area = (w : int, h : int) : int -> ( w * h )
+def area = (w: int, h: int): int -> ( w * h )
 area(2, "3")    ;; Error : Type error : expected int, got string ... at line number 2, column 9
 area(2)         ;; Error : Missing parameter : h ...
 ```
 
-Unannotated code is `dynamic`, and gets no static type errors. Bidirectional local inference
-infers types of unannotated `def`s that are not reassigned, function return types from their
-bodies, lambda parameter types from expected function or Java functional interface types, and
-flow-sensitive types narrowed by `is` (`if x is Point then ( … )`, `and`/`or`, and early-return
-guards). Declared types are also checked at runtime, where an untyped value reaches them :
+`any` is the sound top type for values whose static type is unknown (such as Java `Object`
+returns like `list.get(0)` or script bindings). Nothing can be called, selected or computed on
+an `any` until it is narrowed with `is` (on classes or built-in types, `if x is Point then ( … )`,
+`if v is int then ( … )`) or checked at runtime with `as` :
 
 ```
-def id = (x) -> ( x )
-def half = (n : int) : double -> ( n / 2 )
-half(id("4"))   ;; Type error : expected int, got string, at line number 3
+def id = (x: any): any -> ( x )
+def half = (n: int): double -> ( n / 2 )
+half(id("4") as int)   ;; Type error : expected int, got string, at line number 3
 ```
+
+Strict checking is enabled with `-Dbabble.typing=strict` (or `engine.put("babble.typing", "strict")`)
+while the default transitions from `gradual` mode (see the [design doc](docs/design/static-typing.md)).
 
 ### Interactive mode
 
@@ -394,7 +398,7 @@ starts again. An input continues on the next line while it is incomplete : insid
 parentheses, or after an operator, a comma, `=`, `->`, `then` or `else`.
 
 ```
->> def twice = (f, v) -> (
+>> def twice = (f: (n: int): int, v: int): int -> (
 ..   f(f(v))
 .. )
 function twice
@@ -404,7 +408,7 @@ function twice
 "world"
 >> println("Hello, ", name)
 Hello, world
->> def Point = value class (x, y) ()
+>> def Point = value class (x: int, y: int) ()
 class Point
 >> Point(1, 2)
 Point(x: 1, y: 2)
@@ -588,7 +592,7 @@ interactive mode does :
 
 ```java
 BabbleSession session = ((BabbleScriptEngine) engine).newSession();
-session.eval("def double = (n) -> ( n * 2 )");
+session.eval("def double = (n: int): int -> ( n * 2 )");
 session.eval("double(21)");    // 42
 ```
 
@@ -605,12 +609,12 @@ Language features :
 - [x] functions, supporting recursion (`recurse`) and closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional & named parameters in function calls, and default values for parameters.
-- [x] basic types : boolean, int, double, string, functions.
+- [x] basic types : boolean, int, double, string, functions, `any`.
 - [x] packages as namespaces, which change only through their own code : `p.x = 1` from outside is an error.
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java interfaces.
-- [x] optional type declarations for variables and parameters, checked by a gradual type checker with bidirectional local inference (see the [design doc](docs/design/type-system.md)) : it infers function return types from bodies, contextually types lambda parameters, narrows non-reassigned bindings after `is`, reports values of the wrong type, calls that don't match a signature, missing members and the like as errors before the script runs, and enforces declared types at runtime where untyped values reach them.
+- [x] static and gradual type checking : bidirectional local inference of bindings, members, function results, lambda parameters, and flow-sensitive narrowing after `is` (including built-in types); checked `as` casts and sound top type `any`; runtime checks at type boundaries; strict checking available via `-Dbabble.typing=strict` while `gradual` remains the default during migration (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
 
 Implementation features :

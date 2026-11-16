@@ -58,8 +58,8 @@ assert(next() == 2)
 ;; ---- on members
 def Account = class () (
     def balance: int = 0
-    def deposit = (amount) -> (this.balance += amount)
-    def withdraw = (amount) -> (this.balance -= amount)
+    def deposit = (amount: int) -> (this.balance += amount)
+    def withdraw = (amount: int) -> (this.balance -= amount)
 )
 def account = Account()
 account.deposit(100)
@@ -82,9 +82,9 @@ assert(box.v == 12)
 assert(calls == 1)
 
 ;; ---- with operator methods : x += v calls x.plus(v)
-def V = value class (x, y) (
-    def plus = (o) -> (V(this.x + o.x, this.y + o.y))
-    def times = (k) -> (V(this.x * k, this.y * k))
+def V = value class (x: int, y: int) (
+    def plus = (o: V): V -> (V(this.x + o.x, this.y + o.y))
+    def times = (k: int): V -> (V(this.x * k, this.y * k))
 )
 def v = V(1, 2)
 v += V(10, 20)
@@ -93,7 +93,7 @@ assert(v == V(22, 44))
 
 def Particle = class () (
     def position = V(0, 0)
-    def move = (d) -> (this.position += d)
+    def move = (d: V) -> (this.position += d)
 )
 def p = Particle()
 p.move(V(1, 1))

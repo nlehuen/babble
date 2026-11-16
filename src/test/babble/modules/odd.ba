@@ -1,3 +1,5 @@
+def parity = import("parity.ba")
 def even = import("even.ba")
 
-export def isOdd = (n) -> (if n == 0 then (false) else (even.isEven(n - 1)))
+export def isOdd = (n: int): bool -> (if n == 0 then (false) else (parity.state.even(n - 1)))
+parity.state.odd = isOdd

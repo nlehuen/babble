@@ -2819,9 +2819,13 @@ final class TypeChecker {
         return number(type, operand.getText(), operand);
     }
 
+    private static boolean isNumeric(Type type) {
+        return type == Type.INT || type == Type.DOUBLE
+                || type instanceof Type.JavaInstance instance && Number.class.isAssignableFrom(instance.type());
+    }
+
     private boolean number(Type type, String text, ParserRuleContext at) {
-        if (isUnknown(type) || type == Type.INT || type == Type.DOUBLE
-                || type instanceof Type.JavaInstance instance && Number.class.isAssignableFrom(instance.type())) {
+        if (isUnknown(type) || isNumeric(type)) {
             return true;
         }
         warn("Not a number : " + text, at);
@@ -2833,7 +2837,7 @@ final class TypeChecker {
         if (isUnknown(left) || isUnknown(right)) {
             return true;
         }
-        if ((left == Type.INT || left == Type.DOUBLE) && (right == Type.INT || right == Type.DOUBLE)) {
+        if (isNumeric(left) && isNumeric(right)) {
             return true;
         }
         Class<?> leftClass = javaClassOf(left);

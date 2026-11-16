@@ -1,5 +1,7 @@
 ;; Two modules importing each other : fine as long as neither reads the other's exports
 ;; before they are defined.
+def parity = import("parity.ba")
 def odd = import("odd.ba")
 
-export def isEven = (n) -> (if n == 0 then (true) else (odd.isOdd(n - 1)))
+export def isEven = (n: int): bool -> (if n == 0 then (true) else (parity.state.odd(n - 1)))
+parity.state.even = isEven
