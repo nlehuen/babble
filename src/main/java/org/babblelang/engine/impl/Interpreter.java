@@ -202,7 +202,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
      * evaluated like the equivalent expression.
      */
     private Object type(BabbleParser.TypeContext type) {
-        List<org.antlr.v4.runtime.tree.TerminalNode> ids = ((BabbleParser.SimpleTypeContext) type).ID();
+        List<org.antlr.v4.runtime.tree.TerminalNode> ids = org.babblelang.analysis.ScopeAnalysis.simpleType(type).ID();
         Object value = namespace.lookup(ids.get(0).getText());
         StringBuilder text = new StringBuilder(ids.get(0).getText());
         for (int i = 1; i < ids.size(); i++) {
@@ -517,6 +517,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         // The body block opens a fresh scope on every iteration.
         while (Truth.test(visit(ctx.test))) {
             result = visit(ctx.whileBlock);
+            if (scopes.widensToDouble(ctx.whileBlock)) {
+                result = Values.toDouble(result);
+            }
         }
         return result;
     }

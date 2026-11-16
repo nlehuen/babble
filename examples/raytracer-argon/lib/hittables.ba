@@ -23,7 +23,7 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
         this.bbox
     )
 
-    def hit = (r: Ray, rayT: Interval): HitRecord -> (
+    def hit = (r: Ray, rayT: Interval): HitRecord? -> (
         def oc: Vec3 = this.center - r.origin
         def a: double = r.dir.lengthSquared()
         def h: double = r.dir.dot(oc)
@@ -53,11 +53,11 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
 )
 
 ;; Linked-list node for HittableList (replaces java.util.ArrayList)
-export def HittableNode = class (def item: Hittable, def next: HittableNode = null) ()
+export def HittableNode = class (def item: Hittable, def next: HittableNode? = null) ()
 
 export def HittableList = class () implements Hittable (
     def size: int = 0
-    private def head: HittableNode = null
+    private def head: HittableNode? = null
     private def bbox: AABB = AABB.empty
 
     def add = (item: Hittable) -> (
@@ -72,19 +72,22 @@ export def HittableList = class () implements Hittable (
         this.bbox = AABB.empty
     )
 
-    def headNode = (): HittableNode -> (
+    def headNode = (): HittableNode? -> (
         this.head
     )
 
     def first = (): Hittable -> (
-        if this.head == null then (emptyHittable) else (this.head.item)
+        def h = this.head
+        if h == null then (emptyHittable) else (h.item)
     )
 
     def second = (): Hittable -> (
-        if this.head == null or this.head.next == null then (
+        def h = this.head
+        if h == null then (
             emptyHittable
         ) else (
-            this.head.next.item
+            def n = h.next
+            if n == null then (emptyHittable) else (n.item)
         )
     )
 
@@ -93,8 +96,8 @@ export def HittableList = class () implements Hittable (
     )
 
     ;; Higher-order iteration over all hittables in the list
-    def forEach = (fn: (item: Hittable): any) -> (
-        def cur: HittableNode = this.head
+    def forEach = (fn: (item: Hittable): any?) -> (
+        def cur: HittableNode? = this.head
         while cur != null then (
             fn(cur.item)
             cur = cur.next
@@ -112,12 +115,12 @@ export def HittableList = class () implements Hittable (
         matched
     )
 
-    def hit = (r: Ray, rayT: Interval): HitRecord -> (
-        def closestRecord: HitRecord = null
+    def hit = (r: Ray, rayT: Interval): HitRecord? -> (
+        def closestRecord: HitRecord? = null
         def closestSoFar: double = rayT.max
-        def cur: HittableNode = this.head
+        def cur: HittableNode? = this.head
         while cur != null then (
-            def tempRec: HitRecord = cur.item.hit(r, Interval(rayT.min, closestSoFar))
+            def tempRec: HitRecord? = cur.item.hit(r, Interval(rayT.min, closestSoFar))
             if tempRec != null then (
                 closestSoFar = tempRec.t
                 closestRecord = tempRec
@@ -136,13 +139,13 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
         this.bbox
     )
 
-    def hit = (r: Ray, rayT: Interval): HitRecord -> (
+    def hit = (r: Ray, rayT: Interval): HitRecord? -> (
         if not this.bbox.hit(r, rayT) then (
             return null
         )
-        def hitLeft: HitRecord = this.left.hit(r, rayT)
+        def hitLeft: HitRecord? = this.left.hit(r, rayT)
         def rightT: Interval = if hitLeft != null then (Interval(rayT.min, hitLeft.t)) else (rayT)
-        def hitRight: HitRecord = this.right.hit(r, rightT)
+        def hitRight: HitRecord? = this.right.hit(r, rightT)
         if hitRight != null then (hitRight) else (hitLeft)
     )
 
@@ -161,7 +164,7 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
         )
         def box: AABB = list.boundingBox()
         def cbox: AABB = AABB.empty
-        def cur: HittableNode = list.headNode()
+        def cur: HittableNode? = list.headNode()
         while cur != null then (
             cbox = cbox.expandPoint(cur.item.boundingBox().center())
             cur = cur.next

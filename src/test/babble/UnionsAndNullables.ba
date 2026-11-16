@@ -1,0 +1,108 @@
+;; Union types (A | B), nullable types (T?), strict non-nullable any vs any?,
+;; flow-sensitive narrowing with == null / != null / <> null / truthiness / is / else,
+;; and int-to-double? widening.
+
+def Node = class (def value: int, def next: Node?) ()
+
+def sumList = (head: Node?): int -> (
+    def total = 0
+    def cur: Node? = head
+    while cur != null then (
+        total += cur.value
+        cur = cur.next
+    )
+    total
+)
+
+def list = Node(1, Node(2, Node(3, null)))
+assert(sumList(list) == 6)
+assert(sumList(null) == 0)
+
+def describe = (x: int | string | null): string -> (
+    if x is int then (
+        "int:" + (x + 1)
+    ) else if x is string then (
+        "str:" + x
+    ) else (
+        def nil: null = x
+        "null:" + nil
+    )
+)
+assert(describe(10) == "int:11")
+assert(describe("ok") == "str:ok")
+assert(describe(null) == "null:null")
+
+;; Subtraction narrowing via `not (x is ...)` and truthiness of T?
+def headOrZero = (node: Node?): int -> (
+    if node then (node.value) else (0)
+)
+assert(headOrZero(list) == 1)
+assert(headOrZero(null) == 0)
+
+def textOrCount = (v: int | string): string -> (
+    if not (v is int) then (return "str=" + v)
+    "num=" + (v * 2)
+)
+assert(textOrCount(5) == "num=10")
+assert(textOrCount("hi") == "str=hi")
+
+;; Shared members and operator methods across Babble class unions
+def VecA = value class (x: int, tag: string = "A") (
+    def plus = (o: int): int -> (this.x + o)
+)
+def VecB = value class (x: int, tag: string = "B") (
+    def plus = (o: int): int -> (this.x + o * 10)
+)
+def useUnion = (u: VecA | VecB): string -> (
+    u.tag + ":" + (u + 2)
+)
+assert(useUnion(VecA(3)) == "A:5")
+assert(useUnion(VecB(3)) == "B:23")
+
+;; Numeric operations on (int | double) and widening to double? vs keeping int in (int | double)
+def scale = (n: int | double): double -> (n * 2.0)
+assert(scale(3) == 6.0)
+assert(scale(1.5) == 3.0)
+
+def keepIntOrDouble: int | double = 1
+assert(keepIntOrDouble is int)
+
+def maybeDouble = (b1: bool, b2: bool): double? -> (
+    if b1 then (1) else if b2 then (2.5) else (null)
+)
+def d1 = maybeDouble(true, false)
+assert(d1 is double and d1 == 1.0)
+assert(maybeDouble(false, true) == 2.5)
+assert(maybeDouble(false, false) == null)
+
+def earlyNullableDouble = (flag: bool): double? -> (
+    if flag then (return 4)
+    null
+)
+def d2 = earlyNullableDouble(true)
+assert(d2 is double and d2 == 4.0)
+assert(earlyNullableDouble(false) == null)
+
+;; Callable unions / nullable callbacks and any vs any?
+def applyOpt = (cb: ((n: int): int)?, v: int): int -> (
+    if cb <> null then (cb(v)) else (v)
+)
+assert(applyOpt((n: int): int -> (n + 10), 5) == 15)
+assert(applyOpt(null, 5) == 5)
+
+def acceptAny = (v: any): bool -> (v != null)
+assert(acceptAny(42))
+
+def nullVal: null = null
+assert(nullVal == null)
+
+;; Reassignment widening null -> int? and null -> double?
+def infInt = null
+infInt = 7
+assert(infInt == 7)
+
+def infDbl = null
+infDbl = 1
+assert(infDbl is double and infDbl == 1.0)
+infDbl = 2.5
+assert(infDbl == 2.5)

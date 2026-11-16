@@ -91,7 +91,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         Assertions.assertEquals(2, interpret("def outer = ():int -> ( def inner = ():int -> ( return 1 ) ; inner() + 1 ) ; outer()"));
 
         // The returned value may be null.
-        Assertions.assertNull(interpret("def f = ():any -> ( return null ; 1 ) ; f()"));
+        Assertions.assertNull(interpret("def f = ():any? -> ( return null ; 1 ) ; f()"));
     }
 
     @Test

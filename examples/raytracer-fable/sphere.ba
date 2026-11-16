@@ -8,7 +8,7 @@ def hittable = import("hittable.ba")
 def HitRecord = hittable.HitRecord
 
 export def Sphere = class (def center: Vec3, def radius: double, def material: Material) implements hittable.Hittable (
-    def hit = (r: Ray, tmin: double, tmax: double): HitRecord -> (
+    def hit = (r: Ray, tmin: double, tmax: double): HitRecord? -> (
         def oc: Vec3 = this.center - r.origin
         def a: double = r.direction.lengthSquared()
         def h: double = r.direction.dot(oc)

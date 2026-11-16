@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | P1–P5 implemented : static typing is the only mode and redundant internal T9 checks are removed (§7, §8). P6–P7 remain planned. |
+| **Status** | P1–P6a implemented : static typing is the only mode, redundant internal T9 checks are removed (§7, §8), and union types (`A | B`) and nullable types (`T?`, `any` vs `any?`) are implemented (§11). Java/Babble generics (P6b) and call-site parameter inference (P7) remain planned. |
 | **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9) : T9 checks remain only at `as` casts, Java boundaries, and member writes from Java. |
-| **Scope** | the type checker, the grammar (`as`, `is` on built-in types), the runtime checks, the tests, the examples and the docs. |
+| **Scope** | the type checker, the grammar (`as`, `is` on built-in types, `|`, `?`, `null` in types), the runtime checks, the tests, the examples and the docs. |
 
 ## 1. Summary
 
@@ -347,10 +347,14 @@ that can reject existing code behind `babble.typing=strict` :
   `as` casts, Java boundaries (`JavaTypes.checkBoxed`, `Faces`), and `BabbleInstance`/`BabbleType.setMember` ;
   verify compiled bytecode omits internal `Types.check` / `TYPE*` fields (`BabbleCompilerTestCase`) and measure
   with `Benchmarks` and `argon` (§7.1).
-* **P6, Java generics** (5.2), then **Babble generics**, **union types**, and **nullable types**
-  (README, *Planned features* ; §11), each reducing the casts and Java boundary checks P3–P5
-  needed.
-* **P7, parameters inferred from calls** (4.9). It needs only P4, and can come before P6. It
+* **P6a, union types (`A | B`) and nullable types (`T?`).** *(Implemented)* Separates nullability in
+  the type system (`T` is non-nullable, including `any`; `T?` is `T | null`; `any?` is the nullable
+  top type; `null` is allowed in type annotations; `( ... )` parenthesises complex types such as
+  `((a : int) : int)?`), joins `if`/`while`/`return` branches to unions (and `int?` + `double` to
+  `double?` with conversion), narrows via `else` subtraction, `== null`/`!= null`/`<> null`, truthiness,
+  and `while` loop invalidation, and updates `Types` descriptors for unions and non-nullable checks (§11).
+* **P6b, Java generics** (5.2) and **Babble generics** *(Planned)*, reducing remaining casts and Java boundary checks.
+* **P7, parameters inferred from calls** (4.9). It needs only P4, and can come before P6b. It
   makes most of the annotations P3 adds optional again : P7 removes those inference gives the
   same type, keeping the ones on exported and escaping functions.
 
@@ -383,41 +387,41 @@ The questions of the draft, as decided :
 * P3–P4 : the whole suite in strict mode ; `ExamplesTestCase` compiles the examples in it.
 * P5 : `BabbleCompilerTestCase` checks the boundary checks are gone from the generated code ;
   benchmarks before and after.
+* P6a : `FormatterTestCase`, `TypeCheckerTestCase#testP6aUnionAndNullableTypes`, `BabbleCompilerTestCase`,
+  `DifferentialTestCase`, `src/test/babble/UnionsAndNullables.ba`, and `argon` rendering `scene.ppm` byte for byte.
 * P7 : golden tests of call-site inference in `TypeCheckerTestCase` (widening across calls,
   named and default arguments, methods and constructors, recursion, a conflicting call, and
   `Missing type` for escaping, exported and never-called functions) ; removing the annotations
   inference makes redundant from the tests and examples must leave the suite green.
 
-## 11. Future : nullable types (`T?`)
+## 11. Union types (`A | B`) and nullable types (`T?`) *(Implemented in P6a)*
 
-Today Babble follows T2 : `int`, `double` and `bool` reject `null`, while `string`, Babble
-classes, function types and Java types admit it. A future extension (after P1–P5, alongside or
-as a special case of union types in P6) separates nullability in the type system itself :
+Originally Babble followed T2 : `int`, `double` and `bool` rejected `null`, while `string`, Babble
+classes, function types, Java types and `any` admitted it. P6a separates nullability in the type
+system itself and introduces union types (`A | B`) :
 
 * **`T` vs. `T?`.** Every plain type `T` (`int`, `double`, `bool`, `string`, Babble classes,
-  Java classes, function types, `any`) denotes a **non-nullable** value ; `T?` denotes its
-  nullable counterpart (`string?`, `Point?`, `int?`, `any?`). `null` has a bottom-null type
-  assignable to any `T?` and to no `T` ; `T` is assignable to `T?`, and `T?` is not
-  assignable to `T` without narrowing.
-* **`int?`, `double?`, `bool?` and Java `Integer`.** Nullable primitive types are supported and
-  map directly to Java's boxed wrappers : `int?` is equivalent to Java's `Integer` (and
-  `double?` to `Double`, `bool?` to `Boolean`). Because a plain `int` can never be `null`, a
-  non-nullable `int` (and `Integer` where non-null) always unboxes to a primitive Java `int`
-  with no runtime check, while a nullable `Integer` (`int?` / `Integer?`) keeps the boxed
-  representation and forces the caller to deal with the `null` case.
-* **Using a `T?`.** Just like `any` (4.8), a value of type `T?` has no members, calls,
-  arithmetic or ordering comparisons until `null` is ruled out : by flow-sensitive narrowing
-  (`if x != null then ( … )`, `if x is T then ( … )`), an explicit cast (`x as T`), or a
-  future null-handling operator. Equality (`==`, `!=`, `same`) and string concatenation remain
-  allowed on `T?`.
-* **What it simplifies in this design.**
-  * **Java interop and generics (5.2, 7) :** Java methods and fields returning boxed types or
-    reference types (`Map[string, int].get(k)`) can be typed as `int?` / `T?` rather than
-    relying on a hidden runtime `Types.check` on exit from Java, and `T` parameters passed to
-    Java never silently receive `null`.
-  * **Joins and reassignments (4.3, 4.4) :** `def m = null ; m = "a"` infers `string?`, and
-    `if c then ( x )` without `else` has type `T?` for every `T` (including `int?`), instead
-    of failing for primitives while silently accepting `null` for `string` and classes.
-  * **Unboxed arithmetic (7.1) :** non-nullable `int`, `double` and `bool` are guaranteed
-    non-null by the type system rather than by T2 special cases, while `int?`, `double?` and
-    `bool?` stay boxed until narrowed.
+  Java classes, function types, `any`) denotes a **non-nullable** value ; `T?` is shorthand for
+  `T | null` (`string?`, `Point?`, `int?`, `any?`, `((x : int) : int)?`). `null` is also a type
+  assignable to any `T?` and to no `T` ; `T` is assignable to `T?`, and `T?` is not assignable to
+  `T` without narrowing.
+* **Union types (`A | B`).** Unions flatten nested unions, deduplicate members, absorb `any`
+  (`any` or `any?`), and canonicalize `null` last (`T | null` formats as `T?`). `if`, `while`
+  and `return` join branches into unions (while joining `int`/`int?` with `double`/`double?`
+  into `double`/`double?` and widening `int` to `double` in both backends ; `int | double`
+  preserves `Integer`). Reassignment inference (4.3) continues to widen only `T <-> null` and
+  `int <-> double`.
+* **Using unions and `T?`.**
+  * A value of type `T?` or mixed union has `==`, `!=`, `<>`, `same`, string concatenation (`+`),
+    `is`, `as`, and `any?` parameters; members, operator methods, numeric arithmetic (`int | double`),
+    comparisons and calls require every member of the union to support them safely.
+  * Flow-sensitive narrowing refines local bindings and parameters through `x is T` (and subtracts
+    `T` in the `else` branch), `x == null` / `x != null` / `x <> null`, truthiness (`if x`, `and`,
+    `or`, `not`), and `while` conditions (invalidated if the variable is reassigned or captured across
+    function boundaries).
+* **`int?`, `double?`, `bool?` and Java `Integer`.** Nullable primitive types reject primitive Java
+  overloads (`Math.abs(n)` when `n : int?`), keeping boxed wrappers distinct from unboxed primitives
+  until narrowed, while non-nullable `int`, `double` and `bool` stay guaranteed non-null.
+* **Runtime `Types` descriptors.** `Types.parse` handles `union`, `null`, `any` (`value != null`),
+  and non-nullable `Builtin`, `FunctionType`, `JavaClassType`, and `NominalType` descriptors, with
+  `UnionType.convert` preferring a non-converting matching member before widening.

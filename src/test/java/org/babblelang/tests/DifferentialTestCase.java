@@ -278,7 +278,12 @@ public class DifferentialTestCase {
                 id + "def mk = () -> ( def C = class (def n : int) () ; object ( def make = () -> ( C(1) ) ; def take = (c : any) -> ( (c as C).n ) ) )\n"
                         + "def a = mk() ; def b = mk() ; a.take(id(b.make()))\na.take(id(a))",
                 "def fac = (n : int) : int -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) ) ; fac(10)",
-                id + "def x : int = \"s\"\n1"
+                id + "def x : int = \"s\"\n1",
+                // P6a : runtime checks and conversions for unions, nullables, and strict non-nullable any.
+                "def id = (x : any?) : any? -> ( x )\ndef f = (x : int | string) : int | string -> ( x )\nf(id(true) as (int | string))",
+                "def id = (x : any?) : any? -> ( x )\ndef a : any = id(null) as any",
+                "def id = (x : any?) : any? -> ( x )\ndef d : double? = id(2) as double?\n\"\" + classof(d) + \":\" + d + \":\" + (id(null) as double?)",
+                "def id = (x : any?) : any? -> ( x )\ndef u : int | double = id(2) as (int | double)\nclassof(u)"
         );
     }
 
@@ -297,7 +302,12 @@ public class DifferentialTestCase {
                 "def f = (d : double = 1) -> ( d ) ; \"\" + classof(f()) + \":\" + f()",
                 "def f = (b : bool) : double -> ( if b then ( return 1 ) ; 2 ) ; \"\" + classof(f(true)) + \":\" + classof(f(false)) + \":\" + f(true) + \":\" + f(false)",
                 "def f : () : double = () -> ( 1 ) ; \"\" + classof(f()) + \":\" + f()",
-                "def g : (b : bool) : double = (b) -> ( if b then ( return 1 ) ; 2 ) ; \"\" + classof(g(true)) + \":\" + classof(g(false)) + \":\" + g(false)"
+                "def g : (b : bool) : double = (b) -> ( if b then ( return 1 ) ; 2 ) ; \"\" + classof(g(true)) + \":\" + classof(g(false)) + \":\" + g(false)",
+                // P6a : union & nullable widening, narrowing, while-loop narrowing, and equality narrowing parity.
+                "def f = (b1 : bool, b2 : bool) : double? -> ( if b1 then ( 1 ) else if b2 then ( 2.5 ) else ( null ) ) ; \"\" + classof(f(true, false)) + \":\" + f(true, false) + \":\" + f(false, false)",
+                "def x = null ; x = 1 ; x = 2.5 ; \"\" + classof(x) + \":\" + x",
+                "def N = class (def v : int, def next : N?) () ; def cur : N? = N(1, N(2, null)) ; def s = 0 ; while cur != null then ( s += cur.v ; cur = cur.next ) ; s",
+                "def f = (x : int | string | null) -> ( if x is int then ( x + 1 ) else if x is string then ( x + \"!\" ) else ( \"nil\" ) ) ; \"\" + f(1) + \":\" + f(\"a\") + \":\" + f(null)"
         );
     }
 

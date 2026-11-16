@@ -104,7 +104,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     private static final String LOG = "def Log = class () implements java.lang.Appendable (\n"
             + "    private def sb = java.lang.StringBuilder()\n"
-            + "    def append = (s : any, start : any = null, end : any = null) : java.lang.Appendable -> (\n"
+            + "    def append = (s : any?, start : any? = null, end : any? = null) : java.lang.Appendable -> (\n"
             + "        if s is java.lang.Character then ( this.sb.append(\"'\" + s + \"'\") )\n"
             + "        else ( if start == null then ( this.sb.append(s as java.lang.CharSequence) ) else ( this.sb.append(s as java.lang.CharSequence, start as int, end as int) ) )\n"
             + "        this\n"
@@ -117,7 +117,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         Assertions.assertEquals("abc", interpret(LOG + "def log = Log() ; java.util.Formatter(log).format(\"abc\", null) ; log.text()"));
         // Same-arity overloads are told apart with "is" : here append(char).
         Assertions.assertEquals("'x'", interpret(DEMO + LOG + "def log = Log() ; Demo.appendChar(log, java.lang.String(\"x\").charAt(0)) ; log.text()"));
-        assertFails("def Log = class () implements java.lang.Appendable (\n    def append = (s : any, start : any = null) -> ( this )\n)",
+        assertFails("def Log = class () implements java.lang.Appendable (\n    def append = (s : any, start : any? = null) -> ( this )\n)",
                 "Log.append takes 1 to 2 arguments, but Appendable.append(CharSequence, int, int) passes 3", 2);
     }
 
@@ -133,7 +133,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
     @Test
     public void testJavaInterfacesThroughImport() throws Exception {
         Assertions.assertEquals(true, interpret("def util = import(\"java.util\")\n"
-                + "def E = class () implements util.Iterator ( def hasNext = () : bool -> ( false ) ; def next = () : any -> ( null ) )\n"
+                + "def E = class () implements util.Iterator ( def hasNext = () : bool -> ( false ) ; def next = () : any? -> ( null ) )\n"
                 + "E() is java.util.Iterator"));
     }
 
@@ -142,7 +142,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         Assertions.assertEquals("[321]", output("def Countdown = class (private def n : int) implements java.util.Iterator (\n"
                 + "    def hasNext = () : bool -> ( this.n > 0 )\n"
                 + "    def next = () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
-                + "    def forEachRemaining = (f : java.util.function.Consumer) : any -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
+                + "    def forEachRemaining = (f : java.util.function.Consumer) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
                 + ")\n"
                 + "Countdown(3).forEachRemaining(java.util.function.Consumer((v : any) -> ( print(v) )))"));
     }
@@ -180,7 +180,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
     @Test
     public void testAnInterfaceDefaultOverridingAJavaDefault() throws Exception {
         Assertions.assertEquals("[1]", output("def Loud = interface extends java.util.Iterator (\n"
-                + "    def forEachRemaining = (f : java.util.function.Consumer) : any -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
+                + "    def forEachRemaining = (f : java.util.function.Consumer) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
                 + ")\n"
                 + "def One = class () implements Loud ( def done = false ; def hasNext = () : bool -> ( not this.done ) ; def next = () : int -> ( this.done = true ; 1 ) )\n"
                 + "One().forEachRemaining(java.util.function.Consumer((v : any) -> ( print(v) )))"));

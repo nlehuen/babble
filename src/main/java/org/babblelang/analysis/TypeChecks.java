@@ -127,7 +127,8 @@ final class TypeChecks {
      * reached through packages, or a Java interface.
      */
     private Object resolveType(BabbleParser.TypeContext type, ScopeNode scope, boolean forInterface) {
-        if (!(type instanceof BabbleParser.SimpleTypeContext simple)) {
+        BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(type);
+        if (simple == null) {
             throw notStatic(type);
         }
         List<String> path = simple.ID().stream().map(Object::toString).toList();

@@ -23,6 +23,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Supplier;
@@ -38,10 +39,11 @@ import java.util.stream.Collectors;
  * Typing is static : an unannotated def takes the type of its value and widens along
  * reassignments via {@code join}, unannotated function literals infer their result from
  * their body and receive parameter types from context where an expected function or
- * functional interface type is known, and {@code is} checks narrow non-reassigned lexical
- * bindings along control-flow branches (T8). Use {@code any} with {@code as} casts where
- * heterogeneity is intentional. Declared types are also recorded so the backends check them
- * at runtime where {@code any} or untyped script bindings cross into typed code (T9).
+ * functional interface type is known, and {@code is}, {@code == null}, {@code != null},
+ * and truthiness checks narrow lexical bindings along control-flow branches (T8). Use
+ * {@code any} or {@code any?} with {@code as} casts where heterogeneity is intentional.
+ * Declared types are also recorded so the backends check them at runtime where {@code any}
+ * or untyped script bindings cross into typed code (T9).
  */
 final class TypeChecker {
     private record Diagnostic(int line, int column, String message) {
@@ -57,6 +59,12 @@ final class TypeChecker {
         }
     }
 
+    private record NarrowScope(
+            Map<ParserRuleContext, Type> types,
+            Set<ParserRuleContext> killed,
+            boolean maskReassigned) {
+    }
+
     private record Widening(Type type, int line) {
     }
 
@@ -66,6 +74,7 @@ final class TypeChecker {
     private final BlockScopes pass;
     private final Map<ParserRuleContext, ScopeNode> occurrenceScopes = new HashMap<>();
     private final Set<ParserRuleContext> reassigned = new HashSet<>();
+    private final Set<ParserRuleContext> capturedReassigned = new HashSet<>();
     private final Map<ParserRuleContext, Type> types = new HashMap<>();
     private final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
     private final Map<BabbleParser.TypeContext, Type> annotations = new HashMap<>();
@@ -82,7 +91,7 @@ final class TypeChecker {
     private final Set<BabbleParser.FunctionLiteralContext> inferringResult = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<BabbleParser.FunctionLiteralContext> recursiveFunctions = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<BabbleParser.FunctionLiteralContext, Type> provisionalResults = new IdentityHashMap<>();
-    private final Deque<Map<ParserRuleContext, Type>> narrowings = new ArrayDeque<>();
+    private final Deque<NarrowScope> narrowings = new ArrayDeque<>();
     private final Map<ParserRuleContext, Type> inferredDefs = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> nextInferredDefs = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredMembers = new IdentityHashMap<>();
@@ -114,6 +123,7 @@ final class TypeChecker {
         if (pass.session != null) {
             occurrenceScopes.putAll(pass.session.occurrenceScopes);
             reassigned.addAll(pass.session.reassigned);
+            capturedReassigned.addAll(pass.session.reassigned);
         }
         for (BlockScopes.Occurrence occurrence : pass.occurrences) {
             occurrenceScopes.put(occurrence.ctx(), occurrence.scope());
@@ -121,6 +131,9 @@ final class TypeChecker {
         for (BlockScopes.PendingAssignment assignment : pass.assignments) {
             if (resolveName(null, assignment.name(), assignment.scope()) instanceof ParserRuleContext declaration) {
                 reassigned.add(declaration);
+                if (!Objects.equals(callableScope(assignment.scope()), callableScope(scopeOf(declaration)))) {
+                    capturedReassigned.add(declaration);
+                }
             }
         }
         new ReturnFinder().visit(file);
@@ -391,12 +404,7 @@ final class TypeChecker {
     private void checkMissingTypes(BabbleParser.FileContext file) {
         new BabbleBaseVisitor<Void>() {
             @Override
-            public Void visitSimpleType(BabbleParser.SimpleTypeContext ctx) {
-                return null;
-            }
-
-            @Override
-            public Void visitFunctionType(BabbleParser.FunctionTypeContext ctx) {
+            public Void visitType(BabbleParser.TypeContext ctx) {
                 return null;
             }
 
@@ -437,7 +445,10 @@ final class TypeChecker {
             Type type = parameter.type() != null
                     ? annotation(parameter.type(), scopeOf(parameter))
                     : declarationTypes.get(parameter);
-            if (parameter.type() != null || type == Type.DOUBLE) {
+            if (type != null && containsType(type, Type.DOUBLE) && !containsType(type, Type.INT)) {
+                widened.add(parameter);
+            }
+            if (parameter.type() != null || (type != null && containsType(type, Type.DOUBLE) && !containsType(type, Type.INT))) {
                 String descriptor = descriptor(type);
                 pass.analysis.setCheckedType(parameter, descriptor);
                 if (parameter.getParent().getParent() instanceof BabbleParser.ClassExpressionContext cls
@@ -458,8 +469,8 @@ final class TypeChecker {
             } else {
                 Type inferred = (kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC)
                         ? inferredMembers.get(def) : inferredDefs.get(def);
-                if (inferred == Type.DOUBLE) {
-                    descriptor = descriptor(Type.DOUBLE);
+                if (inferred != null && containsType(inferred, Type.DOUBLE) && !containsType(inferred, Type.INT)) {
+                    descriptor = descriptor(inferred);
                 }
             }
             if (descriptor != null) {
@@ -475,8 +486,11 @@ final class TypeChecker {
             Type declared = declaredType(declaration);
             if (declared != null) {
                 pass.analysis.setCheckedType(assign, descriptor(declared));
-            } else if (typeOfDeclaration(declaration) == Type.DOUBLE) {
-                pass.analysis.setCheckedType(assign, descriptor(Type.DOUBLE));
+            } else {
+                Type inferred = typeOfDeclaration(declaration);
+                if (inferred != null && containsType(inferred, Type.DOUBLE) && !containsType(inferred, Type.INT)) {
+                    pass.analysis.setCheckedType(assign, descriptor(inferred));
+                }
             }
         }
     }
@@ -489,8 +503,26 @@ final class TypeChecker {
 
     /** How the runtime checks a type ({@code Types}), or null when it needs no check. */
     private static String descriptor(Type type) {
-        if (type == Type.INT || type == Type.DOUBLE || type == Type.BOOL || type == Type.STRING) {
+        if (type == Type.INT || type == Type.DOUBLE || type == Type.BOOL || type == Type.STRING
+                || type == Type.NULL || type == Type.ANY) {
             return type + "|" + type + "|";
+        }
+        if (type == Type.NULLABLE_ANY) {
+            return null;
+        }
+        if (type instanceof Type.Union union) {
+            StringBuilder payload = new StringBuilder();
+            for (Type member : union.members()) {
+                String sub = descriptor(member);
+                if (sub == null) {
+                    return null;
+                }
+                if (!payload.isEmpty()) {
+                    payload.append(',');
+                }
+                payload.append(org.babblelang.runtime.Types.encodeComponent(sub));
+            }
+            return "union|" + union + "|" + payload;
         }
         if (type instanceof Type.Function) {
             return "fn|" + type + "|";
@@ -505,6 +537,14 @@ final class TypeChecker {
             return "java|" + array + "|" + array.javaClass().getName();
         }
         return null;
+    }
+
+    private static ScopeNode callableScope(ScopeNode scope) {
+        ScopeNode s = scope;
+        while (s != null && s.kind == ScopeNode.Kind.BLOCK) {
+            s = s.parent;
+        }
+        return s;
     }
 
     // ---------------------------------------------------------------- scopes and names
@@ -699,18 +739,46 @@ final class TypeChecker {
         if (cached != null) {
             return cached;
         }
-        Type result;
-        if (type instanceof BabbleParser.FunctionTypeContext function) {
-            result = new Type.Function(functionTypeParameters(function.parametersDeclaration(), scope),
-                    function.type() != null ? annotation(function.type(), scope) : Type.ANY);
-        } else {
-            result = simpleType((BabbleParser.SimpleTypeContext) type, scope);
-            if (result == null) {
-                warn("Unknown type : " + type.getText(), type);
-                result = Type.ERROR;
+        List<BabbleParser.NullableTypeContext> parts = type.nullableType();
+        List<Type> members = new ArrayList<>(parts.size());
+        for (BabbleParser.NullableTypeContext part : parts) {
+            Type member = nullableAnnotation(part, scope);
+            if (member == Type.ERROR) {
+                annotations.put(type, Type.ERROR);
+                return Type.ERROR;
             }
+            members.add(member);
         }
+        Type result = Type.union(members);
         annotations.put(type, result);
+        return result;
+    }
+
+    private Type nullableAnnotation(BabbleParser.NullableTypeContext nullable, ScopeNode scope) {
+        Type base = primaryAnnotation(nullable.primaryType(), scope);
+        if (base == Type.ERROR) {
+            return Type.ERROR;
+        }
+        return nullable.question != null ? Type.nullable(base) : base;
+    }
+
+    private Type primaryAnnotation(BabbleParser.PrimaryTypeContext primary, ScopeNode scope) {
+        if (primary instanceof BabbleParser.FunctionTypeContext function) {
+            return new Type.Function(functionTypeParameters(function.parametersDeclaration(), scope),
+                    function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY);
+        }
+        if (primary instanceof BabbleParser.NullTypeContext) {
+            return Type.NULL;
+        }
+        if (primary instanceof BabbleParser.ParenTypeContext paren) {
+            return annotation(paren.type(), scope);
+        }
+        BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
+        Type result = simpleType(simple, scope);
+        if (result == null) {
+            warn("Unknown type : " + simple.getText(), simple);
+            return Type.ERROR;
+        }
         return result;
     }
 
@@ -1095,12 +1163,13 @@ final class TypeChecker {
         if (expected == null) {
             return;
         }
+        Type base = Type.withoutNull(expected);
         List<Type> expectedParamTypes = null;
         Type expectedResult = null;
-        if (expected instanceof Type.Function fn) {
+        if (base instanceof Type.Function fn) {
             expectedParamTypes = fn.parameters().stream().map(Type.Parameter::type).toList();
             expectedResult = fn.result();
-        } else if (expected instanceof Type.JavaInstance java) {
+        } else if (base instanceof Type.JavaInstance java) {
             Method sam = JavaTypes.functionalMethod(java.type());
             if (sam != null) {
                 expectedParamTypes = Arrays.stream(sam.getParameterTypes()).map(this::fromJava).toList();
@@ -1152,7 +1221,7 @@ final class TypeChecker {
         Type expectedReturn = contextualReturnTypes.get(literal);
         Type pass1;
         try {
-            pass1 = computeBodyResult(literal, expectedReturn);
+            pass1 = withFunctionBarrier(() -> computeBodyResult(literal, expectedReturn));
         } finally {
             inferenceStack.pop();
             inferringResult.remove(literal);
@@ -1168,7 +1237,7 @@ final class TypeChecker {
                 provisionalResults.put(literal, candidate);
                 inferenceStack.push(literal);
                 try {
-                    Type pass2 = computeBodyResult(literal, expectedReturn);
+                    Type pass2 = withFunctionBarrier(() -> computeBodyResult(literal, expectedReturn));
                     candidate = inferred(pass2);
                 } finally {
                     inferenceStack.pop();
@@ -1195,27 +1264,23 @@ final class TypeChecker {
         for (BabbleParser.ReturnExpressionContext ret : returns) {
             Type retType = ret.expression() != null ? typeOf(ret.expression(), expectedReturn) : Type.NULL;
             returnTypes.add(retType);
-            if (expectedReturn != Type.ANY) {
-                Type next = join(result, retType);
-                if (next == null) {
-                    if (!isUnresolved(result) && !isUnresolved(retType)) {
-                        warn("Type error : incompatible return types : " + result + " and " + retType, ret);
-                    }
-                    next = Type.ERROR;
+            Type next = join(result, retType);
+            if (next == null) {
+                if (!isUnresolved(result) && !isUnresolved(retType)) {
+                    warn("Type error : incompatible return types : " + result + " and " + retType, ret);
                 }
-                result = next;
+                next = Type.ERROR;
             }
+            result = next;
         }
-        if (expectedReturn == Type.ANY) {
-            return Type.ANY;
-        }
-        if (literal.type() == null && (result == Type.DOUBLE || expectedReturn == Type.DOUBLE)) {
-            if (bodyType == Type.INT) {
+        if (literal.type() == null) {
+            Type target = expectedReturn != null && expectedReturn != Type.ERROR ? expectedReturn : result;
+            if (needsDoubleWidening(bodyType, target)) {
                 widened.add(literal.functionBlock);
             }
             for (int i = 0; i < returns.size(); i++) {
                 BabbleParser.ReturnExpressionContext ret = returns.get(i);
-                if (ret.expression() != null && returnTypes.get(i) == Type.INT) {
+                if (ret.expression() != null && needsDoubleWidening(returnTypes.get(i), target)) {
                     widened.add(ret);
                 }
             }
@@ -1258,7 +1323,7 @@ final class TypeChecker {
             BabbleParser.ExpressionContext last = statements.get(statements.size() - 1);
             Type actual = typeOf(last);
             expect(actual, expected, last);
-            if (expected == Type.DOUBLE && actual == Type.INT) {
+            if (needsDoubleWidening(actual, expected)) {
                 widened.add(function.functionBlock);
             }
         }
@@ -1276,7 +1341,7 @@ final class TypeChecker {
         if (scope.isEmpty()) {
             return action.get();
         }
-        narrowings.push(scope);
+        narrowings.push(new NarrowScope(scope, Collections.newSetFromMap(new IdentityHashMap<>()), false));
         try {
             return action.get();
         } finally {
@@ -1284,12 +1349,108 @@ final class TypeChecker {
         }
     }
 
+    private <T> T withFunctionBarrier(Supplier<T> action) {
+        if (narrowings.isEmpty()) {
+            return action.get();
+        }
+        narrowings.push(new NarrowScope(Map.of(), Collections.newSetFromMap(new IdentityHashMap<>()), true));
+        try {
+            return action.get();
+        } finally {
+            narrowings.pop();
+        }
+    }
+
+    private void killNarrowing(ParserRuleContext declaration) {
+        if (declaration == null) {
+            return;
+        }
+        for (NarrowScope scope : narrowings) {
+            scope.killed().add(declaration);
+        }
+    }
+
+    private void killAllNarrowings(Set<ParserRuleContext> declarations) {
+        if (declarations.isEmpty()) {
+            return;
+        }
+        for (NarrowScope scope : narrowings) {
+            scope.killed().addAll(declarations);
+        }
+    }
+
+    private List<Set<ParserRuleContext>> snapshotKilled() {
+        List<Set<ParserRuleContext>> snapshot = new ArrayList<>(narrowings.size());
+        for (NarrowScope scope : narrowings) {
+            Set<ParserRuleContext> copy = Collections.newSetFromMap(new IdentityHashMap<>());
+            copy.addAll(scope.killed());
+            snapshot.add(copy);
+        }
+        return snapshot;
+    }
+
+    private Set<ParserRuleContext> collectNewKills(List<Set<ParserRuleContext>> before) {
+        Set<ParserRuleContext> added = Collections.newSetFromMap(new IdentityHashMap<>());
+        int i = 0;
+        for (NarrowScope scope : narrowings) {
+            Set<ParserRuleContext> prior = i < before.size() ? before.get(i) : Set.of();
+            for (ParserRuleContext decl : scope.killed()) {
+                if (!prior.contains(decl)) {
+                    added.add(decl);
+                }
+            }
+            i++;
+        }
+        return added;
+    }
+
+    private void restoreKilled(List<Set<ParserRuleContext>> before) {
+        int i = 0;
+        for (NarrowScope scope : narrowings) {
+            scope.killed().clear();
+            if (i < before.size()) {
+                scope.killed().addAll(before.get(i));
+            }
+            i++;
+        }
+    }
+
+    private Set<ParserRuleContext> assignedLocals(ParseTree tree) {
+        Set<ParserRuleContext> assigned = Collections.newSetFromMap(new IdentityHashMap<>());
+        collectAssignedLocals(tree, assigned);
+        return assigned;
+    }
+
+    private void collectAssignedLocals(ParseTree tree, Set<ParserRuleContext> assigned) {
+        if (tree instanceof BabbleParser.FunctionLiteralContext
+                || tree instanceof BabbleParser.ClassExpressionContext
+                || tree instanceof BabbleParser.ObjectExpressionContext
+                || tree instanceof BabbleParser.InterfaceExpressionContext) {
+            return;
+        }
+        if (tree instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == null) {
+            ScopeNode scope = occurrenceScopes.get(assign);
+            if (scope != null && resolveName(assign, assign.name.getText(), scope) instanceof ParserRuleContext decl) {
+                assigned.add(decl);
+            }
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            collectAssignedLocals(tree.getChild(i), assigned);
+        }
+    }
+
     private Type narrowedType(ParserRuleContext declaration) {
-        if (reassigned.contains(declaration)) {
+        if (capturedReassigned.contains(declaration)) {
             return null;
         }
-        for (Map<ParserRuleContext, Type> scope : narrowings) {
-            Type narrowed = scope.get(declaration);
+        for (NarrowScope scope : narrowings) {
+            if (scope.killed().contains(declaration)) {
+                return null;
+            }
+            if (scope.maskReassigned() && reassigned.contains(declaration)) {
+                return null;
+            }
+            Type narrowed = scope.types().get(declaration);
             if (narrowed != null) {
                 return narrowed;
             }
@@ -1312,6 +1473,28 @@ final class TypeChecker {
             }
             return new Narrowing(Map.of(), mergeNarrowings(left.whenFalse(), right.whenFalse()));
         }
+        if (expr instanceof BabbleParser.BinaryOpContext opCtx
+                && (opCtx.op.getType() == BabbleLexer.EQ || opCtx.op.getType() == BabbleLexer.NEQ)) {
+            BabbleParser.ExpressionContext other = null;
+            if (isNullLiteral(opCtx.right)) {
+                other = opCtx.left;
+            } else if (isNullLiteral(opCtx.left)) {
+                other = opCtx.right;
+            }
+            if (other != null) {
+                ParserRuleContext decl = narrowableDeclaration(other);
+                if (decl != null) {
+                    Type current = typeOf(other);
+                    if (!isUnresolved(current) && Type.containsNull(current)) {
+                        Type nonNull = Type.withoutNull(current);
+                        Map<ParserRuleContext, Type> whenNotNull = nonNull != Type.NOTHING ? Map.of(decl, nonNull) : Map.of();
+                        Narrowing eqNull = new Narrowing(Map.of(decl, Type.NULL), whenNotNull);
+                        return opCtx.op.getType() == BabbleLexer.EQ ? eqNull : eqNull.invert();
+                    }
+                }
+            }
+            return Narrowing.EMPTY;
+        }
         if (expr instanceof BabbleParser.IsExpressionContext isCtx) {
             ParserRuleContext decl = narrowableDeclaration(isCtx.left);
             if (decl == null) {
@@ -1323,12 +1506,33 @@ final class TypeChecker {
             }
             Type current = typeOf(isCtx.left);
             if (target == null || target == Type.ERROR
-                    || (!isUnresolved(current) && assignable(current, target))) {
+                    || (!isUnresolved(current) && isRuntimeSubtype(current, target))) {
                 return Narrowing.EMPTY;
             }
-            return new Narrowing(Map.of(decl, target), Map.of());
+            Type narrowedTrue = !isUnresolved(current) ? narrowTarget(current, target) : target;
+            Type subtracted = !isUnresolved(current) ? subtractType(current, target) : Type.NOTHING;
+            Map<ParserRuleContext, Type> whenFalse = (subtracted != Type.NOTHING && !subtracted.equals(current))
+                    ? Map.of(decl, subtracted) : Map.of();
+            return new Narrowing(Map.of(decl, narrowedTrue), whenFalse);
+        }
+        ParserRuleContext decl = narrowableDeclaration(expr);
+        if (decl != null) {
+            Type current = typeOf(expr);
+            if (!isUnresolved(current) && Type.containsNull(current)) {
+                Type nonNull = Type.withoutNull(current);
+                if (nonNull != Type.NOTHING) {
+                    return new Narrowing(Map.of(decl, nonNull), Map.of());
+                }
+            }
         }
         return Narrowing.EMPTY;
+    }
+
+    private static boolean isNullLiteral(BabbleParser.ExpressionContext expr) {
+        while (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
+            expr = block.block().expression(0);
+        }
+        return expr instanceof BabbleParser.NullContext;
     }
 
     private Type.Simple isBuiltinTarget(BabbleParser.IsExpressionContext ctx) {
@@ -1358,7 +1562,10 @@ final class TypeChecker {
             return first;
         }
         Map<ParserRuleContext, Type> merged = new IdentityHashMap<>(first);
-        merged.putAll(second);
+        for (Map.Entry<ParserRuleContext, Type> entry : second.entrySet()) {
+            merged.merge(entry.getKey(), entry.getValue(), (a, b) ->
+                    isRuntimeSubtype(a, b) && !isRuntimeSubtype(b, a) ? a : b);
+        }
         return merged;
     }
 
@@ -1368,10 +1575,13 @@ final class TypeChecker {
         }
         if (expr instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
             Object resolved = resolveName(selector, selector.ID().getText(), occurrenceScopes.get(selector));
-            if ((resolved instanceof BabbleParser.DefExpressionContext
-                    || resolved instanceof BabbleParser.ParameterDeclarationContext)
-                    && !reassigned.contains((ParserRuleContext) resolved)) {
-                return (ParserRuleContext) resolved;
+            if (resolved instanceof BabbleParser.DefExpressionContext
+                    || resolved instanceof BabbleParser.ParameterDeclarationContext) {
+                ParserRuleContext decl = (ParserRuleContext) resolved;
+                if (!capturedReassigned.contains(decl)
+                        && (!reassigned.contains(decl) || Objects.equals(callableScope(occurrenceScopes.get(selector)), callableScope(scopeOf(decl))))) {
+                    return decl;
+                }
             }
         }
         return null;
@@ -1450,14 +1660,15 @@ final class TypeChecker {
             map.put(decl, valueType);
             return;
         }
-        Type joined = join(current, valueType);
+        Type joined = reassignmentJoin(current, valueType);
         if (joined == null) {
             warn("Type error : expected " + current + ", got " + valueType, at);
             return;
         }
         if (!joined.equals(current)) {
             map.put(decl, joined);
-            if (current == Type.INT && joined == Type.DOUBLE) {
+            if ((containsType(joined, Type.DOUBLE) && !containsType(current, Type.DOUBLE))
+                    || (Type.containsNull(joined) && !Type.containsNull(current))) {
                 ParserRuleContext site = at instanceof BabbleParser.AssignExpressionContext ? at
                         : at.getParent() instanceof BabbleParser.AssignExpressionContext assign ? assign : null;
                 if (site != null) {
@@ -1478,14 +1689,15 @@ final class TypeChecker {
             typeOf(ctx.test);
             Narrowing narrowing = extractNarrowing(ctx.test);
             Type expected = expectedType(ctx);
+            List<Set<ParserRuleContext>> before = snapshotKilled();
             Type thenType = withNarrowing(narrowing.whenTrue(), () -> typeOf(ctx.thenBlock, expected));
+            Set<ParserRuleContext> thenKilled = collectNewKills(before);
+            restoreKilled(before);
             ParserRuleContext otherwise = ctx.elseBlock != null ? ctx.elseBlock : ctx.elseIf;
             Type elseType = otherwise != null
                     ? withNarrowing(narrowing.whenFalse(), () -> typeOf(otherwise, expected))
                     : Type.NULL;
-            if (expected == Type.ANY) {
-                return Type.ANY;
-            }
+            killAllNarrowings(thenKilled);
             boolean used = isValueUsed(ctx);
             if (expected != null && expected != Type.ERROR && used) {
                 expect(thenType, expected, ctx.thenBlock);
@@ -1494,13 +1706,11 @@ final class TypeChecker {
                 } else if (!assignable(Type.NULL, expected)) {
                     warn("Type error : expected " + expected + ", got null", ctx);
                 }
-                if (expected == Type.DOUBLE) {
-                    if (thenType == Type.INT) {
-                        widened.add(ctx.thenBlock);
-                    }
-                    if (elseType == Type.INT && otherwise != null) {
-                        widened.add(otherwise);
-                    }
+                if (needsDoubleWidening(thenType, expected)) {
+                    widened.add(ctx.thenBlock);
+                }
+                if (otherwise != null && needsDoubleWidening(elseType, expected)) {
+                    widened.add(otherwise);
                 }
                 return expected;
             }
@@ -1514,13 +1724,11 @@ final class TypeChecker {
                 }
                 return Type.ERROR;
             }
-            if (joined == Type.DOUBLE) {
-                if (thenType == Type.INT) {
-                    widened.add(ctx.thenBlock);
-                }
-                if (elseType == Type.INT && otherwise != null) {
-                    widened.add(otherwise);
-                }
+            if (needsDoubleWidening(thenType, joined)) {
+                widened.add(ctx.thenBlock);
+            }
+            if (otherwise != null && needsDoubleWidening(elseType, joined)) {
+                widened.add(otherwise);
             }
             return joined;
         }
@@ -1535,19 +1743,21 @@ final class TypeChecker {
             Type value = ctx.value != null ? typeOf(ctx.value, declared) : Type.NULL;
             if (declared != null) {
                 expect(value, declared, ctx.value != null ? ctx.value : ctx);
-                if (declared == Type.DOUBLE && value == Type.INT) {
+                if (needsDoubleWidening(value, declared)) {
                     widened.add(ctx);
                 }
             } else {
                 ParserRuleContext at = ctx.value != null ? ctx.value : ctx;
                 if (kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC) {
                     recordInferredMember(ctx, value, at);
-                    if (inferredMembers.get(ctx) == Type.DOUBLE && value == Type.INT) {
+                    Type inferred = inferredMembers.get(ctx);
+                    if (inferred != null && needsDoubleWidening(value, inferred)) {
                         widened.add(ctx);
                     }
                 } else {
                     recordInferredDef(ctx, value, at);
-                    if (inferredDefs.get(ctx) == Type.DOUBLE && value == Type.INT) {
+                    Type inferred = inferredDefs.get(ctx);
+                    if (inferred != null && needsDoubleWidening(value, inferred)) {
                         widened.add(ctx);
                     }
                 }
@@ -1557,21 +1767,20 @@ final class TypeChecker {
 
         @Override
         public Type visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
+            killAllNarrowings(assignedLocals(ctx));
             typeOf(ctx.test);
             Narrowing narrowing = extractNarrowing(ctx.test);
             Type expected = expectedType(ctx);
+            Type blockExpected = (expected == Type.ANY || expected == Type.NULLABLE_ANY) ? expected : null;
             Type bodyType = withNarrowing(narrowing.whenTrue(),
-                    () -> typeOf(ctx.whileBlock, expected == Type.ANY ? Type.ANY : null));
+                    () -> typeOf(ctx.whileBlock, blockExpected));
             boolean used = isValueUsed(ctx);
             if (expected != null && expected != Type.ERROR && used) {
-                if (expected == Type.ANY) {
-                    return Type.ANY;
-                }
                 expect(bodyType, expected, ctx.whileBlock);
                 if (!assignable(Type.NULL, expected)) {
                     warn("Type error : expected " + expected + ", got null", ctx);
                 }
-                if (expected == Type.DOUBLE && bodyType == Type.INT) {
+                if (needsDoubleWidening(bodyType, expected)) {
                     widened.add(ctx.whileBlock);
                 }
                 return expected;
@@ -1586,7 +1795,7 @@ final class TypeChecker {
                 }
                 return Type.ERROR;
             }
-            if (joined == Type.DOUBLE && bodyType == Type.INT) {
+            if (needsDoubleWidening(bodyType, joined)) {
                 widened.add(ctx.whileBlock);
             }
             return joined;
@@ -1716,7 +1925,7 @@ final class TypeChecker {
                             guard = extractNarrowing(ifCtx.test).whenTrue();
                         }
                         if (!guard.isEmpty()) {
-                            narrowings.push(guard);
+                            narrowings.push(new NarrowScope(guard, Collections.newSetFromMap(new IdentityHashMap<>()), false));
                             pushedGuards++;
                         }
                     }
@@ -1747,6 +1956,31 @@ final class TypeChecker {
             }
             if (operand instanceof Type.Instance) {
                 return operatorCall(operand, Operators.NEGATE, null, null, ctx, ctx.operand.getText());
+            }
+            if (operand instanceof Type.Union union) {
+                if (Type.containsNull(union)) {
+                    number(operand, ctx.operand);
+                    return Type.ERROR;
+                }
+                boolean allNumericOrInstance = union.members().stream()
+                        .allMatch(m -> m instanceof Type.Instance || isNumeric(m));
+                if (!allNumericOrInstance) {
+                    number(operand, ctx.operand);
+                    return Type.ERROR;
+                }
+                List<Type> results = new ArrayList<>(union.members().size());
+                for (Type m : union.members()) {
+                    if (m instanceof Type.Instance) {
+                        Type r = operatorCall(m, Operators.NEGATE, null, null, ctx, ctx.operand.getText());
+                        if (r == Type.ERROR) {
+                            return Type.ERROR;
+                        }
+                        results.add(r);
+                    } else {
+                        results.add(m == Type.INT ? Type.INT : Type.DOUBLE);
+                    }
+                }
+                return Type.union(results);
             }
             if (!number(operand, ctx.operand) || isUnresolved(operand)) {
                 return Type.ERROR;
@@ -1784,7 +2018,7 @@ final class TypeChecker {
             if (target == Type.ERROR) {
                 return Type.ERROR;
             }
-            if (target instanceof Type.Function) {
+            if (containsFunction(target)) {
                 warn("Cannot cast to a function type", ctx.right);
                 return target;
             }
@@ -1816,7 +2050,7 @@ final class TypeChecker {
             types.put(ctx, sig);
             if (ctx.functionBlock != null && !types.containsKey(ctx.functionBlock)
                     && (ctx.type() == null || inferenceStack.isEmpty())) {
-                typeOf(ctx.functionBlock, expectedReturnType(ctx));
+                withFunctionBarrier(() -> typeOf(ctx.functionBlock, expectedReturnType(ctx)));
             }
             return sig;
         }
@@ -1829,10 +2063,12 @@ final class TypeChecker {
             }
             String name = ctx.name.getText();
             Type declared = null;
+            ParserRuleContext reassignedLocal = null;
             ParserRuleContext inferredTarget = null;
             boolean memberTarget = false;
             if (ctx.namespace == null) {
                 if (resolveName(ctx, name, occurrenceScopes.get(ctx)) instanceof ParserRuleContext declaration) {
+                    reassignedLocal = declaration;
                     declared = declaredType(declaration);
                     if (declared == null) {
                         inferredTarget = declaration;
@@ -1865,22 +2101,25 @@ final class TypeChecker {
             Type value = typeOf(ctx.value, declared);
             if (declared != null) {
                 expect(value, declared, ctx.value);
-                if (declared == Type.DOUBLE && value == Type.INT) {
+                if (needsDoubleWidening(value, declared)) {
                     widened.add(ctx);
                 }
             } else if (inferredTarget != null) {
                 if (memberTarget) {
                     recordInferredMember(inferredTarget, value, ctx.value);
-                    if (inferredMembers.get(inferredTarget) == Type.DOUBLE && value == Type.INT) {
+                    Type inferred = inferredMembers.get(inferredTarget);
+                    if (inferred != null && needsDoubleWidening(value, inferred)) {
                         widened.add(ctx);
                     }
                 } else {
                     recordInferredDef(inferredTarget, value, ctx.value);
-                    if (inferredDefs.get(inferredTarget) == Type.DOUBLE && value == Type.INT) {
+                    Type inferred = inferredDefs.get(inferredTarget);
+                    if (inferred != null && needsDoubleWidening(value, inferred)) {
                         widened.add(ctx);
                     }
                 }
             }
+            killNarrowing(reassignedLocal);
             return value;
         }
 
@@ -1892,11 +2131,13 @@ final class TypeChecker {
             String name = ctx.name.getText();
             Type declared = null;
             Type current = Type.ERROR;
+            ParserRuleContext reassignedLocal = null;
             ParserRuleContext inferredTarget = null;
             boolean memberTarget = false;
             if (ctx.namespace == null) {
                 Object resolved = resolveName(ctx, name, occurrenceScopes.get(ctx));
                 if (resolved instanceof ParserRuleContext declaration) {
+                    reassignedLocal = declaration;
                     declared = declaredType(declaration);
                     Type narrowed = narrowedType(declaration);
                     current = narrowed != null ? narrowed : typeOfDeclaration(declaration);
@@ -1935,22 +2176,25 @@ final class TypeChecker {
                     ctx.value.getText(), ctx.value, value);
             if (declared != null) {
                 expect(result, declared, ctx);
-                if (declared == Type.DOUBLE && result == Type.INT) {
+                if (needsDoubleWidening(result, declared)) {
                     widened.add(ctx);
                 }
             } else if (inferredTarget != null) {
                 if (memberTarget) {
                     recordInferredMember(inferredTarget, result, ctx);
-                    if (inferredMembers.get(inferredTarget) == Type.DOUBLE && result == Type.INT) {
+                    Type inferred = inferredMembers.get(inferredTarget);
+                    if (inferred != null && needsDoubleWidening(result, inferred)) {
                         widened.add(ctx);
                     }
                 } else {
                     recordInferredDef(inferredTarget, result, ctx);
-                    if (inferredDefs.get(inferredTarget) == Type.DOUBLE && result == Type.INT) {
+                    Type inferred = inferredDefs.get(inferredTarget);
+                    if (inferred != null && needsDoubleWidening(result, inferred)) {
                         widened.add(ctx);
                     }
                 }
             }
+            killNarrowing(reassignedLocal);
             return result;
         }
 
@@ -2003,8 +2247,8 @@ final class TypeChecker {
             Type value = ctx.expression() != null ? typeOf(ctx.expression(), expected) : Type.NULL;
             if (function != null && function.type() != null) {
                 Type declared = annotation(function.type(), scopeOf(function));
-                expect(value, declared, ctx.expression());
-                if (declared == Type.DOUBLE && value == Type.INT) {
+                expect(value, declared, ctx.expression() != null ? ctx.expression() : ctx);
+                if (needsDoubleWidening(value, declared)) {
                     widened.add(ctx);
                 }
             }
@@ -2023,6 +2267,21 @@ final class TypeChecker {
     private Type member(Type receiver, String name, boolean own, ParserRuleContext at, String receiverText) {
         if (isUnresolved(receiver)) {
             return Type.ERROR;
+        }
+        if (receiver instanceof Type.Union union) {
+            if (Type.containsNull(union)) {
+                warn("Not a scope : " + receiverText, at);
+                return Type.ERROR;
+            }
+            List<Type> memberTypes = new ArrayList<>(union.members().size());
+            for (Type member : union.members()) {
+                Type resolved = member(member, name, own, at, receiverText);
+                if (resolved == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                memberTypes.add(resolved);
+            }
+            return Type.union(memberTypes);
         }
         if (receiver instanceof Type.Instance instance) {
             TypeNode.Member member = findMember(instance.node(), name);
@@ -2373,10 +2632,31 @@ final class TypeChecker {
                 if (argument.ID() != null && "to".equals(argument.ID().getText())) {
                     expect(typeOf(argument.expression(), appendable), appendable, argument.expression());
                 } else {
-                    typeOf(argument.expression(), Type.ANY);
+                    typeOf(argument.expression(), Type.NULLABLE_ANY);
                 }
             }
             return Type.NULL;
+        }
+        if (callee instanceof Type.Union union) {
+            if (Type.containsNull(union)) {
+                warn(ctx.expression().getText() + " is not callable", ctx);
+                return Type.ERROR;
+            }
+            for (Type member : union.members()) {
+                if (!isFunction(member)) {
+                    warn(ctx.expression().getText() + " is not callable", ctx);
+                    return Type.ERROR;
+                }
+            }
+            List<Type> results = new ArrayList<>(union.members().size());
+            for (Type member : union.members()) {
+                Type r = call(member, ctx);
+                if (r == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                results.add(r);
+            }
+            return Type.union(results);
         }
         if (callee instanceof Type.Function function) {
             bind(function.parameters(), arguments, ctx);
@@ -2467,6 +2747,9 @@ final class TypeChecker {
     }
 
     private static boolean isFunction(Type type) {
+        if (type instanceof Type.Union union) {
+            return union.members().stream().allMatch(TypeChecker::isFunction);
+        }
         return type instanceof Type.Function || type instanceof Type.JavaMethod
                 || type instanceof Type.ClassValue value && !value.node().isInterface()
                 || type == Type.PRINT;
@@ -2576,7 +2859,9 @@ final class TypeChecker {
             paramTypes.add(candidate.getParameterTypes()[index]);
         }
         if (paramTypes.size() == 1) {
-            return fromJava(paramTypes.iterator().next());
+            Class<?> param = paramTypes.iterator().next();
+            Type type = fromJava(param);
+            return param.isPrimitive() ? type : Type.nullable(type);
         }
         if (unwrapFunctionLiteral(argument) != null) {
             Class<?> sam = null;
@@ -2623,6 +2908,9 @@ final class TypeChecker {
         if (isUnresolved(argument)) {
             return true;
         }
+        if (argument instanceof Type.Union union) {
+            return union.members().stream().allMatch(member -> applicable(parameter, member));
+        }
         if (argument == Type.NULL) {
             return !parameter.isPrimitive();
         }
@@ -2661,10 +2949,26 @@ final class TypeChecker {
      */
     private Type binaryOp(int op, String operator, ParserRuleContext ctx, String leftText, ParserRuleContext leftAt, Type left,
                           String rightText, ParserRuleContext rightAt, Type right) {
+        if (op == BabbleLexer.EQ || op == BabbleLexer.NEQ) {
+            return Type.BOOL;
+        }
         boolean seeding = !inferenceStack.isEmpty() && recursiveFunctions.contains(inferenceStack.peek());
         String method = Operators.method(operator);
         if (method != null && left instanceof Type.Instance) {
             return operatorCall(left, method, rightAt, right, ctx, leftText);
+        }
+        if (method != null && left instanceof Type.Union union
+                && !Type.containsNull(union)
+                && union.members().stream().allMatch(m -> m instanceof Type.Instance)) {
+            List<Type> results = new ArrayList<>(union.members().size());
+            for (Type m : union.members()) {
+                Type r = operatorCall(m, method, rightAt, right, ctx, leftText);
+                if (r == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                results.add(r);
+            }
+            return Type.union(results);
         }
         switch (op) {
             case BabbleLexer.PLUS:
@@ -2697,10 +3001,7 @@ final class TypeChecker {
                 if (!numbers || isUnresolved(left) || isUnresolved(right)) {
                     return Type.ERROR;
                 }
-                return left == Type.INT && right == Type.INT ? Type.INT : Type.DOUBLE;
-            case BabbleLexer.EQ:
-            case BabbleLexer.NEQ:
-                return Type.BOOL;
+                return arithmeticResult(left, right);
             default:
                 if (!comparable(left, right)) {
                     warn("Not comparable : " + leftText + " and " + rightText, ctx);
@@ -2709,14 +3010,24 @@ final class TypeChecker {
         }
     }
 
+    private static Type arithmeticResult(Type left, Type right) {
+        List<Type> results = new ArrayList<>();
+        for (Type l : Type.membersOf(left)) {
+            for (Type r : Type.membersOf(right)) {
+                results.add(l == Type.INT && r == Type.INT ? Type.INT : Type.DOUBLE);
+            }
+        }
+        return Type.union(results);
+    }
+
     private static final Type.Function INT_CONVERSION = new Type.Function(List.of(new Type.Parameter("value", Type.ANY, false)), Type.INT);
     private static final Type.Function DOUBLE_CONVERSION = new Type.Function(List.of(new Type.Parameter("value", Type.ANY, false)), Type.DOUBLE);
     private static final Type.Function ASSERT_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("c", Type.BOOL, false), new Type.Parameter("message", Type.ANY, true)), Type.BOOL);
+            List.of(new Type.Parameter("c", Type.BOOL, false), new Type.Parameter("message", Type.NULLABLE_ANY, true)), Type.BOOL);
     private static final Type.Function SAME_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("a", Type.ANY, false), new Type.Parameter("b", Type.ANY, false)), Type.BOOL);
+            List.of(new Type.Parameter("a", Type.NULLABLE_ANY, false), new Type.Parameter("b", Type.NULLABLE_ANY, false)), Type.BOOL);
     private static final Type.Function CLASSOF_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("v", Type.ANY, false)), Type.ANY);
+            List.of(new Type.Parameter("v", Type.NULLABLE_ANY, false)), Type.NULLABLE_ANY);
     private static final Type.Function IMPORT_FUNCTION = new Type.Function(
             List.of(new Type.Parameter("name", Type.STRING, false)), Type.ANY);
     private static final Type STDOUT_TYPE = new Type.JavaInstance(java.io.PrintWriter.class);
@@ -2754,6 +3065,9 @@ final class TypeChecker {
     }
 
     private static boolean isNumber(Type type) {
+        if (type instanceof Type.Union union) {
+            return union.members().stream().allMatch(TypeChecker::isNumber);
+        }
         return type == Type.INT || type == Type.DOUBLE;
     }
 
@@ -2767,6 +3081,9 @@ final class TypeChecker {
     }
 
     private static boolean isNumeric(Type type) {
+        if (type instanceof Type.Union union) {
+            return union.members().stream().allMatch(TypeChecker::isNumeric);
+        }
         return type == Type.INT || type == Type.DOUBLE
                 || type instanceof Type.JavaInstance instance && Number.class.isAssignableFrom(instance.type());
     }
@@ -2783,6 +3100,12 @@ final class TypeChecker {
     private static boolean comparable(Type left, Type right) {
         if (isUnresolved(left) || isUnresolved(right)) {
             return true;
+        }
+        if (left instanceof Type.Union uLeft) {
+            return uLeft.members().stream().allMatch(m -> comparable(m, right));
+        }
+        if (right instanceof Type.Union uRight) {
+            return uRight.members().stream().allMatch(m -> comparable(left, m));
         }
         if (isNumeric(left) && isNumeric(right)) {
             return true;
@@ -2821,12 +3144,20 @@ final class TypeChecker {
 
     /** Whether a value of type {@code from} can be used where {@code to} is declared. */
     static boolean assignable(Type from, Type to) {
-        if (from == Type.ERROR || to == Type.ERROR || from.equals(to) || to == Type.ANY || from == Type.NOTHING) {
+        if (from == Type.ERROR || to == Type.ERROR || from.equals(to) || from == Type.NOTHING) {
             return true;
         }
+        if (from instanceof Type.Union union) {
+            return union.members().stream().allMatch(member -> assignable(member, to));
+        }
+        if (to instanceof Type.Union union) {
+            return union.members().stream().anyMatch(member -> assignable(from, member));
+        }
         if (from == Type.NULL) {
-            // T2 : numbers and booleans are never null ; everything else may be.
-            return to != Type.INT && to != Type.DOUBLE && to != Type.BOOL && to != Type.NOTHING;
+            return to == Type.NULL;
+        }
+        if (to == Type.ANY) {
+            return true;
         }
         if (from == Type.INT && to == Type.DOUBLE) {
             return true;
@@ -2858,11 +3189,20 @@ final class TypeChecker {
 
     /** Whether {@code from as to} can succeed at runtime (static impossibility check for {@code as}). */
     private static boolean canCast(Type from, Type to) {
-        if (from == Type.ERROR || to == Type.ERROR || from == Type.NOTHING || from == Type.ANY || to == Type.ANY) {
+        if (from == Type.ERROR || to == Type.ERROR || from == Type.NOTHING) {
             return true;
         }
-        if (from == Type.NULL) {
-            return assignable(Type.NULL, to);
+        if (from instanceof Type.Union union) {
+            return union.members().stream().anyMatch(member -> canCast(member, to));
+        }
+        if (to instanceof Type.Union union) {
+            return union.members().stream().anyMatch(member -> canCast(from, member));
+        }
+        if (from == Type.NULL || to == Type.NULL) {
+            return from == to;
+        }
+        if (from == Type.ANY || to == Type.ANY) {
+            return true;
         }
         if (from == Type.INT && to == Type.DOUBLE) {
             return true;
@@ -2895,8 +3235,125 @@ final class TypeChecker {
     /** Whether {@code from as to} always holds with no conversion (redundant cast warning). */
     private static boolean alwaysIs(Type from, Type to) {
         return from != Type.ERROR && to != Type.ERROR && from != Type.NOTHING && from != Type.NULL
-                && !(from == Type.INT && to == Type.DOUBLE)
+                && !needsDoubleWidening(from, to)
                 && assignable(from, to);
+    }
+
+    private static boolean isRuntimeSubtype(Type from, Type to) {
+        if (from == Type.ERROR || to == Type.ERROR || from.equals(to) || from == Type.NOTHING) {
+            return true;
+        }
+        if (from instanceof Type.Union union) {
+            return union.members().stream().allMatch(member -> isRuntimeSubtype(member, to));
+        }
+        if (to instanceof Type.Union union) {
+            return union.members().stream().anyMatch(member -> isRuntimeSubtype(from, member));
+        }
+        if (from == Type.NULL) {
+            return to == Type.NULL;
+        }
+        if (to == Type.ANY) {
+            return true;
+        }
+        if (to instanceof Type.Instance target) {
+            return from instanceof Type.Instance instance && isSubtype(instance.node(), target.node());
+        }
+        if (to instanceof Type.JavaInstance java) {
+            Class<?> fromClass = javaClassOf(from);
+            if (fromClass != null) {
+                return java.type().isAssignableFrom(fromClass);
+            }
+            return from instanceof Type.Instance instance && implementsJava(instance.node(), java.type());
+        }
+        if (to instanceof Type.JavaArray target) {
+            return from instanceof Type.JavaArray array && target.javaClass().isAssignableFrom(array.javaClass());
+        }
+        return false;
+    }
+
+    private static boolean canMatchAtRuntime(Type a, Type b) {
+        if (a == Type.ERROR || b == Type.ERROR || a == Type.NOTHING || a.equals(b)) {
+            return true;
+        }
+        if (a == Type.NULL || b == Type.NULL) {
+            return a == b;
+        }
+        if (a == Type.ANY || b == Type.ANY) {
+            return true;
+        }
+        if (a instanceof Type.Union u) {
+            return u.members().stream().anyMatch(m -> canMatchAtRuntime(m, b));
+        }
+        if (b instanceof Type.Union u) {
+            return u.members().stream().anyMatch(m -> canMatchAtRuntime(a, m));
+        }
+        if (isRuntimeSubtype(a, b) || isRuntimeSubtype(b, a)) {
+            return true;
+        }
+        if (a instanceof Type.Instance f && b instanceof Type.Instance t) {
+            return f.node().isInterface() && t.node().isInterface();
+        }
+        if (a instanceof Type.Instance f && b instanceof Type.JavaInstance t) {
+            return f.node().isInterface() && t.type().isInterface();
+        }
+        if (a instanceof Type.JavaInstance f && b instanceof Type.Instance t) {
+            return f.type().isInterface() && t.node().isInterface();
+        }
+        Class<?> ca = javaClassOf(a);
+        Class<?> cb = javaClassOf(b);
+        if (ca != null && cb != null) {
+            return (ca.isInterface() && cb.isInterface())
+                    || (ca.isInterface() && !Modifier.isFinal(cb.getModifiers()))
+                    || (cb.isInterface() && !Modifier.isFinal(ca.getModifiers()));
+        }
+        return false;
+    }
+
+    private static Type narrowTarget(Type current, Type target) {
+        List<Type> narrowed = new ArrayList<>();
+        for (Type member : Type.membersOf(current)) {
+            if (member == Type.NULL) {
+                continue;
+            }
+            if (isRuntimeSubtype(member, target)) {
+                narrowed.add(member);
+            } else if (canMatchAtRuntime(member, target)) {
+                narrowed.add(target);
+            }
+        }
+        return narrowed.isEmpty() ? target : Type.union(narrowed);
+    }
+
+    private static Type subtractType(Type current, Type target) {
+        List<Type> remaining = new ArrayList<>();
+        for (Type member : Type.membersOf(current)) {
+            if (!isRuntimeSubtype(member, target)) {
+                remaining.add(member);
+            }
+        }
+        return remaining.isEmpty() ? Type.NOTHING : Type.union(remaining);
+    }
+
+    private static boolean needsDoubleWidening(Type from, Type to) {
+        return from != Type.ERROR && to != Type.ERROR
+                && containsType(from, Type.INT)
+                && containsType(to, Type.DOUBLE)
+                && !containsType(to, Type.INT);
+    }
+
+    private static boolean containsType(Type type, Type target) {
+        return type.equals(target) || (type instanceof Type.Union union && union.members().contains(target));
+    }
+
+    private static boolean containsFunction(Type type) {
+        if (type instanceof Type.Function) {
+            return true;
+        }
+        return type instanceof Type.Union union && union.members().stream().anyMatch(TypeChecker::containsFunction);
+    }
+
+    private static boolean isIntOrDouble(Type type) {
+        return Type.membersOf(type).stream().allMatch(m -> m == Type.INT || m == Type.DOUBLE || m == Type.NULL);
     }
 
     /**
@@ -2942,7 +3399,7 @@ final class TypeChecker {
         return java == Object.class;
     }
 
-    /** The type of a value that is one of two : {@code if} branches, a loop or null ; null when they don't join. */
+    /** The type of a value that is one of two : {@code if} branches, a loop or null ; null when an error prevents joining. */
     private static Type join(Type a, Type b) {
         if (a == Type.ERROR || b == Type.ERROR) {
             return null;
@@ -2953,14 +3410,43 @@ final class TypeChecker {
         if (a == Type.NOTHING) {
             return b;
         }
-        if ((a == Type.INT || a == Type.DOUBLE) && (b == Type.INT || b == Type.DOUBLE)) {
-            return Type.DOUBLE;
+        if (isIntOrDouble(a) && isIntOrDouble(b) && (containsType(a, Type.DOUBLE) || containsType(b, Type.DOUBLE))
+                && !(containsType(a, Type.INT) && containsType(a, Type.DOUBLE))
+                && !(containsType(b, Type.INT) && containsType(b, Type.DOUBLE))) {
+            return (Type.containsNull(a) || Type.containsNull(b)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
         }
-        if (a == Type.NULL && assignable(Type.NULL, b)) {
-            return b;
+        return Type.union(a, b);
+    }
+
+    /** Widening allowed across reassignments of an unannotated def or member ({@code int -> double} and {@code T <-> null}). */
+    private static Type reassignmentJoin(Type current, Type value) {
+        if (current == Type.ERROR || value == Type.ERROR) {
+            return null;
         }
-        if (b == Type.NULL && assignable(Type.NULL, a)) {
-            return a;
+        if (value == Type.NOTHING || current.equals(value)) {
+            return current;
+        }
+        if (current == Type.NOTHING) {
+            return value;
+        }
+        if (assignable(value, current)) {
+            return current;
+        }
+        if (current == Type.NULL) {
+            return Type.nullable(value);
+        }
+        if (value == Type.NULL) {
+            return Type.nullable(current);
+        }
+        if (Type.withoutNull(current).equals(Type.withoutNull(value))) {
+            return Type.union(current, value);
+        }
+        if (isIntOrDouble(current) && isIntOrDouble(value)
+                && (containsType(current, Type.INT) || containsType(value, Type.INT))
+                && (containsType(current, Type.DOUBLE) || containsType(value, Type.DOUBLE))
+                && !(containsType(current, Type.INT) && containsType(current, Type.DOUBLE))
+                && !(containsType(value, Type.INT) && containsType(value, Type.DOUBLE))) {
+            return (Type.containsNull(current) || Type.containsNull(value)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
         }
         return null;
     }

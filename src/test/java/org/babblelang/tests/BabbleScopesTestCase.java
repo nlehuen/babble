@@ -36,15 +36,16 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     public void testPrecedence() throws Exception {
         Assertions.assertEquals(2, interpret("def value = 1; value = value + 1 ; value"));
         Assertions.assertEquals(2, interpret("package test (def value = 1) ; def value = test.value + 1 ; value"));
-        Assertions.assertEquals(1, interpret("package test (def value = 1) ; def value : any ; value = test.value ; value"));
+        Assertions.assertEquals(1, interpret("package test (def value = 1) ; def value : any? ; value = test.value ; value"));
     }
 
     @Test
     public void testDef() throws Exception {
-        Assertions.assertEquals(null, interpret("def i : any"));
-        Assertions.assertEquals(null, interpret("def i : any ; i"));
-        Assertions.assertEquals(1, interpret("def i : any ; i = 1"));
-        Assertions.assertEquals(1, interpret("def i : any ; i = 1 ; i"));
+        Assertions.assertEquals(null, interpret("def i : any?"));
+        Assertions.assertEquals(null, interpret("def i : any? ; i"));
+        Assertions.assertEquals(1, interpret("def i : any? ; i = 1"));
+        Assertions.assertEquals(1, interpret("def i : any? ; i = 1 ; i"));
+        assertStaticFails("def i : any", "Type error : expected any, got null", 1);
     }
 
     @Test
@@ -125,7 +126,7 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         assertStaticFails("def s = \"hi\" ; s.length", "Not a scope : s", 16);
         assertStaticFails("def n = 1 ; n.value", "Not a scope : n", 13);
         // null is not a scope either, and used to surface as a NullPointerException.
-        assertStaticFails("def n : any = null ; n.value", "Not a scope : n", 22);
+        assertStaticFails("def n : any? = null ; n.value", "Not a scope : n", 23);
         assertStaticFails("def f = () -> ( 1 ) ; f().value", "Not a scope : f()", 23);
         assertStaticFails("def f = (x : any) : any -> ( x ) ; f(1).value", "Not a scope : f(1)", 36);
     }

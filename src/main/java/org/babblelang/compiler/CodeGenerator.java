@@ -1145,7 +1145,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * @param occurrence what the resolution bound the first name of the type for
      */
     private void type(BabbleParser.TypeContext type, ParserRuleContext occurrence) {
-        List<org.antlr.v4.runtime.tree.TerminalNode> ids = ((BabbleParser.SimpleTypeContext) type).ID();
+        List<org.antlr.v4.runtime.tree.TerminalNode> ids = org.babblelang.analysis.ScopeAnalysis.simpleType(type).ID();
         line(type);
         loadName(occurrence, ids.get(0).getText());
         StringBuilder text = new StringBuilder(ids.get(0).getText());
@@ -1455,6 +1455,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
         mv.visitJumpInsn(IFEQ, end);
         visit(ctx.whileBlock);
+        if (scopes.widensToDouble(ctx.whileBlock)) {
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
         mv.visitVarInsn(ASTORE, result);
         mv.visitJumpInsn(GOTO, head);
         mv.visitLabel(end);

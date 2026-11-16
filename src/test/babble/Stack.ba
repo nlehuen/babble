@@ -2,31 +2,33 @@
     Implementation of a simple LIFO stack
 ;;)
 package stack (
-    def Node = class (def value: any, def next: Node) ()
+    def Node = class (def value: any, def next: Node?) ()
 
     def Stack = class () (
         def size = 0
-        def head: Node = null
+        def head: Node? = null
 
         def push = (a: any) -> (
             this.size = this.size + 1
             this.head = Node(a, this.head)
         )
 
-        def first = (): any -> (
-            if this.head == null then (
+        def first = (): any? -> (
+            def head = this.head
+            if head == null then (
                 null
             ) else (
-                this.head.value
+                head.value
             )
         )
 
-        def pop = (): any -> (
-            if this.head == null then (
+        def pop = (): any? -> (
+            def head = this.head
+            if head == null then (
                 null
             ) else (
-                def result = this.head.value
-                this.head = this.head.next
+                def result = head.value
+                this.head = head.next
                 this.size = this.size - 1
                 result
             )
