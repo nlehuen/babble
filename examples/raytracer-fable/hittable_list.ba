@@ -1,19 +1,22 @@
 ;; hittable_list.h
 
-def Hittable = import("hittable.ba").Hittable
+def hittable = import("hittable.ba")
+def Hittable = hittable.Hittable
+def HitRecord = hittable.HitRecord
+def Ray = import("ray.ba").Ray
 
 export def HittableList = class () implements Hittable (
     private def objects = java.util.ArrayList()
 
-    def add = (item) -> (this.objects.add(item))
+    def add = (item: Hittable): bool -> (this.objects.add(item))
 
-    def hit = (r, tmin, tmax) -> (
-        def closest = null
-        def closestSoFar = tmax
-        def count = this.objects.size()
-        def i = 0
+    def hit = (r: Ray, tmin: double, tmax: double): HitRecord -> (
+        def closest: HitRecord = null
+        def closestSoFar: double = tmax
+        def count: int = this.objects.size()
+        def i: int = 0
         while i < count then (
-            def rec = (this.objects.get(i) as Hittable).hit(r, tmin, closestSoFar)
+            def rec: HitRecord = (this.objects.get(i) as Hittable).hit(r, tmin, closestSoFar)
             if rec <> null then (
                 closest = rec
                 closestSoFar = rec.t

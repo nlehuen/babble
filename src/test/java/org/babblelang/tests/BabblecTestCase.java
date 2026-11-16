@@ -63,8 +63,15 @@ public class BabblecTestCase {
     private Run runWithBabble(String jar, String... args) throws Exception {
         List<String> command = new ArrayList<>();
         int i = 0;
+        boolean hasTyping = false;
         for (; i < args.length && args[i].startsWith("-D"); i++) {
             command.add(args[i]);
+            if (args[i].startsWith("-D" + org.babblelang.engine.BabbleScriptEngine.TYPING + "=")) {
+                hasTyping = true;
+            }
+        }
+        if (!hasTyping && BabbleTestBase.isStrict()) {
+            command.add("-D" + org.babblelang.engine.BabbleScriptEngine.TYPING + "=strict");
         }
         command.add("-cp");
         command.add(directory.resolve(jar) + java.io.File.pathSeparator + System.getProperty("java.class.path"));
@@ -137,21 +144,21 @@ public class BabblecTestCase {
 
     @Test
     public void aProgramThatFailsSaysWhereAndExitsWithOne() throws Exception {
-        file("lib/broken.ba", "def id = (v) -> ( v )\nexport def y = () -> ( 1 + id(null) )");
+        file("lib/broken.ba", "def id = (v : any) : any -> ( v )\nexport def y = () : int -> ( 1 + (id(null) as int) )");
         file("main.ba", "println(\"started\")\nimport(\"lib/broken.ba\").y()");
         compile("main.ba", "app.jar");
         Run run = run("app.jar");
         Assertions.assertEquals(1, run.status());
         Assertions.assertEquals("started" + System.lineSeparator(), run.out());
-        Assertions.assertTrue(run.err().contains("Error : Not a number : id(null) in lib/broken.ba at line number 2"), run.err());
+        Assertions.assertTrue(run.err().contains("Error : Type error : expected int, got null in lib/broken.ba at line number 2"), run.err());
     }
 
     @Test
     public void dynamicImportsFindOnlyWhatTheJarHolds() throws Exception {
-        file("lib/a.ba", "export def name = \"a\"");
-        file("lib/b.ba", "export def name = \"b\"");
+        file("lib/a.ba", "export def loaded = java.util.HashMap()\nloaded.put(\"a\", \"a\")");
+        file("lib/b.ba", "import(\"a.ba\").loaded.put(\"b\", \"b\")");
         file("main.ba", "def a = import(\"lib/a.ba\")\n"
-                + "def load = (n) -> ( import(\"lib/\" + n + \".ba\").name )\n"
+                + "def load = (n : string) : string -> ( import(\"lib/\" + n + \".ba\") ; a.loaded.get(n) as string )\n"
                 + "println(load(\"a\"))\n"
                 + "println(load(\"b\"))\n");
         compile("main.ba", "app.jar");
@@ -189,14 +196,14 @@ public class BabblecTestCase {
 
     /** A program whose main script imports b, c or what it is told, dynamically. */
     private void dynamicProgram() throws IOException {
-        file("lib/a.ba", "println(\"loading a\")\ndef n = 0\nexport def next = () -> ( n = n + 1 )");
-        file("lib/b.ba", "def a = import(\"a.ba\")\ndef c = import(\"c.ba\")\nexport def name = \"b, \" + c.name + \", a at \" + a.next()");
-        file("lib/c.ba", "export def name = \"c\"\ndef id = (v) -> ( v )\nexport def fail = () -> ( 1 + id(null) )");
+        file("lib/a.ba", "println(\"loading a\")\ndef n = 0\nexport def next = () : int -> ( n = n + 1 )\nexport def names = java.util.HashMap()\nexport def actions = java.util.HashMap()");
+        file("lib/b.ba", "def a = import(\"a.ba\")\nimport(\"c.ba\")\nexport def name = \"b, \" + (a.names.get(\"c\") as string) + \", a at \" + a.next()\na.names.put(\"b\", name)");
+        file("lib/c.ba", "def a = import(\"a.ba\")\nexport def name = \"c\"\na.names.put(\"c\", name)\ndef id = (v : any) : any -> ( v )\nexport def fail = () : int -> ( 1 + (id(null) as int) )\na.actions.put(\"c\", java.lang.Runnable(() -> ( fail() )))");
         file("main.ba", "def a = import(\"lib/a.ba\")\n"
                 + "a.next()\n"
-                + "def load = (n) -> ( import(\"lib/\" + n + \".ba\") )\n"
+                + "def load = (n : string) : string -> ( import(\"lib/\" + n + \".ba\") ; a.names.get(n) as string )\n"
                 + "def i = 0\n"
-                + "while i < args.size() then ( println(load(args.get(i)).name) ; i = i + 1 )\n");
+                + "while i < args.size() then ( println(load(args.get(i) as string)) ; i = i + 1 )\n");
     }
 
     @Test
@@ -219,11 +226,11 @@ public class BabblecTestCase {
     public void compiledModulesFailLikeTheOthers() throws Exception {
         dynamicProgram();
         file("lib/bad.ba", "export def x = (\n");
-        file("main.ba", "import(\"lib/\" + args.get(0) + \".ba\").fail()\n");
+        file("main.ba", "def a = import(\"lib/a.ba\") ; import(\"lib/\" + (args.get(0) as string) + \".ba\") ; (a.actions.get(args.get(0)) as java.lang.Runnable).run()\n");
         compile("main.ba", "app.jar");
         Run run = runWithBabble("app.jar", "c");
         Assertions.assertEquals(1, run.status());
-        Assertions.assertTrue(run.err().contains("Error : Not a number : id(null) in lib/c.ba at line number 3"), run.err());
+        Assertions.assertTrue(run.err().contains("Error : Type error : expected int, got null in lib/c.ba at line number 5"), run.err());
 
         run = runWithBabble("app.jar", "bad");
         Assertions.assertEquals(1, run.status());

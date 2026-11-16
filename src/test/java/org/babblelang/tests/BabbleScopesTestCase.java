@@ -15,13 +15,15 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testPackagesChangeOnlyThroughTheirOwnCode() throws Exception {
         // From inside : its code assigns its names directly.
-        Assertions.assertEquals(3, interpret("package p ( def n = 1 ; def add = (k) -> ( n += k ) ) ; p.add(2) ; p.n"));
+        Assertions.assertEquals(3, interpret("package p ( def n = 1 ; def add = (k : int) -> ( n += k ) ) ; p.add(2) ; p.n"));
         // From outside, through a member : refused, statically when the package is known...
         for (String assignment : new String[]{"p.n = 5", "p.n += 1", "p.q.m = 2"}) {
             assertFailsWith("package p ( def n = 1 ; package q ( def m = 1 ) ) ; " + assignment, "Cannot assign to a package member : ");
         }
-        // ... and at runtime through any receiver.
-        assertFails("package p ( def n = 1 ) ; def id = (v) -> ( v ) ; id(p).n = 5", "Cannot assign to a package member : n");
+        // ... and at runtime through any receiver in gradual mode.
+        if (!isStrict()) {
+            assertFails("package p ( def n = 1 ) ; def id = (v) -> ( v ) ; id(p).n = 5", "Cannot assign to a package member : n");
+        }
     }
 
     private void assertFailsWith(String source, String message) {
@@ -38,15 +40,15 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     public void testPrecedence() throws Exception {
         Assertions.assertEquals(2, interpret("def value = 1; value = value + 1 ; value"));
         Assertions.assertEquals(2, interpret("package test (def value = 1) ; def value = test.value + 1 ; value"));
-        Assertions.assertEquals(1, interpret("package test (def value = 1) ; def value ; value = test.value ; value"));
+        Assertions.assertEquals(1, interpret("package test (def value = 1) ; def value : any ; value = test.value ; value"));
     }
 
     @Test
     public void testDef() throws Exception {
-        Assertions.assertEquals(null, interpret("def i"));
-        Assertions.assertEquals(null, interpret("def i ; i"));
-        Assertions.assertEquals(1, interpret("def i ; i = 1"));
-        Assertions.assertEquals(1, interpret("def i ; i = 1 ; i"));
+        Assertions.assertEquals(null, interpret("def i : any"));
+        Assertions.assertEquals(null, interpret("def i : any ; i"));
+        Assertions.assertEquals(1, interpret("def i : any ; i = 1"));
+        Assertions.assertEquals(1, interpret("def i : any ; i = 1 ; i"));
     }
 
     @Test
@@ -85,9 +87,10 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         Assertions.assertEquals(4, interpret("def i = 0 ; def s = 0 ; while i < 3 then ( def x = i * 2 ; s = s + x ; i = i + 1 ) ; s - 2"));
         // Closures created in different iterations capture different variables.
         Assertions.assertEquals(3, interpret(
-                "def l = java.util.ArrayList() ; def i = 0\n"
-                        + "while i < 3 then ( def x = i ; l.add(() -> ( x )) ; i = i + 1 )\n"
-                        + "l.get(0)() + l.get(1)() + l.get(2)()"));
+                "def Box = class (def f : () : int) ()\n"
+                        + "def l = java.util.ArrayList() ; def i = 0\n"
+                        + "while i < 3 then ( def x = i ; l.add(Box(() -> ( x ))) ; i = i + 1 )\n"
+                        + "(l.get(0) as Box).f() + (l.get(1) as Box).f() + (l.get(2) as Box).f()"));
     }
 
     @Test
@@ -96,21 +99,21 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         assertFails("def a = 1 ; def f = () -> ( def b = a ; def a = 2 ; b + a ) ; f()", "Name used before definition : a");
         assertFails("def f = () -> ( x = 1 ; def x = 2 ) ; f()", "Name used before definition : x");
         // At the top level, an implicit of the same name is shadowed too.
-        assertFails("println(1) ; def println = (x) -> ( x )", "Name used before definition : println");
+        assertFails("println(1) ; def println = (x : any) -> ( x )", "Name used before definition : println");
     }
 
     @Test
     public void testRedefinitionsAreRejectedBeforeRunning() {
-        assertFails("def f = (a) -> ( def a = 2 ) ; 1", "Name already defined : a");
-        assertFails("def f = (a, a) -> ( a ) ; 1", "Name already defined : a");
-        assertFails("def i = 0 ; def f = (v) -> ( i < 1 ) ; while f(def x = 1) then ( i = 1 )", "Definition in a while test : x");
+        assertFails("def f = (a : int) -> ( def a = 2 ) ; 1", "Name already defined : a");
+        assertFails("def f = (a : int, a : int) -> ( a ) ; 1", "Name already defined : a");
+        assertFails("def i = 0 ; def f = (v : int) -> ( i < 1 ) ; while f(def x = 1) then ( i = 1 )", "Definition in a while test : x");
         // A block in the test is a scope of its own, entered on every evaluation.
         Assertions.assertDoesNotThrow(() -> interpret("def i = 0 ; while ( def x = i ; x < 2 ) then ( i = i + 1 )"));
     }
 
     @Test
     public void testDefinitionNestedInAnExpressionBelongsToTheEnclosingScope() throws Exception {
-        Assertions.assertEquals(2, interpret("def f = (v) -> ( v ) ; f(def x = 1) ; x + 1"));
+        Assertions.assertEquals(2, interpret("def f = (v : int) -> ( v ) ; f(def x = 1) ; x + 1"));
         Assertions.assertEquals(1, interpret("if def x = 1 then ( x ) else ( 0 )"));
     }
 
@@ -126,14 +129,18 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         assertStaticFails("def s = \"hi\" ; s.length", "Not a scope : s", 16);
         assertStaticFails("def n = 1 ; n.value", "Not a scope : n", 13);
         // null is not a scope either, and used to surface as a NullPointerException.
-        assertFails("def n = null ; n.value", "Not a scope : n");
+        assertStaticFails("def n : any = null ; n.value", "Not a scope : n", 22);
         assertStaticFails("def f = () -> ( 1 ) ; f().value", "Not a scope : f()", 23);
-        assertFails("def f = (x) -> ( x ) ; f(1).value", "Not a scope : f(1)");
+        assertStaticFails("def f = (x : any) : any -> ( x ) ; f(1).value", "Not a scope : f(1)", 36);
     }
 
     @Test
     public void testAssigningToAMemberOfANonScope() {
-        assertFails("def s = \"hi\" ; s.length = 1", "Not an assignable scope : s");
+        if (isStrict()) {
+            assertStaticFails("def s = \"hi\" ; s.length = 1", "Not a scope : s", 16);
+        } else {
+            assertFails("def s = \"hi\" ; s.length = 1", "Not an assignable scope : s");
+        }
     }
 
     @Test

@@ -448,8 +448,8 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testDeclaredTypesAreCheckedAtRuntime() {
-        // A dynamic value of the wrong type : nothing static to report, fails at runtime.
-        String script = "def id = (x) -> ( x )\ndef f = (n : int) -> ( n )\nf(id(\"s\"))";
+        // An any value of the wrong type : nothing static to report, fails at runtime at the cast.
+        String script = "def id = (x : any) : any -> ( x )\ndef f = (n : int) : int -> ( n )\nf(id(\"s\") as int)";
         for (String mode : List.of("interpret", "compile")) {
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(script, mode, new StringWriter()));
             Assertions.assertEquals("org.babblelang.runtime.BabbleException: Type error : expected int, got string in <input> at line number 3", e.getMessage(), mode);
@@ -889,6 +889,7 @@ public class TypeCheckerTestCase {
             System.out.println("  - " + line);
         }
         Assertions.assertFalse(all.isEmpty());
+        Assertions.assertTrue(report.isEmpty(), String.join("\n", report));
     }
 
     private static Object run(String script, String mode, StringWriter errors) throws ScriptException {

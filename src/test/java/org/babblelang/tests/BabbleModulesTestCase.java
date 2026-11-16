@@ -17,7 +17,7 @@ import java.io.StringWriter;
  * {@link MapModuleSource} and runs a main script named {@code main.ba}, at its root. What is
  * particular to files is {@code FileModulesTestCase}'s.
  */
-public class BabbleModulesTestCase {
+public class BabbleModulesTestCase extends BabbleTestBase {
     private final MapModuleSource source = new MapModuleSource();
     private final StringWriter output = new StringWriter();
     private final StringWriter errors = new StringWriter();
@@ -30,6 +30,12 @@ public class BabbleModulesTestCase {
     private ScriptEngine newEngine() {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODULE_SOURCE, source);
+        return engine;
+    }
+
+    private ScriptEngine newGradualEngine() {
+        ScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.TYPING, "gradual");
         return engine;
     }
 
@@ -55,7 +61,7 @@ public class BabbleModulesTestCase {
 
     @Test
     public void exportsAreMembersOfTheModule() throws Exception {
-        file("lib.ba", "export def answer = 42\nexport def twice = (n) -> ( n * 2 )");
+        file("lib.ba", "export def answer = 42\nexport def twice = (n : int) : int -> ( n * 2 )");
         Assertions.assertEquals(84, run("def lib = import(\"lib.ba\") ; lib.twice(lib.answer)"));
         Assertions.assertEquals(84, run("def lib = import(\"./lib.ba\") ; lib.twice(n: lib.answer)"));
     }
@@ -68,7 +74,7 @@ public class BabbleModulesTestCase {
         Assertions.assertTrue(message.contains("No such export : secret in lib.ba"), message);
         Assertions.assertTrue(message.contains("at line number 2"), message);
         // The names of a module are not names of the script importing it, and conversely.
-        Assertions.assertTrue(failure("import(\"lib.ba\") ; open()").contains("No such name : open"));
+        Assertions.assertTrue(failure("import(\"lib.ba\") ; open()").contains(isStrict() ? "open is not callable" : "No such name : open"));
         file("needy.ba", "export def get = () -> ( mine )");
         Assertions.assertTrue(failure("def mine = 1 ; import(\"needy.ba\").get()").contains("No such name : mine"));
     }
@@ -84,7 +90,7 @@ public class BabbleModulesTestCase {
     @Test
     public void aModuleRunsOncePerEval() throws Exception {
         file("lib.ba", "println(\"loading\")\nexport def counter = java.util.ArrayList()");
-        file("user.ba", "def lib = import(\"lib.ba\")\nexport def add = (v) -> ( lib.counter.add(v) )");
+        file("user.ba", "def lib = import(\"lib.ba\")\nexport def add = (v : any) -> ( lib.counter.add(v) )");
         Object size = run("def lib = import(\"lib.ba\") ; def user = import(\"user.ba\") ; user.add(1) ; import(\"./lib.ba\").counter.size()");
         Assertions.assertEquals(1, size);
         Assertions.assertEquals("loading" + System.lineSeparator(), output.toString());
@@ -111,16 +117,16 @@ public class BabbleModulesTestCase {
 
     @Test
     public void cyclesWork() throws Exception {
-        file("a.ba", "def b = import(\"b.ba\")\nexport def name = \"a\"\nexport def other = () -> ( b.name )");
-        file("b.ba", "def a = import(\"a.ba\")\nexport def name = \"b\"\nexport def other = () -> ( a.name )");
-        Assertions.assertEquals("ba", run("import(\"a.ba\").other() + import(\"b.ba\").other()"));
+        file("a.ba", "def b = import(\"b.ba\")\nexport def name = \"a\"\nexport def other = () : string -> ( b.name )");
+        file("b.ba", "def a = import(\"a.ba\")\nexport def name = \"b\"\nexport def other = () : string -> ( a.name )");
+        Assertions.assertEquals("ba", run(newGradualEngine(), "import(\"a.ba\").other() + import(\"b.ba\").other()"));
     }
 
     @Test
     public void aCycleCannotReadAnExportBeforeItsDefinition() throws Exception {
         file("a.ba", "def b = import(\"b.ba\")\nexport def name = \"a\"");
         file("b.ba", "def a = import(\"a.ba\")\nexport def name = \"b\" + a.name");
-        String message = failure("import(\"a.ba\")");
+        String message = Assertions.assertThrows(ScriptException.class, () -> run(newGradualEngine(), "import(\"a.ba\")")).getMessage();
         Assertions.assertTrue(message.contains("Name used before definition : name"), message);
         Assertions.assertTrue(message.contains("b.ba at line number 2"), message);
     }
@@ -142,7 +148,7 @@ public class BabbleModulesTestCase {
 
     @Test
     public void aFailedModuleIsNotKept() throws Exception {
-        file("flaky.ba", "export def x = 1\nassert(ready, \"not ready\")");
+        file("flaky.ba", "export def x = 1\nready");
         Assertions.assertTrue(failure("import(\"flaky.ba\")").contains("No such name : ready"));
         file("flaky.ba", "export def x = 1");
         Assertions.assertEquals(1, run("import(\"flaky.ba\").x"));
@@ -163,7 +169,7 @@ public class BabbleModulesTestCase {
 
     @Test
     public void exportedPackagesAndClasses() throws Exception {
-        file("lib.ba", "export package geo ( def Point = value class (x, y) () ; def zero = Point(0, 0) )\n"
+        file("lib.ba", "export package geo ( def Point = value class (x : int, y : int) () ; def zero = Point(0, 0) )\n"
                 + "export def Counter = class () ( def n = 0 ; def next = () -> ( this.n = this.n + 1 ) ) static ( def start = () -> ( this() ) )");
         Assertions.assertEquals(true, run("def lib = import(\"lib.ba\") ; lib.geo.zero == lib.geo.Point(0, 0)"));
         Assertions.assertEquals(2, run("def Counter = import(\"lib.ba\").Counter ; def c = Counter.start() ; c.next() ; c.next()"));
@@ -189,7 +195,7 @@ public class BabbleModulesTestCase {
 
     @Test
     public void typesFromModulesAreChecked() throws Exception {
-        file("lib.ba", "export def Circle = class (def r : int) ()\nexport package geo ( def Point = value class (x, y) () )");
+        file("lib.ba", "export def Circle = class (def r : int) ()\nexport package geo ( def Point = value class (x : int, y : int) () )");
         ScriptEngine engine = newEngine();
         ScriptContext context = new SimpleScriptContext();
         context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
@@ -254,12 +260,12 @@ public class BabbleModulesTestCase {
     @Test
     public void aClassImplementsAnImportedInterface() throws Exception {
         file("shapes.ba", SHAPES);
-        Assertions.assertEquals("area 9 area 4 area 1", run("def shapes = import(\"shapes.ba\")\n"
-                + "def Square = class (def side) implements shapes.Shape ( def area = () -> ( this.side * this.side ) )\n"
+        Assertions.assertEquals("area 9.0 area 4.0 area 1.0", run("def shapes = import(\"shapes.ba\")\n"
+                + "def Square = class (def side : int) implements shapes.Shape ( def area = () : double -> ( this.side * this.side ) )\n"
                 + "def Shape = shapes.Shape\n"
-                + "def Rect = class (def w, def h) implements Shape ( def area = () -> ( this.w * this.h ) )\n"
+                + "def Rect = class (def w : int, def h : int) implements Shape ( def area = () : double -> ( this.w * this.h ) )\n"
                 + "def Unit = import(\"shapes.ba\").Shape\n"
-                + "def u = object implements Unit ( def area = () -> ( 1 ) )\n"
+                + "def u = object implements Unit ( def area = () : double -> ( 1 ) )\n"
                 + "assert(Square(3) is Shape and u is shapes.Shape)\n"
                 + "Square(3).describe() + \" \" + Rect(2, 2).describe() + \" \" + u.describe()"));
         Assertions.assertEquals("", errors.toString());
@@ -278,15 +284,15 @@ public class BabbleModulesTestCase {
     @Test
     public void interfacesExtendAndCallImportedInterfaces() throws Exception {
         file("shapes.ba", SHAPES);
-        Assertions.assertEquals("square, area 4 / area 9", run("def shapes = import(\"shapes.ba\")\n"
+        Assertions.assertEquals("square, area 4.0 / area 9.0", run("def shapes = import(\"shapes.ba\")\n"
                 + "def Named = interface extends shapes.Shape ( def name : () : string )\n"
                 + "def Square = class () implements Named (\n"
-                + "    def area = () -> ( 4 )\n"
+                + "    def area = () : double -> ( 4 )\n"
                 + "    def name = () -> ( \"square\" )\n"
                 + "    def describe = () -> ( this.name() + \", \" + super.describe() )\n"
                 + ")\n"
                 + "def Big = class () implements shapes.Shape (\n"
-                + "    def area = () -> ( 9 )\n"
+                + "    def area = () : double -> ( 9 )\n"
                 + "    def describe = () -> ( super(shapes.Shape).describe() )\n"
                 + ")\n"
                 + "Square().describe() + \" / \" + Big().describe()"));
@@ -298,24 +304,24 @@ public class BabbleModulesTestCase {
         file("lib/all.ba", "export def Shape = import(\"../shapes.ba\").Shape\n"
                 + "export def shapes = import(\"../shapes.ba\")\n"
                 + "export package geo ( def Solid = interface ( def volume : () : double ) )");
-        Assertions.assertEquals(8, run("def all = import(\"lib/all.ba\")\n"
-                + "def A = class () implements all.Shape ( def area = () -> ( 1 ) )\n"
-                + "def B = class () implements all.shapes.Shape ( def area = () -> ( 2 ) )\n"
-                + "def C = class () implements all.geo.Solid ( def volume = () -> ( 5 ) )\n"
-                + "A().area() + B().area() + C().volume()"));
+        Assertions.assertEquals(8.0, run("def all = import(\"lib/all.ba\")\n"
+                + "def A = class () implements all.Shape ( def area = () : double -> ( 1 ) )\n"
+                + "def B = class () implements all.shapes.Shape ( def area = () : double -> ( 2 ) )\n"
+                + "def C = class () implements all.geo.Solid ( def volume = () : double -> ( 5 ) )\n"
+                + "1.0 * A().area() + B().area() + C().volume()"));
     }
 
     @Test
     public void onlyExportedInterfacesCanBeImplemented() throws Exception {
         file("hidden.ba", "def Shape = interface ( def area : () : double )\nexport def x = 1");
-        String message = failure("def hidden = import(\"hidden.ba\")\ndef C = class () implements hidden.Shape ( def area = () -> ( 1 ) )");
+        String message = failure("def hidden = import(\"hidden.ba\")\ndef C = class () implements hidden.Shape ( def area = () : double -> ( 1 ) )");
         Assertions.assertTrue(message.contains("implements needs a statically known interface"), message);
     }
 
     @Test
     public void anInterfaceOfAFileInACycleIsNotKnownStatically() throws Exception {
         file("a.ba", "def b = import(\"b.ba\")\nexport def Shape = interface ( def area : () : double )");
-        file("b.ba", "def a = import(\"a.ba\")\nexport def Square = class () implements a.Shape ( def area = () -> ( 1 ) )");
+        file("b.ba", "def a = import(\"a.ba\")\nexport def Square = class () implements a.Shape ( def area = () : double -> ( 1 ) )");
         String message = failure("import(\"a.ba\")");
         Assertions.assertTrue(message.contains("is still being analysed (an import cycle)"), message);
         Assertions.assertTrue(message.contains("b.ba at line number 2"), message);
@@ -343,13 +349,13 @@ public class BabbleModulesTestCase {
 
     @Test
     public void aScriptDefiningImportCallsItsOwn() throws Exception {
-        Assertions.assertEquals("got nowhere.ba", run("def import = (n) -> ( \"got \" + n )\nimport(\"nowhere.ba\")"));
+        Assertions.assertEquals("got nowhere.ba", run("def import = (n : string) : string -> ( \"got \" + n )\nimport(\"nowhere.ba\")"));
     }
 
     @Test
     public void anEngineCompilesAModuleOnceUntilItChanges() throws Exception {
         // The module warns when it is analysed : the warnings count its analyses.
-        file("lib.ba", "def other = import(\"other.ba\")\nexport def P = value class (def x) ()\nexport def f = () -> ( other.x )");
+        file("lib.ba", "def other = import(\"other.ba\")\nexport def P = value class (def x : int) ()\nexport def f = () -> ( other.x )");
         file("other.ba", "export def x = 1");
         ScriptEngine engine = newEngine();
         run(engine, "import(\"lib.ba\")");
@@ -366,9 +372,9 @@ public class BabbleModulesTestCase {
     public void aChangedInterfaceRechecksTheFilesImplementingIt() throws Exception {
         file("shapes.ba", SHAPES);
         file("square.ba", "def shapes = import(\"shapes.ba\")\n"
-                + "export def Square = class () implements shapes.Shape ( def area = () -> ( 4 ) )");
+                + "export def Square = class () implements shapes.Shape ( def area = () : double -> ( 4 ) )");
         ScriptEngine engine = newEngine();
-        Assertions.assertEquals(4, run(engine, "import(\"square.ba\").Square().area()"));
+        Assertions.assertEquals(4.0, run(engine, "import(\"square.ba\").Square().area()"));
         file("shapes.ba", SHAPES.replace("def area : () : double", "def area : () : double\n    def perimeter : () : double"));
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, "import(\"square.ba\").Square().area()"));
         Assertions.assertTrue(e.getMessage().contains("Square does not implement Shape.perimeter"), e.getMessage());
@@ -399,10 +405,13 @@ public class BabbleModulesTestCase {
             ScriptEngine engine = newEngine();
             engine.put(BabbleScriptEngine.MODE, mode);
             String script = "def P = import(\"lib.ba\").P\n"
-                    + "def read = (o) -> ( o.open )\ndef peek = (o) -> ( o.secret )\n"
+                    + "def read = (o : P) : int -> ( o.open )\n"
                     + "def i = 0 ; def s = 0 ; while i < 10000 then ( s = s + read(P()) ; i = i + 1 )\n";
             Assertions.assertEquals(10000, run(engine, script + "s"), mode);
-            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, script + "peek(P())"), mode);
+            String peek = isStrict()
+                    ? "def P = import(\"lib.ba\").P\ndef peek = (o : P) -> ( o.secret )\npeek(P())"
+                    : "def P = import(\"lib.ba\").P\ndef peek = (o) -> ( o.secret )\npeek(P())";
+            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, peek), mode);
             Assertions.assertTrue(e.getMessage().contains("secret is private"), e.getMessage());
         }
     }
@@ -411,10 +420,16 @@ public class BabbleModulesTestCase {
 
     /** The type errors of a script, without running it : "file:line:column message". */
     private java.util.List<String> typeErrors(String script) {
-        ScriptEngine engine = newEngine();
+        return typeErrors(newEngine(), script);
+    }
+
+    private java.util.List<String> typeErrors(ScriptEngine engine, String script) {
         // The engine's attributes live in its context : the new one carries them.
         ScriptContext context = new SimpleScriptContext();
         context.setAttribute(BabbleScriptEngine.MODULE_SOURCE, source, ScriptContext.ENGINE_SCOPE);
+        if (engine.get(BabbleScriptEngine.TYPING) != null) {
+            context.setAttribute(BabbleScriptEngine.TYPING, engine.get(BabbleScriptEngine.TYPING), ScriptContext.ENGINE_SCOPE);
+        }
         context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
         StringWriter diagnostics = new StringWriter();
         context.setErrorWriter(diagnostics);
@@ -517,9 +532,9 @@ public class BabbleModulesTestCase {
     public void filesInACycleAreDynamicToEachOther() throws Exception {
         file("a.ba", "def b = import(\"b.ba\")\nexport def f = (n : int) -> ( n )\nexport def g = () -> ( b.h(\"x\") )");
         file("b.ba", "def a = import(\"a.ba\")\nexport def h = (n : int) -> ( a.f(\"y\") )");
-        // b is checked while a is still being analysed : a is dynamic to it. a sees b's types.
+        // b is checked while a is still being analysed : in gradual mode a is dynamic to it, and a sees b's types.
         Assertions.assertEquals(java.util.List.of("a.ba:3:28 Type error : expected int, got string"),
-                typeErrors("import(\"a.ba\")"));
+                typeErrors(newGradualEngine(), "import(\"a.ba\")"));
     }
 
     @Test
@@ -528,10 +543,10 @@ public class BabbleModulesTestCase {
         for (String mode : new String[]{"interpret", "compile"}) {
             ScriptEngine engine = newEngine();
             engine.put(BabbleScriptEngine.MODE, mode);
-            String script = "def lib = import(\"lib.ba\")\ndef id = (x) -> ( x )\n";
-            Assertions.assertEquals(2, run(engine, script + "def c : lib.Circle = id(lib.Circle(2))\nc.r"), mode);
+            String script = "def lib = import(\"lib.ba\")\ndef id = (x : any) : any -> ( x )\n";
+            Assertions.assertEquals(2, run(engine, script + "def c : lib.Circle = id(lib.Circle(2)) as lib.Circle\nc.r"), mode);
             ScriptException e = Assertions.assertThrows(ScriptException.class,
-                    () -> run(engine, script + "def c : lib.Circle = id(lib.Square(2))"), mode);
+                    () -> run(engine, script + "def c : lib.Circle = id(lib.Square(2)) as lib.Circle"), mode);
             Assertions.assertTrue(e.getMessage().contains("Type error : expected Circle, got Square"), e.getMessage());
         }
     }
@@ -546,7 +561,7 @@ public class BabbleModulesTestCase {
         ScriptEngine engine = newEngine();
         engine.put(ScriptEngine.FILENAME, "main.ba");
         javax.script.CompiledScript script = ((javax.script.Compilable) engine)
-                .compile("def lib = import(\"lib.ba\")\ndef id = (x) -> ( x )\ndef c : lib.C = id(lib.C())\n\"ok\"");
+                .compile("def lib = import(\"lib.ba\")\ndef id = (x : any) : any -> ( x )\ndef c : lib.C = id(lib.C()) as lib.C\n\"ok\"");
         Assertions.assertEquals("ok", script.eval());
         file("lib.ba", "def Other = class () ()\nexport def C = class () ( def x = 1 )");
         Assertions.assertEquals("ok", script.eval());
@@ -559,7 +574,7 @@ public class BabbleModulesTestCase {
         file("b.ba", "export def C = class () ()");
         ScriptEngine engine = newEngine();
         ScriptException e = Assertions.assertThrows(ScriptException.class,
-                () -> run(engine, "def a = import(\"a.ba\")\ndef id = (x) -> ( x )\ndef c : a.C = id(import(\"b.ba\").C())"));
+                () -> run(engine, "def a = import(\"a.ba\")\ndef id = (x : any) : any -> ( x )\ndef c : a.C = id(import(\"b.ba\").C()) as a.C"));
         Assertions.assertTrue(e.getMessage().contains("Type error : expected C, got C (expected a.ba#C, got b.ba#C)"), e.getMessage());
     }
 

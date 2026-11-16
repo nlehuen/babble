@@ -120,5 +120,6 @@ export def Camera = class (
             )
             j += 1
         )
+        null
     )
 )

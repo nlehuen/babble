@@ -5,46 +5,46 @@ def Math = rtweekend.Math
 def randomDouble = rtweekend.randomDouble
 
 ;; Points, directions and colors. Babble has no operator overloading, hence the methods.
-export def Vec3 = value class (x, y, z) (
-    def neg = () -> (Vec3(-this.x, -this.y, -this.z))
-    def plus = (v) -> (Vec3(this.x + v.x, this.y + v.y, this.z + v.z))
-    def minus = (v) -> (Vec3(this.x - v.x, this.y - v.y, this.z - v.z))
-    def mul = (v) -> (Vec3(this.x * v.x, this.y * v.y, this.z * v.z))
-    def times = (t) -> (Vec3(this.x * t, this.y * t, this.z * t))
-    def div = (t) -> (Vec3(this.x / t, this.y / t, this.z / t))
+export def Vec3 = value class (x: double, y: double, z: double) (
+    def neg = (): Vec3 -> (Vec3(-this.x, -this.y, -this.z))
+    def plus = (v: Vec3): Vec3 -> (Vec3(this.x + v.x, this.y + v.y, this.z + v.z))
+    def minus = (v: Vec3): Vec3 -> (Vec3(this.x - v.x, this.y - v.y, this.z - v.z))
+    def mul = (v: Vec3): Vec3 -> (Vec3(this.x * v.x, this.y * v.y, this.z * v.z))
+    def times = (t: double): Vec3 -> (Vec3(this.x * t, this.y * t, this.z * t))
+    def div = (t: double): Vec3 -> (Vec3(this.x / t, this.y / t, this.z / t))
 
-    def dot = (v) -> (this.x * v.x + this.y * v.y + this.z * v.z)
-    def cross = (v) -> (
+    def dot = (v: Vec3): double -> (this.x * v.x + this.y * v.y + this.z * v.z)
+    def cross = (v: Vec3): Vec3 -> (
         Vec3(this.y * v.z - this.z * v.y,
             this.z * v.x - this.x * v.z,
             this.x * v.y - this.y * v.x)
     )
-    def lengthSquared = () -> (this.x * this.x + this.y * this.y + this.z * this.z)
-    def length = () -> (Math.sqrt(this.lengthSquared()))
-    def unit = () -> (this / this.length())
+    def lengthSquared = (): double -> (this.x * this.x + this.y * this.y + this.z * this.z)
+    def length = (): double -> (Math.sqrt(this.lengthSquared()))
+    def unit = (): Vec3 -> (this / this.length())
 
     ;; true if the vector is close to zero in all dimensions
-    def nearZero = () -> (
-        def s = 0.00000001
+    def nearZero = (): bool -> (
+        def s: double = 0.00000001
         Math.abs(this.x) < s and Math.abs(this.y) < s and Math.abs(this.z) < s
     )
 
-    def reflect = (n) -> (this - n * (2 * this.dot(n)))
-    def refract = (n, etaiOverEtat) -> (
-        def cosTheta = Math.min((-this).dot(n), 1.0)
-        def perp = (this + n * cosTheta) * etaiOverEtat
-        def parallel = n * -Math.sqrt(Math.abs(1.0 - perp.lengthSquared()))
+    def reflect = (n: Vec3): Vec3 -> (this - n * (2 * this.dot(n)))
+    def refract = (n: Vec3, etaiOverEtat: double): Vec3 -> (
+        def cosTheta: double = Math.min((-this).dot(n), 1.0)
+        def perp: Vec3 = (this + n * cosTheta) * etaiOverEtat
+        def parallel: Vec3 = n * -Math.sqrt(Math.abs(1.0 - perp.lengthSquared()))
         perp + parallel
     )
 ) static (
-    def random = (rng, min = 0.0, max = 1.0) -> (
+    def random = (rng: java.util.Random, min: double = 0.0, max: double = 1.0): Vec3 -> (
         Vec3(randomDouble(rng, min, max), randomDouble(rng, min, max), randomDouble(rng, min, max))
     )
 
     ;; a random direction, by rejection of the points outside the unit sphere
-    def randomUnit = (rng) -> (
-        def p = Vec3.random(rng, -1.0, 1.0)
-        def lensq = p.lengthSquared()
+    def randomUnit = (rng: java.util.Random): Vec3 -> (
+        def p: Vec3 = Vec3.random(rng, -1.0, 1.0)
+        def lensq: double = p.lengthSquared()
         if 0.0 < lensq and lensq <= 1.0 then (
             p / Math.sqrt(lensq)
         ) else (
@@ -52,8 +52,8 @@ export def Vec3 = value class (x, y, z) (
         )
     )
 
-    def randomInUnitDisk = (rng) -> (
-        def p = Vec3(randomDouble(rng, -1.0, 1.0), randomDouble(rng, -1.0, 1.0), 0.0)
+    def randomInUnitDisk = (rng: java.util.Random): Vec3 -> (
+        def p: Vec3 = Vec3(randomDouble(rng, -1.0, 1.0), randomDouble(rng, -1.0, 1.0), 0.0)
         if p.lengthSquared() < 1.0 then (p) else (recurse(rng))
     )
 )

@@ -50,9 +50,18 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         } catch (ScriptException e) {
             Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a number : null in <input> at line number 1 at column number 3", e.getMessage());
         }
-        // Dynamic operands hit the same error at runtime.
-        ScriptException runtime = Assertions.assertThrows(ScriptException.class, () -> interpret("def id = (x) -> ( x ) ; 12 + id(\"to\")"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a number : id(\"to\") in <input> at line number 1", runtime.getMessage());
+        if (isStrict()) {
+            ScriptException staticFail = Assertions.assertThrows(ScriptException.class,
+                    () -> interpret("def id = (x : any) : any -> ( x ) ; 12 + id(\"to\")"));
+            Assertions.assertTrue(staticFail.getMessage().contains("Not a number : id(\"to\")"), staticFail.getMessage());
+            ScriptException runtime = Assertions.assertThrows(ScriptException.class,
+                    () -> interpret("def id = (x : any) : any -> ( x ) ; 12 + (id(\"to\") as int)"));
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Type error : expected int, got string in <input> at line number 1", runtime.getMessage());
+        } else {
+            // Dynamic operands hit the same error at runtime.
+            ScriptException runtime = Assertions.assertThrows(ScriptException.class, () -> interpret("def id = (x) -> ( x ) ; 12 + id(\"to\")"));
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a number : id(\"to\") in <input> at line number 1", runtime.getMessage());
+        }
     }
 
 
@@ -199,7 +208,16 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         } catch (ScriptException e) {
             Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not comparable : null and 1 in <input> at line number 1 at column number 2", e.getMessage());
         }
-        ScriptException runtime = Assertions.assertThrows(ScriptException.class, () -> interpret("def id = (x) -> ( x ) ; 1 < id(\"x\")"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not comparable : 1 and id(\"x\") in <input> at line number 1", runtime.getMessage());
+        if (isStrict()) {
+            ScriptException staticFail = Assertions.assertThrows(ScriptException.class,
+                    () -> interpret("def id = (x : any) : any -> ( x ) ; 1 < id(\"x\")"));
+            Assertions.assertTrue(staticFail.getMessage().contains("Not comparable : 1 and id(\"x\")"), staticFail.getMessage());
+            ScriptException runtime = Assertions.assertThrows(ScriptException.class,
+                    () -> interpret("def id = (x : any) : any -> ( x ) ; 1 < (id(\"x\") as int)"));
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Type error : expected int, got string in <input> at line number 1", runtime.getMessage());
+        } else {
+            ScriptException runtime = Assertions.assertThrows(ScriptException.class, () -> interpret("def id = (x) -> ( x ) ; 1 < id(\"x\")"));
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not comparable : 1 and id(\"x\") in <input> at line number 1", runtime.getMessage());
+        }
     }
 }

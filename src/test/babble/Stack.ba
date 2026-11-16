@@ -2,18 +2,18 @@
     Implementation of a simple LIFO stack
 ;;)
 package stack (
-    def Node = class (def value, def next) ()
+    def Node = class (def value: any, def next: Node) ()
 
     def Stack = class () (
         def size = 0
-        def head = null
+        def head: Node = null
 
-        def push = (a) -> (
+        def push = (a: any) -> (
             this.size = this.size + 1
             this.head = Node(a, this.head)
         )
 
-        def first = () -> (
+        def first = (): any -> (
             if this.head == null then (
                 null
             ) else (
@@ -21,7 +21,7 @@ package stack (
             )
         )
 
-        def pop = () -> (
+        def pop = (): any -> (
             if this.head == null then (
                 null
             ) else (

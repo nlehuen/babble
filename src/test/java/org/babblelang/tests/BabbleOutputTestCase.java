@@ -14,7 +14,7 @@ import java.io.StringWriter;
 /**
  * print and println write to the writer of the eval's ScriptContext.
  */
-public class BabbleOutputTestCase {
+public class BabbleOutputTestCase extends BabbleTestBase {
     private final ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
 
     private ScriptContext context(StringWriter out) {
@@ -34,7 +34,7 @@ public class BabbleOutputTestCase {
     @Test
     public void testOutputOfAFunctionCalledElsewhereGoesToTheSameWriter() throws Exception {
         StringWriter out = new StringWriter();
-        engine.eval("def f = () -> ( print(\"in f\") ) ; def g = () -> ( def STDOUT = null ; f() ) ; g()", context(out));
+        engine.eval("def f = () -> ( print(\"in f\") ) ; def g = () -> ( def STDOUT : any = null ; f() ) ; g()", context(out));
         Assertions.assertEquals("in f", out.toString());
     }
 
@@ -58,7 +58,7 @@ public class BabbleOutputTestCase {
         StringWriter other = new StringWriter();
         ScriptContext context = context(out);
         context.setAttribute("other", other, ScriptContext.ENGINE_SCOPE);
-        engine.eval("print(\"a\", to: other) ; print(\"b\")", context);
+        engine.eval("print(\"a\", to: other as java.lang.Appendable) ; print(\"b\")", context);
         Assertions.assertEquals("a", other.toString());
         Assertions.assertEquals("b", out.toString());
     }
@@ -67,7 +67,11 @@ public class BabbleOutputTestCase {
     public void testToRejectsWhatCannotBeWrittenTo() {
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> engine.eval("print(\"a\", to: 1)", context(new StringWriter())));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: print to: expects a Writer or PrintStream in <input> at line number 1", e.getMessage());
+        if (isStrict()) {
+            Assertions.assertTrue(e.getMessage().contains("Type error : expected java.lang.Appendable, got int"), e.getMessage());
+        } else {
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: print to: expects a Writer or PrintStream in <input> at line number 1", e.getMessage());
+        }
     }
 
     @Test

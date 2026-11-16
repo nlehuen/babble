@@ -9,10 +9,10 @@ Babble is a toy programming language running on the JVM, built as a learning pro
 ## Commands
 
 - Build & test: `mvn package` (CI runs `mvn -B package` on JDK 21). Surefire runs the suite twice: `default-test` (`babble.mode=interpret`, set explicitly since compile is the default) and `compiled-tests` (`babble.mode=compile`, plus `babble.verify=true` so every generated class passes ASM's `CheckClassAdapter`; reports in `target/surefire-reports-compiled`).
-- Run tests only: `mvn test`
+- Run tests only: `mvn test` (`mvn test -DargLine="-Dbabble.typing=strict"` for strict typing mode)
 - Run a single test class: `mvn test -Dtest=BabbleFunctionsTestCase`
 - Run a single test method: `mvn test -Dtest=BabbleFunctionsTestCase#methodName` (runs in both modes)
-- Type checker: always on; all type check failures are errors. Diagnostics go to the context's error writer (`Error : ...` with line and column), the first one fails `compile()` with `TypeCheckException`, and declared types are checked at runtime (T9).
+- Type checker: always on; all type check failures are errors. Diagnostics go to the context's error writer (`Error : ...` with line and column), the first one fails `compile()` with `TypeCheckException`, and declared types are checked at runtime (T9). `babble.typing=strict` enables strict typing (`any`, `as`, required parameter annotations, full reassignment inference).
 - Compiler debugging switches (system properties): `babble.dumpClasses=<dir>` writes the generated `.class` files for `javap -c -p`, `babble.trace=true` prints an ASM listing, `babble.verify=true` runs `CheckClassAdapter`.
 - Command line, after `mvn package` (main class `org.babblelang.Main`; the jar's manifest points at `target/lib`, filled by `maven-dependency-plugin`; `-Dbabble.mode` applies):
   - `java -jar target/babble-1.0-SNAPSHOT.jar` starts the interactive mode; `… script.ba [arguments...]` runs a script (arguments in the `args` list; exit status 1 if it fails, 2 for a bad command line); `… -keep-alive script.ba` continues in the interactive mode after it.
@@ -58,7 +58,7 @@ The image matches CI's JDK 21; mounting `~/.m2` caches dependencies between runs
 | `docs/design/modules.md` | `export`, `import`, static imports, types across modules | implemented (M1 to M5) |
 | `docs/design/module-sources-and-aot.md` | `ModuleSource`, the runtime boundary, `babblec` | implemented (R1, M4, M5) |
 | `docs/design/repl.md` | sessions, the interactive mode, the command line | implemented |
-| `docs/design/static-typing.md` | removing `dynamic` : a sound top type `any`, `as` casts, required annotations, a phased plan | accepted (decisions in §9), nothing implemented yet ; plan in §8 |
+| `docs/design/static-typing.md` | removing `dynamic` : a sound top type `any`, `as` casts, required annotations, a phased plan | accepted (§9) ; P1–P3 implemented behind `-Dbabble.typing=strict`, P4 flips the default |
 | `docs/design/effects.md` | function effects and algebraic properties | **draft, nothing implemented**: it describes a possible future, not the language |
 
 ## Architecture

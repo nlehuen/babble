@@ -4,7 +4,7 @@ export def Math = java.lang.Math
 export def infinity = java.lang.Double.POSITIVE_INFINITY
 export def pi = Math.PI
 
-export def degreesToRadians = (degrees) -> (degrees * pi / 180.0)
+export def degreesToRadians = (degrees: double): double -> (degrees * pi / 180.0)
 
 ;; A random real in [min, max)
-export def randomDouble = (rng, min = 0.0, max = 1.0) -> (min + (max - min) * rng.nextDouble())
+export def randomDouble = (rng: java.util.Random, min: double = 0.0, max: double = 1.0): double -> (min + (max - min) * rng.nextDouble())

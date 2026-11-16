@@ -7,9 +7,9 @@
 
 ;; a package is just a namespace
 package test1 (
-    def add = (a, b) -> (  ;;
-        a + b              ;; function literal
-    )                      ;;
+    def add = (a: int, b: int) -> (  ;;
+        a + b                        ;; function literal
+    )                                ;;
 
     ;; optional types
     def add2 = (a: int, b: int): int -> (
@@ -63,7 +63,7 @@ package test1 (
     )
 
     ;; default values, including function literals
-    def apply = (a, f = (v) -> (v)) -> (f(a))
+    def apply = (a: int, f: (v: int): int = (v: int) -> (v)) -> (f(a))
 
     ;; using function scopes as poor man's objects
     ;; like in Javascript
@@ -126,10 +126,10 @@ assert(1 == c2())
 assert(3 == c())
 
 ;; testing counter2
-c = test1.counter2()
-assert(1 == c.inc())
-assert(2 == c.inc())
-assert(3 == c.inc())
+def c3 = test1.counter2()
+assert(1 == c3.inc())
+assert(2 == c3.inc())
+assert(3 == c3.inc())
 
 ;; importing Java classes and using them in Babble
 def list = java.util.ArrayList()
