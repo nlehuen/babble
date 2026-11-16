@@ -264,9 +264,22 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitIsExpression(BabbleParser.IsExpressionContext ctx) {
         last = ctx;
         Object value = visit(ctx.left);
+        String builtin = scopes.isBuiltin(ctx);
+        if (builtin != null) {
+            last = ctx;
+            return Values.isBuiltin(value, builtin);
+        }
         Object type = visit(ctx.right);
         last = ctx;
         return Values.is(value, type, ctx.right.getText());
+    }
+
+    @Override
+    public Object visitAsExpression(BabbleParser.AsExpressionContext ctx) {
+        last = ctx;
+        Object value = visit(ctx.left);
+        last = ctx;
+        return Types.check(value, scopes.checkedType(ctx));
     }
 
     @Override
@@ -300,6 +313,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         Object value = visit(ctx.expression());
         last = ctx;
+        if (scopes.widensToDouble(ctx)) {
+            value = Values.toDouble(value);
+        }
         throw new ReturnException(value);
     }
 
@@ -474,13 +490,16 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         if (Truth.test(visit(ctx.test))) {
             last = ctx;
-            return visit(ctx.thenBlock);
+            Object value = visit(ctx.thenBlock);
+            return scopes.widensToDouble(ctx.thenBlock) ? Values.toDouble(value) : value;
         } else {
             last = ctx;
             if (ctx.elseBlock != null) {
-                return visit(ctx.elseBlock);
+                Object value = visit(ctx.elseBlock);
+                return scopes.widensToDouble(ctx.elseBlock) ? Values.toDouble(value) : value;
             } else if (ctx.elseIf != null) {
-                return visit(ctx.elseIf);
+                Object value = visit(ctx.elseIf);
+                return scopes.widensToDouble(ctx.elseIf) ? Values.toDouble(value) : value;
             } else {
                 return null;
             }

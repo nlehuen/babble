@@ -45,6 +45,8 @@ public final class ScopeAnalysis {
     private final List<Warning> warnings = new ArrayList<>();
     private final List<Warning> typeDiagnostics = new ArrayList<>();
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
+    private final ParseTreeProperty<String> isBuiltins = new ParseTreeProperty<>();
+    private final java.util.Set<ParserRuleContext> widensToDouble = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
     private Resolution resolution;
     private ModuleInterface moduleInterface;
@@ -127,6 +129,14 @@ public final class ScopeAnalysis {
         checkedTypes.put(ctx, descriptor);
     }
 
+    void setIsBuiltin(BabbleParser.IsExpressionContext ctx, String type) {
+        isBuiltins.put(ctx, type);
+    }
+
+    void widenToDouble(ParserRuleContext ctx) {
+        widensToDouble.add(ctx);
+    }
+
     /**
      * The type checker's diagnostics, reported as errors before execution.
      */
@@ -137,10 +147,21 @@ public final class ScopeAnalysis {
     /**
      * The declared type to check at runtime (a {@code Types} descriptor), or null for
      * none : for a parameter declaration, the argument ; for a function literal, its
-     * result ; for a def, its value ; for an unqualified assignment, the value assigned.
+     * result ; for a def, its value ; for an unqualified assignment, the value assigned ;
+     * for an {@code as} cast, its target type.
      */
     public String checkedType(ParserRuleContext ctx) {
         return checkedTypes.get(ctx);
+    }
+
+    /** The built-in type name a {@code value is T} test checks, or null for a normal type expression. */
+    public String isBuiltin(BabbleParser.IsExpressionContext ctx) {
+        return isBuiltins.get(ctx);
+    }
+
+    /** Whether the value produced by this branch or return must be converted from int to double. */
+    public boolean widensToDouble(ParserRuleContext ctx) {
+        return widensToDouble.contains(ctx);
     }
 
     /**

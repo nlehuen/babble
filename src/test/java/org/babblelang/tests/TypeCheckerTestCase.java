@@ -36,8 +36,19 @@ public class TypeCheckerTestCase {
         return analysis.typeDiagnostics().stream().map(w -> w.line() + ":" + w.column() + " " + w.message()).toList();
     }
 
+    private static List<String> warnings(String source) {
+        BabbleParser parser = new BabbleParser(new CommonTokenStream(new BabbleLexer(CharStreams.fromString(source))));
+        parser.setErrorHandler(new BailErrorStrategy());
+        ScopeAnalysis analysis = BlockScopes.analyze(parser.file());
+        return analysis.warnings().stream().map(w -> w.line() + ":" + w.column() + " " + w.message()).toList();
+    }
+
     private static void assertDiagnostics(String source, String... expected) {
         Assertions.assertEquals(List.of(expected), diagnostics(source), source);
+    }
+
+    private static void assertWarnings(String source, String... expected) {
+        Assertions.assertEquals(List.of(expected), warnings(source), source);
     }
 
     static Collection<String> scripts() {
@@ -443,6 +454,161 @@ public class TypeCheckerTestCase {
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(script, mode, new StringWriter()));
             Assertions.assertEquals("org.babblelang.runtime.BabbleException: Type error : expected int, got string in <input> at line number 3", e.getMessage(), mode);
         }
+    }
+
+    @Test
+    public void testAny() {
+        assertDiagnostics("def a : any = 1\ndef b : any = \"s\"\ndef c : any = true\ndef d : any = null\n"
+                + "def f = (v : any) : any -> (\n"
+                + "  def ok1 : bool = v == 1\n"
+                + "  def ok2 : bool = v != null\n"
+                + "  def ok3 : string = \"x = \" + v\n"
+                + "  println(v) ; same(v, 1) ; classof(v) ; java.lang.System.out.println(v)\n"
+                + "  def l = java.util.ArrayList() ; l.add(v)\n"
+                + "  def cond = true\n"
+                + "  def ok4 : any = if cond then ( 1 ) else ( \"a\" )\n"
+                + "  def ok5 : any = if cond then ( 1 )\n"
+                + "  v\n)\nf(1) ; f(\"x\") ; f(null)");
+        assertDiagnostics("def f = (v : any) -> (\n"
+                + "  v.x\n"
+                + "  v.x = 1\n"
+                + "  v()\n"
+                + "  v + 1\n"
+                + "  1 + v\n"
+                + "  -v\n"
+                + "  v < 1\n"
+                + "  1 < v\n"
+                + "  def i : int = v\n"
+                + "  def s : string = v\n"
+                + "  java.lang.Math.abs(v)\n)",
+                "2:3 Not a scope : v",
+                "3:3 Not a scope : v",
+                "4:3 v is not callable",
+                "5:3 Not a number : v",
+                "6:7 Not a number : v",
+                "7:4 Not a number : v",
+                "8:3 Not comparable : v and 1",
+                "9:3 Not comparable : 1 and v",
+                "10:17 Type error : expected int, got any",
+                "11:20 Type error : expected string, got any",
+                "12:3 No applicable overload of java.lang.Math.abs for (any)");
+    }
+
+    @Test
+    public void testBuiltinIsAndNarrowing() {
+        assertDiagnostics("def f = (v : any) -> (\n"
+                + "  if v is int then ( def n : int = v + 1 ; v.nope )\n"
+                + "  if v is double then ( def d : double = v + 0.5 ; def n : int = v )\n"
+                + "  if v is bool then ( def b : bool = v ; def n : int = v )\n"
+                + "  if v is string then ( def s : string = v ; def n : int = v )\n"
+                + "  if v is any then ( def a : any = v ; v + 1 )\n"
+                + "  if not (v is string) then ( return \"none\" )\n"
+                + "  def ok : string = v\n"
+                + "  def bad : int = v\n"
+                + "  v\n)",
+                "2:44 Not a scope : v",
+                "3:66 Type error : expected int, got double",
+                "4:56 Type error : expected int, got bool",
+                "5:60 Type error : expected int, got string",
+                "6:40 Not a number : v",
+                "9:19 Type error : expected int, got string");
+        assertDiagnostics("def Point = class (def x : int) ()\n"
+                + "def g1 = (v : any) -> (\n"
+                + "  def ok1 = v is int and v + 1 > 0\n"
+                + "  def ok2 : string = if not (v is string) then ( \"no\" ) else ( v )\n"
+                + "  ok1\n)\n"
+                + "def g2 = (v : any) -> (\n"
+                + "  def int = Point\n"
+                + "  if v is int then ( def bad : string = v.x )\n"
+                + "  0\n)",
+                "9:41 Type error : expected string, got int");
+        // Built-in int(x) conversion is unaffected outside the right of is.
+        assertDiagnostics("def n : int = int(\"42\") + 1");
+    }
+
+    @Test
+    public void testAsCasts() {
+        String decls = "def P = class (def x : int) ()\n"
+                + "def Q = class (def y : int) ()\n"
+                + "def S = interface ( def area : () : double )\n"
+                + "def T = interface ( def tag : () : string )\n"
+                + "def C = class () implements S ( def area = () -> ( 1.0 ) )\n";
+        assertDiagnostics(decls
+                + "def f = (v : any, s : S, n : java.lang.Number) -> (\n"
+                + "  def a : int = v as int\n"
+                + "  def b : double = v as double\n"
+                + "  def c : bool = v as bool\n"
+                + "  def d : string = (v as string) + \"!\"\n"
+                + "  def e : double = (s as C).area()\n"
+                + "  def t : T = s as T\n"
+                + "  def k : int = n as int\n"
+                + "  def w : double = 1 as double\n"
+                + "  def ns : string = null as string\n"
+                + "  def np : P = null as P\n"
+                + "  def na : any = null as any\n"
+                + "  a + k\n)");
+        assertWarnings(decls
+                + "def f = (v : any, s : S, n : java.lang.Number) -> (\n"
+                + "  (v as int) + (1 as double)\n"
+                + "  def ns : string = null as string\n"
+                + "  def np : P = null as P\n"
+                + "  n as int\n)");
+        assertDiagnostics(decls
+                + "def a = 1 as string\n"
+                + "def b = 1.5 as int\n"
+                + "def c = null as int\n"
+                + "def d = null as double\n"
+                + "def e = null as bool\n"
+                + "def g = P(1) as Q\n"
+                + "def h = P(1) as S\n"
+                + "def i = \"x\" as java.lang.Runnable\n"
+                + "def j = (v : any) -> ( v as (x : int) : int )",
+                "6:9 Type error : expected string, got int",
+                "7:9 Type error : expected int, got double",
+                "8:9 Type error : expected int, got null",
+                "9:9 Type error : expected double, got null",
+                "10:9 Type error : expected bool, got null",
+                "11:9 Type error : expected Q, got P",
+                "12:9 Type error : expected S, got P",
+                "13:9 Type error : expected java.lang.Runnable, got string",
+                "14:29 Cannot cast to a function type");
+        // Non-fatal warnings for redundant casts.
+        String redundant = decls
+                + "def a = 1 as int\n"
+                + "def b = \"x\" as string\n"
+                + "def c = C() as S\n"
+                + "def d = 1 as any\n"
+                + "def e = (v : any) -> ( v as any )";
+        assertDiagnostics(redundant);
+        assertWarnings(redundant,
+                "6:9 Redundant cast : int",
+                "7:9 Redundant cast : string",
+                "8:9 Redundant cast : S",
+                "9:9 Redundant cast : any",
+                "10:24 Redundant cast : any");
+    }
+
+    @Test
+    public void testJavaArrays() {
+        assertDiagnostics("def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b\")\n"
+                + "def n : int = parts.length\n"
+                + "java.util.Arrays.asList(parts)\n"
+                + "def s : string = parts.length\n"
+                + "parts.length = 1\n"
+                + "parts.nope",
+                "4:18 Type error : expected string, got int",
+                "5:1 Cannot assign final field : java.lang.String[].length",
+                "6:1 No such name in java.lang.String[] : nope");
+    }
+
+    @Test
+    public void testIfIntToDoubleConversion() {
+        assertDiagnostics("def f = (c : bool) -> ( if c then ( 1 ) else ( 2.0 ) )\n"
+                + "def g = (c : bool) -> ( if c then ( return 1 ) ; 2.0 )\n"
+                + "def s1 : string = f(true)\n"
+                + "def s2 : string = g(true)",
+                "3:19 Type error : expected string, got double",
+                "4:19 Type error : expected string, got double");
     }
 
     private static Object run(String script, String mode, StringWriter errors) throws ScriptException {

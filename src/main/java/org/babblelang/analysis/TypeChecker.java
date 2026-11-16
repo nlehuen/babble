@@ -69,6 +69,8 @@ final class TypeChecker {
     private final Set<ParserRuleContext> inProgress = new HashSet<>();
     private final Set<BabbleParser.FunctionLiteralContext> functions = new LinkedHashSet<>();
     private final Set<Diagnostic> diagnostics = new TreeSet<>(ORDER);
+    private final Set<Diagnostic> warnings = new TreeSet<>(ORDER);
+    private final Set<ParserRuleContext> widened = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Typer typer = new Typer();
     private final Map<ParserRuleContext, Type> expectedTypes = new IdentityHashMap<>();
     private final Map<BabbleParser.FunctionLiteralContext, Type> contextualReturnTypes = new IdentityHashMap<>();
@@ -116,6 +118,12 @@ final class TypeChecker {
         for (BabbleParser.FunctionLiteralContext function : functions) {
             checkResult(function);
         }
+        for (ParserRuleContext ctx : widened) {
+            pass.analysis.widenToDouble(ctx);
+        }
+        for (Diagnostic warning : warnings) {
+            pass.analysis.warn(warning.message(), warning.line(), warning.column());
+        }
         for (Diagnostic diagnostic : diagnostics) {
             pass.analysis.typeDiagnostic(diagnostic.message(), diagnostic.line(), diagnostic.column());
         }
@@ -147,6 +155,13 @@ final class TypeChecker {
             return;
         }
         diagnostics.add(new Diagnostic(at.getStart().getLine(), at.getStart().getCharPositionInLine() + 1, message));
+    }
+
+    private void analysisWarn(String message, ParserRuleContext at) {
+        if (!inFile(at)) {
+            return;
+        }
+        warnings.add(new Diagnostic(at.getStart().getLine(), at.getStart().getCharPositionInLine() + 1, message));
     }
 
     private boolean inFile(ParserRuleContext ctx) {
@@ -238,6 +253,9 @@ final class TypeChecker {
         }
         if (type instanceof Type.JavaInstance java) {
             return "java|" + java.type().getName() + "|" + java.type().getName();
+        }
+        if (type instanceof Type.JavaArray array) {
+            return "java|" + array + "|" + array.javaClass().getName();
         }
         return null;
     }
@@ -427,6 +445,7 @@ final class TypeChecker {
                 case "double": return Type.DOUBLE;
                 case "bool": return Type.BOOL;
                 case "string": return Type.STRING;
+                case "any": return Type.ANY;
                 case "dynamic": return Type.DYNAMIC;
                 default: return null;
             }
@@ -582,6 +601,9 @@ final class TypeChecker {
         }
         if (java == void.class) {
             return Type.NULL;
+        }
+        if (java.isArray()) {
+            return new Type.JavaArray(java, fromJava(java.getComponentType()));
         }
         if (java == Object.class || java.isPrimitive()) {
             return Type.DYNAMIC;
@@ -761,6 +783,7 @@ final class TypeChecker {
             return Type.DYNAMIC;
         }
         List<Diagnostic> savedDiagnostics = new ArrayList<>(diagnostics);
+        List<Diagnostic> savedWarnings = new ArrayList<>(warnings);
         inferringResult.add(literal);
         inferenceStack.push(literal);
         Type expectedReturn = contextualReturnTypes.get(literal);
@@ -775,6 +798,8 @@ final class TypeChecker {
         if (recursiveFunctions.remove(literal) && candidate != Type.DYNAMIC) {
             diagnostics.clear();
             diagnostics.addAll(savedDiagnostics);
+            warnings.clear();
+            warnings.addAll(savedWarnings);
             clearSubtreeTypes(literal.functionBlock);
             provisionalResults.put(literal, candidate);
             inferenceStack.push(literal);
@@ -790,10 +815,25 @@ final class TypeChecker {
     }
 
     private Type computeBodyResult(BabbleParser.FunctionLiteralContext literal, Type expectedReturn) {
-        Type result = typeOf(literal.functionBlock, expectedReturn);
-        for (BabbleParser.ReturnExpressionContext ret : functionReturns.getOrDefault(literal, List.of())) {
+        Type bodyType = typeOf(literal.functionBlock, expectedReturn);
+        Type result = bodyType;
+        List<BabbleParser.ReturnExpressionContext> returns = functionReturns.getOrDefault(literal, List.of());
+        List<Type> returnTypes = new ArrayList<>(returns.size());
+        for (BabbleParser.ReturnExpressionContext ret : returns) {
             Type retType = ret.expression() != null ? typeOf(ret.expression(), expectedReturn) : Type.NULL;
+            returnTypes.add(retType);
             result = join(result, retType);
+        }
+        if (literal.type() == null && result == Type.DOUBLE) {
+            if (bodyType == Type.INT) {
+                widened.add(literal.functionBlock);
+            }
+            for (int i = 0; i < returns.size(); i++) {
+                BabbleParser.ReturnExpressionContext ret = returns.get(i);
+                if (ret.expression() != null && returnTypes.get(i) == Type.INT) {
+                    widened.add(ret);
+                }
+            }
         }
         return result;
     }
@@ -803,6 +843,7 @@ final class TypeChecker {
             types.remove(ctx);
             expectedTypes.remove(ctx);
             contextualReturnTypes.remove(ctx);
+            widened.remove(ctx);
             if (ctx instanceof BabbleParser.DefExpressionContext || ctx instanceof BabbleParser.ParameterDeclarationContext) {
                 declarationTypes.remove(ctx);
             }
@@ -887,7 +928,10 @@ final class TypeChecker {
             if (decl == null) {
                 return Narrowing.EMPTY;
             }
-            Type target = instanceTypeOfTypeValue(typeOf(isCtx.right));
+            Type target = isBuiltinTarget(isCtx);
+            if (target == null) {
+                target = instanceTypeOfTypeValue(typeOf(isCtx.right));
+            }
             Type current = typeOf(isCtx.left);
             if (target == null || target == Type.DYNAMIC
                     || (current != Type.DYNAMIC && current != Type.NOTHING && assignable(current, target))) {
@@ -896,6 +940,23 @@ final class TypeChecker {
             return new Narrowing(Map.of(decl, target), Map.of());
         }
         return Narrowing.EMPTY;
+    }
+
+    private Type.Simple isBuiltinTarget(BabbleParser.IsExpressionContext ctx) {
+        if (ctx.right instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
+            String name = selector.ID().getText();
+            if (resolveName(selector, name, occurrenceScopes.get(selector)) == null) {
+                return switch (name) {
+                    case "int" -> Type.INT;
+                    case "double" -> Type.DOUBLE;
+                    case "bool" -> Type.BOOL;
+                    case "string" -> Type.STRING;
+                    case "any" -> Type.ANY;
+                    default -> null;
+                };
+            }
+        }
+        return null;
     }
 
     private static Map<ParserRuleContext, Type> mergeNarrowings(
@@ -962,7 +1023,19 @@ final class TypeChecker {
             Type elseType = otherwise != null
                     ? withNarrowing(narrowing.whenFalse(), () -> typeOf(otherwise, expected))
                     : Type.NULL;
-            return join(thenType, elseType);
+            if (expected == Type.ANY) {
+                return Type.ANY;
+            }
+            Type joined = join(thenType, elseType);
+            if (joined == Type.DOUBLE) {
+                if (thenType == Type.INT) {
+                    widened.add(ctx.thenBlock);
+                }
+                if (elseType == Type.INT && otherwise != null) {
+                    widened.add(otherwise);
+                }
+            }
+            return joined;
         }
 
         @Override
@@ -1125,8 +1198,33 @@ final class TypeChecker {
         @Override
         public Type visitIsExpression(BabbleParser.IsExpressionContext ctx) {
             typeOf(ctx.left);
-            typeOf(ctx.right);
+            Type.Simple builtin = isBuiltinTarget(ctx);
+            if (builtin != null) {
+                pass.analysis.setIsBuiltin(ctx, builtin.name());
+            } else {
+                typeOf(ctx.right);
+            }
             return Type.BOOL;
+        }
+
+        @Override
+        public Type visitAsExpression(BabbleParser.AsExpressionContext ctx) {
+            Type source = typeOf(ctx.left);
+            Type target = annotation(ctx.right, scopeOf(ctx));
+            if (target == Type.DYNAMIC) {
+                return Type.DYNAMIC;
+            }
+            if (target instanceof Type.Function) {
+                warn("Cannot cast to a function type", ctx.right);
+                return target;
+            }
+            if (!canCast(source, target)) {
+                warn("Type error : expected " + target + ", got " + source, ctx.left);
+            } else if (alwaysIs(source, target)) {
+                analysisWarn("Redundant cast : " + target, ctx);
+            }
+            pass.analysis.setCheckedType(ctx, descriptor(target));
+            return target;
         }
 
         @Override
@@ -1330,7 +1428,13 @@ final class TypeChecker {
         if (receiver instanceof Type.JavaInstance instance) {
             return javaMember(instance.type(), name, false, at);
         }
-        // Numbers, booleans, strings, null, functions : nothing has members but objects,
+        if (receiver instanceof Type.JavaArray array) {
+            if ("length".equals(name)) {
+                return Type.INT;
+            }
+            return javaMember(array.javaClass(), name, false, at);
+        }
+        // Numbers, booleans, strings, null, functions, any : nothing has members but objects,
         // classes, packages and Java values.
         warn("Not a scope : " + receiverText, at);
         return Type.DYNAMIC;
@@ -1352,6 +1456,10 @@ final class TypeChecker {
         } else if (receiver instanceof Type.Package) {
             // Bound to fail : a package changes only through its own code.
             warn("Cannot assign to a package member : " + name, at);
+        } else if (receiver == Type.ANY) {
+            String receiverText = at instanceof BabbleParser.AssignExpressionContext assign
+                    ? assign.namespace.getText() : name;
+            warn("Not a scope : " + receiverText, at);
         }
         if (member == null || member.isPrivate() && !own) {
             return null;
@@ -1500,6 +1608,15 @@ final class TypeChecker {
      * or the field can't be assigned.
      */
     private java.lang.reflect.Field assignedJavaField(Type receiver, String name, ParserRuleContext at) {
+        if (receiver instanceof Type.JavaArray array) {
+            String description = array.javaClass().getCanonicalName() + "." + name;
+            if ("length".equals(name)) {
+                warn("Cannot assign final field : " + description, at);
+            } else {
+                warn("No such field in " + array.javaClass().getCanonicalName() + " : " + name, at);
+            }
+            return null;
+        }
         boolean onClass = receiver instanceof Type.JavaClassValue;
         Class<?> java = onClass ? ((Type.JavaClassValue) receiver).type()
                 : receiver instanceof Type.JavaInstance instance ? instance.type() : null;
@@ -1748,6 +1865,9 @@ final class TypeChecker {
         if (type instanceof Type.Simple simple) {
             return simple.javaClass();
         }
+        if (type instanceof Type.JavaArray array) {
+            return array.javaClass();
+        }
         return type instanceof Type.JavaInstance instance ? instance.type() : null;
     }
 
@@ -1903,7 +2023,7 @@ final class TypeChecker {
 
     /** Whether a value of type {@code from} can be used where {@code to} is declared. */
     static boolean assignable(Type from, Type to) {
-        if (from.equals(to) || from == Type.DYNAMIC || to == Type.DYNAMIC || from == Type.NOTHING) {
+        if (from.equals(to) || from == Type.DYNAMIC || to == Type.DYNAMIC || to == Type.ANY || from == Type.NOTHING) {
             return true;
         }
         if (from == Type.NULL) {
@@ -1923,6 +2043,9 @@ final class TypeChecker {
             }
             return isFunction(from) && JavaTypes.isFunctionalInterface(java.type());
         }
+        if (to instanceof Type.JavaArray target) {
+            return from instanceof Type.JavaArray array && target.javaClass().isAssignableFrom(array.javaClass());
+        }
         if (to instanceof Type.Instance target) {
             return from instanceof Type.Instance instance && isSubtype(instance.node(), target.node());
         }
@@ -1933,6 +2056,49 @@ final class TypeChecker {
             return isFunction(from);
         }
         return false;
+    }
+
+    /** Whether {@code from as to} can succeed at runtime (static impossibility check for {@code as}). */
+    private static boolean canCast(Type from, Type to) {
+        if (from == Type.DYNAMIC || from == Type.NOTHING || to == Type.DYNAMIC || from == Type.ANY || to == Type.ANY) {
+            return true;
+        }
+        if (from == Type.NULL) {
+            return assignable(Type.NULL, to);
+        }
+        if (from == Type.INT && to == Type.DOUBLE) {
+            return true;
+        }
+        if (from == Type.DOUBLE && to == Type.INT) {
+            return false;
+        }
+        if (assignable(from, to) || assignable(to, from)) {
+            return true;
+        }
+        if (from instanceof Type.Instance f && to instanceof Type.Instance t) {
+            return f.node().isInterface() && t.node().isInterface();
+        }
+        if (from instanceof Type.Instance f && to instanceof Type.JavaInstance t) {
+            return f.node().isInterface() && t.type().isInterface();
+        }
+        if (from instanceof Type.JavaInstance f && to instanceof Type.Instance t) {
+            return f.type().isInterface() && t.node().isInterface();
+        }
+        Class<?> a = javaClassOf(from);
+        Class<?> b = javaClassOf(to);
+        if (a != null && b != null) {
+            return (a.isInterface() && b.isInterface())
+                    || (a.isInterface() && !Modifier.isFinal(b.getModifiers()))
+                    || (b.isInterface() && !Modifier.isFinal(a.getModifiers()));
+        }
+        return false;
+    }
+
+    /** Whether {@code from as to} always holds with no conversion (redundant cast warning). */
+    private static boolean alwaysIs(Type from, Type to) {
+        return from != Type.DYNAMIC && from != Type.NOTHING && from != Type.NULL
+                && to != Type.DYNAMIC && !(from == Type.INT && to == Type.DOUBLE)
+                && assignable(from, to);
     }
 
     /**

@@ -616,6 +616,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
         List<BabbleParser.ExpressionContext> body = literal.functionBlock.expression();
         statements(body);
+        if (scopes.widensToDouble(literal.functionBlock)) {
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
         String resultType = scopes.checkedType(literal);
         if (resultType != null) {
             // The result of the last statement is checked at its line (T9).
@@ -1281,10 +1284,28 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitIsExpression(BabbleParser.IsExpressionContext ctx) {
         visit(ctx.left);
+        String builtin = scopes.isBuiltin(ctx);
+        if (builtin != null) {
+            mv.visitLdcInsn(builtin);
+            line(ctx);
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "isBuiltin", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            return null;
+        }
         visit(ctx.right);
         pushString(mv, ctx.right.getText());
         line(ctx);
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "is", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        return null;
+    }
+
+    @Override
+    public Void visitAsExpression(BabbleParser.AsExpressionContext ctx) {
+        visit(ctx.left);
+        String target = scopes.checkedType(ctx);
+        if (target != null) {
+            line(ctx);
+            checkType(target);
+        }
         return null;
     }
 
@@ -1337,12 +1358,21 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
         mv.visitJumpInsn(IFEQ, otherwise);
         visit(ctx.thenBlock);
+        if (scopes.widensToDouble(ctx.thenBlock)) {
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
         mv.visitJumpInsn(GOTO, end);
         mv.visitLabel(otherwise);
         if (ctx.elseBlock != null) {
             visit(ctx.elseBlock);
+            if (scopes.widensToDouble(ctx.elseBlock)) {
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
         } else if (ctx.elseIf != null) {
             visit(ctx.elseIf);
+            if (scopes.widensToDouble(ctx.elseIf)) {
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
         } else {
             mv.visitInsn(ACONST_NULL);
         }
@@ -1455,6 +1485,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
         visit(ctx.expression());
+        if (scopes.widensToDouble(ctx)) {
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
         String resultType = resultTypeAt(ctx);
         if (resultType != null) {
             line(ctx);

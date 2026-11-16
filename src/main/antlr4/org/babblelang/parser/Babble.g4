@@ -41,6 +41,7 @@ expression:
           | '-' operand=expression                            # negate
           | left=expression op=('*' | '/') NL* right=expression   # binaryOp
           | left=expression op=('+' | '-') NL* right=expression   # binaryOp
+          | left=expression AS NL* right=type                     # asExpression
           | left=expression op=('<' | '<=' | '==' | NEQ
                        | '>=' | '>') NL* right=expression         # binaryOp
           | left=expression IS NL* right=expression               # isExpression
@@ -128,6 +129,7 @@ INTERFACE: 'interface';
 IMPLEMENTS: 'implements';
 EXTENDS: 'extends';
 IS: 'is';
+AS: 'as';
 THIS: 'this';
 SUPER: 'super';
 PRIVATE: 'private';

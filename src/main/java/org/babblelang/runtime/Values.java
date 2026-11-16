@@ -78,6 +78,26 @@ public final class Values {
         throw new BabbleException("Not a type : " + typeText);
     }
 
+    /** {@code value is type} for a built-in type name : {@code int}, {@code double}, {@code bool}, {@code string}, {@code any}. */
+    public static Object isBuiltin(Object value, String type) {
+        if (value instanceof JavaValue wrapper) {
+            value = wrapper.javaValue();
+        }
+        return switch (type) {
+            case "int" -> value instanceof Integer;
+            case "double" -> value instanceof Double;
+            case "bool" -> value instanceof Boolean;
+            case "string" -> value instanceof String;
+            case "any" -> value != null;
+            default -> throw new BabbleException("Not a type : " + type);
+        };
+    }
+
+    /** Converts a joined {@code int} value to {@code double} when static inference widened it. */
+    public static Object toDouble(Object value) {
+        return value instanceof Integer i ? (double) i : value;
+    }
+
     /** A function, a bound method or a class value : what converts to a Java functional interface. */
     public static boolean isBabbleCallable(Object value) {
         return value instanceof BabbleFunction || value instanceof BoundMethod

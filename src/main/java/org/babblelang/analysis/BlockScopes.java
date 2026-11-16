@@ -615,4 +615,10 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         }
         return visitChildren(ctx);
     }
+
+    @Override
+    public Void visitAsExpression(BabbleParser.AsExpressionContext ctx) {
+        checkPlainParameters(ctx.right);
+        return visit(ctx.left);
+    }
 }

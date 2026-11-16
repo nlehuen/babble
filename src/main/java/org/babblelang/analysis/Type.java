@@ -21,6 +21,8 @@ sealed interface Type {
     }
 
     Simple DYNAMIC = new Simple("dynamic", null);
+    /** The sound top type : assignable from every type, usable only once narrowed or cast. */
+    Simple ANY = new Simple("any", Object.class);
     /** The type of an expression that never yields a value : {@code return}. */
     Simple NOTHING = new Simple("nothing", null);
     Simple NULL = new Simple("null", null);
@@ -28,6 +30,14 @@ sealed interface Type {
     Simple DOUBLE = new Simple("double", Double.class);
     Simple BOOL = new Simple("bool", Boolean.class);
     Simple STRING = new Simple("string", String.class);
+
+    /** A Java array, with {@code length} and assignable to matching Java array parameters. */
+    record JavaArray(Class<?> javaClass, Type element) implements Type {
+        @Override
+        public String toString() {
+            return element + "[]";
+        }
+    }
 
     /** A parameter of a function type : its name is part of the type, since calls bind by name. */
     record Parameter(String name, Type type, boolean optional) {
