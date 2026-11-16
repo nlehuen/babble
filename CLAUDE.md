@@ -115,7 +115,6 @@ The pipeline is: Babble source → ANTLR4 parse tree → analysis → tree-walki
 - **Formatter** (`org.babblelang.format.Formatter`, command line `-format`, `org.babblelang.Babblefmt`): works on the token stream, comments included (the lexer puts them on the hidden channel, so the parser never sees them; anything counting tokens must look at the channel, as `BabbleSession.classify` does).
   - It reads in the parse tree (`BabbleScriptEngine.parseSource`) what each token is: a call's `(` or a block's, a newline that separates expressions (`sep`), continues one (+1 indent), sits in a parenthesised list, or precedes a block/`else`/`static` (dropped unless a comment is in the way). It keeps the source's line breaks otherwise; indentation comes from a stack of open parentheses, each anchored to the line where its `if`/function/class starts.
   - The result is parsed again and must give the same tree, newlines and semicolons aside (`IllegalStateException` otherwise). Note that `;;( … ;;)` closed on its line and followed by code lexes as a line comment (longest match).
-- **Optimizers** (`org.babblelang.engine.optimizer`): visitors that rewrite the parse tree in place. `OptimizerBase` provides a `replace()` helper to swap one context node for another; `SimpleBinaryOpsOptimizer` is the example (constant folding of binary ops). The engine does not run them.
 
 ## Known issues
 
