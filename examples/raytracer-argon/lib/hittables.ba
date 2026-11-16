@@ -93,7 +93,7 @@ export def HittableList = class () implements Hittable (
     )
 
     ;; Higher-order iteration over all hittables in the list
-    def forEach = (fn: (item: Hittable): dynamic) -> (
+    def forEach = (fn: (item: Hittable): any) -> (
         def cur: HittableNode = this.head
         while cur != null then (
             fn(cur.item)
