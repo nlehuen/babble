@@ -66,9 +66,13 @@ are unannotated (S1), and 7 test files route values through an identity function
 
 ### 4.1 Annotations required where nothing else gives the type
 
-* A function literal's parameter needs an annotation, unless the literal is checked against a
-  function type that gives it (contextual typing, as today : `list.removeIf((v) -> ( v > 2 ))`
-  types `v` from `Predicate`, `def f : (n : int) : int = (n) -> ( n + 1 )` from the annotation).
+* A function literal's parameter needs an annotation, unless something else gives its type :
+  * the function type the literal is checked against (contextual typing, as today :
+    `list.removeIf((v) -> ( v > 2 ))` types `v` from `Predicate`,
+    `def f : (n : int) : int = (n) -> ( n + 1 )` from the annotation) ;
+  * its default value : `(sep = "")` is a `string`, `(threads = 1)` an `int` (a default of
+    `null` gives no type) ;
+  * from P7, the calls to it (4.9).
 * An unannotated `def` is typed by inference over its initialiser and every assignment to it
   (4.3), so `def m = null ; m = "a"` is a `string`. It needs an annotation only when that gives
   no type : no value and no assignment, or nothing but `null`.
@@ -148,6 +152,43 @@ instead of a runtime `NumberFormatException` (the negated `-2147483648` stays an
 assumes anything of an `any`, so a program that type-checks has no type error at runtime except
 at an `as`, or across the Java boundary (5).
 
+### 4.9 Parameters inferred from calls (P7)
+
+An unannotated parameter with no default and no contextual type is typed by inference over the
+calls to its function, as a `def` is over its assignments (4.3) : its type is the join of the
+arguments the checker sees passed to it.
+
+```
+def area = (w, h) -> ( w * h )
+area(2, 3)
+area(1.5, 2)          ;; w : double, h : int ; the result is a double
+area("x", 1)          ;; Type error : expected double, got string, at this call
+```
+
+* It applies where every call is visible : a function bound by a `def` (or a package's def) and
+  only ever called by that name ; a method of a class or object called as `obj.m(…)` or
+  `this.m(…)` with a receiver of known class (every receiver has one, `dynamic` being gone) ; a
+  class header parameter, through the constructor calls `C(…)`.
+* It doesn't apply, and an annotation is required (`Missing type : a`), when the function
+  escapes : used as a value other than in a call (passed as an argument, stored, returned,
+  assigned), or exported from a module (`export def`, or a member of an exported class) : a
+  module's interface is annotated, since its callers are in files analysed after it. A function
+  never called needs annotations too, there being nothing to infer from.
+* Named and default arguments bind as at runtime (`Arguments`) : the argument that binds a
+  parameter is the one inferred from.
+* Calls, parameters and results depend on each other (a call's argument may be another call's
+  result, or the parameter of an enclosing function) : the checker iterates over the file until
+  the types are stable, as for 4.3. A join only widens (`int` to `double`, `T` to nullable `T`),
+  so this ends ; a recursive function's own calls take part like any other.
+* A conflict is reported at the call that brings it, worded as an assignment's
+  (`Type error : expected double, got string`), `expected` being the join of the calls before
+  it in source order.
+
+Inference from the uses of a parameter in the function's body (Hindley–Milner style) is out of
+scope : `(a, b) -> ( a + b )` is ambiguous between `int`, `double`, `string` and any class with a
+`plus`, typing `a.x` would need structural types, and without generics the result would be
+monomorphic, so it would rarely type more than calls do, with errors harder to explain.
+
 ## 5. Java
 
 ### 5.1 Results and fields
@@ -219,13 +260,17 @@ Each phase keeps `mvn package` green and is a pull request of its own.
   with `Benchmarks`.
 * **P6, Java generics** (5.2), then **Babble generics** and **union types** (README, *Planned
   features*), each reducing the casts P3 had to write.
+* **P7, parameters inferred from calls** (4.9). It needs only P4, and can come before P6. It
+  makes most of the annotations P3 adds optional again : P7 removes those inference gives the
+  same type, keeping the ones on exported and escaping functions.
 
 ## 9. Decisions
 
 The questions of the draft, as decided :
 
-* **Q1. Unannotated parameters with no contextual type** : an annotation is required (4.1).
-  Inferring them from their uses may be considered later.
+* **Q1. Unannotated parameters with no contextual type** : an annotation is required (4.1),
+  unless the parameter has a default value. Then, in P7, a parameter of a function whose calls
+  are all visible is inferred from them (4.9) ; inference from uses in the body is out of scope.
 * **Q2. Numeric widening on reassignment** : inference over all assignments (4.3) :
   `def x = 1 ; x = 1.5` makes `x` a `double`.
 * **Q3. `if` without `else` as a value** : an error where the value is used and its type admits
@@ -243,3 +288,7 @@ The questions of the draft, as decided :
 * P3–P4 : the whole suite in strict mode ; `ExamplesTestCase` compiles the examples in it.
 * P5 : `BabbleCompilerTestCase` checks the boundary checks are gone from the generated code ;
   benchmarks before and after.
+* P7 : golden tests of call-site inference in `TypeCheckerTestCase` (widening across calls,
+  named and default arguments, methods and constructors, recursion, a conflicting call, and
+  `Missing type` for escaping, exported and never-called functions) ; removing the annotations
+  inference makes redundant from the tests and examples must leave the suite green.
