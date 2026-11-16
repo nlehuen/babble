@@ -273,6 +273,11 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         Assertions.assertTrue(message.contains("Empty does not implement Shape.area"), message);
         Assertions.assertTrue(message.endsWith("main.ba at line number 3"), message);
         Assertions.assertEquals("", output.toString());
+
+        String mismatch = failure("def shapes = import(\"shapes.ba\")\n"
+                + "def Bad = class () implements shapes.Shape ( def area = () -> ( 4 ) )");
+        Assertions.assertTrue(mismatch.contains("Type error : expected () : double, got () : int"), mismatch);
+        Assertions.assertTrue(mismatch.contains("main.ba at line number 2"), mismatch);
     }
 
     @Test

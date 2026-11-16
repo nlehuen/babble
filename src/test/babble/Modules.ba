@@ -10,7 +10,7 @@ def s = shapes.Square(vectors.Vec(1, 2), 3)
 assert(s.area() == 9)
 assert(s.opposite() == vectors.Vec(4, 5))
 assert(s is shapes.Shape)
-assert(s.describe() == "shape of area 9")
+assert(s.describe() == "shape of area 9.0")
 assert(vectors.origin == vectors.Vec(0, 0))
 
 ;; a class of a module can be given a local name

@@ -11,7 +11,7 @@ export def Shape = interface (
 )
 
 export def Square = class (def corner: Vec, def side: int) implements Shape (
-    def area = () -> (this.side * this.side)
+    def area = (): double -> (this.side * this.side)
     def opposite = () -> (this.corner.plus(Vec(this.side, this.side)))
 )
 

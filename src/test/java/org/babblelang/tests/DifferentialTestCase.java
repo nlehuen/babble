@@ -307,7 +307,12 @@ public class DifferentialTestCase {
                 "def f = (b1 : bool, b2 : bool) : double? -> ( if b1 then ( 1 ) else if b2 then ( 2.5 ) else ( null ) ) ; \"\" + classof(f(true, false)) + \":\" + f(true, false) + \":\" + f(false, false)",
                 "def x = null ; x = 1 ; x = 2.5 ; \"\" + classof(x) + \":\" + x",
                 "def N = class (def v : int, def next : N?) () ; def cur : N? = N(1, N(2, null)) ; def s = 0 ; while cur != null then ( s += cur.v ; cur = cur.next ) ; s",
-                "def f = (x : int | string | null) -> ( if x is int then ( x + 1 ) else if x is string then ( x + \"!\" ) else ( \"nil\" ) ) ; \"\" + f(1) + \":\" + f(\"a\") + \":\" + f(null)"
+                "def f = (x : int | string | null) -> ( if x is int then ( x + 1 ) else if x is string then ( x + \"!\" ) else ( \"nil\" ) ) ; \"\" + f(1) + \":\" + f(\"a\") + \":\" + f(null)",
+                // Contextual double widening through call arguments, nested lambdas, nullable return, and interface widened fields.
+                "def take = (f : () : double) : double -> ( f() ) ; def r = take(() -> ( 1 )) ; \"\" + classof(r) + \":\" + r",
+                "def mk : () : () : double = () -> ( () -> ( 1 ) ) ; def v = mk()() ; \"\" + classof(v) + \":\" + v",
+                "def f : () : double? = () -> ( 1 ) ; def v = f() ; \"\" + classof(v) + \":\" + v",
+                "def I = interface ( def x : double ) ; def C = class () implements I ( def x = 1 ; def widen = () -> ( this.x = 1.5 ) ) ; def i : I = C() ; \"\" + classof(i.x) + \":\" + i.x"
         );
     }
 

@@ -173,7 +173,6 @@ The in-repo scripts pass type checking and run with these checks enforced (`Diff
 ## 6. Not done yet
 
 * **Generics** (P6b) and structural object types.
-* **Interface members' declared types** against the implementing methods' signatures.
 * **Types for the compiler.** The checker keeps a type per expression, but doesn't publish it yet
   for typed code generation (bytecode-compiler.md §10.5).
 
