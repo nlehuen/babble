@@ -1432,6 +1432,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             line(ctx);
             checkType(declaredType);
         }
+        if (scopes.widensToDouble(ctx)) {
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
     }
 
     /**
@@ -1902,6 +1905,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     line(ctx);
                     checkType(declaredType);
                 }
+                if (scopes.widensToDouble(ctx)) {
+                    mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                }
                 storeVariable(variable, false, ctx);
                 return null;
             }
@@ -1911,6 +1917,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             line(ctx);
             if (declaredType != null) {
                 checkType(declaredType);
+            }
+            if (scopes.widensToDouble(ctx)) {
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "assign", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
             return null;
@@ -1933,12 +1942,18 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 if (declaredType != null) {
                     checkType(declaredType);
                 }
+                if (scopes.widensToDouble(ctx)) {
+                    mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                }
                 mv.visitInsn(DUP_X1);
                 mv.visitFieldInsn(PUTFIELD, gen.name, name, "Ljava/lang/Object;");
                 return null;
             }
             visit(ctx.namespace);
             visit(ctx.value);
+            if (scopes.widensToDouble(ctx)) {
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
             mv.visitLdcInsn(name);
             line(ctx);
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignOwn", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
@@ -1950,6 +1965,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         pushString(mv, ctx.namespace.getText());
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignable", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
         visit(ctx.value);
+        if (scopes.widensToDouble(ctx)) {
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
         mv.visitLdcInsn(name);
         line(ctx);
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assign", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
@@ -1973,6 +1991,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             if (declaredType != null) {
                 line(ctx);
                 checkType(declaredType);
+            }
+            if (scopes.widensToDouble(ctx)) {
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
             if (variable != null) {
                 storeVariable(variable, false, ctx);
@@ -2002,6 +2023,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     line(ctx);
                     checkType(declaredType);
                 }
+                if (scopes.widensToDouble(ctx)) {
+                    mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                }
                 loadThisAs(ctx.namespace, gen);
                 mv.visitInsn(SWAP);
                 mv.visitInsn(DUP_X1);
@@ -2017,6 +2041,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "selectOwn", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             mv.visitVarInsn(ASTORE, current);
             compound(ctx, operator, current);
+            if (scopes.widensToDouble(ctx)) {
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
             mv.visitVarInsn(ALOAD, thiz);
             mv.visitInsn(SWAP);
             mv.visitLdcInsn(name);
@@ -2038,6 +2065,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
         mv.visitVarInsn(ASTORE, current);
         compound(ctx, operator, current);
+        if (scopes.widensToDouble(ctx)) {
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
         mv.visitVarInsn(ALOAD, scope);
         mv.visitInsn(SWAP);
         mv.visitLdcInsn(name);

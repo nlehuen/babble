@@ -611,6 +611,286 @@ public class TypeCheckerTestCase {
                 "4:19 Type error : expected string, got double");
     }
 
+    // ---------------------------------------------------------------- strict mode (P2, docs/design/static-typing.md)
+
+    private static ScopeAnalysis analyzeStrict(String source, org.babblelang.analysis.AnalysisSession session,
+                                               org.babblelang.analysis.ModuleLoader loader) {
+        BabbleParser parser = new BabbleParser(new CommonTokenStream(new BabbleLexer(CharStreams.fromString(source))));
+        parser.setErrorHandler(new BailErrorStrategy());
+        return BlockScopes.analyze(parser.file(), session, loader, true);
+    }
+
+    private static List<String> strictDiagnostics(String source) {
+        ScopeAnalysis analysis = analyzeStrict(source, null, null);
+        return analysis.typeDiagnostics().stream().map(w -> w.line() + ":" + w.column() + " " + w.message()).toList();
+    }
+
+    private static void assertStrictDiagnostics(String source, String... expected) {
+        Assertions.assertEquals(List.of(expected), strictDiagnostics(source), source);
+    }
+
+    @Test
+    public void testStrictS1UnannotatedParametersAndDefaults() {
+        assertStrictDiagnostics("def f = (a, b) -> ( a )\n"
+                + "def g = (sep = \",\", n = 1, bad = null) -> ( sep + n )\n"
+                + "def h = (a : (x) : int) -> ( 1 )\n"
+                + "def s : string = g(1)",
+                "1:10 Missing type : a",
+                "1:13 Missing type : b",
+                "2:28 Missing type : bad",
+                "3:15 Missing type : x",
+                "4:20 Type error : expected string, got int");
+        // Default values are checked against declared parameter types, and contextual types fill omitted parameter types.
+        assertStrictDiagnostics("def apply = (f : (x : int) : int, v : int) : int -> ( f(v) )\n"
+                + "def a : int = apply((y) -> ( y + 1 ), 2)\n"
+                + "def ok = (sep : string = \"a\", x : int = 1) -> ( sep + x )\n"
+                + "def bad = (x : int = \"nope\") -> ( x )\n"
+                + "ok(1)",
+                "4:22 Type error : expected int, got string",
+                "5:4 Type error : expected string, got int");
+    }
+
+    @Test
+    public void testStrictS2MembersAndClassHeaders() {
+        assertStrictDiagnostics("def C = class (x, y = 1, def z = \"a\") (\n"
+                + "  def m = null\n"
+                + "  def n\n"
+                + "  def ok = null\n"
+                + "  def setOk = (v : string) -> ( this.ok = v )\n"
+                + "  def a = this.b\n"
+                + "  def b = this.a\n"
+                + ") static (\n"
+                + "  def s = 1\n"
+                + "  def bad = null\n"
+                + ")\n"
+                + "def I = interface ( def req ; def deflt = (a) -> ( 1 ) )\n"
+                + "C(1, \"bad\").z = 2\n"
+                + "C.s = \"wrong\"",
+                "1:16 Missing type : x",
+                "2:3 Missing type : m",
+                "3:3 Missing type : n",
+                "6:3 Missing type : a (recursive)",
+                "10:3 Missing type : bad",
+                "12:21 Missing type : req",
+                "12:44 Missing type : a",
+                "13:6 Type error : expected int, got string",
+                "13:17 Type error : expected string, got int",
+                "14:7 Type error : expected int, got string");
+    }
+
+    @Test
+    public void testStrictS3S4DefInferenceAndWidening() {
+        assertStrictDiagnostics("def empty\n"
+                + "def nulled = null\n"
+                + "def m = null\n"
+                + "m = \"ok\"\n"
+                + "def len : int = m.nope\n"
+                + "def i = 0\n"
+                + "i = \"a\"\n"
+                + "def badNull = null\n"
+                + "badNull = 1",
+                "1:1 Missing type : empty",
+                "2:1 Missing type : nulled",
+                "5:17 Not a scope : m",
+                "7:5 Type error : expected int, got string",
+                "8:1 Missing type : badNull",
+                "9:11 Type error : expected null, got int");
+        // Widening int -> double across later assignments notifies earlier uses with the widening line.
+        assertStrictDiagnostics("def i = 1\n"
+                + "def use : int = i\n"
+                + "i = 1.5\n"
+                + "def j = 10\n"
+                + "def k : int = j\n"
+                + "j = j / 2\n"
+                + "def C = class () (\n"
+                + "  def x = 1\n"
+                + "  def f = () : int -> ( this.x )\n"
+                + "  def g = () -> ( this.x = 1.5 )\n"
+                + ")",
+                "2:17 Type error : expected int, got double (i is double because of the assignment at line 3)",
+                "5:15 Type error : expected int, got double (j is double because of the assignment at line 6)",
+                "9:25 Type error : expected int, got double (x is double because of the assignment at line 10)");
+    }
+
+    @Test
+    public void testStrictS5IfWhileAndReturns() {
+        assertStrictDiagnostics("def c = true\n"
+                + "if c then ( 1 ) else ( \"a\" )\n"
+                + "while c then ( 1 )\n"
+                + "def a : any = if c then ( 1 ) else ( \"a\" )\n"
+                + "def b = if c then ( 1 ) else ( \"a\" )\n"
+                + "def d = if c then ( 1 )\n"
+                + "def w = while c then ( 1 )\n"
+                + "def f = (n : int) -> ( if n > 0 then ( return 1 ) ; \"s\" )",
+                "5:9 Type error : the branches of if have different types : int and string",
+                "6:9 Type error : the branches of if have different types : int and null",
+                "7:9 Type error : the branches of while have different types : int and null",
+                "8:40 Type error : incompatible return types : string and int");
+    }
+
+    @Test
+    public void testStrictS6JavaObjectInterfacesArraysInaccessible() {
+        assertStrictDiagnostics("def l = java.util.List.of(1, 2)\n"
+                + "l.get(0).nope\n"
+                + "def s : string = l.get(0) as string\n"
+                + "def it = l.iterator()\n"
+                + "def ok : bool = it.hasNext()\n"
+                + "def ts : string = it.toString()\n"
+                + "it.nope()\n"
+                + "def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b\")\n"
+                + "def len : int = parts.length\n"
+                + "parts.nope\n"
+                + "def p = java.lang.ProcessBuilder(java.util.Arrays.asList(parts)).start()\n"
+                + "def code : int = p.exitValue()\n"
+                + "p.nope",
+                "2:1 Not a scope : l.get(0)",
+                "7:1 No such name in java.util.Iterator : nope",
+                "10:1 No such name in java.lang.String[] : nope",
+                "13:1 No such name in java.lang.Process : nope");
+    }
+
+    @Test
+    public void testStrictS7OverloadAmbiguity() {
+        assertStrictDiagnostics("def sb = java.lang.StringBuilder()\n"
+                + "sb.append(null)\n"
+                + "def n : int = java.lang.Math.abs(1)",
+                "2:1 Ambiguous call to java.lang.StringBuilder.append for (null)");
+    }
+
+    @Test
+    public void testStrictS8S11ImplicitsBindingsAndDynamicImports() {
+        assertStrictDiagnostics("println(\"a\", 1, to: STDOUT)\n"
+                + "println(1, to: \"bad\")\n"
+                + "def ok : bool = assert(true, 123)\n"
+                + "assert(1)\n"
+                + "def b : bool = same(1, \"a\")\n"
+                + "classof(1).nope\n"
+                + "def sz : int = args.size()\n"
+                + "def n : int = int(\"1\") + int(double(\"2.5\"))\n"
+                + "def path = \"other.ba\"\n"
+                + "def m = import(path)\n"
+                + "m.foo\n"
+                + "import(1)\n"
+                + "externalBinding + 1",
+                "2:16 Type error : expected java.lang.Appendable, got string",
+                "4:8 Type error : expected bool, got int",
+                "6:1 Not a scope : classof(1)",
+                "11:1 Not a scope : m",
+                "12:8 Type error : expected string, got int",
+                "13:1 Not a number : externalBinding");
+    }
+
+    @Test
+    public void testStrictS9Super() {
+        assertStrictDiagnostics("def I = interface ( def area : () : double ; def describe = () : string -> ( \"area=\" + this.area() ) )\n"
+                + "def C = class () implements I (\n"
+                + "  def area = () -> ( 1.0 )\n"
+                + "  def describe = () : string -> ( super.describe() )\n"
+                + "  def bad = () : int -> ( super(I).describe() )\n"
+                + ")\n"
+                + "def s : int = C().describe()",
+                "5:27 Type error : expected int, got string",
+                "7:15 Type error : expected int, got string");
+    }
+
+    @Test
+    public void testStrictS10RecursionAndImportCycles() throws Exception {
+        assertStrictDiagnostics("def even = (n : int) -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
+                + "def odd = (n : int) -> ( if n == 0 then ( false ) else ( even(n - 1) ) )\n"
+                + "def inf = (n : int) -> ( recurse(n - 1) )\n"
+                + "def fac = (n : int) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )",
+                "1:1 Missing type : even (recursive)",
+                "2:1 Missing type : odd (recursive)",
+                "3:1 Missing type : inf (recursive)");
+
+        // Import cycle across files reports Missing type : <name> (import cycle with <module>).
+        org.babblelang.engine.MapModuleSource source = new org.babblelang.engine.MapModuleSource()
+                .put("a.ba", "def b = import(\"b.ba\")\nexport def f = (n : int) : int -> ( b.g(n) )\n")
+                .put("b.ba", "def a = import(\"a.ba\")\nexport def g = (n : int) : int -> ( a.f(n) )\nexport def C = class () ()\nexport def bad = (v : a.f) -> ( 1 )\nexport def x = a.f(1)\n");
+        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.TYPING, "strict");
+        engine.put(BabbleScriptEngine.MODULE_SOURCE, source);
+        engine.put(ScriptEngine.FILENAME, "main.ba");
+        StringWriter errors = new StringWriter();
+        engine.getContext().setErrorWriter(errors);
+        Assertions.assertThrows(ScriptException.class, () -> engine.compile("import(\"a.ba\").f(1)"));
+        Assertions.assertTrue(errors.toString().contains("Missing type : f (import cycle with a.ba)"), errors.toString());
+    }
+
+    @Test
+    public void testStrictS12S13LiteralsAndDynamicRemoved() {
+        assertStrictDiagnostics("def a = 2147483648\n"
+                + "def b : int = -2147483648\n"
+                + "def c = -2147483649\n"
+                + "def d : dynamic = 1\n"
+                + "def f = (x : dynamic) -> ( x )",
+                "1:9 Integer out of range : 2147483648",
+                "3:9 Integer out of range : -2147483649",
+                "4:9 Unknown type : dynamic",
+                "5:14 Unknown type : dynamic");
+    }
+
+    @Test
+    public void testStrictReplClosedInference() throws Exception {
+        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.TYPING, "strict");
+        StringWriter errors = new StringWriter();
+        SimpleScriptContext context = new SimpleScriptContext();
+        context.setWriter(new StringWriter());
+        context.setErrorWriter(errors);
+        org.babblelang.engine.BabbleSession session = engine.newSession(context);
+        session.eval("def x = 1");
+        session.eval("def C = class (def k = 1) ( def m = \"a\" )");
+        session.eval("def c = C()");
+        // Inference from input 1 is closed : widening x or c.k or mutating c.m incompatibly fails.
+        ScriptException e1 = Assertions.assertThrows(ScriptException.class, () -> session.eval("x = 1.5"));
+        Assertions.assertTrue(e1.getMessage().contains("Type error : expected int, got double"), e1.getMessage());
+        ScriptException e2 = Assertions.assertThrows(ScriptException.class, () -> session.eval("c.k = 1.5"));
+        Assertions.assertTrue(e2.getMessage().contains("Type error : expected int, got double"), e2.getMessage());
+        ScriptException e3 = Assertions.assertThrows(ScriptException.class, () -> session.eval("c.m = 2"));
+        Assertions.assertTrue(e3.getMessage().contains("Type error : expected string, got int"), e3.getMessage());
+        // Unassigned null in strict REPL input 1 fails immediately in input 1.
+        ScriptException e4 = Assertions.assertThrows(ScriptException.class, () -> session.eval("def u = null"));
+        Assertions.assertTrue(e4.getMessage().contains("Missing type : u"), e4.getMessage());
+    }
+
+    @Test
+    public void testStrictSurvey() throws Exception {
+        // P2 migration survey (§8, §10) : run every .ba test script and example in strict mode
+        // and report which fail, without breaking gradual builds.
+        List<Path> all = new java.util.ArrayList<>();
+        for (String s : ScriptTestCase.data()) {
+            all.add(Path.of(s));
+        }
+        all.addAll(ExamplesTestCase.scripts());
+
+        int passed = 0;
+        List<String> report = new java.util.ArrayList<>();
+        for (Path script : all) {
+            Path file = script.toAbsolutePath().normalize();
+            StringWriter errors = new StringWriter();
+            BabbleScriptEngine scriptEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            scriptEngine.put(BabbleScriptEngine.TYPING, "strict");
+            scriptEngine.put(BabbleScriptEngine.MODULE_SOURCE, org.babblelang.engine.FileModuleSource.rooted(file.getParent()));
+            scriptEngine.getContext().setErrorWriter(errors);
+            scriptEngine.getContext().setWriter(new StringWriter());
+            scriptEngine.getContext().setAttribute(ScriptEngine.FILENAME, file.toString(), ScriptContext.ENGINE_SCOPE);
+            try {
+                scriptEngine.compile(Files.readString(file));
+                passed++;
+            } catch (ScriptException e) {
+                long lines = errors.toString().lines().count();
+                String first = errors.toString().lines().findFirst().orElse(e.getMessage());
+                report.add(script + " (" + lines + " diagnostics; first: " + first + ")");
+            }
+        }
+        System.out.println("[strict survey] " + passed + "/" + all.size() + " clean, " + report.size() + " need P3 migration:");
+        for (String line : report) {
+            System.out.println("  - " + line);
+        }
+        Assertions.assertFalse(all.isEmpty());
+    }
+
     private static Object run(String script, String mode, StringWriter errors) throws ScriptException {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);

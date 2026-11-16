@@ -15,7 +15,7 @@ public class AssertFunction implements Callable {
             throw new BabbleException("assert() called with too many parameters");
         }
         Object test = args[0];
-        String message = args.length > 1 ? (String) args[1] : null;
+        String message = args.length > 1 && args[1] != null ? String.valueOf(args[1]) : null;
         if (!(test instanceof Boolean bool)) {
             throw new BabbleException("Expression " + site.argTexts()[0] + " : asserts don't rely on truth values, please make sure that the test has a boolean result");
         }
