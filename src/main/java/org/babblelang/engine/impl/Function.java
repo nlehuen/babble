@@ -8,6 +8,7 @@ import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Frames;
 import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.runtime.Types;
+import org.babblelang.runtime.Values;
 import org.babblelang.parser.BabbleParser;
 
 import java.util.List;
@@ -54,6 +55,9 @@ public class Function implements BabbleFunction {
             // A "return" anywhere in the body unwinds up to here, which is its target. Its
             // result is checked at the return.
             return Types.check(re.getValue(), resultType);
+        }
+        if (interpreter.scopes().widensToDouble(definition.functionBlock)) {
+            result = Values.toDouble(result);
         }
         if (resultType != null) {
             // The result of the last statement, checked at its line.

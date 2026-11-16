@@ -183,7 +183,23 @@ public class DifferentialTestCase {
                 "def at = (l, i) -> ( l.get(i) ) ; def l = java.util.ArrayList() ; l.add(\"a\") ; def i = 0 ; while i < 5 then ( at(l, 0) ; i = i + 1 ) ; at(l, 3)",
                 "def parse = (s) -> ( java.lang.Integer.parseInt(s) ) ; def i = 0 ; def n = 0 ; while i < 5 then ( n = n + parse(\"12\") ; i = i + 1 ) ; parse(\"nope\")",
                 "def each = (l, f) -> ( l.forEach(f) ) ; def l = java.util.ArrayList() ; l.add(1) ; l.add(0) ; def i = 0 ; while i < 3 then ( each(l, (v) -> ( java.lang.Integer.parseInt(\"x\" + v) )) ; i = i + 1 )",
-                "def each = (l) -> ( l.forEach((v) -> ( suppose(v > 0, \"positive\") )) ) ; def l = java.util.ArrayList() ; l.add(1) ; def i = 0 ; while i < 3 then ( each(l) ; i = i + 1 ) ; l.add(0) ; each(l)"
+                "def each = (l) -> ( l.forEach((v) -> ( suppose(v > 0, \"positive\") )) ) ; def l = java.util.ArrayList() ; l.add(1) ; def i = 0 ; while i < 3 then ( each(l) ; i = i + 1 ) ; l.add(0) ; each(l)",
+                // P1 : any, built-in is, as casts, Java arrays and if/while int-to-double conversion.
+                "def f = (v : any) -> ( if v is int then ( v + 1 ) else if v is double then ( v * 2 ) else if v is string then ( v + \"!\" ) else if v is bool then ( if v then ( 10 ) else ( 20 ) ) else if v is any then ( 99 ) else ( -1 ) ) ; \"\" + f(3) + \",\" + f(2.5) + \",\" + f(\"abcd\") + \",\" + f(true) + \",\" + f(java.lang.Object()) + \",\" + f(null)",
+                "def C = class (def x : int) () ; def f = (v : any) -> ( def int = C ; if v is int then ( v.x ) else ( 0 ) ) ; f(C(7)) + f(7) + int(\"42\")",
+                "1 + 2 as int == 3 and (1 + 2 as double) is double and classof(1 as double) == java.lang.Double",
+                "def v : any = \"hi\" ; (v as string) + \"!\"",
+                "def v : any = 123 ; v as string",
+                "(null as string) == null",
+                "def f = (v) -> ( v as int ) ; f(null)",
+                "def f = (v) -> ( v as double ) ; f(null)",
+                "def f = (v) -> ( v as bool ) ; f(null)",
+                "def S = interface ( def k : int ) ; def A = class (def k : int) implements S () ; def B = class () () ; def f = (x : any) -> ( (x as S).k ) ; f(A(5)) ; f(B())",
+                "def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b,c\") ; \"\" + parts.length + \":\" + java.util.Arrays.asList(parts)",
+                "def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b\") ; def id = (x) -> ( x ) ; id(parts).length = 1",
+                "def pick = (c : bool) -> ( if c then ( 1 ) else ( 2.0 ) ) ; def w = pick(true) ; \"\" + classof(w) + \":\" + (w + w)",
+                "def pick2 = (n : int) -> ( if n == 0 then ( 1.0 ) else if n == 1 then ( 2 ) else ( 3 ) ) ; \"\" + classof(pick2(1)) + \":\" + classof(pick2(2)) + \":\" + (pick2(1) + pick2(2))",
+                "def ret = (c : bool) -> ( if c then ( return 1 ) ; 2.0 ) ; def w = ret(true) ; \"\" + classof(w) + \":\" + (w + w)"
         );
     }
 

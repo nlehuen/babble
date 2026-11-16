@@ -29,6 +29,9 @@ public class FormatterTestCase {
         assertFormats("def f = () -> ()\n", "def f=()->( )");
         assertFormats("x += 1\no.n -= int(2.5)\ny *= 2; z /= 3\n", "x+=1\no . n-=int( 2.5 )\ny*=2;z/=3");
         assertFormats("x is java.util.List and x <> null or y != 1.5\n", "x  is java . util . List and x<>null or y!=1.5");
+        assertFormats("def x = a + b as int == 1\n", "def x=a+b   as  int==1");
+        assertFormats("def f = x as (a: int, b: string): bool\n", "def f = x as(a:int,b:string):bool");
+        assertFormats("x is int and y is string\n", "x  is  int  and  y  is  string");
         assertFormats("return (a)\n", "return(a)");
     }
 
