@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Gradual rules and `dynamic` replaced by [static-typing.md](static-typing.md) (P1–P4 implemented) ; runtime boundary checks (T9, §5, `org.babblelang.runtime.Types`) remain until P5. |
+| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [static-typing.md](static-typing.md) (P1–P5 implemented) ; runtime checks remain only at `as` casts, Java boundaries, and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
 | **Depends on** | [bytecode-compiler.md](bytecode-compiler.md) §10 (where the checker sits, the T1–T9 agenda), [object-model.md](object-model.md) §8 (classes and interfaces are types) |
 | **Unblocks** | Typed code generation (bytecode-compiler.md §10.5) |
-| **Replaced by** | [static-typing.md](static-typing.md) (P1–P4 implemented : `any`, `as`, required annotations, strict checking). |
+| **Replaced by** | [static-typing.md](static-typing.md) (P1–P5 implemented : `any`, `as`, required annotations, strict checking, T9 checks removed internally). |
 
 ## 1. Summary
 
@@ -147,45 +147,28 @@ The value of an `if` is the join of its branches: the same type, `double` for `i
 `double`, a nullable type for `null` and that type, and `dynamic` otherwise. A `while` loop's
 value is the join of its body's value and `null`.
 
-## 5. Runtime checks (T9)
+## 5. Runtime checks (T9, updated in P5)
 
-A checker alone can't make types trustworthy, since `dynamic` values flow into annotated code:
-`f(id("s"))` passes the checker for `f = (n : int) -> …`. So declared types are also checked when
-the program runs, in both interpreter and compiler, by `org.babblelang.runtime.Types`. A failure
-reads like a static one,
-`Type error : expected int, got string`, at the line of the boundary.
+With strict static typing (`static-typing.md` P1–P5), `Types.check` is no longer emitted at
+Babble-to-Babble parameter, return, `def`, or assignment boundaries : the static checker proves
+those types, and `int`→`double` widening uses `Values.toDouble` where `widensToDouble` marks a
+widening point.
 
-* **Where.**
-  - Arguments of annotated parameters, of functions and class headers, defaults included.
-    They are checked as they are bound, so an error is at the line of the call, like
-    `Missing parameter`.
-  - Results of functions with an annotated result: each `return`, at its line, and the last
-    statement, at its line.
-  - Annotated `def`s (lexical, members, statics) and unqualified assignments to annotated
-    names, at their line.
-  - Assignments to annotated members and statics through a receiver (`obj.x = …`,
-    `this.x = …`, `C.s = …`). The class shape carries their declared types for that.
-* **What a type accepts.**
-  - `int`, `double`, `bool` accept their values and never `null`; `string` accepts strings and
-    `null`.
-  - An `int` reaching a `double` is widened: `def d : double = id(1)` holds `1.0`. This is
-    the one conversion, and it makes the value what the type says, which typed code
-    generation will rely on.
-  - A function type accepts any callable value (or `null`); its parameters aren't checked.
-  - A Java type accepts instances of the class, Babble instances whose class implements it,
-    and, for a functional interface, Babble functions, which convert when they reach Java.
-  - A class or interface type accepts `null` and the instances of the classes the
-    *expression* creates, or that implement an interface it creates. This is nominal by
-    expression, as the checker is, not by class value. So for a class defined inside a
-    function, the classes two calls create are one type. `is` compares values, and still
-    tells them apart.
-* **How.** The analysis records, at each boundary, a descriptor of the declared type
-  (`int|int|`, `babble|Point|T12`, …). Every class or interface expression has an id for
-  that. The interpreter checks with `Types.check(value, descriptor)`. Compiled code holds each
-  type as a constant and calls `Types.check` inline, so a script with no annotations has no
-  checks at all.
+* **Where runtime checks remain.**
+  - Explicit `as` casts (`Types.check` with the target descriptor from `ScopeAnalysis.checkedType`).
+  - Values exiting Java that map a boxed primitive (`Integer`, `Double`, `Boolean`) to a
+    non-nullable Babble primitive (`JavaTypes.checkBoxed` in `JavaMethod`, `JavaLinker`,
+    `JavaClass`, and `JavaDefaultCall`), which reject `null` with
+    `Type error : expected int/double/bool, got null`.
+  - Arguments entering Babble from Java through `Faces` proxies (`JavaTypes.checkParameters`
+    in `FaceHandler` and `FunctionHandler`) against the Java interface method's parameter types.
+  - Member and static writes going through `BabbleInstance.setMember` and `BabbleType.setMember`
+    (used by external Java callers and dynamic `any` member writes ; `ClassShape` retains the
+    declared field types for that, while Babble-side `this.x = …` direct field writes in
+    `CodeGenerator` omit checks).
 
-The in-repo scripts pass type checking and run with their types enforced (`DifferentialTestCase`).
+The in-repo scripts pass type checking and run with these checks enforced (`DifferentialTestCase`,
+`BabbleCompilerTestCase`).
 
 ## 6. Not done yet
 

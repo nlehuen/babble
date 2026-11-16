@@ -619,12 +619,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         if (scopes.widensToDouble(literal.functionBlock)) {
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         }
-        String resultType = scopes.checkedType(literal);
-        if (resultType != null) {
-            // The result of the last statement is checked at its line (T9).
-            line(body.isEmpty() ? literal.functionBlock : body.get(body.size() - 1));
-            checkType(resultType);
-        }
         mv.visitInsn(ARETURN);
         endMethod();
     }
@@ -726,11 +720,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitInsn(ATHROW);
             }
             mv.visitLabel(bind);
-            String declaredType = scopes.checkedType(declarations.get(i));
-            if (declaredType != null) {
-                // Checked as it is bound : an error is at the line of the call (T9).
+            if (scopes.widensToDouble(declarations.get(i))) {
                 mv.visitVarInsn(ALOAD, value);
-                checkType(declaredType);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
                 mv.visitVarInsn(ASTORE, value);
             }
             int member = shape != null ? shape.parameterMember(i) : -1;
@@ -1427,19 +1419,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         } else {
             mv.visitInsn(ACONST_NULL);
         }
-        String declaredType = scopes.checkedType(ctx);
-        if (declaredType != null) {
-            line(ctx);
-            checkType(declaredType);
-        }
         if (scopes.widensToDouble(ctx)) {
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         }
     }
 
     /**
-     * Checks the value on top of the stack against a declared type (T9) : it stays there,
-     * an int widened for a double.
+     * Checks the value on top of the stack against a cast target type ({@code as}) : it
+     * stays there, an int widened for a double.
      */
     private void checkType(String descriptor) {
         String field = typeFields.computeIfAbsent(descriptor, d -> addConstant("TYPE", "L" + TYPES_TYPE + ";", 16, m -> {
@@ -1448,16 +1435,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }));
         mv.visitFieldInsn(GETSTATIC, className, field, "L" + TYPES_TYPE + ";");
         mv.visitMethodInsn(INVOKESTATIC, TYPES, "check", "(Ljava/lang/Object;L" + TYPES_TYPE + ";)Ljava/lang/Object;", false);
-    }
-
-    /** The result type to check at a return, from its function literal. */
-    private String resultTypeAt(ParserRuleContext ctx) {
-        for (ParserRuleContext p = ctx.getParent(); p != null; p = p.getParent()) {
-            if (p instanceof BabbleParser.FunctionLiteralContext function) {
-                return scopes.checkedType(function);
-            }
-        }
-        return null;
     }
 
     /**
@@ -1490,11 +1467,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         visit(ctx.expression());
         if (scopes.widensToDouble(ctx)) {
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
-        }
-        String resultType = resultTypeAt(ctx);
-        if (resultType != null) {
-            line(ctx);
-            checkType(resultType);
         }
         mv.visitInsn(ARETURN);
         // Dead code, so that the code around a return in the middle of an expression can
@@ -1898,13 +1870,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         String name = ctx.name.getText();
         if (ctx.namespace == null) {
             Resolution.Variable variable = resolution.variable(ctx);
-            String declaredType = scopes.checkedType(ctx);
             if (variable != null) {
                 visit(ctx.value);
-                if (declaredType != null) {
-                    line(ctx);
-                    checkType(declaredType);
-                }
                 if (scopes.widensToDouble(ctx)) {
                     mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
                 }
@@ -1914,13 +1881,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitVarInsn(ALOAD, nsLocal);
             mv.visitLdcInsn(name);
             visit(ctx.value);
-            line(ctx);
-            if (declaredType != null) {
-                checkType(declaredType);
-            }
             if (scopes.widensToDouble(ctx)) {
                 mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
+            line(ctx);
             mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "assign", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
             return null;
         }
@@ -1938,10 +1902,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
                 mv.visitInsn(POP);
                 mv.visitInsn(SWAP);
-                String declaredType = gen.shape.memberType(gen.shape.memberIndex(name));
-                if (declaredType != null) {
-                    checkType(declaredType);
-                }
                 if (scopes.widensToDouble(ctx)) {
                     mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
                 }
@@ -1984,14 +1944,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         int current = newLocal();
         if (ctx.namespace == null) {
             Resolution.Variable variable = resolution.variable(ctx);
-            String declaredType = scopes.checkedType(ctx);
             loadName(ctx, name);
             mv.visitVarInsn(ASTORE, current);
             compound(ctx, operator, current);
-            if (declaredType != null) {
-                line(ctx);
-                checkType(declaredType);
-            }
             if (scopes.widensToDouble(ctx)) {
                 mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
@@ -2018,11 +1973,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
                 mv.visitVarInsn(ASTORE, current);
                 compound(ctx, operator, current);
-                String declaredType = gen.shape.memberType(gen.shape.memberIndex(name));
-                if (declaredType != null) {
-                    line(ctx);
-                    checkType(declaredType);
-                }
                 if (scopes.widensToDouble(ctx)) {
                     mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
                 }

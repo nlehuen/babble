@@ -185,4 +185,55 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
                 + "def One = class () implements Loud ( def done = false ; def hasNext = () : bool -> ( not this.done ) ; def next = () : int -> ( this.done = true ; 1 ) )\n"
                 + "One().forEachRemaining(java.util.function.Consumer((v : any) -> ( print(v) )))"));
     }
+
+    @Test
+    public void testJavaDefaultBoxedReturnChecksNull() throws Exception {
+        String base = "def tests = import(\"org.babblelang.tests\")\n"
+                + "def C = class () implements tests.JavaClassDemo.BoxedDefault ()\n";
+        Assertions.assertEquals(7, interpret(base + "C().getBoxedDefault(true)"));
+        assertFails(base + "C().getBoxedDefault(false)", "Type error : expected int, got null", 3);
+    }
+
+    @Test
+    public void testFacesChecksParametersEnteringBabble() throws Exception {
+        String cb = "def tests = import(\"org.babblelang.tests\")\n"
+                + "def Demo = tests.JavaClassDemo\n"
+                + "def Cb = class () implements tests.JavaClassDemo.TypedCallback (\n"
+                + "    def acceptInt = (v : int) : int -> ( v + 1 )\n"
+                + "    def acceptDouble = (v : double) : double -> ( v + 0.5 )\n"
+                + "    def acceptBool = (v : bool) : bool -> ( not v )\n"
+                + "    def acceptString = (v : string) : string -> ( v )\n"
+                + "    def acceptRunnable = (v : java.lang.Runnable) : int -> ( 1 )\n"
+                + ")\n"
+                + "def c = Cb()\n";
+        Assertions.assertEquals(6, interpret(cb + "Demo.invokeAcceptInt(c, 5)"));
+        Assertions.assertEquals(3.5, interpret(cb + "Demo.invokeAcceptDouble(c, 3.0)"));
+        Assertions.assertEquals(3.5, interpret(cb + "Demo.invokeAcceptDoubleRaw(c, 3)"));
+        Assertions.assertEquals(false, interpret(cb + "Demo.invokeAcceptBool(c, true)"));
+        Assertions.assertNull(interpret(cb + "Demo.invokeAcceptString(c, null)"));
+        Assertions.assertEquals(1, interpret(cb + "Demo.invokeAcceptRunnableRaw(c, () -> ( null ))"));
+
+        String[][] bad = {
+                {cb + "Demo.invokeAcceptInt(c, null)", "Type error : expected int, got null"},
+                {cb + "Demo.invokeAcceptDouble(c, null)", "Type error : expected double, got null"},
+                {cb + "Demo.invokeAcceptDoubleRaw(c, \"x\")", "Type error : expected double, got string"},
+                {cb + "Demo.invokeAcceptBool(c, null)", "Type error : expected bool, got null"},
+                {cb + "Demo.invokeAcceptStringRaw(c, 1)", "Type error : expected string, got int"},
+                {cb + "Demo.invokeAcceptRunnableRaw(c, \"nope\")", "Type error : expected java.lang.Runnable, got string"},
+                {DEMO + "Demo.invokeUnaryBoxed((x : int) -> ( x + 1 ), null)", "Type error : expected int, got null"},
+        };
+        for (String[] test : bad) {
+            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(test[0]), test[0]);
+            Assertions.assertTrue(e.getMessage().contains(test[1]), test[0] + " : " + e.getMessage());
+        }
+        Assertions.assertEquals(5, interpret(DEMO + "Demo.invokeUnaryBoxed((x : int) -> ( x + 1 ), 4)"));
+    }
+
+    @Test
+    public void testSetMemberFromJavaStillChecksDeclaredTypes() throws Exception {
+        String cls = DEMO + "def C = class (def x : double = 0.0) () static ( def s : int = 1 )\n";
+        Assertions.assertEquals(2.0, interpret(cls + "def c = C() ; Demo.setMemberRaw(c, \"x\", 2) ; c.x"));
+        assertFails(cls + "def c = C() ; Demo.setMemberRaw(c, \"x\", \"bad\")", "Type error : expected double, got string", 3);
+        assertFails(cls + "Demo.setMemberRaw(C, \"s\", \"bad\")", "Type error : expected int, got string", 3);
+    }
 }

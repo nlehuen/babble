@@ -1209,7 +1209,7 @@ final class TypeChecker {
         if (expectedReturn == Type.ANY) {
             return Type.ANY;
         }
-        if (literal.type() == null && result == Type.DOUBLE) {
+        if (literal.type() == null && (result == Type.DOUBLE || expectedReturn == Type.DOUBLE)) {
             if (bodyType == Type.INT) {
                 widened.add(literal.functionBlock);
             }
@@ -1256,7 +1256,11 @@ final class TypeChecker {
             expect(Type.NULL, expected, function.functionBlock);
         } else {
             BabbleParser.ExpressionContext last = statements.get(statements.size() - 1);
-            expect(typeOf(last), expected, last);
+            Type actual = typeOf(last);
+            expect(actual, expected, last);
+            if (expected == Type.DOUBLE && actual == Type.INT) {
+                widened.add(function.functionBlock);
+            }
         }
     }
 
@@ -1531,6 +1535,9 @@ final class TypeChecker {
             Type value = ctx.value != null ? typeOf(ctx.value, declared) : Type.NULL;
             if (declared != null) {
                 expect(value, declared, ctx.value != null ? ctx.value : ctx);
+                if (declared == Type.DOUBLE && value == Type.INT) {
+                    widened.add(ctx);
+                }
             } else {
                 ParserRuleContext at = ctx.value != null ? ctx.value : ctx;
                 if (kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC) {
@@ -1995,7 +2002,11 @@ final class TypeChecker {
             Type expected = function != null ? expectedReturnType(function) : null;
             Type value = ctx.expression() != null ? typeOf(ctx.expression(), expected) : Type.NULL;
             if (function != null && function.type() != null) {
-                expect(value, annotation(function.type(), scopeOf(function)), ctx.expression());
+                Type declared = annotation(function.type(), scopeOf(function));
+                expect(value, declared, ctx.expression());
+                if (declared == Type.DOUBLE && value == Type.INT) {
+                    widened.add(ctx);
+                }
             }
             return Type.NOTHING;
         }

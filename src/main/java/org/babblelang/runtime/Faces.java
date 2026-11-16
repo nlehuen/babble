@@ -87,7 +87,7 @@ final class Faces {
             }
             BabbleFunction function = instance.method(method.getName());
             if (function != null) {
-                Object[] babble = Values.fromJava(args);
+                Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), method.getParameterTypes());
                 Object result = function.invoke(instance, instance.runtime(), babble, null, site(method.getName(), babble.length));
                 return JavaTypes.convertResult(result, method.getReturnType(),
                         instance.babbleClass().name() + "." + method.getName(), instance.runtime());
@@ -121,7 +121,7 @@ final class Faces {
                 return callable + " as " + method.getDeclaringClass().getSimpleName();
             }
             if (called.getName().equals(method.getName()) && called.getParameterCount() == method.getParameterCount()) {
-                Object[] babble = Values.fromJava(args);
+                Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), called.getParameterTypes());
                 Object result = callable.call(rt, babble, null, site(description, babble.length));
                 return JavaTypes.convertResult(result, called.getReturnType(), description, rt);
             }

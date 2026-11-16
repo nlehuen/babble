@@ -377,4 +377,57 @@ public class BabbleCompilerTestCase {
         }
     }
 
+    private static List<String> typesCalls(CompiledBabbleScript script) {
+        List<String> calls = new ArrayList<>();
+        for (byte[] classFile : script.getClasses().values()) {
+            new ClassReader(classFile).accept(new ClassVisitor(Opcodes.ASM9) {
+                @Override
+                public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+                    return new MethodVisitor(Opcodes.ASM9) {
+                        @Override
+                        public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor, boolean isInterface) {
+                            if ("org/babblelang/runtime/Types".equals(owner)) {
+                                calls.add(name + "->" + methodName);
+                            }
+                        }
+                    };
+                }
+            }, 0);
+        }
+        return calls;
+    }
+
+    @Test
+    public void testP5OmitsRedundantRuntimeTypeChecksAndKeepsAsCasts() throws Exception {
+        CompiledBabbleScript checked = compile(
+                "def Box = class (def x : double = 1) (\n"
+                        + "  def set = (v : double = 2) : double -> (\n"
+                        + "    this.x = v\n"
+                        + "    this.x += 1\n"
+                        + "    if v > 0.0 then ( return 1 )\n"
+                        + "    2\n"
+                        + "  )\n"
+                        + ")\n"
+                        + "def d : double = 1\n"
+                        + "d = 2\n"
+                        + "d += 3\n"
+                        + "def f = (a : int, b : double = 4) : double -> ( a + b )\n"
+                        + "def b = Box()\n"
+                        + "d + f(1) + b.set(3) + b.set() + b.x");
+        assertVerifies(checked);
+        Assertions.assertEquals(List.of(), typesCalls(checked));
+        for (byte[] classFile : checked.getClasses().values()) {
+            Assertions.assertTrue(fieldNames(classFile).stream().noneMatch(n -> n.startsWith("TYPE")),
+                    fieldNames(classFile).toString());
+        }
+        Assertions.assertEquals(15.0, checked.eval(new SimpleBindings()));
+
+        CompiledBabbleScript cast = compile("def id = (x : any) : any -> ( x ) ; id(7) as int");
+        assertVerifies(cast);
+        Assertions.assertTrue(typesCalls(cast).stream().anyMatch(c -> c.endsWith("->check")), typesCalls(cast).toString());
+        Assertions.assertTrue(fieldNames(cast.getClassBytes()).stream().anyMatch(n -> n.startsWith("TYPE")),
+                fieldNames(cast.getClassBytes()).toString());
+        Assertions.assertEquals(7, cast.eval(new SimpleBindings()));
+    }
+
 }

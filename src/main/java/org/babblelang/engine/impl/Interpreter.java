@@ -239,7 +239,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                     }
                     value = evaluateDefault(scope, defaultValue);
                 }
-                value = Types.check(value, scopes.checkedType(((BabbleParser.ClassExpressionContext) ctx).parametersDeclaration().parameterDeclaration(i)));
+                if (scopes.widensToDouble(((BabbleParser.ClassExpressionContext) ctx).parametersDeclaration().parameterDeclaration(i))) {
+                    value = Values.toDouble(value);
+                }
                 int member = shape.parameterMember(i);
                 if (member >= 0) {
                     instance.initMember(member, value);
@@ -297,7 +299,6 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             value = visit(ctx.value);
         }
         last = ctx;
-        value = Types.check(value, scopes.checkedType(ctx));
         if (scopes.widensToDouble(ctx)) {
             value = Values.toDouble(value);
         }
@@ -533,7 +534,6 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 value = compound(ctx, operator, current, value);
             }
             last = ctx;
-            value = Types.check(value, scopes.checkedType(ctx));
             if (scopes.widensToDouble(ctx)) {
                 value = Values.toDouble(value);
             }
