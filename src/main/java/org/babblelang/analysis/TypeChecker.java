@@ -1349,6 +1349,9 @@ final class TypeChecker {
             if (member == null) {
                 warn("No such member : " + name, at);
             }
+        } else if (receiver instanceof Type.Package) {
+            // Bound to fail : a package changes only through its own code.
+            warn("Cannot assign to a package member : " + name, at);
         }
         if (member == null || member.isPrivate() && !own) {
             return null;

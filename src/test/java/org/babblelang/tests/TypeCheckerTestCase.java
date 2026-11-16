@@ -155,6 +155,13 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testPackageMembersAreNotAssignedFromOutside() {
+        assertDiagnostics("package p ( def n : int = 1 ; package q ( def s = \"\" ) ; def set = (v : int) -> ( n = v ) )\np.n = 2\np.q.s += \"x\"\np.set(3)",
+                "2:1 Cannot assign to a package member : n",
+                "3:1 Cannot assign to a package member : s");
+    }
+
+    @Test
     public void testOperators() {
         assertDiagnostics("def a : int = 1 + 2\ndef b : int = 1 + 2.0\ndef c : int = 4 / 2\ndef d : string = \"a\" + 1\ndef e : bool = 1 < 2",
                 "2:15 Type error : expected int, got double",

@@ -66,6 +66,11 @@ public final class Members {
     public static Object assign(Object target, Object value, String name) {
         if (target instanceof HasMembers members) {
             members.setMember(name, value, false);
+        } else if (target instanceof Namespace) {
+            // A package changes only through its own code, which assigns its names directly.
+            // Checked before Java targets : a Namespace is no Babble value, so isJavaObject
+            // would take it for a Java object with fields.
+            throw new BabbleException("Cannot assign to a package member : " + name);
         } else if (target instanceof JavaClass || target instanceof JavaValue || isJavaObject(target)) {
             // A Java field : a class's static one, or an object's.
             JavaObject.assign(target, name, value);

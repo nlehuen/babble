@@ -13,6 +13,23 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     }
 
     @Test
+    public void testPackagesChangeOnlyThroughTheirOwnCode() throws Exception {
+        // From inside : its code assigns its names directly.
+        Assertions.assertEquals(3, interpret("package p ( def n = 1 ; def add = (k) -> ( n += k ) ) ; p.add(2) ; p.n"));
+        // From outside, through a member : refused, statically when the package is known...
+        for (String assignment : new String[]{"p.n = 5", "p.n += 1", "p.q.m = 2"}) {
+            assertFailsWith("package p ( def n = 1 ; package q ( def m = 1 ) ) ; " + assignment, "Cannot assign to a package member : ");
+        }
+        // ... and at runtime through any receiver.
+        assertFails("package p ( def n = 1 ) ; def id = (v) -> ( v ) ; id(p).n = 5", "Cannot assign to a package member : n");
+    }
+
+    private void assertFailsWith(String source, String message) {
+        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(source), source);
+        Assertions.assertTrue(e.getMessage().contains(message), e.getMessage());
+    }
+
+    @Test
     public void testIncr() throws Exception {
         Assertions.assertEquals(2, interpret("def i = 0 ; ( i = i + 1 ) ; i = i + 1 ; i"));
     }
