@@ -33,6 +33,10 @@ The image matches CI's JDK 21; mounting `~/.m2` caches dependencies between runs
 
 The ANTLR lexer/parser/visitor classes (`org.babblelang.parser.*`) are **generated** by the `antlr4-maven-plugin` into `target/generated-sources/antlr4` from `src/main/antlr4/org/babblelang/parser/Babble.g4`. Never edit generated parser code; change the grammar and rebuild. Grammar changes require `mvn generate-sources` (or any build) before the new contexts are visible to Java code.
 
+## Pull requests
+
+Always watch a pull request after creating it (subscribe to its activity): follow its CI and reviews and fix what fails, without asking first.
+
 ## Architecture
 
 The pipeline is: Babble source → ANTLR4 parse tree → block scope analysis → tree-walking interpreter *or* bytecode compiler. There is no separate AST; both backends work on ANTLR `ParserRuleContext` nodes directly.
