@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | P1–P4 implemented : static typing is the only mode, `dynamic` and the typing flag are removed (§8). P5–P7 remain planned. |
-| **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9) : T9 runtime checks remain until P5. |
+| **Status** | P1–P5 implemented : static typing is the only mode and redundant internal T9 checks are removed (§7, §8). P6–P7 remain planned. |
+| **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9) : T9 checks remain only at `as` casts, Java boundaries, and member writes from Java. |
 | **Scope** | the type checker, the grammar (`as`, `is` on built-in types), the runtime checks, the tests, the examples and the docs. |
 
 ## 1. Summary
@@ -271,18 +271,20 @@ arguments are known.
 
 ## 7. Runtime
 
-* `Types.check` stays for `as` and for values crossing the Java boundary. The T9 checks at
-  parameters, results and assignments are no longer needed where the checker proved the type,
-  which is everywhere but `as` ; they are removed in P5, after the strict mode is the only mode.
-* The Java boundary runs both ways, and its checks stay in both :
-  * calls and field reads into Java : a Java method declared to return `Integer` (or any boxed
-    type), or a Java field of such a boxed type, is typed `int` and may return `null`, so its
-    value is checked on exit from Java ;
-  * calls back from Java : a Babble function passed as a functional interface (`Faces`) can be
-    called with anything through raw types, so its parameters, typed from the interface's
-    method, are checked in that adapter ; likewise the methods of a Babble instance
-    implementing a Java interface, and member writes from Java
-    (`BabbleInstance`/`BabbleType.setMember`).
+* `Types.check` stays for `as` and for external boundaries. In P5, the T9 checks at Babble-to-Babble
+  parameters, results, `def`s, unqualified assignments, and `this.x` direct field writes are removed,
+  keeping `Values.toDouble` where `widensToDouble` marks an `int`→`double` conversion.
+* External boundaries retain runtime checks :
+  * calls and field reads exiting Java : `JavaTypes.checkBoxed` (in `JavaMethod`, `JavaLinker`,
+    `JavaClass`, and `JavaDefaultCall`) checks boxed primitive returns and fields (`Integer`,
+    `Double`, `Boolean`) that map to non-nullable Babble `int`, `double`, `bool`, failing with
+    `Type error : expected int/double/bool, got null` when Java returns `null` ;
+  * calls entering Babble from Java : `JavaTypes.checkParameters` (in `Faces.FaceHandler` and
+    `Faces.FunctionHandler`) checks arguments typed from the Java interface method before invoking
+    Babble code ;
+  * member and static writes through `HasMembers` (`BabbleInstance.setMember`, `BabbleType.setMember`) :
+    `ClassShape` retains declared member and static types so external Java callers and `any` writes
+    remain checked, while `CodeGenerator`'s direct `this.x = …` `PUTFIELD` writes omit checks.
 * The interpreter stays the reference : both modes give the same results, as today. Fewer
   checks change no result of a program that type-checks ; the conversion of an `int` joined to
   `double` (4.4, Q7) does : `w + w` above becomes `2.0`. It is the one change of behaviour of a
@@ -310,8 +312,10 @@ the T9 checks, literals and operators on such values. With this design, a static
   cells ; comparisons keep `Double.compare`, to agree with `Operators` on NaN and the zeros.
 * Measured there : the fable ray tracer with annotations ran a third slower than without (137 s
   against 105 s), from runtime checks alone ; nominal checks were a quarter of argon's time
-  before that branch stopped comparing class ids as strings, and checks are still about a tenth
-  of its profile. That is what P5 removes.
+  before that branch stopped comparing class ids as strings, and checks were still about a
+  quarter of its wall-clock time. Removing them in P5 cut `examples/raytracer-argon/raytracer.ba`
+  from 78.7 s to 58.3 s (byte-identical to `scene.ppm`) and sped up `Stack.ba` in `Benchmarks`
+  from 1.7 ms to 1.3 ms.
 
 ## 8. Plan
 
@@ -319,29 +323,30 @@ Each phase keeps `mvn package` green and is a pull request of its own. To keep d
 backward-compatible while scripts are migrated, P1–P3 gate the new strict rules and inference
 that can reject existing code behind `babble.typing=strict` :
 
-* **P1, `any`, `is` on built-in types, `as`, and `if`/`while` numeric conversion.** Grammar (`as`
+* **P1, `any`, `is` on built-in types, `as`, and `if`/`while` numeric conversion.** *(Implemented)* Grammar (`as`
   binds tighter than comparisons, looser than arithmetic : `a + b as int` is `(a + b) as int`),
   `Type.ANY`, `Type.JavaArray(T)` (5.1), both backends (`as` compiles to `Types.check`),
   formatter, tests. `dynamic` still exists. Also the conversion of an `int` joined to `double`
   in `if` and `while` (4.4, Q7), which needs no strict mode : the checker records where those
   joins widen, and both backends convert there. Verify that `argon` still renders `scene.ppm`
   byte for byte.
-* **P2, strict mode.** `babble.typing=strict` (engine attribute and system property) enables the
+* **P2, strict mode.** *(Implemented)* `babble.typing=strict` (engine attribute and system property) enables the
   strict typing and inference of §4–§6 : parameter defaults (4.1), member inference (4.2),
   inference over all assignments with its `int`→`double` conversion (4.3), `super` typing (4.5),
   `JavaInstance(I)` member lookup (5.1), implicit signatures and `any` bindings (§6), and errors
   for every unresolved source of §3 (`Missing type` for unannotated parameters, defs, cycles and
   imports, out-of-range literals 4.7, unknown `dynamic` 4.8). Off by default ; a test runs every
   `.ba` script and example in strict mode and lists which fail, as the migration's to-do list.
-* **P3, migration.** Annotate the tests and the examples ; rewrite the tests that reach runtime
+* **P3, migration.** *(Implemented)* Annotate the tests and the examples ; rewrite the tests that reach runtime
   type errors through `def id = (v) -> ( v )` with `as` (the error still exists, at the cast) or
   turn them into static diagnostics ; the README's *Optional types* section and the tour ; argon
   must still render `scene.ppm` byte for byte.
-* **P4, flip the default.** Strict is the only mode ; `dynamic` and the flag are removed ;
+* **P4, flip the default.** *(Implemented)* Strict is the only mode ; `dynamic` and the flag are removed ;
   `TypeChecker`'s gradual paths (`isUnknown`, the `dynamic` cases of `assignable`) go.
-* **P5, runtime checks.** Remove the T9 boundary checks the checker makes redundant ; measure
-  with `Benchmarks` and the ray tracers (7.1). Only after P4, and after `Unboxing` takes its kinds
-  from the checker : until then that pass relies on the T9 checks for its soundness.
+* **P5, runtime checks.** *(Implemented)* Remove the redundant internal T9 boundary checks while keeping checks at
+  `as` casts, Java boundaries (`JavaTypes.checkBoxed`, `Faces`), and `BabbleInstance`/`BabbleType.setMember` ;
+  verify compiled bytecode omits internal `Types.check` / `TYPE*` fields (`BabbleCompilerTestCase`) and measure
+  with `Benchmarks` and `argon` (§7.1).
 * **P6, Java generics** (5.2), then **Babble generics**, **union types**, and **nullable types**
   (README, *Planned features* ; §11), each reducing the casts and Java boundary checks P3–P5
   needed.

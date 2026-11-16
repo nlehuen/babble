@@ -3,6 +3,7 @@ package org.babblelang.engine.impl.natives.java;
 import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.Overloads;
 import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.runtime.Values;
@@ -36,7 +37,7 @@ class JavaMethod implements Callable {
         Method method = resolve(args);
         Object[] java = Values.toJava(args, method.getParameterTypes(), rt);
         try {
-            return Values.fromJava(method.invoke(thiz, java));
+            return JavaTypes.checkBoxed(method.getReturnType(), Values.fromJava(method.invoke(thiz, java)));
         } catch (InvocationTargetException e) {
             // A Babble error raised in a callback comes back as itself.
             if (e.getCause() instanceof BabbleException babble) {

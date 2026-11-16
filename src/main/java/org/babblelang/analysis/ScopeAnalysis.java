@@ -145,10 +145,8 @@ public final class ScopeAnalysis {
     }
 
     /**
-     * The declared type to check at runtime (a {@code Types} descriptor), or null for
-     * none : for a parameter declaration, the argument ; for a function literal, its
-     * result ; for a def, its value ; for an unqualified assignment, the value assigned ;
-     * for an {@code as} cast, its target type.
+     * The target type to check at runtime (a {@code Types} descriptor) for an {@code as}
+     * cast, or null when no cast check applies.
      */
     public String checkedType(ParserRuleContext ctx) {
         return checkedTypes.get(ctx);
@@ -159,7 +157,7 @@ public final class ScopeAnalysis {
         return isBuiltins.get(ctx);
     }
 
-    /** Whether the value produced by this branch or return must be converted from int to double. */
+    /** Whether the value produced by this construct must be converted from int to double. */
     public boolean widensToDouble(ParserRuleContext ctx) {
         return widensToDouble.contains(ctx);
     }

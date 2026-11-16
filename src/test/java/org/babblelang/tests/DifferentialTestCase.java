@@ -291,7 +291,13 @@ public class DifferentialTestCase {
                 "def C = class (def k : double = 1) () static ( def s = 1 ) ; C.s = 2.5 ; \"\" + classof(C().k) + \":\" + C.s",
                 "def d : double = 1 ; d = 2 ; \"\" + classof(d) + \":\" + d",
                 "def m = null ; m = \"ok\" ; m",
-                "def f = (sep = \",\", n = 1) -> ( sep + n ) ; f() + \"|\" + f(\";\", 2)"
+                "def f = (sep = \",\", n = 1) -> ( sep + n ) ; f() + \"|\" + f(\";\", 2)",
+                // P5 : widening without redundant T9 runtime checks (contravariant callbacks, defaults, returns, early returns, contextual lambdas).
+                "def apply = (f : (x : int) : double) : double -> ( f(3) ) ; def r = apply((d : double) : double -> ( d )) ; \"\" + classof(r) + \":\" + r",
+                "def f = (d : double = 1) -> ( d ) ; \"\" + classof(f()) + \":\" + f()",
+                "def f = (b : bool) : double -> ( if b then ( return 1 ) ; 2 ) ; \"\" + classof(f(true)) + \":\" + classof(f(false)) + \":\" + f(true) + \":\" + f(false)",
+                "def f : () : double = () -> ( 1 ) ; \"\" + classof(f()) + \":\" + f()",
+                "def g : (b : bool) : double = (b) -> ( if b then ( return 1 ) ; 2 ) ; \"\" + classof(g(true)) + \":\" + classof(g(false)) + \":\" + g(false)"
         );
     }
 

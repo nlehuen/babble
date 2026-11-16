@@ -210,6 +210,78 @@ public final class JavaTypes {
                 + ", got " + (value == null ? "null" : value.getClass().getSimpleName()));
     }
 
+    /**
+     * Checks a value returned or read from Java against a boxed primitive type that Babble
+     * maps to a non-nullable primitive ({@code int}, {@code double}, {@code bool}).
+     */
+    public static Object checkBoxed(Class<?> returnType, Object value) {
+        if (value == null) {
+            if (returnType == Integer.class) {
+                throw new BabbleException("Type error : expected int, got null");
+            }
+            if (returnType == Double.class) {
+                throw new BabbleException("Type error : expected double, got null");
+            }
+            if (returnType == Boolean.class) {
+                throw new BabbleException("Type error : expected bool, got null");
+            }
+        }
+        return value;
+    }
+
+    /**
+     * Checks arguments entering Babble from Java through a {@link Faces} proxy against the
+     * Java interface method's parameter types (raw Java calls or {@code null} boxed primitives).
+     */
+    public static Object[] checkParameters(Object[] args, Class<?>[] parameterTypes) {
+        for (int i = 0; i < parameterTypes.length; i++) {
+            args[i] = checkParameter(args[i], parameterTypes[i]);
+        }
+        return args;
+    }
+
+    private static Object checkParameter(Object value, Class<?> type) {
+        if (type == Object.class) {
+            return value;
+        }
+        if (type == int.class || type == Integer.class) {
+            if (!(value instanceof Integer)) {
+                throw new BabbleException("Type error : expected int, got " + Types.describe(value));
+            }
+            return value;
+        }
+        if (type == double.class || type == Double.class) {
+            if (value instanceof Double) {
+                return value;
+            }
+            if (value instanceof Integer n) {
+                return n.doubleValue();
+            }
+            throw new BabbleException("Type error : expected double, got " + Types.describe(value));
+        }
+        if (type == boolean.class || type == Boolean.class) {
+            if (!(value instanceof Boolean)) {
+                throw new BabbleException("Type error : expected bool, got " + Types.describe(value));
+            }
+            return value;
+        }
+        if (type == String.class) {
+            if (value != null && !(value instanceof String)) {
+                throw new BabbleException("Type error : expected string, got " + Types.describe(value));
+            }
+            return value;
+        }
+        Class<?> expected = box(type);
+        Object java = value instanceof JavaValue wrapper ? wrapper.javaValue() : value;
+        if (java == null
+                || expected.isInstance(java)
+                || java instanceof BabbleInstance instance && instance.babbleClass().isJava(expected)
+                || Values.isBabbleCallable(java) && isFunctionalInterface(expected)) {
+            return value;
+        }
+        throw new BabbleException("Type error : expected " + expected.getCanonicalName() + ", got " + Types.describe(value));
+    }
+
     private static Object widen(Object value, Class<?> to) {
         if (value instanceof Character c) {
             value = (int) c;

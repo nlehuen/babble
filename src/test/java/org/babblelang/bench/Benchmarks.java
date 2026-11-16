@@ -29,9 +29,9 @@ public final class Benchmarks {
 
         Map<String, String> scripts = new LinkedHashMap<>();
         scripts.put("fib(25) : calls and arithmetic",
-                "def fib = (n) -> ( if n < 2 then ( n ) else ( fib(n - 1) + fib(n - 2) ) ) ; fib(25)");
+                "def fib = (n : int) : int -> ( if n < 2 then ( n ) else ( fib(n - 1) + fib(n - 2) ) ) ; fib(25)");
         scripts.put("while loop : locals and while",
-                "def loop = (n) -> ( def i = 0 ; def s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(300000)");
+                "def loop = (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(300000)");
         scripts.put("Counter.ba closure : captured variables",
                 "def counter = () -> ( def c = 0 ; () -> ( c = c + 1 ) ) ; def c = counter() ; def i = 0\n"
                         + "while i < 200000 then ( c() ; i = i + 1 ) ; c()");
@@ -41,7 +41,7 @@ public final class Benchmarks {
                         + "while l.size > 0 then ( l.pop() )");
         scripts.put("ArrayList add/get : Java interop",
                 "def l = java.util.ArrayList() ; def i = 0 ; while i < 20000 then ( l.add(i) ; i = i + 1 )\n"
-                        + "def s = 0 ; i = 0 ; while i < 20000 then ( s = s + l.get(i) ; i = i + 1 ) ; s");
+                        + "def s = 0 ; i = 0 ; while i < 20000 then ( s = s + (l.get(i) as int) ; i = i + 1 ) ; s");
 
         System.out.println("| Benchmark | interpret (ms) | compile (ms) | speed-up |");
         System.out.println("|---|---:|---:|---:|");

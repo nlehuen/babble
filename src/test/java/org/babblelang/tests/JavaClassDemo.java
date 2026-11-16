@@ -124,4 +124,84 @@ public class JavaClassDemo {
     public String Method3() {
         return "Method3";
     }
+
+    // P5 runtime boundary helpers : boxed primitive returns/fields, Java defaults, and Faces callbacks.
+
+    public static Integer boxedInt(boolean present) {
+        return present ? 42 : null;
+    }
+
+    public static Double boxedDouble(boolean present) {
+        return present ? 1.5 : null;
+    }
+
+    public static Boolean boxedBool(boolean present) {
+        return present ? Boolean.TRUE : null;
+    }
+
+    public static Integer staticBoxedInt = null;
+    public static final Integer STATIC_FINAL_NULL_INT = null;
+    public Integer instanceBoxedInt = null;
+
+    public interface BoxedDefault {
+        default Integer getBoxedDefault(boolean present) {
+            return present ? 7 : null;
+        }
+    }
+
+    public interface TypedCallback {
+        int acceptInt(Integer value);
+        double acceptDouble(Double value);
+        boolean acceptBool(Boolean value);
+        String acceptString(String value);
+        int acceptRunnable(Runnable action);
+    }
+
+    public static int invokeAcceptInt(TypedCallback cb, Integer value) {
+        return cb.acceptInt(value);
+    }
+
+    public static double invokeAcceptDouble(TypedCallback cb, Double value) {
+        return cb.acceptDouble(value);
+    }
+
+    public static double invokeAcceptDoubleRaw(TypedCallback cb, Object rawValue) throws Throwable {
+        java.lang.reflect.Method m = TypedCallback.class.getMethod("acceptDouble", Double.class);
+        return (double) java.lang.reflect.Proxy.getInvocationHandler(cb).invoke(cb, m, new Object[]{rawValue});
+    }
+
+    public static boolean invokeAcceptBool(TypedCallback cb, Boolean value) {
+        return cb.acceptBool(value);
+    }
+
+    public static String invokeAcceptString(TypedCallback cb, String value) {
+        return cb.acceptString(value);
+    }
+
+    public static String invokeAcceptStringRaw(TypedCallback cb, Object rawValue) throws Throwable {
+        java.lang.reflect.Method m = TypedCallback.class.getMethod("acceptString", String.class);
+        return (String) java.lang.reflect.Proxy.getInvocationHandler(cb).invoke(cb, m, new Object[]{rawValue});
+    }
+
+    public static int invokeAcceptRunnableRaw(TypedCallback cb, Object rawValue) throws Throwable {
+        java.lang.reflect.Method m = TypedCallback.class.getMethod("acceptRunnable", Runnable.class);
+        return (int) java.lang.reflect.Proxy.getInvocationHandler(cb).invoke(cb, m, new Object[]{rawValue});
+    }
+
+    @FunctionalInterface
+    public interface BoxedIntUnaryOperator {
+        int apply(Integer x);
+    }
+
+    public static int invokeUnaryBoxed(BoxedIntUnaryOperator op, Integer x) {
+        return op.apply(x);
+    }
+
+    public static void setStaticBoxedInt(Integer value) {
+        staticBoxedInt = value;
+    }
+
+    public static void setMemberRaw(Object target, String name, Object value) {
+        ((org.babblelang.runtime.HasMembers) target).setMember(name, value, false);
+    }
 }
