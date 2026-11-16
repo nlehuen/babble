@@ -63,15 +63,8 @@ public class BabblecTestCase {
     private Run runWithBabble(String jar, String... args) throws Exception {
         List<String> command = new ArrayList<>();
         int i = 0;
-        boolean hasTyping = false;
         for (; i < args.length && args[i].startsWith("-D"); i++) {
             command.add(args[i]);
-            if (args[i].startsWith("-D" + org.babblelang.engine.BabbleScriptEngine.TYPING + "=")) {
-                hasTyping = true;
-            }
-        }
-        if (!hasTyping && BabbleTestBase.isStrict()) {
-            command.add("-D" + org.babblelang.engine.BabbleScriptEngine.TYPING + "=strict");
         }
         command.add("-cp");
         command.add(directory.resolve(jar) + java.io.File.pathSeparator + System.getProperty("java.class.path"));

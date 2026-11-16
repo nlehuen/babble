@@ -84,11 +84,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     @Test
     public void testFixedMemberSetAndReadOnlyMethods() {
         assertStaticFails("def o = object ( def v = 1 ) ; o.w = 2", "No such member : w", 1, 32);
-        if (isStrict()) {
-            assertStaticFails("def o = object ( def m = () -> ( 1 ) ) ; o.m = 2", "Type error : expected () : int, got int", 1, 48);
-        } else {
-            assertFails("def o = object ( def m = () -> ( 1 ) ) ; o.m = 2", "Cannot assign method : m");
-        }
+        assertStaticFails("def o = object ( def m = () -> ( 1 ) ) ; o.m = 2", "Type error : expected () : int, got int", 1, 48);
     }
 
     @Test
@@ -162,20 +158,11 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         Assertions.assertEquals(0, interpret(COUNTER + "Counter().nested()"));
         // A bound private method can be handed out.
         Assertions.assertEquals(3, interpret(COUNTER + "def c = Counter(3) ; def b = c.bumper() ; b() ; c.next() - 3"));
-        // Rejected before running when the receiver's class is known...
-        if (isStrict()) {
-            assertFails(COUNTER + "def c = Counter() ; c.n", "n is private", 8);
-            assertFails(COUNTER + "Counter().bump()", "bump is private", 8);
-            assertStaticFails("def C = class () ( private def n = 0 ; def alias = () -> ( def me = this ; me.n ) )", "n is private", 1, 76);
-            assertStaticFails("def C = class () ( private def n = 0 ; def peek = (other : C) -> ( other.n ) )", "n is private", 1, 68);
-        } else {
-            assertFails(COUNTER + "def c = Counter() ; c.n", "n is private", 8);
-            assertFails(COUNTER + "Counter().bump()", "bump is private", 8);
-            // ... and otherwise at runtime (gradual mode), even on the same object, or another instance.
-            assertFails(COUNTER + "def f = (o) -> ( o.n ) ; f(Counter())", "n is private", 8);
-            assertFails("def C = class () ( private def n = 0 ; def alias = () -> ( def me = this ; me.n ) ) ; C().alias()", "n is private", 1);
-            assertFails("def C = class () ( private def n = 0 ; def peek = (other) -> ( other.n ) ) ; C().peek(C())", "n is private", 1);
-        }
+        // Rejected before running when the receiver's class is known.
+        assertFails(COUNTER + "def c = Counter() ; c.n", "n is private", 8);
+        assertFails(COUNTER + "Counter().bump()", "bump is private", 8);
+        assertStaticFails("def C = class () ( private def n = 0 ; def alias = () -> ( def me = this ; me.n ) )", "n is private", 1, 76);
+        assertStaticFails("def C = class () ( private def n = 0 ; def peek = (other : C) -> ( other.n ) )", "n is private", 1, 68);
     }
 
     @Test
@@ -221,25 +208,13 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testStaticMembers() throws Exception {
         Assertions.assertEquals("Point(x: 0, y: 0)", interpret(STATIC_POINT + "\"\" + Point.origin"));
         Assertions.assertEquals(2, interpret(STATIC_POINT + "Point.make(1, 2) ; Point.make(3, 4) ; Point.count()"));
-        if (isStrict()) {
-            assertStaticFails(STATIC_POINT + "Point.created", "created is private", 13, 1);
-        } else {
-            assertFails(STATIC_POINT + "Point.created", "created is private", 13);
-        }
+        assertStaticFails(STATIC_POINT + "Point.created", "created is private", 13, 1);
         assertStaticFails(STATIC_POINT + "Point(1, 2).origin", "No such member : origin", 13, 1);
         assertStaticFails(STATIC_POINT + "Point.x", "No such member : x", 13, 1);
-        if (!isStrict()) {
-            assertFails(STATIC_POINT + "classof(Point(1, 2)).created", "created is private", 13);
-            Assertions.assertEquals("Point(x: 0, y: 0)", interpret(STATIC_POINT + "\"\" + classof(Point(1, 2)).origin"));
-        }
     }
 
     @Test
     public void testStaticsBelongToEachClassValue() throws Exception {
-        String make = "def make = () -> ( class () () static ( def n = 0 ; def inc = () -> ( this.n = this.n + 1 ) ) ) ; ";
-        if (!isStrict()) {
-            Assertions.assertEquals(1, interpret(make + "def A = make() ; def B = make() ; A.inc() ; A.inc() ; B.inc()"));
-        }
         // The static block runs once, when the class expression is evaluated.
         StringWriter out = new StringWriter();
         ScriptContext context = new SimpleScriptContext();
@@ -261,16 +236,10 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     @Test
     public void testClassof() throws Exception {
         Assertions.assertEquals(true, interpret(POINT + "classof(Point(1, 2)) == Point"));
-        if (!isStrict()) {
-            Assertions.assertEquals(3, interpret(POINT + "classof(Point(1, 2))(3, 4).x"));
-        }
         Assertions.assertEquals(true, interpret("classof(java.util.ArrayList()) == java.util.ArrayList"));
         Assertions.assertEquals(true, interpret("classof(\"s\") == java.lang.String and classof(1) == java.lang.Integer"));
         Assertions.assertEquals(null, interpret("classof(null)"));
         Assertions.assertEquals(false, interpret("def mk = () -> ( class () () ) ; def A = mk() ; classof(A()) == mk()"));
-        if (!isStrict()) {
-            assertFails("def o = object ( def v = 1 ) ; classof(o)()", "object literals cannot be constructed again");
-        }
         assertFails("classof(() -> ( 1 ))", "classof : a function has no class");
         assertFails(POINT + "classof(Point)", "classof : a class has no class", 5);
     }

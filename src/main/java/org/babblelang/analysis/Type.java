@@ -6,10 +6,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * A static type, as the type checker computes it (see docs/design/type-system.md).
- * <p>
- * Typing is gradual : {@link #DYNAMIC}, the type of everything the checker can't know, is
- * compatible with every type in both directions.
+ * A static type, as the type checker computes it (see docs/design/static-typing.md).
  */
 sealed interface Type {
     /** The built-in types, and the special ones. */
@@ -20,7 +17,8 @@ sealed interface Type {
         }
     }
 
-    Simple DYNAMIC = new Simple("dynamic", null);
+    /** Internal sentinel for an expression or declaration whose type failed to resolve (never a language type). */
+    Simple ERROR = new Simple("<error>", null);
     /** The sound top type : assignable from every type, usable only once narrowed or cast. */
     Simple ANY = new Simple("any", Object.class);
     /** The type of an expression that never yields a value : {@code return}. */
@@ -43,7 +41,7 @@ sealed interface Type {
     record Parameter(String name, Type type, boolean optional) {
         @Override
         public String toString() {
-            return name + (type == DYNAMIC ? "" : " : " + type) + (optional ? " = …" : "");
+            return name + (type == ERROR ? "" : " : " + type) + (optional ? " = …" : "");
         }
     }
 
@@ -51,7 +49,7 @@ sealed interface Type {
         @Override
         public String toString() {
             return parameters.stream().map(Parameter::toString).collect(Collectors.joining(", ", "(", ")"))
-                    + (result == DYNAMIC ? "" : " : " + result);
+                    + (result == ERROR ? "" : " : " + result);
         }
     }
 

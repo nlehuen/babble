@@ -110,13 +110,7 @@ public class ReplTestCase {
     @Test
     public void testAFunctionDoesNotSeeLaterDefinitions() throws Exception {
         BabbleSession session = session();
-        if (BabbleTestBase.isStrict()) {
-            assertFails(session, "def even = (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )", "odd is not callable");
-        } else {
-            session.eval("def even = (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )");
-            session.eval("def odd = (n : int) : bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )");
-            assertFails(session, "even(2)", "No such name : odd");
-        }
+        assertFails(session, "def even = (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )", "odd is not callable");
         // Functions that call each other go in one input.
         session.eval("def even = (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
                 + "def odd = (n : int) : bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )");
@@ -158,14 +152,9 @@ public class ReplTestCase {
         Assertions.assertEquals(2, session.eval("c.next() ; c.next()"));
         // Once assigned, a name is no longer a statically known interface.
         session.eval("def I = interface ( def m = () -> ( 1 ) )");
-        if (BabbleTestBase.isStrict()) {
-            assertFails(session, "I = 3", "Type error : expected interface I, got int");
-            session.eval("def id = (x : any) : any -> ( x ) ; def J : any = id(I)");
-            assertFails(session, "class () implements J ()", "implements needs a statically known interface");
-        } else {
-            session.eval("I = 3");
-            assertFails(session, "class () implements I ()", "implements needs a statically known interface");
-        }
+        assertFails(session, "I = 3", "Type error : expected interface I, got int");
+        session.eval("def id = (x : any) : any -> ( x ) ; def J : any = id(I)");
+        assertFails(session, "class () implements J ()", "implements needs a statically known interface");
     }
 
     // ---------------------------------------------------------------- the type checker
@@ -211,14 +200,8 @@ public class ReplTestCase {
         BabbleSession session = session(new StringWriter());
         session.eval("def n = 1");
         assertFails(session, "def s : string = n", "Type error : expected string, got int");
-        if (BabbleTestBase.isStrict()) {
-            assertFails(session, "n = \"x\"", "Type error : expected int, got string");
-            Assertions.assertEquals(1, session.eval("n"));
-        } else {
-            // Once assigned, nothing is known of n any more.
-            session.eval("n = \"x\"");
-            Assertions.assertEquals("x", session.eval("def s : string = n"));
-        }
+        assertFails(session, "n = \"x\"", "Type error : expected int, got string");
+        Assertions.assertEquals(1, session.eval("n"));
     }
 
     // ---------------------------------------------------------------- reading inputs

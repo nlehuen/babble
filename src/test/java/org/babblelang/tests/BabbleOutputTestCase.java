@@ -67,11 +67,7 @@ public class BabbleOutputTestCase extends BabbleTestBase {
     public void testToRejectsWhatCannotBeWrittenTo() {
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> engine.eval("print(\"a\", to: 1)", context(new StringWriter())));
-        if (isStrict()) {
-            Assertions.assertTrue(e.getMessage().contains("Type error : expected java.lang.Appendable, got int"), e.getMessage());
-        } else {
-            Assertions.assertEquals("org.babblelang.runtime.BabbleException: print to: expects a Writer or PrintStream in <input> at line number 1", e.getMessage());
-        }
+        Assertions.assertTrue(e.getMessage().contains("Type error : expected java.lang.Appendable, got int"), e.getMessage());
     }
 
     @Test

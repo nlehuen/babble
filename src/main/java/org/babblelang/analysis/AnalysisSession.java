@@ -33,9 +33,9 @@ public final class AnalysisSession {
     final Map<org.babblelang.parser.BabbleParser.CallContext, ModuleInterface> modules = new HashMap<>();
     /** The definitions some input assigned : nothing static is known of them any more. */
     final Set<ParserRuleContext> reassigned = new HashSet<>();
-    /** Frozen inferred declaration types from earlier strict-mode inputs (§6, Q5). */
+    /** Frozen inferred declaration types from earlier inputs (§6, Q5). */
     final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
-    /** Frozen inferred member and static types from earlier strict-mode inputs (§6, Q5). */
+    /** Frozen inferred member and static types from earlier inputs (§6, Q5). */
     final Map<ParserRuleContext, Type> memberTypes = new HashMap<>();
 
     /**
@@ -50,7 +50,7 @@ public final class AnalysisSession {
         definitionScopes.putAll(pass.definitionScopes);
         scopeNodes.putAll(pass.scopeNodes);
         modules.putAll(pass.modules);
-        if (pass.strict && pass.checker != null) {
+        if (pass.checker != null) {
             declarationTypes.putAll(pass.checker.frozenDeclarations());
             memberTypes.putAll(pass.checker.frozenMembers());
         }

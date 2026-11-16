@@ -204,20 +204,13 @@ public class DifferentialTestCase {
     }
 
     private static Outcome run(String mode, String script) {
-        return run(mode, script, null, false);
+        return run(mode, script, null);
     }
 
     /** @param file the name of the script's file, which its relative imports are resolved against, or null */
     private static Outcome run(String mode, String script, String file) {
-        return run(mode, script, file, false);
-    }
-
-    private static Outcome run(String mode, String script, String file, boolean strict) {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
-        if (strict) {
-            engine.put(BabbleScriptEngine.TYPING, "strict");
-        }
         ScriptContext context = new SimpleScriptContext();
         context.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
         context.setAttribute("assert", new AssertFunction(), ScriptContext.ENGINE_SCOPE);
@@ -251,12 +244,6 @@ public class DifferentialTestCase {
     private static void assertSameOutcome(String script) {
         Outcome interpreted = run("interpret", script);
         Outcome compiled = run("compile", script);
-        Assertions.assertEquals(interpreted, compiled, script);
-    }
-
-    private static void assertSameStrictOutcome(String script) {
-        Outcome interpreted = run("interpret", script, null, true);
-        Outcome compiled = run("compile", script, null, true);
         Assertions.assertEquals(interpreted, compiled, script);
     }
 
@@ -295,7 +282,7 @@ public class DifferentialTestCase {
         );
     }
 
-    /** P2 strict mode : int -> double widening conversions and runtime parity. */
+    /** Static inference : int -> double widening conversions and runtime parity. */
     static List<String> strictSnippets() {
         return List.of(
                 "def x = 1 ; def c1 = classof(x) ; x = 2 ; def c2 = classof(x) ; x = 2.5 ; \"\" + c1 + \":\" + c2 + \":\" + (x + 1)",
@@ -332,8 +319,8 @@ public class DifferentialTestCase {
     @ParameterizedTest(name = "{0}")
     @MethodSource("strictSnippets")
     public void testStrictSnippet(String snippet) {
-        Outcome interpreted = run("interpret", snippet, null, true);
+        Outcome interpreted = run("interpret", snippet);
         Assertions.assertNull(interpreted.error(), snippet);
-        assertSameStrictOutcome(snippet);
+        assertSameOutcome(snippet);
     }
 }

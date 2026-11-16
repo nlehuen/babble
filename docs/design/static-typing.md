@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §9 are decided. Nothing implemented yet ; the plan is §8. |
-| **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9), once implemented. |
+| **Status** | P1–P4 implemented : static typing is the only mode, `dynamic` and the typing flag are removed (§8). P5–P7 remain planned. |
+| **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9) : T9 runtime checks remain until P5. |
 | **Scope** | the type checker, the grammar (`as`, `is` on built-in types), the runtime checks, the tests, the examples and the docs. |
 
 ## 1. Summary

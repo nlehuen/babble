@@ -33,12 +33,6 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         return engine;
     }
 
-    private ScriptEngine newGradualEngine() {
-        ScriptEngine engine = newEngine();
-        engine.put(BabbleScriptEngine.TYPING, "gradual");
-        return engine;
-    }
-
     private Object run(String script) throws ScriptException {
         return run(script, "main.ba");
     }
@@ -74,7 +68,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         Assertions.assertTrue(message.contains("No such export : secret in lib.ba"), message);
         Assertions.assertTrue(message.contains("at line number 2"), message);
         // The names of a module are not names of the script importing it, and conversely.
-        Assertions.assertTrue(failure("import(\"lib.ba\") ; open()").contains(isStrict() ? "open is not callable" : "No such name : open"));
+        Assertions.assertTrue(failure("import(\"lib.ba\") ; open()").contains("open is not callable"));
         file("needy.ba", "export def get = () -> ( mine )");
         Assertions.assertTrue(failure("def mine = 1 ; import(\"needy.ba\").get()").contains("No such name : mine"));
     }
@@ -118,16 +112,16 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     @Test
     public void cyclesWork() throws Exception {
         file("a.ba", "def b = import(\"b.ba\")\nexport def name = \"a\"\nexport def other = () : string -> ( b.name )");
-        file("b.ba", "def a = import(\"a.ba\")\nexport def name = \"b\"\nexport def other = () : string -> ( a.name )");
-        Assertions.assertEquals("ba", run(newGradualEngine(), "import(\"a.ba\").other() + import(\"b.ba\").other()"));
+        file("b.ba", "def a = import(\"a.ba\")\nexport def name = \"b\"");
+        Assertions.assertEquals("ba", run("import(\"a.ba\").other() + import(\"a.ba\").name"));
     }
 
     @Test
     public void aCycleCannotReadAnExportBeforeItsDefinition() throws Exception {
         file("a.ba", "def b = import(\"b.ba\")\nexport def name = \"a\"");
         file("b.ba", "def a = import(\"a.ba\")\nexport def name = \"b\" + a.name");
-        String message = Assertions.assertThrows(ScriptException.class, () -> run(newGradualEngine(), "import(\"a.ba\")")).getMessage();
-        Assertions.assertTrue(message.contains("Name used before definition : name"), message);
+        String message = failure("import(\"a.ba\")");
+        Assertions.assertTrue(message.contains("Missing type : name (import cycle with a.ba)"), message);
         Assertions.assertTrue(message.contains("b.ba at line number 2"), message);
     }
 
@@ -408,9 +402,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
                     + "def read = (o : P) : int -> ( o.open )\n"
                     + "def i = 0 ; def s = 0 ; while i < 10000 then ( s = s + read(P()) ; i = i + 1 )\n";
             Assertions.assertEquals(10000, run(engine, script + "s"), mode);
-            String peek = isStrict()
-                    ? "def P = import(\"lib.ba\").P\ndef peek = (o : P) -> ( o.secret )\npeek(P())"
-                    : "def P = import(\"lib.ba\").P\ndef peek = (o) -> ( o.secret )\npeek(P())";
+            String peek = "def P = import(\"lib.ba\").P\ndef peek = (o : P) -> ( o.secret )\npeek(P())";
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, peek), mode);
             Assertions.assertTrue(e.getMessage().contains("secret is private"), e.getMessage());
         }
@@ -427,9 +419,6 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         // The engine's attributes live in its context : the new one carries them.
         ScriptContext context = new SimpleScriptContext();
         context.setAttribute(BabbleScriptEngine.MODULE_SOURCE, source, ScriptContext.ENGINE_SCOPE);
-        if (engine.get(BabbleScriptEngine.TYPING) != null) {
-            context.setAttribute(BabbleScriptEngine.TYPING, engine.get(BabbleScriptEngine.TYPING), ScriptContext.ENGINE_SCOPE);
-        }
         context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
         StringWriter diagnostics = new StringWriter();
         context.setErrorWriter(diagnostics);
@@ -529,12 +518,12 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     }
 
     @Test
-    public void filesInACycleAreDynamicToEachOther() throws Exception {
+    public void filesInACycleCannotReadEachOthersTypes() throws Exception {
         file("a.ba", "def b = import(\"b.ba\")\nexport def f = (n : int) -> ( n )\nexport def g = () -> ( b.h(\"x\") )");
         file("b.ba", "def a = import(\"a.ba\")\nexport def h = (n : int) -> ( a.f(\"y\") )");
-        // b is checked while a is still being analysed : in gradual mode a is dynamic to it, and a sees b's types.
-        Assertions.assertEquals(java.util.List.of("a.ba:3:28 Type error : expected int, got string"),
-                typeErrors(newGradualEngine(), "import(\"a.ba\")"));
+        // b is checked while a is still being analysed : reading a.f reports an import cycle error.
+        Assertions.assertEquals(java.util.List.of("b.ba:2:31 Missing type : f (import cycle with a.ba)"),
+                typeErrors("import(\"a.ba\")"));
     }
 
     @Test
