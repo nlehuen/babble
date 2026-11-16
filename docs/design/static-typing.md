@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft, for decision : nothing implemented. The open questions are in §9. |
+| **Status** | Accepted : the questions of §9 are decided. Nothing implemented yet ; the plan is §8. |
 | **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9), once implemented. |
 | **Scope** | the type checker, the grammar (`as`, `is` on built-in types), the runtime checks, the tests, the examples and the docs. |
 
@@ -69,9 +69,10 @@ are unannotated (S1), and 7 test files route values through an identity function
 * A function literal's parameter needs an annotation, unless the literal is checked against a
   function type that gives it (contextual typing, as today : `list.removeIf((v) -> ( v > 2 ))`
   types `v` from `Predicate`, `def f : (n : int) : int = (n) -> ( n + 1 )` from the annotation).
-* A `def` needs an annotation when it has no value or its value is `null`.
-* Otherwise a `def`'s type is its initialiser's (T8, without the "never reassigned" condition :
-  see 4.3). A function's result is inferred from its body, as today.
+* An unannotated `def` is typed by inference over its initialiser and every assignment to it
+  (4.3), so `def m = null ; m = "a"` is a `string`. It needs an annotation only when that gives
+  no type : no value and no assignment, or nothing but `null`.
+* A function's result is inferred from its body, as today.
 
 Diagnostic : `Missing type : a` (the parameter or def), at its declaration.
 
@@ -84,13 +85,24 @@ writes against the inferred type removes that reason. Statics alike.
 
 ### 4.3 Reassignment
 
-An unannotated `def` keeps its initialiser's type for its whole life, and an assignment must fit
-it : `def i = 0 ; i = "a"` becomes `Type error : expected int, got string`. Inference no longer
-depends on "never reassigned" ; flow-sensitive narrowing still does (a narrowed binding that
-can be reassigned loses its narrowing, as today).
+An unannotated `def`'s type is the join (4.4) of its initialiser's type and the types of every
+value assigned to it, `x = v` and `x op= v` alike, wherever they are in its scope :
 
-Widening : `def x = 1 ; x = 1.5` is an error (`int` from its initialiser) ; the fix is
-`def x : double = 1` or `def x = 1.0`. (Alternative in §9, Q2.)
+* `def x = 1 ; x = 1.5` : `int` and `double` join to `double`, so `x` is a `double` from its
+  definition on (and its initial `1` is `1.0` where a `double` is expected).
+* `def m = null ; m = "a"` : `null` and `string` join to `string`.
+* `def i = 0 ; i = "a"` : `int` and `string` don't join, `Type error : expected int, got string`
+  at the assignment, `expected` being the type of the values before it in source order.
+
+An assigned value may depend on the def itself (`x = x + 0.5`) : the checker iterates the join
+until it is stable, which it is after one widening at most (`int` to `double`, `T` to nullable
+`T`). An annotated `def` is not inferred : assignments must fit its annotation, as today.
+
+Inference no longer depends on "never reassigned" ; flow-sensitive narrowing still does (a
+narrowed binding that can be reassigned loses its narrowing, as today). A member is inferred the
+same way over its initialiser and the assignments the checker sees (`this.x = …` in its class,
+`obj.x = …` where `obj`'s class is known) ; one assigned through a receiver whose class isn't
+known statically can't be, which with `dynamic` gone means never : every receiver has a type.
 
 ### 4.4 The value of `if` and `while`
 
@@ -145,9 +157,9 @@ at an `as`, or across the Java boundary (5).
   Babble instance passed to Java comes back as itself where `I` is declared) is kept by making
   member lookup on `JavaInstance(I)` accept both : the members are `I`'s methods, whichever kind
   of object holds them (`Faces` already makes a Babble instance answer `I`'s methods).
-* An array is a new `Type.JavaArray(T)`, with `length` and indexing through
-  `java.lang.reflect.Array` until Babble has an indexing syntax ; as `any` until then would be
-  simpler (§9, Q4).
+* An array is a new `Type.JavaArray(T)` (`String[]` is `JavaArray(string)`), assignable to the
+  Java parameters that take that array type, with `length`. Until Babble has an indexing
+  syntax, elements are reached through `java.lang.reflect.Array.get(a, i)`, which is `any`.
 * A class Babble can't access directly (`List.of()`'s) is typed by the accessible type it is
   reached through (`JavaTypes.accessible`), as calls already are.
 
@@ -208,23 +220,19 @@ Each phase keeps `mvn package` green and is a pull request of its own.
 * **P6, Java generics** (5.2), then **Babble generics** and **union types** (README, *Planned
   features*), each reducing the casts P3 had to write.
 
-## 9. Open questions
+## 9. Decisions
 
-* **Q1. Unannotated parameters with no contextual type.** Required annotation (this design), or
-  inferred from the body's uses (`(a, b) -> ( a + b )` would still be ambiguous between `int`,
-  `double` and `string`) ? Inference from uses is much more machinery for a beginner-oriented
-  language whose errors should stay simple.
-* **Q2. Numeric widening on reassignment.** `def x = 1 ; x = 1.5` : an error (this design), or
-  should an `int` initialiser give a `def` the type `double` when it is later assigned a
-  `double` (inference over all assignments) ?
-* **Q3. `if` without `else` as a value.** An error for `int`/`double`/`bool` (this design), or
-  should `null` become admissible in every type (optional types), which removes the special
-  case but changes T2 ?
-* **Q4. Arrays.** A `JavaArray(T)` type now, or `any` until Babble has indexing ?
-* **Q5. The REPL.** Same rules (this design), or a lenient mode where an unannotated parameter
-  is `any` (usable only through `is`/`as`) to keep quick experiments short ?
-* **Q6. `as` syntax.** `e as T` (this design), or a call-like `T(e)` as `int(x)` already is ? The
-  latter collides with class construction (`Point(…)`).
+The questions of the draft, as decided :
+
+* **Q1. Unannotated parameters with no contextual type** : an annotation is required (4.1).
+  Inferring them from their uses may be considered later.
+* **Q2. Numeric widening on reassignment** : inference over all assignments (4.3) :
+  `def x = 1 ; x = 1.5` makes `x` a `double`.
+* **Q3. `if` without `else` as a value** : an error where the value is used and its type admits
+  no `null` (`int`, `double`, `bool`), as in 4.4.
+* **Q4. Arrays** : a `JavaArray(T)` type now (5.1).
+* **Q5. The REPL** : the same rules as scripts.
+* **Q6. Cast syntax** : `e as T` (4.8).
 
 ## 10. Testing
 
