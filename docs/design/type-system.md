@@ -5,6 +5,7 @@
 | **Status** | Implemented : gradual type checker (`org.babblelang.analysis.TypeChecker`) with runtime checks at boundaries (T9, §5, `org.babblelang.runtime.Types`). All type check failures are errors. |
 | **Depends on** | [bytecode-compiler.md](bytecode-compiler.md) §10 (where the checker sits, the T1–T9 agenda), [object-model.md](object-model.md) §8 (classes and interfaces are types) |
 | **Unblocks** | Typed code generation (bytecode-compiler.md §10.5) |
+| **To be replaced by** | [static-typing.md](static-typing.md) (accepted, not implemented yet) : its gradual part, `dynamic` and most T9 checks, gives way to full static typing with a top type `any`. |
 
 ## 1. Summary
 

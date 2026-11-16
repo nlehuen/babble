@@ -17,7 +17,8 @@ type, and a program the checker cannot type is rejected before it runs.
 but nothing can be done with one (no member, no call, no operator, not assignable to a narrower
 type) until it is narrowed, by `is` in a condition or by an explicit, runtime-checked cast `as`.
 `any` is what a Java `Object` is, and what an untyped binding is ; it is never what an
-unannotated parameter is : those must be annotated, unless the context gives their type.
+unannotated parameter is : those must be annotated, unless their context or their default value
+gives their type (and, from P7, the calls to their function, 4.9).
 
 The change is made in phases (§8) behind a strict mode, so that the suite stays green at every
 step and the default flips only once the tests, the examples and the README are migrated.
@@ -44,10 +45,10 @@ From `TypeChecker` (67 uses of `Type.DYNAMIC`), the sources, grouped by what rem
 
 | # | Source | Example | Today | Proposed (§) |
 |---|---|---|---|---|
-| S1 | unannotated parameter, no contextual type | `(a, b) -> ( a + b )` | `dynamic` | annotation required (4.1) |
-| S2 | unannotated class header parameter or member | `class (def x) ( def y = null )` | `dynamic` | inferred from the initialiser, else annotation required (4.2) |
-| S3 | `def` initialised with `null`, or without a value | `def m = null`, `def m` | `dynamic` | annotation required (4.1) |
-| S4 | a reassigned unannotated `def` | `def i = 0 ; i = "a"` | `dynamic` | typed by its initialiser ; assignments checked (4.3) |
+| S1 | unannotated parameter, no contextual type | `(a, b) -> ( a + b )` | `dynamic` | annotation required unless a default gives the type (4.1) ; from P7, inferred from calls (4.9) |
+| S2 | unannotated class header parameter or member | `class (def x) ( def y = null )` | `dynamic` | header parameter : as S1, from P7 inferred from constructor calls (4.2, 4.9) ; member : inferred from its initialiser and assignments (4.2, 4.3) |
+| S3 | `def` initialised with `null`, or without a value | `def m = null`, `def m` | `dynamic` | inferred from its assignments (4.3) ; annotation required when there are none (4.1) |
+| S4 | a reassigned unannotated `def` | `def i = 0 ; i = "a"` | `dynamic` | the join of its initialiser and every assignment ; error where they don't join (4.3) |
 | S5 | join of `if` branches / `while` and `null` with unrelated types | `if c then ( 1 ) else ( "a" )` | `dynamic` | error where the value is used (4.4) |
 | S6 | Java `Object`, interfaces, arrays, inaccessible classes | `list.get(0)` | `dynamic` | `any`, `JavaInstance(I)`, arrays (5) |
 | S7 | Java overloads not resolved statically | `Math.abs(x)` with `x` unknown | `dynamic` | disappears with S1 ; else error (5.3) |
@@ -82,10 +83,12 @@ Diagnostic : `Missing type : a` (the parameter or def), at its declaration.
 
 ### 4.2 Members
 
-A class header parameter needs an annotation ; a member is typed by its annotation or its
-initialiser, as a `def` is (4.1), and `obj.x = v` is checked against that type. Today a member
-without annotation is `dynamic` because `obj.x = …` can change it (`memberType`) ; checking
-writes against the inferred type removes that reason. Statics alike.
+A class header parameter is typed as a function's parameter is (4.1) : by its annotation, its
+default value, or from P7 the constructor calls `C(…)` (4.9). A member is typed by its
+annotation, or by inference over its initialiser and assignments, as a `def` is (4.3), and
+`obj.x = v` is checked against that type. Today a member without annotation is `dynamic`
+because `obj.x = …` can change it (`memberType`) ; checking writes against the inferred type
+removes that reason. Statics alike.
 
 ### 4.3 Reassignment
 
@@ -93,14 +96,15 @@ An unannotated `def`'s type is the join (4.4) of its initialiser's type and the 
 value assigned to it, `x = v` and `x op= v` alike, wherever they are in its scope :
 
 * `def x = 1 ; x = 1.5` : `int` and `double` join to `double`, so `x` is a `double` from its
-  definition on (and its initial `1` is `1.0` where a `double` is expected).
+  definition on, and its initial `1` is converted to `1.0` (4.4).
 * `def m = null ; m = "a"` : `null` and `string` join to `string`.
 * `def i = 0 ; i = "a"` : `int` and `string` don't join, `Type error : expected int, got string`
   at the assignment, `expected` being the type of the values before it in source order.
 
 An assigned value may depend on the def itself (`x = x + 0.5`) : the checker iterates the join
-until it is stable, which it is after one widening at most (`int` to `double`, `T` to nullable
-`T`). An annotated `def` is not inferred : assignments must fit its annotation, as today.
+until it is stable, which it is after one widening at most, the only joins that change a type
+being `int` to `double` and `null` to a type that admits it (4.4). An annotated `def` is not
+inferred : assignments must fit its annotation, as today.
 
 Inference no longer depends on "never reassigned" ; flow-sensitive narrowing still does (a
 narrowed binding that can be reassigned loses its narrowing, as today). A member is inferred the
@@ -125,8 +129,8 @@ only an annotated def converts (`def v : double = …` holds `1.0`, through its 
 
 ### 4.5 `super`
 
-`super.m()` and `super(I).m()` are typed by the default method they call, which `TypeChecks`
-already resolves (`superTarget`).
+`super.m()` and `super(I).m()` are typed by the default method they call, which the analysis
+already resolves (`ScopeAnalysis.superTarget`).
 
 ### 4.6 Recursion and cycles
 
@@ -184,8 +188,8 @@ area("x", 1)          ;; Type error : expected double, got string, at this call
   parameter is the one inferred from.
 * Calls, parameters and results depend on each other (a call's argument may be another call's
   result, or the parameter of an enclosing function) : the checker iterates over the file until
-  the types are stable, as for 4.3. A join only widens (`int` to `double`, `T` to nullable `T`),
-  so this ends ; a recursive function's own calls take part like any other.
+  the types are stable, as for 4.3. A join only widens (`int` to `double`, `null` to a type
+  that admits it), so this ends ; a recursive function's own calls take part like any other.
 * A conflict is reported at the call that brings it, worded as an assignment's
   (`Type error : expected double, got string`), `expected` being the join of the calls before
   it in source order.
@@ -250,18 +254,19 @@ arguments are known.
     (`BabbleInstance`/`BabbleType.setMember`).
 * The interpreter stays the reference : both modes give the same results, as today. Fewer
   checks change no result of a program that type-checks ; the conversion of an `int` joined to
-  `double` (4.4, Q7) does : `w + w` above becomes `2.0`. It is the one change of behaviour.
+  `double` (4.4, Q7) does : `w + w` above becomes `2.0`. It is the one change of behaviour of a
+  program that type-checks (others may now be rejected before running, e.g. 4.7).
 * Errors a program could reach before and no longer can (`Not a number : x` on a Babble value,
   `x is not callable`, …) stay in the runtime, as the backstop for Java values and casts.
 
 ### 7.1 Unboxed arithmetic
 
-Branch `ccr-2f175974-zutbpj` (`bytecode-compiler.md` §19 there) computes on unboxed `int`,
-`double` and `bool` values in compiled code. It can't trust the checker's types today (a
-`double` may be an int at runtime, 4.4 ; a parameter typed from its context is checked by
-nothing), so it adds a fifth analysis pass, `Unboxing`, that trusts only the T9 checks, literals
-and operators on such values. With this design, a static `int`, `double` or `bool` is the fact
-it needs :
+The unboxed-arithmetic work (not merged yet ; its design is to land in `bytecode-compiler.md`)
+computes on unboxed `int`, `double` and `bool` values in compiled code. It can't trust the
+checker's types today (a `double` may be an int at runtime, 4.4 ; a parameter typed from its
+context is checked by nothing), so it adds a fifth analysis pass, `Unboxing`, that trusts only
+the T9 checks, literals and operators on such values. With this design, a static `int`,
+`double` or `bool` is the fact it needs :
 
 * At P4, `ScopeAnalysis.kind` (the pass's interface to `CodeGenerator`, which doesn't change) is
   filled from the checker's types instead of from `Unboxing`. What goes : the reasoning about
@@ -320,7 +325,8 @@ The questions of the draft, as decided :
 * **Q6. Cast syntax** : `e as T` (4.8).
 * **Q7. Converting an `int` joined to `double`** : yes (4.4). A static `double` is always a
   runtime `Double`, as the unboxed-arithmetic work needs (7.1). It changes the result of programs
-  like `w + w` in 4.4 (`2` becomes `2.0`), the one change of behaviour this design makes.
+  like `w + w` in 4.4 (`2` becomes `2.0`), the one change of behaviour this design makes to a
+  program that type-checks.
 
 ## 10. Testing
 
