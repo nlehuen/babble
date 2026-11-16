@@ -141,7 +141,7 @@ public class FileModulesTestCase {
     @Test
     public void modulesCanBeResources() throws Exception {
         ClassPathModuleSource source = new ClassPathModuleSource(getClass().getClassLoader(), "babble-modules");
-        Assertions.assertEquals("area 9", run(source, "import(\"lib/square.ba\").Square(3).describe()", "main.ba"));
+        Assertions.assertEquals("area 9.0", run(source, "import(\"lib/square.ba\").Square(3).describe()", "main.ba"));
         Assertions.assertTrue(failure(source, "import(\"lib/nope.ba\")", "main.ba").contains("Cannot import lib/nope.ba : no such module"));
         Assertions.assertTrue(failure(source, "import(\"../babble-modules/lib/shapes.ba\")", "main.ba").contains("no such module"));
     }

@@ -982,6 +982,100 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testFunctionReturnWideningSoundness() {
+        assertDiagnostics("def f = () -> ( 1 )\n"
+                        + "def bad1 : () : double = f\n"
+                        + "def bad2 : () : double = () : int -> ( 1 )\n"
+                        + "def take = (fn : () : double) : double -> ( fn() )\n"
+                        + "take(f)\n"
+                        + "take(() : int -> ( 1 ))\n"
+                        + "take(() -> ( 1 ))\n"
+                        + "def okWrapped : () : double = ( () -> ( 1 ) )\n"
+                        + "def opt = () : int? -> ( 1 )\n"
+                        + "def bad3 : () : double? = opt\n"
+                        + "def uni = () : int | string -> ( 1 )\n"
+                        + "def bad4 : () : double | string = uni\n"
+                        + "def hoBad : (cb : () : int) : int = (cb : () : double) : int -> ( 1 )\n"
+                        + "def nestedBad : () : (() : double) = () : () : int -> ( () : int -> ( 1 ) )\n"
+                        + "def okUnion : () : int | double = () : int -> ( 1 )\n"
+                        + "def okAny : () : any = () : int -> ( 1 )\n"
+                        + "def okCtxOpt : () : double? = () -> ( 1 )\n"
+                        + "def okCtxNested : () : () : double = () -> ( () -> ( 1 ) )\n"
+                        + "def okParamWiden = (cb : (x : int) : double) : double -> ( cb(1) )\n"
+                        + "okParamWiden((d : double) : double -> ( d ))",
+                "2:26 Type error : expected () : double, got () : int",
+                "3:26 Type error : expected () : double, got () : int",
+                "5:6 Type error : expected () : double, got () : int",
+                "6:6 Type error : expected () : double, got () : int",
+                "10:27 Type error : expected () : double?, got () : int?",
+                "12:35 Type error : expected () : double | string, got () : int | string",
+                "13:37 Type error : expected (cb : () : int) : int, got (cb : () : double) : int",
+                "14:38 Type error : expected () : () : double, got () : () : int");
+    }
+
+    @Test
+    public void testInterfaceMemberTypeConformance() {
+        String iface = "def I = interface (\n"
+                + "  def area : () : double\n"
+                + "  def count : int\n"
+                + "  def show = () : string -> ( \"I\" )\n"
+                + ")\n";
+        // Classes, value classes, objects, and extending interfaces rejecting mismatched member types.
+        assertDiagnostics(iface
+                        + "def Bad1 = class () implements I ( def area = () : int -> ( 1 ) ; def count : string = \"a\" ; def show = () -> ( 1 ) )\n"
+                        + "def Bad2 = class () implements I ( def area = () -> ( 1 ) ; def count = 1.5 )\n"
+                        + "def Bad3 = class () implements I ( def area = 1 ; def count = (n : int) -> ( n ) )\n"
+                        + "def BadArity = class () implements I ( def area = (n : int) : double -> ( 1.0 * n ) ; def count = 1 )\n"
+                        + "def BadParam = interface ( def apply : (x : int) : int )\n"
+                        + "def BadParamImpl = class () implements BadParam ( def apply = (x : string) : int -> ( 1 ) )\n"
+                        + "def BadVal = value class (area : () : double, count : string) implements I ()\n"
+                        + "def BadHeader = class (def area : () : double, def count : bool) implements I ()\n"
+                        + "def badObj = object implements I ( def area = () -> ( 1 ) ; def count = \"no\" )\n"
+                        + "def Sub = interface extends I ( def area : () : int )",
+                "6:36 Type error : expected () : double, got () : int",
+                "6:67 Type error : expected int, got string",
+                "6:94 Type error : expected () : string, got () : int",
+                "7:36 Type error : expected () : double, got () : int",
+                "7:61 Type error : expected int, got double",
+                "8:36 Type error : expected () : double, got int",
+                "8:51 Type error : expected int, got (n : int) : int",
+                "9:40 Type error : expected () : double, got (n : int) : double",
+                "11:51 Type error : expected (x : int) : int, got (x : string) : int",
+                "12:47 Type error : expected int, got string",
+                "13:48 Type error : expected int, got bool",
+                "14:36 Type error : expected () : double, got () : int",
+                "14:61 Type error : expected int, got string",
+                "15:33 Type error : expected () : double, got () : int");
+
+        // Inherited defaults conflicting with another interface's requirement.
+        assertDiagnostics("def A = interface ( def m : () : double )\n"
+                        + "def B = interface ( def m = () -> ( 1 ) )\n"
+                        + "def C = class () implements A, B ()\n"
+                        + "def J = interface extends A, B ()",
+                "3:9 Type error : expected () : double, got () : int",
+                "4:9 Type error : expected () : double, got () : int");
+
+        // Sound covariance, contravariance, optional trailing parameters, and widened fields pass cleanly.
+        assertDiagnostics("def Base = interface ( def tag : string )\n"
+                        + "def Sub = class (def tag : string) implements Base ()\n"
+                        + "def Service = interface (\n"
+                        + "  def get : () : Base\n"
+                        + "  def opt : () : string?\n"
+                        + "  def accept : (x : int) : int\n"
+                        + "  def val : double\n"
+                        + "  def ok = () -> ( 1 )\n"
+                        + ")\n"
+                        + "def Child = interface extends Service ()\n"
+                        + "def Impl = class () implements Child (\n"
+                        + "  def get = () : Sub -> ( Sub(\"s\") )\n"
+                        + "  def opt = () : string -> ( \"s\" )\n"
+                        + "  def accept = (x : any, extra = 0) : int -> ( extra )\n"
+                        + "  def val = 1\n"
+                        + "  def widen = () -> ( this.val = 1.5 )\n"
+                        + ")");
+    }
+
+    @Test
     public void testAllScriptsCompileCleanly() throws Exception {
         // Every .ba test script and example compiles cleanly with static typing.
         List<Path> all = new java.util.ArrayList<>();

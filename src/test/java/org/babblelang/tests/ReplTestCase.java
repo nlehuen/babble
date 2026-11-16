@@ -71,8 +71,8 @@ public class ReplTestCase {
         StringWriter errors = new StringWriter();
         BabbleSession session = session(errors);
         session.eval("def shapes = import(\"" + shapes.toString().replace("\\", "\\\\") + "\")");
-        session.eval("def Square = class () implements shapes.Shape ( def area = () -> ( 4 ) )");
-        Assertions.assertEquals("area 4", session.eval("Square().describe()"));
+        session.eval("def Square = class () implements shapes.Shape ( def area = () : double -> ( 4 ) )");
+        Assertions.assertEquals("area 4.0", session.eval("Square().describe()"));
         assertFails(session, "shapes.nope", "No such export : nope");
         Assertions.assertTrue(errors.toString().contains("Error : No such export : nope"), errors.toString());
     }
@@ -144,6 +144,8 @@ public class ReplTestCase {
         Assertions.assertEquals(true, session.eval("Sq(2) is Shape"));
         // The static checks know the interface of an earlier input.
         assertFails(session, "def Bad = class () implements Shape ()", "Bad does not implement Shape.area");
+        assertFails(session, "def BadType = class () implements Shape ( def area = () -> ( 4 ) )",
+                "Type error : expected () : double, got () : int");
         session.eval("def sq = Sq(3)");
         assertFails(session, "sq.nope", "No such member : nope");
         session.eval("def C = class (private def n = 0) ( def next = () -> ( this.n = this.n + 1 ) )");

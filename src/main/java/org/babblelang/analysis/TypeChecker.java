@@ -20,6 +20,7 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -147,6 +148,7 @@ final class TypeChecker {
             }
             changed = commitInferred();
         } while (changed && ++iterations < 64);
+        checkInterfaces();
         checkMissingTypes(file);
         for (ParserRuleContext ctx : widened) {
             pass.analysis.widenToDouble(ctx);
@@ -430,6 +432,78 @@ final class TypeChecker {
                 return super.visitParameterDeclaration(parameter);
             }
         }.visit(file);
+    }
+
+    /** Checks each class, object, and extending interface against all ancestor Babble interface member types. */
+    private void checkInterfaces() {
+        for (TypeNode type : pass.types) {
+            if (type.parents.isEmpty()) {
+                continue;
+            }
+            Map<String, TypeChecks.Provider> defaults = inheritedDefaults(type);
+            Set<TypeNode> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (Object parent : type.parents) {
+                if (parent instanceof TypeNode iface) {
+                    checkInterfaceConformance(type, iface, defaults, seen);
+                }
+            }
+        }
+    }
+
+    private static Map<String, TypeChecks.Provider> inheritedDefaults(TypeNode type) {
+        Map<String, TypeChecks.Provider> result = new LinkedHashMap<>();
+        for (Object parent : type.parents) {
+            if (parent instanceof TypeNode iface && iface.defaults != null) {
+                for (TypeChecks.Provider provider : iface.defaults.values()) {
+                    if (!type.members.containsKey(provider.name())) {
+                        result.putIfAbsent(provider.name(), provider);
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
+    private void checkInterfaceConformance(TypeNode type, TypeNode iface, Map<String, TypeChecks.Provider> defaults, Set<TypeNode> seen) {
+        if (!seen.add(iface)) {
+            return;
+        }
+        for (TypeNode.Member req : iface.members.values()) {
+            if (req.function == null && declaredType(req.declaration) == null) {
+                continue;
+            }
+            Type required = memberType(req);
+            if (isUnresolved(required)) {
+                continue;
+            }
+            TypeNode.Member impl = type.members.get(req.name);
+            if (impl != null) {
+                if (impl.isPrivate()) {
+                    continue;
+                }
+                Type actual = memberType(impl);
+                if (!isUnresolved(actual) && !assignable(actual, required, false)) {
+                    warn("Type error : expected " + required + ", got " + actual, impl.declaration);
+                }
+            } else {
+                TypeChecks.Provider provider = defaults.get(req.name);
+                if (provider != null && provider.owner() instanceof TypeNode owner
+                        && (!type.isInterface() || owner != iface)) {
+                    TypeNode.Member defaultMember = owner.members.get(req.name);
+                    if (defaultMember != null) {
+                        Type actual = memberType(defaultMember);
+                        if (!isUnresolved(actual) && !assignable(actual, required, false)) {
+                            warn("Type error : expected " + required + ", got " + actual, type.ctx);
+                        }
+                    }
+                }
+            }
+        }
+        for (Object parent : iface.parents) {
+            if (parent instanceof TypeNode parentIface) {
+                checkInterfaceConformance(type, parentIface, defaults, seen);
+            }
+        }
     }
 
     // ---------------------------------------------------------------- runtime checks (T9)
@@ -1284,8 +1358,25 @@ final class TypeChecker {
                     widened.add(ret);
                 }
             }
+            if (expectedReturn != null && expectedReturn != Type.ERROR && needsDoubleWidening(result, expectedReturn)) {
+                result = replaceIntWithDouble(result);
+            }
         }
         return result;
+    }
+
+    private static Type replaceIntWithDouble(Type type) {
+        if (type == Type.INT) {
+            return Type.DOUBLE;
+        }
+        if (type instanceof Type.Union union) {
+            List<Type> updated = new ArrayList<>(union.members().size());
+            for (Type member : union.members()) {
+                updated.add(member == Type.INT ? Type.DOUBLE : member);
+            }
+            return Type.union(updated);
+        }
+        return type;
     }
 
     private void clearSubtreeTypes(ParseTree tree) {
@@ -3144,14 +3235,18 @@ final class TypeChecker {
 
     /** Whether a value of type {@code from} can be used where {@code to} is declared. */
     static boolean assignable(Type from, Type to) {
+        return assignable(from, to, true);
+    }
+
+    private static boolean assignable(Type from, Type to, boolean allowWidening) {
         if (from == Type.ERROR || to == Type.ERROR || from.equals(to) || from == Type.NOTHING) {
             return true;
         }
         if (from instanceof Type.Union union) {
-            return union.members().stream().allMatch(member -> assignable(member, to));
+            return union.members().stream().allMatch(member -> assignable(member, to, allowWidening));
         }
         if (to instanceof Type.Union union) {
-            return union.members().stream().anyMatch(member -> assignable(from, member));
+            return union.members().stream().anyMatch(member -> assignable(from, member, allowWidening));
         }
         if (from == Type.NULL) {
             return to == Type.NULL;
@@ -3159,7 +3254,7 @@ final class TypeChecker {
         if (to == Type.ANY) {
             return true;
         }
-        if (from == Type.INT && to == Type.DOUBLE) {
+        if (allowWidening && from == Type.INT && to == Type.DOUBLE) {
             return true;
         }
         if (to instanceof Type.JavaInstance java) {
@@ -3368,14 +3463,14 @@ final class TypeChecker {
         for (int i = 0; i < from.parameters().size(); i++) {
             Type.Parameter parameter = from.parameters().get(i);
             if (i < to.parameters().size()) {
-                if (!assignable(to.parameters().get(i).type(), parameter.type())) {
+                if (!assignable(to.parameters().get(i).type(), parameter.type(), true)) {
                     return false;
                 }
             } else if (!parameter.optional()) {
                 return false;
             }
         }
-        return assignable(from.result(), to.result());
+        return assignable(from.result(), to.result(), false);
     }
 
     private static boolean isSubtype(TypeNode node, TypeNode target) {
