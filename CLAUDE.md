@@ -58,6 +58,7 @@ The image matches CI's JDK 21; mounting `~/.m2` caches dependencies between runs
 | `docs/design/modules.md` | `export`, `import`, static imports, types across modules | implemented (M1 to M5) |
 | `docs/design/module-sources-and-aot.md` | `ModuleSource`, the runtime boundary, `babblec` | implemented (R1, M4, M5) |
 | `docs/design/repl.md` | sessions, the interactive mode, the command line | implemented |
+| `docs/design/static-typing.md` | removing `dynamic` : a sound top type `any`, `as` casts, required annotations, a phased plan | **draft, for decision**: nothing implemented ; open questions in §9 |
 | `docs/design/effects.md` | function effects and algebraic properties | **draft, nothing implemented**: it describes a possible future, not the language |
 
 ## Architecture
