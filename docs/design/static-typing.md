@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §9 are decided. Nothing implemented yet ; the plan is §8. |
+| **Status** | Accepted : Q1 to Q6 of §9 are decided, Q7 is open. Nothing implemented yet ; the plan is §8. |
 | **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9), once implemented. |
 | **Scope** | the type checker, the grammar (`as`, `is` on built-in types), the runtime checks, the tests, the examples and the docs. |
 
@@ -28,8 +28,8 @@ Goals :
 
 * No expression of an unknown type : every member, call and operator is checked before running.
 * Fewer runtime checks : a boundary the checker proves needs none (T9 checks remain only at
-  casts and at the Java boundary), which also opens the way to unboxed arithmetic and direct
-  calls (README, *Planned features*).
+  casts and at the Java boundary). It also simplifies unboxed arithmetic, and opens the way to
+  direct calls and primitive fields (README, *Planned features* ; §7.1).
 * Diagnostics in the style of today's : worded like the runtime errors they replace.
 
 Non-goals, for this design :
@@ -116,6 +116,12 @@ as a statement is fine ; as a value it is `Type error : the branches of if have 
 int and string`. Today's joins stay : `int` and `double` give `double`, `T` and `null` give `T`
 when `T` admits `null`. An `if` without `else` used as a value is `T` joined with `null`, so an
 error for `int`, `double` and `bool` (`if c then ( 1 )` has no type).
+
+Where an `int` joins to `double` — the branches of an `if`, a loop's value, a def's assignments
+(4.3), a parameter's arguments (4.9) — the value is **converted** to a `double`, in both
+backends, so that a static `double` is always a runtime `Double` (Q7). Today it isn't :
+`def w = if c then ( 1 ) else ( 2.0 )` is typed `double` and holds the int `1`, so `w + w` is `2` ;
+only an annotated def converts (`def v : double = …` holds `1.0`, through its runtime check).
 
 ### 4.5 `super`
 
@@ -234,11 +240,42 @@ arguments are known.
 * `Types.check` stays for `as` and for values crossing the Java boundary. The T9 checks at
   parameters, results and assignments are no longer needed where the checker proved the type,
   which is everywhere but `as` ; they are removed in P5, after the strict mode is the only mode.
-  `BabbleInstance`/`BabbleType.setMember` keep checking member writes from Java (`Faces`).
+* The Java boundary runs both ways, and its checks stay in both :
+  * calls into Java : a Java method declared to return `Integer` (or any boxed type) is typed
+    `int` and may return `null`, so its result is checked ;
+  * calls back from Java : a Babble function passed as a functional interface (`Faces`) can be
+    called with anything through raw types, so its parameters, typed from the interface's
+    method, are checked in that adapter ; likewise the methods of a Babble instance
+    implementing a Java interface, and member writes from Java
+    (`BabbleInstance`/`BabbleType.setMember`).
 * The interpreter stays the reference : both modes give the same results, as today. Fewer
-  checks change no result of a program that type-checks.
+  checks change no result of a program that type-checks ; the conversion of an `int` joined to
+  `double` (4.4, Q7) does : `w + w` above becomes `2.0`. It is the one change of behaviour.
 * Errors a program could reach before and no longer can (`Not a number : x` on a Babble value,
   `x is not callable`, …) stay in the runtime, as the backstop for Java values and casts.
+
+### 7.1 Unboxed arithmetic
+
+Branch `ccr-2f175974-zutbpj` (`bytecode-compiler.md` §19 there) computes on unboxed `int`,
+`double` and `bool` values in compiled code. It can't trust the checker's types today (a
+`double` may be an int at runtime, 4.4 ; a parameter typed from its context is checked by
+nothing), so it adds a fifth analysis pass, `Unboxing`, that trusts only the T9 checks, literals
+and operators on such values. With this design, a static `int`, `double` or `bool` is the fact
+it needs :
+
+* At P4, `ScopeAnalysis.kind` (the pass's interface to `CodeGenerator`, which doesn't change) is
+  filled from the checker's types instead of from `Unboxing`. What goes : the reasoning about
+  which class an instance or which function a callee is certain to be, the fixpoint over
+  reassigned variables (4.3 is the same inference), and the `instanceof BabbleInstance` branch on
+  every arithmetic operator, since the left operand's type says statically whether it is
+  numbers or an operator method.
+* What stays : a primitive local (and later field) has no undefined state, so "used only after
+  its definition" still decides where a value can live, and captured variables keep their
+  cells ; comparisons keep `Double.compare`, to agree with `Operators` on NaN and the zeros.
+* Measured there : the fable ray tracer with annotations ran a third slower than without (137 s
+  against 105 s), from runtime checks alone ; nominal checks were a quarter of argon's time
+  before that branch stopped comparing class ids as strings, and checks are still about a tenth
+  of its profile. That is what P5 removes.
 
 ## 8. Plan
 
@@ -257,7 +294,8 @@ Each phase keeps `mvn package` green and is a pull request of its own.
 * **P4, flip the default.** Strict is the only mode ; `dynamic` and the flag are removed ;
   `TypeChecker`'s gradual paths (`isUnknown`, the `dynamic` cases of `assignable`) go.
 * **P5, runtime checks.** Remove the T9 boundary checks the checker makes redundant ; measure
-  with `Benchmarks`.
+  with `Benchmarks` and the ray tracers (7.1). Only after P4, and after `Unboxing` takes its kinds
+  from the checker : until then that pass relies on the T9 checks for its soundness.
 * **P6, Java generics** (5.2), then **Babble generics** and **union types** (README, *Planned
   features*), each reducing the casts P3 had to write.
 * **P7, parameters inferred from calls** (4.9). It needs only P4, and can come before P6. It
@@ -278,6 +316,13 @@ The questions of the draft, as decided :
 * **Q4. Arrays** : a `JavaArray(T)` type now (5.1).
 * **Q5. The REPL** : the same rules as scripts.
 * **Q6. Cast syntax** : `e as T` (4.8).
+
+Open :
+
+* **Q7. Converting an `int` joined to `double`** (4.4) : proposed from the unboxed-arithmetic
+  work (7.1), so that a static `double` is always a runtime `Double`. Recommended : yes ; it
+  changes the result of programs like `w + w` in 4.4 (`2` becomes `2.0`), the one change of
+  behaviour this design makes.
 
 ## 10. Testing
 
