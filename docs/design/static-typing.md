@@ -103,8 +103,11 @@ value assigned to it, `x = v` and `x op= v` alike, wherever they are in its scop
 
 An assigned value may depend on the def itself (`x = x + 0.5`) : the checker iterates the join
 until it is stable, which it is after one widening at most, the only joins that change a type
-being `int` to `double` and `null` to a type that admits it (4.4). An annotated `def` is not
-inferred : assignments must fit its annotation, as today.
+being `int` to `double` and `null` to a type that admits it (4.4). Because an assignment later
+in scope (such as `i = i / 2`, since `/` yields `double`) widens `i` from its definition on, it
+can change earlier uses (`println(i)`, `i is int`, `list.get(i)`) ; diagnostics caused by a
+widened binding name the widening site (`i is double because of the assignment at line N`). An
+annotated `def` is not inferred : assignments must fit its annotation, as today.
 
 Inference no longer depends on "never reassigned" ; flow-sensitive narrowing still does (a
 narrowed binding that can be reassigned loses its narrowing, as today). A member is inferred the
@@ -118,8 +121,10 @@ A value is only required to have a type where it is used : assigned, passed, ret
 operand, or the last expression of a block whose value is used. `if c then ( 1 ) else ( "a" )`
 as a statement is fine ; as a value it is `Type error : the branches of if have different types :
 int and string`. Today's joins stay : `int` and `double` give `double`, `T` and `null` give `T`
-when `T` admits `null`. An `if` without `else` used as a value is `T` joined with `null`, so an
-error for `int`, `double` and `bool` (`if c then ( 1 )` has no type).
+when `T` admits `null`. A join never introduces `any` implicitly ; however, when an `if` has an
+expected type `T` (such as `def v : any = if c then ( 1 ) else ( "a" )`), each branch is checked
+against `T` instead of being joined independently. An `if` without `else` used as a value is `T`
+joined with `null`, so an error for `int`, `double` and `bool` (`if c then ( 1 )` has no type).
 
 Where an `int` joins to `double` — the branches of an `if`, a loop's value, a def's assignments
 (4.3), a parameter's arguments (4.9) — the value is **converted** to a `double`, in both
@@ -147,15 +152,25 @@ instead of a runtime `NumberFormatException` (the negated `-2147483648` stays an
 ### 4.8 `any`, `is` and `as`
 
 * `any` is a type name, assignable from every type ; an `any` is assignable to nothing else, and
-  has no members, calls or operators (`Not a scope : x`, `x is not callable`, `Not a number :
-  x`, as for other types that lack them).
+  has no members, calls, arithmetic, or ordering comparisons (`Not a scope : x`, `x is not
+  callable`, `Not a number : x`, `Not comparable : x and y`, as for other types that lack them).
+  It remains allowed in equality (`==`, `!=`, `same(a, b)`), as the right operand of string
+  concatenation (`"x = " + v`), when passed to `any` or Java `Object` parameters (`print`,
+  `println`, `assert`'s message, `classof`), and in `is` and `as`.
 * `x is T` narrows `x` to `T` in the branch where it holds, as it does for classes today, and is
-  extended to the built-in types : `x is int`, `x is string`… (today `Not a type : int`). The
-  built-in type names become values only on the right of `is` and `as`, not in general
-  expressions, so `int(x)` (the conversion) is unaffected.
-* `e as T` is a cast : `e`'s value if it is a `T`, else a runtime error worded as today's T9
-  checks, `Type error : expected string, got int`. Its static type is `T`. The cast is an error
-  when `e`'s type can never be a `T` (`1 as string`), and a warning when it always is.
+  extended to the built-in types : `x is int`, `x is string`… (today `Not a type : int`). It
+  keeps its existing precedence (looser than comparisons, tighter than `and`/`or`) and stays
+  an expression on the right (`def T = Point ; x is T` keeps working), with built-in type names
+  resolved only when directly on the right of `is` so `int(x)` (the conversion) is unaffected.
+* `e as T` takes a `type` on the right and binds tighter than comparisons and looser than
+  `+`/`-` (`a + b as int == 1` is `((a + b) as int) == 1`). It evaluates to `e`'s value if it is
+  a `T`, else a runtime error worded as today's T9 checks, `Type error : expected string, got
+  int`. Its static type is `T`. The cast is an error when `e`'s type can never be a `T`
+  (`1 as string`), and a warning when it always is. Only types `Types.check` can enforce at
+  runtime are valid targets (built-in types, Babble classes, Java classes/interfaces/arrays,
+  and `any`) ; function types are erased at runtime and rejected statically (`Cannot cast to a
+  function type`). `null` follows T2/T9 rules : `null as string` and `null as C` succeed, while
+  `null as int`, `null as double` and `null as bool` fail at runtime.
 * `dynamic` is no longer a type name (`Unknown type : dynamic`).
 
 `any` differs from `dynamic` in one way only, but it is the whole point : the checker never
@@ -179,11 +194,14 @@ area("x", 1)          ;; Type error : expected double, got string, at this call
   only ever called by that name ; a method of a class or object called as `obj.m(…)` or
   `this.m(…)` with a receiver of known class (every receiver has one, `dynamic` being gone) ; a
   class header parameter, through the constructor calls `C(…)`.
-* It doesn't apply, and an annotation is required (`Missing type : a`), when the function
-  escapes : used as a value other than in a call (passed as an argument, stored, returned,
-  assigned), or exported from a module (`export def`, or a member of an exported class) : a
-  module's interface is annotated, since its callers are in files analysed after it. A function
-  never called needs annotations too, there being nothing to infer from.
+* It doesn't apply, and an annotation is required (`Missing type : a`), when calls can be
+  hidden : when the function escapes as a value (passed as an argument, stored, returned,
+  assigned), when it is exported from a module (`export def`, or a member of an exported class,
+  since callers are in files analysed after it), when a method implements or overrides one on a
+  Java interface (callable from Java via `Faces`, through a `JavaInstance(I)` receiver, or via
+  `super(I).m()`), or for a class's header parameters when the class itself is used as a value
+  (`def K = Point ; K(1, 2)`). A function never called needs annotations too, there being
+  nothing to infer from.
 * Named and default arguments bind as at runtime (`Arguments`) : the argument that binds a
   parameter is the one inferred from.
 * Calls, parameters and results depend on each other (a call's argument may be another call's
@@ -192,7 +210,8 @@ area("x", 1)          ;; Type error : expected double, got string, at this call
   that admits it), so this ends ; a recursive function's own calls take part like any other.
 * A conflict is reported at the call that brings it, worded as an assignment's
   (`Type error : expected double, got string`), `expected` being the join of the calls before
-  it in source order.
+  it in source order. Diagnostics caused earlier in the file by a widening call name the
+  widening site (`w is double because of the call at line N`).
 
 Inference from the uses of a parameter in the function's body (Hindley–Milner style) is out of
 scope : `(a, b) -> ( a + b )` is ambiguous between `int`, `double`, `string` and any class with a
@@ -219,7 +238,10 @@ monomorphic, so it would rarely type more than calls do, with errors harder to e
 Reflection gives the generic signatures (`List<E>.get` returns `E`). A later step (§8, P6)
 types `java.util.List[string]` annotations and propagates type arguments through calls and
 constructors (`java.util.ArrayList[string]()`), so that `list.get(0)` is a `string` without a
-cast. Until then, elements are `any` and need `as` or `is`.
+cast. Until then, elements are `any` and need `as` or `is`. Note for P6 : generic Java methods
+such as `Map[string, int].get(k)` can return `null` on a missing key even when the type
+argument is `int`, so P6 must either keep a boundary check on generic returns of non-nullable
+Babble types or surface `null`/optional handling before P5 removes checks.
 
 ### 5.3 Overloads
 
@@ -238,6 +260,13 @@ arguments are known.
   `java.util.List[string]` with generics).
 * `import(name)` with a name that isn't a string literal is `any` ; static imports keep their
   module types.
+* Interactive sessions (REPL, Q5) : each input in an `AnalysisSession` is analysed and compiled
+  before later inputs are known (`repl.md` §2). A `def`'s or member's inference (4.2, 4.3)
+  therefore closes at the end of the input that defines it, and assignments in later inputs are
+  checked against that type rather than widening it (`AnalysisSession.reassigned` still drops
+  flow-sensitive narrowing across inputs, not the inferred type). Likewise, in P7, call-site
+  inference (4.9) closes at the end of the input that defines the function ; a function defined
+  at the prompt with no calls in that same input needs annotations (`Missing type : f`).
 
 ## 7. Runtime
 
@@ -245,8 +274,9 @@ arguments are known.
   parameters, results and assignments are no longer needed where the checker proved the type,
   which is everywhere but `as` ; they are removed in P5, after the strict mode is the only mode.
 * The Java boundary runs both ways, and its checks stay in both :
-  * calls into Java : a Java method declared to return `Integer` (or any boxed type) is typed
-    `int` and may return `null`, so its result is checked ;
+  * calls and field reads into Java : a Java method declared to return `Integer` (or any boxed
+    type), or a Java field of such a boxed type, is typed `int` and may return `null`, so its
+    value is checked on exit from Java ;
   * calls back from Java : a Babble function passed as a functional interface (`Faces`) can be
     called with anything through raw types, so its parameters, typed from the interface's
     method, are checked in that adapter ; likewise the methods of a Babble instance
@@ -284,15 +314,23 @@ the T9 checks, literals and operators on such values. With this design, a static
 
 ## 8. Plan
 
-Each phase keeps `mvn package` green and is a pull request of its own.
+Each phase keeps `mvn package` green and is a pull request of its own. To keep default mode
+backward-compatible while scripts are migrated, P1–P3 gate the new strict rules and inference
+that can reject existing code behind `babble.typing=strict` :
 
-* **P1, `any`, `is` on built-in types, `as`.** Grammar (`as` binds tighter than comparisons,
-  looser than arithmetic : `a + b as int` is `(a + b) as int`), `Type.ANY`, both backends
-  (`as` compiles to `Types.check`), formatter, tests. `dynamic` still exists. Also the
-  conversion of an `int` joined to `double` (4.4, Q7), which needs no strict mode : the checker
-  records where a join widens, and both backends convert there.
-* **P2, strict mode.** `babble.typing=strict` (engine attribute and system property) reports
-  every source of §3 as an error, with the wording of §4. Off by default ; a test runs every
+* **P1, `any`, `is` on built-in types, `as`, and `if`/`while` numeric conversion.** Grammar (`as`
+  binds tighter than comparisons, looser than arithmetic : `a + b as int` is `(a + b) as int`),
+  `Type.ANY`, `Type.JavaArray(T)` (5.1), both backends (`as` compiles to `Types.check`),
+  formatter, tests. `dynamic` still exists. Also the conversion of an `int` joined to `double`
+  in `if` and `while` (4.4, Q7), which needs no strict mode : the checker records where those
+  joins widen, and both backends convert there. Verify that `argon` still renders `scene.ppm`
+  byte for byte.
+* **P2, strict mode.** `babble.typing=strict` (engine attribute and system property) enables the
+  strict typing and inference of §4–§6 : parameter defaults (4.1), member inference (4.2),
+  inference over all assignments with its `int`→`double` conversion (4.3), `super` typing (4.5),
+  `JavaInstance(I)` member lookup (5.1), implicit signatures and `any` bindings (§6), and errors
+  for every unresolved source of §3 (`Missing type` for unannotated parameters, defs, cycles and
+  imports, out-of-range literals 4.7, unknown `dynamic` 4.8). Off by default ; a test runs every
   `.ba` script and example in strict mode and lists which fail, as the migration's to-do list.
 * **P3, migration.** Annotate the tests and the examples ; rewrite the tests that reach runtime
   type errors through `def id = (v) -> ( v )` with `as` (the error still exists, at the cast) or
@@ -321,7 +359,8 @@ The questions of the draft, as decided :
 * **Q3. `if` without `else` as a value** : an error where the value is used and its type admits
   no `null` (`int`, `double`, `bool`), as in 4.4.
 * **Q4. Arrays** : a `JavaArray(T)` type now (5.1).
-* **Q5. The REPL** : the same rules as scripts.
+* **Q5. The REPL** : the same typing rules as scripts, with inference (4.3, 4.9) closed at the
+  end of the input that defines the binding or function (§6).
 * **Q6. Cast syntax** : `e as T` (4.8).
 * **Q7. Converting an `int` joined to `double`** : yes (4.4). A static `double` is always a
   runtime `Double`, as the unboxed-arithmetic work needs (7.1). It changes the result of programs
@@ -331,7 +370,7 @@ The questions of the draft, as decided :
 ## 10. Testing
 
 * P1 : golden tests of `as` and `is` diagnostics in `TypeCheckerTestCase`, `DifferentialTestCase`
-  snippets for failing casts, a `.ba` script.
+  snippets for failing casts, a `.ba` script, and `argon` rendering `scene.ppm` byte for byte.
 * P2 : one golden test per source of §3 in strict mode, and the strict-mode survey of every
   script (§8).
 * P3–P4 : the whole suite in strict mode ; `ExamplesTestCase` compiles the examples in it.
