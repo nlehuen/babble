@@ -34,7 +34,7 @@ assert(describe(2.5) == "double:5.0")
 assert(describe(true) == "bool:true")
 assert(describe(false) == "bool:false")
 assert(describe("babble") == "string:babble")
-assert(describe(java.lang.Object()) is string)
+assert(java.lang.String(describe(java.lang.Object())).startsWith("any:"))
 assert(describe(null) == "null")
 
 ;; Early-return narrowing and boolean short-circuit narrowing

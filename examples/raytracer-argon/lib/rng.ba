@@ -8,7 +8,7 @@ export def Rng = class (private def seed: int = 1337) (
         def u: double = if this.seed < 0 then (
             this.seed + 2147483648.0
         ) else (
-            1.0 * this.seed
+            this.seed
         )
         u / 2147483648.0
     )
