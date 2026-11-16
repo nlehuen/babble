@@ -10,13 +10,13 @@ export def HittableList = class () implements Hittable (
 
     def add = (item: Hittable): bool -> (this.objects.add(item))
 
-    def hit = (r: Ray, tmin: double, tmax: double): HitRecord -> (
-        def closest: HitRecord = null
+    def hit = (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        def closest: HitRecord? = null
         def closestSoFar: double = tmax
         def count: int = this.objects.size()
         def i: int = 0
         while i < count then (
-            def rec: HitRecord = (this.objects.get(i) as Hittable).hit(r, tmin, closestSoFar)
+            def rec: HitRecord? = (this.objects.get(i) as Hittable).hit(r, tmin, closestSoFar)
             if rec <> null then (
                 closest = rec
                 closestSoFar = rec.t

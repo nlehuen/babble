@@ -77,9 +77,9 @@ export def Camera = class (
         if depth <= 0 then (return Vec3(0.0, 0.0, 0.0))
 
         ;; tmin is 0.001 to ignore hits very close to the origin of the ray : no shadow acne
-        def rec: HitRecord = world.hit(r, 0.001, infinity)
+        def rec: HitRecord? = world.hit(r, 0.001, infinity)
         if rec <> null then (
-            def s: Scatter = (rec.material as Material).scatter(r, rec, rng)
+            def s: Scatter? = (rec.material as Material).scatter(r, rec, rng)
             if s == null then (return Vec3(0.0, 0.0, 0.0))
             return s.attenuation.mul(this.rayColor(s.scattered, depth - 1, world, rng))
         )
@@ -101,7 +101,7 @@ export def Camera = class (
         def image = java.awt.image.BufferedImage(this.imageWidth, this.imageHeight, java.awt.image.BufferedImage.TYPE_INT_RGB)
         def nextLine = java.util.concurrent.atomic.AtomicInteger()
 
-        def renderLines = (): any -> (
+        def renderLines = (): null -> (
             def rng = java.util.Random()
             def j: int = nextLine.getAndIncrement()
             while j < this.imageHeight then (
@@ -123,7 +123,7 @@ export def Camera = class (
         )
 
         ;; start the other threads, render on this one too, then wait for the others
-        def start = (n: int): any -> (
+        def start = (n: int): null -> (
             if n > 1 then (
                 def thread = java.lang.Thread(renderLines)
                 thread.start()

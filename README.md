@@ -377,13 +377,14 @@ area(2, "3")    ;; Error : Type error : expected int, got string ... at line num
 area(2)         ;; Error : Missing parameter : h ...
 ```
 
-`any` is the sound top type for values whose static type is unknown (such as Java `Object`
-returns like `list.get(0)` or script bindings). Nothing can be called, selected or computed on
-an `any` until it is narrowed with `is` (on classes or built-in types, `if x is Point then ( … )`,
-`if v is int then ( … )`) or checked at runtime with `as` :
+`any` is the sound non-null top type for values whose static type is unknown (such as Java `Object`
+returns like `list.get(0)` or script bindings), with `any?` as its nullable counterpart (plain
+types are non-nullable; `T?` is shorthand for `T | null`, and `A | B` forms a union type).
+Nothing can be called, selected or computed on an `any`, `T?` or mixed union until it is
+narrowed (with `is`, `!= null`, or truthiness) or checked at runtime with `as` :
 
 ```
-def id = (x: any): any -> ( x )
+def id = (x: any?): any? -> ( x )
 def half = (n: int): double -> ( n / 2 )
 half(id("4") as int)   ;; Type error : expected int, got string, at line number 3
 ```
@@ -606,12 +607,12 @@ Language features :
 - [x] functions, supporting recursion (`recurse`) and closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional & named parameters in function calls, and default values for parameters.
-- [x] basic types : boolean, int, double, string, functions, `any`.
+- [x] basic types : boolean, int, double, string, `null`, functions, union types (`A | B`), nullable types (`T?`), `any` / `any?`.
 - [x] packages as namespaces, which change only through their own code : `p.x = 1` from outside is an error.
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java interfaces.
-- [x] static type checking : required annotations on uninferred parameters, bidirectional local inference of bindings, members, function results, and lambda parameters, flow-sensitive narrowing after `is` (including built-in types), checked `as` casts and sound top type `any`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
+- [x] static type checking : required annotations on uninferred parameters, bidirectional local inference of bindings, members, function results, and lambda parameters, strict non-nullability with `T?`, union types (`A | B`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
 
 Implementation features :
@@ -635,7 +636,7 @@ Language features :
 
 - [ ] line editing, history and completion in the interactive mode.
 - [ ] better, more user-friendly error reports.
-- [ ] generics, union types and structural object types.
+- [ ] generics and structural object types.
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module, an object or a package, instead of one `def` per name.
 - [ ] collection classes (mapped from Java).

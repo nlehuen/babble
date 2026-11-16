@@ -88,10 +88,12 @@ public class TypeCheckerTestCase {
                 "1:15 Type error : expected int, got string",
                 "2:18 Type error : expected string, got int",
                 "5:15 Type error : expected int, got double");
-        // T2 : numbers and booleans are never null, everything else may be.
-        assertDiagnostics("def a : int = null\ndef b : string = null\ndef c : bool\ndef d : double = if true then ( 1 ) else ( 2.5 )",
+        // P6a : plain types (including string and any) are non-nullable; use T? for nullable.
+        assertDiagnostics("def a : int = null\ndef b : string = null\ndef c : bool\ndef d : any = null\ndef e : string? = null\ndef f : any?\ndef g : double = if true then ( 1 ) else ( 2.5 )",
                 "1:15 Type error : expected int, got null",
-                "3:1 Type error : expected bool, got null");
+                "2:18 Type error : expected string, got null",
+                "3:1 Type error : expected bool, got null",
+                "4:15 Type error : expected any, got null");
         assertDiagnostics("def a : int = 1\na = \"x\"\ndef f = (n : int) -> ( n = 2.5 )",
                 "2:5 Type error : expected int, got string",
                 "3:28 Type error : expected int, got double");
@@ -304,7 +306,8 @@ public class TypeCheckerTestCase {
                 + "def Sq = class (def s : double) implements Shape ( def area = () -> ( 1.0 * this.s * this.s ) )\n";
         assertDiagnostics(shape + "def f = (x : Shape) : string -> ( x.describe() )\nf(Sq(2))\nf(1)\nf(object ())\nf(null)",
                 "5:3 Type error : expected Shape, got int",
-                "6:3 Type error : expected Shape, got object");
+                "6:3 Type error : expected Shape, got object",
+                "7:3 Type error : expected Shape, got null");
         assertDiagnostics(shape + "def g = (x : Shape) -> ( x.nope )\ndef h : int = Sq(1).area()\ndef k : string = Sq(1).describe()",
                 "3:26 No such member : nope",
                 "4:15 Type error : expected int, got double");
@@ -339,17 +342,17 @@ public class TypeCheckerTestCase {
                         + "def nullable = (n : int) -> ( if n > 0 then ( \"a\" ) else ( null ) )\n"
                         + "def mixed = (n : int) -> ( if n > 0 then ( 1 ) else ( \"a\" ) )\n"
                         + "def a : string = same(1)\ndef b : int = widen(1)\ndef c : int = nullable(1)\ndef d : int = mixed(1)",
-                "4:28 Type error : the branches of if have different types : int and string",
                 "5:18 Type error : expected string, got int",
                 "6:15 Type error : expected int, got double",
-                "7:15 Type error : expected int, got string");
+                "7:15 Type error : expected int, got string?",
+                "8:15 Type error : expected int, got int | string");
         assertDiagnostics("def r1 = (n : int) -> ( if n > 0 then ( return 1 ) ; 2 )\n"
                         + "def r2 = (n : int) -> ( if n > 0 then ( return 1 ) else ( return 2 ) )\n"
                         + "def r3 = (n : int) -> ( if n > 0 then ( return 1 ) ; \"s\" )\n"
                         + "def a : string = r1(1)\ndef b : string = r2(1)\ndef c : int = r3(1)",
-                "3:41 Type error : incompatible return types : string and int",
                 "4:18 Type error : expected string, got int",
-                "5:18 Type error : expected string, got int");
+                "5:18 Type error : expected string, got int",
+                "6:15 Type error : expected int, got string | int");
         // Empty and null-returning functions infer null return type.
         assertDiagnostics("def e = () -> ()\ndef n = () -> ( null )\ndef a : int = e()\ndef b : int = n()",
                 "3:15 Type error : expected int, got null",
@@ -419,13 +422,15 @@ public class TypeCheckerTestCase {
                 "10:31 No such member : nope",
                 "11:27 No such member : nope");
         assertDiagnostics("def Point = class (def x : int) ()\n"
-                        + "def getX = (p : any) -> (\n  if not (p is Point) then ( return 0 )\n  p.x\n)\n"
+                        + "def getX = (p : any?) -> (\n  if not (p is Point) then ( return 0 )\n  p.x\n)\n"
                         + "def s : string = getX(null)\n"
                         + "def bad = (p : any) -> (\n  if not (p is Point) then ( return 0 )\n  p.nope\n)\n"
-                        + "def pos = (p : any) -> (\n  if p is Point then ( 0 ) else ( return 1 )\n  p.nope\n)",
+                        + "def pos = (p : any) -> (\n  if p is Point then ( 0 ) else ( return 1 )\n  p.nope\n)\n"
+                        + "bad(null)",
                 "6:18 Type error : expected string, got int",
                 "9:3 No such member : nope",
-                "13:3 No such member : nope");
+                "13:3 No such member : nope",
+                "15:5 Type error : expected any, got null");
         assertDiagnostics("def Shape = interface ( def area : () : double )\n"
                         + "def Sq = class (def side : int) implements Shape ( def area = () -> ( 1.0 * this.side * this.side ) )\n"
                         + "def sideOf = (s : Shape) -> (\n"
@@ -492,8 +497,8 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testAny() {
-        assertDiagnostics("def a : any = 1\ndef b : any = \"s\"\ndef c : any = true\ndef d : any = null\n"
-                + "def f = (v : any) : any -> (\n"
+        assertDiagnostics("def a : any = 1\ndef b : any = \"s\"\ndef c : any = true\ndef d : any? = null\n"
+                + "def f = (v : any?) : any? -> (\n"
                 + "  def ok1 : bool = v == 1\n"
                 + "  def ok2 : bool = v != null\n"
                 + "  def ok3 : string = \"x = \" + v\n"
@@ -501,9 +506,10 @@ public class TypeCheckerTestCase {
                 + "  def l = java.util.ArrayList() ; l.add(v)\n"
                 + "  def cond = true\n"
                 + "  def ok4 : any = if cond then ( 1 ) else ( \"a\" )\n"
-                + "  def ok5 : any = if cond then ( 1 )\n"
+                + "  def ok5 : any? = if cond then ( 1 )\n"
                 + "  v\n)\nf(1) ; f(\"x\") ; f(null)");
-        assertDiagnostics("def f = (v : any) -> (\n"
+        assertDiagnostics("def badNull : any = null\n"
+                + "def f = (v : any) -> (\n"
                 + "  v.x\n"
                 + "  v.x = 1\n"
                 + "  v()\n"
@@ -514,18 +520,21 @@ public class TypeCheckerTestCase {
                 + "  1 < v\n"
                 + "  def i : int = v\n"
                 + "  def s : string = v\n"
-                + "  java.lang.Math.abs(v)\n)",
-                "2:3 Not a scope : v",
+                + "  java.lang.Math.abs(v)\n)\n"
+                + "f(null)",
+                "1:21 Type error : expected any, got null",
                 "3:3 Not a scope : v",
-                "4:3 v is not callable",
-                "5:3 Not a number : v",
-                "6:7 Not a number : v",
-                "7:4 Not a number : v",
-                "8:3 Not comparable : v and 1",
-                "9:3 Not comparable : 1 and v",
-                "10:17 Type error : expected int, got any",
-                "11:20 Type error : expected string, got any",
-                "12:3 No applicable overload of java.lang.Math.abs for (any)");
+                "4:3 Not a scope : v",
+                "5:3 v is not callable",
+                "6:3 Not a number : v",
+                "7:7 Not a number : v",
+                "8:4 Not a number : v",
+                "9:3 Not comparable : v and 1",
+                "10:3 Not comparable : 1 and v",
+                "11:17 Type error : expected int, got any",
+                "12:20 Type error : expected string, got any",
+                "13:3 No applicable overload of java.lang.Math.abs for (any)",
+                "15:3 Type error : expected any, got null");
     }
 
     @Test
@@ -577,15 +586,15 @@ public class TypeCheckerTestCase {
                 + "  def t : T = s as T\n"
                 + "  def k : int = n as int\n"
                 + "  def w : double = 1 as double\n"
-                + "  def ns : string = null as string\n"
-                + "  def np : P = null as P\n"
-                + "  def na : any = null as any\n"
+                + "  def ns : string? = null as string?\n"
+                + "  def np : P? = null as P?\n"
+                + "  def na : any? = null as any?\n"
                 + "  a + k\n)");
         assertWarnings(decls
                 + "def f = (v : any, s : S, n : java.lang.Number) -> (\n"
                 + "  (v as int) + (1 as double)\n"
-                + "  def ns : string = null as string\n"
-                + "  def np : P = null as P\n"
+                + "  def ns : string? = null as string?\n"
+                + "  def np : P? = null as P?\n"
                 + "  n as int\n)");
         assertDiagnostics(decls
                 + "def a = 1 as string\n"
@@ -593,6 +602,9 @@ public class TypeCheckerTestCase {
                 + "def c = null as int\n"
                 + "def d = null as double\n"
                 + "def e = null as bool\n"
+                + "def f1 = null as string\n"
+                + "def f2 = null as P\n"
+                + "def f3 = null as any\n"
                 + "def g = P(1) as Q\n"
                 + "def h = P(1) as S\n"
                 + "def i = \"x\" as java.lang.Runnable\n"
@@ -602,10 +614,13 @@ public class TypeCheckerTestCase {
                 "8:9 Type error : expected int, got null",
                 "9:9 Type error : expected double, got null",
                 "10:9 Type error : expected bool, got null",
-                "11:9 Type error : expected Q, got P",
-                "12:9 Type error : expected S, got P",
-                "13:9 Type error : expected java.lang.Runnable, got string",
-                "14:29 Cannot cast to a function type");
+                "11:10 Type error : expected string, got null",
+                "12:10 Type error : expected P, got null",
+                "13:10 Type error : expected any, got null",
+                "14:9 Type error : expected Q, got P",
+                "15:9 Type error : expected S, got P",
+                "16:9 Type error : expected java.lang.Runnable, got string",
+                "17:29 Cannot cast to a function type");
         // Non-fatal warnings for redundant casts.
         String redundant = decls
                 + "def a = 1 as int\n"
@@ -705,14 +720,16 @@ public class TypeCheckerTestCase {
                 + "def len : int = m.nope\n"
                 + "def i = 0\n"
                 + "i = \"a\"\n"
-                + "def badNull = null\n"
-                + "badNull = 1",
+                + "def intNull = null\n"
+                + "intNull = 1\n"
+                + "def intUse : int = intNull\n"
+                + "m = 1",
                 "1:1 Missing type : empty",
                 "2:1 Missing type : nulled",
                 "5:17 Not a scope : m",
                 "7:5 Type error : expected int, got string",
-                "8:1 Missing type : badNull",
-                "9:11 Type error : expected null, got int");
+                "10:20 Type error : expected int, got int?",
+                "11:5 Type error : expected string?, got int");
         // Widening int -> double across later assignments notifies earlier uses with the widening line.
         assertDiagnostics("def i = 1\n"
                 + "def use : int = i\n"
@@ -739,11 +756,15 @@ public class TypeCheckerTestCase {
                 + "def b = if c then ( 1 ) else ( \"a\" )\n"
                 + "def d = if c then ( 1 )\n"
                 + "def w = while c then ( 1 )\n"
-                + "def f = (n : int) -> ( if n > 0 then ( return 1 ) ; \"s\" )",
-                "5:9 Type error : the branches of if have different types : int and string",
-                "6:9 Type error : the branches of if have different types : int and null",
-                "7:9 Type error : the branches of while have different types : int and null",
-                "8:40 Type error : incompatible return types : string and int");
+                + "def f = (n : int) -> ( if n > 0 then ( return 1 ) ; \"s\" )\n"
+                + "def bCheck : int = b\n"
+                + "def dCheck : int = d\n"
+                + "def wCheck : int = w\n"
+                + "def fCheck : int = f(1)",
+                "9:20 Type error : expected int, got int | string",
+                "10:20 Type error : expected int, got int?",
+                "11:20 Type error : expected int, got int?",
+                "12:20 Type error : expected int, got string | int");
     }
 
     @Test
@@ -868,6 +889,96 @@ public class TypeCheckerTestCase {
         // Unassigned null in REPL input 1 fails immediately in input 1.
         ScriptException e4 = Assertions.assertThrows(ScriptException.class, () -> session.eval("def u = null"));
         Assertions.assertTrue(e4.getMessage().contains("Missing type : u"), e4.getMessage());
+    }
+
+    @Test
+    public void testP6aUnionAndNullableTypes() {
+        // Normalization, T?, null type, any vs any?, non-nullability of plain types.
+        assertDiagnostics("def a : int | null = null\n"
+                        + "def b : int? = a\n"
+                        + "def c : (int | string) | int? = \"x\"\n"
+                        + "def d : any = c\n"
+                        + "def e : null = null\n"
+                        + "def bad1 : int = b\n"
+                        + "def bad2 : string = c\n"
+                        + "def bad3 : any = b\n"
+                        + "def bad4 : (x : int) : int = null\n"
+                        + "def bad5 : any? = null ; def bad6 : any = bad5",
+                "4:15 Type error : expected any, got int | string | null",
+                "6:18 Type error : expected int, got int?",
+                "7:21 Type error : expected string, got int | string | null",
+                "8:18 Type error : expected any, got int?",
+                "9:30 Type error : expected (x : int) : int, got null",
+                "10:43 Type error : expected any, got any?");
+
+        // Reassignment widening: int <-> null notifies earlier uses; incompatible reassignments still fail.
+        assertDiagnostics("def z = 1\n"
+                        + "def u : int = z\n"
+                        + "z = null\n"
+                        + "def n = null\n"
+                        + "n = 1\n"
+                        + "n = 2.5\n"
+                        + "def badD : int = n\n"
+                        + "def s = \"a\"\n"
+                        + "s = 1",
+                "2:15 Type error : expected int, got int? (z is int? because of the assignment at line 3)",
+                "7:18 Type error : expected int, got double?",
+                "9:5 Type error : expected string, got int");
+
+        // Shared members, operator methods, and numeric arithmetic/comparison on unions.
+        assertDiagnostics("def A = class (def tag : string = \"A\", def onlyA = 1) ( def plus = (k : int) : int -> ( k ) )\n"
+                        + "def B = class (def tag : string = \"B\") ( def plus = (k : int) : int -> ( k * 2 ) )\n"
+                        + "def C = class (def tag : string = \"C\") ()\n"
+                        + "def f = (ab : A | B, abc : A | B | C, n : int | double, m : int | string) -> (\n"
+                        + "  def t : string = ab.tag\n"
+                        + "  def p : int = ab + 1\n"
+                        + "  def sum : double = n + 1\n"
+                        + "  def neg : double = -n\n"
+                        + "  def cmp : bool = n < 10\n"
+                        + "  ab.onlyA\n"
+                        + "  abc + 1\n"
+                        + "  m + 1\n"
+                        + "  m < 1\n)",
+                "10:3 No such member : onlyA",
+                "11:3 No such member : plus",
+                "12:3 Not a number : m",
+                "13:3 Not comparable : m and 1");
+
+        // Subtraction narrowing (`else` after `is`), `== null`/`!= null`/truthiness, and invalidation.
+        assertDiagnostics("def N = class (def v : int, def next : N?) ()\n"
+                        + "def f = (x : int | string, y : string?, node : N?) -> (\n"
+                        + "  def ok1 : string = if x is int then ( \"\" + (x + 1) ) else ( x + \"!\" )\n"
+                        + "  def ok2 : string = if y is any then ( y + \"!\" ) else ( \"nil\" )\n"
+                        + "  def ok3 : string = if y == null then ( \"nil\" ) else ( y + \"!\" )\n"
+                        + "  def ok4 : int = if node then ( node.v ) else ( 0 )\n"
+                        + "  def cur : N? = node\n"
+                        + "  while cur != null then ( def val : int = cur.v ; cur = cur.next )\n"
+                        + "  cur.v\n"
+                        + ")\n"
+                        + "def g = (x : string?) -> (\n"
+                        + "  if x != null then (\n"
+                        + "    def fn = () -> ( x + \"!\" )\n"
+                        + "    x = null\n"
+                        + "    x + \"!\"\n"
+                        + "  )\n)",
+                "9:3 Not a scope : cur",
+                "13:22 Not a number : x",
+                "13:26 Not a number : \"!\"",
+                "15:5 Not a number : x",
+                "15:9 Not a number : \"!\"");
+
+        // Casts with unions/nullables and Java overload resolution.
+        assertDiagnostics("def f = (v : any?, n : int?, u : int | string) -> (\n"
+                        + "  def a : int? = v as int?\n"
+                        + "  def b : (int | string) = v as (int | string)\n"
+                        + "  def s : string = java.lang.String.valueOf(u)\n"
+                        + "  java.lang.Math.abs(n)\n"
+                        + "  v as ((k : int) : int)?\n)",
+                "5:3 No applicable overload of java.lang.Math.abs for (int?)",
+                "6:8 Cannot cast to a function type");
+        assertWarnings("def u = 1 as int?\ndef w = 1 as (int | string)",
+                "1:9 Redundant cast : int?",
+                "2:9 Redundant cast : int | string");
     }
 
     @Test

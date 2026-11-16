@@ -228,4 +228,30 @@ public final class ScopeAnalysis {
     public static String functionName(BabbleParser.FunctionLiteralContext function) {
         return definedName(function);
     }
+
+    /**
+     * Unwraps a type that names a single nominal type (with optional grouping parentheses),
+     * or returns {@code null} for unions, nullable types, function types, or {@code null}.
+     */
+    public static BabbleParser.SimpleTypeContext simpleType(BabbleParser.TypeContext type) {
+        while (type != null) {
+            if (type.nullableType().size() != 1) {
+                return null;
+            }
+            BabbleParser.NullableTypeContext nullable = type.nullableType(0);
+            if (nullable.question != null) {
+                return null;
+            }
+            BabbleParser.PrimaryTypeContext primary = nullable.primaryType();
+            if (primary instanceof BabbleParser.SimpleTypeContext simple) {
+                return simple;
+            }
+            if (primary instanceof BabbleParser.ParenTypeContext paren) {
+                type = paren.type();
+            } else {
+                return null;
+            }
+        }
+        return null;
+    }
 }

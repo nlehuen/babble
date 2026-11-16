@@ -12,5 +12,5 @@ export def HitRecord = class (r: Ray, def p: Vec3, def t: double, outwardNormal:
 
 export def Hittable = interface (
     ;; the closest hit of the ray with tmin < t < tmax, or null
-    def hit: (r: Ray, tmin: double, tmax: double): HitRecord
+    def hit: (r: Ray, tmin: double, tmax: double): HitRecord?
 )

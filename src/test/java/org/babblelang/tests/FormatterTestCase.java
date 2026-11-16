@@ -32,6 +32,9 @@ public class FormatterTestCase {
         assertFormats("def x = a + b as int == 1\n", "def x=a+b   as  int==1");
         assertFormats("def f = x as (a: int, b: string): bool\n", "def f = x as(a:int,b:string):bool");
         assertFormats("x is int and y is string\n", "x  is  int  and  y  is  string");
+        assertFormats("def x: int | string?\ndef y: (int | string)? = null\ndef z: ((n: int): int)? = (n: int): int -> (n)\n",
+                "def x:int|string ?\ndef y:(int|string)?=null\ndef z:((n:int):int)?=(n:int):int->(n)");
+        assertFormats("def n: null = null\n", "def  n : null = null");
         assertFormats("return (a)\n", "return(a)");
     }
 

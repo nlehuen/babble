@@ -430,4 +430,30 @@ public class BabbleCompilerTestCase {
         Assertions.assertEquals(7, cast.eval(new SimpleBindings()));
     }
 
+    @Test
+    public void testP6aUnionsAndNullablesCompileCleanly() throws Exception {
+        CompiledBabbleScript verified = compile(
+                "def f = (x : int | string?, flag : bool) : double? -> (\n"
+                        + "  if x is int then ( x ) else if flag then ( 2.5 ) else ( null )\n"
+                        + ")\n"
+                        + "def cb : ((n : int) : int)? = null\n"
+                        + "def r1 = f(3, false)\n"
+                        + "def r2 = f(\"a\", true)\n"
+                        + "def r3 = f(null, false)\n"
+                        + "if cb != null then ( cb(1) )\n"
+                        + "\"\" + classof(r1) + \":\" + r1 + \":\" + r2 + \":\" + r3");
+        assertVerifies(verified);
+        Assertions.assertEquals(List.of(), typesCalls(verified));
+        Assertions.assertEquals("java.lang.Double:3.0:2.5:null", verified.eval(new SimpleBindings()));
+
+        CompiledBabbleScript checked = compile(
+                "def id = (v : any?) : any? -> ( v )\n"
+                        + "def n = id(5) as int?\n"
+                        + "def u = id(\"hi\") as (int | string)\n"
+                        + "\"\" + n + \":\" + u");
+        assertVerifies(checked);
+        Assertions.assertTrue(typesCalls(checked).stream().anyMatch(c -> c.endsWith("->check")), typesCalls(checked).toString());
+        Assertions.assertEquals("5:hi", checked.eval(new SimpleBindings()));
+    }
+
 }

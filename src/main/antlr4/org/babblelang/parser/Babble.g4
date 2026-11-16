@@ -80,9 +80,15 @@ callParameter: (ID ':')? expression;
 
 typeList: type (NL* ',' NL* type)*;
 
-type: ID ('.' ID)*                           # simpleType
-    | parametersDeclaration ( ':' type | )   # functionType
-    ;
+type: nullableType ('|' NL* nullableType)*;
+
+nullableType: primaryType question='?'?;
+
+primaryType: ID ('.' ID)*                           # simpleType
+           | parametersDeclaration ( ':' type | )   # functionType
+           | NULL                                   # nullType
+           | '(' NL* type NL* ')'                   # parenType
+           ;
 
 // Tokens
 INT: [0-9]+;
@@ -107,6 +113,8 @@ MUL_ASSIGN: '*=';
 DIV_ASSIGN: '/=';
 DOT: '.';
 ARROW: '->';
+PIPE: '|';
+QUESTION: '?';
 LPAREN: '(';
 RPAREN: ')';
 COMMA: ',';

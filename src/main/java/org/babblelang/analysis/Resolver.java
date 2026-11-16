@@ -70,7 +70,7 @@ final class Resolver {
     }
 
     private static String firstName(BabbleParser.TypeContext type) {
-        return ((BabbleParser.SimpleTypeContext) type).ID(0).getText();
+        return ScopeAnalysis.simpleType(type).ID(0).getText();
     }
 
     // ---------------------------------------------------------------- representation

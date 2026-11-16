@@ -3,5 +3,10 @@
 def parity = import("parity.ba")
 def odd = import("odd.ba")
 
-export def isEven = (n: int): bool -> (if n == 0 then (true) else (parity.state.odd(n - 1)))
+export def isEven = (n: int): bool -> (
+    if n == 0 then (true) else (
+        def f = parity.state.odd
+        if f != null then (f(n - 1)) else (false)
+    )
+)
 parity.state.even = isEven

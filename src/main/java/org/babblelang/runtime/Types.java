@@ -26,7 +26,7 @@ public final class Types {
     }
 
     /** A declared type, ready to check values against. */
-    public abstract static sealed class Type permits Builtin, FunctionType, JavaClassType, NominalType {
+    public abstract static sealed class Type permits Builtin, FunctionType, JavaClassType, NominalType, NullType, AnyType, UnionType {
         private final String display;
 
         Type(String display) {
@@ -57,11 +57,7 @@ public final class Types {
 
         @Override
         boolean accepts(Object value) {
-            // T2 : numbers and booleans are never null, strings may be.
-            if (value == null) {
-                return javaClass == String.class;
-            }
-            return javaClass.isInstance(value) || javaClass == Double.class && value instanceof Integer;
+            return value != null && (javaClass.isInstance(value) || javaClass == Double.class && value instanceof Integer);
         }
 
         @Override
@@ -77,7 +73,7 @@ public final class Types {
 
         @Override
         boolean accepts(Object value) {
-            return value == null || value instanceof Callable;
+            return value instanceof Callable;
         }
     }
 
@@ -92,9 +88,9 @@ public final class Types {
         @Override
         boolean accepts(Object value) {
             Object java = value instanceof JavaValue wrapper ? wrapper.javaValue() : value;
-            return java == null || javaClass.isInstance(java)
+            return java != null && (javaClass.isInstance(java)
                     || java instanceof BabbleInstance instance && instance.babbleClass().isJava(javaClass)
-                    || Values.isBabbleCallable(java) && JavaTypes.isFunctionalInterface(javaClass);
+                    || Values.isBabbleCallable(java) && JavaTypes.isFunctionalInterface(javaClass));
         }
     }
 
@@ -108,26 +104,129 @@ public final class Types {
 
         @Override
         boolean accepts(Object value) {
-            return value == null || value instanceof BabbleInstance instance && instance.babbleClass().conformsTo(id);
+            return value instanceof BabbleInstance instance && instance.babbleClass().conformsTo(id);
         }
+    }
+
+    static final class NullType extends Type {
+        NullType(String display) {
+            super(display);
+        }
+
+        @Override
+        boolean accepts(Object value) {
+            return value == null;
+        }
+    }
+
+    static final class AnyType extends Type {
+        AnyType(String display) {
+            super(display);
+        }
+
+        @Override
+        boolean accepts(Object value) {
+            return value != null;
+        }
+    }
+
+    static final class UnionType extends Type {
+        private final Type[] members;
+
+        UnionType(String display, Type[] members) {
+            super(display);
+            this.members = members;
+        }
+
+        @Override
+        boolean accepts(Object value) {
+            for (Type member : members) {
+                if (member.accepts(value)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        Object convert(Object value) {
+            Type fallback = null;
+            for (Type member : members) {
+                if (member.accepts(value)) {
+                    Object converted = member.convert(value);
+                    if (converted == value) {
+                        return converted;
+                    }
+                    if (fallback == null) {
+                        fallback = member;
+                    }
+                }
+            }
+            return fallback != null ? fallback.convert(value) : value;
+        }
+    }
+
+    /** Encodes a sub-descriptor so it contains neither {@code ','} nor {@code '|'}. */
+    public static String encodeComponent(String component) {
+        return component.replace("%", "%25").replace(",", "%2C").replace("|", "%7C");
+    }
+
+    private static String decodeComponent(String component) {
+        StringBuilder result = new StringBuilder(component.length());
+        for (int i = 0; i < component.length(); i++) {
+            char c = component.charAt(i);
+            if (c == '%' && i + 2 < component.length()) {
+                String hex = component.substring(i + 1, i + 3);
+                switch (hex) {
+                    case "25" -> { result.append('%'); i += 2; continue; }
+                    case "2C" -> { result.append(','); i += 2; continue; }
+                    case "7C" -> { result.append('|'); i += 2; continue; }
+                    default -> {}
+                }
+            }
+            result.append(c);
+        }
+        return result.toString();
     }
 
     /** The type a descriptor describes, parsed once. */
     public static Type parse(String descriptor) {
-        return PARSED.computeIfAbsent(descriptor, Types::doParse);
+        Type cached = PARSED.get(descriptor);
+        if (cached != null) {
+            return cached;
+        }
+        Type parsed = doParse(descriptor);
+        Type existing = PARSED.putIfAbsent(descriptor, parsed);
+        return existing != null ? existing : parsed;
     }
 
     private static Type doParse(String descriptor) {
-        String[] parts = descriptor.split("\\|", 3);
-        String display = parts[1];
-        return switch (parts[0]) {
+        int first = descriptor.indexOf('|');
+        int last = descriptor.lastIndexOf('|');
+        if (first < 0 || first == last) {
+            throw new IllegalArgumentException("Bad type descriptor : " + descriptor);
+        }
+        String kind = descriptor.substring(0, first);
+        String display = descriptor.substring(first + 1, last);
+        String payload = descriptor.substring(last + 1);
+        return switch (kind) {
             case "int" -> new Builtin(display, Integer.class);
             case "double" -> new Builtin(display, Double.class);
             case "bool" -> new Builtin(display, Boolean.class);
             case "string" -> new Builtin(display, String.class);
+            case "null" -> new NullType(display);
+            case "any" -> new AnyType(display);
             case "fn" -> new FunctionType(display);
-            case "java" -> new JavaClassType(display, javaClass(parts[2]));
-            case "babble" -> new NominalType(display, parts[2]);
+            case "java" -> new JavaClassType(display, javaClass(payload));
+            case "babble" -> new NominalType(display, payload);
+            case "union" -> {
+                String[] encoded = payload.split(",", -1);
+                Type[] members = new Type[encoded.length];
+                for (int i = 0; i < encoded.length; i++) {
+                    members[i] = parse(decodeComponent(encoded[i]));
+                }
+                yield new UnionType(display, members);
+            }
             default -> throw new IllegalArgumentException("Bad type descriptor : " + descriptor);
         };
     }

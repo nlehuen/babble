@@ -1,6 +1,6 @@
 ;; Shared typed holder so cyclic even/odd modules need not read each other's exports before typing finishes.
 export def state = object (
-    def even: (n: int): bool = null
-    def odd: (n: int): bool = null
+    def even: ((n: int): bool)? = null
+    def odd: ((n: int): bool)? = null
 )
 null

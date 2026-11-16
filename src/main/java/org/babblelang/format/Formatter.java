@@ -200,7 +200,7 @@ public final class Formatter {
             return SEPARATES;
         }
         if (parent instanceof BabbleParser.ParametersDeclarationContext || parent instanceof BabbleParser.CallParametersContext
-                || parent instanceof BabbleParser.SuperExpressionContext) {
+                || parent instanceof BabbleParser.SuperExpressionContext || parent instanceof BabbleParser.ParenTypeContext) {
             return IN_LIST;
         }
         // In these, a newline can only come before a block, "else" or "static".
@@ -379,6 +379,7 @@ public final class Formatter {
         int type = token.getType();
         if (before.getType() == OPEN || type == CLOSE || type == BabbleLexer.COMMA || type == BabbleLexer.SEMICOLON
                 || type == BabbleLexer.COLON || type == BabbleLexer.DOT || before.getType() == BabbleLexer.DOT
+                || type == BabbleLexer.QUESTION
                 || before.getType() == BabbleLexer.MINUS && unaryMinus[before.getTokenIndex()] && type != BabbleLexer.MINUS) {
             return false;
         }

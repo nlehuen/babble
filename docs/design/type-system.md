@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [static-typing.md](static-typing.md) (P1–P5 implemented) ; runtime checks remain only at `as` casts, Java boundaries, and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
+| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [static-typing.md](static-typing.md) (P1–P6a implemented : strict checking, union types `A | B`, nullable types `T?`) ; runtime checks remain only at `as` casts, Java boundaries, and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
 | **Depends on** | [bytecode-compiler.md](bytecode-compiler.md) §10 (where the checker sits, the T1–T9 agenda), [object-model.md](object-model.md) §8 (classes and interfaces are types) |
 | **Unblocks** | Typed code generation (bytecode-compiler.md §10.5) |
-| **Replaced by** | [static-typing.md](static-typing.md) (P1–P5 implemented : `any`, `as`, required annotations, strict checking, T9 checks removed internally). |
+| **Replaced by** | [static-typing.md](static-typing.md) (P1–P6a implemented : `any` / `any?`, unions, `T?`, `as`, required annotations, strict checking, T9 checks removed internally). |
 
 ## 1. Summary
 
@@ -147,15 +147,15 @@ The value of an `if` is the join of its branches: the same type, `double` for `i
 `double`, a nullable type for `null` and that type, and `dynamic` otherwise. A `while` loop's
 value is the join of its body's value and `null`.
 
-## 5. Runtime checks (T9, updated in P5)
+## 5. Runtime checks (T9, updated in P5–P6a)
 
-With strict static typing (`static-typing.md` P1–P5), `Types.check` is no longer emitted at
+With strict static typing (`static-typing.md` P1–P6a), `Types.check` is no longer emitted at
 Babble-to-Babble parameter, return, `def`, or assignment boundaries : the static checker proves
-those types, and `int`→`double` widening uses `Values.toDouble` where `widensToDouble` marks a
-widening point.
+those types, and `int`→`double`/`double?` widening uses `Values.toDouble` where `widensToDouble`
+marks a widening point.
 
 * **Where runtime checks remain.**
-  - Explicit `as` casts (`Types.check` with the target descriptor from `ScopeAnalysis.checkedType`).
+  - Explicit `as` casts (`Types.check` with the target descriptor from `ScopeAnalysis.checkedType`, including union, `null`, `any`, and non-nullable checks).
   - Values exiting Java that map a boxed primitive (`Integer`, `Double`, `Boolean`) to a
     non-nullable Babble primitive (`JavaTypes.checkBoxed` in `JavaMethod`, `JavaLinker`,
     `JavaClass`, and `JavaDefaultCall`), which reject `null` with
@@ -172,7 +172,7 @@ The in-repo scripts pass type checking and run with these checks enforced (`Diff
 
 ## 6. Not done yet
 
-* **Generics**, union type syntax, and structural object types.
+* **Generics** (P6b) and structural object types.
 * **Interface members' declared types** against the implementing methods' signatures.
 * **Types for the compiler.** The checker keeps a type per expression, but doesn't publish it yet
   for typed code generation (bytecode-compiler.md §10.5).
