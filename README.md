@@ -388,9 +388,6 @@ def half = (n: int): double -> ( n / 2 )
 half(id("4") as int)   ;; Type error : expected int, got string, at line number 3
 ```
 
-Strict checking is enabled with `-Dbabble.typing=strict` (or `engine.put("babble.typing", "strict")`)
-while the default transitions from `gradual` mode (see the [design doc](docs/design/static-typing.md)).
-
 ### Interactive mode
 
 `java -jar target/babble-1.0-SNAPSHOT.jar` reads an input, evaluates it, prints its value, and
@@ -614,7 +611,7 @@ Language features :
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java interfaces.
-- [x] static and gradual type checking : bidirectional local inference of bindings, members, function results, lambda parameters, and flow-sensitive narrowing after `is` (including built-in types); checked `as` casts and sound top type `any`; runtime checks at type boundaries; strict checking available via `-Dbabble.typing=strict` while `gradual` remains the default during migration (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
+- [x] static type checking : required annotations on uninferred parameters, bidirectional local inference of bindings, members, function results, and lambda parameters, flow-sensitive narrowing after `is` (including built-in types), checked `as` casts and sound top type `any`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
 
 Implementation features :

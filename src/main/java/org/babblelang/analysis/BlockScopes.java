@@ -72,7 +72,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     /** The interactive session the file is an input of, or null. */
     final AnalysisSession session;
-    final boolean strict;
     final Map<BabbleParser.SuperExpressionContext, TypeChecks.Provider> superProviders = new HashMap<>();
     TypeChecker checker;
     ScopeNode fileScope;
@@ -85,9 +84,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     /** How many types of each name the module has so far, for their ids. */
     private final Map<String, Integer> typeNames = new HashMap<>();
 
-    private BlockScopes(AnalysisSession session, boolean strict) {
+    private BlockScopes(AnalysisSession session) {
         this.session = session;
-        this.strict = strict;
         if (session != null) {
             // What earlier inputs defined is found like what the file defines.
             typeNodes.putAll(session.typeNodes);
@@ -103,17 +101,13 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return analyze(file, null);
     }
 
-    public static ScopeAnalysis analyze(BabbleParser.FileContext file, boolean strict) {
-        return analyze(file, null, null, strict);
-    }
-
     /**
      * @param session the interactive session the file is an input of, whose earlier inputs
      *                it sees the definitions of, or null. The session only changes when
      *                the result is {@link AnalysisSession#commit committed}.
      */
     public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session) {
-        return analyze(file, session, null, false);
+        return analyze(file, session, null);
     }
 
     /**
@@ -121,11 +115,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
      *               every import to runtime
      */
     public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session, ModuleLoader loader) {
-        return analyze(file, session, loader, false);
-    }
-
-    public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session, ModuleLoader loader, boolean strict) {
-        BlockScopes pass = new BlockScopes(session, strict);
+        BlockScopes pass = new BlockScopes(session);
         pass.moduleKey = loader != null ? loader.moduleKey() : null;
         pass.analysis.setPass(pass);
         pass.fileScope = pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));

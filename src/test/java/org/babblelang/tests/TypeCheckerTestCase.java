@@ -58,15 +58,28 @@ public class TypeCheckerTestCase {
     @ParameterizedTest(name = "{0}")
     @MethodSource("scripts")
     public void testTheScriptsCheckCleanly(String file) throws Exception {
-        assertDiagnostics(Files.readString(Path.of(file)));
+        Path path = Path.of(file).toAbsolutePath().normalize();
+        StringWriter errors = new StringWriter();
+        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.MODULE_SOURCE, org.babblelang.engine.FileModuleSource.rooted(path.getParent()));
+        engine.getContext().setErrorWriter(errors);
+        engine.getContext().setWriter(new StringWriter());
+        engine.getContext().setAttribute(ScriptEngine.FILENAME, path.toString(), ScriptContext.ENGINE_SCOPE);
+        engine.compile(Files.readString(path));
+        Assertions.assertEquals("", errors.toString(), file);
     }
 
     @Test
-    public void testUnannotatedCodeIsNeverReported() {
-        // Gradual typing : everything here is dynamic, wrong or not.
-        assertDiagnostics("def f = (a, b) -> ( a + b ) ; f(1, 2) ; f(\"x\", 2)\n"
-                + "def g = (x) -> ( x.foo(1) ) ; g(1)\n"
-                + "def i = 0 ; i = i + 1 ; i.y ; def n = null ; n + 1");
+    public void testUnannotatedParametersRequireTypes() {
+        assertDiagnostics("def f = (a, b) -> ( a + b )\n"
+                        + "def g = (x) -> ( x.foo(1) )\n"
+                        + "def i = 0 ; i = i + 1 ; i.y\n"
+                        + "def n = null",
+                "1:10 Missing type : a",
+                "1:13 Missing type : b",
+                "2:10 Missing type : x",
+                "3:25 Not a scope : i",
+                "4:1 Missing type : n");
     }
 
     @Test
@@ -121,8 +134,9 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testResultsOfBranchesAndRecursion() {
-        // if without else may be null : joined with int, nothing is known.
-        assertDiagnostics("def k = (n : int) : int -> ( if n > 0 then ( n ) )");
+        // if without else may be null : incompatible with int.
+        assertDiagnostics("def k = (n : int) : int -> ( if n > 0 then ( n ) )",
+                "1:30 Type error : expected int, got null");
         assertDiagnostics("def fac = (n : int) : int -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )\ndef s : string = fac(3)",
                 "2:18 Type error : expected string, got int");
         assertDiagnostics("def f = (n : int) : string -> ( if n < 2 then ( \"a\" ) else ( recurse(\"x\") ) )",
@@ -131,14 +145,19 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testInference() {
-        // T8 : a def never reassigned has its value's type.
+        // T8 : a def has its initial value's type.
         assertDiagnostics("def n = 1\ndef s : string = n\ndef f = (a : int) : int -> ( a )\ndef g = f\ng(\"x\")",
                 "2:18 Type error : expected string, got int",
                 "5:3 Type error : expected int, got string");
-        // An unannotated function still has a known parameter list : its arity is checked, not its types.
-        assertDiagnostics("def u = (a, b) -> ( a )\nu(1)\nu(\"x\", null)", "2:1 Missing parameter : b");
-        // Reassigned, or initialised with null : dynamic.
-        assertDiagnostics("def n = 1\nn = \"x\"\ndef s : string = n\ndef m = null\ndef t : int = m");
+        assertDiagnostics("def u = (a, b) -> ( a )\nu(1)\nu(\"x\", null)",
+                "1:10 Missing type : a",
+                "1:13 Missing type : b",
+                "2:1 Missing parameter : b");
+        assertDiagnostics("def n = 1\nn = \"x\"\ndef s : string = n\ndef m = null\ndef t : int = m",
+                "2:5 Type error : expected int, got string",
+                "3:18 Type error : expected string, got int",
+                "4:1 Missing type : m",
+                "5:15 Type error : expected int, got null");
     }
 
     @Test
@@ -160,7 +179,7 @@ public class TypeCheckerTestCase {
                 "1:54 Type error : expected int, got double",
                 "4:8 Not a number : \"x\"",
                 "5:1 No such member : q");
-        assertDiagnostics("def V = value class (x) ( def plus = (o : V) : V -> ( V(this.x + o.x) ) )\ndef v : V = V(1)\nv += V(2)\nv += 1\nv -= V(1)",
+        assertDiagnostics("def V = value class (x : int) ( def plus = (o : V) : V -> ( V(this.x + o.x) ) )\ndef v : V = V(1)\nv += V(2)\nv += 1\nv -= V(1)",
                 "4:6 Type error : expected V, got int",
                 "5:1 No such member : minus");
     }
@@ -210,17 +229,20 @@ public class TypeCheckerTestCase {
                         + "a + 1\n"
                         + "a * a\n"
                         + "a - a\n"
-                        + "def P = class () ( def plus = (p, q) -> ( p ) ; def times = 3 )\n"
+                        + "def P = class () ( def plus = (p : int, q : int) -> ( p ) ; def times = 3 )\n"
                         + "P() + 1\n"
-                        + "P() * 2\n" // an unannotated member is dynamic : found when it runs
+                        + "P() * 2\n"
                         + "-P()\n"
-                        + "def d = (x) -> ( x - a )",
+                        + "def d = (x : any) -> ( x - a )",
                 "4:18 Type error : expected double, got V",
                 "5:5 Type error : expected V, got int",
                 "6:5 Type error : expected double, got V",
                 "7:1 No such member : minus",
                 "9:1 Missing parameter : q",
-                "11:1 No such member : neg");
+                "10:1 P().times is not callable",
+                "11:1 No such member : neg",
+                "12:24 Not a number : x",
+                "12:28 Not a number : a");
     }
 
     @Test
@@ -232,11 +254,12 @@ public class TypeCheckerTestCase {
                         + "def e : int = -a * 2\n"
                         + "def f = (n : int) : string -> ( if n < 0 then (\"-\") else if n == 0 then (\"0\") else (\"+\") )\n"
                         + "def g = (n : int) : string -> ( if n < 0 then (\"-\") else if n == 0 then (0) else (\"+\") )\n"
-                        + "def h = (v) -> ( if v is java.lang.Integer then (v + 1) else if v is java.lang.String then (v.nope) else (0) )",
+                        + "def h = (v : any) -> ( if v is java.lang.Integer then (v + 1) else if v is java.lang.String then (v.nope) else (0) )",
                 "3:15 Type error : expected int, got double",
                 "4:10 Not a number : \"s\"",
+                "7:73 Type error : expected string, got int",
                 // Narrowed through "else if" : a string has no members.
-                "8:93 Not a scope : v");
+                "8:99 Not a scope : v");
     }
 
     @Test
@@ -247,12 +270,12 @@ public class TypeCheckerTestCase {
                         + "java.lang.Runtime.getRuntime().nope()\n"
                         + "java.lang.StringBuilder().append(\"a\").nope\n"
                         + "java.lang.Math.NOPE\n"
-                        // An interface's results stay dynamic : a Babble instance may come back as itself.
                         + "java.util.List.of(1).iterator().nope",
                 "2:17 Type error : expected int, got double",
                 "4:1 No such name in java.lang.Runtime : nope",
                 "5:1 No such name in java.lang.StringBuilder : nope",
-                "6:1 No such name in java.lang.Math : NOPE");
+                "6:1 No such name in java.lang.Math : NOPE",
+                "7:1 No such name in java.util.Iterator : nope");
     }
 
     @Test
@@ -278,12 +301,13 @@ public class TypeCheckerTestCase {
     @Test
     public void testInterfacesAreNominal() {
         String shape = "def Shape = interface ( def area : () : double ; def describe = () : string -> ( \"area \" + this.area() ) )\n"
-                + "def Sq = class (def s) implements Shape ( def area = () -> ( 1.0 * this.s * this.s ) )\n";
+                + "def Sq = class (def s : double) implements Shape ( def area = () -> ( 1.0 * this.s * this.s ) )\n";
         assertDiagnostics(shape + "def f = (x : Shape) : string -> ( x.describe() )\nf(Sq(2))\nf(1)\nf(object ())\nf(null)",
                 "5:3 Type error : expected Shape, got int",
                 "6:3 Type error : expected Shape, got object");
         assertDiagnostics(shape + "def g = (x : Shape) -> ( x.nope )\ndef h : int = Sq(1).area()\ndef k : string = Sq(1).describe()",
-                "3:26 No such member : nope");
+                "3:26 No such member : nope",
+                "4:15 Type error : expected int, got double");
         assertDiagnostics(shape + "def i : Sq = Sq(1)\ndef j : Shape = i\ndef k : Sq = j",
                 "5:14 Type error : expected Sq, got Shape");
     }
@@ -300,6 +324,8 @@ public class TypeCheckerTestCase {
         String apply = "def apply = (f : (x : int) : int, v : int) : int -> ( f(v) )\n";
         assertDiagnostics(apply + "apply((y) -> ( y ), 1)\napply((y, z = 2) -> ( y ), 1)\napply((a, b) -> ( a ), 1)\napply(1, 2)\napply((s : string) -> ( 1 ), 1)",
                 "4:7 Type error : expected (x : int) : int, got (a, b)",
+                "4:8 Missing type : a",
+                "4:11 Missing type : b",
                 "5:7 Type error : expected (x : int) : int, got int",
                 "6:7 Type error : expected (x : int) : int, got (s : string) : int");
     }
@@ -313,6 +339,7 @@ public class TypeCheckerTestCase {
                         + "def nullable = (n : int) -> ( if n > 0 then ( \"a\" ) else ( null ) )\n"
                         + "def mixed = (n : int) -> ( if n > 0 then ( 1 ) else ( \"a\" ) )\n"
                         + "def a : string = same(1)\ndef b : int = widen(1)\ndef c : int = nullable(1)\ndef d : int = mixed(1)",
+                "4:28 Type error : the branches of if have different types : int and string",
                 "5:18 Type error : expected string, got int",
                 "6:15 Type error : expected int, got double",
                 "7:15 Type error : expected int, got string");
@@ -320,15 +347,19 @@ public class TypeCheckerTestCase {
                         + "def r2 = (n : int) -> ( if n > 0 then ( return 1 ) else ( return 2 ) )\n"
                         + "def r3 = (n : int) -> ( if n > 0 then ( return 1 ) ; \"s\" )\n"
                         + "def a : string = r1(1)\ndef b : string = r2(1)\ndef c : int = r3(1)",
+                "3:41 Type error : incompatible return types : string and int",
                 "4:18 Type error : expected string, got int",
                 "5:18 Type error : expected string, got int");
-        // Empty and null-returning functions infer dynamic (T8).
-        assertDiagnostics("def e = () -> ()\ndef n = () -> ( null )\ndef a : int = e()\ndef b : int = n()");
+        // Empty and null-returning functions infer null return type.
+        assertDiagnostics("def e = () -> ()\ndef n = () -> ( null )\ndef a : int = e()\ndef b : int = n()",
+                "3:15 Type error : expected int, got null",
+                "4:15 Type error : expected int, got null");
         // Self-recursive functions infer when parameter types determine the body type.
         assertDiagnostics("def fac = (n : int) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )\n"
                         + "def sum = (n : int) -> ( if n < 1 then ( 0 ) else ( n + sum(n - 1) ) )\n"
                         + "def dyn = (n) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )\n"
                         + "def a : string = fac(5)\ndef b : string = sum(5)\ndef c : string = dyn(5)",
+                "3:12 Missing type : n",
                 "4:18 Type error : expected string, got int",
                 "5:18 Type error : expected string, got int");
     }
@@ -369,7 +400,7 @@ public class TypeCheckerTestCase {
     @Test
     public void testIsTypeNarrowing() {
         assertDiagnostics("def Point = class (def x : int) ()\n"
-                        + "def f = (p) -> (\n"
+                        + "def f = (p : any) -> (\n"
                         + "  def a : string = if p is Point then ( p.x ) else ( 0 )\n"
                         + "  def b = if not (p is Point) then ( 0 ) else ( p.x )\n"
                         + "  def c = if p is Point then ( p.nope )\n"
@@ -380,17 +411,18 @@ public class TypeCheckerTestCase {
                         + "  def i = not (p is Point) or p.nope > 0\n"
                         + "  while p is Point then ( p.nope )\n"
                         + "  b\n)",
-                "3:20 Type error : expected string, got int",
+                "3:39 Type error : expected string, got int",
+                "3:52 Type error : expected string, got int",
                 "5:32 No such member : nope",
                 "6:49 No such member : nope",
                 "8:26 No such member : nope",
                 "10:31 No such member : nope",
                 "11:27 No such member : nope");
         assertDiagnostics("def Point = class (def x : int) ()\n"
-                        + "def getX = (p) -> (\n  if not (p is Point) then ( return 0 )\n  p.x\n)\n"
+                        + "def getX = (p : any) -> (\n  if not (p is Point) then ( return 0 )\n  p.x\n)\n"
                         + "def s : string = getX(null)\n"
-                        + "def bad = (p) -> (\n  if not (p is Point) then ( return 0 )\n  p.nope\n)\n"
-                        + "def pos = (p) -> (\n  if p is Point then ( 0 ) else ( return 1 )\n  p.nope\n)",
+                        + "def bad = (p : any) -> (\n  if not (p is Point) then ( return 0 )\n  p.nope\n)\n"
+                        + "def pos = (p : any) -> (\n  if p is Point then ( 0 ) else ( return 1 )\n  p.nope\n)",
                 "6:18 Type error : expected string, got int",
                 "9:3 No such member : nope",
                 "13:3 No such member : nope");
@@ -403,14 +435,16 @@ public class TypeCheckerTestCase {
                 "4:38 Type error : expected string, got int",
                 "4:47 No such member : nope",
                 "8:18 Type error : expected string, got int");
-        assertDiagnostics("def fn = (x) -> (\n"
+        assertDiagnostics("def fn = (x : any) -> (\n"
                         + "  def a : string = if x is java.lang.Integer then ( x + 1 ) else ( 0 )\n"
                         + "  if x is java.lang.Integer then ( x.nope )\n"
                         + "  if x is java.util.List then ( x.nope() )\n)\n"
-                        + "def r = 1\nr = \"a\"\nif r is java.lang.Integer then ( r.nope )",
-                "2:20 Type error : expected string, got int",
+                        + "def r : any = 1\nr = \"a\"\nif r is java.lang.Integer then ( r.nope )",
+                "2:51 Type error : expected string, got int",
+                "2:66 Type error : expected string, got int",
                 "3:36 Not a scope : x",
-                "4:33 No such name in java.util.List : nope");
+                "4:33 No such name in java.util.List : nope",
+                "8:34 Not a scope : r");
     }
 
     @Test
@@ -423,7 +457,7 @@ public class TypeCheckerTestCase {
                 "6:1 No such name in java.lang.Math : nope",
                 "8:25 Type error : expected java.util.Map, got java.util.ArrayList");
         // Babble functions convert to functional interfaces, and classes implement Java interfaces.
-        assertDiagnostics("def l = java.util.ArrayList()\nl.removeIf((v) -> ( v > 2 ))\n"
+        assertDiagnostics("def l = java.util.ArrayList()\nl.removeIf((v) -> ( v is int and v > 2 ))\n"
                 + "def R = class () implements java.lang.Runnable ( def run = () -> ( null ) )\njava.lang.Thread(R())\ndef r : java.lang.Runnable = R()\n"
                 + "def P = class () ()\njava.lang.Thread(P())",
                 "7:1 No applicable overload of java.lang.Thread for (P)");
@@ -611,27 +645,11 @@ public class TypeCheckerTestCase {
                 "4:19 Type error : expected string, got double");
     }
 
-    // ---------------------------------------------------------------- strict mode (P2, docs/design/static-typing.md)
-
-    private static ScopeAnalysis analyzeStrict(String source, org.babblelang.analysis.AnalysisSession session,
-                                               org.babblelang.analysis.ModuleLoader loader) {
-        BabbleParser parser = new BabbleParser(new CommonTokenStream(new BabbleLexer(CharStreams.fromString(source))));
-        parser.setErrorHandler(new BailErrorStrategy());
-        return BlockScopes.analyze(parser.file(), session, loader, true);
-    }
-
-    private static List<String> strictDiagnostics(String source) {
-        ScopeAnalysis analysis = analyzeStrict(source, null, null);
-        return analysis.typeDiagnostics().stream().map(w -> w.line() + ":" + w.column() + " " + w.message()).toList();
-    }
-
-    private static void assertStrictDiagnostics(String source, String... expected) {
-        Assertions.assertEquals(List.of(expected), strictDiagnostics(source), source);
-    }
+    // ---------------------------------------------------------------- static typing rules (docs/design/static-typing.md)
 
     @Test
     public void testStrictS1UnannotatedParametersAndDefaults() {
-        assertStrictDiagnostics("def f = (a, b) -> ( a )\n"
+        assertDiagnostics("def f = (a, b) -> ( a )\n"
                 + "def g = (sep = \",\", n = 1, bad = null) -> ( sep + n )\n"
                 + "def h = (a : (x) : int) -> ( 1 )\n"
                 + "def s : string = g(1)",
@@ -641,7 +659,7 @@ public class TypeCheckerTestCase {
                 "3:15 Missing type : x",
                 "4:20 Type error : expected string, got int");
         // Default values are checked against declared parameter types, and contextual types fill omitted parameter types.
-        assertStrictDiagnostics("def apply = (f : (x : int) : int, v : int) : int -> ( f(v) )\n"
+        assertDiagnostics("def apply = (f : (x : int) : int, v : int) : int -> ( f(v) )\n"
                 + "def a : int = apply((y) -> ( y + 1 ), 2)\n"
                 + "def ok = (sep : string = \"a\", x : int = 1) -> ( sep + x )\n"
                 + "def bad = (x : int = \"nope\") -> ( x )\n"
@@ -652,7 +670,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS2MembersAndClassHeaders() {
-        assertStrictDiagnostics("def C = class (x, y = 1, def z = \"a\") (\n"
+        assertDiagnostics("def C = class (x, y = 1, def z = \"a\") (\n"
                 + "  def m = null\n"
                 + "  def n\n"
                 + "  def ok = null\n"
@@ -680,7 +698,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS3S4DefInferenceAndWidening() {
-        assertStrictDiagnostics("def empty\n"
+        assertDiagnostics("def empty\n"
                 + "def nulled = null\n"
                 + "def m = null\n"
                 + "m = \"ok\"\n"
@@ -696,7 +714,7 @@ public class TypeCheckerTestCase {
                 "8:1 Missing type : badNull",
                 "9:11 Type error : expected null, got int");
         // Widening int -> double across later assignments notifies earlier uses with the widening line.
-        assertStrictDiagnostics("def i = 1\n"
+        assertDiagnostics("def i = 1\n"
                 + "def use : int = i\n"
                 + "i = 1.5\n"
                 + "def j = 10\n"
@@ -714,7 +732,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS5IfWhileAndReturns() {
-        assertStrictDiagnostics("def c = true\n"
+        assertDiagnostics("def c = true\n"
                 + "if c then ( 1 ) else ( \"a\" )\n"
                 + "while c then ( 1 )\n"
                 + "def a : any = if c then ( 1 ) else ( \"a\" )\n"
@@ -730,7 +748,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS6JavaObjectInterfacesArraysInaccessible() {
-        assertStrictDiagnostics("def l = java.util.List.of(1, 2)\n"
+        assertDiagnostics("def l = java.util.List.of(1, 2)\n"
                 + "l.get(0).nope\n"
                 + "def s : string = l.get(0) as string\n"
                 + "def it = l.iterator()\n"
@@ -751,7 +769,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS7OverloadAmbiguity() {
-        assertStrictDiagnostics("def sb = java.lang.StringBuilder()\n"
+        assertDiagnostics("def sb = java.lang.StringBuilder()\n"
                 + "sb.append(null)\n"
                 + "def n : int = java.lang.Math.abs(1)",
                 "2:1 Ambiguous call to java.lang.StringBuilder.append for (null)");
@@ -759,7 +777,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS8S11ImplicitsBindingsAndDynamicImports() {
-        assertStrictDiagnostics("println(\"a\", 1, to: STDOUT)\n"
+        assertDiagnostics("println(\"a\", 1, to: STDOUT)\n"
                 + "println(1, to: \"bad\")\n"
                 + "def ok : bool = assert(true, 123)\n"
                 + "assert(1)\n"
@@ -782,7 +800,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS9Super() {
-        assertStrictDiagnostics("def I = interface ( def area : () : double ; def describe = () : string -> ( \"area=\" + this.area() ) )\n"
+        assertDiagnostics("def I = interface ( def area : () : double ; def describe = () : string -> ( \"area=\" + this.area() ) )\n"
                 + "def C = class () implements I (\n"
                 + "  def area = () -> ( 1.0 )\n"
                 + "  def describe = () : string -> ( super.describe() )\n"
@@ -795,7 +813,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS10RecursionAndImportCycles() throws Exception {
-        assertStrictDiagnostics("def even = (n : int) -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
+        assertDiagnostics("def even = (n : int) -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
                 + "def odd = (n : int) -> ( if n == 0 then ( false ) else ( even(n - 1) ) )\n"
                 + "def inf = (n : int) -> ( recurse(n - 1) )\n"
                 + "def fac = (n : int) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )",
@@ -808,7 +826,6 @@ public class TypeCheckerTestCase {
                 .put("a.ba", "def b = import(\"b.ba\")\nexport def f = (n : int) : int -> ( b.g(n) )\n")
                 .put("b.ba", "def a = import(\"a.ba\")\nexport def g = (n : int) : int -> ( a.f(n) )\nexport def C = class () ()\nexport def bad = (v : a.f) -> ( 1 )\nexport def x = a.f(1)\n");
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        engine.put(BabbleScriptEngine.TYPING, "strict");
         engine.put(BabbleScriptEngine.MODULE_SOURCE, source);
         engine.put(ScriptEngine.FILENAME, "main.ba");
         StringWriter errors = new StringWriter();
@@ -819,7 +836,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS12S13LiteralsAndDynamicRemoved() {
-        assertStrictDiagnostics("def a = 2147483648\n"
+        assertDiagnostics("def a = 2147483648\n"
                 + "def b : int = -2147483648\n"
                 + "def c = -2147483649\n"
                 + "def d : dynamic = 1\n"
@@ -833,7 +850,6 @@ public class TypeCheckerTestCase {
     @Test
     public void testStrictReplClosedInference() throws Exception {
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        engine.put(BabbleScriptEngine.TYPING, "strict");
         StringWriter errors = new StringWriter();
         SimpleScriptContext context = new SimpleScriptContext();
         context.setWriter(new StringWriter());
@@ -849,15 +865,14 @@ public class TypeCheckerTestCase {
         Assertions.assertTrue(e2.getMessage().contains("Type error : expected int, got double"), e2.getMessage());
         ScriptException e3 = Assertions.assertThrows(ScriptException.class, () -> session.eval("c.m = 2"));
         Assertions.assertTrue(e3.getMessage().contains("Type error : expected string, got int"), e3.getMessage());
-        // Unassigned null in strict REPL input 1 fails immediately in input 1.
+        // Unassigned null in REPL input 1 fails immediately in input 1.
         ScriptException e4 = Assertions.assertThrows(ScriptException.class, () -> session.eval("def u = null"));
         Assertions.assertTrue(e4.getMessage().contains("Missing type : u"), e4.getMessage());
     }
 
     @Test
-    public void testStrictSurvey() throws Exception {
-        // P2 migration survey (§8, §10) : run every .ba test script and example in strict mode
-        // and report which fail, without breaking gradual builds.
+    public void testAllScriptsCompileCleanly() throws Exception {
+        // Every .ba test script and example compiles cleanly with static typing.
         List<Path> all = new java.util.ArrayList<>();
         for (String s : ScriptTestCase.data()) {
             all.add(Path.of(s));
@@ -870,7 +885,6 @@ public class TypeCheckerTestCase {
             Path file = script.toAbsolutePath().normalize();
             StringWriter errors = new StringWriter();
             BabbleScriptEngine scriptEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-            scriptEngine.put(BabbleScriptEngine.TYPING, "strict");
             scriptEngine.put(BabbleScriptEngine.MODULE_SOURCE, org.babblelang.engine.FileModuleSource.rooted(file.getParent()));
             scriptEngine.getContext().setErrorWriter(errors);
             scriptEngine.getContext().setWriter(new StringWriter());
@@ -884,12 +898,8 @@ public class TypeCheckerTestCase {
                 report.add(script + " (" + lines + " diagnostics; first: " + first + ")");
             }
         }
-        System.out.println("[strict survey] " + passed + "/" + all.size() + " clean, " + report.size() + " need P3 migration:");
-        for (String line : report) {
-            System.out.println("  - " + line);
-        }
         Assertions.assertFalse(all.isEmpty());
-        Assertions.assertTrue(report.isEmpty(), String.join("\n", report));
+        Assertions.assertTrue(report.isEmpty(), passed + "/" + all.size() + " clean:\n" + String.join("\n", report));
     }
 
     private static Object run(String script, String mode, StringWriter errors) throws ScriptException {

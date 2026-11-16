@@ -16,13 +16,9 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     public void testPackagesChangeOnlyThroughTheirOwnCode() throws Exception {
         // From inside : its code assigns its names directly.
         Assertions.assertEquals(3, interpret("package p ( def n = 1 ; def add = (k : int) -> ( n += k ) ) ; p.add(2) ; p.n"));
-        // From outside, through a member : refused, statically when the package is known...
+        // From outside, through a member : refused statically when the package is known.
         for (String assignment : new String[]{"p.n = 5", "p.n += 1", "p.q.m = 2"}) {
             assertFailsWith("package p ( def n = 1 ; package q ( def m = 1 ) ) ; " + assignment, "Cannot assign to a package member : ");
-        }
-        // ... and at runtime through any receiver in gradual mode.
-        if (!isStrict()) {
-            assertFails("package p ( def n = 1 ) ; def id = (v) -> ( v ) ; id(p).n = 5", "Cannot assign to a package member : n");
         }
     }
 
@@ -136,11 +132,7 @@ public class BabbleScopesTestCase extends BabbleTestBase {
 
     @Test
     public void testAssigningToAMemberOfANonScope() {
-        if (isStrict()) {
-            assertStaticFails("def s = \"hi\" ; s.length = 1", "Not a scope : s", 16);
-        } else {
-            assertFails("def s = \"hi\" ; s.length = 1", "Not an assignable scope : s");
-        }
+        assertStaticFails("def s = \"hi\" ; s.length = 1", "Not a scope : s", 16);
     }
 
     @Test

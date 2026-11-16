@@ -44,23 +44,14 @@ public class BabbleNativesTestCase extends BabbleTestBase {
 
     @Test
     public void testBuiltinAssertArity() {
-        if (isStrict()) {
-            assertError("Missing parameter : c", " suppose() ");
-            assertError("Too many parameters : 2 declared, 3 given", " suppose(true, \"a\", \"b\") ");
-            return;
-        }
-        ScriptException none = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose() "));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: assert() called without parameters in <input> at line number 1", none.getMessage());
-
-        ScriptException tooMany = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(true, \"a\", \"b\") "));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: assert() called with too many parameters in <input> at line number 1", tooMany.getMessage());
+        assertError("Missing parameter : c", " suppose() ");
+        assertError("Too many parameters : 2 declared, 3 given", " suppose(true, \"a\", \"b\") ");
     }
 
     @Test
     public void testBuiltinAssertRejectsNonBoolean() {
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(1) "));
-        String expected = isStrict() ? "Type error : expected bool, got int" : "asserts don't rely on truth values";
-        Assertions.assertTrue(e.getMessage().contains(expected), e.getMessage());
+        Assertions.assertTrue(e.getMessage().contains("Type error : expected bool, got int"), e.getMessage());
     }
 
     @Test
@@ -79,7 +70,7 @@ public class BabbleNativesTestCase extends BabbleTestBase {
         assertError("Not an int : \"2.5\"", " int(\"2.5\") ");
         assertError("Not a double : \"x\"", " double(\"x\") ");
         assertError("Not a number : true", " int(true) ");
-        assertError(isStrict() ? "Missing parameter : value" : "int() takes 1 argument, 0 given", " def f = int ; f = f ; f() ");
+        assertError("Missing parameter : value", " def f = int ; f = f ; f() ");
     }
 
     private void assertError(String message, String source) {

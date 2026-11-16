@@ -54,10 +54,9 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
             interpret(DEMO + "Demo().nullable(1, 2)");
             Assertions.fail("Should report that no overload applies");
         } catch (ScriptException e) {
-            String args = isStrict() ? "(int, int)" : "(java.lang.Integer, java.lang.Integer)";
             Assertions.assertTrue(
                     e.getMessage().startsWith("org.babblelang.runtime.BabbleException: No applicable overload of "
-                            + "org.babblelang.tests.JavaClassDemo.nullable for " + args),
+                            + "org.babblelang.tests.JavaClassDemo.nullable for (int, int)"),
                     e.getMessage());
         }
     }
@@ -109,7 +108,6 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
 
     @Test
     public void testBabbleValuesHaveNoJavaMembers() {
-        // Unknown to the type checker : found when it runs (in gradual), or rejected statically on any (in strict).
         for (String value : new String[]{"\"abc\"", "1", "1.5", "true", "null", "(x : any) -> ( x )"}) {
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret("def f = (v : any) -> ( v.toString() ) ; f(" + value + ")"));
             Assertions.assertTrue(e.getMessage().contains("Not a scope : v"), value + " : " + e.getMessage());
@@ -152,35 +150,18 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
 
     @Test
     public void testFieldErrors() {
-        if (isStrict()) {
-            String[][] staticCases = {
-                    {"def o = java.awt.Point(1, 2) ; o.x = 2.5", "Type error : expected int, got double"},
-                    {"java.lang.Math.PI = 3", "Cannot assign final field : java.lang.Math.PI"},
-                    {"java.awt.Point.x", "Not a static field : java.awt.Point.x"},
-                    {"java.awt.Point.x = 1", "Not a static field : java.awt.Point.x"},
-                    {"java.util.ArrayList().size = 1", "No such field in java.util.ArrayList : size"},
-                    {"java.util.ArrayList().nope", "No such name in java.util.ArrayList : nope"},
-                    {"Demo().action = () -> ( 1 )", "Cannot assign a function to org.babblelang.tests.JavaClassDemo.action : convert it first, as Runnable(f)"},
-            };
-            for (String[] c : staticCases) {
-                ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(DEMO + c[0]));
-                Assertions.assertTrue(e.getMessage().contains(c[1]), c[0] + " : " + e.getMessage());
-            }
-            return;
-        }
-        // Through a parameter, the type checker can't tell : found when it runs.
-        String[][] cases = {
-                {"java.awt.Point(1, 2)", "o.x = 2.5", "Cannot assign java.lang.Double to java.awt.Point.x : expected int"},
-                {"java.lang.Math", "o.PI = 3", "Cannot assign final field : java.lang.Math.PI"},
-                {"java.awt.Point", "o.x", "Not a static field : java.awt.Point.x"},
-                {"java.awt.Point", "o.x = 1", "Not a static field : java.awt.Point.x"},
-                {"java.util.ArrayList()", "o.size = 1", "No such field in java.util.ArrayList : size"},
-                {"java.util.ArrayList()", "o.nope", "No such name in java.util.ArrayList : nope"},
-                {"Demo()", "o.action = () -> ( 1 )", "Cannot assign a function to org.babblelang.tests.JavaClassDemo.action : convert it first, as Runnable(f)"},
+        String[][] staticCases = {
+                {"def o = java.awt.Point(1, 2) ; o.x = 2.5", "Type error : expected int, got double"},
+                {"java.lang.Math.PI = 3", "Cannot assign final field : java.lang.Math.PI"},
+                {"java.awt.Point.x", "Not a static field : java.awt.Point.x"},
+                {"java.awt.Point.x = 1", "Not a static field : java.awt.Point.x"},
+                {"java.util.ArrayList().size = 1", "No such field in java.util.ArrayList : size"},
+                {"java.util.ArrayList().nope", "No such name in java.util.ArrayList : nope"},
+                {"Demo().action = () -> ( 1 )", "Cannot assign a function to org.babblelang.tests.JavaClassDemo.action : convert it first, as Runnable(f)"},
         };
-        for (String[] c : cases) {
-            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(DEMO + "def f = (o) -> ( " + c[1] + " ) ; f(" + c[0] + ")"));
-            Assertions.assertTrue(e.getMessage().contains(c[2]), c[1] + " : " + e.getMessage());
+        for (String[] c : staticCases) {
+            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(DEMO + c[0]));
+            Assertions.assertTrue(e.getMessage().contains(c[1]), c[0] + " : " + e.getMessage());
         }
     }
 

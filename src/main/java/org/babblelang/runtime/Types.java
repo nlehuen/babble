@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <li>{@code babble}, with the id of the class or interface expression (nominal).</li>
  * </ul>
  * {@code display} is how the type reads in the message. Types that need no check
- * ({@code dynamic}) have no descriptor.
+ * ({@code any}) have no descriptor.
  */
 public final class Types {
     private static final Map<String, Type> PARSED = new ConcurrentHashMap<>();

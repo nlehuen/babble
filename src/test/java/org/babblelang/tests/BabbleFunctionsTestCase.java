@@ -155,15 +155,9 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     @Test
     public void testErrorsAreReportedAtTheirLine() {
         // An operator's line is the line where its left operand starts.
-        if (isStrict()) {
-            ScriptException e = Assertions.assertThrows(ScriptException.class,
-                    () -> interpret("def f = (a:any) -> (\n  def b = 1\n  a +\n    \"x\" -\n 2\n)\nf(1)"));
-            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a number : a in <input> at line number 3 at column number 3", e.getMessage());
-        } else {
-            ScriptException e = Assertions.assertThrows(ScriptException.class,
-                    () -> interpret("def f = (a) -> (\n  def b = 1\n  a +\n    \"x\" -\n 2\n)\nf(1)"));
-            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a number : \"x\" in <input> at line number 3", e.getMessage());
-        }
+        ScriptException e = Assertions.assertThrows(ScriptException.class,
+                () -> interpret("def f = (a:any) -> (\n  def b = 1\n  a +\n    \"x\" -\n 2\n)\nf(1)"));
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a number : a in <input> at line number 3 at column number 3", e.getMessage());
 
         ScriptException deeper = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = (a:int) -> (\n  def b = 1\n  b.x\n)\n\nf(1)"));
