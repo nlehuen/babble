@@ -509,9 +509,11 @@ final class TypeChecks {
             if (index < 0) {
                 throw new AnalysisException(name(target) + " is not " + relation + " directly by " + owner.name, line);
             }
-            if (!defaultsOf(target).containsKey(member)) {
+            Provider provider = defaultsOf(target).get(member);
+            if (provider == null) {
                 throw noDefault(target, member, line);
             }
+            pass.superProviders.put(pending.ctx(), provider);
             analysis.setSuperTarget(pending.ctx(), qualifier);
             return;
         }
@@ -539,7 +541,9 @@ final class TypeChecks {
             throw new AnalysisException("Ambiguous super." + member + " : " + String.join(", ", names)
                     + ". Write super(" + names.get(0) + ")." + member + "()", line);
         }
-        analysis.setSuperTarget(pending.ctx(), owner.parentTypes.get(providers.values().iterator().next()));
+        Map.Entry<Provider, Integer> chosen = providers.entrySet().iterator().next();
+        pass.superProviders.put(pending.ctx(), chosen.getKey());
+        analysis.setSuperTarget(pending.ctx(), owner.parentTypes.get(chosen.getValue()));
     }
 
     private AnalysisException noDefault(Object parent, String member, int line) {

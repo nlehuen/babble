@@ -68,6 +68,28 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
     }
 
+    /**
+     * The name of the system property, and of the engine attribute, that selects the
+     * {@link Typing}. The attribute wins : {@code engine.put(TYPING, "strict")}.
+     */
+    public static final String TYPING = "babble.typing";
+
+    /** How strict the static type checker is : gradual (the default) or strict. */
+    public enum Typing {
+        GRADUAL, STRICT;
+
+        static Typing parse(Object value) {
+            if (value instanceof Typing typing) {
+                return typing;
+            }
+            try {
+                return valueOf(String.valueOf(value).trim().toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                throw new BabbleException("Unknown " + TYPING + " : " + value + " (expected gradual or strict)");
+            }
+        }
+    }
+
     /** {@code import} takes a name with this extension for a Babble file, any other for a Java package. */
     public static final String MODULE_EXTENSION = Module.EXTENSION;
 
@@ -94,11 +116,11 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private final Namespace implicits;
 
     /**
-     * A compiled module, as the cache keeps it (docs/design/modules.md §9) : for the source
-     * and mode it was compiled with, and the versions of every module its analysis read, its
-     * own included. It is stale when one of them changed.
+     * A compiled module, as the cache keeps it (docs/design/modules.md §9) : for the source,
+     * mode and typing it was compiled with, and the versions of every module its analysis
+     * read, its own included. It is stale when one of them changed.
      */
-    private record CompiledModule(ModuleSource source, Mode mode, Map<ModuleId, String> versions,
+    private record CompiledModule(ModuleSource source, Mode mode, Typing typing, Map<ModuleId, String> versions,
                                   BabbleScript script, ModuleInterface moduleInterface) {
     }
 
@@ -139,6 +161,18 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             mode = System.getProperty(MODE);
         }
         return mode == null ? Mode.COMPILE : Mode.parse(mode);
+    }
+
+    /**
+     * The typing mode {@link #compile} uses : the {@link #TYPING} engine attribute, else the
+     * system property, else {@link Typing#GRADUAL}.
+     */
+    public Typing getTyping() {
+        Object typing = get(TYPING);
+        if (typing == null) {
+            typing = System.getProperty(TYPING);
+        }
+        return typing == null ? Typing.GRADUAL : Typing.parse(typing);
     }
 
     /**
@@ -273,8 +307,9 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private CompiledModule compiledModule(ModuleSource source, String name, ModuleId id, ScriptContext context) throws ScriptException {
         synchronized (moduleLock) {
             Mode mode = getMode();
+            Typing typing = getTyping();
             CompiledModule cached = moduleCache.get(id.key());
-            if (cached != null && cached.source() == source && cached.mode() == mode && isFresh(cached)) {
+            if (cached != null && cached.source() == source && cached.mode() == mode && cached.typing() == typing && isFresh(cached)) {
                 return cached;
             }
             ModuleText text;
@@ -299,7 +334,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 inProgress.remove(id.key());
             }
             loader.versions.put(id, text.version());
-            CompiledModule module = new CompiledModule(source, mode, Map.copyOf(loader.versions),
+            CompiledModule module = new CompiledModule(source, mode, typing, Map.copyOf(loader.versions),
                     script(file, scopes, sourceName, id), scopes.moduleInterface());
             moduleCache.put(id.key(), module);
             return module;
@@ -559,13 +594,15 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                                   Loader loader) throws ScriptException {
         ScopeAnalysis scopes;
         ModuleSource source;
+        boolean strict;
         try {
             source = getModuleSource();
+            strict = getTyping() == Typing.STRICT;
         } catch (BabbleException e) {
             throw new ScriptException(e);
         }
         try {
-            scopes = BlockScopes.analyze(file, session, loader != null ? loader : new Loader(sourceName, context, source, null, null));
+            scopes = BlockScopes.analyze(file, session, loader != null ? loader : new Loader(sourceName, context, source, null, null), strict);
         } catch (AnalysisException e) {
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());

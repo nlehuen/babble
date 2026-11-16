@@ -107,6 +107,52 @@ public class BabbleCompilerTestCase {
     }
 
     @Test
+    public void testTypingAttributeAndSystemProperty() throws Exception {
+        String previous = System.getProperty(BabbleScriptEngine.TYPING);
+        System.clearProperty(BabbleScriptEngine.TYPING);
+        try {
+            BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            Assertions.assertEquals(BabbleScriptEngine.Typing.GRADUAL, engine.getTyping());
+            // Unannotated parameter compiles in gradual mode, fails in strict mode.
+            Assertions.assertEquals(2, engine.eval("def f = (x) -> ( x + 1 ) ; f(1)"));
+            engine.put(BabbleScriptEngine.TYPING, "strict");
+            Assertions.assertEquals(BabbleScriptEngine.Typing.STRICT, engine.getTyping());
+            ScriptException strictErr = Assertions.assertThrows(ScriptException.class,
+                    () -> engine.eval("def f = (x) -> ( x + 1 ) ; f(1)"));
+            Assertions.assertTrue(strictErr.getMessage().contains("Missing type : x"), strictErr.getMessage());
+            engine.put(BabbleScriptEngine.TYPING, "bogus");
+            Assertions.assertThrows(ScriptException.class, () -> engine.compile("1"));
+
+            System.setProperty(BabbleScriptEngine.TYPING, "strict");
+            BabbleScriptEngine propEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+            Assertions.assertEquals(BabbleScriptEngine.Typing.STRICT, propEngine.getTyping());
+            Assertions.assertThrows(ScriptException.class, () -> propEngine.eval("def f = (x) -> ( x + 1 ) ; f(1)"));
+            propEngine.put(BabbleScriptEngine.TYPING, "gradual");
+            Assertions.assertEquals(2, propEngine.eval("def f = (x) -> ( x + 1 ) ; f(1)"));
+        } finally {
+            if (previous == null) {
+                System.clearProperty(BabbleScriptEngine.TYPING);
+            } else {
+                System.setProperty(BabbleScriptEngine.TYPING, previous);
+            }
+        }
+    }
+
+    @Test
+    public void testModuleCacheIsolatesGradualAndStrict() throws Exception {
+        org.babblelang.engine.MapModuleSource source = new org.babblelang.engine.MapModuleSource()
+                .put("lib.ba", "export def f = (x) -> ( x + 1 )\n");
+        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.MODULE_SOURCE, source);
+        engine.put(ScriptEngine.FILENAME, "main.ba");
+        Assertions.assertEquals(2, engine.eval("import(\"lib.ba\").f(1)"));
+        engine.put(BabbleScriptEngine.TYPING, "strict");
+        ScriptException e = Assertions.assertThrows(ScriptException.class,
+                () -> engine.eval("import(\"lib.ba\").f(1)"));
+        Assertions.assertTrue(e.getMessage().contains("Missing type : x"), e.getMessage());
+    }
+
+    @Test
     public void testMethodsAreNamedAfterTheirDefinitions() throws Exception {
         CompiledBabbleScript script = compile("def add = (a, b) -> ( a + b ) ; def twice = (f) -> ( () -> ( f() + f() ) ) ; add(1, 2)");
         List<String> names = methodNames(script);

@@ -298,6 +298,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
         last = ctx;
         value = Types.check(value, scopes.checkedType(ctx));
+        if (scopes.widensToDouble(ctx)) {
+            value = Values.toDouble(value);
+        }
         ScopeAnalysis.DefTarget target = scopes.defTarget(ctx);
         return switch (target.kind()) {
             case LEXICAL -> namespace.initialize(id, value);
@@ -530,7 +533,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 value = compound(ctx, operator, current, value);
             }
             last = ctx;
-            return namespace.assign(name, Types.check(value, scopes.checkedType(ctx)));
+            value = Types.check(value, scopes.checkedType(ctx));
+            if (scopes.widensToDouble(ctx)) {
+                value = Values.toDouble(value);
+            }
+            return namespace.assign(name, value);
         }
         if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
             Object thiz = namespace.lookup("this");
@@ -540,6 +547,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 value = compound(ctx, operator, current, value);
             }
             last = ctx;
+            if (scopes.widensToDouble(ctx)) {
+                value = Values.toDouble(value);
+            }
             return Members.assignOwn(thiz, value, name);
         }
         // The target is checked before the value is evaluated.
@@ -552,6 +562,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             value = compound(ctx, operator, current, value);
         }
         last = ctx;
+        if (scopes.widensToDouble(ctx)) {
+            value = Values.toDouble(value);
+        }
         return Members.assign(scope, value, name);
     }
 

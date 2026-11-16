@@ -117,4 +117,14 @@ sealed interface Type {
             return owner.getName() + "." + name;
         }
     }
+
+    /** {@code print}, {@code println}, {@code affiche}, {@code afficherc} : any number of {@code any}, optional {@code to : Appendable}. */
+    record Print() implements Type {
+        @Override
+        public String toString() {
+            return "print";
+        }
+    }
+
+    Print PRINT = new Print();
 }
