@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted : Q1 to Q6 of §9 are decided, Q7 is open. Nothing implemented yet ; the plan is §8. |
+| **Status** | Accepted : the questions of §9 are decided. Nothing implemented yet ; the plan is §8. |
 | **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9), once implemented. |
 | **Scope** | the type checker, the grammar (`as`, `is` on built-in types), the runtime checks, the tests, the examples and the docs. |
 
@@ -283,7 +283,9 @@ Each phase keeps `mvn package` green and is a pull request of its own.
 
 * **P1, `any`, `is` on built-in types, `as`.** Grammar (`as` binds tighter than comparisons,
   looser than arithmetic : `a + b as int` is `(a + b) as int`), `Type.ANY`, both backends
-  (`as` compiles to `Types.check`), formatter, tests. `dynamic` still exists.
+  (`as` compiles to `Types.check`), formatter, tests. `dynamic` still exists. Also the
+  conversion of an `int` joined to `double` (4.4, Q7), which needs no strict mode : the checker
+  records where a join widens, and both backends convert there.
 * **P2, strict mode.** `babble.typing=strict` (engine attribute and system property) reports
   every source of §3 as an error, with the wording of §4. Off by default ; a test runs every
   `.ba` script and example in strict mode and lists which fail, as the migration's to-do list.
@@ -316,13 +318,9 @@ The questions of the draft, as decided :
 * **Q4. Arrays** : a `JavaArray(T)` type now (5.1).
 * **Q5. The REPL** : the same rules as scripts.
 * **Q6. Cast syntax** : `e as T` (4.8).
-
-Open :
-
-* **Q7. Converting an `int` joined to `double`** (4.4) : proposed from the unboxed-arithmetic
-  work (7.1), so that a static `double` is always a runtime `Double`. Recommended : yes ; it
-  changes the result of programs like `w + w` in 4.4 (`2` becomes `2.0`), the one change of
-  behaviour this design makes.
+* **Q7. Converting an `int` joined to `double`** : yes (4.4). A static `double` is always a
+  runtime `Double`, as the unboxed-arithmetic work needs (7.1). It changes the result of programs
+  like `w + w` in 4.4 (`2` becomes `2.0`), the one change of behaviour this design makes.
 
 ## 10. Testing
 
