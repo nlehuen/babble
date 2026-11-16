@@ -35,8 +35,9 @@ Goals :
 
 Non-goals, for this design :
 
-* Generics for Babble functions and classes, and union types. They make some programs typable
-  without casts ; §7 describes what this design needs instead, and §8 places them after it.
+* Generics for Babble functions and classes, union types, and nullable types (`T?`, §11). They
+  make some programs typable without casts or Java boundary checks ; §7 describes what this
+  design needs instead, and §8 places them after it.
 * Subtyping between classes : there is still no class inheritance.
 
 ## 3. Where `dynamic` comes from today
@@ -241,7 +242,7 @@ constructors (`java.util.ArrayList[string]()`), so that `list.get(0)` is a `stri
 cast. Until then, elements are `any` and need `as` or `is`. Note for P6 : generic Java methods
 such as `Map[string, int].get(k)` can return `null` on a missing key even when the type
 argument is `int`, so P6 must either keep a boundary check on generic returns of non-nullable
-Babble types or surface `null`/optional handling before P5 removes checks.
+Babble types or surface `null`/optional handling (such as `T?`, §11) before P5 removes checks.
 
 ### 5.3 Overloads
 
@@ -341,8 +342,9 @@ that can reject existing code behind `babble.typing=strict` :
 * **P5, runtime checks.** Remove the T9 boundary checks the checker makes redundant ; measure
   with `Benchmarks` and the ray tracers (7.1). Only after P4, and after `Unboxing` takes its kinds
   from the checker : until then that pass relies on the T9 checks for its soundness.
-* **P6, Java generics** (5.2), then **Babble generics** and **union types** (README, *Planned
-  features*), each reducing the casts P3 had to write.
+* **P6, Java generics** (5.2), then **Babble generics**, **union types**, and **nullable types**
+  (README, *Planned features* ; §11), each reducing the casts and Java boundary checks P3–P5
+  needed.
 * **P7, parameters inferred from calls** (4.9). It needs only P4, and can come before P6. It
   makes most of the annotations P3 adds optional again : P7 removes those inference gives the
   same type, keeping the ones on exported and escaping functions.
@@ -380,3 +382,37 @@ The questions of the draft, as decided :
   named and default arguments, methods and constructors, recursion, a conflicting call, and
   `Missing type` for escaping, exported and never-called functions) ; removing the annotations
   inference makes redundant from the tests and examples must leave the suite green.
+
+## 11. Future : nullable types (`T?`)
+
+Today Babble follows T2 : `int`, `double` and `bool` reject `null`, while `string`, Babble
+classes, function types and Java types admit it. A future extension (after P1–P5, alongside or
+as a special case of union types in P6) separates nullability in the type system itself :
+
+* **`T` vs. `T?`.** Every plain type `T` (`int`, `double`, `bool`, `string`, Babble classes,
+  Java classes, function types, `any`) denotes a **non-nullable** value ; `T?` denotes its
+  nullable counterpart (`string?`, `Point?`, `int?`, `any?`). `null` has a bottom-null type
+  assignable to any `T?` and to no `T` ; `T` is assignable to `T?`, and `T?` is not
+  assignable to `T` without narrowing.
+* **`int?`, `double?`, `bool?` and Java `Integer`.** Nullable primitive types are supported and
+  map directly to Java's boxed wrappers : `int?` is equivalent to Java's `Integer` (and
+  `double?` to `Double`, `bool?` to `Boolean`). Because a plain `int` can never be `null`, a
+  non-nullable `int` (and `Integer` where non-null) always unboxes to a primitive Java `int`
+  with no runtime check, while a nullable `Integer` (`int?` / `Integer?`) keeps the boxed
+  representation and forces the caller to deal with the `null` case.
+* **Using a `T?`.** Just like `any` (4.8), a value of type `T?` has no members, calls,
+  arithmetic or ordering comparisons until `null` is ruled out : by flow-sensitive narrowing
+  (`if x != null then ( … )`, `if x is T then ( … )`), an explicit cast (`x as T`), or a
+  future null-handling operator. Equality (`==`, `!=`, `same`) and string concatenation remain
+  allowed on `T?`.
+* **What it simplifies in this design.**
+  * **Java interop and generics (5.2, 7) :** Java methods and fields returning boxed types or
+    reference types (`Map[string, int].get(k)`) can be typed as `int?` / `T?` rather than
+    relying on a hidden runtime `Types.check` on exit from Java, and `T` parameters passed to
+    Java never silently receive `null`.
+  * **Joins and reassignments (4.3, 4.4) :** `def m = null ; m = "a"` infers `string?`, and
+    `if c then ( x )` without `else` has type `T?` for every `T` (including `int?`), instead
+    of failing for primitives while silently accepting `null` for `string` and classes.
+  * **Unboxed arithmetic (7.1) :** non-nullable `int`, `double` and `bool` are guaranteed
+    non-null by the type system rather than by T2 special cases, while `int?`, `double?` and
+    `bool?` stay boxed until narrowed.
