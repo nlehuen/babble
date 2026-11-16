@@ -133,6 +133,9 @@ gradually:
   functions): `Not a scope : x`. Narrowed lexical bindings use their narrowed type in branches,
   short-circuit operators and post-guard block statements.
 * Operators (T3), members (T5), Java calls (T7).
+* Assigning a package's member from outside (`p.x = …`, `p.x += …`), when the package is known
+  statically: `Cannot assign to a package member : x`. A package changes only through its own
+  code; the runtime refuses it whatever the receiver.
 * Compound assignment (`x += v`, `obj.x -= v`, `this.x *= v`, `/=`) is typed as `x = x op v`:
   the operator on the target's type (its declaration, or `dynamic`) and `v`'s, operator methods
   included, and its result against the target's declared type, reported at the assignment.
