@@ -358,12 +358,16 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (expression == null) {
             return namespace.lookup(name);
         }
+        Object result;
         if (expression instanceof BabbleParser.ThisExpressionContext) {
-            return Members.selectOwn(namespace.lookup("this"), name);
+            result = Members.selectOwn(namespace.lookup("this"), name);
+        } else {
+            Object value = visit(expression);
+            last = ctx;
+            result = Members.select(value, name, expression.getText());
         }
-        Object value = visit(expression);
         last = ctx;
-        return Members.select(value, name, expression.getText());
+        return Types.check(result, scopes.checkedType(ctx));
     }
 
     @Override
@@ -388,6 +392,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         String method = Operators.method(ctx.op.getText());
         if (method != null && a instanceof BabbleInstance) {
             // An operator method : a + b is a.plus(b).
+            if (scopes.widensToDouble(ctx.right)) {
+                b = Values.toDouble(b);
+            }
             return operatorCall(a, method, ctx.left.getText(), ctx.right.getText(), b, ctx);
         }
 
@@ -608,7 +615,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpression) {
-            return superCall(ctx, selector, superExpression);
+            return Types.check(superCall(ctx, selector, superExpression), scopes.checkedType(ctx));
         }
         Object callee = visit(ctx.expression());
         last = ctx;
@@ -616,7 +623,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         var callable = Calls.callable(callee, site);
         Object[] args = arguments(ctx);
         last = ctx;
-        return callable.call(runtime, args, callNames.get(ctx), site);
+        return Types.check(callable.call(runtime, args, callNames.get(ctx), site), scopes.checkedType(ctx));
     }
 
     /** {@code super.m(args)} : the default method the analysis resolved, called on {@code this}. */
@@ -633,7 +640,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
         Object[] args = parameters.isEmpty() ? Arguments.NONE : new Object[parameters.size()];
         for (int i = 0; i < args.length; i++) {
-            args[i] = visit(parameters.get(i).expression());
+            BabbleParser.ExpressionContext expression = parameters.get(i).expression();
+            Object value = visit(expression);
+            args[i] = scopes.widensToDouble(expression) ? Values.toDouble(value) : value;
         }
         return args;
     }

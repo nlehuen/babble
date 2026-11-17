@@ -171,7 +171,9 @@ public final class Formatter {
                 unaryMinus[index] = parent instanceof BabbleParser.NegateContext;
             } else if (token.getType() == OPEN) {
                 callParentheses[index] = parent instanceof BabbleParser.CallParametersContext
-                        || parent instanceof BabbleParser.SuperExpressionContext;
+                        || parent instanceof BabbleParser.SuperExpressionContext
+                        || parent instanceof BabbleParser.TypeParametersContext
+                        || parent instanceof BabbleParser.TypeArgumentsContext;
                 // What a block of an "if", a function, a class... encloses is indented from
                 // the line where that expression starts, wherever its parenthesis is.
                 anchors[index] = parent instanceof BabbleParser.BlockContext block
@@ -200,7 +202,8 @@ public final class Formatter {
             return SEPARATES;
         }
         if (parent instanceof BabbleParser.ParametersDeclarationContext || parent instanceof BabbleParser.CallParametersContext
-                || parent instanceof BabbleParser.SuperExpressionContext || parent instanceof BabbleParser.ParenTypeContext) {
+                || parent instanceof BabbleParser.SuperExpressionContext || parent instanceof BabbleParser.ParenTypeContext
+                || parent instanceof BabbleParser.TypeParametersContext || parent instanceof BabbleParser.TypeArgumentsContext) {
             return IN_LIST;
         }
         // In these, a newline can only come before a block, "else" or "static".

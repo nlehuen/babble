@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [static-typing.md](static-typing.md) (P1–P6a implemented : strict checking, union types `A | B`, nullable types `T?`) ; runtime checks remain only at `as` casts, Java boundaries, and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
+| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [static-typing.md](static-typing.md) (P1–P6b implemented : strict checking, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax) ; runtime checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
 | **Depends on** | [bytecode-compiler.md](bytecode-compiler.md) §10 (where the checker sits, the T1–T9 agenda), [object-model.md](object-model.md) §8 (classes and interfaces are types) |
 | **Unblocks** | Typed code generation (bytecode-compiler.md §10.5) |
-| **Replaced by** | [static-typing.md](static-typing.md) (P1–P6a implemented : `any` / `any?`, unions, `T?`, `as`, required annotations, strict checking, T9 checks removed internally). |
+| **Replaced by** | [static-typing.md](static-typing.md) (P1–P6b implemented : `any` / `any?`, unions, `T?`, generics, `as`, required annotations, strict checking, T9 checks removed internally). |
 
 ## 1. Summary
 
@@ -36,10 +36,11 @@ gradually:
 | `null` | `null` | not written: the type of the literal |
 | function types | Babble functions | `(a : int, b = …) : int` |
 | class and interface types (nominal) | instances | the name of a class or interface literal |
+| parameterized & generic types | instances of generic classes/interfaces, type variables | `Box(int)`, `java.util.List(string)`, `T` |
 | object literal types | the single instance | not written |
 | class values | a class or interface expression's value: constructor, statics | not written |
 | packages (structural) | a package | not written |
-| Java types | instances of a Java class | `java.util.List`, or through `import("…")` |
+| Java types | instances of a Java class | `java.util.List(string)`, or through `import("…")` |
 | `nothing` | none: the type of `return` | not written |
 
 ## 3. Decisions (T1–T8 of bytecode-compiler.md §10.4)
@@ -147,9 +148,9 @@ The value of an `if` is the join of its branches: the same type, `double` for `i
 `double`, a nullable type for `null` and that type, and `dynamic` otherwise. A `while` loop's
 value is the join of its body's value and `null`.
 
-## 5. Runtime checks (T9, updated in P5–P6a)
+## 5. Runtime checks (T9, updated in P5–P6b)
 
-With strict static typing (`static-typing.md` P1–P6a), `Types.check` is no longer emitted at
+With strict static typing (`static-typing.md` P1–P6b), `Types.check` is no longer emitted at
 Babble-to-Babble parameter, return, `def`, or assignment boundaries : the static checker proves
 those types, and `int`→`double`/`double?` widening uses `Values.toDouble` where `widensToDouble`
 marks a widening point.
@@ -160,6 +161,9 @@ marks a widening point.
     non-nullable Babble primitive (`JavaTypes.checkBoxed` in `JavaMethod`, `JavaLinker`,
     `JavaClass`, and `JavaDefaultCall`), which reject `null` with
     `Type error : expected int/double/bool, got null`.
+  - Java generic method calls and field reads whose reflection return/field type is a `TypeVariable`
+    or `WildcardType` resolving to a non-`any?` type (`Types.check` with `ScopeAnalysis.checkedType`
+    emitted/applied at the boundary in `JavaMethod`, `BoundJavaMethod`, `Interpreter`, and `CodeGenerator`).
   - Arguments entering Babble from Java through `Faces` proxies (`JavaTypes.checkParameters`
     in `FaceHandler` and `FunctionHandler`) against the Java interface method's parameter types.
   - Member and static writes going through `BabbleInstance.setMember` and `BabbleType.setMember`
@@ -172,7 +176,7 @@ The in-repo scripts pass type checking and run with these checks enforced (`Diff
 
 ## 6. Not done yet
 
-* **Generics** (P6b) and structural object types.
+* Structural object types.
 * **Types for the compiler.** The checker keeps a type per expression, but doesn't publish it yet
   for typed code generation (bytecode-compiler.md §10.5).
 

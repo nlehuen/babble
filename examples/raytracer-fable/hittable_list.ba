@@ -6,7 +6,7 @@ def HitRecord = hittable.HitRecord
 def Ray = import("ray.ba").Ray
 
 export def HittableList = class () implements Hittable (
-    private def objects = java.util.ArrayList()
+    private def objects: java.util.List(Hittable) = java.util.ArrayList()
 
     def add = (item: Hittable): bool -> (this.objects.add(item))
 
@@ -16,7 +16,8 @@ export def HittableList = class () implements Hittable (
         def count: int = this.objects.size()
         def i: int = 0
         while i < count then (
-            def rec: HitRecord? = (this.objects.get(i) as Hittable).hit(r, tmin, closestSoFar)
+            def obj = this.objects.get(i)
+            def rec: HitRecord? = if obj != null then (obj.hit(r, tmin, closestSoFar))
             if rec <> null then (
                 closest = rec
                 closestSoFar = rec.t

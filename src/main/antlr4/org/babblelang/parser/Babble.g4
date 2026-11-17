@@ -18,7 +18,7 @@ expression:
           // at this alternative's precedence : "… else (c) + 1" adds to the whole chain.
           | IF test=expression THEN NL* thenBlock=block
                      NL* ELSE NL* {_input.LA(1) == IF}? elseIf=expression   # ifExpression
-          | (EXPORT | PRIVATE)? DEF name=ID (':' type)? ('=' NL* value=expression)?   # defExpression
+          | (EXPORT | PRIVATE)? DEF name=ID typeParameters? (':' type)? ('=' NL* value=expression)?   # defExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           // "value class" : the modifier is a contextual keyword, checked by the analysis.
           // No newline before the body : "class (a)" followed by "(b)" on the next line
@@ -73,6 +73,10 @@ parametersDeclaration: '(' NL* parameterDeclaration (NL* ',' NL* parameterDeclar
 // PRIVATE and DEF are only accepted in class headers, which the analysis checks.
 parameterDeclaration: PRIVATE? DEF? ID (':' type)? ('=' NL* defaultValue=expression)?;
 
+typeParameters: '(' NL* ID (NL* ',' NL* ID)* NL* ')';
+
+typeArguments: '(' NL* type (NL* ',' NL* type)* NL* ')';
+
 callParameters: '(' NL* callParameter (NL* ',' NL* callParameter)* NL* ')'
               | '(' NL* ')';
 
@@ -84,7 +88,7 @@ type: nullableType ('|' NL* nullableType)*;
 
 nullableType: primaryType question='?'?;
 
-primaryType: ID ('.' ID)*                           # simpleType
+primaryType: ID ('.' ID)* typeArguments?          # simpleType
            | parametersDeclaration ( ':' type | )   # functionType
            | NULL                                   # nullType
            | '(' NL* type NL* ')'                   # parenType

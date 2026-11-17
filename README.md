@@ -118,9 +118,9 @@ assert(1 == c2())
 assert(3 == c())
 
 ;; using Java classes from Babble
-def list = java.util.ArrayList()
+def list : java.util.List(int) = java.util.ArrayList()
 list.add(3) ; list.add(1) ; list.add(2)
-list.sort((a: any, b: any): int -> ( (a as int) - (b as int) ))  ;; a Babble function passed as a Comparator
+list.sort((a, b) -> ( a - b ))  ;; a Babble function passed as a Comparator
 assert(list.get(0) == 1)
 ```
 
@@ -207,7 +207,7 @@ reached through `this` or a receiver : a bare name is never a member.
 
 ```
 def Account = class (def owner: string, def balance = 0) (     ;; "def" : the parameter is also a member
-    private def history = java.util.ArrayList()        ;; private : only reachable as this.history
+    private def history: java.util.List(int) = java.util.ArrayList()        ;; private : only reachable as this.history
 
     def deposit = (n: int) -> (
         this.history.add(n)
@@ -294,23 +294,23 @@ def circle = 2 * java.lang.Math.PI
 def point = java.awt.Point(1, 2)
 point.x = point.x + 10
 
-def list = java.util.ArrayList()
+def list: java.util.List(int) = java.util.ArrayList()
 list.add(3) ; list.add(1) ; list.add(2)
-list.removeIf((v) -> ( (v as int) > 2 ))          ;; a Predicate
+list.removeIf((v) -> ( v > 2 ))          ;; a Predicate
 assert(list.size() == 2)
 
-def Countdown = class (private def n: int) implements java.util.Iterator (
+def Countdown = class (private def n: int) implements java.util.Iterator(int) (
     def hasNext = () -> ( this.n > 0 )
     def next = () -> ( this.n = this.n - 1 ; this.n + 1 )
 )
-def seen = java.util.ArrayList()
+def seen: java.util.List(int) = java.util.ArrayList()
 Countdown(3).forEachRemaining((v) -> ( seen.add(v) ))   ;; a Java default method
 assert(seen.toString() == "[3, 2, 1]")
 
-def Money = value class (cents: int) implements java.lang.Comparable (
-    def compareTo = (o: any): int -> ( this.cents - (o as Money).cents )
+def Money = value class (cents: int) implements java.lang.Comparable(Money) (
+    def compareTo = (o: Money): int -> ( this.cents - o.cents )
 )
-def wallet = java.util.ArrayList()
+def wallet: java.util.List(Money) = java.util.ArrayList()
 wallet.add(Money(500)) ; wallet.add(Money(20))
 java.util.Collections.sort(wallet)                 ;; Java calls Money.compareTo
 assert(wallet.get(0) == Money(20))
@@ -387,6 +387,17 @@ narrowed (with `is`, `!= null`, or truthiness) or checked at runtime with `as` :
 def id = (x: any?): any? -> ( x )
 def half = (n: int): double -> ( n / 2 )
 half(id("4") as int)   ;; Type error : expected int, got string, at line number 3
+```
+
+Functions, classes and interfaces can also take type parameters in parentheses `(T)` — Babble
+never uses square brackets — and type arguments are inferred at call sites :
+
+```
+def Box(T) = class (def value: T) (
+    def map(U) = (fn: (x: T): U): Box(U) -> ( Box(fn(this.value)) )
+)
+def label: Box(string) = Box(21).map((n) -> ( "v=" + n ))
+def names: java.util.List(string) = java.util.ArrayList()
 ```
 
 ### Interactive mode
@@ -478,7 +489,7 @@ java -jar target/babble-1.0-SNAPSHOT.jar script.ba [arguments...]     # runs a s
 java -jar target/babble-1.0-SNAPSHOT.jar -keep-alive script.ba ...    # runs it, then the interactive mode
 ```
 
-A script finds its arguments in `args`, a `java.util.List` of strings :
+A script finds its arguments in `args`, a `java.util.List(string)` :
 
 ```
 ;; hello.ba
@@ -607,12 +618,12 @@ Language features :
 - [x] functions, supporting recursion (`recurse`) and closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional & named parameters in function calls, and default values for parameters.
-- [x] basic types : boolean, int, double, string, `null`, functions, union types (`A | B`), nullable types (`T?`), `any` / `any?`.
+- [x] basic types : boolean, int, double, string, `null`, functions, union types (`A | B`), nullable types (`T?`), `any` / `any?`, and generic/parameterized types (`Box(T)`, `java.util.List(string)`).
 - [x] packages as namespaces, which change only through their own code : `p.x = 1` from outside is an error.
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
-- [x] Java interop both ways : Java classes used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java interfaces.
-- [x] static type checking : required annotations on uninferred parameters, bidirectional local inference of bindings, members, function results, and lambda parameters, strict non-nullability with `T?`, union types (`A | B`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
+- [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java (including generic) interfaces.
+- [x] static type checking : required annotations on uninferred parameters, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
 
 Implementation features :
@@ -636,7 +647,7 @@ Language features :
 
 - [ ] line editing, history and completion in the interactive mode.
 - [ ] better, more user-friendly error reports.
-- [ ] generics and structural object types.
+- [ ] structural object types.
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module, an object or a package, instead of one `def` per name.
 - [ ] collection classes (mapped from Java).

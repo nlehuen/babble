@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | P1–P6a implemented : static typing is the only mode, redundant internal T9 checks are removed (§7, §8), and union types (`A | B`) and nullable types (`T?`, `any` vs `any?`) are implemented (§11). Java/Babble generics (P6b) and call-site parameter inference (P7) remain planned. |
-| **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9) : T9 checks remain only at `as` casts, Java boundaries, and member writes from Java. |
-| **Scope** | the type checker, the grammar (`as`, `is` on built-in types, `|`, `?`, `null` in types), the runtime checks, the tests, the examples and the docs. |
+| **Status** | P1–P6b implemented : static typing is the only mode, redundant internal T9 checks are removed (§7, §8), union types (`A | B`) and nullable types (`T?`, `any` vs `any?`) are implemented (§11), and Java/Babble generics with `(...)` syntax are implemented (§5.2, §12). Call-site parameter inference (P7) remains planned. |
+| **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9) : T9 checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java. |
+| **Scope** | the type checker, the grammar (`as`, `is` on built-in types, `|`, `?`, `null` in types, generic type parameters/arguments with `(...)`), the runtime checks, the tests, the examples and the docs. |
 
 ## 1. Summary
 
@@ -35,9 +35,8 @@ Goals :
 
 Non-goals, for this design :
 
-* Generics for Babble functions and classes, union types, and nullable types (`T?`, §11). They
-  make some programs typable without casts or Java boundary checks ; §7 describes what this
-  design needs instead, and §8 places them after it.
+* Generics for Babble functions and classes, union types, and nullable types (`T?`) : deferred in
+  the initial P1–P5 design, then added as P6a (§11) and P6b (§12).
 * Subtyping between classes : there is still no class inheritance.
 
 ## 3. Where `dynamic` comes from today
@@ -223,7 +222,7 @@ monomorphic, so it would rarely type more than calls do, with errors harder to e
 
 ### 5.1 Results and fields
 
-* `Object` is `any`. `list.get(0)` is `any` until generics (5.2) : `list.get(0) as string`.
+* `Object` is `any`. `list.get(0)` is `string?` on `java.util.List(string)` (5.2).
 * An interface is `JavaInstance(I)`, no longer `dynamic`. The reason it is `dynamic` today (a
   Babble instance passed to Java comes back as itself where `I` is declared) is kept by making
   member lookup on `JavaInstance(I)` accept both : the members are `I`'s methods, whichever kind
@@ -236,13 +235,15 @@ monomorphic, so it would rarely type more than calls do, with errors harder to e
 
 ### 5.2 Generics
 
-Reflection gives the generic signatures (`List<E>.get` returns `E`). A later step (§8, P6)
-types `java.util.List[string]` annotations and propagates type arguments through calls and
-constructors (`java.util.ArrayList[string]()`), so that `list.get(0)` is a `string` without a
-cast. Until then, elements are `any` and need `as` or `is`. Note for P6 : generic Java methods
-such as `Map[string, int].get(k)` can return `null` on a missing key even when the type
-argument is `int`, so P6 must either keep a boundary check on generic returns of non-nullable
-Babble types or surface `null`/optional handling (such as `T?`, §11) before P5 removes checks.
+Reflection gives the generic signatures (`List<E>.get` returns `E`). From P6b (§8, §12), Babble
+types `java.util.List(string)` and `java.util.Map(string, int)` annotations and infers type
+arguments from call arguments and expected types (`java.util.ArrayList()`,
+`java.util.Collections.emptyList()`), enforcing Java `TypeVariable` bounds. Generic Java methods
+and fields whose reflection return/field type is a `TypeVariable` or `WildcardType` — such as
+`Map(string, int).get(k)` returning `null` on a missing key or `List(string).get(0)` — widen to
+nullable `T?` and record a runtime `Types.check` boundary check when non-`any?`. Uninferred or
+raw generic annotations report `Missing type arguments` or `Missing type : cannot infer type
+arguments for ...`.
 
 ### 5.3 Overloads
 
@@ -257,8 +258,7 @@ arguments are known.
   any) : int` and `double(v : any) : double` stay as they are (they already check at runtime).
 * Script bindings (`engine.put(…)`, `args`) are `any` : a `CompiledScript` is compiled before its
   bindings are known, and runs with whichever it is given. `args` is the exception : `Main`
-  always binds a `java.util.List` of strings, so it is declared `java.util.List` (and
-  `java.util.List[string]` with generics).
+  always binds a `java.util.List` of strings, so it is declared `java.util.List(string)`.
 * `import(name)` with a name that isn't a string literal is `any` ; static imports keep their
   module types.
 * Interactive sessions (REPL, Q5) : each input in an `AnalysisSession` is analysed and compiled
@@ -353,7 +353,12 @@ that can reject existing code behind `babble.typing=strict` :
   `((a : int) : int)?`), joins `if`/`while`/`return` branches to unions (and `int?` + `double` to
   `double?` with conversion), narrows via `else` subtraction, `== null`/`!= null`/`<> null`, truthiness,
   and `while` loop invalidation, and updates `Types` descriptors for unions and non-nullable checks (§11).
-* **P6b, Java generics** (5.2) and **Babble generics** *(Planned)*, reducing remaining casts and Java boundary checks.
+* **P6b, Java generics (5.2) and Babble generics (§12).** *(Implemented)* Adds type parameters
+  and arguments using `(...)` syntax (`def Box(T) = class ...`, `def id(T) = ...`,
+  `java.util.List(string)`), call-site and contextual type inference (including `int` → `double`
+  widening when safe and uncalled generic function values), Java `TypeVariable` bound checking,
+  covariant parameterized subtyping, raw `is`/`as` narrowing with runtime erasure, and runtime
+  `Types.check` boundary checks on Java generic `TypeVariable`/`WildcardType` returns and fields.
 * **P7, parameters inferred from calls** (4.9). It needs only P4, and can come before P6b. It
   makes most of the annotations P3 adds optional again : P7 removes those inference gives the
   same type, keeping the ones on exported and escaping functions.
@@ -389,6 +394,9 @@ The questions of the draft, as decided :
   benchmarks before and after.
 * P6a : `FormatterTestCase`, `TypeCheckerTestCase#testP6aUnionAndNullableTypes`, `BabbleCompilerTestCase`,
   `DifferentialTestCase`, `src/test/babble/UnionsAndNullables.ba`, and `argon` rendering `scene.ppm` byte for byte.
+* P6b : `FormatterTestCase`, `TypeCheckerTestCase#testP6bGenerics`, `BabbleCompilerTestCase`,
+  `BabbleModulesTestCase`, `DifferentialTestCase`, `src/test/babble/Generics.ba`, and `argon`
+  rendering `scene.ppm` byte for byte.
 * P7 : golden tests of call-site inference in `TypeCheckerTestCase` (widening across calls,
   named and default arguments, methods and constructors, recursion, a conflicting call, and
   `Missing type` for escaping, exported and never-called functions) ; removing the annotations
@@ -425,3 +433,42 @@ system itself and introduces union types (`A | B`) :
 * **Runtime `Types` descriptors.** `Types.parse` handles `union`, `null`, `any` (`value != null`),
   and non-nullable `Builtin`, `FunctionType`, `JavaClassType`, and `NominalType` descriptors, with
   `UnionType.convert` preferring a non-converting matching member before widening.
+
+## 12. Generics *(Implemented in P6b)*
+
+P6b adds parametric polymorphism for Babble functions, classes, interfaces, and methods alongside
+Java generic classes, interfaces, and methods, using parentheses `(...)` exclusively (no square
+brackets `[]` anywhere in Babble syntax) :
+
+* **Type parameters on `def`.** A `def` whose value is a function literal, class/value-class literal,
+  interface literal, or an interface member declaration can declare type parameters before `=`:
+  `def id(T) = (x : T) : T -> ( x )`, `def Box(T) = class (def value : T) ( ... )`,
+  `def Container(T) = interface ( def get : () : T )`, `def map(U) = (fn : (x : T) : U) : Box(U) -> ...`.
+  Duplicate type parameter names report `Name already defined : T`, and `static (...)` blocks of a
+  generic class do not see the class's type parameters. Function type annotations always require
+  named parameters: `(x : T) : U`.
+* **Type arguments in annotations.** Parameterized types are written with parentheses :
+  `Box(int)`, `Pair(string, Node(T)?)`, `java.util.List(string)`, `java.util.List(int | string)?`.
+  Omitting type arguments on a generic class/interface reports `Missing type arguments : C`, and
+  mismatching counts report `Wrong number of type arguments : expected N, got M`.
+* **Call-site and contextual inference.** Type arguments are not written at call or construction sites ;
+  they are inferred from arguments and expected types (including uncalled generic function values
+  such as `def idInt : (x : int) : int = id`, Java SAM lambdas, and contextual `int` → `double`
+  widening when safe). Calls or constructions whose type parameters cannot be inferred fail with
+  `Missing type : cannot infer type arguments for ...`.
+* **Type variables, nullability, and covariance.**
+  * Unconstrained Babble type variables `T` can hold nullable types when instantiated, so `T` is
+    assignable to `T`, `T?`, `any?`, or unions containing them, and is **not** assignable to
+    non-nullable `any`.
+  * Parameterized Babble and Java types are covariant in their type arguments : `Box(int)` is
+    assignable to `Box(int | double)` and `Box(any)`, and `java.util.List(int)` to
+    `java.util.List(any)` (without implicit `int` → `double` conversion inside containers).
+* **Type erasure, `is`, and `as`.** Type arguments are erased at runtime. `is` and `as` take raw
+  class/interface names (`x is Box`, `x is java.util.List`, `x as Box`), narrowing/typing them as
+  `Box(any?)` / `java.util.List(any?)` while `is` preserves narrower covariant type arguments when
+  already known statically. Parameterized `as` targets (`x as Box(int)`) and `x as T` casts are
+  rejected statically (`Cannot cast to parameterized type`, `Cannot cast to type parameter`).
+* **Java generics.** Reflection `TypeVariable` bounds are checked on Java calls/constructions
+  (`type argument X does not satisfy bound ...`). Java generic methods and fields whose reflection
+  type is a `TypeVariable` or `WildcardType` widen to `T?` and record a runtime `Types.check`
+  boundary check when non-`any?`.

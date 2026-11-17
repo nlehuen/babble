@@ -1337,7 +1337,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         for (int i = 0; i < parameters.size(); i++) {
             mv.visitInsn(DUP);
             pushInt(mv, i);
-            visit(parameters.get(i).expression());
+            BabbleParser.ExpressionContext expression = parameters.get(i).expression();
+            visit(expression);
+            if (scopes.widensToDouble(expression)) {
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
             mv.visitInsn(AASTORE);
         }
     }
@@ -1527,34 +1531,49 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitLdcInsn(name);
                 line(ctx);
                 mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
-                return null;
+            } else {
+                visit(expression);
+                mv.visitLdcInsn(name);
+                line(ctx);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "selectOwn", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             }
+        } else {
             visit(expression);
-            mv.visitLdcInsn(name);
             line(ctx);
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "selectOwn", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
-            return null;
+            String text = expression.getText();
+            if (text.length() <= MAX_STRING_CONSTANT) {
+                // An invokedynamic site, cached by receiver (Bootstrap.select).
+                mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, name, text);
+            } else {
+                mv.visitLdcInsn(name);
+                pushString(mv, text);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
+            }
         }
-        visit(expression);
-        line(ctx);
-        String text = expression.getText();
-        if (text.length() <= MAX_STRING_CONSTANT) {
-            // An invokedynamic site, cached by receiver (Bootstrap.select).
-            mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, name, text);
-            return null;
+        String checked = scopes.checkedType(ctx);
+        if (checked != null) {
+            line(ctx);
+            checkType(checked);
         }
-        mv.visitLdcInsn(name);
-        pushString(mv, text);
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
         return null;
     }
 
     @Override
     public Void visitCall(BabbleParser.CallContext ctx) {
+        emitCall(ctx);
+        String checked = scopes.checkedType(ctx);
+        if (checked != null) {
+            line(ctx);
+            checkType(checked);
+        }
+        return null;
+    }
+
+    private void emitCall(BabbleParser.CallContext ctx) {
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpression) {
             superCall(ctx, selector, superExpression);
-            return null;
+            return;
         }
         String site = callSiteField(ctx);
         String[] names = Interpreter.callNames(ctx);
@@ -1581,14 +1600,18 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     // By position, with no more arguments than parameters : the direct entry point.
                     mv.visitInsn(ACONST_NULL);
                     for (BabbleParser.CallParameterContext parameter : parameters) {
-                        visit(parameter.expression());
+                        BabbleParser.ExpressionContext argExpr = parameter.expression();
+                        visit(argExpr);
+                        if (scopes.widensToDouble(argExpr)) {
+                            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                        }
                     }
                     for (int i = parameters.size(); i < count; i++) {
                         mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
                     }
                     line(ctx);
                     mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, gen.methodName(member), methodDirectDescriptor(literal), false);
-                    return null;
+                    return;
                 }
                 arguments(parameters);
                 if (names != null) {
@@ -1599,7 +1622,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
                 line(ctx);
                 mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, gen.methodName(member) + (isSpread(literal) ? "$call" : ""), METHOD_DESCRIPTOR, false);
-                return null;
+                return;
             }
         }
 
@@ -1619,12 +1642,16 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             }
             mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
             for (BabbleParser.CallParameterContext parameter : parameters) {
-                visit(parameter.expression());
+                BabbleParser.ExpressionContext argExpr = parameter.expression();
+                visit(argExpr);
+                if (scopes.widensToDouble(argExpr)) {
+                    mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                }
             }
             line(ctx);
             mv.visitInvokeDynamicInsn("call", "(L" + CALLABLE + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/String;L" + CALL_SITE + ";"
                     + "Ljava/lang/Object;".repeat(parameters.size()) + ")Ljava/lang/Object;", CALL_BOOTSTRAP);
-            return null;
+            return;
         }
         arguments(parameters);
         if (names != null) {
@@ -1635,7 +1662,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
         line(ctx);
         mv.visitMethodInsn(INVOKEINTERFACE, CALLABLE, "call", "(L" + SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", true);
-        return null;
     }
 
     @Override
@@ -1682,6 +1708,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         visit(ctx.left);
         mv.visitVarInsn(ASTORE, left);
         visit(ctx.right);
+        if (scopes.widensToDouble(ctx.right)) {
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
         mv.visitVarInsn(ASTORE, right);
         arithmetic(ctx, ctx.op.getText(), ctx.left.getText(), ctx.right.getText(), left, right);
         return null;

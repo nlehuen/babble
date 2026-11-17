@@ -58,6 +58,7 @@ final class TypeNode {
     /** Where the expression is evaluated. */
     final ScopeNode scope;
     final List<BabbleParser.TypeContext> parentTypes;
+    final List<String> typeParameters;
 
     final Map<String, Member> members = new LinkedHashMap<>();
     final Map<String, Member> statics = new LinkedHashMap<>();
@@ -81,6 +82,11 @@ final class TypeNode {
         this.name = name;
         this.scope = scope;
         this.parentTypes = parentTypes;
+        if (ctx.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == ctx && def.typeParameters() != null) {
+            this.typeParameters = def.typeParameters().ID().stream().map(Object::toString).toList();
+        } else {
+            this.typeParameters = List.of();
+        }
     }
 
     boolean isInterface() {

@@ -236,7 +236,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     @Test
     public void testClassof() throws Exception {
         Assertions.assertEquals(true, interpret(POINT + "classof(Point(1, 2)) == Point"));
-        Assertions.assertEquals(true, interpret("classof(java.util.ArrayList()) == java.util.ArrayList"));
+        Assertions.assertEquals(true, interpret("def l : java.util.List(int) = java.util.ArrayList() ; classof(l) == java.util.ArrayList"));
         Assertions.assertEquals(true, interpret("classof(\"s\") == java.lang.String and classof(1) == java.lang.Integer"));
         Assertions.assertEquals(null, interpret("classof(null)"));
         Assertions.assertEquals(false, interpret("def mk = () -> ( class () () ) ; def A = mk() ; classof(A()) == mk()"));
@@ -252,7 +252,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
                 + "def C = class () ()\n";
         Assertions.assertEquals(true, interpret(shapes + "Sq() is Sq and Sq() is T and Sq() is S"));
         Assertions.assertEquals(false, interpret(shapes + "C() is S or Sq() is C or null is C or 1 is S"));
-        Assertions.assertEquals(true, interpret("\"s\" is java.lang.String and 1 is java.lang.Number and java.util.ArrayList() is java.util.List"));
+        Assertions.assertEquals(true, interpret("def l : java.util.List(int) = java.util.ArrayList() ; \"s\" is java.lang.String and 1 is java.lang.Number and l is java.util.List"));
         Assertions.assertEquals(false, interpret("def mk = () -> ( class () () ) ; def A = mk() ; A() is mk()"));
         assertFails("1 is 2", "Not a type : 2");
     }
@@ -289,9 +289,9 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         Assertions.assertEquals(false, interpret(point + "Point(1, 2) == Point(2, 1)"));
         // Equality needs the same class value.
         Assertions.assertEquals(false, interpret("def mk = () -> ( value class (x : int) () ) ; mk()(1) == mk()(1)"));
-        Assertions.assertEquals(true, interpret(point + "def s = java.util.HashSet() ; s.add(Point(1, 2)) ; s.contains(Point(1.0, 2))"));
-        Assertions.assertEquals("b", interpret(point + "def m = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.get(Point(1, 2))"));
-        Assertions.assertEquals(1, interpret(point + "def m = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.size()"));
+        Assertions.assertEquals(true, interpret(point + "def s : java.util.Set(Point) = java.util.HashSet() ; s.add(Point(1, 2)) ; s.contains(Point(1.0, 2))"));
+        Assertions.assertEquals("b", interpret(point + "def m : java.util.Map(Point, string) = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.get(Point(1, 2))"));
+        Assertions.assertEquals(1, interpret(point + "def m : java.util.Map(Point, string) = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.size()"));
         // Regular classes compare by identity.
         Assertions.assertEquals(false, interpret("def C = class (def x : int) () ; C(1) == C(1)"));
     }
@@ -409,7 +409,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testEqualityOfJavaCollectionsAndBoundMethods() throws Exception {
-        Assertions.assertEquals(true, interpret("def a = java.util.HashMap() ; def b = java.util.HashMap() ; a.put(1, 2) ; b.put(1, 2) ; a == b"));
+        Assertions.assertEquals(true, interpret("def a : java.util.Map(int, int) = java.util.HashMap() ; def b : java.util.Map(int, int) = java.util.HashMap() ; a.put(1, 2) ; b.put(1, 2) ; a == b"));
         Assertions.assertEquals(true, interpret("def o = object ( def m = () -> ( 1 ) ) ; o.m == o.m"));
     }
 }

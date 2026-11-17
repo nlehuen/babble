@@ -39,6 +39,23 @@ public class FormatterTestCase {
     }
 
     @Test
+    public void testGenerics() throws Exception {
+        assertFormats("""
+                def id(T): (x: T): T = (x: T): T -> (x)
+                def Stack(T) = class (def value: T, def next: Stack(T)?) ()
+                def l: java.util.List(string) = java.util.ArrayList()
+                def m: java.util.Map(string, Stack(int)?) = java.util.HashMap()
+                def f: ((x: int): Box(int | string))? = null
+                """, """
+                def id ( T ) : ( x : T ) : T = ( x : T ) : T -> ( x )
+                def Stack ( T ) = class ( def value : T , def next : Stack ( T ) ? ) ( )
+                def l : java.util.List ( string ) = java.util.ArrayList ( )
+                def m : java.util.Map ( string , Stack ( int ) ? ) = java.util.HashMap ( )
+                def f : ( ( x : int ) : Box ( int | string ) ) ? = null
+                """);
+    }
+
+    @Test
     public void testUnaryMinusElseIfAndLeadingDots() throws Exception {
         // A unary minus sticks to its operand ; a binary one is spaced.
         assertFormats("def x = -3 - -y * f(-1, - -z)\n", "def x = - 3--y*f(- 1,- - z)");
