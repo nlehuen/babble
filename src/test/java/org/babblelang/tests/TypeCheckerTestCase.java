@@ -454,15 +454,15 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testJava() {
-        assertDiagnostics("def l = java.util.ArrayList()\nl.add(1)\nl.nope()\njava.lang.Math.abs(\"x\")\ndef m : string = java.lang.Math.max(1, 2)\njava.lang.Math.nope\n"
-                        + "def b : java.util.List = l\ndef c : java.util.Map = l",
+        assertDiagnostics("def l : java.util.ArrayList(int) = java.util.ArrayList()\nl.add(1)\nl.nope()\njava.lang.Math.abs(\"x\")\ndef m : string = java.lang.Math.max(1, 2)\njava.lang.Math.nope\n"
+                        + "def b : java.util.List(int) = l\ndef c : java.util.Map(string, int) = l",
                 "3:1 No such name in java.util.ArrayList : nope",
                 "4:1 No applicable overload of java.lang.Math.abs for (string)",
                 "5:18 Type error : expected string, got int",
                 "6:1 No such name in java.lang.Math : nope",
-                "8:25 Type error : expected java.util.Map, got java.util.ArrayList");
+                "8:38 Type error : expected java.util.Map(string, int), got java.util.ArrayList(int)");
         // Babble functions convert to functional interfaces, and classes implement Java interfaces.
-        assertDiagnostics("def l = java.util.ArrayList()\nl.removeIf((v) -> ( v is int and v > 2 ))\n"
+        assertDiagnostics("def l : java.util.List(any) = java.util.ArrayList()\nl.removeIf((v) -> ( v is int and v > 2 ))\n"
                 + "def R = class () implements java.lang.Runnable ( def run = () -> ( null ) )\njava.lang.Thread(R())\ndef r : java.lang.Runnable = R()\n"
                 + "def P = class () ()\njava.lang.Thread(P())",
                 "7:1 No applicable overload of java.lang.Thread for (P)");
@@ -503,7 +503,7 @@ public class TypeCheckerTestCase {
                 + "  def ok2 : bool = v != null\n"
                 + "  def ok3 : string = \"x = \" + v\n"
                 + "  println(v) ; same(v, 1) ; classof(v) ; java.lang.System.out.println(v)\n"
-                + "  def l = java.util.ArrayList() ; l.add(v)\n"
+                + "  def l : java.util.List(any?) = java.util.ArrayList() ; l.add(v)\n"
                 + "  def cond = true\n"
                 + "  def ok4 : any = if cond then ( 1 ) else ( \"a\" )\n"
                 + "  def ok5 : any? = if cond then ( 1 )\n"
@@ -771,7 +771,7 @@ public class TypeCheckerTestCase {
     public void testStrictS6JavaObjectInterfacesArraysInaccessible() {
         assertDiagnostics("def l = java.util.List.of(1, 2)\n"
                 + "l.get(0).nope\n"
-                + "def s : string = l.get(0) as string\n"
+                + "def n : int = l.get(0) as int\n"
                 + "def it = l.iterator()\n"
                 + "def ok : bool = it.hasNext()\n"
                 + "def ts : string = it.toString()\n"
@@ -1073,6 +1073,78 @@ public class TypeCheckerTestCase {
                         + "  def val = 1\n"
                         + "  def widen = () -> ( this.val = 1.5 )\n"
                         + ")");
+    }
+
+    @Test
+    public void testP6bGenerics() {
+        // Positive cases: Babble generics, Java generics, bounds, covariance, is/as raw narrowing, nullability.
+        assertDiagnostics("def id(T) = (x : T) : T -> ( x )\n"
+                + "def Box(T) = class (def value : T) (\n"
+                + "  def map(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )\n"
+                + ")\n"
+                + "def n : int = id(1)\n"
+                + "def idStr : (s : string) : string = id\n"
+                + "def s : string = idStr(\"ok\")\n"
+                + "def bi : Box(int) = Box(5)\n"
+                + "def bu : Box(int | double) = bi\n"
+                + "def ba : Box(any) = bi\n"
+                + "def mb : Box(int)? = bi\n"
+                + "def narrowed : int = if mb is Box then ( mb.value ) else ( 0 )\n"
+                + "def rawCast : any = (\"hi\" as any)\n"
+                + "def jl : java.util.List(string) = java.util.ArrayList()\n"
+                + "def first : string? = jl.get(0)\n"
+                + "def takeNullable(T) = (x : T) : any? -> ( x )\n"
+                + "takeNullable(1)");
+
+        // Negative cases: missing type args, wrong arity, uninferred, bounds, covariance, as targets, T vs any, static scope.
+        assertDiagnostics("def Box(T) = class (def value : T) () static ( def bad : T? = null )\n"
+                + "def id(T) = (x : T) : T -> ( x )\n"
+                + "def rawAnnot : java.util.List = java.util.List.of(1)\n"
+                + "def rawBabble : Box = Box(1)\n"
+                + "def badArity : Box(int, string) = Box(1)\n"
+                + "def badPrimArg : int(string) = 1\n"
+                + "def badTvArg(T) = (x : T(int)) -> ( x )\n"
+                + "def uninferredJava = java.util.ArrayList()\n"
+                + "def uninferredFn = id\n"
+                + "def bi : Box(int) = Box(1)\n"
+                + "def bd : Box(double) = bi\n"
+                + "def anyVal : any = bi\n"
+                + "def paramCast = anyVal as Box(int)\n"
+                + "def tvCast(T) = (x : any) -> ( x as T )\n"
+                + "def tvToAny(T) = (x : T) : any -> ( x )\n"
+                + "def jl : java.util.List(string) = java.util.ArrayList()\n"
+                + "jl.add(42)\n"
+                + "def il = java.util.List.of(1, 2)\n"
+                + "def badElem : int = il.get(0)\n"
+                + "def badElemCast = il.get(0) as string\n"
+                + "def ptList = java.util.List.of(object ())\n"
+                + "java.util.Collections.sort(ptList)",
+                "1:58 Unknown type : T",
+                "3:16 Missing type arguments : java.util.List",
+                "4:17 Missing type arguments : Box",
+                "5:16 Wrong number of type arguments : expected 1, got 2",
+                "6:18 Wrong number of type arguments : expected 0, got 1",
+                "7:24 Wrong number of type arguments : expected 0, got 1",
+                "8:22 Missing type : cannot infer type arguments for java.util.ArrayList",
+                "9:20 Missing type : cannot infer type arguments for id",
+                "11:24 Type error : expected Box(double), got Box(int)",
+                "13:27 Cannot cast to parameterized type : Box(int)",
+                "14:37 Cannot cast to type parameter : T",
+                "15:37 Type error : expected any, got T",
+                "17:1 No applicable overload of java.util.List.add for (int)",
+                "19:21 Type error : expected int, got int?",
+                "20:19 Type error : expected string, got int?",
+                "22:1 Type error : type argument object does not satisfy bound T of java.util.Collections.sort");
+
+        org.babblelang.analysis.AnalysisException dup = Assertions.assertThrows(
+                org.babblelang.analysis.AnalysisException.class,
+                () -> diagnostics("def f(T, T) = (x : T) -> ( x )"));
+        Assertions.assertTrue(dup.getMessage().contains("Name already defined : T"), dup.getMessage());
+
+        org.babblelang.analysis.AnalysisException misplaced = Assertions.assertThrows(
+                org.babblelang.analysis.AnalysisException.class,
+                () -> diagnostics("def bad(T) = 42"));
+        Assertions.assertTrue(misplaced.getMessage().contains("Type parameters only apply to functions, classes, and interfaces : bad"), misplaced.getMessage());
     }
 
     @Test

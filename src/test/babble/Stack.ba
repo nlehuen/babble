@@ -2,18 +2,18 @@
     Implementation of a simple LIFO stack
 ;;)
 package stack (
-    def Node = class (def value: any, def next: Node?) ()
+    def Node(T) = class (def value: T, def next: Node(T)?) ()
 
-    def Stack = class () (
+    def Stack(T) = class () (
         def size = 0
-        def head: Node? = null
+        def head: Node(T)? = null
 
-        def push = (a: any) -> (
+        def push = (a: T) -> (
             this.size = this.size + 1
             this.head = Node(a, this.head)
         )
 
-        def first = (): any? -> (
+        def first = (): T? -> (
             def head = this.head
             if head == null then (
                 null
@@ -22,7 +22,7 @@ package stack (
             )
         )
 
-        def pop = (): any? -> (
+        def pop = (): T? -> (
             def head = this.head
             if head == null then (
                 null
@@ -68,11 +68,11 @@ package stack (
     )
 
     ;; keeps stack.create() working
-    def create = () -> (Stack())
+    def create(T) = (): Stack(T) -> (Stack())
 )
 
 def test = () -> (
-    def l = stack.create()
+    def l: stack.Stack(string) = stack.create()
     assert(l.size == 0)
     l.push("world")
     assert(l.size == 1)
@@ -89,7 +89,7 @@ def test = () -> (
 test()
 
 def testRecursiveMethod = () -> (
-    def l = stack.Stack()
+    def l: stack.Stack(string) = stack.Stack()
     l.push("c")
     l.push("b")
     l.push("a")

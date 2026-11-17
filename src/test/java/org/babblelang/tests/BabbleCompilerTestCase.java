@@ -285,7 +285,7 @@ public class BabbleCompilerTestCase {
     @Test
     public void testACallSiteSeesManyFunctions() throws Exception {
         // More function literals than a site caches, each called many times from the same site.
-        StringBuilder source = new StringBuilder("def Box = class (def f : (x : int) : int) ()\ndef fs = java.util.ArrayList()\n");
+        StringBuilder source = new StringBuilder("def Box = class (def f : (x : int) : int) ()\ndef fs : java.util.List(Box) = java.util.ArrayList()\n");
         for (int i = 0; i < 10; i++) {
             source.append("fs.add(Box((x : int, y : int = ").append(i).append(") -> ( x * y )))\n");
         }
@@ -456,4 +456,25 @@ public class BabbleCompilerTestCase {
         Assertions.assertEquals("5:hi", checked.eval(new SimpleBindings()));
     }
 
+    @Test
+    public void testP6bGenericsCompileCleanly() throws Exception {
+        CompiledBabbleScript babbleGenerics = compile(
+                "def Box(T) = class (def v : T) (\n"
+                        + "  def map(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.v)) )\n"
+                        + ")\n"
+                        + "def id(T) = (x : T) : T -> ( x )\n"
+                        + "def db : Box(double) = Box(3)\n"
+                        + "def sb : Box(string) = db.map((d) -> ( \"\" + id(d) ))\n"
+                        + "\"\" + classof(db.v) + \":\" + sb.v");
+        assertVerifies(babbleGenerics);
+        Assertions.assertEquals(List.of(), typesCalls(babbleGenerics));
+        Assertions.assertEquals("java.lang.Double:3.0", babbleGenerics.eval(new SimpleBindings()));
+
+        CompiledBabbleScript javaBoundary = compile(
+                "def l : java.util.List(int) = java.util.List.of(42)\n"
+                        + "l.get(0)");
+        assertVerifies(javaBoundary);
+        Assertions.assertTrue(typesCalls(javaBoundary).stream().anyMatch(c -> c.endsWith("->check")), typesCalls(javaBoundary).toString());
+        Assertions.assertEquals(42, javaBoundary.eval(new SimpleBindings()));
+    }
 }

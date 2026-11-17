@@ -59,6 +59,14 @@ sealed interface Type {
         }
     }
 
+    /** A Babble generic type parameter declared on a class, interface or function def. */
+    record TypeVar(BabbleParser.DefExpressionContext owner, String name, int index) implements Type {
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
     /** A parameter of a function type : its name is part of the type, since calls bind by name. */
     record Parameter(String name, Type type, boolean optional) {
         @Override
@@ -67,19 +75,30 @@ sealed interface Type {
         }
     }
 
-    record Function(List<Parameter> parameters, Type result) implements Type {
+    record Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result) implements Type {
+        Function(List<Parameter> parameters, Type result) {
+            this(List.of(), parameters, result);
+        }
+
         @Override
         public String toString() {
-            return parameters.stream().map(Parameter::toString).collect(Collectors.joining(", ", "(", ")"))
+            String tp = typeParameters.isEmpty() ? ""
+                    : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
+            return tp + parameters.stream().map(Parameter::toString).collect(Collectors.joining(", ", "(", ")"))
                     + (result == ERROR ? "" : " : " + result);
         }
     }
 
     /** An instance of a class, object literal or interface : nominal. */
-    record Instance(TypeNode node) implements Type {
+    record Instance(TypeNode node, List<Type> typeArguments) implements Type {
+        Instance(TypeNode node) {
+            this(node, List.of());
+        }
+
         @Override
         public String toString() {
-            return node.name;
+            return typeArguments.isEmpty() ? node.name
+                    : node.name + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
         }
     }
 
@@ -123,15 +142,24 @@ sealed interface Type {
     }
 
     /** An instance of a Java class, as a constructor returns it. */
-    record JavaInstance(Class<?> type) implements Type {
+    record JavaInstance(Class<?> type, List<Type> typeArguments) implements Type {
+        JavaInstance(Class<?> type) {
+            this(type, List.of());
+        }
+
         @Override
         public String toString() {
-            return type.getName();
+            return typeArguments.isEmpty() ? type.getName()
+                    : type.getName() + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
         }
     }
 
     /** The methods of a Java class with one name, selected through the class or an instance. */
-    record JavaMethod(Class<?> owner, String name) implements Type {
+    record JavaMethod(Class<?> owner, List<Type> typeArguments, String name) implements Type {
+        JavaMethod(Class<?> owner, String name) {
+            this(owner, List.of(), name);
+        }
+
         @Override
         public String toString() {
             return owner.getName() + "." + name;

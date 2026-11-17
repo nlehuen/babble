@@ -229,7 +229,7 @@ public class ReplTestCase {
         Assertions.assertEquals(List.of("3", "\"a\\\"b\"", "1.5", "true", "function f", "function", "class P", "P(x: 1, y: 2)", "interface I", "[1]", "package java.util",
                         "java.lang.Math", "package", "hi"),
                 transcript("1 + 2", "\"a\\\"b\"", "1.5", "1 < 2", "def f = () -> ( 1 )", "() -> ( 1 )", "def P = value class (x : int, y : int) ()", "P(1, 2)", "def I = interface ()",
-                        "def l = java.util.ArrayList() ; l.add(1) ; l", "java.util", "java.lang.Math", "package p ( def a = 1 ) ; p",
+                        "def l : java.util.List(int) = java.util.ArrayList() ; l.add(1) ; l", "java.util", "java.lang.Math", "package p ( def a = 1 ) ; p",
                         // null is not shown, and output is.
                         "null", "def n : any?", "println(\"hi\")"));
     }

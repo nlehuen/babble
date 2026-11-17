@@ -36,4 +36,5 @@ assert(even.isEven(10))
 assert(not even.isEven(7))
 
 ;; Java packages are imported as before
-assert(import("java").util.ArrayList().size() == 0)
+def l: java.util.List(int) = import("java").util.ArrayList()
+assert(l.size() == 0)

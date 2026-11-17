@@ -436,6 +436,21 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         BabbleParser.FunctionLiteralContext function = ctx.value instanceof BabbleParser.FunctionLiteralContext literal ? literal : null;
         int flags = (function != null ? ClassShape.METHOD : 0) | (isPrivate ? ClassShape.PRIVATE : 0);
 
+        if (ctx.typeParameters() != null) {
+            Set<String> typeParameterNames = new HashSet<>();
+            for (org.antlr.v4.runtime.tree.TerminalNode id : ctx.typeParameters().ID()) {
+                if (!typeParameterNames.add(id.getText())) {
+                    throw error("Name already defined : " + id.getText(), id.getSymbol());
+                }
+            }
+            if (scope.kind != ScopeNode.Kind.INTERFACE_BODY
+                    && !(ctx.value instanceof BabbleParser.FunctionLiteralContext
+                    || ctx.value instanceof BabbleParser.ClassExpressionContext
+                    || ctx.value instanceof BabbleParser.InterfaceExpressionContext)) {
+                throw error("Type parameters only apply to functions, classes, and interfaces : " + ctx.name.getText(), ctx.typeParameters());
+            }
+        }
+
         switch (scope.kind) {
             case CLASS_BODY -> {
                 TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, function);

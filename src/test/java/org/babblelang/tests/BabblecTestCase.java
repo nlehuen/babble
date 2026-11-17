@@ -148,7 +148,7 @@ public class BabblecTestCase {
 
     @Test
     public void dynamicImportsFindOnlyWhatTheJarHolds() throws Exception {
-        file("lib/a.ba", "export def loaded = java.util.HashMap()\nloaded.put(\"a\", \"a\")");
+        file("lib/a.ba", "export def loaded : java.util.Map(string, string) = java.util.HashMap()\nloaded.put(\"a\", \"a\")");
         file("lib/b.ba", "import(\"a.ba\").loaded.put(\"b\", \"b\")");
         file("main.ba", "def a = import(\"lib/a.ba\")\n"
                 + "def load = (n : string) : string -> ( import(\"lib/\" + n + \".ba\") ; a.loaded.get(n) as string )\n"
@@ -189,7 +189,7 @@ public class BabblecTestCase {
 
     /** A program whose main script imports b, c or what it is told, dynamically. */
     private void dynamicProgram() throws IOException {
-        file("lib/a.ba", "println(\"loading a\")\ndef n = 0\nexport def next = () : int -> ( n = n + 1 )\nexport def names = java.util.HashMap()\nexport def actions = java.util.HashMap()");
+        file("lib/a.ba", "println(\"loading a\")\ndef n = 0\nexport def next = () : int -> ( n = n + 1 )\nexport def names : java.util.Map(string, string) = java.util.HashMap()\nexport def actions : java.util.Map(string, java.lang.Runnable) = java.util.HashMap()");
         file("lib/b.ba", "def a = import(\"a.ba\")\nimport(\"c.ba\")\nexport def name = \"b, \" + (a.names.get(\"c\") as string) + \", a at \" + a.next()\na.names.put(\"b\", name)");
         file("lib/c.ba", "def a = import(\"a.ba\")\nexport def name = \"c\"\na.names.put(\"c\", name)\ndef id = (v : any?) : any? -> ( v )\nexport def fail = () : int -> ( 1 + (id(null) as int) )\na.actions.put(\"c\", java.lang.Runnable(() -> ( fail() )))");
         file("main.ba", "def a = import(\"lib/a.ba\")\n"

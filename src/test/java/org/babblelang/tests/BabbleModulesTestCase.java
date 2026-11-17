@@ -83,8 +83,8 @@ public class BabbleModulesTestCase extends BabbleTestBase {
 
     @Test
     public void aModuleRunsOncePerEval() throws Exception {
-        file("lib.ba", "println(\"loading\")\nexport def counter = java.util.ArrayList()");
-        file("user.ba", "def lib = import(\"lib.ba\")\nexport def add = (v : any) -> ( lib.counter.add(v) )");
+        file("lib.ba", "println(\"loading\")\nexport def counter : java.util.List(int) = java.util.ArrayList()");
+        file("user.ba", "def lib = import(\"lib.ba\")\nexport def add = (v : int) -> ( lib.counter.add(v) )");
         Object size = run("def lib = import(\"lib.ba\") ; def user = import(\"user.ba\") ; user.add(1) ; import(\"./lib.ba\").counter.size()");
         Assertions.assertEquals(1, size);
         Assertions.assertEquals("loading" + System.lineSeparator(), output.toString());
@@ -574,6 +574,25 @@ public class BabbleModulesTestCase extends BabbleTestBase {
 
     @Test
     public void javaPackagesAreStillImported() throws Exception {
-        Assertions.assertEquals(0, run("def util = import(\"java\").util ; util.ArrayList().size()"));
+        Assertions.assertEquals(0, run("def util = import(\"java\").util ; def l : util.List(int) = util.ArrayList() ; l.size()"));
+    }
+
+    @Test
+    public void crossModuleGenericsWork() throws Exception {
+        file("gen.ba", "export def Container(T) = interface ( def get : () : T )\n"
+                + "export def Box(T) = class (def value : T) implements Container(T) (\n"
+                + "  def get = () : T -> ( this.value )\n"
+                + "  def map(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )\n"
+                + ")\n"
+                + "export def id(T) = (x : T) : T -> ( x )");
+        Assertions.assertEquals("42:hi", run(
+                "def gen = import(\"gen.ba\")\n"
+                        + "def b : gen.Box(int) = gen.Box(42)\n"
+                        + "def c : gen.Container(int) = b\n"
+                        + "def s = b.map((n) -> ( \"hi\" ))\n"
+                        + "\"\" + c.get() + \":\" + gen.id(s.get())"));
+        Assertions.assertEquals(java.util.List.of(
+                "main.ba:2:26 Type error : expected Box(int), got Box(string)"),
+                typeErrors("def gen = import(\"gen.ba\")\ndef bad : gen.Box(int) = gen.Box(\"wrong\")"));
     }
 }

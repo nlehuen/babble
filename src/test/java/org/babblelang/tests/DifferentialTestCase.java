@@ -283,7 +283,9 @@ public class DifferentialTestCase {
                 "def id = (x : any?) : any? -> ( x )\ndef f = (x : int | string) : int | string -> ( x )\nf(id(true) as (int | string))",
                 "def id = (x : any?) : any? -> ( x )\ndef a : any = id(null) as any",
                 "def id = (x : any?) : any? -> ( x )\ndef d : double? = id(2) as double?\n\"\" + classof(d) + \":\" + d + \":\" + (id(null) as double?)",
-                "def id = (x : any?) : any? -> ( x )\ndef u : int | double = id(2) as (int | double)\nclassof(u)"
+                "def id = (x : any?) : any? -> ( x )\ndef u : int | double = id(2) as (int | double)\nclassof(u)",
+                // P6b : Java generic boundary check rejects corrupted element read and permits null.
+                "def l : java.util.List(int) = java.util.ArrayList()\n(l as java.util.List).add(null)\nl.get(0)\n(l as java.util.List).add(\"bad\")\nl.get(1)"
         );
     }
 
@@ -312,7 +314,9 @@ public class DifferentialTestCase {
                 "def take = (f : () : double) : double -> ( f() ) ; def r = take(() -> ( 1 )) ; \"\" + classof(r) + \":\" + r",
                 "def mk : () : () : double = () -> ( () -> ( 1 ) ) ; def v = mk()() ; \"\" + classof(v) + \":\" + v",
                 "def f : () : double? = () -> ( 1 ) ; def v = f() ; \"\" + classof(v) + \":\" + v",
-                "def I = interface ( def x : double ) ; def C = class () implements I ( def x = 1 ; def widen = () -> ( this.x = 1.5 ) ) ; def i : I = C() ; \"\" + classof(i.x) + \":\" + i.x"
+                "def I = interface ( def x : double ) ; def C = class () implements I ( def x = 1 ; def widen = () -> ( this.x = 1.5 ) ) ; def i : I = C() ; \"\" + classof(i.x) + \":\" + i.x",
+                // P6b : generic double widening, covariant narrowing with is, generic methods and Java collections.
+                "def Box(T) = class (def v : T) ()\ndef b : Box(double) = Box(1)\ndef l : java.util.List(double) = java.util.ArrayList() ; l.add(2)\n\"\" + classof(b.v) + \":\" + classof(l.get(0))"
         );
     }
 
