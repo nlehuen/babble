@@ -55,6 +55,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     record Occurrence(ParserRuleContext ctx, String name, ScopeNode scope) {
     }
 
+    record PendingEffectDecl(BabbleParser.EffectDeclarationContext ctx, ScopeNode scope) {
+    }
+
     final ScopeAnalysis analysis = new ScopeAnalysis();
     final List<TypeNode> types = new ArrayList<>();
     final List<PendingSuper> supers = new ArrayList<>();
@@ -67,11 +70,13 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final List<BabbleParser.PackageExpressionContext> packages = new ArrayList<>();
     final Map<BabbleParser.PackageExpressionContext, ScopeNode> packageScopes = new HashMap<>();
     final List<PendingImport> imports = new ArrayList<>();
+    final List<PendingEffectDecl> effectDeclarations = new ArrayList<>();
     /** The interfaces of the files imported statically, by import call. */
     final Map<BabbleParser.CallContext, ModuleInterface> modules = new HashMap<>();
 
     /** The interactive session the file is an input of, or null. */
     final AnalysisSession session;
+    final HostEffects hostEffects;
     final Map<BabbleParser.SuperExpressionContext, TypeChecks.Provider> superProviders = new HashMap<>();
     TypeChecker checker;
     ScopeNode fileScope;
@@ -84,8 +89,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     /** How many types of each name the module has so far, for their ids. */
     private final Map<String, Integer> typeNames = new HashMap<>();
 
-    private BlockScopes(AnalysisSession session) {
+    private BlockScopes(AnalysisSession session, HostEffects hostEffects) {
         this.session = session;
+        this.hostEffects = hostEffects != null ? hostEffects : HostEffects.DEFAULT;
         if (session != null) {
             // What earlier inputs defined is found like what the file defines.
             typeNodes.putAll(session.typeNodes);
@@ -115,7 +121,11 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
      *               every import to runtime
      */
     public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session, ModuleLoader loader) {
-        BlockScopes pass = new BlockScopes(session);
+        return analyze(file, session, loader, HostEffects.DEFAULT);
+    }
+
+    public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session, ModuleLoader loader, HostEffects hostEffects) {
+        BlockScopes pass = new BlockScopes(session, hostEffects);
         pass.moduleKey = loader != null ? loader.moduleKey() : null;
         pass.analysis.setPass(pass);
         pass.fileScope = pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
@@ -387,6 +397,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         TypeNode type = newType(ctx, ClassShape.Kind.INTERFACE, typeName(ctx, "interface"), ctx.typeList());
         inReturnTarget(ReturnTarget.CLASS_BODY, () -> {
             inScope(ScopeNode.Kind.INTERFACE_BODY, ctx, type, () -> {
+                if (!ctx.interfaceBlock.effectDeclaration().isEmpty()) {
+                    throw error("An interface can only declare members", ctx.interfaceBlock.effectDeclaration().get(0));
+                }
                 for (BabbleParser.ExpressionContext statement : ctx.interfaceBlock.expression()) {
                     if (!(statement instanceof BabbleParser.DefExpressionContext)) {
                         throw error("An interface can only declare members", statement);
@@ -408,6 +421,19 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitBlock(BabbleParser.BlockContext ctx) {
         inScope(ScopeNode.Kind.BLOCK, ctx, null, () -> visitChildren(ctx));
+        return null;
+    }
+
+    @Override
+    public Void visitEffectDeclaration(BabbleParser.EffectDeclarationContext ctx) {
+        ScopeNode scope = current();
+        if (scope.whileTests > 0) {
+            throw error("Effect declaration in a while test", ctx);
+        }
+        if (ctx.EXPORT() != null && scope.kind != ScopeNode.Kind.FILE) {
+            throw error("export only applies to the top-level definitions of a file", ctx.EXPORT().getSymbol());
+        }
+        effectDeclarations.add(new PendingEffectDecl(ctx, scope));
         return null;
     }
 

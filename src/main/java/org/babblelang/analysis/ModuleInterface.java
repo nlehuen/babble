@@ -21,6 +21,7 @@ public final class ModuleInterface {
     private String name = "<module>";
     private TypeChecks checks;
     private TypeChecker checker;
+    private Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects = Map.of();
 
     ModuleInterface(BlockScopes pass) {
         String[] ordered = pass.analysis.exports();
@@ -57,11 +58,16 @@ public final class ModuleInterface {
     /** The file's checker, once it ran, which types its exports. */
     void typed(TypeChecker checker) {
         this.checker = checker;
+        this.exportedJavaEffects = checker.exportedJavaEffects();
     }
 
     /** The file's type checker, or null if the file is still being analysed (a cycle). */
     TypeChecker checker() {
         return checker;
+    }
+
+    Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
+        return exportedJavaEffects;
     }
 
     /**

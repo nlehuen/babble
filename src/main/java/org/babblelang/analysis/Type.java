@@ -68,23 +68,92 @@ sealed interface Type {
     }
 
     /** A parameter of a function type : its name is part of the type, since calls bind by name. */
-    record Parameter(String name, Type type, boolean optional) {
+    record Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitBorrow) {
+        Parameter(String name, Type type, boolean optional) {
+            this(name, type, optional, false, false, false);
+        }
+
+        Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow) {
+            this(name, type, optional, mut, borrow, borrow);
+        }
+
+        Parameter withType(Type newType) {
+            return new Parameter(name, newType, optional, mut, borrow, explicitBorrow);
+        }
+
+        Parameter withModifiers(boolean newMut, boolean newBorrow) {
+            return new Parameter(name, type, optional, newMut, newBorrow || explicitBorrow, explicitBorrow);
+        }
+
+        String format(boolean showBorrow) {
+            return (mut ? "mut " : "")
+                    + ((showBorrow ? borrow : explicitBorrow) ? "borrow " : "")
+                    + name
+                    + (type == ERROR ? "" : " : " + type)
+                    + (optional ? " = …" : "");
+        }
+
         @Override
         public String toString() {
-            return name + (type == ERROR ? "" : " : " + type) + (optional ? " = …" : "");
+            return format(false);
         }
     }
 
-    record Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result) implements Type {
+    record Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result, EffectSet effects) implements Type {
+        public Function {
+            effects = effects != null ? effects : EffectSet.EMPTY;
+        }
+
         Function(List<Parameter> parameters, Type result) {
-            this(List.of(), parameters, result);
+            this(List.of(), parameters, result, EffectSet.EMPTY);
+        }
+
+        Function(List<Parameter> parameters, Type result, EffectSet effects) {
+            this(List.of(), parameters, result, effects);
+        }
+
+        Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result) {
+            this(typeParameters, parameters, result, EffectSet.EMPTY);
+        }
+
+        Function withEffects(EffectSet newEffects, List<Parameter> newParameters) {
+            return new Function(typeParameters, newParameters, result, newEffects);
+        }
+
+        /** Formats this function type highlighting guarantees relevant to {@code expected}. */
+        String describeAgainst(Function expected) {
+            java.util.EnumSet<org.babblelang.effects.Effect> shown = java.util.EnumSet.copyOf(effects.declared());
+            for (org.babblelang.effects.Effect req : expected.effects().effects()) {
+                if (effects.has(req)) {
+                    shown.add(req);
+                }
+            }
+            EffectSet displaySet = new EffectSet(
+                    shown, shown,
+                    effects.mutThis(),
+                    effects.explicitBorrowThis() || (expected.effects().borrowThis() && effects.borrowThis()),
+                    effects.explicitBorrowThis() || (expected.effects().borrowThis() && effects.borrowThis()),
+                    false, false);
+            String tp = typeParameters.isEmpty() ? ""
+                    : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
+            StringBuilder params = new StringBuilder("(");
+            for (int i = 0; i < parameters.size(); i++) {
+                if (i > 0) {
+                    params.append(", ");
+                }
+                boolean showBorrow = i < expected.parameters().size() && expected.parameters().get(i).borrow();
+                params.append(parameters.get(i).format(showBorrow));
+            }
+            params.append(")");
+            return displaySet.formatDeclaredPrefix() + tp + params + (result == ERROR ? "" : " : " + result);
         }
 
         @Override
         public String toString() {
             String tp = typeParameters.isEmpty() ? ""
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
-            return tp + parameters.stream().map(Parameter::toString).collect(Collectors.joining(", ", "(", ")"))
+            return effects.formatDeclaredPrefix() + tp
+                    + parameters.stream().map(Parameter::toString).collect(Collectors.joining(", ", "(", ")"))
                     + (result == ERROR ? "" : " : " + result);
         }
     }

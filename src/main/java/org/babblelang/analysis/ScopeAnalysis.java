@@ -6,7 +6,9 @@ import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * What the analysis computes for a file : which constructs open a scope, the names each
@@ -367,6 +369,27 @@ public final class ScopeAnalysis {
      */
     public BabbleParser.TypeContext superTarget(BabbleParser.SuperExpressionContext superExpression) {
         return superTargets.get(superExpression);
+    }
+
+    private final Map<ParserRuleContext, EffectSet> callableEffects = new HashMap<>();
+    private final Map<BabbleParser.CallContext, EffectSet> callEffects = new HashMap<>();
+
+    void setCallableEffects(ParserRuleContext callable, EffectSet effects) {
+        callableEffects.put(callable, effects);
+    }
+
+    /** The converged or declared effect summary of a function literal or class constructor. */
+    public EffectSet callableEffects(ParserRuleContext callable) {
+        return callableEffects.getOrDefault(callable, EffectSet.EMPTY);
+    }
+
+    void setCallEffects(BabbleParser.CallContext call, EffectSet effects) {
+        callEffects.put(call, effects);
+    }
+
+    /** The resolved effect summary of a call site. */
+    public EffectSet callEffects(BabbleParser.CallContext call) {
+        return callEffects.getOrDefault(call, EffectSet.EMPTY);
     }
 
     public List<Warning> warnings() {

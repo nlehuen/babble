@@ -37,6 +37,10 @@ public final class AnalysisSession {
     final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
     /** Frozen inferred member and static types from earlier inputs (§6, Q5). */
     final Map<ParserRuleContext, Type> memberTypes = new HashMap<>();
+    /** Committed top-level {@code axiom} and {@code impure} Java overrides from earlier inputs. */
+    final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> javaEffects = new HashMap<>();
+    /** Converged caller-visible summaries of functions and constructors from earlier inputs. */
+    final Map<ParserRuleContext, EffectChecker.CallableSummary> callableSummaries = new HashMap<>();
 
     /**
      * Makes an analysed input part of the session, for the inputs that follow.
@@ -53,6 +57,8 @@ public final class AnalysisSession {
         if (pass.checker != null) {
             declarationTypes.putAll(pass.checker.frozenDeclarations());
             memberTypes.putAll(pass.checker.frozenMembers());
+            javaEffects.putAll(pass.checker.committedJavaEffects());
+            callableSummaries.putAll(pass.checker.committedCallableSummaries());
         }
         for (BlockScopes.Occurrence occurrence : pass.occurrences) {
             occurrenceScopes.put(occurrence.ctx(), occurrence.scope());
