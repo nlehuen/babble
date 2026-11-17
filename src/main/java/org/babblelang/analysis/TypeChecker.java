@@ -2375,7 +2375,10 @@ final class TypeChecker {
         public Type visitSelector(BabbleParser.SelectorContext ctx) {
             Type result = selectUninstantiated(ctx);
             if (result instanceof Type.Function fn && !fn.typeParameters().isEmpty() && !isCalleeOfCall(ctx)) {
-                return instantiateFunctionValue(fn, ctx);
+                result = instantiateFunctionValue(fn, ctx);
+            }
+            if (ctx.safe != null && result != Type.ERROR) {
+                return Type.nullable(result);
             }
             return result;
         }
@@ -2418,11 +2421,32 @@ final class TypeChecker {
                 }
                 return Type.ERROR;
             }
+            if (ctx.safe != null) {
+                Type receiverType = typeOf(receiver);
+                if (isUnresolved(receiverType)) {
+                    return Type.ERROR;
+                }
+                if (!canBeNull(receiverType)) {
+                    warn("Not nullable : " + receiver.getText(), ctx);
+                    return Type.ERROR;
+                }
+                Type target = receiverType == Type.NULL ? Type.NULL : Type.withoutNull(receiverType);
+                return member(target, name, receiver instanceof BabbleParser.ThisExpressionContext, ctx, receiver);
+            }
             return member(typeOf(receiver), name, receiver instanceof BabbleParser.ThisExpressionContext, ctx, receiver);
         }
 
         @Override
         public Type visitCall(BabbleParser.CallContext ctx) {
+            if (ctx.expression() instanceof BabbleParser.SelectorContext safeSelector && safeSelector.safe != null) {
+                Type callee = typer.selectUninstantiated(safeSelector);
+                types.put(safeSelector, callee == Type.ERROR ? Type.ERROR : Type.nullable(callee));
+                Type result = call(callee, ctx);
+                for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
+                    typeOf(argument.expression());
+                }
+                return result == Type.ERROR ? Type.ERROR : Type.nullable(result);
+            }
             Type callee = typeOf(ctx.expression());
             ModuleInterface module = pass.modules.get(ctx);
             Type result;
@@ -5026,6 +5050,13 @@ final class TypeChecker {
 
     private static boolean containsType(Type type, Type target) {
         return type.equals(target) || (type instanceof Type.Union union && union.members().contains(target));
+    }
+
+    private static boolean canBeNull(Type type) {
+        if (type == Type.NULL || type instanceof Type.TypeVar) {
+            return true;
+        }
+        return type instanceof Type.Union union && union.members().stream().anyMatch(TypeChecker::canBeNull);
     }
 
     private static boolean containsFunction(Type type) {

@@ -584,6 +584,9 @@ final class TypeChecks {
         }
         ModuleInterface module = moduleOf(access.receiver(), access.scope(), 0);
         if (module != null) {
+            if (access.ctx() instanceof BabbleParser.SelectorContext selector && selector.safe != null) {
+                return;
+            }
             checkExport(access, module);
             return;
         }

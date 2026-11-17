@@ -561,6 +561,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitSuperExpression(BabbleParser.SuperExpressionContext ctx) {
         if (!(ctx.getParent() instanceof BabbleParser.SelectorContext selector && selector.expression() == ctx
+                && selector.safe == null
                 && selector.getParent() instanceof BabbleParser.CallContext call && call.expression() == selector)) {
             throw error("super must be called directly", ctx);
         }

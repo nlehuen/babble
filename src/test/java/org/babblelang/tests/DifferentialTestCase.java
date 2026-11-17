@@ -316,7 +316,11 @@ public class DifferentialTestCase {
                 "def f : () : double? = () -> ( 1 ) ; def v = f() ; \"\" + classof(v) + \":\" + v",
                 "def I = interface ( def x : double ) ; def C = class () implements I ( def x = 1 ; def widen = () -> ( this.x = 1.5 ) ) ; def i : I = C() ; \"\" + classof(i.x) + \":\" + i.x",
                 // P6b : generic double widening, covariant narrowing with is, generic methods and Java collections.
-                "def Box(T) = class (def v : T) ()\ndef b : Box(double) = Box(1)\ndef l : java.util.List(double) = java.util.ArrayList() ; l.add(2)\n\"\" + classof(b.v) + \":\" + classof(l.get(0))"
+                "def Box(T) = class (def v : T) ()\ndef b : Box(double) = Box(1)\ndef l : java.util.List(double) = java.util.ArrayList() ; l.add(2)\n\"\" + classof(b.v) + \":\" + classof(l.get(0))",
+                // Safe navigation (?.) : calls, field reads, chains, single LHS eval, short-circuit args, int -> double? widening.
+                "def B = class (def v : int) () ; def A = class (def n : A? = null) ( def f = () : B -> ( B(9) ) ) ; def mk = (b : bool) : A? -> ( if b then ( A(A()) ) else ( null ) ) ; \"\" + mk(true)?.f()?.v + \":\" + mk(false)?.f()?.v + \":\" + mk(true)?.n?.f()?.v",
+                "def n = 0 ; def m = 0 ; def A = class () ( def f = (x : int) -> ( x + 1 ) ) ; def recv = (b : bool) : A? -> ( n += 1 ; if b then ( A() ) else ( null ) ) ; def arg = () : int -> ( m += 1 ; 5 ) ; def r1 = recv(false)?.f(arg()) ; def r2 = recv(true)?.f(arg()) ; \"\" + r1 + \":\" + r2 + \":\" + n + \":\" + m",
+                "def A = class () ( def g = () : int -> ( 3 ) ) ; def mk = (b : bool) : A? -> ( if b then ( A() ) else ( null ) ) ; def d1 : double? = mk(true)?.g() ; def d0 : double? = mk(false)?.g() ; \"\" + classof(d1) + \":\" + d1 + \":\" + d0"
         );
     }
 

@@ -406,6 +406,21 @@ public class FormatterTestCase {
     }
 
     @Test
+    public void testSafeNavigationFormatting() throws Exception {
+        assertFormats("""
+                def x = a?.f(1)?.g
+                def y = a
+                    ?.f(1)
+                    ?.g
+                """, """
+                def x = a ?. f ( 1 ) ?. g
+                def y = a
+                ?. f(1)
+                ?. g
+                """);
+    }
+
+    @Test
     public void testSyntaxErrors() {
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def f = (\n  1 +\n)", "f.ba"));
         Assertions.assertTrue(e.getMessage().contains("Syntax error : unexpected ')'"), e.getMessage());

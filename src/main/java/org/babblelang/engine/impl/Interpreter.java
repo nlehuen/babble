@@ -358,6 +358,16 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (expression == null) {
             return namespace.lookup(name);
         }
+        if (ctx.safe != null) {
+            Object value = visit(expression);
+            last = ctx;
+            if (value == null) {
+                return null;
+            }
+            Object result = Members.select(value, name, expression.getText());
+            last = ctx;
+            return Types.check(result, scopes.checkedType(ctx));
+        }
         Object result;
         if (expression instanceof BabbleParser.ThisExpressionContext) {
             result = Members.selectOwn(namespace.lookup("this"), name);
@@ -616,6 +626,22 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpression) {
             return Types.check(superCall(ctx, selector, superExpression), scopes.checkedType(ctx));
+        }
+        if (ctx.expression() instanceof BabbleParser.SelectorContext selector && selector.safe != null) {
+            BabbleParser.ExpressionContext receiverExpr = selector.expression();
+            Object receiver = visit(receiverExpr);
+            last = selector;
+            if (receiver == null) {
+                return null;
+            }
+            Object callee = Types.check(Members.select(receiver, selector.ID().getText(), receiverExpr.getText()),
+                    scopes.checkedType(selector));
+            last = ctx;
+            CallSite site = callSite(ctx);
+            var callable = Calls.callable(callee, site);
+            Object[] args = arguments(ctx);
+            last = ctx;
+            return Types.check(callable.call(runtime, args, callNames.get(ctx), site), scopes.checkedType(ctx));
         }
         Object callee = visit(ctx.expression());
         last = ctx;

@@ -381,7 +381,9 @@ area(2)         ;; Error : Missing parameter : h ...
 returns like `list.get(0)` or script bindings), with `any?` as its nullable counterpart (plain
 types are non-nullable; `T?` is shorthand for `T | null`, and `A | B` forms a union type).
 Nothing can be called, selected or computed on an `any`, `T?` or mixed union until it is
-narrowed (with `is`, `!= null`, or truthiness) or checked at runtime with `as` :
+narrowed (with `is`, `!= null`, or truthiness) or checked at runtime with `as` — or navigated
+with `?.`, which short-circuits to `null` when the receiver is `null` (and is rejected when the
+receiver is provably non-null) :
 
 ```
 def id = (x: any?): any? -> ( x )
@@ -624,7 +626,7 @@ Language features :
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java (including generic) interfaces.
-- [x] static type checking : required annotations on uninferred parameters, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
+- [x] static type checking : required annotations on uninferred parameters, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
 
 Implementation features :
@@ -688,8 +690,8 @@ order of how much each would improve that code :
   methods on instances. The ray tracers' counters and accumulators use them.
 - [x] number conversions : `int(x)` and `double(x)`, instead of
   `Math.toIntExact(Math.round(Math.floor(x)))` or a binary decomposition in Babble.
-- [x] line continuation before `.`, to break long method chains across lines : a line may start
-  with `.`, continuing the expression above it.
+- [x] line continuation before `.` and `?.`, to break long method chains across lines : a line may start
+  with `.` or `?.`, continuing the expression above it.
 - [x] importing other Babble files : `export` and `import("file.ba")`.
 - [x] parse errors with a line, a column and a message : a syntax error such as using the keyword
   `object` as a name was reported as a bare `ParseCancellationException`. It is now

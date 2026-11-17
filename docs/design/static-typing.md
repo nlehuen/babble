@@ -392,7 +392,7 @@ The questions of the draft, as decided :
 * P3–P4 : the whole suite in strict mode ; `ExamplesTestCase` compiles the examples in it.
 * P5 : `BabbleCompilerTestCase` checks the boundary checks are gone from the generated code ;
   benchmarks before and after.
-* P6a : `FormatterTestCase`, `TypeCheckerTestCase#testP6aUnionAndNullableTypes`, `BabbleCompilerTestCase`,
+* P6a : `FormatterTestCase`, `TypeCheckerTestCase#testP6aUnionAndNullableTypes`, `TypeCheckerTestCase#testSafeCallOperator`, `BabbleCompilerTestCase`,
   `DifferentialTestCase`, `src/test/babble/UnionsAndNullables.ba`, and `argon` rendering `scene.ppm` byte for byte.
 * P6b : `FormatterTestCase`, `TypeCheckerTestCase#testP6bGenerics`, `BabbleCompilerTestCase`,
   `BabbleModulesTestCase`, `DifferentialTestCase`, `src/test/babble/Generics.ba`, and `argon`
@@ -423,6 +423,13 @@ system itself and introduces union types (`A | B`) :
   * A value of type `T?` or mixed union has `==`, `!=`, `<>`, `same`, string concatenation (`+`),
     `is`, `as`, and `any?` parameters; members, operator methods, numeric arithmetic (`int | double`),
     comparisons and calls require every member of the union to support them safely.
+  * Safe navigation (`a?.x`, `a?.f(...)`) selects or calls on a receiver whose static type can be
+    `null` : if the receiver evaluates to `null` at runtime, the expression short-circuits to
+    `null` (evaluating the receiver once and skipping member lookup and call arguments) ; otherwise
+    it performs the selection or call and yields `T?` (or `B?` for a method returning `B`). Using
+    `?.` on a provably non-null receiver is a compile-time error (`Not nullable : …`), as is
+    `super?.m()` or assignment `a?.x = v` ; parenthesized `(a?.f)(...)` evaluates `a?.f` to a
+    nullable function value (`not callable`).
   * Flow-sensitive narrowing refines local bindings and parameters through `x is T` (and subtracts
     `T` in the `else` branch), `x == null` / `x != null` / `x <> null`, truthiness (`if x`, `and`,
     `or`, `not`), and `while` conditions (invalidated if the variable is reassigned or captured across
