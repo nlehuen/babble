@@ -442,9 +442,10 @@ Ray tracing demo
 [examples/raytracer-fable](examples/raytracer-fable/raytracer.ba) is a port of
 [_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
 to Babble : vectors as a value class, spheres and materials as classes implementing
-interfaces, a camera with depth of field, and the final scene of the book. It is split into
-modules along the files of the book (`rtweekend.ba`, `vec3.ba`, `ray.ba`, `hittable.ba`,
-`sphere.ba`, `hittable_list.ba`, `material.ba`, `camera.ba`), and `raytracer.ba` is its main. This image was rendered by it, in
+interfaces, a bounding volume hierarchy, a camera with depth of field, and the final scene
+of the book. It is split into modules along the files of the book (`rtweekend.ba`,
+`vec3.ba`, `ray.ba`, `aabb.ba`, `hittable.ba`, `sphere.ba`, `hittable_list.ba`, `bvh.ba`,
+`material.ba`, `camera.ba`), and `raytracer.ba` is its main. This image was rendered by it, in
 compiled mode :
 
 ![The final scene of Ray Tracing in One Weekend, rendered by Babble](examples/raytracer-fable/demo.png)

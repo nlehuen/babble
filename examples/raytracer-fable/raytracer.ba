@@ -3,7 +3,8 @@
 
     A port of https://raytracing.github.io/books/RayTracingInOneWeekend.html, following the
     book's structure : vec3, ray, hittable, sphere, hittable_list, material, camera, and the
-    final scene of chapter 14.
+    final scene of chapter 14, accelerated with a bounding volume hierarchy (aabb, bvh) from
+    Ray Tracing: The Next Week.
 
     What differs from the C++ of the book :
     - a hit or a scatter is returned as a record, or null, instead of filling an out parameter ;
@@ -11,8 +12,8 @@
     - scanlines are shared between threads, each with its own random generator, so functions
       that need random numbers take it as their "rng" parameter.
 
-    The program is split into modules along the files of the book : rtweekend, vec3, ray,
-    hittable, sphere, hittable_list, material and camera. This file is main.cc.
+    The program is split into modules along the files of the book : rtweekend, vec3, ray, aabb,
+    hittable, sphere, hittable_list, bvh, material and camera. This file is main.cc.
 
     Run it from the root of the repository, once "mvn package" has built the jar :
         java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
@@ -32,6 +33,7 @@ def randomDouble = import("rtweekend.ba").randomDouble
 def Vec3 = import("vec3.ba").Vec3
 def HittableList = import("hittable_list.ba").HittableList
 def Sphere = import("sphere.ba").Sphere
+def BVHNode = import("bvh.ba").BVHNode
 def material = import("material.ba")
 def Lambertian = material.Lambertian
 def Metal = material.Metal
@@ -76,6 +78,8 @@ world.add(Sphere(Vec3(0.0, 1.0, 0.0), 1.0, Dielectric(1.5)))
 world.add(Sphere(Vec3(-4.0, 1.0, 0.0), 1.0, Lambertian(Vec3(0.4, 0.2, 0.1))))
 world.add(Sphere(Vec3(4.0, 1.0, 0.0), 1.0, Metal(Vec3(0.7, 0.6, 0.5), 0.0)))
 
+def bvh = BVHNode.fromList(world)
+
 def camera = Camera(
     aspectRatio: 16.0 / 9.0,
     imageWidth: imageWidth,
@@ -91,6 +95,6 @@ def camera = Camera(
 
 println("Rendering ", camera.imageWidth, "x", camera.imageHeight, ", ", samplesPerPixel, " samples per pixel, on ", threads, " threads")
 def started = java.lang.System.currentTimeMillis()
-def image = camera.render(world, threads)
+def image = camera.render(bvh, threads)
 javax.imageio.ImageIO.write(image, "png", java.io.File(output))
 println("Wrote ", output, " in ", (java.lang.System.currentTimeMillis() - started) / 1000, " s")

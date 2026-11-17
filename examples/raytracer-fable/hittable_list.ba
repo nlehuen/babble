@@ -1,14 +1,27 @@
 ;; hittable_list.h
 
+def AABB = import("aabb.ba").AABB
 def hittable = import("hittable.ba")
 def Hittable = hittable.Hittable
 def HitRecord = hittable.HitRecord
 def Ray = import("ray.ba").Ray
 
 export def HittableList = class () implements Hittable (
-    private def objects: java.util.List(Hittable) = java.util.ArrayList()
+    def objects: java.util.List(Hittable) = java.util.ArrayList()
+    private def bbox: AABB = AABB.empty
 
-    def add = (item: Hittable): bool -> (this.objects.add(item))
+    def add = (item: Hittable): bool -> (
+        this.bbox = AABB.enclose(this.bbox, item.boundingBox())
+        this.objects.add(item)
+    )
+
+    def clear = (): null -> (
+        this.objects.clear()
+        this.bbox = AABB.empty
+        null
+    )
+
+    def boundingBox = (): AABB -> (this.bbox)
 
     def hit = (r: Ray, tmin: double, tmax: double): HitRecord? -> (
         def closest: HitRecord? = null
