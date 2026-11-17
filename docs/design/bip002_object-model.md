@@ -536,8 +536,8 @@ classof("s") == java.lang.String                         ;; true
   reachable only from the static block (§4.9, §4.10). That is the deliberate answer to `BIP002-Q8`'s
   privacy half.
 * **Numbers keep their Babble classes.** `classof(1)` is `java.lang.Integer` and `classof(1.5)`
-  is `java.lang.Double`, in every mode. Compiled code that keeps `int`s unboxed (compiler `BIP001-P3`)
-  answers as if they were boxed.
+  is `java.lang.Double`, in every mode. Compiled code that keeps `int`s and `double`s unboxed (`RM001`)
+  boxes the operand back to `Integer`/`Double`/`Boolean` at `classof(...)` so it answers as if they were boxed.
 * **`classof` and `is`.** For Babble classes, which have no inheritance, `x is Point` and
   `classof(x) == Point` agree. `is` is still the way to test interfaces, Java supertypes and
   `null` safety, and the type checker narrows types after `is`, not after `classof`.

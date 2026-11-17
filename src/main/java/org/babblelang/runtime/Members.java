@@ -89,6 +89,14 @@ public final class Members {
         return assign(assignable(thiz, "this"), value, name);
     }
 
+    public static BabbleException notAScope(String targetText) {
+        return new BabbleException("Not a scope : " + targetText);
+    }
+
+    public static BabbleException notAssignable(String targetText) {
+        return new BabbleException("Not an assignable scope : " + targetText);
+    }
+
     static BabbleException noSuchMember(String name) {
         return new BabbleException("No such member : " + name);
     }
@@ -97,7 +105,7 @@ public final class Members {
         return new BabbleException(name + " is private");
     }
 
-    static BabbleException usedBeforeDefinition(String name) {
+    public static BabbleException usedBeforeDefinition(String name) {
         return new BabbleException("Member used before definition : " + name);
     }
 

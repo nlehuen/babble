@@ -114,6 +114,13 @@ final class TypeChecker {
     private final Map<Type.Function, BabbleParser.FunctionLiteralContext> functionLiterals = new IdentityHashMap<>();
     private final Set<TypeNode> exportedTypeNodes = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<BabbleParser.CallContext, ScopeAnalysis.JavaCallTarget> javaCallTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, ScopeAnalysis.JavaConstructorTarget> javaConstructorTargets = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, ScopeAnalysis.JavaFieldTarget> javaFieldTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.SelectorContext, Class<?>> arrayLengthSelectors = new IdentityHashMap<>();
+    private final Map<BabbleParser.SelectorContext, ScopeAnalysis.ModuleExportTarget> moduleExportTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, BabbleParser.FunctionLiteralContext> babbleCallFunctions = new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, ScopeAnalysis.FunctionSignature> babbleCallSignatures = new IdentityHashMap<>();
     /**
      * The checkers of the files this one imports statically, transitively, by file : what
      * this file uses from another is typed by that file's checker (docs/design/bip005_modules.md §8.2).
@@ -176,6 +183,7 @@ final class TypeChecker {
         for (Map.Entry<ParserRuleContext, String> entry : callChecks.entrySet()) {
             pass.analysis.setCheckedType(entry.getKey(), entry.getValue());
         }
+        publishToAnalysis();
         for (Diagnostic warning : warnings) {
             pass.analysis.warn(warning.message(), warning.line(), warning.column());
         }
@@ -208,6 +216,137 @@ final class TypeChecker {
         p7Params.clear();
         functionLiterals.clear();
         failedDefs.clear();
+        javaCallTargets.clear();
+        javaConstructorTargets.clear();
+        javaFieldTargets.clear();
+        arrayLengthSelectors.clear();
+        moduleExportTargets.clear();
+        babbleCallFunctions.clear();
+        babbleCallSignatures.clear();
+    }
+
+    private void publishToAnalysis() {
+        for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
+            if (inFile(entry.getKey())) {
+                pass.analysis.setExpressionKind(entry.getKey(), ScopeAnalysis.PrimitiveKind.of(entry.getValue()));
+            }
+        }
+        for (ParserRuleContext decl : pass.definitionScopes.keySet()) {
+            if (!inFile(decl)) {
+                continue;
+            }
+            if (decl instanceof BabbleParser.DefExpressionContext def) {
+                Type t = declaredType(def);
+                if (t == null) {
+                    ScopeAnalysis.DefKind defKind = pass.analysis.defTarget(def).kind();
+                    t = (defKind == ScopeAnalysis.DefKind.MEMBER || defKind == ScopeAnalysis.DefKind.STATIC)
+                            ? inferredMembers.get(def) : inferredDefs.get(def);
+                }
+                if (t != null) {
+                    pass.analysis.setDeclarationKind(def, ScopeAnalysis.PrimitiveKind.of(t));
+                }
+            } else if (decl instanceof BabbleParser.ParameterDeclarationContext param) {
+                Type t = declarationTypes.get(param);
+                if (t == null && param.type() != null) {
+                    t = annotations.get(param.type());
+                }
+                if (t == null) {
+                    t = inferredParams.get(param);
+                }
+                if (t != null) {
+                    pass.analysis.setDeclarationKind(param, ScopeAnalysis.PrimitiveKind.of(t));
+                }
+            }
+        }
+        for (TypeNode typeNode : pass.types) {
+            if (!inFile(typeNode.ctx)) {
+                continue;
+            }
+            for (TypeNode.Member member : typeNode.members.values()) {
+                if (member.declaration == null || !inFile(member.declaration) || member.function != null) {
+                    continue;
+                }
+                Type t = declaredType(member.declaration);
+                if (t == null && member.declaration instanceof BabbleParser.ParameterDeclarationContext param) {
+                    t = declarationTypes.get(param);
+                    if (t == null) {
+                        t = inferredParams.get(param);
+                    }
+                } else if (t == null && member.declaration instanceof BabbleParser.DefExpressionContext def) {
+                    t = inferredMembers.get(def);
+                }
+                if (t != null) {
+                    pass.analysis.setDeclarationKind(member.declaration, ScopeAnalysis.PrimitiveKind.of(t));
+                }
+            }
+        }
+        for (BabbleParser.FunctionLiteralContext fn : functions) {
+            if (types.get(fn) instanceof Type.Function tf) {
+                pass.analysis.setFunctionReturnKind(fn, ScopeAnalysis.PrimitiveKind.of(tf.result()));
+            }
+        }
+        Resolution resolution = pass.analysis.resolution();
+        if (resolution != null) {
+            Set<Resolution.Variable> unsafe = new HashSet<>();
+            for (BlockScopes.Occurrence occ : pass.occurrences) {
+                Resolution.Variable v = resolution.variable(occ.ctx());
+                if (v != null && v.kind() == Resolution.Variable.Kind.DEFINITION
+                        && v.declaration() instanceof BabbleParser.DefExpressionContext def
+                        && occ.ctx() != def
+                        && occ.ctx().getStart().getStartIndex() <= def.getStop().getStopIndex()) {
+                    unsafe.add(v);
+                }
+            }
+            for (Map.Entry<ParserRuleContext, ScopeNode> entry : pass.scopeNodes.entrySet()) {
+                ParserRuleContext method = entry.getKey();
+                if (method instanceof BabbleParser.FunctionLiteralContext
+                        || method instanceof BabbleParser.ClassExpressionContext
+                        || method instanceof BabbleParser.ObjectExpressionContext) {
+                    for (Resolution.Variable cap : resolution.captured(method)) {
+                        if (cap.kind() == Resolution.Variable.Kind.DEFINITION
+                                && cap.declaration() instanceof BabbleParser.DefExpressionContext def
+                                && method.getStart().getStartIndex() <= def.getStop().getStopIndex()) {
+                            unsafe.add(cap);
+                        }
+                    }
+                }
+            }
+            for (ParserRuleContext decl : pass.definitionScopes.keySet()) {
+                if (decl instanceof BabbleParser.DefExpressionContext def && inFile(def)) {
+                    Resolution.Variable v = resolution.variable(def);
+                    if (v != null && !unsafe.contains(v)) {
+                        pass.analysis.markDefinitelyDefined(def);
+                    }
+                }
+            }
+        }
+        javaCallTargets.forEach(pass.analysis::setJavaCallTarget);
+        javaConstructorTargets.forEach(pass.analysis::setJavaConstructorTarget);
+        javaFieldTargets.forEach(pass.analysis::setJavaFieldTarget);
+        arrayLengthSelectors.forEach(pass.analysis::setArrayLengthClass);
+        moduleExportTargets.forEach(pass.analysis::setModuleExportTarget);
+        babbleCallFunctions.forEach(pass.analysis::setBabbleCallFunction);
+        babbleCallSignatures.forEach(pass.analysis::setBabbleCallSignature);
+    }
+
+    private static boolean guaranteedApplicable(Class<?> parameter, Type argument) {
+        if (parameter == Object.class) {
+            return true;
+        }
+        return !containsDynamicOrTypeVar(argument, JavaTypes.isFunctionalInterface(parameter));
+    }
+
+    private static boolean containsDynamicOrTypeVar(Type type, boolean rejectCallables) {
+        if (type == null || isUnresolved(type) || type == Type.ANY || type instanceof Type.TypeVar) {
+            return true;
+        }
+        if (rejectCallables && (type instanceof Type.JavaMethod || type == Type.PRINT)) {
+            return true;
+        }
+        if (type instanceof Type.Union union) {
+            return union.members().stream().anyMatch(m -> containsDynamicOrTypeVar(m, rejectCallables));
+        }
+        return false;
     }
 
     private boolean commitInferred() {
@@ -2976,6 +3115,14 @@ final class TypeChecker {
                         if (needsDoubleWidening(value, fieldType)) {
                             widened.add(ctx);
                         }
+                        if (!Modifier.isFinal(field.getModifiers())
+                                && Modifier.isPublic(field.getModifiers())
+                                && JavaTypes.isAccessible(field.getDeclaringClass())
+                                && guaranteedApplicable(field.getType(), value)
+                                && supportedStaticJavaArg(field.getType(), value)) {
+                            boolean isStatic = Modifier.isStatic(field.getModifiers());
+                            javaFieldTargets.put(ctx, new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic));
+                        }
                     }
                     return value;
                 }
@@ -3028,6 +3175,7 @@ final class TypeChecker {
             ParserRuleContext reassignedLocal = null;
             ParserRuleContext inferredTarget = null;
             boolean memberTarget = false;
+            java.lang.reflect.Field assignedField = null;
             if (ctx.namespace == null) {
                 Object resolved = resolveName(ctx, name, occurrenceScopes.get(ctx));
                 if (resolved instanceof ParserRuleContext declaration) {
@@ -3049,6 +3197,7 @@ final class TypeChecker {
                 Type receiver = typeOf(ctx.namespace);
                 java.lang.reflect.Field field = assignedJavaField(receiver, name, ctx);
                 if (field != null) {
+                    assignedField = field;
                     declared = javaFieldType(receiver, field, false);
                     current = javaFieldType(receiver, field, true);
                 } else {
@@ -3077,6 +3226,15 @@ final class TypeChecker {
             Type value = typeOf(ctx.value);
             Type result = binaryOp(arithmeticToken(operator), operator, ctx, org.babblelang.engine.impl.Interpreter.targetText(ctx), ctx, current,
                     ctx.value.getText(), ctx.value, value);
+            if (assignedField != null
+                    && !Modifier.isFinal(assignedField.getModifiers())
+                    && Modifier.isPublic(assignedField.getModifiers())
+                    && JavaTypes.isAccessible(assignedField.getDeclaringClass())
+                    && guaranteedApplicable(assignedField.getType(), result)
+                    && supportedStaticJavaArg(assignedField.getType(), result)) {
+                boolean isStatic = Modifier.isStatic(assignedField.getModifiers());
+                javaFieldTargets.put(ctx, new ScopeAnalysis.JavaFieldTarget(assignedField, isStatic, !isStatic));
+            }
             if (declared != null) {
                 expect(result, declared, ctx);
                 if (needsDoubleWidening(result, declared)) {
@@ -3169,11 +3327,16 @@ final class TypeChecker {
 
     /** {@code receiver.name}, read. */
     private Type member(Type receiver, String name, boolean own, ParserRuleContext at, BabbleParser.ExpressionContext receiverExpression) {
-        return member(receiver, name, own, at, receiverExpression.getText());
+        return member(receiver, name, own, at, receiverExpression.getText(),
+                at instanceof BabbleParser.SelectorContext selector && selector.safe == null);
     }
 
     /** {@code receiver.name}, read, given the receiver's source text. */
     private Type member(Type receiver, String name, boolean own, ParserRuleContext at, String receiverText) {
+        return member(receiver, name, own, at, receiverText, false);
+    }
+
+    private Type member(Type receiver, String name, boolean own, ParserRuleContext at, String receiverText, boolean recordTarget) {
         if (isUnresolved(receiver)) {
             return Type.ERROR;
         }
@@ -3184,7 +3347,7 @@ final class TypeChecker {
             }
             List<Type> memberTypes = new ArrayList<>(union.members().size());
             for (Type member : union.members()) {
-                Type resolved = member(member, name, own, at, receiverText);
+                Type resolved = member(member, name, own, at, receiverText, false);
                 if (resolved == Type.ERROR) {
                     return Type.ERROR;
                 }
@@ -3235,6 +3398,12 @@ final class TypeChecker {
             }
             // A missing export is TypeChecks' to report.
             Type export = exportType(module.module(), name);
+            if (export != null && recordTarget && at instanceof BabbleParser.SelectorContext selector) {
+                int index = module.module().exportIndex(name);
+                if (index >= 0) {
+                    moduleExportTargets.put(selector, new ScopeAnalysis.ModuleExportTarget(index, name));
+                }
+            }
             return export != null ? export : Type.ERROR;
         }
         if (receiver instanceof Type.JavaPackage pkg) {
@@ -3248,16 +3417,19 @@ final class TypeChecker {
                     return new Type.JavaClassValue(memberClass);
                 }
             }
-            return javaMember(value.type(), List.of(), name, true, at);
+            return javaMember(value.type(), List.of(), name, true, at, recordTarget);
         }
         if (receiver instanceof Type.JavaInstance instance) {
-            return javaMember(instance.type(), instance.typeArguments(), name, false, at);
+            return javaMember(instance.type(), instance.typeArguments(), name, false, at, recordTarget);
         }
         if (receiver instanceof Type.JavaArray array) {
             if ("length".equals(name)) {
+                if (recordTarget && at instanceof BabbleParser.SelectorContext selector && selector.safe == null) {
+                    arrayLengthSelectors.put(selector, array.javaClass());
+                }
                 return Type.INT;
             }
-            return javaMember(array.javaClass(), List.of(), name, false, at);
+            return javaMember(array.javaClass(), List.of(), name, false, at, recordTarget);
         }
         // Numbers, booleans, strings, null, functions, any : nothing has members but objects,
         // classes, packages and Java values.
@@ -3496,7 +3668,7 @@ final class TypeChecker {
      * A method or a public field of a Java class, as {@code JavaClass} looks them up : through
      * the class itself, only a static field.
      */
-    private Type javaMember(Class<?> java, List<Type> typeArgs, String name, boolean onClass, ParserRuleContext at) {
+    private Type javaMember(Class<?> java, List<Type> typeArgs, String name, boolean onClass, ParserRuleContext at, boolean recordTarget) {
         for (Method method : java.getMethods()) {
             if (method.getName().equals(name)) {
                 return new Type.JavaMethod(java, onClass ? List.of() : typeArgs, name);
@@ -3523,6 +3695,11 @@ final class TypeChecker {
                 if (desc != null) {
                     callChecks.put(at, desc);
                 }
+            }
+            if (recordTarget && at instanceof BabbleParser.SelectorContext selector && selector.safe == null
+                    && Modifier.isPublic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())) {
+                boolean isStatic = Modifier.isStatic(field.getModifiers());
+                javaFieldTargets.put(selector, new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic));
             }
             return result;
         }
@@ -3677,6 +3854,10 @@ final class TypeChecker {
     }
 
     private Type call(Type callee, BabbleParser.CallContext ctx) {
+        return call(callee, ctx, true);
+    }
+
+    private Type call(Type callee, BabbleParser.CallContext ctx, boolean recordTarget) {
         List<BabbleParser.CallParameterContext> arguments = ctx.callParameters().callParameter();
         if (callee == Type.ERROR || callee == Type.NOTHING) {
             return Type.ERROR;
@@ -3705,7 +3886,7 @@ final class TypeChecker {
             }
             List<Type> results = new ArrayList<>(union.members().size());
             for (Type member : union.members()) {
-                Type r = call(member, ctx);
+                Type r = call(member, ctx, false);
                 if (r == Type.ERROR) {
                     return Type.ERROR;
                 }
@@ -3717,6 +3898,9 @@ final class TypeChecker {
             List<BabbleParser.ParameterDeclarationContext> decls = parameterDecls(function);
             if (function.typeParameters().isEmpty()) {
                 bind(function.parameters(), decls, arguments, ctx);
+                if (recordTarget) {
+                    recordBabbleCall(function, arguments, ctx);
+                }
                 return function.result();
             }
             return genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
@@ -3746,17 +3930,68 @@ final class TypeChecker {
                     && JavaTypes.isFunctionalInterface(java)) {
                 return javaGenericSamCall(java, arguments.get(0).expression(), ctx);
             }
-            return javaConstructorCall(java, arguments, ctx);
+            return javaConstructorCall(java, arguments, ctx, recordTarget);
         }
         if (callee instanceof Type.JavaMethod method) {
             List<Method> candidates = JavaTypes.methods(method.owner(), method.name());
             Map<TypeVariable<?>, Type> receiverEnv = method.typeArguments().isEmpty()
                     ? Map.of() : javaTypeEnv(method.owner(), method.typeArguments());
             return javaMethodCall(candidates, method.owner().getCanonicalName() + "." + method.name(),
-                    receiverEnv, arguments, ctx);
+                    receiverEnv, arguments, ctx, recordTarget);
         }
         warn(ctx.expression().getText() + " is not callable", ctx);
         return Type.ERROR;
+    }
+
+    private void recordBabbleCall(Type.Function function, List<BabbleParser.CallParameterContext> arguments,
+                                  BabbleParser.CallContext ctx) {
+        if (ctx.expression() instanceof BabbleParser.SelectorContext sel && sel.safe != null) {
+            return;
+        }
+        if (arguments.size() != function.parameters().size()) {
+            return;
+        }
+        for (BabbleParser.CallParameterContext arg : arguments) {
+            if (arg.ID() != null) {
+                return;
+            }
+        }
+        ScopeAnalysis.PrimitiveKind[] paramKinds = new ScopeAnalysis.PrimitiveKind[arguments.size()];
+        boolean hasPrimitive = false;
+        int slots = 0;
+        for (int i = 0; i < arguments.size(); i++) {
+            ScopeAnalysis.PrimitiveKind kind = ScopeAnalysis.PrimitiveKind.of(function.parameters().get(i).type());
+            paramKinds[i] = kind;
+            slots += kind.slots();
+            if (kind.isPrimitive()) {
+                hasPrimitive = true;
+            }
+        }
+        ScopeAnalysis.PrimitiveKind returnKind = ScopeAnalysis.PrimitiveKind.of(function.result());
+        if (returnKind.isPrimitive()) {
+            hasPrimitive = true;
+        }
+        if (slots <= 200) {
+            BabbleParser.FunctionLiteralContext lit = functionLiterals.get(function);
+            if (lit != null && inFile(lit) && scopeOf(lit).memberOf == null) {
+                BabbleParser.ExpressionContext calleeExpr = ctx.expression();
+                while (calleeExpr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+                    calleeExpr = b.block().expression(0);
+                }
+                if (calleeExpr == lit) {
+                    babbleCallFunctions.put(ctx, lit);
+                } else if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
+                    Object resolved = resolveName(sel, sel.ID().getText(), occurrenceScopes.get(sel));
+                    if (resolved instanceof BabbleParser.DefExpressionContext def
+                            && inFile(def) && !reassigned.contains(def) && unwrapFunctionLiteral(def.value) == lit) {
+                        babbleCallFunctions.put(ctx, lit);
+                    }
+                }
+            }
+            if (hasPrimitive) {
+                babbleCallSignatures.put(ctx, new ScopeAnalysis.FunctionSignature(paramKinds, returnKind));
+            }
+        }
     }
 
     private Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
@@ -4069,6 +4304,11 @@ final class TypeChecker {
     }
 
     private Type javaConstructorCall(Class<?> java, List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
+        return javaConstructorCall(java, arguments, ctx, true);
+    }
+
+    private Type javaConstructorCall(Class<?> java, List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx,
+                                     boolean recordTarget) {
         List<Executable> candidates = Arrays.asList(java.getConstructors());
         List<Type> argumentTypes = new ArrayList<>();
         List<Executable> matching = javaCall(candidates, java.getCanonicalName(), Map.of(), arguments, ctx, argumentTypes);
@@ -4078,6 +4318,9 @@ final class TypeChecker {
                 Executable winner = matching.size() == 1 ? matching.get(0) : mostSpecific(matching);
                 if (winner != null) {
                     checkJavaArgumentWidening(winner, Map.of(), arguments, argumentTypes);
+                    if (recordTarget) {
+                        recordJavaConstructor(winner, arguments, argumentTypes, ctx);
+                    }
                 }
             }
             return new Type.JavaInstance(java);
@@ -4150,11 +4393,46 @@ final class TypeChecker {
             }
         }
         checkJavaArgumentWidening(winner, solvedEnv, arguments, argumentTypes);
+        if (recordTarget) {
+            recordJavaConstructor(winner, arguments, argumentTypes, ctx);
+        }
         return new Type.JavaInstance(java, solvedClassArgs);
     }
 
+    private void recordJavaConstructor(Executable winner, List<BabbleParser.CallParameterContext> arguments,
+                                       List<Type> argumentTypes, BabbleParser.CallContext ctx) {
+        if (!(winner instanceof java.lang.reflect.Constructor<?> ctor)) {
+            return;
+        }
+        if (ctx.expression() instanceof BabbleParser.SelectorContext sel && sel.safe != null) {
+            return;
+        }
+        Class<?> java = ctor.getDeclaringClass();
+        if (!Modifier.isPublic(ctor.getModifiers()) || !Modifier.isPublic(java.getModifiers())
+                || !JavaTypes.isAccessible(java) || ctor.getParameterCount() != arguments.size()) {
+            return;
+        }
+        for (BabbleParser.CallParameterContext arg : arguments) {
+            if (arg.ID() != null) {
+                return;
+            }
+        }
+        Class<?>[] paramTypes = ctor.getParameterTypes();
+        if (argumentTypes.size() != paramTypes.length) {
+            return;
+        }
+        for (int i = 0; i < paramTypes.length; i++) {
+            Type argType = argumentTypes.get(i);
+            if (!guaranteedApplicable(paramTypes[i], argType) || !supportedStaticJavaArg(paramTypes[i], argType)) {
+                return;
+            }
+        }
+        javaConstructorTargets.put(ctx, new ScopeAnalysis.JavaConstructorTarget(ctor));
+    }
+
     private Type javaMethodCall(List<Method> candidates, String description, Map<TypeVariable<?>, Type> receiverEnv,
-                                List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
+                                List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx,
+                                boolean recordTarget) {
         List<Type> argumentTypes = new ArrayList<>();
         List<Method> applicable = javaCall(candidates, description, receiverEnv, arguments, ctx, argumentTypes);
         if (applicable.isEmpty()) {
@@ -4182,6 +4460,9 @@ final class TypeChecker {
                 if (desc != null) {
                     callChecks.put(ctx, desc);
                 }
+            }
+            if (recordTarget) {
+                recordJavaMethodCall(best, arguments, argumentTypes, ctx);
             }
             return result;
         }
@@ -4238,7 +4519,76 @@ final class TypeChecker {
                 callChecks.put(ctx, desc);
             }
         }
+        if (recordTarget) {
+            recordJavaMethodCall(best, arguments, argumentTypes, ctx);
+        }
         return result;
+    }
+
+    private void recordJavaMethodCall(Method best, List<BabbleParser.CallParameterContext> arguments,
+                                      List<Type> argumentTypes, BabbleParser.CallContext ctx) {
+        if (!(ctx.expression() instanceof BabbleParser.SelectorContext sel)
+                || sel.safe != null
+                || sel.expression() == null
+                || sel.expression() instanceof BabbleParser.SuperExpressionContext) {
+            return;
+        }
+        Type receiverType = types.get(sel.expression());
+        if (!(receiverType instanceof Type.JavaClassValue
+                || receiverType instanceof Type.JavaInstance
+                || receiverType instanceof Type.JavaArray
+                || receiverType == Type.STRING)) {
+            return;
+        }
+        Method accessible = JavaTypes.accessible(best);
+        if (accessible == null
+                || !Modifier.isPublic(accessible.getModifiers())
+                || !Modifier.isPublic(accessible.getDeclaringClass().getModifiers())
+                || !JavaTypes.isAccessible(accessible.getDeclaringClass())
+                || accessible.getParameterCount() != arguments.size()) {
+            return;
+        }
+        boolean isStatic = Modifier.isStatic(accessible.getModifiers());
+        if (receiverType instanceof Type.JavaClassValue && !isStatic) {
+            return;
+        }
+        for (BabbleParser.CallParameterContext arg : arguments) {
+            if (arg.ID() != null) {
+                return;
+            }
+        }
+        Class<?>[] paramTypes = accessible.getParameterTypes();
+        if (argumentTypes.size() != paramTypes.length) {
+            return;
+        }
+        for (int i = 0; i < paramTypes.length; i++) {
+            Type argType = argumentTypes.get(i);
+            if (!guaranteedApplicable(paramTypes[i], argType) || !supportedStaticJavaArg(paramTypes[i], argType)) {
+                return;
+            }
+        }
+        boolean unwrapReceiver = !isStatic && receiverType != Type.STRING;
+        javaCallTargets.put(ctx, new ScopeAnalysis.JavaCallTarget(accessible, isStatic, unwrapReceiver));
+    }
+
+    private static boolean supportedStaticJavaArg(Class<?> paramType, Type argType) {
+        if (paramType.isPrimitive()) {
+            if (paramType == int.class) {
+                return argType == Type.INT;
+            }
+            if (paramType == boolean.class) {
+                return argType == Type.BOOL;
+            }
+            if (paramType == double.class) {
+                return argType == Type.INT || argType == Type.DOUBLE;
+            }
+            if (paramType == long.class || paramType == float.class) {
+                return argType == Type.INT;
+            }
+            return false;
+        }
+        return paramType == Object.class || paramType.isArray()
+                || JavaTypes.isAccessible(paramType) || JavaTypes.isFunctionalInterface(paramType);
     }
 
     private void checkJavaArgumentWidening(Executable candidate, Map<TypeVariable<?>, Type> env,

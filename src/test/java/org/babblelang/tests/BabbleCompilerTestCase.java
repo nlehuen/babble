@@ -499,4 +499,213 @@ public class BabbleCompilerTestCase {
         Assertions.assertEquals(List.of(), typesCalls(safe));
         Assertions.assertEquals("3:null:5:java.lang.Double:3.0:null", safe.eval(new SimpleBindings()));
     }
+
+    // ---------------------------------------------------------------- RM001 : typed lowering & static dispatch
+
+    private static List<String> fieldEntries(byte[] classFile) {
+        List<String> fields = new ArrayList<>();
+        new ClassReader(classFile).accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            public org.objectweb.asm.FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
+                fields.add(name + ":" + descriptor);
+                return null;
+            }
+        }, 0);
+        return fields;
+    }
+
+    private static List<String> methodDescriptors(byte[] classFile) {
+        List<String> methods = new ArrayList<>();
+        new ClassReader(classFile).accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+                methods.add(name + ":" + descriptor);
+                return null;
+            }
+        }, 0);
+        return methods;
+    }
+
+    private static List<String> methodInstructions(byte[] classFile, String methodPrefix) {
+        List<String> ops = new ArrayList<>();
+        new ClassReader(classFile).accept(new ClassVisitor(Opcodes.ASM9) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+                if (!name.startsWith(methodPrefix)) {
+                    return null;
+                }
+                return new MethodVisitor(Opcodes.ASM9) {
+                    @Override
+                    public void visitInsn(int opcode) {
+                        if (opcode == Opcodes.IADD) ops.add("IADD");
+                        else if (opcode == Opcodes.IMUL) ops.add("IMUL");
+                        else if (opcode == Opcodes.ARRAYLENGTH) ops.add("ARRAYLENGTH");
+                    }
+
+                    @Override
+                    public void visitFieldInsn(int opcode, String owner, String fieldName, String fieldDescriptor) {
+                        if (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC
+                                || opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC) {
+                            ops.add("FIELD:" + owner + "." + fieldName + ":" + fieldDescriptor);
+                        }
+                    }
+
+                    @Override
+                    public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor, boolean isInterface) {
+                        ops.add("CALL:" + owner + "." + methodName);
+                    }
+
+                    @Override
+                    public void visitInvokeDynamicInsn(String indyName, String indyDesc, org.objectweb.asm.Handle bsm, Object... args) {
+                        ops.add("INDY:" + bsm.getOwner() + "." + bsm.getName() + ":" + indyName);
+                    }
+                };
+            }
+        }, 0);
+        return ops;
+    }
+
+    @Test
+    public void testRm001UnboxedPrimitivesSpecEntryPointsAndFields() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def Point = value class (x : int, y : int) (\n"
+                        + "  def norm = () : int -> ( this.x * this.x + this.y * this.y )\n"
+                        + ")\n"
+                        + "def Early = class () (\n"
+                        + "  def readBefore = () : int -> ( this.late )\n"
+                        + "  def late : int = 7\n"
+                        + ")\n"
+                        + "def Lazy = class (early : bool) (\n"
+                        + "  def a : int = if early then ( this.b ) else ( 0 )\n"
+                        + "  def b : int = 5\n"
+                        + ")\n"
+                        + "def fib = (n : int) : int -> ( if n < 2 then ( n ) else ( recurse(n - 1) + recurse(n - 2) ) )\n"
+                        + "def loop = (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s += i ; i += 1 ) ; s )\n"
+                        + "def counter = () -> ( def c = 0 ; () : int -> ( c = c + 1 ) )\n"
+                        + "def widenJoin = (c : bool) : double -> ( if c then ( 1 ) else ( 2.5 ) )\n"
+                        + "def foldCheck = (n : int) : int -> (\n"
+                        + "  def touched = 0\n"
+                        + "  def inc = () : int -> ( touched = touched + 1 ; 99 )\n"
+                        + "  def z = inc() * 0\n"
+                        + "  def folded = 1 + 2 * 3\n"
+                        + "  touched * 100 + z + folded + n\n"
+                        + ")\n"
+                        + "def pureFold = () : int -> ( 1 + 2 * 3 )\n"
+                        + "def c = counter()\n"
+                        + "\"\" + Point(3, 4).norm() + \":\" + Early().readBefore() + \":\" + Lazy(false).b + \":\" + fib(6) + \":\" + loop(5) + \":\" + (c() + c()) + \":\" + widenJoin(true) + \":\" + foldCheck(4) + \":\" + pureFold() + \":\" + classof(1) + \":\" + classof(1.5) + \":\" + classof(true)");
+        assertVerifies(script);
+        Assertions.assertEquals(
+                "25:7:5:8:10:3:1.0:111:7:java.lang.Integer:java.lang.Double:java.lang.Boolean",
+                script.eval(new SimpleBindings()));
+
+        byte[] mainBytes = script.getClassBytes();
+        List<String> mainMethods = methodDescriptors(mainBytes);
+        Assertions.assertTrue(mainMethods.stream().anyMatch(m -> m.endsWith("$fib$spec:(Lorg/babblelang/runtime/CompiledFunction;Ljava/lang/Object;Lorg/babblelang/runtime/ScriptRuntime;I)I")),
+                mainMethods.toString());
+        Assertions.assertTrue(mainMethods.stream().anyMatch(m -> m.endsWith("$spec:(Lorg/babblelang/runtime/CompiledFunction;Ljava/lang/Object;Lorg/babblelang/runtime/ScriptRuntime;)I")),
+                mainMethods.toString());
+
+        for (String fn : List.of("fn$3$fib$spec", "fn$4$loop$spec")) {
+            List<String> ops = methodInstructions(mainBytes, fn);
+            Assertions.assertTrue(ops.stream().noneMatch(o -> o.contains("org/babblelang/runtime/Operators")
+                    || o.contains("org/babblelang/runtime/Truth")
+                    || o.contains("org/babblelang/runtime/JavaLinker")
+                    || o.startsWith("INDY:org/babblelang/runtime/Bootstrap.")), fn + ": " + ops);
+        }
+        List<String> foldOps = methodInstructions(mainBytes, "fn$8$pureFold$spec");
+        Assertions.assertFalse(foldOps.contains("IADD") || foldOps.contains("IMUL"), foldOps.toString());
+
+        byte[] pointBytes = script.getClasses().entrySet().stream()
+                .filter(e -> e.getKey().endsWith("$Point")).findFirst().orElseThrow().getValue();
+        Assertions.assertEquals(List.of("x:I", "y:I", "norm:Ljava/lang/Object;"), fieldEntries(pointBytes));
+        List<String> normOps = methodInstructions(pointBytes, "m$norm$spec");
+        Assertions.assertTrue(normOps.contains("IMUL") && normOps.contains("IADD"), normOps.toString());
+        Assertions.assertTrue(normOps.stream().noneMatch(o -> o.contains("org/babblelang/runtime/Operators")
+                || o.startsWith("INDY:")), normOps.toString());
+
+        byte[] lazyBytes = script.getClasses().entrySet().stream()
+                .filter(e -> e.getKey().endsWith("$Lazy")).findFirst().orElseThrow().getValue();
+        Assertions.assertTrue(fieldEntries(lazyBytes).contains("$defined$0:I"), fieldEntries(lazyBytes).toString());
+        Assertions.assertTrue(methodDescriptors(lazyBytes).contains("isMemberDefined:(I)Z"), methodDescriptors(lazyBytes).toString());
+
+        CompiledBabbleScript earlyFail = compile(
+                "def Bad = class (early : bool) ( def a : int = if early then ( this.b ) else ( 0 ) ; def b : int = 5 ) ; Bad(true)");
+        assertVerifies(earlyFail);
+        ScriptException err = Assertions.assertThrows(ScriptException.class, () -> earlyFail.eval(new SimpleBindings()));
+        Assertions.assertTrue(err.getMessage().contains("Member used before definition : b"), err.getMessage());
+    }
+
+    @Test
+    public void testRm001StaticJavaDispatchAndIndexedModuleExports() throws Exception {
+        CompiledBabbleScript typedJava = compile(
+                "def work = (sb : java.lang.StringBuilder, list : java.util.List(int), xs) : double -> (\n"
+                        + "  sb.append(\"a\")\n"
+                        + "  sb.length() + list.size() + xs.length + java.lang.Math.sqrt(9)\n"
+                        + ")\n"
+                        + "def l : java.util.List(int) = java.util.ArrayList() ; l.add(10)\n"
+                        + "def arr = java.util.regex.Pattern.compile(\",\").split(\"x,y\")\n"
+                        + "work(java.lang.StringBuilder(\"ok\"), l, arr)");
+        assertVerifies(typedJava);
+        Assertions.assertEquals(9.0, typedJava.eval(new SimpleBindings()));
+        List<String> workOps = methodInstructions(typedJava.getClassBytes(), "fn$0$work$spec");
+        Assertions.assertTrue(workOps.contains("CALL:java/lang/StringBuilder.append"), workOps.toString());
+        Assertions.assertTrue(workOps.contains("CALL:java/lang/StringBuilder.length"), workOps.toString());
+        Assertions.assertTrue(workOps.contains("CALL:java/util/List.size"), workOps.toString());
+        Assertions.assertTrue(workOps.contains("ARRAYLENGTH"), workOps.toString());
+        Assertions.assertTrue(workOps.contains("CALL:java/lang/Math.sqrt"), workOps.toString());
+        Assertions.assertTrue(workOps.stream().noneMatch(o -> o.contains("org/babblelang/runtime/JavaLinker")
+                || o.startsWith("INDY:org/babblelang/runtime/Bootstrap.")), workOps.toString());
+
+        CompiledBabbleScript nullArr = compile("java.lang.Class.forName(\"java.lang.String\").getEnumConstants().length");
+        assertVerifies(nullArr);
+        ScriptException nullErr = Assertions.assertThrows(ScriptException.class, () -> nullArr.eval(new SimpleBindings()));
+        Assertions.assertTrue(nullErr.getMessage().contains("Not a scope"), nullErr.getMessage());
+
+        CompiledBabbleScript retInJavaArg = compile(
+                "def g = () : int -> ( java.lang.Math.max(1, return 42) ) ; g()");
+        assertVerifies(retInJavaArg);
+        Assertions.assertEquals(42, retInJavaArg.eval(new SimpleBindings()));
+
+        String modSource = "export def scale : int = 3\n"
+                + "export def Vec = value class (x : double, y : double) (\n"
+                + "  def dot = (o : Vec) : double -> ( this.x * o.x + this.y * o.y )\n"
+                + ")\n"
+                + "export def addInts = (a : int, b : int) : int -> ( a + b )\n";
+        String mainSource = "def m = import(\"lib/vec.ba\")\n"
+                + "def p = m.Vec(1.0, 2.0)\n"
+                + "m.scale + m.addInts(4, 5) + p.dot(m.Vec(3.0, 4.0))\n";
+
+        java.nio.file.Path first = java.nio.file.Files.createTempDirectory("babble-rm001-a");
+        java.nio.file.Path second = java.nio.file.Files.createTempDirectory("babble-rm001-b");
+        String previous = System.getProperty(org.babblelang.compiler.BabbleCompiler.DUMP_CLASSES);
+        try {
+            Object res = null;
+            for (java.nio.file.Path dump : List.of(first, second)) {
+                System.setProperty(org.babblelang.compiler.BabbleCompiler.DUMP_CLASSES, dump.toString());
+                org.babblelang.engine.MapModuleSource src = new org.babblelang.engine.MapModuleSource().put("lib/vec.ba", modSource);
+                res = moduleEngine(src).eval(mainSource);
+            }
+            Assertions.assertEquals(23.0, res);
+            byte[] dumpedMain = java.nio.file.Files.readAllBytes(first.resolve("babble/lib/vec$ba.class"));
+            List<String> dotOps = methodInstructions(
+                    java.nio.file.Files.list(first.resolve("babble/lib"))
+                            .filter(p -> p.getFileName().toString().contains("$Vec.class"))
+                            .findFirst().map(p -> {
+                                try {
+                                    return java.nio.file.Files.readAllBytes(p);
+                                } catch (Exception ex) {
+                                    throw new RuntimeException(ex);
+                                }
+                            }).orElseThrow(),
+                    "m$dot$spec");
+            Assertions.assertTrue(dotOps.stream().noneMatch(o -> o.contains("org/babblelang/runtime/Operators")), dotOps.toString());
+            Assertions.assertArrayEquals(dumpedMain, java.nio.file.Files.readAllBytes(second.resolve("babble/lib/vec$ba.class")));
+        } finally {
+            if (previous == null) {
+                System.clearProperty(org.babblelang.compiler.BabbleCompiler.DUMP_CLASSES);
+            } else {
+                System.setProperty(org.babblelang.compiler.BabbleCompiler.DUMP_CLASSES, previous);
+            }
+        }
+    }
 }

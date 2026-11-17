@@ -295,13 +295,13 @@ a type error between them gives both ids : `expected C, got C (expected a.ba#C, 
 
 ### 8.3 Compiler
 
-Nothing in `BIP005-P1` : the file scope keeps a namespace in compiled code (bip001_bytecode-compiler.md §4),
-exports are read from it, and `m.x` is an `invokedynamic` selection with an inline cache like
-any other.
+In `BIP005-P1`–`BIP005-P5`, the file scope kept a namespace in compiled code (bip001_bytecode-compiler.md §4),
+and `m.x` went through `invokedynamic` selection.
 
-Later, for a static import bound to a never-reassigned def, `m.x` can be compiled as a
-constant call site bound to the export's slot, and `m.f(…)` as a guarded direct call. This is
-an optimisation with no change of semantics, worth doing when a benchmark asks for it.
+In `RM001`, for a static import bound to a never-reassigned `def` referencing a non-cyclic export,
+`m.x` and `m.f` compile to indexed `Module.exportAt(index)` reads (`ScopeAnalysis.ModuleExportTarget`),
+bypassing the hash lookup while preserving the runtime `Member used before definition` check;
+`m.f(...)` with statically known primitive/typed exports dispatches directly via `$spec` typed call sites.
 
 One case did not wait : split into modules, the argon ray tracer rendered in 71 s instead of
 49 s in compiled mode. The first guess, that module members such as `math.sqrt` took a slower
@@ -312,8 +312,8 @@ calling class's access. The classes of each file are loaded by a class loader of
 and are package-private, so a file using a class another file compiled could not reach its
 fields : the selection went to the generic path for good. Every `Vec3` the ray tracer used
 outside `vec3.ba` paid for it. The cache now looks the field up with access to the instance's
-own class (`MethodHandles.privateLookupIn`), and the split ray tracer renders as fast as the
-single file did (60 s and 67 s, on the same machine).
+own class (`MethodHandles.privateLookupIn`), and handles primitive `int`/`double`/`bool`
+fields as well since `RM001`.
 
 ## 9. Compilation cache
 

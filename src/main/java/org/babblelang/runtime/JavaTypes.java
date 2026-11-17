@@ -229,6 +229,14 @@ public final class JavaTypes {
         return value;
     }
 
+    /** Wraps an exception thrown by a direct Java call to match reflective dispatch. */
+    public static BabbleException wrapInvocationException(Throwable t) {
+        if (t instanceof BabbleException babble) {
+            return babble;
+        }
+        return new BabbleException(new java.lang.reflect.InvocationTargetException(t));
+    }
+
     /**
      * Checks arguments entering Babble from Java through a {@link Faces} proxy against the
      * Java interface method's parameter types (raw Java calls or {@code null} boxed primitives).

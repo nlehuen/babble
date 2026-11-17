@@ -45,7 +45,7 @@ public final class Resolution {
         }
 
         /** The def or parameter declaration, or null for this and recurse. */
-        ParserRuleContext declaration() {
+        public ParserRuleContext declaration() {
             return declaration;
         }
 

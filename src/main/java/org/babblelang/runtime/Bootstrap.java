@@ -30,16 +30,21 @@ public final class Bootstrap {
     private static final MethodType CALL = MethodType.methodType(Object.class, ScriptRuntime.class, Object[].class, String[].class, CallSite.class);
     private static final MethodHandle CALLABLE_CALL;
     private static final MethodHandle IS_FUNCTION;
+    private static final MethodHandle IS_FUNCTION_SPEC;
     private static final MethodHandle IS_BOUND_FUNCTION;
+    private static final MethodHandle IS_BOUND_FUNCTION_SPEC;
     private static final MethodHandle IS_BOUND_METHOD;
     private static final MethodHandle BOUND_FUNCTION;
     private static final MethodHandle RECEIVER;
+    private static final MethodHandle TYPED_CALL_FALLBACK;
     private static final MethodHandle SELECT_FALLBACK;
     private static final MethodHandle SELECT_GENERIC;
     private static final MethodHandle IS_CLASS;
     private static final MethodHandle IS_SAME;
     private static final MethodHandle MEMBER;
     private static final MethodHandle METHOD;
+    private static final MethodHandle REQUIRE_MEMBER_DEFINED;
+    private static final MethodHandle EXPORT_AT;
 
     static {
         try {
@@ -48,16 +53,21 @@ public final class Bootstrap {
             CALL_GENERIC = LOOKUP.findStatic(Bootstrap.class, "callGeneric", call);
             CALLABLE_CALL = LOOKUP.findVirtual(Callable.class, "call", CALL);
             IS_FUNCTION = LOOKUP.findStatic(Bootstrap.class, "isFunction", MethodType.methodType(boolean.class, MethodHandle.class, Callable.class));
+            IS_FUNCTION_SPEC = LOOKUP.findStatic(Bootstrap.class, "isFunctionSpec", MethodType.methodType(boolean.class, MethodHandle.class, Callable.class));
             IS_BOUND_FUNCTION = LOOKUP.findStatic(Bootstrap.class, "isBoundFunction", MethodType.methodType(boolean.class, MethodHandle.class, Callable.class));
+            IS_BOUND_FUNCTION_SPEC = LOOKUP.findStatic(Bootstrap.class, "isBoundFunctionSpec", MethodType.methodType(boolean.class, MethodHandle.class, Callable.class));
             IS_BOUND_METHOD = LOOKUP.findStatic(Bootstrap.class, "isBoundMethod", MethodType.methodType(boolean.class, CompiledMethod.class, Callable.class));
             BOUND_FUNCTION = LOOKUP.findStatic(Bootstrap.class, "boundFunction", MethodType.methodType(CompiledFunction.class, Callable.class));
             RECEIVER = LOOKUP.findStatic(Bootstrap.class, "receiver", MethodType.methodType(Object.class, Callable.class));
+            TYPED_CALL_FALLBACK = LOOKUP.findStatic(Bootstrap.class, "typedCallFallback", MethodType.methodType(Object.class, TypedCallCache.class, Object[].class));
             SELECT_FALLBACK = LOOKUP.findStatic(Bootstrap.class, "selectFallback", MethodType.methodType(Object.class, SelectCache.class, Object.class));
             SELECT_GENERIC = LOOKUP.findStatic(Members.class, "select", MethodType.methodType(Object.class, Object.class, String.class, String.class));
             IS_CLASS = LOOKUP.findStatic(Bootstrap.class, "isClass", MethodType.methodType(boolean.class, Class.class, Object.class));
             IS_SAME = LOOKUP.findStatic(Bootstrap.class, "isSame", MethodType.methodType(boolean.class, Object.class, Object.class));
             MEMBER = LOOKUP.findStatic(Classes.class, "member", MethodType.methodType(Object.class, Object.class, String.class));
             METHOD = LOOKUP.findStatic(Bootstrap.class, "method", MethodType.methodType(Object.class, Object.class, Object.class, String.class));
+            REQUIRE_MEMBER_DEFINED = LOOKUP.findStatic(Bootstrap.class, "requireMemberDefined", MethodType.methodType(void.class, Object.class, int.class, String.class));
+            EXPORT_AT = LOOKUP.findVirtual(Module.class, "exportAt", MethodType.methodType(Object.class, int.class));
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -214,12 +224,132 @@ public final class Bootstrap {
         return MethodHandles.insertArguments(h, position, values);
     }
 
+    /**
+     * {@code typedCall(Callable callee, ScriptRuntime rt, CallSite site, <args...>)<ret>} :
+     * a statically typed positional Babble call with primitive parameters or return value,
+     * inline-caching the callee's {@code $spec} entry point.
+     */
+    public static java.lang.invoke.CallSite typedCall(MethodHandles.Lookup lookup, String name, MethodType type) {
+        return new TypedCallCache(type);
+    }
+
+    static final class TypedCallCache extends MutableCallSite {
+        private final MethodHandle generic;
+        private int depth;
+
+        TypedCallCache(MethodType type) {
+            super(type);
+            int arguments = type.parameterCount() - 3;
+            MethodHandle fallback = TYPED_CALL_FALLBACK.bindTo(this)
+                    .asCollector(Object[].class, type.parameterCount())
+                    .asType(type);
+            MethodHandle noNames = MethodHandles.insertArguments(CALL_GENERIC, 2, new Object[]{null});
+            this.generic = (arguments == 0
+                    ? MethodHandles.insertArguments(noNames, 3, (Object) Arguments.NONE)
+                    : noNames.asCollector(Object[].class, arguments)).asType(type);
+            setTarget(fallback);
+        }
+
+        int arguments() {
+            return type().parameterCount() - 3;
+        }
+
+        synchronized void relink(Callable callee) {
+            if (depth > MAX_DEPTH) {
+                return;
+            }
+            if (++depth > MAX_DEPTH) {
+                setTarget(generic);
+                return;
+            }
+            int arguments = arguments();
+            MethodHandle test = null;
+            MethodHandle fast = null;
+            if (callee instanceof CompiledFunction f && f.spec() != null && compatibleSpec(f.spec().type(), type())) {
+                MethodHandle spec = f.spec();
+                test = IS_FUNCTION_SPEC.bindTo(spec);
+                MethodHandle h = MethodHandles.insertArguments(spec, 1, Undefined.UNBOUND);
+                fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
+            } else if (callee instanceof BoundMethod bound) {
+                if (bound.function() instanceof CompiledMethod m && m.spec() != null
+                        && compatibleSpec(m.spec().type(), type())) {
+                    MethodHandle spec = m.spec();
+                    test = IS_BOUND_METHOD.bindTo(m);
+                    MethodHandle h = MethodHandles.insertArguments(spec, 1, m);
+                    h = h.asType(h.type().changeParameterType(0, Object.class));
+                    h = MethodHandles.filterArguments(h, 0, RECEIVER);
+                    fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
+                } else if (bound.function() instanceof CompiledFunction f && f.spec() != null
+                        && compatibleSpec(f.spec().type(), type())) {
+                    MethodHandle spec = f.spec();
+                    test = IS_BOUND_FUNCTION_SPEC.bindTo(spec);
+                    MethodHandle h = MethodHandles.filterArguments(spec, 0, BOUND_FUNCTION, RECEIVER);
+                    int[] reorder = new int[h.type().parameterCount()];
+                    for (int i = 1; i < reorder.length; i++) {
+                        reorder[i] = i - 1;
+                    }
+                    h = MethodHandles.permuteArguments(h, h.type().dropParameterTypes(0, 1), reorder);
+                    fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
+                }
+            }
+            if (test == null) {
+                test = callTest(callee, arguments);
+                if (test != null) {
+                    fast = MethodHandles.dropArguments(callTarget(callee, arguments), 2, CallSite.class).asType(type());
+                } else {
+                    test = IS_CLASS.bindTo(callee.getClass()).asType(MethodType.methodType(boolean.class, Callable.class));
+                    MethodHandle noNames = MethodHandles.insertArguments(
+                            MethodHandles.permuteArguments(CALLABLE_CALL, MethodType.methodType(Object.class, Callable.class, ScriptRuntime.class, String[].class, CallSite.class, Object[].class), 0, 1, 4, 2, 3),
+                            2, new Object[]{null});
+                    fast = (arguments == 0
+                            ? MethodHandles.insertArguments(noNames, 3, (Object) Arguments.NONE)
+                            : noNames.asCollector(Object[].class, arguments)).asType(type());
+                }
+            }
+            setTarget(MethodHandles.guardWithTest(test, fast, getTarget()));
+        }
+
+        private static boolean compatibleSpec(MethodType specType, MethodType callType) {
+            int args = callType.parameterCount() - 3;
+            if (specType.parameterCount() != 3 + args) {
+                return false;
+            }
+            if (specType.returnType() != callType.returnType()) {
+                return false;
+            }
+            for (int i = 0; i < args; i++) {
+                if (specType.parameterType(3 + i) != callType.parameterType(3 + i)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    private static Object typedCallFallback(TypedCallCache cache, Object[] all) {
+        Callable callee = (Callable) all[0];
+        ScriptRuntime rt = (ScriptRuntime) all[1];
+        CallSite site = (CallSite) all[2];
+        Object[] args = all.length == 3 ? Arguments.NONE : Arrays.copyOfRange(all, 3, all.length);
+        Object result = callee.call(rt, args, null, site);
+        cache.relink(callee);
+        return result;
+    }
+
     private static boolean isFunction(MethodHandle direct, Callable callee) {
         return callee instanceof CompiledFunction f && f.direct() == direct;
     }
 
+    private static boolean isFunctionSpec(MethodHandle spec, Callable callee) {
+        return callee instanceof CompiledFunction f && f.spec() == spec;
+    }
+
     private static boolean isBoundFunction(MethodHandle direct, Callable callee) {
         return callee instanceof BoundMethod bound && bound.function() instanceof CompiledFunction f && f.direct() == direct;
+    }
+
+    private static boolean isBoundFunctionSpec(MethodHandle spec, Callable callee) {
+        return callee instanceof BoundMethod bound && bound.function() instanceof CompiledFunction f && f.spec() == spec;
     }
 
     private static boolean isBoundMethod(CompiledMethod method, Callable callee) {
@@ -270,6 +400,12 @@ public final class Bootstrap {
                 // Their members never change, except a Java class's static fields that aren't final.
                 test = IS_SAME.bindTo(target);
                 fast = MethodHandles.dropArguments(MethodHandles.constant(Object.class, result), 0, Object.class);
+            } else if (target instanceof Module mod) {
+                int index = mod.exportIndex(member);
+                if (index >= 0) {
+                    test = IS_SAME.bindTo(mod);
+                    fast = MethodHandles.dropArguments(MethodHandles.insertArguments(EXPORT_AT.bindTo(mod), 0, index), 0, Object.class);
+                }
             } else if (target instanceof BabbleInstance instance && target.getClass() != BabbleInstance.class) {
                 test = IS_CLASS.bindTo(target.getClass());
                 fast = instanceMember(instance);
@@ -302,14 +438,23 @@ public final class Bootstrap {
             if (index < 0 || shape.isPrivate(index)) {
                 return null;
             }
+            Class<?> fieldType;
+            try {
+                fieldType = instance.getClass().getDeclaredField(member).getType();
+            } catch (NoSuchFieldException | SecurityException e) {
+                return null;
+            }
             MethodHandle getter;
             try {
-                getter = MethodHandles.privateLookupIn(instance.getClass(), LOOKUP).findGetter(instance.getClass(), member, Object.class);
+                getter = MethodHandles.privateLookupIn(instance.getClass(), LOOKUP).findGetter(instance.getClass(), member, fieldType);
             } catch (ReflectiveOperationException | SecurityException e) {
                 return null;
             }
             getter = getter.asType(MethodType.methodType(Object.class, Object.class));
             if (!shape.isMethod(index)) {
+                if (fieldType.isPrimitive()) {
+                    return MethodHandles.foldArguments(getter, MethodHandles.insertArguments(REQUIRE_MEMBER_DEFINED, 1, index, member));
+                }
                 return MethodHandles.filterReturnValue(getter, MethodHandles.insertArguments(MEMBER, 1, member));
             }
             // method(getter(receiver), receiver, name)
@@ -331,6 +476,12 @@ public final class Bootstrap {
 
     private static boolean isSame(Object expected, Object target) {
         return target == expected;
+    }
+
+    private static void requireMemberDefined(Object receiver, int index, String name) {
+        if (!((BabbleInstance) receiver).isMemberDefined(index)) {
+            throw Members.usedBeforeDefinition(name);
+        }
     }
 
     /** The value of a method member, selected through an instance : bound to it. */

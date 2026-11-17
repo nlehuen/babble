@@ -36,8 +36,9 @@ class JavaMethod implements Callable {
     Object invoke(Object thiz, Object[] args, ScriptRuntime rt) {
         Method method = resolve(args);
         Object[] java = Values.toJava(args, method.getParameterTypes(), rt);
+        Object result;
         try {
-            return JavaTypes.checkBoxed(method.getReturnType(), Values.fromJava(method.invoke(thiz, java)));
+            result = method.invoke(thiz, java);
         } catch (InvocationTargetException e) {
             // A Babble error raised in a callback comes back as itself.
             if (e.getCause() instanceof BabbleException babble) {
@@ -47,6 +48,7 @@ class JavaMethod implements Callable {
         } catch (Exception e) {
             throw new BabbleException(e);
         }
+        return JavaTypes.checkBoxed(method.getReturnType(), Values.fromJava(result));
     }
 
     /** The overload these arguments call, by their kinds : what {@link JavaLinker} guards on. */
