@@ -14,7 +14,7 @@ import javax.script.ScriptContext;
 import javax.script.ScriptException;
 
 /**
- * An interactive session (docs/design/repl.md) : successive inputs, each a small script
+ * An interactive session (docs/design/bip004_repl.md) : successive inputs, each a small script
  * that sees what the previous ones defined. It runs in the engine's mode, interpreted or
  * compiled.
  * <p>

@@ -33,7 +33,7 @@ public final class FileModuleSource implements ModuleSource {
     }
 
     /**
-     * The modules under a directory (docs/design/module-sources-and-aot.md §4.2), for a host
+     * The modules under a directory (docs/design/bip006_module-sources-and-aot.md §4.2), for a host
      * that confines imports, and for ahead-of-time compilation. Names are resolved as by
      * {@link MapModuleSource} : relative to the importing module's directory, or from the root
      * when they start with "/" ; an import that would leave the directory, through ".." or a

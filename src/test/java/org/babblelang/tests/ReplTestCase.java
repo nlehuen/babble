@@ -17,7 +17,7 @@ import java.io.StringWriter;
 import java.util.List;
 
 /**
- * The interactive mode (docs/design/repl.md) : sessions, whose inputs see the definitions
+ * The interactive mode (docs/design/bip004_repl.md) : sessions, whose inputs see the definitions
  * of the previous ones, and the read-eval-print loop on top. Like the rest of the suite,
  * it runs interpreted, then compiled.
  */

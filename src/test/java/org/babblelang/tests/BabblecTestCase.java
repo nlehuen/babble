@@ -22,7 +22,7 @@ import java.util.jar.JarFile;
 import java.util.stream.Collectors;
 
 /**
- * {@code babblec} (docs/design/module-sources-and-aot.md §5) : a program compiled ahead of
+ * {@code babblec} (docs/design/bip006_module-sources-and-aot.md §5) : a program compiled ahead of
  * time into a jar, run in a fresh JVM with that jar alone on its class path.
  */
 public class BabblecTestCase {

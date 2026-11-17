@@ -4,7 +4,7 @@ import java.nio.file.Path;
 
 /**
  * What a compiled program falls back on to import a module its jar doesn't hold
- * (docs/design/module-sources-and-aot.md §5.4, M5c) : a service the full Babble jar provides,
+ * (docs/design/bip006_module-sources-and-aot.md §5.4, M5c) : a service the full Babble jar provides,
  * found through {@link java.util.ServiceLoader}, so that with Babble on the class path a
  * dynamic import compiles the module from its file, as the engine would. Without it, the
  * import fails.

@@ -1,9 +1,11 @@
-# Design: removing dynamic typing
+# BIP008: removing dynamic typing
 
 | | |
 |---|---|
+| **BIP** | 008 |
+| **Date** | 2026-11-16 |
 | **Status** | P1–P7 implemented : static typing is the only mode, redundant internal T9 checks are removed (§7, §8), union types (`A | B`) and nullable types (`T?`, `any` vs `any?`) are implemented (§11), Java/Babble generics with `(...)` syntax are implemented (§5.2, §12), and call-site parameter inference (P7, §4.9) is implemented. |
-| **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9) : T9 checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java. |
+| **Replaces** | the gradual part of [bip003_type-system.md](bip003_type-system.md) (T1–T9) : T9 checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java. |
 | **Scope** | the type checker, the grammar (`as`, `is` on built-in types, `|`, `?`, `null` in types, generic type parameters/arguments with `(...)`), the runtime checks, the tests, the examples and the docs. |
 
 ## 1. Summary
@@ -262,7 +264,7 @@ arguments are known.
 * `import(name)` with a name that isn't a string literal is `any` ; static imports keep their
   module types.
 * Interactive sessions (REPL, Q5) : each input in an `AnalysisSession` is analysed and compiled
-  before later inputs are known (`repl.md` §2). A `def`'s or member's inference (4.2, 4.3)
+  before later inputs are known (`bip004_repl.md` §2). A `def`'s or member's inference (4.2, 4.3)
   therefore closes at the end of the input that defines it, and assignments in later inputs are
   checked against that type rather than widening it (`AnalysisSession.reassigned` still drops
   flow-sensitive narrowing across inputs, not the inferred type). Likewise, in P7, call-site
@@ -294,7 +296,7 @@ arguments are known.
 
 ### 7.1 Unboxed arithmetic
 
-The unboxed-arithmetic work (not merged yet ; its design is to land in `bytecode-compiler.md`)
+The unboxed-arithmetic work (not merged yet ; its design is to land in `bip001_bytecode-compiler.md`)
 computes on unboxed `int`, `double` and `bool` values in compiled code. It can't trust the
 checker's types today (a `double` may be an int at runtime, 4.4 ; a parameter typed from its
 context is checked by nothing), so it adds a fifth analysis pass, `Unboxing`, that trusts only

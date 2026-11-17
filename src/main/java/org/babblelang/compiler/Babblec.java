@@ -30,7 +30,7 @@ import java.util.stream.Stream;
 
 /**
  * {@code babblec} : compiles a Babble program ahead of time into a jar that runs on a plain
- * JRE (docs/design/module-sources-and-aot.md §5) :
+ * JRE (docs/design/bip006_module-sources-and-aot.md §5) :
  * <pre>
  * java -jar babble.jar -compile main.ba -o app.jar [-root dir]
  * java -jar app.jar [arguments...]

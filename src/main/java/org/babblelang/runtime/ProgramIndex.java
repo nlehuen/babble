@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The index of a compiled program's jar (docs/design/module-sources-and-aot.md §5.4), the
+ * The index of a compiled program's jar (docs/design/bip006_module-sources-and-aot.md §5.4), the
  * resource {@link #RESOURCE} : its main module, the program's root, and for each module its
  * key, display name, script class and exports. One line each, tab-separated :
  * <pre>

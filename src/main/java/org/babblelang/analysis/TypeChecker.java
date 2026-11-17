@@ -35,7 +35,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
- * The type checker (docs/design/static-typing.md) : the fourth pass of the analysis, after
+ * The type checker (docs/design/bip008_static-typing.md) : the fourth pass of the analysis, after
  * {@link Resolver}. It types every expression of the file and reports, as errors, what
  * contradicts the annotations, leaves a declaration without a static type, or is bound to
  * fail at runtime : a value of the wrong type where a type is declared, calls that don't
@@ -116,7 +116,7 @@ final class TypeChecker {
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
     /**
      * The checkers of the files this one imports statically, transitively, by file : what
-     * this file uses from another is typed by that file's checker (docs/design/modules.md §8.2).
+     * this file uses from another is typed by that file's checker (docs/design/bip005_modules.md §8.2).
      */
     private final Map<ParserRuleContext, TypeChecker> owners = new HashMap<>();
 

@@ -1,7 +1,7 @@
 package org.babblelang.runtime;
 
 /**
- * Where {@code import("x.ba")} gets modules from (docs/design/module-sources-and-aot.md §3).
+ * Where {@code import("x.ba")} gets modules from (docs/design/bip006_module-sources-and-aot.md §3).
  * The engine implements it by compiling the module's file ; a compiled program, by finding
  * the module's class. One instance serves one eval, and the runtimes of the modules it
  * imports : a module is loaded once per eval.

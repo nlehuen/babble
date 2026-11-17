@@ -395,7 +395,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
 
     /**
      * The selection cache reads the fields of another file's compiled class with private
-     * access to it (docs/design/modules.md §8.3) : Babble's private members stay private.
+     * access to it (docs/design/bip005_modules.md §8.3) : Babble's private members stay private.
      */
     @Test
     public void privateMembersOfImportedClassesStayPrivateOnceCached() throws Exception {
@@ -546,7 +546,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     }
 
     /**
-     * A module's types keep their ids when it is compiled again (docs/design/module-sources-and-aot.md
+     * A module's types keep their ids when it is compiled again (docs/design/bip006_module-sources-and-aot.md
      * §5.2) : a script compiled before the module changed still recognises its classes.
      */
     @Test

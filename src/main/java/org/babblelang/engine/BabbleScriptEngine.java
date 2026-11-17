@@ -94,7 +94,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private final Namespace implicits;
 
     /**
-     * A compiled module, as the cache keeps it (docs/design/modules.md §9) : for the source
+     * A compiled module, as the cache keeps it (docs/design/bip005_modules.md §9) : for the source
      * and mode it was compiled with, and the versions of every module its analysis
      * read, its own included. It is stale when one of them changed.
      */
@@ -311,7 +311,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * Compiles a program ahead of time (docs/design/module-sources-and-aot.md §5) : its main
+     * Compiles a program ahead of time (docs/design/bip006_module-sources-and-aot.md §5) : its main
      * script, as a module of the source, and every module it imports statically, transitively.
      * The main module comes first, the others by key. Modules it only imports dynamically
      * are not compiled.

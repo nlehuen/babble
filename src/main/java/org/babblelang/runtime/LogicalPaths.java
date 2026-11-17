@@ -7,7 +7,7 @@ import java.util.Deque;
  * Module paths that are not files : "/"-separated, relative to a root, with "." and ".."
  * resolved and no way above the root. What the engine's {@code MapModuleSource},
  * {@code ClassPathModuleSource} and rooted {@code FileModuleSource} use for keys and display
- * names, and what a compiled program resolves its imports with (docs/design/module-sources-and-aot.md §5.4).
+ * names, and what a compiled program resolves its imports with (docs/design/bip006_module-sources-and-aot.md §5.4).
  */
 public final class LogicalPaths {
     private LogicalPaths() {

@@ -50,7 +50,7 @@ final class TypeNode {
     /**
      * The nominal type the expression defines (T9). In a module, its key and the type's name,
      * {@code lib/vec3.ba#Vec3}, the same every time the module is compiled ; elsewhere, unique
-     * within the JVM (docs/design/module-sources-and-aot.md §5.2).
+     * within the JVM (docs/design/bip006_module-sources-and-aot.md §5.2).
      */
     final String id;
     final ClassShape.Kind kind;

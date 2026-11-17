@@ -1,11 +1,13 @@
-# Design: the type system
+# BIP003: the type system
 
 | | |
 |---|---|
-| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [static-typing.md](static-typing.md) (P1–P7 implemented : strict checking, call-site parameter inference, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax) ; runtime checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
-| **Depends on** | [bytecode-compiler.md](bytecode-compiler.md) §10 (where the checker sits, the T1–T9 agenda), [object-model.md](object-model.md) §8 (classes and interfaces are types) |
-| **Unblocks** | Typed code generation (bytecode-compiler.md §10.5) |
-| **Replaced by** | [static-typing.md](static-typing.md) (P1–P7 implemented : `any` / `any?`, unions, `T?`, generics, `as`, call-site parameter inference, strict checking, T9 checks removed internally). |
+| **BIP** | 003 |
+| **Date** | 2026-10-24 |
+| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [bip008_static-typing.md](bip008_static-typing.md) (P1–P7 implemented : strict checking, call-site parameter inference, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax) ; runtime checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
+| **Depends on** | [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §10 (where the checker sits, the T1–T9 agenda), [bip002_object-model.md](bip002_object-model.md) §8 (classes and interfaces are types) |
+| **Unblocks** | Typed code generation (`bip001_bytecode-compiler.md` §10.5) |
+| **Replaced by** | [bip008_static-typing.md](bip008_static-typing.md) (P1–P7 implemented : `any` / `any?`, unions, `T?`, generics, `as`, call-site parameter inference, strict checking, T9 checks removed internally). |
 
 ## 1. Summary
 
@@ -43,7 +45,7 @@ gradually:
 | Java types | instances of a Java class | `java.util.List(string)`, or through `import("…")` |
 | `nothing` | none: the type of `return` | not written |
 
-## 3. Decisions (T1–T8 of bytecode-compiler.md §10.4)
+## 3. Decisions (T1–T8 of bip001_bytecode-compiler.md §10.4)
 
 * **T1, type names.** `int`, `double`, `bool`, `string` and `dynamic` are built in. A plain name
   must refer to a `def` initialised with a class or interface literal and never reassigned,
@@ -150,7 +152,7 @@ value is the join of its body's value and `null`.
 
 ## 5. Runtime checks (T9, updated in P5–P6b)
 
-With strict static typing (`static-typing.md` P1–P6b), `Types.check` is no longer emitted at
+With strict static typing (`bip008_static-typing.md` P1–P6b), `Types.check` is no longer emitted at
 Babble-to-Babble parameter, return, `def`, or assignment boundaries : the static checker proves
 those types, and `int`→`double`/`double?` widening uses `Values.toDouble` where `widensToDouble`
 marks a widening point.
@@ -178,11 +180,11 @@ The in-repo scripts pass type checking and run with these checks enforced (`Diff
 
 * Structural object types.
 * **Types for the compiler.** The checker keeps a type per expression, but doesn't publish it yet
-  for typed code generation (bytecode-compiler.md §10.5).
+  for typed code generation (bip001_bytecode-compiler.md §10.5).
 
 ## 7. Testing
 
-`TypeCheckerTestCase` has the golden tests of bytecode-compiler.md §10.6: a snippet, and the
+`TypeCheckerTestCase` has the golden tests of bip001_bytecode-compiler.md §10.6: a snippet, and the
 diagnostics expected at each line and column. It also checks that every `.ba` script in
 `src/test/babble` checks cleanly, that type errors fail the compilation with all diagnostics on
 the error writer, and that declared types are checked at runtime.

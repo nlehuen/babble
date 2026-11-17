@@ -1,9 +1,10 @@
-# Design: compiling Babble to JVM bytecode
+# BIP001: compiling Babble to JVM bytecode
 
 | | |
 |---|---|
-| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([object-model.md](object-model.md), summarised in §8.2). |
-| **Implemented** | §15 steps 1–11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker with runtime checks (T9) ([type-system.md](type-system.md)), always enabled and rejecting type errors before execution. Phase 4, ahead-of-time compilation, was designed and done as M5 of [module-sources-and-aot.md](module-sources-and-aot.md) (`-compile`). Typed code generation (§10.5) remains. |
+| **BIP** | 001 |
+| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([bip002_object-model.md](bip002_object-model.md), summarised in §8.2). |
+| **Implemented** | §15 steps 1–11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker with runtime checks (T9) ([bip003_type-system.md](bip003_type-system.md)), always enabled and rejecting type errors before execution. Phase 4, ahead-of-time compilation, was designed and done as M5 of [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) (`-compile`). Typed code generation (§10.5) remains. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -38,7 +39,7 @@ which is where enforced types pay off (§10).
 
 Decisions so far. Babble gets **real block scope** (§8.1). It lands in the interpreter after
 phase 0 and before phase 1, so the compiler targets the new rules from the start. The **object
-model** has its own design ([object-model.md](object-model.md)): class expressions, members reached only through `this` or a
+model** has its own design ([bip002_object-model.md](bip002_object-model.md)): class expressions, members reached only through `this` or a
 receiver, interfaces with default methods instead of inheritance, and Babble functions usable
 as Java functional interfaces (§8.2). **Type annotations are checked at runtime boundaries**
 (§10.3).
@@ -179,7 +180,7 @@ assert on that exact message shape, for example
 
 * Ahead-of-time `.class`/`.jar` output and a `babblec` CLI. The class layout is chosen so that
   this is easy later (§9, phase 4 ; since done, as M5 of
-  [module-sources-and-aot.md](module-sources-and-aot.md)).
+  [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)).
 * Type checking. It is a separate front-end pass with its own design. §10 explains where it
   fits relative to the compiler phases, and what the compiler gains from it.
 * New language features (classes, `for`, `yield`). The compiler must not make them harder,
@@ -495,7 +496,7 @@ still knows their `def` sets statically, so for those it only skips the chain wa
 
 ### 7.3 Classes and objects
 
-The object model ([object-model.md](object-model.md) §7) gives the details. In summary:
+The object model ([bip002_object-model.md](bip002_object-model.md) §7) gives the details. In summary:
 
 * Each `class` and `object` expression compiles to a JVM class whose fields are its members.
   Its methods are JVM instance methods, with the receiver in local 0. Each `interface`
@@ -548,7 +549,7 @@ Each item gets a test that pins the agreed behaviour **in both modes**.
 | D5 | `obj.x` falling through to lexical scope (`o.println`, `mk().hidden`) | allowed | **Decided: no.** `obj.x` sees only the object's members (§8.2). |
 | D6 | Where `print` writes by default | `STDOUT` looked up in the scope where the call is written; the `ScriptContext` writer is ignored | **Decided: the eval's `ScriptContext` writer (§8.4).** |
 | D7 | An unqualified name inside an object body after `obj.m` has cached a `BoundMethod` in the object | can resolve to the bound method | **Obsolete.** Unqualified names never reach members, and nothing is bound on the fly any more (§8.2). |
-| D8 | `==` on non-numbers | `compareTo` for two `Comparable`s of the same class, identity otherwise, so equal Java lists are not `==` | **Decided: Java `equals()`**, with numbers still compared across types, value classes generating their own equality, and `same(a, b)` for identity ([object-model.md](object-model.md) §4.7). It changes `Operators.eq` only, so it can land with phase 0. |
+| D8 | `==` on non-numbers | `compareTo` for two `Comparable`s of the same class, identity otherwise, so equal Java lists are not `==` | **Decided: Java `equals()`**, with numbers still compared across types, value classes generating their own equality, and `same(a, b)` for identity ([bip002_object-model.md](bip002_object-model.md) §4.7). It changes `Operators.eq` only, so it can land with phase 0. |
 
 Every item is decided.
 
@@ -624,7 +625,7 @@ name (`println(1) ; def println = …` is now an error).
 
 ### 8.2 Object model
 
-The object model has its own design document, [object-model.md](object-model.md). Its four
+The object model has its own design document, [bip002_object-model.md](bip002_object-model.md). Its four
 foundational decisions:
 
 1. **Class expressions,** `class (params) implements I ( body )`. The header is the
@@ -751,7 +752,7 @@ get there (§18 has what landed):
 script class plus a `main` that builds the implicits and calls `run`. Hidden runtime state
 (class loader, `ScriptRuntime`) is already explicit, so this is mostly packaging. The jar
 would depend on the Babble runtime and on ANTLR only if interpreter fallback is still used.
-*Done* as M5 of [module-sources-and-aot.md](module-sources-and-aot.md), with modules : a CLI,
+*Done* as M5 of [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md), with modules : a CLI,
 `-compile`, writes a jar of the program's modules, an index, the runtime and a launcher ; it
 depends on `java.base` only, and compiles imports it doesn't hold only when Babble is on its
 class path. The Maven goal is left for later.
@@ -762,7 +763,7 @@ The README lists "type checking" and "type inference" as planned features. Today
 annotations (`a:int`, `(n:int):string`) are parsed and then ignored: nothing in the interpreter
 reads them. This section covers where a type checker fits relative to the compiler phases, and
 what has to be decided before one can be built. The type system itself has its own design
-document, [type-system.md](type-system.md), which settles T1–T8; the list in §10.4 is the agenda
+document, [bip003_type-system.md](bip003_type-system.md), which settles T1–T8; the list in §10.4 is the agenda
 it answers. The checker and runtime boundary enforcement are implemented.
 
 ### 10.1 Where it sits
@@ -819,7 +820,7 @@ design (§10.4) depends on none of this and can start now.
   shared runtime (`Types.check(value, type)`), so both modes fail the same way, with
   `Type error : expected int, got string` and the line of the boundary. The checks are always
   active, and typed code generation can rely on checked types. Implemented as
-  described in type-system.md §5.
+  described in bip003_type-system.md §5.
 
 ### 10.4 Type system questions to settle first
 
@@ -1036,7 +1037,7 @@ What landed, and where it departs from the text above.
   so every class compiled by a test also passes `CheckClassAdapter`. `DifferentialTestCase`
   runs every `.ba` script and a list of tricky snippets in both modes and compares results,
   output and errors.
-* **Objects.** The object model is implemented (step 6, [object-model.md](object-model.md) §13),
+* **Objects.** The object model is implemented (step 6, [bip002_object-model.md](bip002_object-model.md) §13),
   and phase 1 compiles it against `BabbleInstance` (step 7). Each class or object expression's
   constructor is a static method `cls$N$Name(BabbleClass, BabbleInstance, ScriptRuntime, args,
   names, site)`, adapted to `ClassBody` with `LambdaMetafactory` like function bodies, and its

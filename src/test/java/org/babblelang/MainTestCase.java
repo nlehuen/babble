@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The command line (docs/design/repl.md) : a script given as an argument runs, without the
+ * The command line (docs/design/bip004_repl.md) : a script given as an argument runs, without the
  * interactive mode unless {@code -keep-alive} asks for it.
  */
 public class MainTestCase {

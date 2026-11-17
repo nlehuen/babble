@@ -9,7 +9,7 @@ import java.io.Writer;
  * importing it.
  * <p>
  * It holds nothing of {@code javax.script} : the runtime needs {@code java.base} alone, so
- * that a compiled program runs without the engine (docs/design/module-sources-and-aot.md §3).
+ * that a compiled program runs without the engine (docs/design/bip006_module-sources-and-aot.md §3).
  *
  * @param modules null when the runtime can't import modules
  */

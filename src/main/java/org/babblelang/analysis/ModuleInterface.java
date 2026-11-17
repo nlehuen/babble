@@ -8,7 +8,7 @@ import java.util.Set;
 /**
  * What the analysis of a file knows of a file it imports statically : its exported names,
  * and the interfaces it exports, for {@code implements}, {@code extends} and
- * {@code super(I)} (docs/design/modules.md §8.1).
+ * {@code super(I)} (docs/design/bip005_modules.md §8.1).
  * <p>
  * An interface is complete once the file's {@link TypeChecks} have run. Before that, which
  * a file importing it back in a cycle observes, only its exported names are known.

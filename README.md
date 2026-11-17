@@ -439,7 +439,7 @@ that call each other go in one input. To change a variable they see, assign it :
 switches below work here too : `java -Dbabble.mode=interpret -jar …`.
 `java -jar … -keep-alive script.ba` runs a script first, and starts with what it defined.
 There is no line editing or history ; `rlwrap java -jar …` adds both. The
-[design note](docs/design/repl.md) has the details.
+[design note](docs/design/bip004_repl.md) has the details.
 
 Ray tracing demo
 ----------------
@@ -535,7 +535,7 @@ same program twice gives the same bytes, and errors read as they do through the 
 dynamic import only finds the modules the program imports statically. With Babble on the class path,
 `java -cp hello.jar:target/babble-1.0-SNAPSHOT.jar org.babblelang.runtime.Launcher Ada`, the
 others are compiled from their files when they are imported. Imports may not leave the root,
-the script's directory by default (`-Dbabble.root=dir` tells a jar moved away from it). See the [design doc](docs/design/module-sources-and-aot.md) (§5).
+the script's directory by default (`-Dbabble.root=dir` tells a jar moved away from it). See [BIP006](docs/design/bip006_module-sources-and-aot.md) (§5).
 
 ### Formatting code
 
@@ -627,22 +627,22 @@ Language features :
 - [x] basic types : boolean, int, double, string, `null`, functions, union types (`A | B`), nullable types (`T?`), `any` / `any?`, and generic/parameterized types (`Box(T)`, `java.util.List(string)`).
 - [x] packages as namespaces, which change only through their own code : `p.x = 1` from outside is an error.
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
-- [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
+- [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java (including generic) interfaces.
-- [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
+- [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md) and [BIP008](docs/design/bip008_static-typing.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
 
 Implementation features :
 
 - [x] interpreted mode running on the parse tree, like 1.8.x Ruby, A.K.A. SLOW MODE : no longer the default, it is the reference implementation the compiler is tested against, and runs scripts on one thread only.
-- [x] compiled mode, the default : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals and classes are JVM classes, and calls and member accesses are `invokedynamic` sites with inline caches (phases 1 to 3 of the [bytecode compiler design](docs/design/bytecode-compiler.md)) : 25 to 55 times faster than the interpreter on calls, loops, closures and objects in the benchmarks, and Java calls no longer re-resolve overloads each time : in compiled mode, a call site calls the Java method it resolved to through a method handle, about as fast as a Babble call.
+- [x] compiled mode, the default : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals and classes are JVM classes, and calls and member accesses are `invokedynamic` sites with inline caches (phases 1 to 3 of the [bytecode compiler design](docs/design/bip001_bytecode-compiler.md)) : 25 to 55 times faster than the interpreter on calls, loops, closures and objects in the benchmarks, and Java calls no longer re-resolve overloads each time : in compiled mode, a call site calls the Java method it resolved to through a method handle, about as fast as a Babble call.
 - [x] errors found before running : redefined names, misplaced `return`, `this` or `super`, incomplete or conflicting interface implementations, private members reached from outside.
 - [x] about 100 lines of ANTLR4 grammar (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's parse tree & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
-- [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker (see the [design note](docs/design/repl.md)).
+- [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker (see [BIP004](docs/design/bip004_repl.md)).
 - [x] command line : `java -jar babble.jar script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
-- [x] ahead-of-time compilation : `-compile script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see the [design doc](docs/design/module-sources-and-aot.md)).
+- [x] ahead-of-time compilation : `-compile script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)).
 - [x] syntax errors that say what was unexpected, and where.
 - [x] a code formatter : `java -jar babble.jar -format`.
 

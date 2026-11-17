@@ -98,7 +98,7 @@
                     </execution>
                     <!-- What a compiled program needs to run, and nothing of the front end : the
                          classes RuntimeBoundaryTestCase keeps free of the parser, the analysis,
-                         the compiler, ANTLR and ASM (docs/design/module-sources-and-aot.md §3). -->
+                         the compiler, ANTLR and ASM (docs/design/bip006_module-sources-and-aot.md §3). -->
                     <execution>
                         <id>runtime-jar</id>
                         <phase>package</phase>

@@ -25,7 +25,7 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * Golden tests of the type checker (docs/design/type-system.md) : for each snippet, the
+ * Golden tests of the type checker (docs/design/bip003_type-system.md) : for each snippet, the
  * diagnostics expected, as {@code line:column message}.
  */
 public class TypeCheckerTestCase {
@@ -662,7 +662,7 @@ public class TypeCheckerTestCase {
                 "4:19 Type error : expected string, got double");
     }
 
-    // ---------------------------------------------------------------- static typing rules (docs/design/static-typing.md)
+    // ---------------------------------------------------------------- static typing rules (docs/design/bip008_static-typing.md)
 
     @Test
     public void testStrictS1UnannotatedParametersAndDefaults() {
