@@ -26,6 +26,7 @@ Roadmap stages group related work across proposals into sequential milestones:
 | **BIP006** | Module sources and ahead-of-time compilation | 2026-11-14 | Accepted & implemented (`BIP006-Q1`–`BIP006-Q8` → `BIP006-D1`–`BIP006-D8`; `BIP006-P1`–`BIP006-P6` implemented, covering `BIP001-P4` and `BIP005-P4`–`P5`; `babblec` Maven plugin `BIP006-D8`, incremental `babblec`, and GraalVM native image §9 deferred) | [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) |
 | **BIP007** | Function Effects and Algebraic Properties in Babble | 2026-11-14 | Draft (`BIP007-Q1`–`Q4` → `BIP007-D1`–`D4` decided; `BIP007-P1` specified for `RM002`; `BIP007-P2`–`P3` planned for `RM004`; `threadsafe` & parallelization in §10) | [bip007_effects.md](bip007_effects.md) |
 | **BIP008** | Removing dynamic typing | 2026-11-16 | Accepted & implemented (`BIP008-Q1`–`BIP008-Q7` → `BIP008-D1`–`BIP008-D7`; `BIP008-P1`–`BIP008-P5`, `BIP008-P6a`, `BIP008-P6b`, `BIP008-P7` implemented; `RM001` delivered typed/unboxed codegen §7.1; `BIP007` is unblocked and array indexing syntax §5.1 remains) | [bip008_static-typing.md](bip008_static-typing.md) |
+| **BIP009** | Systematic interpreter and compiler test coverage | 2026-11-17 | Draft (`BIP009-Q1`–`BIP009-Q8` → `BIP009-D1`–`BIP009-D8` proposed; `BIP009-P1`–`BIP009-P4` planned: `.batest` format, leak-free error normalization, and single-command `-Pbatest` dual-JVM JaCoCo coverage harness) | [bip009_test-coverage.md](bip009_test-coverage.md) |
 
 ## Cross-BIP baseline
 
