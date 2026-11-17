@@ -37,7 +37,7 @@ that. It resolves `implements Shape` to an interface literal, it knows `Point` i
 it infers the type of a `def` that is never assigned. A session must let the user define a name
 again, without making any of that false for code already analysed.
 
-So **each input that defines names is a scope nested in the previous one**, in the analysis and
+So **`BIP004-D1` — each input that defines names is a scope nested in the previous one**, in the analysis and
 at runtime alike:
 
 * **Analysis.** `AnalysisSession` keeps the file scope of the last input that defined names. The

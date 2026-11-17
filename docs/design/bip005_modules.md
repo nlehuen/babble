@@ -4,8 +4,8 @@
 |---|---|
 | **BIP** | 005 |
 | **Date** | 2026-11-11 |
-| **Status** | Accepted : the questions of §13 were decided as recommended. Steps M1 to M5 (§12) are implemented. |
-| **Depends on** | [bip002_object-model.md](bip002_object-model.md) (member access, `HasMembers`), [bip003_type-system.md](bip003_type-system.md) (what a module's type is), [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §4 (the file scope keeps a namespace) and phase 4 (ahead-of-time compilation) |
+| **Status** | Accepted : the questions of §13 (`BIP005-Q1`–`BIP005-Q8`) were decided (`BIP005-D1`–`BIP005-D8`) as recommended. Steps `BIP005-P1` to `BIP005-P5` (§12) are implemented. |
+| **Depends on** | [bip002_object-model.md](bip002_object-model.md) (member access, `HasMembers`), [bip003_type-system.md](bip003_type-system.md) (what a module's type is), [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §4 (the file scope keeps a namespace) and `BIP001-P4` (ahead-of-time compilation) |
 | **Unblocks** | Programs in several files, a standard library written in Babble, the AOT jar |
 
 ## 1. Summary
@@ -52,7 +52,7 @@ Goals :
 Non-goals, for now :
 
 * Versions, a package manager, a registry, remote imports.
-* A search path or a standard library location (§13, Q5).
+* A search path or a standard library location (§13, `BIP005-D5`).
 * Visibility finer than exported or not (no "exported to these files only").
 * Re-export syntax : `export def Circle = import("shapes.ba").Circle` does it.
 * Hot reloading of a changed file within one eval.
@@ -127,9 +127,9 @@ If a script shadows `import` with its own definition, calls to it are ordinary c
 
 | Alternative | Why not |
 |---|---|
-| A declaration : `import shapes from "shapes.ba"`, `import (Circle, unit) from "shapes.ba"` | Clearly static, and selective. But it is a statement in a language where everything is an expression, it needs two more keywords, and it duplicates what `def` plus the function do. The literal-argument rule gives the same static knowledge with the syntax that exists. Selective import is better solved once, for every value with members (Q3). |
+| A declaration : `import shapes from "shapes.ba"`, `import (Circle, unit) from "shapes.ba"` | Clearly static, and selective. But it is a statement in a language where everything is an expression, it needs two more keywords, and it duplicates what `def` plus the function do. The literal-argument rule gives the same static knowledge with the syntax that exists. Selective import is better solved once, for every value with members (`BIP005-D3`). |
 | A separate native, `module("shapes.ba")` | One more name for the same idea ; `import` is already the word for "bring something from outside". |
-| Module names instead of paths : `import("shapes")`, found on a search path | Needs a search path, a mapping from names to files and a rule for clashes with Java packages. Paths need none of it. A search path can be added later without changing files that use relative paths (Q5). |
+| Module names instead of paths : `import("shapes")`, found on a search path | Needs a search path, a mapping from names to files and a rule for clashes with Java packages. Paths need none of it. A search path can be added later without changing files that use relative paths (`BIP005-D5`). |
 | Importing copies the exports into the importer's scope (`import("shapes.ba")` defines `Circle`) | Names appear in a scope without a `def` : the analysis, which hoists and checks every name, could not see them for a dynamic import, and readers could not tell where a name comes from. |
 
 ## 5. Resolving a path
@@ -149,7 +149,7 @@ The extension is required. It is what tells a file from a Java package, and it k
 open for importing other things by extension later.
 
 A host that keeps its scripts elsewhere than in files (a database, the class path, a jar) needs
-to supply the source of a module itself : see Q6.
+to supply the source of a module itself : see `BIP005-D6`.
 
 ## 6. What a module is at runtime
 
@@ -176,7 +176,7 @@ bindings, then the file's own definitions.
 So a module sees what the host gave every script, and nothing of the scripts that import it.
 Sharing the bindings is deliberate : they are how a host injects its services, and a module
 that could not reach them would be useless in an embedded setting. They are copied into each
-root, as they are for a script, so a module rebinding one does not affect the others (Q4).
+root, as they are for a script, so a module rebinding one does not affect the others (`BIP005-D4`).
 
 Output goes to the same context writer, errors and warnings to the same error writer.
 
@@ -246,7 +246,7 @@ parsing and analysing the imported file, which in turn may have static imports.
   (`implements shapes.Shape`), a def holding the export (`def Shape = shapes.Shape`), an export
   that is itself an import or a re-export, or an exported package (`implements lib.geo.Solid`).
   Only exported names are reachable. Completeness, default conflicts and `super` resolution then
-  work as for a local interface. In M1 the analysis did not have the imported interface, and
+  work as for a local interface. In `BIP005-P1` the analysis did not have the imported interface, and
   splitting the ray tracers ran into it : their interfaces had to stay in the same file as the
   classes implementing them.
 * Imports run in the importing file's analysis after its pass 1 and before `TypeChecks`, so an
@@ -287,7 +287,7 @@ A checker serves every file that imports its file, one question at a time. So ty
 files without any file being checked twice, and diagnostics are reported once, by the file they
 are in.
 
-A compiled script refers to the class ids of the modules it was analysed against. Since M5a
+A compiled script refers to the class ids of the modules it was analysed against. Since `BIP006-P4`
 (bip006_module-sources-and-aot.md §5.2) a module's ids are its key and the class's name
 (`lib.ba#C`), the same every time it is compiled : a module changed after a script was compiled
 keeps its classes' identity. Two classes of one name from two modules are still two types, and
@@ -295,7 +295,7 @@ a type error between them gives both ids : `expected C, got C (expected a.ba#C, 
 
 ### 8.3 Compiler
 
-Nothing in M1 : the file scope keeps a namespace in compiled code (bip001_bytecode-compiler.md §4),
+Nothing in `BIP005-P1` : the file scope keeps a namespace in compiled code (bip001_bytecode-compiler.md §4),
 exports are read from it, and `m.x` is an `invokedynamic` selection with an inline cache like
 any other.
 
@@ -353,10 +353,10 @@ eval.
 ## 11. Host API and ahead-of-time compilation
 
 * `ScriptEngine.FILENAME` names the main script (§5). The launchers set it.
-* **Module sources** (Q6) : an engine attribute holding a function from a resolved path to a
+* **Module sources** (`BIP005-D6`) : an engine attribute holding a function from a resolved path to a
   `Reader`, defaulting to the file system. It is what a host needs to serve modules from a
   database, tests need to avoid temporary files, and the AOT compiler needs to follow imports.
-* **AOT** (bip001_bytecode-compiler.md, phase 4) : a jar contains one script class per file. Static
+* **AOT** (bip001_bytecode-compiler.md, `BIP001-P4`) : a jar contains one script class per file. Static
   imports are known at compile time, so the jar is closed over them, and `import` of a static
   path finds the class in the jar instead of a file. Dynamic imports keep reading files at
   runtime, or fail in a jar-only deployment. This is the main practical argument for making
@@ -369,18 +369,18 @@ eval.
 
 | Step | Content | State |
 |---|---|---|
-| **M1** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
-| **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | Done, with tests in both modes and in sessions. |
-| **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks (§8.2). | Done, with tests in both modes. |
-| **M4** | Module sources for hosts (§11). Designed with M5 in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (M4a, M4b). |
-| **M5** | AOT : a jar closed over static imports. Designed in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (M5a to M5c) : `-compile`. |
+| **`BIP005-P1`** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
+| **`BIP005-P2`** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | Done, with tests in both modes and in sessions. |
+| **`BIP005-P3`** | `Type.Module` : types across files, nominal types of exported classes, runtime checks (§8.2). | Done, with tests in both modes. |
+| **`BIP005-P4`** | Module sources for hosts (§11). Designed with `BIP005-P5` in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (`BIP006-P2`, `BIP006-P3`). |
+| **`BIP005-P5`** | AOT : a jar closed over static imports. Designed in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (`BIP006-P4` to `BIP006-P6`) : `-compile`. |
 
 Each step leaves both modes passing the whole suite. Both ray tracers, `examples/raytracer-fable`
-and `examples/raytracer-argon`, were split into files after M1 as the acceptance test of the
-feature, each interface sharing a file with the classes implementing it. After M2 they no
+and `examples/raytracer-argon`, were split into files after `BIP005-P1` as the acceptance test of the
+feature, each interface sharing a file with the classes implementing it. After `BIP005-P2` they no
 longer have to : the fable one has the files of the book (`hittable.ba`, `sphere.ba`,
 `hittable_list.ba`, …), and the argon one separates its interfaces, materials and hittables.
-The argon one is typed throughout : after M3 its types hold across its files, and it passes
+The argon one is typed throughout : after `BIP005-P3` its types hold across its files, and it passes
 type checking cleanly, with its runtime checks. The fable one is dynamic : annotating it is
 left as an exercise.
 
@@ -389,15 +389,15 @@ left as an exercise.
 These were open questions, each with a recommendation. All were decided as recommended, in the
 review of the pull request that brought this document ; the rest of the document assumes them.
 
-**Q1. `export` modifier, or one of the alternatives of §3.2 ?**
+**`BIP005-Q1` → `BIP005-D1`. `export` modifier, or one of the alternatives of §3.2 ?**
 Decided : the modifier.
 
-**Q2. Keep the `import` function for files, or add an import declaration (§4.3) ?**
+**`BIP005-Q2` → `BIP005-D2`. Keep the `import` function for files, or add an import declaration (§4.3) ?**
 Decided : the function, with the literal-argument rule for static imports. The risk is
 that "static if the argument is a literal" is a rule people have to learn ; the precedent is
 that Java package imports already work this way.
 
-**Q3. Selective import.**
+**`BIP005-Q3` → `BIP005-D3`. Selective import.**
 `def shapes = import(…)` followed by one `def` per name is verbose for a file that uses ten
 names of another. Options : (a) nothing ; (b) a destructuring `def (Circle, unit) = expr`,
 which binds the named members of any value with members, modules included ; (c) an import
@@ -405,23 +405,23 @@ declaration. Decided : (a) now, (b) as its own small proposal, because it is use
 modules and keeps `def` the only way to define a name. It is on the planned features of the
 README.
 
-**Q4. Do modules see the host's bindings ?**
+**`BIP005-Q4` → `BIP005-D4`. Do modules see the host's bindings ?**
 Decided : yes (§6.2). The alternative, modules that only see the implicits, is purer but
 forces hosts to thread their services through every call.
 
-**Q5. A search path, and a standard library.**
+**`BIP005-Q5` → `BIP005-D5`. A search path, and a standard library.**
 Decided : not now. When it comes, a path that does not start with `.` or `/` and is not
 found next to the importer could be looked up in a list of roots (`babble.path`), and a
 `std/…` prefix reserved for modules shipped in the jar.
 
-**Q6. Module sources : in M1 or M4 ?**
-Decided : M4. It is an API to get right once the needs of AOT are clear.
+**`BIP005-Q6` → `BIP005-D6`. Module sources : in `BIP005-P1` or `BIP005-P4` ?**
+Decided : `BIP005-P4`. It is an API to get right once the needs of AOT are clear.
 
-**Q7. Should exports be assignable from outside ?**
+**`BIP005-Q7` → `BIP005-D7`. Should exports be assignable from outside ?**
 Decided : no. Read-only exports are what lets the checker trust the type of
 `shapes.Circle`, and the compiler bind it.
 
-**Q8. Per-eval or per-engine module state ?**
+**`BIP005-Q8` → `BIP005-D8`. Per-eval or per-engine module state ?**
 Decided : per eval (§6.3). Per-engine state would make a second eval of a script observe
 what the first did to its modules, which no other part of the engine does.
 
@@ -433,14 +433,14 @@ what the first did to its modules, which no other part of the engine does.
   packages and classes, static type checks, Java packages still imported.
 * `src/test/babble/Modules.ba` and `src/test/babble/modules/` : run by `ScriptTestCase` and
   by `DifferentialTestCase` in both modes, with enforced types.
-* M2 adds, to `BabbleModulesTestCase` : missing and broken files found before running, dynamic
+* `BIP005-P2` adds, to `BabbleModulesTestCase` : missing and broken files found before running, dynamic
   imports still resolved at runtime, classes, objects and interfaces implementing or extending
   imported interfaces (through defs, re-exports and exported packages), `super(I)` with an
   imported qualifier, unexported and cyclic interfaces rejected, missing exports and assignments
   to exports as errors, a script's own `import`, and the cache :
   one analysis per file until it or a dependency changes. `ReplTestCase` checks static imports
   across the inputs of a session.
-* M3 adds, to `BabbleModulesTestCase`, golden tests of type diagnostics across files (exports'
+* `BIP005-P3` adds, to `BabbleModulesTestCase`, golden tests of type diagnostics across files (exports'
   types, imported classes' constructors, members and methods, imported classes and interfaces as
   types, re-exports, cycles), and runtime checks of imported types, in both execution
   modes.

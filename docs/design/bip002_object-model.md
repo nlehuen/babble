@@ -3,10 +3,10 @@
 | | |
 |---|---|
 | **BIP** | 002 |
-| **Status** | Implemented (§12 steps 1–6, through compiler phase 1), in both the interpreter and the compiler. §13 lists what the implementation decided where this text was silent. |
+| **Status** | Implemented (`BIP002-P1`–`BIP002-P6`, §12, through compiler `BIP001-P1`), in both the interpreter and the compiler. §13 lists what the implementation decided where this text was silent. |
 | **Date** | 2026-10-11 |
 | **Depends on** | [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md): block scope (§8.1), the shared runtime (§5), type checking (§10) |
-| **Unblocks** | Compiler phase 2 (§7), object and package types T5 (§10.4) |
+| **Unblocks** | Compiler `BIP001-P2` (§7), object and package types `BIP001-Q5` / `BIP003-D5` (§10.4) |
 
 ## 1. Summary
 
@@ -36,7 +36,7 @@ instance. Every `def` at the top level of the body declares a **member**.
   else. The built-in `same(a, b)` tests identity, and `classof(v)` returns a value's class.
 
 The model is closed: an object's members are fixed by its class. That is what lets compiler
-phase 2 turn a class into a JVM class with fields, an interface into a JVM interface, and a
+`BIP001-P2` turn a class into a JVM class with fields, an interface into a JVM interface, and a
 method call into an ordinary virtual or interface call. It also gives the type checker
 nominal types to work with.
 
@@ -44,23 +44,23 @@ nominal types to work with.
 
 | # | Question | Decision |
 |---|---|---|
-| O1 | Unit of definition | **Class expressions** with a constructor parameter list in the header. Object literals become one-off anonymous classes. |
-| O2 | Member lookup | **Members only, explicit `this`.** `obj.x` sees only members, and inside a class members must be written `this.x`. This closes D5 in the compiler doc. |
-| O3 | Reuse | **Interfaces with default methods (traits).** There is no class inheritance. `super` reaches interface defaults only (O9). |
-| O4 | Java interop | **Functions convert to Java functional interfaces.** Classes can also implement Java interfaces (O12). |
-| O5 | Equality of instances | **Value classes.** `value class` generates `equals`/`hashCode`/`toString` from read-only members, and every other class compares by identity. There is no hand-written `equals`. |
-| O6 | `==` on other values | **Java `equals()`** for every non-number, so lists, maps and sets compare by content. Numbers keep the cross-type rule (`1 == 1.0`). |
-| O7 | Identity | **A built-in `same(a, b)`** native, with no new operator. |
-| O8 | Parameters as members | **`def` in the class header** (`class (def x, def y)`) declares a member initialised from the argument. In a **value class every parameter is a member**, record-style. Header members, like all members, are reached only as `this.x` (§4.8). |
-| O9 | Calling an overridden default | **`super.m()`**, qualified as `super(Shape).m()` when several interfaces provide `m`. Kotlin-style, compiled as Java's `Shape.super.m()` (§6.5). |
-| O10 | Private members | **A `private` modifier**, on body and header members, and **object-private**: a private member is reachable only as `this.x` (§4.9). |
-| O11 | Static members | **A `static ( … )` block** after the class body, run once when the class expression is evaluated. Its `def`s are members of the class value, and inside it `this` is the class value (§4.10). |
-| O12 | Implementing Java interfaces | **Java interfaces only,** with no extending of Java classes. **One Babble method per name** serves every overload. Before compiler phase 2, a **cached `Proxy`** gives each instance its Java face; from phase 2 the generated JVM class implements the interfaces itself (§9.5). |
-| O13 | Structural typing | **None.** Conformance is always declared, object literals included: `object implements Shape ( … )` (§6.2). |
-| O14 | Reaching a class value | **A built-in `classof(v)`** returns any value's class: the creating class value for Babble instances, the Java class for Java objects. It is not privileged: private statics stay with the static block (§4.11). |
-| O15 | Babble interfaces extending Java interfaces | **Allowed,** and Babble defaults may implement the Java interfaces' methods, so a trait can package a Java implementation (§9.6). |
+| `BIP002-D1` | Unit of definition | **Class expressions** with a constructor parameter list in the header. Object literals become one-off anonymous classes. |
+| `BIP002-D2` | Member lookup | **Members only, explicit `this`.** `obj.x` sees only members, and inside a class members must be written `this.x`. This closes `BIP001-D5` in [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md). |
+| `BIP002-D3` | Reuse | **Interfaces with default methods (traits).** There is no class inheritance. `super` reaches interface defaults only (`BIP002-D9`). |
+| `BIP002-D4` | Java interop | **Functions convert to Java functional interfaces.** Classes can also implement Java interfaces (`BIP002-D12`). |
+| `BIP002-D5` | Equality of instances | **Value classes.** `value class` generates `equals`/`hashCode`/`toString` from read-only members, and every other class compares by identity (`BIP002-Q3`). |
+| `BIP002-D6` | `==` on other values | **Java `equals()`** for every non-number, so lists, maps and sets compare by content. Numbers keep the cross-type rule (`1 == 1.0`) (`BIP002-Q3`). |
+| `BIP002-D7` | Identity | **A built-in `same(a, b)`** native, with no new operator (`BIP002-Q3`). |
+| `BIP002-D8` | Parameters as members | **`def` in the class header** (`class (def x, def y)`) declares a member initialised from the argument. In a **value class every parameter is a member**, record-style. Header members, like all members, are reached only as `this.x` (§4.8; resolves `BIP002-Q1`). |
+| `BIP002-D9` | Calling an overridden default | **`super.m()`**, qualified as `super(Shape).m()` when several interfaces provide `m`. Kotlin-style, compiled as Java's `Shape.super.m()` (§6.5; resolves `BIP002-Q2`). |
+| `BIP002-D10` | Private members | **A `private` modifier**, on body and header members, and **object-private**: a private member is reachable only as `this.x` (§4.9; resolves `BIP002-Q4`). |
+| `BIP002-D11` | Static members | **A `static ( … )` block** after the class body, run once when the class expression is evaluated. Its `def`s are members of the class value, and inside it `this` is the class value (§4.10; resolves `BIP002-Q5`). |
+| `BIP002-D12` | Implementing Java interfaces | **Java interfaces only,** with no extending of Java classes. **One Babble method per name** serves every overload. Before compiler `BIP001-P2`, a **cached `Proxy`** gives each instance its Java face; from `BIP001-P2` the generated JVM class implements the interfaces itself (§9.5; resolves `BIP002-Q6`). |
+| `BIP002-D13` | Structural typing | **None.** Conformance is always declared, object literals included: `object implements Shape ( … )` (§6.2; resolves `BIP002-Q7`). |
+| `BIP002-D14` | Reaching a class value | **A built-in `classof(v)`** returns any value's class: the creating class value for Babble instances, the Java class for Java objects. It is not privileged: private statics stay with the static block (§4.11; resolves `BIP002-Q8`). |
+| `BIP002-D15` | Babble interfaces extending Java interfaces | **Allowed,** and Babble defaults may implement the Java interfaces' methods, so a trait can package a Java implementation (§9.6; resolves `BIP002-Q9`). |
 
-The sections below work out what these imply. §11 records the follow-up questions, all of
+The sections below work out what these imply. §11 records the follow-up questions (`BIP002-Q1`–`BIP002-Q9`), all of
 them resolved.
 
 ## 3. Today, and what changes
@@ -138,7 +138,7 @@ The body is an ordinary block, run **once per instance** by the constructor, top
 
 * **Top-level `def`s declare members.** `def size = 0` declares the member `size` and stores its
   initial value. These are the only members the class has.
-* **Member `def`s bind no unqualified name** (O2). In the body and in methods alike, a member is
+* **Member `def`s bind no unqualified name** (`BIP002-D2`). In the body and in methods alike, a member is
   `this.size`, never `size`. So `def x = x` is unambiguous: it declares the member `x`, and
   initialises it from the constructor parameter `x`. This is the one exception to block-scope
   hoisting (compiler doc §8.1, rule 3): a class or object body is not a lexical scope for its
@@ -156,7 +156,7 @@ The body is an ordinary block, run **once per instance** by the constructor, top
   size`, the member counterpart of block scope's rule 3. Every member starts out undefined. This
   is what happens when an initialiser calls a method that reads a later member.
 * **`return` in a class body** (outside its methods) is a compile-time error,
-  `return in a class body`, just as `return` in a parameter default is (D3). The body runs when
+  `return in a class body`, just as `return` in a parameter default is (`BIP001-D3`). The body runs when
   the class is *called*, so a `return` there would have nothing sensible to return from.
 * The value of a construction expression `Point(1, 2)` is the new instance, not the value of
   the body's last expression.
@@ -300,7 +300,7 @@ runtime can fix it.
 * For objects, it tests reference identity: `same(Point(1, 2), Point(1, 2))` is `false`, and
   `same(p, p)` is `true`.
 * For numbers, booleans and strings, which have no meaningful identity, `same` is the same as
-  `==`. Their identity depends on JVM boxing caches and on compiler optimisations (phase 3
+  `==`. Their identity depends on JVM boxing caches and on compiler optimisations (`BIP001-P3`
   unboxes `int`s), so answering by reference would make `same(1000, 1000)` change between modes
   or between runs.
 * `same(null, null)` is `true`.
@@ -329,7 +329,7 @@ def Account = class (owner:string, balance:int = 0) (
 )
 ```
 
-* **A header member is a member only.** Like every member it is reached as `this.x` (O2), and
+* **A header member is a member only.** Like every member it is reached as `this.x` (`BIP002-D2`), and
   it binds **no unqualified name** in the body or in methods. If `x` also stayed visible as a
   parameter, a method could read a stale copy after `this.x = …`. With one name there is a
   single storage location and no ambiguity. In the long form above, by contrast, `owner` stays
@@ -345,7 +345,7 @@ def Account = class (owner:string, balance:int = 0) (
 * **Only in class headers.** `def` on a function-literal parameter, or in a function type, is
   rejected with `def parameters are only allowed in a class header`.
 
-**In a value class, every parameter is a member** (O8), as in Java records and Kotlin data
+**In a value class, every parameter is a member** (`BIP002-D8`), as in Java records and Kotlin data
 classes:
 
 ```
@@ -404,7 +404,7 @@ through public members or value classes, whose generated equality does see priva
 who is calling. So:
 
 * `this.x` takes a separate path that may see private members. In the interpreter and in
-  phase 1 that is `Members.selectOwn(this, "x")`. In phase 2 it is a direct `GETFIELD`, or an
+  `BIP001-P1` that is `Members.selectOwn(this, "x")`. In `BIP001-P2` it is a direct `GETFIELD`, or an
   `INVOKEVIRTUAL` on a JVM `private` method.
 * Every other selection, through `Members.select` and later its `invokedynamic` sites, refuses
   private members outright. It needs no knowledge of the calling class, and no call site has to
@@ -436,7 +436,7 @@ already private state (§7.2). `private def` is for private state that needs its
 value, or that should read as a member (`this.n`) rather than as a captured variable.
 
 **Types and the JVM.** Private members are not part of a class's type as seen from outside, so
-the type checker only lets `this.x` reach them. In phase 2 they become JVM `private` fields and
+the type checker only lets `this.x` reach them. In `BIP001-P2` they become JVM `private` fields and
 methods. A function literal nested in a method that touches them is compiled as a synthetic
 instance method of the class, as for `super` (§7.3), so the access is legal there. Java code
 sees them as private too, through reflection or otherwise.
@@ -533,19 +533,19 @@ classof("s") == java.lang.String                         ;; true
 | functions, bound methods, class values, interfaces, packages | an error: `classof : a function has no class`. Their runtime representation differs between the interpreter and the compiled phases, and Babble has no metaclasses, so any answer would leak an implementation detail. |
 
 * **Not privileged.** `classof(this).x` is an ordinary selection, so private statics stay
-  reachable only from the static block (§4.9, §4.10). That is the deliberate answer to Q8's
+  reachable only from the static block (§4.9, §4.10). That is the deliberate answer to `BIP002-Q8`'s
   privacy half.
 * **Numbers keep their Babble classes.** `classof(1)` is `java.lang.Integer` and `classof(1.5)`
-  is `java.lang.Double`, in every mode. Compiled code that keeps `int`s unboxed (compiler phase
-  3) answers as if they were boxed.
+  is `java.lang.Double`, in every mode. Compiled code that keeps `int`s unboxed (compiler `BIP001-P3`)
+  answers as if they were boxed.
 * **`classof` and `is`.** For Babble classes, which have no inheritance, `x is Point` and
   `classof(x) == Point` agree. `is` is still the way to test interfaces, Java supertypes and
   `null` safety, and the type checker narrows types after `is`, not after `classof`.
 * **Equality.** Class values compare by identity (§4.7), so two evaluations of the same class
   expression give unequal class values. That matches the rule that value-class equality requires
   the *same* class value (§4.6).
-* **Implementation.** In the interpreter and phase 1, `classof` reads `BabbleInstance`'s class
-  value. In phase 2 it reads the instance's `$class` field (§7.1). For Java objects it goes
+* **Implementation.** In the interpreter and `BIP001-P1`, `classof` reads `BabbleInstance`'s class
+  value. In `BIP001-P2` it reads the instance's `$class` field (§7.1). For Java objects it goes
   through a cache keyed by `java.lang.Class`. The type checker types it as the class value of
   `v`'s static type when known, and as `dynamic` otherwise.
 
@@ -614,7 +614,7 @@ Square(2.0).describe()    ;; "square of area 4.0", the default method from Shape
 
 * **Conformance is declared, i.e. nominal.** A class satisfies only the interfaces it lists in
   `implements`, including what those interfaces extend. Merely having the right members is not
-  enough, for any value, object literals included (O13). Declaring is what lets `is` (§8.1),
+  enough, for any value, object literals included (`BIP002-D13`). Declaring is what lets `is` (§8.1),
   the type checker and the JVM mapping (§7.3) all give the same answer cheaply.
 * **Completeness is checked before the program runs.** A class that lacks a required member and
   doesn't inherit a default for it is rejected: `Square does not implement Shape.area`.
@@ -658,7 +658,7 @@ around dynamically.
 
 ### 6.4 Why not class inheritance
 
-Declined for this version, by decision O3. Interfaces with defaults cover the main reuse
+Declined for this version, by decision `BIP002-D3`. Interfaces with defaults cover the main reuse
 cases. They avoid the fragile-base-class problem and chains of `super` through class
 hierarchies, and they fit the JVM mapping directly (default methods). `super` exists, but it
 only reaches interface defaults (§6.5). Class inheritance could still be added later, because
@@ -715,19 +715,19 @@ type checker knows the exact default being called, and therefore its signature.
 
 ### 7.1 One JVM class per class expression
 
-Before compiler phase 2, in the interpreter and in phase 1, an instance is a `BabbleInstance`.
+Before compiler `BIP001-P2`, in the interpreter and in `BIP001-P1`, an instance is a `BabbleInstance`.
 It holds its `BabbleClass` and an `Object[]` of member values, indexed through the class's
 member table, which replaces the `HashMap` of today's `BabbleObject`. That already makes
 member access an array load. It also makes "fixed member set" structural rather than a
 convention.
 
-In phase 2, each `class` (and each `object`) expression compiles to its own JVM class,
+In `BIP001-P2`, each `class` (and each `object`) expression compiles to its own JVM class,
 `Script$7$Point`. As a Java-equivalent sketch:
 
 ```java
 final class Script$7$Point extends BabbleInstanceBase implements Script$7$Shape {
     final BabbleClass $class;      // the class value: display name, captured outer variables
-    Object x, y;                   // members, as fields (typed fields later, with T9)
+    Object x, y;                   // members, as fields (typed fields later, with BIP003-D9)
     // + hidden fields for constructor parameters that methods use (§7.2)
 
     Script$7$Point(BabbleClass c, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
@@ -744,7 +744,7 @@ final class Script$7$Point extends BabbleInstanceBase implements Script$7$Shape 
 * **A member access with a known receiver class** compiles to `GETFIELD`/`PUTFIELD`, and a call
   to `INVOKEVIRTUAL`. That happens when the receiver is `this`, or when the type checker knows
   its class. An unknown receiver goes through `Members.select`, which uses the class's member
-  table (an array of `VarHandle`/`MethodHandle`). In compiler phase 3 that path becomes an
+  table (an array of `VarHandle`/`MethodHandle`). In compiler `BIP001-P3` that path becomes an
   `invokedynamic` site cached per receiver class.
 * **Construction** is `new` plus the constructor, through the class value's `call`.
 * **Outer variables** captured by the class body or its methods are stored once per class value
@@ -776,13 +776,13 @@ literal's body is compiled as a synthetic instance method of the class, so that
 
 `obj.m` without a call allocates a small `BoundMethod(receiver, method handle)`. The common
 case, `obj.m(args)`, never allocates one: the compiler recognises select-then-call and emits a
-direct invocation, through `Members.invoke` in phase 2 and an `invokedynamic` site in phase 3.
+direct invocation, through `Members.invoke` in `BIP001-P2` and an `invokedynamic` site in `BIP001-P3`.
 
 ## 8. Types
 
 ### 8.1 Classes and interfaces are types
 
-This settles T5 in the compiler doc.
+This settles `BIP001-Q5` (`BIP003-D5`) in the compiler doc.
 
 * **A class value used in a type position is a nominal type,** for example `def p : Point`.
   The same goes for interfaces: `(s : Shape)`.
@@ -795,7 +795,7 @@ This settles T5 in the compiler doc.
 * **`x is T` tests membership at runtime,** with `T` a class or interface value. It is an
   `INSTANCEOF` in compiled code. For a class defined in a function, the test also compares the
   `BabbleClass` value. `x is java.lang.String` works for Java classes too.
-* **Runtime boundary checks (T9)** use the same test, so a failure reads
+* **Runtime boundary checks (`BIP003-D9`)** use the same test, so a failure reads
   `Type error : expected Shape, got Point`.
 
 ### 8.2 Packages
@@ -847,11 +847,11 @@ executor.submit(java.util.concurrent.Callable(() -> ( 1 )))
 
 ### 9.3 Implementation
 
-* In the interpreter and in compiler phases 1 and 2, `java.lang.reflect.Proxy` with an
+* In the interpreter and in compiler `BIP001-P1` and `BIP001-P2`, `java.lang.reflect.Proxy` with an
   `InvocationHandler`. The handler routes the single abstract method to `Callable.call`,
   default methods to `InvocationHandler.invokeDefault`, and `toString`/`equals`/`hashCode` to
   sensible identity-based implementations. This is simple and supports every interface.
-* In compiler phase 3, `LambdaMetafactory`-generated adapters are cached per (interface, Babble
+* In compiler `BIP001-P3`, `LambdaMetafactory`-generated adapters are cached per (interface, Babble
   callable kind). That avoids the reflection cost of proxies on hot callbacks such as
   comparators inside a sort.
 
@@ -887,7 +887,7 @@ java.util.Collections.sort(wallet)               ;; Java calls Money.compareTo
 ```
 
 **Declaring.** Java interfaces go in `implements` next to Babble ones, statically resolved
-(§6.3). Only Java interfaces are allowed (O12).
+(§6.3). Only Java interfaces are allowed (`BIP002-D12`).
 
 **Completeness.** Every abstract method of the Java interface and its superinterfaces needs a
 public Babble **method** with the same name. Three kinds of method are excluded: Java
@@ -943,7 +943,7 @@ def Log = class () implements java.lang.Appendable (
 **The Java face.** Java must always see **the same object** for a given Babble instance, or
 collections, identity maps and `equals` break. That object is the instance's *Java face*:
 
-* **Before phase 2** (the interpreter and compiler phase 1), instances are `BabbleInstance`s,
+* **Before `BIP001-P2`** (the interpreter and compiler `BIP001-P1`), instances are `BabbleInstance`s,
   which can't implement Java interfaces. The face of an instance whose class implements Java
   interfaces is a `java.lang.reflect.Proxy` implementing all of them. It is created on first
   use and cached in the instance. Its handler routes:
@@ -951,7 +951,7 @@ collections, identity maps and `equals` break. That object is the instance's *Ja
   - Java defaults the class doesn't override to `InvocationHandler.invokeDefault`;
   - `equals`, `hashCode` and `toString` to the instance's own semantics (identity, or the
     value-class versions, and the `toString` method), unwrapping proxy arguments first.
-* **From phase 2**, the generated JVM class `implements` the Java interfaces itself, with one
+* **From `BIP001-P2`**, the generated JVM class `implements` the Java interfaces itself, with one
   bridge method per Java overload. Each bridge has the exact Java signature, boxes its
   arguments, calls the single Babble method and converts the result. The face is the instance
   itself, and Java defaults are inherited natively by the JVM.
@@ -967,11 +967,11 @@ collections, identity maps and `equals` break. That object is the instance's *Ja
 So `same(list.get(0), it)` is `true`, and `==`, `is` and private access behave the same
 whichever phase is running. `Overloads` tests a Babble instance's applicability against its
 class's declared Java interfaces, not its runtime JVM class. That is how `wallet.add(Money(500))`
-and `Collections.sort(wallet)` accept it before phase 2, when the instance itself implements
+and `Collections.sort(wallet)` accept it before `BIP001-P2`, when the instance itself implements
 nothing.
 
 **Types.** A class that implements a Java interface is assignable to that interface type, for
-the type checker and for runtime boundary checks (T9). `x is java.util.Iterator` is `true` for
+the type checker and for runtime boundary checks (`BIP003-D9`). `x is java.util.Iterator` is `true` for
 a `Countdown` in every phase.
 
 ### 9.6 Babble interfaces extending Java interfaces
@@ -1012,10 +1012,10 @@ Task("x", 1) is java.lang.Comparable     ;; true
     default of one of its Babble interfaces.
   - A class method overrides a Babble default as usual. A default that two interfaces provide
     under the same name is a conflict (§6.2), whether either side comes from Java or Babble.
-* **Before compiler phase 2,** the proxy handler of §9.5 resolves a Java method by name. It
+* **Before compiler `BIP001-P2`,** the proxy handler of §9.5 resolves a Java method by name. It
   tries the class's method first, then a default of the class's Babble interfaces, then the
   Java default through `invokeDefault`.
-* **From phase 2,** the Babble interface compiles to a JVM interface that `extends` the Java
+* **From `BIP001-P2`,** the Babble interface compiles to a JVM interface that `extends` the Java
   interfaces. Each Babble default that implements a Java method is emitted as a JVM `default`
   method with the exact Java signature, bridging to the default's body, one per overload. The
   JVM then dispatches Java's calls with no help from the runtime.
@@ -1138,22 +1138,22 @@ All of these are resolved. They are kept as a record of what was considered.
 
 | # | Question | Leaning |
 |---|---|---|
-| Q1 | A shorthand for "parameter that is also a member" | **Resolved:** `def` in the class header, and every parameter in a value class (§4.8). |
-| Q2 | Calling an overridden default from the override | **Resolved:** `super.m()`, qualified as `super(I).m()` when ambiguous (§6.5). |
-| Q3 | Value equality | **Resolved:** value classes, Java `equals()` for `==`, and `same` (§4.6, §4.7). Hand-written `equals` remains excluded. Revisit only if a real case needs equality that is not field-wise. |
-| Q4 | Private members | **Resolved:** a `private` modifier, object-private, reachable only through `this` (§4.9). |
-| Q5 | Static members on classes | **Resolved:** a `static ( … )` block, with `this` as the class value (§4.10). |
-| Q6 | Babble classes implementing Java interfaces | **Resolved:** Java interfaces only, one method per name, `Proxy` until phase 2 (§9.5). |
-| Q7 | Structural typing for object literals passed where an interface is expected | **Resolved:** no. Conformance is always declared (§6.2, O13). |
-| Q8 | A way for instance code to reach its own class value, and its private statics | **Resolved:** `classof(this)` for the class value and public statics. Private statics stay with the static block (§4.11). |
-| Q9 | Babble interfaces extending Java interfaces | **Resolved:** allowed, and Babble defaults may implement the Java methods (§9.6). |
+| `BIP002-Q1` | A shorthand for "parameter that is also a member" | **Resolved (`BIP002-D8`):** `def` in the class header, and every parameter in a value class (§4.8). |
+| `BIP002-Q2` | Calling an overridden default from the override | **Resolved (`BIP002-D9`):** `super.m()`, qualified as `super(I).m()` when ambiguous (§6.5). |
+| `BIP002-Q3` | Value equality | **Resolved (`BIP002-D5`–`BIP002-D7`):** value classes, Java `equals()` for `==`, and `same` (§4.6, §4.7). Hand-written `equals` remains excluded. Revisit only if a real case needs equality that is not field-wise. |
+| `BIP002-Q4` | Private members | **Resolved (`BIP002-D10`):** a `private` modifier, object-private, reachable only through `this` (§4.9). |
+| `BIP002-Q5` | Static members on classes | **Resolved (`BIP002-D11`):** a `static ( … )` block, with `this` as the class value (§4.10). |
+| `BIP002-Q6` | Babble classes implementing Java interfaces | **Resolved (`BIP002-D12`):** Java interfaces only, one method per name, `Proxy` until `BIP001-P2` (§9.5). |
+| `BIP002-Q7` | Structural typing for object literals passed where an interface is expected | **Resolved (`BIP002-D13`):** no. Conformance is always declared (§6.2, `BIP002-D13`). |
+| `BIP002-Q8` | A way for instance code to reach its own class value, and its private statics | **Resolved (`BIP002-D14`):** `classof(this)` for the class value and public statics. Private statics stay with the static block (§4.11). |
+| `BIP002-Q9` | Babble interfaces extending Java interfaces | **Resolved (`BIP002-D15`):** allowed, and Babble defaults may implement the Java methods (§9.6). |
 
 ## 12. Implementation order
 
-1. Grammar: `class` (with the contextual `value` modifier), `interface`, `implements`,
+1. **`BIP002-P1` — Grammar:** `class` (with the contextual `value` modifier), `interface`, `implements`,
    `extends`, `is`, `this`, `super`, `private`, `static`, and `def` on parameter declarations.
    Regenerate the parser.
-2. Runtime: `BabbleClass`, `BabbleInstance` (an array of member values), `BabbleInterface`,
+2. **`BIP002-P2` — Runtime:** `BabbleClass`, `BabbleInstance` (an array of member values), `BabbleInterface`,
    bound methods over the new `Callable` (with `equals`). Retire `BabbleObject`'s parent
    fall-through and the on-the-fly binding of free functions.
    - Equality: `Operators.eq` switches to Java `equals()` for non-numbers.
@@ -1161,7 +1161,7 @@ All of these are resolved. They are kept as a record of what was considered.
    - The `same` and `classof` natives, and equality of Java class values by their `Class`.
    The `==` change can land on its own, before the rest, since it only touches
    `Operators`.
-3. Analysis pass, in the `BlockScopes` pass that grows into the `Resolver`:
+3. **`BIP002-P3` — Analysis pass, in the `BlockScopes` pass that grows into the `Resolver`:**
    - member tables;
    - the `this`/`return` placement checks;
    - static resolution of `implements`/`extends`;
@@ -1172,10 +1172,10 @@ All of these are resolved. They are kept as a record of what was considered.
    - private members: placement of `private`, static rejection of `e.x`, the interface rules
      (§4.9);
    - static blocks: member tables for class values, `return` placement (§4.10).
-4. Interpreter: class and object expressions, construction, member access (with the separate
+4. **`BIP002-P4` — Interpreter:** class and object expressions, construction, member access (with the separate
    `this.x` path that may see private members), `is`, `super`, `toString`, static blocks.
    Migrate `Stack.ba`, `Test1.ba`, the README and the test in §10.
-5. Java: functional-interface applicability in `Overloads`, `Proxy`-based conversion, and
+5. **`BIP002-P5` — Java:** functional-interface applicability in `Overloads`, `Proxy`-based conversion, and
    explicit conversion through a Java interface's class value. Then Java interfaces in
    `implements` (§9.5):
    - static loading and the completeness and arity checks;
@@ -1184,27 +1184,27 @@ All of these are resolved. They are kept as a record of what was considered.
    - applicability of instances by their declared interfaces;
    - Java interfaces in an interface's `extends`, with Babble defaults implementing them
      (§9.6).
-6. Compiler phase 1 compiles all of this, backed by `BabbleInstance`. Phase 2 moves to
-   JVM classes and interfaces (§7), and phase 3 adds `LambdaMetafactory` adapters.
+6. **`BIP002-P6` — Compiler `BIP001-P1` compiles all of this, backed by `BabbleInstance`.** `BIP001-P2` moves to
+   JVM classes and interfaces (§7), and `BIP001-P3` adds `LambdaMetafactory` adapters.
 
-Steps 1–5 need nothing from the compiler beyond the shared runtime (compiler phase 0) and
-block scope. Ideally they land before compiler phase 1 reaches `object` and member access
-(compiler doc §15, step 7), so phase 1 never has to compile the old object semantics.
+`BIP002-P1`–`BIP002-P5` need nothing from the compiler beyond the shared runtime (compiler `BIP001-P0`) and
+block scope. Ideally they land before compiler `BIP001-P1` reaches `object` and member access
+(compiler doc §15, step 7), so `BIP001-P1` never has to compile the old object semantics.
 
 ## 13. Implementation notes
 
-Everything in §12 steps 1–6 is implemented, in both modes: the interpreter and compiler phase 1
+Everything in §12 (`BIP002-P1`–`BIP002-P6`) is implemented, in both modes: the interpreter and compiler `BIP001-P1`
 (compiler doc §16). `BabbleObjectModelTestCase` and `BabbleJavaObjectsTestCase` cover the list in
 §10, and `DifferentialTestCase` checks that both modes agree. Where the text above was silent:
 
 * **Representation.** In the interpreter, an instance is a `BabbleInstance` (an array of member
   values, indexed through the class's `ClassShape`), and a method is the function value its
   `def` creates when the body runs, so each instance holds its own method closures over the
-  constructor's namespace. Compiler phase 2 generates a JVM class per class or object
+  constructor's namespace. Compiler `BIP001-P2` generates a JVM class per class or object
   expression, extending `BabbleInstance`, with a field per member, methods as JVM instance
   methods, and hidden fields for the constructor parameters methods capture (§7.1, §7.2;
   compiler doc §17). Babble interfaces are not JVM interfaces yet, and instances still reach
-  Java through a `Proxy` face (§9.5): both wait for the type checker and compiler phase 3.
+  Java through a `Proxy` face (§9.5): both wait for the type checker and compiler `BIP001-P3`.
 * **Analysis.** `BlockScopes` (scopes, members, placement of `this`, `return`, `super`, `private`
   and header `def`s, the value-class rules) is followed by `TypeChecks`, which needs the whole
   file: `implements`/`extends` resolution, completeness, default conflicts, `super`, and the

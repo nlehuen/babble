@@ -4,15 +4,15 @@
 |---|---|
 | **BIP** | 008 |
 | **Date** | 2026-11-16 |
-| **Status** | P1–P7 implemented : static typing is the only mode, redundant internal T9 checks are removed (§7, §8), union types (`A | B`) and nullable types (`T?`, `any` vs `any?`) are implemented (§11), Java/Babble generics with `(...)` syntax are implemented (§5.2, §12), and call-site parameter inference (P7, §4.9) is implemented. |
-| **Replaces** | the gradual part of [bip003_type-system.md](bip003_type-system.md) (T1–T9) : T9 checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java. |
+| **Status** | `BIP008-P1`–`BIP008-P7` implemented : static typing is the only mode, redundant internal `BIP003-D9` checks are removed (§7, §8), union types (`A | B`) and nullable types (`T?`, `any` vs `any?`) are implemented (§11), Java/Babble generics with `(...)` syntax are implemented (§5.2, §12), and call-site parameter inference (`BIP008-P7`, §4.9) is implemented. |
+| **Replaces** | the gradual part of [bip003_type-system.md](bip003_type-system.md) (`BIP003-D1`–`BIP003-D9`) : `BIP003-D9` checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java. |
 | **Scope** | the type checker, the grammar (`as`, `is` on built-in types, `|`, `?`, `null` in types, generic type parameters/arguments with `(...)`), the runtime checks, the tests, the examples and the docs. |
 
 ## 1. Summary
 
 Babble is gradually typed today : what is unannotated and can't be inferred is `dynamic`, which
 is assignable to and from everything, and declared types are enforced at runtime where a
-`dynamic` value reaches them (T9). This design removes `dynamic`. Every expression gets a static
+`dynamic` value reaches them (`BIP003-D9`). This design removes `dynamic`. Every expression gets a static
 type, and a program the checker cannot type is rejected before it runs.
 
 `dynamic` is replaced by a **top type, `any`**, that is sound : anything can be put in an `any`,
@@ -30,7 +30,7 @@ step and the default flips only once the tests, the examples and the README are 
 Goals :
 
 * No expression of an unknown type : every member, call and operator is checked before running.
-* Fewer runtime checks : a boundary the checker proves needs none (T9 checks remain only at
+* Fewer runtime checks : a boundary the checker proves needs none (`BIP003-D9` checks remain only at
   casts and at the Java boundary). It also simplifies unboxed arithmetic, and opens the way to
   direct calls and primitive fields (README, *Planned features* ; §7.1).
 * Diagnostics in the style of today's : worded like the runtime errors they replace.
@@ -38,7 +38,7 @@ Goals :
 Non-goals, for this design :
 
 * Generics for Babble functions and classes, union types, and nullable types (`T?`) : deferred in
-  the initial P1–P5 design, then added as P6a (§11) and P6b (§12).
+  the initial `BIP008-P1`–`BIP008-P5` design, then added as `BIP008-P6a` (§11) and `BIP008-P6b` (§12).
 * Subtyping between classes : there is still no class inheritance.
 
 ## 3. Where `dynamic` comes from today
@@ -47,8 +47,8 @@ From `TypeChecker` (67 uses of `Type.DYNAMIC`), the sources, grouped by what rem
 
 | # | Source | Example | Today | Proposed (§) |
 |---|---|---|---|---|
-| S1 | unannotated parameter, no contextual type | `(a, b) -> ( a + b )` | `dynamic` | annotation required unless a default gives the type (4.1) ; from P7, inferred from calls (4.9) |
-| S2 | unannotated class header parameter or member | `class (def x) ( def y = null )` | `dynamic` | header parameter : as S1, from P7 inferred from constructor calls (4.2, 4.9) ; member : inferred from its initialiser and assignments (4.2, 4.3) |
+| S1 | unannotated parameter, no contextual type | `(a, b) -> ( a + b )` | `dynamic` | annotation required unless a default gives the type (4.1) ; from `BIP008-P7`, inferred from calls (4.9) |
+| S2 | unannotated class header parameter or member | `class (def x) ( def y = null )` | `dynamic` | header parameter : as S1, from `BIP008-P7` inferred from constructor calls (4.2, 4.9) ; member : inferred from its initialiser and assignments (4.2, 4.3) |
 | S3 | `def` initialised with `null`, or without a value | `def m = null`, `def m` | `dynamic` | inferred from its assignments (4.3) ; annotation required when there are none (4.1) |
 | S4 | a reassigned unannotated `def` | `def i = 0 ; i = "a"` | `dynamic` | the join of its initialiser and every assignment ; error where they don't join (4.3) |
 | S5 | join of `if` branches / `while` and `null` with unrelated types | `if c then ( 1 ) else ( "a" )` | `dynamic` | error where the value is used (4.4) |
@@ -75,7 +75,7 @@ are unannotated (S1), and 7 test files route values through an identity function
     `def f : (n : int) : int = (n) -> ( n + 1 )` from the annotation) ;
   * its default value : `(sep = "")` is a `string`, `(threads = 1)` an `int` (a default of
     `null` gives no type) ;
-  * from P7, the calls to it (4.9).
+  * from `BIP008-P7`, the calls to it (4.9).
 * An unannotated `def` is typed by inference over its initialiser and every assignment to it
   (4.3), so `def m = null ; m = "a"` is a `string`. It needs an annotation only when that gives
   no type : no value and no assignment, or nothing but `null`.
@@ -86,7 +86,7 @@ Diagnostic : `Missing type : a` (the parameter or def), at its declaration.
 ### 4.2 Members
 
 A class header parameter is typed as a function's parameter is (4.1) : by its annotation, its
-default value, or from P7 the constructor calls `C(…)` (4.9). A member is typed by its
+default value, or from `BIP008-P7` the constructor calls `C(…)` (4.9). A member is typed by its
 annotation, or by inference over its initialiser and assignments, as a `def` is (4.3), and
 `obj.x = v` is checked against that type. Today a member without annotation is `dynamic`
 because `obj.x = …` can change it (`memberType`) ; checking writes against the inferred type
@@ -130,7 +130,7 @@ joined with `null`, so an error for `int`, `double` and `bool` (`if c then ( 1 )
 
 Where an `int` joins to `double` — the branches of an `if`, a loop's value, a def's assignments
 (4.3), a parameter's arguments (4.9) — the value is **converted** to a `double`, in both
-backends, so that a static `double` is always a runtime `Double` (Q7). Today it isn't :
+backends, so that a static `double` is always a runtime `Double` (`BIP008-D7`). Today it isn't :
 `def w = if c then ( 1 ) else ( 2.0 )` is typed `double` and holds the int `1`, so `w + w` is `2` ;
 only an annotated def converts (`def v : double = …` holds `1.0`, through its runtime check).
 
@@ -166,12 +166,12 @@ instead of a runtime `NumberFormatException` (the negated `-2147483648` stays an
   resolved only when directly on the right of `is` so `int(x)` (the conversion) is unaffected.
 * `e as T` takes a `type` on the right and binds tighter than comparisons and looser than
   `+`/`-` (`a + b as int == 1` is `((a + b) as int) == 1`). It evaluates to `e`'s value if it is
-  a `T`, else a runtime error worded as today's T9 checks, `Type error : expected string, got
+  a `T`, else a runtime error worded as today's `BIP003-D9` checks, `Type error : expected string, got
   int`. Its static type is `T`. The cast is an error when `e`'s type can never be a `T`
   (`1 as string`), and a warning when it always is. Only types `Types.check` can enforce at
   runtime are valid targets (built-in types, Babble classes, Java classes/interfaces/arrays,
   and `any`) ; function types are erased at runtime and rejected statically (`Cannot cast to a
-  function type`). `null` follows T2/T9 rules : `null as string` and `null as C` succeed, while
+  function type`). `null` follows `BIP003-D2`/`BIP003-D9` rules : `null as string` and `null as C` succeed, while
   `null as int`, `null as double` and `null as bool` fail at runtime.
 * `dynamic` is no longer a type name (`Unknown type : dynamic`).
 
@@ -179,7 +179,7 @@ instead of a runtime `NumberFormatException` (the negated `-2147483648` stays an
 assumes anything of an `any`, so a program that type-checks has no type error at runtime except
 at an `as`, or across the Java boundary (5).
 
-### 4.9 Parameters inferred from calls (P7)
+### 4.9 Parameters inferred from calls (`BIP008-P7`)
 
 An unannotated parameter with no default and no contextual type is typed by inference over the
 calls to its function, as a `def` is over its assignments (4.3) : its type is the join of the
@@ -237,7 +237,7 @@ monomorphic, so it would rarely type more than calls do, with errors harder to e
 
 ### 5.2 Generics
 
-Reflection gives the generic signatures (`List<E>.get` returns `E`). From P6b (§8, §12), Babble
+Reflection gives the generic signatures (`List<E>.get` returns `E`). From `BIP008-P6b` (§8, §12), Babble
 types `java.util.List(string)` and `java.util.Map(string, int)` annotations and infers type
 arguments from call arguments and expected types (`java.util.ArrayList()`,
 `java.util.Collections.emptyList()`), enforcing Java `TypeVariable` bounds. Generic Java methods
@@ -263,17 +263,17 @@ arguments are known.
   always binds a `java.util.List` of strings, so it is declared `java.util.List(string)`.
 * `import(name)` with a name that isn't a string literal is `any` ; static imports keep their
   module types.
-* Interactive sessions (REPL, Q5) : each input in an `AnalysisSession` is analysed and compiled
+* Interactive sessions (REPL, `BIP008-D5`) : each input in an `AnalysisSession` is analysed and compiled
   before later inputs are known (`bip004_repl.md` §2). A `def`'s or member's inference (4.2, 4.3)
   therefore closes at the end of the input that defines it, and assignments in later inputs are
   checked against that type rather than widening it (`AnalysisSession.reassigned` still drops
-  flow-sensitive narrowing across inputs, not the inferred type). Likewise, in P7, call-site
+  flow-sensitive narrowing across inputs, not the inferred type). Likewise, in `BIP008-P7`, call-site
   inference (4.9) closes at the end of the input that defines the function ; a function defined
   at the prompt with no calls in that same input needs annotations (`Missing type : f`).
 
 ## 7. Runtime
 
-* `Types.check` stays for `as` and for external boundaries. In P5, the T9 checks at Babble-to-Babble
+* `Types.check` stays for `as` and for external boundaries. In `BIP008-P5`, the `BIP003-D9` checks at Babble-to-Babble
   parameters, results, `def`s, unqualified assignments, and `this.x` direct field writes are removed,
   keeping `Values.toDouble` where `widensToDouble` marks an `int`→`double` conversion.
 * External boundaries retain runtime checks :
@@ -289,7 +289,7 @@ arguments are known.
     remain checked, while `CodeGenerator`'s direct `this.x = …` `PUTFIELD` writes omit checks.
 * The interpreter stays the reference : both modes give the same results, as today. Fewer
   checks change no result of a program that type-checks ; the conversion of an `int` joined to
-  `double` (4.4, Q7) does : `w + w` above becomes `2.0`. It is the one change of behaviour of a
+  `double` (4.4, `BIP008-D7`) does : `w + w` above becomes `2.0`. It is the one change of behaviour of a
   program that type-checks (others may now be rejected before running, e.g. 4.7).
 * Errors a program could reach before and no longer can (`Not a number : x` on a Babble value,
   `x is not callable`, …) stay in the runtime, as the backstop for Java values and casts.
@@ -300,10 +300,10 @@ The unboxed-arithmetic work (not merged yet ; its design is to land in `bip001_b
 computes on unboxed `int`, `double` and `bool` values in compiled code. It can't trust the
 checker's types today (a `double` may be an int at runtime, 4.4 ; a parameter typed from its
 context is checked by nothing), so it adds a fifth analysis pass, `Unboxing`, that trusts only
-the T9 checks, literals and operators on such values. With this design, a static `int`,
+the `BIP003-D9` checks, literals and operators on such values. With this design, a static `int`,
 `double` or `bool` is the fact it needs :
 
-* At P4, `ScopeAnalysis.kind` (the pass's interface to `CodeGenerator`, which doesn't change) is
+* At `BIP008-P4`, `ScopeAnalysis.kind` (the pass's interface to `CodeGenerator`, which doesn't change) is
   filled from the checker's types instead of from `Unboxing`. What goes : the reasoning about
   which class an instance or which function a callee is certain to be, the fixpoint over
   reassigned variables (4.3 is the same inference), and the `instanceof BabbleInstance` branch on
@@ -315,53 +315,53 @@ the T9 checks, literals and operators on such values. With this design, a static
 * Measured there : the fable ray tracer with annotations ran a third slower than without (137 s
   against 105 s), from runtime checks alone ; nominal checks were a quarter of argon's time
   before that branch stopped comparing class ids as strings, and checks were still about a
-  quarter of its wall-clock time. Removing them in P5 cut `examples/raytracer-argon/raytracer.ba`
+  quarter of its wall-clock time. Removing them in `BIP008-P5` cut `examples/raytracer-argon/raytracer.ba`
   from 78.7 s to 58.3 s (byte-identical to `scene.ppm`) and sped up `Stack.ba` in `Benchmarks`
   from 1.7 ms to 1.3 ms.
 
 ## 8. Plan
 
 Each phase keeps `mvn package` green and is a pull request of its own. To keep default mode
-backward-compatible while scripts are migrated, P1–P3 gate the new strict rules and inference
+backward-compatible while scripts are migrated, `BIP008-P1`–`BIP008-P3` gate the new strict rules and inference
 that can reject existing code behind `babble.typing=strict` :
 
-* **P1, `any`, `is` on built-in types, `as`, and `if`/`while` numeric conversion.** *(Implemented)* Grammar (`as`
+* **`BIP008-P1`, `any`, `is` on built-in types, `as`, and `if`/`while` numeric conversion.** *(Implemented)* Grammar (`as`
   binds tighter than comparisons, looser than arithmetic : `a + b as int` is `(a + b) as int`),
   `Type.ANY`, `Type.JavaArray(T)` (5.1), both backends (`as` compiles to `Types.check`),
   formatter, tests. `dynamic` still exists. Also the conversion of an `int` joined to `double`
-  in `if` and `while` (4.4, Q7), which needs no strict mode : the checker records where those
+  in `if` and `while` (4.4, `BIP008-D7`), which needs no strict mode : the checker records where those
   joins widen, and both backends convert there. Verify that `argon` still renders `scene.ppm`
   byte for byte.
-* **P2, strict mode.** *(Implemented)* `babble.typing=strict` (engine attribute and system property) enables the
+* **`BIP008-P2`, strict mode.** *(Implemented)* `babble.typing=strict` (engine attribute and system property) enables the
   strict typing and inference of §4–§6 : parameter defaults (4.1), member inference (4.2),
   inference over all assignments with its `int`→`double` conversion (4.3), `super` typing (4.5),
   `JavaInstance(I)` member lookup (5.1), implicit signatures and `any` bindings (§6), and errors
   for every unresolved source of §3 (`Missing type` for unannotated parameters, defs, cycles and
   imports, out-of-range literals 4.7, unknown `dynamic` 4.8). Off by default ; a test runs every
   `.ba` script and example in strict mode and lists which fail, as the migration's to-do list.
-* **P3, migration.** *(Implemented)* Annotate the tests and the examples ; rewrite the tests that reach runtime
+* **`BIP008-P3`, migration.** *(Implemented)* Annotate the tests and the examples ; rewrite the tests that reach runtime
   type errors through `def id = (v) -> ( v )` with `as` (the error still exists, at the cast) or
   turn them into static diagnostics ; the README's *Optional types* section and the tour ; argon
   must still render `scene.ppm` byte for byte.
-* **P4, flip the default.** *(Implemented)* Strict is the only mode ; `dynamic` and the flag are removed ;
+* **`BIP008-P4`, flip the default.** *(Implemented)* Strict is the only mode ; `dynamic` and the flag are removed ;
   `TypeChecker`'s gradual paths (`isUnknown`, the `dynamic` cases of `assignable`) go.
-* **P5, runtime checks.** *(Implemented)* Remove the redundant internal T9 boundary checks while keeping checks at
+* **`BIP008-P5`, runtime checks.** *(Implemented)* Remove the redundant internal `BIP003-D9` boundary checks while keeping checks at
   `as` casts, Java boundaries (`JavaTypes.checkBoxed`, `Faces`), and `BabbleInstance`/`BabbleType.setMember` ;
   verify compiled bytecode omits internal `Types.check` / `TYPE*` fields (`BabbleCompilerTestCase`) and measure
   with `Benchmarks` and `argon` (§7.1).
-* **P6a, union types (`A | B`) and nullable types (`T?`).** *(Implemented)* Separates nullability in
+* **`BIP008-P6a`, union types (`A | B`) and nullable types (`T?`).** *(Implemented)* Separates nullability in
   the type system (`T` is non-nullable, including `any`; `T?` is `T | null`; `any?` is the nullable
   top type; `null` is allowed in type annotations; `( ... )` parenthesises complex types such as
   `((a : int) : int)?`), joins `if`/`while`/`return` branches to unions (and `int?` + `double` to
   `double?` with conversion), narrows via `else` subtraction, `== null`/`!= null`/`<> null`, truthiness,
   and `while` loop invalidation, and updates `Types` descriptors for unions and non-nullable checks (§11).
-* **P6b, Java generics (5.2) and Babble generics (§12).** *(Implemented)* Adds type parameters
+* **`BIP008-P6b`, Java generics (5.2) and Babble generics (§12).** *(Implemented)* Adds type parameters
   and arguments using `(...)` syntax (`def Box(T) = class ...`, `def id(T) = ...`,
   `java.util.List(string)`), call-site and contextual type inference (including `int` → `double`
   widening when safe and uncalled generic function values), Java `TypeVariable` bound checking,
   covariant parameterized subtyping, raw `is`/`as` narrowing with runtime erasure, and runtime
   `Types.check` boundary checks on Java generic `TypeVariable`/`WildcardType` returns and fields.
-* **P7, parameters inferred from calls** (4.9). *(Implemented)* Infers unannotated parameters of
+* **`BIP008-P7`, parameters inferred from calls** (4.9). *(Implemented)* Infers unannotated parameters of
   non-exported, non-escaping, called functions, class headers, and non-interface methods from
   their call sites (supporting named/default args, mutual/self recursion, source-order conflict
   reporting, widening line notes, and end-of-input closure in REPL sessions, §6), and removes
@@ -372,45 +372,45 @@ that can reject existing code behind `babble.typing=strict` :
 
 The questions of the draft, as decided :
 
-* **Q1. Unannotated parameters with no contextual type** : an annotation is required (4.1),
-  unless the parameter has a default value. Then, in P7, a parameter of a function whose calls
+* **`BIP008-Q1` → `BIP008-D1`. Unannotated parameters with no contextual type** : an annotation is required (4.1),
+  unless the parameter has a default value. Then, in `BIP008-P7`, a parameter of a function whose calls
   are all visible is inferred from them (4.9) ; inference from uses in the body is out of scope.
-* **Q2. Numeric widening on reassignment** : inference over all assignments (4.3) :
+* **`BIP008-Q2` → `BIP008-D2`. Numeric widening on reassignment** : inference over all assignments (4.3) :
   `def x = 1 ; x = 1.5` makes `x` a `double`.
-* **Q3. `if` without `else` as a value** : an error where the value is used and its type admits
+* **`BIP008-Q3` → `BIP008-D3`. `if` without `else` as a value** : an error where the value is used and its type admits
   no `null` (`int`, `double`, `bool`), as in 4.4.
-* **Q4. Arrays** : a `JavaArray(T)` type now (5.1).
-* **Q5. The REPL** : the same typing rules as scripts, with inference (4.3, 4.9) closed at the
+* **`BIP008-Q4` → `BIP008-D4`. Arrays** : a `JavaArray(T)` type now (5.1).
+* **`BIP008-Q5` → `BIP008-D5`. The REPL** : the same typing rules as scripts, with inference (4.3, 4.9) closed at the
   end of the input that defines the binding or function (§6).
-* **Q6. Cast syntax** : `e as T` (4.8).
-* **Q7. Converting an `int` joined to `double`** : yes (4.4). A static `double` is always a
+* **`BIP008-Q6` → `BIP008-D6`. Cast syntax** : `e as T` (4.8).
+* **`BIP008-Q7` → `BIP008-D7`. Converting an `int` joined to `double`** : yes (4.4). A static `double` is always a
   runtime `Double`, as the unboxed-arithmetic work needs (7.1). It changes the result of programs
   like `w + w` in 4.4 (`2` becomes `2.0`), the one change of behaviour this design makes to a
   program that type-checks.
 
 ## 10. Testing
 
-* P1 : golden tests of `as` and `is` diagnostics in `TypeCheckerTestCase`, `DifferentialTestCase`
+* `BIP008-P1` : golden tests of `as` and `is` diagnostics in `TypeCheckerTestCase`, `DifferentialTestCase`
   snippets for failing casts, a `.ba` script, and `argon` rendering `scene.ppm` byte for byte.
-* P2 : one golden test per source of §3 in strict mode, and the strict-mode survey of every
+* `BIP008-P2` : one golden test per source of §3 in strict mode, and the strict-mode survey of every
   script (§8).
-* P3–P4 : the whole suite in strict mode ; `ExamplesTestCase` compiles the examples in it.
-* P5 : `BabbleCompilerTestCase` checks the boundary checks are gone from the generated code ;
+* `BIP008-P3`–`BIP008-P4` : the whole suite in strict mode ; `ExamplesTestCase` compiles the examples in it.
+* `BIP008-P5` : `BabbleCompilerTestCase` checks the boundary checks are gone from the generated code ;
   benchmarks before and after.
-* P6a : `FormatterTestCase`, `TypeCheckerTestCase#testP6aUnionAndNullableTypes`, `TypeCheckerTestCase#testSafeCallOperator`, `BabbleCompilerTestCase`,
+* `BIP008-P6a` : `FormatterTestCase`, `TypeCheckerTestCase#testP6aUnionAndNullableTypes`, `TypeCheckerTestCase#testSafeCallOperator`, `BabbleCompilerTestCase`,
   `DifferentialTestCase`, `src/test/babble/UnionsAndNullables.ba`, and `argon` rendering `scene.ppm` byte for byte.
-* P6b : `FormatterTestCase`, `TypeCheckerTestCase#testP6bGenerics`, `BabbleCompilerTestCase`,
+* `BIP008-P6b` : `FormatterTestCase`, `TypeCheckerTestCase#testP6bGenerics`, `BabbleCompilerTestCase`,
   `BabbleModulesTestCase`, `DifferentialTestCase`, `src/test/babble/Generics.ba`, and `argon`
   rendering `scene.ppm` byte for byte.
-* P7 : golden tests of call-site inference in `TypeCheckerTestCase` (widening across calls,
+* `BIP008-P7` : golden tests of call-site inference in `TypeCheckerTestCase` (widening across calls,
   named and default arguments, methods and constructors, recursion, a conflicting call, and
   `Missing type` for escaping, exported and never-called functions) ; removing the annotations
   inference makes redundant from the tests and examples must leave the suite green.
 
-## 11. Union types (`A | B`) and nullable types (`T?`) *(Implemented in P6a)*
+## 11. Union types (`A | B`) and nullable types (`T?`) *(Implemented in `BIP008-P6a`)*
 
-Originally Babble followed T2 : `int`, `double` and `bool` rejected `null`, while `string`, Babble
-classes, function types, Java types and `any` admitted it. P6a separates nullability in the type
+Originally Babble followed `BIP003-D2` : `int`, `double` and `bool` rejected `null`, while `string`, Babble
+classes, function types, Java types and `any` admitted it. `BIP008-P6a` separates nullability in the type
 system itself and introduces union types (`A | B`) :
 
 * **`T` vs. `T?`.** Every plain type `T` (`int`, `double`, `bool`, `string`, Babble classes,
@@ -446,9 +446,9 @@ system itself and introduces union types (`A | B`) :
   and non-nullable `Builtin`, `FunctionType`, `JavaClassType`, and `NominalType` descriptors, with
   `UnionType.convert` preferring a non-converting matching member before widening.
 
-## 12. Generics *(Implemented in P6b)*
+## 12. Generics *(Implemented in `BIP008-P6b`)*
 
-P6b adds parametric polymorphism for Babble functions, classes, interfaces, and methods alongside
+`BIP008-P6b` adds parametric polymorphism for Babble functions, classes, interfaces, and methods alongside
 Java generic classes, interfaces, and methods, using parentheses `(...)` exclusively (no square
 brackets `[]` anywhere in Babble syntax) :
 

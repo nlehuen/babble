@@ -4,19 +4,19 @@
 |---|---|
 | **BIP** | 006 |
 | **Date** | 2026-11-14 |
-| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [bip005_modules.md](bip005_modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3), M4 (§4) and M5 (§5) are implemented. |
-| **Depends on** | [bip005_modules.md](bip005_modules.md) (static imports, the module cache, module types), [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
+| **Status** | Accepted : the questions of §10 (`BIP006-Q1`–`BIP006-Q8`) were decided (`BIP006-D1`–`BIP006-D8`) as recommended. Covers steps `BIP005-P4` and `BIP005-P5` of [bip005_modules.md](bip005_modules.md) (§11, §12), designed together because `BIP005-P5` is the main user of `BIP005-P4`'s API. `BIP006-P1` (§3), `BIP006-P2`–`BIP006-P3` (§4), and `BIP006-P4`–`BIP006-P6` (§5) are implemented. |
+| **Depends on** | [bip005_modules.md](bip005_modules.md) (static imports, the module cache, module types), [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) (`BIP001-P4`, the class layout, `Bootstrap`) |
 | **Unblocks** | Babble programs shipped as a jar, hosts serving modules from anywhere, module tests without temporary files |
 
 ## 1. Summary
 
 Two features, one seam :
 
-* **M4, module sources.** Where an imported module's source text comes from becomes a host's
+* **`BIP005-P4` (`BIP006-P2`–`BIP006-P3`), module sources.** Where an imported module's source text comes from becomes a host's
   choice : a `ModuleSource` resolves `import("x.ba")` to a module identity, and reads that
   module's text and version. The file system is the default ; a map in memory, the class path
   or a database are others.
-* **M5, ahead-of-time compilation.** `babblec` compiles a program and the modules it imports
+* **`BIP005-P5` (`BIP006-P4`–`BIP006-P6`), ahead-of-time compilation.** `babblec` compiles a program and the modules it imports
   statically into a jar : one class per file, an index, a launcher, and the Babble runtime.
   `java -jar app.jar` runs it without parsing, analysing or generating anything.
 
@@ -26,7 +26,7 @@ runtime). §2 measures that split ; §3 makes it explicit ; §4 and §5 build on
 
 ## 2. What the Babble runtime contains
 
-The question that sizes M5 : once a program is compiled, what does it need that the JRE does
+The question that sizes `BIP005-P5` : once a program is compiled, what does it need that the JRE does
 not have ?
 
 ### 2.1 Method
@@ -104,7 +104,7 @@ Before either feature, the split of §2 is made explicit, with no change of beha
   ```
 
   The importer is the importing file's source name, as `import` resolves relative names
-  today ; M4 turns it into a `ModuleId` (§4.1).
+  today ; `BIP006-P2` turns it into a `ModuleId` (§4.1).
 
   `ImportFunction` calls it for names ending in `.ba`. The engine implements it by compiling
   (today's `importModule`, through its cache) ; the AOT launcher implements it from the jar's
@@ -121,17 +121,17 @@ Before either feature, the split of §2 is made explicit, with no change of beha
 * **A test keeps the boundary.** `RuntimeBoundaryTestCase` reads the constant pool of every
   runtime class file and fails on a reference to the parser, the analysis, the compiler, the
   interpreter, the engine, a library, or a JDK package outside `java.base`. Run against the code
-  before R1, it reports exactly the edges R1 removes. Without it,
+  before `BIP006-P1`, it reports exactly the edges `BIP006-P1` removes. Without it,
   the next convenience import puts the compiler back into every jar.
 * **A runtime jar.** The build also produces `babble-<version>-runtime.jar`, the runtime
   alone (68 classes, 100 KB), with a classifier : a second artifact of the same module, rather
-  than a Maven multi-module build (Q1). A script compiled by the engine runs with that jar alone
+  than a Maven multi-module build (`BIP006-D1`). A script compiled by the engine runs with that jar alone
   on the class path.
 * **Sessions keep their modules.** An interactive session keeps one `Modules` for its
-  lifetime, as one long eval : a module imported by several inputs is loaded once. Before R1,
+  lifetime, as one long eval : a module imported by several inputs is loaded once. Before `BIP006-P1`,
   each input loaded its modules afresh.
 
-## 4. M4 : module sources
+## 4. `BIP006-P2`–`BIP006-P3` (`BIP005-P4`) : module sources
 
 ### 4.1 The API
 
@@ -157,7 +157,7 @@ public record ModuleText(String text, String version) { }
 ```
 
 * The engine attribute `babble.moduleSource` holds one ; the default is the file system.
-* **The source resolves names** (Q7). It gets the name as written and the importer's identity,
+* **The source resolves names** (`BIP006-D7`). It gets the name as written and the importer's identity,
   not a path already resolved against a directory : a database has no directories, and a
   host may want its own rules (a search path, a `std/` prefix for modules it ships).
 * **A module is its key.** `ModuleId.key` is what the engine's cache, the per-eval module table
@@ -170,12 +170,12 @@ public record ModuleText(String text, String version) { }
   `identify`. By default it is what `resolve` gives for the name with no importer. A script
   named after a file need not be one, as when a host evaluates a string under a file's name,
   so `FileModuleSource` gives an identity to a path that does not exist, and its imports are
-  resolved from that path's directory, as before M4. A source that does not know the name gives
+  resolved from that path's directory, as before `BIP006-P2`. A source that does not know the name gives
   none, and the script's imports are resolved from nowhere in particular (for files, the working
   directory).
 * **The importer stays a source name at runtime.** `Modules.load` (§3) gets the importing
   file's source name, which is all generated code knows. The engine maps it back to an identity
-  : the module it compiled under that name (its display name), else what `identify` gives. M5
+  : the module it compiled under that name (its display name), else what `identify` gives. `BIP006-P4`
   makes source names portable (§5.2) ; until then, this keeps generated code unchanged.
 * The types are in `org.babblelang.engine`, with `FileModuleSource.INSTANCE` the default. A
   value of the attribute that is not a `ModuleSource` fails `compile()`.
@@ -207,7 +207,7 @@ carries, so `import` in a function resolves against the module the function is i
 Errors : `Cannot import x.ba : no such module` when `resolve` returns null, with the file
 source keeping `no such file : /abs/x.ba`.
 
-## 5. M5 : ahead-of-time compilation
+## 5. `BIP006-P4`–`BIP006-P6` (`BIP005-P5`) : ahead-of-time compilation
 
 ### 5.1 What it produces
 
@@ -234,7 +234,7 @@ exports, compiled script), the main one first.
   by default, for modules compiled while running, §5.4) (`runtime.ProgramIndex`, a tab-separated text resource : a
   generated class was the first draft, a resource is simpler to write and to read, and the
   launcher reads it once) ;
-* the runtime classes of §3, copied in (Q3) from wherever the runtime was loaded (the
+* the runtime classes of §3, copied in (`BIP006-D3`) from wherever the runtime was loaded (the
   classes directory or a jar), so the jar runs on a plain JRE ;
 * a manifest with `Main-Class: org.babblelang.runtime.Launcher` (the main key is in the index).
 
@@ -290,11 +290,11 @@ render takes 60 s from its jar against 68 s through the engine, with the same `s
   the importer's directory, `/` for the root, `..` never above it), then looks the key up :
   nothing is read. The index does not record what each import resolved to : the same rules give
   the same key, and that serves dynamic imports too.
-* **Dynamic imports** (`import(name + ".ba")`) cannot be known before running (Q4). In the jar,
+* **Dynamic imports** (`import(name + ".ba")`) cannot be known before running (`BIP006-D4`). In the jar,
   `Modules` looks for the name in the index first, so a dynamic import of a module the program
-  also imports statically works (M5b). Otherwise the import fails with
-  `Cannot import x.ba : a compiled program only has the modules it imports statically` ; M5c
-  first asks `ServiceLoader` for a module compiler (M5c).
+  also imports statically works (`BIP006-P5`). Otherwise the import fails with
+  `Cannot import x.ba : a compiled program only has the modules it imports statically` ; `BIP006-P6`
+  first asks `ServiceLoader` for a module compiler (`BIP006-P6`).
 * **The module compiler** is `runtime.ModuleCompiler` : `compile(root, key)` returns the
   module's script class, display name and exports, which the launcher runs as it runs the
   jar's. The full Babble jar provides one, `compiler.FileModuleCompiler` (registered in
@@ -330,7 +330,7 @@ runtime.
 * Interactive sessions : each input is compiled when it is typed.
 * Modules imported only dynamically, unless a compiler is present (§5.4).
 
-## 6. How M4 and M5 fit
+## 6. How `BIP005-P4` and `BIP005-P5` fit
 
 * The `Modules` interface (§3) is the runtime's side ; `ModuleSource` (§4) is the compiler's.
   The engine joins them : its `Modules` compiles what its `ModuleSource` reads. The launcher's
@@ -344,14 +344,14 @@ runtime.
 
 | Step | Content | State |
 |---|---|---|
-| **R1** | The runtime boundary (§3) : `Implicits`, `Modules`, `ScriptRuntime` without `javax.script`, the moves, the boundary test, the runtime jar. No change of behaviour but sessions loading a module once. | Done. |
-| **M4a** | `ModuleSource`, `ModuleId`, `FileModuleSource` as the default ; the engine's cache keyed by `ModuleId` and versions. | Done. |
-| **M4b** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. | Done : `BabbleModulesTestCase` runs in memory, `FileModulesTestCase` keeps what is particular to files and the class path. |
-| **M5a** | Stable class names, type ids and source names (§5.2), in the engine too. | Done. |
-| **M5b** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. | Done, with dynamic imports of indexed modules ; the index is a text resource rather than a class (§5.1). `BabblecTestCase` runs the jars in fresh JVMs. |
-| **M5c** | Dynamic imports in a compiled program of modules it does not index : a module compiler through `ServiceLoader`, else the error of §5.4. | Done : `runtime.ModuleCompiler`, `compiler.FileModuleCompiler`, the root in the index and `babble.root`. |
+| **`BIP006-P1`** | The runtime boundary (§3) : `Implicits`, `Modules`, `ScriptRuntime` without `javax.script`, the moves, the boundary test, the runtime jar. No change of behaviour but sessions loading a module once. | Done. |
+| **`BIP006-P2`** | `ModuleSource`, `ModuleId`, `FileModuleSource` as the default ; the engine's cache keyed by `ModuleId` and versions. | Done. |
+| **`BIP006-P3`** | `MapModuleSource`, `ClassPathModuleSource`, `FileModuleSource(root)` ; module tests moved to `MapModuleSource` where files are incidental. | Done : `BabbleModulesTestCase` runs in memory, `FileModulesTestCase` keeps what is particular to files and the class path. |
+| **`BIP006-P4`** | Stable class names, type ids and source names (§5.2), in the engine too. | Done. |
+| **`BIP006-P5`** | `babblec` (`-compile … -o …`), the index, the launcher, the runtime copied in. | Done, with dynamic imports of indexed modules ; the index is a text resource rather than a class (§5.1). `BabblecTestCase` runs the jars in fresh JVMs. |
+| **`BIP006-P6`** | Dynamic imports in a compiled program of modules it does not index : a module compiler through `ServiceLoader`, else the error of §5.4. | Done : `runtime.ModuleCompiler`, `compiler.FileModuleCompiler`, the root in the index and `babble.root`. |
 
-Each step leaves both modes passing the whole suite. The acceptance test of M5 is both ray
+Each step leaves both modes passing the whole suite. The acceptance test of `BIP005-P5` is both ray
 tracers compiled into jars and run on a JRE without Babble on the class path : argon's
 `scene.ppm` byte for byte, and the start-up time with and without `babblec`.
 
@@ -378,36 +378,36 @@ tracers compiled into jars and run on a JRE without Babble on the class path : a
 These were open questions, each with a recommendation. All were decided as recommended ; the
 rest of the document assumes them.
 
-**Q1. One Maven module with a runtime classifier jar, or a multi-module build ?**
+**`BIP006-Q1` → `BIP006-D1`. One Maven module with a runtime classifier jar, or a multi-module build ?**
 Decided : the classifier jar and the boundary test. A multi-module build enforces the
 boundary by construction, but moves every file and every path in the docs for a guarantee the
 test already gives.
 
-**Q2. Remove `javax.script` from the runtime ?**
-Decided : yes, in R1. It is two fields, and `java.base` alone is what makes a `jlink`ed or
+**`BIP006-Q2` → `BIP006-D2`. Remove `javax.script` from the runtime ?**
+Decided : yes, in `BIP006-P1`. It is two fields, and `java.base` alone is what makes a `jlink`ed or
 native runtime simplest.
 
-**Q3. Copy the runtime into each compiled jar, or reference the runtime jar from the manifest ?**
+**`BIP006-Q3` → `BIP006-D3`. Copy the runtime into each compiled jar, or reference the runtime jar from the manifest ?**
 Decided : copy it. It is under 200 KB, and `java -jar app.jar` with nothing else is the point of
-M5.
+`BIP005-P5`.
 
-**Q4. Dynamic imports in a compiled program : fail, or compile when Babble is present ?**
+**`BIP006-Q4` → `BIP006-D4`. Dynamic imports in a compiled program : fail, or compile when Babble is present ?**
 Decided : the index first, then compile when a module compiler is on the class path, else
 fail with a message that says why.
 
-**Q5. Stable type ids in the engine too, or only in `babblec` ?**
+**`BIP006-Q5` → `BIP006-D5`. Stable type ids in the engine too, or only in `babblec` ?**
 Decided : in both. One scheme is simpler to test, and the engine's stale-module case gets
 rarer.
 
-**Q6. `babblec`'s type checking : the engine's setting, or error mode by default ?**
+**`BIP006-Q6` → `BIP006-D6`. `babblec`'s type checking : the engine's setting, or error mode by default ?**
 Superseded : optional typecheck modes were removed. Type checking is always enforced across every
 entry point, including `babblec`.
 
-**Q7. What `ModuleSource` gets : the name as written, or a path already resolved ?**
+**`BIP006-Q7` → `BIP006-D7`. What `ModuleSource` gets : the name as written, or a path already resolved ?**
 Decided : the name as written, and the importer's identity. Resolution is part of where
 modules come from.
 
-**Q8. A `babblec` Maven goal ?**
+**`BIP006-Q8` → `BIP006-D8`. A `babblec` Maven goal ?**
 Decided : not now ; later. A goal has to be an artifact of its own (packaging `maven-plugin`),
-so it cannot be a classifier of the single module Q1 keeps. When it comes, it is a separate
-`babble-maven-plugin` build depending on the babble artifact, or the reason to revisit Q1.
+so it cannot be a classifier of the single module `BIP006-D1` keeps. When it comes, it is a separate
+`babble-maven-plugin` build depending on the babble artifact, or the reason to revisit `BIP006-D1`.

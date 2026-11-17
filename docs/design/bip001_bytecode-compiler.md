@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **BIP** | 001 |
-| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (D2, D3), `print` writes to the `ScriptContext` writer (D6), annotations checked at boundaries (§10.3), and the object model ([bip002_object-model.md](bip002_object-model.md), summarised in §8.2). |
-| **Implemented** | §15 steps 1–11: the shared runtime (phase 0), block scope and the `return` checks, D6, D8, the object model in both modes, the phase 1 compiler for the whole grammar, phase 2 (§16, §17) apart from JVM interfaces, phase 3 (§18), and the type checker with runtime checks (T9) ([bip003_type-system.md](bip003_type-system.md)), always enabled and rejecting type errors before execution. Phase 4, ahead-of-time compilation, was designed and done as M5 of [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) (`-compile`). Typed code generation (§10.5) remains. |
+| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (`BIP001-D2`, `BIP001-D3`), `print` writes to the `ScriptContext` writer (`BIP001-D6`), annotations checked at boundaries (§10.3), and the object model ([bip002_object-model.md](bip002_object-model.md), summarised in §8.2). |
+| **Implemented** | §15 steps 1–11: the shared runtime (`BIP001-P0`), block scope and the `return` checks, `BIP001-D6`, `BIP001-D8`, the object model in both modes, the `BIP001-P1` compiler for the whole grammar, `BIP001-P2` (§16, §17) apart from JVM interfaces, `BIP001-P3` (§18), and the type checker with runtime checks (`BIP003-D9`) ([bip003_type-system.md](bip003_type-system.md)), always enabled and rejecting type errors before execution. `BIP001-P4`, ahead-of-time compilation, was designed and done as `BIP005-P5` (`BIP006-P4`–`BIP006-P6`) of [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) (`-compile`). Typed code generation (§10.5) remains. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -18,27 +18,27 @@ in place as the reference implementation and as a fallback.
 
 The work is split into four phases. Each one leaves the build green and can ship on its own:
 
-0. **Shared runtime.** Pull operators, truthiness, member selection and the calling
+0. **`BIP001-P0` — Shared runtime.** Pull operators, truthiness, member selection and the calling
    convention out of `Interpreter` and the `Callable` natives into a runtime library that does
    not depend on the parse tree. The interpreter is moved onto it. Behaviour does not change.
-1. **Namespace-backed compiler.** Generate bytecode that keeps today's runtime data model
+1. **`BIP001-P1` — Namespace-backed compiler.** Generate bytecode that keeps today's runtime data model
    (`Namespace`, `Slot`, `BabbleObject`). Every name lookup is still a hash lookup at runtime,
    but tree walking, visitor dispatch and the `ReturnException` unwinding are gone. The goal
    here is full parity with the interpreter: the same test suite passes in both modes.
-2. **Static scope resolution.** A resolver pass binds each identifier to its declaration at
+2. **`BIP001-P2` — Static scope resolution.** A resolver pass binds each identifier to its declaration at
    compile time. Function locals then become JVM locals, or heap cells when closures capture
    them. Classes and objects become JVM classes (§7.3). Namespaces are only kept where the
    language needs them to be reflective: packages, the script root, and globals.
-3. **invokedynamic.** Calls, member selection, Java interop and arithmetic go through
+3. **`BIP001-P3` — invokedynamic.** Calls, member selection, Java interop and arithmetic go through
    `invokedynamic` call sites with inline caches. Type specialisation driven by the optional
    type annotations becomes possible.
 
-Type checking is a separate front-end pass that both modes run. It reuses the phase 2
-`Resolver`, should land alongside phase 2 code generation, and should come before phase 3,
+Type checking is a separate front-end pass that both modes run. It reuses the `BIP001-P2`
+`Resolver`, should land alongside `BIP001-P2` code generation, and should come before `BIP001-P3`,
 which is where enforced types pay off (§10).
 
 Decisions so far. Babble gets **real block scope** (§8.1). It lands in the interpreter after
-phase 0 and before phase 1, so the compiler targets the new rules from the start. The **object
+`BIP001-P0` and before `BIP001-P1`, so the compiler targets the new rules from the start. The **object
 model** has its own design ([bip002_object-model.md](bip002_object-model.md)): class expressions, members reached only through `this` or a
 receiver, interfaces with default methods instead of inheritance, and Babble functions usable
 as Java functional interfaces (§8.2). **Type annotations are checked at runtime boundaries**
@@ -173,13 +173,13 @@ assert on that exact message shape, for example
   method names taken from `def` names, and the script name as the `SourceFile`.
 * G4. Support learning and debugging: dump generated classes, verify them in tests, and run
   any test in either mode.
-* G5. Make Babble programs measurably faster than the interpreter (§11). Phase 1 should already
-  win; phases 2 and 3 should win by a lot.
+* G5. Make Babble programs measurably faster than the interpreter (§11). `BIP001-P1` should already
+  win; `BIP001-P2` and `BIP001-P3` should win by a lot.
 
 **Non-goals (for this design)**
 
 * Ahead-of-time `.class`/`.jar` output and a `babblec` CLI. The class layout is chosen so that
-  this is easy later (§9, phase 4 ; since done, as M5 of
+  this is easy later (§9, `BIP001-P4` ; since done, as `BIP005-P5` / `BIP006-P4`–`BIP006-P6` of
   [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)).
 * Type checking. It is a separate front-end pass with its own design. §10 explains where it
   fits relative to the compiler phases, and what the compiler gains from it.
@@ -196,7 +196,7 @@ source ──►  │  lex/parse ─► FileContext ─► [analysis] ─► [op
             │                                                          └─► compiler     │
             └───────────────────────────────────────────────────────────────────────────┘
                          org.babblelang.analysis (both modes)
-          BlockScopes ─► Resolver (phase 2) ─► type checker (§10) ─► scopes, bindings, types
+          BlockScopes ─► Resolver (BIP001-P2) ─► type checker (§10) ─► scopes, bindings, types
                                                               │
                          org.babblelang.compiler              ▼
                     CodeGenerator (ASM) ─► byte[] ─► ScriptClassLoader
@@ -222,7 +222,7 @@ It is taken from the system property `babble.mode` and can be overridden through
 `engine.put("babble.mode", ...)` before `compile`. The factory stays a singleton. Both modes
 return a `CompiledScript`, and nothing outside the engine knows which one it got.
 
-## 5. Phase 0: a shared runtime
+## 5. `BIP001-P0`: a shared runtime
 
 Generated code cannot call `Interpreter` and cannot hold `ParserRuleContext`s. Before any
 bytecode exists, the following moves out of the interpreter:
@@ -281,11 +281,11 @@ are the ones that construct `Callable`s by hand.
 
 One consequence matters a lot: **interpreted and compiled functions can call each other.**
 The compiler can then fall back to the interpreter for any function literal it does not
-support yet, by emitting `new InterpretedFunction(ctx, ns)` for it. Phase 1 can land one
+support yet, by emitting `new InterpretedFunction(ctx, ns)` for it. `BIP001-P1` can land one
 construct at a time and still run every test. While any fallback remains, the compiled
 script keeps the parse tree and an `Interpreter` in its `ScriptRuntime`.
 
-## 6. Phase 1: a compiler on top of the existing data model
+## 6. `BIP001-P1`: a compiler on top of the existing data model
 
 ### 6.1 Class layout
 
@@ -315,9 +315,9 @@ The generated class has no instance state. Everything that varies per eval is in
 `CodeGenerator` is a `BabbleBaseVisitor<Void>` that writes into an ASM `MethodVisitor`. Its
 one invariant is that **every expression leaves exactly one `Object` on the operand stack.**
 A statement in a sequence is followed by `POP`, except the last one in a block, the function
-body or the file. In phase 1 the current namespace is always held in one JVM local, `ns`.
+body or the file. In `BIP001-P1` the current namespace is always held in one JVM local, `ns`.
 
-| Construct | Phase 1 emission |
+| Construct | `BIP001-P1` emission |
 |---|---|
 | `1`, `1.5`, `"s"`, `true`, `null` | `Integer.valueOf`/`Double.valueOf` of an `LDC`, `LDC` string (unescaped at compile time), `GETSTATIC Boolean.TRUE`, `ACONST_NULL` |
 | `x` | `ns.get("x").get()` |
@@ -386,11 +386,11 @@ unreachable code with `NOP`s and an `ATHROW`, so the dead code costs nothing.
 
 Two cases are handled before code generation (§8):
 
-* `return` with no enclosing function. **Decided (D2):** it is a compile-time error in both
+* `return` with no enclosing function. **Decided (`BIP001-D2`):** it is a compile-time error in both
   modes, reported by the analysis pass. The code generator never sees one.
 * `return` inside a parameter default. In the interpreter it escapes `bindParameters`, which is
   outside `Function.call`'s `catch`, so it returns **from the caller's** function. Compiled
-  inline, it would return from the callee. **Decided (D3):** it is a compile-time error too, so
+  inline, it would return from the callee. **Decided (`BIP001-D3`):** it is a compile-time error too, so
   the prologue never contains a `return`.
 
 ### 6.5 Loading classes and LambdaMetafactory
@@ -438,7 +438,7 @@ It is a reasonable later refinement, but it is not needed.
 
 The JVM caps a method at 64 KB of bytecode. A function body that large is unlikely, but a
 generated top-level script can get there. If `run` would exceed a threshold, the generator
-splits the top-level statement list into `run$0`, `run$1`, …. In phase 1 that works without
+splits the top-level statement list into `run$0`, `run$1`, …. In `BIP001-P1` that works without
 any extra machinery, because all state sits in `root`, which is passed to each part.
 
 ### 6.9 Exit criteria
@@ -448,9 +448,9 @@ any extra machinery, because all state sits in `root`, which is passed to each p
 * Every generated class passes ASM's `CheckClassAdapter` in tests.
 * No interpreter fallback is left for any construct in the grammar.
 
-## 7. Phase 2: static scope resolution
+## 7. `BIP001-P2`: static scope resolution
 
-Phase 1 still does a `HashMap` lookup and a parent-chain walk for every variable access. Phase 2
+`BIP001-P1` still does a `HashMap` lookup and a parent-chain walk for every variable access. `BIP001-P2`
 resolves names at compile time.
 
 ### 7.1 Resolver
@@ -476,7 +476,7 @@ member, and members are only reached as `this.x` or `obj.x` (§7.3).
 
 ### 7.2 Block-local variables
 
-By phase 2, block scope (§8.1) already behaves the same in both modes. Phase 2 only changes
+By `BIP001-P2`, block scope (§8.1) already behaves the same in both modes. `BIP001-P2` only changes
 how it is represented:
 
 * A block's variables are JVM locals that are live only inside the block. Their slots can be
@@ -508,7 +508,7 @@ The object model ([bip002_object-model.md](bip002_object-model.md) §7) gives th
   class are stored once per class value, not per instance.
 
 Members are never reached through the lexical scope chain, so the `FrameScope` bridge an
-earlier draft needed for today's fall-through (D5) is gone.
+earlier draft needed for today's fall-through (`BIP001-D5`) is gone.
 
 ### 7.4 `this` and `recurse`
 
@@ -522,7 +522,7 @@ earlier draft needed for today's fall-through (D5) is gone.
 ### 7.5 Closures
 
 `CompiledFunction` holds `FunctionBody body`, `Object[] captured` (cells, or member
-namespaces/slots), the parameter table and a display name. Phase 2 drops the `Namespace
+namespaces/slots), the parameter table and a display name. `BIP001-P2` drops the `Namespace
 closure` field, except for functions whose enclosing scope really is a namespace (file and
 package bodies). Those capture that namespace as one entry of `captured`. Methods are not
 `CompiledFunction`s: they are instance methods of their class (§7.3).
@@ -534,7 +534,7 @@ body creates a new variable on every iteration, so that case needs no special ha
 ### 7.6 Exit criteria
 
 * Both modes pass the full suite.
-* On the benchmarks in §11, phase 2 is clearly ahead of phase 1. The numbers go in the PR.
+* On the benchmarks in §11, `BIP001-P2` is clearly ahead of `BIP001-P1`. The numbers go in the PR.
 
 ## 8. Semantic decisions and divergences
 
@@ -542,20 +542,20 @@ Each item gets a test that pins the agreed behaviour **in both modes**.
 
 | # | Topic | Today | Decision or recommendation |
 |---|---|---|---|
-| D1 | What a name refers to before its `def` runs | resolves to an outer binding | **Decided: real block scope with hoisting (§8.1).** Reading a name before its `def` is an error. |
-| D2 | `return` with no enclosing function: at file level, or in a top-level `package`/`object` body | runtime error, only if it runs | **Decided: compile-time error (§8.3).** |
-| D3 | `return` in a parameter default | returns from the *caller* when the default is used | **Decided: compile-time error (§8.3).** |
-| D4 | `def` inside a loop body | fails on the second iteration | **Decided: fixed by D1.** Each iteration gets a fresh scope. |
-| D5 | `obj.x` falling through to lexical scope (`o.println`, `mk().hidden`) | allowed | **Decided: no.** `obj.x` sees only the object's members (§8.2). |
-| D6 | Where `print` writes by default | `STDOUT` looked up in the scope where the call is written; the `ScriptContext` writer is ignored | **Decided: the eval's `ScriptContext` writer (§8.4).** |
-| D7 | An unqualified name inside an object body after `obj.m` has cached a `BoundMethod` in the object | can resolve to the bound method | **Obsolete.** Unqualified names never reach members, and nothing is bound on the fly any more (§8.2). |
-| D8 | `==` on non-numbers | `compareTo` for two `Comparable`s of the same class, identity otherwise, so equal Java lists are not `==` | **Decided: Java `equals()`**, with numbers still compared across types, value classes generating their own equality, and `same(a, b)` for identity ([bip002_object-model.md](bip002_object-model.md) §4.7). It changes `Operators.eq` only, so it can land with phase 0. |
+| `BIP001-D1` | What a name refers to before its `def` runs | resolves to an outer binding | **Decided: real block scope with hoisting (§8.1).** Reading a name before its `def` is an error. |
+| `BIP001-D2` | `return` with no enclosing function: at file level, or in a top-level `package`/`object` body | runtime error, only if it runs | **Decided: compile-time error (§8.3).** |
+| `BIP001-D3` | `return` in a parameter default | returns from the *caller* when the default is used | **Decided: compile-time error (§8.3).** |
+| `BIP001-D4` | `def` inside a loop body | fails on the second iteration | **Decided: fixed by `BIP001-D1`.** Each iteration gets a fresh scope. |
+| `BIP001-D5` | `obj.x` falling through to lexical scope (`o.println`, `mk().hidden`) | allowed | **Decided: no.** `obj.x` sees only the object's members (§8.2). |
+| `BIP001-D6` | Where `print` writes by default | `STDOUT` looked up in the scope where the call is written; the `ScriptContext` writer is ignored | **Decided: the eval's `ScriptContext` writer (§8.4).** |
+| `BIP001-D7` | An unqualified name inside an object body after `obj.m` has cached a `BoundMethod` in the object | can resolve to the bound method | **Obsolete.** Unqualified names never reach members, and nothing is bound on the fly any more (§8.2). |
+| `BIP001-D8` | `==` on non-numbers | `compareTo` for two `Comparable`s of the same class, identity otherwise, so equal Java lists are not `==` | **Decided: Java `equals()`**, with numbers still compared across types, value classes generating their own equality, and `same(a, b)` for identity ([bip002_object-model.md](bip002_object-model.md) §4.7). It changes `Operators.eq` only, so it can land with `BIP001-P0`. |
 
 Every item is decided.
 
 ### 8.1 Block scope
 
-This is a language change, made in the interpreter after phase 0 and before phase 1. Its rules:
+This is a language change, made in the interpreter after `BIP001-P0` and before `BIP001-P1`. Its rules:
 
 1. **Which blocks are scopes.** A block expression, an `if` branch and a `while` body each open
    a new scope, a child of the enclosing one. Function, package and object bodies do not add a
@@ -606,7 +606,7 @@ expected exceptions updated to the current `ScriptException`/`BabbleException` m
 
 * A `BlockScopes` pass computes the `def` set of every scope once, at `compile()` time, and
   stores it in a `ParseTreeProperty`. It also reports the errors of rule 4, so they surface
-  before anything runs in both modes. This pass is the seed of the phase 2 `Resolver`, and it
+  before anything runs in both modes. This pass is the seed of the `BIP001-P2` `Resolver`, and it
   lives in `org.babblelang.analysis`.
 * On entering a block that has `def`s of its own, the interpreter creates a child namespace
   and pre-declares those names as unset slots. A block with no `def`s behaves identically
@@ -631,7 +631,7 @@ foundational decisions:
 1. **Class expressions,** `class (params) implements I ( body )`. The header is the
    constructor's parameter list, the body runs once per instance, and its top-level `def`s are
    the members. `object ( … )` stays, as an instance of an anonymous class.
-2. **Members only, explicit `this`.** `obj.x` sees only the object's members (this closes D5).
+2. **Members only, explicit `this`.** `obj.x` sees only the object's members (this closes `BIP001-D5`).
    Inside a class, members are written `this.x`, and an unqualified name never means a member.
    `this` is valid only in class bodies and methods.
 3. **No class inheritance.** Classes implement **interfaces** that declare required members and
@@ -642,14 +642,14 @@ foundational decisions:
 
 What this means for the compiler:
 
-* **Phase 1** compiles classes and objects backed by `BabbleInstance`, an array of member
+* **`BIP001-P1`** compiles classes and objects backed by `BabbleInstance`, an array of member
   values with a member table. The object model is implemented in the interpreter first, ideally
-  before §15 step 7, so phase 1 never compiles the old object semantics.
-* **Phase 2** turns classes into JVM classes and interfaces into JVM interfaces (§7.3), and
+  before §15 step 7, so `BIP001-P1` never compiles the old object semantics.
+* **`BIP001-P2`** turns classes into JVM classes and interfaces into JVM interfaces (§7.3), and
   `this` becomes local 0 (§7.4).
-* **Phase 3** adds call sites cached per receiver class, and `LambdaMetafactory` adapters for
+* **`BIP001-P3`** adds call sites cached per receiver class, and `LambdaMetafactory` adapters for
   the Java conversions.
-* **Types:** classes and interfaces are nominal types, which settles T5.
+* **Types:** classes and interfaces are nominal types, which settles `BIP001-Q5` (`BIP003-D5`).
 
 `Stack.ba`, `counter2` in `Test1.ba` and the README, and
 `testRecursionInAMethodKeepsTheReceiver` are migrated in the same change (object model §10).
@@ -663,21 +663,21 @@ the `return` to the nearest enclosing function literal:
   `package` and `object` bodies are not functions, so the walk goes through them: a `return`
   inside one returns from whatever function encloses it.
 * If the `return` is in one of that literal's parameter defaults, it is rejected with
-  `return in a parameter default` (D3). A default value is an expression to compute, not a place
+  `return in a parameter default` (`BIP001-D3`). A default value is an expression to compute, not a place
   to leave a function. A function literal nested *inside* a default is a function of its own, so
   a `return` in its body is fine.
 * If there is no enclosing function literal, it is rejected with `return outside of a
-  function` (D2).
+  function` (`BIP001-D2`).
 
 The check happens before the script runs, in both modes:
 
 ```
-return 1                         ;; rejected (D2)
+return 1                         ;; rejected (BIP001-D2)
 if false then ( return 1 )       ;; rejected too, though it never runs
 package p ( return 1 )           ;; rejected
 def f = () -> ( return 1 )       ;; fine
 def g = () -> ( object ( def v = ( return 2 ) ) )   ;; fine: returns from g
-def h = (a, b = ( return 99 )) -> ( a )             ;; rejected (D3)
+def h = (a, b = ( return 99 )) -> ( a )             ;; rejected (BIP001-D3)
 def k = (a, cb = () -> ( return 1 )) -> ( cb() )    ;; fine: the return belongs to the nested literal
 ```
 
@@ -691,7 +691,7 @@ level it fails at runtime. No test covers either case.
   as `ScriptException(message, fileName, line)`. They read exactly like runtime errors
   (`… in <input> at line number 1`). The existing `testReturnOutsideOfFunction` therefore passes
   unchanged. It gains a case for a `return` that never runs (`if false then ( return 1 )`),
-  which is accepted today and rejected from now on. A new test covers D3: a `return` in a
+  which is accepted today and rejected from now on. A new test covers `BIP001-D3`: a `return` in a
   default is rejected, and one in a function literal nested inside a default is accepted.
 * Because the code generator never meets such a `return`, neither `run` nor a function
   prologue (§6.3) needs a special case: every `ARETURN` emitted for a `return` is in a
@@ -729,9 +729,9 @@ engine.eval("println(\"hi\")", ctx);      // out now holds "hi\n"
 * **Tests.** A new test captures output through `ctx.setWriter`. The differential `.ba` tests
   (§11) capture output the same way instead of swapping `System.out`.
 
-## 9. Phases 3 and 4 (outline)
+## 9. `BIP001-P3` and `BIP001-P4` (outline)
 
-**Phase 3: invokedynamic and specialisation.** Each of these needs its own design note when we
+**`BIP001-P3`: invokedynamic and specialisation.** Each of these needs its own design note when we
 get there (§18 has what landed):
 
 * **Calls.** `INVOKEDYNAMIC call(Object callee, Object… args)`, bootstrapped by
@@ -748,11 +748,11 @@ get there (§18 has what landed):
   arithmetic, falling back to `Operators`. Where the type checker has established a static
   type (§10.5), no guard is needed.
 
-**Phase 4: ahead-of-time compilation (optional).** A `babblec` Maven goal or CLI writes the
+**`BIP001-P4`: ahead-of-time compilation (optional).** A `babblec` Maven goal or CLI writes the
 script class plus a `main` that builds the implicits and calls `run`. Hidden runtime state
 (class loader, `ScriptRuntime`) is already explicit, so this is mostly packaging. The jar
 would depend on the Babble runtime and on ANTLR only if interpreter fallback is still used.
-*Done* as M5 of [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md), with modules : a CLI,
+*Done* as `BIP005-P5` (`BIP006-P4`–`BIP006-P6`) of [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md), with modules : a CLI,
 `-compile`, writes a jar of the program's modules, an index, the runtime and a launcher ; it
 depends on `java.base` only, and compiles imports it doesn't hold only when Babble is on its
 class path. The Maven goal is left for later.
@@ -763,7 +763,7 @@ The README lists "type checking" and "type inference" as planned features. Today
 annotations (`a:int`, `(n:int):string`) are parsed and then ignored: nothing in the interpreter
 reads them. This section covers where a type checker fits relative to the compiler phases, and
 what has to be decided before one can be built. The type system itself has its own design
-document, [bip003_type-system.md](bip003_type-system.md), which settles T1–T8; the list in §10.4 is the agenda
+document, [bip003_type-system.md](bip003_type-system.md), which settles `BIP001-Q1`–`BIP001-Q8` (`BIP003-D1`–`BIP003-D8`); the list in §10.4 is the agenda
 it answers. The checker and runtime boundary enforcement are implemented.
 
 ### 10.1 Where it sits
@@ -773,7 +773,7 @@ either backend, and in both modes. If it ran only before code generation, whethe
 is accepted would depend on `babble.mode`, which goes against G1.
 
 * It needs to know which declaration each identifier refers to. That is exactly what the
-  phase 2 `Resolver` (§7.1) computes, so the checker consumes `ParseTreeProperty<Binding>`
+  `BIP001-P2` `Resolver` (§7.1) computes, so the checker consumes `ParseTreeProperty<Binding>`
   rather than repeating the analysis. The `Resolver` therefore lives in a shared
   `org.babblelang.analysis` package, not in the compiler.
 * It records a `Type` per expression in a `ParseTreeProperty<Type>`, which code generation and
@@ -783,7 +783,7 @@ is accepted would depend on `babble.mode`, which goes against G1.
 
 ### 10.2 Ordering relative to the compiler phases
 
-**Not before phases 0 and 1.** Those phases reproduce the interpreter's dynamic behaviour, and
+**Not before `BIP001-P0` and `BIP001-P1`.** Those phases reproduce the interpreter's dynamic behaviour, and
 their only success criterion is that the same tests pass in both modes. Type information gives
 them nothing. A checker also changes which programs the language accepts, and doing that while
 parity is being established makes every failure ambiguous: is it the compiler, or the new rules?
@@ -791,13 +791,13 @@ parity is being established makes every failure ambiguous: is it the compiler, o
 **Not before block scope and the `Resolver`.** Block scope (§8.1) fixes what each name refers
 to, and the `Resolver` computes it.
 
-**Before phase 3.** Phase 3 adds guarded call sites to cope with not knowing types: `int`
+**Before `BIP001-P3`.** `BIP001-P3` adds guarded call sites to cope with not knowing types: `int`
 arithmetic with fallbacks, overload caches keyed on runtime classes. Where types are known and
 trustworthy (§10.3), the compiler can emit direct code instead, so the mix of the two strategies
 should be designed knowing what types will provide.
 
-So the order is: phase 0, block scope, phase 1, then the `Resolver`, then **the type checker alongside
-phase 2 code generation**, then the runtime checks (T9), then phase 3. The type system
+So the order is: `BIP001-P0`, block scope, `BIP001-P1`, then the `Resolver`, then **the type checker alongside
+`BIP001-P2` code generation**, then the runtime checks (`BIP001-Q9` / `BIP003-D9`), then `BIP001-P3`. The type system
 design (§10.4) depends on none of this and can start now.
 
 ### 10.3 Rollout: gradual, warnings first
@@ -805,15 +805,15 @@ design (§10.4) depends on none of this and can start now.
 * **Gradual typing.** Anything without an annotation has the type `dynamic`, which is compatible
   in both directions with every other type. Programs without annotations are therefore accepted
   as before, and diagnostics come from code that contradicts its own annotations. The exception
-  to watch is inference (T8). A type inferred from an initialiser must not be stricter than what
-  runs today: an inferred object type that leaves out the D5 fall-through members would reject
+  to watch is inference (`BIP001-Q8`). A type inferred from an initialiser must not be stricter than what
+  runs today: an inferred object type that leaves out the `BIP001-D5` fall-through members would reject
   `o.println`, for instance. The in-repo scripts are the test for this.
 * **Always enforced.** (Originally gated behind a `babble.typecheck=off|warn|error` switch; once
   the type system settled and all in-repo scripts checked cleanly, optional modes were removed.)
 * **Diagnostics** are collected with their source line and column, written to the
   `ScriptContext`'s error writer as `Error : ...`, and raised as a `TypeCheckException` (a
   `ScriptException`) from `compile()`, before anything runs.
-* **Enforcement (T9, decided: checked at boundaries).** A checker alone cannot make types
+* **Enforcement (`BIP001-Q9` → `BIP003-D9`, decided: checked at boundaries).** A checker alone cannot make types
   trustworthy, because `dynamic` values flow into annotated code. So a runtime check runs
   wherever a `dynamic` value meets a declared type: arguments of annotated parameters, results
   of annotated functions, writes to annotated variables and members. The check lives in the
@@ -822,23 +822,23 @@ design (§10.4) depends on none of this and can start now.
   active, and typed code generation can rely on checked types. Implemented as
   described in bip003_type-system.md §5.
 
-### 10.4 Type system questions to settle first
+### 10.4 Type system questions to settle first (`BIP001-Q1`–`BIP001-Q9`, resolved by `BIP003-D1`–`BIP003-D9`)
 
 | # | Question | Why it matters | Starting point |
 |---|---|---|---|
-| T1 | Type names | `Test1.ba` uses `int` and `string`, which nothing defines | Built-ins `int`, `double`, `bool`, `string` mapped to their boxed runtime classes. Dotted names (`java.util.List`) resolve to Java classes. |
-| T2 | `null` | `def head = null` is everywhere, and so are `if` without `else` and `def x` without a value | `int`, `double` and `bool` reject `null`, which is what allows unboxing in phase 3. Every other type is nullable, as the runtime already is. A `T?` syntax can come later. |
-| T3 | Operator typing | §2.2 is the specification | `int op int` is `int` (except `/`, which is `double`). Any mix with `double` is `double`. `string + any` is `string`. Comparisons and `and`/`or`/`not` are `bool`. `if`/`while` tests accept any type, because truthiness is defined for all values. |
-| T4 | Function types | Calls bind by name and by position, and parameters can have defaults | Parameter names are part of the type, and each parameter is marked optional or not. The grammar's `functionType` reuses `parametersDeclaration`, which allows default *expressions* in a type. That needs tightening. |
-| T5 | Class, object and package types | Objects are a new kind of value with the object model (§8.2) | **Decided by the object model (§8.1 there):** classes and interfaces are nominal types, an object literal has an anonymous class type, and a package has a structural type. `x is T` tests at runtime. |
-| T6 | `this` | Only valid in class bodies and methods (§7.4) | The enclosing class's type. |
-| T7 | Java interop | Reflection gives static types, but generics are erased | Constructor and method result types come from reflection, and erased type parameters become `dynamic`. With the argument types known, overload resolution can happen at check time (§10.5). |
-| T8 | Inference for unannotated `def`s | If `def f = (a:int):int -> …` leaves `f` as `dynamic`, calls to `f` are never checked and the checker is close to useless | An unannotated `def` takes its initialiser's type when the `Resolver` sees no other assignment to it. Members that can be written through `obj.x = …` stay `dynamic` unless annotated. Fuller inference is the README's separate "type inference" item. |
-| T9 | Enforcement | Decides whether phase 3 can trust types (§10.3) | **Decided: runtime checks at boundaries, always active, in both modes.** |
+| `BIP001-Q1` | Type names | `Test1.ba` uses `int` and `string`, which nothing defines | Built-ins `int`, `double`, `bool`, `string` mapped to their boxed runtime classes. Dotted names (`java.util.List`) resolve to Java classes. (Resolved by `BIP003-D1`.) |
+| `BIP001-Q2` | `null` | `def head = null` is everywhere, and so are `if` without `else` and `def x` without a value | `int`, `double` and `bool` reject `null`, which is what allows unboxing in `BIP001-P3`. Every other type is nullable, as the runtime already is. A `T?` syntax can come later. (Resolved by `BIP003-D2`.) |
+| `BIP001-Q3` | Operator typing | §2.2 is the specification | `int op int` is `int` (except `/`, which is `double`). Any mix with `double` is `double`. `string + any` is `string`. Comparisons and `and`/`or`/`not` are `bool`. `if`/`while` tests accept any type, because truthiness is defined for all values. (Resolved by `BIP003-D3`.) |
+| `BIP001-Q4` | Function types | Calls bind by name and by position, and parameters can have defaults | Parameter names are part of the type, and each parameter is marked optional or not. The grammar's `functionType` reuses `parametersDeclaration`, which allows default *expressions* in a type. That needs tightening. (Resolved by `BIP003-D4`.) |
+| `BIP001-Q5` | Class, object and package types | Objects are a new kind of value with the object model (§8.2) | **Decided by the object model (§8.1 there; `BIP003-D5`):** classes and interfaces are nominal types, an object literal has an anonymous class type, and a package has a structural type. `x is T` tests at runtime. |
+| `BIP001-Q6` | `this` | Only valid in class bodies and methods (§7.4) | The enclosing class's type. (Resolved by `BIP003-D6`.) |
+| `BIP001-Q7` | Java interop | Reflection gives static types, but generics are erased | Constructor and method result types come from reflection, and erased type parameters become `dynamic`. With the argument types known, overload resolution can happen at check time (§10.5). (Resolved by `BIP003-D7`.) |
+| `BIP001-Q8` | Inference for unannotated `def`s | If `def f = (a:int):int -> …` leaves `f` as `dynamic`, calls to `f` are never checked and the checker is close to useless | An unannotated `def` takes its initialiser's type when the `Resolver` sees no other assignment to it. Members that can be written through `obj.x = …` stay `dynamic` unless annotated. Fuller inference is the README's separate "type inference" item. (Resolved by `BIP003-D8`.) |
+| `BIP001-Q9` | Enforcement | Decides whether `BIP001-P3` can trust types (§10.3) | **Decided (`BIP003-D9`): runtime checks at boundaries, always active, in both modes.** |
 
 ### 10.5 What the compiler gains
 
-Phases 1 and 2 use no type information. In phase 3, where types are enforced (T9):
+`BIP001-P1` and `BIP001-P2` use no type information. In `BIP001-P3`, where types are enforced (`BIP003-D9`):
 
 * `int`, `double` and `bool` locals and parameters become unboxed JVM locals. Arithmetic
   compiles to `IADD`/`IMUL`/…, which wraps around exactly like today's `Integer` arithmetic,
@@ -861,14 +861,14 @@ Phases 1 and 2 use no type information. In phase 3, where types are enforced (T9
 * Every `.ba` script in `src/test/babble` must check cleanly, using the
   annotations it already has. Gradual typing makes that the baseline, and it also catches
   annotations that are wrong today but go unnoticed because nothing reads them.
-* With T9 in place, both modes must fail the same way when a `dynamic` value reaches an
+* With `BIP003-D9` in place, both modes must fail the same way when a `dynamic` value reaches an
   annotated parameter with the wrong type. This joins the differential tests in §11.
 
 ## 11. Testing, debugging and benchmarking
 
 * **Dual-mode suite.** `BabbleTestBase` reads `babble.mode`. Surefire gets a second execution,
   `compiled-tests`, that runs the same classes with `-Dbabble.mode=compile`, so `mvn package` runs
-  both. While phase 1 is in progress, the compiled execution may exclude tests through a short,
+  both. While `BIP001-P1` is in progress, the compiled execution may exclude tests through a short,
   shrinking list in the POM.
 * **Differential tests.** A parameterised test runs every `src/test/babble/*.ba` in both modes
   and compares the result value, the output captured through the `ScriptContext` writer, and
@@ -898,7 +898,7 @@ Phases 1 and 2 use no type information. In phase 3, where types are enforced (T9
   full JDK at runtime and compiles slowly. It also fits an expression language badly
   (`while` and `if` as values, `return` mid-expression), and Babble line numbers get lost.
 * **Closure compilation** (turning the parse tree into a tree of Java lambdas). It gives most
-  of phase 1's speed-up for less work. It would be the right call if speed were the only goal,
+  of `BIP001-P1`'s speed-up for less work. It would be the right call if speed were the only goal,
   but the project's stated aim is learning to compile to bytecode.
 * **Truffle/GraalVM.** Partial evaluation of a self-specialising AST interpreter would probably
   beat everything here, but it is a heavyweight framework that sidesteps the learning goal.
@@ -909,7 +909,7 @@ Phases 1 and 2 use no type information. In phase 3, where types are enforced (T9
 | Risk | Mitigation |
 |---|---|
 | Stack-map frames break on unusual expression nesting (`return`/`while` inside arguments) | `COMPUTE_FRAMES`, `CheckClassAdapter` in every test, codegen tests for those shapes |
-| Semantics drift between the two modes | One shared runtime (phase 0), the dual-mode suite and differential `.ba` tests |
+| Semantics drift between the two modes | One shared runtime (`BIP001-P0`), the dual-mode suite and differential `.ba` tests |
 | Block scope breaks user scripts | Only in-repo scripts exist today, and none relies on a `def` escaping its block (§8.1). It lands in the interpreter before the compiler starts. |
 | The object model breaks existing scripts | Only three in-repo users rely on today's objects, and they are migrated in the same change (object model §10) |
 | `getCommonSuperClass` loading classes during generation | Override it (§6.5) |
@@ -932,7 +932,7 @@ def c = counter()
 assert(c() == 1)
 ```
 
-**Phase 1** (Java-equivalent of the generated class):
+**`BIP001-P1`** (Java-equivalent of the generated class):
 
 ```java
 final class Script$1 {
@@ -975,7 +975,7 @@ final class Script$1 {
 }
 ```
 
-**Phase 2.** `c` inside `counter` is captured and assigned by the inner literal, so it becomes a
+**`BIP001-P2`.** `c` inside `counter` is captured and assigned by the inner literal, so it becomes a
 `CELL`. Neither function mentions `this` or `recurse`, so neither sets them up:
 
 ```java
@@ -1002,30 +1002,30 @@ behaviour for bindings and forward references.
 
 ## 15. Proposed sequence of changes
 
-1. Phase 0a: `org.babblelang.runtime` with `Operators`, `Truth`, `Members`. The interpreter
+1. `BIP001-P0a`: `org.babblelang.runtime` with `Operators`, `Truth`, `Members`. The interpreter
    delegates to them.
-2. Phase 0b: the new `Callable`, `Arguments`, `CallSite`, `ScriptRuntime`. Port the natives,
+2. `BIP001-P0b`: the new `Callable`, `Arguments`, `CallSite`, `ScriptRuntime`. Port the natives,
    the interop and the test `AssertFunction`. `print` writes to the `ScriptContext` writer
-   (D6, §8.4).
+   (`BIP001-D6`, §8.4).
 3. Block scope in the interpreter (§8.1): the `BlockScopes` pass, pre-declared slots, the new
    error message. Enable `testBlockScope`. The same pass rejects a `return` outside a function
-   body (D2, D3, §8.3).
+   body (`BIP001-D2`, `BIP001-D3`, §8.3).
 4. Add ASM. Add `BabbleCompiler`, `ScriptClassLoader` and the mode switch. Compile literals,
    operators, `def`, names, blocks (as scopes), `if` and `while`, with interpreter fallback for
    function literals. Add the dual-mode surefire execution.
 5. Compile function literals and calls (prologue, defaults, `return`). Remove the fallback.
-6. The object model in the interpreter (object model §12, steps 1–5): grammar, runtime,
+6. The object model in the interpreter (object model §12, `BIP002-P1`–`BIP002-P5`): grammar, runtime,
    analysis checks, Java conversions, migrations. This can run in parallel with steps 4–5.
 7. Compile `package`, `class`, `object`, `interface` and member access, backed by
-   `BabbleInstance`. Phase 1 is complete: the full suite passes in both modes.
-8. Phase 2: grow `BlockScopes` into the `Resolver`, then `LOCAL`/`CELL`/`CAPTURED`, then
+   `BabbleInstance`. `BIP001-P1` is complete: the full suite passes in both modes.
+8. `BIP001-P2`: grow `BlockScopes` into the `Resolver`, then `LOCAL`/`CELL`/`CAPTURED`, then
    JVM classes and interfaces (§7.3), then `this` as local 0.
 9. In parallel with step 8, once the `Resolver` exists: the type checker (`warn` mode initially,
-   now always-on errors). The type system design (T1–T8) can start at any time before that.
-10. Runtime boundary checks (T9) in both modes, and full error enforcement (done; optional modes removed).
-11. Benchmarks, then phase 3 design notes, using enforced types where §10.5 allows.
+   now always-on errors). The type system design (`BIP001-Q1`–`BIP001-Q8` / `BIP003-D1`–`BIP003-D8`) can start at any time before that.
+10. Runtime boundary checks (`BIP001-Q9` / `BIP003-D9`) in both modes, and full error enforcement (done; optional modes removed).
+11. Benchmarks, then `BIP001-P3` design notes, using enforced types where §10.5 allows.
 
-## 16. Implementation notes (phase 0 and phase 1)
+## 16. Implementation notes (`BIP001-P0` and `BIP001-P1`)
 
 What landed, and where it departs from the text above.
 
@@ -1037,8 +1037,8 @@ What landed, and where it departs from the text above.
   so every class compiled by a test also passes `CheckClassAdapter`. `DifferentialTestCase`
   runs every `.ba` script and a list of tricky snippets in both modes and compares results,
   output and errors.
-* **Objects.** The object model is implemented (step 6, [bip002_object-model.md](bip002_object-model.md) §13),
-  and phase 1 compiles it against `BabbleInstance` (step 7). Each class or object expression's
+* **Objects.** The object model is implemented (`BIP002-P1`–`BIP002-P6`, [bip002_object-model.md](bip002_object-model.md) §13),
+  and `BIP001-P1` compiles it against `BabbleInstance` (§15 step 7). Each class or object expression's
   constructor is a static method `cls$N$Name(BabbleClass, BabbleInstance, ScriptRuntime, args,
   names, site)`, adapted to `ClassBody` with `LambdaMetafactory` like function bodies, and its
   `ClassShape` is a constant. Interface bodies and static blocks run inline. Since an object
@@ -1052,7 +1052,7 @@ What landed, and where it departs from the text above.
   has no line entry, and default values are compiled out of line after the body, so a binding
   error is reported at the line of the call. The interpreter was aligned with that: after
   evaluating a default it reports later binding errors at the call too.
-* **D8** landed with phase 0: `Operators.eq` uses `equals()` past null and numbers, `JavaObject`
+* **`BIP001-D8`** landed with `BIP001-P0`: `Operators.eq` uses `equals()` past null and numbers, `JavaObject`
   compares the wrapped values, and `BoundMethod` compares receiver and function. `same` and
   `Values.hash` belong to the object model.
 * **Natives.** `print to:` accepts any `Appendable`. Raw Java objects are still not scopes, so
@@ -1074,12 +1074,12 @@ What landed, and where it departs from the text above.
 
 Calls win most, because the visitor frames and `ReturnException` are gone. Loops were even,
 but not for the reason first assumed (namespace lookups) : the compiled loop never left the
-bytecode interpreter. §17 explains, and gives the numbers after phase 2. Java interop is
-dominated by the per-call reflection that phase 3 caches.
+bytecode interpreter. §17 explains, and gives the numbers after `BIP001-P2`. Java interop is
+dominated by the per-call reflection that `BIP001-P3` caches.
 
-## 17. Implementation notes (phase 2)
+## 17. Implementation notes (`BIP001-P2`)
 
-Phase 2 (§7) is implemented, apart from compiling interfaces to JVM interfaces (below).
+`BIP001-P2` (§7) is implemented, apart from compiling interfaces to JVM interfaces (below).
 
 * **Resolver** (`org.babblelang.analysis.Resolver`, result in `Resolution`). It runs after
   `BlockScopes` and `TypeChecks` on the scope tree they build, and only the compiler uses it.
@@ -1092,9 +1092,9 @@ Phase 2 (§7) is implemented, apart from compiling interfaces to JVM interfaces 
   them through the cells it captured (`CAPTURED`). `this` and `recurse` are variables like any
   other: a method's `this` comes from its receiver argument, `recurse` from the function value.
   The file, packages and interface bodies keep their namespace (`MEMBER`/`GLOBAL` of §7.1 both
-  compile to the phase 1 lookup), and so does any function, class body or static block that
+  compile to the `BIP001-P1` lookup), and so does any function, class body or static block that
   declares a `package` somewhere in it, which the design didn't consider: a package needs a
-  namespace to live in, and keeping the phase 1 representation for that whole scope keeps its
+  namespace to live in, and keeping the `BIP001-P1` representation for that whole scope keeps its
   semantics exact. `ResolverTestCase` has the golden tests of §11.
 * **Undefined.** A hoisted definition starts as `Undefined.UNDEFINED`, and reading or assigning
   it before its `def` runs is `Name used before definition`, as in the interpreter.
@@ -1120,17 +1120,17 @@ Phase 2 (§7) is implemented, apart from compiling interfaces to JVM interfaces 
   so it could emit neither `INVOKEINTERFACE` nor `INSTANCEOF`: `obj.m()` and `is` go through the
   runtime either way. The cost would be default methods reaching the captured variables of the
   right interface value from inside a JVM default method, and exact-signature bridges for each
-  Java overload. Instances keep their `Proxy` face for Java. Phase 3 caches selections by
+  Java overload. Instances keep their `Proxy` face for Java. `BIP001-P3` caches selections by
   receiver class instead (§18), which gets the speed without them; they wait for the type
   checker.
-* **Loops and on-stack replacement.** Phase 1 kept a `while` loop's running result on the
+* **Loops and on-stack replacement.** `BIP001-P1` kept a `while` loop's running result on the
   operand stack. HotSpot only compiles a running loop (on-stack replacement) when the stack is
   empty at its head, so a function running one long loop, called only a few times, stayed in
-  the bytecode interpreter: that, not namespace lookups, is why phase 1 loops were no faster than
-  the tree-walking interpreter. The result now lives in a local. With that fix alone, the phase 1
+  the bytecode interpreter: that, not namespace lookups, is why `BIP001-P1` loops were no faster than
+  the tree-walking interpreter. The result now lives in a local. With that fix alone, the `BIP001-P1`
   representation runs the loop benchmark about 15x faster than the interpreter.
 
-**Benchmarks after phase 2** (same harness and machine, JDK 21):
+**Benchmarks after `BIP001-P2`** (same harness and machine, JDK 21):
 
 | Benchmark | interpret (ms) | compile (ms) | speed-up |
 |---|---:|---:|---:|
@@ -1140,13 +1140,13 @@ Phase 2 (§7) is implemented, apart from compiling interfaces to JVM interfaces 
 | Stack.ba push/pop : objects and methods | 63.5 | 4.6 | 13.8x |
 | ArrayList add/get : Java interop | 93.0 | 67.7 | 1.4x |
 
-Measured along the way: the phase 1 representation with the loop fix gives 8.4x, 14.7x, 9.3x,
-7.2x and 1.0x; phase 2 without JVM classes for class expressions gives the same as above except
-Stack.ba at 12.1x. Java interop stays bound by reflection, which phase 3 caches.
+Measured along the way: the `BIP001-P1` representation with the loop fix gives 8.4x, 14.7x, 9.3x,
+7.2x and 1.0x; `BIP001-P2` without JVM classes for class expressions gives the same as above except
+Stack.ba at 12.1x. Java interop stays bound by reflection, which `BIP001-P3` caches.
 
-## 18. Implementation notes (phase 3)
+## 18. Implementation notes (`BIP001-P3`)
 
-Phase 3 (§9) is implemented for calls, member selection and Java overloads. Arithmetic guards
+`BIP001-P3` (§9) is implemented for calls, member selection and Java overloads. Arithmetic guards
 were measured and left out (below), and so was type specialisation, which needs the type
 checker (§10.5).
 
@@ -1176,11 +1176,11 @@ checker (§10.5).
   - any other callee: its own class's `call`, guarded on that class. This one matters more than
     it looks: when every generic site went through one shared `callee.call(...)`, its type
     profile was megamorphic and HotSpot inlined nothing, which made class construction 2x slower
-    than phase 2's plain `INVOKEINTERFACE`, whose profile is per site.
+    than `BIP001-P2`'s plain `INVOKEINTERFACE`, whose profile is per site.
 
   After 4 misses a site goes generic for good. `this.m(args)` in a compiled class doesn't need a
   site: it was already an `INVOKEVIRTUAL`, now of the direct entry point when the call is
-  positional. Calls with more than 200 arguments keep phase 2's array path.
+  positional. Calls with more than 200 arguments keep `BIP001-P2`'s array path.
 * **Member selection.** `obj.x` is `INVOKEDYNAMIC select(Object)Object`, the member's name and
   the target's text (for errors) as static arguments. A miss first runs `Members.select`, so an
   error links nothing, then caches by receiver: for an instance of a compiled class, a guard on
@@ -1188,7 +1188,7 @@ checker (§10.5).
   for a `JavaPackage` or `JavaClass`, whose members never change, a guard on the receiver itself
   and a constant. Private and inherited members, namespaces, class values, interpreted instances
   and Java objects go generic. So does an instance whose class another script compiled: its
-  fields are package-private to another class loader. `this.x` keeps phase 2's `GETFIELD`.
+  fields are package-private to another class loader. `this.x` keeps `BIP001-P2`'s `GETFIELD`.
 * **Java overloads** (`Overloads.Cache`, used by both modes). Every Java call used to run
   reflection over all the overloads of the method. Resolution only depends on the *kinds* of the
   arguments: their class, the Babble class of an instance (whose Java interfaces decide where it
@@ -1214,14 +1214,14 @@ checker (§10.5).
   the result dominates either way. Unboxing needs types the compiler can trust (§10.5).
 * **Warm-up.** Until the JIT compiles them, `invokedynamic` sites run through interpreted
   method handle code, which is slower than a plain `INVOKEINTERFACE`. A top-level loop that runs
-  only a few times shows it: Stack.ba took 10 ms instead of phase 2's 6 ms for each of its first
+  only a few times shows it: Stack.ba took 10 ms instead of `BIP001-P2`'s 6 ms for each of its first
   10 runs, then 1.2 ms instead of 2.6 ms. The harness now warms up for 50 runs and times 20,
   for both columns below.
 
-**Benchmarks after phase 3** (same machine, JDK 21; the phase 2 column is master before phase 3,
+**Benchmarks after `BIP001-P3`** (same machine, JDK 21; the `BIP001-P2` column is master before `BIP001-P3`,
 under the same harness):
 
-| Benchmark | interpret (ms) | phase 2 (ms) | phase 3 (ms) | phase 3 speed-up |
+| Benchmark | interpret (ms) | `BIP001-P2` (ms) | `BIP001-P3` (ms) | `BIP001-P3` speed-up |
 |---|---:|---:|---:|---:|
 | fib(25) : calls and arithmetic | 104.7 | 3.5 | 2.8 | 38.0x |
 | while loop : locals and while | 98.6 | 1.7 | 1.8 | 55.8x |
