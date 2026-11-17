@@ -214,7 +214,7 @@ public class ReplTestCase {
             Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify(complete), complete);
         }
         for (String incomplete : List.of("1 +", "1 +\n", "def x =", "def f = (a,", "def f = () -> (", "def f = () -> (\n  1\n", "if a then", "if a then ( 1 ) else",
-                "f(", "class () (\n def a = 1\n", "\"abc", "println(\"a\n")) {
+                "f(", "class () (\n def a = 1\n", "a?.", "\"abc", "println(\"a\n")) {
             Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify(incomplete), incomplete);
         }
         for (String empty : List.of("", "\n", "  \n\n", ";; a comment\n", ";;( a\nlong comment ;;)\n", ";")) {
@@ -273,5 +273,16 @@ public class ReplTestCase {
         // Diagnostics are errors : the bad input doesn't run, the loop keeps going.
         Assertions.assertEquals(List.of("function half", "Error : Type error : expected int, got string in <input> at line number 1, column 6", "2.0"),
                 transcript("def half = (n : int) : double -> ( n / 2 )", "half(\"4\")", "half(4)"));
+    }
+
+    @Test
+    public void testSafeNavigationInSession() throws Exception {
+        BabbleSession session = session();
+        session.eval("def A = class (def x : int) ( def f = () : int -> ( this.x + 1 ) )");
+        session.eval("def some : A? = A(10)");
+        session.eval("def none : A? = null");
+        Assertions.assertEquals(11, session.eval("some?.f()"));
+        Assertions.assertNull(session.eval("none?.f()"));
+        assertFails(session, "def nonNull : A = A(1) ; nonNull?.f()", "Not nullable : nonNull");
     }
 }

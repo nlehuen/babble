@@ -106,3 +106,73 @@ infDbl = 1
 assert(infDbl is double and infDbl == 1.0)
 infDbl = 2.5
 assert(infDbl == 2.5)
+
+;; Safe-navigation operator (?.) on methods, fields, chains, unions, generics, and Java interop
+def B = value class (val: int) ()
+def A = class (def val: int, def next: A? = null, def opt: B? = null) (
+    def f = (delta: int = 1): B -> (B(this.val + delta))
+    def getInt = (): int -> (this.val)
+    def id(T) = (x: T): T -> (x)
+)
+
+def makeOptA = (present: bool): A? -> (
+    if present then (A(10, A(20, null, B(99)), B(5))) else (null)
+)
+
+def a1: A? = makeOptA(true)
+def b1: B? = a1?.f()
+assert(b1 != null and b1.val == 11)
+
+def a0: A? = makeOptA(false)
+def b0: B? = a0?.f()
+assert(b0 == null)
+
+;; Chaining, field reads, and multiline continuation before ?.
+assert(a1?.next?.val == 20)
+assert(a1?.next?.opt?.val == 99)
+assert(a0?.next?.opt?.val == null)
+assert(a1?.next?.f(3)?.val == 23)
+assert(a0?.next?.f(3)?.val == null)
+def chainedMultiline: int? = a1
+    ?.next
+    ?.f(5)
+    ?.val
+assert(chainedMultiline == 25)
+
+;; Short-circuiting: LHS evaluated once, call arguments not evaluated when LHS is null
+def rhsRuns = 0
+def lhsRuns = 0
+def getReceiver = (present: bool): A? -> (
+    lhsRuns += 1
+    if present then (A(4)) else (null)
+)
+def bumpArg = (n: int): int -> (
+    rhsRuns += 1
+    n
+)
+def resNull: B? = getReceiver(false)?.f(bumpArg(10))
+assert(resNull == null and lhsRuns == 1 and rhsRuns == 0)
+def resHit: B? = getReceiver(true)?.f(bumpArg(10))
+assert(resHit != null and resHit.val == 14 and lhsRuns == 2 and rhsRuns == 1)
+
+;; Int-to-double? widening from ?.
+def safeDblHit: double? = a1?.getInt()
+def safeDblNull: double? = a0?.getInt()
+assert(safeDblHit is double and safeDblHit == 10.0)
+assert(safeDblNull == null)
+
+;; Union of Babble classes | null and Java collections / generic methods
+def maybeVec: VecA | VecB | null = VecB(7)
+assert(maybeVec?.tag == "B")
+def nullVec: VecA | VecB | null = null
+assert(nullVec?.tag == null)
+
+def maybeList: java.util.List(B)? = java.util.List.of(B(42))
+assert(maybeList?.get(0)?.val == 42)
+def nullList: java.util.List(B)? = null
+assert(nullList?.get(0)?.val == null)
+
+def optId: ((x: int): int)? = a1?.id
+assert(optId != null and optId(7) == 7)
+def nullId: ((x: int): int)? = a0?.id
+assert(nullId == null)

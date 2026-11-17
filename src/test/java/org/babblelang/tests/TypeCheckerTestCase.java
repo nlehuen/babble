@@ -1148,6 +1148,86 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testSafeCallOperator() {
+        // Positive cases: methods, fields, chaining, unions, interfaces, generics, Java interop, widening, late null reassignment.
+        assertDiagnostics("def B = class (def v : int) ( def g = () : int -> ( this.v ) )\n"
+                + "def A = class (def x : int, def next : A? = null, def cb : (() : int)? = null) (\n"
+                + "  def f = (d : int = 1) : B -> ( B(this.x + d) )\n"
+                + "  def getInt = () : int -> ( this.x )\n"
+                + "  def id(T) = (v : T) : T -> ( v )\n"
+                + ")\n"
+                + "def opt : A? = A(1, A(2))\n"
+                + "def b : B? = opt?.f()\n"
+                + "def v : int? = opt?.next?.f(3)?.g()\n"
+                + "def x : int? = opt?.x\n"
+                + "def d : double? = opt?.getInt()\n"
+                + "def fn : ((n : int) : int)? = opt?.id\n"
+                + "def optCb : (() : int)? = opt?.cb\n"
+                + "def I = interface ( def k : int )\n"
+                + "def C = class (def k : int) implements I ()\n"
+                + "def D = class (def k : int) implements I ()\n"
+                + "def u : C | D | null = C(5)\n"
+                + "def k : int? = u?.k\n"
+                + "def iface : I? = u\n"
+                + "def ik : int? = iface?.k\n"
+                + "def jl : java.util.List(B)? = java.util.List.of(B(9))\n"
+                + "def jv : int? = jl?.get(0)?.v\n"
+                + "def late = A(4)\n"
+                + "def lateB : B? = late?.f()\n"
+                + "late = null");
+
+        // Negative cases: provably non-null LHS, regular '.' after '?.', (a?.f)(), nullable callee, null?., this?., any?., narrowed.
+        assertDiagnostics("def B = class (def v : int) ( def g = () : int -> ( this.v ) )\n"
+                + "def A = class (def x : int, def nullableCb : (() : int)? = null) (\n"
+                + "  def f = () : B -> ( B(this.x) )\n"
+                + "  def m = () -> ( this?.f() )\n"
+                + ")\n"
+                + "def a : A = A(1)\n"
+                + "def bad1 : B? = a?.f()\n"
+                + "def bad2 : B? = A(1)?.f()\n"
+                + "def bad3 : B = (A(1) as A?)?.f()\n"
+                + "def opt : A? = a\n"
+                + "def bad4 = opt?.f().g()\n"
+                + "def bad5 = (opt?.f)()\n"
+                + "def bad6 = opt?.nullableCb()\n"
+                + "def bad7 = null?.f()\n"
+                + "def anyVal : any = a\n"
+                + "def bad8 = anyVal?.f()\n"
+                + "def narrowedCheck = if opt != null then ( opt?.f() ) else ( null )\n"
+                + "def narrowedIs = if opt is A then ( opt?.f() ) else ( null )\n"
+                + "def narrowedTruth = if opt then ( opt?.f() ) else ( null )\n"
+                + "def uNonNull : A | B = a\n"
+                + "def bad9 = uNonNull?.nonexistent()\n"
+                + "def i = 1\n"
+                + "def bad10 = i?.toString()",
+                "4:19 Not nullable : this",
+                "7:17 Not nullable : a",
+                "8:17 Not nullable : A(1)",
+                "9:16 Type error : expected B, got B?",
+                "11:12 Not a scope : opt?.f()",
+                "12:12 (opt?.f) is not callable",
+                "13:12 opt?.nullableCb is not callable",
+                "14:12 Not a scope : null",
+                "16:12 Not nullable : anyVal",
+                "17:43 Not nullable : opt",
+                "18:37 Not nullable : opt",
+                "19:35 Not nullable : opt",
+                "21:12 Not nullable : uNonNull",
+                "23:13 Not nullable : i");
+
+        org.babblelang.analysis.AnalysisException superSafe = Assertions.assertThrows(
+                org.babblelang.analysis.AnalysisException.class,
+                () -> diagnostics("def I = interface ( def m = () -> ( 1 ) )\n"
+                        + "def C = class () implements I ( def m = () -> ( super?.m() ) )"));
+        Assertions.assertTrue(superSafe.getMessage().contains("super must be called directly"), superSafe.getMessage());
+
+        // Safe assignment a?.x = 1 is not valid syntax.
+        Assertions.assertThrows(
+                org.antlr.v4.runtime.misc.ParseCancellationException.class,
+                () -> diagnostics("def A = class (def x : int) () ; def a : A? = null ; a?.x = 1"));
+    }
+
+    @Test
     public void testAllScriptsCompileCleanly() throws Exception {
         // Every .ba test script and example compiles cleanly with static typing.
         List<Path> all = new java.util.ArrayList<>();

@@ -31,7 +31,7 @@ expression:
           | THIS                                              # thisExpression
           | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
           // A newline may come before the dot : a chain of calls can go on the next lines.
-          | expression NL* '.' ID                             # selector
+          | expression NL* ('.' | safe='?.') ID               # selector
           | ID                                                # selector
           | expression callParameters                         # call
           | block                                             # blockExpression
@@ -116,6 +116,7 @@ MINUS_ASSIGN: '-=';
 MUL_ASSIGN: '*=';
 DIV_ASSIGN: '/=';
 DOT: '.';
+SAFE_DOT: '?.';
 ARROW: '->';
 PIPE: '|';
 QUESTION: '?';

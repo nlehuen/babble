@@ -1522,6 +1522,25 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             loadName(ctx, name);
             return null;
         }
+        if (ctx.safe != null) {
+            Label nonNull = new Label();
+            Label end = new Label();
+            visit(expression);
+            mv.visitInsn(DUP);
+            mv.visitJumpInsn(IFNONNULL, nonNull);
+            mv.visitInsn(POP);
+            mv.visitInsn(ACONST_NULL);
+            mv.visitJumpInsn(GOTO, end);
+            mv.visitLabel(nonNull);
+            selectReceiverMember(ctx, expression, name);
+            String checked = scopes.checkedType(ctx);
+            if (checked != null) {
+                line(ctx);
+                checkType(checked);
+            }
+            mv.visitLabel(end);
+            return null;
+        }
         if (expression instanceof BabbleParser.ThisExpressionContext) {
             ClassGen gen = thisClassAt(expression);
             if (fieldIndex(gen, name) >= 0) {
@@ -1539,16 +1558,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             }
         } else {
             visit(expression);
-            line(ctx);
-            String text = expression.getText();
-            if (text.length() <= MAX_STRING_CONSTANT) {
-                // An invokedynamic site, cached by receiver (Bootstrap.select).
-                mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, name, text);
-            } else {
-                mv.visitLdcInsn(name);
-                pushString(mv, text);
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
-            }
+            selectReceiverMember(ctx, expression, name);
         }
         String checked = scopes.checkedType(ctx);
         if (checked != null) {
@@ -1558,8 +1568,47 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         return null;
     }
 
+    private void selectReceiverMember(BabbleParser.SelectorContext ctx, BabbleParser.ExpressionContext expression, String name) {
+        line(ctx);
+        String text = expression.getText();
+        if (text.length() <= MAX_STRING_CONSTANT) {
+            // An invokedynamic site, cached by receiver (Bootstrap.select).
+            mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, name, text);
+        } else {
+            mv.visitLdcInsn(name);
+            pushString(mv, text);
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
+        }
+    }
+
     @Override
     public Void visitCall(BabbleParser.CallContext ctx) {
+        if (ctx.expression() instanceof BabbleParser.SelectorContext selector && selector.safe != null) {
+            Label nonNull = new Label();
+            Label end = new Label();
+            BabbleParser.ExpressionContext receiver = selector.expression();
+            visit(receiver);
+            mv.visitInsn(DUP);
+            mv.visitJumpInsn(IFNONNULL, nonNull);
+            mv.visitInsn(POP);
+            mv.visitInsn(ACONST_NULL);
+            mv.visitJumpInsn(GOTO, end);
+            mv.visitLabel(nonNull);
+            selectReceiverMember(selector, receiver, selector.ID().getText());
+            String selectorChecked = scopes.checkedType(selector);
+            if (selectorChecked != null) {
+                line(selector);
+                checkType(selectorChecked);
+            }
+            emitCallWithCallee(ctx, callSiteField(ctx), Interpreter.callNames(ctx), ctx.callParameters().callParameter());
+            String checked = scopes.checkedType(ctx);
+            if (checked != null) {
+                line(ctx);
+                checkType(checked);
+            }
+            mv.visitLabel(end);
+            return null;
+        }
         emitCall(ctx);
         String checked = scopes.checkedType(ctx);
         if (checked != null) {
@@ -1627,6 +1676,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
 
         visit(ctx.expression());
+        emitCallWithCallee(ctx, site, names, parameters);
+    }
+
+    private void emitCallWithCallee(BabbleParser.CallContext ctx, String site, String[] names,
+                                    List<BabbleParser.CallParameterContext> parameters) {
         // Checked before the arguments are evaluated.
         line(ctx);
         mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");

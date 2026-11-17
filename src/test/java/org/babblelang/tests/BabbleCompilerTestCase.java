@@ -477,4 +477,26 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(typesCalls(javaBoundary).stream().anyMatch(c -> c.endsWith("->check")), typesCalls(javaBoundary).toString());
         Assertions.assertEquals(42, javaBoundary.eval(new SimpleBindings()));
     }
+
+    @Test
+    public void testSafeNavigationCompilesCleanly() throws Exception {
+        CompiledBabbleScript safe = compile(
+                "def B = class (def v : int) ()\n"
+                        + "def A = class (def next : A? = null, def x : int = 7) (\n"
+                        + "  def f = () : B -> ( B(this.x) )\n"
+                        + "  def getInt = () : int -> ( this.x )\n"
+                        + ")\n"
+                        + "def mk = (flag : bool) : A? -> ( if flag then ( A(A(null, 5), 3) ) else ( null ) )\n"
+                        + "def a1 = mk(true)\n"
+                        + "def a0 = mk(false)\n"
+                        + "def b1 : B? = a1?.f()\n"
+                        + "def b0 : B? = a0?.f()\n"
+                        + "def chained : int? = a1?.next?.f()?.v\n"
+                        + "def d1 : double? = a1?.getInt()\n"
+                        + "def d0 : double? = a0?.getInt()\n"
+                        + "\"\" + b1?.v + \":\" + b0?.v + \":\" + chained + \":\" + classof(d1) + \":\" + d1 + \":\" + d0");
+        assertVerifies(safe);
+        Assertions.assertEquals(List.of(), typesCalls(safe));
+        Assertions.assertEquals("3:null:5:java.lang.Double:3.0:null", safe.eval(new SimpleBindings()));
+    }
 }
