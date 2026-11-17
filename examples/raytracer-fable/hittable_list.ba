@@ -10,12 +10,12 @@ export def HittableList = class () implements Hittable (
     def objects: java.util.List(Hittable) = java.util.ArrayList()
     private def bbox: AABB = AABB.empty
 
-    def add = (item: Hittable): bool -> (
+    def add = mut (item: Hittable): bool -> (
         this.bbox = AABB.enclose(this.bbox, item.boundingBox())
         this.objects.add(item)
     )
 
-    def clear = (): null -> (
+    def clear = mut (): null -> (
         this.objects.clear()
         this.bbox = AABB.empty
         null

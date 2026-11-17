@@ -198,7 +198,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         Assertions.assertEquals(6, interpret(
                 "def o = object (\n"
                         + "  def total = 0\n"
-                        + "  def down = (n:int):int -> (\n"
+                        + "  def down = mut (n:int):int -> (\n"
                         + "    if n < 1 then ( this.total ) else ( this.total = this.total + n ; recurse(n - 1) )\n"
                         + "  )\n"
                         + ")\n"

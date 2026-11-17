@@ -300,7 +300,7 @@ final class EffectChecker {
             }
         }
         if (parsed.effects().contains(Effect.PURE) && hasMutParam) {
-            EnumSet<Effect> fixed = EnumSet.copyOf(parsed.effects());
+            EnumSet<Effect> fixed = EffectSet.copySet(parsed.effects());
             fixed.remove(Effect.PURE);
             fixed.add(Effect.HERMETIC);
             parsed = new ParsedPrefix(fixed, parsed.mutThis(), parsed.borrowThis(), parsed.axiom(), parsed.impure(), true);
@@ -326,7 +326,7 @@ final class EffectChecker {
             checker.effectDiagnostic("pure and mut are mutually exclusive : use hermetic with mut parameters", ctx);
         }
         if (parsed.effects().contains(Effect.PURE) && hasMutParam) {
-            EnumSet<Effect> fixed = EnumSet.copyOf(parsed.effects());
+            EnumSet<Effect> fixed = EffectSet.copySet(parsed.effects());
             fixed.remove(Effect.PURE);
             fixed.add(Effect.HERMETIC);
             return new ParsedPrefix(fixed, parsed.mutThis(), parsed.borrowThis(), false, false, true);
@@ -1541,7 +1541,7 @@ final class EffectChecker {
         if (isFixedSummary(callable)) {
             return raw;
         }
-        EnumSet<Effect> effs = EnumSet.copyOf(raw.effects().effects());
+        EnumSet<Effect> effs = EffectSet.copySet(raw.effects().effects());
         boolean anyMutParam = anyTrue(raw.mutParams());
         boolean mutThis = raw.effects().mutThis();
         if (effs.contains(Effect.HERMETIC) && !mutThis && !anyMutParam) {
@@ -1583,14 +1583,12 @@ final class EffectChecker {
         }
         ParsedPrefix prefix = parseFunctionPrefix(fn, false);
         List<BabbleParser.ParameterDeclarationContext> params = fn.parametersDeclaration().parameterDeclaration();
-        boolean hasExplicitFnTypeOnDef = fn.getParent() instanceof BabbleParser.DefExpressionContext def
-                && def.value == fn && def.type() != null;
         boolean hasAnyExplicit = prefix.hasAnyModifier();
         for (BabbleParser.ParameterDeclarationContext p : params) {
             ParamMods pm = parseParamMods(p, false);
             hasAnyExplicit |= pm.mut() || pm.borrow();
         }
-        if (!hasAnyExplicit && !hasExplicitFnTypeOnDef) {
+        if (!hasAnyExplicit) {
             // Unannotated function (including unannotated `export def` per BIP007-D2):
             // expose full inferred EffectSet, inferred borrow, and (for untyped fns) inferred mut!
             return internal;
@@ -2009,6 +2007,19 @@ final class EffectChecker {
                 }
                 return RelProps.NONE;
             }
+            if (resType == Type.STRING && "+".equals(op)) {
+                Type lt = checker.rawTypeOf(bin.left);
+                Type rt = checker.rawTypeOf(bin.right);
+                if (l.usesTarget && !r.usesTarget) {
+                    boolean inj = l.injective && isLosslessToStringType(lt);
+                    return new RelProps(0, inj, true);
+                }
+                if (!l.usesTarget && r.usesTarget) {
+                    boolean inj = r.injective && isLosslessToStringType(rt);
+                    return new RelProps(0, inj, true);
+                }
+                return RelProps.NONE;
+            }
             return RelProps.NONE;
         }
         if (expr instanceof BabbleParser.CallContext call) {
@@ -2058,6 +2069,10 @@ final class EffectChecker {
             return l.monotoneSign;
         }
         return 0;
+    }
+
+    private static boolean isLosslessToStringType(Type type) {
+        return type == Type.STRING || type == Type.INT || type == Type.BOOL;
     }
 
     private static boolean isOddIntConstant(BabbleParser.ExpressionContext raw) {
@@ -2314,7 +2329,7 @@ final class EffectChecker {
             CallableSummary cs = constructorSummary(cv.node());
             if (cs != null) {
                 boolean isVal = cv.node().kind == ClassShape.Kind.VALUE_CLASS;
-                EnumSet<Effect> set = EnumSet.copyOf(cs.effects().effects());
+                EnumSet<Effect> set = EffectSet.copySet(cs.effects().effects());
                 if (isVal && set.contains(Effect.PURE) && set.contains(Effect.DETERMINISTIC) && !cv.node().parameters.isEmpty()) {
                     set.add(Effect.INJECTIVE);
                 }
@@ -2699,18 +2714,30 @@ final class EffectChecker {
                     hermetic = false;
                 }
                 markStoredOrigin(init, "field " + def.name.getText(), def);
-            } else if (kind == ScopeAnalysis.DefKind.STATIC
-                    || defScope == null
-                    || defScope.kind == ScopeNode.Kind.FILE
-                    || defScope.kind == ScopeNode.Kind.PACKAGE
-                    || escapedCapturedLocals.contains(def)) {
-                markStoredOrigin(init, "outer binding " + def.name.getText(), def);
-            } else {
-                // Local variable in this function!
+            } else if (isOwnedScopeLocal(def, defScope, kind)) {
+                // Local variable in this function (or top-level binding when verifying top-level file/static block)!
                 Origin localOrig = isDeeplyImmutable(defType) ? Origin.IMMUTABLE : withLocalAliasKey(init, def, defType);
                 env.put(def, localOrig);
+            } else {
+                markStoredOrigin(init, "outer binding " + def.name.getText(), def);
             }
             return Origin.IMMUTABLE;
+        }
+
+        private boolean isOwnedScopeLocal(ParserRuleContext decl, ScopeNode declScope, ScopeAnalysis.DefKind kind) {
+            if (kind == ScopeAnalysis.DefKind.STATIC || declScope == null || escapedCapturedLocals.contains(decl)) {
+                return false;
+            }
+            BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
+            if (owner instanceof BabbleParser.FunctionLiteralContext) {
+                return declFn == owner
+                        && declScope.kind != ScopeNode.Kind.FILE
+                        && declScope.kind != ScopeNode.Kind.PACKAGE;
+            }
+            if (owner instanceof BabbleParser.FileContext || owner instanceof BabbleParser.BlockContext) {
+                return declFn == null;
+            }
+            return false;
         }
 
         private Origin withLocalAliasKey(Origin base, Object localKey, Type type) {
@@ -2742,12 +2769,9 @@ final class EffectChecker {
                     }
                     BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
                     ScopeNode declScope = pass.definitionScopes.get(decl);
-                    boolean isLocalOfSelf = declFn != null && declFn == owner
-                            && declScope != null
-                            && declScope.kind != ScopeNode.Kind.FILE
-                            && declScope.kind != ScopeNode.Kind.PACKAGE
-                            && !escapedCapturedLocals.contains(decl);
-                    if (isLocalOfSelf) {
+                    ScopeAnalysis.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
+                            ? pass.analysis.defTarget(d).kind() : null;
+                    if (isOwnedScopeLocal(decl, declScope, dKind)) {
                         Type dType = checker.typeOfDeclarationForEffects(decl);
                         Origin next = compoundOp != null ? Origin.IMMUTABLE : withLocalAliasKey(rhs, decl, dType);
                         env.put(decl, next);
@@ -2775,6 +2799,10 @@ final class EffectChecker {
                 checkCompoundArithmeticEffects(compoundOp, checker.rawTypeOf(assign), assign);
             }
             Type recvType = effectiveType(assign.namespace);
+            if (recvType == Type.ERROR || recvType == Type.ANY || Type.containsNull(recvType)
+                    || isPrimitiveOrString(recvType) || recvType instanceof Type.Function) {
+                return rhs;
+            }
             if (recvType instanceof Type.JavaClassValue || recvType instanceof Type.ClassValue
                     || recvType instanceof Type.Package || recvType instanceof Type.Module) {
                 // Static / package field write -> global mutation!
@@ -2805,11 +2833,9 @@ final class EffectChecker {
                     }
                     BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
                     ScopeNode declScope = pass.definitionScopes.get(decl);
-                    boolean isLocalOfSelf = declFn != null && declFn == owner
-                            && declScope != null
-                            && declScope.kind != ScopeNode.Kind.FILE
-                            && declScope.kind != ScopeNode.Kind.PACKAGE;
-                    if (isLocalOfSelf) {
+                    ScopeAnalysis.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
+                            ? pass.analysis.defTarget(d).kind() : null;
+                    if (isOwnedScopeLocal(decl, declScope, dKind)) {
                         if (escapedCapturedLocals.contains(decl) && checker.isReassigned(decl)) {
                             deterministic = false;
                         }
@@ -3369,6 +3395,9 @@ final class EffectChecker {
         }
 
         private void recordTargetMutation(Origin target, ParserRuleContext targetExpr, String reason, ParserRuleContext at) {
+            if (targetExpr instanceof BabbleParser.ExpressionContext expr && effectiveType(expr) == Type.ERROR) {
+                return;
+            }
             boolean hitParamOrThis = false;
             if (target.aliasesThis) {
                 hitParamOrThis = true;

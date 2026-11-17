@@ -312,4 +312,31 @@ public class ReplTestCase {
         Assertions.assertEquals(7.5, session.eval("p.sum(4)"));
         Assertions.assertEquals(9, session.eval("add(4, 5)"));
     }
+
+    @Test
+    public void testRm002EffectsAndAxiomsAcrossInputs() throws Exception {
+        BabbleSession session = session(new StringWriter());
+        // Inferred pure deterministic nothrow function persists across inputs:
+        session.eval("def sq = (x: int): int -> (x * x)");
+        session.eval("def quad = pure deterministic nothrow (x: int): int -> (sq(sq(x)))");
+        Assertions.assertEquals(81, session.eval("quad(3)"));
+
+        // `mut` method and static call-site exclusivity persist across inputs:
+        session.eval("def Box = class (def v: int) ( def addFrom = mut (other: Box) -> ( this.v += other.v ) )");
+        session.eval("def a = Box(10) ; def b = Box(5)");
+        session.eval("a.addFrom(b)");
+        Assertions.assertEquals(15, session.eval("a.v"));
+        assertFails(session, "a.addFrom(a)", "Exclusivity error");
+        assertFails(session, "def bad = (x: Box): int -> ( x.addFrom(b) ; x.v )", "Cannot mutate parameter x");
+
+        // Top-level `axiom` persists across REPL turns:
+        assertFails(session, "def badSep = pure (): string -> (java.lang.System.lineSeparator())", "pure");
+        session.eval("axiom pure deterministic nothrow java.lang.System.lineSeparator");
+        session.eval("def okSep = pure deterministic nothrow (): string -> (java.lang.System.lineSeparator())");
+        Assertions.assertEquals(System.lineSeparator(), session.eval("okSep()"));
+
+        // Multi-line incomplete classification with effect headers:
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("def f = pure (x: int): int -> ("));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("axiom pure java.lang.Math"));
+    }
 }

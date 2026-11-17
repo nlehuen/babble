@@ -209,7 +209,7 @@ reached through `this` or a receiver : a bare name is never a member.
 def Account = class (def owner: string, def balance = 0) (     ;; "def" : the parameter is also a member
     private def history: java.util.List(int) = java.util.ArrayList()        ;; private : only reachable as this.history
 
-    def deposit = (n: int) -> (
+    def deposit = mut (n: int) -> (
         this.history.add(n)
         this.balance += n
     )
@@ -404,6 +404,36 @@ def Box(T) = class (def value: T) (
 def label: Box(string) = Box(21).map((n) -> ( "v=" + n ))
 def names: java.util.List(string) = java.util.ArrayList()
 ```
+
+### Function effects and contracts
+
+Unannotated functions automatically infer their effects (`pure`, `hermetic`, `deterministic`,
+`nothrow`, `borrow`) and algebraic properties (`idempotent`, `commutative`, `associative`,
+`monotone`, `injective`), while explicit modifiers turn them into statically verified contracts.
+Typed functions that mutate `this` or a parameter declare `mut` explicitly, and call sites check
+that a `mut` argument does not alias another argument :
+
+```
+axiom pure deterministic nothrow java.lang.Math
+
+def hypot = pure deterministic nothrow (x: double, y: double): double -> (
+    java.lang.Math.sqrt(x * x + y * y)
+)
+
+def Counter = class (def value: int = 0) (
+    def addFrom = hermetic mut (borrow other: Counter) -> (
+        this.value += other.value
+    )
+)
+def a = Counter(10) ; def b = Counter(5)
+a.addFrom(b)
+;; a.addFrom(a)   ;; Error : Exclusivity error : mut target a aliases argument a
+```
+
+`axiom` and `impure` declare trusted or conservative contracts on Java classes, constructors
+(`Class()`), and methods, or Java hosts can annotate APIs with `@Pure`, `@Mut`, `@Borrow`,
+`@Deterministic`, `@Nothrow`, and `@Impure` from `org.babblelang.effects` (or configure an engine
+with `assumeEffects` / `allowAxioms(false)`). See [BIP007](docs/design/bip007_effects.md).
 
 ### Interactive mode
 
@@ -630,6 +660,7 @@ Language features :
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java (including generic) interfaces.
 - [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md) and [BIP008](docs/design/bip008_static-typing.md)).
+- [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts, and `org.babblelang.effects` host annotations (see [BIP007](docs/design/bip007_effects.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
 
 Implementation features :
@@ -664,6 +695,7 @@ Language features :
 Implementation features :
 
 - [ ] JVM interfaces for Babble interfaces and direct Java interface bridges (`RM003`).
+- [ ] deep ownership (`unique`, `move`, `freeze`), effect-driven bytecode optimizations, and `axiom` property fuzzing (`RM004`).
 - [ ] a Maven goal for ahead-of-time compilation.
 
 TODO : lessons from the ray tracer

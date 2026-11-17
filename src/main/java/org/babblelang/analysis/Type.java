@@ -122,7 +122,7 @@ sealed interface Type {
 
         /** Formats this function type highlighting guarantees relevant to {@code expected}. */
         String describeAgainst(Function expected) {
-            java.util.EnumSet<org.babblelang.effects.Effect> shown = java.util.EnumSet.copyOf(effects.declared());
+            java.util.EnumSet<org.babblelang.effects.Effect> shown = EffectSet.copySet(effects.declared());
             for (org.babblelang.effects.Effect req : expected.effects().effects()) {
                 if (effects.has(req)) {
                     shown.add(req);

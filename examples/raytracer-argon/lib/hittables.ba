@@ -60,7 +60,7 @@ export def HittableList = class () implements Hittable (
     private def head: HittableNode? = null
     private def bbox: AABB = AABB.empty
 
-    def add = (item: Hittable) -> (
+    def add = mut (item: Hittable) -> (
         this.head = HittableNode(item, this.head)
         this.size += 1
         this.bbox = AABB.enclose(this.bbox, item.boundingBox())

@@ -691,7 +691,7 @@ public class TypeCheckerTestCase {
                 + "  def m = null\n"
                 + "  def n\n"
                 + "  def ok = null\n"
-                + "  def setOk = (v : string) -> ( this.ok = v )\n"
+                + "  def setOk = mut (v : string) -> ( this.ok = v )\n"
                 + "  def a = this.b\n"
                 + "  def b = this.a\n"
                 + ") static (\n"

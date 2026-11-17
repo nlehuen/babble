@@ -29,7 +29,7 @@ export def Scenes = object (
     )
 
     ;; Chapter 14: "Where Next?" Final Cover Scene
-    def finalScene = (rng: Rng = Rng(42), gridRadius: int = 11): HittableList -> (
+    def finalScene = (mut rng: Rng = Rng(42), gridRadius: int = 11): HittableList -> (
         def world: HittableList = HittableList()
 
         def groundMaterial: Material = Lambertian(Vec3(0.5, 0.5, 0.5))
