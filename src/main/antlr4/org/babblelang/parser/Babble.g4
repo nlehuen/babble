@@ -1,12 +1,128 @@
 grammar Babble;
 
-file: sep? expression (sep expression)* sep? EOF;
+@parser::members {
+    private static boolean isAxiomOrImpureWord(Token token) {
+        if (token == null || token.getType() != ID) {
+            return false;
+        }
+        String text = token.getText();
+        return "axiom".equals(text) || "impure".equals(text);
+    }
+
+    private static boolean isParamModWord(Token token) {
+        if (token == null || token.getType() != ID) {
+            return false;
+        }
+        String text = token.getText();
+        return "mut".equals(text) || "borrow".equals(text);
+    }
+
+    private static boolean isEffectOrAxiomWord(Token token) {
+        if (token == null || token.getType() != ID) {
+            return false;
+        }
+        return switch (token.getText()) {
+            case "axiom", "impure", "pure", "hermetic", "mut", "borrow",
+                 "deterministic", "nothrow", "idempotent", "commutative",
+                 "associative", "monotone", "injective" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isParamModifier() {
+        return isParamModWord(_input.LT(1)) && _input.LT(2).getType() == ID;
+    }
+
+    private boolean isFunctionLiteralStart() {
+        int i = 1;
+        if (!isEffectOrAxiomWord(_input.LT(i))) {
+            return false;
+        }
+        while (isEffectOrAxiomWord(_input.LT(i))) {
+            i++;
+        }
+        if (_input.LT(i).getType() != LPAREN) {
+            return false;
+        }
+        int depth = 0;
+        int firstInside = i + 1;
+        while (_input.LT(firstInside).getType() == NL) {
+            firstInside++;
+        }
+        while (true) {
+            int t = _input.LT(i).getType();
+            if (t == Token.EOF) {
+                Token first = _input.LT(firstInside);
+                return first.getType() == PRIVATE || first.getType() == DEF || isParamModWord(first);
+            }
+            if (t == LPAREN) {
+                depth++;
+            } else if (t == RPAREN) {
+                depth--;
+                if (depth == 0) {
+                    i++;
+                    break;
+                }
+            }
+            i++;
+        }
+        int after = _input.LT(i).getType();
+        return after == ARROW || after == COLON;
+    }
+
+    private boolean isFunctionTypeStart() {
+        int i = 1;
+        if (!isEffectOrAxiomWord(_input.LT(i))) {
+            return false;
+        }
+        while (isEffectOrAxiomWord(_input.LT(i))) {
+            i++;
+        }
+        return _input.LT(i).getType() == LPAREN;
+    }
+
+    private boolean isDefEffectStart() {
+        if (!isAxiomOrImpureWord(_input.LT(1)) || isFunctionLiteralStart()) {
+            return false;
+        }
+        return _input.LT(2).getType() == ID;
+    }
+
+    private boolean isEffectDeclarationStart() {
+        if (_input.LT(1).getType() == EXPORT) {
+            return isAxiomOrImpureWord(_input.LT(2));
+        }
+        if (!isAxiomOrImpureWord(_input.LT(1)) || isFunctionLiteralStart()) {
+            return false;
+        }
+        return _input.LT(2).getType() == ID;
+    }
+
+    private boolean isTargetEffectWord() {
+        return isEffectOrAxiomWord(_input.LT(1)) && _input.LT(2).getType() == ID;
+    }
+}
+
+file: sep? ({isEffectDeclarationStart()}? effectDeclaration | expression)
+      (sep ({isEffectDeclarationStart()}? effectDeclaration | expression))* sep? EOF;
 
 // Statements are separated by newlines or semicolons.
 // Newlines are ignored only after tokens that require a continuation
 // (operators, commas, '=', '->', 'then', ...), never between an
 // expression and a following '(' : that would be ambiguous with a call.
 sep: (';' | NL)+;
+
+effectDeclaration: EXPORT? targetEffectPrefix effectTarget (ctorOpen='(' ctorClose=')')?;
+
+effectTarget: (ID '(' STRING ')' | ID) ('.' ID)*;
+
+effectPrefix: effectWord+;
+
+effectWord: {isEffectOrAxiomWord(_input.LT(1))}? ID;
+
+targetEffectPrefix: targetEffectWord+;
+
+targetEffectWord: {isTargetEffectWord()}? ID;
 
 expression:
           // "export" is only accepted at the top level of a file, which the analysis checks.
@@ -18,7 +134,8 @@ expression:
           // at this alternative's precedence : "… else (c) + 1" adds to the whole chain.
           | IF test=expression THEN NL* thenBlock=block
                      NL* ELSE NL* {_input.LA(1) == IF}? elseIf=expression   # ifExpression
-          | (EXPORT | PRIVATE)? DEF name=ID typeParameters? (':' type)? ('=' NL* value=expression)?   # defExpression
+          | (EXPORT | PRIVATE)? DEF name=ID typeParameters? (':' type)?
+                     ('=' NL* ({isDefEffectStart()}? targetEffectPrefix)? value=expression)?   # defExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           // "value class" : the modifier is a contextual keyword, checked by the analysis.
           // No newline before the body : "class (a)" followed by "(b)" on the next line
@@ -30,6 +147,7 @@ expression:
           | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block   # objectExpression
           | THIS                                              # thisExpression
           | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
+          | {isFunctionLiteralStart()}? effectPrefix parametersDeclaration ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
           // A newline may come before the dot : a chain of calls can go on the next lines.
           | expression NL* ('.' | safe='?.') ID               # selector
           | ID                                                # selector
@@ -65,13 +183,16 @@ expression:
           ;
 
 block: '(' sep? ')'
-     | '(' sep? expression (sep expression)* sep? ')';
+     | '(' sep? ({isEffectDeclarationStart()}? effectDeclaration | expression)
+       (sep ({isEffectDeclarationStart()}? effectDeclaration | expression))* sep? ')';
 
 parametersDeclaration: '(' NL* parameterDeclaration (NL* ',' NL* parameterDeclaration)* NL* ')'
                      | '(' NL* ')';
 
 // PRIVATE and DEF are only accepted in class headers, which the analysis checks.
-parameterDeclaration: PRIVATE? DEF? ID (':' type)? ('=' NL* defaultValue=expression)?;
+parameterDeclaration: PRIVATE? DEF? ({isParamModifier()}? paramModifier)* ID (':' type)? ('=' NL* defaultValue=expression)?;
+
+paramModifier: ID;
 
 typeParameters: '(' NL* ID (NL* ',' NL* ID)* NL* ')';
 
@@ -88,10 +209,11 @@ type: nullableType ('|' NL* nullableType)*;
 
 nullableType: primaryType question='?'?;
 
-primaryType: ID ('.' ID)* typeArguments?          # simpleType
-           | parametersDeclaration ( ':' type | )   # functionType
-           | NULL                                   # nullType
-           | '(' NL* type NL* ')'                   # parenType
+primaryType: {isFunctionTypeStart()}? effectPrefix parametersDeclaration ( ':' type | )   # functionType
+           | ID ('.' ID)* typeArguments?                                                  # simpleType
+           | parametersDeclaration ( ':' type | )                                         # functionType
+           | NULL                                                                         # nullType
+           | '(' NL* type NL* ')'                                                         # parenType
            ;
 
 // Tokens

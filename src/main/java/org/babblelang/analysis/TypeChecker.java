@@ -2,6 +2,7 @@ package org.babblelang.analysis;
 
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
+import org.babblelang.effects.Effect;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
@@ -21,6 +22,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -51,6 +53,9 @@ import java.util.stream.Collectors;
  * or untyped script bindings cross into typed code (T9).
  */
 final class TypeChecker {
+    record NarrowingInfo(Map<ParserRuleContext, Type> whenTrue, Map<ParserRuleContext, Type> whenFalse) {
+    }
+
     private record Diagnostic(int line, int column, String message) {
     }
 
@@ -116,6 +121,8 @@ final class TypeChecker {
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<BabbleParser.CallContext, ScopeAnalysis.JavaCallTarget> javaCallTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.CallContext, ScopeAnalysis.JavaConstructorTarget> javaConstructorTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, Method> resolvedJavaMethods = new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, java.lang.reflect.Constructor<?>> resolvedJavaConstructors = new IdentityHashMap<>();
     private final Map<ParserRuleContext, ScopeAnalysis.JavaFieldTarget> javaFieldTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.SelectorContext, Class<?>> arrayLengthSelectors = new IdentityHashMap<>();
     private final Map<BabbleParser.SelectorContext, ScopeAnalysis.ModuleExportTarget> moduleExportTargets = new IdentityHashMap<>();
@@ -127,6 +134,8 @@ final class TypeChecker {
      */
     private final Map<ParserRuleContext, TypeChecker> owners = new HashMap<>();
 
+    EffectChecker effectChecker;
+    private boolean checkingEffects;
     private BabbleParser.FileContext file;
 
     TypeChecker(BlockScopes pass) {
@@ -165,6 +174,8 @@ final class TypeChecker {
             }
         }
         new ReturnFinder().visit(file);
+        this.checkingEffects = false;
+        this.effectChecker = new EffectChecker(pass, this);
         int iterations = 0;
         boolean changed;
         do {
@@ -175,8 +186,22 @@ final class TypeChecker {
             }
             changed = commitInferred();
         } while (changed && ++iterations < 64);
+        effectChecker.inferAll(file);
+        resetPass();
+        walk(file);
+        for (BabbleParser.FunctionLiteralContext function : functions) {
+            checkResult(function);
+        }
+        commitInferred();
+        this.checkingEffects = true;
+        resetPass();
+        walk(file);
+        for (BabbleParser.FunctionLiteralContext function : functions) {
+            checkResult(function);
+        }
         checkInterfaces();
         checkMissingTypes(file);
+        effectChecker.verify(file);
         for (ParserRuleContext ctx : widened) {
             pass.analysis.widenToDouble(ctx);
         }
@@ -218,6 +243,8 @@ final class TypeChecker {
         failedDefs.clear();
         javaCallTargets.clear();
         javaConstructorTargets.clear();
+        resolvedJavaMethods.clear();
+        resolvedJavaConstructors.clear();
         javaFieldTargets.clear();
         arrayLengthSelectors.clear();
         moduleExportTargets.clear();
@@ -574,7 +601,7 @@ final class TypeChecker {
         warnings.add(new Diagnostic(at.getStart().getLine(), at.getStart().getCharPositionInLine() + 1, message));
     }
 
-    private boolean inFile(ParserRuleContext ctx) {
+    boolean inFile(ParserRuleContext ctx) {
         ParserRuleContext root = ctx;
         while (root.getParent() != null) {
             root = root.getParent();
@@ -707,7 +734,7 @@ final class TypeChecker {
                 }
                 Type actual = memberType(impl);
                 if (!isUnresolved(actual) && !assignable(actual, required, false)) {
-                    warn("Type error : expected " + required + ", got " + actual, impl.declaration);
+                    reportTypeMismatch(actual, required, impl.declaration);
                 }
             } else {
                 TypeChecks.Provider provider = defaults.get(req.name);
@@ -719,7 +746,7 @@ final class TypeChecker {
                         Map<Type.TypeVar, Type> ownerEnv = projectedOwner instanceof Type.Instance proj ? instanceEnv(proj) : Map.of();
                         Type actual = substitute(memberType(defaultMember), ownerEnv);
                         if (!isUnresolved(actual) && !assignable(actual, required, false)) {
-                            warn("Type error : expected " + required + ", got " + actual, type.ctx);
+                            reportTypeMismatch(actual, required, type.ctx);
                         }
                     }
                 }
@@ -879,7 +906,7 @@ final class TypeChecker {
         return false;
     }
 
-    private ScopeNode scopeOf(ParserRuleContext ctx) {
+    ScopeNode scopeOf(ParserRuleContext ctx) {
         for (ParserRuleContext p = ctx; p != null; p = p.getParent()) {
             ScopeNode scope = pass.scopeNodes.get(p);
             if (scope == null && pass.session != null) {
@@ -997,6 +1024,12 @@ final class TypeChecker {
                         return recursiveSignature(literal);
                     }
                     Type valueType = typeOf(def.value);
+                    if (def.targetEffectPrefix() != null && effectChecker != null && valueType instanceof Type.Function fn) {
+                        EffectSet override = effectChecker.defOverrideEffects(def);
+                        if (override != null) {
+                            valueType = fn.withEffects(override, fn.parameters());
+                        }
+                    }
                     type = inferred(valueType);
                 }
             } else if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.defaultValue != null) {
@@ -1033,7 +1066,7 @@ final class TypeChecker {
         if (declaration instanceof BabbleParser.DefExpressionContext def && def.type() != null) {
             Type declared = annotation(def.type(), scopeOf(def));
             if (def.typeParameters() != null && declared instanceof Type.Function fn) {
-                return new Type.Function(typeVarsOf(def), fn.parameters(), fn.result());
+                return new Type.Function(typeVarsOf(def), fn.parameters(), fn.result(), fn.effects());
             }
             return declared;
         }
@@ -1157,8 +1190,12 @@ final class TypeChecker {
 
     private Type primaryAnnotation(BabbleParser.PrimaryTypeContext primary, ScopeNode scope, boolean allowRaw) {
         if (primary instanceof BabbleParser.FunctionTypeContext function) {
+            EffectSet effs = effectChecker != null
+                    ? effectChecker.parseFunctionTypePrefix(function, checkingEffects).toEffectSet()
+                    : EffectSet.EMPTY;
             return new Type.Function(functionTypeParameters(function.parametersDeclaration(), scope),
-                    function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY);
+                    function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY,
+                    effs);
         }
         if (primary instanceof BabbleParser.NullTypeContext) {
             return Type.NULL;
@@ -1185,7 +1222,11 @@ final class TypeChecker {
                 warn("Missing type : " + parameter.ID().getText(), parameter);
                 type = Type.ERROR;
             }
-            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null));
+            EffectChecker.ParamMods pm = effectChecker != null
+                    ? effectChecker.parseParamMods(parameter, checkingEffects)
+                    : EffectChecker.ParamMods.NONE;
+            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null,
+                    pm.mut(), pm.borrow(), pm.borrow()));
         }
         return result;
     }
@@ -1765,18 +1806,20 @@ final class TypeChecker {
         } else {
             result = inferFunctionResult(literal);
         }
-        return recordFunctionLiteral(new Type.Function(typeVarsOf(owningDef(literal)), params, result), literal);
+        return recordFunctionLiteral(
+                new Type.Function(typeVarsOf(owningDef(literal)), params, result, literalEffectSet(literal)), literal);
     }
 
     private Type.Function recursiveSignature(BabbleParser.FunctionLiteralContext literal) {
         List<Type.TypeVar> tparams = typeVarsOf(owningDef(literal));
         List<Type.Parameter> params = functionParameters(literal);
+        EffectSet effs = literalEffectSet(literal);
         if (provisionalResults.containsKey(literal)) {
-            return recordFunctionLiteral(new Type.Function(tparams, params, provisionalResults.get(literal)), literal);
+            return recordFunctionLiteral(new Type.Function(tparams, params, provisionalResults.get(literal), effs), literal);
         }
         if (!inferenceStack.isEmpty() && inferenceStack.peek() == literal) {
             recursiveFunctions.add(literal);
-            return recordFunctionLiteral(new Type.Function(tparams, params, Type.NOTHING), literal);
+            return recordFunctionLiteral(new Type.Function(tparams, params, Type.NOTHING, effs), literal);
         }
         for (BabbleParser.FunctionLiteralContext fn : inferenceStack) {
             BabbleParser.DefExpressionContext def = owningDef(fn);
@@ -1790,7 +1833,25 @@ final class TypeChecker {
                 break;
             }
         }
-        return recordFunctionLiteral(new Type.Function(tparams, params, Type.ERROR), literal);
+        return recordFunctionLiteral(new Type.Function(tparams, params, Type.ERROR, effs), literal);
+    }
+
+    private EffectSet literalEffectSet(BabbleParser.FunctionLiteralContext literal) {
+        if (effectChecker == null) {
+            return EffectSet.EMPTY;
+        }
+        EffectChecker.CallableSummary summary = effectChecker.visibleSummary(literal);
+        if (summary != null) {
+            return summary.effects();
+        }
+        TypeChecker remote = ownerOf(literal);
+        if (remote != null && remote != this && remote.effectChecker != null) {
+            EffectChecker.CallableSummary remoteSummary = remote.effectChecker.visibleSummary(literal);
+            if (remoteSummary != null) {
+                return remoteSummary.effects();
+            }
+        }
+        return effectChecker.parseFunctionPrefix(literal, checkingEffects).toEffectSet();
     }
 
     private static BabbleParser.DefExpressionContext owningDef(BabbleParser.FunctionLiteralContext literal) {
@@ -1897,10 +1958,27 @@ final class TypeChecker {
 
     private List<Type.Parameter> functionParameters(BabbleParser.FunctionLiteralContext literal) {
         ScopeNode scope = scopeOf(literal);
-        List<Type.Parameter> result = new ArrayList<>();
-        for (BabbleParser.ParameterDeclarationContext parameter : literal.parametersDeclaration().parameterDeclaration()) {
+        EffectChecker.CallableSummary summary = effectChecker != null ? effectChecker.visibleSummary(literal) : null;
+        if (summary == null) {
+            TypeChecker remote = ownerOf(literal);
+            if (remote != null && remote != this && remote.effectChecker != null) {
+                summary = remote.effectChecker.visibleSummary(literal);
+            }
+        }
+        if (effectChecker != null && checkingEffects && inFile(literal)) {
+            effectChecker.parseFunctionPrefix(literal, true);
+        }
+        List<BabbleParser.ParameterDeclarationContext> decls = literal.parametersDeclaration().parameterDeclaration();
+        List<Type.Parameter> result = new ArrayList<>(decls.size());
+        for (int i = 0; i < decls.size(); i++) {
+            BabbleParser.ParameterDeclarationContext parameter = decls.get(i);
             Type type = parameterType(parameter, scope);
-            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null));
+            EffectChecker.ParamMods pm = effectChecker != null
+                    ? effectChecker.parseParamMods(parameter, checkingEffects && inFile(literal))
+                    : EffectChecker.ParamMods.NONE;
+            boolean mut = summary != null && i < summary.mutParams().length ? summary.mutParams()[i] : pm.mut();
+            boolean borrow = summary != null && i < summary.borrowParams().length ? summary.borrowParams()[i] : pm.borrow();
+            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null, mut, borrow, pm.borrow()));
         }
         return result;
     }
@@ -1936,7 +2014,8 @@ final class TypeChecker {
             params.add(new Type.Parameter("p" + i, fromJavaType(genericParams[i], env, false, true), false));
         }
         Type returnType = fromJavaType(sam.getGenericReturnType(), env, false, false);
-        return new Type.Function(params, returnType);
+        Type.Function raw = new Type.Function(params, returnType);
+        return effectChecker != null ? effectChecker.applySamJavaEffects(sam, raw) : raw;
     }
 
     private static boolean containsSyntheticTypeVar(Type type) {
@@ -2157,6 +2236,15 @@ final class TypeChecker {
 
     private void expect(Type actual, Type expected, ParserRuleContext at) {
         if (actual != Type.ERROR && expected != Type.ERROR && !assignable(actual, expected)) {
+            reportTypeMismatch(actual, expected, at);
+        }
+    }
+
+    private void reportTypeMismatch(Type actual, Type expected, ParserRuleContext at) {
+        if (actual instanceof Type.Function aFn && expected instanceof Type.Function eFn
+                && functionAssignableWithoutEffects(aFn, eFn)) {
+            warn("Type error : expected " + eFn.describeAgainst(eFn) + ", got " + aFn.describeAgainst(eFn), at);
+        } else {
             warn("Type error : expected " + expected + ", got " + actual, at);
         }
     }
@@ -2712,6 +2800,12 @@ final class TypeChecker {
             }
             Type declared = ctx.type() != null ? declaredType(ctx) : null;
             Type value = ctx.value != null ? typeOf(ctx.value, declared) : Type.NULL;
+            if (ctx.targetEffectPrefix() != null && effectChecker != null && value instanceof Type.Function fn) {
+                EffectSet override = effectChecker.defOverrideEffects(ctx);
+                if (override != null) {
+                    value = fn.withEffects(override, fn.parameters());
+                }
+            }
             if (declared != null) {
                 expect(value, declared, ctx.value != null ? ctx.value : ctx);
                 if (needsDoubleWidening(value, declared)) {
@@ -3808,7 +3902,11 @@ final class TypeChecker {
         }
         Map<Type.TypeVar, Type> inferred = new HashMap<>();
         Set<Type.TypeVar> solving = Set.copyOf(fn.typeParameters());
-        Type.Function unparameterized = new Type.Function(fn.parameters(), fn.result());
+        Type.Function unparameterized = new Type.Function(fn.parameters(), fn.result(), fn.effects());
+        BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
+        if (lit != null) {
+            functionLiterals.put(unparameterized, lit);
+        }
         if (!unify(unparameterized, expectedFn, solving, inferred, false)) {
             return unparameterized;
         }
@@ -4061,7 +4159,7 @@ final class TypeChecker {
         }
         List<Type.Parameter> substitutedParams = new ArrayList<>(parameters.size());
         for (Type.Parameter p : parameters) {
-            substitutedParams.add(new Type.Parameter(p.name(), substitute(p.type(), inferred), p.optional()));
+            substitutedParams.add(p.withType(substitute(p.type(), inferred)));
         }
         bind(substitutedParams, declarations, arguments, ctx);
         return substitute(resultPattern, inferred);
@@ -4404,6 +4502,7 @@ final class TypeChecker {
         if (!(winner instanceof java.lang.reflect.Constructor<?> ctor)) {
             return;
         }
+        resolvedJavaConstructors.put(ctx, ctor);
         if (ctx.expression() instanceof BabbleParser.SelectorContext sel && sel.safe != null) {
             return;
         }
@@ -4527,6 +4626,7 @@ final class TypeChecker {
 
     private void recordJavaMethodCall(Method best, List<BabbleParser.CallParameterContext> arguments,
                                       List<Type> argumentTypes, BabbleParser.CallContext ctx) {
+        resolvedJavaMethods.put(ctx, best);
         if (!(ctx.expression() instanceof BabbleParser.SelectorContext sel)
                 || sel.safe != null
                 || sel.expression() == null
@@ -4613,8 +4713,12 @@ final class TypeChecker {
             return List.of();
         }
         ScopeNode scope = scopeOf(cls);
-        List<Type.Parameter> result = new ArrayList<>();
-        for (BabbleParser.ParameterDeclarationContext parameter : cls.parametersDeclaration().parameterDeclaration()) {
+        TypeNode node = pass.typeNodes.get(cls);
+        EffectChecker.CallableSummary cs = (effectChecker != null && node != null) ? effectChecker.constructorSummary(node) : null;
+        List<BabbleParser.ParameterDeclarationContext> decls = cls.parametersDeclaration().parameterDeclaration();
+        List<Type.Parameter> result = new ArrayList<>(decls.size());
+        for (int i = 0; i < decls.size(); i++) {
+            BabbleParser.ParameterDeclarationContext parameter = decls.get(i);
             Type type = parameterType(parameter, scope);
             if (parameter.defaultValue != null && !types.containsKey(parameter.defaultValue)) {
                 Type actual = typeOf(parameter.defaultValue, type != Type.ERROR ? type : null);
@@ -4622,7 +4726,11 @@ final class TypeChecker {
                     expect(actual, type, parameter.defaultValue);
                 }
             }
-            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null));
+            EffectChecker.ParamMods pm = effectChecker != null
+                    ? effectChecker.parseParamMods(parameter, checkingEffects) : EffectChecker.ParamMods.NONE;
+            boolean mut = cs != null && i < cs.mutParams().length ? cs.mutParams()[i] : pm.mut();
+            boolean borrow = cs != null && i < cs.borrowParams().length ? cs.borrowParams()[i] : pm.borrow();
+            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null, mut, borrow, pm.borrow()));
         }
         return result;
     }
@@ -5070,14 +5178,28 @@ final class TypeChecker {
         return Type.union(results);
     }
 
-    private static final Type.Function INT_CONVERSION = new Type.Function(List.of(new Type.Parameter("value", Type.ANY, false)), Type.INT);
-    private static final Type.Function DOUBLE_CONVERSION = new Type.Function(List.of(new Type.Parameter("value", Type.ANY, false)), Type.DOUBLE);
+    private static final EffectSet PURE_DET = EffectSet.ofInferred(
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false);
+    private static final EffectSet PURE_DET_NOTHROW = EffectSet.ofInferred(
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false);
+    private static final EffectSet SAME_EFFECTS = EffectSet.ofInferred(
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW, Effect.COMMUTATIVE), false, false);
+
+    private static final Type.Function INT_CONVERSION = new Type.Function(
+            List.of(new Type.Parameter("value", Type.ANY, false, false, true, false)), Type.INT, PURE_DET);
+    private static final Type.Function DOUBLE_CONVERSION = new Type.Function(
+            List.of(new Type.Parameter("value", Type.ANY, false, false, true, false)), Type.DOUBLE, PURE_DET);
     private static final Type.Function ASSERT_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("c", Type.BOOL, false), new Type.Parameter("message", Type.NULLABLE_ANY, true)), Type.BOOL);
+            List.of(new Type.Parameter("c", Type.BOOL, false, false, true, false),
+                    new Type.Parameter("message", Type.NULLABLE_ANY, true, false, true, false)),
+            Type.BOOL, PURE_DET);
     private static final Type.Function SAME_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("a", Type.NULLABLE_ANY, false), new Type.Parameter("b", Type.NULLABLE_ANY, false)), Type.BOOL);
+            List.of(new Type.Parameter("a", Type.NULLABLE_ANY, false, false, true, false),
+                    new Type.Parameter("b", Type.NULLABLE_ANY, false, false, true, false)),
+            Type.BOOL, SAME_EFFECTS);
     private static final Type.Function CLASSOF_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("v", Type.NULLABLE_ANY, false)), Type.NULLABLE_ANY);
+            List.of(new Type.Parameter("v", Type.NULLABLE_ANY, false, false, true, false)),
+            Type.NULLABLE_ANY, PURE_DET_NOTHROW);
     private static final Type.Function IMPORT_FUNCTION = new Type.Function(
             List.of(new Type.Parameter("name", Type.STRING, false)), Type.ANY);
     private static final Type STDOUT_TYPE = new Type.JavaInstance(java.io.PrintWriter.class);
@@ -5253,9 +5375,9 @@ final class TypeChecker {
             }
             List<Type.Parameter> params = new ArrayList<>(fn.parameters().size());
             for (Type.Parameter p : fn.parameters()) {
-                params.add(new Type.Parameter(p.name(), substitute(p.type(), active), p.optional()));
+                params.add(p.withType(substitute(p.type(), active)));
             }
-            Type.Function substituted = new Type.Function(fn.typeParameters(), params, substitute(fn.result(), active));
+            Type.Function substituted = new Type.Function(fn.typeParameters(), params, substitute(fn.result(), active), fn.effects());
             BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
             if (lit != null) {
                 functionLiterals.put(substituted, lit);
@@ -5538,7 +5660,11 @@ final class TypeChecker {
             if (from instanceof Type.Function fn && JavaTypes.isFunctionalInterface(java.type())) {
                 return samFunctionAssignable(fn, java);
             }
-            return isFunction(from) && !(from instanceof Type.Function) && JavaTypes.isFunctionalInterface(java.type());
+            if (isFunction(from) && !(from instanceof Type.Function) && JavaTypes.isFunctionalInterface(java.type())) {
+                Type.Function sam = samFunctionType(java);
+                return sam == null || nonFunctionCallableAssignable(from, sam);
+            }
+            return false;
         }
         if (to instanceof Type.JavaArray target) {
             return from instanceof Type.JavaArray array
@@ -5567,7 +5693,7 @@ final class TypeChecker {
             if (from instanceof Type.Function function) {
                 return functionAssignable(function, target);
             }
-            return isFunction(from);
+            return nonFunctionCallableAssignable(from, target);
         }
         return false;
     }
@@ -5585,7 +5711,7 @@ final class TypeChecker {
             return false;
         }
         if (samMethod.getReturnType() == void.class) {
-            sam = new Type.Function(sam.parameters(), Type.NULLABLE_ANY);
+            sam = new Type.Function(sam.parameters(), Type.NULLABLE_ANY, sam.effects());
         }
         return functionAssignable(from, sam);
     }
@@ -5829,6 +5955,29 @@ final class TypeChecker {
      * Parameter names aren't compared : a callback is normally called by position.
      */
     private boolean functionAssignable(Type.Function from, Type.Function to) {
+        if (!functionAssignableWithoutEffects(from, to)) {
+            return false;
+        }
+        if (!checkingEffects) {
+            return true;
+        }
+        if (!from.effects().satisfies(to.effects())) {
+            return false;
+        }
+        for (int i = 0; i < to.parameters().size(); i++) {
+            Type.Parameter fromParam = from.parameters().get(i);
+            Type.Parameter toParam = to.parameters().get(i);
+            if (fromParam.mut() && !toParam.mut()) {
+                return false;
+            }
+            if (toParam.borrow() && !fromParam.borrow()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean functionAssignableWithoutEffects(Type.Function from, Type.Function to) {
         if (!from.typeParameters().isEmpty() || !to.typeParameters().isEmpty()) {
             return false;
         }
@@ -5846,6 +5995,78 @@ final class TypeChecker {
             }
         }
         return assignable(from.result(), to.result(), false);
+    }
+
+    private boolean nonFunctionCallableAssignable(Type from, Type.Function target) {
+        if (!isFunction(from)) {
+            return false;
+        }
+        if (!checkingEffects || effectChecker == null) {
+            return true;
+        }
+        if (from == Type.PRINT) {
+            if (!EffectSet.EMPTY.satisfies(target.effects())) {
+                return false;
+            }
+            for (Type.Parameter p : target.parameters()) {
+                if (p.borrow()) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (from instanceof Type.JavaMethod jm) {
+            Method exact = uniqueArityMethod(jm.owner(), jm.name(), target.parameters().size());
+            EffectChecker.JavaCallProfile profile = effectChecker.resolveJavaMethodProfile(jm.owner(), jm.name(), exact);
+            if (!profile.effects().satisfies(target.effects())) {
+                return false;
+            }
+            for (int i = 0; i < target.parameters().size(); i++) {
+                Type.Parameter tp = target.parameters().get(i);
+                boolean mut = i < profile.mutParams().length && profile.mutParams()[i];
+                boolean borrow = i < profile.borrowParams().length ? profile.borrowParams()[i] : profile.borrowReceiver();
+                if (mut && !tp.mut()) {
+                    return false;
+                }
+                if (tp.borrow() && !borrow) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (from instanceof Type.ClassValue cv && !cv.node().isInterface()) {
+            EffectChecker.CallableSummary cs = effectChecker.constructorSummary(cv.node());
+            EffectSet effs = cs != null ? cs.effects() : EffectSet.EMPTY;
+            if (!effs.satisfies(target.effects())) {
+                return false;
+            }
+            for (int i = 0; i < target.parameters().size(); i++) {
+                Type.Parameter tp = target.parameters().get(i);
+                boolean mut = cs != null && i < cs.mutParams().length && cs.mutParams()[i];
+                boolean borrow = cs != null && i < cs.borrowParams().length && cs.borrowParams()[i];
+                if (mut && !tp.mut()) {
+                    return false;
+                }
+                if (tp.borrow() && !borrow) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return true;
+    }
+
+    private static Method uniqueArityMethod(Class<?> owner, String name, int arity) {
+        Method found = null;
+        for (Method m : owner.getMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == arity) {
+                if (found != null) {
+                    return null;
+                }
+                found = m;
+            }
+        }
+        return found;
     }
 
     private static boolean isSubtype(TypeNode node, TypeNode target) {
@@ -5880,12 +6101,50 @@ final class TypeChecker {
         if (a == Type.NOTHING) {
             return b;
         }
+        if (a instanceof Type.Function fa && b instanceof Type.Function fb) {
+            Type.Function merged = intersectCompatibleFunctions(fa, fb);
+            if (merged != null) {
+                return merged;
+            }
+        }
         if (isIntOrDouble(a) && isIntOrDouble(b) && (containsType(a, Type.DOUBLE) || containsType(b, Type.DOUBLE))
                 && !(containsType(a, Type.INT) && containsType(a, Type.DOUBLE))
                 && !(containsType(b, Type.INT) && containsType(b, Type.DOUBLE))) {
             return (Type.containsNull(a) || Type.containsNull(b)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
         }
         return Type.union(a, b);
+    }
+
+    private static Type.Function intersectCompatibleFunctions(Type.Function fa, Type.Function fb) {
+        if (!fa.typeParameters().equals(fb.typeParameters())
+                || fa.parameters().size() != fb.parameters().size()
+                || !fa.result().equals(fb.result())) {
+            return null;
+        }
+        List<Type.Parameter> params = new ArrayList<>(fa.parameters().size());
+        boolean anyMutParam = false;
+        for (int i = 0; i < fa.parameters().size(); i++) {
+            Type.Parameter pa = fa.parameters().get(i);
+            Type.Parameter pb = fb.parameters().get(i);
+            if (!pa.name().equals(pb.name()) || !pa.type().equals(pb.type()) || pa.optional() != pb.optional()) {
+                return null;
+            }
+            boolean mut = pa.mut() || pb.mut();
+            boolean borrow = pa.borrow() && pb.borrow();
+            boolean explicitBorrow = pa.explicitBorrow() && pb.explicitBorrow();
+            anyMutParam |= mut;
+            params.add(new Type.Parameter(pa.name(), pa.type(), pa.optional(), mut, borrow, explicitBorrow));
+        }
+        EffectSet common = fa.effects().intersect(fb.effects());
+        if (anyMutParam && common.isPure()) {
+            EnumSet<Effect> effs = EnumSet.copyOf(common.effects());
+            effs.remove(Effect.PURE);
+            EnumSet<Effect> decl = EnumSet.copyOf(common.declared());
+            decl.remove(Effect.PURE);
+            common = new EffectSet(effs, decl, common.mutThis(), common.borrowThis(),
+                    common.explicitBorrowThis(), false, common.axiomatic());
+        }
+        return new Type.Function(fa.typeParameters(), params, fa.result(), common);
     }
 
     /** Widening allowed across reassignments of an unannotated def or member ({@code int -> double} and {@code T <-> null}). */
@@ -5901,6 +6160,30 @@ final class TypeChecker {
         }
         if (assignable(value, current)) {
             return current;
+        }
+        if (current instanceof Type.Function cf && value instanceof Type.Function vf
+                && functionAssignableWithoutEffects(vf, cf) && cf.parameters().size() == vf.parameters().size()) {
+            List<Type.Parameter> params = new ArrayList<>(cf.parameters().size());
+            boolean anyMutParam = false;
+            for (int i = 0; i < cf.parameters().size(); i++) {
+                Type.Parameter cp = cf.parameters().get(i);
+                Type.Parameter vp = vf.parameters().get(i);
+                boolean mut = cp.mut() || vp.mut();
+                boolean borrow = cp.borrow() && vp.borrow();
+                boolean explicitBorrow = cp.explicitBorrow() && vp.explicitBorrow();
+                anyMutParam |= mut;
+                params.add(new Type.Parameter(cp.name(), cp.type(), cp.optional(), mut, borrow, explicitBorrow));
+            }
+            EffectSet common = cf.effects().intersect(vf.effects());
+            if (anyMutParam && common.isPure()) {
+                EnumSet<Effect> effs = EnumSet.copyOf(common.effects());
+                effs.remove(Effect.PURE);
+                EnumSet<Effect> decl = EnumSet.copyOf(common.declared());
+                decl.remove(Effect.PURE);
+                common = new EffectSet(effs, decl, common.mutThis(), common.borrowThis(),
+                        common.explicitBorrowThis(), false, common.axiomatic());
+            }
+            return new Type.Function(cf.typeParameters(), params, cf.result(), common);
         }
         if (current == Type.NULL) {
             return Type.nullable(value);
@@ -5919,5 +6202,217 @@ final class TypeChecker {
             return (Type.containsNull(current) || Type.containsNull(value)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
         }
         return null;
+    }
+
+    // ---------------------------------------------------------------- EffectChecker bridge
+
+    void effectDiagnostic(String message, ParserRuleContext at) {
+        warn(message, at);
+    }
+
+    Type rawTypeOf(ParserRuleContext ctx) {
+        if (ctx == null) {
+            return Type.ERROR;
+        }
+        Type t = types.get(ctx);
+        return t != null ? t : typeOf(ctx);
+    }
+
+    Type annotationTypeOf(BabbleParser.FunctionTypeContext ft) {
+        return primaryAnnotation(ft, scopeOf(ft), false);
+    }
+
+    ScopeNode occurrenceScopeOf(ParserRuleContext ctx) {
+        ScopeNode occ = occurrenceScopes.get(ctx);
+        return occ != null ? occ : scopeOf(ctx);
+    }
+
+    BabbleParser.FunctionLiteralContext enclosingFunctionOf(ParserRuleContext ctx) {
+        return enclosingFunction(ctx);
+    }
+
+    boolean isReassigned(ParserRuleContext decl) {
+        return reassigned.contains(decl);
+    }
+
+    boolean isExportedDef(BabbleParser.DefExpressionContext def) {
+        return isExported(def);
+    }
+
+    Class<?> findJavaClass(String qualifiedName) {
+        return loadTopLevel(qualifiedName);
+    }
+
+    Class<?> findMemberJavaClass(Class<?> enclosing, String simpleName) {
+        for (Class<?> c : enclosing.getClasses()) {
+            if (c.getSimpleName().equals(simpleName) && Modifier.isPublic(c.getModifiers())) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    Object resolveNameForEffects(String name, ScopeNode scope) {
+        return resolveName(null, name, scope);
+    }
+
+    Type typeOfDeclarationForEffects(ParserRuleContext decl) {
+        return typeOfDeclaration(decl);
+    }
+
+    Type implicitTypeForEffects(String name) {
+        Type t = implicitType(name);
+        return t == Type.ANY ? null : t;
+    }
+
+    Type packageMemberTypeForEffects(Type.Package pkg, String name) {
+        return packageMember(pkg, name);
+    }
+
+    Type moduleMemberTypeForEffects(ModuleInterface module, String name) {
+        return exportType(module, name);
+    }
+
+    Object resolveNamespaceMemberDecl(Type nsType, String name) {
+        if (nsType instanceof Type.Package pkg) {
+            for (BabbleParser.PackageExpressionContext p : pkg.packages()) {
+                for (BabbleParser.ExpressionContext st : p.packageBlock.expression()) {
+                    if (st instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(name)) {
+                        return def;
+                    }
+                }
+            }
+            return null;
+        }
+        if (nsType instanceof Type.Module mod && mod.module().checker() != null) {
+            TypeChecker remote = mod.module().checker();
+            return remote.pass.fileScope.names.get(name);
+        }
+        return null;
+    }
+
+    BabbleParser.FunctionLiteralContext literalOf(Type.Function fn) {
+        return functionLiterals.get(fn);
+    }
+
+    BabbleParser.FunctionLiteralContext literalOfAcrossModules(Type.Function fn) {
+        BabbleParser.FunctionLiteralContext local = functionLiterals.get(fn);
+        if (local != null) {
+            return local;
+        }
+        for (TypeChecker owner : owners.values()) {
+            BabbleParser.FunctionLiteralContext remote = owner.functionLiterals.get(fn);
+            if (remote != null) {
+                return remote;
+            }
+        }
+        return null;
+    }
+
+    TypeChecker ownerOf(ParserRuleContext ctx) {
+        if (inFile(ctx)) {
+            return this;
+        }
+        ParserRuleContext root = ctx;
+        while (root.getParent() != null) {
+            root = root.getParent();
+        }
+        return owners.get(root);
+    }
+
+    int parameterIndexForArg(List<Type.Parameter> parameters,
+                             List<BabbleParser.CallParameterContext> arguments,
+                             BabbleParser.CallParameterContext targetArg) {
+        if (targetArg.ID() != null) {
+            String argName = targetArg.ID().getText();
+            for (int i = 0; i < parameters.size(); i++) {
+                if (parameters.get(i).name().equals(argName)) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+        Type.Parameter[] mapped = mapArgumentsToParameters(parameters, arguments);
+        int argPos = arguments.indexOf(targetArg);
+        if (argPos < 0 || argPos >= mapped.length || mapped[argPos] == null) {
+            return -1;
+        }
+        return parameters.indexOf(mapped[argPos]);
+    }
+
+    Method resolvedJavaMethodOf(BabbleParser.CallContext call) {
+        Method m = resolvedJavaMethods.get(call);
+        if (m != null) {
+            return m;
+        }
+        ScopeAnalysis.JavaCallTarget jct = javaCallTargets.get(call);
+        return jct != null ? jct.method() : null;
+    }
+
+    java.lang.reflect.Constructor<?> resolvedJavaConstructorOf(BabbleParser.CallContext call) {
+        java.lang.reflect.Constructor<?> c = resolvedJavaConstructors.get(call);
+        if (c != null) {
+            return c;
+        }
+        ScopeAnalysis.JavaConstructorTarget jct = javaConstructorTargets.get(call);
+        return jct != null ? jct.constructor() : null;
+    }
+
+    ScopeAnalysis.JavaFieldTarget javaFieldTargetOf(ParserRuleContext sel) {
+        return javaFieldTargets.get(sel);
+    }
+
+    boolean hasCallCheck(ParserRuleContext ctx) {
+        return callChecks.containsKey(ctx);
+    }
+
+    List<Type.Parameter> constructorParamsForEffects(TypeNode node) {
+        if (node.ctx instanceof BabbleParser.ClassExpressionContext cls) {
+            List<Type.Parameter> params = constructorParameters(cls);
+            return params != null ? params : List.of();
+        }
+        return List.of();
+    }
+
+    TypeNode.Member findMemberOnNode(TypeNode node, String name) {
+        return findMember(node, name);
+    }
+
+    Type memberTypeForEffects(TypeNode.Member member) {
+        return memberType(member);
+    }
+
+    Type instanceMemberTypeForEffects(Type.Instance inst, TypeNode.Member member) {
+        return substitute(memberType(member), instanceEnv(inst));
+    }
+
+    boolean assignableNoWidening(Type from, Type to) {
+        return assignable(from, to, false);
+    }
+
+    boolean isBuiltinFunction(Type.Function fn) {
+        return fn == INT_CONVERSION
+                || fn == DOUBLE_CONVERSION
+                || fn == ASSERT_FUNCTION
+                || fn == SAME_FUNCTION
+                || fn == CLASSOF_FUNCTION
+                || fn == IMPORT_FUNCTION;
+    }
+
+    NarrowingInfo extractNarrowingForEffects(BabbleParser.ExpressionContext expr) {
+        Narrowing n = extractNarrowing(expr);
+        return new NarrowingInfo(n.whenTrue(), n.whenFalse());
+    }
+
+    Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
+        return effectChecker != null ? effectChecker.exportedJavaEffects() : Map.of();
+    }
+
+    Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> committedJavaEffects() {
+        return effectChecker != null ? effectChecker.committedJavaEffects() : Map.of();
+    }
+
+    Map<ParserRuleContext, EffectChecker.CallableSummary> committedCallableSummaries() {
+        return effectChecker != null ? effectChecker.committedCallableSummaries() : Map.of();
     }
 }

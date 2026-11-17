@@ -17,6 +17,7 @@ import org.antlr.v4.runtime.misc.ParseCancellationException;
 import org.babblelang.analysis.AnalysisSession;
 import org.babblelang.analysis.AnalysisException;
 import org.babblelang.analysis.BlockScopes;
+import org.babblelang.analysis.HostEffects;
 import org.babblelang.analysis.ModuleInterface;
 import org.babblelang.analysis.ModuleLoader;
 import org.babblelang.analysis.ScopeAnalysis;
@@ -41,9 +42,11 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 public class BabbleScriptEngine extends AbstractScriptEngine implements Compilable {
     /**
@@ -117,6 +120,9 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      */
     private final Map<String, ModuleId> compiledAs = new HashMap<>();
 
+    private boolean allowAxioms = true;
+    private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> hostEffectOverrides = new LinkedHashMap<>();
+
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
         super();
         this.factory = factory;
@@ -126,6 +132,104 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     public Namespace getImplicits() {
         return implicits;
+    }
+
+    /**
+     * Controls whether script-level {@code axiom} and {@code impure} Java target declarations
+     * are accepted during type checking (default {@code true}).
+     */
+    public BabbleScriptEngine allowAxioms(boolean allow) {
+        synchronized (moduleLock) {
+            if (this.allowAxioms != allow) {
+                this.allowAxioms = allow;
+                this.moduleCache.clear();
+            }
+        }
+        return this;
+    }
+
+    public boolean allowsAxioms() {
+        synchronized (moduleLock) {
+            return allowAxioms;
+        }
+    }
+
+    /** Registers a per-engine effect assumption for all methods and constructors of {@code target}. */
+    public BabbleScriptEngine assumeEffects(Class<?> target, org.babblelang.effects.Effect... effects) {
+        Objects.requireNonNull(target, "target");
+        HostEffects.OverrideEntry entry = HostEffects.OverrideEntry.fromEffects(HostEffects.TargetKind.CLASS, effects);
+        synchronized (moduleLock) {
+            hostEffectOverrides.put(HostEffects.JavaTarget.ofClass(target), entry);
+            moduleCache.clear();
+        }
+        return this;
+    }
+
+    /** Registers a per-engine effect assumption for all overloads of {@code methodName} on {@code owner}. */
+    public BabbleScriptEngine assumeEffects(Class<?> owner, String methodName, org.babblelang.effects.Effect... effects) {
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(methodName, "methodName");
+        if (!HostEffects.hasMethodNamed(owner, methodName)) {
+            throw new IllegalArgumentException("No such method : " + methodName + " on " + owner.getName());
+        }
+        HostEffects.OverrideEntry entry = HostEffects.OverrideEntry.fromEffects(HostEffects.TargetKind.METHOD, effects);
+        synchronized (moduleLock) {
+            hostEffectOverrides.put(HostEffects.JavaTarget.ofMethod(owner, methodName), entry);
+            moduleCache.clear();
+        }
+        return this;
+    }
+
+    /** Registers a per-engine effect assumption for constructors of {@code target} only. */
+    public BabbleScriptEngine assumeConstructorEffects(Class<?> target, org.babblelang.effects.Effect... effects) {
+        Objects.requireNonNull(target, "target");
+        HostEffects.OverrideEntry entry = HostEffects.OverrideEntry.fromEffects(HostEffects.TargetKind.CONSTRUCTOR, effects);
+        synchronized (moduleLock) {
+            hostEffectOverrides.put(HostEffects.JavaTarget.ofConstructor(target), entry);
+            moduleCache.clear();
+        }
+        return this;
+    }
+
+    /** Marks {@code target} (all constructors and methods) as impure on this engine. */
+    public BabbleScriptEngine markImpure(Class<?> target) {
+        Objects.requireNonNull(target, "target");
+        synchronized (moduleLock) {
+            hostEffectOverrides.put(HostEffects.JavaTarget.ofClass(target), HostEffects.OverrideEntry.impureEntry());
+            moduleCache.clear();
+        }
+        return this;
+    }
+
+    /** Marks one or more named methods on {@code owner} as impure on this engine. */
+    public BabbleScriptEngine markImpure(Class<?> owner, String... methodNames) {
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(methodNames, "methodNames");
+        if (methodNames.length == 0) {
+            throw new IllegalArgumentException("Expected at least one method name");
+        }
+        for (String name : methodNames) {
+            Objects.requireNonNull(name, "methodName");
+            if (!HostEffects.hasMethodNamed(owner, name)) {
+                throw new IllegalArgumentException("No such method : " + name + " on " + owner.getName());
+            }
+        }
+        synchronized (moduleLock) {
+            for (String name : methodNames) {
+                hostEffectOverrides.put(HostEffects.JavaTarget.ofMethod(owner, name), HostEffects.OverrideEntry.impureEntry());
+            }
+            moduleCache.clear();
+        }
+        return this;
+    }
+
+    HostEffects hostEffects() {
+        synchronized (moduleLock) {
+            if (allowAxioms && hostEffectOverrides.isEmpty()) {
+                return HostEffects.DEFAULT;
+            }
+            return new HostEffects(allowAxioms, hostEffectOverrides);
+        }
     }
 
     /**
@@ -565,7 +669,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             throw new ScriptException(e);
         }
         try {
-            scopes = BlockScopes.analyze(file, session, loader != null ? loader : new Loader(sourceName, context, source, null, null));
+            scopes = BlockScopes.analyze(file, session, loader != null ? loader : new Loader(sourceName, context, source, null, null), hostEffects());
         } catch (AnalysisException e) {
             // Reported exactly like the same error found at runtime.
             throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());
