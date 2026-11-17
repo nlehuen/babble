@@ -122,6 +122,11 @@ public final class Values {
         return value;
     }
 
+    /** Unwraps a {@link JavaValue} wrapper to its underlying Java object, if wrapped. */
+    public static Object unwrap(Object value) {
+        return value instanceof JavaValue wrapper ? wrapper.javaValue() : value;
+    }
+
     public static Object[] toJava(Object[] values, Class<?>[] types, ScriptRuntime rt) {
         Object[] result = new Object[values.length];
         for (int i = 0; i < values.length; i++) {

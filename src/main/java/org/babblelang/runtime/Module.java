@@ -15,11 +15,16 @@ public final class Module implements HasMembers {
 
     private final String name;
     private final Namespace root;
+    private final String[] exportNames;
+    private final Slot<Object>[] exportSlots;
     private final Set<String> exports;
 
+    @SuppressWarnings("unchecked")
     public Module(String name, Namespace root, String[] exports) {
         this.name = name;
         this.root = root;
+        this.exportNames = exports.clone();
+        this.exportSlots = (Slot<Object>[]) new Slot<?>[exports.length];
         this.exports = Set.of(exports);
     }
 
@@ -30,6 +35,27 @@ public final class Module implements HasMembers {
 
     public Set<String> exports() {
         return exports;
+    }
+
+    public int exportIndex(String member) {
+        for (int i = 0; i < exportNames.length; i++) {
+            if (exportNames[i].equals(member)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    public Object exportAt(int index) {
+        if (index < 0 || index >= exportNames.length) {
+            throw new BabbleException("No such export index : " + index + " in " + name);
+        }
+        Slot<Object> slot = exportSlots[index];
+        if (slot == null) {
+            slot = root.get(exportNames[index]);
+            exportSlots[index] = slot;
+        }
+        return slot.get();
     }
 
     @Override

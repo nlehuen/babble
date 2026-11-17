@@ -179,8 +179,7 @@ The in-repo scripts pass type checking and run with these checks enforced (`Diff
 ## 6. Not done yet
 
 * Structural object types.
-* **Types for the compiler.** The checker keeps a type per expression, but doesn't publish it yet
-  for typed code generation (bip001_bytecode-compiler.md §10.5).
+* *(Done in `RM001`, [bip001_bytecode-compiler.md §19](bip001_bytecode-compiler.md#19-design--implementation-notes-rm001--typed-primitive-lowering-and-static-dispatch)):* `ScopeAnalysis` now publishes converged `PrimitiveKind`, definite-initialization flags, and static Babble/Java/module targets to `CodeGenerator`.
 
 ## 7. Testing
 

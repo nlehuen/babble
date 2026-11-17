@@ -15,13 +15,19 @@ import java.lang.invoke.MethodHandle;
 public final class CompiledMethod implements BabbleFunction {
     private final MethodBody body;
     private final MethodHandle direct;
+    private final MethodHandle spec;
     private final String[] params;
     private final int required;
     private final String name;
 
     public CompiledMethod(MethodBody body, MethodHandle direct, String[] params, int required, String name) {
+        this(body, direct, null, params, required, name);
+    }
+
+    public CompiledMethod(MethodBody body, MethodHandle direct, MethodHandle spec, String[] params, int required, String name) {
         this.body = body;
         this.direct = direct;
+        this.spec = spec;
         this.params = params;
         this.required = required;
         this.name = name;
@@ -35,6 +41,11 @@ public final class CompiledMethod implements BabbleFunction {
     /** The direct entry point, or null. */
     public MethodHandle direct() {
         return direct;
+    }
+
+    /** The specialized primitive entry point, or null. */
+    public MethodHandle spec() {
+        return spec;
     }
 
     public String[] params() {

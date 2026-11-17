@@ -17,6 +17,7 @@ import java.lang.invoke.MethodHandle;
 public final class CompiledFunction implements BabbleFunction {
     private final FunctionBody body;
     private final MethodHandle direct;
+    private final MethodHandle spec;
     private final Namespace closure;
     private final Object[] captured;
     private final String[] params;
@@ -29,8 +30,13 @@ public final class CompiledFunction implements BabbleFunction {
      * @param captured the cells of the variables of enclosing methods the function uses
      */
     public CompiledFunction(FunctionBody body, MethodHandle direct, Namespace closure, Object[] captured, String[] params, int required, String name) {
+        this(body, direct, null, closure, captured, params, required, name);
+    }
+
+    public CompiledFunction(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, String name) {
         this.body = body;
         this.direct = direct;
+        this.spec = spec;
         this.closure = closure;
         this.captured = captured;
         this.params = params;
@@ -40,12 +46,22 @@ public final class CompiledFunction implements BabbleFunction {
 
     /** What compiled code calls to create the value of a function literal. */
     public static CompiledFunction create(FunctionBody body, MethodHandle direct, Namespace closure, Object[] captured, String[] params, int required, String name) {
-        return new CompiledFunction(body, direct, closure, captured, params, required, name);
+        return new CompiledFunction(body, direct, null, closure, captured, params, required, name);
+    }
+
+    /** What compiled code calls to create the value of a function literal with a specialized primitive entry point. */
+    public static CompiledFunction create(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, String name) {
+        return new CompiledFunction(body, direct, spec, closure, captured, params, required, name);
     }
 
     /** The direct entry point, or null when the function has too many parameters for one. */
     public MethodHandle direct() {
         return direct;
+    }
+
+    /** The specialized primitive entry point, or null. */
+    public MethodHandle spec() {
+        return spec;
     }
 
     public Object[] captured() {

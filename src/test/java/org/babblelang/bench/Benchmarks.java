@@ -36,11 +36,11 @@ public final class Benchmarks {
                 "def counter = () -> ( def c = 0 ; () -> ( c = c + 1 ) ) ; def c = counter() ; def i = 0\n"
                         + "while i < 200000 then ( c() ; i = i + 1 ) ; c()");
         scripts.put("Stack.ba push/pop : objects and methods",
-                stack + "def l = stack.create() ; def i = 0\n"
+                stack + "def l : stack.Stack(int) = stack.create() ; def i = 0\n"
                         + "while i < 20000 then ( l.push(i) ; i = i + 1 )\n"
                         + "while l.size > 0 then ( l.pop() )");
         scripts.put("ArrayList add/get : Java interop",
-                "def l = java.util.ArrayList() ; def i = 0 ; while i < 20000 then ( l.add(i) ; i = i + 1 )\n"
+                "def l : java.util.ArrayList(int) = java.util.ArrayList() ; def i = 0 ; while i < 20000 then ( l.add(i) ; i = i + 1 )\n"
                         + "def s = 0 ; i = 0 ; while i < 20000 then ( s = s + (l.get(i) as int) ; i = i + 1 ) ; s");
 
         System.out.println("| Benchmark | interpret (ms) | compile (ms) | speed-up |");

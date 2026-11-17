@@ -3,8 +3,8 @@
 | | |
 |---|---|
 | **BIP** | 001 |
-| **Status** | Draft. Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (`BIP001-D2`, `BIP001-D3`), `print` writes to the `ScriptContext` writer (`BIP001-D6`), annotations checked at boundaries (§10.3), and the object model ([bip002_object-model.md](bip002_object-model.md), summarised in §8.2). |
-| **Implemented** | §15 steps 1–11: the shared runtime (`BIP001-P0`), block scope and the `return` checks, `BIP001-D6`, `BIP001-D8`, the object model in both modes, the `BIP001-P1` compiler for the whole grammar, `BIP001-P2` (§16, §17) apart from JVM interfaces, `BIP001-P3` (§18), and the type checker with runtime checks (`BIP003-D9`) ([bip003_type-system.md](bip003_type-system.md)), always enabled and rejecting type errors before execution. `BIP001-P4`, ahead-of-time compilation, was designed and done as `BIP005-P5` (`BIP006-P4`–`BIP006-P6`) of [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) (`-compile`). Typed code generation (§10.5) remains. |
+| **Status** | Draft (implemented through `RM001`; JVM interfaces in §17 remain for `RM003`). Decided: block scope (§8.1), a `return` outside a function body is a compile-time error (`BIP001-D2`, `BIP001-D3`), `print` writes to the `ScriptContext` writer (`BIP001-D6`), annotations checked at boundaries (§10.3), and the object model ([bip002_object-model.md](bip002_object-model.md), summarised in §8.2). |
+| **Implemented** | §15 steps 1–11: the shared runtime (`BIP001-P0`), block scope and the `return` checks, `BIP001-D6`, `BIP001-D8`, the object model in both modes, the `BIP001-P1` compiler for the whole grammar, `BIP001-P2` (§16, §17) apart from JVM interfaces, `BIP001-P3` (§18), the static type checker with external boundary checks ([bip003_type-system.md](bip003_type-system.md), [bip008_static-typing.md](bip008_static-typing.md)), and `RM001` typed primitive lowering & static dispatch (§10.5, §19). `BIP001-P4`, ahead-of-time compilation, was designed and done as `BIP005-P5` (`BIP006-P4`–`BIP006-P6`) of [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) (`-compile`). JVM interfaces (§17) remain. |
 | **Date** | 2026-10-11 |
 | **Scope** | `org.babblelang.engine` and a new `org.babblelang.runtime` / `org.babblelang.compiler` |
 | **Tracks** | README, *Planned features → compiled mode with compilation to bytecode using ASM* |
@@ -838,21 +838,13 @@ design (§10.4) depends on none of this and can start now.
 
 ### 10.5 What the compiler gains
 
-`BIP001-P1` and `BIP001-P2` use no type information. In `BIP001-P3`, where types are enforced (`BIP003-D9`):
+`BIP001-P1`, `BIP001-P2`, and `BIP001-P3` used no type information beyond runtime `Types.check` boundary guards (`as`, `setMember`, and `JavaClass` / `Faces`). With mandatory static typing ([bip008_static-typing.md](bip008_static-typing.md)) enforced in both modes (`RM001`), the compiler lowers trustworthy primitive and static-target facts directly via `ScopeAnalysis` (§19):
 
-* `int`, `double` and `bool` locals and parameters become unboxed JVM locals. Arithmetic
-  compiles to `IADD`/`IMUL`/…, which wraps around exactly like today's `Integer` arithmetic,
-  and comparisons compile to `IF_ICMPxx`/`DCMPx`.
-* A typed function gets a specialised static entry point with a primitive signature, next to
-  the generic boxed entry. The boxed entry checks and unboxes its arguments, then calls the
-  specialised one. A call site whose callee is statically known (a `def` that the `Resolver`
-  sees is never reassigned) calls the specialised entry directly.
-* A Java call whose receiver and argument types are known is resolved once, at compile time,
-  and emitted as `INVOKEVIRTUAL`/`INVOKESTATIC`/`INVOKEINTERFACE`, with no reflection at all.
-* Code typed `dynamic` keeps the guarded `invokedynamic` sites from §9.
-* `SimpleBinaryOpsOptimizer` folds `x * 0` to `0` without checking types, which is wrong when
-  `x` is a `double` (`0.0`) or a `string` (an error at runtime). With types available, it can
-  restrict those rewrites to `int`.
+* Non-nullable `int`, `double`, and `bool` locals, closure cells (`IntCell`/`DoubleCell`/`BoolCell`), and compiled class fields (`I`/`D`/`Z`) are stored unboxed. Numeric arithmetic (`+`, `-`, `*`, `/`, unary `-`, compound `op=`) and comparisons compile directly to JVM primitive instructions (`IADD`, `DADD`, `IF_ICMPxx`, `Double.compare`), bypassing `Operators` and `instanceof BabbleInstance` guards whenever the operand is statically numeric.
+* Functions and class methods with primitive parameters or results get specialized `$spec` entry points (`fn$N$name$spec`, `m$name$spec`) alongside the existing `$direct` (`Object`-signature `MethodHandle` invariant) and array `$call` adapters. Direct intra-file calls, `recurse(...)`, and `this.m(...)` call `$spec` directly without boxing; cross-module and dynamic typed sites can use typed `invokedynamic` descriptors `(Callable, ScriptRuntime, CallSite, <prim...>)<prim>`.
+* Statically resolved Java method calls, constructors, array `.length`, and public field accesses emit direct `INVOKEVIRTUAL`/`INVOKESTATIC`/`INVOKEINTERFACE`/`NEW`/`ARRAYLENGTH`/`GETFIELD`/`PUTFIELD`/`GETSTATIC`/`PUTSTATIC`, with no reflection or `JavaLinker` guards at the call site.
+* Static module imports bound to never-reassigned `def`s (`m.x`, `m.f`) compile to indexed `Module.exportAt(index)` slot reads (`BIP005` §8.3), and cross-classloader primitive field inline caches inspect the JVM field descriptor via `MethodHandles.privateLookupIn` (`BIP004` §8).
+* `ScopeAnalysis` publishes converged `TypeChecker` facts (`PrimitiveKind`, definite-initialization flags, resolved Java/Babble/Module targets) directly into code generation, superseding a standalone AST `Unboxing` pass (`BIP008` §7.1). Algebraic constant folding / identity simplifications (`x + 0`, `x - 0`, `x * 1`, `x * 0`, literal `int` arithmetic) are restricted strictly to provable `int` operands so `double` signed-zero/NaN semantics (`x * 0.0` preserving `-0.0`/`NaN`) and runtime type errors on non-numeric types stay exact.
 
 ### 10.6 Testing
 
@@ -1231,3 +1223,40 @@ under the same harness):
 
 The interpreter column includes the overload cache, which took the ArrayList benchmark from
 97 ms to 25 ms in that mode too.
+
+## 19. Design & implementation notes (`RM001` : Typed primitive lowering and static dispatch)
+
+`RM001` connects `BIP008`'s mandatory static type checker directly to bytecode generation and runtime inline caches across `BIP001` (§10.5, §18), `BIP002` (§4.11), `BIP003` (§6), `BIP004` (§8), `BIP005` (§8.3), and `BIP008` (§7.1).
+
+* **Design choice : `ScopeAnalysis` publication instead of an AST `Unboxing` pass.** `TypeChecker` already runs a fixed-point loop (`up to 64` passes) resolving every expression's narrowed type, declaration type, widening conversions (`widensToDouble`), runtime boundary descriptors (`checkedTypes`), and unambiguous Babble/Java/module targets. Rather than duplicating type logic in a separate AST rewrite (`BIP008` §7.1), `TypeChecker` publishes converged static facts once into `ScopeAnalysis` after the fixed-point loop and `checkInterfaces()` complete (and freezes declaration/member types into `AnalysisSession` across interactive REPL inputs):
+  - `ScopeAnalysis.PrimitiveKind` (`NONE`, `INT`, `DOUBLE`, `BOOL`), returned only for exact non-nullable `Type.INT`, `Type.DOUBLE`, and `Type.BOOL` (nullable `int?`, unions such as `int | double`, and `any` remain `NONE` at storage boundaries, while flow-narrowed reads inside e.g. `if x != null` get an expression `PrimitiveKind` of `INT` and unbox at use).
+  - Definite-initialization flags distinguishing declarations that may be observed before their initializer executes (recursive/forward references or closure capture before init) from lexically initialized definitions, omitting redundant `def$N` guards when safe.
+  - Resolved static targets : `JavaCallTarget`, `JavaConstructorTarget`, `JavaFieldTarget`, `isArrayLength`, `BabbleCallTarget` (local functions and class methods), and `ModuleExportTarget(index, name)`.
+* **Storage representation & `$spec` entry points.**
+  - *Locals & `while` results :* `LOCAL` variables with `declarationKind` `INT`/`DOUBLE`/`BOOL` live directly in `I`/`D`/`Z` JVM local slots (allocating 2 local slots per `double` across locals, parameters, and `maxLocals`).
+  - *Closure cells :* `CELL`/`CAPTURED` variables of `PrimitiveKind != NONE` use dedicated `org.babblelang.runtime.IntCell`, `DoubleCell`, and `BoolCell` holders in `babble-runtime`, avoiding boxed `Integer`/`Double`/`Boolean` allocation on every closure mutation (e.g., `Counter.ba`).
+  - *Compiled class fields :* Members of `BabbleInstance` subclasses with `PrimitiveKind != NONE` become primitive fields (`int x;`, `double y;`, `boolean b;`), keeping `ClassShape` `fieldNames` exact (`Point` -> `x, y, norm`; `C` -> `next, $v$start`). Header parameters and methods are initialized before body code runs and carry no `$defined` bit. Only classes that have unboxed primitive body `def` fields emit a compact `int $defined` bitmask and override `BabbleInstance.isMemberDefined(int index)` so `Member used before definition` stays exact even if `this` escapes during construction. `field(int)` and `setField(int, Object)` box/unbox at the boundary.
+  - *Specialized entry points (`$spec`) :* Functions and class methods that have at least one primitive parameter or primitive return type emit a specialized entry point `fn$N$name$spec` / `m$name$spec` alongside the existing `$direct` (`Object`-parameter `MethodHandle` invariant tested by `BabbleCompilerTestCase`) and `$call` adapters. `$direct` handles `Arguments.MISSING`, parameter defaults, and `binder.rejectLeftovers()`, then delegates directly to `$spec` with zero body duplication. `CompiledFunction` and `CompiledMethod` optionally carry a `MethodHandle spec` handle so cross-module and polymorphic typed `invokedynamic` call sites (`Bootstrap.call` with primitive `MethodType` `(Callable, ScriptRuntime, CallSite, <prim...>)<prim>`) also stay unboxed end-to-end when arity and types match. Intra-file direct calls, `recurse(...)`, and `this.m(...)` emit direct `INVOKESTATIC`/`INVOKEVIRTUAL` to `$spec`.
+* **Expressions, operators, control flow & edge-case parity.**
+  - Expressions emit onto the operand stack in their natural `PrimitiveKind` (`I`, `D`, `Z`, or `L` for reference `NONE`). Adapters `emitAs(expr, expectedKind)` box (`Integer.valueOf`/`Double.valueOf`/`Boolean.valueOf`), unbox (`((Integer) v).intValue()`), and widen (`I2D`) only at representation transitions.
+  - Numeric `+`, `-`, `*`, `/`, unary `-`, compound `op=`, `<`, `<=`, `>`, `>=` compile directly to `IADD`/`DADD`/..., `ISUB`/`DSUB`, `IMUL`/`DMUL`, `I2D` + `DDIV`, `INEG`/`DNEG`, `IF_ICMPxx`, and `Double.compare` + branch (matching `Operators.compare` exactly for `NaN` and `-0.0` vs `0.0`).
+  - `==` / `!=` / `<>` on matching unboxed `int`/`bool`, unboxed `int` vs `double` (using `I2D`), or unboxed `double` (using `Double.compare(a, b) == 0`, preserving `-0.0 == 0.0` and `NaN != NaN` as in `Operators.equal`), compile inline; mixed/reference operands delegate to `Operators.equal`.
+  - Boolean `not`, short-circuit `and`/`or` (including narrowed operands), and `if`/`while` conditions branch directly on `Z` (`IFEQ`/`IFNE`) without calling `Truth.test`. `classof(expr)` preserves `BIP002` §4.11 behavior by boxing primitive arguments cleanly to `Object`.
+  - Constant folding / identity rewrites (`x + 0`, `x - 0`, `x * 1`, `x * 0`, literal `int` arithmetic) trigger strictly when both operands are provably `INT` (preserving side effects on evaluated sub-expressions and never rewriting `double` `-0.0`/`NaN` or erroneous dynamic values).
+* **Static Java dispatch.** When `TypeChecker` resolves an unambiguous public, accessible Java method, constructor, array `.length`, or public field (with arguments statically guaranteed applicable so wildcard `any` values still hit `Overloads` error messages), `CodeGenerator` emits direct `INVOKEVIRTUAL`/`INVOKESTATIC`/`INVOKEINTERFACE`, `NEW` + `INVOKESPECIAL` (+ `JavaObject.of(...)`), `ARRAYLENGTH`, or `GETFIELD`/`PUTFIELD`/`GETSTATIC`/`PUTSTATIC` using `JavaTypes.accessible(method)`, unwrapping `JavaValue` wrappers on receivers where needed (`Values.unwrap`), converting arguments via `Values.toJava`/`unboxed`, checking boxed wrapper returns (`JavaTypes.checkBoxed`) and generic `Types.check` boundaries, and catching non-`BabbleException` `Throwable`s via `JavaTypes.wrapInvocationException` so checked/unchecked exception behavior matches reflection (`JavaMethod`/`JavaClass`) identically.
+* **Indexed module imports & cross-classloader fields.** `Module` indexes exported slots by declaration order (`Module.exportAt(int index)`), letting static module member reads (`m.x`, `m.f`) on non-cyclic exports bypass `Set.contains` + `HashMap.get`. Across separate module or REPL session `ScriptClassLoader`s, `Bootstrap.SelectCache.instanceMember` inspects each field's runtime JVM type (`int`, `double`, `boolean`, or `Object`) via `MethodHandles.privateLookupIn`, checks `BabbleInstance.isMemberDefined(index)` for primitives when needed, and adapts the getter handle to `Object`.
+
+**Benchmarks after `RM001`** (same `Benchmarks` harness, JDK 21, uncontended; baseline is `c5a17bb` before `RM001`):
+
+| Benchmark | interpret (ms) | baseline compile (ms) | `RM001` compile (ms) | `RM001` vs interpret |
+|---|---:|---:|---:|---:|
+| fib(25) : calls and arithmetic | 122.4 | 2.3 | 1.7 | 71.4x |
+| while loop : locals and while | 113.2 | 1.9 | 0.1 | 769.4x |
+| Counter.ba closure : captured variables | 113.1 | 3.4 | 2.8 | 40.1x |
+| Stack.ba push/pop : objects and methods | 54.9 | 2.7 | 2.8 | 19.5x |
+| ArrayList add/get : Java interop | 27.2 | 3.0 | 2.0 | 13.3x |
+
+End-to-end ray tracers (same machine, JDK 21):
+* `examples/raytracer-argon/raytracer.ba`: **46.1 s** wall-clock (`50.3 s` user), down from `59.3 s` (~22% faster), rendering `examples/raytracer-argon/scene.ppm` byte-for-byte identically.
+* `examples/raytracer-fable/raytracer.ba`: **65.9 s** render (`67.9 s` total wall-clock on 16 threads), down from `72.9 s` (~10% faster without yet unboxed cross-object `vec3` fields/`obj.x` call-site unboxing).
+

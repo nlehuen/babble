@@ -294,30 +294,24 @@ arguments are known.
 * Errors a program could reach before and no longer can (`Not a number : x` on a Babble value,
   `x is not callable`, …) stay in the runtime, as the backstop for Java values and casts.
 
-### 7.1 Unboxed arithmetic
+### 7.1 Unboxed arithmetic *(Implemented in `RM001`)*
 
-The unboxed-arithmetic work (not merged yet ; its design is to land in `bip001_bytecode-compiler.md`)
-computes on unboxed `int`, `double` and `bool` values in compiled code. It can't trust the
-checker's types today (a `double` may be an int at runtime, 4.4 ; a parameter typed from its
-context is checked by nothing), so it adds a fifth analysis pass, `Unboxing`, that trusts only
-the `BIP003-D9` checks, literals and operators on such values. With this design, a static `int`,
-`double` or `bool` is the fact it needs :
+`RM001` ([bip001_bytecode-compiler.md §19](bip001_bytecode-compiler.md#19-design--implementation-notes-rm001--typed-primitive-lowering-and-static-dispatch))
+implements unboxed `int`, `double`, and `bool` arithmetic, locals, closure cells (`IntCell`/`DoubleCell`/`BoolCell`),
+class fields (`I`/`D`/`Z`), `$spec` specialized entry points, typed `invokedynamic` calls, and direct static Java
+dispatch by reading converged `TypeChecker` results directly from `ScopeAnalysis` (without a standalone `Unboxing` pass) :
 
-* At `BIP008-P4`, `ScopeAnalysis.kind` (the pass's interface to `CodeGenerator`, which doesn't change) is
-  filled from the checker's types instead of from `Unboxing`. What goes : the reasoning about
-  which class an instance or which function a callee is certain to be, the fixpoint over
-  reassigned variables (4.3 is the same inference), and the `instanceof BabbleInstance` branch on
-  every arithmetic operator, since the left operand's type says statically whether it is
-  numbers or an operator method.
-* What stays : a primitive local (and later field) has no undefined state, so "used only after
-  its definition" still decides where a value can live, and captured variables keep their
-  cells ; comparisons keep `Double.compare`, to agree with `Operators` on NaN and the zeros.
-* Measured there : the fable ray tracer with annotations ran a third slower than without (137 s
-  against 105 s), from runtime checks alone ; nominal checks were a quarter of argon's time
-  before that branch stopped comparing class ids as strings, and checks were still about a
-  quarter of its wall-clock time. Removing them in `BIP008-P5` cut `examples/raytracer-argon/raytracer.ba`
-  from 78.7 s to 58.3 s (byte-identical to `scene.ppm`) and sped up `Stack.ba` in `Benchmarks`
-  from 1.7 ms to 1.3 ms.
+* `ScopeAnalysis.primitiveKind(node)` and `declarationKind(node)` expose exact non-nullable `int`, `double`, and `bool`
+  types (while nullable `int?`/`double?`/`bool?` and unions stay boxed at storage boundaries and unbox after narrowing);
+  the left operand's static type skips `instanceof BabbleInstance` checks on arithmetic operators.
+* A definite-initialization bitmask (`$defined` / `BabbleInstance.isMemberDefined`) preserves exact
+  `Member used before definition` checks for unboxed body fields when `this` escapes during construction;
+  floating-point comparisons use `Double.compare` to match `Operators` on `NaN` and signed zero.
+* Measured in `BIP008-P5` : removing redundant internal `BIP003-D9` checks cut `examples/raytracer-argon/raytracer.ba`
+  from 78.7 s to 58.3 s (byte-identical to `scene.ppm`) and sped up `Stack.ba` in `Benchmarks` from 1.7 ms to 1.3 ms.
+* Measured in `RM001` (uncontended, JDK 21) : unboxed lowering + static Java dispatch further cut `argon` from 59.3 s to
+  **46.1 s**, `fable` from 72.9 s to **67.9 s**, `fib(25)` to **1.7 ms**, `while loop` to **0.1 ms**, and `ArrayList`
+  interop to **2.0 ms** (`bip001_bytecode-compiler.md` §19).
 
 ## 8. Plan
 

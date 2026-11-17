@@ -18,25 +18,26 @@ Roadmap stages group related work across proposals into sequential milestones:
 
 | BIP | Title | Date | Status | Document |
 |---|---|---|---|---|
-| **BIP001** | Compiling Babble to JVM bytecode | 2026-10-11 | Draft (`BIP001-D1`–`BIP001-D8` decided; `BIP001-Q1`–`BIP001-Q9` → `BIP003-D1`–`BIP003-D9`; `BIP001-P0a`/`P0b`–`BIP001-P3` implemented apart from JVM interfaces in §17 and typed/unboxed codegen in §10.5/§18; `BIP001-P4` CLI done as `BIP006-P4`–`BIP006-P6`, Maven goal deferred to `BIP006-D8`) | [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) |
-| **BIP002** | The Babble object model | 2026-10-11 | Implemented (`BIP002-D1`–`BIP002-D15` decided, resolving `BIP002-Q1`–`BIP002-Q9`; `BIP002-P1`–`BIP002-P6` implemented in interpreter and `BIP001-P1`/`P2`; JVM interfaces §7.3, direct Java-interface bridges §9.5–§9.6, and `LambdaMetafactory` callback adapters §9.3 remain) | [bip002_object-model.md](bip002_object-model.md) |
-| **BIP003** | The type system | 2026-10-24 | Gradual rules, `dynamic`, and internal `BIP003-D9` checks replaced by `BIP008` (`BIP003-D1`–`BIP003-D8` settled `BIP001-Q1`–`BIP001-Q8`; runtime checks `BIP003-D9` remain at `as` casts, Java boundaries, and `setMember`; structural object types and publishing expression types to the compiler in §6 remain) | [bip003_type-system.md](bip003_type-system.md) |
-| **BIP004** | The interactive mode | 2026-11-10 | Implemented (`BIP004-D1` nested session scopes; sessions keep one `Modules` per `BIP006-P1` and close inference per input per `BIP008-D5`; line editing/history/completion, `:load`, value type display, and cross-input direct field access in §8 remain) | [bip004_repl.md](bip004_repl.md) |
-| **BIP005** | Modules | 2026-11-11 | Accepted & implemented (`BIP005-Q1`–`BIP005-Q8` → `BIP005-D1`–`BIP005-D8`; `BIP005-P1`–`BIP005-P5` implemented with `P4`–`P5` via `BIP006`; destructuring `BIP005-D3`, search path/stdlib `BIP005-D5`, and static-import slot optimization §8.3 deferred) | [bip005_modules.md](bip005_modules.md) |
+| **BIP001** | Compiling Babble to JVM bytecode | 2026-10-11 | Draft (implemented through `RM001`; `BIP001-D1`–`BIP001-D8` decided; `BIP001-Q1`–`BIP001-Q9` → `BIP003-D1`–`BIP003-D9`; `BIP001-P0a`/`P0b`–`BIP001-P3` and `RM001` typed/unboxed codegen & static dispatch in §10.5/§19 implemented; JVM interfaces in §17 remain for `RM003`; `BIP001-P4` CLI done as `BIP006-P4`–`BIP006-P6`, Maven goal deferred to `BIP006-D8`) | [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) |
+| **BIP002** | The Babble object model | 2026-10-11 | Implemented (`BIP002-D1`–`BIP002-D15` decided, resolving `BIP002-Q1`–`BIP002-Q9`; `BIP002-P1`–`BIP002-P6` implemented in interpreter and `BIP001-P1`/`P2`, with §4.11 unboxed `classof` parity landed in `RM001`; JVM interfaces §7.3, direct Java-interface bridges §9.5–§9.6, and `LambdaMetafactory` callback adapters §9.3 remain for `RM003`) | [bip002_object-model.md](bip002_object-model.md) |
+| **BIP003** | The type system | 2026-10-24 | Gradual rules, `dynamic`, and internal `BIP003-D9` checks replaced by `BIP008` (`BIP003-D1`–`BIP003-D8` settled `BIP001-Q1`–`BIP001-Q8`; runtime checks `BIP003-D9` remain at `as` casts, Java boundaries, and `setMember`; `RM001` now publishes expression types and primitive storage kinds to the compiler via `ScopeAnalysis`; structural object types in §6 remain) | [bip003_type-system.md](bip003_type-system.md) |
+| **BIP004** | The interactive mode | 2026-11-10 | Implemented (`BIP004-D1` nested session scopes; sessions keep one `Modules` per `BIP006-P1`, close inference per input per `BIP008-D5`, and support cross-classloader unboxed fields & `$spec` typed calls across inputs per `RM001`; line editing/history/completion, `:load`, and value type display in §8 remain) | [bip004_repl.md](bip004_repl.md) |
+| **BIP005** | Modules | 2026-11-11 | Accepted & implemented (`BIP005-Q1`–`BIP005-Q8` → `BIP005-D1`–`BIP005-D8`; `BIP005-P1`–`BIP005-P5` implemented with `P4`–`P5` via `BIP006`; `RM001` added indexed `Module.exportAt` reads for static imports in §8.3; destructuring `BIP005-D3` and search path/stdlib `BIP005-D5` remain) | [bip005_modules.md](bip005_modules.md) |
 | **BIP006** | Module sources and ahead-of-time compilation | 2026-11-14 | Accepted & implemented (`BIP006-Q1`–`BIP006-Q8` → `BIP006-D1`–`BIP006-D8`; `BIP006-P1`–`BIP006-P6` implemented, covering `BIP001-P4` and `BIP005-P4`–`P5`; `babblec` Maven plugin `BIP006-D8`, incremental `babblec`, and GraalVM native image §9 deferred) | [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) |
 | **BIP007** | Function Effects and Algebraic Properties in Babble | 2026-11-14 | Draft (not implemented; depends on `BIP008-P1`–`BIP008-P7`, now unblocked; `BIP007-Q1`–`BIP007-Q4` open; `BIP007-P1`–`BIP007-P3` planned; `threadsafe` & parallelization in §10) | [bip007_effects.md](bip007_effects.md) |
-| **BIP008** | Removing dynamic typing | 2026-11-16 | Accepted & implemented (`BIP008-Q1`–`BIP008-Q7` → `BIP008-D1`–`BIP008-D7`; `BIP008-P1`–`BIP008-P5`, `BIP008-P6a`, `BIP008-P6b`, `BIP008-P7` implemented; unblocks typed/unboxed codegen §7.1 and `BIP007`; array indexing syntax §5.1 remains) | [bip008_static-typing.md](bip008_static-typing.md) |
+| **BIP008** | Removing dynamic typing | 2026-11-16 | Accepted & implemented (`BIP008-Q1`–`BIP008-Q7` → `BIP008-D1`–`BIP008-D7`; `BIP008-P1`–`BIP008-P5`, `BIP008-P6a`, `BIP008-P6b`, `BIP008-P7` implemented; `RM001` delivered typed/unboxed codegen §7.1; `BIP007` is unblocked and array indexing syntax §5.1 remains) | [bip008_static-typing.md](bip008_static-typing.md) |
 
 ## Cross-BIP baseline
 
-With `BIP001-P0`–`BIP001-P3`, `BIP002-P1`–`BIP002-P6`, `BIP004`, `BIP005-P1`–`BIP005-P5`, `BIP006-P1`–`BIP006-P6`, and `BIP008-P1`–`BIP008-P7` landed, Babble has:
+With `BIP001-P0`–`BIP001-P3`, `BIP002-P1`–`BIP002-P6`, `BIP004`, `BIP005-P1`–`BIP005-P5`, `BIP006-P1`–`BIP006-P6`, `BIP008-P1`–`BIP008-P7`, and `RM001` landed, Babble has:
 
 - A shared, `java.base`-only runtime (`BIP001-P0`, `BIP006-P1`) and dual-mode execution (parse-tree `Interpreter` + ASM `CodeGenerator` with `invokedynamic` call/select/Java inline caches).
 - Classes, value classes, objects, interfaces with default methods, and two-way Java interop via `Proxy` faces (`BIP002`).
 - Nested interactive sessions (`BIP004`), cross-file modules with `ModuleSource` abstractions (`BIP005`, `BIP006-P2`–`P3`), and reproducible AOT jars (`babblec` `-compile`, `BIP006-P4`–`P6`).
 - Mandatory static typing (`BIP008`) with `any`/`any?`, `T?`, `A | B`, `?.`, `as`, flow-sensitive narrowing, generics (`(...)`), call-site parameter inference, and `int`→`double` conversion on numeric joins (`BIP008-D7`), eliminating internal `BIP003-D9` runtime checks.
+- Typed primitive lowering & static dispatch (`RM001`): unboxed `int`/`double`/`bool` locals, closure cells (`IntCell`/`DoubleCell`/`BoolCell`), compiled class fields, `$spec` entry points, typed `invokedynamic` calls, direct static Java dispatch, indexed module exports, and cross-classloader primitive field inline caches.
 
-Because `BIP008` guarantees trustworthy static types before code generation runs, two major areas are now directly unblocked: **typed/unboxed bytecode generation & JVM interface lowering** (`BIP001` §10.5/§17, `BIP002` §7.3/§9.3/§9.5, `BIP003` §6, `BIP008` §7.1) and **effect/ownership analysis & compiler optimizations** (`BIP007`).
+Two major next areas remain open: **JVM interface lowering & proxy-free packaging (`RM003`)** (`BIP001` §17, `BIP002` §7.3/§9.3/§9.5, `BIP006` §9) and **effect/ownership analysis & compiler optimizations (`RM002`/`RM004`)** (`BIP007`).
 
 ## Roadmap
 
@@ -44,11 +45,11 @@ The stages below organize remaining work and planned phases from `BIP001`–`BIP
 
 ### Overview
 
-| Stage | Transversal Slice | Spans (BIPs / Areas) | Prerequisite(s) | Readiness & Parallelism |
+| Stage | Transversal Slice | Spans (BIPs / Areas) | Prerequisite(s) | Status & Parallelism |
 |---|---|---|---|---|
-| **RM001** | Typed Primitive Lowering & Static Dispatch | `BIP001` §10.5/§18, `BIP002` §4.11, `BIP003` §6, `BIP004` §8, `BIP005` §8.3, `BIP008` §7.1 | `BIP008-P4`–`P7` | Ready once §10.5 / `BIP008` §7.1 design note lands in `BIP001` |
-| **RM002** | Core Effect & `axiom` Contract Layer | `BIP007` §9.1–§9.2 (`P1`), `BIP002`, `BIP004`, `BIP005`, `BIP006`, `BIP008` | `BIP008-P1`–`P7` | Front-end only (zero `babble-runtime` changes); can run in parallel with `RM001` once `BIP007-Q1`–`Q4` are settled |
-| **RM003** | JVM Interfaces, Proxy-Free Adapters & Native Image Packaging | `BIP001` §17, `BIP002` §7.3/§9.3/§9.5–§9.6/`P6`/§13, `BIP006` §9 | `RM001`, `BIP006-P4`–`P6` | Removing `Proxy` in interfaces & `Faces` directly unblocks GraalVM native images (`BIP006` §9) |
+| **RM001** | Typed Primitive Lowering & Static Dispatch | `BIP001` §10.5/§19, `BIP002` §4.11, `BIP003` §6, `BIP004` §8, `BIP005` §8.3, `BIP008` §7.1 | `BIP008-P4`–`P7` | **Implemented** |
+| **RM002** | Core Effect & `axiom` Contract Layer | `BIP007` §9.1–§9.2 (`P1`), `BIP002`, `BIP004`, `BIP005`, `BIP006`, `BIP008` | `BIP008-P1`–`P7` | Front-end only (zero `babble-runtime` changes); ready once `BIP007-Q1`–`Q4` are settled |
+| **RM003** | JVM Interfaces, Proxy-Free Adapters & Native Image Packaging | `BIP001` §17, `BIP002` §7.3/§9.3/§9.5–§9.6/`P6`/§13, `BIP006` §9 | `RM001`, `BIP006-P4`–`P6` | Unblocked by `RM001`; removing `Proxy` in interfaces & `Faces` directly unblocks GraalVM native images (`BIP006` §9) |
 | **RM004** | Ownership Lattice, Bytecode Optimization & Axiom Verification | `BIP007` §9.2 (`P2`–`P3`), `BIP001` §10.5, `BIP003`/`BIP008` (`ScopeAnalysis`, `Narrowing`), `BIP006` (CI) | `RM001`, `RM002` | Connects typed codegen (`RM001`) with effects (`RM002`) |
 | **RM005** | Language, Import & Collection Ergonomics + Structural Types | `BIP005-D3`, `BIP008` §5.1, `BIP002`, `BIP003` §6 (+ [README](../../README.md)) | `BIP005-P3`, `BIP008-P6b`–`P7`; `RM003` for structural types | Destructuring, array indexing & loop syntax need small BIPs and can be pulled ahead independently |
 | **RM006** | Standard Library, Interactive Mode & Maven/Incremental Tooling | `BIP005-D5`, `BIP006-P3`/`D8`/§9, `BIP001` §9, `BIP004` §8, `BIP007`, `BIP008` | `BIP004`, `BIP006-P3`–`P6`; `RM002`/`RM004`/`RM005` for effect-contracted `std/` | Pure `Repl` UX and `babble-maven-plugin` can be pulled ahead independently |
@@ -56,19 +57,19 @@ The stages below organize remaining work and planned phases from `BIP001`–`BIP
 
 ---
 
-### RM001 — Typed Primitive Lowering & Static Dispatch
+### RM001 — Typed Primitive Lowering & Static Dispatch *(Implemented)*
 
-Exploits `BIP008`'s non-`dynamic` static types across analysis publication, primitive codegen, Java interop dispatch, and module/session field specialization so `CodeGenerator` eliminates redundant boxing, reflection, and dynamic call fallbacks.
+Exploits `BIP008`'s non-`dynamic` static types across analysis publication, primitive codegen, Java interop dispatch, and module/session field specialization so `CodeGenerator` eliminates redundant boxing, reflection, and dynamic call fallbacks. See [bip001_bytecode-compiler.md §19](bip001_bytecode-compiler.md#19-design--implementation-notes-rm001--typed-primitive-lowering-and-static-dispatch) for design notes and benchmark results.
 
-- **Spans:** [BIP001](bip001_bytecode-compiler.md) (§10.5, §18), [BIP002](bip002_object-model.md) (§4.11), [BIP003](bip003_type-system.md) (§6), [BIP004](bip004_repl.md) (§8), [BIP005](bip005_modules.md) (§8.3), [BIP008](bip008_static-typing.md) (§7.1)
+- **Spans:** [BIP001](bip001_bytecode-compiler.md) (§10.5, §19), [BIP002](bip002_object-model.md) (§4.11), [BIP003](bip003_type-system.md) (§6), [BIP004](bip004_repl.md) (§8), [BIP005](bip005_modules.md) (§8.3), [BIP008](bip008_static-typing.md) (§7.1)
 - **Depends on:** `BIP008-P4`–`P7`
-- **Design step first:** Land the unboxed-arithmetic design section in [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) (per `BIP008` §7.1), superseding a standalone `Unboxing` pass.
-- **Deliverables across topics:**
-  - *Analysis publication (`BIP003` §6, `BIP008` §7.1):* Publish resolved expression types and primitive storage kinds (`int`, `double`, `bool`) from `TypeChecker` via `ScopeAnalysis`.
-  - *Primitive codegen (`BIP001` §10.5/§18, `BIP002` §4.11):* Unbox non-nullable `int`, `double`, and `bool` locals, parameters, and class fields; emit primitive JVM arithmetic (`IADD`, `IMUL`, `DADD`, etc., omitting `instanceof BabbleInstance` guards when the left operand is statically numeric) and comparisons (`IF_ICMPxx`, `Double.compare` for NaN/signed-zero parity with `Operators`); generate specialized primitive entry points alongside boxed `Callable` adapters; apply type-guarded constant folding only to provable `int`s (`BIP001` §10.5); preserve `classof(1)`/`classof(1.5)` behavior (`BIP002` §4.11).
-  - *Static Java dispatch (`BIP001` §10.5):* Emit direct `INVOKEVIRTUAL`/`INVOKESTATIC`/`INVOKEINTERFACE` and direct field reads/writes whenever `TypeChecker` statically resolves a Java overload or field, bypassing `JavaLinker`/`Overloads` reflection on typed sites.
-  - *Static imports & session fields (`BIP005` §8.3, `BIP004` §8):* Specialize static module imports bound to never-reassigned `def`s (`m.x`, `m.f(...)`) to constant slot reads and guarded direct calls (`BIP005` §8.3); extend direct/typed member access cleanly across compiled module and REPL session class loaders (`BIP004` §8; `Bootstrap` already inline-caches cross-loader field getters via `MethodHandles.privateLookupIn`).
-- **Exit criteria:** Dual-mode suite and `CheckClassAdapter` pass; `argon` renders `scene.ppm` byte for byte; measurable throughput gains on `Benchmarks` and both ray tracers.
+- **Landed across topics:**
+  - *Analysis publication (`BIP003` §6, `BIP008` §7.1):* `TypeChecker` publishes converged `PrimitiveKind`, definite-initialization flags, and static Babble/Java/Module targets into `ScopeAnalysis` (and freezes types in `AnalysisSession`), superseding a standalone AST `Unboxing` pass.
+  - *Primitive codegen (`BIP001` §10.5/§19, `BIP002` §4.11):* Unboxed non-nullable `int`, `double`, and `bool` locals, closure cells (`IntCell`/`DoubleCell`/`BoolCell`), and class fields (`$defined` bitmask for primitive body `def`s); primitive JVM arithmetic and comparisons (`Double.compare` for NaN/signed-zero parity); `$spec` entry points (`fn$N$name$spec`, `m$name$spec`) alongside `$direct` and `$call`; typed `Bootstrap.call` sites; type-guarded `int` constant folding; boxed `classof(1)`/`classof(1.5)`/`classof(true)` parity (`BIP002` §4.11).
+  - *Static Java dispatch (`BIP001` §10.5):* Direct `INVOKEVIRTUAL`/`INVOKESTATIC`/`INVOKEINTERFACE`/`NEW`/`ARRAYLENGTH`/field `GET*`/`PUT*` with `Values.unwrap`, `JavaTypes.checkBoxed`/`wrapInvocationException`, and `Types.check` generic boundary parity.
+  - *Static imports & session fields (`BIP005` §8.3, `BIP004` §8):* Indexed `Module.exportAt(index)` reads for non-cyclic static imports, and cross-classloader primitive field getters in `Bootstrap.SelectCache` (`MethodHandles.privateLookupIn`).
+- **Verification:** Dual-mode `mvn -B package` (`interpret` + `compile`/`CheckClassAdapter`, including `RuntimeBoundaryTestCase`), bytecode/unit/differential/REPL tests, `-format -check`, byte-identical `examples/raytracer-argon/scene.ppm` (`59.3 s` → `46.1 s`), `raytracer-fable` (`72.9 s` → `67.9 s` wall / `65.9 s` render), and `Benchmarks` (`while loop` `0.1 ms` / `769.4x` vs interpret, `fib(25)` `1.7 ms` / `71.4x`, `ArrayList` `2.0 ms` / `13.3x`).
+
 
 ### RM002 — Core Effect & `axiom` Contract Layer
 

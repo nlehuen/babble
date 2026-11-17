@@ -36,4 +36,11 @@ public final class Frames {
     public static void checkAssignable(Object current, String name) {
         defined(current, name);
     }
+
+    /** Checks an out-of-band definition flag for an unboxed primitive variable. */
+    public static void checkDefined(boolean defined, String name) {
+        if (!defined) {
+            throw new BabbleException("Name used before definition : " + name);
+        }
+    }
 }

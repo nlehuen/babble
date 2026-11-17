@@ -199,7 +199,14 @@ public class DifferentialTestCase {
                 "def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b\") ; def id = (x : any) : any -> ( x ) ; id(parts).length = 1",
                 "def pick = (c : bool) -> ( if c then ( 1 ) else ( 2.0 ) ) ; def w = pick(true) ; \"\" + classof(w) + \":\" + (w + w)",
                 "def pick2 = (n : int) -> ( if n == 0 then ( 1.0 ) else if n == 1 then ( 2 ) else ( 3 ) ) ; \"\" + classof(pick2(1)) + \":\" + classof(pick2(2)) + \":\" + (pick2(1) + pick2(2))",
-                "def ret = (c : bool) -> ( if c then ( return 1 ) ; 2.0 ) ; def w = ret(true) ; \"\" + classof(w) + \":\" + (w + w)"
+                "def ret = (c : bool) -> ( if c then ( return 1 ) ; 2.0 ) ; def w = ret(true) ; \"\" + classof(w) + \":\" + (w + w)",
+                "java.lang.Class.forName(\"no.such.Class\")",
+                "import(\"org\").babblelang.tests.JavaClassDemo.boxedInt(false)",
+                "import(\"org\").babblelang.tests.JavaClassDemo.boxedDouble(false)",
+                "import(\"org\").babblelang.tests.JavaClassDemo.boxedBool(false)",
+                "def id = (x : any?) : any? -> ( x ) ; (id(null) as java.awt.Point).x = 1",
+                "def id = (x : any?) : any? -> ( x ) ; (id(null) as java.awt.Point).x",
+                "java.lang.Class.forName(\"java.lang.String\").getEnumConstants().length"
         );
     }
 
@@ -325,7 +332,14 @@ public class DifferentialTestCase {
                 "def f = (w) -> ( \"\" + classof(w) + \":\" + w ) ; f(2) + \"|\" + f(1.5)",
                 "def V = value class (x, y) ( def plus = (o) -> ( V(this.x + o.x, this.y + o.y) ) ; def scale = (k = 1) -> ( V(this.x * k, this.y * k) ) ) static ( def of = (a, b) -> ( this(a, b) ) ) ; def v = V.of(1, 2) + V(1.5, 3) ; \"\" + v.scale(2) + \"|\" + v.scale()",
                 "def fac = (n) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) ) ; fac(6)",
-                "def takesStr = (x : string) -> ( x + \"!\" ) ; def greet = (s = null) -> ( if s == null then ( \"none\" ) else ( takesStr(s) ) ) ; greet() + \",\" + greet(\"abc\")"
+                "def takesStr = (x : string) -> ( x + \"!\" ) ; def greet = (s = null) -> ( if s == null then ( \"none\" ) else ( takesStr(s) ) ) ; greet() + \",\" + greet(\"abc\")",
+                // RM001 : edge-case parity for NaN, -0.0, int wraparound, narrowed nullables, array.length, Java fields and exceptions.
+                "def nz = -0.0 ; def pz = 0.0 ; def nan = 0.0 / 0.0 ; \"\" + (nz == pz) + \":\" + (nz < pz) + \":\" + (pz < nz) + \":\" + (1.0 / nz) + \":\" + (nan == nan) + \":\" + (nan != nan) + \":\" + (nan < 1.0) + \":\" + (nan > 1.0)",
+                "def minV = -2147483648 ; def maxV = 2147483647 ; \"\" + (maxV + 1) + \":\" + (minV - 1) + \":\" + (-minV) + \":\" + (minV * -1)",
+                "def f = (a : int?, b : double?, c : bool?) : double -> ( (if a != null then ( a + 1 ) else ( 0 )) + (if b != null then ( b * 2 ) else ( 0.5 )) + (if c != null and c then ( 10 ) else ( 20 )) ) ; \"\" + f(3, 1.5, true) + \":\" + f(null, null, false) + \":\" + f(null, 2, null)",
+                "def d = import(\"org\").babblelang.tests.JavaClassDemo(\"n\") ; d.count = 4 ; d.count += 5 ; def a = java.lang.String(\"xyz\").getBytes() ; \"\" + d.count + \":\" + a.length + \":\" + d.label",
+                "def g = () : int -> ( java.lang.Math.max(1, return 7) ) ; g()",
+                "def sb = java.lang.StringBuilder() ; import(\"org\").babblelang.tests.JavaClassDemo.appendChar(sb, java.lang.String(\"x\").charAt(0)) ; sb.toString()"
         );
     }
 

@@ -2,7 +2,9 @@ package org.babblelang.analysis;
 
 import org.babblelang.parser.BabbleParser;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -15,12 +17,19 @@ import java.util.Set;
  */
 public final class ModuleInterface {
     private final Set<String> exports;
+    private final Map<String, Integer> exportIndices;
     private String name = "<module>";
     private TypeChecks checks;
     private TypeChecker checker;
 
     ModuleInterface(BlockScopes pass) {
-        this.exports = Set.of(pass.analysis.exports());
+        String[] ordered = pass.analysis.exports();
+        this.exports = Set.of(ordered);
+        Map<String, Integer> indices = new HashMap<>(ordered.length);
+        for (int i = 0; i < ordered.length; i++) {
+            indices.put(ordered[i], i);
+        }
+        this.exportIndices = Map.copyOf(indices);
     }
 
     /** The file, as messages name it : the same name as the runtime module's. */
@@ -34,6 +43,11 @@ public final class ModuleInterface {
 
     public Set<String> exports() {
         return exports;
+    }
+
+    /** The declaration-order index of an export in {@link org.babblelang.runtime.Module#exportAt}, or -1. */
+    public int exportIndex(String name) {
+        return exportIndices.getOrDefault(name, -1);
     }
 
     void complete(TypeChecks checks) {

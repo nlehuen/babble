@@ -44,6 +44,11 @@ public class BabbleInstance implements HasMembers {
         values[index] = value;
     }
 
+    /** Whether a compiled primitive member has been defined. */
+    protected boolean isMemberDefined(int index) {
+        return true;
+    }
+
     public BabbleClass babbleClass() {
         return babbleClass;
     }

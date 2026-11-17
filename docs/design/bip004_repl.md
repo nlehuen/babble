@@ -176,7 +176,5 @@ its arguments, failing and empty scripts, the type checker's settings, and comma
 
 * Line editing, history and completion in the loop itself.
 * Loading a file from inside the loop (`:load`), and showing the type of a value.
-* A script can't import another Babble file: a program is one file.
-* Compiled code reads the fields of an instance directly only within one input: across
-  inputs it goes through the generic path, since each input's classes have their own class
-  loader. It is correct, just not as fast.
+* A script can't import another Babble file: a program is one file. *(Done with modules in `BIP005`, keeping one `Modules` cache per `BabbleSession`.)*
+* *(Done via `Bootstrap` and `RM001`):* Across inputs (whose classes live in separate `ScriptClassLoader`s), `Bootstrap.SelectCache` reads both reference and primitive (`int`/`double`/`bool`) fields directly via `MethodHandles.privateLookupIn` (honouring `BabbleInstance.isMemberDefined`), and typed `$spec` function/method calls across inputs dispatch directly via `Bootstrap.call`.

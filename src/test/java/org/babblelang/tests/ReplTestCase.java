@@ -297,4 +297,19 @@ public class ReplTestCase {
         Assertions.assertNull(session.eval("none?.f()"));
         assertFails(session, "def nonNull : A = A(1) ; nonNull?.f()", "Not nullable : nonNull");
     }
+
+    @Test
+    public void testRm001UnboxedFieldsAndTypedCallsAcrossInputs() throws Exception {
+        BabbleSession session = session();
+        session.eval("def P = class (def i : int, def d : double, def b : bool) (\n"
+                + "  def sum = (k : int) : double -> ( this.i + this.d + k )\n"
+                + ")");
+        session.eval("def p = P(2, 1.5, true)");
+        session.eval("def add = (x : int, y : int) : int -> ( x + y )");
+        Assertions.assertEquals(true, session.eval("p.b"));
+        Assertions.assertEquals(2, session.eval("p.i"));
+        Assertions.assertEquals(1.5, session.eval("p.d"));
+        Assertions.assertEquals(7.5, session.eval("p.sum(4)"));
+        Assertions.assertEquals(9, session.eval("add(4, 5)"));
+    }
 }

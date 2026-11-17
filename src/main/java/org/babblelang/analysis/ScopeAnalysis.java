@@ -36,6 +36,49 @@ public final class ScopeAnalysis {
     public record Warning(String message, int line, int column) {
     }
 
+    public enum PrimitiveKind {
+        NONE,
+        INT,
+        DOUBLE,
+        BOOL;
+
+        public boolean isPrimitive() {
+            return this != NONE;
+        }
+
+        public int slots() {
+            return this == DOUBLE ? 2 : 1;
+        }
+
+        static PrimitiveKind of(Type type) {
+            if (type == Type.INT) {
+                return INT;
+            }
+            if (type == Type.DOUBLE) {
+                return DOUBLE;
+            }
+            if (type == Type.BOOL) {
+                return BOOL;
+            }
+            return NONE;
+        }
+    }
+
+    public record JavaCallTarget(java.lang.reflect.Method method, boolean isStatic, boolean unwrapReceiver) {
+    }
+
+    public record JavaConstructorTarget(java.lang.reflect.Constructor<?> constructor) {
+    }
+
+    public record JavaFieldTarget(java.lang.reflect.Field field, boolean isStatic, boolean unwrapReceiver) {
+    }
+
+    public record ModuleExportTarget(int index, String name) {
+    }
+
+    public record FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind) {
+    }
+
     private final ParseTreeProperty<String[]> declared = new ParseTreeProperty<>();
     private final ParseTreeProperty<String[]> parameters = new ParseTreeProperty<>();
     private final ParseTreeProperty<Integer> requiredParameters = new ParseTreeProperty<>();
@@ -48,6 +91,17 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<String> isBuiltins = new ParseTreeProperty<>();
     private final java.util.Set<ParserRuleContext> widensToDouble = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
+    private final ParseTreeProperty<PrimitiveKind> expressionKinds = new ParseTreeProperty<>();
+    private final ParseTreeProperty<PrimitiveKind> declarationKinds = new ParseTreeProperty<>();
+    private final ParseTreeProperty<PrimitiveKind> functionReturnKinds = new ParseTreeProperty<>();
+    private final java.util.Set<ParserRuleContext> definitelyDefined = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private final ParseTreeProperty<JavaCallTarget> javaCallTargets = new ParseTreeProperty<>();
+    private final ParseTreeProperty<JavaConstructorTarget> javaConstructorTargets = new ParseTreeProperty<>();
+    private final ParseTreeProperty<JavaFieldTarget> javaFieldTargets = new ParseTreeProperty<>();
+    private final java.util.Map<ParserRuleContext, Class<?>> arrayLengthSelectors = new java.util.IdentityHashMap<>();
+    private final ParseTreeProperty<ModuleExportTarget> moduleExportTargets = new ParseTreeProperty<>();
+    private final ParseTreeProperty<BabbleParser.FunctionLiteralContext> babbleCallFunctions = new ParseTreeProperty<>();
+    private final ParseTreeProperty<FunctionSignature> babbleCallSignatures = new ParseTreeProperty<>();
     private Resolution resolution;
     private ModuleInterface moduleInterface;
 
@@ -137,6 +191,56 @@ public final class ScopeAnalysis {
         widensToDouble.add(ctx);
     }
 
+    void setExpressionKind(ParserRuleContext ctx, PrimitiveKind kind) {
+        if (kind != PrimitiveKind.NONE) {
+            expressionKinds.put(ctx, kind);
+        }
+    }
+
+    void setDeclarationKind(ParserRuleContext decl, PrimitiveKind kind) {
+        if (kind != PrimitiveKind.NONE) {
+            declarationKinds.put(decl, kind);
+        }
+    }
+
+    void setFunctionReturnKind(BabbleParser.FunctionLiteralContext function, PrimitiveKind kind) {
+        if (kind != PrimitiveKind.NONE) {
+            functionReturnKinds.put(function, kind);
+        }
+    }
+
+    void markDefinitelyDefined(ParserRuleContext decl) {
+        definitelyDefined.add(decl);
+    }
+
+    void setJavaCallTarget(ParserRuleContext ctx, JavaCallTarget target) {
+        javaCallTargets.put(ctx, target);
+    }
+
+    void setJavaConstructorTarget(ParserRuleContext ctx, JavaConstructorTarget target) {
+        javaConstructorTargets.put(ctx, target);
+    }
+
+    void setJavaFieldTarget(ParserRuleContext ctx, JavaFieldTarget target) {
+        javaFieldTargets.put(ctx, target);
+    }
+
+    void setArrayLengthClass(ParserRuleContext ctx, Class<?> arrayClass) {
+        arrayLengthSelectors.put(ctx, arrayClass);
+    }
+
+    void setModuleExportTarget(ParserRuleContext ctx, ModuleExportTarget target) {
+        moduleExportTargets.put(ctx, target);
+    }
+
+    void setBabbleCallFunction(ParserRuleContext ctx, BabbleParser.FunctionLiteralContext function) {
+        babbleCallFunctions.put(ctx, function);
+    }
+
+    void setBabbleCallSignature(ParserRuleContext ctx, FunctionSignature signature) {
+        babbleCallSignatures.put(ctx, signature);
+    }
+
     /**
      * The type checker's diagnostics, reported as errors before execution.
      */
@@ -160,6 +264,61 @@ public final class ScopeAnalysis {
     /** Whether the value produced by this construct must be converted from int to double. */
     public boolean widensToDouble(ParserRuleContext ctx) {
         return widensToDouble.contains(ctx);
+    }
+
+    /** The primitive kind of an expression, or {@link PrimitiveKind#NONE} for references/boxed values. */
+    public PrimitiveKind expressionKind(ParserRuleContext ctx) {
+        PrimitiveKind kind = expressionKinds.get(ctx);
+        return kind != null ? kind : PrimitiveKind.NONE;
+    }
+
+    /** The storage primitive kind of a declaration, or {@link PrimitiveKind#NONE}. */
+    public PrimitiveKind declarationKind(ParserRuleContext decl) {
+        PrimitiveKind kind = declarationKinds.get(decl);
+        return kind != null ? kind : PrimitiveKind.NONE;
+    }
+
+    /** The return primitive kind of a function literal, or {@link PrimitiveKind#NONE}. */
+    public PrimitiveKind functionReturnKind(BabbleParser.FunctionLiteralContext function) {
+        PrimitiveKind kind = functionReturnKinds.get(function);
+        return kind != null ? kind : PrimitiveKind.NONE;
+    }
+
+    /** Whether a {@code def} is provably initialized before any read or closure capture can observe it. */
+    public boolean isDefinitelyDefined(ParserRuleContext decl) {
+        return definitelyDefined.contains(decl);
+    }
+
+    public JavaCallTarget javaCallTarget(ParserRuleContext ctx) {
+        return javaCallTargets.get(ctx);
+    }
+
+    public JavaConstructorTarget javaConstructorTarget(ParserRuleContext ctx) {
+        return javaConstructorTargets.get(ctx);
+    }
+
+    public JavaFieldTarget javaFieldTarget(ParserRuleContext ctx) {
+        return javaFieldTargets.get(ctx);
+    }
+
+    public boolean isArrayLength(ParserRuleContext ctx) {
+        return arrayLengthSelectors.containsKey(ctx);
+    }
+
+    public Class<?> arrayLengthClass(ParserRuleContext ctx) {
+        return arrayLengthSelectors.get(ctx);
+    }
+
+    public ModuleExportTarget moduleExportTarget(ParserRuleContext ctx) {
+        return moduleExportTargets.get(ctx);
+    }
+
+    public BabbleParser.FunctionLiteralContext babbleCallFunction(ParserRuleContext ctx) {
+        return babbleCallFunctions.get(ctx);
+    }
+
+    public FunctionSignature babbleCallSignature(ParserRuleContext ctx) {
+        return babbleCallSignatures.get(ctx);
     }
 
     /**
