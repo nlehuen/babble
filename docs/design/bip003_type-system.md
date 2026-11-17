@@ -4,10 +4,10 @@
 |---|---|
 | **BIP** | 003 |
 | **Date** | 2026-10-24 |
-| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [bip008_static-typing.md](bip008_static-typing.md) (P1–P7 implemented : strict checking, call-site parameter inference, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax) ; runtime checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
-| **Depends on** | [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §10 (where the checker sits, the T1–T9 agenda), [bip002_object-model.md](bip002_object-model.md) §8 (classes and interfaces are types) |
+| **Status** | Gradual rules, `dynamic`, and internal `BIP003-D9` checks replaced by [bip008_static-typing.md](bip008_static-typing.md) (`BIP008-P1`–`BIP008-P7` implemented : strict checking, call-site parameter inference, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax) ; runtime checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
+| **Depends on** | [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §10 (where the checker sits, `BIP001-Q1`–`BIP001-Q9`), [bip002_object-model.md](bip002_object-model.md) §8 (classes and interfaces are types) |
 | **Unblocks** | Typed code generation (`bip001_bytecode-compiler.md` §10.5) |
-| **Replaced by** | [bip008_static-typing.md](bip008_static-typing.md) (P1–P7 implemented : `any` / `any?`, unions, `T?`, generics, `as`, call-site parameter inference, strict checking, T9 checks removed internally). |
+| **Replaced by** | [bip008_static-typing.md](bip008_static-typing.md) (`BIP008-P1`–`BIP008-P7` implemented : `any` / `any?`, unions, `T?`, generics, `as`, call-site parameter inference, strict checking, internal `BIP003-D9` checks removed). |
 
 ## 1. Summary
 
@@ -45,18 +45,18 @@ gradually:
 | Java types | instances of a Java class | `java.util.List(string)`, or through `import("…")` |
 | `nothing` | none: the type of `return` | not written |
 
-## 3. Decisions (T1–T8 of bip001_bytecode-compiler.md §10.4)
+## 3. Decisions (`BIP003-D1`–`BIP003-D8`, resolving `BIP001-Q1`–`BIP001-Q8`)
 
-* **T1, type names.** `int`, `double`, `bool`, `string` and `dynamic` are built in. A plain name
+* **`BIP003-D1` (resolves `BIP001-Q1`), type names.** `int`, `double`, `bool`, `string` and `dynamic` are built in. A plain name
   must refer to a `def` initialised with a class or interface literal and never reassigned,
   possibly reached through packages (`shapes.Shape`), as for `implements`. A dotted name
   starting with `java` or `javax`, or with a name bound to `import("…")`, is a Java class;
   `java.lang.String` is `string`, `java.lang.Integer` is `int`, and so on. Anything else is
   reported as `Unknown type : X` and treated as `dynamic`.
-* **T2, null.** `int`, `double` and `bool` reject `null`; every other type accepts it. So
+* **`BIP003-D2` (resolves `BIP001-Q2`), `null`.** `int`, `double` and `bool` reject `null`; every other type accepts it. So
   `def x : int` without a value is reported, and `def s : string` isn't. A `T?` syntax can come
   later.
-* **T3, operators.** As the runtime does them (`Operators`):
+* **`BIP003-D3` (resolves `BIP001-Q3`), operators.** As the runtime does them (`Operators`):
   - `+` with a `string` on the left is `string`;
   - `+ - *` on two `int`s are `int`, on two numbers otherwise `double`, and `/` is always
     `double`;
@@ -65,7 +65,7 @@ gradually:
     `Not comparable : … and …`;
   - comparisons, `==`, `!=`, `and`, `or`, `not` and `is` are `bool`;
   - `if` and `while` accept any test, since every value has a truth value.
-* **T4, function types.** A function type lists its parameters, their types, and whether each
+* **`BIP003-D4` (resolves `BIP001-Q4`), function types.** A function type lists its parameters, their types, and whether each
   is optional (has a default), then its result. Calls are checked against it with the binding
   rules of `Arguments`: by name, then by position, then the default. The reports are those of
   the runtime: `Missing parameter`, `No such parameter`, `Too many parameters`, then
@@ -75,7 +75,7 @@ gradually:
   - Parameter names are not compared: a callback is normally called by position.
   - A default *expression* in a function type, which the grammar allows, only marks the
     parameter optional.
-* **T5, classes, objects and packages.** As decided by the object model (§8 there):
+* **`BIP003-D5` (resolves `BIP001-Q5`), classes, objects and packages.** As decided by the object model ([bip002_object-model.md](bip002_object-model.md) §8):
   - Classes and interfaces are nominal. An instance is assignable to its class and to every
     interface it implements, directly or through other interfaces. An object literal has an
     anonymous class type, assignable to its interfaces.
@@ -89,9 +89,9 @@ gradually:
     instance. Its statics are its members.
   - A package's members are its `def`s and nested packages, with their types; it never reports
     a missing member.
-* **T6, this.** In a class or object body, or one of its methods, `this` has the class's type.
+* **`BIP003-D6` (resolves `BIP001-Q6`), `this`.** In a class or object body, or one of its methods, `this` has the class's type.
   In an interface default it has the interface's type, and in a static block the class value's.
-* **T7, Java.** Overloads are resolved at check time, as `Overloads` does at runtime:
+* **`BIP003-D7` (resolves `BIP001-Q7`), Java.** Overloads are resolved at check time, as `Overloads` does at runtime:
   - a `dynamic` argument fits any parameter;
   - a call no overload can accept is `No applicable overload of C.m for (types)`;
   - unknown names are `No such name in C : x`.
@@ -102,7 +102,7 @@ gradually:
     `dynamic`, and `Object` is `dynamic` everywhere (generics are erased).
   - Babble functions and class values are assignable to functional interfaces, and Babble
     instances to the Java interfaces their class implements.
-* **T8, bidirectional local inference.**
+* **`BIP003-D8` (resolves `BIP001-Q8`), bidirectional local inference.**
   - An unannotated `def` that is never assigned with `x = …` has its value's type, except that
     `null` (and `return`) infer `dynamic`: `def head = null` says nothing about what `head`
     holds later. So `def f = (a : int) -> …` gives `f` a function type, and `def p = Point(1, 2)`
@@ -136,7 +136,7 @@ gradually:
 * Member selection on values that have no members (numbers, booleans, strings, null,
   functions): `Not a scope : x`. Narrowed lexical bindings use their narrowed type in branches,
   short-circuit operators and post-guard block statements.
-* Operators (T3), members (T5), Java calls (T7).
+* Operators (`BIP003-D3`), members (`BIP003-D5`), Java calls (`BIP003-D7`).
 * Assigning a package's member from outside (`p.x = …`, `p.x += …`), when the package is known
   statically: `Cannot assign to a package member : x`. A package changes only through its own
   code; the runtime refuses it whatever the receiver.
@@ -150,9 +150,9 @@ The value of an `if` is the join of its branches: the same type, `double` for `i
 `double`, a nullable type for `null` and that type, and `dynamic` otherwise. A `while` loop's
 value is the join of its body's value and `null`.
 
-## 5. Runtime checks (T9, updated in P5–P6b)
+## 5. Runtime checks (`BIP003-D9`, resolving `BIP001-Q9`, updated in `BIP008-P5`–`BIP008-P6b`)
 
-With strict static typing (`bip008_static-typing.md` P1–P6b), `Types.check` is no longer emitted at
+With strict static typing ([bip008_static-typing.md](bip008_static-typing.md) `BIP008-P1`–`BIP008-P6b`), `Types.check` is no longer emitted at
 Babble-to-Babble parameter, return, `def`, or assignment boundaries : the static checker proves
 those types, and `int`→`double`/`double?` widening uses `Values.toDouble` where `widensToDouble`
 marks a widening point.
