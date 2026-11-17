@@ -62,6 +62,7 @@ Design documents live in `docs/design/` as numbered BIPs (see `docs/design/READM
 | **BIP006** | `docs/design/bip006_module-sources-and-aot.md` | `ModuleSource`, the runtime boundary, `babblec` | implemented (R1, M4, M5) |
 | **BIP007** | `docs/design/bip007_effects.md` | function effects and algebraic properties | **draft, nothing implemented**: it describes a possible future, not the language |
 | **BIP008** | `docs/design/bip008_static-typing.md` | removing `dynamic` : a sound top type `any`, `as` casts, call-site parameter inference, unions, nullables, and generics | P1–P7 implemented (strict static typing, redundant internal T9 checks removed, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax, and call-site parameter inference) |
+| **BIP009** | `docs/design/bip009_test-coverage.md` | `.batest` systematic test suite and dual-mode JaCoCo coverage harness (`-Pbatest`) | **draft, nothing implemented** (`BIP009-D1`–`BIP009-D8` proposed; `BIP009-P1`–`BIP009-P4` planned) |
 
 ## Architecture
 
