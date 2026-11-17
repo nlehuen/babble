@@ -54,11 +54,11 @@ export def Camera = class (
     private def defocusDiskU: Vec3 = this.u * this.defocusRadius
     private def defocusDiskV: Vec3 = this.v * this.defocusRadius
 
-    private def sampleSquare = (rng: Rng): Vec3 -> (
+    private def sampleSquare = (rng): Vec3 -> (
         Vec3(rng.nextDouble() - 0.5, rng.nextDouble() - 0.5, 0.0)
     )
 
-    private def defocusDiskSample = (rng: Rng): Vec3 -> (
+    private def defocusDiskSample = (rng): Vec3 -> (
         def p: Vec3 = Vec3.randomInUnitDisk(rng)
         this.center + this.defocusDiskU * p.x + this.defocusDiskV * p.y
     )

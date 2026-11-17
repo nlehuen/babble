@@ -3,7 +3,7 @@
 ;;)
 
 ;; not exported : only this file can use it
-def square = (n: int) -> (n * n)
+def square = (n) -> (n * n)
 
 export def Vec = value class (x: int, y: int) (
     def plus = (o: Vec): Vec -> (Vec(this.x + o.x, this.y + o.y))

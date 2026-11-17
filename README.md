@@ -366,14 +366,17 @@ runtime.
 
 ### Types
 
-Function and class parameters need type annotations unless a default value or an expected
-function type gives them. Bindings, members and function results are inferred from their values
+Function and class parameters are inferred from their calls when every call is visible
+(non-exported, non-escaping functions, classes, and non-interface methods), or from a default
+value or expected function type ; exported, escaping, interface, and uncalled definitions need
+parameter type annotations. Bindings, members and function results are inferred from their values
 and assignments (including widening `int` to `double`), and every expression is checked before
 the script runs :
 
 ```
-def area = (w: int, h: int): int -> ( w * h )
-area(2, "3")    ;; Error : Type error : expected int, got string ... at line number 2, column 9
+def area = (w, h) -> ( w * h )
+area(2, 3)      ;; infers w: int, h: int
+area(2, "3")    ;; Error : Type error : expected int, got string ... at line number 3, column 9
 area(2)         ;; Error : Missing parameter : h ...
 ```
 
@@ -626,7 +629,7 @@ Language features :
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see the [design doc](docs/design/object-model.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java (including generic) interfaces.
-- [x] static type checking : required annotations on uninferred parameters, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
+- [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [type-system.md](docs/design/type-system.md) and [static-typing.md](docs/design/static-typing.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
 
 Implementation features :

@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [static-typing.md](static-typing.md) (P1–P6b implemented : strict checking, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax) ; runtime checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
+| **Status** | Gradual rules, `dynamic`, and internal T9 checks replaced by [static-typing.md](static-typing.md) (P1–P7 implemented : strict checking, call-site parameter inference, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax) ; runtime checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
 | **Depends on** | [bytecode-compiler.md](bytecode-compiler.md) §10 (where the checker sits, the T1–T9 agenda), [object-model.md](object-model.md) §8 (classes and interfaces are types) |
 | **Unblocks** | Typed code generation (bytecode-compiler.md §10.5) |
-| **Replaced by** | [static-typing.md](static-typing.md) (P1–P6b implemented : `any` / `any?`, unions, `T?`, generics, `as`, required annotations, strict checking, T9 checks removed internally). |
+| **Replaced by** | [static-typing.md](static-typing.md) (P1–P7 implemented : `any` / `any?`, unions, `T?`, generics, `as`, call-site parameter inference, strict checking, T9 checks removed internally). |
 
 ## 1. Summary
 

@@ -57,14 +57,14 @@ export def Camera = class (
     private def defocusDiskV: Vec3 = this.v * this.defocusRadius
 
     ;; a random point in the camera defocus disk
-    private def defocusDiskSample = (rng: java.util.Random): Vec3 -> (
+    private def defocusDiskSample = (rng): Vec3 -> (
         def p: Vec3 = Vec3.randomInUnitDisk(rng)
         this.center + this.defocusDiskU * p.x + this.defocusDiskV * p.y
     )
 
     ;; a camera ray originating from the defocus disk and directed at a randomly
     ;; sampled point around the pixel location i, j
-    private def getRay = (i: int, j: int, rng: java.util.Random): Ray -> (
+    private def getRay = (i, j, rng): Ray -> (
         def pixelSample: Vec3 = this.pixel00 +
             this.pixelDeltaU * (i + rng.nextDouble() - 0.5) +
             this.pixelDeltaV * (j + rng.nextDouble() - 0.5)
@@ -72,7 +72,7 @@ export def Camera = class (
         Ray(origin, pixelSample - origin)
     )
 
-    private def rayColor = (r: Ray, depth: int, world: Hittable, rng: java.util.Random): Vec3 -> (
+    private def rayColor = (r, depth, world, rng): Vec3 -> (
         ;; if we've exceeded the ray bounce limit, no more light is gathered
         if depth <= 0 then (return Vec3(0.0, 0.0, 0.0))
 
@@ -90,7 +90,7 @@ export def Camera = class (
     )
 
     ;; a linear color component as a gamma 2 byte
-    private def toByte = (linear: double): int -> (
+    private def toByte = (linear): int -> (
         def gamma: double = if linear > 0 then (Math.sqrt(linear)) else (0.0)
         int(256 * Math.max(0.0, Math.min(gamma, 0.999)))
     )
@@ -123,7 +123,7 @@ export def Camera = class (
         )
 
         ;; start the other threads, render on this one too, then wait for the others
-        def start = (n: int): null -> (
+        def start = (n): null -> (
             if n > 1 then (
                 def thread = java.lang.Thread(renderLines)
                 thread.start()

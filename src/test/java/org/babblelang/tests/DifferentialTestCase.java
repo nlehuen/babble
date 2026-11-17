@@ -320,7 +320,12 @@ public class DifferentialTestCase {
                 // Safe navigation (?.) : calls, field reads, chains, single LHS eval, short-circuit args, int -> double? widening.
                 "def B = class (def v : int) () ; def A = class (def n : A? = null) ( def f = () : B -> ( B(9) ) ) ; def mk = (b : bool) : A? -> ( if b then ( A(A()) ) else ( null ) ) ; \"\" + mk(true)?.f()?.v + \":\" + mk(false)?.f()?.v + \":\" + mk(true)?.n?.f()?.v",
                 "def n = 0 ; def m = 0 ; def A = class () ( def f = (x : int) -> ( x + 1 ) ) ; def recv = (b : bool) : A? -> ( n += 1 ; if b then ( A() ) else ( null ) ) ; def arg = () : int -> ( m += 1 ; 5 ) ; def r1 = recv(false)?.f(arg()) ; def r2 = recv(true)?.f(arg()) ; \"\" + r1 + \":\" + r2 + \":\" + n + \":\" + m",
-                "def A = class () ( def g = () : int -> ( 3 ) ) ; def mk = (b : bool) : A? -> ( if b then ( A() ) else ( null ) ) ; def d1 : double? = mk(true)?.g() ; def d0 : double? = mk(false)?.g() ; \"\" + classof(d1) + \":\" + d1 + \":\" + d0"
+                "def A = class () ( def g = () : int -> ( 3 ) ) ; def mk = (b : bool) : A? -> ( if b then ( A() ) else ( null ) ) ; def d1 : double? = mk(true)?.g() ; def d0 : double? = mk(false)?.g() ; \"\" + classof(d1) + \":\" + d1 + \":\" + d0",
+                // P7 : call-site parameter inference, int -> double conversion, methods, operators, constructors, recursion, nullables.
+                "def f = (w) -> ( \"\" + classof(w) + \":\" + w ) ; f(2) + \"|\" + f(1.5)",
+                "def V = value class (x, y) ( def plus = (o) -> ( V(this.x + o.x, this.y + o.y) ) ; def scale = (k = 1) -> ( V(this.x * k, this.y * k) ) ) static ( def of = (a, b) -> ( this(a, b) ) ) ; def v = V.of(1, 2) + V(1.5, 3) ; \"\" + v.scale(2) + \"|\" + v.scale()",
+                "def fac = (n) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) ) ; fac(6)",
+                "def takesStr = (x : string) -> ( x + \"!\" ) ; def greet = (s = null) -> ( if s == null then ( \"none\" ) else ( takesStr(s) ) ) ; greet() + \",\" + greet(\"abc\")"
         );
     }
 
