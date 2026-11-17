@@ -29,8 +29,7 @@ export def HittableList = class () implements Hittable (
         def count: int = this.objects.size()
         def i: int = 0
         while i < count then (
-            def obj = this.objects.get(i)
-            def rec: HitRecord? = if obj != null then (obj.hit(r, tmin, closestSoFar))
+            def rec: HitRecord? = this.objects.get(i)?.hit(r, tmin, closestSoFar)
             if rec <> null then (
                 closest = rec
                 closestSoFar = rec.t
