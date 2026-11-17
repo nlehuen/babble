@@ -18,7 +18,7 @@ export def Describable = interface (
 export def ScatterResult = value class (attenuation: Vec3, scattered: Ray) ()
 
 export def Material = interface extends Describable (
-    def scatter: (rIn: Ray, rec: HitRecord, rng: Rng): ScatterResult?
+    def scatter: (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult?
     def kind = (): string -> ("material")
 )
 

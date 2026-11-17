@@ -401,7 +401,7 @@ public class BabbleCompilerTestCase {
     public void testP5OmitsRedundantRuntimeTypeChecksAndKeepsAsCasts() throws Exception {
         CompiledBabbleScript checked = compile(
                 "def Box = class (def x : double = 1) (\n"
-                        + "  def set = (v : double = 2) : double -> (\n"
+                        + "  def set = mut (v : double = 2) : double -> (\n"
                         + "    this.x = v\n"
                         + "    this.x += 1\n"
                         + "    if v > 0.0 then ( return 1 )\n"

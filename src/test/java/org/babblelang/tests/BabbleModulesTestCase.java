@@ -595,4 +595,80 @@ public class BabbleModulesTestCase extends BabbleTestBase {
                 "main.ba:2:26 Type error : expected Box(int), got Box(string)"),
                 typeErrors("def gen = import(\"gen.ba\")\ndef bad : gen.Box(int) = gen.Box(\"wrong\")"));
     }
+
+    @Test
+    public void rm002ExportedEffectContractsAndSpecialization() throws Exception {
+        // BIP007-D2 : unannotated export exposes full inferred summary; annotated export locks its contract!
+        file("lib.ba", """
+                export def inferredAdd = (x: int, y: int): int -> (x + y)
+                export def lockedPure = pure (x: int): int -> (x + 1)
+                export def applyOnce = (f: (x: int): int, v: int): int -> (f(v))
+                export def Counter = class (def n: int = 0) (
+                    def bump = mut (d: int): int -> (
+                        this.n += d
+                        this.n
+                    )
+                )
+                """);
+
+        // Inferred export satisfies `pure deterministic nothrow`, and `applyOnce` specializes across modules!
+        Assertions.assertEquals(13, run("""
+                def lib = import("lib.ba")
+                def useInferred: pure deterministic nothrow (x: int): int = (x: int): int -> (
+                    lib.applyOnce((v: int): int -> (lib.inferredAdd(v, 3)), x)
+                )
+                useInferred(10)
+                """));
+
+        // Locked `pure` export satisfies `pure`, NOT `deterministic` or `nothrow`!
+        Assertions.assertEquals(6, run("""
+                def lib = import("lib.ba")
+                def okPure = pure (x: int): int -> (lib.lockedPure(x))
+                okPure(5)
+                """));
+        java.util.List<String> lockedErrs = typeErrors("""
+                def lib = import("lib.ba")
+                def badDet = deterministic (x: int): int -> (lib.lockedPure(x))
+                """);
+        Assertions.assertEquals(1, lockedErrs.size(), lockedErrs.toString());
+        Assertions.assertTrue(lockedErrs.get(0).contains("deterministic"), lockedErrs.toString());
+
+        // Cross-module `mut` method requires `mut` parameter on typed caller!
+        java.util.List<String> mutErrs = typeErrors("""
+                def lib = import("lib.ba")
+                def badBump = (c: lib.Counter): int -> (c.bump(1))
+                """);
+        Assertions.assertEquals(1, mutErrs.size(), mutErrs.toString());
+        Assertions.assertTrue(mutErrs.get(0).contains("Cannot mutate parameter c"), mutErrs.toString());
+    }
+
+    @Test
+    public void rm002ExportAxiomAndImpurePropagation() throws Exception {
+        // `export axiom` propagates Java effect assumptions to importers; non-exported `axiom` stays module-private!
+        file("pub_axioms.ba", """
+                export axiom pure deterministic nothrow java.lang.System.lineSeparator
+                export def sep = (): string -> (java.lang.System.lineSeparator())
+                """);
+        file("priv_axioms.ba", """
+                axiom pure deterministic nothrow java.lang.System.lineSeparator
+                export def sep = (): string -> (java.lang.System.lineSeparator())
+                """);
+
+        Assertions.assertEquals(true, run("""
+                def pub = import("pub_axioms.ba")
+                def f = pure deterministic nothrow (): bool -> (
+                    java.lang.System.lineSeparator() == pub.sep()
+                )
+                f()
+                """));
+
+        // Importing `priv_axioms.ba` lets `priv.sep()` be pure, while direct `System.lineSeparator()` in importer stays unassumed!
+        java.util.List<String> privErrs = typeErrors("""
+                def priv = import("priv_axioms.ba")
+                def okViaWrapper = pure deterministic (): string -> (priv.sep())
+                def directCall = pure (): string -> (java.lang.System.lineSeparator())
+                """);
+        Assertions.assertEquals(1, privErrs.size(), privErrs.toString());
+        Assertions.assertTrue(privErrs.get(0).startsWith("main.ba:3:"), privErrs.toString());
+    }
 }

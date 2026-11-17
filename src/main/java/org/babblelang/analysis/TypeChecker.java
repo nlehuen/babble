@@ -91,6 +91,7 @@ final class TypeChecker {
     private final Set<ParserRuleContext> inProgress = new HashSet<>();
     private final Set<BabbleParser.FunctionLiteralContext> functions = new LinkedHashSet<>();
     private final Set<Diagnostic> diagnostics = new TreeSet<>(ORDER);
+    private final Set<Diagnostic> effectDiagnostics = new TreeSet<>(ORDER);
     private final Set<Diagnostic> warnings = new TreeSet<>(ORDER);
     private final Set<ParserRuleContext> widened = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<ParserRuleContext, String> callChecks = new IdentityHashMap<>();
@@ -202,6 +203,7 @@ final class TypeChecker {
         checkInterfaces();
         checkMissingTypes(file);
         effectChecker.verify(file);
+        diagnostics.addAll(effectDiagnostics);
         for (ParserRuleContext ctx : widened) {
             pass.analysis.widenToDouble(ctx);
         }
@@ -6137,9 +6139,9 @@ final class TypeChecker {
         }
         EffectSet common = fa.effects().intersect(fb.effects());
         if (anyMutParam && common.isPure()) {
-            EnumSet<Effect> effs = EnumSet.copyOf(common.effects());
+            EnumSet<Effect> effs = EffectSet.copySet(common.effects());
             effs.remove(Effect.PURE);
-            EnumSet<Effect> decl = EnumSet.copyOf(common.declared());
+            EnumSet<Effect> decl = EffectSet.copySet(common.declared());
             decl.remove(Effect.PURE);
             common = new EffectSet(effs, decl, common.mutThis(), common.borrowThis(),
                     common.explicitBorrowThis(), false, common.axiomatic());
@@ -6176,9 +6178,9 @@ final class TypeChecker {
             }
             EffectSet common = cf.effects().intersect(vf.effects());
             if (anyMutParam && common.isPure()) {
-                EnumSet<Effect> effs = EnumSet.copyOf(common.effects());
+                EnumSet<Effect> effs = EffectSet.copySet(common.effects());
                 effs.remove(Effect.PURE);
-                EnumSet<Effect> decl = EnumSet.copyOf(common.declared());
+                EnumSet<Effect> decl = EffectSet.copySet(common.declared());
                 decl.remove(Effect.PURE);
                 common = new EffectSet(effs, decl, common.mutThis(), common.borrowThis(),
                         common.explicitBorrowThis(), false, common.axiomatic());
@@ -6207,7 +6209,10 @@ final class TypeChecker {
     // ---------------------------------------------------------------- EffectChecker bridge
 
     void effectDiagnostic(String message, ParserRuleContext at) {
-        warn(message, at);
+        if (!inFile(at)) {
+            return;
+        }
+        effectDiagnostics.add(new Diagnostic(at.getStart().getLine(), at.getStart().getCharPositionInLine() + 1, message));
     }
 
     Type rawTypeOf(ParserRuleContext ctx) {

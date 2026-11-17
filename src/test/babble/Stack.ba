@@ -8,7 +8,7 @@ package stack (
         def size = 0
         def head: Node(T)? = null
 
-        def push = (a: T) -> (
+        def push = mut (a: T) -> (
             this.size = this.size + 1
             this.head = Node(a, this.head)
         )
@@ -22,7 +22,7 @@ package stack (
             )
         )
 
-        def pop = (): T? -> (
+        def pop = mut (): T? -> (
             def head = this.head
             if head == null then (
                 null

@@ -1,0 +1,108 @@
+;;(
+    End-to-end differential tests for RM002 (BIP007-P1) :
+    effect inference and verification, mut / borrow parameters,
+    frame-local closures, bounded higher-order specialization,
+    narrowing in nothrow, algebraic properties, and host axioms.
+;;)
+
+axiom pure deterministic nothrow java.lang.Math
+
+def Vec2 = value class (x: double, y: double) (
+    def dot = pure deterministic nothrow (other: Vec2): double -> (
+        this.x * other.x + this.y * other.y
+    )
+)
+
+def Counter = class (def value: int = 0) (
+    def add = mut (delta: int): int -> (
+        this.value += delta
+        this.value
+    )
+
+    def readPlus = (borrow other: Counter): int -> (
+        this.value + other.value
+    )
+)
+
+;; Unannotated helper automatically inferred pure deterministic nothrow
+def square = (x: int): int -> (x * x)
+
+;; Concrete higher-order helper specialized per call site
+def mapInt = (f: (x: int): int, v: int): int -> (f(v))
+
+;; Verified pure deterministic nothrow caller using specialization + frame-local helper
+def forEachUpTo = (n: int, borrow fn: (i: int): int): int -> (
+    def i: int = 1
+    while i <= n then (
+        fn(i)
+        i += 1
+    )
+    n
+)
+
+def sumSquares = pure deterministic nothrow (n: int): int -> (
+    def total: int = 0
+    forEachUpTo(n, (i: int): int -> (
+        total += mapInt(square, i)
+        total
+    ))
+    total
+)
+
+assert(sumSquares(4) == 30)
+
+;; BIP007-D1 flow-sensitive narrowing preserves nothrow on guarded branches
+def unwrapOrZero = pure deterministic nothrow (x: int?, borrow fallback: Counter?): int -> (
+    if x != null then (
+        x
+    ) else if fallback != null then (
+        fallback.value
+    ) else (
+        0
+    )
+)
+
+def parsePositive = pure deterministic nothrow (x: int | string): int -> (
+    if x is int then (
+        x
+    ) else (
+        -1
+    )
+)
+
+assert(unwrapOrZero(42, null) == 42 and unwrapOrZero(null, Counter(9)) == 9 and unwrapOrZero(null, null) == 0)
+assert(parsePositive(7) == 7 and parsePositive("nope") == -1)
+
+;; Compositional algebraic properties
+def scaleShift = pure deterministic nothrow monotone (x: double): double -> (
+    x * 2.5 + 1.0
+)
+
+def affineHash = pure deterministic nothrow injective (x: int): int -> (
+    x * 3 + 7
+)
+
+def tagId = pure deterministic nothrow injective (x: int): string -> (
+    "id:" + x
+)
+
+def addComm = pure deterministic nothrow commutative associative (a: int, b: int): int -> (
+    a + b
+)
+
+assert(scaleShift(2.0) == 6.0)
+assert(affineHash(10) == 37)
+assert(tagId(9) == "id:9")
+assert(addComm(3, 4) == 7)
+
+;; Mutating methods and borrow reads
+def c1 = Counter(10)
+def c2 = Counter(5)
+assert(c1.add(3) == 13)
+assert(c1.readPlus(c2) == 18)
+assert(Vec2(3.0, 4.0).dot(Vec2(2.0, 1.0)) == 10.0)
+assert(java.lang.Math.max(3, 9) == 9)
+
+;; Contextual effect keywords remain usable as regular identifiers
+def pure = (axiom: int, borrow: int): int -> (axiom + borrow)
+assert(pure(20, 22) == 42)

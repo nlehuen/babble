@@ -64,7 +64,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     private static final String COUNTDOWN = "def Countdown = class (private def n : int) implements java.util.Iterator(int) (\n"
             + "    def hasNext = () : bool -> ( this.n > 0 )\n"
-            + "    def next = () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
+            + "    def next = mut () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
             + ")\n";
 
     @Test
@@ -143,7 +143,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
     public void testOverridingAJavaDefault() throws Exception {
         Assertions.assertEquals("[321]", output("def Countdown = class (private def n : int) implements java.util.Iterator(int) (\n"
                 + "    def hasNext = () : bool -> ( this.n > 0 )\n"
-                + "    def next = () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
+                + "    def next = mut () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
                 + "    def forEachRemaining = (f : java.util.function.Consumer(any?)) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
                 + ")\n"
                 + "Countdown(3).forEachRemaining(java.util.function.Consumer((v : any?) -> ( print(v) )))"));
@@ -184,7 +184,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         Assertions.assertEquals("[1]", output("def Loud = interface extends java.util.Iterator(int) (\n"
                 + "    def forEachRemaining = (f : java.util.function.Consumer(any?)) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
                 + ")\n"
-                + "def One = class () implements Loud ( def done = false ; def hasNext = () : bool -> ( not this.done ) ; def next = () : int -> ( this.done = true ; 1 ) )\n"
+                + "def One = class () implements Loud ( def done = false ; def hasNext = () : bool -> ( not this.done ) ; def next = mut () : int -> ( this.done = true ; 1 ) )\n"
                 + "One().forEachRemaining(java.util.function.Consumer((v : any?) -> ( print(v) )))"));
     }
 

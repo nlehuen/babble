@@ -74,11 +74,11 @@ export def Vec3 = value class (x: double, y: double, z: double) (
     def zero: Vec3 = this(0.0, 0.0, 0.0)
     def one: Vec3 = this(1.0, 1.0, 1.0)
 
-    def random = (rng: Rng): Vec3 -> (
+    def random = (mut rng: Rng): Vec3 -> (
         this(rng.nextDouble(), rng.nextDouble(), rng.nextDouble())
     )
 
-    def randomRange = (rng: Rng, minVal: double, maxVal: double): Vec3 -> (
+    def randomRange = (mut rng: Rng, minVal: double, maxVal: double): Vec3 -> (
         this(
             rng.nextRange(minVal, maxVal),
             rng.nextRange(minVal, maxVal),
@@ -86,7 +86,7 @@ export def Vec3 = value class (x: double, y: double, z: double) (
         )
     )
 
-    def randomUnitVector = (rng: Rng): Vec3 -> (
+    def randomUnitVector = (mut rng: Rng): Vec3 -> (
         while true then (
             def p: Vec3 = this.randomRange(rng, -1.0, 1.0)
             def lensq: double = p.lengthSquared()
@@ -97,7 +97,7 @@ export def Vec3 = value class (x: double, y: double, z: double) (
         this.zero
     )
 
-    def randomOnHemisphere = (rng: Rng, normal: Vec3): Vec3 -> (
+    def randomOnHemisphere = (mut rng: Rng, normal: Vec3): Vec3 -> (
         def onUnitSphere: Vec3 = this.randomUnitVector(rng)
         if onUnitSphere.dot(normal) > 0.0 then (
             onUnitSphere
@@ -106,7 +106,7 @@ export def Vec3 = value class (x: double, y: double, z: double) (
         )
     )
 
-    def randomInUnitDisk = (rng: Rng): Vec3 -> (
+    def randomInUnitDisk = (mut rng: Rng): Vec3 -> (
         while true then (
             def p: Vec3 = this(
                 rng.nextRange(-1.0, 1.0),

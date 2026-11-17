@@ -45,6 +45,10 @@ public final class EffectSet {
     private final boolean impure;
     private final boolean axiomatic;
 
+    public static EnumSet<Effect> copySet(Set<Effect> set) {
+        return set == null || set.isEmpty() ? EnumSet.noneOf(Effect.class) : EnumSet.copyOf(set);
+    }
+
     public EffectSet(Set<Effect> effects,
                      Set<Effect> declared,
                      boolean mutThis,
@@ -52,7 +56,7 @@ public final class EffectSet {
                      boolean explicitBorrowThis,
                      boolean impure,
                      boolean axiomatic) {
-        EnumSet<Effect> norm = effects.isEmpty() ? EnumSet.noneOf(Effect.class) : EnumSet.copyOf(effects);
+        EnumSet<Effect> norm = copySet(effects);
         norm.remove(Effect.MUT);
         norm.remove(Effect.BORROW);
         norm.remove(Effect.IMPURE);
@@ -61,7 +65,7 @@ public final class EffectSet {
         } else if (norm.contains(Effect.PURE)) {
             norm.add(Effect.HERMETIC);
         }
-        EnumSet<Effect> decl = declared.isEmpty() ? EnumSet.noneOf(Effect.class) : EnumSet.copyOf(declared);
+        EnumSet<Effect> decl = copySet(declared);
         decl.retainAll(norm);
         this.effects = norm;
         this.declared = decl;
@@ -173,9 +177,9 @@ public final class EffectSet {
 
     /** Intersection of guarantees across control-flow branches. */
     public EffectSet intersect(EffectSet other) {
-        EnumSet<Effect> common = EnumSet.copyOf(effects);
+        EnumSet<Effect> common = copySet(effects);
         common.retainAll(other.effects);
-        EnumSet<Effect> commonDecl = EnumSet.copyOf(declared);
+        EnumSet<Effect> commonDecl = copySet(declared);
         commonDecl.retainAll(other.declared);
         boolean eitherMut = mutThis || other.mutThis;
         if (eitherMut) {

@@ -446,4 +446,45 @@ public class FormatterTestCase {
             Assertions.assertTrue(formatted.lines().noneMatch(line -> line.endsWith(" ") || line.contains("\t")), script.toString());
         }
     }
+
+    @Test
+    public void testRm002EffectsAndAxioms() throws Exception {
+        assertFormats("""
+                axiom pure deterministic java.lang.Math
+                axiom mut java.util.List.add
+                axiom pure java.awt.Point()
+                export axiom pure import("java.time")
+                impure java.lang.System.nanoTime
+                def m = axiom pure java.lang.Math
+                def r = impure java.lang.Math.random
+                def add: pure deterministic nothrow (a: int, b: int): int = pure deterministic nothrow (a: int, b: int): int -> (
+                    a + b
+                )
+                def id(T) = pure (x: T): T -> (x)
+                def step = hermetic (mut p: Point, borrow q: Point): int -> (
+                    p.x = q.x
+                    p.x
+                )
+                def pure = (axiom: int, mut: int): int -> (axiom + mut)
+                pure(1, 2)
+                """, """
+                axiom   pure   deterministic   java . lang . Math
+                axiom mut java.util.List.add
+                axiom pure java.awt.Point ( )
+                export   axiom  pure  import ( "java.time" )
+                impure   java.lang.System.nanoTime
+                def m = axiom   pure  java.lang.Math
+                def r = impure   java.lang.Math.random
+                def add : pure  deterministic  nothrow ( a : int , b : int ) : int = pure  deterministic  nothrow ( a : int , b : int ) : int -> (
+                a+b
+                )
+                def id ( T ) = pure ( x : T ) : T -> ( x )
+                def step = hermetic ( mut  p : Point , borrow  q : Point ) : int -> (
+                p.x = q.x
+                p.x
+                )
+                def pure = ( axiom : int , mut : int ) : int -> ( axiom + mut )
+                pure ( 1 , 2 )
+                """);
+    }
 }

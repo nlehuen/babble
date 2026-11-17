@@ -46,7 +46,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     @Test
     public void testConstructorParametersAndDefaults() throws Exception {
         String account = "def Account = class (def owner : string, def balance = 0) (\n"
-                + "    def deposit = (n : int) -> ( this.balance = this.balance + n )\n"
+                + "    def deposit = mut (n : int) -> ( this.balance = this.balance + n )\n"
                 + ")\n";
         Assertions.assertEquals(5, interpret(account + "def a = Account(\"ann\") ; a.deposit(5) ; a.balance"));
         Assertions.assertEquals(12, interpret(account + "def a = Account(\"ann\", balance: 7) ; a.deposit(5)"));
