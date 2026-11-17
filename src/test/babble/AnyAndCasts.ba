@@ -75,7 +75,7 @@ assert((null as Box?) == null)
 def Shape = interface (
     def area: (): double
 )
-def Square = class (def side: double) implements Shape (
+def Square = class (def side) implements Shape (
     def area = () -> (this.side * this.side)
 )
 def shape: Shape = Square(3.0)
@@ -88,14 +88,14 @@ assert(java.lang.reflect.Array.get(parts, 1) == "two")
 assert(java.util.Arrays.asList(parts).size() == 3)
 
 ;; ---- `int`-to-`double` conversion on `if` and inferred function results
-def pickNumber = (c: bool) -> (
+def pickNumber = (c) -> (
     if c then (1) else (2.0)
 )
 def w = pickNumber(true)
 assert(w is double)
 assert(w + w == 2.0)
 
-def pickEarly = (c: bool) -> (
+def pickEarly = (c) -> (
     if c then (return 1)
     2.0
 )

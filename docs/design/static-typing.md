@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | P1–P6b implemented : static typing is the only mode, redundant internal T9 checks are removed (§7, §8), union types (`A | B`) and nullable types (`T?`, `any` vs `any?`) are implemented (§11), and Java/Babble generics with `(...)` syntax are implemented (§5.2, §12). Call-site parameter inference (P7) remains planned. |
+| **Status** | P1–P7 implemented : static typing is the only mode, redundant internal T9 checks are removed (§7, §8), union types (`A | B`) and nullable types (`T?`, `any` vs `any?`) are implemented (§11), Java/Babble generics with `(...)` syntax are implemented (§5.2, §12), and call-site parameter inference (P7, §4.9) is implemented. |
 | **Replaces** | the gradual part of [type-system.md](type-system.md) (T1–T9) : T9 checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java. |
 | **Scope** | the type checker, the grammar (`as`, `is` on built-in types, `|`, `?`, `null` in types, generic type parameters/arguments with `(...)`), the runtime checks, the tests, the examples and the docs. |
 
@@ -17,8 +17,8 @@ type, and a program the checker cannot type is rejected before it runs.
 but nothing can be done with one (no member, no call, no operator, not assignable to a narrower
 type) until it is narrowed, by `is` in a condition or by an explicit, runtime-checked cast `as`.
 `any` is what a Java `Object` is, and what an untyped binding is ; it is never what an
-unannotated parameter is : those must be annotated, unless their context or their default value
-gives their type (and, from P7, the calls to their function, 4.9).
+unannotated parameter is : those must be annotated, unless their context, their default value,
+or (for non-escaping, non-exported, called callables) the calls to them (4.9) gives their type.
 
 The change is made in phases (§8) behind a strict mode, so that the suite stays green at every
 step and the default flips only once the tests, the examples and the README are migrated.
@@ -196,12 +196,12 @@ area("x", 1)          ;; Type error : expected double, got string, at this call
   class header parameter, through the constructor calls `C(…)`.
 * It doesn't apply, and an annotation is required (`Missing type : a`), when calls can be
   hidden : when the function escapes as a value (passed as an argument, stored, returned,
-  assigned), when it is exported from a module (`export def`, or a member of an exported class,
-  since callers are in files analysed after it), when a method implements or overrides one on a
-  Java interface (callable from Java via `Faces`, through a `JavaInstance(I)` receiver, or via
-  `super(I).m()`), or for a class's header parameters when the class itself is used as a value
-  (`def K = Point ; K(1, 2)`). A function never called needs annotations too, there being
-  nothing to infer from.
+  assigned), when it is exported from a module (`export def`, `export package`, or a public or
+  static member of an exported class, since callers are in files analysed after it), when a
+  method implements or overrides one on an interface (Babble or Java) or is an interface default
+  method, or for a class's header parameters when the class itself is used as a value
+  (`def K = Point ; K(1, 2)`). A function never called (or called only with `null` when it has
+  no default) needs annotations too, there being nothing to infer from.
 * Named and default arguments bind as at runtime (`Arguments`) : the argument that binds a
   parameter is the one inferred from.
 * Calls, parameters and results depend on each other (a call's argument may be another call's
@@ -359,9 +359,12 @@ that can reject existing code behind `babble.typing=strict` :
   widening when safe and uncalled generic function values), Java `TypeVariable` bound checking,
   covariant parameterized subtyping, raw `is`/`as` narrowing with runtime erasure, and runtime
   `Types.check` boundary checks on Java generic `TypeVariable`/`WildcardType` returns and fields.
-* **P7, parameters inferred from calls** (4.9). It needs only P4, and can come before P6b. It
-  makes most of the annotations P3 adds optional again : P7 removes those inference gives the
-  same type, keeping the ones on exported and escaping functions.
+* **P7, parameters inferred from calls** (4.9). *(Implemented)* Infers unannotated parameters of
+  non-exported, non-escaping, called functions, class headers, and non-interface methods from
+  their call sites (supporting named/default args, mutual/self recursion, source-order conflict
+  reporting, widening line notes, and end-of-input closure in REPL sessions, §6), and removes
+  redundant parameter annotations across the tests and examples while keeping required annotations
+  on exported, escaping, interface, and uncalled definitions.
 
 ## 9. Decisions
 

@@ -7,9 +7,9 @@
 
 ;; a package is just a namespace
 package test1 (
-    def add = (a: int, b: int) -> (  ;;
-        a + b                        ;; function literal
-    )                                ;;
+    def add = (a, b) -> (  ;;
+        a + b              ;; function literal
+    )                      ;;
 
     ;; optional types
     def add2 = (a: int, b: int): int -> (
@@ -25,7 +25,7 @@ package test1 (
     )
 
     ;; loops
-    def fac2 = (n: int): int -> (
+    def fac2 = (n) -> (
         def result = 1
         while n > 1 then (
             ;; use ";" to put several statements on one line
@@ -35,7 +35,7 @@ package test1 (
     )
 
     ;; recursion
-    def fac = (n: int): int -> (
+    def fac = (n) -> (
         if n < 2 then (
             1
         ) else (
@@ -52,7 +52,7 @@ package test1 (
     )
 
     ;; an early return abandons the rest of the function body
-    def sign = (n: int): string -> (
+    def sign = (n) -> (
         if n > 0 then (
             return "positive"
         )
@@ -63,7 +63,7 @@ package test1 (
     )
 
     ;; default values, including function literals
-    def apply = (a: int, f: (v: int): int = (v: int) -> (v)) -> (f(a))
+    def apply = (a, f: (v: int): int = (v: int) -> (v)) -> (f(a))
 
     ;; using function scopes as poor man's objects
     ;; like in Javascript

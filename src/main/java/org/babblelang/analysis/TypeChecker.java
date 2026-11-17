@@ -103,8 +103,16 @@ final class TypeChecker {
     private final Map<ParserRuleContext, Type> nextInferredDefs = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredMembers = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> nextInferredMembers = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, Type> inferredParams = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, Type> nextInferredParams = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Widening> defWidenings = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Widening> memberWidenings = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, Widening> paramWidenings = new IdentityHashMap<>();
+    private final Set<ParserRuleContext> escapingTargets = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<ParserRuleContext> nextEscapingTargets = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<ParserRuleContext> p7Params = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<Type.Function, BabbleParser.FunctionLiteralContext> functionLiterals = new IdentityHashMap<>();
+    private final Set<TypeNode> exportedTypeNodes = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
     /**
      * The checkers of the files this one imports statically, transitively, by file : what
@@ -141,6 +149,12 @@ final class TypeChecker {
                 if (!Objects.equals(callableScope(assignment.scope()), callableScope(scopeOf(declaration)))) {
                     capturedReassigned.add(declaration);
                 }
+            }
+        }
+        for (TypeNode node : pass.types) {
+            BabbleParser.DefExpressionContext def = owningDefExpr(node.ctx);
+            if (isExported(def)) {
+                exportedTypeNodes.add(node);
             }
         }
         new ReturnFinder().visit(file);
@@ -189,10 +203,15 @@ final class TypeChecker {
         narrowings.clear();
         nextInferredDefs.clear();
         nextInferredMembers.clear();
+        nextInferredParams.clear();
+        nextEscapingTargets.clear();
+        p7Params.clear();
+        functionLiterals.clear();
         failedDefs.clear();
     }
 
     private boolean commitInferred() {
+        boolean escapedChanged = escapingTargets.addAll(nextEscapingTargets);
         Map<ParserRuleContext, Type> filteredDefs = new IdentityHashMap<>();
         for (Map.Entry<ParserRuleContext, Type> entry : nextInferredDefs.entrySet()) {
             if (entry.getValue() != Type.NULL) {
@@ -205,12 +224,22 @@ final class TypeChecker {
                 filteredMembers.put(entry.getKey(), entry.getValue());
             }
         }
-        boolean changed = !filteredDefs.equals(inferredDefs) || !filteredMembers.equals(inferredMembers);
+        Map<ParserRuleContext, Type> filteredParams = new IdentityHashMap<>();
+        for (Map.Entry<ParserRuleContext, Type> entry : nextInferredParams.entrySet()) {
+            if (entry.getValue() != Type.NULL && entry.getKey() instanceof BabbleParser.ParameterDeclarationContext param
+                    && !escapingTargets.contains(ownerOfParam(param))) {
+                filteredParams.put(entry.getKey(), entry.getValue());
+            }
+        }
+        boolean changed = escapedChanged || !filteredDefs.equals(inferredDefs) || !filteredMembers.equals(inferredMembers)
+                || !filteredParams.equals(inferredParams);
         if (changed) {
             inferredDefs.clear();
             inferredDefs.putAll(filteredDefs);
             inferredMembers.clear();
             inferredMembers.putAll(filteredMembers);
+            inferredParams.clear();
+            inferredParams.putAll(filteredParams);
         }
         return changed;
     }
@@ -308,6 +337,10 @@ final class TypeChecker {
             if (selector.expression() == null) {
                 ScopeNode scope = occurrenceScopes.get(selector);
                 if (scope != null && resolveName(selector, name, scope) instanceof ParserRuleContext decl) {
+                    Widening paramWidening = paramWidenings.get(decl);
+                    if (paramWidening != null && paramWidening.line() > diagnosticLine) {
+                        return " (" + name + " is " + paramWidening.type() + " because of the call at line " + paramWidening.line() + ")";
+                    }
                     Widening widening = defWidenings.get(decl);
                     if (widening != null && widening.line() > diagnosticLine) {
                         return " (" + name + " is " + widening.type() + " because of the assignment at line " + widening.line() + ")";
@@ -317,6 +350,10 @@ final class TypeChecker {
                 Type receiver = types.get(selector.expression());
                 TypeNode.Member member = targetMember(receiver, name);
                 if (member != null) {
+                    Widening paramWidening = paramWidenings.get(member.declaration);
+                    if (paramWidening != null && paramWidening.line() > diagnosticLine) {
+                        return " (" + name + " is " + paramWidening.type() + " because of the call at line " + paramWidening.line() + ")";
+                    }
                     Widening widening = memberWidenings.get(member.declaration);
                     if (widening != null && widening.line() > diagnosticLine) {
                         return " (" + name + " is " + widening.type() + " because of the assignment at line " + widening.line() + ")";
@@ -335,6 +372,18 @@ final class TypeChecker {
                 return found;
             }
         }
+        if (tree instanceof BabbleParser.CallContext call && types.get(call.expression()) instanceof Type.Function fn) {
+            BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
+            if (lit != null) {
+                for (BabbleParser.ParameterDeclarationContext param : lit.parametersDeclaration().parameterDeclaration()) {
+                    Widening paramWidening = paramWidenings.get(param);
+                    if (paramWidening != null && paramWidening.line() > diagnosticLine) {
+                        return " (" + param.ID().getText() + " is " + paramWidening.type()
+                                + " because of the call at line " + paramWidening.line() + ")";
+                    }
+                }
+            }
+        }
         return null;
     }
 
@@ -343,6 +392,10 @@ final class TypeChecker {
         if (assign.namespace == null) {
             ScopeNode scope = occurrenceScopes.get(assign);
             if (scope != null && resolveName(assign, name, scope) instanceof ParserRuleContext decl) {
+                Widening paramWidening = paramWidenings.get(decl);
+                if (paramWidening != null && paramWidening.line() > diagnosticLine) {
+                    return " (" + name + " is " + paramWidening.type() + " because of the call at line " + paramWidening.line() + ")";
+                }
                 Widening widening = defWidenings.get(decl);
                 if (widening != null && widening.line() > diagnosticLine) {
                     return " (" + name + " is " + widening.type() + " because of the assignment at line " + widening.line() + ")";
@@ -352,6 +405,10 @@ final class TypeChecker {
             Type receiver = types.get(assign.namespace);
             TypeNode.Member member = targetMember(receiver, name);
             if (member != null) {
+                Widening paramWidening = paramWidenings.get(member.declaration);
+                if (paramWidening != null && paramWidening.line() > diagnosticLine) {
+                    return " (" + name + " is " + paramWidening.type() + " because of the call at line " + paramWidening.line() + ")";
+                }
                 Widening widening = memberWidenings.get(member.declaration);
                 if (widening != null && widening.line() > diagnosticLine) {
                     return " (" + name + " is " + widening.type() + " because of the assignment at line " + widening.line() + ")";
@@ -762,6 +819,13 @@ final class TypeChecker {
         Type cached = declarationTypes.get(declaration);
         if (cached != null) {
             return cached;
+        }
+        if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter) {
+            Type inferredParam = inferredParams.get(parameter);
+            if (inferredParam != null && isInferrableCallable(ownerOfParam(parameter))) {
+                declarationTypes.put(parameter, inferredParam);
+                return inferredParam;
+            }
         }
         if (inferredDefs.containsKey(declaration)
                 && !(declaration instanceof BabbleParser.DefExpressionContext def
@@ -1540,6 +1604,13 @@ final class TypeChecker {
         }
     }
 
+    private Type.Function recordFunctionLiteral(Type.Function fn, BabbleParser.FunctionLiteralContext literal) {
+        if (inFile(literal)) {
+            functionLiterals.put(fn, literal);
+        }
+        return fn;
+    }
+
     /** The type of a function literal : its parameters and annotated or inferred result. */
     private Type.Function signature(BabbleParser.FunctionLiteralContext literal) {
         applyContextualType(literal);
@@ -1555,18 +1626,18 @@ final class TypeChecker {
         } else {
             result = inferFunctionResult(literal);
         }
-        return new Type.Function(typeVarsOf(owningDef(literal)), params, result);
+        return recordFunctionLiteral(new Type.Function(typeVarsOf(owningDef(literal)), params, result), literal);
     }
 
     private Type.Function recursiveSignature(BabbleParser.FunctionLiteralContext literal) {
         List<Type.TypeVar> tparams = typeVarsOf(owningDef(literal));
         List<Type.Parameter> params = functionParameters(literal);
         if (provisionalResults.containsKey(literal)) {
-            return new Type.Function(tparams, params, provisionalResults.get(literal));
+            return recordFunctionLiteral(new Type.Function(tparams, params, provisionalResults.get(literal)), literal);
         }
         if (!inferenceStack.isEmpty() && inferenceStack.peek() == literal) {
             recursiveFunctions.add(literal);
-            return new Type.Function(tparams, params, Type.NOTHING);
+            return recordFunctionLiteral(new Type.Function(tparams, params, Type.NOTHING), literal);
         }
         for (BabbleParser.FunctionLiteralContext fn : inferenceStack) {
             BabbleParser.DefExpressionContext def = owningDef(fn);
@@ -1580,37 +1651,116 @@ final class TypeChecker {
                 break;
             }
         }
-        return new Type.Function(tparams, params, Type.ERROR);
+        return recordFunctionLiteral(new Type.Function(tparams, params, Type.ERROR), literal);
     }
 
     private static BabbleParser.DefExpressionContext owningDef(BabbleParser.FunctionLiteralContext literal) {
-        ParserRuleContext child = literal;
+        return owningDefExpr(literal);
+    }
+
+    private static BabbleParser.DefExpressionContext owningDefExpr(ParserRuleContext expr) {
+        ParserRuleContext child = expr;
         while (child.getParent() instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
             child = block;
         }
         return child.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == child ? def : null;
     }
 
+    private static ParserRuleContext ownerOfParam(BabbleParser.ParameterDeclarationContext parameter) {
+        ParserRuleContext parent = parameter.getParent();
+        return parent != null ? parent.getParent() : null;
+    }
+
+    private boolean isExported(BabbleParser.DefExpressionContext def) {
+        if (def == null || !inFile(def)) {
+            return false;
+        }
+        if (def.EXPORT() != null) {
+            return true;
+        }
+        BabbleParser.PackageExpressionContext outermost = null;
+        for (ParserRuleContext p = def.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof BabbleParser.PackageExpressionContext pkg) {
+                outermost = pkg;
+            } else if (p instanceof BabbleParser.FunctionLiteralContext
+                    || p instanceof BabbleParser.ClassExpressionContext
+                    || p instanceof BabbleParser.InterfaceExpressionContext
+                    || p instanceof BabbleParser.ObjectExpressionContext) {
+                return false;
+            }
+        }
+        return outermost != null && pass.analysis.exportsName(outermost.name.getText());
+    }
+
+    private static boolean implementsInterfaceMethod(TypeNode node, String name) {
+        return implementsInterfaceMethod(node, name, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private static boolean implementsInterfaceMethod(TypeNode node, String name, Set<TypeNode> seen) {
+        for (Object parent : node.parents) {
+            if (parent instanceof TypeNode parentNode) {
+                if (seen.add(parentNode)) {
+                    if (parentNode.members.containsKey(name)
+                            || implementsInterfaceMethod(parentNode, name, seen)) {
+                        return true;
+                    }
+                }
+            } else if (parent instanceof Class<?> javaIface) {
+                for (Method method : javaIface.getMethods()) {
+                    if (method.getName().equals(name)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isInferrableCallable(ParserRuleContext owner) {
+        if (owner == null || !inFile(owner) || escapingTargets.contains(owner)) {
+            return false;
+        }
+        if (owner instanceof BabbleParser.ClassExpressionContext cls) {
+            TypeNode node = pass.typeNodes.get(cls);
+            if (node == null || exportedTypeNodes.contains(node)) {
+                return false;
+            }
+            BabbleParser.DefExpressionContext def = owningDefExpr(cls);
+            return def != null && !reassigned.contains(def) && !isExported(def);
+        }
+        if (owner instanceof BabbleParser.FunctionLiteralContext fn) {
+            ScopeNode fnScope = scopeOf(fn);
+            if (fnScope.memberOf != null) {
+                if (fnScope.memberOf.isInterface()) {
+                    return false;
+                }
+                if (!(fn.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == fn)) {
+                    return false;
+                }
+                String memberName = def.name.getText();
+                TypeNode.Member member = fnScope.staticMethod
+                        ? fnScope.memberOf.statics.get(memberName)
+                        : fnScope.memberOf.members.get(memberName);
+                boolean isPrivate = member != null && member.isPrivate();
+                if (exportedTypeNodes.contains(fnScope.memberOf) && !isPrivate) {
+                    return false;
+                }
+                if (!fnScope.staticMethod && !isPrivate && implementsInterfaceMethod(fnScope.memberOf, memberName)) {
+                    return false;
+                }
+                return true;
+            }
+            BabbleParser.DefExpressionContext def = owningDefExpr(fn);
+            return def != null && !reassigned.contains(def) && !isExported(def);
+        }
+        return false;
+    }
+
     private List<Type.Parameter> functionParameters(BabbleParser.FunctionLiteralContext literal) {
         ScopeNode scope = scopeOf(literal);
         List<Type.Parameter> result = new ArrayList<>();
         for (BabbleParser.ParameterDeclarationContext parameter : literal.parametersDeclaration().parameterDeclaration()) {
-            Type type;
-            if (parameter.type() != null) {
-                type = annotation(parameter.type(), scope);
-            } else if (declarationTypes.containsKey(parameter)) {
-                type = declarationTypes.get(parameter);
-            } else if (parameter.defaultValue != null) {
-                Type defType = typeOf(parameter.defaultValue);
-                if (defType != Type.NULL && !isUnresolved(defType)) {
-                    declarationTypes.put(parameter, defType);
-                    type = defType;
-                } else {
-                    type = Type.ERROR;
-                }
-            } else {
-                type = Type.ERROR;
-            }
+            Type type = parameterType(parameter, scope);
             result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null));
         }
         return result;
@@ -2191,6 +2341,146 @@ final class TypeChecker {
         recordInferred(nextInferredMembers, memberWidenings, decl, valueType, at);
     }
 
+    private void recordInferredParam(ParserRuleContext decl, Type valueType, ParserRuleContext at) {
+        if (isUnresolved(valueType)) {
+            return;
+        }
+        if (containsUnresolved(valueType)) {
+            return;
+        }
+        if (hasForeignTypeVar(valueType, decl)) {
+            Type currentInferred = inferredParams.get(decl);
+            if (currentInferred != null) {
+                expect(valueType, currentInferred, at);
+            }
+            return;
+        }
+        Type current = nextInferredParams.get(decl);
+        if (current == null) {
+            nextInferredParams.put(decl, valueType);
+            return;
+        }
+        Type joined = reassignmentJoin(current, valueType);
+        if (joined == null) {
+            warn("Type error : expected " + current + ", got " + valueType, at);
+            return;
+        }
+        if (!joined.equals(current)) {
+            nextInferredParams.put(decl, joined);
+            if ((containsType(joined, Type.DOUBLE) && !containsType(current, Type.DOUBLE))
+                    || (Type.containsNull(joined) && !Type.containsNull(current))) {
+                ParserRuleContext site = at.getParent() instanceof BabbleParser.CallParameterContext cp
+                        && cp.getParent() instanceof BabbleParser.CallParametersContext cps
+                        && cps.getParent() instanceof BabbleParser.CallContext call ? call : at;
+                paramWidenings.put(decl, new Widening(joined, site.getStart().getLine()));
+            }
+        }
+    }
+
+    private static boolean containsUnresolved(Type type) {
+        if (type == null || isUnresolved(type)) {
+            return true;
+        }
+        if (type instanceof Type.TypeVar tv) {
+            return tv.owner() == null;
+        }
+        if (type instanceof Type.Union u) {
+            return u.members().stream().anyMatch(TypeChecker::containsUnresolved);
+        }
+        if (type instanceof Type.Function f) {
+            return containsUnresolved(f.result())
+                    || f.parameters().stream().anyMatch(p -> containsUnresolved(p.type()));
+        }
+        if (type instanceof Type.Instance inst) {
+            return inst.typeArguments().stream().anyMatch(TypeChecker::containsUnresolved);
+        }
+        if (type instanceof Type.JavaInstance ji) {
+            return ji.typeArguments().stream().anyMatch(TypeChecker::containsUnresolved);
+        }
+        if (type instanceof Type.JavaArray ja) {
+            return containsUnresolved(ja.element());
+        }
+        return false;
+    }
+
+    private static boolean hasForeignTypeVar(Type type, ParserRuleContext decl) {
+        if (type instanceof Type.TypeVar tv) {
+            return !isTypeVarInScope(tv, decl);
+        }
+        if (type instanceof Type.Union u) {
+            return u.members().stream().anyMatch(m -> hasForeignTypeVar(m, decl));
+        }
+        if (type instanceof Type.Function f) {
+            return hasForeignTypeVar(f.result(), decl)
+                    || f.parameters().stream().anyMatch(p -> hasForeignTypeVar(p.type(), decl));
+        }
+        if (type instanceof Type.Instance inst) {
+            return inst.typeArguments().stream().anyMatch(a -> hasForeignTypeVar(a, decl));
+        }
+        if (type instanceof Type.JavaInstance ji) {
+            return ji.typeArguments().stream().anyMatch(a -> hasForeignTypeVar(a, decl));
+        }
+        if (type instanceof Type.JavaArray ja) {
+            return hasForeignTypeVar(ja.element(), decl);
+        }
+        return false;
+    }
+
+    private static boolean isTypeVarInScope(Type.TypeVar tv, ParserRuleContext decl) {
+        if (tv.owner() == null) {
+            return false;
+        }
+        for (ParserRuleContext p = decl; p != null; p = p.getParent()) {
+            if (p == tv.owner()) {
+                return true;
+            }
+            if (p.getParent() instanceof BabbleParser.ClassExpressionContext cls && cls.staticBlock == p
+                    && owningDefExpr(cls) == tv.owner()) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static BabbleParser.ClassExpressionContext unwrapClassExpression(BabbleParser.ExpressionContext expr) {
+        while (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
+            expr = block.block().expression(0);
+        }
+        return expr instanceof BabbleParser.ClassExpressionContext cls ? cls : null;
+    }
+
+    private void checkSelectorEscape(BabbleParser.SelectorContext ctx, Type result) {
+        boolean callee = isCalleeOfCall(ctx);
+        boolean classSafe = callee || isReceiverOfSelector(ctx) || isTypeTestRight(ctx);
+        if (!callee || !classSafe) {
+            for (Type member : Type.membersOf(result)) {
+                if (member instanceof Type.Function fn) {
+                    BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
+                    if (lit != null && inFile(lit) && !callee) {
+                        nextEscapingTargets.add(lit);
+                    }
+                } else if (member instanceof Type.ClassValue cv
+                        && cv.node().ctx instanceof BabbleParser.ClassExpressionContext cls
+                        && inFile(cls) && !classSafe) {
+                    nextEscapingTargets.add(cls);
+                }
+            }
+            if (result == Type.ERROR && ctx.expression() == null) {
+                Object resolved = resolveName(ctx, ctx.ID().getText(), occurrenceScopes.get(ctx));
+                if (resolved instanceof BabbleParser.DefExpressionContext def && inFile(def)) {
+                    BabbleParser.FunctionLiteralContext lit = unwrapFunctionLiteral(def.value);
+                    if (lit != null && !callee) {
+                        nextEscapingTargets.add(lit);
+                    }
+                    BabbleParser.ClassExpressionContext cls = unwrapClassExpression(def.value);
+                    if (cls != null && !classSafe) {
+                        nextEscapingTargets.add(cls);
+                    }
+                }
+            }
+        }
+    }
+
     private void recordInferred(Map<ParserRuleContext, Type> map, Map<ParserRuleContext, Widening> widenMap,
                                 ParserRuleContext decl, Type valueType, ParserRuleContext at) {
         if (isUnresolved(valueType)) {
@@ -2363,7 +2653,12 @@ final class TypeChecker {
 
         @Override
         public Type visitThisExpression(BabbleParser.ThisExpressionContext ctx) {
-            return thisType(occurrenceScopes.get(ctx));
+            Type result = thisType(occurrenceScopes.get(ctx));
+            if (result instanceof Type.ClassValue cv && cv.node().ctx instanceof BabbleParser.ClassExpressionContext cls
+                    && inFile(cls) && !isCalleeOfCall(ctx) && !isReceiverOfSelector(ctx) && !isTypeTestRight(ctx)) {
+                nextEscapingTargets.add(cls);
+            }
+            return result;
         }
 
         @Override
@@ -2374,6 +2669,7 @@ final class TypeChecker {
         @Override
         public Type visitSelector(BabbleParser.SelectorContext ctx) {
             Type result = selectUninstantiated(ctx);
+            checkSelectorEscape(ctx, result);
             if (result instanceof Type.Function fn && !fn.typeParameters().isEmpty() && !isCalleeOfCall(ctx)) {
                 result = instantiateFunctionValue(fn, ctx);
             }
@@ -2657,9 +2953,13 @@ final class TypeChecker {
             if (ctx.namespace == null) {
                 if (resolveName(ctx, name, occurrenceScopes.get(ctx)) instanceof ParserRuleContext declaration) {
                     reassignedLocal = declaration;
-                    declared = declaredType(declaration);
-                    if (declared == null) {
-                        inferredTarget = declaration;
+                    if (declaration instanceof BabbleParser.ParameterDeclarationContext) {
+                        declared = typeOfDeclaration(declaration);
+                    } else {
+                        declared = declaredType(declaration);
+                        if (declared == null) {
+                            inferredTarget = declaration;
+                        }
                     }
                 }
             } else {
@@ -2681,13 +2981,15 @@ final class TypeChecker {
                 }
                 boolean own = ctx.namespace instanceof BabbleParser.ThisExpressionContext;
                 declared = assignedMemberType(receiver, name, own, ctx);
-                if (declared == null) {
-                    TypeNode.Member member = assignedBabbleMember(receiver, name, own);
-                    if (member != null && member.function == null && member.declaration instanceof BabbleParser.DefExpressionContext def
-                            && isLocal(def) && inFile(def)) {
-                        inferredTarget = def;
-                        memberTarget = true;
-                    }
+                TypeNode.Member member = assignedBabbleMember(receiver, name, own);
+                if (member != null && member.function != null && inFile(member.function)) {
+                    nextEscapingTargets.add(member.function);
+                }
+                if (declared == null && member != null && member.function == null
+                        && member.declaration instanceof BabbleParser.DefExpressionContext def
+                        && isLocal(def) && inFile(def)) {
+                    inferredTarget = def;
+                    memberTarget = true;
                 }
             }
             Type value = typeOf(ctx.value, declared);
@@ -2730,11 +3032,15 @@ final class TypeChecker {
                 Object resolved = resolveName(ctx, name, occurrenceScopes.get(ctx));
                 if (resolved instanceof ParserRuleContext declaration) {
                     reassignedLocal = declaration;
-                    declared = declaredType(declaration);
                     Type narrowed = narrowedType(declaration);
                     current = narrowed != null ? narrowed : typeOfDeclaration(declaration);
-                    if (declared == null) {
-                        inferredTarget = declaration;
+                    if (declaration instanceof BabbleParser.ParameterDeclarationContext) {
+                        declared = typeOfDeclaration(declaration);
+                    } else {
+                        declared = declaredType(declaration);
+                        if (declared == null) {
+                            inferredTarget = declaration;
+                        }
                     }
                 } else if (resolved == null) {
                     current = implicitType(name);
@@ -2753,6 +3059,9 @@ final class TypeChecker {
                     } else {
                         TypeNode.Member member = assignedBabbleMember(receiver, name, own);
                         if (member != null) {
+                            if (member.function != null && inFile(member.function)) {
+                                nextEscapingTargets.add(member.function);
+                            }
                             current = receiver instanceof Type.Instance inst
                                     ? substitute(memberType(member), instanceEnv(inst))
                                     : memberType(member);
@@ -2807,6 +3116,9 @@ final class TypeChecker {
             BabbleParser.FunctionLiteralContext function = enclosingFunction(ctx);
             if (function == null) {
                 return Type.ERROR;
+            }
+            if (inFile(function) && !isCalleeOfCall(ctx)) {
+                nextEscapingTargets.add(function);
             }
             if (inferringResult.contains(function) || provisionalResults.containsKey(function)) {
                 return recursiveSignature(function);
@@ -3272,13 +3584,32 @@ final class TypeChecker {
 
     // ---------------------------------------------------------------- calls
 
-    private static boolean isCalleeOfCall(BabbleParser.SelectorContext ctx) {
+    private static boolean isCalleeOfCall(ParserRuleContext ctx) {
         ParserRuleContext current = ctx;
         while (current.getParent() instanceof BabbleParser.BlockExpressionContext block
                 && block.block().expression().size() == 1) {
             current = block;
         }
         return current.getParent() instanceof BabbleParser.CallContext call && call.expression() == current;
+    }
+
+    private static boolean isReceiverOfSelector(ParserRuleContext ctx) {
+        ParserRuleContext current = ctx;
+        while (current.getParent() instanceof BabbleParser.BlockExpressionContext block
+                && block.block().expression().size() == 1) {
+            current = block;
+        }
+        return (current.getParent() instanceof BabbleParser.SelectorContext selector && selector.expression() == current)
+                || (current.getParent() instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == current);
+    }
+
+    private static boolean isTypeTestRight(ParserRuleContext ctx) {
+        ParserRuleContext current = ctx;
+        while (current.getParent() instanceof BabbleParser.BlockExpressionContext block
+                && block.block().expression().size() == 1) {
+            current = block;
+        }
+        return current.getParent() instanceof BabbleParser.IsExpressionContext isExpr && isExpr.right == current;
     }
 
     private Type instantiateFunctionValue(Type.Function fn, BabbleParser.SelectorContext ctx) {
@@ -3335,6 +3666,16 @@ final class TypeChecker {
         return false;
     }
 
+    private List<BabbleParser.ParameterDeclarationContext> parameterDecls(Type.Function fn) {
+        BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
+        return lit != null ? lit.parametersDeclaration().parameterDeclaration() : null;
+    }
+
+    private static List<BabbleParser.ParameterDeclarationContext> parameterDecls(TypeNode node) {
+        return node.ctx instanceof BabbleParser.ClassExpressionContext cls && cls.parametersDeclaration() != null
+                ? cls.parametersDeclaration().parameterDeclaration() : null;
+    }
+
     private Type call(Type callee, BabbleParser.CallContext ctx) {
         List<BabbleParser.CallParameterContext> arguments = ctx.callParameters().callParameter();
         if (callee == Type.ERROR || callee == Type.NOTHING) {
@@ -3373,11 +3714,12 @@ final class TypeChecker {
             return Type.union(results);
         }
         if (callee instanceof Type.Function function) {
+            List<BabbleParser.ParameterDeclarationContext> decls = parameterDecls(function);
             if (function.typeParameters().isEmpty()) {
-                bind(function.parameters(), arguments, ctx);
+                bind(function.parameters(), decls, arguments, ctx);
                 return function.result();
             }
-            return genericBabbleCall(function.typeParameters(), function.parameters(), function.result(),
+            return genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
                     arguments, ctx, ctx.expression().getText());
         }
         if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
@@ -3385,9 +3727,10 @@ final class TypeChecker {
             List<Type.TypeVar> classVars = typeVarsOf(node);
             List<Type.Parameter> parameters = node.ctx instanceof BabbleParser.ClassExpressionContext cls
                     ? constructorParameters(cls) : List.of();
+            List<BabbleParser.ParameterDeclarationContext> decls = parameterDecls(node);
             if (classVars.isEmpty()) {
                 if (parameters != null) {
-                    bind(parameters, arguments, ctx);
+                    bind(parameters, decls, arguments, ctx);
                 }
                 return new Type.Instance(node);
             }
@@ -3395,7 +3738,7 @@ final class TypeChecker {
                 parameters = List.of();
             }
             Type patternReturn = new Type.Instance(node, List.copyOf(classVars));
-            return genericBabbleCall(classVars, parameters, patternReturn, arguments, ctx, node.name);
+            return genericBabbleCall(classVars, parameters, decls, patternReturn, arguments, ctx, node.name);
         }
         if (callee instanceof Type.JavaClassValue value) {
             Class<?> java = value.type();
@@ -3417,6 +3760,7 @@ final class TypeChecker {
     }
 
     private Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
+                                   List<BabbleParser.ParameterDeclarationContext> declarations,
                                    Type resultPattern, List<BabbleParser.CallParameterContext> arguments,
                                    BabbleParser.CallContext ctx, String description) {
         Type.Parameter[] argParams = mapArgumentsToParameters(parameters, arguments);
@@ -3484,7 +3828,7 @@ final class TypeChecker {
         for (Type.Parameter p : parameters) {
             substitutedParams.add(new Type.Parameter(p.name(), substitute(p.type(), inferred), p.optional()));
         }
-        bind(substitutedParams, arguments, ctx);
+        bind(substitutedParams, declarations, arguments, ctx);
         return substitute(resultPattern, inferred);
     }
 
@@ -3946,11 +4290,25 @@ final class TypeChecker {
         if (declarationTypes.containsKey(parameter)) {
             return declarationTypes.get(parameter);
         }
+        Type defType = null;
         if (parameter.defaultValue != null) {
-            Type defType = typeOf(parameter.defaultValue);
+            defType = typeOf(parameter.defaultValue);
             if (defType != Type.NULL && !isUnresolved(defType)) {
                 declarationTypes.put(parameter, defType);
                 return defType;
+            }
+        }
+        if (parameter.defaultValue == null || defType == Type.NULL) {
+            if (isInferrableCallable(ownerOfParam(parameter))) {
+                p7Params.add(parameter);
+                if (defType == Type.NULL) {
+                    nextInferredParams.putIfAbsent(parameter, Type.NULL);
+                }
+                Type inferred = inferredParams.get(parameter);
+                if (inferred != null) {
+                    declarationTypes.put(parameter, inferred);
+                    return inferred;
+                }
             }
         }
         return Type.ERROR;
@@ -3966,7 +4324,8 @@ final class TypeChecker {
     }
 
     /** The argument binding rules of {@code Arguments}, applied to a known signature. */
-    private void bind(List<Type.Parameter> parameters, List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
+    private void bind(List<Type.Parameter> parameters, List<BabbleParser.ParameterDeclarationContext> declarations,
+                      List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
         int count = arguments.size();
         String[] names = new String[count];
         boolean named = false;
@@ -3997,10 +4356,30 @@ final class TypeChecker {
                 continue;
             }
             BabbleParser.ExpressionContext argument = arguments.get(found).expression();
+            BabbleParser.ParameterDeclarationContext decl = declarations != null && index < declarations.size()
+                    ? declarations.get(index) : null;
             Type actual = typeOf(argument, parameter.type());
-            expect(actual, parameter.type(), argument);
-            if (needsDoubleWidening(actual, parameter.type())) {
-                widened.add(argument);
+            if (decl != null && p7Params.contains(decl)) {
+                Type inferredParam = inferredParams.get(decl);
+                boolean substitutedClassTypeVar = inferredParam != null && containsTypeVar(inferredParam)
+                        && !parameter.type().equals(inferredParam);
+                if (substitutedClassTypeVar) {
+                    expect(actual, parameter.type(), argument);
+                    if (needsDoubleWidening(actual, parameter.type())) {
+                        widened.add(argument);
+                    }
+                } else {
+                    recordInferredParam(decl, actual, argument);
+                    Type latest = inferredParams.get(decl);
+                    if (latest != null && needsDoubleWidening(actual, latest)) {
+                        widened.add(argument);
+                    }
+                }
+            } else {
+                expect(actual, parameter.type(), argument);
+                if (needsDoubleWidening(actual, parameter.type())) {
+                    widened.add(argument);
+                }
             }
         }
         if (!named) {
@@ -4457,9 +4836,28 @@ final class TypeChecker {
             warn("Too many parameters : " + parameters.size() + " declared, " + given + " given", at);
         } else if (argument != null) {
             Type expectedParam = parameters.get(0).type();
-            expect(argumentType, expectedParam, argument);
-            if (needsDoubleWidening(argumentType, expectedParam)) {
-                widened.add(argument);
+            List<BabbleParser.ParameterDeclarationContext> decls = parameterDecls(function);
+            BabbleParser.ParameterDeclarationContext decl = decls != null && !decls.isEmpty() ? decls.get(0) : null;
+            if (decl != null && p7Params.contains(decl)) {
+                Type inferredParam = inferredParams.get(decl);
+                boolean substitutedClassTypeVar = inferredParam != null && containsTypeVar(inferredParam)
+                        && !expectedParam.equals(inferredParam);
+                if (substitutedClassTypeVar) {
+                    expect(argumentType, expectedParam, argument);
+                    if (needsDoubleWidening(argumentType, expectedParam)) {
+                        widened.add(argument);
+                    }
+                } else {
+                    recordInferredParam(decl, argumentType, argument);
+                    if (inferredParam != null && needsDoubleWidening(argumentType, inferredParam)) {
+                        widened.add(argument);
+                    }
+                }
+            } else {
+                expect(argumentType, expectedParam, argument);
+                if (needsDoubleWidening(argumentType, expectedParam)) {
+                    widened.add(argument);
+                }
             }
         }
         return function.result();
@@ -4507,7 +4905,12 @@ final class TypeChecker {
             for (Type.Parameter p : fn.parameters()) {
                 params.add(new Type.Parameter(p.name(), substitute(p.type(), active), p.optional()));
             }
-            return new Type.Function(fn.typeParameters(), params, substitute(fn.result(), active));
+            Type.Function substituted = new Type.Function(fn.typeParameters(), params, substitute(fn.result(), active));
+            BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
+            if (lit != null) {
+                functionLiterals.put(substituted, lit);
+            }
+            return substituted;
         }
         if (type instanceof Type.Instance inst) {
             if (inst.typeArguments().isEmpty()) {

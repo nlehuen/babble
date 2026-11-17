@@ -38,7 +38,7 @@ export def Metal = class (def albedo: Vec3, fuzz: double) implements Material (
 
 export def Dielectric = class (def refractionIndex: double) implements Material (
     ;; Schlick's approximation for reflectance
-    private def reflectance = (cosine: double, refractionIndex: double): double -> (
+    private def reflectance = (cosine, refractionIndex): double -> (
         def r0: double = (1 - refractionIndex) / (1 + refractionIndex)
         r0 *= r0
         r0 + (1 - r0) * Math.pow(1 - cosine, 5)

@@ -2,9 +2,9 @@
 ;; flow-sensitive narrowing with == null / != null / <> null / truthiness / is / else,
 ;; and int-to-double? widening.
 
-def Node = class (def value: int, def next: Node?) ()
+def Node = class (def value, def next) ()
 
-def sumList = (head: Node?): int -> (
+def sumList = (head): int -> (
     def total = 0
     def cur: Node? = head
     while cur != null then (
@@ -33,7 +33,7 @@ assert(describe("ok") == "str:ok")
 assert(describe(null) == "null:null")
 
 ;; Subtraction narrowing via `not (x is ...)` and truthiness of T?
-def headOrZero = (node: Node?): int -> (
+def headOrZero = (node): int -> (
     if node then (node.value) else (0)
 )
 assert(headOrZero(list) == 1)
@@ -67,7 +67,7 @@ assert(scale(1.5) == 3.0)
 def keepIntOrDouble: int | double = 1
 assert(keepIntOrDouble is int)
 
-def maybeDouble = (b1: bool, b2: bool): double? -> (
+def maybeDouble = (b1, b2): double? -> (
     if b1 then (1) else if b2 then (2.5) else (null)
 )
 def d1 = maybeDouble(true, false)
@@ -75,7 +75,7 @@ assert(d1 is double and d1 == 1.0)
 assert(maybeDouble(false, true) == 2.5)
 assert(maybeDouble(false, false) == null)
 
-def earlyNullableDouble = (flag: bool): double? -> (
+def earlyNullableDouble = (flag): double? -> (
     if flag then (return 4)
     null
 )
@@ -84,7 +84,7 @@ assert(d2 is double and d2 == 4.0)
 assert(earlyNullableDouble(false) == null)
 
 ;; Callable unions / nullable callbacks and any vs any?
-def applyOpt = (cb: ((n: int): int)?, v: int): int -> (
+def applyOpt = (cb: ((n: int): int)?, v): int -> (
     if cb <> null then (cb(v)) else (v)
 )
 assert(applyOpt((n: int): int -> (n + 10), 5) == 15)

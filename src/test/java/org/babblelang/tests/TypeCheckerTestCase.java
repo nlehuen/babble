@@ -152,9 +152,9 @@ public class TypeCheckerTestCase {
                 "2:18 Type error : expected string, got int",
                 "5:3 Type error : expected int, got string");
         assertDiagnostics("def u = (a, b) -> ( a )\nu(1)\nu(\"x\", null)",
-                "1:10 Missing type : a",
                 "1:13 Missing type : b",
-                "2:1 Missing parameter : b");
+                "2:1 Missing parameter : b",
+                "3:3 Type error : expected int, got string");
         assertDiagnostics("def n = 1\nn = \"x\"\ndef s : string = n\ndef m = null\ndef t : int = m",
                 "2:5 Type error : expected int, got string",
                 "3:18 Type error : expected string, got int",
@@ -357,14 +357,16 @@ public class TypeCheckerTestCase {
         assertDiagnostics("def e = () -> ()\ndef n = () -> ( null )\ndef a : int = e()\ndef b : int = n()",
                 "3:15 Type error : expected int, got null",
                 "4:15 Type error : expected int, got null");
-        // Self-recursive functions infer when parameter types determine the body type.
+        // Self-recursive functions infer when parameter types determine the body type or are inferred from calls.
         assertDiagnostics("def fac = (n : int) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )\n"
                         + "def sum = (n : int) -> ( if n < 1 then ( 0 ) else ( n + sum(n - 1) ) )\n"
                         + "def dyn = (n) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )\n"
+                        + "def uncalled = (n) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )\n"
                         + "def a : string = fac(5)\ndef b : string = sum(5)\ndef c : string = dyn(5)",
-                "3:12 Missing type : n",
-                "4:18 Type error : expected string, got int",
-                "5:18 Type error : expected string, got int");
+                "4:17 Missing type : n",
+                "5:18 Type error : expected string, got int",
+                "6:18 Type error : expected string, got int",
+                "7:18 Type error : expected string, got int");
     }
 
     @Test
@@ -699,7 +701,6 @@ public class TypeCheckerTestCase {
                 + "def I = interface ( def req ; def deflt = (a) -> ( 1 ) )\n"
                 + "C(1, \"bad\").z = 2\n"
                 + "C.s = \"wrong\"",
-                "1:16 Missing type : x",
                 "2:3 Missing type : m",
                 "3:3 Missing type : n",
                 "6:3 Missing type : a (recursive)",
@@ -1225,6 +1226,110 @@ public class TypeCheckerTestCase {
         Assertions.assertThrows(
                 org.antlr.v4.runtime.misc.ParseCancellationException.class,
                 () -> diagnostics("def A = class (def x : int) () ; def a : A? = null ; a?.x = 1"));
+    }
+
+    @Test
+    public void testP7CallSiteParameterInference() {
+        // Functions, package defs, widening (int -> double, T <-> null), named/default args, methods, operators, constructors, recursion.
+        assertDiagnostics("def area = (w, h) -> ( w * h )\n"
+                + "area(2, 3)\n"
+                + "def d : double = area(1.5, 2)\n"
+                + "package pkg ( def sq = (x) -> ( x * x ) )\n"
+                + "def sqr : int = pkg.sq(4)\n"
+                + "def opt = (a = null, b = 10) -> ( (if a == null then ( \"none\" ) else ( a )) + \":\" + b )\n"
+                + "def o1 : string = opt()\n"
+                + "def o2 : string = opt(b: 5, a: \"ok\")\n"
+                + "def Point = value class (x, y) (\n"
+                + "  def plus = (o) -> ( Point(this.x + o.x, this.y + o.y) )\n"
+                + "  def scale = (k) -> ( this.move(this.x * k, this.y * k) )\n"
+                + "  private def move = (nx, ny) -> ( Point(nx, ny) )\n"
+                + ") static (\n"
+                + "  def make = (a, b) -> ( this(a, b) )\n"
+                + ")\n"
+                + "def p1 : Point = Point.make(1, 2)\n"
+                + "def p2 : Point = p1 + Point(1.5, 3)\n"
+                + "def p3 : Point = p2.scale(2)\n"
+                + "def pOpt : Point? = p3\n"
+                + "def p4 : Point? = pOpt?.scale(3)\n"
+                + "def okIs : bool = p1 is Point\n"
+                + "def obj = object ( def greet = (who) -> ( \"hi \" + who ) )\n"
+                + "def g : string = obj.greet(\"world\")\n"
+                + "def fact = (n) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )\n"
+                + "def f5 : int = fact(5)\n"
+                + "def even = (n) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
+                + "def odd = (n) : bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )\n"
+                + "def e4 : bool = even(4)\n"
+                + "def Box(T) = class (def v : T) ( def tag = (label) -> ( label ) )\n"
+                + "def b : Box(int) = Box(1)\n"
+                + "def lbl : string = b.tag(\"box\")");
+
+        // Conflicts in source order and widening notes for earlier diagnostics.
+        assertDiagnostics("def area = (w, h) -> ( w * h )\n"
+                        + "def bad : int = area(2, 3)\n"
+                        + "area(1.5, 2)\n"
+                        + "area(\"x\", 1)\n"
+                        + "def check = (x) -> ( def i : int = x )\n"
+                        + "check(1)\n"
+                        + "check(2.5)",
+                "2:17 Type error : expected int, got double (w is double because of the call at line 3)",
+                "4:6 Type error : expected double, got string",
+                "5:36 Type error : expected int, got double (x is double because of the call at line 7)");
+
+        // Exclusions: escaping functions, exported defs/packages/classes, interface implementations, escaping classes, never-called & null-only.
+        assertDiagnostics("def esc1 = (x) -> ( x )\n"
+                        + "def ref = esc1\n"
+                        + "esc1(1)\n"
+                        + "def esc2 = (x) -> ( x )\n"
+                        + "def apply = (fn : (a : int) : int, v : int) -> ( fn(v) )\n"
+                        + "apply(esc2, 1)\n"
+                        + "def esc3 = (x) -> ( if false then ( return recurse ) ; (v : int) -> ( v ) )\n"
+                        + "esc3(1)\n"
+                        + "def reass = (x) -> ( x )\n"
+                        + "reass = (x : int) -> ( x )\n"
+                        + "reass(1)\n"
+                        + "export def expFn = (x) -> ( x )\n"
+                        + "expFn(1)\n"
+                        + "export package expPkg ( def pf = (x) -> ( x ) )\n"
+                        + "expPkg.pf(1)\n"
+                        + "export def ExpCls = class (hx) (\n"
+                        + "  def pubM = (y) -> ( y )\n"
+                        + "  private def privM = (z) -> ( this.pubM(z) )\n"
+                        + "  def callPriv = () -> ( this.privM(1) )\n"
+                        + ") static (\n"
+                        + "  def st = (w) -> ( w )\n"
+                        + ")\n"
+                        + "ExpCls(1).pubM(2)\n"
+                        + "ExpCls.st(3)\n"
+                        + "def Iface = interface ( def deflt = (a) -> ( a ) )\n"
+                        + "def BabbleI = interface ( def m : (x : int) : int )\n"
+                        + "def BabbleImpl = class () implements BabbleI ( def m = (x) -> ( x ) )\n"
+                        + "BabbleImpl().m(1)\n"
+                        + "def JavaImpl = class () implements java.util.function.IntUnaryOperator ( def applyAsInt = (x) -> ( x ) )\n"
+                        + "JavaImpl().applyAsInt(1)\n"
+                        + "def EscCls = class (x) ()\n"
+                        + "def Alias = EscCls\n"
+                        + "EscCls(1)\n"
+                        + "def EscThis = class (x) () static ( def self = () -> ( this ) )\n"
+                        + "EscThis(1)\n"
+                        + "def never = (x) -> ( x )\n"
+                        + "def onlyNull = (x) -> ( x )\n"
+                        + "onlyNull(null)",
+                "1:13 Missing type : x",
+                "4:13 Missing type : x",
+                "7:13 Missing type : x",
+                "9:14 Missing type : x",
+                "12:21 Missing type : x",
+                "14:35 Missing type : x",
+                "16:28 Missing type : hx",
+                "17:15 Missing type : y",
+                "21:13 Missing type : w",
+                "25:38 Missing type : a",
+                "27:57 Missing type : x",
+                "29:92 Missing type : x",
+                "31:21 Missing type : x",
+                "34:22 Missing type : x",
+                "36:14 Missing type : x",
+                "37:17 Missing type : x");
     }
 
     @Test

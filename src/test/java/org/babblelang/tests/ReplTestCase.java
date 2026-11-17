@@ -206,6 +206,18 @@ public class ReplTestCase {
         Assertions.assertEquals(1, session.eval("n"));
     }
 
+    @Test
+    public void testP7ClosedAtInputEnd() throws Exception {
+        BabbleSession session = session(new StringWriter());
+        Assertions.assertEquals(3, session.eval("def f = (x) -> ( x + 1 )\nf(2)"));
+        Assertions.assertEquals(5, session.eval("f(4)"));
+        assertFails(session, "f(1.5)", "Type error : expected int, got double");
+        assertFails(session, "f(\"x\")", "Type error : expected int, got string");
+        assertFails(session, "def uncalled = (x) -> ( x + 1 )", "Missing type : x");
+        Assertions.assertEquals(1, session.eval("def P = class (def x) ()\nP(1).x"));
+        assertFails(session, "P(1.5)", "Type error : expected int, got double");
+    }
+
     // ---------------------------------------------------------------- reading inputs
 
     @Test
