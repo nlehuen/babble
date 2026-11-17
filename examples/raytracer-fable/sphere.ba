@@ -3,16 +3,30 @@
 def Math = import("rtweekend.ba").Math
 def Vec3 = import("vec3.ba").Vec3
 def Ray = import("ray.ba").Ray
+def AABB = import("aabb.ba").AABB
 def Material = import("material.ba").Material
 def hittable = import("hittable.ba")
 def HitRecord = hittable.HitRecord
 
 export def Sphere = class (def center: Vec3, def radius: double, def material: Material) implements hittable.Hittable (
+    private def radiusSq: double = this.radius * this.radius
+    private def invRadius: double = 1.0 / this.radius
+    private def bbox: AABB = (
+        def r: double = Math.abs(this.radius)
+        AABB(
+            this.center.x - r, this.center.x + r,
+            this.center.y - r, this.center.y + r,
+            this.center.z - r, this.center.z + r
+        )
+    )
+
+    def boundingBox = (): AABB -> (this.bbox)
+
     def hit = (r: Ray, tmin: double, tmax: double): HitRecord? -> (
         def oc: Vec3 = this.center - r.origin
         def a: double = r.direction.lengthSquared()
         def h: double = r.direction.dot(oc)
-        def c: double = oc.lengthSquared() - this.radius * this.radius
+        def c: double = oc.lengthSquared() - this.radiusSq
 
         def discriminant: double = h * h - a * c
         if discriminant < 0 then (return null)
@@ -27,6 +41,6 @@ export def Sphere = class (def center: Vec3, def radius: double, def material: M
         )
 
         def p: Vec3 = r.at(root)
-        HitRecord(r, p, root, (p - this.center) / this.radius, this.material)
+        HitRecord(r, p, root, (p - this.center) * this.invRadius, this.material)
     )
 )
