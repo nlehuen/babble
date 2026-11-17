@@ -40,9 +40,9 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
         def cbox: AABB = AABB.empty
         def i: int = 0
         while i < count then (
-            def item = list.objects.get(i)
-            if item != null then (
-                cbox = cbox.expandPoint(item.boundingBox().center())
+            def center = list.objects.get(i)?.boundingBox()?.center()
+            if center != null then (
+                cbox = cbox.expandPoint(center)
             )
             i += 1
         )

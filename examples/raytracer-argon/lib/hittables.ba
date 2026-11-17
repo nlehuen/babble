@@ -77,18 +77,13 @@ export def HittableList = class () implements Hittable (
     )
 
     def first = (): Hittable -> (
-        def h = this.head
-        if h == null then (emptyHittable) else (h.item)
+        def item = this.head?.item
+        if item != null then (item) else (emptyHittable)
     )
 
     def second = (): Hittable -> (
-        def h = this.head
-        if h == null then (
-            emptyHittable
-        ) else (
-            def n = h.next
-            if n == null then (emptyHittable) else (n.item)
-        )
+        def item = this.head?.next?.item
+        if item != null then (item) else (emptyHittable)
     )
 
     def boundingBox = (): AABB -> (
