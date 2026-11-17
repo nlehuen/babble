@@ -11,7 +11,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 
 /**
- * Babble's interactive mode (docs/design/repl.md) : reads an input, evaluates it in a
+ * Babble's interactive mode (docs/design/bip004_repl.md) : reads an input, evaluates it in a
  * {@link BabbleSession}, prints its value, and starts again. An input spans several lines
  * when it stops in the middle of something, an open parenthesis for instance.
  * <p>

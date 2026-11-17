@@ -11,7 +11,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * A static type, as the type checker computes it (see docs/design/static-typing.md).
+ * A static type, as the type checker computes it (see docs/design/bip008_static-typing.md).
  */
 sealed interface Type {
     /** The built-in types, and the special ones. */
@@ -118,7 +118,7 @@ sealed interface Type {
         }
     }
 
-    /** A module imported statically : its exports are its members (docs/design/modules.md §8.2). */
+    /** A module imported statically : its exports are its members (docs/design/bip005_modules.md §8.2). */
     record Module(ModuleInterface module) implements Type {
         @Override
         public String toString() {

@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The runtime side of declared types (T9, docs/design/type-system.md) : wherever a value
+ * The runtime side of declared types (T9, docs/design/bip003_type-system.md) : wherever a value
  * meets a declared type (an argument, a result, a definition or an assignment), both
  * modes check it here, and fail the same way : {@code Type error : expected int, got string}.
  * <p>

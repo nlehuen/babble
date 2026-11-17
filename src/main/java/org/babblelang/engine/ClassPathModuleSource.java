@@ -7,7 +7,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Modules shipped as resources, for libraries in jars (docs/design/module-sources-and-aot.md
+ * Modules shipped as resources, for libraries in jars (docs/design/bip006_module-sources-and-aot.md
  * §4.2) : {@code lib/shapes.ba} is the resource {@code <prefix>/lib/shapes.ba} of a class
  * loader. Paths are resolved as by {@link MapModuleSource} ; a module's key is
  * {@code classpath:} and its path, its display name the path, its version a hash of its text.

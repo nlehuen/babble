@@ -11,7 +11,7 @@ import javax.script.SimpleScriptContext;
 import java.io.StringWriter;
 
 /**
- * The object model (docs/design/object-model.md) : classes, members, privacy, statics,
+ * The object model (docs/design/bip002_object-model.md) : classes, members, privacy, statics,
  * interfaces, super, value classes, is, same and classof. Java interop is in
  * {@link BabbleJavaObjectsTestCase}.
  */

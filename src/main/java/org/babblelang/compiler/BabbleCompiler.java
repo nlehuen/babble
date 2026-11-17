@@ -92,7 +92,7 @@ public final class BabbleCompiler {
 
     /**
      * The internal name of a module's script class, from its key : the same every time the
-     * module is compiled (docs/design/module-sources-and-aot.md §5.2). {@code lib/vec3.ba} is
+     * module is compiled (docs/design/bip006_module-sources-and-aot.md §5.2). {@code lib/vec3.ba} is
      * {@code babble/lib/vec3$ba} ; a scheme ({@code file:}, {@code classpath:}) is dropped, each
      * "." becomes "$", and a character a class name can't hold, "_".
      */

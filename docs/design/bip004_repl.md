@@ -1,9 +1,11 @@
-# Design: the interactive mode
+# BIP004: the interactive mode
 
 | | |
 |---|---|
+| **BIP** | 004 |
+| **Date** | 2026-11-10 |
 | **Status** | Implemented : `org.babblelang.Main` (the command line), `org.babblelang.Repl`, `org.babblelang.engine.BabbleSession`, `org.babblelang.analysis.AnalysisSession`. |
-| **Depends on** | Block scope and the analysis ([bytecode-compiler.md](bytecode-compiler.md) §8.1), the type checker ([type-system.md](type-system.md)) |
+| **Depends on** | Block scope and the analysis ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §8.1), the type checker ([bip003_type-system.md](bip003_type-system.md)) |
 | **Tracks** | README, *Planned features → interactive mode* |
 
 ## 1. Summary

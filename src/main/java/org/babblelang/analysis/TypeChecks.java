@@ -609,7 +609,7 @@ final class TypeChecks {
     /**
      * {@code m.x} on a module known statically : a missing export, or an assignment to one,
      * is bound to fail at runtime. Like the type checker's bound-to-fail diagnostics, it is
-     * an error (docs/design/modules.md §8.1).
+     * an error (docs/design/bip005_modules.md §8.1).
      */
     private void checkExport(BlockScopes.PendingAccess access, ModuleInterface module) {
         String member = access.member();

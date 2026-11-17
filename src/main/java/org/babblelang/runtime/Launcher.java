@@ -22,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The main class of a program {@code babblec} compiled into a jar
- * (docs/design/module-sources-and-aot.md §5.3) : it runs the main module the jar's
+ * (docs/design/bip006_module-sources-and-aot.md §5.3) : it runs the main module the jar's
  * {@link ProgramIndex} names, with the program's arguments in {@code args}, as
  * {@code java -jar babble.jar script.ba} would, but with nothing to parse, analyse or compile.
  * It exits with status 1 when the program fails, the message on standard error.

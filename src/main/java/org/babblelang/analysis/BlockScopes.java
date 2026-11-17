@@ -47,7 +47,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     record PendingAssignment(String name, ScopeNode scope) {
     }
 
-    /** {@code import("file.ba")} : a static import (docs/design/modules.md §4.2). */
+    /** {@code import("file.ba")} : a static import (docs/design/bip005_modules.md §4.2). */
     record PendingImport(BabbleParser.CallContext ctx, String name, ScopeNode scope) {
     }
 

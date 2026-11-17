@@ -1,5 +1,7 @@
-# Design: Function Effects and Algebraic Properties in Babble
+# BIP007: Function Effects and Algebraic Properties in Babble
 
+**BIP:** 007  
+**Date:** 2026-11-14  
 **Status:** Draft (High-Level Design)  
 **Scope:** Static type system, effect inference & verification engine, `axiom` declarations, optimizer contract, Java interop, and runtime/bytecode compiler integration.
 
@@ -192,7 +194,7 @@ Function declaration / Java target
 
 #### Soundness premise — declared parameter types are enforced
 
-Every profile, inferred or verified, is derived assuming the arguments conform to the declared parameter types. Because Babble always enforces declared types both statically (`TypeChecker`) and at runtime boundaries (`Types.check`, `type-system.md` §5), that assumption is an unconditional language invariant:
+Every profile, inferred or verified, is derived assuming the arguments conform to the declared parameter types. Because Babble always enforces declared types both statically (`TypeChecker`) and at runtime boundaries (`Types.check`, `bip003_type-system.md` §5), that assumption is an unconditional language invariant:
 
 * **Typed parameters are guaranteed on entry:** Static mismatches are rejected at compile time, and calls crossing a `dynamic` boundary check declared parameter types on entry via `Types.check` before the body runs (so inside `(x: int, y: int) -> ( x + y )`, `x + y` can never dispatch to an arbitrary `obj.toString()`). A call site that statically proves conformance can link to an entry point that skips the redundant `Types.check`.
 * **Unannotated parameters are `dynamic`:** Because Babble's type system is gradual, nothing is assumed about unannotated (`dynamic`) parameters. Operators and member accesses on them may throw and may dispatch to arbitrary `toString`/Java code, so they drop `nothrow` and, unless the operation is known to be closed over primitives, `pure`/`deterministic` too.

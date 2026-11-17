@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * The runtime boundary (docs/design/module-sources-and-aot.md §3) : what a compiled Babble
+ * The runtime boundary (docs/design/bip006_module-sources-and-aot.md §3) : what a compiled Babble
  * program needs to run references nothing of the front end (parser, analysis, compiler,
  * interpreter, engine), no third-party library, and no JDK module but {@code java.base}.
  * The runtime is the {@code runtime} package and the built-ins of {@code engine.impl.natives}

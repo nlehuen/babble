@@ -21,7 +21,7 @@ import java.nio.file.Path;
 /**
  * What is particular to modules in files and in the class path : the default source's real
  * paths, a rooted source confining imports to a directory, and modules shipped as resources
- * (docs/design/module-sources-and-aot.md §4.2). Everything else about modules is
+ * (docs/design/bip006_module-sources-and-aot.md §4.2). Everything else about modules is
  * BabbleModulesTestCase's, in memory.
  */
 public class FileModulesTestCase {

@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Modules kept in memory, by "/"-separated path : for tests, and for hosts that generate
- * modules or keep them elsewhere than in files (docs/design/module-sources-and-aot.md §4.2).
+ * modules or keep them elsewhere than in files (docs/design/bip006_module-sources-and-aot.md §4.2).
  * A relative name is resolved against the importing module's directory, a name starting with
  * "/" from the root ; nothing goes above the root. Paths are both keys and display names, and
  * a module's version is a hash of its text, so {@link #put} with a new text recompiles it.

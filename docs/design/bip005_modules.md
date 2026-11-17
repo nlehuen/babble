@@ -1,9 +1,11 @@
-# Design: modules
+# BIP005: modules
 
 | | |
 |---|---|
+| **BIP** | 005 |
+| **Date** | 2026-11-11 |
 | **Status** | Accepted : the questions of §13 were decided as recommended. Steps M1 to M5 (§12) are implemented. |
-| **Depends on** | [object-model.md](object-model.md) (member access, `HasMembers`), [type-system.md](type-system.md) (what a module's type is), [bytecode-compiler.md](bytecode-compiler.md) §4 (the file scope keeps a namespace) and phase 4 (ahead-of-time compilation) |
+| **Depends on** | [bip002_object-model.md](bip002_object-model.md) (member access, `HasMembers`), [bip003_type-system.md](bip003_type-system.md) (what a module's type is), [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §4 (the file scope keeps a namespace) and phase 4 (ahead-of-time compilation) |
 | **Unblocks** | Programs in several files, a standard library written in Babble, the AOT jar |
 
 ## 1. Summary
@@ -235,11 +237,11 @@ parsing and analysing the imported file, which in turn may have static imports.
   analysis, reported with its own file and line.
 * For `def shapes = import("shapes.ba")` where `shapes` is never reassigned, `shapes.nope` is
   reported like a missing member : `No such export : nope in shapes.ba`, as a static type error
-  like the "bound to fail" diagnostics of type-system.md §4. The same goes for `m.x = v` : `Cannot assign to an export : x`. The receiver is known to be
+  like the "bound to fail" diagnostics of bip003_type-system.md §4. The same goes for `m.x = v` : `Cannot assign to an export : x`. The receiver is known to be
   a module when it is a static import, a never-reassigned def holding one, or an export of
   such a module that holds one in turn.
 * `implements`, `extends` and `super(I)` accept an interface exported by a statically imported
-  file : the analysis resolves them statically (object-model.md), so it needs the imported
+  file : the analysis resolves them statically (bip002_object-model.md), so it needs the imported
   interface's resolved parents and defaults. The path may go through a def holding the module
   (`implements shapes.Shape`), a def holding the export (`def Shape = shapes.Shape`), an export
   that is itself an import or a re-export, or an exported package (`implements lib.geo.Solid`).
@@ -270,7 +272,7 @@ New type : `Type.Module(interface)`, with the exports as members.
   expression in `shapes.ba`. Nominal identity is by class expression, and a file runs once per
   eval, so the static type and the runtime class agree.
 * The runtime check of such an annotation uses the class's id, which is unique
-  per class expression in the JVM (type-system.md §5). The descriptor of the importing file
+  per class expression in the JVM (bip003_type-system.md §5). The descriptor of the importing file
   therefore needs the id that the imported file's compilation gave the class, which is one more
   reason to cache compilations per engine (§9).
 * A dynamic import is `dynamic`. So is a module in an import cycle, to the files of the cycle
@@ -286,14 +288,14 @@ files without any file being checked twice, and diagnostics are reported once, b
 are in.
 
 A compiled script refers to the class ids of the modules it was analysed against. Since M5a
-(module-sources-and-aot.md §5.2) a module's ids are its key and the class's name
+(bip006_module-sources-and-aot.md §5.2) a module's ids are its key and the class's name
 (`lib.ba#C`), the same every time it is compiled : a module changed after a script was compiled
 keeps its classes' identity. Two classes of one name from two modules are still two types, and
 a type error between them gives both ids : `expected C, got C (expected a.ba#C, got b.ba#C)`.
 
 ### 8.3 Compiler
 
-Nothing in M1 : the file scope keeps a namespace in compiled code (bytecode-compiler.md §4),
+Nothing in M1 : the file scope keeps a namespace in compiled code (bip001_bytecode-compiler.md §4),
 exports are read from it, and `m.x` is an `invokedynamic` selection with an inline cache like
 any other.
 
@@ -354,7 +356,7 @@ eval.
 * **Module sources** (Q6) : an engine attribute holding a function from a resolved path to a
   `Reader`, defaulting to the file system. It is what a host needs to serve modules from a
   database, tests need to avoid temporary files, and the AOT compiler needs to follow imports.
-* **AOT** (bytecode-compiler.md, phase 4) : a jar contains one script class per file. Static
+* **AOT** (bip001_bytecode-compiler.md, phase 4) : a jar contains one script class per file. Static
   imports are known at compile time, so the jar is closed over them, and `import` of a static
   path finds the class in the jar instead of a file. Dynamic imports keep reading files at
   runtime, or fail in a jar-only deployment. This is the main practical argument for making
@@ -370,8 +372,8 @@ eval.
 | **M1** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
 | **M2** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | Done, with tests in both modes and in sessions. |
 | **M3** | `Type.Module` : types across files, nominal types of exported classes, runtime checks (§8.2). | Done, with tests in both modes. |
-| **M4** | Module sources for hosts (§11). Designed with M5 in [module-sources-and-aot.md](module-sources-and-aot.md). | Done (M4a, M4b). |
-| **M5** | AOT : a jar closed over static imports. Designed in [module-sources-and-aot.md](module-sources-and-aot.md). | Done (M5a to M5c) : `-compile`. |
+| **M4** | Module sources for hosts (§11). Designed with M5 in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (M4a, M4b). |
+| **M5** | AOT : a jar closed over static imports. Designed in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (M5a to M5c) : `-compile`. |
 
 Each step leaves both modes passing the whole suite. Both ray tracers, `examples/raytracer-fable`
 and `examples/raytracer-argon`, were split into files after M1 as the acceptance test of the

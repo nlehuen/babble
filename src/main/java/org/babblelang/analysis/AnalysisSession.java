@@ -9,7 +9,7 @@ import java.util.Set;
 
 /**
  * What the analysis remembers between the inputs of an interactive session
- * (docs/design/repl.md), so that an input sees the definitions of the earlier ones : it
+ * (docs/design/bip004_repl.md), so that an input sees the definitions of the earlier ones : it
  * can implement an interface defined earlier, name an earlier class in a type
  * annotation, and have its calls to earlier functions checked.
  * <p>

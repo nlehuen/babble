@@ -2,7 +2,7 @@ package org.babblelang.analysis;
 
 /**
  * How the analysis gets the interfaces of the files a file imports statically
- * (docs/design/modules.md §8.1) : the engine implements it, with its compilation cache.
+ * (docs/design/bip005_modules.md §8.1) : the engine implements it, with its compilation cache.
  */
 public interface ModuleLoader {
     /**

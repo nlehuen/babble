@@ -22,7 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * Babble's command line, and the main class of its jar (docs/design/repl.md) :
+ * Babble's command line, and the main class of its jar (docs/design/bip004_repl.md) :
  * <pre>
  * java -jar babble.jar                              the interactive mode
  * java -jar babble.jar script.ba [arguments...]     runs a script

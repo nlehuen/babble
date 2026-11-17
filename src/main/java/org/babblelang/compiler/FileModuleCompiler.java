@@ -16,7 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * The {@link ModuleCompiler} of the full Babble jar (docs/design/module-sources-and-aot.md
+ * The {@link ModuleCompiler} of the full Babble jar (docs/design/bip006_module-sources-and-aot.md
  * §5.4, M5c) : a compiled program run with Babble on its class path imports the modules its
  * jar doesn't hold from the files under its root, compiled as the engine compiles them. One engine
  * per root, so that a module is compiled once, and the modules it imports statically with it.

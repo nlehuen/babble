@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Module sources (docs/design/module-sources-and-aot.md §4) : where imports read modules from,
+ * Module sources (docs/design/bip006_module-sources-and-aot.md §4) : where imports read modules from,
  * when it is not the file system. The source here keeps modules in memory, by "/"-separated
  * path, and records what the engine asks it.
  */

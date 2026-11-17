@@ -1,10 +1,11 @@
-# Design: the Babble object model
+# BIP002: the Babble object model
 
 | | |
 |---|---|
+| **BIP** | 002 |
 | **Status** | Implemented (§12 steps 1–6, through compiler phase 1), in both the interpreter and the compiler. §13 lists what the implementation decided where this text was silent. |
 | **Date** | 2026-10-11 |
-| **Depends on** | [bytecode-compiler.md](bytecode-compiler.md): block scope (§8.1), the shared runtime (§5), type checking (§10) |
+| **Depends on** | [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md): block scope (§8.1), the shared runtime (§5), type checking (§10) |
 | **Unblocks** | Compiler phase 2 (§7), object and package types T5 (§10.4) |
 
 ## 1. Summary

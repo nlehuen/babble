@@ -10,7 +10,7 @@ import javax.script.SimpleScriptContext;
 import java.io.StringWriter;
 
 /**
- * Java interop of the object model (object-model.md §9) : Babble functions converted to
+ * Java interop of the object model (bip002_object-model.md §9) : Babble functions converted to
  * functional interfaces, Babble classes implementing Java interfaces, and Babble
  * interfaces extending them.
  */

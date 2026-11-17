@@ -3,7 +3,7 @@ package org.babblelang.engine;
 import java.io.IOException;
 
 /**
- * Where the text of imported modules comes from (docs/design/module-sources-and-aot.md §4) :
+ * Where the text of imported modules comes from (docs/design/bip006_module-sources-and-aot.md §4) :
  * the engine attribute {@link BabbleScriptEngine#MODULE_SOURCE}, by default the file system
  * ({@link FileModuleSource}). A host can serve modules from memory, a database or a jar.
  */

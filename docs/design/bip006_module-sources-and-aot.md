@@ -1,9 +1,11 @@
-# Design: module sources and ahead-of-time compilation
+# BIP006: module sources and ahead-of-time compilation
 
 | | |
 |---|---|
-| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [modules.md](modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3), M4 (§4) and M5 (§5) are implemented. |
-| **Depends on** | [modules.md](modules.md) (static imports, the module cache, module types), [bytecode-compiler.md](bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
+| **BIP** | 006 |
+| **Date** | 2026-11-14 |
+| **Status** | Accepted : the questions of §10 were decided as recommended. Covers steps M4 and M5 of [bip005_modules.md](bip005_modules.md) (§11, §12), designed together because M5 is the main user of M4's API. R1 (§3), M4 (§4) and M5 (§5) are implemented. |
+| **Depends on** | [bip005_modules.md](bip005_modules.md) (static imports, the module cache, module types), [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) (phase 4, the class layout, `Bootstrap`) |
 | **Unblocks** | Babble programs shipped as a jar, hosts serving modules from anywhere, module tests without temporary files |
 
 ## 1. Summary
@@ -162,7 +164,7 @@ public record ModuleText(String text, String version) { }
   and cycle detection compare : two spellings of one module must resolve to the same key. The
   display name is what messages show.
 * **A version is opaque.** The cache compares the versions of every module an analysis read,
-  as it compares file contents today (modules.md §9) : a content hash for files, a row version
+  as it compares file contents today (bip005_modules.md §9) : a content hash for files, a row version
   or timestamp for a database. `version` may be cheaper than `read`.
 * **The main script has an identity too**, from its `ScriptEngine.FILENAME` : the source's
   `identify`. By default it is what `resolve` gives for the name with no importer. A script
@@ -259,7 +261,7 @@ classes live and die with one run, not in a jar.
   id after it, and a different class taking a slot would pass the checks meant for the old
   one. Ids are embedded in class shapes and in type descriptors, so classes
   compiled separately must agree on them. The engine uses the same scheme : a module changed
-  after a script was compiled keeps its classes' identity (modules.md §8.2), and a type error
+  after a script was compiled keeps its classes' identity (bip005_modules.md §8.2), and a type error
   between two classes of one name gives both ids. Scripts that are not modules keep `T17`.
 * **Source names** in `CallSite`s and the `SourceFile` attribute are the modules' display names,
   which `FileModuleSource.rooted` makes relative to the program root, not the build machine's
@@ -369,7 +371,7 @@ tracers compiled into jars and run on a JRE without Babble on the class path : a
   runtime, but Java interop needs reflection configuration, and `Faces` dynamic proxies : a
   later design.
 * Incremental compilation in `babblec`, or a Maven plugin : the CLI first.
-* Changing what a module is, or how imports bind (modules.md).
+* Changing what a module is, or how imports bind (bip005_modules.md).
 
 ## 10. Decisions
 
