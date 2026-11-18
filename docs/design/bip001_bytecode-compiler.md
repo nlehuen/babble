@@ -1107,14 +1107,15 @@ dominated by the per-call reflection that `BIP001-P3` caches.
     (`$v$start`), and outer variables are captured once per class value;
   - `this.x` compiles to `GETFIELD`/`PUTFIELD`, with the undefined check, and `this.m(args)` to
     a direct `INVOKEVIRTUAL` of the method.
-* **Not done: interfaces as JVM interfaces, and Java interfaces implemented by the generated
-  class itself.** Without the type checker, the compiler never knows a receiver's static type,
+* **Not done in `BIP001-P2` (landed later in `RM003`, §20): interfaces as JVM interfaces, and Java
+  interfaces implemented by the generated class itself.** Without the type checker, the compiler
+  never knows a receiver's static type,
   so it could emit neither `INVOKEINTERFACE` nor `INSTANCEOF`: `obj.m()` and `is` go through the
   runtime either way. The cost would be default methods reaching the captured variables of the
   right interface value from inside a JVM default method, and exact-signature bridges for each
   Java overload. Instances keep their `Proxy` face for Java. `BIP001-P3` caches selections by
   receiver class instead (§18), which gets the speed without them; they wait for the type
-  checker.
+  checker (`RM003`, §20).
 * **Loops and on-stack replacement.** `BIP001-P1` kept a `while` loop's running result on the
   operand stack. HotSpot only compiles a running loop (on-stack replacement) when the stack is
   empty at its head, so a function running one long loop, called only a few times, stayed in
@@ -1260,3 +1261,27 @@ End-to-end ray tracers (same machine, JDK 21):
 * `examples/raytracer-argon/raytracer.ba`: **46.1 s** wall-clock (`50.3 s` user), down from `59.3 s` (~22% faster), rendering `examples/raytracer-argon/scene.ppm` byte-for-byte identically.
 * `examples/raytracer-fable/raytracer.ba`: **65.9 s** render (`67.9 s` total wall-clock on 16 threads), down from `72.9 s` (~10% faster without yet unboxed cross-object `vec3` fields/`obj.x` call-site unboxing).
 
+## 20. Design & implementation notes (`RM003` : JVM interfaces, Java interface bridges, and `LambdaMetafactory` SAM adapters)
+
+`RM003` completes the JVM interface and proxy-free interop design deferred in §17 across `BIP001` (§17), `BIP002` (§7.3, §9.3, §9.5–§9.6, `BIP002-P6`, §13), and `BIP006` (§9).
+
+* **Cross-module classloader hierarchy & frame computation (`RM003-P1`).**
+  - When a compiled class or interface in module `B` implements or extends a JVM interface emitted by module `A` (or a prior REPL input), `B`'s `ScriptClassLoader` must resolve `A`'s bytecode. `BabbleScriptEngine` and `BabbleSession` chain parent `ClassLoader`s across static module imports (`CompositeClassLoader` when a script imports multiple compiled modules) and sequential session inputs, while `babblec` jars share one flat classpath at runtime. Cyclic module imports degrade gracefully to runtime `BabbleInterface` checks where mutual parent delegation is impossible.
+  - ASM's `ClassWriter.COMPUTE_FRAMES` calls `getCommonSuperClass(type1, type2)` during code generation, before the current batch of generated classes and interfaces is loaded. `CodeGenerator` overrides `getCommonSuperClass` with an in-memory hierarchy table covering every generated class/interface in the compilation unit plus already-loaded parent classes, avoiding premature `Class.forName` failures and resolving shared Babble/Java superinterfaces cleanly.
+  - `TypeChecker` publishes deterministic JVM internal names (`Script$N$iface$k$Name`, or stable `babble/<module>$iface$k$Name` in modules) together with `InterfaceMethodInfo`, `InterfaceCallTarget`, `InterfaceCheckTarget`, `InterfaceSuperTarget`, and `JavaInterfaceImpl` records into `ScopeAnalysis`, `ModuleInterface`, and `AnalysisSession`.
+* **Babble interfaces as real JVM interfaces (`RM003-P2`, `BIP001` §17, `BIP002` §7.3).**
+  - Each Babble `interface` expression (whose default bodies declare no `package` namespace) compiles via `InterfaceGen` to a public JVM `interface` (`ACC_PUBLIC | ACC_INTERFACE | ACC_ABSTRACT`) extending its parent Babble JVM interfaces.
+  - Every declared member gets an `Object` entry point `bm$<name>(ScriptRuntime, CallSite, Object...)` (`0`-arg `(ScriptRuntime, CallSite)Object` for value members), plus a primitive-specialized `bm$<name>$spec(ScriptRuntime, CallSite, <prim...>)<prim>` entry point whenever `RM001` assigns any parameter or return an unboxed `PrimitiveKind` (`INT`, `DOUBLE`, `BOOL`) and all inherited declarations agree on that signature.
+  - Interface default methods compile directly to JVM `default` methods on the generated interface, alongside retaining their `CompiledFunction` table on `BabbleInterface` for first-class `I.m`, `Bootstrap` fallback, and interpreted subclasses. When a default method captures outer lexical cells (`Cell`, `IntCell`, `DoubleCell`, `BoolCell`), the interface declares an abstract `$iface$<Id>() : BabbleInterface` accessor implemented on each compiled `BabbleClass` subclass (reading `BabbleClass.capturedFor(BabbleInterface)`), so separate evaluations of the same lexical `interface` expression remain isolated.
+  - Compiled classes (`ClassGen`) declare their Babble JVM interfaces in the class header's `implements` list and emit `bm$<name>` / `bm$<name>$spec` bridges forwarding to the class's fields or `m$<name>` / `m$<name>$spec` methods (`Classes.requireDefined` for value members that may be uninitialized).
+  - Statically resolved calls (including operator methods `+ - * /` and unary `-`) on interface-typed receivers emit direct `INVOKEINTERFACE` (`bm$<name>$spec` when specialized, else `bm$<name>`); `x is I` emits `INSTANCEOF <JvmInterface>` when no interpreted or namespace-keeping class can implement `I` (`Classes.isInstance` otherwise); and `super(I).m(...)` emits `INVOKESPECIAL I.bm$<name>(...)` (hoisting `super(I)` calls inside nested lambdas into synthetic `$super$k` instance/default methods on the enclosing class or interface because JVM `INVOKESPECIAL` requires the direct subtype as caller).
+* **Direct Java-interface `implements` bridges (`RM003-P3`, `BIP002` §9.5–§9.6).**
+  - Compiled Babble classes directly list every accessible implemented Java interface (`JavaTypes.isAccessible`) in their JVM `implements` clause and emit one exact-signature public bridge method per abstract or overridden Java method overload (deduplicated by `(name, MethodType)` across diamond hierarchies, including erased generic superinterface bridges).
+  - Each bridge binds `ScriptRuntime` (`ScriptRuntime.BOUND` when active on the calling thread, else the class's creation-time `ScriptRuntime`, matching `Faces` behavior when Java threads invoke callbacks), converts arguments with `Values.fromJava` + `JavaTypes.checkParameters` (when boxed-primitive null checks or generic checks apply), invokes the Babble method, and converts the result back with `JavaTypes.convertResult` + `Values.toJava`.
+  - Generated classes that implement Java interfaces override `BabbleInstance.javaDefaultLookup()` to return `MethodHandles.lookup()`, allowing `JavaDefaultCall` (`Lookup.findSpecial`) to invoke Java `default` methods directly on `this` (`super(JavaI).m(...)` and inherited Java defaults) without `Proxy.getInvocationHandler`.
+  - `BabbleInstance.face()` returns `this` whenever `javaInterfaces` are all implemented directly by `this.getClass()`, eliminating per-instance `java.lang.reflect.Proxy` allocation in compiled mode while keeping `Faces.create` for the interpreter (and any hypothetical inaccessible Java interface).
+* **Cached `LambdaMetafactory` SAM adapters (`RM003-P4`, `BIP002` §9.3).**
+  - `Faces.function(callable, samClass, rt)` caches a per-interface `SamFactory` via `ClassValue` that spins a hidden JVM adapter class once per accessible `0..16`-argument SAM visible from `Faces.class.getClassLoader()`, using `LambdaMetafactory.metafactory` (or `LambdaMetafactory.altMetafactory` with `FLAG_BRIDGES` when generic superinterfaces introduce additional abstract erased `MethodType`s).
+  - Each adapter captures a lightweight `SamInvoker(callable, sam, rt)` bound to `SamInvoker.invoke0`..`invoke16`, preserving upfront arity validation, `JavaTypes.checkParameter` boxed-null diagnostics, `Values.fromJava`, `JavaTypes.convertResult` widening/type-error checks, and `Values.toJava` return conversion without `Proxy` or `Method.invoke` reflection, and staying strictly inside `java.base` (`RuntimeBoundaryTestCase`).
+  - `Proxy.newProxyInstance` (`FunctionHandler`) is retained strictly as a fallback for SAMs with `> 16` parameters, non-public/package-private SAMs (`TypeChecker` also routes inaccessible-SAM Java calls through `Bootstrap.call` / `JavaLinker` rather than emitting `CHECKCAST` to an inaccessible type), or SAMs defined in isolated child `ClassLoader`s invisible to `Faces`.
+* **GraalVM native image (`BIP006` §9).** Eliminating `Proxy` faces on compiled classes and `Proxy` wrappers on standard SAM callbacks removes the dynamic-proxy obstacle noted in `BIP006` §9; generating `META-INF/native-image` reflection metadata for `Overloads` and standalone `native-image` packaging remains deferred.

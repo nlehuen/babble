@@ -368,8 +368,9 @@ tracers compiled into jars and run on a JRE without Babble on the class path : a
 ## 9. Non-goals
 
 * A GraalVM native image. A compiled jar removes the main obstacle, defining classes at
-  runtime, but Java interop needs reflection configuration, and `Faces` dynamic proxies : a
-  later design.
+  runtime, and `RM003` eliminates `Faces` dynamic proxies for compiled classes and standard
+  `0..16`-argument SAM callbacks, while GraalVM reflection metadata configuration for Java
+  interop and native-image packaging remain deferred to a later design.
 * Incremental compilation in `babblec`, or a Maven plugin : the CLI first.
 * Changing what a module is, or how imports bind (bip005_modules.md).
 
