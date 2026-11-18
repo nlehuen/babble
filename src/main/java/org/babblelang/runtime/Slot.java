@@ -37,10 +37,6 @@ public class Slot<T> {
         set(value);
     }
 
-    public boolean isSet() {
-        return set;
-    }
-
     /**
      * A declared slot is unset until its definition runs : block scope hoists every
      * name defined in a scope, so reading it any earlier is an error.

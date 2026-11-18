@@ -53,13 +53,6 @@ public class Namespace implements Scope<Object> {
         return namespace;
     }
 
-    public Namespace leave() {
-        if (parent == null) {
-            throw new IllegalStateException("Too many calls to leave()");
-        }
-        return parent;
-    }
-
     public Slot<Object> define(String key, boolean isFinal) {
         if (locals.containsKey(key)) {
             throw new BabbleException("Name already defined : " + key);

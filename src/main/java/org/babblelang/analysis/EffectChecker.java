@@ -2267,11 +2267,7 @@ final class EffectChecker {
         }
         BabbleParser.ExpressionContext r1 = unwrapParens(ns);
         BabbleParser.ExpressionContext r2 = unwrapParens(sel.expression());
-        if (r1 instanceof BabbleParser.ThisExpressionContext && r2 instanceof BabbleParser.ThisExpressionContext) {
-            return true;
-        }
-        Object p1 = resolvePlainParam(r1);
-        return p1 != null && p1 == resolvePlainParam(r2);
+        return r1 instanceof BabbleParser.ThisExpressionContext && r2 instanceof BabbleParser.ThisExpressionContext;
     }
 
     private static boolean readsField(ParseTree tree, String fieldName) {

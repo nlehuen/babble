@@ -168,13 +168,6 @@ public final class EffectSet {
         return true;
     }
 
-    public EffectSet withInferred(Set<Effect> inferredEffects, boolean inferredMutThis, boolean inferredBorrowThis) {
-        EnumSet<Effect> merged = inferredEffects.isEmpty() ? EnumSet.noneOf(Effect.class) : EnumSet.copyOf(inferredEffects);
-        merged.addAll(declared);
-        return new EffectSet(merged, declared, mutThis || inferredMutThis,
-                borrowThis || inferredBorrowThis, explicitBorrowThis, impure, axiomatic);
-    }
-
     /** Intersection of guarantees across control-flow branches. */
     public EffectSet intersect(EffectSet other) {
         EnumSet<Effect> common = copySet(effects);
