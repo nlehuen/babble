@@ -14,7 +14,6 @@ import org.babblelang.runtime.Values;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.Map;
@@ -67,13 +66,8 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
         Object[] java = Values.toJava(args, constructor.getParameterTypes(), rt);
         try {
             return new JavaObject(this, constructor.newInstance(java));
-        } catch (InvocationTargetException e) {
-            if (e.getCause() instanceof BabbleException babble) {
-                throw babble;
-            }
-            throw new BabbleException(e);
-        } catch (Exception e) {
-            throw new BabbleException(e);
+        } catch (Throwable t) {
+            throw JavaTypes.wrapInvocationException(t);
         }
     }
 

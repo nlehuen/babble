@@ -12,7 +12,6 @@ import org.babblelang.runtime.Values;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.List;
@@ -203,12 +202,9 @@ public final class JavaLinker {
         return Values.toJava(value, type, null);
     }
 
-    /** As {@link JavaMethod#invoke} reports what the method threw, through reflection. */
+    /** As {@link JavaMethod#invoke} reports what the method threw. */
     private static Object fail(Throwable t) {
-        if (t instanceof BabbleException babble) {
-            throw babble;
-        }
-        throw new BabbleException(new InvocationTargetException(t));
+        throw JavaTypes.wrapInvocationException(t);
     }
 
     private static boolean isWrappedOf(JavaClass clazz, Object target) {

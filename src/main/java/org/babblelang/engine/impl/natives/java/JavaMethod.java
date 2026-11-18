@@ -1,6 +1,5 @@
 package org.babblelang.engine.impl.natives.java;
 
-import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.JavaTypes;
@@ -8,7 +7,6 @@ import org.babblelang.runtime.Overloads;
 import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.runtime.Values;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 class JavaMethod implements Callable {
@@ -39,14 +37,8 @@ class JavaMethod implements Callable {
         Object result;
         try {
             result = method.invoke(thiz, java);
-        } catch (InvocationTargetException e) {
-            // A Babble error raised in a callback comes back as itself.
-            if (e.getCause() instanceof BabbleException babble) {
-                throw babble;
-            }
-            throw new BabbleException(e);
-        } catch (Exception e) {
-            throw new BabbleException(e);
+        } catch (Throwable t) {
+            throw JavaTypes.wrapInvocationException(t);
         }
         return JavaTypes.checkBoxed(method.getReturnType(), Values.fromJava(result));
     }

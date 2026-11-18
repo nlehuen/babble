@@ -229,12 +229,20 @@ public final class JavaTypes {
         return value;
     }
 
-    /** Wraps an exception thrown by a direct Java call to match reflective dispatch. */
+    /** Unwraps reflective wrappers and formats host Java exceptions consistently across modes. */
     public static BabbleException wrapInvocationException(Throwable t) {
+        while (t instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null) {
+            t = ite.getCause();
+        }
         if (t instanceof BabbleException babble) {
             return babble;
         }
-        return new BabbleException(new java.lang.reflect.InvocationTargetException(t));
+        if (t instanceof Error error) {
+            throw error;
+        }
+        String name = t.getClass().getName();
+        String msg = t instanceof NullPointerException ? null : t.getMessage();
+        return new BabbleException(msg == null ? name : name + " : " + msg, t);
     }
 
     /**

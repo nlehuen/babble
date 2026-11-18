@@ -24,12 +24,12 @@ final class JavaDefaultCall implements Callable {
     public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         Method method = Overloads.resolve(methods, description, args);
         Object[] java = Values.toJava(args, method.getParameterTypes(), rt);
+        Object result;
         try {
-            return JavaTypes.checkBoxed(method.getReturnType(), Values.fromJava(InvocationHandler.invokeDefault(instance.face(), method, java)));
-        } catch (RuntimeException | Error e) {
-            throw e;
+            result = InvocationHandler.invokeDefault(instance.face(), method, java);
         } catch (Throwable t) {
-            throw new BabbleException(t);
+            throw JavaTypes.wrapInvocationException(t);
         }
+        return JavaTypes.checkBoxed(method.getReturnType(), Values.fromJava(result));
     }
 }
