@@ -340,3 +340,152 @@ def n1 = Node(Node(null))
 println(walk(n1))
 }}}}}
 2
+
+{{{{{
+;; validateAlgebraicSignature error branches
+def badAssoc = associative (x : int, y : double) : int -> ( x )
+}}}}}
+Function badAssoc declared associative violates associative guarantee
+
+{{{{{
+def badComm = commutative (x : int, y : double) : int -> ( x )
+}}}}}
+Function badComm declared commutative violates commutative guarantee
+
+{{{{{
+def C = class (def v : int) (
+    def bad = hermetic mut commutative () : int -> ( this.v )
+)
+}}}}}
+Function bad declared commutative violates commutative guarantee
+
+{{{{{
+def badIdemp = idempotent (x : int, y : int) : int -> ( x )
+}}}}}
+Function badIdemp declared idempotent violates idempotent guarantee
+
+{{{{{
+def Box = class () ()
+def badMono = pure monotone (x : Box) : Box -> ( x )
+}}}}}
+Function badMono declared monotone violates monotone guarantee
+
+{{{{{
+def badInj = pure injective (x : int) : null -> ( null )
+}}}}}
+Function badInj declared injective violates injective guarantee
+
+{{{{{
+;; relationalProps for int (injective) and double (monotone) arithmetic
+def iNeg = pure injective (x : int) : int -> ( -x )
+def iAdd = pure injective (x : int) : int -> ( 1 + (x - 2) )
+def iSub = pure injective (x : int) : int -> ( 10 - x )
+def iMulOdd = pure injective (x : int) : int -> ( 3 * (x * 5) )
+def dMono1 = pure monotone (x : double) : double -> ( -(-x) + 1.0 - 2.0 )
+def dMono2 = pure monotone (x : double) : double -> ( -(10.0 - x) )
+println(iNeg(5), ":", iAdd(3), ":", iSub(4), ":", iMulOdd(2), ":", dMono1(3.0), ":", dMono2(4.0))
+}}}}}
+-5:2:6:30:2.0:-6.0
+
+{{{{{
+;; SAM Java callback effect propagation inside pure/hermetic functions
+def countPure = hermetic () : int -> (
+    def list = java.util.Arrays.asList("a", "bb")
+    def total = 0
+    list.forEach((s : string) -> ( total += 1 ))
+    total
+)
+println(countPure())
+}}}}}
+Function countPure declared hermetic violates hermetic guarantee
+
+{{{{{
+;; Java effect annotations (@Pure, @Hermetic, @Mut, @Borrow, @Deterministic, @Nothrow, @Idempotent, @Commutative, @Associative, @Monotone, @Injective)
+def tests = import("org.babblelang.tests")
+def HF = tests.EffectsTestCase.HostFixtures
+def APC = tests.EffectsTestCase.AnnotatedPureClass
+def MH = tests.EffectsTestCase.MutableHolder
+def fPure = pure deterministic (x : int) : int -> (
+    HF.pureCalc(x) + APC.helper(x)
+)
+def fNothrow = pure deterministic nothrow (x : int) : int -> ( HF.pureCalc(x) )
+def fIdemp = pure idempotent (x : double) : double -> ( HF.clampUnit(x) )
+def fAssocComm = pure associative commutative (a : int, b : int) : int -> ( HF.bitXor(a, b) )
+def fMono = pure monotone (x : double) : double -> ( HF.expStep(x) )
+def fInj = pure injective (x : int) : string -> ( HF.hexKey(x) )
+def fHerm = (d : int) : int -> (
+    def h1 = MH(10)
+    def h2 = MH(5)
+    h1.bump(d)
+    HF.mutateParam(h2, h1)
+    h2.value
+)
+def fSam = pure (x : int) : int -> ( HF.applyOp(x, (v : int) : int -> ( v + 1 )) )
+println(fPure(2), ":", fIdemp(1.5), ":", fAssocComm(3, 5), ":", fInj(255), ":", fHerm(3), ":", fSam(9))
+}}}}}
+17:1.0:6:ff:13:10
+
+{{{{{
+;; @Impure method overrides class-level @Pure
+def tests = import("org.babblelang.tests")
+def bad = pure (x : int) : int -> ( tests.EffectsTestCase.AnnotatedPureClass.escapeHatch(x) )
+}}}}}
+Function bad declared pure violates pure guarantee
+
+{{{{{
+;; @Impure method on HostFixtures violates pure
+def tests = import("org.babblelang.tests")
+def bad = pure (x : int) : int -> ( tests.EffectsTestCase.HostFixtures.annotatedImpure(x) )
+}}}}}
+Function bad declared pure violates pure guarantee
+
+{{{{{
+;; relationalProps: const, negate const, double mul negative, string concat, monotone/injective call, int->double, x+x
+def tests = import("org.babblelang.tests")
+def HF = tests.EffectsTestCase.HostFixtures
+def cInt = pure (x : int) : int -> ( 42 )
+def cNeg = pure (x : int) : double -> ( -(42.0) )
+def dMulPos = pure monotone (x : double) : double -> ( 2.0 * x )
+def dMulNeg = pure (x : double) : double -> ( -2.0 * x )
+def dMulNegR = pure (x : double) : double -> ( x * -3.0 )
+def sLeft = pure injective (x : int) : string -> ( "k=" + x )
+def sRight = pure injective (s : string) : string -> ( s + "!" )
+def sSelf = pure (s : string) : string -> ( s + s )
+def callMono = pure monotone (x : double) : double -> ( HF.expStep(x) )
+def callInj = pure injective (x : int) : string -> ( HF.hexKey(x) )
+def widen = pure monotone injective (x : int) : double -> ( x as double )
+def addSame = pure monotone (x : double) : double -> ( x + x )
+println(cInt(1), ":", cNeg(1), ":", dMulPos(2.0), ":", dMulNeg(2.0), ":", dMulNegR(2.0), ":", sLeft(3), ":", sRight("ok"), ":", sSelf("a"), ":", widen(4), ":", addSame(5.0))
+}}}}}
+42:-42.0:4.0:-4.0:-6.0:k=3:ok!:aa:4.0:10.0
+
+{{{{{
+;; binaryWrapperProps: string +, double +, ==, <>, swapped params
+def tests = import("org.babblelang.tests")
+def HF = tests.EffectsTestCase.HostFixtures
+def sJoin = pure associative (a : string, b : string) : string -> ( a + b )
+def dAdd = pure commutative (a : double, b : double) : double -> ( a + b )
+def eq = pure commutative (a : int, b : int) : bool -> ( a == b )
+def neq = pure commutative (a : int, b : int) : bool -> ( a <> b )
+def swapXor = pure commutative (a : int, b : int) : int -> ( HF.bitXor(b, a) )
+def namedXor = pure (a : int, b : int) : int -> ( HF.bitXor(a, b) )
+println(sJoin("a", "b"), ":", dAdd(1.0, 2.0), ":", eq(3, 3), ":", neq(3, 4), ":", swapXor(3, 5), ":", namedXor(3, 5))
+}}}}}
+ab:3.0:true:true:6:6
+
+{{{{{
+;; Axiom targets: constructor, class, nested class, static mut, borrow, override on @Pure/@Mut
+def tests = import("org.babblelang.tests")
+axiom pure java.lang.StringBuilder()
+axiom pure java.lang.Math
+axiom pure java.lang.Thread.State
+axiom mut java.lang.Math.abs
+axiom borrow java.lang.StringBuilder.append
+axiom pure tests.EffectsTestCase.HostFixtures.pureCalc
+axiom pure tests.EffectsTestCase.MutableHolder.bump
+println(tests.EffectsTestCase.HostFixtures.pureCalc(3))
+}}}}}
+7
+
+
+

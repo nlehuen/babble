@@ -187,3 +187,153 @@ while i < 6 then (
 println(sum)
 }}}}}
 75
+
+{{{{{
+;; FaceHandler Object methods (equals, hashCode, toString) on Java interface proxy
+def Task = class (id : int) implements java.lang.Runnable (
+    def run = () -> ( )
+)
+def t1 : java.lang.Runnable = Task(1)
+def t2 : java.lang.Runnable = Task(1)
+def t3 : java.lang.Runnable = Task(2)
+println(java.util.Objects.equals(t1, t1), ":", java.util.Objects.equals(t1, t2), ":", java.util.Objects.equals(t1, t3), ":", java.util.Objects.hashCode(t1) == java.util.Objects.hashCode(t1), ":", java.util.Objects.toString(t1) != "")
+}}}}}
+true:false:false:true:true
+
+{{{{{
+;; BabbleInstance equals across different classes and non-instances, plus JavaClass equals
+def A = class (x : int) ()
+def B = class (x : int) ()
+def a = A(1)
+def b = B(1)
+println(a == a, ":", a == b, ":", a == "x", ":", java.lang.String == java.lang.String, ":", java.lang.String == java.lang.Integer, ":", java.lang.String == "s")
+}}}}}
+true:false:false:true:false:false
+
+{{{{{
+;; BabbleInterface extendsType with Java superinterface and instance-of checks
+def JList = interface extends java.lang.Runnable (
+    def ping = () : int -> ( 7 )
+)
+def Impl = class () implements JList (
+    def run = () -> ( )
+)
+def x = Impl()
+println(x is JList, ":", x is java.lang.Runnable, ":", x is java.lang.AutoCloseable)
+}}}}}
+true:true:false
+
+{{{{{
+;; JavaTypes.describe on BabbleInstance in runtime cast failure
+def Foo = class () ()
+def dyn = (v : any) : any -> ( v )
+def s : java.lang.String = dyn(Foo()) as java.lang.String
+}}}}}
+Type error : expected string, got Foo
+
+{{{{{
+;; Package member assignment rejected
+package p ( def x = 1 )
+p.x = 2
+}}}}}
+Cannot assign to a package member : x
+
+{{{{{
+;; Value class member assignment rejected
+def Pt = value class (def x : int) ()
+def pt = Pt(3)
+pt.x = 4
+}}}}}
+Value members are read-only : x
+
+{{{{{
+;; Final Java field assignment rejected
+java.lang.Integer.MAX_VALUE = 1
+}}}}}
+Cannot assign final field : java.lang.Integer.MAX_VALUE
+
+{{{{{
+;; Operators runtime dispatch on int, double, string, and comparisons
+def dyn = (v : any) : any -> ( v )
+def a = dyn(7)
+def b = dyn(2)
+def d = dyn(2.5)
+println((a == b), ":", (a == 7), ":", (a != b), ":", ("x" + a))
+}}}}}
+false:true:true:x7
+
+{{{{{
+;; Faces FaceHandler & JavaTypes checkParameter with BabbleInstance implementing Java interface
+def R = class implements java.lang.Runnable (
+    def run = () -> ( println("ran") )
+)
+def r : java.lang.Runnable = R()
+r.run()
+def eq = java.util.Objects.equals(r, r)
+def eq2 = java.util.Objects.equals(r, R())
+def h = java.util.Objects.hashCode(r)
+def s = java.lang.String.valueOf(r)
+def t = java.lang.Thread(R())
+println(eq, ":", eq2, ":", (h != 0 or h == 0), ":", (s != null))
+}}}}}
+ran
+true:false:true:true
+
+{{{{{
+;; DoubleSupplier and BooleanSupplier SAM invocations
+def ds : java.util.function.DoubleSupplier = () : double -> ( 3.5 )
+def bs : java.util.function.BooleanSupplier = () : bool -> ( true )
+println(ds.getAsDouble(), ":", bs.getAsBoolean())
+}}}}}
+3.5:true
+
+{{{{{
+;; Values.fromJava Proxy unwrap + BabbleClass.implementsType(Java) + Operators runtime lt/le/gt
+def R = class implements java.lang.Runnable (
+    def run = () -> ( )
+)
+def xs = java.util.Collections.singletonList(R())
+def got = xs.get(0)
+def dyn = (v : any) : any -> ( v )
+def a : any = R()
+println((got is java.lang.Runnable), ":", (a is java.lang.Runnable))
+}}}}}
+true:true
+
+{{{{{
+def dyn = (v : any) : any -> ( v )
+dyn(1) < dyn(2)
+}}}}}
+Not comparable : dyn(1) and dyn(2)
+
+{{{{{
+;; FaceHandler Java interface default methods (IntPredicate.negate, IntUnaryOperator.compose) & FunctionHandler Object methods
+def P = class () implements java.util.function.IntPredicate (
+    def test = (x : int) : bool -> ( x > 0 )
+)
+def p : java.util.function.IntPredicate = P()
+def pNeg = p.negate()
+def u : java.util.function.IntUnaryOperator = (x : int) : int -> ( x + 1 )
+def uComp = u.compose((x : int) : int -> ( x * 2 ))
+def fn : java.util.function.IntPredicate = (x : int) : bool -> ( x > 0 )
+def ch = java.lang.String("abc").charAt(0)
+println(pNeg.test(5), ":", uComp.applyAsInt(3), ":", java.util.Objects.equals(fn, fn), ":", (java.util.Objects.hashCode(fn) != 0), ":", (java.lang.String.valueOf(fn) != null), ":", ch)
+}}}}}
+false:7:true:true:true:a
+
+{{{{{
+;; No applicable overload for any argument
+def dyn = (v : any) : any -> ( v )
+java.lang.Boolean.logicalAnd(dyn("bad"), true)
+}}}}}
+No applicable overload of java.lang.Boolean.logicalAnd for (any, bool)
+
+{{{{{
+def dyn = (v : any) : any -> ( v )
+java.lang.Integer.parseInt(dyn(123))
+}}}}}
+No applicable overload of java.lang.Integer.parseInt for (any)
+
+
+
+

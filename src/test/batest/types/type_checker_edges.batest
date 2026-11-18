@@ -1,0 +1,429 @@
+;; TypeChecker edge cases: nonFunctionCallableAssignable, canWidenTypeVarToDouble, extractNarrowing, resolveStaticRef, binaryOp
+
+{{{{{
+;; nonFunctionCallableAssignable: class constructor, println, and @Pure Java method ref as function values
+def tests = import("org.babblelang.tests")
+def HF = tests.EffectsTestCase.HostFixtures
+def Box = class (def x : int) ()
+def mkBox : pure (x : int) : Box = Box
+def fnPure : pure (x : int) : int = HF.pureCalc
+def pr : (x : int) : any? = println
+println(mkBox(3).x, ":", fnPure(4))
+}}}}}
+3:9
+
+{{{{{
+;; nonFunctionCallableAssignable rejects impure Java method ref for pure target
+def tests = import("org.babblelang.tests")
+def fnBad : pure (x : int) : int = tests.EffectsTestCase.HostFixtures.annotatedImpure
+}}}}}
+Type error : expected pure (x : int) : int, got org.babblelang.tests.EffectsTestCase$HostFixtures.annotatedImpure
+
+{{{{{
+;; nonFunctionCallableAssignable rejects println for pure target
+def pr : pure (x : int) : any? = println
+}}}}}
+Type error : expected pure (x : int) : any?, got print
+
+{{{{{
+;; canWidenTypeVarToDouble with Java generic method (Objects.requireNonNullElse)
+def r = java.util.Objects.requireNonNullElse(1, 2.5)
+println(r)
+}}}}}
+1.0
+
+{{{{{
+;; extractNarrowing: null != x, not (null == x), &&, ||, paren-wrapped, and nullable bool
+def Box = class (def v : int) ()
+def check = (a : Box?, b : Box?, c : bool?) : string -> (
+    def s = ""
+    if null != a then ( s += a.v ) else ( s += "-" )
+    if not (null == b) then ( s += b.v ) else ( s += "-" )
+    if (a != null and b != null) then ( s += (a.v + b.v) ) else ( s += "n" )
+    if (a == null or b == null) then ( s += "z" ) else ( s += "p" )
+    if ((a != null)) then ( s += "!" )
+    if c == true then ( s += "T" )
+    s
+)
+println(check(Box(2), Box(3), true), ":", check(null, Box(4), false))
+}}}}}
+235p!T:-4nz
+
+{{{{{
+;; resolveStaticRef: nested packages
+package outer (
+    package inner (
+        def Pair = class (def a : int, def b : int) ()
+    )
+)
+def x : outer.inner.Pair = outer.inner.Pair(4, 5)
+println(x.a + x.b)
+}}}}}
+9
+
+{{{{{
+;; binaryOp type errors: invalid subtraction, invalid comparison
+def bad = "a" - 1
+}}}}}
+Not a number : "a"
+
+{{{{{
+def bad = 1 < "a"
+}}}}}
+Not comparable : 1 and "a"
+
+{{{{{
+println(1 == true)
+}}}}}
+false
+
+{{{{{
+;; assignmentWideningNote: local assignment widening and parameter call widening
+def x = 1
+x = 2.5
+def y : int = x
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+def f = (x) -> ( x )
+f(1)
+f(2.5)
+def y : int = f(1)
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+;; Array length assignment rejected
+def arr = java.lang.String("abc").toCharArray()
+arr.length = 5
+}}}}}
+Cannot assign final field : char[].length
+
+{{{{{
+;; Private method cannot implement interface method
+def I = interface ( def foo : () : int )
+def C = class () implements I (
+    private def foo = () : int -> ( 1 )
+)
+}}}}}
+C.foo is private and cannot implement I.foo
+
+{{{{{
+;; Non-callable passed to Java functional interface constructor
+java.lang.Runnable(42)
+}}}}}
+No applicable overload of java.lang.Runnable for (java.lang.Integer) : candidates are
+
+{{{{{
+;; Wrong number of type arguments on non-generic class
+def Box = class () ()
+def x : Box(int) = Box()
+}}}}}
+Wrong number of type arguments : expected 0, got 1
+
+{{{{{
+;; Union return types inferred across multiple returns
+def bad = (flag : bool) -> (
+    if flag then ( return 1 ) else ( return "a" )
+)
+println(bad(true), ":", bad(false))
+}}}}}
+1:a
+
+{{{{{
+;; Return type widening int -> double and param reassignment
+def pick = (flag : bool, x : int) : double -> (
+    x = 10
+    if flag then ( return x ) else ( return 2.5 )
+)
+def apply(T) = (a : T, f : () : T) : T -> ( f() )
+println(pick(true, 1), ":", pick(false, 1), ":", apply(2.5, () -> ( 3 )))
+}}}}}
+10.0:2.5:3.0
+
+{{{{{
+;; Values.hash on whole and large doubles
+def dyn = (v : any) : any -> ( v )
+println(java.util.Objects.hashCode(dyn(3.0)) == java.util.Objects.hashCode(dyn(3)), ":", java.util.Objects.hashCode(dyn(java.lang.Double.MAX_VALUE)) != 0)
+}}}}}
+false:true
+
+{{{{{
+;; Static member used before definition via static helper during static init
+def C = class () () static (
+    def readB = () : int -> ( this.b )
+    def a = this.readB()
+    def b = 1
+)
+}}}}}
+Member used before definition : b
+
+{{{{{
+;; assignedMemberType: static field assign, generic class param assign, missing/private member errors
+def Box(T) = class (def v : T) () static (
+    def count = 0
+)
+def b = Box(10)
+b.v = 20
+Box.count = 5
+println(b.v, ":", Box.count)
+}}}}}
+20:5
+
+{{{{{
+def Box = class (private def p : int) ()
+def b = Box(1)
+b.p = 2
+}}}}}
+p is private
+
+{{{{{
+def Box = class (def v : int) ()
+def b = Box(1)
+b.missing = 2
+}}}}}
+No such member : missing
+
+{{{{{
+def C = class () () static ( def s = 1 )
+C.missing = 2
+}}}}}
+No such member : missing
+
+{{{{{
+42.x = 1
+}}}}}
+Not a scope : 42
+
+{{{{{
+;; unify: union actual, nullable pattern, Babble generic class pattern, Java generic interface pattern, function pattern
+def Box(T) = class (def v : T) ()
+def unbox(T) = (b : Box(T)) : T -> ( b.v )
+def first(T) = (xs : java.util.List(T)) : T? -> ( xs.get(0) )
+def orDefault(T) = (x : T?, d : T) : any? -> ( if x != null then ( x ) else ( d ) )
+def id(T) = (x : T) : T -> ( x )
+def apply(A, B) = (x : A, f : (a : A) : B) : B -> ( f(x) )
+def u : int | string = 7
+def xs = java.util.Collections.singletonList("hi")
+println(unbox(Box(3)), ":", first(xs), ":", orDefault(null, 9), ":", orDefault(4, 9), ":", id(u), ":", apply(5, (n : int) : int -> ( n + 1 )))
+}}}}}
+3:hi:9:4:7:6
+
+{{{{{
+;; canMatchAtRuntime & isRuntimeSubtype across classes, value classes, interfaces, Java classes/interfaces, unions, functions
+def I1 = interface ( def m : () : int )
+def I2 = interface ( def n : () : int )
+def C1 = class () implements I1 ( def m = () : int -> ( 1 ) )
+def V1 = value class (x : int) implements I1 ( def m = () : int -> ( this.x ) )
+def a : any = C1()
+def v : any = V1(2)
+def u : int | string = 5
+def sb : java.lang.CharSequence = java.lang.StringBuilder("x")
+def r : java.lang.Runnable? = null
+def f : any = (x : int) : int -> ( x )
+println(
+    (a is I1), ":", (a is I2), ":", (v is V1), ":", (u is int), ":", (u is string), ":",
+    (sb is java.lang.Appendable), ":", (sb is java.lang.String), ":", (r is java.lang.Runnable), ":",
+    (f is any)
+)
+}}}}}
+true:false:true:true:false:true:false:false:true
+
+{{{{{
+;; compoundAssignment edge cases: string +=, bool += error, string -= error
+def s = "hi"
+s += "!"
+println(s)
+}}}}}
+hi!
+
+{{{{{
+def b = true
+b += false
+}}}}}
+Not a number : b
+
+{{{{{
+def s = "hi"
+s -= "i"
+}}}}}
+Not a number : s
+
+{{{{{
+;; reassignmentJoin across locals: int -> double widening, nullable join, function effect join
+def x : int | double = 1
+x = 2.5
+def opt : string? = "a"
+opt = null
+def f = pure (n : int) : int -> ( n )
+f = (n : int) : int -> ( n + 1 )
+println(x, ":", opt, ":", f(3))
+}}}}}
+2.5:null:4
+
+{{{{{
+;; isInferrableCallable: unannotated lambdas in typed contexts, generic call, object/class, recursive error
+def apply = (f : (x : int) : int, v : int) : int -> ( f(v) )
+def o = object ( def fn = (x : int) -> ( x + 1 ) )
+println(apply((x) -> ( x * 2 ), 4), ":", o.fn(5))
+}}}}}
+8:6
+
+{{{{{
+;; replaceIntWithDouble on union return of unannotated lambda
+def f : (c : bool) : double | string = (c) -> ( if c then ( 1 ) else ( "a" ) )
+println(f(true), ":", f(false))
+}}}}}
+1.0:a
+
+{{{{{
+;; findMember on inherited interface + missing interface member conformance
+def I1 = interface ( def m : () : int )
+def I2 = interface extends I1 ()
+def C = class () implements I2 ()
+}}}}}
+C does not implement I1.m
+
+{{{{{
+;; genericBabbleCall with deferred unannotated lambda + unify JavaInstance SAM with Function + Java Optional.map deferred lambda
+def apply(A, B) = (x : A, f : (a : A) : B) : B -> ( f(x) )
+def runSam(T) = (f : java.util.function.Function(T, int), x : T) : int? -> ( f.apply(x) )
+def opt = java.util.Optional.of(5).map((x : int) -> ( x + 1 ))
+println(apply(10, (n) -> ( n + 1 )), ":", runSam((s : string) : int -> ( java.lang.String(s).length() ), "hello"), ":", opt.orElse(0))
+}}}}}
+11:5:6
+
+{{{{{
+;; isRuntimeSubtype JavaInstance projection (Collection(string) is List)
+def xs : java.util.Collection(string) = java.util.Collections.singletonList("a")
+println((xs is java.util.List))
+}}}}}
+true
+
+{{{{{
+;; widened local variable used in type error
+def x = 1
+x = 2.5
+def n : int = x
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+;; visitNegate: numeric union, out of range int, null union error, non-numeric union error
+def u : int | double = 5
+println(-u)
+}}}}}
+-5
+
+{{{{{
+-9999999999999
+}}}}}
+Integer out of range : -9999999999999
+
+{{{{{
+9999999999999
+}}}}}
+Integer out of range : 9999999999999
+
+{{{{{
+def u : int | null = 5
+-u
+}}}}}
+Not a number : u
+
+{{{{{
+def u : int | string = 5
+-u
+}}}}}
+Not a number : u
+
+{{{{{
+;; visitAsExpression: cast to type var, cast to function type, redundant cast warning
+def f(T) = (x : any) -> ( x as T )
+}}}}}
+Cannot cast to type parameter : T
+
+{{{{{
+def f = (x : any) -> ( x as (a : int) : int )
+}}}}}
+Cannot cast to a function type
+
+{{{{{
+println((1 as int))
+}}}}}
+Warning : Redundant cast : int
+1
+
+{{{{{
+;; visitWhileExpression & visitReturnExpression: expected int (null error), double? widening, unused while, return null, return widening
+def w : int = while false then ( 1 )
+}}}}}
+Type error : expected int, got null
+
+{{{{{
+def w : double? = while false then ( 1 )
+while false then ( 1 )
+def f1 = (x : int) : double -> ( return x )
+def f2 = () : any? -> ( return null )
+println(w, ":", f1(3), ":", f2())
+}}}}}
+null:3.0:null
+
+{{{{{
+;; member on nullable union (Not a scope)
+def C = class (def x = 1) ()
+def opt : C? = C()
+opt.x
+}}}}}
+Not a scope : opt
+
+{{{{{
+;; typeOfDeclaration: recursive inferred def error, unannotated param with defaultValue (non-null & null)
+def x = x + 1
+}}}}}
+Missing type : x (recursive)
+
+{{{{{
+def f = (x = 1) -> ( x + 1 )
+println(f(), ":", f(4))
+}}}}}
+2:5
+
+{{{{{
+def g = (x = null) -> ( x )
+}}}}}
+Missing type : x
+
+{{{{{
+;; resolveStaticRef: package nested, reassigned package ref
+package a (
+    package b (
+        def C = class (def v = 3) ()
+    )
+)
+def p1 = a
+def p2 = a
+p2 = a
+println(a.b.C().v, ":", p1.b.C().v, ":", p2.b.C().v)
+}}}}}
+3:3:3
+
+{{{{{
+package a (
+    package b (
+        def C = class (def v = 3) ()
+    )
+)
+def p2 = a
+def p3 = a.b
+p2 = p3
+}}}}}
+Type error : expected package a, got package b
+
+
+
+
+
+
+

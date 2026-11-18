@@ -756,3 +756,241 @@ def n = 2147483648
 }}}}}
 Integer out of range : 2147483648
 
+{{{{{
+;; emitJavaFieldAssign (int->double widening) and emitJavaFieldCompoundAssign (+=, -=, *=, /= on int/double/String Java fields)
+def st = java.io.StreamTokenizer(java.io.StringReader("x"))
+st.nval = 3
+st.nval += 2
+st.nval -= 1.5
+st.nval *= 2.0
+st.nval /= 7
+st.ttype = 10
+st.ttype += 5
+st.ttype -= 3
+st.ttype *= 2
+st.sval = "hi"
+st.sval += "!"
+println(st.nval, ":", st.ttype, ":", st.sval)
+}}}}}
+1.0:24:hi!
+
+{{{{{
+;; ScriptClassWriter getCommonSuperClass / commonSuperInterface / ancestorInterfaces / isAssignable merges
+def Root = interface ( def tag : () : string )
+def I1 = interface extends Root ()
+def I2 = interface extends Root ()
+def C1 = class () implements I1 ( def tag = () : string -> ( "c1" ) )
+def C2 = class () implements I2 ( def tag = () : string -> ( "c2" ) )
+def pickRoot = (flag : bool) : Root -> (
+    if flag then ( C1() ) else ( C2() )
+)
+def pickMixed = (flag : bool, a : I1, b : C2) : Root -> (
+    if flag then ( a ) else ( b )
+)
+def pickIfaces = (flag : bool, a : I1, b : I2) : Root -> (
+    if flag then ( a ) else ( b )
+)
+def c1 = C1()
+def c2 = C2()
+println(pickRoot(true).tag(), ":", pickRoot(false).tag(), ":", pickMixed(true, c1, c2).tag(), ":", pickIfaces(false, c1, c2).tag())
+}}}}}
+c1:c2:c1:c2
+
+{{{{{
+;; InterfaceGen namespace-backed default method, own default invoke, and int->double widening
+def CalcIface = interface (
+    def base = () : int -> ( 10 )
+    def plusBase = (k : int) : double -> (
+        package local ( def mul = 2 )
+        this.base() * local.mul + k
+    )
+)
+def CalcImpl = class () implements CalcIface ()
+def ci : CalcIface = CalcImpl()
+println(ci.plusBase(5))
+}}}}}
+25.0
+
+{{{{{
+;; emitReturnToJava double->void POP2 on Runnable and Object->double on DoubleSupplier
+def dyn = (v : any) : any -> ( v )
+def DS = class () implements java.util.function.DoubleSupplier (
+    def getAsDouble = () : any -> ( dyn(3.5) )
+)
+def f2 : java.util.function.DoubleSupplier = DS()
+def r : java.lang.Runnable = () -> ( 1.5 + 2.5 )
+r.run()
+println(f2.getAsDouble())
+}}}}}
+3.5
+
+{{{{{
+;; emitJavaFieldAssign on int field (java.awt.Point) and widening assignments
+def pt = java.awt.Point()
+pt.x = 3
+pt.y = 4
+def x = 1
+def Box = class () ( def v : int = 2 )
+def b = Box()
+def d1 : double = (x = 5)
+def d2 : double = (x += 3)
+def d3 : double = (b.v = 7)
+def d4 : double = (b.v += 2)
+def d5 : double = (b.v -= 1)
+def d6 : double = (b.v *= 2)
+def st = java.io.StreamTokenizer(java.io.StringReader("a"))
+def d7 : double = (st.ttype = 4)
+def d8 : double = (st.ttype += 2)
+println(pt.x, ":", pt.y, ":", d1, ":", d2, ":", d3, ":", d4, ":", d5, ":", d6, ":", d7, ":", d8)
+}}}}}
+3:4:5.0:8.0:7.0:9.0:8.0:16.0:4.0:6.0
+
+{{{{{
+;; ScriptClassWriter getCommonSuperClass / commonSuperInterface on unannotated if/else joins
+def Root = interface ( def tag : () : string )
+def I1 = interface extends Root ()
+def I2 = interface extends Root ()
+def C1 = class () implements I1 ( def tag = () : string -> ( "c1" ) )
+def C2 = class () implements I2 ( def tag = () : string -> ( "c2" ) )
+def joinIface = (flag : bool, a : I1, b : I2) -> (
+    def r = if flag then ( a ) else ( b )
+    r.tag()
+)
+def joinJava = (flag : bool) : int -> (
+    def xs = if flag then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuffer("bc") )
+    xs.length()
+)
+println(joinIface(true, C1(), C2()), ":", joinIface(false, C1(), C2()), ":", joinJava(true), ":", joinJava(false))
+}}}}}
+c1:c2:1:2
+
+{{{{{
+;; Paren-wrapped class/Java static chains, safe-nav static chain, method recurse, and interface constant
+def Box = ( class (def v : int) (
+    def fact = (n : int) : int -> (
+        if n <= 1 then ( 1 ) else ( n * recurse(n - 1) )
+    )
+) )
+def IWithConst = interface (
+    def get = () : int -> ( 3 )
+)
+def Impl = class () implements IWithConst ()
+def b = Box(5)
+def r1 = (java.lang.Math).abs(-9)
+def xs = java.util.Collections.singletonList("a")
+println(b.fact(4), ":", Impl().get(), ":", r1, ":", xs.size())
+}}}}}
+24:3:9:1
+
+{{{{{
+;; Static Java field assign and compound-assign (emitJavaFieldAssign / emitJavaFieldCompoundAssign static)
+def tests = import("org.babblelang.tests")
+def HF = tests.EffectsTestCase.HostFixtures
+def saved = HF.mutableStatic
+HF.mutableStatic = 10
+HF.mutableStatic += 5
+HF.mutableStatic -= 3
+HF.mutableStatic *= 2
+def after = HF.mutableStatic
+HF.mutableStatic = saved
+println(after)
+}}}}}
+24
+
+{{{{{
+;; Safe-navigation call on nullable Babble & Java receivers and super default call
+def I1 = interface (
+    def greet = (x : int) : int -> ( x + 10 )
+)
+def I2 = interface extends I1 ()
+def C = class (def v : int) implements I2 (
+    def greet = (x : int) : int -> ( super.greet(x) + this.v )
+)
+def opt : C? = C(5)
+def nil : C? = null
+def s1 : java.lang.StringBuilder? = java.lang.StringBuilder("abc")
+def s2 : java.lang.StringBuilder? = null
+println(opt?.greet(2), ":", nil?.greet(2), ":", s1?.length(), ":", s2?.length())
+}}}}}
+17:null:3:null
+
+{{{{{
+;; InterfaceGen signature adaptation bridge + inherited default through intermediate interface + float field int assign
+def IBase = interface (
+    def calc = (x : int) : any -> ( x * 0 )
+)
+def IMid = interface extends IBase (
+    def calc = (x : any) : int -> ( 5 )
+)
+def ILeaf = interface extends IMid ()
+def C1 = class () implements ILeaf ()
+def c1 : IBase = C1()
+def pf = java.awt.geom.Point2D.Double(1.0, 2.0)
+pf.x = 5
+println(c1.calc(4), ":", C1().calc(4), ":", pf.x)
+}}}}}
+5:5:5.0
+
+{{{{{
+;; ScriptClassWriter interface-interface & class-interface joins + Java primitive bridge args (DoublePredicate, IntToDoubleFunction, LongUnaryOperator)
+def getList = () : java.util.List(string) -> ( java.util.Collections.singletonList("a") )
+def getSet = () : java.util.Set(string) -> ( java.util.Collections.singleton("b") )
+def joinCol = (c : bool) : java.util.Collection(string) -> (
+    if c then ( getList() ) else ( getSet() )
+)
+def IBase = interface ( def tag : () : int )
+def IA = interface extends IBase ( def tag = () : int -> ( 1 ) )
+def IB = interface extends IBase ( def tag = () : int -> ( 2 ) )
+def CA = class () implements IA ()
+def CB = class () implements IB ()
+def joinB = (c : bool) : IBase -> (
+    if c then ( CA() ) else ( CB() )
+)
+def DP = class () implements java.util.function.DoublePredicate (
+    def test = (d : double) : bool -> ( d > 0.0 )
+)
+def I2D = class () implements java.util.function.IntToDoubleFunction (
+    def applyAsDouble = (i : int) : double -> ( i + 0.5 )
+)
+def IP = class () implements java.util.function.IntPredicate (
+    def test = (i : int) : bool -> ( i > 0 )
+)
+def dp : java.util.function.DoublePredicate = DP()
+def i2d : java.util.function.IntToDoubleFunction = I2D()
+def ip : java.util.function.IntPredicate = IP()
+println(joinCol(true).size(), ":", joinCol(false).size(), ":", joinB(true).tag(), ":", joinB(false).tag(), ":", dp.test(1.5), ":", i2d.applyAsDouble(2), ":", ip.test(3))
+}}}}}
+1:1:1:2:true:2.5:true
+
+{{{{{
+;; superCall inside Babble interface default method, inside nested lambda in class, and with named arg
+def I1 = interface (
+    def calc = (x : int) : int -> ( x + 10 )
+)
+def I2 = interface extends I1 (
+    def calc = (x : int) : int -> ( super.calc(x) + 2 )
+)
+def C2 = class () implements I2 (
+    def run = (x : int) : int -> (
+        def inner = () : int -> ( super.calc(x) + 1 )
+        inner() + super.calc(x = x + 1)
+    )
+)
+def pt = java.awt.Point(10, 20)
+pt.x -= 3
+pt.x *= 2
+def pd = java.awt.geom.Point2D.Double(10.0, 20.0)
+pd.x += 2.0
+pd.x -= 4.0
+pd.x *= 3.0
+pd.x /= 2.0
+println(C2().run(5), ":", pt.x, ":", pd.x)
+}}}}}
+36:14:12.0
+
+
+
+
+
+
+
