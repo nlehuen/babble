@@ -2,40 +2,29 @@ package org.babblelang.analysis;
 
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
-import org.babblelang.effects.Effect;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
-import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.Operators;
 
 import static org.babblelang.analysis.TypeAlgebra.canBeNull;
 import static org.babblelang.analysis.TypeAlgebra.containsFunction;
-import static org.babblelang.analysis.TypeAlgebra.containsType;
-import static org.babblelang.analysis.TypeAlgebra.isCallable;
 import static org.babblelang.analysis.TypeAlgebra.needsDoubleWidening;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.PriorityQueue;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 
 /**
  * The type checker (docs/design/bip008_static-typing.md) : the fourth pass of the analysis, after
@@ -78,7 +67,7 @@ final class TypeChecker {
     private record Diagnostic(int line, int column, String message) {
     }
 
-    private record Widening(Type type, int line) {
+    record Widening(Type type, int line) {
     }
 
     private static final Comparator<Diagnostic> ORDER = Comparator.comparingInt(Diagnostic::line)
@@ -108,83 +97,7 @@ final class TypeChecker {
     private final Map<ParserRuleContext, Type> inferredDefs = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredMembers = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredParams = new IdentityHashMap<>();
-    private record SiteKey(int tokenIndex, int line) implements Comparable<SiteKey> {
-        @Override
-        public int compareTo(SiteKey other) {
-            int cmp = Integer.compare(this.tokenIndex, other.tokenIndex);
-            return cmp != 0 ? cmp : Integer.compare(this.line, other.line);
-        }
-    }
 
-    private final class SlotCell {
-        final TreeMap<SiteKey, Type> contributors = new TreeMap<>();
-        final Set<Integer> readers = new LinkedHashSet<>();
-        Type value;
-        int widenedLine = -1;
-
-        boolean record(SiteKey key, Type contributor) {
-            Type prev = contributors.put(key, contributor);
-            if (contributor.equals(prev)) {
-                return false;
-            }
-            Type folded = null;
-            int newWidenedLine = -1;
-            for (Map.Entry<SiteKey, Type> e : contributors.entrySet()) {
-                if (folded == null) {
-                    folded = e.getValue();
-                } else {
-                    Type joined = algebra.reassignmentJoin(folded, e.getValue());
-                    if (joined == null) {
-                        continue;
-                    }
-                    if (!joined.equals(folded)) {
-                        if ((containsType(joined, Type.DOUBLE) && !containsType(folded, Type.DOUBLE))
-                                || (Type.containsNull(joined) && !Type.containsNull(folded))) {
-                            if (e.getKey().line() >= 0) {
-                                newWidenedLine = e.getKey().line();
-                            }
-                        }
-                        folded = joined;
-                    }
-                }
-            }
-            boolean changed = !Objects.equals(this.value, folded) || this.widenedLine != newWidenedLine;
-            this.value = folded;
-            this.widenedLine = newWidenedLine;
-            return changed;
-        }
-
-        /** The fold of the contributions before {@code key} in the source, or null if none. */
-        Type foldBefore(SiteKey key) {
-            Type folded = null;
-            for (Type contribution : contributors.headMap(key, false).values()) {
-                Type joined = folded == null ? contribution : algebra.reassignmentJoin(folded, contribution);
-                if (joined != null) {
-                    folded = joined;
-                }
-            }
-            return folded;
-        }
-        void addReader(Integer unitIdx) {
-            if (unitIdx != null) {
-                readers.add(unitIdx);
-            }
-        }
-    }
-
-    private final Map<ParserRuleContext, SlotCell> defCells = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, SlotCell> memberCells = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, SlotCell> paramCells = new IdentityHashMap<>();
-    /** The result of each self-recursive unannotated function, converged with the slots. */
-    private final Map<BabbleParser.FunctionLiteralContext, SlotCell> resultCells = new IdentityHashMap<>();
-    private final Map<BabbleParser.WhileExpressionContext, Set<ParserRuleContext>> assignedWhileLocals = new IdentityHashMap<>();
-    private final Deque<Integer> activeUnitStack = new ArrayDeque<>();
-    private boolean inferenceMode;
-    private Map<ParserRuleContext, Integer> topUnitIndex = new IdentityHashMap<>();
-    private int[] sccRank;
-    private PriorityQueue<Integer> worklist;
-    private boolean[] inQueue;
-    private int[] evalCount;
 
     private final Map<ParserRuleContext, Widening> defWidenings = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Widening> memberWidenings = new IdentityHashMap<>();
@@ -197,9 +110,11 @@ final class TypeChecker {
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
 
     private final CallSolver callSolver = new CallSolver(this);
+    private final SlotInference slots = new SlotInference(this);
     private final TypeAnnotations annotator = new TypeAnnotations(this);
     private final MemberTypes members = new MemberTypes(this);
     private final OperatorTypes operators = new OperatorTypes(this);
+    private final Narrowing narrowing = new Narrowing(this);
     private ImportedSummaries imported;
 
     CallSolver callSolver() {
@@ -314,6 +229,47 @@ final class TypeChecker {
         return pass;
     }
 
+    /** The scope a name occurrence was recorded in, or null. */
+    ScopeNode occurrenceScope(ParserRuleContext ctx) {
+        return occurrenceScopes.get(ctx);
+    }
+
+    Map<ParserRuleContext, ScopeNode> occurrenceScopes() {
+        return occurrenceScopes;
+    }
+
+    Set<ParserRuleContext> escapingTargets() {
+        return escapingTargets;
+    }
+
+    Set<ParserRuleContext> nextEscapingTargets() {
+        return nextEscapingTargets;
+    }
+
+    Set<ParserRuleContext> failedDefs() {
+        return failedDefs;
+    }
+
+    Map<ParserRuleContext, Widening> widenings(int slots) {
+        return slots == SlotInference.DEFS ? defWidenings : slots == SlotInference.MEMBERS ? memberWidenings : paramWidenings;
+    }
+
+    Map<ParserRuleContext, Type> inferred(int slots) {
+        return slots == SlotInference.DEFS ? inferredDefs : slots == SlotInference.MEMBERS ? inferredMembers : inferredParams;
+    }
+
+    Narrowing narrowing() {
+        return narrowing;
+    }
+
+    TypeEnv env() {
+        return env;
+    }
+
+    Set<ParserRuleContext> capturedReassigned() {
+        return capturedReassigned;
+    }
+
     OperatorTypes operators() {
         return operators;
     }
@@ -370,11 +326,11 @@ final class TypeChecker {
         new ReturnFinder().visit(file);
         this.checkingEffects = false;
         this.effectChecker = new EffectChecker(pass, new TypedProgram(this));
-        buildTarjanRanks(file);
-        runInferenceWorklist(file);
+        slots.rank(file);
+        slots.converge(file);
         effectChecker.inferAll(file);
         // The function types the slots hold now carry their inferred effects.
-        runInferenceWorklist(file);
+        slots.converge(file);
         this.checkingEffects = true;
         resetPass(true);
         walk(file);
@@ -393,159 +349,6 @@ final class TypeChecker {
         }
         LoweringAnalyzer.publish(pass, file, this);
         this.builtSummary = TypedModuleSummary.build(pass, this, new StaticRefs(pass, this));
-    }
-
-    private void buildTarjanRanks(BabbleParser.FileContext file) {
-        List<BabbleParser.ExpressionContext> units = file.expression();
-        int n = units.size();
-        topUnitIndex = new IdentityHashMap<>(n * 2);
-        for (int i = 0; i < n; i++) {
-            topUnitIndex.put(units.get(i), i);
-        }
-        List<Set<Integer>> deps = new ArrayList<>(n);
-        for (int i = 0; i < n; i++) {
-            deps.add(new LinkedHashSet<>());
-        }
-        for (Map.Entry<ParserRuleContext, ScopeNode> entry : occurrenceScopes.entrySet()) {
-            ParserRuleContext occ = entry.getKey();
-            if (!inFile(occ)) {
-                continue;
-            }
-            Integer uIdx = topUnitOf(occ);
-            if (uIdx == null) {
-                continue;
-            }
-            String refName = null;
-            if (occ instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-                refName = sel.ID().getText();
-            } else if (occ instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == null) {
-                refName = assign.name.getText();
-            }
-            if (refName != null && resolveName(null, refName, entry.getValue()) instanceof ParserRuleContext decl) {
-                Integer vIdx = topUnitOf(decl);
-                if (vIdx != null && !vIdx.equals(uIdx)) {
-                    deps.get(uIdx).add(vIdx);
-                }
-            }
-        }
-        sccRank = new int[n];
-        int[] index = new int[n];
-        int[] lowlink = new int[n];
-        boolean[] onStack = new boolean[n];
-        Arrays.fill(index, -1);
-        Deque<Integer> stack = new ArrayDeque<>();
-        int[] nextIndex = {0};
-        int[] nextRank = {0};
-        for (int i = 0; i < n; i++) {
-            if (index[i] == -1) {
-                tarjanStrongConnect(i, deps, index, lowlink, onStack, stack, nextIndex, nextRank);
-            }
-        }
-    }
-
-    private void tarjanStrongConnect(int v, List<Set<Integer>> deps, int[] index, int[] lowlink,
-                                     boolean[] onStack, Deque<Integer> stack, int[] nextIndex, int[] nextRank) {
-        index[v] = lowlink[v] = nextIndex[0]++;
-        stack.push(v);
-        onStack[v] = true;
-        for (int w : deps.get(v)) {
-            if (index[w] == -1) {
-                tarjanStrongConnect(w, deps, index, lowlink, onStack, stack, nextIndex, nextRank);
-                lowlink[v] = Math.min(lowlink[v], lowlink[w]);
-            } else if (onStack[w]) {
-                lowlink[v] = Math.min(lowlink[v], index[w]);
-            }
-        }
-        if (lowlink[v] == index[v]) {
-            int rank = nextRank[0]++;
-            int w;
-            do {
-                w = stack.pop();
-                onStack[w] = false;
-                sccRank[w] = rank;
-            } while (w != v);
-        }
-    }
-
-    private Integer topUnitOf(ParserRuleContext ctx) {
-        for (ParserRuleContext p = ctx; p != null; p = p.getParent()) {
-            Integer idx = topUnitIndex.get(p);
-            if (idx != null) {
-                return idx;
-            }
-        }
-        return null;
-    }
-
-    private void runInferenceWorklist(BabbleParser.FileContext file) {
-        List<BabbleParser.ExpressionContext> units = file.expression();
-        int n = units.size();
-        if (n == 0) {
-            return;
-        }
-        worklist = new PriorityQueue<>(Comparator.comparingInt((Integer i) -> sccRank[i]).thenComparingInt(i -> i));
-        inQueue = new boolean[n];
-        evalCount = new int[n];
-        for (int i = 0; i < n; i++) {
-            worklist.add(i);
-            inQueue[i] = true;
-        }
-        inferenceMode = true;
-        try {
-            while (!worklist.isEmpty()) {
-                int uIdx = worklist.poll();
-                inQueue[uIdx] = false;
-                if (evalCount[uIdx]++ >= 64) {
-                    continue;
-                }
-                BabbleParser.ExpressionContext unit = units.get(uIdx);
-                clearSubtreeTypes(unit);
-                activeUnitStack.push(uIdx);
-                try {
-                    walk(unit);
-                } finally {
-                    activeUnitStack.pop();
-                }
-                if (!nextEscapingTargets.isEmpty()) {
-                    for (ParserRuleContext target : nextEscapingTargets) {
-                        if (escapingTargets.add(target)) {
-                            wakeParamReadersForOwner(target);
-                        }
-                    }
-                    nextEscapingTargets.clear();
-                }
-            }
-        } finally {
-            inferenceMode = false;
-        }
-    }
-
-    private void wakeReaders(SlotCell cell) {
-        if (!inferenceMode || worklist == null) {
-            return;
-        }
-        for (int readerIdx : cell.readers) {
-            if (!inQueue[readerIdx] && evalCount[readerIdx] < 64) {
-                worklist.add(readerIdx);
-                inQueue[readerIdx] = true;
-            }
-        }
-    }
-
-    private void wakeParamReadersForOwner(ParserRuleContext owner) {
-        for (Map.Entry<ParserRuleContext, SlotCell> entry : paramCells.entrySet()) {
-            if (entry.getKey() instanceof BabbleParser.ParameterDeclarationContext param
-                    && ownerOfParam(param) == owner) {
-                inferredParams.remove(param);
-                wakeReaders(entry.getValue());
-            }
-        }
-    }
-
-    private void registerReader(Map<ParserRuleContext, SlotCell> cells, ParserRuleContext decl) {
-        if (inferenceMode && !activeUnitStack.isEmpty()) {
-            cells.computeIfAbsent(decl, k -> new SlotCell()).addReader(activeUnitStack.peek());
-        }
     }
 
     private void resetPass(boolean clearAnnotations) {
@@ -704,7 +507,7 @@ final class TypeChecker {
     }
 
     /** Types every expression and block, and resolves every annotation, in source order. */
-    private void walk(ParseTree tree) {
+    void walk(ParseTree tree) {
         if (tree instanceof BabbleParser.TypeContext type) {
             // Only annotations are walked to : implements lists, super qualifiers, and as targets are handled elsewhere.
             if (type.getParent() instanceof BabbleParser.AsExpressionContext asCtx && asCtx.right == type) {
@@ -786,7 +589,7 @@ final class TypeChecker {
         }.visit(file);
     }
 
-    private static ScopeNode callableScope(ScopeNode scope) {
+    static ScopeNode callableScope(ScopeNode scope) {
         ScopeNode s = scope;
         while (s != null && s.kind == ScopeNode.Kind.BLOCK) {
             s = s.parent;
@@ -889,14 +692,14 @@ final class TypeChecker {
             return cached;
         }
         if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter) {
-            registerReader(paramCells, parameter);
+            slots.read(SlotInference.PARAMS, parameter);
             Type inferredParam = inferredParams.get(parameter);
             if (inferredParam != null && isInferrableCallable(ownerOfParam(parameter))) {
                 declarationTypes.put(parameter, inferredParam);
                 return inferredParam;
             }
         }
-        registerReader(defCells, declaration);
+        slots.read(SlotInference.DEFS, declaration);
         if (inferredDefs.containsKey(declaration)
                 && !(declaration instanceof BabbleParser.DefExpressionContext def
                 && !reassigned.contains(def) && unwrapFunctionLiteral(def.value) != null)) {
@@ -1036,8 +839,10 @@ final class TypeChecker {
         }
         if (!inferenceStack.isEmpty() && inferenceStack.peek() == literal) {
             recursiveFunctions.add(literal);
-            SlotCell cell = resultCells.get(literal);
-            Type result = cell != null && cell.value != null ? cell.value : Type.NOTHING;
+            Type result = slots.result(literal);
+            if (result == null) {
+                result = Type.NOTHING;
+            }
             return recordFunctionLiteral(new Type.Function(tparams, params, result, effs), literal);
         }
         for (BabbleParser.FunctionLiteralContext fn : inferenceStack) {
@@ -1084,7 +889,7 @@ final class TypeChecker {
         return child.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == child ? def : null;
     }
 
-    private static ParserRuleContext ownerOfParam(BabbleParser.ParameterDeclarationContext parameter) {
+    static ParserRuleContext ownerOfParam(BabbleParser.ParameterDeclarationContext parameter) {
         ParserRuleContext parent = parameter.getParent();
         return parent != null ? parent.getParent() : null;
     }
@@ -1282,13 +1087,10 @@ final class TypeChecker {
         if (literal.functionBlock == null) {
             return Type.ERROR;
         }
-        SlotCell cell = resultCells.get(literal);
-        if (cell != null && inferenceMode) {
-            cell.addReader(activeUnitStack.peek());
-        }
-        boolean provisional = !inferenceMode && cell != null && cell.value != null;
+        Type converged = slots.readResult(literal);
+        boolean provisional = !slots.converging() && converged != null;
         if (provisional) {
-            provisionalResults.put(literal, cell.value);
+            provisionalResults.put(literal, converged);
         }
         inferringResult.add(literal);
         inferenceStack.push(literal);
@@ -1308,13 +1110,7 @@ final class TypeChecker {
         Type candidate = inferred(result);
         if (recursiveFunctions.remove(literal)) {
             if (candidate != Type.ERROR) {
-                if (inferenceMode) {
-                    SlotCell resultCell = resultCells.computeIfAbsent(literal, k -> new SlotCell());
-                    resultCell.addReader(activeUnitStack.peek());
-                    if (resultCell.record(new SiteKey(literal.getStart().getTokenIndex(), -1), candidate)) {
-                        wakeReaders(resultCell);
-                    }
-                }
+                slots.recordResult(literal, candidate);
             } else if (result == Type.NOTHING) {
                 BabbleParser.DefExpressionContext def = owningDef(literal);
                 if (def != null) {
@@ -1374,7 +1170,7 @@ final class TypeChecker {
         return type;
     }
 
-    private void clearSubtreeTypes(ParseTree tree) {
+    void clearSubtreeTypes(ParseTree tree) {
         if (tree instanceof ParserRuleContext ctx) {
             types.remove(ctx);
             contextualReturnTypes.remove(ctx);
@@ -1465,166 +1261,6 @@ final class TypeChecker {
         }
     }
 
-    // ---------------------------------------------------------------- flow-sensitive narrowing
-
-    private Set<ParserRuleContext> assignedLocals(BabbleParser.WhileExpressionContext ctx) {
-        return assignedWhileLocals.computeIfAbsent(ctx, node -> {
-            Set<ParserRuleContext> assigned = Collections.newSetFromMap(new IdentityHashMap<>());
-            collectAssignedLocals(node, assigned);
-            return Collections.unmodifiableSet(assigned);
-        });
-    }
-
-    private void collectAssignedLocals(ParseTree tree, Set<ParserRuleContext> assigned) {
-        if (tree instanceof BabbleParser.FunctionLiteralContext
-                || tree instanceof BabbleParser.ClassExpressionContext
-                || tree instanceof BabbleParser.ObjectExpressionContext
-                || tree instanceof BabbleParser.InterfaceExpressionContext) {
-            return;
-        }
-        if (tree instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == null) {
-            ScopeNode scope = occurrenceScopes.get(assign);
-            if (scope != null && resolveName(assign, assign.name.getText(), scope) instanceof ParserRuleContext decl) {
-                assigned.add(decl);
-            }
-        }
-        for (int i = 0; i < tree.getChildCount(); i++) {
-            collectAssignedLocals(tree.getChild(i), assigned);
-        }
-    }
-
-    private Type narrowedType(ParserRuleContext declaration) {
-        if (capturedReassigned.contains(declaration)) {
-            return null;
-        }
-        return env.lookup(declaration);
-    }
-
-    private Type preferMoreSpecific(Type a, Type b) {
-        return algebra.runtimeSubtype(a, b) && !algebra.runtimeSubtype(b, a) ? a : b;
-    }
-
-    private TypeEnv.Refinement extractRefinement(BabbleParser.ExpressionContext expr) {
-        if (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
-            return extractRefinement(block.block().expression(0));
-        }
-        if (expr instanceof BabbleParser.BooleanNotContext notCtx) {
-            return extractRefinement(notCtx.expression()).invert();
-        }
-        if (expr instanceof BabbleParser.BooleanOpContext opCtx) {
-            TypeEnv.Refinement left = extractRefinement(opCtx.left);
-            TypeEnv.Refinement right = extractRefinement(opCtx.right);
-            return opCtx.op.getType() == BabbleLexer.AND
-                    ? left.and(right, this::preferMoreSpecific)
-                    : left.or(right, this::preferMoreSpecific);
-        }
-        if (expr instanceof BabbleParser.BinaryOpContext opCtx
-                && (opCtx.op.getType() == BabbleLexer.EQ || opCtx.op.getType() == BabbleLexer.NEQ)) {
-            BabbleParser.ExpressionContext other = null;
-            if (isNullLiteral(opCtx.right)) {
-                other = opCtx.left;
-            } else if (isNullLiteral(opCtx.left)) {
-                other = opCtx.right;
-            }
-            if (other != null) {
-                ParserRuleContext decl = narrowableDeclaration(other);
-                if (decl != null) {
-                    Type current = synth(other);
-                    if (!isUnresolved(current) && Type.containsNull(current)) {
-                        Type nonNull = Type.withoutNull(current);
-                        Map<ParserRuleContext, Type> whenNotNull = nonNull != Type.NOTHING ? Map.of(decl, nonNull) : Map.of();
-                        TypeEnv.Refinement eqNull = new TypeEnv.Refinement(Map.of(decl, Type.NULL), whenNotNull);
-                        return opCtx.op.getType() == BabbleLexer.EQ ? eqNull : eqNull.invert();
-                    }
-                }
-            }
-            return TypeEnv.Refinement.EMPTY;
-        }
-        if (expr instanceof BabbleParser.IsExpressionContext isCtx) {
-            ParserRuleContext decl = narrowableDeclaration(isCtx.left);
-            if (decl == null) {
-                return TypeEnv.Refinement.EMPTY;
-            }
-            Type target = isBuiltinTarget(isCtx);
-            if (target == null) {
-                target = instanceTypeOfTypeValue(synth(isCtx.right, Role.TYPE_TEST_RIGHT));
-            }
-            Type current = synth(isCtx.left);
-            if (target == null || target == Type.ERROR
-                    || (!isUnresolved(current) && algebra.runtimeSubtype(current, target))) {
-                return TypeEnv.Refinement.EMPTY;
-            }
-            Type narrowedTrue = !isUnresolved(current) ? algebra.narrowTarget(current, target) : target;
-            Type subtracted = !isUnresolved(current) ? algebra.subtractType(current, target) : Type.NOTHING;
-            Map<ParserRuleContext, Type> whenFalse = (subtracted != Type.NOTHING && !subtracted.equals(current))
-                    ? Map.of(decl, subtracted) : Map.of();
-            return new TypeEnv.Refinement(Map.of(decl, narrowedTrue), whenFalse);
-        }
-        ParserRuleContext decl = narrowableDeclaration(expr);
-        if (decl != null) {
-            Type current = synth(expr);
-            if (!isUnresolved(current) && Type.containsNull(current)) {
-                Type nonNull = Type.withoutNull(current);
-                if (nonNull != Type.NOTHING) {
-                    return new TypeEnv.Refinement(Map.of(decl, nonNull), Map.of());
-                }
-            }
-        }
-        return TypeEnv.Refinement.EMPTY;
-    }
-
-    private static boolean isNullLiteral(BabbleParser.ExpressionContext expr) {
-        while (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
-            expr = block.block().expression(0);
-        }
-        return expr instanceof BabbleParser.NullContext;
-    }
-
-    Type.Simple isBuiltinTarget(BabbleParser.IsExpressionContext ctx) {
-        if (ctx.right instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
-            String name = selector.ID().getText();
-            if (resolveName(selector, name, occurrenceScopes.get(selector)) == null) {
-                return switch (name) {
-                    case "int" -> Type.INT;
-                    case "double" -> Type.DOUBLE;
-                    case "bool" -> Type.BOOL;
-                    case "string" -> Type.STRING;
-                    case "any" -> Type.ANY;
-                    default -> null;
-                };
-            }
-        }
-        return null;
-    }
-
-    private ParserRuleContext narrowableDeclaration(BabbleParser.ExpressionContext expr) {
-        while (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
-            expr = block.block().expression(0);
-        }
-        if (expr instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
-            Object resolved = resolveName(selector, selector.ID().getText(), occurrenceScopes.get(selector));
-            if (resolved instanceof BabbleParser.DefExpressionContext
-                    || resolved instanceof BabbleParser.ParameterDeclarationContext) {
-                ParserRuleContext decl = (ParserRuleContext) resolved;
-                if (!capturedReassigned.contains(decl)
-                        && (!reassigned.contains(decl) || Objects.equals(callableScope(occurrenceScopes.get(selector)), callableScope(scopeOf(decl))))) {
-                    return decl;
-                }
-            }
-        }
-        return null;
-    }
-
-    private Type instanceTypeOfTypeValue(Type typeValue) {
-        if (typeValue instanceof Type.ClassValue cv) {
-            return annotator.rawInstance(cv.node());
-        }
-        if (typeValue instanceof Type.JavaClassValue jcv) {
-            return JavaTypeBridge.rawJavaInstance(jcv.type());
-        }
-        return null;
-    }
-
     /** The type of {@code this} : the class or interface whose body or method it is in, or the class value in a static block. */
     private Type thisType(ScopeNode scope) {
         ScopeNode thisScope = BlockScopes.thisScope(scope);
@@ -1640,62 +1276,13 @@ final class TypeChecker {
     }
 
     private void recordInferredDef(ParserRuleContext decl, Type valueType, ParserRuleContext at) {
-        contribute(defCells, inferredDefs, defWidenings, decl, valueType, at, false);
+        slots.contribute(SlotInference.DEFS, decl, valueType, at);
     }
 
     private void recordInferredMember(ParserRuleContext decl, Type valueType, ParserRuleContext at) {
-        contribute(memberCells, inferredMembers, memberWidenings, decl, valueType, at, false);
+        slots.contribute(SlotInference.MEMBERS, decl, valueType, at);
     }
 
-    /**
-     * A value contributed to the slot of an unannotated def, member, or inferred parameter.
-     * While the slots converge, it is recorded in the slot's cell (waking the units that read
-     * it when the slot changes) ; in the final walk, it is checked against the contributions
-     * that precede it in the source, which must join with it.
-     */
-    private void contribute(Map<ParserRuleContext, SlotCell> cells, Map<ParserRuleContext, Type> targetMap,
-                            Map<ParserRuleContext, Widening> widenMap, ParserRuleContext decl,
-                            Type valueType, ParserRuleContext at, boolean isParam) {
-        if (isUnresolved(valueType)) {
-            failedDefs.add(decl);
-            return;
-        }
-        int widenLine = -1;
-        if (isParam) {
-            ParserRuleContext site = at.getParent() instanceof BabbleParser.CallParameterContext cp
-                    && cp.getParent() instanceof BabbleParser.CallParametersContext cps
-                    && cps.getParent() instanceof BabbleParser.CallContext call ? call : at;
-            widenLine = site.getStart().getLine();
-        } else {
-            ParserRuleContext site = at instanceof BabbleParser.AssignExpressionContext ? at
-                    : at.getParent() instanceof BabbleParser.AssignExpressionContext assign ? assign : null;
-            if (site != null) {
-                widenLine = site.getStart().getLine();
-            }
-        }
-        SiteKey key = new SiteKey(at.getStart() != null ? at.getStart().getTokenIndex() : 0, widenLine);
-        if (!inferenceMode) {
-            SlotCell cell = cells.get(decl);
-            Type before = cell != null ? cell.foldBefore(key) : null;
-            if (before != null && algebra.reassignmentJoin(before, valueType) == null) {
-                warn("Type error : expected " + before + ", got " + valueType, at);
-            }
-            return;
-        }
-        SlotCell cell = cells.computeIfAbsent(decl, k -> new SlotCell());
-        boolean changed = cell.record(key, valueType);
-        if (cell.value != null && cell.value != Type.NULL
-                && (!isParam || !(decl instanceof BabbleParser.ParameterDeclarationContext param)
-                || !escapingTargets.contains(ownerOfParam(param)))) {
-            targetMap.put(decl, cell.value);
-            if (cell.widenedLine >= 0) {
-                widenMap.put(decl, new Widening(cell.value, cell.widenedLine));
-            }
-        }
-        if (changed) {
-            wakeReaders(cell);
-        }
-    }
     void recordInferredParam(ParserRuleContext decl, Type valueType, ParserRuleContext at) {
         if (isUnresolved(valueType)) {
             return;
@@ -1710,7 +1297,7 @@ final class TypeChecker {
             }
             return;
         }
-        contribute(paramCells, inferredParams, paramWidenings, decl, valueType, at, true);
+        slots.contribute(SlotInference.PARAMS, decl, valueType, at);
     }
 
     private static boolean containsUnresolved(Type type) {
@@ -1840,7 +1427,7 @@ final class TypeChecker {
 
         private Type visitIfExpression(BabbleParser.IfExpressionContext ctx, Type expected, Role role) {
             synth(ctx.test);
-            TypeEnv.Refinement refinement = extractRefinement(ctx.test);
+            TypeEnv.Refinement refinement = narrowing.extractRefinement(ctx.test);
             TypeEnv baseEnv = env;
 
             env = baseEnv.apply(refinement.whenTrue());
@@ -1908,10 +1495,10 @@ final class TypeChecker {
         }
 
         private Type visitWhileExpression(BabbleParser.WhileExpressionContext ctx, Type expected, Role role) {
-            env = env.evictAll(assignedLocals(ctx));
+            env = env.evictAll(narrowing.assignedLocals(ctx));
             synth(ctx.test);
             TypeEnv afterTest = env;
-            TypeEnv.Refinement refinement = extractRefinement(ctx.test);
+            TypeEnv.Refinement refinement = narrowing.extractRefinement(ctx.test);
             Type blockExpected = (expected == Type.ANY || expected == Type.NULLABLE_ANY) ? expected : null;
             env = afterTest.apply(refinement.whenTrue());
             Type bodyType = type(ctx.whileBlock, blockExpected, role);
@@ -1984,7 +1571,7 @@ final class TypeChecker {
             if (receiver == null) {
                 Object resolved = resolveName(ctx, name, occurrenceScopes.get(ctx));
                 if (resolved instanceof ParserRuleContext declaration) {
-                    Type narrowed = narrowedType(declaration);
+                    Type narrowed = narrowing.narrowedType(declaration);
                     return narrowed != null ? narrowed : typeOfDeclaration(declaration);
                 }
                 if (resolved instanceof List<?> packages) {
@@ -2098,9 +1685,9 @@ final class TypeChecker {
                         ParserRuleContext otherwise = ifCtx.elseBlock != null ? ifCtx.elseBlock : ifCtx.elseIf;
                         Type elseType = otherwise != null ? types.getOrDefault(otherwise, Type.ERROR) : Type.NULL;
                         if (thenType == Type.NOTHING && elseType != Type.NOTHING) {
-                            env = env.apply(extractRefinement(ifCtx.test).whenFalse());
+                            env = env.apply(narrowing.extractRefinement(ifCtx.test).whenFalse());
                         } else if (elseType == Type.NOTHING && thenType != Type.NOTHING) {
-                            env = env.apply(extractRefinement(ifCtx.test).whenTrue());
+                            env = env.apply(narrowing.extractRefinement(ifCtx.test).whenTrue());
                         }
                     }
                 }
@@ -2170,7 +1757,7 @@ final class TypeChecker {
 
         private Type visitIsExpression(BabbleParser.IsExpressionContext ctx, Type expected, Role role) {
             synth(ctx.left);
-            Type.Simple builtin = isBuiltinTarget(ctx);
+            Type.Simple builtin = narrowing.isBuiltinTarget(ctx);
             if (builtin != null) {
                 pass.analysis.setIsBuiltin(ctx, builtin.name());
             } else {
@@ -2205,7 +1792,7 @@ final class TypeChecker {
         private Type visitBooleanOp(BabbleParser.BooleanOpContext ctx, Type expected, Role role) {
             synth(ctx.left);
             TypeEnv saved = env;
-            TypeEnv.Refinement leftRef = extractRefinement(ctx.left);
+            TypeEnv.Refinement leftRef = narrowing.extractRefinement(ctx.left);
             Map<ParserRuleContext, Type> rightGuard =
                     ctx.op.getType() == BabbleLexer.AND ? leftRef.whenTrue() : leftRef.whenFalse();
             env = saved.apply(rightGuard);
@@ -2243,7 +1830,7 @@ final class TypeChecker {
                 if (resolved instanceof ParserRuleContext declaration) {
                     Type current = Type.ERROR;
                     if (readCurrent) {
-                        Type narrowed = narrowedType(declaration);
+                        Type narrowed = narrowing.narrowedType(declaration);
                         current = narrowed != null ? narrowed : typeOfDeclaration(declaration);
                     }
                     Type declared = declaration instanceof BabbleParser.ParameterDeclarationContext
@@ -2434,7 +2021,7 @@ final class TypeChecker {
             return synth(member.function);
         }
         if (member.declaration instanceof BabbleParser.DefExpressionContext def) {
-            registerReader(memberCells, def);
+            slots.read(SlotInference.MEMBERS, def);
             Type inferred = inferredMembers.get(def);
             if (inferred != null) {
                 return inferred;
@@ -2528,7 +2115,7 @@ final class TypeChecker {
             if (isInferrableCallable(ownerOfParam(parameter))) {
                 p7Params.add(parameter);
                 if (defType == Type.NULL) {
-                    contribute(paramCells, inferredParams, paramWidenings, parameter, Type.NULL, parameter, true);
+                    slots.contribute(SlotInference.PARAMS, parameter, Type.NULL, parameter);
                 }
                 Type inferred = inferredParams.get(parameter);
                 if (inferred != null) {

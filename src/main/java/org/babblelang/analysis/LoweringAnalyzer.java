@@ -63,7 +63,7 @@ final class LoweringAnalyzer {
                 pass.analysis.setExpressionKind(entry.getKey(), ScopeAnalysis.PrimitiveKind.of(entry.getValue()));
             }
             if (entry.getKey() instanceof BabbleParser.IsExpressionContext isCtx && checker.inFile(isCtx)
-                    && checker.isBuiltinTarget(isCtx) == null
+                    && checker.narrowing().isBuiltinTarget(isCtx) == null
                     && types.get(isCtx.right) instanceof Type.ClassValue cv
                     && refs.singletonTypeNode(isCtx.right) == cv.node()) {
                 pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(cv.node().id, cv.node().kind));
@@ -304,7 +304,7 @@ final class LoweringAnalyzer {
                 if (calleeExpr == lit) {
                     pass.analysis.setBabbleCallFunction(ctx, lit);
                 } else if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-                    Object resolved = TypeChecker.resolveName(sel, sel.ID().getText(), checker.occurrenceScopeOf(sel));
+                    Object resolved = TypeChecker.resolveName(sel, sel.ID().getText(), checker.occurrenceScope(sel));
                     if (resolved instanceof BabbleParser.DefExpressionContext def
                             && checker.inFile(def) && !checker.isReassigned(def) && TypeChecker.unwrapFunctionLiteral(def.value) == lit) {
                         pass.analysis.setBabbleCallFunction(ctx, lit);
