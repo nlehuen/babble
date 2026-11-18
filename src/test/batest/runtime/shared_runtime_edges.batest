@@ -1,5 +1,11 @@
 ;; Shared Runtime edge cases: JavaLinker fast paths, Values, Types, JavaTypes, Overloads, Faces
 
+========== dir/top.ba ==========
+export def val = 42
+
+========== dir/sub/leaf.ba ==========
+export def val = import("../top.ba").val
+
 {{{{{
 ;; JavaLinker fast-path caches via loop calls (BoundJavaMethod, JavaMethod, isWrappedOf, bindWrapped,
 ;; bindRaw, isNull, isKind, isWrappedKind, toJava, fail)
@@ -193,3 +199,144 @@ hf.invoke(ff, findM(ff.getClass(), "accept"), java.util.List.of(123, "a").toArra
 }}}}}
 4.0
 Type error : expected java.io.File, got int
+
+{{{{{
+;; LogicalPaths relative ../, leading /, and escaping root ../../
+def t1 = import("dir/sub/leaf.ba")
+def t2 = import("/dir/top.ba")
+println(t1.val + t2.val)
+}}}}}
+84
+
+{{{{{
+import("../../missing.ba")
+}}}}}
+Cannot import ../../missing.ba : no such module
+
+{{{{{
+;; JavaLinker.call (Bootstrap.call with all non-primitive param/return types) & JavaLinker.select (wrapped & raw in loop)
+def map : java.util.Map(any?, any?) = java.util.HashMap()
+def putFn : (k : any?, v : any?) : any? = map.put
+def toStrFn : (o : any?) : string = java.util.Objects.toString
+def s = ""
+def i = 0
+while i < 3 then (
+    putFn("k" + i, "v" + i)
+    s += toStrFn("x")
+    i += 1
+)
+putFn(null, java.lang.StringBuilder("sb"))
+s += toStrFn(null) + ":" + toStrFn(java.lang.StringBuilder("y"))
+
+def pickSb = (k : int) : java.lang.StringBuilder -> (
+    if k == 0 then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuilder("bb") )
+)
+def pickBig = (k : int) : java.math.BigInteger -> (
+    if k == 0 then ( java.math.BigInteger.valueOf(1) ) else ( java.math.BigInteger.valueOf(2) )
+)
+def total = 0
+def bigSum = java.math.BigInteger.ZERO
+i = 0
+while i < 3 then (
+    def lenFn = pickSb(i).length
+    total += lenFn()
+    def addBigFn = pickBig(i).add
+    bigSum = addBigFn(java.math.BigInteger.ONE)
+    i += 1
+)
+println(map.get("k1"), ":", map.get(null), ":", s, ":", total, ":", bigSum.toString())
+}}}}}
+v1:sb:xxxnull:y:5:3
+
+{{{{{
+;; JavaLinker.fail via non-primitive static JavaMethod in loop
+def decFn : (s : string) : java.lang.Integer = java.lang.Integer.decode
+def i = 0
+while i < 3 then (
+    if i == 2 then ( decFn("bad") ) else ( decFn("10") )
+    i += 1
+)
+}}}}}
+java.lang.NumberFormatException : For input string: "bad"
+
+{{{{{
+;; Supers default Java interface call, BabbleInstance value equals/toString, Namespace reopen, same(), is/as edges
+def Cmp = class () implements java.util.Comparator(int) (
+    def compare = (a : int, b : int) : int -> ( a - b )
+    def rev = () -> ( super(java.util.Comparator).reversed() )
+)
+def rcmp = Cmp().rev()
+println(rcmp.compare(1, 5) > 0)
+
+def Val = value class (x : int) ()
+def Val2 = value class (x : int) ()
+def Ref = class (def x : int) (
+    private def p = 9
+    def toString = () : string -> ( "Ref(" + this.x + ")" )
+)
+def v = Val(1)
+println(v == Val2(1), ":", v == Val(2), ":", v == v, ":", Ref(5))
+println(Ref(1) == Ref(1), ":", java.util.Objects.equals(v, Val(1)), ":", java.util.List.of(v).hashCode() != 0)
+
+package reopen ( def a = 10 )
+package reopen ( def b = 20 )
+println(reopen.a + reopen.b)
+
+def dyn = (v : any?) : any? -> ( v )
+println(same(1.0, 1), ":", same(null, 1), ":", dyn(1.5) is double, ":", dyn(null) is string, ":", dyn("hi") is string, ":", dyn(false) is any)
+}}}}}
+true
+false:false:true:Ref(5)
+false:true:true
+30
+true:false:true:false:true:true
+
+{{{{{
+;; JavaTypes.checkBoxed null return, ConvertFunction errors, PrintFunction Appendable & null error
+def v = java.lang.Integer.getInteger("babble.nonexistent.prop.xyz")
+println(v)
+}}}}}
+Type error : expected int, got null
+
+{{{{{
+def out = java.lang.StringBuilder()
+print("ok", to: out)
+println(out.toString())
+def pr : (s : string, to : any?) : () = print
+pr("hi", to: 123)
+}}}}}
+ok
+print to: expects a Writer or PrintStream
+
+{{{{{
+def dyn = (v : any) : any -> ( v )
+double(dyn(true))
+}}}}}
+Not a number : dyn(true)
+
+{{{{{
+def dyn = (v : any) : any -> ( v )
+println(int(dyn(3.5)), ":", double(dyn(3)), ":", double(dyn("2.5")))
+int(dyn("nope"))
+}}}}}
+3:3.0:2.5
+Not an int : "nope"
+
+{{{{{
+def dyn = (v : any) : any -> ( v )
+double(dyn("nope"))
+}}}}}
+Not a double : "nope"
+
+{{{{{
+int(1.0 * 1000000000 * 1000000000 * 100)
+}}}}}
+Out of the int range : 1.0*1000000000*1000000000*100 = 1.0E20
+
+{{{{{
+;; ClassofFunction across Babble object, class instance, Java instance, primitives, and null
+def obj = object ( def k = 7 )
+def Box = class (def x : int) ()
+println(classof(obj) != null, ":", classof(Box(1)) == Box, ":", classof("hi") == classof("yo"), ":", classof(1) != null, ":", classof(1.5) != null, ":", classof(true) != null, ":", classof(null) == null, ":", classof(java.lang.StringBuilder()) != null)
+}}}}}
+true:true:true:true:true:true:true:true

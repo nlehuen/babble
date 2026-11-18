@@ -454,3 +454,126 @@ println(checkConds(2, 2, 1.0, 2.0), ":", checkConds(2, 3, 2.0, 1.0))
 -4:-1.5:-9
 1001110010:0101001110
 
+{{{{{
+;; Captured outer & class-constructor double cell inside enclosing function (publishCell, loadCapturedCells, loadCell, DoubleCell.of)
+def make = (start : double) -> (
+    def outer = start
+    def C = class (p : double) (
+        def bump = mut () : double -> (
+            outer += 1.0
+            p += 0.5
+            outer + p
+        )
+    )
+    C(2.0)
+)
+def inst = make(10.0)
+println(inst.bump(), ":", inst.bump())
+}}}}}
+13.5:15.0
+
+{{{{{
+;; Interface default methods called via bound function refs in loops (Bootstrap isBoundFunctionSpec, isBoundFunction, boundFunction)
+def IDef = interface (
+    def dmSpec = (x : int) : int -> ( x + 10 )
+    def dmSpread = (x : int, y : int = 5) : int -> ( x + y )
+    def dmAny = (x : any?, y : any? = 5) : any? -> ( (x as int) + (y as int) )
+)
+def CImpl = class () implements IDef ()
+def ci = CImpl()
+def fSpec : (x : int) : int = ci.dmSpec
+def fSpread : (x : int) : int = ci.dmSpread
+def fAny = ci.dmAny
+def s1 = 0
+def s2 = 0
+def s3 = 0
+def i = 0
+while i < 3 then (
+    s1 += fSpec(i)
+    s2 += fSpread(i)
+    s3 += fAny(i) as int
+    i += 1
+)
+println(s1, ":", s2, ":", s3)
+}}}}}
+33:18:18
+
+{{{{{
+;; Constant folding identities, block/while double widening, Rectangle2D.Double compound ops, and common superclass merges
+def fold = (x : int) : string -> (
+    def a = x + 0
+    def b = 0 + x
+    def c = x - 0
+    def d = x * 0
+    def e = 0 * x
+    def f = x * 1
+    def g = 1 * x
+    def h = (1 + 2) * (3 + 4)
+    def j = -(10 - 3)
+    "" + a + ":" + b + ":" + c + ":" + d + ":" + e + ":" + f + ":" + g + ":" + h + ":" + j
+)
+println(fold(5))
+
+def k = 0
+def wd : double? = while k < 2 then ( k += 1; 42 )
+def bd : double = ( def t = 3; t )
+println(wd, ":", bd)
+
+def r = java.awt.geom.Rectangle2D.Double(1.0, 2.0, 3.0, 4.0)
+r.x += 2.0
+r.y -= 0.5
+r.width *= 2.0
+r.height /= 2.0
+def pt = java.awt.Point(5, 6)
+pt.x -= 2
+pt.y *= 3
+println(r.x, ":", r.y, ":", r.width, ":", r.height, ":", pt.x, ":", pt.y)
+
+def pickColl = (flag : bool) : any -> (
+    if flag then ( java.util.List.of(1) ) else ( java.util.Set.of(2) )
+)
+def pickFn = (flag : bool) : () : int -> (
+    if flag then ( () : int -> ( 1 ) ) else ( () : int -> ( 2 ) )
+)
+println(pickColl(true), ":", pickColl(false), ":", pickFn(true)(), ":", pickFn(false)())
+}}}}}
+5:5:5:0:0:5:5:21:-7
+42.0:3.0
+3.0:1.5:6.0:2.0:3:18
+[1]:[2]:1:2
+
+{{{{{
+;; Uncaptured primitive locals read before definition (defSlot + Frames.checkDefined)
+def safeRead = (flag : bool) : int -> (
+    def a = if flag then ( x ) else ( 0 )
+    def x : int = 7
+    a + x
+)
+println(safeRead(false))
+safeRead(true)
+}}}}}
+7
+Name used before definition : x
+
+{{{{{
+;; Uncaptured double local read before definition
+def badDouble = (flag : bool) : double -> (
+    def a = if flag then ( x ) else ( 0.0 )
+    def x : double = 2.5
+    a + x
+)
+badDouble(true)
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Uncaptured bool local read before definition
+def badBool = (flag : bool) : bool -> (
+    def a = if flag then ( x ) else ( false )
+    def x : bool = true
+    a or x
+)
+badBool(true)
+}}}}}
+Name used before definition : x
+
