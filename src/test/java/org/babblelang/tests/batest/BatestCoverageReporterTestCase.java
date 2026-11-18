@@ -133,9 +133,9 @@ public class BatestCoverageReporterTestCase {
         Assertions.assertTrue(summary.contains("\"branchesCovered\": 3, \"branchesTotal\": 4"), summary);
         Assertions.assertTrue(Files.isRegularFile(reportDir.resolve("uncovered.txt")));
 
-        // Verify 85% branch threshold enforcement
+        // Verify branch threshold enforcement (sharedRuntimeCombined is 3/4 = 75.0% < 80.0%)
         Assertions.assertThrows(AssertionError.class,
-                () -> BatestCoverageReporter.run(reportDir, xmlI, xmlC, tmp.resolve("src"), "", "", 85.0));
+                () -> BatestCoverageReporter.run(reportDir, xmlI, xmlC, tmp.resolve("src"), "", "", 80.0));
 
         // Verify failure triggers AssertionError
         Files.writeString(reportDir.resolve("outcomes-compile.jsonl"),
