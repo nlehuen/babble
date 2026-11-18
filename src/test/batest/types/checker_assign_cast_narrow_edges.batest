@@ -1,0 +1,253 @@
+;; TypeChecker edge cases: casting, flow narrowing, reassignment joins, operators, compound assigns, members
+
+{{{{{
+;; canCast and alwaysIs across primitives, unions, interfaces, Java final/non-final classes
+def dyn = (v : any?) : any? -> ( v )
+def I1 = interface ( def a : () : int )
+def I2 = interface ( def b : () : int )
+def C = class () implements I1 ( def a = () : int -> ( 1 ) )
+def cs : java.lang.CharSequence = java.lang.StringBuilder("abc")
+def sb = cs as java.lang.StringBuilder
+def u : int | string = 1
+println(sb.toString(), ":", u as int | string, ":", (dyn(C()) as I1).a())
+}}}}}
+Warning : Redundant cast : int | string
+abc:1:1
+
+{{{{{
+def d = 1.5
+d as int
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+def I1 = interface ( def a : () : int )
+def C = class () ()
+def c = C()
+c as I1
+}}}}}
+Type error : expected I1, got C
+
+{{{{{
+def cs : java.lang.CharSequence = java.lang.StringBuilder("hi")
+def arr : java.util.List(int) = cs as java.util.List(int)
+}}}}}
+Cannot cast to parameterized type : java.util.List(int)
+
+{{{{{
+def cs : java.lang.CharSequence = java.lang.StringBuilder("hi")
+def ap : java.lang.Appendable = cs as java.lang.Appendable
+println(ap.toString())
+cs as java.io.Closeable
+}}}}}
+hi
+Type error : expected java.io.Closeable, got java.lang.StringBuilder
+
+{{{{{
+def r : java.lang.Runnable = java.lang.Runnable(() -> ())
+r as java.lang.StringBuilder
+}}}}}
+Type error : expected java.lang.StringBuilder, got java.lang.Runnable
+
+{{{{{
+def s = "hi"
+s as java.lang.Thread
+}}}}}
+Type error : expected java.lang.Thread, got string
+
+{{{{{
+def x : null = null
+x as string
+}}}}}
+Type error : expected string, got null
+
+{{{{{
+def s = "hi"
+s as null
+}}}}}
+Type error : expected null, got string
+
+{{{{{
+;; Narrowing edges: is with Babble interfaces, Java interfaces, final/non-final classes, not/and/or, subtractType
+def I1 = interface ( def a : () : int )
+def I2 = interface ( def b : () : int )
+def Both = class () implements I1, I2 (
+    def a = () : int -> ( 1 )
+    def b = () : int -> ( 2 )
+)
+def Only1 = class () implements I1 (
+    def a = () : int -> ( 3 )
+)
+def testIface = (x : I1, obj : any?, u : int | double | string) : string -> (
+    def r = ""
+    if x is I2 then ( r += "" + x.b() ) else ( r += "no2" )
+    if not (u is string) then (
+        if u is int then ( r += ":i" ) else ( r += ":d" )
+    ) else (
+        r += ":" + u
+    )
+    if obj is java.lang.Runnable then ( r += ":run" )
+    if obj is Both then ( r += ":both" )
+    if not (obj == null) and obj is any then ( r += ":any" )
+    r
+)
+println(testIface(Both(), Both(), 1), "|", testIface(Only1(), "s", 2.5))
+}}}}}
+2:i:both:any|no2:d:any
+
+{{{{{
+;; Impossible 'is' warnings / false branches
+def testImp = (s : string) : bool -> ( s is int )
+println(testImp("a"))
+}}}}}
+false
+
+{{{{{
+;; Reassignment join and intersectCompatibleFunctions (pure vs impure, mut param, borrow param, null/nullable, int->double)
+def Box = class (def n : int) ()
+def count = 0
+def fn = (x : int) : int -> ( x + 1 )
+fn = impure (x : int) : int -> ( count += 1 ; x + 2 )
+def fnMut : (mut b : Box) : int = (borrow b : Box) : int -> ( b.n )
+fnMut = (mut b : Box) : int -> ( b.n += 1 ; b.n )
+def v : int? = null
+v = 42
+def w : int | double? = 3
+w = null
+w = 2.5
+def pick = (flag : bool) -> (
+    if flag then ( (x : int) : int -> ( x ) )
+    else ( impure (x : int) : int -> ( count += 1 ; x ) )
+)
+def bx = Box(10)
+println(fn(1), ":", count, ":", fnMut(bx), ":", v, ":", w, ":", pick(true)(5), ":", pick(false)(5), ":", count)
+}}}}}
+3:1:11:42:2.5:5:5:2
+
+{{{{{
+;; Reassignment join error when incompatible
+def x = 1
+x = "bad"
+}}}}}
+Type error : expected int, got string
+
+{{{{{
+;; Operator overloading on class and union of classes, plus error cases
+def Vec = class (def x : int) (
+    def plus = (o : Vec) : Vec -> ( Vec(this.x + o.x) )
+    def minus = (o : Vec) : Vec -> ( Vec(this.x - o.x) )
+    def times = (k : int) : Vec -> ( Vec(this.x * k) )
+    def div = (k : int) : Vec -> ( Vec(this.x + k) )
+    def neg = () : Vec -> ( Vec(-(this.x)) )
+)
+def v1 = Vec(3)
+def v2 = Vec(2)
+def Box2 = class (def x : int) (
+    def plus = (o : Vec) : Vec -> ( Vec(this.x + o.x + 10) )
+)
+def pick = (flag : bool) : Vec | Box2 -> ( if flag then ( v1 ) else ( Box2(1) ) )
+println((v1 + v2).x, ":", (v1 - v2).x, ":", (v1 * 3).x, ":", (v1 / 1).x, ":", (-v1).x, ":", (pick(false) + v2).x)
+}}}}}
+5:1:9:4:-3:13
+
+{{{{{
+;; Non-callable operator member
+def Bad = class () (
+    def plus = 42
+)
+Bad() + 1
+}}}}}
+Bad().plus is not callable
+
+{{{{{
+;; Too many parameters or missing parameter on operator method
+def Bad = class () (
+    def plus = () : int -> ( 1 )
+)
+Bad() + 1
+}}}}}
+Too many parameters : 0 declared, 1 given
+
+{{{{{
+def Bad = class () (
+    def plus = (a : int, b : int) : int -> ( a + b )
+)
+Bad() + 1
+}}}}}
+Missing parameter : b
+
+{{{{{
+;; Numeric comparisons on Java Number subclasses & Comparable vs uncomparable
+def i1 = java.lang.Integer.valueOf(3)
+def i2 = java.lang.Integer.valueOf(5)
+println(i1 < i2, ":", i1 + i2)
+}}}}}
+true:8
+
+{{{{{
+def A = class () ()
+def B = class () ()
+A() < B()
+}}}}}
+Not comparable : A() and B()
+
+{{{{{
+;; Assignment & compound assignment member errors
+package p ( def x = 1 )
+p.x = 2
+}}}}}
+Cannot assign to a package member : x
+
+{{{{{
+(5).x = 1
+}}}}}
+Not a scope : (5)
+
+{{{{{
+def C = class () ()
+def c = C()
+c.missing = 1
+}}}}}
+No such member : missing
+
+{{{{{
+def C = class () ()
+C.missing = 1
+}}}}}
+No such member : missing
+
+{{{{{
+def C = class () ( private def x : int = 1 )
+def c = C()
+c.x = 2
+}}}}}
+x is private
+
+{{{{{
+def C = class (def x : int) (
+    def run = mut () : int -> (
+        this.x = 5
+        this.x += 2
+        this.x
+    )
+)
+println(C(1).run())
+}}}}}
+7
+
+{{{{{
+;; Integer out of range and return numeric widening
+println(9999999999)
+}}}}}
+Integer out of range : 9999999999
+
+{{{{{
+;; Early return with int->double widening and nullable return
+def f = (b : bool) : double -> (
+    if b then ( return 1 )
+    2.5
+)
+def r = () -> ( return null )
+println(f(true), ":", f(false), ":", r())
+}}}}}
+1.0:2.5:null

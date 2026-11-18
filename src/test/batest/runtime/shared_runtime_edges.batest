@@ -1,0 +1,195 @@
+;; Shared Runtime edge cases: JavaLinker fast paths, Values, Types, JavaTypes, Overloads, Faces
+
+{{{{{
+;; JavaLinker fast-path caches via loop calls (BoundJavaMethod, JavaMethod, isWrappedOf, bindWrapped,
+;; bindRaw, isNull, isKind, isWrappedKind, toJava, fail)
+def list : java.util.ArrayList(any?) = java.util.ArrayList()
+def addLoop = (target : java.util.ArrayList(any?)) : string -> (
+    def addFn : (v : any?) : bool = target.add
+    def i = 0
+    while i < 2 then (
+        addFn("x")
+        i += 1
+    )
+    addFn(null)
+    addFn(java.lang.StringBuilder("y"))
+    target.toString()
+)
+def staticLoop = () : string -> (
+    def valOf : (n : int) : string = java.lang.String.valueOf
+    valOf(1) + ":" + valOf(2)
+)
+println(addLoop(list), ":", staticLoop())
+}}}}}
+[x, x, null, y]:1:2
+
+{{{{{
+;; Overloads ambiguous null call
+def sb = java.lang.StringBuilder()
+def addFn : (v : any?) : java.lang.StringBuilder = sb.append
+addFn(null)
+}}}}}
+Ambiguous call to java.lang.StringBuilder.append for (null) : candidates are (java.lang.StringBuffer), (java.lang.CharSequence), (char[]), (java.lang.String), (java.lang.Object)
+
+{{{{{
+;; JavaLinker.fail on fast-path exception (parseInt fails on 3rd call)
+def parse : (s : string) : int = java.lang.Integer.parseInt
+def i = 0
+while i < 3 then (
+    if i == 2 then ( parse("bad") ) else ( parse("12") )
+    i += 1
+)
+}}}}}
+java.lang.NumberFormatException : For input string: "bad"
+
+{{{{{
+;; JavaLinker.select fast path via polymorphic JavaObject select in loop (different instances, same JavaClass)
+def pickSb = (i : int) : java.lang.StringBuilder -> (
+    if i == 0 then ( java.lang.StringBuilder("a") )
+    else if i == 1 then ( java.lang.StringBuilder("bb") )
+    else ( java.lang.StringBuilder("ccc") )
+)
+def total = 0
+def i = 0
+while i < 3 then (
+    total += pickSb(i).length()
+    i += 1
+)
+println(total)
+}}}}}
+6
+
+{{{{{
+;; Values.hash (via value class with null, int, 2.0, MAX_VALUE), UnionType.convert (double | string),
+;; AnyType, and Types.describe variants
+def V = value class (a : any?, b : double, c : double) ()
+def v1 = V(null, 2.0, java.lang.Double.MAX_VALUE)
+def v2 = V(2, 2.0, java.lang.Double.MAX_VALUE)
+def map : java.util.Map(V, string) = java.util.HashMap()
+map.put(v1, "one")
+map.put(v2, "two")
+println(v1 == V(null, 2.0, java.lang.Double.MAX_VALUE), ":", map.get(V(null, 2.0, java.lang.Double.MAX_VALUE)), ":", map.get(v2))
+
+def dyn = (v : any?) : any? -> ( v )
+def dOrS : double | string = dyn(3) as double | string
+def dOrS2 : double | string = dyn("ok") as double | string
+def an : any = dyn(5) as any
+println(dOrS, ":", dOrS2, ":", an)
+}}}}}
+true:one:two
+3.0:ok:5
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+dyn(null) as any
+}}}}}
+Type error : expected any, got null
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+def C = class () ()
+dyn(C) as string
+}}}}}
+Type error : expected string, got class C
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+def fn = () : int -> ( 1 )
+dyn(fn) as string
+}}}}}
+Type error : expected string, got function
+
+{{{{{
+;; JavaTypes.convertResult widening (IntToLongFunction + Runnable void), Faces FunctionHandler (equals/hashCode/toString/default),
+;; and Faces FaceHandler (equals/hashCode/toString)
+def sumL = java.util.stream.IntStream.range(1, 4).mapToLong((x : int) : int -> ( x * 2 )).sum()
+def r = java.lang.Runnable(() -> ( 99 ))
+r.run()
+def c = java.util.function.DoubleFunction((d : double) : string -> ( "d=" + d ))
+def pred = java.util.function.Predicate((x : java.lang.Boolean) : bool -> ( x ))
+def inc = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 1 ))
+def dbl = java.util.function.IntUnaryOperator((x : int) : int -> ( x * 2 ))
+def comp = inc.andThen(dbl)
+
+def CompCls = value class (n : int) implements java.util.Comparator(CompCls) (
+    def compare = (a : CompCls, b : CompCls) : int -> ( a.n - b.n )
+)
+def objList = java.util.List.of(CompCls(1), CompCls(2))
+println(sumL, ":", c.apply(3), ":", pred.test(java.lang.Boolean.TRUE), ":", comp.applyAsInt(3), ":", r.equals(r), ":", r.hashCode() != 0, ":", objList.equals(java.util.List.of(CompCls(1), CompCls(2))), ":", objList.hashCode() != 0, ":", java.util.Objects.toString(r) != "")
+}}}}}
+12:d=3.0:true:8:true:true:true:true:true
+
+{{{{{
+;; JavaTypes.checkParameter error branches via InvocationHandler.invoke on Faces proxies
+def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
+    def list = java.util.Arrays.asList(cls.getMethods())
+    def i = 0
+    while i < list.size() then (
+        def m = list.get(i) as java.lang.reflect.Method
+        if m.getName() == name then ( return m )
+        i += 1
+    )
+    list.get(0) as java.lang.reflect.Method
+)
+def fn = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 1 ))
+def h = java.lang.reflect.Proxy.getInvocationHandler(fn)
+h.invoke(fn, findM(fn.getClass(), "applyAsInt"), java.util.List.of("bad").toArray())
+}}}}}
+Type error : expected int, got string
+
+{{{{{
+def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
+    def list = java.util.Arrays.asList(cls.getMethods())
+    def i = 0
+    while i < list.size() then (
+        def m = list.get(i) as java.lang.reflect.Method
+        if m.getName() == name then ( return m )
+        i += 1
+    )
+    list.get(0) as java.lang.reflect.Method
+)
+def fn = java.util.function.DoubleUnaryOperator((x : double) : double -> ( x + 1.0 ))
+def h = java.lang.reflect.Proxy.getInvocationHandler(fn)
+h.invoke(fn, findM(fn.getClass(), "applyAsDouble"), java.util.List.of("bad").toArray())
+}}}}}
+Type error : expected double, got string
+
+{{{{{
+def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
+    def list = java.util.Arrays.asList(cls.getMethods())
+    def i = 0
+    while i < list.size() then (
+        def m = list.get(i) as java.lang.reflect.Method
+        if m.getName() == name then ( return m )
+        i += 1
+    )
+    list.get(0) as java.lang.reflect.Method
+)
+def ff = java.io.FilenameFilter((d : java.io.File, n : string) : bool -> ( true ))
+def h = java.lang.reflect.Proxy.getInvocationHandler(ff)
+h.invoke(ff, findM(ff.getClass(), "accept"), java.util.List.of(java.io.File("."), 123).toArray())
+}}}}}
+Type error : expected string, got int
+
+{{{{{
+;; checkParameter double widened from int via DoubleUnaryOperator, and FileFilter non-File
+def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
+    def list = java.util.Arrays.asList(cls.getMethods())
+    def i = 0
+    while i < list.size() then (
+        def m = list.get(i) as java.lang.reflect.Method
+        if m.getName() == name then ( return m )
+        i += 1
+    )
+    list.get(0) as java.lang.reflect.Method
+)
+def df = java.util.function.DoubleUnaryOperator((x : double) : double -> ( x + 1.0 ))
+def hd = java.lang.reflect.Proxy.getInvocationHandler(df)
+def r1 = hd.invoke(df, findM(df.getClass(), "applyAsDouble"), java.util.List.of(3).toArray())
+def ff = java.io.FilenameFilter((d : java.io.File, n : string) : bool -> ( true ))
+def hf = java.lang.reflect.Proxy.getInvocationHandler(ff)
+println(r1)
+hf.invoke(ff, findM(ff.getClass(), "accept"), java.util.List.of(123, "a").toArray())
+}}}}}
+4.0
+Type error : expected java.io.File, got int
