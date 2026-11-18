@@ -1,0 +1,176 @@
+;; BIP009-P4 Batch 4d: additional Shared Runtime & Shared Front-End coverage closures
+
+========== ec_mod.ba ==========
+export def exportedNum = 42
+export def exportedPair = java.util.AbstractMap.SimpleEntry("k", 7)
+
+{{{{{
+;; Cross-module unannotated export + JavaClass nested class + JavaClass/JavaObject equals/hashCode
+def m = import("ec_mod.ba")
+def e = java.util.AbstractMap.SimpleEntry("a", 1)
+def p1 = java.awt.Point(1, 2)
+def p2 = java.awt.Point(1, 2)
+println(m.exportedNum, ":", m.exportedPair.getValue(), ":", e.getKey(), ":", e.getValue(), ":", java.util.Objects.hashCode(java.lang.String) != 0, ":", java.util.Objects.hashCode(p1) == java.util.Objects.hashCode(p2))
+}}}}}
+42:7:a:1:true:true
+
+{{{{{
+;; BabbleInterface extending Java interface checked against super-interface via `is`
+def IList = interface extends java.util.Collection(java.lang.Object) ()
+def Dummy = class () ()
+def d : any = Dummy()
+println(d is IList, ":", java.lang.String == java.lang.String)
+}}}}}
+false:true
+
+{{{{{
+;; BabbleInstance Member used before definition
+def Runner = class () (
+    def go = (mut b : Box) -> ( b.x = 1 )
+)
+def Box = class () (
+    Runner().go(this)
+    def x = 0
+)
+Box()
+}}}}}
+Member used before definition : x
+
+{{{{{
+;; JavaTypes.wrapInvocationException with NullPointerException
+def tm : java.util.TreeMap(java.lang.Object, int) = java.util.TreeMap()
+println(tm.get(null))
+}}}}}
+java.lang.NullPointerException
+
+{{{{{
+;; Recursive unannotated def cycle
+def rec = rec
+}}}}}
+Missing type : rec (recursive)
+
+{{{{{
+;; Wrong number of type arguments on Babble class and Java class
+def Box(T) = class (def v : T) ()
+def b : Box(int, string)? = null
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+def badJava : java.util.ArrayList(int, string)? = null
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+;; TypeChecker.satisfiesJavaBound ParameterizedType invalid & EnumMap valid via Map constructor
+def em : java.util.EnumMap(java.nio.file.AccessMode, int) = java.util.EnumMap(java.util.Collections.singletonMap(java.nio.file.AccessMode.READ, 5))
+println(em.get(java.nio.file.AccessMode.READ))
+}}}}}
+5
+
+{{{{{
+def badObjEnum : java.util.EnumSet(java.lang.Object)? = null
+}}}}}
+Type error : type argument any does not satisfy bound E of java.util.EnumSet
+
+{{{{{
+;; isRuntimeSubtype & canMatchAtRuntime across interfaces, Java interfaces, final classes, unions
+def I1 = interface ( def a : () : int )
+def I2 = interface ( def b : () : int )
+def Both = class () implements I1, I2, java.lang.Runnable (
+    def a = () : int -> ( 1 )
+    def b = () : int -> ( 2 )
+    def run = () -> ( () )
+)
+def x : I1 = Both()
+def r : java.lang.Runnable = Both()
+def lst : java.util.List(int) = java.util.Collections.singletonList(3)
+def cs : java.lang.CharSequence = "abc"
+println(x is I2, ":", x is java.lang.Runnable, ":", r is I1, ":", cs is string, ":", lst is java.util.ArrayList, ":", (null as int?) is int)
+}}}}}
+true:true:true:true:false:false
+
+{{{{{
+;; TypeChecker: invalid cast between unrelated final class and Java interface
+def f = (r : java.lang.Runnable) -> ( r as string )
+}}}}}
+Type error : expected string, got java.lang.Runnable
+
+{{{{{
+;; EffectChecker checkDeclarationPlacement: axiom inside verified constrained function & Invalid axiom on non-function
+def f = pure () : int -> (
+    axiom pure java.lang.Math.abs
+    1
+)
+}}}}}
+axiom declaration is not allowed inside a verified constrained function
+
+{{{{{
+def y = 1
+def x = axiom y
+}}}}}
+Invalid axiom target : expected a Java class, Java method, or function
+
+{{{{{
+;; EffectChecker impure declaration and impure function literal
+impure java.lang.System.nanoTime
+def f = impure () : int -> ( 1 )
+println(f(), ":", java.lang.System.nanoTime() != 0)
+}}}}}
+1:true
+
+{{{{{
+;; validateAlgebraicSignature errors: monotone on non-ordered type (any)
+def f : pure monotone (x : any) : any = (x : any) : any -> ( x )
+}}}}}
+monotone requires ordered parameter and return types without mut
+
+{{{{{
+;; validateAlgebraicSignature errors: injective returning null
+def f : pure injective (x : int) : null = (x : int) : null -> ( null )
+}}}}}
+injective requires at least one parameter, no mut, and a non-null return type
+
+{{{{{
+;; validateAlgebraicSignature errors: commutative with mismatched parameter types
+def f : pure commutative (a : int, b : string) : int = (a : int, b : string) : int -> ( a )
+}}}}}
+commutative without mut requires a pure binary (T, T) : R signature
+
+{{{{{
+;; validateAlgebraicSignature errors: associative with return type mismatch
+def f : pure associative (a : int, b : int) : double = (a : int, b : int) : double -> ( a + b )
+}}}}}
+associative requires a pure binary (T, T) : T signature
+
+{{{{{
+;; validateAlgebraicSignature errors: idempotent on 2-arg pure function
+def f : pure idempotent (a : int, b : int) : int = (a : int, b : int) : int -> ( a + b )
+}}}}}
+idempotent without mut requires a pure unary (T) : T signature or an effectful axiom
+
+{{{{{
+;; binaryWrapperProps: associative string +, commutative double +, non-commutative int -
+def sCat : pure associative (a : string, b : string) : string = (a : string, b : string) : string -> ( a + b )
+def dAdd : pure commutative (a : double, b : double) : double = (a : double, b : double) : double -> ( a + b )
+println(sCat("a", "b"), ":", dAdd(1.5, 2.5))
+}}}}}
+ab:4.0
+
+{{{{{
+def badSub : pure commutative (a : int, b : int) : int = (a : int, b : int) : int -> ( a - b )
+}}}}}
+Type error : expected pure commutative (a : int, b : int) : int, got pure (a : int, b : int) : int
+
+{{{{{
+;; toStringProfile on Union and non-value BabbleInstance inside deterministic
+def uStr = deterministic (v : int | string) : string -> ( "" + v )
+println(uStr(5), ":", uStr("ok"))
+}}}}}
+5:ok
+
+{{{{{
+def Plain = class (def x : int) ()
+def badDet = deterministic (p : Plain) : string -> ( "" + p )
+}}}}}
+Function badDet declared deterministic violates deterministic guarantee
