@@ -20,12 +20,17 @@ public final class CompiledBabbleScript extends BabbleScript {
     private final int firstLine;
     private final String[] exports;
     private final Map<String, String> interfaceJvmNames;
+    private final Map<String, String> classJvmNames;
 
     CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports) {
-        this(engine, scriptClass, classes, run, sourceName, firstLine, exports, Map.of());
+        this(engine, scriptClass, classes, run, sourceName, firstLine, exports, Map.of(), Map.of());
     }
 
     CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports, Map<String, String> interfaceJvmNames) {
+        this(engine, scriptClass, classes, run, sourceName, firstLine, exports, interfaceJvmNames, Map.of());
+    }
+
+    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports, Map<String, String> interfaceJvmNames, Map<String, String> classJvmNames) {
         super(engine);
         this.exports = exports;
         this.scriptClass = scriptClass;
@@ -34,6 +39,7 @@ public final class CompiledBabbleScript extends BabbleScript {
         this.sourceName = sourceName;
         this.firstLine = firstLine;
         this.interfaceJvmNames = interfaceJvmNames != null ? Map.copyOf(interfaceJvmNames) : Map.of();
+        this.classJvmNames = classJvmNames != null ? Map.copyOf(classJvmNames) : Map.of();
     }
 
     /** The generated class, for tests and debugging. */
@@ -57,6 +63,11 @@ public final class CompiledBabbleScript extends BabbleScript {
     /** Internal JVM names of Babble interfaces compiled by this script, keyed by {@code ClassShape.id()}. */
     public Map<String, String> interfaceJvmNames() {
         return interfaceJvmNames;
+    }
+
+    /** Internal JVM names of static top-level Babble classes compiled by this script, keyed by {@code ClassShape.id()}. */
+    public Map<String, String> classJvmNames() {
+        return classJvmNames;
     }
 
     @Override

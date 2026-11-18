@@ -410,7 +410,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             loader.versions.put(id, text.version());
             BabbleScript compiledScript = script(file, scopes, sourceName, id);
             if (compiledScript instanceof CompiledBabbleScript compiled && scopes.moduleInterface() != null) {
-                scopes.moduleInterface().setCompilation(compiled.getScriptClass().getClassLoader(), compiled.interfaceJvmNames());
+                scopes.moduleInterface().setCompilation(compiled.getScriptClass().getClassLoader(),
+                        compiled.interfaceJvmNames(), compiled.classJvmNames());
             }
             CompiledModule module = new CompiledModule(source, mode, Map.copyOf(loader.versions),
                     compiledScript, scopes.moduleInterface());
@@ -705,9 +706,10 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 case COMPILE -> {
                     List<ClassLoader> dependencyLoaders = new ArrayList<>();
                     Map<String, String> knownInterfaceJvmNames = new LinkedHashMap<>();
-                    collectCompileDependencies(scopes, dependencyLoaders, knownInterfaceJvmNames);
+                    Map<String, String> knownClassJvmNames = new LinkedHashMap<>();
+                    collectCompileDependencies(scopes, dependencyLoaders, knownInterfaceJvmNames, knownClassJvmNames);
                     yield BabbleCompiler.compile(this, file, scopes, sourceName,
-                            module != null ? module.key() : null, dependencyLoaders, knownInterfaceJvmNames);
+                            module != null ? module.key() : null, dependencyLoaders, knownInterfaceJvmNames, knownClassJvmNames);
                 }
             };
         } catch (RuntimeException e) {
@@ -717,7 +719,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     private static void collectCompileDependencies(ScopeAnalysis scopes, List<ClassLoader> dependencyLoaders,
-                                                   Map<String, String> knownInterfaceJvmNames) {
+                                                   Map<String, String> knownInterfaceJvmNames,
+                                                   Map<String, String> knownClassJvmNames) {
         Queue<ModuleInterface> queue = new ArrayDeque<>();
         Set<ModuleInterface> visitedModules = Collections.newSetFromMap(new IdentityHashMap<>());
         Set<ClassLoader> seenLoaders = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -733,6 +736,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 dependencyLoaders.add(cl);
             }
             knownInterfaceJvmNames.putAll(mod.interfaceJvmNames());
+            knownClassJvmNames.putAll(mod.classJvmNames());
             for (ModuleInterface dep : mod.dependencies()) {
                 if (dep != null && visitedModules.add(dep)) {
                     queue.add(dep);
@@ -747,6 +751,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 }
             }
             knownInterfaceJvmNames.putAll(session.interfaceJvmNames());
+            knownClassJvmNames.putAll(session.classJvmNames());
         }
     }
 

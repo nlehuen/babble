@@ -27,6 +27,7 @@ public final class ModuleInterface {
     private Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects = Map.of();
     private volatile ClassLoader compiledClassLoader;
     private volatile Map<String, String> interfaceJvmNames = Map.of();
+    private volatile Map<String, String> classJvmNames = Map.of();
     private volatile Map<String, ScopeAnalysis.TypeHierarchyInfo> typeHierarchies = Map.of();
 
     ModuleInterface(BlockScopes pass) {
@@ -72,8 +73,13 @@ public final class ModuleInterface {
     }
 
     public void setCompilation(ClassLoader classLoader, Map<String, String> interfaceJvmNames) {
+        setCompilation(classLoader, interfaceJvmNames, Map.of());
+    }
+
+    public void setCompilation(ClassLoader classLoader, Map<String, String> interfaceJvmNames, Map<String, String> classJvmNames) {
         this.compiledClassLoader = classLoader;
         this.interfaceJvmNames = interfaceJvmNames != null ? Map.copyOf(interfaceJvmNames) : Map.of();
+        this.classJvmNames = classJvmNames != null ? Map.copyOf(classJvmNames) : Map.of();
     }
 
     public ClassLoader compiledClassLoader() {
@@ -82,6 +88,10 @@ public final class ModuleInterface {
 
     public Map<String, String> interfaceJvmNames() {
         return interfaceJvmNames;
+    }
+
+    public Map<String, String> classJvmNames() {
+        return classJvmNames;
     }
 
     void setTypeHierarchies(Map<String, ScopeAnalysis.TypeHierarchyInfo> hierarchies) {

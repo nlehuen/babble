@@ -67,6 +67,20 @@ public final class BabbleInterface extends BabbleType {
         }
     }
 
+    /** Own default method at {@code index}, or null. */
+    BabbleFunction defaultAt(int index) {
+        return index >= 0 && index < defaults.length ? defaults[index] : null;
+    }
+
+    void collectBabbleInterfaces(Map<String, BabbleInterface> result) {
+        result.putIfAbsent(shape().id(), this);
+        for (Object parent : parents) {
+            if (parent instanceof BabbleInterface babble) {
+                babble.collectBabbleInterfaces(result);
+            }
+        }
+    }
+
     void collectJavaInterfaces(Set<Class<?>> result) {
         for (Object parent : parents) {
             if (parent instanceof Class<?> java) {

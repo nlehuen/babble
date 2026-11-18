@@ -156,7 +156,7 @@ public class BabbleCompilerTestCase {
                 .filter(e -> e.getKey().endsWith("$Point")).findFirst().orElseThrow();
         Assertions.assertEquals(List.of("x", "y", "norm"), fieldNames(point.getValue()));
         Assertions.assertTrue(methodNames(point.getValue()).containsAll(List.of("<init>", "field", "setField", "m$norm")), methodNames(point.getValue()).toString());
-        Assertions.assertEquals(3, script.getClasses().size());
+        Assertions.assertEquals(4, script.getClasses().size());
     }
 
     @Test

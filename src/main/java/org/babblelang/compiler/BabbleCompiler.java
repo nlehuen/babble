@@ -53,11 +53,17 @@ public final class BabbleCompiler {
      */
     public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
                                                String moduleKey) {
-        return compile(engine, file, scopes, sourceName, moduleKey, List.of(), Map.of());
+        return compile(engine, file, scopes, sourceName, moduleKey, List.of(), Map.of(), Map.of());
     }
 
     public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
                                                String moduleKey, List<ClassLoader> dependencyLoaders, Map<String, String> knownInterfaceJvmNames) {
+        return compile(engine, file, scopes, sourceName, moduleKey, dependencyLoaders, knownInterfaceJvmNames, Map.of());
+    }
+
+    public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
+                                               String moduleKey, List<ClassLoader> dependencyLoaders, Map<String, String> knownInterfaceJvmNames,
+                                               Map<String, String> knownClassJvmNames) {
         String internalName = moduleKey != null ? className(moduleKey) : PACKAGE + "Script$" + COUNTER.incrementAndGet();
         ClassLoader runtimeLoader = BabbleCompiler.class.getClassLoader();
         ClassLoader tccl = Thread.currentThread().getContextClassLoader();
@@ -73,7 +79,7 @@ public final class BabbleCompiler {
             }
         }
         ClassLoader parentLoader = delegates.isEmpty() ? runtimeLoader : new CompositeClassLoader(runtimeLoader, delegates);
-        CodeGenerator generator = new CodeGenerator(internalName, sourceName, scopes, parentLoader, knownInterfaceJvmNames);
+        CodeGenerator generator = new CodeGenerator(internalName, sourceName, scopes, parentLoader, knownInterfaceJvmNames, knownClassJvmNames);
         Map<String, byte[]> classes = generator.generate(file);
 
         String dump = System.getProperty(DUMP_CLASSES);
@@ -109,7 +115,7 @@ public final class BabbleCompiler {
             throw new BabbleException("Cannot load the compiled script", e);
         }
         return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, file.getStart().getLine(), scopes.exports(),
-                generator.interfaceJvmNames());
+                generator.interfaceJvmNames(), generator.classJvmNames());
     }
 
     /**
