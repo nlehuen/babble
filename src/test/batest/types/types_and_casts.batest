@@ -1,0 +1,188 @@
+;; Casts, warnings, narrowing invalidation, callable class assignments, selector escapes, and array/Java field errors
+
+{{{{{
+;; Redundant casts, runtime casts, array/interface/Java casts
+def I1 = interface ( def a : () : int )
+def I2 = interface ( def b : () : string )
+def C = class (def x : int) implements I1 (
+    def a = () : int -> ( this.x )
+)
+def C2 = class () implements I1 (
+    def a = () : int -> ( 0 )
+)
+def D = class () ()
+def c = C(4)
+def red1 = c as C
+def red2 = 3 as int
+def i1 : I1 = if true then ( c ) else ( C2() )
+def cBack = i1 as C
+def stack = java.lang.Thread.currentThread().getStackTrace()
+println(red1.x, ":", red2, ":", cBack.x, ":", stack.length > 0)
+}}}}}
+Warning : Redundant cast : C
+Warning : Redundant cast : int
+4:3:4:true
+
+{{{{{
+def I1 = interface ( def a : () : int )
+def I2 = interface ( def b : () : string )
+def C = class (def x : int) implements I1 (
+    def a = () : int -> ( this.x )
+)
+def C2 = class () implements I1 (
+    def a = () : int -> ( 0 )
+)
+def i1 : I1 = if true then ( C(4) ) else ( C2() )
+println(i1 as I2?)
+}}}}}
+Type error : expected I2?, got C
+
+{{{{{
+def I1 = interface ( def a : () : int )
+def D = class () ()
+def d = D()
+def bad = d as I1
+}}}}}
+Type error : expected I1, got D
+
+{{{{{
+def bad = "x" as int
+}}}}}
+Type error : expected int, got string
+
+{{{{{
+def Box(T) = class (def v : T) ()
+def mix = (flag : bool) -> ( if flag then ( Box(1) ) else ( 2 ) )
+def bad = mix(true) as int
+println(bad)
+}}}}}
+Type error : expected int, got Box
+
+{{{{{
+def mix = (flag : bool) -> ( if flag then ( 1 ) else ( "s" ) )
+def bad = mix(true) as string
+println(bad)
+}}}}}
+Type error : expected string, got int
+
+{{{{{
+;; Flow-sensitive narrowing: is double, is bool, is any, and, or, early return, and kill on reassign
+def checkAll = (x : any?, flag : bool) : string -> (
+    def r1 = if x is double then ( "d:" + (x + 1.0) )
+        else if x is bool then ( "b:" + (not x) )
+        else if x is any then ( "a" )
+        else ( "null" )
+    def y : int | string = 10
+    def ok1 = if (y is int) and (y > 5) then ( y + 1 ) else ( 0 )
+    def z : int? = if flag then ( 7 ) else ( null )
+    def early = () : int -> (
+        if z == null or not flag then ( return -1 )
+        z + 2
+    )
+    def w : int | string = 1
+    def killedIf = if w is int then (
+        w = "s"
+        1
+    ) else ( 0 )
+    def k : int | string = 3
+    if flag then ( k = "z" )
+    def u = 2
+    def closureKill = () : int | string -> ( u )
+    if u is int then (
+        def f = () -> ( u = 9 )
+        f()
+    )
+    r1 + ":" + ok1 + ":" + early() + ":" + killedIf + ":" + closureKill() + ":" + (k is string)
+)
+println(checkAll(2.5, true), "|", checkAll(false, false), "|", checkAll("hi", true), "|", checkAll(null, true))
+}}}}}
+d:3.5:11:9:1:9:true|b:true:11:-1:1:9:false|a:11:9:1:9:true|null:11:9:1:9:true
+
+{{{{{
+;; Parameter default skips later parameter in same list via notBoundYet (binds outer b)
+def b = 10
+def f = (a : int = b, b : int = 1) : int -> ( a + b )
+println(f())
+}}}}}
+11
+
+{{{{{
+;; Passing ClassValue / JavaMethod / print to function types (nonFunctionCallableAssignable)
+def Box = class (def v : int) ()
+def MutBox = class (def v : int) (
+    def n = ( println(this.v) ; 1 )
+)
+def apply = (x : int, fn : (a : int) : Box) : int -> ( fn(x).v )
+def mk : (a : int) : Box = Box
+def takeMut = (m : MutBox) -> ( m )
+println(apply(5, Box), ":", mk(7).v)
+}}}}}
+5:7
+
+{{{{{
+def Box = class (def v : int) ( def log = ( println(this.v) ; 1 ) )
+def bad : pure (v : int) : Box = Box
+}}}}}
+Type error : expected pure (v : int) : Box, got class Box
+
+{{{{{
+def p = () : int -> ( println(1) ; 1 )
+def f : pure () : int = p
+}}}}}
+Type error : expected pure () : int, got () : int
+
+{{{{{
+def imp = () : int -> ( println(1) ; 1 )
+def bad : pure deterministic nothrow () : int = imp
+}}}}}
+Type error : expected pure deterministic nothrow () : int, got () : int
+
+{{{{{
+def bad : pure () = java.lang.System.gc
+}}}}}
+Type error : expected pure () : any?, got java.lang.System.gc
+
+{{{{{
+def bad : pure (x : int) = print
+}}}}}
+Type error : expected pure (x : int) : any?, got print
+
+{{{{{
+def C = class () (
+    def v = this
+)
+def c = C()
+println(c.v == c)
+}}}}}
+true
+
+{{{{{
+;; Java array field errors, non-static Java field on class, assigning lambda to SAM parameter
+def stack = java.lang.Thread.currentThread().getStackTrace()
+stack.length = 5
+}}}}}
+Cannot assign final field : java.lang.StackTraceElement[].length
+
+{{{{{
+def stack = java.lang.Thread.currentThread().getStackTrace()
+println(stack.missing)
+}}}}}
+No such name in java.lang.StackTraceElement[] : missing
+
+{{{{{
+println(java.awt.Point.x)
+}}}}}
+Not a static field : java.awt.Point.x
+
+{{{{{
+def st = java.io.StreamTokenizer(java.io.StringReader("a"))
+st.sval = (x : int) -> ( x )
+}}}}}
+Type error : expected string, got (x : int) : int
+
+{{{{{
+def r : () = () -> ( )
+def holder = java.lang.Thread(r)
+println(holder != null)
+}}}}}
+true

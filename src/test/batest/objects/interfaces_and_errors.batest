@@ -1,0 +1,371 @@
+;; BlockScopes, TypeChecks, BabbleInterface, BabbleInstance, BabbleType, and Supers coverage
+
+========== iface_mod.ba ==========
+export def MI = interface (
+    def tag : () : string
+    def shared = () : string -> ( "mod:" + this.tag() )
+)
+export package mp (
+    def PI = interface (
+        def code : () : int
+    )
+)
+
+{{{{{
+;; Package, nested package, module-exported, module-package, alias, imported Java package, and inner Java Map.Entry
+def m = import("iface_mod.ba")
+def jutil = import("java.util")
+package outer (
+    package inner (
+        def LocalI = interface (
+            def ping = () : int -> ( 7 )
+        )
+    )
+)
+def AliasMI = m.MI
+def Entry = java.util.Map.Entry
+
+def Multi = class (def n : int) implements AliasMI, m.mp.PI, outer.inner.LocalI, java.lang.Runnable (
+    def tag = () : string -> ( "m" + this.n )
+    def code = () : int -> ( this.n * 10 )
+    def run = () -> ( println("run:" + this.tag()) )
+)
+def multi = Multi(3)
+def mi : m.MI = multi
+def pi : m.mp.PI = multi
+def li : outer.inner.LocalI = multi
+println(mi.shared(), ":", pi.code(), ":", li.ping())
+println(multi is m.MI, ":", multi is AliasMI, ":", multi is outer.inner.LocalI, ":", multi is java.lang.Runnable)
+def r : java.lang.Runnable = multi
+r.run()
+
+;; Babble interface extending a Java interface and calling super Java default via Supers
+def SubI = interface extends java.util.function.IntPredicate (
+    def test = (x : int) : bool -> ( x > 0 )
+    def alt = (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )
+)
+def SubC = class () implements SubI ()
+def sub = SubC()
+println(sub is SubI, ":", sub is java.util.function.IntPredicate, ":", sub.test(5), ":", sub.alt(5))
+
+;; Inherited interface default lookup across two levels (BabbleInterface.findDefault parent recursion)
+def G0 = interface ( def deep = () : string -> ( "deep" ) )
+def G1 = interface extends G0 ()
+def G2 = interface extends G1 ()
+def GC = class () implements G2 ()
+println(GC().deep())
+}}}}}
+mod:m3:30:7
+true:true:true:true
+run:m3
+true:true:true:false
+deep
+
+{{{{{
+;; BlockScopes parameter and member modifier diagnostics
+def f = (def x : int) -> ( x )
+}}}}}
+def parameters are only allowed in a class header
+
+{{{{{
+def f = (private x : int) -> ( x )
+}}}}}
+private only applies to members
+
+{{{{{
+def C = class (x : int, x : int) ()
+}}}}}
+Name already defined : x
+
+{{{{{
+def C = class (private x : int) ()
+}}}}}
+private only applies to members
+
+{{{{{
+def V = value class (def x : int) ()
+println(V(3).x)
+}}}}}
+Warning : def is redundant on a value class parameter : x
+3
+
+{{{{{
+def V = value class (def x : int) (
+    def equals = () : bool -> ( true )
+)
+}}}}}
+equals is generated for value classes
+
+{{{{{
+def V = value class (def x : int) (
+    def hashCode = () : int -> ( 1 )
+)
+}}}}}
+hashCode is generated for value classes
+
+{{{{{
+def C = class (def x : int) (
+    def equals = () : bool -> ( true )
+)
+println(C(1).equals())
+}}}}}
+Warning : equals has no effect on == : use a value class
+true
+
+{{{{{
+def I = interface (
+    def x : () : int
+    println(1)
+)
+}}}}}
+An interface can only declare members
+
+{{{{{
+def I = interface (
+    axiom pure java.lang.Math.abs
+)
+}}}}}
+An interface can only declare members
+
+{{{{{
+def I = interface (
+    private def x : () : int
+)
+}}}}}
+Interface members cannot be private : x
+
+{{{{{
+def I = interface (
+    def x = 1
+)
+}}}}}
+An interface default must be a function literal : x
+
+{{{{{
+def f = () -> (
+    private def x = 1
+    x
+)
+}}}}}
+private only applies to members
+
+{{{{{
+def f(T, T) = (x : T) : T -> ( x )
+}}}}}
+Name already defined : T
+
+{{{{{
+def x(T) = 1
+}}}}}
+Type parameters only apply to functions, classes, and interfaces : x
+
+{{{{{
+def f = () -> (
+    export def x = 1
+)
+}}}}}
+export only applies to the top-level definitions of a file : x
+
+{{{{{
+while def x = 1 then ( )
+}}}}}
+Definition in a while test : x
+
+{{{{{
+def f = (x : int = ( return 1 )) : int -> ( x )
+}}}}}
+return in a parameter default
+
+{{{{{
+def C = class () (
+    def x = ( return 1 )
+)
+}}}}}
+return in a class body
+
+{{{{{
+def V = value class (x : int) (
+    def self = this
+)
+}}}}}
+this cannot escape a value class under construction
+
+{{{{{
+def I = interface ( def m = () : int -> ( 1 ) )
+def C = class () implements I (
+    def m = () : int -> (
+        def s = super
+        1
+    )
+)
+}}}}}
+super must be called directly
+
+{{{{{
+def I = interface ( def m = () : int -> ( 1 ) )
+def f = () : int -> ( super(I).m() )
+}}}}}
+super outside of a method
+
+{{{{{
+def I = interface ( def m = () : int -> ( 1 ) )
+def C = class () (
+) static (
+    def f = () : int -> ( super(I).m() )
+)
+}}}}}
+super outside of a method
+
+{{{{{
+def C = class () (
+    def a = 1
+    def a = 2
+)
+}}}}}
+Member already defined : a
+
+{{{{{
+;; TypeChecks inheritance & interface validation errors
+def I = interface extends java.lang.String ()
+}}}}}
+Babble interfaces can only extend Java interfaces
+
+{{{{{
+def C = class () implements java.lang.String ()
+}}}}}
+Babble classes can only implement Java interfaces
+
+{{{{{
+def C = class () implements int ()
+}}}}}
+implements needs a statically known interface
+
+{{{{{
+def NotI = class () ()
+def C = class () implements NotI ()
+}}}}}
+implements needs a statically known interface
+
+{{{{{
+def I = interface extends I ()
+}}}}}
+Interface extends itself : I
+
+{{{{{
+def I1 = interface ( def m = () : int -> ( 1 ) )
+def I2 = interface ( def m = () : int -> ( 2 ) )
+def C = class () implements I1, I2 ()
+}}}}}
+Conflicting defaults for m : I1, I2
+
+{{{{{
+def I1 = interface ( def m = () : int -> ( 1 ) )
+def C = class () implements I1 (
+    private def m = () : int -> ( 3 )
+)
+}}}}}
+m is private but I1 provides a public m
+
+{{{{{
+def Req = interface ( def m : () : int )
+def C = class () implements Req (
+    private def m = () : int -> ( 3 )
+)
+}}}}}
+C.m is private and cannot implement Req.m
+
+{{{{{
+def C = class () implements java.lang.Runnable (
+    def run = (x : int) -> ( )
+)
+}}}}}
+C.run takes 1 arguments, but Runnable.run() passes 0
+
+{{{{{
+def I = interface extends java.lang.Runnable (
+    def run = (x : int) -> ( )
+)
+}}}}}
+I.run takes 1 arguments, but Runnable.run() passes 0
+
+{{{{{
+def I1 = interface ( def m = () : int -> ( 1 ) )
+def I2 = interface ( def m = () : int -> ( 2 ) )
+def C = class () implements I1 (
+    def m = () : int -> ( super(I2).m() )
+)
+}}}}}
+I2 is not implemented directly by C
+
+{{{{{
+def I = interface (
+    def req : () : int
+    def callMissing = () : int -> ( this.missing() )
+)
+}}}}}
+missing is not a member of I
+
+{{{{{
+def V = value class (x : int) (
+    def bump = () -> ( this.x = 2 )
+)
+}}}}}
+Value members are read-only : x
+
+{{{{{
+def V = value class (x : int) ()
+def v = V(1)
+v.x = 2
+}}}}}
+Value members are read-only : x
+
+{{{{{
+;; Private member and method-assignment checks on BabbleInstance / BabbleType + Member used before definition
+def C = class (private def s : int = 1, def v : int = 2) (
+    def m = () : int -> ( this.v )
+) static (
+    private def ps = 9
+    def sm = () : int -> ( 1 )
+)
+C().s
+}}}}}
+s is private
+
+{{{{{
+def C = class (private def s : int = 1, def v : int = 2) ()
+C().s = 5
+}}}}}
+s is private
+
+{{{{{
+def C = class (def v : int = 2) (
+    def m = () : int -> ( 1 )
+)
+def c = C()
+c.m = c.m
+}}}}}
+Cannot assign method : m
+
+{{{{{
+def C = class () () static (
+    private def ps = 9
+)
+C.ps = 1
+}}}}}
+ps is private
+
+{{{{{
+def C = class () () static (
+    def sm = () : int -> ( 1 )
+)
+C.sm = () : int -> ( 2 )
+}}}}}
+Cannot assign method : sm
+
+{{{{{
+def C = class () () static (
+    def a = this.late
+    def late = 5
+)
+}}}}}
+Member used before definition : late

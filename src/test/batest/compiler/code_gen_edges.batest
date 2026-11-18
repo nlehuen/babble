@@ -1,0 +1,350 @@
+;; Compiler bytecode lowering and Bootstrap invokedynamic cache edge cases
+
+{{{{{
+;; this.method(...) direct spec, spread direct (with missing optional arg), named-arg method,
+;; recurse with omitted optional arg inside class method, boxed field assign, spread-to-double field assign,
+;; and method capturing enclosing mutable cell (methodClass != null in loadCapturedCells)
+def enclosing = 10
+def C = class (def d : double, def label : string) (
+    def specM = (a : int) : int -> ( a + 1 )
+    def optM = (a : int, b : int = 10) : int -> ( a + b )
+    def recOpt = (n : int, step : int = 1) : int -> (
+        if n <= 0 then ( 0 ) else ( step + recurse(n - 1) )
+    )
+    def runAll = mut () : string -> (
+        this.label = "abc"
+        this.label += "!"
+        this.d = this.optM(1)
+        enclosing += 1
+        "" + this.specM(2) + ":" + this.optM(2) + ":" + this.optM(a: 3) + ":" + this.recOpt(3) + ":" + this.d + ":" + this.label + ":" + enclosing
+    )
+)
+println(C(0.0, "init").runAll())
+}}}}}
+3:12:13:3:11.0:abc!:11
+
+{{{{{
+;; Constructor package scope, static package scope, and static block `this` assign / compound assign
+def C = class () (
+    package inner (
+        def v = 7
+    )
+    def getV = () : int -> ( inner.v )
+) static (
+    package sp (
+        def k = 5
+    )
+    def x = 1
+    def bump = () : string -> (
+        this.x = 2
+        this.x += 3
+        "" + this.x + ":" + sp.k
+    )
+    def me = () -> ( this )
+)
+println(C().getV(), ":", C.bump(), ":", C.me() == C)
+}}}}}
+7:5:5:true
+
+{{{{{
+;; Top-level recursive function omitting optional parameter (Arguments.MISSING in recurse)
+def sumDown = (n : int, step : int = 2) : int -> (
+    if n <= 0 then ( 0 ) else ( step + recurse(n - 1) )
+)
+println(sumDown(3))
+}}}}}
+6
+
+{{{{{
+;; Member used before definition in compiled class constructor (defSlot + Bootstrap.requireMemberDefined)
+def Box = class () (
+    def peek = () : int -> ( this.late )
+    def a = this.peek()
+    def late : int = 5
+)
+Box()
+}}}}}
+Member used before definition : late
+
+{{{{{
+;; Reading captured BoolCell before definition throws Name used before definition
+def f = () : () : bool -> (
+    def r = () : bool -> ( b )
+    def g = r()
+    def b = true
+    () : bool -> ( g )
+)
+f()
+}}}}}
+Name used before definition : b
+
+{{{{{
+;; Assigning captured BoolCell before definition throws Name used before definition
+def f = () : bool -> (
+    def w = () : bool -> ( b = false )
+    w()
+    def b = true
+    b
+)
+f()
+}}}}}
+Name used before definition : b
+
+{{{{{
+;; Reading captured DoubleCell before definition throws Name used before definition
+def f = () : () : double -> (
+    def r = () : double -> ( d )
+    def g = r()
+    def d = 1.5
+    () : double -> ( g )
+)
+f()
+}}}}}
+Name used before definition : d
+
+{{{{{
+;; Assigning captured DoubleCell before definition throws Name used before definition
+def f = () : double -> (
+    def w = () : double -> ( d = 2.5 )
+    w()
+    def d = 1.5
+    d
+)
+f()
+}}}}}
+Name used before definition : d
+
+{{{{{
+;; Assigning captured IntCell before definition throws Name used before definition
+def f = () : int -> (
+    def w = () : int -> ( i = 9 )
+    w()
+    def i = 1
+    i
+)
+f()
+}}}}}
+Name used before definition : i
+
+{{{{{
+;; Reading and assigning uncaptured ref local before definition (Frames.defined / Frames.checkAssignable)
+def readRef = () : string -> (
+    def x = s
+    def s = "hi"
+    x
+)
+readRef()
+}}}}}
+Name used before definition : s
+
+{{{{{
+def assignRef = () : string -> (
+    s = "ok"
+    def s = "hi"
+    s
+)
+assignRef()
+}}}}}
+Name used before definition : s
+
+{{{{{
+;; Standalone constant folding (MINUS, MUL, unary minus), boolean equality, negated/or conditions,
+;; double comparisons in control flow, block with package, widening return/as, and object without methods
+println(10 - 3, ":", 4 * 5, ":", -(3) + 10, ":", -(2.5))
+def b1 = true
+def b2 = false
+println(b1 == b2, ":", b1 != b2)
+def x = 8
+def y = 9
+if not (x < 5) then ( println("ge5") ) else ( println("lt5") )
+if (x < 5) or (y < 5) then ( println("yes") ) else ( println("no") )
+
+def d = 2.5
+def hits = 0
+if d < 3.0 then ( hits += 1 )
+if d <= 2.5 then ( hits += 1 )
+if d == 2.5 then ( hits += 1 )
+if d != 1.0 then ( hits += 1 )
+if d >= 2.5 then ( hits += 1 )
+if d > 2.0 then ( hits += 1 )
+println(hits)
+
+println(( package p ( def a = 9 ) ; p.a ))
+def wf1 = () : double -> ( 1 )
+def wf2 = (flag : bool) : double -> ( if flag then ( 1 ) else ( 2.5 ) )
+println(wf1(), ":", wf2(true), ":", 1 as double)
+def obj = object ( def k : int = 7 )
+println(obj.k)
+}}}}}
+7:20:7:-2.5
+false:true
+ge5
+no
+6
+9
+1.0:1.0:1.0
+7
+
+{{{{{
+;; Java long/float arg lowering (emitJavaArgToLocal), pure static chain parens,
+;; static field on non-pure Java receiver, and ScriptClassWriter.getCommonSuperClass merges
+println(java.lang.Long.sum(3, 4), ":", java.lang.Float.sum(3, 4), ":", (java.lang.Math).abs(-5))
+
+def mkSt = () : java.io.StreamTokenizer -> ( java.io.StreamTokenizer(java.io.StringReader("hi")) )
+println(mkSt().TT_EOF)
+
+def pickBuf = (flag : bool) : any -> (
+    if flag then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuffer("b") )
+)
+def A = class () ()
+def B = class () ()
+def pickCls = (flag : bool) : any -> (
+    if flag then ( A() ) else ( B() )
+)
+println(java.util.Objects.toString(pickBuf(true)), ":", java.util.Objects.toString(pickBuf(false)), ":", classof(pickCls(true)) == A)
+}}}}}
+7:7.0:5
+-1
+a:b:true
+
+{{{{{
+;; Bootstrap BoundMethod(CompiledFunction) spec/direct, TypedCallCache 0-arg, and MAX_DEPTH (>4) caches
+def extSpec = (x : int) : int -> ( x + 10 )
+def extSpread = (x : int, y : int = 5) : int -> ( x + y )
+def Holder = class () (
+    def ms = extSpec
+    def md = extSpread
+)
+def h = Holder()
+def bmSpec : (x : int) : int = h.ms
+def bmDirect = h.md
+println(bmSpec(4), ":", bmDirect(4))
+
+def Z = class () ()
+def makeZ : () : Z = Z
+def z = makeZ()
+println(classof(z) == Z)
+
+;; Exceed MAX_DEPTH (4) in SelectCache, CallCache, and TypedCallCache
+def HasV = interface ( def getV : () : int )
+def S1 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
+def S2 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
+def S3 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
+def S4 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
+def S5 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
+def S6 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
+def pickObj = (k : int) : HasV -> (
+    if k == 0 then ( S1(1) )
+    else if k == 1 then ( S2(2) )
+    else if k == 2 then ( S3(3) )
+    else if k == 3 then ( S4(4) )
+    else if k == 4 then ( S5(5) )
+    else ( S6(6) )
+)
+def ssum = 0
+def i = 0
+while i < 6 then (
+    ssum += pickObj(i).getV()
+    i += 1
+)
+
+def f1 = (x : int) : int -> ( x + 1 )
+def f2 = (x : int) : int -> ( x + 2 )
+def f3 = (x : int) : int -> ( x + 3 )
+def f4 = (x : int) : int -> ( x + 4 )
+def f5 = (x : int) : int -> ( x + 5 )
+def f6 = (x : int) : int -> ( x + 6 )
+def pickFn = (k : int) : (x : int) : int -> (
+    if k == 0 then ( f1 )
+    else if k == 1 then ( f2 )
+    else if k == 2 then ( f3 )
+    else if k == 3 then ( f4 )
+    else if k == 4 then ( f5 )
+    else ( f6 )
+)
+def g1 = (x : int, y : int = 0) : int -> ( x + y + 1 )
+def g2 = (x : int, y : int = 0) : int -> ( x + y + 2 )
+def g3 = (x : int, y : int = 0) : int -> ( x + y + 3 )
+def g4 = (x : int, y : int = 0) : int -> ( x + y + 4 )
+def g5 = (x : int, y : int = 0) : int -> ( x + y + 5 )
+def g6 = (x : int, y : int = 0) : int -> ( x + y + 6 )
+def pickOpt = (k : int) : (x : int) : int -> (
+    if k == 0 then ( g1 )
+    else if k == 1 then ( g2 )
+    else if k == 2 then ( g3 )
+    else if k == 3 then ( g4 )
+    else if k == 4 then ( g5 )
+    else ( g6 )
+)
+def fsum = 0
+i = 0
+while i < 6 then (
+    def fn = pickFn(i)
+    fsum += fn(10)
+    def opt = pickOpt(i)
+    fsum += opt(0)
+    i += 1
+)
+println(ssum, ":", fsum)
+}}}}}
+14:9
+true
+21:102
+
+{{{{{
+;; this.field compound assign, union primitive field SelectCache, BabbleInterface 2-level super/extends,
+;; Bootstrap BoundMethod(CompiledFunction) direct & TypedCallCache 0-arg BoundJavaMethod, Java compound assign
+def Counter = class (def n : int) (
+    def bump = mut (d : int) : int -> ( this.n += d ; this.n )
+)
+def ctr = Counter(10)
+
+def UA = class (def v : int) ()
+def UB = class (def v : int) ()
+def pickU = (flag : bool) : UA | UB -> ( if flag then ( UA(3) ) else ( UB(7) ) )
+
+def G0 = interface (
+    def deep = () : string -> ( "g0" )
+)
+def G1 = interface extends G0 ()
+def G2 = interface extends G1 ()
+def GG = class () implements G2 (
+    def deep = () : string -> ( super(G2).deep() + ":gg" )
+)
+def SubP = interface extends java.util.function.IntPredicate (
+    def test = (x : int) : bool -> ( x > 0 )
+)
+def SubPC = class () implements SubP ()
+def sp = SubPC()
+def dyn = (v : any) : any -> ( v )
+def gVal : G0 = dyn(GG()) as G0
+
+def IfaceDef = interface (
+    def defm = (x : int | string) : any -> ( x )
+)
+def CDef = class () implements IfaceDef ()
+def callAny : (x : int) : any = CDef().defm
+def sb = java.lang.StringBuilder("abc")
+def sbLen : () : int = sb.length
+
+def tk = java.io.StreamTokenizer(java.io.StringReader("1"))
+tk.nval = 1.5
+tk.nval += 2.0
+tk.ttype = 10
+tk.ttype += 5
+
+println(ctr.bump(5), ":", pickU(true).v, ":", pickU(false).v, ":", gVal.deep(), ":", GG() is G0, ":", GG() is G1, ":", sp is java.util.function.IntPredicate, ":", callAny(42), ":", sbLen(), ":", tk.nval, ":", tk.ttype)
+}}}}}
+15:3:7:g0:gg:true:true:true:42:3:3.5:15
+
+{{{{{
+;; SelectCache requireMemberDefined on union primitive field before initialization
+def UB = class (def late : int = 0) ()
+def UA = class (def a : int = 1) (
+    def peek = (u : UA | UB) : int -> ( u.late )
+    def v = this.peek(if this.a == 1 then ( this ) else ( UB() ))
+    def late : int = 5
+)
+UA()
+}}}}}
+Member used before definition : late
