@@ -1,0 +1,527 @@
+;; BIP009-P4 Batch 4b: TypeChecker, TypeChecks, EffectChecker, EffectSet, Type & runtime edge cases
+
+========== ce_mod_a.ba ==========
+export def Dup = class (def k : int) ()
+export def ModCustom = class (def x : int) (
+    def toString = pure deterministic () : string -> ( "M:" + this.x )
+)
+export def ExportCls = class (def n : int) (
+    private def priv = (a : int) -> ( a + this.n )
+    def pub = (a : int) : int -> ( this.priv(a) )
+)
+export package ModPkg (
+    def IMod = interface (
+        def id : () : int
+    )
+)
+export def ModWrap(T) = class (def v : T) ()
+export def x = 10
+export def subMod = import("ce_mod_b.ba")
+
+========== ce_mod_b.ba ==========
+export def Dup = class (def k : int) ()
+export def y = 20
+
+{{{{{
+;; EffectSet.keywordOf violations: hermetic, deterministic, nothrow
+def g = 1
+g = 2
+def badHerm = hermetic () -> ( g = 3 )
+}}}}}
+Function badHerm declared hermetic violates hermetic guarantee
+
+{{{{{
+def badDet = deterministic () -> ( java.lang.Math.random() )
+}}}}}
+Function badDet declared deterministic violates deterministic guarantee
+
+{{{{{
+def badNothrow = nothrow () -> ( java.lang.Integer.parseInt("1") )
+}}}}}
+Function badNothrow declared nothrow violates nothrow guarantee
+
+{{{{{
+;; EffectChecker.toStringProfile across module, non-value class, JavaInstance
+def ma = import("ce_mod_a.ba")
+def Reg = class (def v : int) ()
+def useRegOk = pure (r : Reg) : string -> ( "r=" + r )
+def useModOk = pure deterministic (m : ma.ModCustom) : string -> ( "m=" + m )
+def useJavaOk = pure deterministic (p : java.awt.Point) : string -> ( "p=" + p.x )
+def useJavaStr = pure (p : java.awt.Point) : string -> ( "p=" + p )
+println(useModOk(ma.ModCustom(7)), "|", useJavaStr(java.awt.Point(1, 2)))
+}}}}}
+m=M:7|p=java.awt.Point[x=1,y=2]
+
+{{{{{
+def Reg = class (def v : int) ()
+def badRegDet = pure deterministic (r : Reg) : string -> ( "r=" + r )
+}}}}}
+Function badRegDet declared deterministic violates deterministic guarantee
+
+{{{{{
+;; EffectChecker.propagateSamCallbackEffects: pure vs impure lambda & Consumer class
+axiom pure java.util.Collections.singletonList
+axiom pure java.lang.Iterable.forEach
+axiom pure java.util.List.size
+def GoodCons = class () implements java.util.function.Consumer(java.lang.Object) (
+    def accept = pure (x : java.lang.Object) -> ( () )
+)
+def okSam = pure () : int -> (
+    def item : java.lang.Object = 1
+    def list : java.util.List(java.lang.Object) = java.util.Collections.singletonList(item)
+    list.forEach((x) -> ( def y = x ))
+    list.forEach(GoodCons())
+    list.size()
+)
+println(okSam())
+}}}}}
+1
+
+{{{{{
+axiom pure deterministic java.util.ArrayList()
+axiom hermetic mut java.util.ArrayList.add
+axiom pure java.util.ArrayList.forEach
+def badSamLambda = pure () -> (
+    def list : java.util.ArrayList(java.lang.Object) = java.util.ArrayList()
+    list.add(1)
+    list.forEach((x) -> ( println(x) ))
+)
+}}}}}
+Function badSamLambda declared pure violates pure guarantee
+
+{{{{{
+axiom pure deterministic java.util.ArrayList()
+axiom hermetic mut java.util.ArrayList.add
+axiom pure java.util.ArrayList.forEach
+def BadCons = class () implements java.util.function.Consumer(java.lang.Object) (
+    def accept = (x : java.lang.Object) -> ( println(x) )
+)
+def badSamClass = pure () -> (
+    def list : java.util.ArrayList(java.lang.Object) = java.util.ArrayList()
+    list.add(1)
+    list.forEach(BadCons())
+)
+}}}}}
+Function badSamClass declared pure violates pure guarantee
+
+{{{{{
+;; EffectChecker exclusivity error & mut target violations
+def Box = class (def v : int) (
+    def swapWith = hermetic mut (mut other : Box) -> (
+        def t = this.v
+        this.v = other.v
+        other.v = t
+    )
+)
+def b = Box(1)
+b.swapWith(b)
+}}}}}
+Exclusivity error : mut target b aliases argument b
+
+{{{{{
+;; EffectChecker relationalProps, binaryWrapperProps, isUnaryIdempotentWrapper, isMutCommutativeBody
+axiom pure deterministic idempotent java.nio.file.Path.normalize
+def badMonoJ = (f : pure monotone (s : java.lang.StringBuilder) : int) : int -> ( 1 )
+def addD = (a : double, b : double) : double -> ( a + b )
+def addI = (a : int, b : int) : int -> ( a + b )
+def impBin = (a : int, b : int) : int -> ( println(a) ; a + b )
+def w1 = (x : double) : double -> ( 1.0 + x )
+def w2 = (x : int) : string -> ( "" + x + "!" )
+def w3 = (x : double) : string -> ( "d=" + x )
+def w4 = (x : int, y : int) : int -> ( addI(a = x, b = y) )
+def w5 = (x : int, y : int) : int -> ( impBin(x, y) )
+def m1 : pure monotone (x : double) : double = w1
+def j1 : pure injective (x : int) : string = w2
+def normWrap = (p : java.nio.file.Path) : java.nio.file.Path -> ( p.normalize() )
+def pIdem : pure idempotent (p : java.nio.file.Path) : java.nio.file.Path = normWrap
+def cleanOp = pure deterministic idempotent (s : string) : string -> ( s )
+def cleanWrap = (s : string) : string -> ( cleanOp(s) )
+def sIdem : pure idempotent (s : string) : string = cleanWrap
+def MBox = class (def v : int) (
+    def addLeft = hermetic mut commutative (d : int) : int -> ( this.v = this.v + d )
+    def addRight = hermetic mut commutative (d : int) : int -> ( this.v = d + this.v )
+    def addPlus = hermetic mut commutative (d : int) : int -> ( this.v += d )
+)
+def mb = MBox(0)
+def mc1 : hermetic commutative mut (d : int) : int = mb.addLeft
+def mc2 : hermetic commutative mut (d : int) : int = mb.addRight
+def mc3 : hermetic commutative mut (d : int) : int = mb.addPlus
+def nDet = class () () static (
+    def s = MBox(1)
+)
+def badStaticRead = deterministic () : int -> ( nDet.s.v )
+}}}}}
+Function badStaticRead declared deterministic violates deterministic guarantee
+
+{{{{{
+;; EffectChecker: algebraic signature mismatches
+def badAssocDom = (f : pure associative (a : int, b : double) : double) : int -> ( 1 )
+}}}}}
+associative requires a pure binary (T, T) : T signature
+
+{{{{{
+def badCommDom = (f : pure commutative (a : int, b : double) : double) : int -> ( 1 )
+}}}}}
+commutative without mut requires a pure binary (T, T) : R signature
+
+{{{{{
+def Box = class (def v : int) ()
+def badCommMutOne = (f : hermetic commutative (mut a : Box) : null) : int -> ( 1 )
+}}}}}
+mut commutative requires a value parameter on the mutated target
+
+{{{{{
+def badIdemRet = (f : pure idempotent (a : int) : string) : int -> ( 1 )
+}}}}}
+idempotent without mut requires a pure unary (T) : T signature or an effectful axiom
+
+{{{{{
+def badInjBool = (f : pure injective (x : int) : bool) : int -> ( 1 )
+def badInjNull = (f : pure injective (x : int) : null) : int -> ( 1 )
+}}}}}
+injective requires at least one parameter, no mut, and a non-null return type
+
+{{{{{
+;; Type.toString variants: JavaArray, Package, Module, JavaPackage, JavaClassValue, describeAgainst
+def e1 : int = java.util.regex.Pattern.compile(",").split("a,b")
+}}}}}
+Type error : expected int, got string[]
+
+{{{{{
+package P ( def k = 1 )
+def e2 : int = P
+}}}}}
+Type error : expected int, got package P
+
+{{{{{
+def m = import("ce_mod_a.ba")
+def e3 : int = m
+}}}}}
+Type error : expected int, got module ce_mod_a.ba
+
+{{{{{
+def jp = import("java.util")
+def e4 : int = jp
+}}}}}
+Type error : expected int, got package java.util
+
+{{{{{
+def e5 : int = java.lang.String
+}}}}}
+Type error : expected int, got class java.lang.String
+
+{{{{{
+def Box = class (def v : int) ()
+def mutFn = hermetic (mut a : Box, b : Box) : int -> ( a.v = 1 ; b.v )
+def expectedFn : pure (borrow a : Box, b : Box) : int = mutFn
+}}}}}
+Type error : expected pure (borrow a : Box, b : Box) : int, got hermetic (mut a : Box, b : Box) : int
+
+{{{{{
+;; TypeChecks: nested Java interface, invalid Java parent, package interface, multi-arg checkJavaArity, super errors, module exports
+def EntryImpl = class (def k : java.lang.Object, def v : java.lang.Object) implements java.util.Map.Entry(java.lang.Object, java.lang.Object) (
+    def getKey = () -> ( this.k )
+    def getValue = () -> ( this.v )
+    def setValue = mut (nv : java.lang.Object) -> (
+        def old = this.v
+        this.v = nv
+        old
+    )
+)
+def I1 = interface ( def a : () : int )
+package Pkg (
+    def IPkg = interface ( def b : () : int )
+)
+def C1 = class () implements I1, Pkg.IPkg (
+    def a = () : int -> ( 1 )
+    def b = () : int -> ( 2 )
+)
+def e = EntryImpl("k", 42)
+def c = C1()
+println(e.getKey(), ":", e.setValue(99), ":", e.getValue(), ":", c.a(), ":", c.b())
+}}}}}
+k:42:99:1:2
+
+{{{{{
+def BadImpl = class () implements java.lang.Object ()
+}}}}}
+Babble classes can only implement Java interfaces
+
+{{{{{
+def BadExt = interface extends java.lang.Object ()
+}}}}}
+Babble interfaces can only extend Java interfaces
+
+{{{{{
+def BadBiFn = class () implements java.util.function.BiFunction(java.lang.Object, java.lang.Object, java.lang.Object) (
+    def apply = (a : java.lang.Object) -> ( a )
+)
+}}}}}
+BadBiFn.apply takes 1 arguments, but BiFunction.apply(Object, Object) passes 2
+
+{{{{{
+def I1 = interface ( def m : () : int )
+def C = class () implements I1 (
+    def m = () : int -> ( super.m() )
+)
+}}}}}
+I1.m has no default
+
+{{{{{
+def I1 = interface ( def a : () : int )
+def C = class () implements I1 (
+    def a = () : int -> ( super.missing() )
+)
+}}}}}
+No default missing to call
+
+{{{{{
+def I1 = interface ( def m = () : int -> ( 1 ) )
+def I2 = interface ( def m = () : int -> ( 2 ) )
+def C = class () implements I1 (
+    def m = () : int -> ( super(I2).m() )
+)
+}}}}}
+I2 is not implemented directly by C
+
+{{{{{
+def I = interface (
+    def foo = () -> ( this.missing )
+)
+}}}}}
+missing is not a member of I
+
+{{{{{
+def m = import("ce_mod_a.ba")
+println(m?.x)
+}}}}}
+Not nullable : m
+
+{{{{{
+def m = import("ce_mod_a.ba")
+m.x = 20
+}}}}}
+Cannot assign to an export : x
+
+{{{{{
+def m = import("ce_mod_a.ba")
+println(m.missingExport)
+}}}}}
+No such export : missingExport in ce_mod_a.ba
+
+{{{{{
+;; TypeChecker widening notes: local, param (call & member), member in selector and assignment
+def x = 1
+def y : int = 0
+y = x
+x = 1.5
+}}}}}
+Type error : expected int, got double (x is double because of the assignment)
+
+{{{{{
+def Box = class () ( def x = 1 )
+def c = Box()
+def y : int = 0
+y = c.x
+c.x = 1.5
+}}}}}
+Type error : expected int, got double (x is double because of the assignment)
+
+{{{{{
+def C = object ( def x = 1 )
+def y : int = 0
+y = C.x
+C.x = 1.5
+}}}}}
+Type error : expected int, got double (x is double because of the assignment)
+
+{{{{{
+def f = (a) -> (
+    def y : int = 0
+    y = a
+    a
+)
+f(1)
+f(1.5)
+}}}}}
+Type error : expected int, got double (a is double because of the call)
+
+{{{{{
+def PBox = class (def x = 1) ()
+def pb = PBox(1)
+def y : int = 0
+y = pb.x
+def pb2 = PBox(1.5)
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+;; TypeChecker: satisfiesJavaBound, makeAccessible / accessibleType
+def ptList : java.util.List(java.awt.Point) = java.util.Collections.singletonList(java.awt.Point(1, 2))
+println(java.util.Collections.max(ptList))
+}}}}}
+Type error : type argument java.awt.Point does not satisfy bound T of java.util.Collections.max
+
+{{{{{
+def intList : java.util.ArrayList(java.lang.Integer) = java.util.ArrayList()
+intList.add(3)
+intList.add(7)
+def it : java.util.Iterator(int) = java.util.Collections.emptyIterator()
+def lst : java.util.List(int) = java.util.List.of(1, 2)
+println(java.util.Collections.max(intList), ":", it.hasNext(), ":", lst.size())
+}}}}}
+7:false:2
+
+{{{{{
+;; TypeChecker: module ExportCls inferrability, Java SAM unannotated, recursive warning
+def m = import("ce_mod_a.ba")
+def ec = m.ExportCls(5)
+def r = object implements java.lang.Runnable (
+    def run = () -> ( println("run:" + ec.pub(3)) )
+)
+r.run()
+}}}}}
+run:8
+
+{{{{{
+def recNoType = (n : int) -> ( recNoType(n - 1) )
+}}}}}
+Missing type : recNoType (recursive)
+
+{{{{{
+;; TypeChecker: canCast, isRuntimeSubtype, canMatchAtRuntime
+def I1 = interface ( def a : () : int )
+def I2 = interface ( def b : () : int )
+def Both = class () implements I1, I2, java.lang.Runnable (
+    def a = () : int -> ( 1 )
+    def b = () : int -> ( 2 )
+    def run = () -> ( () )
+)
+def obj : Both = Both()
+def i1 : I1 = obj
+def i2 = i1 as I2
+def r = i1 as java.lang.Runnable
+def back = r as I1
+def nil : null = null as null
+def arr = java.util.regex.Pattern.compile(",").split("a,b")
+def arrCopy = java.util.Arrays.copyOf(arr, 3)
+def arrObj = arrCopy as java.lang.Object
+def genTest(T) = (x : T) : bool -> ( x is string )
+println(i2.b(), ":", back.a(), ":", nil, ":", arrCopy.length, ":", arrObj != null, ":", genTest("hi"), ":", genTest(1))
+}}}}}
+Warning : Redundant cast : any
+2:1:null:3:true:true:false
+
+{{{{{
+def mkR = () : java.lang.Runnable -> ( object implements java.lang.Runnable ( def run = () -> ( () ) ) )
+def r : java.lang.Runnable = mkR()
+def n = r as java.lang.Number
+}}}}}
+Type error : expected java.lang.Number, got object
+
+{{{{{
+def mkR = () : java.lang.Runnable -> ( object implements java.lang.Runnable ( def run = () -> ( () ) ) )
+def r : java.lang.Runnable = mkR()
+def s = r as string
+}}}}}
+Type error : expected string, got java.lang.Runnable
+
+{{{{{
+def badDoubleToInt = 1.5 as int
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+def f = () : int -> ( 1 )
+def badFnCast = f as (() : int)
+}}}}}
+Cannot cast to a function type
+
+{{{{{
+def badTv(T) = (x : any) : T -> ( x as T )
+}}}}}
+Cannot cast to type parameter : T
+
+{{{{{
+;; TypeChecker: nonFunctionCallableAssignable (PRINT, JavaMethod, ClassValue)
+def p1 : pure () : null = println
+}}}}}
+Type error : expected pure () : null, got print
+
+{{{{{
+def p2 : (borrow x : int) : null = println
+}}}}}
+Type error : expected (borrow x : int) : null, got print
+
+{{{{{
+axiom pure java.lang.Integer.bitCount
+def fBit : pure (x : int) : int = java.lang.Integer.bitCount
+println(fBit(7))
+}}}}}
+3
+
+{{{{{
+def badRand : deterministic () : double = java.lang.Math.random
+}}}}}
+Type error : expected deterministic () : double, got java.lang.Math.random
+
+{{{{{
+def Holder = class (def x : any) ()
+def badBorrow : (borrow x : any) : Holder = Holder
+}}}}}
+Type error : expected (borrow x : any) : Holder, got class Holder
+
+{{{{{
+;; TypeChecker: intersectCompatibleFunctions, reassignmentJoin, generic double widening, compound assign on param/this
+def Box = class (def v : int) (
+    def bump = mut (d : int) : int -> ( this.v += d ; this.v )
+)
+def pickFn = (flag : bool) -> (
+    if flag then ( (mut b : Box) : int -> ( b.v = 1 ; b.v ) )
+    else ( pure (b : Box) : int -> ( b.v ) )
+)
+def pickDiffName = (flag : bool) -> (
+    if flag then ( (a : int) : int -> ( a ) ) else ( (b : int) : int -> ( b + 1 ) )
+)
+def rf = pure (b : Box) : int -> ( b.v )
+rf = (mut b : Box) : int -> ( b.v = 2 ; b.v )
+def n1 = null
+n1 = 1
+n1 = 2.5
+def n2 = 1
+n2 = null
+n2 = 3.5
+def wrapGen(T) = (fn : () : T) : T -> ( fn() )
+def dWid : double = wrapGen(() -> ( 1 ))
+def addParam = (p : int) : int -> ( p += 4 ; p )
+def bx = Box(5)
+println(pickFn(false)(bx), ":", rf(bx), ":", n1, ":", n2, ":", dWid, ":", addParam(6), ":", bx.bump(3))
+}}}}}
+5:2:2.5:3.5:1.0:10:5
+
+{{{{{
+def uninf(T) = () : T? -> ( null )
+uninf()
+}}}}}
+Missing type : cannot infer type arguments for uninf
+
+{{{{{
+;; Runtime shared: Types.decodeComponent (%2C), Values.isBabbleCallable BabbleClass
+def Pair(A, B) = class (def a : A, def b : B) ()
+def optPair : Pair(int, double)? = Pair(1, 2.5)
+def optNull : Pair(int, double)? = null
+def Dup = class (def k : int = 9) ()
+def runIt = java.lang.Runnable(Dup)
+runIt.run()
+println(optPair?.b, ":", optNull)
+}}}}}
+2.5:null
+
+{{{{{
+;; Runtime shared: Types.check duplicate class ids (cross-module)
+def m1 = import("ce_mod_a.ba")
+def m2 = import("ce_mod_b.ba")
+def a : any = m2.Dup(3)
+def bad : m1.Dup = a as m1.Dup
+}}}}}
+Type error : expected Dup, got Dup (expected ce_mod_a.ba#Dup, got ce_mod_b.ba#Dup)
