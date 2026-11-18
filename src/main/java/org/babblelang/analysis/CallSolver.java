@@ -58,8 +58,8 @@ final class CallSolver {
         if (lit != null) {
             checker.functionLiterals().put(unparameterized, lit);
         }
-        TypeAlgebra.ConstraintStore store = new TypeAlgebra.ConstraintStore(solving, false, checker.algebraEnv());
-        if (!TypeAlgebra.relate(unparameterized, expectedFn, TypeAlgebra.RelateMode.ASSIGNABLE, store, checker.algebraEnv())) {
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, false);
+        if (!checker.algebra().relate(unparameterized, expectedFn, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
             return unparameterized;
         }
         Map<Type.TypeVar, Type> inferred = new HashMap<>();
@@ -74,7 +74,7 @@ final class CallSolver {
             }
             inferred.put(tv, resolved);
         }
-        return checker.substitute(unparameterized, inferred);
+        return checker.algebra().substitute(unparameterized, inferred);
     }
 
     /**
@@ -155,7 +155,7 @@ final class CallSolver {
             } else {
                 checker.recordInferredParam(decl, actual, argument);
                 Type latest = checker.inferredParams().get(decl);
-                if (latest != null && TypeChecker.needsDoubleWidening(actual, latest)) {
+                if (latest != null && TypeAlgebra.needsDoubleWidening(actual, latest)) {
                     checker.widened().add(argument);
                 }
             }
@@ -172,7 +172,7 @@ final class CallSolver {
                       ParserRuleContext at, String receiverText) {
         Type callee = checker.member(receiver, method, false, at, receiverText);
         if (!(callee instanceof Type.Function function)) {
-            if (!TypeChecker.isUnresolved(callee) && !TypeChecker.isFunction(callee)) {
+            if (!TypeChecker.isUnresolved(callee) && !TypeAlgebra.isCallable(callee)) {
                 checker.warn(receiverText + "." + method + " is not callable", at);
             }
             return Type.ERROR;
@@ -198,7 +198,7 @@ final class CallSolver {
                            BabbleParser.CallContext ctx, String description) {
         Type.Parameter[] argParams = mapArgumentsToParameters(parameters, arguments);
         Set<Type.TypeVar> solving = Set.copyOf(solvingList);
-        TypeAlgebra.ConstraintStore store = new TypeAlgebra.ConstraintStore(solving, true, checker.algebraEnv());
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
         Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern, checker.currentExpected(), solving);
 
         List<Type> paramPatterns = new ArrayList<>(arguments.size());
@@ -217,12 +217,12 @@ final class CallSolver {
                 }
                 Map<Type.TypeVar, Type> env = placeholderEnvWithHints(solving, store, retHints);
                 Type paramPattern = paramPatterns.get(i);
-                Type expectedArg = paramPattern != null ? checker.substitute(paramPattern, env) : null;
+                Type expectedArg = paramPattern != null ? checker.algebra().substitute(paramPattern, env) : null;
                 if (!needsDeferredLambdaTyping(argExprs.get(i), expectedArg)) {
                     Type actual = checker.check(argExprs.get(i), expectedArg);
                     argTypes[i] = actual;
                     if (paramPattern != null) {
-                        TypeAlgebra.relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, checker.algebraEnv());
+                        checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store);
                     }
                     progress = true;
                 }
@@ -233,11 +233,11 @@ final class CallSolver {
         for (int i = 0; i < arguments.size(); i++) {
             if (argTypes[i] == null) {
                 Type paramPattern = paramPatterns.get(i);
-                Type expectedArg = paramPattern != null ? checker.substitute(paramPattern, finalHintEnv) : null;
+                Type expectedArg = paramPattern != null ? checker.algebra().substitute(paramPattern, finalHintEnv) : null;
                 Type actual = checker.check(argExprs.get(i), expectedArg);
                 argTypes[i] = actual;
                 if (paramPattern != null) {
-                    TypeAlgebra.relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, checker.algebraEnv());
+                    checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store);
                 }
             }
         }
@@ -253,17 +253,17 @@ final class CallSolver {
         }
         List<Type.Parameter> substitutedParams = new ArrayList<>(parameters.size());
         for (Type.Parameter p : parameters) {
-            substitutedParams.add(p.withType(checker.substitute(p.type(), inferred)));
+            substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), inferred)));
         }
         bind(substitutedParams, declarations, arguments, ctx);
-        return checker.substitute(resultPattern, inferred);
+        return checker.algebra().substitute(resultPattern, inferred);
     }
 
     Type javaGenericSamCall(Class<?> java, BabbleParser.ExpressionContext argExpr, BabbleParser.CallContext ctx) {
         TypeVariable<?>[] typeParams = java.getTypeParameters();
         if (typeParams.length == 0) {
             Type expectedSam = new Type.JavaInstance(java);
-            if (TypeChecker.isFunction(checker.check(argExpr, expectedSam))) {
+            if (TypeAlgebra.isCallable(checker.check(argExpr, expectedSam))) {
                 return expectedSam;
             }
             return javaConstructorCall(java, ctx.callParameters().callParameter(), ctx, true);
@@ -276,17 +276,17 @@ final class CallSolver {
         Type.JavaInstance samPattern = new Type.JavaInstance(java, List.copyOf(solvingList));
         Type.Function samFn = JavaTypeBridge.samFunctionType(samPattern, checker.effectChecker());
         Map<Type.TypeVar, Type> retHints = collectReturnHints(samPattern, checker.currentExpected(), solving);
-        TypeAlgebra.ConstraintStore store = new TypeAlgebra.ConstraintStore(solving, true, checker.algebraEnv());
-        Type expectedForArg = checker.substitute(samPattern, placeholderEnvWithHints(solving, store, retHints));
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
+        Type expectedForArg = checker.algebra().substitute(samPattern, placeholderEnvWithHints(solving, store, retHints));
         Type actualArg = checker.check(argExpr, expectedForArg);
         if (TypeChecker.isUnresolved(actualArg)) {
             return Type.ERROR;
         }
-        if (!TypeChecker.isFunction(actualArg)) {
+        if (!TypeAlgebra.isCallable(actualArg)) {
             return javaConstructorCall(java, ctx.callParameters().callParameter(), ctx, true);
         }
         if (actualArg instanceof Type.Function actualFn && samFn != null) {
-            TypeAlgebra.relate(actualFn, samFn, TypeAlgebra.RelateMode.ASSIGNABLE, store, checker.algebraEnv());
+            checker.algebra().relate(actualFn, samFn, TypeAlgebra.RelateMode.ASSIGNABLE, store);
         }
         Map<Type.TypeVar, Type> inferred = coalesceAndApplyDoubleWidening(
                 solvingList, store, retHints, samFn != null ? List.of(samFn) : List.of(), List.of(argExpr));
@@ -302,7 +302,7 @@ final class CallSolver {
             env.put(typeParams[i], resolved);
         }
         for (int i = 0; i < typeParams.length; i++) {
-            if (!JavaTypeBridge.satisfiesJavaBounds(solvedArgs.get(i), typeParams[i], env, checker.algebraEnv())) {
+            if (!JavaTypeBridge.satisfiesJavaBounds(solvedArgs.get(i), typeParams[i], env, checker.algebra())) {
                 checker.warn("Type error : type argument " + solvedArgs.get(i) + " does not satisfy bound "
                         + typeParams[i].getName() + " of " + java.getCanonicalName(), argExpr);
                 return Type.ERROR;
@@ -354,7 +354,7 @@ final class CallSolver {
         List<Type.TypeVar> solvingList = List.copyOf(tvToSynthetic.values());
         Set<Type.TypeVar> solving = Set.copyOf(solvingList);
         Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(tvToSynthetic);
-        TypeAlgebra.ConstraintStore store = new TypeAlgebra.ConstraintStore(solving, true, checker.algebraEnv());
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
         java.lang.reflect.Type[] genericParams = winner.getGenericParameterTypes();
         List<Type> paramPatterns = new ArrayList<>(arguments.size());
         List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
@@ -362,7 +362,7 @@ final class CallSolver {
             Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
             paramPatterns.add(paramPat);
             argExprs.add(arguments.get(i).expression());
-            TypeAlgebra.relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store, checker.algebraEnv());
+            checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
         }
         Type.JavaInstance patternReturn = new Type.JavaInstance(java, List.copyOf(classSolving));
         Map<Type.TypeVar, Type> retHints = collectReturnHints(patternReturn, checker.currentExpected(), solving);
@@ -383,7 +383,7 @@ final class CallSolver {
         for (int i = 0; i < classParams.length; i++) {
             Type resolved = solvedEnv.get(classParams[i]);
             solvedClassArgs.add(resolved);
-            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, classParams[i], solvedEnv, checker.algebraEnv())) {
+            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, classParams[i], solvedEnv, checker.algebra())) {
                 checker.warn("Type error : type argument " + resolved + " does not satisfy bound " + classParams[i].getName()
                         + " of " + java.getCanonicalName(), ctx);
                 return Type.ERROR;
@@ -391,7 +391,7 @@ final class CallSolver {
         }
         for (TypeVariable<?> tp : winner.getTypeParameters()) {
             Type resolved = solvedEnv.get(tp);
-            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, tp, solvedEnv, checker.algebraEnv())) {
+            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, tp, solvedEnv, checker.algebra())) {
                 checker.warn("Type error : type argument " + resolved + " does not satisfy bound " + tp.getName()
                         + " of " + java.getCanonicalName(), ctx);
                 return Type.ERROR;
@@ -420,7 +420,7 @@ final class CallSolver {
         if (best == null) {
             Set<Class<?>> results = applicable.stream().map(Method::getReturnType).collect(Collectors.toSet());
             if (results.size() == 1 && applicable.stream().allMatch(m -> m.getTypeParameters().length == 0)) {
-                return JavaTypeBridge.javaResult(applicable.get(0).getGenericReturnType(), receiverEnv, checker.algebraEnv());
+                return JavaTypeBridge.javaResult(applicable.get(0).getGenericReturnType(), receiverEnv, checker.algebra());
             }
             return Type.ERROR;
         }
@@ -428,7 +428,7 @@ final class CallSolver {
         if (methodParams.length == 0) {
             checkJavaArgumentWidening(best, receiverEnv, arguments, argumentTypes);
             java.lang.reflect.Type genericRet = best.getGenericReturnType();
-            Type result = JavaTypeBridge.javaResult(genericRet, receiverEnv, checker.algebraEnv());
+            Type result = JavaTypeBridge.javaResult(genericRet, receiverEnv, checker.algebra());
             if (genericRet instanceof TypeVariable<?> || genericRet instanceof WildcardType) {
                 String desc = LoweringAnalyzer.descriptor(result);
                 if (desc != null) {
@@ -450,7 +450,7 @@ final class CallSolver {
         Set<Type.TypeVar> solving = Set.copyOf(solvingList);
         Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(receiverEnv);
         patternEnv.putAll(tvToSynthetic);
-        TypeAlgebra.ConstraintStore store = new TypeAlgebra.ConstraintStore(solving, true, checker.algebraEnv());
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
         java.lang.reflect.Type[] genericParams = best.getGenericParameterTypes();
         List<Type> paramPatterns = new ArrayList<>(arguments.size());
         List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
@@ -458,7 +458,7 @@ final class CallSolver {
             Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
             paramPatterns.add(paramPat);
             argExprs.add(arguments.get(i).expression());
-            TypeAlgebra.relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store, checker.algebraEnv());
+            checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
         }
         Type retPat = JavaTypeBridge.fromJavaType(best.getGenericReturnType(), patternEnv, false, false);
         Map<Type.TypeVar, Type> retHints = collectReturnHints(retPat, checker.currentExpected(), solving);
@@ -477,7 +477,7 @@ final class CallSolver {
         }
         for (TypeVariable<?> tp : methodParams) {
             Type resolved = solvedEnv.get(tp);
-            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, tp, solvedEnv, checker.algebraEnv())) {
+            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, tp, solvedEnv, checker.algebra())) {
                 checker.warn("Type error : type argument " + resolved + " does not satisfy bound " + tp.getName()
                         + " of " + description, ctx);
                 return Type.ERROR;
@@ -485,7 +485,7 @@ final class CallSolver {
         }
         checkJavaArgumentWidening(best, solvedEnv, arguments, argumentTypes);
         java.lang.reflect.Type genericRet = best.getGenericReturnType();
-        Type result = JavaTypeBridge.javaResult(genericRet, solvedEnv, checker.algebraEnv());
+        Type result = JavaTypeBridge.javaResult(genericRet, solvedEnv, checker.algebra());
         if (genericRet instanceof TypeVariable<?> || genericRet instanceof WildcardType) {
             String desc = LoweringAnalyzer.descriptor(result);
             if (desc != null) {
@@ -522,7 +522,7 @@ final class CallSolver {
             Type actual = checker.check(argument, expected);
             argTypes[i] = actual;
             final int index = i;
-            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, receiverEnv, checker.algebraEnv()));
+            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, receiverEnv, checker.algebra()));
         }
         for (int i = 0; i < arguments.size(); i++) {
             if (!deferred[i]) {
@@ -535,7 +535,7 @@ final class CallSolver {
             Type actual = checker.check(argument, expected);
             argTypes[i] = actual;
             final int index = i;
-            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, refinedEnv, checker.algebraEnv()));
+            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, refinedEnv, checker.algebra()));
         }
         outArgumentTypes.clear();
         for (Type t : argTypes) {
@@ -567,12 +567,12 @@ final class CallSolver {
         Set<Type.TypeVar> solving = Set.copyOf(tvToSyn.values());
         Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(receiverEnv);
         patternEnv.putAll(tvToSyn);
-        TypeAlgebra.ConstraintStore store = new TypeAlgebra.ConstraintStore(solving, true, checker.algebraEnv());
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
         java.lang.reflect.Type[] genericParams = cand.getGenericParameterTypes();
         for (int i = 0; i < argTypes.length; i++) {
             if (!deferred[i] && argTypes[i] != null) {
                 Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
-                TypeAlgebra.relate(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store, checker.algebraEnv());
+                checker.algebra().relate(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
             }
         }
         Type ctxExpected = checker.currentExpected();
@@ -694,7 +694,7 @@ final class CallSolver {
         for (int i = 0; i < arguments.size(); i++) {
             if (i < argumentTypes.size()) {
                 Type paramType = JavaTypeBridge.fromJavaType(genericParams[i], env, false, true);
-                if (TypeChecker.needsDoubleWidening(argumentTypes.get(i), paramType)) {
+                if (TypeAlgebra.needsDoubleWidening(argumentTypes.get(i), paramType)) {
                     checker.widened().add(arguments.get(i).expression());
                 }
             }
@@ -711,8 +711,8 @@ final class CallSolver {
         if (expBase == Type.NOTHING || expBase instanceof Type.Union) {
             return Map.of();
         }
-        TypeAlgebra.ConstraintStore retStore = new TypeAlgebra.ConstraintStore(solving, false, checker.algebraEnv());
-        TypeAlgebra.relate(resultPattern, expBase, TypeAlgebra.RelateMode.SUBTYPE, retStore, checker.algebraEnv());
+        TypeAlgebra.ConstraintStore retStore = checker.algebra().store(solving, false);
+        checker.algebra().relate(resultPattern, expBase, TypeAlgebra.RelateMode.SUBTYPE, retStore);
         Map<Type.TypeVar, Type> hints = new HashMap<>();
         for (Type.TypeVar tv : solving) {
             Type hint = retStore.lower(tv);
@@ -749,7 +749,7 @@ final class CallSolver {
             Type.TypeVar tv = entry.getKey();
             Type hint = entry.getValue();
             Type current = inferred.get(tv);
-            if (current != null && isIntOrDouble(current) && TypeChecker.needsDoubleWidening(current, hint)
+            if (current != null && isIntOrDouble(current) && TypeAlgebra.needsDoubleWidening(current, hint)
                     && canWidenTypeVarToDouble(tv, paramPatterns, argExprs)) {
                 inferred.put(tv, Type.containsNull(current) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE);
             }

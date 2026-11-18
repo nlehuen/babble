@@ -9,6 +9,12 @@ import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.Operators;
 
+import static org.babblelang.analysis.TypeAlgebra.canBeNull;
+import static org.babblelang.analysis.TypeAlgebra.containsFunction;
+import static org.babblelang.analysis.TypeAlgebra.containsType;
+import static org.babblelang.analysis.TypeAlgebra.isCallable;
+import static org.babblelang.analysis.TypeAlgebra.needsDoubleWidening;
+
 import java.lang.reflect.Executable;
 import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Method;
@@ -145,7 +151,7 @@ final class TypeChecker {
                 if (folded == null) {
                     folded = e.getValue();
                 } else {
-                    Type joined = reassignmentJoin(folded, e.getValue());
+                    Type joined = algebra.reassignmentJoin(folded, e.getValue());
                     if (joined == null) {
                         continue;
                     }
@@ -214,30 +220,15 @@ final class TypeChecker {
     private boolean checkingEffects;
     private BabbleParser.FileContext file;
     private TypedModuleSummary builtSummary;
-    private final TypeAlgebra.Env algebraEnv = new TypeAlgebra.Env() {
+    private final TypeAlgebra algebra = new TypeAlgebra(new TypeAlgebra.Env() {
         @Override
-        public Type projectToBabble(Type.Instance source, TypeNode targetNode) {
-            return TypeChecker.this.projectToBabble(source, targetNode);
+        public List<Type.TypeVar> typeParameters(TypeNode node) {
+            return typeVarsOf(node);
         }
 
         @Override
-        public Type projectToJava(Type source, Class<?> targetClass) {
-            return TypeChecker.this.projectToJava(source, targetClass);
-        }
-
-        @Override
-        public boolean isSubtype(TypeNode sub, TypeNode sup) {
-            return TypeChecker.isSubtype(sub, sup);
-        }
-
-        @Override
-        public boolean implementsJava(TypeNode node, Class<?> iface) {
-            return TypeChecker.implementsJava(node, iface);
-        }
-
-        @Override
-        public Class<?> javaClassOf(Type type) {
-            return JavaTypeBridge.javaClassOf(type);
+        public Type parentType(TypeNode node, int index) {
+            return parentAnnotation(node, index);
         }
 
         @Override
@@ -246,42 +237,30 @@ final class TypeChecker {
         }
 
         @Override
-        public boolean isFunctionalInterface(Class<?> java) {
-            return JavaTypes.isFunctionalInterface(java);
-        }
-
-        @Override
-        public Method functionalMethod(Class<?> java) {
-            return JavaTypes.functionalMethod(java);
-        }
-
-        @Override
-        public boolean isCallable(Type type) {
-            return TypeChecker.isFunction(type);
-        }
-
-        @Override
         public boolean checkingEffects() {
             return checkingEffects;
         }
 
         @Override
-        public boolean nonFunctionCallableAssignable(Type from, Type.Function target) {
-            return TypeChecker.this.nonFunctionCallableAssignable(from, target);
+        public boolean callableSatisfies(Type from, Type.Function target) {
+            return effectChecker == null || effectChecker.callableSatisfies(from, target);
         }
 
         @Override
-        public boolean functionAssignableWithoutEffects(Type.Function from, Type.Function to) {
-            return TypeChecker.this.functionAssignableWithoutEffects(from, to);
+        public void derived(Type.Function from, Type.Function to) {
+            BabbleParser.FunctionLiteralContext literal = functionLiterals.get(from);
+            if (literal != null) {
+                functionLiterals.put(to, literal);
+            }
         }
-    };
+    });
 
     TypeChecker(BlockScopes pass) {
         this.pass = pass;
     }
 
-    TypeAlgebra.Env algebraEnv() {
-        return algebraEnv;
+    TypeAlgebra algebra() {
+        return algebra;
     }
 
     EffectChecker effectChecker() {
@@ -939,13 +918,13 @@ final class TypeChecker {
         if (!seen.add(iface)) {
             return;
         }
-        Type projectedIface = projectToBabble(selfInst, iface);
-        Map<Type.TypeVar, Type> ifaceEnv = projectedIface instanceof Type.Instance proj ? instanceEnv(proj) : Map.of();
+        Type projectedIface = algebra.projectToBabble(selfInst, iface);
+        Map<Type.TypeVar, Type> ifaceEnv = projectedIface instanceof Type.Instance proj ? algebra.instanceEnv(proj) : Map.of();
         for (TypeNode.Member req : iface.members.values()) {
             if (req.declaration != null && !req.hasFunction && declaredType(req.declaration) == null) {
                 continue;
             }
-            Type required = substitute(memberType(iface, req), ifaceEnv);
+            Type required = algebra.substitute(memberType(iface, req), ifaceEnv);
             if (isUnresolved(required)) {
                 continue;
             }
@@ -955,7 +934,7 @@ final class TypeChecker {
                     continue;
                 }
                 Type actual = memberType(type, impl);
-                if (!isUnresolved(actual) && !assignable(actual, required, false)) {
+                if (!isUnresolved(actual) && !algebra.subtype(actual, required)) {
                     reportTypeMismatch(actual, required, impl.declaration);
                 }
             } else {
@@ -964,10 +943,10 @@ final class TypeChecker {
                         && (!type.isInterface() || owner != iface)) {
                     TypeNode.Member defaultMember = owner.members.get(req.name);
                     if (defaultMember != null) {
-                        Type projectedOwner = projectToBabble(selfInst, owner);
-                        Map<Type.TypeVar, Type> ownerEnv = projectedOwner instanceof Type.Instance proj ? instanceEnv(proj) : Map.of();
-                        Type actual = substitute(memberType(owner, defaultMember), ownerEnv);
-                        if (!isUnresolved(actual) && !assignable(actual, required, false)) {
+                        Type projectedOwner = algebra.projectToBabble(selfInst, owner);
+                        Map<Type.TypeVar, Type> ownerEnv = projectedOwner instanceof Type.Instance proj ? algebra.instanceEnv(proj) : Map.of();
+                        Type actual = algebra.substitute(memberType(owner, defaultMember), ownerEnv);
+                        if (!isUnresolved(actual) && !algebra.subtype(actual, required)) {
                             reportTypeMismatch(actual, required, type.ctx);
                         }
                     }
@@ -1504,7 +1483,7 @@ final class TypeChecker {
             warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
             return Type.ERROR;
         }
-        int badArg = JavaTypeBridge.checkJavaTypeArguments(java, args, algebraEnv);
+        int badArg = JavaTypeBridge.checkJavaTypeArguments(java, args, algebra);
         if (badArg >= 0) {
             warn("Type error : type argument " + args.get(badArg) + " does not satisfy bound "
                     + java.getTypeParameters()[badArg].getName() + " of " + java.getName(),
@@ -2018,7 +1997,7 @@ final class TypeChecker {
         for (BabbleParser.ReturnExpressionContext ret : returns) {
             Type retType = ret.expression() != null ? check(ret.expression(), expectedReturn) : Type.NULL;
             returnTypes.add(retType);
-            Type next = join(result, retType);
+            Type next = algebra.join(result, retType);
             if (next == null) {
                 if (!isUnresolved(result) && !isUnresolved(retType)) {
                     warn("Type error : incompatible return types : " + result + " and " + retType, ret);
@@ -2112,7 +2091,7 @@ final class TypeChecker {
     }
 
     void subsumes(ParserRuleContext errorSite, ParserRuleContext widenSite, Type actual, Type expected) {
-        if (actual != Type.ERROR && expected != Type.ERROR && !assignable(actual, expected)) {
+        if (actual != Type.ERROR && expected != Type.ERROR && !algebra.assignable(actual, expected)) {
             reportTypeMismatch(actual, expected, errorSite);
         }
         if (widenSite != null && needsDoubleWidening(actual, expected)) {
@@ -2122,7 +2101,7 @@ final class TypeChecker {
 
     private void reportTypeMismatch(Type actual, Type expected, ParserRuleContext at) {
         if (actual instanceof Type.Function aFn && expected instanceof Type.Function eFn
-                && functionAssignableWithoutEffects(aFn, eFn)) {
+                && algebra.assignableIgnoringEffects(aFn, eFn)) {
             warn("Type error : expected " + eFn.describeAgainst(eFn) + ", got " + aFn.describeAgainst(eFn), at);
         } else {
             warn("Type error : expected " + expected + ", got " + actual, at);
@@ -2165,7 +2144,7 @@ final class TypeChecker {
     }
 
     private Type preferMoreSpecific(Type a, Type b) {
-        return isRuntimeSubtype(a, b) && !isRuntimeSubtype(b, a) ? a : b;
+        return algebra.runtimeSubtype(a, b) && !algebra.runtimeSubtype(b, a) ? a : b;
     }
 
     private TypeEnv.Refinement extractRefinement(BabbleParser.ExpressionContext expr) {
@@ -2215,11 +2194,11 @@ final class TypeChecker {
             }
             Type current = synth(isCtx.left);
             if (target == null || target == Type.ERROR
-                    || (!isUnresolved(current) && isRuntimeSubtype(current, target))) {
+                    || (!isUnresolved(current) && algebra.runtimeSubtype(current, target))) {
                 return TypeEnv.Refinement.EMPTY;
             }
-            Type narrowedTrue = !isUnresolved(current) ? narrowTarget(current, target) : target;
-            Type subtracted = !isUnresolved(current) ? subtractType(current, target) : Type.NOTHING;
+            Type narrowedTrue = !isUnresolved(current) ? algebra.narrowTarget(current, target) : target;
+            Type subtracted = !isUnresolved(current) ? algebra.subtractType(current, target) : Type.NOTHING;
             Map<ParserRuleContext, Type> whenFalse = (subtracted != Type.NOTHING && !subtracted.equals(current))
                     ? Map.of(decl, subtracted) : Map.of();
             return new TypeEnv.Refinement(Map.of(decl, narrowedTrue), whenFalse);
@@ -2377,7 +2356,7 @@ final class TypeChecker {
             nextInferredParams.put(decl, valueType);
             return;
         }
-        Type joined = reassignmentJoin(current, valueType);
+        Type joined = algebra.reassignmentJoin(current, valueType);
         if (joined == null) {
             warn("Type error : expected " + current + ", got " + valueType, at);
             return;
@@ -2470,7 +2449,7 @@ final class TypeChecker {
             map.put(decl, valueType);
             return;
         }
-        Type joined = reassignmentJoin(current, valueType);
+        Type joined = algebra.reassignmentJoin(current, valueType);
         if (joined == null) {
             warn("Type error : expected " + current + ", got " + valueType, at);
             return;
@@ -2538,12 +2517,12 @@ final class TypeChecker {
                 subsumes(ctx.thenBlock, thenType, expected);
                 if (otherwise != null) {
                     subsumes(otherwise, elseType, expected);
-                } else if (!assignable(Type.NULL, expected)) {
+                } else if (!algebra.assignable(Type.NULL, expected)) {
                     warn("Type error : expected " + expected + ", got null", ctx);
                 }
                 return expected;
             }
-            Type joined = join(thenType, elseType);
+            Type joined = algebra.join(thenType, elseType);
             if (joined == null) {
                 if (!used) {
                     return Type.NULL;
@@ -2610,12 +2589,12 @@ final class TypeChecker {
             boolean used = role.isUsed();
             if (expected != null && expected != Type.ERROR && used) {
                 subsumes(ctx.whileBlock, bodyType, expected);
-                if (!assignable(Type.NULL, expected)) {
+                if (!algebra.assignable(Type.NULL, expected)) {
                     warn("Type error : expected " + expected + ", got null", ctx);
                 }
                 return expected;
             }
-            Type joined = join(bodyType, Type.NULL);
+            Type joined = algebra.join(bodyType, Type.NULL);
             if (joined == null) {
                 if (!used) {
                     return Type.NULL;
@@ -2703,15 +2682,15 @@ final class TypeChecker {
                         TypeNode.Member defaultMember = parentNode.members.get(provider.name());
                         Type fnType = defaultMember != null ? memberType(parentNode, defaultMember) : Type.ERROR;
                         if (selfType instanceof Type.Instance selfInst) {
-                            Type projected = projectToBabble(selfInst, parentNode);
+                            Type projected = algebra.projectToBabble(selfInst, parentNode);
                             if (projected instanceof Type.Instance projInst) {
-                                return substitute(fnType, instanceEnv(projInst));
+                                return algebra.substitute(fnType, algebra.instanceEnv(projInst));
                             }
                         }
                         return fnType;
                     }
                     if (provider.owner() instanceof Class<?> javaInterface) {
-                        Type projected = projectToJava(selfType, javaInterface);
+                        Type projected = algebra.projectToJava(selfType, javaInterface);
                         List<Type> typeArgs = projected instanceof Type.JavaInstance ji ? ji.typeArguments() : List.of();
                         return new Type.JavaMethod(javaInterface, typeArgs, provider.name());
                     }
@@ -2904,9 +2883,9 @@ final class TypeChecker {
                 warn("Cannot cast to a function type", ctx.right);
                 return target;
             }
-            if (!canCast(source, target)) {
+            if (!algebra.canCast(source, target)) {
                 warn("Type error : expected " + target + ", got " + source, ctx.left);
-            } else if (alwaysIs(source, target)) {
+            } else if (algebra.alwaysIs(source, target)) {
                 analysisWarn("Redundant cast : " + target, ctx);
             }
             pass.analysis.setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
@@ -2969,8 +2948,8 @@ final class TypeChecker {
             Type receiver = synth(ctx.namespace, Role.SELECTOR_RECEIVER);
             java.lang.reflect.Field field = assignedJavaField(receiver, name, ctx);
             if (field != null) {
-                Type declared = JavaTypeBridge.javaFieldType(receiver, field, false, algebraEnv);
-                Type current = readCurrent ? JavaTypeBridge.javaFieldType(receiver, field, true, algebraEnv) : declared;
+                Type declared = JavaTypeBridge.javaFieldType(receiver, field, false, algebra);
+                Type current = readCurrent ? JavaTypeBridge.javaFieldType(receiver, field, true, algebra) : declared;
                 return new LValue.JavaField(field, declared, current);
             }
             boolean own = ctx.namespace instanceof BabbleParser.ThisExpressionContext;
@@ -2987,7 +2966,7 @@ final class TypeChecker {
                     TypeNode ownerNode = receiver instanceof Type.Instance inst ? inst.node()
                             : (receiver instanceof Type.ClassValue cv ? cv.node() : null);
                     current = receiver instanceof Type.Instance inst
-                            ? substitute(memberType(ownerNode, member), instanceEnv(inst))
+                            ? algebra.substitute(memberType(ownerNode, member), algebra.instanceEnv(inst))
                             : memberType(ownerNode, member);
                 }
             }
@@ -3003,7 +2982,7 @@ final class TypeChecker {
             switch (target) {
                 case LValue.JavaField jf -> {
                     java.lang.reflect.Field field = jf.field();
-                    if (isFunction(value) && JavaTypes.isFunctionalInterface(field.getType())) {
+                    if (isCallable(value) && JavaTypes.isFunctionalInterface(field.getType())) {
                         warn("Cannot assign a function to " + field.getDeclaringClass().getCanonicalName() + "." + ctx.name.getText()
                                 + " : convert it first, as " + field.getType().getSimpleName() + "(f)", errorSite);
                     } else {
@@ -3196,7 +3175,7 @@ final class TypeChecker {
                     warn(name + " is private", at);
                     return Type.ERROR;
                 }
-                return substitute(memberType(resolved.owner(), resolved.member()), resolved.env());
+                return algebra.substitute(memberType(resolved.owner(), resolved.member()), resolved.env());
             }
             Type inherited = inheritedMember(instance, name);
             if (inherited != null) {
@@ -3312,23 +3291,23 @@ final class TypeChecker {
         }
         if (!isLocal(member.declaration) || (!inFile(member.declaration) && pass.session != null)) {
             Type closed = memberType(ownerNode, member);
-            return closed == Type.ERROR ? null : substitute(closed, env);
+            return closed == Type.ERROR ? null : algebra.substitute(closed, env);
         }
         if (member.declaration instanceof BabbleParser.ParameterDeclarationContext) {
             Type type = typeOfDeclaration(member.declaration);
-            return type == Type.ERROR ? null : substitute(type, env);
+            return type == Type.ERROR ? null : algebra.substitute(type, env);
         }
         if (member.hasFunction) {
-            return substitute(memberType(ownerNode, member), env);
+            return algebra.substitute(memberType(ownerNode, member), env);
         }
         Type declared = declaredType(member.declaration);
         if (declared != null) {
-            return substitute(declared, env);
+            return algebra.substitute(declared, env);
         }
         if (receiverInstance != null && !receiverInstance.node().typeParameters.isEmpty() && !own) {
             Type closed = memberType(ownerNode, member);
             if (closed != Type.ERROR && containsTypeVar(closed)) {
-                return substitute(closed, env);
+                return algebra.substitute(closed, env);
             }
         }
         return null;
@@ -3363,13 +3342,13 @@ final class TypeChecker {
 
     private ResolvedMember findMember(Type.Instance instance, String name) {
         TypeNode node = instance.node();
-        Map<Type.TypeVar, Type> env = instanceEnv(instance);
+        Map<Type.TypeVar, Type> env = algebra.instanceEnv(instance);
         TypeNode.Member member = node.members.get(name);
         if (member != null || !node.isInterface()) {
             return member != null ? new ResolvedMember(node, member, env) : null;
         }
         for (int i = 0; i < node.parents.size(); i++) {
-            Type parent = substitute(parentAnnotation(node, i), env);
+            Type parent = algebra.substitute(parentAnnotation(node, i), env);
             if (parent instanceof Type.Instance parentInst) {
                 ResolvedMember found = findMember(parentInst, name);
                 if (found != null) {
@@ -3386,13 +3365,13 @@ final class TypeChecker {
      */
     private Type inheritedMember(Type.Instance instance, String name) {
         TypeNode node = instance.node();
-        Map<Type.TypeVar, Type> env = instanceEnv(instance);
+        Map<Type.TypeVar, Type> env = algebra.instanceEnv(instance);
         for (int i = 0; i < node.parents.size(); i++) {
-            Type parent = substitute(parentAnnotation(node, i), env);
+            Type parent = algebra.substitute(parentAnnotation(node, i), env);
             if (parent instanceof Type.Instance parentInst) {
                 TypeNode.Member member = parentInst.node().members.get(name);
                 if (member != null && (member.hasFunction || node.isInterface())) {
-                    return substitute(memberType(parentInst.node(), member), instanceEnv(parentInst));
+                    return algebra.substitute(memberType(parentInst.node(), member), algebra.instanceEnv(parentInst));
                 }
                 Type inherited = inheritedMember(parentInst, name);
                 if (inherited != null) {
@@ -3544,7 +3523,7 @@ final class TypeChecker {
             }
             Map<TypeVariable<?>, Type> env = onClass ? Map.of() : JavaTypeBridge.javaTypeEnv(java, typeArgs);
             java.lang.reflect.Type genericType = field.getGenericType();
-            Type result = JavaTypeBridge.javaResult(genericType, env, algebraEnv);
+            Type result = JavaTypeBridge.javaResult(genericType, env, algebra);
             if (genericType instanceof TypeVariable<?> || genericType instanceof WildcardType) {
                 String desc = LoweringAnalyzer.descriptor(result);
                 if (desc != null) {
@@ -3639,7 +3618,7 @@ final class TypeChecker {
                 return Type.ERROR;
             }
             for (Type member : union.members()) {
-                if (!isFunction(member)) {
+                if (!isCallable(member)) {
                     warn(ctx.expression().getText() + " is not callable", ctx);
                     return Type.ERROR;
                 }
@@ -4043,15 +4022,6 @@ final class TypeChecker {
         return Type.ERROR;
     }
 
-    static boolean isFunction(Type type) {
-        if (type instanceof Type.Union union) {
-            return union.members().stream().allMatch(TypeChecker::isFunction);
-        }
-        return type instanceof Type.Function || type instanceof Type.JavaMethod
-                || type instanceof Type.ClassValue value && !value.node().isInterface()
-                || type == Type.PRINT;
-    }
-
     // ---------------------------------------------------------------- operators
 
     private Type binaryOp(BabbleParser.BinaryOpContext ctx, Type left, Type right) {
@@ -4255,336 +4225,7 @@ final class TypeChecker {
 
     // ---------------------------------------------------------------- generics & substitution
 
-    private Map<Type.TypeVar, Type> instanceEnv(Type.Instance instance) {
-        List<Type.TypeVar> params = typeVarsOf(instance.node());
-        List<Type> args = instance.typeArguments();
-        if (params.isEmpty() || args.isEmpty()) {
-            return Map.of();
-        }
-        Map<Type.TypeVar, Type> env = new HashMap<>(params.size());
-        for (int i = 0; i < Math.min(params.size(), args.size()); i++) {
-            env.put(params.get(i), args.get(i));
-        }
-        return env;
-    }
-
-    Type substitute(Type type, Map<Type.TypeVar, Type> env) {
-        if (type == null || env.isEmpty()) {
-            return type;
-        }
-        return type.mapTypes(t -> {
-            if (t instanceof Type.TypeVar tv) {
-                return env.getOrDefault(tv, tv);
-            }
-            if (t instanceof Type.Function fn) {
-                Map<Type.TypeVar, Type> active = env;
-                if (!fn.typeParameters().isEmpty()) {
-                    active = new HashMap<>(env);
-                    fn.typeParameters().forEach(active::remove);
-                    if (active.isEmpty()) {
-                        return fn;
-                    }
-                }
-                Map<Type.TypeVar, Type> finalActive = active;
-                List<Type.Parameter> params = new ArrayList<>(fn.parameters().size());
-                for (Type.Parameter p : fn.parameters()) {
-                    params.add(p.withType(substitute(p.type(), finalActive)));
-                }
-                Type.Function substituted = new Type.Function(fn.typeParameters(), params, substitute(fn.result(), finalActive), fn.effects());
-                BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
-                if (lit != null) {
-                    functionLiterals.put(substituted, lit);
-                }
-                return substituted;
-            }
-            return null;
-        });
-    }
-
-    private Type projectToBabble(Type.Instance source, TypeNode targetNode) {
-        if (source.node() == targetNode) {
-            return source;
-        }
-        Map<Type.TypeVar, Type> env = instanceEnv(source);
-        for (int i = 0; i < source.node().parents.size(); i++) {
-            Type parent = substitute(parentAnnotation(source.node(), i), env);
-            if (parent instanceof Type.Instance parentInst) {
-                Type projected = projectToBabble(parentInst, targetNode);
-                if (projected != null) {
-                    return projected;
-                }
-            }
-        }
-        return null;
-    }
-
-    private Type projectToJava(Type source, Class<?> targetClass) {
-        if (targetClass == Object.class) {
-            return Type.ANY;
-        }
-        if (source instanceof Type.JavaInstance ji) {
-            if (ji.type() == targetClass) {
-                return ji;
-            }
-            if (!targetClass.isAssignableFrom(ji.type())) {
-                return null;
-            }
-            TypeVariable<?>[] targetParams = targetClass.getTypeParameters();
-            if (targetParams.length == 0) {
-                return JavaTypeBridge.fromJava(targetClass);
-            }
-            Map<TypeVariable<?>, Type> env = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
-            List<Type> args = new ArrayList<>(targetParams.length);
-            for (TypeVariable<?> tp : targetParams) {
-                args.add(env.getOrDefault(tp, Type.NULLABLE_ANY));
-            }
-            return new Type.JavaInstance(targetClass, args);
-        }
-        if (source instanceof Type.Instance inst) {
-            Map<Type.TypeVar, Type> env = instanceEnv(inst);
-            for (int i = 0; i < inst.node().parents.size(); i++) {
-                Type parent = substitute(parentAnnotation(inst.node(), i), env);
-                Type projected = projectToJava(parent, targetClass);
-                if (projected != null) {
-                    return projected;
-                }
-            }
-            return null;
-        }
-        if (source instanceof Type.Simple simple && simple.javaClass() != null) {
-            return projectToJava(new Type.JavaInstance(simple.javaClass()), targetClass);
-        }
-        if (source instanceof Type.JavaArray array) {
-            return targetClass.isAssignableFrom(array.javaClass()) ? JavaTypeBridge.fromJava(targetClass) : null;
-        }
-        return null;
-    }
-
     // ---------------------------------------------------------------- assignability
-
-    /** Covariant assignability inside parameterized containers (forbids implicit int -> double widening). */
-    private boolean covariantAssignable(Type from, Type to) {
-        return TypeAlgebra.relate(from, to, TypeAlgebra.RelateMode.SUBTYPE, null, algebraEnv);
-    }
-
-    /** Whether a value of type {@code from} can be used where {@code to} is declared. */
-    boolean assignable(Type from, Type to) {
-        return TypeAlgebra.relate(from, to, TypeAlgebra.RelateMode.ASSIGNABLE, null, algebraEnv);
-    }
-
-    private boolean assignable(Type from, Type to, boolean allowWidening) {
-        return TypeAlgebra.relate(from, to,
-                allowWidening ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE,
-                null, algebraEnv);
-    }
-
-    /** Whether {@code from as to} can succeed at runtime (static impossibility check for {@code as}). */
-    private boolean canCast(Type from, Type to) {
-        return TypeAlgebra.canCast(from, to, algebraEnv);
-    }
-
-    /** Whether {@code from as to} always holds with no conversion (redundant cast warning). */
-    private boolean alwaysIs(Type from, Type to) {
-        return from != Type.ERROR && to != Type.ERROR && from != Type.NOTHING && from != Type.NULL
-                && !needsDoubleWidening(from, to)
-                && assignable(from, to);
-    }
-
-    private boolean isRuntimeSubtype(Type from, Type to) {
-        return TypeAlgebra.relate(from, to, TypeAlgebra.RelateMode.RUNTIME_EXACT, null, algebraEnv);
-    }
-
-    private boolean canMatchAtRuntime(Type a, Type b) {
-        return TypeAlgebra.overlapsErased(a, b, algebraEnv);
-    }
-
-    private Type narrowTarget(Type current, Type target) {
-        return TypeAlgebra.narrowTarget(current, target, algebraEnv);
-    }
-
-    private Type subtractType(Type current, Type target) {
-        return TypeAlgebra.subtractType(current, target, algebraEnv);
-    }
-
-    static boolean needsDoubleWidening(Type from, Type to) {
-        return from != Type.ERROR && to != Type.ERROR
-                && containsType(from, Type.INT)
-                && containsType(to, Type.DOUBLE)
-                && !containsType(to, Type.INT);
-    }
-
-    static boolean containsType(Type type, Type target) {
-        return type.equals(target) || (type instanceof Type.Union union && union.members().contains(target));
-    }
-
-    private static boolean canBeNull(Type type) {
-        if (type == Type.NULL || type instanceof Type.TypeVar) {
-            return true;
-        }
-        return type instanceof Type.Union union && union.members().stream().anyMatch(TypeChecker::canBeNull);
-    }
-
-    private static boolean containsFunction(Type type) {
-        if (type instanceof Type.Function) {
-            return true;
-        }
-        return type instanceof Type.Union union && union.members().stream().anyMatch(TypeChecker::containsFunction);
-    }
-
-    private static boolean isIntOrDouble(Type type) {
-        return Type.membersOf(type).stream().allMatch(m -> m == Type.INT || m == Type.DOUBLE || m == Type.NULL);
-    }
-
-    /**
-     * A function can stand for another when it accepts the other's arguments by position,
-     * at types at least as wide, needs no more of them, and returns a narrower result.
-     * Parameter names aren't compared : a callback is normally called by position.
-     */
-    private boolean functionAssignable(Type.Function from, Type.Function to) {
-        if (!functionAssignableWithoutEffects(from, to)) {
-            return false;
-        }
-        if (!checkingEffects) {
-            return true;
-        }
-        if (!from.effects().satisfies(to.effects())) {
-            return false;
-        }
-        for (int i = 0; i < to.parameters().size(); i++) {
-            Type.Parameter fromParam = from.parameters().get(i);
-            Type.Parameter toParam = to.parameters().get(i);
-            if (fromParam.mut() && !toParam.mut()) {
-                return false;
-            }
-            if (toParam.borrow() && !fromParam.borrow()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean functionAssignableWithoutEffects(Type.Function from, Type.Function to) {
-        if (!from.typeParameters().isEmpty() || !to.typeParameters().isEmpty()) {
-            return false;
-        }
-        if (from.parameters().size() < to.parameters().size()) {
-            return false;
-        }
-        for (int i = 0; i < from.parameters().size(); i++) {
-            Type.Parameter parameter = from.parameters().get(i);
-            if (i < to.parameters().size()) {
-                if (!assignable(to.parameters().get(i).type(), parameter.type(), true)) {
-                    return false;
-                }
-            } else if (!parameter.optional()) {
-                return false;
-            }
-        }
-        return assignable(from.result(), to.result(), false);
-    }
-
-    private boolean nonFunctionCallableAssignable(Type from, Type.Function target) {
-        if (!isFunction(from)) {
-            return false;
-        }
-        if (!checkingEffects || effectChecker == null) {
-            return true;
-        }
-        if (from == Type.PRINT) {
-            if (!EffectSet.EMPTY.satisfies(target.effects())) {
-                return false;
-            }
-            for (Type.Parameter p : target.parameters()) {
-                if (p.borrow()) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if (from instanceof Type.JavaMethod jm) {
-            Method exact = uniqueArityMethod(jm.owner(), jm.name(), target.parameters().size());
-            EffectChecker.JavaCallProfile profile = effectChecker.resolveJavaMethodProfile(jm.owner(), jm.name(), exact);
-            if (!profile.effects().satisfies(target.effects())) {
-                return false;
-            }
-            for (int i = 0; i < target.parameters().size(); i++) {
-                Type.Parameter tp = target.parameters().get(i);
-                boolean mut = i < profile.mutParams().length && profile.mutParams()[i];
-                boolean borrow = i < profile.borrowParams().length ? profile.borrowParams()[i] : profile.borrowReceiver();
-                if (mut && !tp.mut()) {
-                    return false;
-                }
-                if (tp.borrow() && !borrow) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if (from instanceof Type.ClassValue cv && !cv.node().isInterface()) {
-            EffectChecker.CallableSummary cs = effectChecker.constructorSummary(cv.node());
-            EffectSet effs = cs != null ? cs.effects() : EffectSet.EMPTY;
-            if (!effs.satisfies(target.effects())) {
-                return false;
-            }
-            for (int i = 0; i < target.parameters().size(); i++) {
-                Type.Parameter tp = target.parameters().get(i);
-                boolean mut = cs != null && i < cs.mutParams().length && cs.mutParams()[i];
-                boolean borrow = cs != null && i < cs.borrowParams().length && cs.borrowParams()[i];
-                if (mut && !tp.mut()) {
-                    return false;
-                }
-                if (tp.borrow() && !borrow) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        return true;
-    }
-
-    private static Method uniqueArityMethod(Class<?> owner, String name, int arity) {
-        Method found = null;
-        for (Method m : owner.getMethods()) {
-            if (m.getName().equals(name) && m.getParameterCount() == arity) {
-                if (found != null) {
-                    return null;
-                }
-                found = m;
-            }
-        }
-        return found;
-    }
-
-    private static boolean isSubtype(TypeNode node, TypeNode target) {
-        if (node == target) {
-            return true;
-        }
-        for (Object parent : node.parents) {
-            if (parent instanceof TypeNode parentNode && isSubtype(parentNode, target)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean implementsJava(TypeNode node, Class<?> java) {
-        for (Object parent : node.parents) {
-            if (parent instanceof TypeNode parentNode ? implementsJava(parentNode, java) : java.isAssignableFrom((Class<?>) parent)) {
-                return true;
-            }
-        }
-        return java == Object.class;
-    }
-
-    /** The type of a value that is one of two : {@code if} branches, a loop or null ; null when an error prevents joining. */
-    private Type join(Type a, Type b) {
-        return TypeAlgebra.join(a, b, TypeAlgebra.JoinPolicy.EXPRESSION, algebraEnv);
-    }
-
-    /** Widening allowed across reassignments of an unannotated def or member ({@code int -> double} and {@code T <-> null}). */
-    private Type reassignmentJoin(Type current, Type value) {
-        return TypeAlgebra.join(current, value, TypeAlgebra.JoinPolicy.REASSIGNMENT, algebraEnv);
-    }
 
     // ---------------------------------------------------------------- EffectChecker bridge
 
@@ -5000,11 +4641,7 @@ final class TypeChecker {
     }
 
     Type instanceMemberTypeForEffects(Type.Instance inst, TypeNode.Member member) {
-        return substitute(memberType(inst.node(), member), instanceEnv(inst));
-    }
-
-    boolean assignableNoWidening(Type from, Type to) {
-        return assignable(from, to, false);
+        return algebra.substitute(memberType(inst.node(), member), algebra.instanceEnv(inst));
     }
 
     boolean isBuiltinFunction(Type.Function fn) {

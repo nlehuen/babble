@@ -215,10 +215,10 @@ final class LoweringAnalyzer {
             Type type = parameter.type() != null
                     ? checker.annotation(parameter.type(), checker.scopeOf(parameter))
                     : declarationTypes.get(parameter);
-            if (type != null && TypeChecker.containsType(type, Type.DOUBLE) && !TypeChecker.containsType(type, Type.INT)) {
+            if (type != null && TypeAlgebra.containsType(type, Type.DOUBLE) && !TypeAlgebra.containsType(type, Type.INT)) {
                 widened.add(parameter);
             }
-            if (parameter.type() != null || (type != null && TypeChecker.containsType(type, Type.DOUBLE) && !TypeChecker.containsType(type, Type.INT))) {
+            if (parameter.type() != null || (type != null && TypeAlgebra.containsType(type, Type.DOUBLE) && !TypeAlgebra.containsType(type, Type.INT))) {
                 String descriptor = descriptor(type);
                 pass.analysis.setCheckedType(parameter, descriptor);
                 if (parameter.getParent().getParent() instanceof BabbleParser.ClassExpressionContext cls
@@ -239,7 +239,7 @@ final class LoweringAnalyzer {
             } else {
                 Type inferred = (kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC)
                         ? inferredMembers.get(def) : inferredDefs.get(def);
-                if (inferred != null && TypeChecker.containsType(inferred, Type.DOUBLE) && !TypeChecker.containsType(inferred, Type.INT)) {
+                if (inferred != null && TypeAlgebra.containsType(inferred, Type.DOUBLE) && !TypeAlgebra.containsType(inferred, Type.INT)) {
                     descriptor = descriptor(inferred);
                 }
             }
@@ -258,7 +258,7 @@ final class LoweringAnalyzer {
                 pass.analysis.setCheckedType(assign, descriptor(declared));
             } else {
                 Type inferred = checker.typeOfDeclaration(declaration);
-                if (inferred != null && TypeChecker.containsType(inferred, Type.DOUBLE) && !TypeChecker.containsType(inferred, Type.INT)) {
+                if (inferred != null && TypeAlgebra.containsType(inferred, Type.DOUBLE) && !TypeAlgebra.containsType(inferred, Type.INT)) {
                     pass.analysis.setCheckedType(assign, descriptor(inferred));
                 }
             }

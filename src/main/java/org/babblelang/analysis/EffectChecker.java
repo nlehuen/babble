@@ -523,6 +523,51 @@ final class EffectChecker {
         return visibleSummaries.get(fn);
     }
 
+    /**
+     * Whether a callable that is not a Babble function — print, a Java method, or a class
+     * constructor — satisfies the effects of {@code target} : its effects, and per parameter no
+     * mutation the target doesn't allow and no retention of a parameter the target only borrows.
+     */
+    boolean callableSatisfies(Type from, Type.Function target) {
+        EffectSet effects;
+        boolean[] mutParams;
+        boolean[] borrowParams;
+        boolean borrowRest;
+        if (from == Type.PRINT) {
+            effects = EffectSet.EMPTY;
+            mutParams = new boolean[0];
+            borrowParams = new boolean[0];
+            borrowRest = false;
+        } else if (from instanceof Type.JavaMethod jm) {
+            Method exact = JavaTypeBridge.uniqueArityMethod(jm.owner(), jm.name(), target.parameters().size());
+            JavaCallProfile profile = resolveJavaMethodProfile(jm.owner(), jm.name(), exact);
+            effects = profile.effects();
+            mutParams = profile.mutParams();
+            borrowParams = profile.borrowParams();
+            borrowRest = profile.borrowReceiver();
+        } else if (from instanceof Type.ClassValue cv && !cv.node().isInterface()) {
+            CallableSummary summary = constructorSummary(cv.node());
+            effects = summary != null ? summary.effects() : EffectSet.EMPTY;
+            mutParams = summary != null ? summary.mutParams() : new boolean[0];
+            borrowParams = summary != null ? summary.borrowParams() : new boolean[0];
+            borrowRest = false;
+        } else {
+            return true;
+        }
+        if (!effects.satisfies(target.effects())) {
+            return false;
+        }
+        for (int i = 0; i < target.parameters().size(); i++) {
+            Type.Parameter tp = target.parameters().get(i);
+            boolean mut = i < mutParams.length && mutParams[i];
+            boolean borrow = i < borrowParams.length ? borrowParams[i] : borrowRest;
+            if (mut && !tp.mut() || tp.borrow() && !borrow) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     CallableSummary constructorSummary(TypeNode node) {
         if (node.ctx instanceof BabbleParser.ClassExpressionContext cls) {
             CallableSummary local = visibleSummaries.get(cls);

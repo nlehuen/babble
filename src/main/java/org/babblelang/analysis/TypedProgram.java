@@ -99,11 +99,11 @@ final class TypedProgram {
     }
 
     boolean assignable(Type from, Type to) {
-        return checker.assignable(from, to);
+        return checker.algebra().assignable(from, to);
     }
 
     boolean assignableNoWidening(Type from, Type to) {
-        return checker.assignableNoWidening(from, to);
+        return checker.algebra().subtype(from, to);
     }
 
     Class<?> findJavaClass(String name) {

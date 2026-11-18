@@ -5,6 +5,7 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +51,7 @@ public final class AnalysisSession {
     final Map<TypeNode, Map<String, Type>> typeMemberTypes = new HashMap<>();
     final Map<TypeNode, List<Type.Parameter>> constructorParams = new HashMap<>();
     final Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries = new HashMap<>();
-    final Map<Type.Function, TypedModuleSummary.CallableEffectTemplate> callableTemplates = new HashMap<>();
+    final Map<Type.Function, TypedModuleSummary.CallableEffectTemplate> callableTemplates = new IdentityHashMap<>();
     final Map<ParserRuleContext, Object> staticSingletons = new HashMap<>();
     private final List<ClassLoader> classLoaders = new ArrayList<>();
     private final Map<String, String> interfaceJvmNames = new LinkedHashMap<>();
