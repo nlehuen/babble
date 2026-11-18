@@ -115,11 +115,11 @@ final class TypedProgram {
     }
 
     Method resolvedJavaMethodOf(BabbleParser.CallContext call) {
-        return checker.resolvedJavaMethodOf(call);
+        return checker.callSolver().resolvedMethod(call);
     }
 
     Constructor<?> resolvedJavaConstructorOf(BabbleParser.CallContext call) {
-        return checker.resolvedJavaConstructorOf(call);
+        return checker.callSolver().resolvedConstructor(call);
     }
 
     ScopeAnalysis.JavaFieldTarget javaFieldTargetOf(ParserRuleContext sel) {

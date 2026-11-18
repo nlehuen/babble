@@ -382,6 +382,143 @@ final class JavaTypeBridge {
         }
     }
 
+    /** A class by its qualified name, trying each trailing dot as a nested class ({@code a.B.C} as {@code a.B$C}) ; null if none. */
+    static Class<?> loadClass(String name) {
+        String candidate = name;
+        while (true) {
+            Class<?> found = loadTopLevel(candidate);
+            if (found != null) {
+                return found;
+            }
+            int dot = candidate.lastIndexOf('.');
+            if (dot < 0) {
+                return null;
+            }
+            candidate = candidate.substring(0, dot) + "$" + candidate.substring(dot + 1);
+        }
+    }
+
+    /** As {@code JavaPackage} finds them : a class with that exact name, or null. */
+    static Class<?> loadTopLevel(String name) {
+        try {
+            return Class.forName(name, false, JavaTypeBridge.class.getClassLoader());
+        } catch (ClassNotFoundException | LinkageError e) {
+            return null;
+        }
+    }
+
+    /** The public member class of {@code enclosing} with that simple name, or null. */
+    static Class<?> publicMemberClass(Class<?> enclosing, String simpleName) {
+        for (Class<?> c : enclosing.getClasses()) {
+            if (c.getSimpleName().equals(simpleName) && Modifier.isPublic(c.getModifiers())) {
+                return c;
+            }
+        }
+        return null;
+    }
+
+    static int typeParameterCount(Class<?> java) {
+        return java.getTypeParameters().length;
+    }
+
+    static String typeParameterName(Class<?> java, int index) {
+        return java.getTypeParameters()[index].getName();
+    }
+
+    /**
+     * A Java member read through a class or an instance : its {@code type}, or the {@code error}
+     * to report ; {@code checked} when it is a field whose generic type needs a runtime check
+     * ({@code T9}), and the static {@code fieldTarget} of a public, accessible field.
+     */
+    record JavaMember(Type type, String error, boolean checked, ScopeAnalysis.JavaFieldTarget fieldTarget) {
+    }
+
+    /**
+     * A method or a public field of a Java class, as {@code JavaClass} looks them up : through
+     * the class itself, only a static field.
+     */
+    static JavaMember javaMember(Class<?> java, List<Type> typeArgs, String name, boolean onClass, TypeAlgebra algebra) {
+        if (hasJavaMethod(java, name)) {
+            return new JavaMember(new Type.JavaMethod(java, onClass ? List.of() : typeArgs, name), null, false, null);
+        }
+        if (java.isInterface() && !onClass && hasJavaMethod(Object.class, name)) {
+            return new JavaMember(new Type.JavaMethod(Object.class, List.of(), name), null, false, null);
+        }
+        Field field = javaField(java, name);
+        if (field == null) {
+            return new JavaMember(Type.ERROR, "No such name in " + java.getCanonicalName() + " : " + name, false, null);
+        }
+        boolean isStatic = Modifier.isStatic(field.getModifiers());
+        if (onClass && !isStatic) {
+            return new JavaMember(Type.ERROR, "Not a static field : " + java.getCanonicalName() + "." + name, false, null);
+        }
+        Map<TypeVariable<?>, Type> env = onClass ? Map.of() : javaTypeEnv(java, typeArgs);
+        java.lang.reflect.Type genericType = field.getGenericType();
+        boolean checked = genericType instanceof TypeVariable<?> || genericType instanceof WildcardType;
+        ScopeAnalysis.JavaFieldTarget target = Modifier.isPublic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())
+                ? new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic) : null;
+        return new JavaMember(javaResult(genericType, env, algebra), null, checked, target);
+    }
+
+    /** A Java field an assignment writes. */
+    record AssignedField(Field field) {
+        /** Its type read through {@code receiver} ; {@code widenTopTypeVar} for the value read before a compound assignment. */
+        Type type(Type receiver, boolean widenTopTypeVar, TypeAlgebra algebra) {
+            return javaFieldType(receiver, field, widenTopTypeVar, algebra);
+        }
+
+        /** The error assigning a function to a functional-interface field, which needs an explicit conversion ; null otherwise. */
+        String functionError(Type value, String name) {
+            if (TypeAlgebra.isCallable(value) && JavaTypes.isFunctionalInterface(field.getType())) {
+                return "Cannot assign a function to " + field.getDeclaringClass().getCanonicalName() + "." + name
+                        + " : convert it first, as " + field.getType().getSimpleName() + "(f)";
+            }
+            return null;
+        }
+
+        /** The static write target for a value of that type, or null when it must go through {@code JavaClass.assign}. */
+        ScopeAnalysis.JavaFieldTarget target(Type value) {
+            if (Modifier.isFinal(field.getModifiers()) || !Modifier.isPublic(field.getModifiers())
+                    || !JavaTypes.isAccessible(field.getDeclaringClass())
+                    || !guaranteedApplicable(field.getType(), value) || !supportedStaticJavaArg(field.getType(), value)) {
+                return null;
+            }
+            boolean isStatic = Modifier.isStatic(field.getModifiers());
+            return new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic);
+        }
+    }
+
+    /**
+     * The field {@code receiver.name = value} assigns when the receiver is a Java class, object or
+     * array : the field, or the error {@code JavaClass.assign} would report (as {@code [error]}).
+     * Null when the receiver isn't Java.
+     */
+    static Object assignedField(Type receiver, String name) {
+        if (receiver instanceof Type.JavaArray array) {
+            String owner = array.javaClass().getCanonicalName();
+            return "length".equals(name) ? "Cannot assign final field : " + owner + "." + name
+                    : "No such field in " + owner + " : " + name;
+        }
+        boolean onClass = receiver instanceof Type.JavaClassValue;
+        Class<?> java = onClass ? ((Type.JavaClassValue) receiver).type()
+                : receiver instanceof Type.JavaInstance instance ? instance.type() : null;
+        if (java == null) {
+            return null;
+        }
+        Field field = javaField(java, name);
+        String description = java.getCanonicalName() + "." + name;
+        if (field == null) {
+            return "No such field in " + java.getCanonicalName() + " : " + name;
+        }
+        if (onClass && !Modifier.isStatic(field.getModifiers())) {
+            return "Not a static field : " + description;
+        }
+        if (Modifier.isFinal(field.getModifiers())) {
+            return "Cannot assign final field : " + description;
+        }
+        return new AssignedField(field);
+    }
+
     static Type javaFieldType(Type receiver, Field field, boolean widenTopTypeVar, TypeAlgebra algebra) {
         Map<TypeVariable<?>, Type> env = receiver instanceof Type.JavaInstance ji
                 ? javaTypeEnv(ji.type(), ji.typeArguments())

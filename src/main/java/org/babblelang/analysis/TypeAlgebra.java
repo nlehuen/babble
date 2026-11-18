@@ -131,6 +131,16 @@ final class TypeAlgebra {
             return lowers.get(tv);
         }
 
+        /** The current solution of {@code tv} : its lower bound, else its first upper bound, else null. */
+        Type solution(Type.TypeVar tv) {
+            Type lower = lowers.get(tv);
+            if (lower != null) {
+                return lower;
+            }
+            List<Type> list = uppers.get(tv);
+            return list == null || list.isEmpty() ? null : list.get(0);
+        }
+
         List<Type> uppers(Type.TypeVar tv) {
             return uppers.getOrDefault(tv, List.of());
         }

@@ -342,6 +342,16 @@ sealed interface Type {
         return type instanceof Union union ? union.members() : List.of(type);
     }
 
+    /** Whether this type mentions a type variable. */
+    default boolean hasTypeVar() {
+        return anyMatch(Type.TypeVar.class::isInstance);
+    }
+
+    /** Whether this type mentions a synthetic type variable (one a call is still solving, with no owner). */
+    default boolean hasSyntheticTypeVar() {
+        return anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null);
+    }
+
     /** Structural predicate catamorphism over this type and all nested type children. */
     default boolean anyMatch(Predicate<Type> predicate) {
         if (predicate.test(this)) {
