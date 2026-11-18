@@ -455,3 +455,233 @@ appFn(null, "bad", 1)
 5
 No applicable overload of java.lang.StringBuilder.append for (null, java.lang.String, java.lang.Integer) : candidates are (java.lang.StringBuffer), (java.lang.CharSequence), (java.lang.CharSequence, int, int), (char[]), (java.lang.String), (java.lang.Object), (char), (int), (long), (float), (double), (boolean), (char[], int, int)
 
+{{{{{
+;; BabbleType static read/write, Member used before definition (static), BabbleInstance javaDefaultMethods & toString(arg)
+def C = class (def x : int) (
+    private def secret = 99
+    def m = () : int -> ( 1 )
+) static (
+    private def sp = 7
+    def sv = 10
+    def sm = () : int -> ( this.sp )
+)
+def V = value class (x : int) (
+    def toString = (unused : int) : string -> ( "hi" )
+)
+def Comp = class () implements java.util.Comparator(int) (
+    def compare = (a : int, b : int) : int -> ( a - b )
+)
+C.sv = 25
+def cInst = C(3)
+def revFn = Comp().reversed()
+println(C.sv, ":", C.sm(), ":", V(4), ":", revFn.compare(1, 5) > 0)
+}}}}}
+25:7:V(x: 4):true
+
+{{{{{
+;; BabbleType static member used before definition at runtime
+def C = class () () static (
+    def readLate = () : int -> ( this.late )
+    def r = this.readLate()
+    def late : int = 5
+)
+C.r
+}}}}}
+Member used before definition : late
+
+{{{{{
+;; Values.is (bool, JavaType), Types.describe (Double, Boolean), ConvertFunction, AssertFunction, Operators, JavaTypes
+def dyn = (v : any?) : any? -> ( v )
+println(int(0.0 / 0.0))
+}}}}}
+Out of the int range : 0.0/0.0 = NaN
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+println(dyn(true) is bool, ":", dyn(java.lang.Integer.valueOf(1)) is java.lang.Number)
+println(dyn(1) is int, ":", dyn(1.5) is double, ":", dyn("a") is string, ":", dyn(null) is any)
+}}}}}
+true:true
+true:true:true:false
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+dyn(1.5) as string
+}}}}}
+Type error : expected string, got double
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+dyn(true) as string
+}}}}}
+Type error : expected string, got bool
+
+{{{{{
+assert(false)
+}}}}}
+Assertion failed : false
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+dyn("a") < dyn(1)
+}}}}}
+Not comparable : dyn("a") and dyn(1)
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+dyn(java.awt.Point(1, 2)) < dyn(java.awt.Point(3, 4))
+}}}}}
+Not comparable : dyn(java.awt.Point(1,2)) and dyn(java.awt.Point(3,4))
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+dyn(true) + dyn(1)
+}}}}}
+Not a number : dyn(true)
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+dyn("a") - dyn("b")
+}}}}}
+Not a number : dyn("a")
+
+{{{{{
+;; Operators isIntegral (Long, Short, Byte, Double), equal, Values.hash edge
+def dyn = (v : any?) : any? -> ( v )
+def iL = dyn(java.lang.Long.valueOf("5"))
+def iS = dyn(java.lang.Short.valueOf("5"))
+def iB = dyn(java.lang.Byte.valueOf("5"))
+def dF = dyn(java.lang.Float.valueOf("1.5"))
+def huge = 1.0 * 100000000000000000000.0
+println(iL == iS, ":", iS == iB, ":", dF == dyn(1.5), ":", dyn(huge) == dyn(huge))
+def VBox = value class (x : any?) ()
+println(VBox(java.lang.Float.valueOf("1.5")) == VBox(1.5), ":", VBox(1.0 / 0.0) == VBox(1.0 / 0.0), ":", java.util.List.of(VBox(java.lang.Float.valueOf("1.5")), VBox(1.0 / 0.0)).hashCode() != 0)
+}}}}}
+true:true:true:true
+true:true:true
+
+{{{{{
+;; JavaTypes widen Byte/Short/Character/Float/Long/Integer in convertResult via SAM returning any?
+def is1 = java.util.function.IntSupplier(() : any? -> ( java.lang.Byte.valueOf("2") ))
+def is2 = java.util.function.IntSupplier(() : any? -> ( java.lang.Short.valueOf("3") ))
+def is3 = java.util.function.IntSupplier(() : any? -> ( java.lang.Character.valueOf(java.lang.StringBuilder("A").charAt(0)) ))
+def ls1 = java.util.function.LongSupplier(() : any? -> ( java.lang.Integer.valueOf(5) ))
+def ds1 = java.util.function.DoubleSupplier(() : any? -> ( java.lang.Float.valueOf("4.5") ))
+def ds2 = java.util.function.DoubleSupplier(() : any? -> ( java.lang.Long.valueOf("6") ))
+println(is1.getAsInt(), ":", is2.getAsInt(), ":", is3.getAsInt(), ":", ls1.getAsLong(), ":", ds1.getAsDouble(), ":", ds2.getAsDouble())
+
+def badNull = java.util.function.IntSupplier(() : any? -> ( null ))
+badNull.getAsInt()
+}}}}}
+2:3:65:5:4.5:6.0
+Type error : IntSupplier.getAsInt must return int, got null
+
+{{{{{
+;; BabbleInterface 2-level extendsType
+def Empty = interface ()
+def SubEmpty = interface extends Empty ()
+def HasDefault = interface ( def ok = () : int -> ( 1 ) )
+def SubDefault = interface extends HasDefault, Empty ()
+def Impl = class () implements SubDefault ()
+def dyn = (v : any?) : any? -> ( v )
+println(dyn(Impl()) is Empty, ":", dyn(Impl()) is HasDefault, ":", dyn(Impl()) is SubDefault, ":", dyn(Impl()) is SubEmpty)
+}}}}}
+true:true:true:false
+
+{{{{{
+;; BoundMethod.equals (same, equal receiver+fn, diff receiver, diff fn, non-BoundMethod), Classes.member non-primitive before def
+def C = class (def n : int) (
+    def m1 = () : int -> ( this.n )
+    def m2 = () : int -> ( this.n + 1 )
+)
+def a = C(1)
+def b = C(2)
+def am = a.m1
+println(am == am, ":", am == a.m1, ":", am == b.m1, ":", am == a.m2, ":", am == "x")
+
+def LateRef = class () (
+    def readLate = () : string -> ( this.late )
+    def r = this.readLate()
+    def late : string = "hi"
+)
+LateRef()
+}}}}}
+true:true:false:false:false
+Member used before definition : late
+
+{{{{{
+;; JavaLinker loop with mixed null, String, StringBuilder, BabbleInstance, BabbleClass across 2 passes
+def K = class (def v : int) (
+    def toString = () : string -> ( "K" )
+)
+def list : java.util.List(any?) = java.util.ArrayList()
+def addFn : (v : any?) : bool = list.add
+def pickItem = (idx : int) : any? -> (
+    if idx == 0 then ( "s" )
+    else if idx == 1 then ( null )
+    else if idx == 2 then ( java.lang.StringBuilder("sb") )
+    else if idx == 3 then ( K(1) )
+    else ( K )
+)
+def p = 0
+while p < 2 then (
+    def i = 0
+    while i < 5 then (
+        addFn(pickItem(i))
+        i += 1
+    )
+    p += 1
+)
+def toStr : (o : any?) : string = java.util.Objects.toString
+def out = ""
+def j = 0
+while j < 5 then (
+    out = out + toStr(pickItem(j)) + ";"
+    j += 1
+)
+println(list.size(), "|", out)
+}}}}}
+10|s;null;sb;K;class K;
+
+{{{{{
+;; BabbleInterface extendsType with super Java interface (is Collection via List), ClassofFunction on classes
+def SubOp = interface extends java.util.function.UnaryOperator(int) ()
+def LImpl = class () implements SubOp (
+    def apply = (x : int) : int -> ( x )
+)
+def dyn = (v : any?) : any? -> ( v )
+println(dyn(LImpl()) is java.util.function.Function)
+classof(LImpl)
+}}}}}
+true
+classof : a class has no class
+
+{{{{{
+;; Types NominalType non-instance fail, JavaClassType BabbleInstance/object/primitive fail, LogicalPaths ./
+def C = class () ()
+def o = object ( def x = 1 )
+def dyn = (v : any?) : any? -> ( v )
+def tmod = import("./dir/top.ba")
+println(tmod.val)
+dyn("notC") as C
+}}}}}
+42
+Type error : expected C, got string
+
+{{{{{
+def C = class () ()
+def dyn = (v : any?) : any? -> ( v )
+dyn(C()) as java.lang.Runnable
+}}}}}
+Type error : expected java.lang.Runnable, got C
+
+{{{{{
+def o = object ( def x = 1 )
+def dyn = (v : any?) : any? -> ( v )
+dyn(o) as java.lang.Runnable
+}}}}}
+Type error : expected java.lang.Runnable, got object
+
+
+
+

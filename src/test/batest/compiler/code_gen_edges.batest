@@ -645,3 +645,114 @@ def w = (1 + 2) as double
 println(pt.x, ":", pt.y, ":", rect.width, ":", strArg, ":", ev.arg, ":", w, ":", classof(listA(true)) != null, ":", mixed(false))
 }}}}}
 5.0:4.0:15:ok:42:3.0:true:s
+
+{{{{{
+;; Bootstrap CallCache & TypedCallCache polymorphic predicate guards (isFunction, isBoundFunction, isBoundFunctionSpec, isBoundMethod)
+;; plus SelectCache javaDefaultMethods miss on BabbleInstance & BabbleInstance operatorCall/neg/arithmetic
+def I1 = interface (
+    def dmSpec = (x : int) : int -> ( x + 100 )
+    def dmSpread = (x : int, y : int = 10) : int -> ( x + y + 100 )
+)
+def I2 = interface (
+    def dmSpec2 = (x : int) : int -> ( x + 200 )
+    def dmSpread2 = (x : int, y : int = 20) : int -> ( x + y + 200 )
+)
+def Impl1 = class (def bias : int) implements I1, java.util.Comparator(int) (
+    def mSpec = (x : int) : int -> ( x + this.bias )
+    def mSpread = (x : int, y : int = 1) : int -> ( x + y + this.bias )
+    def compare = (a : int, b : int) : int -> ( a - b )
+)
+def Impl2 = class (def bias : int) implements I2 (
+    def mSpec2 = (x : int) : int -> ( x + this.bias )
+    def mSpread2 = (x : int, y : int = 2) : int -> ( x + y + this.bias )
+)
+def c1 = Impl1(10)
+def c2 = Impl2(20)
+def fSpec = (x : int) : int -> ( x + 1 )
+def fSpec2 = (x : int) : int -> ( x + 2 )
+def fSpread = (x : int, y : int = 3) : int -> ( x + y )
+def fSpread2 = (x : int, y : int = 4) : int -> ( x + y )
+
+def totalCall = 0
+def totalTyped = 0
+def pass = 0
+while pass < 2 then (
+    def i = 0
+    while i < 4 then (
+        def fnSpread : (x : int) : int = if i == 0 then ( c1.dmSpread ) else if i == 1 then ( c2.dmSpread2 ) else if i == 2 then ( c1.mSpread ) else ( fSpread )
+        totalCall += fnSpread(i)
+
+        def fnSpreadB : (x : int) : int = if i == 0 then ( c1.mSpread ) else if i == 1 then ( c2.mSpread2 ) else if i == 2 then ( fSpread ) else ( fSpread2 )
+        totalCall += fnSpreadB(i)
+
+        def fnSpec : (x : int) : int = if i == 0 then ( c1.dmSpec ) else if i == 1 then ( c2.dmSpec2 ) else if i == 2 then ( c1.mSpec ) else ( fSpec )
+        totalTyped += fnSpec(i)
+
+        def fnSpecB : (x : int) : int = if i == 0 then ( c1.mSpec ) else if i == 1 then ( c2.mSpec2 ) else if i == 2 then ( fSpec ) else ( fSpec2 )
+        totalTyped += fnSpecB(i)
+        i += 1
+    )
+    pass += 1
+)
+
+def rev1 = c1.reversed()
+def rev2 = c1.reversed()
+
+def Vec = class (def n : int) (
+    def neg = () : Vec -> ( Vec(-this.n) )
+    def plus = (o : any) : Vec -> ( Vec(this.n + (o as int)) )
+    def minus = (o : any) : Vec -> ( Vec(this.n - (o as int)) )
+    def times = (o : any) : Vec -> ( Vec(this.n * (o as int)) )
+    def div = (o : any) : Vec -> ( Vec(int(this.n / (o as int))) )
+)
+def v = Vec(10)
+def negV = -v
+def negI = -(1 + 1)
+def vPlus = v + 2
+def vMinus = v - 3
+def vTimes = v * 4
+def vDiv = v / 2
+def vComp = Vec(5)
+vComp += 3
+
+println(totalCall, ":", totalTyped, ":", rev1.compare(1, 5) > 0, ":", rev2.compare(5, 1) > 0, ":", negV.n, ":", negI, ":", vPlus.n, ":", vMinus.n, ":", vTimes.n, ":", vDiv.n, ":", vComp.n)
+}}}}}
+792:712:true:false:-10:-2:12:7:40:5:8
+
+{{{{{
+;; emitCondition INT/DOUBLE, evalIntConstant * & nested -, mixed comparisons, emitJavaConstructorCall/MethodCall catch
+def dCond = 1.5
+def dZero = 0.0
+def iCond = 2
+def iZero = 0
+def bT = true
+def out = ""
+if dCond then ( out += "1" ) else ( out += "0" )
+if dZero then ( out += "1" ) else ( out += "0" )
+if iCond then ( out += "1" ) else ( out += "0" )
+if iZero then ( out += "1" ) else ( out += "0" )
+if (1 == 1.0) and (2 != 3.0) and (bT == true) and (bT != false) then ( out += "1" ) else ( out += "0" )
+if ((1 < 2)) then ( out += "1" ) else ( out += "0" )
+
+def x = 4
+def z = (0 - x) + (10 * 2 + 1) + -(-3) + -(-2147483647 - 1) + -(0 - x)
+def dm = 1 + 2.0
+def dmin : double = -2147483648
+println(out, ":", z, ":", dm, ":", dmin == -2147483648)
+java.lang.Integer.parseInt("bad_num")
+}}}}}
+101011:-2147483624:3.0:true
+java.lang.NumberFormatException : For input string: "bad_num"
+
+{{{{{
+;; emitJavaConstructorCall exception catch handler
+java.io.FileReader("nonexistent_batest_file_xyz.txt")
+}}}}}
+java.io.FileNotFoundException : nonexistent_batest_file_xyz.txt (No such file or directory)
+
+{{{{{
+;; Out-of-range integer literal rejected cleanly
+def n = 2147483648
+}}}}}
+Integer out of range : 2147483648
+
