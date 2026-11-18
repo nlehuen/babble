@@ -1,0 +1,35 @@
+;; Java instance/static fields, Java arrays via java.lang.reflect.Array, and field mutability errors
+
+{{{{{
+;; Public mutable fields on java.awt.Point and static fields on java.lang.Integer
+def pt = java.awt.Point(3, 4)
+def origX = pt.x
+pt.x = 10
+pt.y += 6
+println(origX, ":", pt.x, ":", pt.y, ":", java.lang.Integer.MIN_VALUE)
+}}}}}
+3:10:10:-2147483648
+
+{{{{{
+;; Java array creation and element read/write via java.lang.reflect.Array
+def Array = java.lang.reflect.Array
+def arr = Array.newInstance(java.lang.Integer.TYPE, 3)
+Array.setInt(arr, 0, 10)
+Array.setInt(arr, 1, 20)
+Array.setInt(arr, 2, 30)
+println(Array.getLength(arr), ":", Array.getInt(arr, 0) + Array.getInt(arr, 2))
+}}}}}
+3:40
+
+{{{{{
+;; Writing to a final Java static field is rejected
+java.lang.Integer.MAX_VALUE = 0
+}}}}}
+Cannot assign final field : java.lang.Integer.MAX_VALUE
+
+{{{{{
+;; Assigning mismatched type to public Java field
+def pt = java.awt.Point(1, 2)
+pt.x = "nope"
+}}}}}
+Type error : expected int, got string

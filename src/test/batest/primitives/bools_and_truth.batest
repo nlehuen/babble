@@ -1,0 +1,56 @@
+;; Booleans, short-circuit and/or, not, truthiness, same(), and assert/suppose
+
+{{{{{
+def calls = 0
+def bump = (r : bool) : bool -> ( calls += 1 ; r )
+println(false and bump(true), ":", calls)
+println(true or bump(true), ":", calls)
+println(true and bump(true), ":", calls)
+println(false or bump(false), ":", calls)
+println(not true, ":", not false, ":", not null, ":", not 0, ":", not 1, ":", not "", ":", not "a", ":", not 0.0, ":", not 0.5)
+}}}}}
+false:0
+true:0
+true:1
+false:2
+false:true:true:true:false:false:false:true:false
+
+{{{{{
+;; Equality and same() identity
+println((true == true), ":", (true == 1), ":", (false == null), ":", (null == null), ":", (null != 1))
+def a = "ab"
+def b = "a" + "b"
+println(a == b, ":", same(null, null), ":", same(1, 1.0))
+}}}}}
+true:false:false:true:true
+true:true:true
+
+{{{{{
+;; Truthiness with dynamic values in if/while (only null, false, 0, 0.0 are falsy; "" is truthy)
+def dyn = (v : any?) : any? -> ( v )
+def check = (v : any?) : string -> ( if v then ( "T" ) else ( "F" ) )
+println(check(dyn(null)), check(dyn(false)), check(dyn(true)), check(dyn(0)), check(dyn(2)), check(dyn(0.0)), check(dyn(0.1)), check(dyn("")), check(dyn("hi")))
+}}}}}
+FFTFTFTTT
+
+{{{{{
+;; Real assert / suppose failure messages
+assert(1 == 2)
+}}}}}
+Assertion failed : 1==2
+
+{{{{{
+suppose(1 == 2, "custom suppose")
+}}}}}
+custom suppose
+
+{{{{{
+assert(1)
+}}}}}
+Type error : expected bool, got int
+
+{{{{{
+def dyn = (v : any) : any -> ( v )
+assert(dyn(1))
+}}}}}
+Type error : expected bool, got any

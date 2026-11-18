@@ -1,0 +1,47 @@
+;; String concatenation, comparisons, Java String methods, and errors
+
+{{{{{
+println("a" + "b", ":", "a" + 1, ":", "a" + null, ":", "a" + true)
+def s = "hi"
+s += 42
+s += "!"
+println(s)
+}}}}}
+ab:a1:anull:atrue
+hi42!
+
+{{{{{
+print(1 + "a")
+}}}}}
+Not a number : "a"
+
+{{{{{
+print(null + "a")
+}}}}}
+Not a number : null
+
+{{{{{
+println("abc" == "abc", ":", "abc" < "abd", ":", "b" > "a", ":", "a" <= "a", ":", "b" >= "c")
+}}}}}
+true:true:true:true:false
+
+{{{{{
+print("hello".length())
+}}}}}
+Not a scope : "hello"
+
+{{{{{
+print(1 - "a")
+}}}}}
+Not a number : "a"
+
+{{{{{
+print("a" * 2)
+}}}}}
+Not a number : "a"
+
+{{{{{
+def s = "abc"
+print(s < 1)
+}}}}}
+Not comparable : s and 1

@@ -1,4 +1,4 @@
-;; Basic int arithmetic, comparisons, wraparound, and type errors
+;; Int arithmetic, comparisons, range limits, wraparound, and errors
 
 def Checked = value class (x : int) (
     def div = (k : int) : int -> (
@@ -31,3 +31,33 @@ def maxV = 2147483647
 println(maxV + 1, ":", minV - 1, ":", -minV, ":", minV * -1)
 }}}}}
 -2147483648:2147483647:-2147483648:-2147483648
+
+{{{{{
+;; Int division produces double; comparisons and relational operators
+println(classof(5 / 2), ":", 5 / 2, ":", 4 / 2)
+println((1 < 2), ":", (2 <= 2), ":", (3 > 2), ":", (3 >= 4), ":", (2 == 2), ":", (2 != 3), ":", (2 <> 3))
+}}}}}
+java.lang.Double:2.5:2.0
+true:true:true:false:true:true:true
+
+{{{{{
+def x = 99999999999
+}}}}}
+Integer out of range : 99999999999
+
+{{{{{
+def x = -2147483649
+}}}}}
+Integer out of range : -2147483649
+
+{{{{{
+;; Compound assignment on int (+=, -=, *=, /= promotes int variable to double if widening allowed)
+def n = 10
+n += 5 ; n -= 3 ; n *= 2
+println(n, ":", classof(n))
+def d = 10
+d /= 4
+println(d, ":", classof(d))
+}}}}}
+24:java.lang.Integer
+2.5:java.lang.Double

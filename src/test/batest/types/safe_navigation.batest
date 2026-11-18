@@ -1,0 +1,47 @@
+;; Safe navigation operator (?.), chaining, method calls, short-circuit arguments, and errors
+
+{{{{{
+def Node = class (def value : int, def next : Node? = null) (
+    def add = (k : int) : Node -> ( Node(this.value + k, this.next) )
+    def read = () : int -> ( this.value )
+)
+def head : Node? = Node(10, Node(20))
+def empty : Node? = null
+println(head?.value, ":", head?.next?.value, ":", head?.next?.next?.value)
+println(empty?.value, ":", empty?.next?.read())
+println(head?.add(5)?.read(), ":", empty?.add(5)?.read())
+}}}}}
+10:20:null
+null:null
+15:null
+
+{{{{{
+;; Short-circuit: receiver is null so arguments of ?.method(arg) are NOT evaluated
+def hits = 0
+def side = () : int -> ( hits += 1 ; 99 )
+def C = class (def x : int) (
+    def calc = (k : int) : int -> ( this.x + k )
+)
+def present : C? = C(1)
+def absent : C? = null
+def r1 = absent?.calc(side())
+def h1 = hits
+def r2 = present?.calc(side())
+println(r1, ":", h1, ":", r2, ":", hits)
+}}}}}
+null:0:100:1
+
+{{{{{
+;; Safe-nav inside expression evaluated before null propagates: member on nullable union of primitives
+def C = class (def v : int?) ()
+def c : C? = C(null)
+println(c?.v)
+}}}}}
+null
+
+{{{{{
+;; Safe-nav on non-nullable primitive fails statically
+def n = 5
+print(n?.foo)
+}}}}}
+Not nullable : n

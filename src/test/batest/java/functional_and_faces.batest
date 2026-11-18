@@ -1,0 +1,43 @@
+;; Java functional interfaces (SAM lambdas) and Babble instances implementing Java interfaces (Faces)
+
+{{{{{
+;; Passing Babble lambda directly to Java SAM interfaces: Function, Predicate, Comparator
+def mapped = java.util.Optional.of(6).map((x : int) : int -> ( x * x )).get()
+println(mapped)
+
+def list : java.util.List(int) = java.util.ArrayList()
+list.add(3)
+list.add(1)
+list.add(4)
+list.add(2)
+list.removeIf((x) -> ( x > 2 ))
+list.sort((a, b) -> ( a - b ))
+println(list.toString())
+}}}}}
+36
+[1, 2]
+
+{{{{{
+;; Babble class implementing a Java interface (Faces dynamic proxy bridge)
+def Greeter = class (def tag : string) implements java.util.function.Supplier(string) (
+    def get = () : string -> ( "sup:" + this.tag )
+)
+def sup : java.util.function.Supplier(string) = Greeter("ok")
+println(sup.get())
+}}}}}
+sup:ok
+
+{{{{{
+;; Direct Comparator with Java Collections.sort
+def names : java.util.List(string) = java.util.ArrayList()
+names.add("pear")
+names.add("fig")
+names.add("apple")
+java.util.Collections.sort(names, (a : string, b : string) : int -> (
+    def la = java.lang.StringBuilder(a).length()
+    def lb = java.lang.StringBuilder(b).length()
+    la - lb
+))
+println(names.toString())
+}}}}}
+[fig, pear, apple]

@@ -1,0 +1,42 @@
+;; Type inference, numeric int->double widening across locals/fields/returns, and BIP008-P7 call-site inference
+
+{{{{{
+;; Variable initialized as int, widened to double by later reassignment (BIP008-D6)
+def x = 1
+def asInt = x + 2
+x = 2.5
+def asDouble = x + 1
+println(asInt, ":", asDouble, ":", classof(x))
+}}}}}
+3.0:3.5:java.lang.Double
+
+{{{{{
+;; Nullable int widened to nullable double (int? -> double?)
+def x : int? = 3
+def y : double? = x
+def z : double? = 4
+println(x, ":", y, ":", z, ":", classof(y))
+}}}}}
+3:3.0:4.0:java.lang.Double
+
+{{{{{
+;; Field with fixed int type refuses double widening
+def Box = class (def x : int) ()
+def b = Box(1)
+b.x = 2.5
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+;; BIP008-P7 call-site parameter inference with unannotated parameter and typed callback
+def transform = (n, fn : (k : int) : double) -> ( fn(n) )
+def res = transform(5, (k) -> ( k * 2.5 ))
+println(res, ":", classof(res))
+}}}}}
+12.5:java.lang.Double
+
+{{{{{
+;; Unannotated function never called reports missing parameter type
+def unused = (x) -> ( x + 1 )
+}}}}}
+Missing type : x

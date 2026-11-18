@@ -1,0 +1,32 @@
+;; Lexical errors and comment handling
+
+{{{{{
+def # = 1
+}}}}}
+Lexical error : token recognition error at: '#'
+
+{{{{{
+def s = "unterminated
+}}}}}
+Lexical error : token recognition error at: '"unterminated'
+
+{{{{{
+def s = "bad\"
+}}}}}
+Lexical error : token recognition error at: '"bad\"'
+
+{{{{{
+;; Line comment
+;;( multi
+line
+comment ;;)
+def x = 42
+print(x)
+}}}}}
+42
+
+{{{{{
+;; Escaped quotes and backslashes in strings
+println("a\"b\\c")
+}}}}}
+a"b\c

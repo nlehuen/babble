@@ -1,0 +1,89 @@
+;; Built-in conversions: int(), double(), classof(), dynamic ConvertFunction errors
+
+def dyn = (v : any) : any -> ( v )
+def dynOpt = (v : any?) : any? -> ( v )
+
+{{{{{
+println(int(3), ":", int(2.9), ":", int(-2.9), ":", int("42"), ":", int("-7"))
+println(double(3), ":", double(1.5), ":", double("3.25"))
+println(classof(1), ":", classof(1.0), ":", classof(true), ":", classof("x"), ":", classof(null))
+}}}}}
+3:2:-2:42:-7
+3.0:1.5:3.25
+java.lang.Integer:java.lang.Double:java.lang.Boolean:java.lang.String:null
+
+{{{{{
+print(int("nope"))
+}}}}}
+Not an int : "nope"
+
+{{{{{
+print(double("nope"))
+}}}}}
+Not a double : "nope"
+
+{{{{{
+print(int(1.0E20))
+}}}}}
+Out of the int range : 1.0E20
+
+{{{{{
+print(int(0.0 / 0.0))
+}}}}}
+Out of the int range : 0.0/0.0 = NaN
+
+{{{{{
+print(int(dyn(true)))
+}}}}}
+Not a number : dyn(true)
+
+{{{{{
+print(double(dynOpt(null)))
+}}}}}
+Type error : expected any, got any?
+
+{{{{{
+def f = dyn(int)
+print(f())
+}}}}}
+f is not callable
+
+{{{{{
+print(int())
+}}}}}
+Missing parameter : value
+
+{{{{{
+def f = dyn(classof)
+print(f())
+}}}}}
+f is not callable
+
+{{{{{
+print(classof())
+}}}}}
+Missing parameter : v
+
+{{{{{
+def C = class () ()
+print(classof(C))
+}}}}}
+classof : a class has no class
+
+{{{{{
+def I = interface ()
+print(classof(I))
+}}}}}
+classof : an interface has no class
+
+{{{{{
+package p ()
+print(classof(p))
+}}}}}
+classof : a package has no class
+
+{{{{{
+def f = () -> ( 1 )
+print(classof(f))
+}}}}}
+classof : a function has no class

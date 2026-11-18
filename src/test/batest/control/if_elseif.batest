@@ -1,0 +1,60 @@
+;; if / then / else / else if chains, type joins, and truthiness
+
+{{{{{
+def grade = (n : int) : string -> (
+    if n >= 90 then (
+        "A"
+    ) else if n >= 80 then (
+        "B"
+    ) else if n >= 70 then (
+        "C"
+    ) else (
+        "F"
+    )
+)
+println(grade(95), ":", grade(83), ":", grade(71), ":", grade(40))
+}}}}}
+A:B:C:F
+
+{{{{{
+;; Precedence of else-if tail: "if ... else if ... + 1" applies to the chain
+def classify = (x : int) : int -> (
+    (if x < 0 then ( 10 ) else if x == 0 then ( 20 ) else ( 30 )) + 1
+)
+println(classify(-1), ":", classify(0), ":", classify(5))
+}}}}}
+11:21:31
+
+{{{{{
+;; if without else yields nullable type (T?) when used as a value
+def maybe = (flag : bool) : int? -> (
+    if flag then ( 42 )
+)
+println(maybe(true), ":", maybe(false))
+}}}}}
+42:null
+
+{{{{{
+;; Numeric widening join across branches: int and double join to double
+def mix = (flag : bool) : double -> (
+    if flag then ( 1 ) else ( 2.5 )
+)
+println(mix(true), ":", classof(mix(true)), ":", mix(false))
+}}}}}
+1.0:java.lang.Double:2.5
+
+{{{{{
+;; Dynamic truthiness on int, double, null, string in if condition
+def dyn = (v : any?) : any? -> ( v )
+def t = (v : any?) : string -> ( if v then ( "T" ) else ( "F" ) )
+println(t(dyn(0)), t(dyn(1)), t(dyn(0.0)), t(dyn(-0.5)), t(dyn(null)), t(dyn("ok")))
+}}}}}
+FTFTFT
+
+{{{{{
+;; Dynamic condition evaluated after boolean test error when unreachable? Always evaluates test
+def f = (x : int) -> ( if x == 1 then ( 10 ) else ( "ten" ) )
+def r : int | string = f(1)
+println(r, ":", f(2))
+}}}}}
+10:ten

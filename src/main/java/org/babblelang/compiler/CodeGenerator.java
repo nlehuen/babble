@@ -2498,7 +2498,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitInsn(POP);
             }
         } else {
-            emitCheckedJavaReceiver(receiverExpr, selector, target.unwrapReceiver(), owner, "notAScope");
+            emitCheckedJavaReceiver(receiverExpr, selector, target.unwrapReceiver(), owner, "notAScope", method.getDeclaringClass());
             recvLocal = newLocal();
             mv.visitVarInsn(ASTORE, recvLocal);
         }
@@ -2562,9 +2562,23 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private void emitCheckedJavaReceiver(BabbleParser.ExpressionContext recvExpr, ParserRuleContext lineAt,
                                          boolean unwrap, String internalTargetClass, String nullErrorFactory) {
+        emitCheckedJavaReceiver(recvExpr, lineAt, unwrap, internalTargetClass, nullErrorFactory, null);
+    }
+
+    private void emitCheckedJavaReceiver(BabbleParser.ExpressionContext recvExpr, ParserRuleContext lineAt,
+                                         boolean unwrap, String internalTargetClass, String nullErrorFactory,
+                                         Class<?> unwrapTargetClass) {
         emitBoxed(recvExpr);
         if (unwrap) {
-            mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            if (unwrapTargetClass != null && unwrapTargetClass.isInterface()) {
+                mv.visitLdcInsn(Type.getType(unwrapTargetClass));
+                mv.visitVarInsn(ALOAD, rtLocal);
+                line(lineAt);
+                mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava",
+                        "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+            } else {
+                mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
         }
         Label ok = new Label();
         mv.visitInsn(DUP);

@@ -1,0 +1,37 @@
+;; Double literals, scientific notation, NaN, signed zero, infinities, and mixed arithmetic
+
+{{{{{
+def a = .5
+def b = 1.25E2
+def c = -2.5
+println(a, ":", b, ":", a + b + c, ":", classof(b))
+}}}}}
+0.5:125.0:123.0:java.lang.Double
+
+{{{{{
+def nz = -0.0
+def pz = 0.0
+def nan = 0.0 / 0.0
+def inf = 1.0 / 0.0
+def ninf = -1.0 / 0.0
+;; Operators.compareNumbers uses Double.compare (-0.0 < +0.0, NaN == NaN, NaN > everything)
+println(nz == pz, ":", nz < pz, ":", pz < nz, ":", 1.0 / nz, ":", inf, ":", ninf)
+println(nan == nan, ":", nan != nan, ":", nan < 1.0, ":", nan > 1.0, ":", nan <= 1.0, ":", nan >= 1.0)
+}}}}}
+false:true:false:-Infinity:Infinity:-Infinity
+true:false:false:true:false:true
+
+{{{{{
+;; Mixed int and double arithmetic always promotes to double
+println(classof(1 + 2.0), ":", classof(2.0 - 1), ":", classof(3 * 1.5), ":", classof(5.0 / 2))
+println(1 < 1.5, ":", 2 == 2.0, ":", 2.0 != 2, ":", 1.5 <= 2, ":", 2.5 >= 2)
+}}}}}
+java.lang.Double:java.lang.Double:java.lang.Double:java.lang.Double
+true:true:false:true:true
+
+{{{{{
+def x = 1.5
+x += 2 ; x -= 0.5 ; x *= 3 ; x /= 2
+println(x)
+}}}}}
+4.5

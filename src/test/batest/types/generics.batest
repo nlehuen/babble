@@ -1,0 +1,67 @@
+;; Parameterized functions, classes, interfaces, type argument inference, covariance, and errors
+
+{{{{{
+;; Generic functions and generic classes with generic methods
+def id(T) = (x : T) : T -> ( x )
+def Box(T) = class (def value : T) (
+    def map(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )
+)
+def bi : Box(int) = Box(5)
+def bd : Box(double) = bi.map((x) -> ( x * 1.5 ))
+def s : string = id("hello")
+println(bi.value, ":", bd.value, ":", s)
+}}}}}
+5:7.5:hello
+
+{{{{{
+;; Covariance to Box(int | double) and Box(any), and raw 'is Box' narrowing on nullable generic
+def Box(T) = class (def value : T) ()
+def bi : Box(int) = Box(9)
+def bu : Box(int | double) = bi
+def ba : Box(any) = bi
+def mb : Box(int)? = bi
+def n = if mb is Box then ( mb.value ) else ( 0 )
+println(bu.value, ":", ba.value, ":", n)
+}}}}}
+9:9:9
+
+{{{{{
+;; Generic interface implemented by generic class
+def Getter(T) = interface (
+    def get : () : T
+)
+def Holder(T) = class (def v : T) implements Getter(T) (
+    def get = () : T -> ( this.v )
+)
+def g : Getter(string) = Holder("babble")
+println(g.get())
+}}}}}
+babble
+
+{{{{{
+;; Invariant/unrelated type argument assignment rejected (Box(int) != Box(double))
+def Box(T) = class (def value : T) ()
+def bi : Box(int) = Box(1)
+def bd : Box(double) = bi
+}}}}}
+Type error : expected Box(double), got Box(int)
+
+{{{{{
+;; Cannot cast 'as' to parameterized type or bare type parameter
+def Box(T) = class (def value : T) ()
+def anyVal : any = Box(1)
+def bad = anyVal as Box(int)
+}}}}}
+Cannot cast to parameterized type : Box(int)
+
+{{{{{
+def bad(T) = (x : any) -> ( x as T )
+}}}}}
+Cannot cast to type parameter : T
+
+{{{{{
+;; Missing type arguments on generic class annotation
+def Box(T) = class (def value : T) ()
+def b : Box = Box(1)
+}}}}}
+Missing type arguments : Box

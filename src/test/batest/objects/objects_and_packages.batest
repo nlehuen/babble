@@ -1,0 +1,56 @@
+;; Singleton object expressions and packages: member access, mutation, and namespace errors
+
+{{{{{
+;; Singleton object expression with private state and methods
+def counter = object (
+    private def n = 0
+    def inc = mut (k : int = 1) : int -> ( this.n += k ; this.n )
+    def read = () : int -> ( this.n )
+)
+println(counter.inc(), ":", counter.inc(4), ":", counter.read())
+}}}}}
+1:5:5
+
+{{{{{
+;; Package reads and internal mutation via exported/public functions
+package math (
+    def calls = 0
+    def add = (a : int, b : int) : int -> (
+        calls += 1
+        a + b
+    )
+)
+println(math.add(2, 3), ":", math.add(4, 5), ":", math.calls)
+}}}}}
+5:9:2
+
+{{{{{
+;; Assigning to a package member via any fails static scope check
+package p ( def n = 1 )
+def dyn = (v : any) : any -> ( v )
+dyn(p).n = 2
+}}}}}
+Not a scope : dyn(p)
+
+{{{{{
+;; Assigning to a package member statically
+package p ( def n = 1 )
+p.n = 2
+}}}}}
+Cannot assign to a package member : n
+
+{{{{{
+;; Private member on object is inaccessible outside
+def o = object (
+    private def hidden = 1
+)
+print(o.hidden)
+}}}}}
+hidden is private
+
+{{{{{
+;; Non-assignable primitives fail scope check
+def dyn = (v : any) : any -> ( v )
+dyn(1).x = 2
+}}}}}
+Not a scope : dyn(1)

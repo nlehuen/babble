@@ -62,7 +62,8 @@ public final class BatestRunner {
         try {
             if (testCase.session()) {
                 BabbleSession session = engine.newSession(context);
-                if (!file.preamble().isEmpty()) {
+                if (!file.preamble().isEmpty()
+                        && BabbleSession.classify(file.preamble()) != BabbleSession.Input.EMPTY) {
                     session.eval(file.preamble());
                 }
                 for (String input : testCase.inputs()) {

@@ -1,0 +1,67 @@
+;; Function declarations, first-class functions, arity checks, and calling non-callables
+
+{{{{{
+;; Immediate function call, returning function, passing function as argument
+def applyTwice = (f : (n : int) : int, x : int) : int -> ( f(f(x)) )
+def inc = (n : int) : int -> ( n + 1 )
+def immediate = ((x : int) : int -> ( x * 3 ))(7)
+println(applyTwice(inc, 10), ":", immediate)
+}}}}}
+12:21
+
+{{{{{
+;; Zero-arg and void/null-returning functions
+def ping = () : any? -> ( println("pong") )
+def r = ping()
+println(r)
+}}}}}
+pong
+null
+
+{{{{{
+;; Missing argument error (static)
+def add = (a : int, b : int) : int -> ( a + b )
+print(add(1))
+}}}}}
+Missing parameter : b
+
+{{{{{
+;; Too many arguments error (static)
+def id = (a : int) : int -> ( a )
+print(id(1, 2))
+}}}}}
+Too many parameters : 1 declared, 2 given
+
+{{{{{
+;; Calling a non-callable value (static and dynamic via any)
+print(42())
+}}}}}
+42 is not callable
+
+{{{{{
+def dyn = (v : any) : any -> ( v )
+def callAny = (fn : any) -> ( fn(1) )
+print(callAny(dyn(42)))
+}}}}}
+fn is not callable
+
+{{{{{
+;; BIP008-P7 call-site parameter inference joins numeric calls cleanly and rejects incompatible strings
+def mul2 = (x) -> ( x * 2 )
+println(mul2(3), ":", mul2(1.5))
+}}}}}
+6.0:3.0
+
+{{{{{
+def mul2 = (x) -> ( x * 2 )
+print(mul2("bad"))
+}}}}}
+Not a number : x
+
+{{{{{
+;; Mixed call-site inference widening vs mismatched call
+def add1 = (x) -> ( x + 1 )
+println(add1(2))
+print(add1("bad"))
+}}}}}
+Type error : expected int, got string
