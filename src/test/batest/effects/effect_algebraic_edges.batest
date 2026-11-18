@@ -1,0 +1,342 @@
+;; EffectChecker modifier errors, target resolution, static blocks, algebraic validation/inference, closures & specialization
+
+{{{{{
+;; Parameter & effect modifier validation edge cases
+def f1 = (mut mut x : int) : int -> ( x )
+}}}}}
+Duplicate parameter modifier : mut
+
+{{{{{
+def f2 = pure pure () : int -> ( 1 )
+}}}}}
+Duplicate effect modifier : pure
+
+{{{{{
+def f3 : (x : axiom pure (y : int) : int) : int = (x : axiom pure (y : int) : int) -> ( 1 )
+}}}}}
+axiom is not allowed in a function type
+
+{{{{{
+def f4 = pure axiom () : int -> ( 1 )
+}}}}}
+axiom must appear first before effect modifiers
+
+{{{{{
+def f5 : (x : impure () : int) : int = (x : impure () : int) -> ( 1 )
+}}}}}
+impure is not allowed in a function type
+
+{{{{{
+def f6 = axiom impure () : int -> ( 1 )
+}}}}}
+axiom and impure cannot be combined
+
+{{{{{
+def f7 = impure pure () : int -> ( 1 )
+}}}}}
+impure cannot be combined with effect modifiers
+
+{{{{{
+def f8 = mut () : int -> ( 1 )
+}}}}}
+mut on a function requires a receiver (this) : mark mutated parameters with mut
+
+{{{{{
+def f9 = borrow () : int -> ( 1 )
+}}}}}
+borrow on a function requires a receiver (this) : mark borrowed parameters with borrow
+
+{{{{{
+def f10 : pure (mut x : int) : int = (mut x : int) -> ( 1 )
+}}}}}
+pure and mut are mutually exclusive : use hermetic with mut parameters
+
+{{{{{
+;; Effect declaration inside constrained static block and non-file scopes
+def makeBadStatic1 = pure () -> (
+    def C = class () () static ( println("bad") )
+    ()
+)
+}}}}}
+static block inside pure function violates pure guarantee
+
+{{{{{
+def makeBadStatic2 = hermetic () -> (
+    def I = interface () static ( println("bad") )
+    ()
+)
+}}}}}
+static block inside hermetic function violates hermetic guarantee
+
+{{{{{
+def makeBadStatic3 = deterministic () -> (
+    def C = class () () static ( def y = java.lang.Math.random() )
+    ()
+)
+}}}}}
+static block inside deterministic function violates deterministic guarantee
+
+{{{{{
+def BadPlace = ( export axiom pure java.lang.Math.abs ; 1 )
+}}}}}
+export only applies to the top-level definitions of a file
+
+{{{{{
+;; Effect target resolution errors and valid target forms (constructor & member inner interface)
+def import = 1
+axiom pure import("java.lang").Math
+}}}}}
+Invalid target : shadowed import
+
+{{{{{
+axiom pure foo("java.lang").Math
+}}}}}
+Invalid target : expected import("...") or Java class path
+
+{{{{{
+axiom pure java.lang
+}}}}}
+Invalid effect declaration target : expected a Java class, constructor, or method
+
+{{{{{
+def p = object ( def a = 1 )
+axiom pure p.a
+}}}}}
+Invalid effect declaration target : p.a
+
+{{{{{
+def badAxiom = axiom pure java.lang.String.CASE_INSENSITIVE_ORDER
+}}}}}
+Invalid axiom target : expected a Java class, Java method, or function
+
+{{{{{
+axiom pure deterministic java.lang.StringBuilder()
+axiom pure java.util.Map.Entry
+def sb = java.lang.StringBuilder()
+println(sb.toString())
+}}}}}
+
+
+{{{{{
+;; Invalid algebraic signatures in validateAlgebraicSignature (function types and definitions)
+def badAssocType = (f : pure associative (x : int) : int) : int -> ( 1 )
+}}}}}
+associative requires a pure binary (T, T) : T signature
+
+{{{{{
+def badAssoc2 = hermetic associative (a : int, b : int) : int -> ( a + b )
+}}}}}
+associative requires a pure binary (T, T) : T signature
+
+{{{{{
+def badCommType = (f : pure commutative (a : int) : int) : int -> ( 1 )
+}}}}}
+commutative without mut requires a pure binary (T, T) : R signature
+
+{{{{{
+def badCommMutType = (f : hermetic mut commutative () : int) : int -> ( 1 )
+}}}}}
+mut commutative requires a value parameter on the mutated target
+
+{{{{{
+def badIdempType = (f : pure idempotent (a : int, b : int) : int) : int -> ( 1 )
+}}}}}
+idempotent without mut requires a pure unary (T) : T signature or an effectful axiom
+
+{{{{{
+def badMonoType = (f : pure monotone () : int) : int -> ( 1 )
+}}}}}
+monotone requires ordered parameter and return types without mut
+
+{{{{{
+def Box = class (def x : int) ()
+def badMono2 = (f : pure monotone (b : Box) : Box) : int -> ( 1 )
+}}}}}
+monotone requires ordered parameter and return types without mut
+
+{{{{{
+def badInjType = (f : pure injective (x : int) : null) : int -> ( 1 )
+}}}}}
+injective requires at least one parameter, no mut, and a non-null return type
+
+{{{{{
+;; Compositional algebraic inference: relationalProps, binaryWrapperProps, isUnaryIdempotentWrapper, mut idempotent/commutative
+def V = value class (x : int) (
+    def get = pure () : int -> ( this.x )
+)
+def addInt = (a : int, b : int) : int -> ( a + b )
+def addRev = (a : int, b : int) : int -> ( b + a )
+def mulD = (a : double, b : double) : double -> ( a * b )
+def catS = (a : string, b : string) : string -> ( a + b )
+def catRev = (a : string, b : string) : string -> ( b + a )
+def eqD = (a : double, b : double) : bool -> ( a == b )
+def wrapAddRev = (a : int, b : int) : int -> ( addInt(b, a) )
+def c1 : pure commutative associative (a : int, b : int) : int = addRev
+def c2 : pure commutative (a : double, b : double) : double = mulD
+def c3 : pure associative (a : string, b : string) : string = catS
+def c4 : pure commutative (a : double, b : double) : bool = eqD
+def c5 : pure commutative (a : int, b : int) : int = wrapAddRev
+
+def d1 = (x : double) : double -> ( return -(-x) + 1.0 - (-2.0 * x) )
+def d2 = (x : double, y : double) : double -> ( x + (y * 0.0 + 1.0) )
+def d3 = (x : int) : double -> ( (x as double) * 2.0 )
+def d4 = (x : double) : double -> ( 3.0 * x )
+def i1 = (x : int) : int -> ( -x * -3 + 5 )
+def i2 = (x : int) : int -> ( 7 - (3 * x) )
+def i3 = (x : int) : string -> ( "k:" + x )
+def i4 = (x : int) : string -> ( "" + (x + 1) + ":k" )
+def vc = (x : int) : V -> ( V(x) )
+def m1 : pure monotone (x : double) : double = d1
+def m2 : pure monotone (x : double, y : double) : double = d2
+def m3 : pure monotone (x : int) : double = d3
+def m4 : pure monotone (x : double) : double = d4
+def j1 : pure injective (x : int) : int = i1
+def j2 : pure injective (x : int) : int = i2
+def j3 : pure injective (x : int) : string = i3
+def j4 : pure injective (x : int) : string = i4
+def j5 : pure injective (x : int) : V = vc
+
+def idemSelf = pure idempotent (x : int) : int -> ( x )
+def wrapIdem = (x : int) : int -> ( idemSelf(x) )
+def idCheck : pure idempotent (x : int) : int = wrapIdem
+
+def Box = class (def v : int) (
+    def setV = hermetic mut idempotent (x : int) -> ( this.v = x )
+    def addAssign = hermetic mut commutative (d : int) -> ( this.v += d )
+    def addLeft = hermetic mut commutative (d : int) -> ( this.v = this.v + d )
+    def addRight = hermetic mut commutative (d : int) -> ( this.v = d + this.v )
+    def fwdSet = hermetic mut idempotent (x : int) -> ( this.setV(x) )
+    def fwdAdd = hermetic mut commutative (d : int) -> ( this.addAssign(d) )
+)
+def setParam = hermetic idempotent (mut b : Box, x : int) -> ( b.v = x )
+def ms1 : hermetic mut idempotent (x : int) = Box(0).setV
+def ms2 : hermetic mut commutative (d : int) = Box(0).addAssign
+def ms3 : hermetic mut commutative (d : int) = Box(0).addLeft
+def ms4 : hermetic mut commutative (d : int) = Box(0).addRight
+def ms5 : hermetic mut idempotent (x : int) = Box(0).fwdSet
+def ms6 : hermetic mut commutative (d : int) = Box(0).fwdAdd
+def ms7 : hermetic idempotent (mut b : Box, x : int) = setParam
+
+println(m1(2.0), ":", m2(1.0, 99.0), ":", m3(4), ":", i3(7), ":", catRev("a", "b"), ":", c5(2, 3))
+}}}}}
+7.0:2.0:8.0:k:7:ba:5
+
+{{{{{
+;; Value class constructor constraints: mut param, impure ctor, non-deterministic ctor
+def BadV1 = value class (mut x : int) ()
+}}}}}
+value class constructor parameter cannot be mut : x
+
+{{{{{
+def BadV2 = value class (x : int) (
+    println(x)
+)
+}}}}}
+value class BadV2 constructor must be pure
+
+{{{{{
+def g = 1
+g = 2
+def BadV3 = value class (x : int) (
+    def y = g
+)
+}}}}}
+value class BadV3 constructor must be deterministic
+
+{{{{{
+;; toStringProfile, equalityProfile, comparisonProfile, inline object inside pure, redundant cast
+def V = value class (x : int) ()
+def R = class (def x : int) ()
+def Custom = class (def x : int) (
+    def toString = pure deterministic () : string -> ( "C" )
+)
+def arr = java.lang.String("ab").toCharArray()
+def pOps = pure (x : int, ia : java.lang.Integer, ib : java.lang.Integer) : bool -> (
+    def s = "v=" + V(x) + ":" + Custom(x) + ":" + (if x > 0 then ( x ) else ( "z" ))
+    s += V(x)
+    def ok1 = V(x) == V(x)
+    def ok2 = R(x) == R(x)
+    def ok3 = "abc" < "def"
+    def ok4 = ia < ib
+    def y = x as int
+    ok1 and ok2 and ok3 and ok4 and (s != "") and (y == x)
+)
+println(pOps(1, java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2)), ":", ("arr=" + arr) != "")
+}}}}}
+Warning : Redundant cast : int
+false:true
+
+{{{{{
+;; Inline object in pure function mutating outer binding & frame-local vs escaping closure captures
+def outer = 0
+def badObj = pure () -> (
+    def o = object (
+        outer = 1
+    )
+    ()
+)
+}}}}}
+Function badObj declared pure violates pure guarantee
+
+{{{{{
+;; Frame-local borrow closures reading/writing enclosing unescaped locals vs bounded call-site specialization
+def Box = class (def v : int) ()
+def applyZero = (borrow f : () : int) : int -> ( f() )
+def pureWithFrame = pure (n : int) : int -> (
+    def acc = n
+    def step = (k : int) : int -> (
+        acc += k
+        acc
+    )
+    def r1 = step(2)
+    def r2 = applyZero(() : int -> ( acc += 3 ; acc ))
+    r2
+)
+def specCaller = pure (n : int) : int -> (
+    def invoke = (cb : (x : int) : int, v : int) : int -> ( cb(v) )
+    invoke((x : int) : int -> ( x + 1 ), n)
+)
+println(pureWithFrame(10), ":", specCaller(5))
+}}}}}
+15:6
+
+{{{{{
+;; Closures: escaping closure capturing mut param vs inner closure mutating this without mut on outer
+def Box = class (def v : int) (
+    def okMut = hermetic mut () : mut () : int -> (
+        def inner = () -> ( this.v += 1 )
+        inner
+    )
+    def badBorrow = borrow () : () : int -> (
+        () -> ( this.v )
+    )
+)
+}}}}}
+borrow receiver this escapes via captured closure
+
+{{{{{
+def Box = class (def v : int) (
+    def badNoMut = () : null -> (
+        this.v = 1
+        null
+    )
+)
+}}}}}
+Cannot mutate this (field assignment .v) : function is not declared mut
+
+{{{{{
+;; While & if narrowing inside EffectChecker
+def Node = class (def next : Node?) ()
+def walk = pure (borrow start : Node?) : int -> (
+    def cur : Node? = start
+    def c = 0
+    while cur != null then (
+        c += 1
+        cur = cur.next
+    )
+    c
+)
+def n1 = Node(Node(null))
+println(walk(n1))
+}}}}}
+2
