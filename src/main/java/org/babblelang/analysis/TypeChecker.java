@@ -193,14 +193,6 @@ final class TypeChecker {
     private final Map<Type.Function, BabbleParser.FunctionLiteralContext> functionLiterals = new IdentityHashMap<>();
     private final Set<TypeNode> exportedTypeNodes = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
-    private final Map<BabbleParser.CallContext, ScopeAnalysis.JavaCallTarget> javaCallTargets = new IdentityHashMap<>();
-    private final Map<BabbleParser.CallContext, ScopeAnalysis.JavaConstructorTarget> javaConstructorTargets = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, ScopeAnalysis.JavaFieldTarget> javaFieldTargets = new IdentityHashMap<>();
-    private final Map<BabbleParser.SelectorContext, Class<?>> arrayLengthSelectors = new IdentityHashMap<>();
-    private final Map<BabbleParser.SelectorContext, ScopeAnalysis.ModuleExportTarget> moduleExportTargets = new IdentityHashMap<>();
-    private final Map<BabbleParser.CallContext, BabbleParser.FunctionLiteralContext> babbleCallFunctions = new IdentityHashMap<>();
-    private final Map<BabbleParser.CallContext, ScopeAnalysis.FunctionSignature> babbleCallSignatures = new IdentityHashMap<>();
-    private final Map<BabbleParser.CallContext, ScopeAnalysis.InterfaceCallTarget> interfaceCallTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.DefExpressionContext, Type.SymbolId> defSymbolIds = new IdentityHashMap<>();
     private final Map<List<BabbleParser.PackageExpressionContext>, Type.SymbolId> packageSymbolIds = new IdentityHashMap<>();
     private final Map<Type.Package, List<BabbleParser.PackageExpressionContext>> localPackages = new IdentityHashMap<>();
@@ -278,20 +270,37 @@ final class TypeChecker {
         return callChecks;
     }
 
-    Map<BabbleParser.CallContext, ScopeAnalysis.JavaCallTarget> javaCallTargets() {
-        return javaCallTargets;
-    }
-
-    Map<BabbleParser.CallContext, ScopeAnalysis.JavaConstructorTarget> javaConstructorTargets() {
-        return javaConstructorTargets;
-    }
-
     Map<ParserRuleContext, Type> types() {
         return types;
     }
 
     Map<Type.Function, BabbleParser.FunctionLiteralContext> functionLiterals() {
         return functionLiterals;
+    }
+
+    Map<ParserRuleContext, Type> declarationTypes() {
+        return declarationTypes;
+    }
+
+    Map<ParserRuleContext, Type> inferredMembers() {
+        return inferredMembers;
+    }
+
+    Map<BabbleParser.TypeContext, Type> annotations() {
+        return annotations;
+    }
+
+    Set<BabbleParser.FunctionLiteralContext> functions() {
+        return functions;
+    }
+
+    Map<ParserRuleContext, Type> inferredDefs() {
+        return inferredDefs;
+    }
+
+    /** The package expressions a package type of this file stands for, or null for another file's. */
+    List<BabbleParser.PackageExpressionContext> localPackageDeclarations(Type.Package pkg) {
+        return localPackages.get(pkg);
     }
 
     TypedModuleSummary summary() {
@@ -350,13 +359,8 @@ final class TypeChecker {
         for (Diagnostic diagnostic : diagnostics) {
             pass.analysis.typeDiagnostic(diagnostic.message(), diagnostic.line(), diagnostic.column());
         }
-        LoweringAnalyzer.publish(
-                pass, file, this, types, declarationTypes, annotations,
-                inferredDefs, inferredMembers, inferredParams, functions, widened, callChecks,
-                javaCallTargets, javaConstructorTargets, javaFieldTargets,
-                arrayLengthSelectors, moduleExportTargets, babbleCallFunctions,
-                babbleCallSignatures, interfaceCallTargets);
-        this.builtSummary = buildSummary();
+        LoweringAnalyzer.publish(pass, file, this);
+        this.builtSummary = TypedModuleSummary.build(pass, this, new StaticRefs(pass, this));
     }
 
     private void buildTarjanRanks(BabbleParser.FileContext file) {
@@ -539,15 +543,7 @@ final class TypeChecker {
         p7Params.clear();
         functionLiterals.clear();
         failedDefs.clear();
-        javaCallTargets.clear();
-        javaConstructorTargets.clear();
         callSolver.reset();
-        javaFieldTargets.clear();
-        arrayLengthSelectors.clear();
-        moduleExportTargets.clear();
-        babbleCallFunctions.clear();
-        babbleCallSignatures.clear();
-        interfaceCallTargets.clear();
     }
 
     private boolean commitInferred() {
@@ -582,43 +578,6 @@ final class TypeChecker {
             inferredParams.putAll(filteredParams);
         }
         return changed;
-    }
-
-    Map<ParserRuleContext, Type> frozenDeclarations() {
-        Map<ParserRuleContext, Type> frozen = new HashMap<>();
-        for (Map.Entry<ParserRuleContext, Type> entry : declarationTypes.entrySet()) {
-            if (inFile(entry.getKey()) && !isUnresolved(entry.getValue()) && entry.getValue() != Type.NULL) {
-                frozen.put(entry.getKey(), entry.getValue());
-            }
-        }
-        for (Map.Entry<ParserRuleContext, Type> entry : inferredDefs.entrySet()) {
-            if (inFile(entry.getKey()) && !isUnresolved(entry.getValue()) && entry.getValue() != Type.NULL) {
-                frozen.put(entry.getKey(), entry.getValue());
-            }
-        }
-        return frozen;
-    }
-
-    Map<ParserRuleContext, Type> frozenMembers() {
-        Map<ParserRuleContext, Type> frozen = new HashMap<>();
-        for (TypeNode node : pass.types) {
-            for (TypeNode.Member member : node.members.values()) {
-                freezeMember(node, member, frozen);
-            }
-            for (TypeNode.Member member : node.statics.values()) {
-                freezeMember(node, member, frozen);
-            }
-        }
-        return frozen;
-    }
-
-    private void freezeMember(TypeNode owner, TypeNode.Member member, Map<ParserRuleContext, Type> frozen) {
-        if (inFile(member.declaration)) {
-            Type type = memberType(owner, member);
-            if (!isUnresolved(type) && type != Type.NULL) {
-                frozen.put(member.declaration, type);
-            }
-        }
     }
 
     private final class ReturnFinder extends BabbleBaseVisitor<Void> {
@@ -1216,7 +1175,7 @@ final class TypeChecker {
         return null;
     }
 
-    private Type parentAnnotation(TypeNode node, int index) {
+    Type parentAnnotation(TypeNode node, int index) {
         if (node == null || index < 0) {
             return Type.ERROR;
         }
@@ -2955,7 +2914,6 @@ final class TypeChecker {
                         warn(error, errorSite);
                     } else {
                         subsumes(errorSite, ctx, value, jf.declaredType());
-                        recordJavaFieldWrite(ctx, jf.field().target(value));
                     }
                 }
                 case LValue.Local local -> {
@@ -2983,12 +2941,6 @@ final class TypeChecker {
                 }
                 case LValue.Implicit ignored -> {
                 }
-            }
-        }
-
-        private void recordJavaFieldWrite(BabbleParser.AssignExpressionContext ctx, ScopeAnalysis.JavaFieldTarget target) {
-            if (target != null) {
-                javaFieldTargets.put(ctx, target);
             }
         }
 
@@ -3026,7 +2978,6 @@ final class TypeChecker {
             Type result = binaryOp(arithmeticToken(operator), operator, ctx, org.babblelang.engine.impl.Interpreter.targetText(ctx), ctx, current,
                     ctx.value.getText(), ctx.value, value);
             if (target instanceof LValue.JavaField jf) {
-                recordJavaFieldWrite(ctx, jf.field().target(result));
                 subsumes(ctx, result, jf.declaredType());
             } else {
                 writeLValue(ctx, target, result, ctx);
@@ -3099,16 +3050,11 @@ final class TypeChecker {
 
     /** {@code receiver.name}, read. */
     private Type member(Type receiver, String name, boolean own, ParserRuleContext at, BabbleParser.ExpressionContext receiverExpression) {
-        return member(receiver, name, own, at, receiverExpression.getText(),
-                at instanceof BabbleParser.SelectorContext selector && selector.safe == null);
+        return member(receiver, name, own, at, receiverExpression.getText());
     }
 
     /** {@code receiver.name}, read, given the receiver's source text. */
     Type member(Type receiver, String name, boolean own, ParserRuleContext at, String receiverText) {
-        return member(receiver, name, own, at, receiverText, false);
-    }
-
-    private Type member(Type receiver, String name, boolean own, ParserRuleContext at, String receiverText, boolean recordTarget) {
         if (isUnresolved(receiver)) {
             return Type.ERROR;
         }
@@ -3119,7 +3065,7 @@ final class TypeChecker {
             }
             List<Type> memberTypes = new ArrayList<>(union.members().size());
             for (Type member : union.members()) {
-                Type resolved = member(member, name, own, at, receiverText, false);
+                Type resolved = member(member, name, own, at, receiverText);
                 if (resolved == Type.ERROR) {
                     return Type.ERROR;
                 }
@@ -3170,12 +3116,6 @@ final class TypeChecker {
             }
             // A missing export is TypeChecks' to report.
             Type export = exportType(module.module(), name);
-            if (export != null && recordTarget && at instanceof BabbleParser.SelectorContext selector) {
-                int index = module.module().exportIndex(name);
-                if (index >= 0) {
-                    moduleExportTargets.put(selector, new ScopeAnalysis.ModuleExportTarget(index, name));
-                }
-            }
             return export != null ? export : Type.ERROR;
         }
         if (receiver instanceof Type.JavaPackage pkg) {
@@ -3188,19 +3128,16 @@ final class TypeChecker {
             if (memberClass != null) {
                 return new Type.JavaClassValue(memberClass);
             }
-            return javaMember(value.type(), List.of(), name, true, at, recordTarget);
+            return javaMember(value.type(), List.of(), name, true, at);
         }
         if (receiver instanceof Type.JavaInstance instance) {
-            return javaMember(instance.type(), instance.typeArguments(), name, false, at, recordTarget);
+            return javaMember(instance.type(), instance.typeArguments(), name, false, at);
         }
         if (receiver instanceof Type.JavaArray array) {
             if ("length".equals(name)) {
-                if (recordTarget && at instanceof BabbleParser.SelectorContext selector && selector.safe == null) {
-                    arrayLengthSelectors.put(selector, array.javaClass());
-                }
                 return Type.INT;
             }
-            return javaMember(array.javaClass(), List.of(), name, false, at, recordTarget);
+            return javaMember(array.javaClass(), List.of(), name, false, at);
         }
         // Numbers, booleans, strings, null, functions, any : nothing has members but objects,
         // classes, packages and Java values.
@@ -3421,7 +3358,7 @@ final class TypeChecker {
         return t != null ? t : Type.ERROR;
     }
 
-    private Type.Package localPackage(String name, List<BabbleParser.PackageExpressionContext> list) {
+    Type.Package localPackage(String name, List<BabbleParser.PackageExpressionContext> list) {
         Type.SymbolId id = packageSymbolIds.computeIfAbsent(list, k -> new Type.SymbolId(name));
         Type.Package pkg = new Type.Package(name, id);
         localPackages.put(pkg, list);
@@ -3448,7 +3385,7 @@ final class TypeChecker {
     }
 
     /** A method or field of a Java class or object, through {@link JavaTypeBridge#javaMember}. */
-    private Type javaMember(Class<?> java, List<Type> typeArgs, String name, boolean onClass, ParserRuleContext at, boolean recordTarget) {
+    private Type javaMember(Class<?> java, List<Type> typeArgs, String name, boolean onClass, ParserRuleContext at) {
         JavaTypeBridge.JavaMember found = JavaTypeBridge.javaMember(java, typeArgs, name, onClass, algebra);
         if (found.error() != null) {
             warn(found.error(), at);
@@ -3459,9 +3396,6 @@ final class TypeChecker {
             if (desc != null) {
                 callChecks.put(at, desc);
             }
-        }
-        if (recordTarget && found.fieldTarget() != null && at instanceof BabbleParser.SelectorContext selector && selector.safe == null) {
-            javaFieldTargets.put(selector, found.fieldTarget());
         }
         return found.type();
     }
@@ -3476,257 +3410,6 @@ final class TypeChecker {
     static List<BabbleParser.ParameterDeclarationContext> parameterDecls(TypeNode node) {
         return node.ctx instanceof BabbleParser.ClassExpressionContext cls && cls.parametersDeclaration() != null
                 ? cls.parametersDeclaration().parameterDeclaration() : null;
-    }
-
-    void recordBabbleCall(Type.Function function, List<BabbleParser.CallParameterContext> arguments,
-                                  BabbleParser.CallContext ctx) {
-        if (ctx.expression() instanceof BabbleParser.SelectorContext sel && sel.safe != null) {
-            return;
-        }
-        if (arguments.size() != function.parameters().size()) {
-            return;
-        }
-        for (BabbleParser.CallParameterContext arg : arguments) {
-            if (arg.ID() != null) {
-                return;
-            }
-        }
-        ScopeAnalysis.PrimitiveKind[] paramKinds = new ScopeAnalysis.PrimitiveKind[arguments.size()];
-        boolean hasPrimitive = false;
-        int slots = 0;
-        for (int i = 0; i < arguments.size(); i++) {
-            ScopeAnalysis.PrimitiveKind kind = ScopeAnalysis.PrimitiveKind.of(function.parameters().get(i).type());
-            paramKinds[i] = kind;
-            slots += kind.slots();
-            if (kind.isPrimitive()) {
-                hasPrimitive = true;
-            }
-        }
-        ScopeAnalysis.PrimitiveKind returnKind = ScopeAnalysis.PrimitiveKind.of(function.result());
-        if (returnKind.isPrimitive()) {
-            hasPrimitive = true;
-        }
-        if (slots <= 200) {
-            BabbleParser.FunctionLiteralContext lit = functionLiterals.get(function);
-            if (lit != null && inFile(lit) && scopeOf(lit).memberOf == null) {
-                BabbleParser.ExpressionContext calleeExpr = ctx.expression();
-                while (calleeExpr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
-                    calleeExpr = b.block().expression(0);
-                }
-                if (calleeExpr == lit) {
-                    babbleCallFunctions.put(ctx, lit);
-                } else if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-                    Object resolved = resolveName(sel, sel.ID().getText(), occurrenceScopes.get(sel));
-                    if (resolved instanceof BabbleParser.DefExpressionContext def
-                            && inFile(def) && !reassigned.contains(def) && unwrapFunctionLiteral(def.value) == lit) {
-                        babbleCallFunctions.put(ctx, lit);
-                    }
-                }
-            }
-            if (hasPrimitive) {
-                babbleCallSignatures.put(ctx, new ScopeAnalysis.FunctionSignature(paramKinds, returnKind));
-            }
-        }
-    }
-
-    private record FoundInterfaceMember(TypeNode iface, TypeNode.Member member) {
-    }
-
-    void recordInterfaceCall(List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
-        if (!inFile(ctx) || !(ctx.expression() instanceof BabbleParser.SelectorContext sel)) {
-            return;
-        }
-        if (sel.safe != null || sel.expression() == null || sel.expression() instanceof BabbleParser.SuperExpressionContext) {
-            return;
-        }
-        if (!(types.get(sel.expression()) instanceof Type.Instance recvInst) || !recvInst.node().isInterface()) {
-            return;
-        }
-        for (BabbleParser.CallParameterContext arg : arguments) {
-            if (arg.ID() != null) {
-                return;
-            }
-        }
-        FoundInterfaceMember found = findDeclaringInterfaceMember(recvInst.node(), sel.ID().getText());
-        if (found == null) {
-            return;
-        }
-        Type mt = memberType(found.iface(), found.member());
-        if (!(mt instanceof Type.Function uninstFn)) {
-            return;
-        }
-        if (arguments.size() != uninstFn.parameters().size()) {
-            return;
-        }
-        ScopeAnalysis.FunctionSignature sig = LoweringAnalyzer.uninstantiatedSignature(uninstFn);
-        if (sig == null) {
-            return;
-        }
-        interfaceCallTargets.put(ctx,
-                new ScopeAnalysis.InterfaceCallTarget(found.iface().id, found.member().name, sig, true));
-    }
-
-    private static FoundInterfaceMember findDeclaringInterfaceMember(TypeNode iface, String name) {
-        return findDeclaringInterfaceMember(iface, name, Collections.newSetFromMap(new IdentityHashMap<>()));
-    }
-
-    private static FoundInterfaceMember findDeclaringInterfaceMember(TypeNode iface, String name, Set<TypeNode> visited) {
-        if (iface == null || !iface.isInterface() || !visited.add(iface)) {
-            return null;
-        }
-        TypeNode.Member member = iface.members.get(name);
-        if (member != null) {
-            return new FoundInterfaceMember(iface, member);
-        }
-        for (Object parent : iface.parents) {
-            if (parent instanceof TypeNode parentNode) {
-                FoundInterfaceMember found = findDeclaringInterfaceMember(parentNode, name, visited);
-                if (found != null) {
-                    return found;
-                }
-            }
-        }
-        return null;
-    }
-
-    TypeNode staticSingletonTypeNode(BabbleParser.ExpressionContext expr) {
-        Object ref = resolveStaticRef(expr, 0);
-        return ref instanceof TypeNode tn ? tn : null;
-    }
-
-    private Object resolveStaticRef(BabbleParser.ExpressionContext expr, int depth) {
-        if (expr == null || depth > 16) {
-            return null;
-        }
-        BabbleParser.ExpressionContext current = expr;
-        while (current instanceof BabbleParser.BlockExpressionContext blockExpr
-                && blockExpr.block().effectDeclaration().isEmpty()
-                && blockExpr.block().expression().size() == 1
-                && !pass.analysis.opensScope(blockExpr.block())) {
-            current = blockExpr.block().expression(0);
-        }
-        if (current instanceof BabbleParser.ClassExpressionContext || current instanceof BabbleParser.InterfaceExpressionContext) {
-            if (!isStaticTopLevelTypeExpr(current)) {
-                return null;
-            }
-            return pass.typeNodes.get(current);
-        }
-        if (current instanceof BabbleParser.CallContext call) {
-            return pass.modules.get(call);
-        }
-        if (current instanceof BabbleParser.SelectorContext sel) {
-            if (sel.safe != null) {
-                return null;
-            }
-            String name = sel.ID().getText();
-            if (sel.expression() == null) {
-                ScopeNode scope = occurrenceScopes.get(sel);
-                if (scope == null) {
-                    scope = scopeOf(sel);
-                }
-                Object resolved = resolveName(sel, name, scope);
-                if (resolved instanceof BabbleParser.DefExpressionContext def) {
-                    if (reassigned.contains(def)) {
-                        return null;
-                    }
-                    if (!inFile(def) && pass.session != null) {
-                        return pass.session.staticSingletons.get(def);
-                    }
-                    return resolveStaticRef(def.value, depth + 1);
-                }
-                if (resolved instanceof List<?> rawList) {
-                    return staticPackages(rawList);
-                }
-                return null;
-            }
-            Object recv = resolveStaticRef(sel.expression(), depth + 1);
-            if (recv instanceof List<?> pkgList) {
-                List<BabbleParser.PackageExpressionContext> nested = new ArrayList<>();
-                for (Object item : pkgList) {
-                    if (!(item instanceof BabbleParser.PackageExpressionContext pkg)) {
-                        continue;
-                    }
-                    for (BabbleParser.ExpressionContext stmt : pkg.packageBlock.expression()) {
-                        if (stmt instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(name)) {
-                            if (reassigned.contains(def)) {
-                                return null;
-                            }
-                            if (!inFile(def) && pass.session != null) {
-                                return pass.session.staticSingletons.get(def);
-                            }
-                            return resolveStaticRef(def.value, depth + 1);
-                        }
-                        if (stmt instanceof BabbleParser.PackageExpressionContext inner && inner.name.getText().equals(name)) {
-                            nested.add(inner);
-                        }
-                    }
-                }
-                return nested.isEmpty() ? null : staticPackages(nested);
-            }
-            if (recv instanceof TypedModuleSummary.StaticPackageMap pkgMap) {
-                return pkgMap.members().get(name);
-            }
-            if (recv instanceof ModuleInterface mod) {
-                TypedModuleSummary summary = mod.summary();
-                if (summary == null || !mod.exports().contains(name)) {
-                    return null;
-                }
-                return summary.staticSingleton(name);
-            }
-        }
-        return null;
-    }
-
-    private static List<BabbleParser.PackageExpressionContext> staticPackages(List<?> rawList) {
-        if (rawList.isEmpty()) {
-            return null;
-        }
-        List<BabbleParser.PackageExpressionContext> result = new ArrayList<>(rawList.size());
-        for (Object item : rawList) {
-            if (!(item instanceof BabbleParser.PackageExpressionContext pkg) || !isStaticTopLevelPackage(pkg)) {
-                return null;
-            }
-            result.add(pkg);
-        }
-        return result;
-    }
-
-    private static boolean isStaticTopLevelPackage(BabbleParser.PackageExpressionContext pkg) {
-        ParserRuleContext cur = pkg;
-        while (cur != null) {
-            ParserRuleContext parent = cur.getParent();
-            if (parent instanceof BabbleParser.FileContext) {
-                return true;
-            }
-            if (parent instanceof BabbleParser.BlockContext block
-                    && block.getParent() instanceof BabbleParser.PackageExpressionContext enclosingPkg
-                    && enclosingPkg.packageBlock == block) {
-                cur = enclosingPkg;
-            } else {
-                return false;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isStaticTopLevelTypeExpr(ParserRuleContext typeExpr) {
-        ParserRuleContext cur = typeExpr;
-        while (cur != null) {
-            ParserRuleContext parent = cur.getParent();
-            if (parent instanceof BabbleParser.FileContext) {
-                return true;
-            }
-            if (parent instanceof BabbleParser.DefExpressionContext def && def.value == cur) {
-                cur = def;
-            } else if (parent instanceof BabbleParser.BlockContext block
-                    && block.getParent() instanceof BabbleParser.PackageExpressionContext pkg
-                    && pkg.packageBlock == block) {
-                cur = pkg;
-            } else {
-                return false;
-            }
-        }
-        return false;
     }
 
     /** A class's constructor parameters, or null when they are another file's that can't be typed. */
@@ -4133,178 +3816,6 @@ final class TypeChecker {
         return result;
     }
 
-    private Type freezeType(Type type) {
-        if (type instanceof Type.Package pkg) {
-            List<BabbleParser.PackageExpressionContext> list = localPackages.get(pkg);
-            if (list == null) {
-                return pkg;
-            }
-            Map<String, Type> members = new LinkedHashMap<>();
-            Map<String, List<BabbleParser.PackageExpressionContext>> nested = new LinkedHashMap<>();
-            for (BabbleParser.PackageExpressionContext expr : list) {
-                for (BabbleParser.ExpressionContext stmt : expr.packageBlock.expression()) {
-                    if (stmt instanceof BabbleParser.DefExpressionContext def) {
-                        members.put(def.name.getText(), freezeType(typeOfDeclaration(def)));
-                    } else if (stmt instanceof BabbleParser.PackageExpressionContext inner) {
-                        nested.computeIfAbsent(inner.name.getText(), k -> new ArrayList<>()).add(inner);
-                    }
-                }
-            }
-            for (Map.Entry<String, List<BabbleParser.PackageExpressionContext>> entry : nested.entrySet()) {
-                members.put(entry.getKey(), freezeType(localPackage(entry.getKey(), entry.getValue())));
-            }
-            return new Type.Package(pkg.name(), pkg.id(), Map.copyOf(members));
-        }
-        return type;
-    }
-
-    private Object freezeStaticRef(Object ref) {
-        if (ref instanceof TypeNode || ref instanceof ModuleInterface || ref instanceof TypedModuleSummary.StaticPackageMap) {
-            return ref;
-        }
-        if (ref instanceof List<?> pkgList) {
-            List<BabbleParser.PackageExpressionContext> list = new ArrayList<>(pkgList.size());
-            for (Object item : pkgList) {
-                if (item instanceof BabbleParser.PackageExpressionContext p) {
-                    list.add(p);
-                }
-            }
-            return list.isEmpty() ? null : freezeStaticPackageMap(list);
-        }
-        return null;
-    }
-
-    private TypedModuleSummary.StaticPackageMap freezeStaticPackageMap(List<BabbleParser.PackageExpressionContext> list) {
-        Map<String, Object> members = new LinkedHashMap<>();
-        Map<String, List<BabbleParser.PackageExpressionContext>> nested = new LinkedHashMap<>();
-        for (BabbleParser.PackageExpressionContext pkg : list) {
-            for (BabbleParser.ExpressionContext stmt : pkg.packageBlock.expression()) {
-                if (stmt instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
-                    Object ref = freezeStaticRef(resolveStaticRef(def.value, 0));
-                    if (ref != null) {
-                        members.put(def.name.getText(), ref);
-                    }
-                } else if (stmt instanceof BabbleParser.PackageExpressionContext inner && isStaticTopLevelPackage(inner)) {
-                    nested.computeIfAbsent(inner.name.getText(), k -> new ArrayList<>()).add(inner);
-                }
-            }
-        }
-        for (Map.Entry<String, List<BabbleParser.PackageExpressionContext>> entry : nested.entrySet()) {
-            members.put(entry.getKey(), freezeStaticPackageMap(entry.getValue()));
-        }
-        return new TypedModuleSummary.StaticPackageMap(Map.copyOf(members));
-    }
-
-    Map<ParserRuleContext, Object> frozenStaticSingletons() {
-        Map<ParserRuleContext, Object> frozen = new HashMap<>();
-        for (ParserRuleContext decl : pass.definitionScopes.keySet()) {
-            if (inFile(decl) && decl instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
-                Object ref = freezeStaticRef(resolveStaticRef(def.value, 0));
-                if (ref != null) {
-                    frozen.put(def, ref);
-                }
-            }
-        }
-        return frozen;
-    }
-
-    private TypedModuleSummary buildSummary() {
-        Map<String, Type> exports = new LinkedHashMap<>();
-        Map<String, Object> staticSingletons = new LinkedHashMap<>();
-        for (Map.Entry<String, ParserRuleContext> entry : pass.fileScope.names.entrySet()) {
-            String name = entry.getKey();
-            ParserRuleContext decl = entry.getValue();
-            Type t = freezeType(typeOfDeclaration(decl));
-            if (t != null) {
-                exports.put(name, t);
-            }
-            if (decl instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
-                Object ref = freezeStaticRef(resolveStaticRef(def.value, 0));
-                if (ref != null) {
-                    staticSingletons.put(name, ref);
-                }
-            }
-        }
-        for (Map.Entry<String, List<BabbleParser.PackageExpressionContext>> entry : pass.fileScope.packages.entrySet()) {
-            String name = entry.getKey();
-            List<BabbleParser.PackageExpressionContext> list = entry.getValue();
-            if (list != null && !list.isEmpty()) {
-                exports.putIfAbsent(name, freezeType(localPackage(name, list)));
-                List<BabbleParser.PackageExpressionContext> staticPkgs = staticPackages(list);
-                if (staticPkgs != null) {
-                    staticSingletons.putIfAbsent(name, freezeStaticPackageMap(staticPkgs));
-                }
-            }
-        }
-        Map<TypeNode, List<Type.TypeVar>> typeNodeVars = new IdentityHashMap<>();
-        Map<TypeNode, List<Type>> parentTypes = new IdentityHashMap<>();
-        Map<TypeNode, Map<String, Type>> memberTypes = new IdentityHashMap<>();
-        Map<TypeNode, List<Type.Parameter>> constructorParams = new IdentityHashMap<>();
-        Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries = new IdentityHashMap<>();
-        for (TypeNode node : pass.types) {
-            List<Type.TypeVar> vars = typeVarsOf(node);
-            if (!vars.isEmpty()) {
-                typeNodeVars.put(node, vars);
-            }
-            if (!node.parents.isEmpty()) {
-                List<Type> parents = new ArrayList<>(node.parents.size());
-                for (int i = 0; i < node.parents.size(); i++) {
-                    parents.add(parentAnnotation(node, i));
-                }
-                parentTypes.put(node, List.copyOf(parents));
-            }
-            Map<String, Type> members = new LinkedHashMap<>();
-            for (TypeNode.Member m : node.members.values()) {
-                Type t = memberType(node, m);
-                if (t != null) {
-                    members.put(m.name, t);
-                }
-            }
-            for (TypeNode.Member m : node.statics.values()) {
-                Type t = memberType(node, m);
-                if (t != null) {
-                    members.put(m.name, t);
-                }
-            }
-            if (!members.isEmpty()) {
-                memberTypes.put(node, Map.copyOf(members));
-            }
-            if (node.ctx instanceof BabbleParser.ClassExpressionContext) {
-                List<Type.Parameter> params = constructorParameters(node);
-                if (params != null) {
-                    constructorParams.put(node, List.copyOf(params));
-                }
-                if (effectChecker != null) {
-                    EffectChecker.CallableSummary cs = effectChecker.constructorSummary(node);
-                    if (cs != null) {
-                        constructorSummaries.put(node, cs);
-                    }
-                }
-            }
-        }
-        Map<Type.Function, TypedModuleSummary.CallableEffectTemplate> callableTemplates = new IdentityHashMap<>();
-        if (effectChecker != null) {
-            for (Map.Entry<Type.Function, BabbleParser.FunctionLiteralContext> entry : functionLiterals.entrySet()) {
-                if (inFile(entry.getValue())) {
-                    TypedModuleSummary.CallableEffectTemplate tpl = effectChecker.buildCallableTemplate(entry.getValue(), entry.getKey());
-                    if (tpl != null) {
-                        callableTemplates.put(entry.getKey(), tpl);
-                    }
-                }
-            }
-        }
-        return new TypedModuleSummary(
-                exports,
-                staticSingletons,
-                typeNodeVars,
-                parentTypes,
-                memberTypes,
-                constructorParams,
-                constructorSummaries,
-                callableTemplates,
-                exportedJavaEffects());
-    }
-
     Object resolveNamespaceMemberDecl(Type nsType, String name) {
         if (nsType instanceof Type.Package pkg) {
             List<BabbleParser.PackageExpressionContext> list = localPackages.get(pkg);
@@ -4386,10 +3897,6 @@ final class TypeChecker {
             return -1;
         }
         return parameters.indexOf(mapped[argPos]);
-    }
-
-    ScopeAnalysis.JavaFieldTarget javaFieldTargetOf(ParserRuleContext sel) {
-        return javaFieldTargets.get(sel);
     }
 
     boolean hasCallCheck(ParserRuleContext ctx) {

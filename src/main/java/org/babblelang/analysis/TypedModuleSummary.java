@@ -1,8 +1,14 @@
 package org.babblelang.analysis;
 
+import org.antlr.v4.runtime.ParserRuleContext;
 import org.babblelang.effects.Effect;
+import org.babblelang.parser.BabbleParser;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -82,8 +88,20 @@ final class TypedModuleSummary {
         }
     }
 
+    /**
+     * What the following inputs of a session read of an input's declarations : the types of its
+     * defs and parameters and of its members, its static singletons, and its effects.
+     */
+    record Session(
+            Map<ParserRuleContext, Type> declarationTypes,
+            Map<ParserRuleContext, Type> memberTypes,
+            Map<ParserRuleContext, Object> staticSingletons,
+            Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> javaEffects,
+            Map<ParserRuleContext, EffectChecker.CallableSummary> callableSummaries) {
+    }
+
     static final TypedModuleSummary EMPTY = new TypedModuleSummary(
-            Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+            Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), null);
 
     private final Map<String, Type> exports;
     private final Map<String, Object> staticSingletons;
@@ -94,6 +112,7 @@ final class TypedModuleSummary {
     private final Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries;
     private final Map<Type.Function, CallableEffectTemplate> callableTemplates;
     private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects;
+    private final Session session;
 
     TypedModuleSummary(
             Map<String, Type> exports,
@@ -104,7 +123,9 @@ final class TypedModuleSummary {
             Map<TypeNode, List<Type.Parameter>> constructorParams,
             Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries,
             Map<Type.Function, CallableEffectTemplate> callableTemplates,
-            Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects) {
+            Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects,
+            Session session) {
+        this.session = session;
         this.exports = exports != null ? Map.copyOf(exports) : Map.of();
         this.staticSingletons = staticSingletons != null ? Map.copyOf(staticSingletons) : Map.of();
         this.typeNodeVars = typeNodeVars != null ? typeNodeVars : Map.of();
@@ -114,6 +135,181 @@ final class TypedModuleSummary {
         this.constructorSummaries = constructorSummaries != null ? constructorSummaries : Map.of();
         this.callableTemplates = callableTemplates != null ? callableTemplates : Map.of();
         this.exportedJavaEffects = exportedJavaEffects != null ? Map.copyOf(exportedJavaEffects) : Map.of();
+    }
+
+    /**
+     * The summary of the file {@code checker} analysed : its exports and static singletons, its
+     * classes and interfaces, the effect templates of its callables, and, for a session input,
+     * what the following inputs read of its declarations.
+     */
+    static TypedModuleSummary build(BlockScopes pass, TypeChecker checker, StaticRefs refs) {
+        Map<String, Type> exports = new LinkedHashMap<>();
+        Map<String, Object> staticSingletons = new LinkedHashMap<>();
+        for (Map.Entry<String, ParserRuleContext> entry : pass.fileScope.names.entrySet()) {
+            String name = entry.getKey();
+            ParserRuleContext decl = entry.getValue();
+            Type t = freezeType(checker, checker.typeOfDeclaration(decl));
+            if (t != null) {
+                exports.put(name, t);
+            }
+            if (decl instanceof BabbleParser.DefExpressionContext def && !checker.isReassigned(def)) {
+                Object ref = refs.freeze(refs.resolve(def.value, 0));
+                if (ref != null) {
+                    staticSingletons.put(name, ref);
+                }
+            }
+        }
+        for (Map.Entry<String, List<BabbleParser.PackageExpressionContext>> entry : pass.fileScope.packages.entrySet()) {
+            String name = entry.getKey();
+            List<BabbleParser.PackageExpressionContext> list = entry.getValue();
+            if (list != null && !list.isEmpty()) {
+                exports.putIfAbsent(name, freezeType(checker, checker.localPackage(name, list)));
+                List<BabbleParser.PackageExpressionContext> staticPkgs = StaticRefs.staticPackages(list);
+                if (staticPkgs != null) {
+                    staticSingletons.putIfAbsent(name, refs.freezePackages(staticPkgs));
+                }
+            }
+        }
+        Map<TypeNode, List<Type.TypeVar>> typeNodeVars = new IdentityHashMap<>();
+        Map<TypeNode, List<Type>> parentTypes = new IdentityHashMap<>();
+        Map<TypeNode, Map<String, Type>> memberTypes = new IdentityHashMap<>();
+        Map<TypeNode, List<Type.Parameter>> constructorParams = new IdentityHashMap<>();
+        Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries = new IdentityHashMap<>();
+        for (TypeNode node : pass.types) {
+            List<Type.TypeVar> vars = checker.typeVarsOf(node);
+            if (!vars.isEmpty()) {
+                typeNodeVars.put(node, vars);
+            }
+            if (!node.parents.isEmpty()) {
+                List<Type> parents = new ArrayList<>(node.parents.size());
+                for (int i = 0; i < node.parents.size(); i++) {
+                    parents.add(checker.parentAnnotation(node, i));
+                }
+                parentTypes.put(node, List.copyOf(parents));
+            }
+            Map<String, Type> members = new LinkedHashMap<>();
+            for (TypeNode.Member m : node.members.values()) {
+                Type t = checker.memberType(node, m);
+                if (t != null) {
+                    members.put(m.name, t);
+                }
+            }
+            for (TypeNode.Member m : node.statics.values()) {
+                Type t = checker.memberType(node, m);
+                if (t != null) {
+                    members.put(m.name, t);
+                }
+            }
+            if (!members.isEmpty()) {
+                memberTypes.put(node, Map.copyOf(members));
+            }
+            if (node.ctx instanceof BabbleParser.ClassExpressionContext) {
+                List<Type.Parameter> params = checker.constructorParameters(node);
+                if (params != null) {
+                    constructorParams.put(node, List.copyOf(params));
+                }
+                if (checker.effectChecker != null) {
+                    EffectChecker.CallableSummary cs = checker.effectChecker.constructorSummary(node);
+                    if (cs != null) {
+                        constructorSummaries.put(node, cs);
+                    }
+                }
+            }
+        }
+        Map<Type.Function, TypedModuleSummary.CallableEffectTemplate> callableTemplates = new IdentityHashMap<>();
+        if (checker.effectChecker != null) {
+            for (Map.Entry<Type.Function, BabbleParser.FunctionLiteralContext> entry : checker.functionLiterals().entrySet()) {
+                if (checker.inFile(entry.getValue())) {
+                    TypedModuleSummary.CallableEffectTemplate tpl = checker.effectChecker.buildCallableTemplate(entry.getValue(), entry.getKey());
+                    if (tpl != null) {
+                        callableTemplates.put(entry.getKey(), tpl);
+                    }
+                }
+            }
+        }
+        return new TypedModuleSummary(
+                exports,
+                staticSingletons,
+                typeNodeVars,
+                parentTypes,
+                memberTypes,
+                constructorParams,
+                constructorSummaries,
+                callableTemplates,
+                checker.exportedJavaEffects(),
+                pass.session == null ? null : new Session(
+                        frozenDeclarations(checker),
+                        frozenMembers(pass, checker),
+                        refs.frozenSingletons(),
+                        checker.effectChecker != null ? checker.effectChecker.committedJavaEffects() : Map.of(),
+                        checker.effectChecker != null ? checker.effectChecker.committedCallableSummaries() : Map.of()));
+    }
+
+    private static Type freezeType(TypeChecker checker, Type type) {
+        if (type instanceof Type.Package pkg) {
+            List<BabbleParser.PackageExpressionContext> list = checker.localPackageDeclarations(pkg);
+            if (list == null) {
+                return pkg;
+            }
+            Map<String, Type> members = new LinkedHashMap<>();
+            Map<String, List<BabbleParser.PackageExpressionContext>> nested = new LinkedHashMap<>();
+            for (BabbleParser.PackageExpressionContext expr : list) {
+                for (BabbleParser.ExpressionContext stmt : expr.packageBlock.expression()) {
+                    if (stmt instanceof BabbleParser.DefExpressionContext def) {
+                        members.put(def.name.getText(), freezeType(checker, checker.typeOfDeclaration(def)));
+                    } else if (stmt instanceof BabbleParser.PackageExpressionContext inner) {
+                        nested.computeIfAbsent(inner.name.getText(), k -> new ArrayList<>()).add(inner);
+                    }
+                }
+            }
+            for (Map.Entry<String, List<BabbleParser.PackageExpressionContext>> entry : nested.entrySet()) {
+                members.put(entry.getKey(), freezeType(checker, checker.localPackage(entry.getKey(), entry.getValue())));
+            }
+            return new Type.Package(pkg.name(), pkg.id(), Map.copyOf(members));
+        }
+        return type;
+    }
+
+    private static Map<ParserRuleContext, Type> frozenDeclarations(TypeChecker checker) {
+        Map<ParserRuleContext, Type> frozen = new HashMap<>();
+        for (Map.Entry<ParserRuleContext, Type> entry : checker.declarationTypes().entrySet()) {
+            if (checker.inFile(entry.getKey()) && !TypeChecker.isUnresolved(entry.getValue()) && entry.getValue() != Type.NULL) {
+                frozen.put(entry.getKey(), entry.getValue());
+            }
+        }
+        for (Map.Entry<ParserRuleContext, Type> entry : checker.inferredDefs().entrySet()) {
+            if (checker.inFile(entry.getKey()) && !TypeChecker.isUnresolved(entry.getValue()) && entry.getValue() != Type.NULL) {
+                frozen.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return frozen;
+    }
+
+    private static Map<ParserRuleContext, Type> frozenMembers(BlockScopes pass, TypeChecker checker) {
+        Map<ParserRuleContext, Type> frozen = new HashMap<>();
+        for (TypeNode node : pass.types) {
+            for (TypeNode.Member member : node.members.values()) {
+                freezeMember(checker, node, member, frozen);
+            }
+            for (TypeNode.Member member : node.statics.values()) {
+                freezeMember(checker, node, member, frozen);
+            }
+        }
+        return frozen;
+    }
+
+    private static void freezeMember(TypeChecker checker, TypeNode owner, TypeNode.Member member, Map<ParserRuleContext, Type> frozen) {
+        if (checker.inFile(member.declaration)) {
+            Type type = checker.memberType(owner, member);
+            if (!TypeChecker.isUnresolved(type) && type != Type.NULL) {
+                frozen.put(member.declaration, type);
+            }
+        }
+    }
+
+    /** The session part, or null when the file isn't a session input. */
+    Session session() {
+        return session;
     }
 
     Type exportType(String name) {

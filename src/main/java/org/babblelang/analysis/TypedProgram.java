@@ -122,8 +122,10 @@ final class TypedProgram {
         return checker.callSolver().resolvedConstructor(call);
     }
 
-    ScopeAnalysis.JavaFieldTarget javaFieldTargetOf(ParserRuleContext sel) {
-        return checker.javaFieldTargetOf(sel);
+    /** The Java field a selection reads, when it has a static target. */
+    ScopeAnalysis.JavaFieldTarget javaFieldTargetOf(BabbleParser.SelectorContext sel) {
+        return sel.expression() == null || sel.safe != null ? null
+                : LoweringAnalyzer.fieldReadTarget(checker.types().get(sel.expression()), sel.ID().getText(), checker.algebra());
     }
 
     boolean hasCallCheck(ParserRuleContext ctx) {
