@@ -1,0 +1,205 @@
+;; Generics, type inference, widening hints, Java generic bounds, recursive signatures, and unions
+
+{{{{{
+;; Generic Babble function value instantiation (to function type & Java SAM) and inference failure
+def id(T) = (x : T) : T -> ( x )
+def intId : (x : int) : int = id
+def strId : (x : string) : string = id
+def s = java.util.stream.IntStream.range(1, 4).map(id).sum()
+def o = java.util.Optional.of(5).map(id).get()
+println(intId(4), ":", strId("ok"), ":", s, ":", o)
+}}}}}
+4:ok:6:5
+
+{{{{{
+def id(T) = (x : T) : T -> ( x )
+def bad = id
+}}}}}
+Missing type : cannot infer type arguments for id
+
+{{{{{
+;; Deferred lambda arg + return-type hint fallback + widening hints across union/fn/class/Java
+def id(T) = (x : T) : T -> ( x )
+def apply(A, B) = (x : A, f : (a : A) : B) : B -> ( f(x) )
+def d1 : double = id(1)
+def u1 : int | double = id(2)
+def r = apply(3, (x) -> ( x * 2.5 ))
+def Box(T) = class (def v : T) ()
+def opt : java.util.Optional(int) = java.util.Optional.of(5)
+def opt2 = opt.map((x) -> ( x + 1 ))
+def b1 : Box(double) = Box(3)
+def mkPair(A, B) = (a : A, b : B) : A -> ( a )
+def p : double = mkPair(2, "z")
+println(d1, ":", u1, ":", r, ":", opt2.get(), ":", b1.v, ":", p)
+}}}}}
+1.0:2:7.5:6:3.0:2.0
+
+{{{{{
+;; Generic Java SAM target typing (deferred lambda) + Collections.sort / List.replaceAll
+def lenOpt = java.util.Optional.of("abc").map((s) -> ( java.lang.StringBuilder(s).length() )).get()
+def fn : java.util.function.Function(string, int) = (s) -> ( java.lang.StringBuilder(s).length() )
+def list : java.util.List(string) = java.util.ArrayList()
+list.add("bb")
+list.add("a")
+list.add("ccc")
+java.util.Collections.sort(list, (a, b) -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
+list.replaceAll((s) -> ( s + ":" + java.util.Optional.of(s).map(fn).get() ))
+println(lenOpt, ":", list.get(0), ",", list.get(1), ",", list.get(2))
+}}}}}
+3:a:1,bb:2,ccc:3
+
+{{{{{
+def fn = java.util.function.Function((s : string) -> ( s.length() ))
+}}}}}
+Missing type : cannot infer type arguments for java.util.function.Function
+
+{{{{{
+;; Generic interface extending generic interface with default substitution
+def BaseI(A) = interface (
+    def get : () : A
+    def pair = () : java.util.List(A) -> (
+        def out : java.util.List(A) = java.util.ArrayList()
+        out.add(this.get())
+        out
+    )
+)
+def SubI(B) = interface extends BaseI(B) (
+    def get2 = () : B -> ( this.get() )
+)
+def Impl(C) = class (def item : C) implements SubI(C) (
+    def get = () : C -> ( this.item )
+)
+def i : SubI(string) = Impl("hi")
+println(i.get(), ":", i.get2(), ":", i.pair().get(0))
+}}}}}
+hi:hi:hi
+
+{{{{{
+;; Parameterized & module/package/Java type path and bound errors
+def x : int(int) = 1
+}}}}}
+Wrong number of type arguments : expected 0, got 1
+
+{{{{{
+def Box(T) = class (def v : T) ()
+def b : Box(int, string) = Box(1)
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+def l : java.util.List = java.util.ArrayList()
+}}}}}
+Missing type arguments : java.util.List
+
+{{{{{
+def l : java.util.List(int, string) = java.util.ArrayList()
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+def e : java.util.EnumSet(string)? = null
+}}}}}
+Type error : type argument string does not satisfy bound E of java.util.EnumSet
+
+{{{{{
+;; Imported Java package in type annotation
+def ju = import("java.util")
+def xs : ju.List(string) = ju.ArrayList()
+xs.add("ok")
+println(xs.get(0))
+}}}}}
+ok
+
+{{{{{
+;; Unknown type paths inside packages
+package p (
+    def a = 1
+)
+def x : p.Missing = 1
+}}}}}
+Unknown type : p.Missing
+
+{{{{{
+def x : p.a = 1
+}}}}}
+Unknown type : p.a
+
+{{{{{
+;; Cannot infer type arguments for generic Java static method / constructor
+def o = java.util.Optional.empty()
+}}}}}
+Missing type : cannot infer type arguments for java.util.Optional.empty
+
+{{{{{
+def l = java.util.ArrayList()
+}}}}}
+Missing type : cannot infer type arguments for java.util.ArrayList
+
+{{{{{
+;; Recursive expression cycle without declared return type
+def f = (n : int) -> ( f(n - 1) )
+}}}}}
+Missing type : f (recursive)
+
+{{{{{
+def f = (n : int) : int -> ( if n <= 0 then ( 1 ) else ( n * recurse(n - 1) ) )
+println(f(4))
+}}}}}
+24
+
+{{{{{
+;; Return type errors & empty block against expected return type
+def f = (flag : bool) : int -> (
+    if flag then ( return 1 )
+    return "no"
+)
+}}}}}
+Type error : expected int, got string
+
+{{{{{
+def f = () : int -> ( )
+}}}}}
+Type error : expected int, got null
+
+{{{{{
+;; Unary minus on union int|double and nullable union, plus union of functions call
+def negU = (flag : bool) : int | double -> (
+    def v : int | double = if flag then ( 3 ) else ( 2.5 )
+    -v
+)
+def f1 = (x : int) : int -> ( x + 1 )
+def f2 = (x : int) : double -> ( x * 0.5 )
+def pick = (flag : bool) -> (
+    def fn = if flag then ( f1 ) else ( f2 )
+    fn(4)
+)
+println(negU(true), ":", negU(false), ":", pick(true), ":", pick(false))
+}}}}}
+-3:-2.5:5:2.0
+
+{{{{{
+;; Calling union containing null fails TypeChecker
+def f : ((x : int) : int)? = null
+f(1)
+}}}}}
+f is not callable
+
+{{{{{
+;; Widening notes ("because of the assignment" and "because of the call")
+def x = 1
+def takeInt = (n : int) -> ( n )
+takeInt(x)
+x = 1.5
+}}}}}
+Type error : expected int, got double (x is double because of the assignment)
+
+{{{{{
+def takeInt = (n : int) -> ( n )
+def f = (x) -> (
+    takeInt(x)
+    x
+)
+f(1)
+f(1.5)
+}}}}}
+Type error : expected int, got double (x is double because of the call)

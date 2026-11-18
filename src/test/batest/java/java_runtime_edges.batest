@@ -1,0 +1,137 @@
+;; Shared runtime & Java interop edge cases: JavaTypes, JavaClass, JavaLinker, Faces, Overloads, Operators, Values, Types, Members
+
+{{{{{
+;; JavaTypes widen (int->double), Faces convertResult check, and Map boxed get
+def dsum = java.util.List.of(1, 2, 3).stream().mapToDouble((x : int) -> ( x + 1 )).sum()
+def box : java.util.Map(string, any?) = java.util.HashMap()
+box.put("k", 42)
+println(dsum, ":", box.get("k"))
+}}}}}
+9.0:42
+
+{{{{{
+;; Faces convertResult type error when SAM implementation returns wrong type
+def list : java.util.List(int) = java.util.ArrayList()
+list.add(1)
+list.add(2)
+def bad = (x : any?, y : any?) : any? -> ( "oops" )
+java.util.Collections.sort(list, bad)
+}}}}}
+Type error : Comparator.compare must return int, got String
+
+{{{{{
+;; JavaTypes.checkBoxed (Integer.getInteger returns null for missing property -> Type error)
+def v : int = java.lang.Integer.getInteger("babble.nonexistent.prop")
+println(v)
+}}}}}
+Type error : expected int, got null
+
+{{{{{
+;; JavaTypes.wrapInvocationException with NullPointerException (null message) and exception message
+def bad = () -> ( java.util.Objects.requireNonNull(null) )
+bad()
+}}}}}
+java.lang.NullPointerException
+
+{{{{{
+def bad = () -> ( java.lang.Integer.parseInt("notanumber") )
+bad()
+}}}}}
+java.lang.NumberFormatException : For input string: "notanumber"
+
+{{{{{
+;; Operators: Not comparable & Not a number via dynamic any values
+def dyn = (v : any) : any -> ( v )
+def C = class () ()
+println(dyn(C()) < dyn(C()))
+}}}}}
+Not comparable : dyn(C()) and dyn(C())
+
+{{{{{
+def dyn = (v : any) : any -> ( v )
+println(-dyn("abc"))
+}}}}}
+Not a number : dyn("abc")
+
+{{{{{
+;; BabbleClass / JavaClass / JavaObject equality, same(), and Class equivalence
+def A = class () ()
+def B = class () ()
+def o1 = java.lang.StringBuilder("a")
+def o2 = java.lang.StringBuilder("a")
+println(A == A, ":", A == B, ":", same(o1, o1), ":", same(o1, o2), ":", java.lang.String == java.lang.String, ":", java.lang.String == java.lang.Integer)
+}}}}}
+true:false:true:false:true:false
+
+{{{{{
+;; JavaTypes.checkParameters via IntStream, DoubleStream, and FilenameFilter invoked by Java
+def ip : java.util.function.IntPredicate = (x : int) -> ( x > 0 )
+def dp : java.util.function.DoublePredicate = (x : double) -> ( x > 1.0 )
+def ff : java.io.FilenameFilter = (d, s) -> ( s == "pom.xml" )
+def found = java.io.File(".").list(ff)
+println(java.util.stream.IntStream.range(1, 4).allMatch(ip), ":", java.util.stream.DoubleStream.of(1.5).allMatch(dp), ":", found.length >= 0)
+}}}}}
+true:true:true
+
+{{{{{
+def ip : java.util.function.IntPredicate = (x : int) -> ( x > 0 )
+def im = java.util.Arrays.stream(java.lang.Class.forName("java.util.function.IntPredicate").getDeclaredMethods()).filter((m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
+def badArgs : java.util.List(any) = java.util.List.of("bad")
+im.invoke(ip, badArgs.toArray())
+}}}}}
+java.lang.IllegalArgumentException : object is not an instance of declaring class
+
+{{{{{
+;; JavaLinker selectCache + BoundJavaMethod calls + BabbleInstance/callable Object args
+def sb = java.lang.StringBuilder("hello")
+def getLen : () : int = sb.length
+def appStr : (s : string) : java.lang.StringBuilder = sb.append
+def appInt : (n : int) : java.lang.StringBuilder = sb.append
+def appBool : (b : bool) : java.lang.StringBuilder = sb.append
+def appDbl : (d : double) : java.lang.StringBuilder = sb.append
+appStr("!")
+appInt(7)
+appBool(true)
+appDbl(2.5)
+def C = class (def n : int) (
+    def toString = () : string -> ( "C" + this.n )
+)
+def objList : java.util.List(any?) = java.util.ArrayList()
+objList.add(C(9))
+objList.add(C)
+objList.add((x : int) -> ( x ))
+println(getLen(), ":", sb.toString(), ":", objList.get(0), ":", objList.size())
+}}}}}
+14:hello!7true2.5:C9:3
+
+{{{{{
+;; Dynamic JavaLinker wrong arg types through dynamic BoundJavaMethod calls
+def dyn = (v : any) : any -> ( v )
+def parse : (s : string) : int = java.lang.Integer.parseInt
+def s = dyn(123)
+println(java.lang.Integer.parseInt(s as string))
+}}}}}
+Type error : expected string, got int
+
+{{{{{
+;; Java static constant field & non-constant static field via SelectCache
+def tk = java.io.StreamTokenizer(java.io.StringReader("1"))
+println(java.io.StreamTokenizer.TT_EOF, ":", tk.TT_WORD)
+}}}}}
+-1:-3
+
+{{{{{
+;; AssertFunction and int()/double() conversions
+println(double(42), ":", int("99"), ":", int(3.9))
+}}}}}
+42.0:99:3
+
+{{{{{
+assert(false, "boom")
+}}}}}
+boom
+
+{{{{{
+assert(false)
+}}}}}
+Assertion failed : false

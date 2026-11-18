@@ -28,6 +28,7 @@ public final class BatestRunner {
     private static final Pattern LEXICAL_LINE = Pattern.compile("^Lexical error at line \\d+:\\d+ : ");
     private static final Pattern ASSERTION_LINE = Pattern.compile("^Assertion failed at line -?\\d+ : ");
     private static final Pattern REASON_LINE = Pattern.compile(" because of the (assignment|call) at line \\d+\\)");
+    private static final Pattern TYPE_ID_PAIR = Pattern.compile(" \\(expected T\\d+, got T\\d+\\)$");
 
     public enum Kind {
         OK,
@@ -167,6 +168,7 @@ public final class BatestRunner {
         text = LEXICAL_LINE.matcher(text).replaceFirst("Lexical error : ");
         text = ASSERTION_LINE.matcher(text).replaceFirst("Assertion failed : ");
         text = REASON_LINE.matcher(text).replaceAll(" because of the $1)");
+        text = TYPE_ID_PAIR.matcher(text).replaceFirst(" (expected T#, got T#)");
         return text.strip();
     }
 

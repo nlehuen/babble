@@ -4,6 +4,7 @@ import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.ScriptRuntime;
+import org.babblelang.runtime.Values;
 
 import java.io.IOException;
 
@@ -33,7 +34,7 @@ public class PrintFunction implements Callable {
         Appendable out;
         if (!redirected) {
             out = rt.writer();
-        } else if (to instanceof Appendable appendable) {
+        } else if (Values.unwrap(to) instanceof Appendable appendable) {
             out = appendable;
         } else {
             throw new BabbleException("print to: expects a Writer or PrintStream");

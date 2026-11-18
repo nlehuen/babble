@@ -3301,7 +3301,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                         widenStackToDouble();
                     }
                     if (stackKind == ScopeAnalysis.PrimitiveKind.NONE && mk == ScopeAnalysis.PrimitiveKind.DOUBLE
-                            && scopes.expressionKind(ctx.value) == ScopeAnalysis.PrimitiveKind.INT) {
+                            && scopes.expressionKind(ctx.value) == ScopeAnalysis.PrimitiveKind.INT
+                            && !scopes.widensToDouble(ctx.value) && !scopes.widensToDouble(ctx)) {
                         unbox(ScopeAnalysis.PrimitiveKind.INT);
                         mv.visitInsn(I2D);
                         stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;

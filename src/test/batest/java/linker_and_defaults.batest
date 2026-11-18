@@ -1,0 +1,330 @@
+;; Runtime JavaLinker inline caches, Java default methods, Faces proxies, Supers, and Java field/primitive edges
+
+{{{{{
+;; Unbound JavaMethod and BoundJavaMethod select/call through Bootstrap & JavaLinker
+def absFn = java.lang.Math.abs
+def parseFn = java.lang.Integer.parseInt
+def eqFn = java.util.Objects.equals
+println(absFn(-7), ":", absFn(-2.5), ":", parseFn("42"), ":", eqFn(null, null), ":", eqFn("a", null))
+
+def sb = java.lang.StringBuilder("hi")
+def app = sb.append
+app("!")
+println(sb.toString())
+
+def rawList = java.util.List.of("a", "b", "c")
+def rawGet = rawList.get
+println(rawGet(1))
+
+def list : java.util.List(any) = java.util.ArrayList()
+def add = list.add
+add(sb)
+println(list.size())
+
+def intVal = java.lang.Integer.valueOf
+def dblVal = java.lang.Double.valueOf
+def boolVal = java.lang.Boolean.valueOf
+println(intVal(99), ":", dblVal(1.5), ":", boolVal(true))
+}}}}}
+7:2.5:42:true:false
+hi!
+b
+1
+99:1.5:true
+
+{{{{{
+;; Safe navigation on Java receivers (Bootstrap.select -> JavaLinker.select -> JavaLinker.call)
+def sb : java.lang.StringBuilder? = java.lang.StringBuilder("ab")
+def noneSb : java.lang.StringBuilder? = null
+def raw : java.util.List(int)? = java.util.List.of(10, 20)
+def noneRaw : java.util.List(int)? = null
+println(sb?.append("c")?.toString(), ":", noneSb?.toString(), ":", raw?.get(1), ":", noneRaw?.size())
+}}}}}
+abc:null:20:null
+
+{{{{{
+;; Polymorphic and megamorphic JavaLinker select & call across wrapped/raw receivers and BabbleInstance args
+def Box = class (def n : int) ()
+def list : java.util.List(any) = java.util.ArrayList()
+def add = list.add
+add(Box(1))
+println(list.size())
+
+def c0 : java.util.List(int) = java.util.ArrayList()
+def c1 : java.util.List(int) = java.util.LinkedList()
+def c2 : java.util.List(int) = java.util.Vector()
+def c3 : java.util.List(int) = java.util.Stack()
+def c4 : java.util.List(int) = java.util.List.of(1, 2)
+def c5 : java.util.List(int) = java.util.Collections.singletonList(9)
+def cols : java.util.List(java.util.List(int)) = java.util.List.of(c0, c1, c2, c3, c4, c5)
+
+def sum = 0
+def i = 0
+while i < 12 then (
+    def k = i - int(i / 6) * 6
+    def c : java.util.List(int)? = cols.get(k)
+    def sz = c?.size()
+    if sz != null then ( sum += sz )
+    i += 1
+)
+println(sum)
+}}}}}
+1
+6
+
+{{{{{
+;; Exception through JavaLinker FAIL handler
+def parseFn = java.lang.Integer.parseInt
+println(parseFn("bad"))
+}}}}}
+java.lang.NumberFormatException : For input string: "bad"
+
+{{{{{
+;; Wrong arity through BoundJavaMethod (JavaLinker fallback to generic)
+def sb = java.lang.StringBuilder("x")
+def app = sb.append
+app()
+}}}}}
+No applicable overload of java.lang.StringBuilder.append for ()
+
+{{{{{
+;; Java default methods (JavaDefaultCall), super(JavaInterface), and Faces Object methods
+def EvenPred = class () implements java.util.function.IntPredicate (
+    def test = (x : int) : bool -> ( int(x / 2) * 2 == x )
+    def testInverted = (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )
+)
+def p = EvenPred()
+def neg = p.negate()
+println(p.test(4), ":", neg.test(4), ":", neg.test(3), ":", p.testInverted(4))
+
+def pred : java.util.function.IntPredicate = p
+def samProxy : java.util.function.IntUnaryOperator = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 10 ))
+def predObj : any = pred
+def samObj : any = samProxy
+println(java.util.Objects.equals(predObj, p), ":", java.util.Objects.equals(samObj, samObj))
+println(java.util.Objects.hashCode(predObj) == java.util.Objects.hashCode(p), ":", java.util.Objects.hashCode(samObj) != 0)
+println(java.util.Objects.toString(predObj) == java.util.Objects.toString(p))
+println(java.util.Objects.toString(samObj))
+}}}}}
+true:false:true:false
+true:true
+true:true
+true
+function as IntUnaryOperator
+
+{{{{{
+;; Multi-level Babble interface inheritance, default lookup, 'is' checks, and interface/class toString
+def Base = interface (
+    def req : () : int
+    def tag = () : string -> ( "base" )
+)
+def Mid = interface extends Base (
+    def midTag = () : string -> ( super(Base).tag() + "+mid" )
+)
+def Impl = class (def v : int) implements Mid (
+    def req = () : int -> ( this.v )
+    def full = () : string -> ( super(Mid).midTag() )
+)
+def x = Impl(7)
+println(x.tag(), ":", x.midTag(), ":", x.full(), ":", x is Base, ":", x is Mid)
+println(Base, ":", Impl)
+}}}}}
+base:base+mid:base+mid:true:true
+interface Base:class Impl
+
+{{{{{
+;; Calling interface method with no default via super fails
+def I = interface (
+    def m : () : int
+)
+def C = class () implements I (
+    def m = () : int -> ( super(I).m() )
+)
+println(C().m())
+}}}}}
+I.m has no default
+
+{{{{{
+;; Java array length in Babble and primitive/boxed returns (byte, short, char, long, float, void)
+def frames = java.lang.Thread.currentThread().getStackTrace()
+println(frames.length > 0)
+def b = java.lang.Byte.parseByte("7")
+def s = java.lang.Short.parseShort("12")
+def ch = java.lang.Character.valueOf(java.lang.StringBuilder("abc").charAt(1)).charValue()
+def lg = java.lang.Long.parseLong("9000000000")
+def fl = java.lang.Float.parseFloat("2.5")
+def arr : java.util.List(int) = java.util.ArrayList()
+arr.add(1)
+arr.clear()
+def ib = java.lang.Integer.valueOf(5)
+def db = java.lang.Double.valueOf(2.5)
+def bb = java.lang.Boolean.valueOf(true)
+println(b, ":", s, ":", ch, ":", lg, ":", fl, ":", arr.isEmpty(), ":", ib + 1, ":", db + 0.5, ":", bb)
+}}}}}
+true
+7:12:b:9000000000:2.5:true:6:3.0:true
+
+{{{{{
+;; Null boxed Integer return into typed non-nullable int (checkBoxed)
+def x : int = java.lang.Integer.getInteger("babble.nonexistent.prop")
+}}}}}
+Type error : expected int, got null
+
+{{{{{
+;; Java public mutable fields: double, float, long, int, String, Object (assign & compound assign)
+def p2d = java.awt.geom.Point2D.Double(1.0, 2.0)
+p2d.x = 3
+p2d.x += 1.5
+p2d.y *= 2.0
+p2d.y /= 2.0
+p2d.x -= 0.5
+println(p2d.x, ":", p2d.y)
+
+def p2f = java.awt.geom.Point2D.Float(java.lang.Float.parseFloat("1"), java.lang.Float.parseFloat("2"))
+p2f.x = java.lang.Float.parseFloat("5")
+println(p2f.x)
+
+def ev = java.awt.Event("src", java.lang.Long.parseLong("10"), 1, 2, 3, 4, 5, "init")
+ev.when = java.lang.Long.parseLong("200")
+ev.arg = "updated"
+ev.x += 10
+ev.x -= 3
+ev.x *= 2
+println(ev.when, ":", ev.arg, ":", ev.x)
+
+def st = java.io.StreamTokenizer(java.io.StringReader("hi"))
+st.sval = "custom"
+st.nval = 7.5
+st.nval += 2.5
+println(st.sval, ":", st.nval)
+}}}}}
+4.0:2.0
+5.0
+200:updated:18
+custom:10.0
+
+{{{{{
+;; Redirected print(to: writer) and BoundMethod equality/hash/string + classof
+def sw = java.io.StringWriter()
+print("hello", " world", to: sw)
+println("out=", sw.toString())
+def sw2 = java.io.StringWriter()
+println("line1", to: sw2)
+print("line2", to: sw2)
+println(sw2.getBuffer().length() > 5)
+
+def C = class (def x : int) (
+    def m = () : int -> ( this.x )
+)
+def c = C(5)
+def m1 = c.m
+def m2 = c.m
+def set : java.util.Set(any) = java.util.HashSet()
+set.add(m1)
+println(m1 == m2, ":", set.contains(m2), ":", m1)
+println(classof(c) == C, ":", classof(java.lang.StringBuilder()) == java.lang.StringBuilder)
+println(c.m)
+}}}}}
+out=hello world
+true
+true:true:bound function m
+true:true
+bound function m
+
+{{{{{
+;; Faces equals, FunctionHandler default method (andThen), Java long/float params, Point2D.Float/Event/StreamTokenizer compound assign
+def EvenPred = class () implements java.util.function.IntPredicate (
+    def test = (x : int) : bool -> ( int(x / 2) * 2 == x )
+)
+def p1 = EvenPred()
+def p2 = EvenPred()
+def pred1 : java.util.function.IntPredicate = p1
+def fn1 : java.util.function.IntUnaryOperator = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 1 ))
+def fn2 : java.util.function.IntUnaryOperator = java.util.function.IntUnaryOperator((x : int) : int -> ( x * 2 ))
+println(java.util.Objects.equals(pred1, p1), ":", java.util.Objects.equals(pred1, p2), ":", java.util.Objects.equals(fn1, fn1), ":", java.util.Objects.equals(fn1, fn2))
+println(fn1.andThen(fn2).applyAsInt(3))
+
+def pf = java.awt.geom.Point2D.Float(3, 4)
+pf.x = java.lang.Float.parseFloat("5")
+def ev = java.awt.Event("s", java.lang.Long.numberOfLeadingZeros(8), 1, 2, 3, 4, 5, "a")
+def st = java.io.StreamTokenizer(java.io.StringReader("a"))
+st.sval = "go"
+st.sval += "!"
+println(pf.x, ":", ev.when > 0, ":", st.sval)
+}}}}}
+true:false:true:false
+8
+5.0:true:go!
+
+{{{{{
+;; Faces.function arity mismatch with function, BoundMethod, and BabbleClass (Values.arity)
+def add2 = (a : int, b : int) : int -> ( a + b )
+def p = java.util.function.IntUnaryOperator(add2)
+}}}}}
+IntUnaryOperator.applyAsInt takes 1 arguments, function takes 2
+
+{{{{{
+def Box = class (def a : int, def b : int) (
+    def m = (x : int, y : int) : int -> ( x + y )
+)
+def bm = Box(1, 2).m
+def p = java.util.function.IntUnaryOperator(bm)
+}}}}}
+IntUnaryOperator.applyAsInt takes 1 arguments, function takes 2
+
+{{{{{
+def Pair = class (def a : int, def b : int) ()
+def p = java.util.function.IntUnaryOperator(Pair)
+}}}}}
+IntUnaryOperator.applyAsInt takes 1 arguments, function takes 2
+
+{{{{{
+;; Values.hash(null/double), Values.same(JavaObject/null), Values.is / isBuiltin, and Types runtime checks
+def V = value class (d : double, n : any?) ()
+def set : java.util.Set(V) = java.util.HashSet()
+set.add(V(3.5, null))
+set.add(V(2.0, null))
+println(set.contains(V(3.5, null)), ":", set.contains(V(2, null)))
+
+def sb1 = java.lang.StringBuilder("a")
+def sb2 = java.lang.StringBuilder("a")
+println(same(sb1, sb1), ":", same(sb1, sb2), ":", same(sb1, null), ":", same(null, null))
+
+def I = interface ( def id : () : int )
+def C = class (def v : int) implements I, java.lang.Runnable (
+    def id = () : int -> ( this.v )
+    def run = () -> ( )
+)
+def a : any = 3.5
+def b : any = true
+def c : any = C(9)
+def n : any? = null
+def jlTyped : java.util.List(any) = java.util.ArrayList()
+def jl : any = jlTyped
+println(a is double, ":", b is bool, ":", a is any, ":", n is any)
+println(c is I, ":", c is C, ":", c is java.lang.Runnable, ":", jl is java.util.List)
+}}}}}
+true:true
+true:false:false:true
+true:true:true:false
+true:true:true:true
+
+{{{{{
+;; Casting to a function type is rejected
+def fnAny : any = (x : int) : int -> ( x + 1 )
+def fnCast = fnAny as (x : int) : int
+}}}}}
+Cannot cast to a function type
+
+{{{{{
+;; Types.NominalType shadowed class name diagnostic (two local classes named P)
+def make = () : any -> (
+    def P = class (def x : int) ()
+    P(1)
+)
+def P = class (def x : int) ()
+def v : any = make()
+def bad : P = v as P
+}}}}}
+Type error : expected P, got P (expected T#, got T#)
+

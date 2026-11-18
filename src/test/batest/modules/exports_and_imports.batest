@@ -24,6 +24,10 @@ export axiom pure deterministic nothrow java.lang.Math.max
 def w = import("../wrap.ba")
 export def calc = (a : int, b : int) : int -> ( w.sumAndMul(a, b) )
 
+========== math2.ba ==========
+export def pi = 4.0
+export def add = (a : int, b : int) : int -> ( a + b + 1 )
+
 {{{{{
 def m = import("math.ba")
 def m2 = import("math.ba")
@@ -57,3 +61,25 @@ def m = import("math.ba")
 m.ops.mul = (a : int, b : int) : int -> ( 0 )
 }}}}}
 Cannot assign to a package member : mul
+
+{{{{{
+;; Dynamic Module receiver exercises Bootstrap.SelectCache Module path and Module.getMember
+def flag = true
+def dm = if flag then ( import("math.ba") ) else ( import("math2.ba") )
+println(dm, ":", dm.add(4, 5), ":", dm.pi)
+}}}}}
+module math.ba:9:3.0
+
+{{{{{
+;; Runtime assign to export on conditionally-typed Module hits Module.setMember
+def m = if true then ( import("math.ba") ) else ( import("math.ba") )
+m.add = 1
+}}}}}
+Cannot assign to an export : add
+
+{{{{{
+;; Runtime assign to nonexistent export on conditionally-typed Module hits Module.setMember
+def m = if true then ( import("math.ba") ) else ( import("math.ba") )
+m.missing = 1
+}}}}}
+No such export : missing in math.ba
