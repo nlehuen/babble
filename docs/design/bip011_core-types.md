@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 011 |
 | **Date** | 2026-11-18 |
-| **Status** | Draft |
+| **Status** | Draft (`BIP011-D1`–`D13` decided) |
 | **Depends on** | Bytecode compiler, `RM001` primitive lowering & `RM003` JVM/Java interface bridges ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), object model, Java interop & `RM003` `LambdaMetafactory` SAM adapters ([bip002_object-model.md](bip002_object-model.md)), function effects & `RM002` ([bip007_effects.md](bip007_effects.md)), mandatory static typing, nullables & generics ([bip008_static-typing.md](bip008_static-typing.md)), `.batest` coverage harness ([bip009_test-coverage.md](bip009_test-coverage.md)), type-checker architecture ([bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)) |
 | **Scope** | Core scalar types (`byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`), core collection & entry types (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`), Babble-to-Java nullability alignment (`@NotNull`/`@Nullable`/JSpecify, mapped parametric-nullness `java.base` contracts, postfix `e!`, outbound & `RM003` inbound defensive boundary checks), collection invariance & `borrow` covariance, universal call-site type arguments `C(T)(...)`, `Babble.g4` & `Formatter`, `BIP007` built-in effect profiles, and 8-primitive `RM001`/`RM003` bytecode lowering |
 
@@ -66,8 +66,8 @@ Following `BIP008` (mandatory static typing, unions, nullables, generics), `RM00
 
 **Non-Goals:**
 
-* **Bracket indexing (`xs[i]`) and collection bracket literals (`[1, 2]`):** Tracked separately in `RM005` (`BIP008` §5.1) and orthogonal to `list(...)` / `map(...)` constructor calls.
-* **Unsigned integer types (`ubyte`, `uint`, `ulong`) or arbitrary-precision numbers (`BigInteger`, `BigDecimal`):** Standard `java.math.BigInteger` / `BigDecimal` and `Integer.compareUnsigned` remain directly accessible via Java interop or future `std/` modules (`RM006`).
+* **Bracket indexing (`xs[i]`) and collection bracket literals (`[1, 2]`):** Tracked separately (`BIP008` §5.1) and orthogonal to `list(...)` / `map(...)` constructor calls.
+* **Unsigned integer types (`ubyte`, `uint`, `ulong`) or arbitrary-precision numbers (`BigInteger`, `BigDecimal`):** Standard `java.math.BigInteger` / `BigDecimal` and `Integer.compareUnsigned` remain directly accessible via Java interop or future `std/` modules (`BIP005-D5`).
 * **Shadowing read-only vs mutable collection interface hierarchies:** Unlike Kotlin's `kotlin.collections.List` vs `MutableList`, Babble uses `BIP007`'s `borrow` and `mut` effect modifiers directly on `list(T)` (§3.2, §5.4).
 
 ---
@@ -590,7 +590,7 @@ Today `EffectChecker` (`RM002`) treats `java.util.List` / `Map` calls as `impure
 | Collection mutators (`add`, `addAll`, `set`, `put`, `putIfAbsent`, `putAll`, `remove`, `removeAll`, `retainAll`, `replace`, `clear`) | `hermetic deterministic` | **`mut`** receiver |
 
 Notice the immediate payoff:
-* A `hermetic` function can allocate local `list`/`set`/`map` instances (`unique` local mutation in `pure` functions connects seamlessly when `RM004` lands!), read `borrow` collection parameters, and return deterministic results with **zero `axiom` boilerplate** (because `set` and `map` default to `LinkedHashSet` and `LinkedHashMap`, even iterating over `set`/`map` preserves `deterministic`!).
+* A `hermetic` function can allocate local `list`/`set`/`map` instances (`unique` local mutation in `pure` functions connects seamlessly when `BIP007-P2` lands!), read `borrow` collection parameters, and return deterministic results with **zero `axiom` boilerplate** (because `set` and `map` default to `LinkedHashSet` and `LinkedHashMap`, even iterating over `set`/`map` preserves `deterministic`!).
 
 ---
 
@@ -627,9 +627,9 @@ Notice the immediate payoff:
 
 ## 10. Implementation Plan, Existing Test Migration & Verification
 
-### 10.1 Sequencing with `BIP010` and Roadmap Placement
+### 10.1 Sequencing with `BIP010` and Follow-On Proposals
 
-`BIP011` is designed to land cleanly **after `BIP010`** (`docs/design/bip010_type-checker-simplification.md`) on top of the completed `RM001`–`RM003` baseline, taking direct advantage of `BIP010`'s modular front-end collaborators (`TypeAlgebra`, `subsumes`, `CallSolver`, `JavaTypeBridge`, and `LoweringAnalyzer`) and `RM003`'s proxy-free JVM/Java interface bridges and `LambdaMetafactory` SAM adapters, ahead of `RM005` (indexing syntax `xs[i]` and `for` loops over `Iterable(T)`) and `RM006` (`std/` higher-order collection combinators, which no longer need collection wrapper classes!).
+`BIP011` is designed to land cleanly **after `BIP010`** (`docs/design/bip010_type-checker-simplification.md`) on top of the completed `RM001`–`RM003` baseline, taking direct advantage of `BIP010`'s modular front-end collaborators (`TypeAlgebra`, `subsumes`, `CallSolver`, `JavaTypeBridge`, and `LoweringAnalyzer`) and `RM003`'s proxy-free JVM/Java interface bridges and `LambdaMetafactory` SAM adapters, ahead of `BIP007-P2`–`P3` (`unique`/`move`/`freeze` ownership & effect-driven bytecode optimizations), indexing syntax `xs[i]` (`BIP008` §5.1) and `for` loops over `Iterable(T)`, and `std/` higher-order collection combinators (`BIP005-D5`, which no longer need collection wrapper classes!).
 
 ### 10.2 Phased Delivery Plan (`BIP011-P1`–`BIP011-P6`)
 
