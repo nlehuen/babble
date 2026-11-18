@@ -155,10 +155,16 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         TypeChecker checker = new TypeChecker(pass);
         pass.checker = checker;
         checker.run(file);
-        self.typed(checker);
+        self.typed(checker.summary());
         // The shapes now carry the declared types of members and statics.
         for (TypeNode type : pass.types) {
             pass.analysis.setShape(type.ctx, type.shape());
+            if (session == null) {
+                type.detachAst();
+            }
+        }
+        if (session == null) {
+            pass.checker = null;
         }
         return pass.analysis;
     }
