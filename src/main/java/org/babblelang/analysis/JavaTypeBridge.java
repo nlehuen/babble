@@ -74,11 +74,25 @@ final class JavaTypeBridge {
         return new Type.JavaInstance(java, Collections.nCopies(params.length, Type.NULLABLE_ANY));
     }
 
-    static int checkJavaTypeArguments(Class<?> java, List<Type> args, TypeAlgebra.Env algebraEnv) {
+    /** The only public method of {@code owner} named {@code name} with {@code arity} parameters, or null. */
+    static Method uniqueArityMethod(Class<?> owner, String name, int arity) {
+        Method found = null;
+        for (Method m : owner.getMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == arity) {
+                if (found != null) {
+                    return null;
+                }
+                found = m;
+            }
+        }
+        return found;
+    }
+
+    static int checkJavaTypeArguments(Class<?> java, List<Type> args, TypeAlgebra algebra) {
         TypeVariable<?>[] params = java.getTypeParameters();
         Map<TypeVariable<?>, Type> env = javaTypeEnv(java, args);
         for (int i = 0; i < params.length; i++) {
-            if (!satisfiesJavaBounds(args.get(i), params[i], env, algebraEnv)) {
+            if (!satisfiesJavaBounds(args.get(i), params[i], env, algebra)) {
                 return i;
             }
         }
@@ -201,7 +215,7 @@ final class JavaTypeBridge {
     }
 
     static boolean satisfiesJavaBounds(Type actual, TypeVariable<?> param,
-                                       Map<TypeVariable<?>, Type> env, TypeAlgebra.Env algebraEnv) {
+                                       Map<TypeVariable<?>, Type> env, TypeAlgebra algebra) {
         if (actual == Type.ERROR || actual == Type.NOTHING || actual instanceof Type.TypeVar) {
             return true;
         }
@@ -209,7 +223,7 @@ final class JavaTypeBridge {
             if (bound == Object.class) {
                 continue;
             }
-            if (!satisfiesJavaBound(actual, bound, env, algebraEnv)) {
+            if (!satisfiesJavaBound(actual, bound, env, algebra)) {
                 return false;
             }
         }
@@ -217,12 +231,12 @@ final class JavaTypeBridge {
     }
 
     private static boolean satisfiesJavaBound(Type actual, java.lang.reflect.Type bound,
-                                            Map<TypeVariable<?>, Type> env, TypeAlgebra.Env algebraEnv) {
+                                            Map<TypeVariable<?>, Type> env, TypeAlgebra algebra) {
         if (bound == Object.class) {
             return true;
         }
         if (bound instanceof ParameterizedType pt && pt.getRawType() instanceof Class<?> raw) {
-            Type projected = algebraEnv.projectToJava(actual, raw);
+            Type projected = algebra.projectToJava(actual, raw);
             if (!(projected instanceof Type.JavaInstance proj)) {
                 return false;
             }
@@ -237,18 +251,18 @@ final class JavaTypeBridge {
                 if (ptArg instanceof WildcardType wt) {
                     if (wt.getLowerBounds().length > 0) {
                         Type lower = fromJavaType(wt.getLowerBounds()[0], env, false, false);
-                        if (!TypeAlgebra.relate(lower, a, TypeAlgebra.RelateMode.ASSIGNABLE, null, algebraEnv)) {
+                        if (!algebra.relate(lower, a, TypeAlgebra.RelateMode.ASSIGNABLE, null)) {
                             return false;
                         }
                     } else if (wt.getUpperBounds().length > 0 && wt.getUpperBounds()[0] != Object.class) {
                         Type upper = fromJavaType(wt.getUpperBounds()[0], env, false, false);
-                        if (!TypeAlgebra.relate(a, upper, TypeAlgebra.RelateMode.SUBTYPE, null, algebraEnv)) {
+                        if (!algebra.relate(a, upper, TypeAlgebra.RelateMode.SUBTYPE, null)) {
                             return false;
                         }
                     }
                 } else {
                     Type expectedArg = fromJavaType(ptArg, env, false, false);
-                    if (!TypeAlgebra.relate(a, expectedArg, TypeAlgebra.RelateMode.SUBTYPE, null, algebraEnv)) {
+                    if (!algebra.relate(a, expectedArg, TypeAlgebra.RelateMode.SUBTYPE, null)) {
                         return false;
                     }
                 }
@@ -256,7 +270,7 @@ final class JavaTypeBridge {
             return true;
         }
         Type expectedBound = fromJavaType(bound, env, false, false);
-        return TypeAlgebra.relate(actual, expectedBound, TypeAlgebra.RelateMode.ASSIGNABLE, null, algebraEnv);
+        return algebra.relate(actual, expectedBound, TypeAlgebra.RelateMode.ASSIGNABLE, null);
     }
 
     /**
@@ -264,20 +278,20 @@ final class JavaTypeBridge {
      * class (whose members are checked), or the closest accessible supertype / {@code any}
      * when the concrete class is package-private or non-public.
      */
-    static Type javaResult(java.lang.reflect.Type genericType, Map<TypeVariable<?>, Type> env, TypeAlgebra.Env algebraEnv) {
-        return makeAccessible(fromJavaType(genericType, env, true, false), algebraEnv);
+    static Type javaResult(java.lang.reflect.Type genericType, Map<TypeVariable<?>, Type> env, TypeAlgebra algebra) {
+        return makeAccessible(fromJavaType(genericType, env, true, false), algebra);
     }
 
-    static Type makeAccessible(Type type, TypeAlgebra.Env algebraEnv) {
+    static Type makeAccessible(Type type, TypeAlgebra algebra) {
         if (type instanceof Type.Union union) {
-            return Type.union(union.members().stream().map(m -> makeAccessible(m, algebraEnv)).toList());
+            return Type.union(union.members().stream().map(m -> makeAccessible(m, algebra)).toList());
         }
         if (type instanceof Type.JavaInstance ji && !ji.type().isInterface() && !JavaTypes.isAccessible(ji.type())) {
             Class<?> accessible = accessibleType(ji.type());
             if (accessible == null) {
                 return Type.ANY;
             }
-            Type projected = algebraEnv.projectToJava(ji, accessible);
+            Type projected = algebra.projectToJava(ji, accessible);
             return projected != null ? projected : fromJava(accessible);
         }
         return type;
@@ -368,11 +382,11 @@ final class JavaTypeBridge {
         }
     }
 
-    static Type javaFieldType(Type receiver, Field field, boolean widenTopTypeVar, TypeAlgebra.Env algebraEnv) {
+    static Type javaFieldType(Type receiver, Field field, boolean widenTopTypeVar, TypeAlgebra algebra) {
         Map<TypeVariable<?>, Type> env = receiver instanceof Type.JavaInstance ji
                 ? javaTypeEnv(ji.type(), ji.typeArguments())
                 : Map.of();
-        return makeAccessible(fromJavaType(field.getGenericType(), env, widenTopTypeVar, false), algebraEnv);
+        return makeAccessible(fromJavaType(field.getGenericType(), env, widenTopTypeVar, false), algebra);
     }
 
     static Class<?> javaClassOf(Type type) {
@@ -435,8 +449,8 @@ final class JavaTypeBridge {
     }
 
     static boolean applicableGeneric(Executable candidate, int index, Type argument,
-                                     Map<TypeVariable<?>, Type> receiverEnv, TypeAlgebra.Env algebraEnv) {
-        if (!applicable(candidate.getParameterTypes()[index], argument, algebraEnv)) {
+                                     Map<TypeVariable<?>, Type> receiverEnv, TypeAlgebra algebra) {
+        if (!applicable(candidate.getParameterTypes()[index], argument, algebra)) {
             return false;
         }
         if (TypeChecker.isUnresolved(argument)) {
@@ -451,7 +465,7 @@ final class JavaTypeBridge {
         env.putAll(tvToSyn);
         Type paramPattern = fromJavaType(genericParam, env, false, true);
         if (!paramPattern.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null)) {
-            return TypeAlgebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null, algebraEnv);
+            return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null);
         }
         if (argument instanceof Type.Function aFn && paramPattern instanceof Type.JavaInstance pJava
                 && JavaTypes.isFunctionalInterface(pJava.type())) {
@@ -469,8 +483,8 @@ final class JavaTypeBridge {
             }
         }
         Set<Type.TypeVar> solving = Set.copyOf(tvToSyn.values());
-        TypeAlgebra.ConstraintStore store = new TypeAlgebra.ConstraintStore(solving, true, algebraEnv);
-        return TypeAlgebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, algebraEnv);
+        TypeAlgebra.ConstraintStore store = algebra.store(solving, true);
+        return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store);
     }
 
     /** The overload more specific than all the others, as {@code Overloads.resolve} finds it, or null. */
@@ -497,12 +511,12 @@ final class JavaTypeBridge {
     }
 
     /** Whether an argument of a static type can be passed to a Java parameter (as {@code Overloads} decides at runtime). */
-    static boolean applicable(Class<?> parameter, Type argument, TypeAlgebra.Env algebraEnv) {
+    static boolean applicable(Class<?> parameter, Type argument, TypeAlgebra algebra) {
         if (TypeChecker.isUnresolved(argument)) {
             return true;
         }
         if (argument instanceof Type.Union union) {
-            return union.members().stream().allMatch(member -> applicable(parameter, member, algebraEnv));
+            return union.members().stream().allMatch(member -> applicable(parameter, member, algebra));
         }
         if (argument == Type.NULL) {
             return !parameter.isPrimitive();
@@ -513,9 +527,9 @@ final class JavaTypeBridge {
                     || parameter.isPrimitive() && JavaTypes.isWidening(java, JavaTypes.box(parameter));
         }
         if (argument instanceof Type.Instance instance) {
-            return parameter == Object.class || algebraEnv.implementsJava(instance.node(), parameter);
+            return parameter == Object.class || TypeAlgebra.implementsJava(instance.node(), parameter);
         }
-        if (algebraEnv.isCallable(argument)) {
+        if (TypeAlgebra.isCallable(argument)) {
             return parameter == Object.class || JavaTypes.isFunctionalInterface(parameter);
         }
         return !parameter.isPrimitive();

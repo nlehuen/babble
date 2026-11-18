@@ -1,9 +1,11 @@
 package org.babblelang.analysis;
 
 import org.babblelang.effects.Effect;
+import org.babblelang.runtime.JavaTypes;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.lang.reflect.TypeVariable;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -14,10 +16,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Core algebraic type operations ({@code docs/design/bip010_type-checker-simplification.md} §4.1):
- * cycle-guarded polarized {@link #relate}, local {@link ConstraintStore}, erased runtime overlap
- * ({@link #overlapsErased}), directional {@link #canCast}, union elimination ({@link #narrowTarget} /
- * {@link #subtractType}), and parameterized {@link #join}.
+ * The algebra of {@link Type}s ({@code docs/design/bip010_type-checker-simplification.md} §4.1),
+ * bound to the {@link Env} of one analysis : a cycle-guarded polarized {@link #relate} with its
+ * local {@link ConstraintStore}, erased runtime overlap ({@link #overlapsErased}), directional
+ * {@link #canCast}, union elimination ({@link #narrowTarget} / {@link #subtractType}), the two
+ * joins, projections onto Babble and Java supertypes, and type-variable substitution.
  */
 final class TypeAlgebra {
     enum RelateMode {
@@ -31,38 +34,26 @@ final class TypeAlgebra {
         INVARIANT_ARG
     }
 
-    enum JoinPolicy {
-        /** Expression-level join ({@code if} branches, unannotated returns). */
-        EXPRESSION,
-        /** Variable/member reassignment join ({@code int <-> double}, {@code T <-> null}, compatible function effect intersection). */
-        REASSIGNMENT
-    }
-
-    /** Projection and host-SAM callbacks supplied by {@link TypeChecker} / {@link JavaTypeBridge}. */
+    /** What the algebra needs from the analysis it serves. */
     interface Env {
-        Type projectToBabble(Type.Instance source, TypeNode targetNode);
+        /** The type parameters a class or interface declares, as type variables. */
+        List<Type.TypeVar> typeParameters(TypeNode node);
 
-        Type projectToJava(Type source, Class<?> targetClass);
+        /** The {@code index}th {@code implements}/{@code extends} type of a class or interface, or {@link Type#ERROR}. */
+        Type parentType(TypeNode node, int index);
 
-        boolean isSubtype(TypeNode sub, TypeNode sup);
-
-        boolean implementsJava(TypeNode node, Class<?> iface);
-
-        Class<?> javaClassOf(Type type);
-
+        /** The function type of a Java functional interface, with its host effects. */
         Type.Function samFunctionType(Type.JavaInstance java);
 
-        boolean isFunctionalInterface(Class<?> java);
-
-        Method functionalMethod(Class<?> java);
-
-        boolean isCallable(Type type);
-
+        /** Whether function types are compared with their effects (the final, effect-checking walk). */
         boolean checkingEffects();
 
-        boolean nonFunctionCallableAssignable(Type from, Type.Function target);
+        /** Whether a callable that is not a Babble function (a Java method, a constructor, print) satisfies the effects of {@code target}. */
+        boolean callableSatisfies(Type from, Type.Function target);
 
-        boolean functionAssignableWithoutEffects(Type.Function from, Type.Function to);
+        /** {@link #substitute} derived {@code to} from {@code from} (to track which literal a function type comes from). */
+        default void derived(Type.Function from, Type.Function to) {
+        }
     }
 
     private record RelationKey(Type sub, Type sup, RelateMode mode) {
@@ -72,18 +63,16 @@ final class TypeAlgebra {
      * Local call-site constraint store with mark/reset rollback for speculative right-union trials
      * and lazy lower-bound joining ({@code [Par20]}, {@code [XCJO26]}).
      */
-    static final class ConstraintStore {
+    final class ConstraintStore {
         private final Set<Type.TypeVar> solving;
         private final boolean allowNumericWidening;
-        private final Env env;
         private final Map<Type.TypeVar, Type> lowers = new LinkedHashMap<>();
         private final Map<Type.TypeVar, List<Type>> uppers = new LinkedHashMap<>();
         private final List<Runnable> undoLog = new ArrayList<>();
 
-        ConstraintStore(Set<Type.TypeVar> solving, boolean allowNumericWidening, Env env) {
+        private ConstraintStore(Set<Type.TypeVar> solving, boolean allowNumericWidening) {
             this.solving = solving;
             this.allowNumericWidening = allowNumericWidening;
-            this.env = env;
         }
 
         Set<Type.TypeVar> solving() {
@@ -107,7 +96,7 @@ final class TypeAlgebra {
                 next = bound;
             } else {
                 next = allowNumericWidening
-                        ? join(prev, bound, JoinPolicy.EXPRESSION, env)
+                        ? join(prev, bound)
                         : (prev.equals(bound) ? prev : Type.union(prev, bound));
                 if (next == null) {
                     return false;
@@ -121,12 +110,9 @@ final class TypeAlgebra {
                     lowers.put(tv, prev);
                 }
             });
-            List<Type> uList = uppers.get(tv);
-            if (uList != null) {
-                for (Type upper : uList) {
-                    if (!relate(next, upper, RelateMode.ASSIGNABLE, null, env)) {
-                        return false;
-                    }
+            for (Type upper : uppers.getOrDefault(tv, List.of())) {
+                if (!assignable(next, upper)) {
+                    return false;
                 }
             }
             return true;
@@ -138,7 +124,7 @@ final class TypeAlgebra {
             int idx = list.size() - 1;
             undoLog.add(() -> list.remove(idx));
             Type low = lowers.get(tv);
-            return low == null || relate(low, bound, RelateMode.ASSIGNABLE, null, env);
+            return low == null || assignable(low, bound);
         }
 
         Type lower(Type.TypeVar tv) {
@@ -154,15 +140,51 @@ final class TypeAlgebra {
         }
     }
 
-    private TypeAlgebra() {
+    private final Env env;
+
+    TypeAlgebra(Env env) {
+        this.env = env;
     }
 
-    static boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, Env env) {
-        return relate(sub, sup, mode, store, env, new HashSet<>());
+    /** A constraint store solving {@code solving} ; {@code allowNumericWidening} joins {@code int} and {@code double} lower bounds. */
+    ConstraintStore store(Set<Type.TypeVar> solving, boolean allowNumericWidening) {
+        return new ConstraintStore(solving, allowNumericWidening);
     }
 
-    private static boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, Env env,
-                                  Set<RelationKey> active) {
+    // ---------------------------------------------------------------- relations
+
+    /** Whether a value of type {@code from} can be used where {@code to} is declared. */
+    boolean assignable(Type from, Type to) {
+        return relate(from, to, RelateMode.ASSIGNABLE, null);
+    }
+
+    /** Assignability without the implicit {@code int -> double} widening (container arguments, results). */
+    boolean subtype(Type from, Type to) {
+        return relate(from, to, RelateMode.SUBTYPE, null);
+    }
+
+    /** Subtyping of runtime representations (no widening, functions only by identity). */
+    boolean runtimeSubtype(Type from, Type to) {
+        return relate(from, to, RelateMode.RUNTIME_EXACT, null);
+    }
+
+    /** Whether {@code from as to} always holds with no conversion (a redundant cast). */
+    boolean alwaysIs(Type from, Type to) {
+        return from != Type.ERROR && to != Type.ERROR && from != Type.NOTHING && from != Type.NULL
+                && !needsDoubleWidening(from, to)
+                && assignable(from, to);
+    }
+
+    /** Function assignability by parameters and result only, ignoring effects, {@code mut} and {@code borrow}. */
+    boolean assignableIgnoringEffects(Type.Function from, Type.Function to) {
+        return functionRelates(from, to, null, new HashSet<>(), false);
+    }
+
+    boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store) {
+        return relate(sub, sup, mode, store, new HashSet<>());
+    }
+
+    private boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, Set<RelationKey> active) {
         if (sub == Type.ERROR || sup == Type.ERROR || sub == Type.NOTHING) {
             return true;
         }
@@ -194,7 +216,7 @@ final class TypeAlgebra {
             // Left-union universal split ([FCB08])
             if (sub instanceof Type.Union union) {
                 for (Type member : union.members()) {
-                    if (!relate(member, sup, mode, store, env, active)) {
+                    if (!relate(member, sup, mode, store, active)) {
                         return false;
                     }
                 }
@@ -206,14 +228,14 @@ final class TypeAlgebra {
                     return true;
                 }
                 return sup.equals(Type.NULLABLE_ANY)
-                        || (sup instanceof Type.Union union && anyMemberRelates(sub, union, mode, store, env, active));
+                        || (sup instanceof Type.Union union && anyMemberRelates(sub, union, mode, store, active));
             }
             if (sup instanceof Type.TypeVar tv && tv.owner() == null) {
                 return true;
             }
             // Right-union existential search with ConstraintStore rollback
             if (sup instanceof Type.Union union) {
-                return anyMemberRelates(sub, union, mode, store, env, active);
+                return anyMemberRelates(sub, union, mode, store, active);
             }
             if (sub == Type.NULL) {
                 return sup == Type.NULL;
@@ -226,28 +248,23 @@ final class TypeAlgebra {
             }
             RelateMode argMode = mode == RelateMode.INVARIANT_ARG ? RelateMode.INVARIANT_ARG : RelateMode.SUBTYPE;
             if (sup instanceof Type.JavaInstance java) {
-                Type projected = env.projectToJava(sub, java.type());
+                Type projected = projectToJava(sub, java.type());
                 if (projected instanceof Type.JavaInstance proj) {
                     if (proj.typeArguments().size() != java.typeArguments().size()) {
                         return java.type().isAssignableFrom(proj.type());
                     }
-                    for (int i = 0; i < java.typeArguments().size(); i++) {
-                        if (!relate(proj.typeArguments().get(i), java.typeArguments().get(i), argMode, store, env, active)) {
-                            return false;
-                        }
-                    }
-                    return true;
+                    return argumentsRelate(proj.typeArguments(), java.typeArguments(), argMode, store, active);
                 }
                 if (projected != null) {
                     return true;
                 }
-                if (mode != RelateMode.RUNTIME_EXACT && env.isFunctionalInterface(java.type())) {
+                if (mode != RelateMode.RUNTIME_EXACT && JavaTypes.isFunctionalInterface(java.type())) {
                     if (sub instanceof Type.Function fn) {
-                        return samFunctionRelates(fn, java, store, env, active);
+                        return samFunctionRelates(fn, java, store, active);
                     }
-                    if (env.isCallable(sub)) {
+                    if (isCallable(sub)) {
                         Type.Function sam = env.samFunctionType(java);
-                        return sam == null || env.nonFunctionCallableAssignable(sub, sam);
+                        return sam == null || callableSatisfies(sub, sam);
                     }
                 }
                 return false;
@@ -255,34 +272,24 @@ final class TypeAlgebra {
             if (sup instanceof Type.JavaArray target) {
                 return sub instanceof Type.JavaArray array
                         && target.javaClass().isAssignableFrom(array.javaClass())
-                        && relate(array.element(), target.element(), argMode, store, env, active);
+                        && relate(array.element(), target.element(), argMode, store, active);
             }
             if (sup instanceof Type.Instance target) {
-                if (!(sub instanceof Type.Instance instance)) {
+                if (!(sub instanceof Type.Instance instance)
+                        || !(projectToBabble(instance, target.node()) instanceof Type.Instance proj)) {
                     return false;
                 }
-                Type projected = env.projectToBabble(instance, target.node());
-                if (!(projected instanceof Type.Instance proj)) {
-                    return false;
-                }
-                if (proj.typeArguments().size() != target.typeArguments().size()) {
-                    return true;
-                }
-                for (int i = 0; i < target.typeArguments().size(); i++) {
-                    if (!relate(proj.typeArguments().get(i), target.typeArguments().get(i), argMode, store, env, active)) {
-                        return false;
-                    }
-                }
-                return true;
+                return proj.typeArguments().size() != target.typeArguments().size()
+                        || argumentsRelate(proj.typeArguments(), target.typeArguments(), argMode, store, active);
             }
             if (sup instanceof Type.Function target) {
                 if (mode == RelateMode.RUNTIME_EXACT) {
                     return false;
                 }
                 if (sub instanceof Type.Function fn) {
-                    return functionRelates(fn, target, store, env, active);
+                    return functionRelates(fn, target, store, active, env.checkingEffects());
                 }
-                return env.nonFunctionCallableAssignable(sub, target);
+                return callableSatisfies(sub, target);
             }
             return false;
         } finally {
@@ -290,11 +297,21 @@ final class TypeAlgebra {
         }
     }
 
-    private static boolean anyMemberRelates(Type sub, Type.Union supUnion, RelateMode mode,
-                                            ConstraintStore store, Env env, Set<RelationKey> active) {
+    private boolean argumentsRelate(List<Type> subArgs, List<Type> supArgs, RelateMode mode,
+                                    ConstraintStore store, Set<RelationKey> active) {
+        for (int i = 0; i < supArgs.size(); i++) {
+            if (!relate(subArgs.get(i), supArgs.get(i), mode, store, active)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean anyMemberRelates(Type sub, Type.Union supUnion, RelateMode mode,
+                                     ConstraintStore store, Set<RelationKey> active) {
         for (Type member : supUnion.members()) {
             int mark = store != null ? store.mark() : 0;
-            if (relate(sub, member, mode, store, env, active)) {
+            if (relate(sub, member, mode, store, active)) {
                 return true;
             }
             if (store != null) {
@@ -304,48 +321,52 @@ final class TypeAlgebra {
         return false;
     }
 
-    private static boolean samFunctionRelates(Type.Function from, Type.JavaInstance java,
-                                                ConstraintStore store, Env env, Set<RelationKey> active) {
+    /** A non-function callable stands for a function type when it is callable and, while checking effects, satisfies them. */
+    private boolean callableSatisfies(Type from, Type.Function target) {
+        return isCallable(from) && (!env.checkingEffects() || env.callableSatisfies(from, target));
+    }
+
+    private boolean samFunctionRelates(Type.Function from, Type.JavaInstance java,
+                                       ConstraintStore store, Set<RelationKey> active) {
         if (!from.typeParameters().isEmpty()) {
             return false;
         }
-        Method samMethod = env.functionalMethod(java.type());
-        if (samMethod == null) {
-            return false;
-        }
-        Type.Function sam = env.samFunctionType(java);
+        Method samMethod = JavaTypes.functionalMethod(java.type());
+        Type.Function sam = samMethod != null ? env.samFunctionType(java) : null;
         if (sam == null) {
             return false;
         }
         if (samMethod.getReturnType() == void.class) {
             sam = new Type.Function(sam.parameters(), Type.NULLABLE_ANY, sam.effects());
         }
-        return functionRelates(from, sam, store, env, active);
+        return functionRelates(from, sam, store, active, env.checkingEffects());
     }
 
-    private static boolean functionRelates(Type.Function from, Type.Function to,
-                                           ConstraintStore store, Env env, Set<RelationKey> active) {
-        if (!from.typeParameters().isEmpty() || !to.typeParameters().isEmpty()) {
-            return false;
-        }
-        if (from.parameters().size() < to.parameters().size()) {
+    /**
+     * A function can stand for another when it accepts the other's arguments by position,
+     * at types at least as wide, needs no more of them, and returns a narrower result ; with
+     * {@code withEffects}, its effects must also satisfy the other's, and it may not mutate a
+     * parameter the other doesn't, nor keep one the other only borrows. Parameter names aren't
+     * compared : a callback is normally called by position.
+     */
+    private boolean functionRelates(Type.Function from, Type.Function to, ConstraintStore store,
+                                    Set<RelationKey> active, boolean withEffects) {
+        if (!from.typeParameters().isEmpty() || !to.typeParameters().isEmpty()
+                || from.parameters().size() < to.parameters().size()) {
             return false;
         }
         for (int i = 0; i < from.parameters().size(); i++) {
             Type.Parameter fp = from.parameters().get(i);
-            if (i < to.parameters().size()) {
-                Type.Parameter tp = to.parameters().get(i);
-                if (!relate(tp.type(), fp.type(), RelateMode.ASSIGNABLE, store, env, active)) {
-                    return false;
-                }
-            } else if (!fp.optional()) {
+            if (i < to.parameters().size()
+                    ? !relate(to.parameters().get(i).type(), fp.type(), RelateMode.ASSIGNABLE, store, active)
+                    : !fp.optional()) {
                 return false;
             }
         }
-        if (!relate(from.result(), to.result(), RelateMode.SUBTYPE, store, env, active)) {
+        if (!relate(from.result(), to.result(), RelateMode.SUBTYPE, store, active)) {
             return false;
         }
-        if (!env.checkingEffects()) {
+        if (!withEffects) {
             return true;
         }
         if (!from.effects().satisfies(to.effects())) {
@@ -354,28 +375,27 @@ final class TypeAlgebra {
         for (int i = 0; i < to.parameters().size(); i++) {
             Type.Parameter fp = from.parameters().get(i);
             Type.Parameter tp = to.parameters().get(i);
-            if (fp.mut() && !tp.mut()) {
-                return false;
-            }
-            if (tp.borrow() && !fp.borrow()) {
+            if (fp.mut() && !tp.mut() || tp.borrow() && !fp.borrow()) {
                 return false;
             }
         }
         return true;
     }
 
-    private static boolean isErasedSubtype(Type from, Type to, Env env) {
+    // ---------------------------------------------------------------- runtime tags
+
+    private boolean isErasedSubtype(Type from, Type to) {
         if (to == Type.ANY) {
             return true;
         }
         if (from instanceof Type.Instance f && to instanceof Type.Instance t) {
-            return env.isSubtype(f.node(), t.node());
+            return isSubtype(f.node(), t.node());
         }
         if (from instanceof Type.Instance f && to instanceof Type.JavaInstance t) {
-            return env.implementsJava(f.node(), t.type());
+            return implementsJava(f.node(), t.type());
         }
         if (to instanceof Type.JavaInstance t) {
-            Class<?> fc = env.javaClassOf(from);
+            Class<?> fc = JavaTypeBridge.javaClassOf(from);
             return fc != null && t.type().isAssignableFrom(fc);
         }
         if (to instanceof Type.JavaArray t) {
@@ -384,30 +404,24 @@ final class TypeAlgebra {
         return false;
     }
 
-    /** Symmetric erased runtime-value inhabitation ({@code overlapsErased}). */
-    static boolean overlapsErased(Type a, Type b, Env env) {
+    /** Symmetric erased runtime-value inhabitation : whether some value can have both types. */
+    boolean overlapsErased(Type a, Type b) {
         if (a == Type.ERROR || b == Type.ERROR || a == Type.NOTHING || b == Type.NOTHING || a.equals(b)) {
             return true;
         }
         if (a == Type.NULL || b == Type.NULL) {
             return a == b;
         }
-        if (a instanceof Type.TypeVar || b instanceof Type.TypeVar) {
-            return true;
-        }
-        if (a == Type.ANY || b == Type.ANY) {
+        if (a instanceof Type.TypeVar || b instanceof Type.TypeVar || a == Type.ANY || b == Type.ANY) {
             return true;
         }
         if (a instanceof Type.Union u) {
-            return u.members().stream().anyMatch(m -> overlapsErased(m, b, env));
+            return u.members().stream().anyMatch(m -> overlapsErased(m, b));
         }
         if (b instanceof Type.Union u) {
-            return u.members().stream().anyMatch(m -> overlapsErased(a, m, env));
+            return u.members().stream().anyMatch(m -> overlapsErased(a, m));
         }
-        if (relate(a, b, RelateMode.RUNTIME_EXACT, null, env)
-                || relate(b, a, RelateMode.RUNTIME_EXACT, null, env)
-                || isErasedSubtype(a, b, env)
-                || isErasedSubtype(b, a, env)) {
+        if (runtimeSubtype(a, b) || runtimeSubtype(b, a) || isErasedSubtype(a, b) || isErasedSubtype(b, a)) {
             return true;
         }
         if (a instanceof Type.Instance f && b instanceof Type.Instance t) {
@@ -419,8 +433,8 @@ final class TypeAlgebra {
         if (a instanceof Type.JavaInstance f && b instanceof Type.Instance t) {
             return f.type().isInterface() && t.node().isInterface();
         }
-        Class<?> ca = env.javaClassOf(a);
-        Class<?> cb = env.javaClassOf(b);
+        Class<?> ca = JavaTypeBridge.javaClassOf(a);
+        Class<?> cb = JavaTypeBridge.javaClassOf(b);
         if (ca != null && cb != null) {
             return (ca.isInterface() && cb.isInterface())
                     || (ca.isInterface() && !Modifier.isFinal(cb.getModifiers()))
@@ -429,24 +443,21 @@ final class TypeAlgebra {
         return false;
     }
 
-    /** Directional runtime castability ({@code from as to}). */
-    static boolean canCast(Type from, Type to, Env env) {
+    /** Directional runtime castability : whether {@code from as to} can succeed. */
+    boolean canCast(Type from, Type to) {
         if (from == Type.ERROR || to == Type.ERROR || from == Type.NOTHING) {
             return true;
         }
         if (from instanceof Type.Union union) {
-            return union.members().stream().anyMatch(member -> canCast(member, to, env));
+            return union.members().stream().anyMatch(member -> canCast(member, to));
         }
         if (to instanceof Type.Union union) {
-            return union.members().stream().anyMatch(member -> canCast(from, member, env));
+            return union.members().stream().anyMatch(member -> canCast(from, member));
         }
         if (from == Type.NULL || to == Type.NULL) {
             return from == to;
         }
-        if (from instanceof Type.TypeVar || to instanceof Type.TypeVar) {
-            return true;
-        }
-        if (from == Type.ANY || to == Type.ANY) {
+        if (from instanceof Type.TypeVar || to instanceof Type.TypeVar || from == Type.ANY || to == Type.ANY) {
             return true;
         }
         if (from == Type.INT && to == Type.DOUBLE) {
@@ -455,46 +466,44 @@ final class TypeAlgebra {
         if (from == Type.DOUBLE && to == Type.INT) {
             return false;
         }
-        if (relate(from, to, RelateMode.ASSIGNABLE, null, env)
-                || relate(to, from, RelateMode.ASSIGNABLE, null, env)) {
-            return true;
-        }
-        return overlapsErased(from, to, env);
+        return assignable(from, to) || assignable(to, from) || overlapsErased(from, to);
     }
 
-    static Type narrowTarget(Type current, Type target, Env env) {
+    /** What {@code x is target} narrows {@code current} to. */
+    Type narrowTarget(Type current, Type target) {
         List<Type> narrowed = new ArrayList<>();
         for (Type member : Type.membersOf(current)) {
             if (member == Type.NULL) {
                 continue;
             }
-            if (relate(member, target, RelateMode.RUNTIME_EXACT, null, env)) {
+            if (runtimeSubtype(member, target)) {
                 narrowed.add(member);
-            } else if (overlapsErased(member, target, env)) {
+            } else if (overlapsErased(member, target)) {
                 narrowed.add(target);
             }
         }
         return narrowed.isEmpty() ? target : Type.union(narrowed);
     }
 
-    static Type subtractType(Type current, Type target, Env env) {
+    /** What remains of {@code current} when {@code x is target} fails. */
+    Type subtractType(Type current, Type target) {
         List<Type> remaining = new ArrayList<>();
         for (Type member : Type.membersOf(current)) {
-            if (!relate(member, target, RelateMode.RUNTIME_EXACT, null, env)) {
+            if (!runtimeSubtype(member, target)) {
                 remaining.add(member);
             }
         }
         return remaining.isEmpty() ? Type.NOTHING : Type.union(remaining);
     }
 
-    static Type join(Type a, Type b, JoinPolicy policy, Env env) {
-        if (policy == JoinPolicy.EXPRESSION) {
-            return joinExpression(a, b, env);
-        }
-        return joinReassignment(a, b, env);
-    }
+    // ---------------------------------------------------------------- joins
 
-    private static Type joinExpression(Type a, Type b, Env env) {
+    /**
+     * The type of a value that is one of two ({@code if} branches, a loop or null), widening
+     * {@code int} and {@code double} to {@code double} and uniting other types ; null when an
+     * error prevents joining.
+     */
+    Type join(Type a, Type b) {
         if (a == Type.ERROR || b == Type.ERROR) {
             return null;
         }
@@ -504,53 +513,24 @@ final class TypeAlgebra {
         if (a == Type.NOTHING) {
             return b;
         }
-        if (a instanceof Type.Function fa && b instanceof Type.Function fb) {
-            Type.Function merged = intersectCompatibleFunctions(fa, fb);
-            if (merged != null) {
-                return merged;
-            }
+        if (a instanceof Type.Function fa && b instanceof Type.Function fb
+                && fa.typeParameters().equals(fb.typeParameters()) && fa.result().equals(fb.result())
+                && sameParameters(fa, fb)) {
+            return mergeFunctions(fa, fb);
         }
         if (isIntOrDouble(a) && isIntOrDouble(b) && (containsType(a, Type.DOUBLE) || containsType(b, Type.DOUBLE))
-                && !(containsType(a, Type.INT) && containsType(a, Type.DOUBLE))
-                && !(containsType(b, Type.INT) && containsType(b, Type.DOUBLE))) {
+                && !mixesIntAndDouble(a) && !mixesIntAndDouble(b)) {
             return (Type.containsNull(a) || Type.containsNull(b)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
         }
         return Type.union(a, b);
     }
 
-    private static Type.Function intersectCompatibleFunctions(Type.Function fa, Type.Function fb) {
-        if (!fa.typeParameters().equals(fb.typeParameters())
-                || fa.parameters().size() != fb.parameters().size()
-                || !fa.result().equals(fb.result())) {
-            return null;
-        }
-        List<Type.Parameter> params = new ArrayList<>(fa.parameters().size());
-        boolean anyMutParam = false;
-        for (int i = 0; i < fa.parameters().size(); i++) {
-            Type.Parameter pa = fa.parameters().get(i);
-            Type.Parameter pb = fb.parameters().get(i);
-            if (!pa.name().equals(pb.name()) || !pa.type().equals(pb.type()) || pa.optional() != pb.optional()) {
-                return null;
-            }
-            boolean mut = pa.mut() || pb.mut();
-            boolean borrow = pa.borrow() && pb.borrow();
-            boolean explicitBorrow = pa.explicitBorrow() && pb.explicitBorrow();
-            anyMutParam |= mut;
-            params.add(new Type.Parameter(pa.name(), pa.type(), pa.optional(), mut, borrow, explicitBorrow));
-        }
-        EffectSet common = fa.effects().intersect(fb.effects());
-        if (anyMutParam && common.isPure()) {
-            EnumSet<Effect> effs = EffectSet.copySet(common.effects());
-            effs.remove(Effect.PURE);
-            EnumSet<Effect> decl = EffectSet.copySet(common.declared());
-            decl.remove(Effect.PURE);
-            common = new EffectSet(effs, decl, common.mutThis(), common.borrowThis(),
-                    common.explicitBorrowThis(), false, common.axiomatic());
-        }
-        return new Type.Function(fa.typeParameters(), params, fa.result(), common);
-    }
-
-    private static Type joinReassignment(Type current, Type value, Env env) {
+    /**
+     * Widening allowed across the reassignments of an unannotated def or member : only
+     * {@code int -> double}, {@code T <-> null}, and compatible functions (intersecting their
+     * effects) ; null for heterogeneous types.
+     */
+    Type reassignmentJoin(Type current, Type value) {
         if (current == Type.ERROR || value == Type.ERROR) {
             return null;
         }
@@ -560,32 +540,12 @@ final class TypeAlgebra {
         if (current == Type.NOTHING) {
             return value;
         }
-        if (relate(value, current, RelateMode.ASSIGNABLE, null, env)) {
+        if (assignable(value, current)) {
             return current;
         }
         if (current instanceof Type.Function cf && value instanceof Type.Function vf
-                && env.functionAssignableWithoutEffects(vf, cf) && cf.parameters().size() == vf.parameters().size()) {
-            List<Type.Parameter> params = new ArrayList<>(cf.parameters().size());
-            boolean anyMutParam = false;
-            for (int i = 0; i < cf.parameters().size(); i++) {
-                Type.Parameter cp = cf.parameters().get(i);
-                Type.Parameter vp = vf.parameters().get(i);
-                boolean mut = cp.mut() || vp.mut();
-                boolean borrow = cp.borrow() && vp.borrow();
-                boolean explicitBorrow = cp.explicitBorrow() && vp.explicitBorrow();
-                anyMutParam |= mut;
-                params.add(new Type.Parameter(cp.name(), cp.type(), cp.optional(), mut, borrow, explicitBorrow));
-            }
-            EffectSet common = cf.effects().intersect(vf.effects());
-            if (anyMutParam && common.isPure()) {
-                EnumSet<Effect> effs = EffectSet.copySet(common.effects());
-                effs.remove(Effect.PURE);
-                EnumSet<Effect> decl = EffectSet.copySet(common.declared());
-                decl.remove(Effect.PURE);
-                common = new EffectSet(effs, decl, common.mutThis(), common.borrowThis(),
-                        common.explicitBorrowThis(), false, common.axiomatic());
-            }
-            return new Type.Function(cf.typeParameters(), params, cf.result(), common);
+                && assignableIgnoringEffects(vf, cf) && cf.parameters().size() == vf.parameters().size()) {
+            return mergeFunctions(cf, vf);
         }
         if (current == Type.NULL) {
             return Type.nullable(value);
@@ -599,17 +559,199 @@ final class TypeAlgebra {
         if (isIntOrDouble(current) && isIntOrDouble(value)
                 && (containsType(current, Type.INT) || containsType(value, Type.INT))
                 && (containsType(current, Type.DOUBLE) || containsType(value, Type.DOUBLE))
-                && !(containsType(current, Type.INT) && containsType(current, Type.DOUBLE))
-                && !(containsType(value, Type.INT) && containsType(value, Type.DOUBLE))) {
+                && !mixesIntAndDouble(current) && !mixesIntAndDouble(value)) {
             return (Type.containsNull(current) || Type.containsNull(value)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
         }
         return null;
+    }
+
+    private static boolean sameParameters(Type.Function fa, Type.Function fb) {
+        if (fa.parameters().size() != fb.parameters().size()) {
+            return false;
+        }
+        for (int i = 0; i < fa.parameters().size(); i++) {
+            Type.Parameter pa = fa.parameters().get(i);
+            Type.Parameter pb = fb.parameters().get(i);
+            if (!pa.name().equals(pb.name()) || !pa.type().equals(pb.type()) || pa.optional() != pb.optional()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * The function type both {@code first} and {@code second} can stand for : the first's
+     * signature, a parameter {@code mut} if either mutates it and borrowed if both borrow it, and
+     * the effects both guarantee (not {@code pure} once a parameter is mutated).
+     */
+    private static Type.Function mergeFunctions(Type.Function first, Type.Function second) {
+        List<Type.Parameter> params = new ArrayList<>(first.parameters().size());
+        boolean anyMutParam = false;
+        for (int i = 0; i < first.parameters().size(); i++) {
+            Type.Parameter a = first.parameters().get(i);
+            Type.Parameter b = second.parameters().get(i);
+            boolean mut = a.mut() || b.mut();
+            anyMutParam |= mut;
+            params.add(new Type.Parameter(a.name(), a.type(), a.optional(), mut,
+                    a.borrow() && b.borrow(), a.explicitBorrow() && b.explicitBorrow()));
+        }
+        EffectSet common = first.effects().intersect(second.effects());
+        if (anyMutParam && common.isPure()) {
+            EnumSet<Effect> effs = EffectSet.copySet(common.effects());
+            effs.remove(Effect.PURE);
+            EnumSet<Effect> decl = EffectSet.copySet(common.declared());
+            decl.remove(Effect.PURE);
+            common = new EffectSet(effs, decl, common.mutThis(), common.borrowThis(),
+                    common.explicitBorrowThis(), false, common.axiomatic());
+        }
+        return new Type.Function(first.typeParameters(), params, first.result(), common);
+    }
+
+    // ---------------------------------------------------------------- generics and projections
+
+    /** The type arguments of an instance by the type variables of its class. */
+    Map<Type.TypeVar, Type> instanceEnv(Type.Instance instance) {
+        List<Type.TypeVar> params = env.typeParameters(instance.node());
+        List<Type> args = instance.typeArguments();
+        if (params.isEmpty() || args.isEmpty()) {
+            return Map.of();
+        }
+        Map<Type.TypeVar, Type> bindings = new HashMap<>(params.size());
+        for (int i = 0; i < Math.min(params.size(), args.size()); i++) {
+            bindings.put(params.get(i), args.get(i));
+        }
+        return bindings;
+    }
+
+    /** {@code type} with its free type variables replaced by their {@code bindings}. */
+    Type substitute(Type type, Map<Type.TypeVar, Type> bindings) {
+        if (type == null || bindings.isEmpty()) {
+            return type;
+        }
+        return type.mapTypes(t -> {
+            if (t instanceof Type.TypeVar tv) {
+                return bindings.getOrDefault(tv, tv);
+            }
+            if (t instanceof Type.Function fn) {
+                Map<Type.TypeVar, Type> active = bindings;
+                if (!fn.typeParameters().isEmpty()) {
+                    active = new HashMap<>(bindings);
+                    fn.typeParameters().forEach(active::remove);
+                    if (active.isEmpty()) {
+                        return fn;
+                    }
+                }
+                List<Type.Parameter> params = new ArrayList<>(fn.parameters().size());
+                for (Type.Parameter p : fn.parameters()) {
+                    params.add(p.withType(substitute(p.type(), active)));
+                }
+                Type.Function substituted = new Type.Function(fn.typeParameters(), params, substitute(fn.result(), active), fn.effects());
+                env.derived(fn, substituted);
+                return substituted;
+            }
+            return null;
+        });
+    }
+
+    /** {@code source} seen as an instance of {@code targetNode}, one of its ancestors, or null. */
+    Type projectToBabble(Type.Instance source, TypeNode targetNode) {
+        if (source.node() == targetNode) {
+            return source;
+        }
+        Map<Type.TypeVar, Type> bindings = instanceEnv(source);
+        for (int i = 0; i < source.node().parents.size(); i++) {
+            if (substitute(env.parentType(source.node(), i), bindings) instanceof Type.Instance parent) {
+                Type projected = projectToBabble(parent, targetNode);
+                if (projected != null) {
+                    return projected;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** {@code source} seen as an instance of the Java type {@code targetClass}, or null. */
+    Type projectToJava(Type source, Class<?> targetClass) {
+        if (targetClass == Object.class) {
+            return Type.ANY;
+        }
+        if (source instanceof Type.JavaInstance ji) {
+            if (ji.type() == targetClass) {
+                return ji;
+            }
+            if (!targetClass.isAssignableFrom(ji.type())) {
+                return null;
+            }
+            TypeVariable<?>[] targetParams = targetClass.getTypeParameters();
+            if (targetParams.length == 0) {
+                return JavaTypeBridge.fromJava(targetClass);
+            }
+            Map<TypeVariable<?>, Type> javaEnv = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
+            List<Type> args = new ArrayList<>(targetParams.length);
+            for (TypeVariable<?> tp : targetParams) {
+                args.add(javaEnv.getOrDefault(tp, Type.NULLABLE_ANY));
+            }
+            return new Type.JavaInstance(targetClass, args);
+        }
+        if (source instanceof Type.Instance inst) {
+            Map<Type.TypeVar, Type> bindings = instanceEnv(inst);
+            for (int i = 0; i < inst.node().parents.size(); i++) {
+                Type projected = projectToJava(substitute(env.parentType(inst.node(), i), bindings), targetClass);
+                if (projected != null) {
+                    return projected;
+                }
+            }
+            return null;
+        }
+        if (source instanceof Type.Simple simple && simple.javaClass() != null) {
+            return projectToJava(new Type.JavaInstance(simple.javaClass()), targetClass);
+        }
+        if (source instanceof Type.JavaArray array) {
+            return targetClass.isAssignableFrom(array.javaClass()) ? JavaTypeBridge.fromJava(targetClass) : null;
+        }
+        return null;
+    }
+
+    // ---------------------------------------------------------------- structural predicates
+
+    /** Whether a value of this type can be called : functions, Java methods, classes, and print. */
+    static boolean isCallable(Type type) {
+        if (type instanceof Type.Union union) {
+            return union.members().stream().allMatch(TypeAlgebra::isCallable);
+        }
+        return type instanceof Type.Function || type instanceof Type.JavaMethod
+                || type instanceof Type.ClassValue value && !value.node().isInterface()
+                || type == Type.PRINT;
+    }
+
+    /** Whether a value of type {@code from} is converted to {@code double} where {@code to} is expected. */
+    static boolean needsDoubleWidening(Type from, Type to) {
+        return from != Type.ERROR && to != Type.ERROR
+                && containsType(from, Type.INT)
+                && containsType(to, Type.DOUBLE)
+                && !containsType(to, Type.INT);
     }
 
     static boolean containsType(Type type, Type target) {
         return type.equals(target) || (type instanceof Type.Union union && union.members().contains(target));
     }
 
+    /** Whether a value of this type may be null (a type variable might be instantiated nullable). */
+    static boolean canBeNull(Type type) {
+        if (type == Type.NULL || type instanceof Type.TypeVar) {
+            return true;
+        }
+        return type instanceof Type.Union union && union.members().stream().anyMatch(TypeAlgebra::canBeNull);
+    }
+
+    static boolean containsFunction(Type type) {
+        if (type instanceof Type.Function) {
+            return true;
+        }
+        return type instanceof Type.Union union && union.members().stream().anyMatch(TypeAlgebra::containsFunction);
+    }
+
+    /** Whether a type is {@code int}, {@code double}, or a union of them, possibly nullable. */
     static boolean isIntOrDouble(Type type) {
         Type base = Type.withoutNull(type);
         if (base == Type.INT || base == Type.DOUBLE) {
@@ -617,5 +759,32 @@ final class TypeAlgebra {
         }
         return base instanceof Type.Union u
                 && u.members().stream().allMatch(m -> m == Type.INT || m == Type.DOUBLE);
+    }
+
+    private static boolean mixesIntAndDouble(Type type) {
+        return containsType(type, Type.INT) && containsType(type, Type.DOUBLE);
+    }
+
+    /** Whether a class or interface is {@code target} or has it among its ancestors. */
+    static boolean isSubtype(TypeNode node, TypeNode target) {
+        if (node == target) {
+            return true;
+        }
+        for (Object parent : node.parents) {
+            if (parent instanceof TypeNode parentNode && isSubtype(parentNode, target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Whether a class or interface implements the Java type {@code java}, directly or through its ancestors. */
+    static boolean implementsJava(TypeNode node, Class<?> java) {
+        for (Object parent : node.parents) {
+            if (parent instanceof TypeNode parentNode ? implementsJava(parentNode, java) : java.isAssignableFrom((Class<?>) parent)) {
+                return true;
+            }
+        }
+        return java == Object.class;
     }
 }
