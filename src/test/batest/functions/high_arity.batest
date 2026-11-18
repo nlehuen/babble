@@ -1,0 +1,49 @@
+;; High-arity function (>200 parameters) exercising CodeGenerator Object[] array-adapter fallback
+
+{{{{{
+def big = (
+    p001 : int = 1, p002 : int = 1, p003 : int = 1, p004 : int = 1, p005 : int = 1,
+    p006 : int = 1, p007 : int = 1, p008 : int = 1, p009 : int = 1, p010 : int = 1,
+    p011 : int = 1, p012 : int = 1, p013 : int = 1, p014 : int = 1, p015 : int = 1,
+    p016 : int = 1, p017 : int = 1, p018 : int = 1, p019 : int = 1, p020 : int = 1,
+    p021 : int = 1, p022 : int = 1, p023 : int = 1, p024 : int = 1, p025 : int = 1,
+    p026 : int = 1, p027 : int = 1, p028 : int = 1, p029 : int = 1, p030 : int = 1,
+    p031 : int = 1, p032 : int = 1, p033 : int = 1, p034 : int = 1, p035 : int = 1,
+    p036 : int = 1, p037 : int = 1, p038 : int = 1, p039 : int = 1, p040 : int = 1,
+    p041 : int = 1, p042 : int = 1, p043 : int = 1, p044 : int = 1, p045 : int = 1,
+    p046 : int = 1, p047 : int = 1, p048 : int = 1, p049 : int = 1, p050 : int = 1,
+    p051 : int = 1, p052 : int = 1, p053 : int = 1, p054 : int = 1, p055 : int = 1,
+    p056 : int = 1, p057 : int = 1, p058 : int = 1, p059 : int = 1, p060 : int = 1,
+    p061 : int = 1, p062 : int = 1, p063 : int = 1, p064 : int = 1, p065 : int = 1,
+    p066 : int = 1, p067 : int = 1, p068 : int = 1, p069 : int = 1, p070 : int = 1,
+    p071 : int = 1, p072 : int = 1, p073 : int = 1, p074 : int = 1, p075 : int = 1,
+    p076 : int = 1, p077 : int = 1, p078 : int = 1, p079 : int = 1, p080 : int = 1,
+    p081 : int = 1, p082 : int = 1, p083 : int = 1, p084 : int = 1, p085 : int = 1,
+    p086 : int = 1, p087 : int = 1, p088 : int = 1, p089 : int = 1, p090 : int = 1,
+    p091 : int = 1, p092 : int = 1, p093 : int = 1, p094 : int = 1, p095 : int = 1,
+    p096 : int = 1, p097 : int = 1, p098 : int = 1, p099 : int = 1, p100 : int = 1,
+    p101 : int = 1, p102 : int = 1, p103 : int = 1, p104 : int = 1, p105 : int = 1,
+    p106 : int = 1, p107 : int = 1, p108 : int = 1, p109 : int = 1, p110 : int = 1,
+    p111 : int = 1, p112 : int = 1, p113 : int = 1, p114 : int = 1, p115 : int = 1,
+    p116 : int = 1, p117 : int = 1, p118 : int = 1, p119 : int = 1, p120 : int = 1,
+    p121 : int = 1, p122 : int = 1, p123 : int = 1, p124 : int = 1, p125 : int = 1,
+    p126 : int = 1, p127 : int = 1, p128 : int = 1, p129 : int = 1, p130 : int = 1,
+    p131 : int = 1, p132 : int = 1, p133 : int = 1, p134 : int = 1, p135 : int = 1,
+    p136 : int = 1, p137 : int = 1, p138 : int = 1, p139 : int = 1, p140 : int = 1,
+    p141 : int = 1, p142 : int = 1, p143 : int = 1, p144 : int = 1, p145 : int = 1,
+    p146 : int = 1, p147 : int = 1, p148 : int = 1, p149 : int = 1, p150 : int = 1,
+    p151 : int = 1, p152 : int = 1, p153 : int = 1, p154 : int = 1, p155 : int = 1,
+    p156 : int = 1, p157 : int = 1, p158 : int = 1, p159 : int = 1, p160 : int = 1,
+    p161 : int = 1, p162 : int = 1, p163 : int = 1, p164 : int = 1, p165 : int = 1,
+    p166 : int = 1, p167 : int = 1, p168 : int = 1, p169 : int = 1, p170 : int = 1,
+    p171 : int = 1, p172 : int = 1, p173 : int = 1, p174 : int = 1, p175 : int = 1,
+    p176 : int = 1, p177 : int = 1, p178 : int = 1, p179 : int = 1, p180 : int = 1,
+    p181 : int = 1, p182 : int = 1, p183 : int = 1, p184 : int = 1, p185 : int = 1,
+    p186 : int = 1, p187 : int = 1, p188 : int = 1, p189 : int = 1, p190 : int = 1,
+    p191 : int = 1, p192 : int = 1, p193 : int = 1, p194 : int = 1, p195 : int = 1,
+    p196 : int = 1, p197 : int = 1, p198 : int = 1, p199 : int = 1, p200 : int = 1,
+    p201 : int = 1, p202 : int = 1, p203 : int = 1, p204 : int = 1, p205 : int = 1
+) : int -> ( p001 + p100 + p205 )
+println(big(), ":", big(p205: 40, p001: 10))
+}}}}}
+3:51

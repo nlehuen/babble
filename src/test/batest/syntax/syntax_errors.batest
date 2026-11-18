@@ -1,0 +1,33 @@
+;; Syntax error diagnostics
+
+{{{{{
+def = 1
+}}}}}
+Syntax error : unexpected '='
+
+{{{{{
+def x =
+}}}}}
+Syntax error : unexpected end of input
+
+{{{{{
+if true ( 1 )
+}}}}}
+Syntax error : unexpected end of input
+
+{{{{{
+def f = (a : int -> ( a )
+}}}}}
+Syntax error : unexpected '->'
+
+{{{{{
+1 + )
+}}}}}
+Syntax error : unexpected ')'
+
+{{{{{
+def C = class (x : int)
+(
+)
+}}}}}
+Syntax error : unexpected end of line

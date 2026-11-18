@@ -1,0 +1,70 @@
+;; Significant newlines, semicolons, continuations, and unary minus precedence
+
+{{{{{
+def a = 1 +
+  2 *
+  3
+def b =
+  10
+def s = "x" +
+  "y"
+println(a, ":", b, ":", s)
+}}}}}
+7:10:xy
+
+{{{{{
+"x"
+  + "y"
+}}}}}
+Syntax error : unexpected '+'
+
+{{{{{
+;; Dot and safe-dot continuation on next line
+def C = class (def x : int) ( def inc = () : C -> ( C(this.x + 1) ) )
+def v = C(1)
+  .inc()
+  .inc()
+  .x
+def n : C? = null
+def nv = n
+  ?.inc()
+  ?.x
+println(v, ":", nv)
+}}}}}
+3:null
+
+{{{{{
+;; Newline before unary minus separates two expressions; inline -a * b parses as (-a) * b
+def a = 5
+def b = 3
+def r = (
+  a
+  -b
+)
+def p = -a * b
+println(r, ":", p)
+}}}}}
+-3:-15
+
+{{{{{
+;; Semicolons and empty block with any? annotation evaluate to null
+def e : any? = ()
+def x = 1 ; def y = 2 ; ; def z = x + y
+println(e, ":", z)
+}}}}}
+null:3
+
+{{{{{
+;; Unannotated empty block cannot infer a concrete type
+def e = ()
+}}}}}
+Missing type : e
+
+{{{{{
+;; Call juxtaposition is suppressed across newlines: f\n(10) assigns f then evaluates (10)
+def f = (x : int) : int -> ( x + 1 )
+def r = f
+(10)
+println(r(10))
+}}}}}
+11

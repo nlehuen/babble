@@ -1,0 +1,75 @@
+;; Operator overloading (plus, minus, times, div, neg), compound assignments, and operator errors
+
+{{{{{
+;; Value class overloading +, -, *, /, unary -, and compound +=, -=, *=, /=
+def Vec = value class (x : double, y : double) (
+    def plus = (o : Vec) : Vec -> ( Vec(this.x + o.x, this.y + o.y) )
+    def minus = (o : Vec) : Vec -> ( Vec(this.x - o.x, this.y - o.y) )
+    def times = (k : double) : Vec -> ( Vec(this.x * k, this.y * k) )
+    def div = (k : double) : Vec -> ( Vec(this.x / k, this.y / k) )
+    def neg = () : Vec -> ( Vec(-this.x, -this.y) )
+)
+def a = Vec(2.0, 3.0)
+def b = Vec(1.0, 1.5)
+println(a + b, "|", a - b, "|", a * 2.0, "|", a / 2.0, "|", -a)
+def v = Vec(1.0, 2.0)
+v += Vec(2.0, 1.0)
+v -= Vec(0.5, 0.5)
+v *= 2.0
+v /= 5.0
+println(v)
+}}}}}
+Vec(x: 3.0, y: 4.5)|Vec(x: 1.0, y: 1.5)|Vec(x: 4.0, y: 6.0)|Vec(x: 1.0, y: 1.5)|Vec(x: -2.0, y: -3.0)
+Vec(x: 1.0, y: 1.0)
+
+{{{{{
+;; Compound assignment on member field evaluates receiver only once
+def Box = class (def x : int) ()
+def calls = 0
+def getBox = (b : Box) : Box -> ( calls += 1 ; b )
+def b = Box(10)
+getBox(b).x += 5
+getBox(b).x -= 3
+getBox(b).x *= 2
+getBox(b).x /= 4
+println(b.x, ":", calls)
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+;; Single evaluation of receiver for +=, -=, *= on mutable object field
+def Box = class (def x : double) ()
+def calls = 0
+def getBox = (b : Box) : Box -> ( calls += 1 ; b )
+def b = Box(10.0)
+getBox(b).x += 5
+getBox(b).x -= 3
+getBox(b).x *= 2
+getBox(b).x /= 4
+println(b.x, ":", calls)
+}}}}}
+6.0:4
+
+{{{{{
+;; Calling binary operator on instance lacking the operator method
+def Empty = class () ()
+def e = Empty()
+print(e + 1)
+}}}}}
+No such member : plus
+
+{{{{{
+;; Calling unary - on instance lacking neg()
+def Empty = class () ()
+def e = Empty()
+print(-e)
+}}}}}
+No such member : neg
+
+{{{{{
+;; Dynamic operator lookup on any value wrapping non-number
+def dyn = (v : any) : any -> ( v )
+def x : any = dyn(true)
+x += 1
+}}}}}
+Not a number : x

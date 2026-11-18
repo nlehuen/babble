@@ -1,0 +1,53 @@
+;; Recursion via self-reference, recurse keyword, mutual recursion, and stack errors
+
+{{{{{
+;; Anonymous recursion via recurse keyword (requires explicit return type for non-trivial base case if needed)
+def fact = (n : int) : int -> (
+    if n <= 1 then ( 1 ) else ( n * recurse(n - 1) )
+)
+println(fact(0), ":", fact(1), ":", fact(6))
+}}}}}
+1:1:720
+
+{{{{{
+;; Named recursive function and Tree recursion
+def fib = (n : int) : int -> (
+    if n <= 1 then ( n ) else ( fib(n - 1) + fib(n - 2) )
+)
+println(fib(0), ":", fib(1), ":", fib(7))
+}}}}}
+0:1:13
+
+{{{{{
+;; Mutual recursion within the same block
+def isEven = (n : int) : bool -> (
+    if n == 0 then ( true ) else ( isOdd(n - 1) )
+)
+def isOdd = (n : int) : bool -> (
+    if n == 0 then ( false ) else ( isEven(n - 1) )
+)
+println(isEven(4), ":", isOdd(4), ":", isEven(5), ":", isOdd(5))
+}}}}}
+true:false:false:true
+
+{{{{{
+;; Unannotated recursive function infers return type when a non-recursive branch establishes it
+def countDown = (n : int) -> (
+    if n <= 0 then ( 0 ) else ( 1 + countDown(n - 1) )
+)
+print(countDown(3))
+}}}}}
+3
+
+{{{{{
+;; Self-recursive function with no non-recursive branch cannot infer return type
+def spin = (n : int) -> ( spin(n - 1) )
+print(spin(1))
+}}}}}
+Missing type : spin (recursive)
+
+{{{{{
+;; recurse used outside of a function fails name resolution
+print(recurse)
+}}}}}
+No such name : $recurse

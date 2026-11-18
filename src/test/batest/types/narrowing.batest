@@ -1,0 +1,57 @@
+;; Flow-sensitive type narrowing with 'is', 'not (x is T)', short-circuit 'and'/'or', and early return guards
+
+{{{{{
+def Point = class (def x : int) ()
+def Pair = class (def x : int, def y : int) ()
+
+def describe = (v : Point | Pair | string | null) : string -> (
+    if v is Pair then (
+        "pair:" + (v.x + v.y)
+    ) else if v is Point then (
+        "pt:" + v.x
+    ) else if v is string then (
+        "str:" + v
+    ) else (
+        "null"
+    )
+)
+println(describe(Point(3)), "|", describe(Pair(4, 5)), "|", describe("ok"), "|", describe(null))
+}}}}}
+pt:3|pair:9|str:ok|null
+
+{{{{{
+;; Logical-path narrowing with short-circuit 'and' / 'or' and negated guard with early return
+def Point = class (def x : int) ()
+def checkAnd = (p : any?) : bool -> ( p is Point and p.x > 0 )
+def checkOr = (p : any?) : bool -> ( not (p is Point) or p.x > 0 )
+def getX = (p : any?) : int -> (
+    if not (p is Point) then ( return -1 )
+    p.x
+)
+println(checkAnd(Point(2)), ":", checkAnd(Point(-1)), ":", checkAnd(null))
+println(checkOr(Point(2)), ":", checkOr(Point(-1)), ":", checkOr("x"))
+println(getX(Point(9)), ":", getX("nope"))
+}}}}}
+true:false:false
+true:false:true
+9:-1
+
+{{{{{
+;; 'is null' and negated narrowing on nullable class
+def Box = class (def v : int) ()
+def unwrap = (b : Box?) : int -> (
+    if b == null then ( return 0 )
+    b.v
+)
+println(unwrap(Box(7)), ":", unwrap(null))
+}}}}}
+7:0
+
+{{{{{
+;; Un-narrowed branch member access still rejected statically
+def Point = class (def x : int) ()
+def bad = (p : any) -> (
+    if not (p is Point) then ( p.x ) else ( 0 )
+)
+}}}}}
+Not a scope : p

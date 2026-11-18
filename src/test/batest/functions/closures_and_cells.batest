@@ -1,0 +1,81 @@
+;; Closures capturing IntCell, DoubleCell, BoolCell, Cell, nested scopes, and Namespace fallback
+
+{{{{{
+;; Mutable captures across all 4 cell specializations: IntCell, DoubleCell, BoolCell, reference Cell
+def makeCounter = () -> (
+    def i = 0
+    def d = 0.5
+    def b = false
+    def s = "x"
+    def step = () : string -> (
+        i += 1
+        d += 1.25
+        b = not b
+        s += "y"
+        "" + i + ":" + d + ":" + b + ":" + s
+    )
+    step
+)
+def c1 = makeCounter()
+def c2 = makeCounter()
+println(c1())
+println(c1())
+println(c2())
+}}}}}
+1:1.75:true:xy
+2:3.0:false:xyy
+1:1.75:true:xy
+
+{{{{{
+;; Shared mutable capture between two sibling closures and enclosing block
+def shared = () : string -> (
+    def count = 10
+    def inc = (k : int) : int -> ( count += k ; count )
+    def read = () : int -> ( count )
+    def a = inc(5)
+    def b = read()
+    count += 1
+    def c = read()
+    "" + a + ":" + b + ":" + c
+)
+println(shared())
+}}}}}
+15:15:16
+
+{{{{{
+;; Multi-level capture (inner closure reads outer variable unused in middle closure)
+def outer = (x : int) -> (
+    def mid = () -> (
+        () : int -> ( x + 100 )
+    )
+    mid()
+)
+def fn = outer(7)
+println(fn())
+}}}}}
+107
+
+{{{{{
+;; Widening a captured int variable to double (uses DoubleCell instead of IntCell)
+def widenCapture = () : string -> (
+    def v = 1
+    def read = () -> ( v )
+    v = 2.5
+    "" + read() + ":" + classof(read())
+)
+println(widenCapture())
+}}}}}
+2.5:java.lang.Double
+
+{{{{{
+;; Package inside a function forces Namespace-backed scope rather than flat JVM locals
+def pkgClosure = (n : int) : int -> (
+    package p (
+        def k = 10
+    )
+    def reader = () : int -> ( p.k + n )
+    reader()
+)
+println(pkgClosure(5))
+}}}}}
+15

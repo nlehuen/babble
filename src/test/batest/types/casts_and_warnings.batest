@@ -1,0 +1,40 @@
+;; 'as' casts, runtime Cast errors, and static type warnings
+
+{{{{{
+;; Valid casts at runtime: interface/class, boxed primitive widening/narrowing, any -> concrete
+def dyn = (v : any) : any -> ( v )
+def C = class (def x : int) ()
+def c = dyn(C(11)) as C
+def s = dyn("ok") as string
+def n = dyn(42) as int
+def d = dyn(2.5) as double
+println(c.x, ":", s, ":", n, ":", d)
+}}}}}
+11:ok:42:2.5
+
+{{{{{
+;; Nullable cast allows null, non-null cast fails at runtime on null
+def dyn = (v : any?) : any? -> ( v )
+def ok = dyn(null) as string?
+println(ok)
+}}}}}
+null
+
+{{{{{
+def dyn = (v : any?) : any? -> ( v )
+print(dyn(null) as string)
+}}}}}
+Type error : expected string, got null
+
+{{{{{
+;; Runtime failed 'as' cast with incompatible concrete value
+def dyn = (v : any) : any -> ( v )
+print(dyn("abc") as int)
+}}}}}
+Type error : expected int, got string
+
+{{{{{
+;; Statically impossible 'as' cast (unrelated concrete types)
+print("abc" as int)
+}}}}}
+Type error : expected int, got string

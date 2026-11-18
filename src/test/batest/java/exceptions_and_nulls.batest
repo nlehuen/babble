@@ -1,0 +1,36 @@
+;; Unwrapped Java exceptions (BIP009-D7), null handling on Java boundaries, and generic boundary checks
+
+{{{{{
+;; Method throwing NumberFormatException is unwrapped without InvocationTargetException wrapper
+println(java.lang.Integer.parseInt("not_an_int"))
+}}}}}
+java.lang.NumberFormatException : For input string: "not_an_int"
+
+{{{{{
+;; Method throwing IndexOutOfBoundsException is unwrapped
+def l : java.util.List(int) = java.util.ArrayList()
+println(l.get(0))
+}}}}}
+java.lang.IndexOutOfBoundsException : Index 0 out of bounds for length 0
+
+{{{{{
+;; Method throwing ArithmeticException is unwrapped
+println(java.lang.Math.floorDiv(1, 0))
+}}}}}
+java.lang.ArithmeticException : / by zero
+
+{{{{{
+;; Constructor throwing IllegalArgumentException is unwrapped
+def list : java.util.List(int) = java.util.ArrayList(-1)
+}}}}}
+java.lang.IllegalArgumentException : Illegal Capacity: -1
+
+{{{{{
+;; Java generic element type mismatch on read/write and nullable return from Map.get
+def m : java.util.Map(string, int) = java.util.HashMap()
+m.put("a", 10)
+def v1 : int? = m.get("a")
+def v2 : int? = m.get("missing")
+println(v1, ":", v2)
+}}}}}
+10:null

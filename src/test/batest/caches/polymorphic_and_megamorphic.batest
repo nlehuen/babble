@@ -1,0 +1,78 @@
+;; Polymorphic (2-4 shapes) and megamorphic (5+ shapes) inline caches in loops (Bootstrap & JavaLinker)
+
+{{{{{
+;; 6 Babble classes + singleton object implementing Shape -> megamorphic SelectCache & CallSite (> 4 cache depth)
+def Shape = interface (
+    def val : () : int
+)
+def S1 = class (def x : int) implements Shape ( def val = () : int -> ( this.x + 1 ) )
+def S2 = class (def x : int) implements Shape ( def val = () : int -> ( this.x + 2 ) )
+def S3 = class (def x : int) implements Shape ( def val = () : int -> ( this.x + 3 ) )
+def S4 = class (def x : int) implements Shape ( def val = () : int -> ( this.x + 4 ) )
+def S5 = class (def x : int) implements Shape ( def val = () : int -> ( this.x + 5 ) )
+def S6 = object implements Shape ( def x = 10 ; def val = () : int -> ( this.x + 6 ) )
+
+def pick = (i : int) : Shape -> (
+    def k = i - int(i / 6) * 6
+    if k == 0 then ( S1(i) )
+    else if k == 1 then ( S2(i) )
+    else if k == 2 then ( S3(i) )
+    else if k == 3 then ( S4(i) )
+    else if k == 4 then ( S5(i) )
+    else ( S6 )
+)
+
+def invokeShape = (s : Shape) : int -> ( s.val() )
+def total = 0
+def i = 0
+while i < 18 then (
+    total += invokeShape(pick(i))
+    i += 1
+)
+println(total)
+}}}}}
+213
+
+{{{{{
+;; Megamorphic callable dispatch across 6 different closures
+def f0 = (x : int) : int -> ( x + 1 )
+def f1 = (x : int) : int -> ( x + 2 )
+def f2 = (x : int) : int -> ( x + 3 )
+def f3 = (x : int) : int -> ( x + 4 )
+def f4 = (x : int) : int -> ( x + 5 )
+def f5 = (x : int) : int -> ( x * 2 )
+def apply = (fn : (x : int) : int, v : int) : int -> ( fn(v) )
+
+def i = 0
+def sum = 0
+while i < 12 then (
+    def m = i - int(i / 6) * 6
+    def fn = if m == 0 then ( f0 ) else if m == 1 then ( f1 ) else if m == 2 then ( f2 ) else if m == 3 then ( f3 ) else if m == 4 then ( f4 ) else ( f5 )
+    sum += apply(fn, i)
+    i += 1
+)
+println(sum)
+}}}}}
+112
+
+{{{{{
+;; Polymorphic and megamorphic Java overload/method calls on distinct Java receiver classes
+def c1 : java.util.Collection(int) = java.util.ArrayList()
+def c2 : java.util.Collection(int) = java.util.LinkedList()
+def c3 : java.util.Collection(int) = java.util.Vector()
+def c4 : java.util.Collection(int) = java.util.Stack()
+def c5 : java.util.Collection(int) = java.util.ArrayDeque()
+def items = java.util.List.of(c1, c2, c3, c4, c5)
+def sizes = 0
+def j = 0
+while j < 10 then (
+    def idx = j - int(j / 5) * 5
+    def col = items.get(idx)
+    if col != null then (
+        sizes += col.size()
+    )
+    j += 1
+)
+println(sizes)
+}}}}}
+0

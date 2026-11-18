@@ -1,0 +1,59 @@
+;; Virtual modules: export def, export package, nested imports, caching of module init, and export axioms
+
+========== math.ba ==========
+def loads = 0
+def bump = () : int -> ( loads += 1 ; loads )
+def secret = 99
+export def pi = 3.0
+export def add = (a : int, b : int) : int -> ( a + b )
+export def Box = class (def x : int) (
+    def get = () : int -> ( this.x )
+)
+export package ops (
+    def mul = (a : int, b : int) : int -> ( a * b )
+)
+export def hits = () : int -> ( loads )
+bump()
+
+========== wrap.ba ==========
+def m = import("math.ba")
+export def sumAndMul = (a : int, b : int) : int -> ( m.add(a, b) + m.ops.mul(a, b) )
+export axiom pure deterministic nothrow java.lang.Math.max
+
+========== sub/deep.ba ==========
+def w = import("../wrap.ba")
+export def calc = (a : int, b : int) : int -> ( w.sumAndMul(a, b) )
+
+{{{{{
+def m = import("math.ba")
+def m2 = import("math.ba")
+def w = import("wrap.ba")
+def b = m.Box(7)
+println(m.add(2, 3), ":", m.ops.mul(2, 3), ":", b.get(), ":", m.pi)
+println(w.sumAndMul(3, 4), ":", m.hits(), ":", same(m, m2))
+}}}}}
+5:6:7:3.0
+19:1:true
+
+{{{{{
+;; Relative path normalization ("sub/deep.ba" importing "../wrap.ba") and exported axiom
+def d = import("sub/deep.ba")
+def w = import("wrap.ba")
+def check = pure () : int -> ( java.lang.Math.max(d.calc(2, 5), 10) )
+println(check())
+}}}}}
+17
+
+{{{{{
+;; Non-exported binding is hidden from importers
+def m = import("math.ba")
+print(m.secret)
+}}}}}
+No such export : secret in math.ba
+
+{{{{{
+;; Exported package member cannot be mutated from importer
+def m = import("math.ba")
+m.ops.mul = (a : int, b : int) : int -> ( 0 )
+}}}}}
+Cannot assign to a package member : mul

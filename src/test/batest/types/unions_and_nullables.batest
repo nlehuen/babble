@@ -1,0 +1,43 @@
+;; Union types, nullability (T?), parenthesized type annotations, and nullability mismatches
+
+{{{{{
+def fmt = (v : int | string | null) : string -> (
+    if v == null then ( "nil" )
+    else if v is int then ( "int:" + v )
+    else ( "str:" + v )
+)
+println(fmt(42), "|", fmt("ok"), "|", fmt(null))
+}}}}}
+int:42|str:ok|nil
+
+{{{{{
+;; Parenthesized union nullable type ((int | string)?)
+def maybe : (int | string)? = 7
+maybe = "hi"
+maybe = null
+println(maybe)
+}}}}}
+null
+
+{{{{{
+;; Assigning null to non-null variable rejected statically
+def x : int = null
+}}}}}
+Type error : expected int, got null
+
+{{{{{
+;; Dereferencing/calling on nullable without narrowing rejected
+def s : string? = null
+def C = class (def x : int) ()
+def c : C? = null
+print(c.x)
+}}}}}
+Not a scope : c
+
+{{{{{
+;; Late null reassignment widens inferred non-null variable to T? or fails if incompatible
+def x = 10
+x = null
+println(x)
+}}}}}
+null

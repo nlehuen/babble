@@ -1,0 +1,73 @@
+;; Block scoping, shadowing, variable hoisting, forward reference errors, and compound assignments
+
+{{{{{
+;; Inner block has its own lexical scope and returns its last expression
+def x = 10
+def y = (
+    def x = 20
+    def z = x + 5
+    z
+)
+println(x, ":", y)
+}}}}}
+10:25
+
+{{{{{
+;; Out-of-scope inner definition is not visible outside
+def y = (
+    def inner = 42
+    inner
+)
+print(inner)
+}}}}}
+No such name : inner
+
+{{{{{
+;; Duplicate definition in same block
+def x = 1
+def x = 2
+}}}}}
+Name already defined : x
+
+{{{{{
+;; Variable read before definition in same block (hoisted slot throws Runtime error)
+def f = () -> ( a )
+def g = () -> (
+    def x = a
+    def a = 5
+    x
+)
+print(g())
+}}}}}
+Name used before definition : a
+
+{{{{{
+;; Assignment before definition in same block
+def f = () -> (
+    a = 10
+    def a = 5
+)
+print(f())
+}}}}}
+Name used before definition : a
+
+{{{{{
+;; Read/assign captured variable from closure before def runs
+def maker = () -> (
+    def readA = () : int -> ( a )
+    def r = readA()
+    def a = 1
+    r
+)
+print(maker())
+}}}}}
+Name used before definition : a
+
+{{{{{
+;; Sequential empty and single-statement blocks
+def a : any? = ( ; ; )
+def b = ( 7 )
+def c = ( 1 ; 2 ; 3 )
+println(a, ":", b, ":", c)
+}}}}}
+null:7:3

@@ -1,0 +1,51 @@
+;; Overloaded Java methods, varargs dispatch, numeric widening in Java calls, and overload errors
+
+{{{{{
+;; Static overload selection by type and arity (String.valueOf, Math.abs, StringBuilder.append)
+def sb = java.lang.StringBuilder()
+sb.append(true).append(":").append(42).append(":").append(1.5)
+println(sb.toString())
+println(java.lang.Math.abs(-5), ":", java.lang.Math.abs(-2.5))
+println(java.lang.String.valueOf(true), ":", java.lang.String.valueOf(99))
+}}}}}
+true:42:1.5
+5:2.5
+true:99
+
+{{{{{
+;; Fixed-arity Java overloads (List.of 0/3 args) and passing an array to a varargs parameter
+def empty : java.util.List(string) = java.util.List.of()
+def three = java.util.List.of("a", "b", "c")
+def fromArr = java.util.Arrays.asList(java.util.List.of("x", "y").toArray())
+println(empty.size(), ":", three.size(), ":", three.get(1), ":", fromArr.size(), ":", fromArr.get(0))
+}}}}}
+0:3:b:2:x
+
+{{{{{
+;; Varargs methods are matched on their declared array parameter, not expanded
+print(java.util.Arrays.asList("only"))
+}}}}}
+No applicable overload of java.util.Arrays.asList for (string)
+
+{{{{{
+;; Ambiguous overloaded call with null argument
+def sb = java.lang.StringBuilder()
+sb.append(null)
+}}}}}
+Ambiguous call to java.lang.StringBuilder.append for (null)
+
+{{{{{
+;; No matching overload for given argument types
+print(java.lang.Integer.parseInt(true))
+}}}}}
+No applicable overload of java.lang.Integer.parseInt for (bool)
+
+{{{{{
+;; Calling overloaded Java method on any receiver (JavaLinker runtime overload selection)
+def dyn = (v : any) : any -> ( v )
+def sb : java.lang.StringBuilder = java.lang.StringBuilder("x")
+def obj = dyn(sb)
+def ok = obj.toString()
+println(ok)
+}}}}}
+Not a scope : obj
