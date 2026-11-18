@@ -42,6 +42,12 @@ final class CallSolver {
         resolvedConstructors.clear();
     }
 
+    private void recordConstructor(Executable winner, BabbleParser.CallContext ctx) {
+        if (winner instanceof Constructor<?> constructor) {
+            resolvedConstructors.put(ctx, constructor);
+        }
+    }
+
     Method resolvedMethod(BabbleParser.CallContext call) {
         return resolvedMethods.get(call);
     }
@@ -50,7 +56,7 @@ final class CallSolver {
         return resolvedConstructors.get(call);
     }
 
-    /** The type of a call of {@code callee} ; {@code recordTarget} records its static dispatch target (not for a union member). */
+    /** The type of a call of {@code callee} ; {@code recordTarget} records the Java executable it resolves to (not for a union member). */
     Type call(Type callee, BabbleParser.CallContext ctx, boolean recordTarget) {
         List<BabbleParser.CallParameterContext> arguments = ctx.callParameters().callParameter();
         if (callee == Type.ERROR || callee == Type.NOTHING) {
@@ -92,17 +98,10 @@ final class CallSolver {
             List<BabbleParser.ParameterDeclarationContext> decls = checker.parameterDecls(function);
             if (function.typeParameters().isEmpty()) {
                 bind(function.parameters(), decls, arguments, ctx);
-                if (recordTarget) {
-                    checker.recordBabbleCall(function, arguments, ctx);
-                    checker.recordInterfaceCall(arguments, ctx);
-                }
                 return function.result();
             }
             Type result = genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
                     arguments, ctx, ctx.expression().getText());
-            if (recordTarget && result != Type.ERROR) {
-                checker.recordInterfaceCall(arguments, ctx);
-            }
             return result;
         }
         if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
@@ -409,7 +408,7 @@ final class CallSolver {
             if (winner != null) {
                 checkJavaArgumentWidening(winner, Map.of(), arguments, argumentTypes);
                 if (recordTarget) {
-                    recordJavaConstructor(winner, arguments, argumentTypes, ctx);
+                    recordConstructor(winner, ctx);
                 }
             }
             return new Type.JavaInstance(java);
@@ -426,7 +425,7 @@ final class CallSolver {
             return Type.ERROR;
         }
         if (recordTarget) {
-            recordJavaConstructor(winner, arguments, argumentTypes, ctx);
+            recordConstructor(winner, ctx);
         }
         return new Type.JavaInstance(java, Arrays.stream(classParams).map(solved::get).toList());
     }
@@ -475,7 +474,7 @@ final class CallSolver {
             }
         }
         if (recordTarget) {
-            recordJavaMethodCall(best, arguments, argumentTypes, ctx);
+            resolvedMethods.put(ctx, best);
         }
         return result;
     }
@@ -634,88 +633,6 @@ final class CallSolver {
             }
         });
         return refined;
-    }
-
-    private void recordJavaConstructor(Executable winner, List<BabbleParser.CallParameterContext> arguments,
-                                       List<Type> argumentTypes, BabbleParser.CallContext ctx) {
-        if (!(winner instanceof Constructor<?> ctor)) {
-            return;
-        }
-        resolvedConstructors.put(ctx, ctor);
-        if (ctx.expression() instanceof BabbleParser.SelectorContext sel && sel.safe != null) {
-            return;
-        }
-        Class<?> java = ctor.getDeclaringClass();
-        if (!Modifier.isPublic(ctor.getModifiers()) || !Modifier.isPublic(java.getModifiers())
-                || !JavaTypes.isAccessible(java) || ctor.getParameterCount() != arguments.size()) {
-            return;
-        }
-        for (BabbleParser.CallParameterContext arg : arguments) {
-            if (arg.ID() != null) {
-                return;
-            }
-        }
-        Class<?>[] paramTypes = ctor.getParameterTypes();
-        if (argumentTypes.size() != paramTypes.length) {
-            return;
-        }
-        for (int i = 0; i < paramTypes.length; i++) {
-            Type argType = argumentTypes.get(i);
-            if (!JavaTypeBridge.guaranteedApplicable(paramTypes[i], argType)
-                    || !JavaTypeBridge.supportedStaticJavaArg(paramTypes[i], argType)) {
-                return;
-            }
-        }
-        checker.javaConstructorTargets().put(ctx, new ScopeAnalysis.JavaConstructorTarget(ctor));
-    }
-
-    private void recordJavaMethodCall(Method best, List<BabbleParser.CallParameterContext> arguments,
-                                      List<Type> argumentTypes, BabbleParser.CallContext ctx) {
-        resolvedMethods.put(ctx, best);
-        if (!(ctx.expression() instanceof BabbleParser.SelectorContext sel)
-                || sel.safe != null
-                || sel.expression() == null
-                || sel.expression() instanceof BabbleParser.SuperExpressionContext) {
-            return;
-        }
-        Type receiverType = checker.types().get(sel.expression());
-        if (!(receiverType instanceof Type.JavaClassValue
-                || receiverType instanceof Type.JavaInstance
-                || receiverType instanceof Type.JavaArray
-                || receiverType == Type.STRING)) {
-            return;
-        }
-        Method accessible = JavaTypes.accessible(best);
-        if (accessible == null
-                || !Modifier.isPublic(accessible.getModifiers())
-                || !Modifier.isPublic(accessible.getDeclaringClass().getModifiers())
-                || !JavaTypes.isAccessible(accessible.getDeclaringClass())
-                || !JavaTypeBridge.isBytecodeAccessible(accessible.getReturnType())
-                || accessible.getParameterCount() != arguments.size()) {
-            return;
-        }
-        boolean isStatic = Modifier.isStatic(accessible.getModifiers());
-        if (receiverType instanceof Type.JavaClassValue && !isStatic) {
-            return;
-        }
-        for (BabbleParser.CallParameterContext arg : arguments) {
-            if (arg.ID() != null) {
-                return;
-            }
-        }
-        Class<?>[] paramTypes = accessible.getParameterTypes();
-        if (argumentTypes.size() != paramTypes.length) {
-            return;
-        }
-        for (int i = 0; i < paramTypes.length; i++) {
-            Type argType = argumentTypes.get(i);
-            if (!JavaTypeBridge.guaranteedApplicable(paramTypes[i], argType)
-                    || !JavaTypeBridge.supportedStaticJavaArg(paramTypes[i], argType)) {
-                return;
-            }
-        }
-        boolean unwrapReceiver = !isStatic && receiverType != Type.STRING;
-        checker.javaCallTargets().put(ctx, new ScopeAnalysis.JavaCallTarget(accessible, isStatic, unwrapReceiver));
     }
 
     private void checkJavaArgumentWidening(Executable candidate, Map<TypeVariable<?>, Type> env,

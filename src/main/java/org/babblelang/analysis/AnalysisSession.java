@@ -71,21 +71,22 @@ public final class AnalysisSession {
         scopeNodes.putAll(pass.scopeNodes);
         modules.putAll(pass.modules);
         typeHierarchies.putAll(analysis.typeHierarchies());
-        if (pass.checker != null) {
-            TypedModuleSummary summary = pass.checker.summary();
-            if (summary != null) {
-                typeNodeVars.putAll(summary.typeNodeVarsMap());
-                parentTypes.putAll(summary.parentTypesMap());
-                typeMemberTypes.putAll(summary.memberTypesMap());
-                constructorParams.putAll(summary.constructorParamsMap());
-                constructorSummaries.putAll(summary.constructorSummariesMap());
-                callableTemplates.putAll(summary.callableTemplatesMap());
+        TypedModuleSummary summary = pass.summary;
+        if (summary != null) {
+            typeNodeVars.putAll(summary.typeNodeVarsMap());
+            parentTypes.putAll(summary.parentTypesMap());
+            typeMemberTypes.putAll(summary.memberTypesMap());
+            constructorParams.putAll(summary.constructorParamsMap());
+            constructorSummaries.putAll(summary.constructorSummariesMap());
+            callableTemplates.putAll(summary.callableTemplatesMap());
+            TypedModuleSummary.Session input = summary.session();
+            if (input != null) {
+                staticSingletons.putAll(input.staticSingletons());
+                declarationTypes.putAll(input.declarationTypes());
+                memberTypes.putAll(input.memberTypes());
+                javaEffects.putAll(input.javaEffects());
+                callableSummaries.putAll(input.callableSummaries());
             }
-            staticSingletons.putAll(pass.checker.frozenStaticSingletons());
-            declarationTypes.putAll(pass.checker.frozenDeclarations());
-            memberTypes.putAll(pass.checker.frozenMembers());
-            javaEffects.putAll(pass.checker.committedJavaEffects());
-            callableSummaries.putAll(pass.checker.committedCallableSummaries());
         }
         for (BlockScopes.Occurrence occurrence : pass.occurrences) {
             occurrenceScopes.put(occurrence.ctx(), occurrence.scope());

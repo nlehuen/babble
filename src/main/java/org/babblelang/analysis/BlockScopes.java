@@ -79,7 +79,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final AnalysisSession session;
     final HostEffects hostEffects;
     final Map<BabbleParser.SuperExpressionContext, TypeChecks.Provider> superProviders = new HashMap<>();
-    TypeChecker checker;
+    /** The file's type and effect summary, once analysed (what a session keeps of it). */
+    TypedModuleSummary summary;
     ScopeNode fileScope;
 
     private final Deque<ScopeNode> scopes = new ArrayDeque<>();
@@ -153,18 +154,15 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         pass.analysis.setModuleInterface(self);
         pass.analysis.setResolution(new Resolver(pass).run());
         TypeChecker checker = new TypeChecker(pass);
-        pass.checker = checker;
         checker.run(file);
-        self.typed(checker.summary());
+        pass.summary = checker.summary();
+        self.typed(pass.summary);
         // The shapes now carry the declared types of members and statics.
         for (TypeNode type : pass.types) {
             pass.analysis.setShape(type.ctx, type.shape());
             if (session == null) {
                 type.detachAst();
             }
-        }
-        if (session == null) {
-            pass.checker = null;
         }
         return pass.analysis;
     }
