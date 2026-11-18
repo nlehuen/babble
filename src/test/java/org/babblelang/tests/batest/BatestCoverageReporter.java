@@ -145,12 +145,18 @@ public final class BatestCoverageReporter {
         Path sourceRoot = Path.of(System.getProperty("batest.sourceRoot", "src/main/java"));
         String filter = System.getProperty("batest.filter", "").trim();
         String inspect = System.getProperty("batest.inspect", "").trim();
+        double minBranchPct = Double.parseDouble(System.getProperty("batest.minBranchPct", "85.0").trim());
 
-        run(reportDir, xmlInterpret, xmlCompile, sourceRoot, filter, inspect);
+        run(reportDir, xmlInterpret, xmlCompile, sourceRoot, filter, inspect, minBranchPct);
     }
 
     static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path sourceRoot,
                     String filter, String inspect) throws Exception {
+        run(reportDir, xmlInterpret, xmlCompile, sourceRoot, filter, inspect, 0.0);
+    }
+
+    static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path sourceRoot,
+                    String filter, String inspect, double minBranchPct) throws Exception {
         Files.createDirectories(reportDir);
 
         Map<CaseKey, RecordedOutcome> interpretOutcomes = readOutcomes(reportDir.resolve("outcomes-interpret.jsonl"));
@@ -322,6 +328,24 @@ public final class BatestCoverageReporter {
         }
         if (!failures.isEmpty()) {
             throw new AssertionError(failures.size() + " .batest case failure(s)");
+        }
+        if (filter.isEmpty() && minBranchPct > 0.0) {
+            List<String> below = new ArrayList<>();
+            checkBranchThreshold(below, "Interpreter (impl.*)", scopeInterpBranches[0], minBranchPct);
+            checkBranchThreshold(below, "Compiler (codegen+indy)", scopeCompileBranches[0], minBranchPct);
+            checkBranchThreshold(below, "Shared Front-End (analysis)", scopeFrontBranches[0], minBranchPct);
+            checkBranchThreshold(below, "Shared Runtime (combined)", sharedUnionBranches[0], minBranchPct);
+            if (!below.isEmpty()) {
+                throw new AssertionError(String.format(Locale.ROOT,
+                        "Branch coverage below %.1f%% threshold: %s", minBranchPct, String.join(", ", below)));
+            }
+        }
+    }
+
+    private static void checkBranchThreshold(List<String> below, String scope, Counter branches, double minPct) {
+        if (branches.total() > 0 && branches.pct() < minPct) {
+            below.add(String.format(Locale.ROOT, "%s=%.1f%% (%d/%d)",
+                    scope, branches.pct(), branches.covered(), branches.total()));
         }
     }
 
