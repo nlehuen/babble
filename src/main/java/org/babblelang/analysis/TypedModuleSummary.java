@@ -163,7 +163,7 @@ final class TypedModuleSummary {
             String name = entry.getKey();
             List<BabbleParser.PackageExpressionContext> list = entry.getValue();
             if (list != null && !list.isEmpty()) {
-                exports.putIfAbsent(name, freezeType(checker, checker.localPackage(name, list)));
+                exports.putIfAbsent(name, freezeType(checker, checker.members().localPackage(name, list)));
                 List<BabbleParser.PackageExpressionContext> staticPkgs = StaticRefs.staticPackages(list);
                 if (staticPkgs != null) {
                     staticSingletons.putIfAbsent(name, refs.freezePackages(staticPkgs));
@@ -176,14 +176,14 @@ final class TypedModuleSummary {
         Map<TypeNode, List<Type.Parameter>> constructorParams = new IdentityHashMap<>();
         Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries = new IdentityHashMap<>();
         for (TypeNode node : pass.types) {
-            List<Type.TypeVar> vars = checker.typeVarsOf(node);
+            List<Type.TypeVar> vars = checker.annotator().typeVarsOf(node);
             if (!vars.isEmpty()) {
                 typeNodeVars.put(node, vars);
             }
             if (!node.parents.isEmpty()) {
                 List<Type> parents = new ArrayList<>(node.parents.size());
                 for (int i = 0; i < node.parents.size(); i++) {
-                    parents.add(checker.parentAnnotation(node, i));
+                    parents.add(checker.annotator().parentAnnotation(node, i));
                 }
                 parentTypes.put(node, List.copyOf(parents));
             }
@@ -263,7 +263,7 @@ final class TypedModuleSummary {
                 }
             }
             for (Map.Entry<String, List<BabbleParser.PackageExpressionContext>> entry : nested.entrySet()) {
-                members.put(entry.getKey(), freezeType(checker, checker.localPackage(entry.getKey(), entry.getValue())));
+                members.put(entry.getKey(), freezeType(checker, checker.members().localPackage(entry.getKey(), entry.getValue())));
             }
             return new Type.Package(pkg.name(), pkg.id(), Map.copyOf(members));
         }

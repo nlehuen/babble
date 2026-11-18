@@ -74,7 +74,7 @@ final class LoweringAnalyzer {
                 continue;
             }
             if (decl instanceof BabbleParser.DefExpressionContext def) {
-                Type t = checker.declaredType(def);
+                Type t = checker.annotator().declaredType(def);
                 if (t == null) {
                     ScopeAnalysis.DefKind defKind = pass.analysis.defTarget(def).kind();
                     t = (defKind == ScopeAnalysis.DefKind.MEMBER || defKind == ScopeAnalysis.DefKind.STATIC)
@@ -104,7 +104,7 @@ final class LoweringAnalyzer {
                 if (member.declaration == null || !checker.inFile(member.declaration) || member.function != null) {
                     continue;
                 }
-                Type t = checker.declaredType(member.declaration);
+                Type t = checker.annotator().declaredType(member.declaration);
                 if (t == null && member.declaration instanceof BabbleParser.ParameterDeclarationContext param) {
                     t = declarationTypes.get(param);
                     if (t == null) {
@@ -451,7 +451,7 @@ final class LoweringAnalyzer {
             Set<ParserRuleContext> widened) {
         if (tree instanceof BabbleParser.ParameterDeclarationContext parameter) {
             Type type = parameter.type() != null
-                    ? checker.annotation(parameter.type(), checker.scopeOf(parameter))
+                    ? checker.annotator().annotation(parameter.type(), checker.scopeOf(parameter))
                     : declarationTypes.get(parameter);
             if (type != null && TypeAlgebra.containsType(type, Type.DOUBLE) && !TypeAlgebra.containsType(type, Type.INT)) {
                 widened.add(parameter);
@@ -465,7 +465,7 @@ final class LoweringAnalyzer {
                 }
             }
         } else if (tree instanceof BabbleParser.FunctionLiteralContext function && function.type() != null) {
-            pass.analysis.setCheckedType(function, descriptor(checker.annotation(function.type(), checker.scopeOf(function))));
+            pass.analysis.setCheckedType(function, descriptor(checker.annotator().annotation(function.type(), checker.scopeOf(function))));
         } else if (tree instanceof BabbleParser.DefExpressionContext def) {
             ScopeAnalysis.DefKind kind = pass.analysis.defTarget(def).kind();
             if (kind == ScopeAnalysis.DefKind.DEFAULT || kind == ScopeAnalysis.DefKind.REQUIRED) {
@@ -473,7 +473,7 @@ final class LoweringAnalyzer {
             }
             String descriptor = null;
             if (def.type() != null) {
-                descriptor = descriptor(checker.annotation(def.type(), checker.scopeOf(def)));
+                descriptor = descriptor(checker.annotator().annotation(def.type(), checker.scopeOf(def)));
             } else {
                 Type inferred = (kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC)
                         ? inferredMembers.get(def) : inferredDefs.get(def);
@@ -491,7 +491,7 @@ final class LoweringAnalyzer {
             }
         } else if (tree instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == null
                 && checker.resolveName(assign, assign.name.getText(), checker.occurrenceScopeOf(assign)) instanceof ParserRuleContext declaration) {
-            Type declared = checker.declaredType(declaration);
+            Type declared = checker.annotator().declaredType(declaration);
             if (declared != null) {
                 pass.analysis.setCheckedType(assign, descriptor(declared));
             } else {

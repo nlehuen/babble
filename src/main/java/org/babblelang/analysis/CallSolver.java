@@ -57,7 +57,7 @@ final class CallSolver {
     }
 
     /** The type of a call of {@code callee} ; {@code recordTarget} records the Java executable it resolves to (not for a union member). */
-    Type call(Type callee, BabbleParser.CallContext ctx, boolean recordTarget) {
+    Type call(Type callee, BabbleParser.CallContext ctx, Type expected, boolean recordTarget) {
         List<BabbleParser.CallParameterContext> arguments = ctx.callParameters().callParameter();
         if (callee == Type.ERROR || callee == Type.NOTHING) {
             return Type.ERROR;
@@ -86,7 +86,7 @@ final class CallSolver {
             }
             List<Type> results = new ArrayList<>(union.members().size());
             for (Type member : union.members()) {
-                Type r = call(member, ctx, false);
+                Type r = call(member, ctx, expected, false);
                 if (r == Type.ERROR) {
                     return Type.ERROR;
                 }
@@ -101,12 +101,12 @@ final class CallSolver {
                 return function.result();
             }
             Type result = genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
-                    arguments, ctx, ctx.expression().getText());
+                    arguments, ctx, ctx.expression().getText(), expected);
             return result;
         }
         if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
             TypeNode node = value.node();
-            List<Type.TypeVar> classVars = checker.typeVarsOf(node);
+            List<Type.TypeVar> classVars = checker.annotator().typeVarsOf(node);
             List<Type.Parameter> parameters = checker.constructorParameters(node);
             List<BabbleParser.ParameterDeclarationContext> decls = checker.parameterDecls(node);
             if (classVars.isEmpty()) {
@@ -119,22 +119,22 @@ final class CallSolver {
                 parameters = List.of();
             }
             Type patternReturn = new Type.Instance(node, List.copyOf(classVars));
-            return genericBabbleCall(classVars, parameters, decls, patternReturn, arguments, ctx, node.name);
+            return genericBabbleCall(classVars, parameters, decls, patternReturn, arguments, ctx, node.name, expected);
         }
         if (callee instanceof Type.JavaClassValue value) {
             Class<?> java = value.type();
             if (java.isInterface() && arguments.size() == 1 && arguments.get(0).ID() == null
                     && JavaTypes.isFunctionalInterface(java)) {
-                return javaGenericSamCall(java, arguments.get(0).expression(), ctx);
+                return javaGenericSamCall(java, arguments.get(0).expression(), ctx, expected);
             }
-            return javaConstructorCall(java, arguments, ctx, recordTarget);
+            return javaConstructorCall(java, arguments, ctx, expected, recordTarget);
         }
         if (callee instanceof Type.JavaMethod method) {
             List<Method> candidates = JavaTypes.methods(method.owner(), method.name());
             Map<TypeVariable<?>, Type> receiverEnv = method.typeArguments().isEmpty()
                     ? Map.of() : JavaTypeBridge.javaTypeEnv(method.owner(), method.typeArguments());
             return javaMethodCall(candidates, method.owner().getCanonicalName() + "." + method.name(),
-                    receiverEnv, arguments, ctx, recordTarget);
+                    receiverEnv, arguments, ctx, expected, recordTarget);
         }
         checker.warn(ctx.expression().getText() + " is not callable", ctx);
         return Type.ERROR;
@@ -241,8 +241,8 @@ final class CallSolver {
             } else {
                 checker.recordInferredParam(decl, actual, argument);
                 Type latest = checker.inferredParams().get(decl);
-                if (latest != null && TypeAlgebra.needsDoubleWidening(actual, latest)) {
-                    checker.widened().add(argument);
+                if (latest != null) {
+                    checker.coerce(argument, actual, latest);
                 }
             }
         } else {
@@ -256,7 +256,7 @@ final class CallSolver {
      */
     Type operatorCall(Type receiver, String method, ParserRuleContext argument, Type argumentType,
                       ParserRuleContext at, String receiverText) {
-        Type callee = checker.member(receiver, method, false, at, receiverText);
+        Type callee = checker.members().member(receiver, method, false, at, receiverText);
         if (!(callee instanceof Type.Function function)) {
             if (!TypeChecker.isUnresolved(callee) && !TypeAlgebra.isCallable(callee)) {
                 checker.warn(receiverText + "." + method + " is not callable", at);
@@ -281,11 +281,11 @@ final class CallSolver {
     Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
                            List<BabbleParser.ParameterDeclarationContext> declarations,
                            Type resultPattern, List<BabbleParser.CallParameterContext> arguments,
-                           BabbleParser.CallContext ctx, String description) {
+                           BabbleParser.CallContext ctx, String description, Type expected) {
         Type.Parameter[] argParams = mapArgumentsToParameters(parameters, arguments);
         Set<Type.TypeVar> solving = Set.copyOf(solvingList);
         TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
-        Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern, checker.currentExpected(), solving);
+        Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern, expected, solving);
 
         List<Type> paramPatterns = new ArrayList<>(arguments.size());
         List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
@@ -342,14 +342,14 @@ final class CallSolver {
         return checker.algebra().substitute(resultPattern, inferred);
     }
 
-    Type javaGenericSamCall(Class<?> java, BabbleParser.ExpressionContext argExpr, BabbleParser.CallContext ctx) {
+    Type javaGenericSamCall(Class<?> java, BabbleParser.ExpressionContext argExpr, BabbleParser.CallContext ctx, Type expected) {
         TypeVariable<?>[] typeParams = java.getTypeParameters();
         if (typeParams.length == 0) {
             Type expectedSam = new Type.JavaInstance(java);
             if (TypeAlgebra.isCallable(checker.check(argExpr, expectedSam))) {
                 return expectedSam;
             }
-            return javaConstructorCall(java, ctx.callParameters().callParameter(), ctx, true);
+            return javaConstructorCall(java, ctx.callParameters().callParameter(), ctx, expected, true);
         }
         List<Type.TypeVar> solvingList = new ArrayList<>(typeParams.length);
         for (int i = 0; i < typeParams.length; i++) {
@@ -358,7 +358,7 @@ final class CallSolver {
         Set<Type.TypeVar> solving = Set.copyOf(solvingList);
         Type.JavaInstance samPattern = new Type.JavaInstance(java, List.copyOf(solvingList));
         Type.Function samFn = JavaTypeBridge.samFunctionType(samPattern, checker.effectChecker());
-        Map<Type.TypeVar, Type> retHints = collectReturnHints(samPattern, checker.currentExpected(), solving);
+        Map<Type.TypeVar, Type> retHints = collectReturnHints(samPattern, expected, solving);
         TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
         Type expectedForArg = checker.algebra().substitute(samPattern, placeholderEnvWithHints(solving, store, retHints));
         Type actualArg = checker.check(argExpr, expectedForArg);
@@ -366,7 +366,7 @@ final class CallSolver {
             return Type.ERROR;
         }
         if (!TypeAlgebra.isCallable(actualArg)) {
-            return javaConstructorCall(java, ctx.callParameters().callParameter(), ctx, true);
+            return javaConstructorCall(java, ctx.callParameters().callParameter(), ctx, expected, true);
         }
         if (actualArg instanceof Type.Function actualFn && samFn != null) {
             checker.algebra().relate(actualFn, samFn, TypeAlgebra.RelateMode.ASSIGNABLE, store);
@@ -398,10 +398,10 @@ final class CallSolver {
     }
 
     Type javaConstructorCall(Class<?> java, List<BabbleParser.CallParameterContext> arguments,
-                             BabbleParser.CallContext ctx, boolean recordTarget) {
+                             BabbleParser.CallContext ctx, Type expected, boolean recordTarget) {
         List<Type> argumentTypes = new ArrayList<>();
         String description = java.getCanonicalName();
-        List<Executable> matching = javaCall(Arrays.asList(java.getConstructors()), description, Map.of(), arguments, ctx, argumentTypes);
+        List<Executable> matching = javaCall(Arrays.asList(java.getConstructors()), description, Map.of(), arguments, ctx, expected, argumentTypes);
         TypeVariable<?>[] classParams = java.getTypeParameters();
         Executable winner = matching.isEmpty() ? null : matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching);
         if (classParams.length == 0) {
@@ -420,7 +420,7 @@ final class CallSolver {
         variables.addAll(Arrays.asList(winner.getTypeParameters()));
         Map<TypeVariable<?>, Type> solved = solveJava(winner, variables, Map.of(),
                 synthetic -> new Type.JavaInstance(java, Arrays.stream(classParams).map(tp -> (Type) synthetic.get(tp)).toList()),
-                arguments, argumentTypes, description, ctx);
+                arguments, argumentTypes, description, ctx, expected);
         if (solved == null) {
             return Type.ERROR;
         }
@@ -432,9 +432,9 @@ final class CallSolver {
 
     Type javaMethodCall(List<Method> candidates, String description, Map<TypeVariable<?>, Type> receiverEnv,
                         List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx,
-                        boolean recordTarget) {
+                        Type expected, boolean recordTarget) {
         List<Type> argumentTypes = new ArrayList<>();
-        List<Method> applicable = javaCall(candidates, description, receiverEnv, arguments, ctx, argumentTypes);
+        List<Method> applicable = javaCall(candidates, description, receiverEnv, arguments, ctx, expected, argumentTypes);
         if (applicable.isEmpty()) {
             return Type.ERROR;
         }
@@ -460,7 +460,7 @@ final class CallSolver {
                         patternEnv.putAll(synthetic);
                         return JavaTypeBridge.fromJavaType(generic.getGenericReturnType(), patternEnv, false, false);
                     },
-                    arguments, argumentTypes, description, ctx);
+                    arguments, argumentTypes, description, ctx, expected);
             if (env == null) {
                 return Type.ERROR;
             }
@@ -489,7 +489,7 @@ final class CallSolver {
                                                  Map<TypeVariable<?>, Type> knownEnv,
                                                  java.util.function.Function<Map<TypeVariable<?>, Type.TypeVar>, Type> resultPattern,
                                                  List<BabbleParser.CallParameterContext> arguments, List<Type> argumentTypes,
-                                                 String description, BabbleParser.CallContext ctx) {
+                                                 String description, BabbleParser.CallContext ctx, Type expected) {
         Map<TypeVariable<?>, Type.TypeVar> synthetic = new HashMap<>();
         for (TypeVariable<?> tp : variables) {
             synthetic.putIfAbsent(tp, new Type.TypeVar(null, tp.getName(), synthetic.size()));
@@ -508,7 +508,7 @@ final class CallSolver {
             argExprs.add(arguments.get(i).expression());
             checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
         }
-        Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern.apply(synthetic), checker.currentExpected(), solving);
+        Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern.apply(synthetic), expected, solving);
         Map<Type.TypeVar, Type> inferred = solveAll(solvingList, store, retHints, paramPatterns, argExprs);
         if (inferred == null) {
             if (argumentTypes.stream().noneMatch(TypeChecker::isUnresolved)) {
@@ -533,7 +533,7 @@ final class CallSolver {
     private <E extends Executable> List<E> javaCall(List<E> candidates, String description,
                                                     Map<TypeVariable<?>, Type> receiverEnv,
                                                     List<BabbleParser.CallParameterContext> arguments,
-                                                    BabbleParser.CallContext ctx,
+                                                    BabbleParser.CallContext ctx, Type expected,
                                                     List<Type> outArgumentTypes) {
         List<E> matching = new ArrayList<>();
         for (E candidate : candidates) {
@@ -546,12 +546,12 @@ final class CallSolver {
         for (int i = 0; i < arguments.size(); i++) {
             BabbleParser.ExpressionContext argument = arguments.get(i).expression();
             boolean isLambda = checker.unwrapFunctionLiteral(argument) != null;
-            Type expected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, receiverEnv);
-            if (needsDeferredLambdaTyping(argument, expected)) {
+            Type argExpected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, receiverEnv);
+            if (needsDeferredLambdaTyping(argument, argExpected)) {
                 deferred[i] = true;
                 continue;
             }
-            Type actual = checker.check(argument, expected);
+            Type actual = checker.check(argument, argExpected);
             argTypes[i] = actual;
             final int index = i;
             matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, receiverEnv, checker.algebra()));
@@ -561,10 +561,10 @@ final class CallSolver {
                 continue;
             }
             BabbleParser.ExpressionContext argument = arguments.get(i).expression();
-            Map<TypeVariable<?>, Type> refinedEnv = refineJavaEnvFromArgs(matching, receiverEnv, argTypes, deferred, ctx);
+            Map<TypeVariable<?>, Type> refinedEnv = refineJavaEnvFromArgs(matching, receiverEnv, argTypes, deferred, ctx, expected);
             boolean isLambda = checker.unwrapFunctionLiteral(argument) != null;
-            Type expected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, refinedEnv);
-            Type actual = checker.check(argument, expected);
+            Type argExpected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, refinedEnv);
+            Type actual = checker.check(argument, argExpected);
             argTypes[i] = actual;
             final int index = i;
             matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, refinedEnv, checker.algebra()));
@@ -587,7 +587,7 @@ final class CallSolver {
 
     private <E extends Executable> Map<TypeVariable<?>, Type> refineJavaEnvFromArgs(
             List<E> matching, Map<TypeVariable<?>, Type> receiverEnv, Type[] argTypes, boolean[] deferred,
-            BabbleParser.CallContext ctx) {
+            BabbleParser.CallContext ctx, Type expected) {
         if (matching.size() != 1) {
             return receiverEnv;
         }
@@ -607,7 +607,7 @@ final class CallSolver {
                 checker.algebra().relate(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
             }
         }
-        Type ctxExpected = checker.currentExpected();
+        Type ctxExpected = expected;
         Map<Type.TypeVar, Type> retHints = Map.of();
         if (ctxExpected != null && ctxExpected != Type.ERROR) {
             Type retPat;
@@ -641,9 +641,7 @@ final class CallSolver {
         for (int i = 0; i < arguments.size(); i++) {
             if (i < argumentTypes.size()) {
                 Type paramType = JavaTypeBridge.fromJavaType(genericParams[i], env, false, true);
-                if (TypeAlgebra.needsDoubleWidening(argumentTypes.get(i), paramType)) {
-                    checker.widened().add(arguments.get(i).expression());
-                }
+                checker.coerce(arguments.get(i).expression(), argumentTypes.get(i), paramType);
             }
         }
     }

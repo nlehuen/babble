@@ -92,7 +92,6 @@ final class TypeChecker {
     private final Set<ParserRuleContext> capturedReassigned = new HashSet<>();
     private final Map<ParserRuleContext, Type> types = new HashMap<>();
     private final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
-    private final Map<BabbleParser.TypeContext, Type> annotations = new HashMap<>();
     private final Set<ParserRuleContext> inProgress = new HashSet<>();
     private final Set<BabbleParser.FunctionLiteralContext> functions = new LinkedHashSet<>();
     private final Set<Diagnostic> diagnostics = new TreeSet<>(ORDER);
@@ -100,7 +99,6 @@ final class TypeChecker {
     private final Set<Diagnostic> warnings = new TreeSet<>(ORDER);
     private final Set<ParserRuleContext> widened = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<ParserRuleContext, String> callChecks = new IdentityHashMap<>();
-    private final Map<BabbleParser.DefExpressionContext, List<Type.TypeVar>> defTypeVars = new IdentityHashMap<>();
     private final Typer typer = new Typer();
     private final Map<BabbleParser.FunctionLiteralContext, Type> contextualReturnTypes = new IdentityHashMap<>();
     private final Map<BabbleParser.FunctionLiteralContext, List<BabbleParser.ReturnExpressionContext>> functionReturns = new IdentityHashMap<>();
@@ -109,8 +107,6 @@ final class TypeChecker {
     private final Set<BabbleParser.FunctionLiteralContext> recursiveFunctions = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<BabbleParser.FunctionLiteralContext, Type> provisionalResults = new IdentityHashMap<>();
     private TypeEnv env = TypeEnv.EMPTY;
-    private Type currentExpected;
-    private Role currentRole = Role.VALUE;
     private final Map<ParserRuleContext, Type> inferredDefs = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> nextInferredDefs = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredMembers = new IdentityHashMap<>();
@@ -193,11 +189,11 @@ final class TypeChecker {
     private final Map<Type.Function, BabbleParser.FunctionLiteralContext> functionLiterals = new IdentityHashMap<>();
     private final Set<TypeNode> exportedTypeNodes = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
-    private final Map<BabbleParser.DefExpressionContext, Type.SymbolId> defSymbolIds = new IdentityHashMap<>();
-    private final Map<List<BabbleParser.PackageExpressionContext>, Type.SymbolId> packageSymbolIds = new IdentityHashMap<>();
-    private final Map<Type.Package, List<BabbleParser.PackageExpressionContext>> localPackages = new IdentityHashMap<>();
 
     private final CallSolver callSolver = new CallSolver(this);
+    private final TypeAnnotations annotator = new TypeAnnotations(this);
+    private final MemberTypes members = new MemberTypes(this);
+    private final OperatorTypes operators = new OperatorTypes(this);
 
     CallSolver callSolver() {
         return callSolver;
@@ -210,12 +206,12 @@ final class TypeChecker {
     private final TypeAlgebra algebra = new TypeAlgebra(new TypeAlgebra.Env() {
         @Override
         public List<Type.TypeVar> typeParameters(TypeNode node) {
-            return typeVarsOf(node);
+            return annotator.typeVarsOf(node);
         }
 
         @Override
         public Type parentType(TypeNode node, int index) {
-            return parentAnnotation(node, index);
+            return annotator.parentAnnotation(node, index);
         }
 
         @Override
@@ -287,7 +283,28 @@ final class TypeChecker {
     }
 
     Map<BabbleParser.TypeContext, Type> annotations() {
-        return annotations;
+        return annotator.annotations();
+    }
+
+    /** Whether the walk is seeding a self-recursive function's result (operators on its provisional result stay quiet). */
+    boolean seedingRecursion() {
+        return !inferenceStack.isEmpty() && recursiveFunctions.contains(inferenceStack.peek());
+    }
+
+    boolean checkingEffects() {
+        return checkingEffects;
+    }
+
+    BlockScopes pass() {
+        return pass;
+    }
+
+    MemberTypes members() {
+        return members;
+    }
+
+    TypeAnnotations annotator() {
+        return annotator;
     }
 
     Set<BabbleParser.FunctionLiteralContext> functions() {
@@ -300,7 +317,7 @@ final class TypeChecker {
 
     /** The package expressions a package type of this file stands for, or null for another file's. */
     List<BabbleParser.PackageExpressionContext> localPackageDeclarations(Type.Package pkg) {
-        return localPackages.get(pkg);
+        return members.localPackageDeclarations(pkg);
     }
 
     TypedModuleSummary summary() {
@@ -349,7 +366,7 @@ final class TypeChecker {
         for (BabbleParser.FunctionLiteralContext function : functions) {
             checkResult(function);
         }
-        checkInterfaces();
+        members.checkInterfaces();
         checkMissingTypes(file);
         effectChecker.verify(file);
         diagnostics.addAll(effectDiagnostics);
@@ -520,7 +537,7 @@ final class TypeChecker {
         types.clear();
         declarationTypes.clear();
         if (clearAnnotations) {
-            annotations.clear();
+            annotator.clear();
         }
         inProgress.clear();
         functions.clear();
@@ -528,8 +545,6 @@ final class TypeChecker {
         warnings.clear();
         widened.clear();
         callChecks.clear();
-        currentExpected = null;
-        currentRole = Role.VALUE;
         contextualReturnTypes.clear();
         inferenceStack.clear();
         inferringResult.clear();
@@ -630,34 +645,12 @@ final class TypeChecker {
         return null;
     }
 
+    /** The first note found in {@code tree}, innermost names first, then the parameters of a call's function. */
     private String findWideningNote(ParseTree tree, int diagnosticLine) {
         if (tree instanceof BabbleParser.SelectorContext selector) {
-            String name = selector.ID().getText();
-            if (selector.expression() == null) {
-                ScopeNode scope = occurrenceScopes.get(selector);
-                if (scope != null && resolveName(selector, name, scope) instanceof ParserRuleContext decl) {
-                    Widening paramWidening = paramWidenings.get(decl);
-                    if (paramWidening != null && paramWidening.line() > diagnosticLine) {
-                        return " (" + name + " is " + paramWidening.type() + " because of the call at line " + paramWidening.line() + ")";
-                    }
-                    Widening widening = defWidenings.get(decl);
-                    if (widening != null && widening.line() > diagnosticLine) {
-                        return " (" + name + " is " + widening.type() + " because of the assignment at line " + widening.line() + ")";
-                    }
-                }
-            } else {
-                Type receiver = types.get(selector.expression());
-                TypeNode.Member member = targetMember(receiver, name);
-                if (member != null) {
-                    Widening paramWidening = paramWidenings.get(member.declaration);
-                    if (paramWidening != null && paramWidening.line() > diagnosticLine) {
-                        return " (" + name + " is " + paramWidening.type() + " because of the call at line " + paramWidening.line() + ")";
-                    }
-                    Widening widening = memberWidenings.get(member.declaration);
-                    if (widening != null && widening.line() > diagnosticLine) {
-                        return " (" + name + " is " + widening.type() + " because of the assignment at line " + widening.line() + ")";
-                    }
-                }
+            String note = noteForName(selector, selector.ID().getText(), selector.expression(), diagnosticLine);
+            if (note != null) {
+                return note;
             }
         } else if (tree instanceof BabbleParser.AssignExpressionContext assign) {
             String note = assignmentWideningNote(assign, diagnosticLine);
@@ -671,15 +664,12 @@ final class TypeChecker {
                 return found;
             }
         }
-        if (tree instanceof BabbleParser.CallContext call && types.get(call.expression()) instanceof Type.Function fn) {
-            BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
-            if (lit != null) {
-                for (BabbleParser.ParameterDeclarationContext param : lit.parametersDeclaration().parameterDeclaration()) {
-                    Widening paramWidening = paramWidenings.get(param);
-                    if (paramWidening != null && paramWidening.line() > diagnosticLine) {
-                        return " (" + param.ID().getText() + " is " + paramWidening.type()
-                                + " because of the call at line " + paramWidening.line() + ")";
-                    }
+        if (tree instanceof BabbleParser.CallContext call && types.get(call.expression()) instanceof Type.Function fn
+                && functionLiterals.get(fn) instanceof BabbleParser.FunctionLiteralContext lit) {
+            for (BabbleParser.ParameterDeclarationContext param : lit.parametersDeclaration().parameterDeclaration()) {
+                String note = wideningNote(param.ID().getText(), paramWidenings.get(param), null, diagnosticLine);
+                if (note != null) {
+                    return note;
                 }
             }
         }
@@ -687,42 +677,35 @@ final class TypeChecker {
     }
 
     private String assignmentWideningNote(BabbleParser.AssignExpressionContext assign, int diagnosticLine) {
-        String name = assign.name.getText();
-        if (assign.namespace == null) {
-            ScopeNode scope = occurrenceScopes.get(assign);
-            if (scope != null && resolveName(assign, name, scope) instanceof ParserRuleContext decl) {
-                Widening paramWidening = paramWidenings.get(decl);
-                if (paramWidening != null && paramWidening.line() > diagnosticLine) {
-                    return " (" + name + " is " + paramWidening.type() + " because of the call at line " + paramWidening.line() + ")";
-                }
-                Widening widening = defWidenings.get(decl);
-                if (widening != null && widening.line() > diagnosticLine) {
-                    return " (" + name + " is " + widening.type() + " because of the assignment at line " + widening.line() + ")";
-                }
-            }
-        } else {
-            Type receiver = types.get(assign.namespace);
-            TypeNode.Member member = targetMember(receiver, name);
-            if (member != null) {
-                Widening paramWidening = paramWidenings.get(member.declaration);
-                if (paramWidening != null && paramWidening.line() > diagnosticLine) {
-                    return " (" + name + " is " + paramWidening.type() + " because of the call at line " + paramWidening.line() + ")";
-                }
-                Widening widening = memberWidenings.get(member.declaration);
-                if (widening != null && widening.line() > diagnosticLine) {
-                    return " (" + name + " is " + widening.type() + " because of the assignment at line " + widening.line() + ")";
-                }
-            }
-        }
-        return null;
+        return noteForName(assign, assign.name.getText(), assign.namespace, diagnosticLine);
     }
 
-    private static TypeNode.Member targetMember(Type receiver, String name) {
-        if (receiver instanceof Type.Instance instance) {
-            return findMember(instance.node(), name);
+    /**
+     * Why {@code name} (a local, or a member of {@code receiver}) has a type wider than at the
+     * line of the diagnostic : a later call widened the parameter, or a later assignment the slot.
+     */
+    private String noteForName(ParserRuleContext occurrence, String name, BabbleParser.ExpressionContext receiver, int diagnosticLine) {
+        ParserRuleContext declaration;
+        Map<ParserRuleContext, Widening> assignments;
+        if (receiver == null) {
+            ScopeNode scope = occurrenceScopes.get(occurrence);
+            declaration = scope != null && resolveName(occurrence, name, scope) instanceof ParserRuleContext decl ? decl : null;
+            assignments = defWidenings;
+        } else {
+            TypeNode.Member member = members.targetMember(types.get(receiver), name);
+            declaration = member != null ? member.declaration : null;
+            assignments = memberWidenings;
         }
-        if (receiver instanceof Type.ClassValue value) {
-            return value.node().statics.get(name);
+        return declaration == null ? null
+                : wideningNote(name, paramWidenings.get(declaration), assignments.get(declaration), diagnosticLine);
+    }
+
+    private static String wideningNote(String name, Widening call, Widening assignment, int diagnosticLine) {
+        if (call != null && call.line() > diagnosticLine) {
+            return " (" + name + " is " + call.type() + " because of the call at line " + call.line() + ")";
+        }
+        if (assignment != null && assignment.line() > diagnosticLine) {
+            return " (" + name + " is " + assignment.type() + " because of the assignment at line " + assignment.line() + ")";
         }
         return null;
     }
@@ -749,18 +732,18 @@ final class TypeChecker {
             if (type.getParent() instanceof BabbleParser.AsExpressionContext asCtx && asCtx.right == type) {
                 return;
             }
-            annotation(type, scopeOf(type));
+            annotator.annotation(type, scopeOf(type));
             return;
         }
         if (tree instanceof BabbleParser.TypeListContext list) {
             for (BabbleParser.TypeContext parentType : list.type()) {
-                annotation(parentType, scopeOf(parentType));
+                annotator.annotation(parentType, scopeOf(parentType));
             }
             return;
         }
         if (tree instanceof BabbleParser.SuperExpressionContext sup) {
             if (sup.qualifier != null) {
-                annotation(sup.qualifier, scopeOf(sup), true);
+                annotator.annotation(sup.qualifier, scopeOf(sup), true);
             }
             return;
         }
@@ -786,7 +769,7 @@ final class TypeChecker {
             synth((ParserRuleContext) tree);
         }
         if (tree instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.defaultValue != null && parameter.type() != null) {
-            Type declared = annotation(parameter.type(), scopeOf(parameter));
+            Type declared = annotator.annotation(parameter.type(), scopeOf(parameter));
             subsumes(parameter.defaultValue, null, check(parameter.defaultValue, declared), declared);
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
@@ -825,86 +808,6 @@ final class TypeChecker {
         }.visit(file);
     }
 
-    /** Checks each class, object, and extending interface against all ancestor Babble interface member types. */
-    private void checkInterfaces() {
-        for (TypeNode type : pass.types) {
-            if (type.parents.isEmpty()) {
-                continue;
-            }
-            List<Type.TypeVar> vars = typeVarsOf(type);
-            Type.Instance selfInst = vars.isEmpty()
-                    ? new Type.Instance(type)
-                    : new Type.Instance(type, List.copyOf(vars));
-            Map<String, TypeChecks.Provider> defaults = inheritedDefaults(type);
-            Set<TypeNode> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-            for (Object parent : type.parents) {
-                if (parent instanceof TypeNode iface) {
-                    checkInterfaceConformance(type, selfInst, iface, defaults, seen);
-                }
-            }
-        }
-    }
-
-    private static Map<String, TypeChecks.Provider> inheritedDefaults(TypeNode type) {
-        Map<String, TypeChecks.Provider> result = new LinkedHashMap<>();
-        for (Object parent : type.parents) {
-            if (parent instanceof TypeNode iface && iface.defaults != null) {
-                for (TypeChecks.Provider provider : iface.defaults.values()) {
-                    if (!type.members.containsKey(provider.name())) {
-                        result.putIfAbsent(provider.name(), provider);
-                    }
-                }
-            }
-        }
-        return result;
-    }
-
-    private void checkInterfaceConformance(TypeNode type, Type.Instance selfInst, TypeNode iface, Map<String, TypeChecks.Provider> defaults, Set<TypeNode> seen) {
-        if (!seen.add(iface)) {
-            return;
-        }
-        Type projectedIface = algebra.projectToBabble(selfInst, iface);
-        Map<Type.TypeVar, Type> ifaceEnv = projectedIface instanceof Type.Instance proj ? algebra.instanceEnv(proj) : Map.of();
-        for (TypeNode.Member req : iface.members.values()) {
-            if (req.declaration != null && !req.hasFunction && declaredType(req.declaration) == null) {
-                continue;
-            }
-            Type required = algebra.substitute(memberType(iface, req), ifaceEnv);
-            if (isUnresolved(required)) {
-                continue;
-            }
-            TypeNode.Member impl = type.members.get(req.name);
-            if (impl != null) {
-                if (impl.isPrivate()) {
-                    continue;
-                }
-                Type actual = memberType(type, impl);
-                if (!isUnresolved(actual) && !algebra.subtype(actual, required)) {
-                    reportTypeMismatch(actual, required, impl.declaration);
-                }
-            } else {
-                TypeChecks.Provider provider = defaults.get(req.name);
-                if (provider != null && provider.owner() instanceof TypeNode owner
-                        && (!type.isInterface() || owner != iface)) {
-                    TypeNode.Member defaultMember = owner.members.get(req.name);
-                    if (defaultMember != null) {
-                        Type projectedOwner = algebra.projectToBabble(selfInst, owner);
-                        Map<Type.TypeVar, Type> ownerEnv = projectedOwner instanceof Type.Instance proj ? algebra.instanceEnv(proj) : Map.of();
-                        Type actual = algebra.substitute(memberType(owner, defaultMember), ownerEnv);
-                        if (!isUnresolved(actual) && !algebra.subtype(actual, required)) {
-                            reportTypeMismatch(actual, required, type.ctx);
-                        }
-                    }
-                }
-            }
-        }
-        for (Object parent : iface.parents) {
-            if (parent instanceof TypeNode parentIface) {
-                checkInterfaceConformance(type, selfInst, parentIface, defaults, seen);
-            }
-        }
-    }
-
     private static ScopeNode callableScope(ScopeNode scope) {
         ScopeNode s = scope;
         while (s != null && s.kind == ScopeNode.Kind.BLOCK) {
@@ -916,7 +819,7 @@ final class TypeChecker {
     // ---------------------------------------------------------------- scopes and names
 
     /** Whether a construct is part of what this pass analysed, rather than of an imported file. */
-    private boolean isLocal(ParserRuleContext ctx) {
+    boolean isLocal(ParserRuleContext ctx) {
         if (ctx == null) {
             return false;
         }
@@ -988,12 +891,12 @@ final class TypeChecker {
             }
         }
         if (declaration instanceof BabbleParser.DefExpressionContext def && def.type() != null) {
-            Type declared = declaredType(def);
+            Type declared = annotator.declaredType(def);
             declarationTypes.put(declaration, declared);
             return declared;
         }
         if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.type() != null) {
-            Type declared = annotation(parameter.type(), scopeOf(parameter));
+            Type declared = annotator.annotation(parameter.type(), scopeOf(parameter));
             declarationTypes.put(declaration, declared);
             return declared;
         }
@@ -1075,470 +978,6 @@ final class TypeChecker {
         return type == Type.NOTHING ? Type.ERROR : type;
     }
 
-    /** The annotation a def or parameter declares, or null. */
-    Type declaredType(ParserRuleContext declaration) {
-        if (!isLocal(declaration)) {
-            return null;
-        }
-        if (!inFile(declaration) && pass.session != null) {
-            Type frozen = pass.session.declarationTypes.get(declaration);
-            if (frozen != null) {
-                return frozen;
-            }
-        }
-        if (declaration instanceof BabbleParser.DefExpressionContext def && def.type() != null) {
-            Type declared = annotation(def.type(), scopeOf(def));
-            if (def.typeParameters() != null && declared instanceof Type.Function fn) {
-                return new Type.Function(typeVarsOf(def), fn.parameters(), fn.result(), fn.effects());
-            }
-            return declared;
-        }
-        if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.type() != null) {
-            return annotation(parameter.type(), scopeOf(parameter));
-        }
-        return null;
-    }
-
-    private List<Type.TypeVar> typeVarsOf(BabbleParser.DefExpressionContext def) {
-        if (def == null || def.typeParameters() == null) {
-            return List.of();
-        }
-        return defTypeVars.computeIfAbsent(def, d -> {
-            Type.SymbolId id = defSymbolIds.computeIfAbsent(d, k -> new Type.SymbolId(k.name.getText()));
-            List<org.antlr.v4.runtime.tree.TerminalNode> ids = d.typeParameters().ID();
-            List<Type.TypeVar> vars = new ArrayList<>(ids.size());
-            for (int i = 0; i < ids.size(); i++) {
-                vars.add(new Type.TypeVar(id, ids.get(i).getText(), i));
-            }
-            return List.copyOf(vars);
-        });
-    }
-
-    List<Type.TypeVar> typeVarsOf(TypeNode node) {
-        if (node == null || node.typeParameters.isEmpty()) {
-            return List.of();
-        }
-        if (!isLocal(node.ctx)) {
-            if (pass.session != null) {
-                List<Type.TypeVar> fromSession = pass.session.typeNodeVars.get(node);
-                if (fromSession != null) {
-                    return fromSession;
-                }
-            }
-            for (ModuleInterface mod : allLoadedModules()) {
-                TypedModuleSummary s = mod.summary();
-                if (s != null) {
-                    List<Type.TypeVar> remote = s.typeVarsOf(node);
-                    if (remote != null) {
-                        return remote;
-                    }
-                }
-            }
-            return List.of();
-        }
-        if (node.ctx.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == node.ctx) {
-            return typeVarsOf(def);
-        }
-        return List.of();
-    }
-
-    private Type.TypeVar resolveTypeVar(String name, ParserRuleContext at, ScopeNode scope) {
-        if (at != null) {
-            for (ParserRuleContext p = at; p != null; p = p.getParent()) {
-                if (p.getParent() instanceof BabbleParser.DefExpressionContext def && def.type() == p && def.typeParameters() != null) {
-                    for (Type.TypeVar tv : typeVarsOf(def)) {
-                        if (tv.name().equals(name)) {
-                            return tv;
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-        for (ScopeNode s = scope; s != null; s = s.parent) {
-            if ((s.kind == ScopeNode.Kind.CLASS_BODY || s.kind == ScopeNode.Kind.INTERFACE_BODY) && s.type != null) {
-                for (Type.TypeVar tv : typeVarsOf(s.type)) {
-                    if (tv.name().equals(name)) {
-                        return tv;
-                    }
-                }
-            } else if (s.kind == ScopeNode.Kind.FUNCTION
-                    && s.owner.getParent() instanceof BabbleParser.DefExpressionContext def
-                    && def.value == s.owner && def.typeParameters() != null) {
-                for (Type.TypeVar tv : typeVarsOf(def)) {
-                    if (tv.name().equals(name)) {
-                        return tv;
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    Type parentAnnotation(TypeNode node, int index) {
-        if (node == null || index < 0) {
-            return Type.ERROR;
-        }
-        if (!isLocal(node.ctx)) {
-            if (pass.session != null) {
-                List<Type> fromSession = pass.session.parentTypes.get(node);
-                if (fromSession != null && index < fromSession.size()) {
-                    return fromSession.get(index);
-                }
-            }
-            for (ModuleInterface mod : allLoadedModules()) {
-                TypedModuleSummary s = mod.summary();
-                if (s != null) {
-                    List<Type> remote = s.parentTypesOf(node);
-                    if (remote != null && index < remote.size()) {
-                        return remote.get(index);
-                    }
-                }
-            }
-            return Type.ERROR;
-        }
-        if (index >= node.parentTypes.size()) {
-            return Type.ERROR;
-        }
-        BabbleParser.TypeContext parentType = node.parentTypes.get(index);
-        return annotation(parentType, scopeOf(parentType));
-    }
-
-    // ---------------------------------------------------------------- annotations
-
-    Type annotation(BabbleParser.TypeContext type, ScopeNode scope) {
-        return annotation(type, scope, false);
-    }
-
-    private Type annotation(BabbleParser.TypeContext type, ScopeNode scope, boolean allowRaw) {
-        if (!allowRaw) {
-            Type cached = annotations.get(type);
-            if (cached != null) {
-                return cached;
-            }
-        }
-        List<BabbleParser.NullableTypeContext> parts = type.nullableType();
-        List<Type> members = new ArrayList<>(parts.size());
-        for (BabbleParser.NullableTypeContext part : parts) {
-            Type member = nullableAnnotation(part, scope, allowRaw);
-            if (member == Type.ERROR) {
-                if (!allowRaw) {
-                    annotations.put(type, Type.ERROR);
-                }
-                return Type.ERROR;
-            }
-            members.add(member);
-        }
-        Type result = Type.union(members);
-        if (!allowRaw) {
-            annotations.put(type, result);
-        }
-        return result;
-    }
-
-    private Type nullableAnnotation(BabbleParser.NullableTypeContext nullable, ScopeNode scope, boolean allowRaw) {
-        Type base = primaryAnnotation(nullable.primaryType(), scope, allowRaw);
-        if (base == Type.ERROR) {
-            return Type.ERROR;
-        }
-        return nullable.question != null ? Type.nullable(base) : base;
-    }
-
-    private Type primaryAnnotation(BabbleParser.PrimaryTypeContext primary, ScopeNode scope, boolean allowRaw) {
-        if (primary instanceof BabbleParser.FunctionTypeContext function) {
-            EffectSet effs = effectChecker != null
-                    ? effectChecker.parseFunctionTypePrefix(function, checkingEffects).toEffectSet()
-                    : EffectSet.EMPTY;
-            return new Type.Function(functionTypeParameters(function.parametersDeclaration(), scope),
-                    function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY,
-                    effs);
-        }
-        if (primary instanceof BabbleParser.NullTypeContext) {
-            return Type.NULL;
-        }
-        if (primary instanceof BabbleParser.ParenTypeContext paren) {
-            return annotation(paren.type(), scope, allowRaw);
-        }
-        BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
-        Type result = simpleType(simple, scope, allowRaw);
-        if (result == null) {
-            warn("Unknown type : " + simple.getText(), simple);
-            return Type.ERROR;
-        }
-        return result;
-    }
-
-    private List<Type.Parameter> functionTypeParameters(BabbleParser.ParametersDeclarationContext declaration, ScopeNode scope) {
-        List<Type.Parameter> result = new ArrayList<>();
-        for (BabbleParser.ParameterDeclarationContext parameter : declaration.parameterDeclaration()) {
-            Type type;
-            if (parameter.type() != null) {
-                type = annotation(parameter.type(), scope);
-            } else {
-                warn("Missing type : " + parameter.ID().getText(), parameter);
-                type = Type.ERROR;
-            }
-            EffectChecker.ParamMods pm = effectChecker != null
-                    ? effectChecker.parseParamMods(parameter, checkingEffects)
-                    : EffectChecker.ParamMods.NONE;
-            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null,
-                    pm.mut(), pm.borrow(), pm.borrow()));
-        }
-        return result;
-    }
-
-    /**
-     * T1 : the built-in names, generic type parameters, a class or interface literal bound to
-     * a def (possibly reached through packages or modules), or a Java class. Null when unknown.
-     */
-    private Type simpleType(BabbleParser.SimpleTypeContext type, ScopeNode scope, boolean allowRaw) {
-        List<String> path = type.ID().stream().map(Object::toString).toList();
-        if (path.size() == 1) {
-            Type.TypeVar tv = resolveTypeVar(path.get(0), type, scope);
-            if (tv != null) {
-                if (type.typeArguments() != null) {
-                    warn("Wrong number of type arguments : expected 0, got " + type.typeArguments().type().size(), type);
-                    return Type.ERROR;
-                }
-                return tv;
-            }
-        }
-        Object resolved = resolveName(null, path.get(0), scope);
-        if (path.size() == 1 && resolved == null) {
-            Type builtin = switch (path.get(0)) {
-                case "int" -> Type.INT;
-                case "double" -> Type.DOUBLE;
-                case "bool" -> Type.BOOL;
-                case "string" -> Type.STRING;
-                case "any" -> Type.ANY;
-                default -> null;
-            };
-            if (builtin == null) {
-                return null;
-            }
-            if (type.typeArguments() != null) {
-                warn("Wrong number of type arguments : expected 0, got " + type.typeArguments().type().size(), type);
-                return Type.ERROR;
-            }
-            return builtin;
-        }
-        if (resolved instanceof BabbleParser.DefExpressionContext def) {
-            if (path.size() == 1) {
-                TypeNode node = classNode(def.value);
-                if (node != null) {
-                    return instantiateBabbleType(node, type, scope, allowRaw);
-                }
-            } else {
-                String imported = importedPackage(def.value);
-                if (imported != null) {
-                    Class<?> java = JavaTypeBridge.loadClass(imported + "." + String.join(".", path.subList(1, path.size())));
-                    return java != null ? instantiateJavaType(java, type, scope, allowRaw) : null;
-                }
-            }
-            if (fromModule(def.value, scopeOf(def), 0)) {
-                Type through = typeThroughModule(typeOfDeclaration(def), path, type);
-                if (through == null || through == Type.ERROR) {
-                    return through;
-                }
-                if (through instanceof Type.Instance inst) {
-                    return instantiateBabbleType(inst.node(), type, scope, allowRaw);
-                }
-                return null;
-            }
-            return null;
-        }
-        if (resolved instanceof List<?> packages) {
-            @SuppressWarnings("unchecked")
-            List<BabbleParser.PackageExpressionContext> list = (List<BabbleParser.PackageExpressionContext>) packages;
-            TypeNode node = nodeInPackages(list, path, 1);
-            return node != null ? instantiateBabbleType(node, type, scope, allowRaw) : null;
-        }
-        if (resolved == null && (path.get(0).equals("java") || path.get(0).equals("javax"))) {
-            Class<?> java = JavaTypeBridge.loadClass(String.join(".", path));
-            return java != null ? instantiateJavaType(java, type, scope, allowRaw) : null;
-        }
-        return null;
-    }
-
-    private List<Type> resolveTypeArguments(BabbleParser.SimpleTypeContext type, ScopeNode scope) {
-        if (type.typeArguments() == null) {
-            return null;
-        }
-        List<Type> args = new ArrayList<>(type.typeArguments().type().size());
-        for (BabbleParser.TypeContext arg : type.typeArguments().type()) {
-            Type resolved = annotation(arg, scope, false);
-            if (resolved == Type.ERROR) {
-                return null;
-            }
-            args.add(resolved);
-        }
-        return args;
-    }
-
-    private Type instantiateBabbleType(TypeNode node, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
-        int expected = node.typeParameters.size();
-        BabbleParser.TypeArgumentsContext argCtx = simple.typeArguments();
-        if (argCtx == null) {
-            if (expected == 0) {
-                return new Type.Instance(node);
-            }
-            if (allowRaw) {
-                return rawInstance(node);
-            }
-            warn("Missing type arguments : " + simple.getText(), simple);
-            return Type.ERROR;
-        }
-        if (allowRaw) {
-            warn("Cannot cast to parameterized type : " + simple.getText(), simple);
-            return Type.ERROR;
-        }
-        List<Type> args = resolveTypeArguments(simple, scope);
-        if (args == null) {
-            return Type.ERROR;
-        }
-        if (args.size() != expected) {
-            warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
-            return Type.ERROR;
-        }
-        return new Type.Instance(node, args);
-    }
-
-    private Type instantiateJavaType(Class<?> java, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
-        int expected = JavaTypeBridge.typeParameterCount(java);
-        BabbleParser.TypeArgumentsContext argCtx = simple.typeArguments();
-        if (argCtx == null) {
-            if (expected == 0) {
-                return JavaTypeBridge.fromJava(java);
-            }
-            if (allowRaw) {
-                return JavaTypeBridge.rawJavaInstance(java);
-            }
-            warn("Missing type arguments : " + simple.getText(), simple);
-            return Type.ERROR;
-        }
-        if (allowRaw) {
-            warn("Cannot cast to parameterized type : " + simple.getText(), simple);
-            return Type.ERROR;
-        }
-        List<Type> args = resolveTypeArguments(simple, scope);
-        if (args == null) {
-            return Type.ERROR;
-        }
-        if (args.size() != expected) {
-            warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
-            return Type.ERROR;
-        }
-        int badArg = JavaTypeBridge.checkJavaTypeArguments(java, args, algebra);
-        if (badArg >= 0) {
-            warn("Type error : type argument " + args.get(badArg) + " does not satisfy bound "
-                    + JavaTypeBridge.typeParameterName(java, badArg) + " of " + java.getName(),
-                    simple.typeArguments().type(badArg));
-            return Type.ERROR;
-        }
-        return new Type.JavaInstance(java, args);
-    }
-
-    private static Type.Instance rawInstance(TypeNode node) {
-        if (node.typeParameters.isEmpty()) {
-            return new Type.Instance(node);
-        }
-        return new Type.Instance(node, Collections.nCopies(node.typeParameters.size(), Type.NULLABLE_ANY));
-    }
-
-    /**
-     * Whether a value is {@code import("file.ba")}, or selected from a def of such a value :
-     * {@code def shapes = import("shapes.ba") ; def Circle = shapes.Circle}.
-     */
-    private boolean fromModule(BabbleParser.ExpressionContext value, ScopeNode scope, int depth) {
-        if (value == null || depth > 16) {
-            return false;
-        }
-        if (value instanceof BabbleParser.CallContext call) {
-            return call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
-                    && callee.ID().getText().equals("import")
-                    && call.callParameters().callParameter().size() == 1
-                    && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string
-                    && org.babblelang.engine.impl.Interpreter.unescape(string.getText()).endsWith(".ba");
-        }
-        if (value instanceof BabbleParser.SelectorContext selector) {
-            if (selector.expression() != null) {
-                return fromModule(selector.expression(), scope, depth + 1);
-            }
-            return resolveName(null, selector.ID().getText(), scope) instanceof BabbleParser.DefExpressionContext def
-                    && fromModule(def.value, scopeOf(def), depth + 1);
-        }
-        return false;
-    }
-
-    /**
-     * A type named through a module : {@code shapes.Circle}, {@code lib.geo.Point}, or
-     * {@code Circle} after {@code def Circle = shapes.Circle}. The class or interface the path
-     * ends on, as its own file types it ; error when a file on the way can't be typed (a cycle) ;
-     * null when the path names no class or interface.
-     */
-    private Type typeThroughModule(Type type, List<String> path, ParserRuleContext at) {
-        for (int i = 1; i < path.size() && type != null && type != Type.ERROR; i++) {
-            if (type instanceof Type.Module module) {
-                if (module.module().summary() == null && module.module().exports().contains(path.get(i))) {
-                    warn("Missing type : " + path.get(i) + " (import cycle with " + module.module().name() + ")", at);
-                    return Type.ERROR;
-                }
-                type = exportType(module.module(), path.get(i));
-            } else if (type instanceof Type.Package pkg) {
-                type = packageMember(pkg, path.get(i));
-            } else {
-                return null;
-            }
-        }
-        if (type == Type.ERROR) {
-            return Type.ERROR;
-        }
-        return type instanceof Type.ClassValue value ? new Type.Instance(value.node()) : null;
-    }
-
-    private TypeNode classNode(BabbleParser.ExpressionContext value) {
-        if (value instanceof BabbleParser.ClassExpressionContext || value instanceof BabbleParser.InterfaceExpressionContext) {
-            return pass.typeNodes.get(value);
-        }
-        return null;
-    }
-
-    private TypeNode nodeInPackages(List<BabbleParser.PackageExpressionContext> packages, List<String> path, int index) {
-        if (index >= path.size()) {
-            return null;
-        }
-        List<BabbleParser.PackageExpressionContext> nested = new ArrayList<>();
-        for (BabbleParser.PackageExpressionContext pkg : packages) {
-            for (BabbleParser.ExpressionContext statement : pkg.packageBlock.expression()) {
-                if (statement instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(path.get(index))) {
-                    return index == path.size() - 1 ? classNode(def.value) : null;
-                }
-                if (statement instanceof BabbleParser.PackageExpressionContext inner && inner.name.getText().equals(path.get(index))) {
-                    nested.add(inner);
-                }
-            }
-        }
-        return nested.isEmpty() ? null : nodeInPackages(nested, path, index + 1);
-    }
-
-    /** The literal argument of {@code import("…")}, or a subpackage selected from it, or null. */
-    private static String importedPackage(BabbleParser.ExpressionContext value) {
-        if (value instanceof BabbleParser.SelectorContext selector && selector.expression() != null) {
-            String base = importedPackage(selector.expression());
-            return base != null ? base + "." + selector.ID().getText() : null;
-        }
-        if (value instanceof BabbleParser.CallContext call
-                && call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
-                && callee.ID().getText().equals("import")
-                && call.callParameters().callParameter().size() == 1
-                && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
-            String name = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
-            // A file name imports a Babble module, whose members are not known statically.
-            return name.endsWith(".ba") ? null : name;
-        }
-        return null;
-    }
-
     // ---------------------------------------------------------------- expressions
 
     Type synth(ParserRuleContext ctx) {
@@ -1557,10 +996,6 @@ final class TypeChecker {
         return type(ctx, null, Role.STATEMENT);
     }
 
-    Type currentExpected() {
-        return currentExpected;
-    }
-
     private Type type(ParserRuleContext ctx, Type expected, Role role) {
         if (ctx == null || !isLocal(ctx)) {
             return Type.ERROR;
@@ -1576,20 +1011,14 @@ final class TypeChecker {
             }
             return Type.ERROR;
         }
-        Type prevExpected = currentExpected;
-        Role prevRole = currentRole;
-        currentExpected = expected != Type.ERROR ? expected : null;
-        currentRole = role;
         try {
-            Type type = typer.visit(ctx);
+            Type type = typer.typeOf(ctx, expected != Type.ERROR ? expected : null, role);
             if (type == null) {
                 type = Type.ERROR;
             }
             types.put(ctx, type);
             return type;
         } finally {
-            currentExpected = prevExpected;
-            currentRole = prevRole;
             inProgress.remove(ctx);
         }
     }
@@ -1602,13 +1031,13 @@ final class TypeChecker {
     }
 
     /** The type of a function literal : its parameters and annotated or inferred result. */
-    private Type.Function signature(BabbleParser.FunctionLiteralContext literal) {
-        applyContextualType(literal);
+    private Type.Function signature(BabbleParser.FunctionLiteralContext literal, Type expected) {
+        applyContextualType(literal, expected);
         List<Type.Parameter> params = functionParameters(literal);
         typeDefaultValues(literal);
         Type result;
         if (literal.type() != null) {
-            result = annotation(literal.type(), scopeOf(literal));
+            result = annotator.annotation(literal.type(), scopeOf(literal));
         } else if (provisionalResults.containsKey(literal)) {
             result = provisionalResults.get(literal);
         } else if (inferringResult.contains(literal)) {
@@ -1617,11 +1046,11 @@ final class TypeChecker {
             result = inferFunctionResult(literal);
         }
         return recordFunctionLiteral(
-                new Type.Function(typeVarsOf(owningDef(literal)), params, result, literalEffectSet(literal)), literal);
+                new Type.Function(annotator.typeVarsOf(owningDef(literal)), params, result, literalEffectSet(literal)), literal);
     }
 
     private Type.Function recursiveSignature(BabbleParser.FunctionLiteralContext literal) {
-        List<Type.TypeVar> tparams = typeVarsOf(owningDef(literal));
+        List<Type.TypeVar> tparams = annotator.typeVarsOf(owningDef(literal));
         List<Type.Parameter> params = functionParameters(literal);
         EffectSet effs = literalEffectSet(literal);
         if (provisionalResults.containsKey(literal)) {
@@ -1792,7 +1221,7 @@ final class TypeChecker {
         for (BabbleParser.ParameterDeclarationContext parameter : literal.parametersDeclaration().parameterDeclaration()) {
             if (parameter.defaultValue != null) {
                 Type expected = parameter.type() != null
-                        ? annotation(parameter.type(), scope)
+                        ? annotator.annotation(parameter.type(), scope)
                         : declarationTypes.get(parameter);
                 if (!types.containsKey(parameter.defaultValue)) {
                     Type actual = check(parameter.defaultValue, expected);
@@ -1806,11 +1235,10 @@ final class TypeChecker {
         }
     }
 
-    private void applyContextualType(BabbleParser.FunctionLiteralContext literal) {
-        Type expected = currentExpected;
+    private void applyContextualType(BabbleParser.FunctionLiteralContext literal, Type expected) {
         if (expected == null && literal.getParent() instanceof BabbleParser.DefExpressionContext def
                 && def.value == literal && def.type() != null) {
-            expected = declaredType(def);
+            expected = annotator.declaredType(def);
         }
         if (expected == null) {
             return;
@@ -1858,7 +1286,7 @@ final class TypeChecker {
 
     private Type expectedReturnType(BabbleParser.FunctionLiteralContext function) {
         if (function.type() != null) {
-            return annotation(function.type(), scopeOf(function));
+            return annotator.annotation(function.type(), scopeOf(function));
         }
         return contextualReturnTypes.get(function);
     }
@@ -1934,13 +1362,11 @@ final class TypeChecker {
         }
         if (literal.type() == null) {
             Type target = expectedReturn != null && expectedReturn != Type.ERROR ? expectedReturn : result;
-            if (needsDoubleWidening(bodyType, target)) {
-                widened.add(literal.functionBlock);
-            }
+            coerce(literal.functionBlock, bodyType, target);
             for (int i = 0; i < returns.size(); i++) {
                 BabbleParser.ReturnExpressionContext ret = returns.get(i);
-                if (ret.expression() != null && needsDoubleWidening(returnTypes.get(i), target)) {
-                    widened.add(ret);
+                if (ret.expression() != null) {
+                    coerce(ret, returnTypes.get(i), target);
                 }
             }
             if (expectedReturn != null && expectedReturn != Type.ERROR && needsDoubleWidening(result, expectedReturn)) {
@@ -2002,7 +1428,7 @@ final class TypeChecker {
         if (function.type() == null) {
             return;
         }
-        Type expected = annotation(function.type(), scopeOf(function));
+        Type expected = annotator.annotation(function.type(), scopeOf(function));
         List<BabbleParser.ExpressionContext> statements = function.functionBlock.expression();
         if (statements.isEmpty()) {
             subsumes(function.functionBlock, null, Type.NULL, expected);
@@ -2020,12 +1446,33 @@ final class TypeChecker {
         if (actual != Type.ERROR && expected != Type.ERROR && !algebra.assignable(actual, expected)) {
             reportTypeMismatch(actual, expected, errorSite);
         }
-        if (widenSite != null && needsDoubleWidening(actual, expected)) {
-            widened.add(widenSite);
+        coerce(widenSite, actual, expected);
+    }
+
+    /**
+     * The one coercion point : records that the value {@code site} produces is converted from
+     * {@code int} to {@code double} where {@code target} is expected, for both backends.
+     */
+    void coerce(ParserRuleContext site, Type actual, Type target) {
+        if (site != null && needsDoubleWidening(actual, target)) {
+            widened.add(site);
         }
     }
 
-    private void reportTypeMismatch(Type actual, Type expected, ParserRuleContext at) {
+    /** A value flowing into an unannotated def or member : recorded in its slot, and coerced to the slot's type. */
+    private void flowInto(ParserRuleContext declaration, boolean member, Type value, ParserRuleContext errorSite, ParserRuleContext widenSite) {
+        if (member) {
+            recordInferredMember(declaration, value, errorSite);
+        } else {
+            recordInferredDef(declaration, value, errorSite);
+        }
+        Type inferred = (member ? inferredMembers : inferredDefs).get(declaration);
+        if (inferred != null) {
+            coerce(widenSite, value, inferred);
+        }
+    }
+
+    void reportTypeMismatch(Type actual, Type expected, ParserRuleContext at) {
         if (actual instanceof Type.Function aFn && expected instanceof Type.Function eFn
                 && algebra.assignableIgnoringEffects(aFn, eFn)) {
             warn("Type error : expected " + eFn.describeAgainst(eFn) + ", got " + aFn.describeAgainst(eFn), at);
@@ -2186,7 +1633,7 @@ final class TypeChecker {
 
     private Type instanceTypeOfTypeValue(Type typeValue) {
         if (typeValue instanceof Type.ClassValue cv) {
-            return rawInstance(cv.node());
+            return annotator.rawInstance(cv.node());
         }
         if (typeValue instanceof Type.JavaClassValue jcv) {
             return JavaTypeBridge.rawJavaInstance(jcv.type());
@@ -2203,7 +1650,7 @@ final class TypeChecker {
         if (thisScope.kind == ScopeNode.Kind.STATIC_BODY) {
             return new Type.ClassValue(thisScope.type);
         }
-        List<Type.TypeVar> vars = typeVarsOf(thisScope.type);
+        List<Type.TypeVar> vars = annotator.typeVarsOf(thisScope.type);
         return vars.isEmpty() ? new Type.Instance(thisScope.type)
                 : new Type.Instance(thisScope.type, List.copyOf(vars));
     }
@@ -2312,12 +1759,12 @@ final class TypeChecker {
             return false;
         }
         for (ParserRuleContext p = decl; p != null; p = p.getParent()) {
-            if (p instanceof BabbleParser.DefExpressionContext def && defSymbolIds.get(def) == tv.owner()) {
+            if (p instanceof BabbleParser.DefExpressionContext def && annotator.symbolOf(def) == tv.owner()) {
                 return true;
             }
             if (p.getParent() instanceof BabbleParser.ClassExpressionContext cls && cls.staticBlock == p) {
                 BabbleParser.DefExpressionContext owningDef = owningDefExpr(cls);
-                if (owningDef != null && defSymbolIds.get(owningDef) == tv.owner()) {
+                if (owningDef != null && annotator.symbolOf(owningDef) == tv.owner()) {
                     return false;
                 }
             }
@@ -2407,16 +1854,53 @@ final class TypeChecker {
         }
     }
 
-    private final class Typer extends BabbleBaseVisitor<Type> {
-        @Override
-        public Type visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
+    /** The expression rules, each typing its construct against an {@code expected} type (or null) in a {@code role}. */
+    private final class Typer {
+        Type typeOf(ParserRuleContext ctx, Type expected, Role role) {
+            return switch (ctx) {
+                case BabbleParser.PackageExpressionContext c -> visitPackageExpression(c, expected, role);
+                case BabbleParser.IfExpressionContext c -> visitIfExpression(c, expected, role);
+                case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
+                case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
+                case BabbleParser.ClassExpressionContext c -> visitClassExpression(c, expected, role);
+                case BabbleParser.InterfaceExpressionContext c -> visitInterfaceExpression(c, expected, role);
+                case BabbleParser.ObjectExpressionContext c -> visitObjectExpression(c, expected, role);
+                case BabbleParser.ThisExpressionContext c -> visitThisExpression(c, expected, role);
+                case BabbleParser.SuperExpressionContext c -> visitSuperExpression(c, expected, role);
+                case BabbleParser.SelectorContext c -> visitSelector(c, expected, role);
+                case BabbleParser.CallContext c -> visitCall(c, expected, role);
+                case BabbleParser.BlockExpressionContext c -> visitBlockExpression(c, expected, role);
+                case BabbleParser.BlockContext c -> visitBlock(c, expected, role);
+                case BabbleParser.NegateContext c -> visitNegate(c, expected, role);
+                case BabbleParser.BooleanNotContext c -> visitBooleanNot(c, expected, role);
+                case BabbleParser.BinaryOpContext c -> visitBinaryOp(c, expected, role);
+                case BabbleParser.IsExpressionContext c -> visitIsExpression(c, expected, role);
+                case BabbleParser.AsExpressionContext c -> visitAsExpression(c, expected, role);
+                case BabbleParser.BooleanOpContext c -> visitBooleanOp(c, expected, role);
+                case BabbleParser.FunctionLiteralContext c -> visitFunctionLiteral(c, expected, role);
+                case BabbleParser.AssignExpressionContext c -> visitAssignExpression(c, expected, role);
+                case BabbleParser.NullContext c -> visitNull(c, expected, role);
+                case BabbleParser.BooleanContext c -> visitBoolean(c, expected, role);
+                case BabbleParser.RecurseContext c -> visitRecurse(c, expected, role);
+                case BabbleParser.IntegerContext c -> visitInteger(c, expected, role);
+                case BabbleParser.DoubleContext c -> visitDouble(c, expected, role);
+                case BabbleParser.StringContext c -> visitString(c, expected, role);
+                case BabbleParser.ReturnExpressionContext c -> visitReturnExpression(c, expected, role);
+                default -> {
+                    Type last = null;
+                    for (int i = 0; i < ctx.getChildCount(); i++) {
+                        last = ctx.getChild(i) instanceof ParserRuleContext child ? typeOf(child, expected, role) : null;
+                    }
+                    yield last;
+                }
+            };
+        }
+
+        private Type visitPackageExpression(BabbleParser.PackageExpressionContext ctx, Type expected, Role role) {
             return Type.NULL;
         }
 
-        @Override
-        public Type visitIfExpression(BabbleParser.IfExpressionContext ctx) {
-            Type expected = currentExpected;
-            Role role = currentRole;
+        private Type visitIfExpression(BabbleParser.IfExpressionContext ctx, Type expected, Role role) {
             synth(ctx.test);
             TypeEnv.Refinement refinement = extractRefinement(ctx.test);
             TypeEnv baseEnv = env;
@@ -2458,22 +1942,17 @@ final class TypeChecker {
                 }
                 return Type.ERROR;
             }
-            if (needsDoubleWidening(thenType, joined)) {
-                widened.add(ctx.thenBlock);
-            }
-            if (otherwise != null && needsDoubleWidening(elseType, joined)) {
-                widened.add(otherwise);
-            }
+            coerce(ctx.thenBlock, thenType, joined);
+            coerce(otherwise, elseType, joined);
             return joined;
         }
 
-        @Override
-        public Type visitDefExpression(BabbleParser.DefExpressionContext ctx) {
+        private Type visitDefExpression(BabbleParser.DefExpressionContext ctx, Type expected, Role role) {
             ScopeAnalysis.DefKind kind = pass.analysis.defTarget(ctx).kind();
             if (kind == ScopeAnalysis.DefKind.REQUIRED) {
                 return Type.NULL;
             }
-            Type declared = ctx.type() != null ? declaredType(ctx) : null;
+            Type declared = ctx.type() != null ? annotator.declaredType(ctx) : null;
             Type value = ctx.value != null ? check(ctx.value, declared) : Type.NULL;
             if (ctx.targetEffectPrefix() != null && effectChecker != null && value instanceof Type.Function fn) {
                 EffectSet override = effectChecker.defOverrideEffects(ctx);
@@ -2484,26 +1963,13 @@ final class TypeChecker {
             ParserRuleContext errorSite = ctx.value != null ? ctx.value : ctx;
             if (declared != null) {
                 subsumes(errorSite, ctx, value, declared);
-            } else if (kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC) {
-                recordInferredMember(ctx, value, errorSite);
-                Type inferred = inferredMembers.get(ctx);
-                if (inferred != null && needsDoubleWidening(value, inferred)) {
-                    widened.add(ctx);
-                }
             } else {
-                recordInferredDef(ctx, value, errorSite);
-                Type inferred = inferredDefs.get(ctx);
-                if (inferred != null && needsDoubleWidening(value, inferred)) {
-                    widened.add(ctx);
-                }
+                flowInto(ctx, kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC, value, errorSite, ctx);
             }
             return value;
         }
 
-        @Override
-        public Type visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
-            Type expected = currentExpected;
-            Role role = currentRole;
+        private Type visitWhileExpression(BabbleParser.WhileExpressionContext ctx, Type expected, Role role) {
             env = env.evictAll(assignedLocals(ctx));
             synth(ctx.test);
             TypeEnv afterTest = env;
@@ -2530,49 +1996,39 @@ final class TypeChecker {
                 }
                 return Type.ERROR;
             }
-            if (needsDoubleWidening(bodyType, joined)) {
-                widened.add(ctx.whileBlock);
-            }
+            coerce(ctx.whileBlock, bodyType, joined);
             return joined;
         }
 
-        @Override
-        public Type visitClassExpression(BabbleParser.ClassExpressionContext ctx) {
+        private Type visitClassExpression(BabbleParser.ClassExpressionContext ctx, Type expected, Role role) {
             if (ctx.parametersDeclaration() != null) {
                 constructorParameters(pass.typeNodes.get(ctx));
             }
             return new Type.ClassValue(pass.typeNodes.get(ctx));
         }
 
-        @Override
-        public Type visitInterfaceExpression(BabbleParser.InterfaceExpressionContext ctx) {
+        private Type visitInterfaceExpression(BabbleParser.InterfaceExpressionContext ctx, Type expected, Role role) {
             return new Type.ClassValue(pass.typeNodes.get(ctx));
         }
 
-        @Override
-        public Type visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
+        private Type visitObjectExpression(BabbleParser.ObjectExpressionContext ctx, Type expected, Role role) {
             return new Type.Instance(pass.typeNodes.get(ctx));
         }
 
-        @Override
-        public Type visitThisExpression(BabbleParser.ThisExpressionContext ctx) {
+        private Type visitThisExpression(BabbleParser.ThisExpressionContext ctx, Type expected, Role role) {
             Type result = thisType(occurrenceScopes.get(ctx));
             if (result instanceof Type.ClassValue cv && cv.node().ctx instanceof BabbleParser.ClassExpressionContext cls
-                    && inFile(cls) && !currentRole.isClassSafe()) {
+                    && inFile(cls) && !role.isClassSafe()) {
                 nextEscapingTargets.add(cls);
             }
             return result;
         }
 
-        @Override
-        public Type visitSuperExpression(BabbleParser.SuperExpressionContext ctx) {
+        private Type visitSuperExpression(BabbleParser.SuperExpressionContext ctx, Type expected, Role role) {
             return Type.ERROR;
         }
 
-        @Override
-        public Type visitSelector(BabbleParser.SelectorContext ctx) {
-            Role role = currentRole;
-            Type expected = currentExpected;
+        private Type visitSelector(BabbleParser.SelectorContext ctx, Type expected, Role role) {
             Type result = selectUninstantiated(ctx);
             checkSelectorEscape(ctx, result, role);
             if (result instanceof Type.Function fn && !fn.typeParameters().isEmpty() && !role.isCallee()) {
@@ -2596,9 +2052,9 @@ final class TypeChecker {
                 if (resolved instanceof List<?> packages) {
                     @SuppressWarnings("unchecked")
                     List<BabbleParser.PackageExpressionContext> list = (List<BabbleParser.PackageExpressionContext>) packages;
-                    return localPackage(name, list);
+                    return members.localPackage(name, list);
                 }
-                return implicitType(name);
+                return operators.implicitType(name);
             }
             if (receiver instanceof BabbleParser.SuperExpressionContext superExpr) {
                 TypeChecks.Provider provider = pass.superProviders.get(superExpr);
@@ -2633,17 +2089,16 @@ final class TypeChecker {
                     return Type.ERROR;
                 }
                 Type target = receiverType == Type.NULL ? Type.NULL : Type.withoutNull(receiverType);
-                return member(target, name, receiver instanceof BabbleParser.ThisExpressionContext, ctx, receiver);
+                return members.member(target, name, receiver instanceof BabbleParser.ThisExpressionContext, ctx, receiver);
             }
-            return member(synth(receiver, Role.SELECTOR_RECEIVER), name, receiver instanceof BabbleParser.ThisExpressionContext, ctx, receiver);
+            return members.member(synth(receiver, Role.SELECTOR_RECEIVER), name, receiver instanceof BabbleParser.ThisExpressionContext, ctx, receiver);
         }
 
-        @Override
-        public Type visitCall(BabbleParser.CallContext ctx) {
+        private Type visitCall(BabbleParser.CallContext ctx, Type expected, Role role) {
             if (ctx.expression() instanceof BabbleParser.SelectorContext safeSelector && safeSelector.safe != null) {
                 Type callee = typer.selectUninstantiated(safeSelector);
                 types.put(safeSelector, callee == Type.ERROR ? Type.ERROR : Type.nullable(callee));
-                Type result = callSolver.call(callee, ctx, true);
+                Type result = callSolver.call(callee, ctx, expected, true);
                 for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
                     synth(argument.expression());
                 }
@@ -2665,7 +2120,7 @@ final class TypeChecker {
                 String target = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
                 result = target.endsWith(".ba") ? Type.ANY : new Type.JavaPackage(target);
             } else {
-                result = callSolver.call(callee, ctx, true);
+                result = callSolver.call(callee, ctx, expected, true);
                 for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
                     synth(argument.expression());
                 }
@@ -2682,18 +2137,14 @@ final class TypeChecker {
             return false;
         }
 
-        @Override
-        public Type visitBlockExpression(BabbleParser.BlockExpressionContext ctx) {
-            Role role = ctx.block().expression().size() == 1
-                    ? currentRole
-                    : (currentRole == Role.STATEMENT ? Role.STATEMENT : Role.VALUE);
-            return type(ctx.block(), currentExpected, role);
+        private Type visitBlockExpression(BabbleParser.BlockExpressionContext ctx, Type expected, Role role) {
+            Role blockRole = ctx.block().expression().size() == 1
+                    ? role
+                    : (role == Role.STATEMENT ? Role.STATEMENT : Role.VALUE);
+            return type(ctx.block(), expected, blockRole);
         }
 
-        @Override
-        public Type visitBlock(BabbleParser.BlockContext ctx) {
-            Type expected = currentExpected;
-            Role role = currentRole;
+        private Type visitBlock(BabbleParser.BlockContext ctx, Type expected, Role role) {
             List<BabbleParser.ExpressionContext> statements = ctx.expression();
             if (statements.isEmpty()) {
                 return Type.NULL;
@@ -2722,8 +2173,7 @@ final class TypeChecker {
         }
 
         /** As {@code Operators.negate} : an int stays an int, another number is a double. */
-        @Override
-        public Type visitNegate(BabbleParser.NegateContext ctx) {
+        private Type visitNegate(BabbleParser.NegateContext ctx, Type expected, Role role) {
             if (ctx.operand instanceof BabbleParser.IntegerContext literal) {
                 try {
                     Integer.parseInt("-" + literal.getText());
@@ -2738,23 +2188,23 @@ final class TypeChecker {
                 return Type.NOTHING;
             }
             if (operand instanceof Type.Instance) {
-                return operatorCall(operand, Operators.NEGATE, null, null, ctx, ctx.operand.getText());
+                return operators.operatorCall(operand, Operators.NEGATE, null, null, ctx, ctx.operand.getText());
             }
             if (operand instanceof Type.Union union) {
                 if (Type.containsNull(union)) {
-                    number(operand, ctx.operand);
+                    operators.number(operand, ctx.operand);
                     return Type.ERROR;
                 }
                 boolean allNumericOrInstance = union.members().stream()
-                        .allMatch(m -> m instanceof Type.Instance || isNumeric(m));
+                        .allMatch(m -> m instanceof Type.Instance || operators.isNumeric(m));
                 if (!allNumericOrInstance) {
-                    number(operand, ctx.operand);
+                    operators.number(operand, ctx.operand);
                     return Type.ERROR;
                 }
                 List<Type> results = new ArrayList<>(union.members().size());
                 for (Type m : union.members()) {
                     if (m instanceof Type.Instance) {
-                        Type r = operatorCall(m, Operators.NEGATE, null, null, ctx, ctx.operand.getText());
+                        Type r = operators.operatorCall(m, Operators.NEGATE, null, null, ctx, ctx.operand.getText());
                         if (r == Type.ERROR) {
                             return Type.ERROR;
                         }
@@ -2765,25 +2215,22 @@ final class TypeChecker {
                 }
                 return Type.union(results);
             }
-            if (!number(operand, ctx.operand) || isUnresolved(operand)) {
+            if (!operators.number(operand, ctx.operand) || isUnresolved(operand)) {
                 return Type.ERROR;
             }
             return operand == Type.INT ? Type.INT : Type.DOUBLE;
         }
 
-        @Override
-        public Type visitBooleanNot(BabbleParser.BooleanNotContext ctx) {
+        private Type visitBooleanNot(BabbleParser.BooleanNotContext ctx, Type expected, Role role) {
             synth(ctx.expression());
             return Type.BOOL;
         }
 
-        @Override
-        public Type visitBinaryOp(BabbleParser.BinaryOpContext ctx) {
-            return binaryOp(ctx, synth(ctx.left), synth(ctx.right));
+        private Type visitBinaryOp(BabbleParser.BinaryOpContext ctx, Type expected, Role role) {
+            return operators.binaryOp(ctx, synth(ctx.left), synth(ctx.right));
         }
 
-        @Override
-        public Type visitIsExpression(BabbleParser.IsExpressionContext ctx) {
+        private Type visitIsExpression(BabbleParser.IsExpressionContext ctx, Type expected, Role role) {
             synth(ctx.left);
             Type.Simple builtin = isBuiltinTarget(ctx);
             if (builtin != null) {
@@ -2794,10 +2241,9 @@ final class TypeChecker {
             return Type.BOOL;
         }
 
-        @Override
-        public Type visitAsExpression(BabbleParser.AsExpressionContext ctx) {
+        private Type visitAsExpression(BabbleParser.AsExpressionContext ctx, Type expected, Role role) {
             Type source = synth(ctx.left);
-            Type target = annotation(ctx.right, scopeOf(ctx), true);
+            Type target = annotator.annotation(ctx.right, scopeOf(ctx), true);
             if (target == Type.ERROR) {
                 return Type.ERROR;
             }
@@ -2818,8 +2264,7 @@ final class TypeChecker {
             return target;
         }
 
-        @Override
-        public Type visitBooleanOp(BabbleParser.BooleanOpContext ctx) {
+        private Type visitBooleanOp(BabbleParser.BooleanOpContext ctx, Type expected, Role role) {
             synth(ctx.left);
             TypeEnv saved = env;
             TypeEnv.Refinement leftRef = extractRefinement(ctx.left);
@@ -2834,12 +2279,11 @@ final class TypeChecker {
             return Type.BOOL;
         }
 
-        @Override
-        public Type visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
+        private Type visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx, Type expected, Role role) {
             if (inFile(ctx)) {
                 functions.add(ctx);
             }
-            Type.Function sig = signature(ctx);
+            Type.Function sig = signature(ctx, expected);
             types.put(ctx, sig);
             if (ctx.functionBlock != null && !types.containsKey(ctx.functionBlock)
                     && (ctx.type() == null || inferenceStack.isEmpty())) {
@@ -2866,10 +2310,10 @@ final class TypeChecker {
                     }
                     Type declared = declaration instanceof BabbleParser.ParameterDeclarationContext
                             ? typeOfDeclaration(declaration)
-                            : declaredType(declaration);
+                            : annotator.declaredType(declaration);
                     return new LValue.Local(declaration, declared, current, declared == null);
                 }
-                return new LValue.Implicit(readCurrent ? implicitType(name) : Type.ERROR);
+                return new LValue.Implicit(readCurrent ? operators.implicitType(name) : Type.ERROR);
             }
             Type receiver = synth(ctx.namespace, Role.SELECTOR_RECEIVER);
             Object field = JavaTypeBridge.assignedField(receiver, name);
@@ -2881,8 +2325,8 @@ final class TypeChecker {
                 return new LValue.JavaField(assigned, declared, current);
             }
             boolean own = ctx.namespace instanceof BabbleParser.ThisExpressionContext;
-            Type declared = assignedMemberType(receiver, name, own, ctx);
-            TypeNode.Member member = assignedBabbleMember(receiver, name, own);
+            Type declared = members.assignedMemberType(receiver, name, own, ctx);
+            TypeNode.Member member = members.assignedBabbleMember(receiver, name, own);
             if (member != null && member.function != null && inFile(member.function)) {
                 nextEscapingTargets.add(member.function);
             }
@@ -2920,11 +2364,7 @@ final class TypeChecker {
                     if (local.declaredType() != null) {
                         subsumes(errorSite, ctx, value, local.declaredType());
                     } else if (local.inferred()) {
-                        recordInferredDef(local.declaration(), value, errorSite);
-                        Type inferred = inferredDefs.get(local.declaration());
-                        if (inferred != null && needsDoubleWidening(value, inferred)) {
-                            widened.add(ctx);
-                        }
+                        flowInto(local.declaration(), false, value, errorSite, ctx);
                     }
                     env = env.evict(local.declaration());
                 }
@@ -2932,11 +2372,7 @@ final class TypeChecker {
                     if (member.declaredType() != null) {
                         subsumes(errorSite, ctx, value, member.declaredType());
                     } else if (member.inferred() && member.declaration() != null) {
-                        recordInferredMember(member.declaration(), value, errorSite);
-                        Type inferred = inferredMembers.get(member.declaration());
-                        if (inferred != null && needsDoubleWidening(value, inferred)) {
-                            widened.add(ctx);
-                        }
+                        flowInto(member.declaration(), true, value, errorSite, ctx);
                     }
                 }
                 case LValue.Implicit ignored -> {
@@ -2944,20 +2380,19 @@ final class TypeChecker {
             }
         }
 
-        @Override
-        public Type visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
+        private Type visitAssignExpression(BabbleParser.AssignExpressionContext ctx, Type expected, Role role) {
             String operator = Operators.compound(ctx.op.getText());
             if (operator != null) {
                 return compoundAssignment(ctx, operator);
             }
             LValue target = resolveLValue(ctx, false);
-            Type expected = switch (target) {
+            Type declared = switch (target) {
                 case LValue.JavaField jf -> jf.declaredType();
                 case LValue.Local local -> local.declaredType();
                 case LValue.Member member -> member.declaredType();
                 case LValue.Implicit ignored -> null;
             };
-            Type value = check(ctx.value, expected);
+            Type value = check(ctx.value, declared);
             writeLValue(ctx, target, value, ctx.value);
             return value;
         }
@@ -2975,7 +2410,7 @@ final class TypeChecker {
                 case LValue.Implicit imp -> imp.currentType();
             };
             Type value = synth(ctx.value);
-            Type result = binaryOp(arithmeticToken(operator), operator, ctx, org.babblelang.engine.impl.Interpreter.targetText(ctx), ctx, current,
+            Type result = operators.binaryOp(operators.arithmeticToken(operator), operator, ctx, org.babblelang.engine.impl.Interpreter.targetText(ctx), ctx, current,
                     ctx.value.getText(), ctx.value, value);
             if (target instanceof LValue.JavaField jf) {
                 subsumes(ctx, result, jf.declaredType());
@@ -2985,33 +2420,29 @@ final class TypeChecker {
             return result;
         }
 
-        @Override
-        public Type visitNull(BabbleParser.NullContext ctx) {
+        private Type visitNull(BabbleParser.NullContext ctx, Type expected, Role role) {
             return Type.NULL;
         }
 
-        @Override
-        public Type visitBoolean(BabbleParser.BooleanContext ctx) {
+        private Type visitBoolean(BabbleParser.BooleanContext ctx, Type expected, Role role) {
             return Type.BOOL;
         }
 
-        @Override
-        public Type visitRecurse(BabbleParser.RecurseContext ctx) {
+        private Type visitRecurse(BabbleParser.RecurseContext ctx, Type expected, Role role) {
             BabbleParser.FunctionLiteralContext function = enclosingFunction(ctx);
             if (function == null) {
                 return Type.ERROR;
             }
-            if (inFile(function) && !currentRole.isCallee()) {
+            if (inFile(function) && !role.isCallee()) {
                 nextEscapingTargets.add(function);
             }
             if (inferringResult.contains(function) || provisionalResults.containsKey(function)) {
                 return recursiveSignature(function);
             }
-            return signature(function);
+            return signature(function, expected);
         }
 
-        @Override
-        public Type visitInteger(BabbleParser.IntegerContext ctx) {
+        private Type visitInteger(BabbleParser.IntegerContext ctx, Type expected, Role role) {
             try {
                 Integer.parseInt(ctx.getText());
             } catch (NumberFormatException e) {
@@ -3020,23 +2451,20 @@ final class TypeChecker {
             return Type.INT;
         }
 
-        @Override
-        public Type visitDouble(BabbleParser.DoubleContext ctx) {
+        private Type visitDouble(BabbleParser.DoubleContext ctx, Type expected, Role role) {
             return Type.DOUBLE;
         }
 
-        @Override
-        public Type visitString(BabbleParser.StringContext ctx) {
+        private Type visitString(BabbleParser.StringContext ctx, Type expected, Role role) {
             return Type.STRING;
         }
 
-        @Override
-        public Type visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
+        private Type visitReturnExpression(BabbleParser.ReturnExpressionContext ctx, Type expected, Role role) {
             BabbleParser.FunctionLiteralContext function = enclosingFunction(ctx);
-            Type expected = function != null ? expectedReturnType(function) : null;
-            Type value = ctx.expression() != null ? check(ctx.expression(), expected) : Type.NULL;
+            Type returnType = function != null ? expectedReturnType(function) : null;
+            Type value = ctx.expression() != null ? check(ctx.expression(), returnType) : Type.NULL;
             if (function != null && function.type() != null) {
-                Type declared = annotation(function.type(), scopeOf(function));
+                Type declared = annotator.annotation(function.type(), scopeOf(function));
                 subsumes(ctx.expression() != null ? ctx.expression() : ctx, ctx, value, declared);
             }
             return Type.NOTHING;
@@ -3044,241 +2472,6 @@ final class TypeChecker {
     }
 
     // ---------------------------------------------------------------- members
-
-    private record ResolvedMember(TypeNode owner, TypeNode.Member member, Map<Type.TypeVar, Type> env) {
-    }
-
-    /** {@code receiver.name}, read. */
-    private Type member(Type receiver, String name, boolean own, ParserRuleContext at, BabbleParser.ExpressionContext receiverExpression) {
-        return member(receiver, name, own, at, receiverExpression.getText());
-    }
-
-    /** {@code receiver.name}, read, given the receiver's source text. */
-    Type member(Type receiver, String name, boolean own, ParserRuleContext at, String receiverText) {
-        if (isUnresolved(receiver)) {
-            return Type.ERROR;
-        }
-        if (receiver instanceof Type.Union union) {
-            if (Type.containsNull(union)) {
-                warn("Not a scope : " + receiverText, at);
-                return Type.ERROR;
-            }
-            List<Type> memberTypes = new ArrayList<>(union.members().size());
-            for (Type member : union.members()) {
-                Type resolved = member(member, name, own, at, receiverText);
-                if (resolved == Type.ERROR) {
-                    return Type.ERROR;
-                }
-                memberTypes.add(resolved);
-            }
-            return Type.union(memberTypes);
-        }
-        if (receiver instanceof Type.Instance instance) {
-            ResolvedMember resolved = findMember(instance, name);
-            if (resolved != null) {
-                if (resolved.member().isPrivate() && !own) {
-                    warn(name + " is private", at);
-                    return Type.ERROR;
-                }
-                return algebra.substitute(memberType(resolved.owner(), resolved.member()), resolved.env());
-            }
-            Type inherited = inheritedMember(instance, name);
-            if (inherited != null) {
-                return inherited;
-            }
-            warn("No such member : " + name, at);
-            return Type.ERROR;
-        }
-        if (receiver instanceof Type.ClassValue value) {
-            TypeNode.Member member = value.node().statics.get(name);
-            if (member != null) {
-                if (member.isPrivate() && !own) {
-                    warn(name + " is private", at);
-                    return Type.ERROR;
-                }
-                return memberType(value.node(), member);
-            }
-            warn("No such member : " + name, at);
-            return Type.ERROR;
-        }
-        if (receiver instanceof Type.Package pkg) {
-            Type found = packageMember(pkg, name);
-            if (found != null) {
-                return found;
-            }
-            warn("No such member : " + name, at);
-            return Type.ERROR;
-        }
-        if (receiver instanceof Type.Module module) {
-            if (module.module().summary() == null && module.module().exports().contains(name)) {
-                warn("Missing type : " + name + " (import cycle with " + module.module().name() + ")", at);
-                return Type.ERROR;
-            }
-            // A missing export is TypeChecks' to report.
-            Type export = exportType(module.module(), name);
-            return export != null ? export : Type.ERROR;
-        }
-        if (receiver instanceof Type.JavaPackage pkg) {
-            String qualified = pkg.name() + "." + name;
-            Class<?> java = JavaTypeBridge.loadTopLevel(qualified);
-            return java != null ? new Type.JavaClassValue(java) : new Type.JavaPackage(qualified);
-        }
-        if (receiver instanceof Type.JavaClassValue value) {
-            Class<?> memberClass = JavaTypeBridge.publicMemberClass(value.type(), name);
-            if (memberClass != null) {
-                return new Type.JavaClassValue(memberClass);
-            }
-            return javaMember(value.type(), List.of(), name, true, at);
-        }
-        if (receiver instanceof Type.JavaInstance instance) {
-            return javaMember(instance.type(), instance.typeArguments(), name, false, at);
-        }
-        if (receiver instanceof Type.JavaArray array) {
-            if ("length".equals(name)) {
-                return Type.INT;
-            }
-            return javaMember(array.javaClass(), List.of(), name, false, at);
-        }
-        // Numbers, booleans, strings, null, functions, any : nothing has members but objects,
-        // classes, packages and Java values.
-        warn("Not a scope : " + receiverText, at);
-        return Type.ERROR;
-    }
-
-    /** What {@code receiver.name = value} must assign : the member's declared or closed type, or null if inferred locally. */
-    private Type assignedMemberType(Type receiver, String name, boolean own, ParserRuleContext at) {
-        TypeNode ownerNode = null;
-        TypeNode.Member member = null;
-        Map<Type.TypeVar, Type> env = Map.of();
-        Type.Instance receiverInstance = null;
-        if (receiver instanceof Type.Instance instance) {
-            receiverInstance = instance;
-            ResolvedMember resolved = findMember(instance, name);
-            if (resolved != null) {
-                ownerNode = resolved.owner();
-                member = resolved.member();
-                env = resolved.env();
-            } else if (inheritedMember(instance, name) == null) {
-                warn("No such member : " + name, at);
-            }
-        } else if (receiver instanceof Type.ClassValue value) {
-            ownerNode = value.node();
-            member = value.node().statics.get(name);
-            if (member == null) {
-                warn("No such member : " + name, at);
-            }
-        } else if (receiver instanceof Type.Package) {
-            // Bound to fail : a package changes only through its own code.
-            warn("Cannot assign to a package member : " + name, at);
-        } else if (!(receiver instanceof Type.Module || receiver instanceof Type.JavaPackage
-                || receiver instanceof Type.JavaClassValue || receiver instanceof Type.JavaInstance
-                || receiver instanceof Type.JavaArray || isUnresolved(receiver))) {
-            String receiverText = at instanceof BabbleParser.AssignExpressionContext assign
-                    ? assign.namespace.getText() : name;
-            warn("Not a scope : " + receiverText, at);
-        }
-        if (member == null) {
-            return null;
-        }
-        if (member.isPrivate() && !own) {
-            warn(name + " is private", at);
-            return null;
-        }
-        if (!isLocal(member.declaration) || (!inFile(member.declaration) && pass.session != null)) {
-            Type closed = memberType(ownerNode, member);
-            return closed == Type.ERROR ? null : algebra.substitute(closed, env);
-        }
-        if (member.declaration instanceof BabbleParser.ParameterDeclarationContext) {
-            Type type = typeOfDeclaration(member.declaration);
-            return type == Type.ERROR ? null : algebra.substitute(type, env);
-        }
-        if (member.hasFunction) {
-            return algebra.substitute(memberType(ownerNode, member), env);
-        }
-        Type declared = declaredType(member.declaration);
-        if (declared != null) {
-            return algebra.substitute(declared, env);
-        }
-        if (receiverInstance != null && !receiverInstance.node().typeParameters.isEmpty() && !own) {
-            Type closed = memberType(ownerNode, member);
-            if (closed != Type.ERROR && closed.hasTypeVar()) {
-                return algebra.substitute(closed, env);
-            }
-        }
-        return null;
-    }
-
-    private static TypeNode.Member assignedBabbleMember(Type receiver, String name, boolean own) {
-        TypeNode.Member member = null;
-        if (receiver instanceof Type.Instance instance) {
-            member = findMember(instance.node(), name);
-        } else if (receiver instanceof Type.ClassValue value) {
-            member = value.node().statics.get(name);
-        }
-        return member != null && (!member.isPrivate() || own) ? member : null;
-    }
-
-    /** A member of a class or object, or for an interface, of it or the interfaces it extends. */
-    private static TypeNode.Member findMember(TypeNode node, String name) {
-        TypeNode.Member member = node.members.get(name);
-        if (member != null || !node.isInterface()) {
-            return member;
-        }
-        for (Object parent : node.parents) {
-            if (parent instanceof TypeNode parentNode) {
-                member = findMember(parentNode, name);
-                if (member != null) {
-                    return member;
-                }
-            }
-        }
-        return null;
-    }
-
-    private ResolvedMember findMember(Type.Instance instance, String name) {
-        TypeNode node = instance.node();
-        Map<Type.TypeVar, Type> env = algebra.instanceEnv(instance);
-        TypeNode.Member member = node.members.get(name);
-        if (member != null || !node.isInterface()) {
-            return member != null ? new ResolvedMember(node, member, env) : null;
-        }
-        for (int i = 0; i < node.parents.size(); i++) {
-            Type parent = algebra.substitute(parentAnnotation(node, i), env);
-            if (parent instanceof Type.Instance parentInst) {
-                ResolvedMember found = findMember(parentInst, name);
-                if (found != null) {
-                    return found;
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * A member the class or interface gets from what it implements or extends : a Babble
-     * default, or any method of a Java interface. Null when there is none.
-     */
-    private Type inheritedMember(Type.Instance instance, String name) {
-        TypeNode node = instance.node();
-        Map<Type.TypeVar, Type> env = algebra.instanceEnv(instance);
-        for (int i = 0; i < node.parents.size(); i++) {
-            Type parent = algebra.substitute(parentAnnotation(node, i), env);
-            if (parent instanceof Type.Instance parentInst) {
-                TypeNode.Member member = parentInst.node().members.get(name);
-                if (member != null && (member.hasFunction || node.isInterface())) {
-                    return algebra.substitute(memberType(parentInst.node(), member), algebra.instanceEnv(parentInst));
-                }
-                Type inherited = inheritedMember(parentInst, name);
-                if (inherited != null) {
-                    return inherited;
-                }
-            } else if (parent instanceof Type.JavaInstance javaParent
-                    && JavaTypeBridge.hasJavaMethod(javaParent.type(), name)) {
-                return new Type.JavaMethod(javaParent.type(), javaParent.typeArguments(), name);
-            }
-        }
-        return null;
-    }
 
     /** A member's annotation, method signature, or inferred type. */
     Type memberType(TypeNode owner, TypeNode.Member member) {
@@ -3308,7 +2501,7 @@ final class TypeChecker {
                 return frozen;
             }
         }
-        Type declared = declaredType(member.declaration);
+        Type declared = annotator.declaredType(member.declaration);
         if (declared != null) {
             return declared;
         }
@@ -3340,64 +2533,6 @@ final class TypeChecker {
             }
         }
         return Type.ERROR;
-    }
-
-    /**
-     * The type of a module's export : from its published {@link TypedModuleSummary}. Null when the
-     * module doesn't export the name ; error when its file can't be typed (a cycle).
-     */
-    private static Type exportType(ModuleInterface module, String name) {
-        if (!module.exports().contains(name)) {
-            return null;
-        }
-        TypedModuleSummary summary = module.summary();
-        if (summary == null) {
-            return Type.ERROR;
-        }
-        Type t = summary.exportType(name);
-        return t != null ? t : Type.ERROR;
-    }
-
-    Type.Package localPackage(String name, List<BabbleParser.PackageExpressionContext> list) {
-        Type.SymbolId id = packageSymbolIds.computeIfAbsent(list, k -> new Type.SymbolId(name));
-        Type.Package pkg = new Type.Package(name, id);
-        localPackages.put(pkg, list);
-        return pkg;
-    }
-
-    private Type packageMember(Type.Package pkg, String name) {
-        List<BabbleParser.PackageExpressionContext> list = localPackages.get(pkg);
-        if (list == null) {
-            return pkg.members().get(name);
-        }
-        List<BabbleParser.PackageExpressionContext> nested = new ArrayList<>();
-        for (BabbleParser.PackageExpressionContext expression : list) {
-            for (BabbleParser.ExpressionContext statement : expression.packageBlock.expression()) {
-                if (statement instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(name)) {
-                    return typeOfDeclaration(def);
-                }
-                if (statement instanceof BabbleParser.PackageExpressionContext inner && inner.name.getText().equals(name)) {
-                    nested.add(inner);
-                }
-            }
-        }
-        return nested.isEmpty() ? null : localPackage(name, nested);
-    }
-
-    /** A method or field of a Java class or object, through {@link JavaTypeBridge#javaMember}. */
-    private Type javaMember(Class<?> java, List<Type> typeArgs, String name, boolean onClass, ParserRuleContext at) {
-        JavaTypeBridge.JavaMember found = JavaTypeBridge.javaMember(java, typeArgs, name, onClass, algebra);
-        if (found.error() != null) {
-            warn(found.error(), at);
-            return Type.ERROR;
-        }
-        if (found.checked()) {
-            String desc = LoweringAnalyzer.descriptor(found.type());
-            if (desc != null) {
-                callChecks.put(at, desc);
-            }
-        }
-        return found.type();
     }
 
     // ---------------------------------------------------------------- calls
@@ -3462,7 +2597,7 @@ final class TypeChecker {
 
     private Type parameterType(BabbleParser.ParameterDeclarationContext parameter, ScopeNode scope) {
         if (parameter.type() != null) {
-            return annotation(parameter.type(), scope);
+            return annotator.annotation(parameter.type(), scope);
         }
         if (!inFile(parameter) && pass.session != null) {
             Type frozen = pass.session.declarationTypes.get(parameter);
@@ -3497,212 +2632,9 @@ final class TypeChecker {
         return Type.ERROR;
     }
 
-    // ---------------------------------------------------------------- operators
-
-    private Type binaryOp(BabbleParser.BinaryOpContext ctx, Type left, Type right) {
-        return binaryOp(ctx.op.getType(), ctx.op.getText(), ctx, ctx.left.getText(), ctx.left, left, ctx.right.getText(), ctx.right, right);
-    }
-
-    /**
-     * {@code left op right}, given the operands' source texts and where to report each : the
-     * operands of a binary expression, or the target and the value of a compound assignment.
-     */
-    private Type binaryOp(int op, String operator, ParserRuleContext ctx, String leftText, ParserRuleContext leftAt, Type left,
-                          String rightText, ParserRuleContext rightAt, Type right) {
-        if (op == BabbleLexer.EQ || op == BabbleLexer.NEQ) {
-            return Type.BOOL;
-        }
-        boolean seeding = !inferenceStack.isEmpty() && recursiveFunctions.contains(inferenceStack.peek());
-        String method = Operators.method(operator);
-        if (method != null && left instanceof Type.Instance) {
-            return operatorCall(left, method, rightAt, right, ctx, leftText);
-        }
-        if (method != null && left instanceof Type.Union union
-                && !Type.containsNull(union)
-                && union.members().stream().allMatch(m -> m instanceof Type.Instance)) {
-            List<Type> results = new ArrayList<>(union.members().size());
-            for (Type m : union.members()) {
-                Type r = operatorCall(m, method, rightAt, right, ctx, leftText);
-                if (r == Type.ERROR) {
-                    return Type.ERROR;
-                }
-                results.add(r);
-            }
-            return Type.union(results);
-        }
-        switch (op) {
-            case BabbleLexer.PLUS:
-                if (left == Type.STRING) {
-                    return Type.STRING;
-                }
-                if (isUnresolved(left) && !(seeding && left == Type.NOTHING && isNumber(right))) {
-                    return left;
-                }
-                // Fall through : anything but a string on the left adds numbers.
-            case BabbleLexer.MINUS:
-            case BabbleLexer.MUL:
-            case BabbleLexer.DIV:
-                if (left == Type.ERROR) {
-                    // Already failed : suppress cascading operator errors.
-                    return Type.ERROR;
-                }
-                boolean numbers = number(left, leftText, leftAt) & number(right, rightText, rightAt);
-                if (op == BabbleLexer.DIV) {
-                    return Type.DOUBLE;
-                }
-                if (seeding && numbers) {
-                    if (left == Type.NOTHING && isNumber(right)) {
-                        return right;
-                    }
-                    if (right == Type.NOTHING && isNumber(left)) {
-                        return left;
-                    }
-                }
-                if (!numbers || isUnresolved(left) || isUnresolved(right)) {
-                    return Type.ERROR;
-                }
-                return arithmeticResult(left, right);
-            default:
-                if (!comparable(left, right)) {
-                    warn("Not comparable : " + leftText + " and " + rightText, ctx);
-                }
-                return Type.BOOL;
-        }
-    }
-
-    private static Type arithmeticResult(Type left, Type right) {
-        List<Type> results = new ArrayList<>();
-        for (Type l : Type.membersOf(left)) {
-            for (Type r : Type.membersOf(right)) {
-                results.add(l == Type.INT && r == Type.INT ? Type.INT : Type.DOUBLE);
-            }
-        }
-        return Type.union(results);
-    }
-
-    private static final EffectSet PURE_DET = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false);
-    private static final EffectSet PURE_DET_NOTHROW = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false);
-    private static final EffectSet SAME_EFFECTS = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW, Effect.COMMUTATIVE), false, false);
-
-    private static final Type.Function INT_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", Type.ANY, false, false, true, false)), Type.INT, PURE_DET);
-    private static final Type.Function DOUBLE_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", Type.ANY, false, false, true, false)), Type.DOUBLE, PURE_DET);
-    private static final Type.Function ASSERT_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("c", Type.BOOL, false, false, true, false),
-                    new Type.Parameter("message", Type.NULLABLE_ANY, true, false, true, false)),
-            Type.BOOL, PURE_DET);
-    private static final Type.Function SAME_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("a", Type.NULLABLE_ANY, false, false, true, false),
-                    new Type.Parameter("b", Type.NULLABLE_ANY, false, false, true, false)),
-            Type.BOOL, SAME_EFFECTS);
-    private static final Type.Function CLASSOF_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("v", Type.NULLABLE_ANY, false, false, true, false)),
-            Type.NULLABLE_ANY, PURE_DET_NOTHROW);
-    private static final Type.Function IMPORT_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("name", Type.STRING, false)), Type.ANY);
-    private static final Type STDOUT_TYPE = new Type.JavaInstance(java.io.PrintWriter.class);
-    private static final Type ARGS_TYPE = new Type.JavaInstance(java.util.List.class, List.of(Type.STRING));
-
-    /**
-     * A name the analysis doesn't declare : a root Java package, a number conversion
-     * ({@code int(x)}, {@code double(x)}), implicit signatures and {@code any} bindings.
-     */
-    private Type implicitType(String name) {
-        return switch (name) {
-            case "java", "javax" -> new Type.JavaPackage(name);
-            case "int" -> INT_CONVERSION;
-            case "double" -> DOUBLE_CONVERSION;
-            case "print", "println", "affiche", "afficherc" -> Type.PRINT;
-            case "assert", "suppose" -> ASSERT_FUNCTION;
-            case "same" -> SAME_FUNCTION;
-            case "classof" -> CLASSOF_FUNCTION;
-            case "import", "importe" -> IMPORT_FUNCTION;
-            case "STDOUT" -> STDOUT_TYPE;
-            case "args" -> ARGS_TYPE;
-            default -> Type.ANY;
-        };
-    }
-
-    /** The lexer's token for an arithmetic operator. */
-    private static int arithmeticToken(String operator) {
-        return switch (operator) {
-            case "+" -> BabbleLexer.PLUS;
-            case "-" -> BabbleLexer.MINUS;
-            case "*" -> BabbleLexer.MUL;
-            case "/" -> BabbleLexer.DIV;
-            default -> throw new IllegalArgumentException(operator);
-        };
-    }
-
-    private static boolean isNumber(Type type) {
-        if (type instanceof Type.Union union) {
-            return union.members().stream().allMatch(TypeChecker::isNumber);
-        }
-        return type == Type.INT || type == Type.DOUBLE;
-    }
-
     static boolean isUnresolved(Type type) {
         return type == Type.ERROR || type == Type.NOTHING;
     }
-
-    /** Whether an operand can be a number, reporting it when it can't. */
-    private boolean number(Type type, BabbleParser.ExpressionContext operand) {
-        return number(type, operand.getText(), operand);
-    }
-
-    private static boolean isNumeric(Type type) {
-        if (type instanceof Type.Union union) {
-            return union.members().stream().allMatch(TypeChecker::isNumeric);
-        }
-        return type == Type.INT || type == Type.DOUBLE
-                || type instanceof Type.JavaInstance instance && Number.class.isAssignableFrom(instance.type());
-    }
-
-    private boolean number(Type type, String text, ParserRuleContext at) {
-        if (isUnresolved(type) || isNumeric(type)) {
-            return true;
-        }
-        warn("Not a number : " + text, at);
-        return false;
-    }
-
-    /** {@code Operators.compare} : two numbers, or a Comparable and a value of its class. */
-    private static boolean comparable(Type left, Type right) {
-        if (isUnresolved(left) || isUnresolved(right)) {
-            return true;
-        }
-        if (left instanceof Type.Union uLeft) {
-            return uLeft.members().stream().allMatch(m -> comparable(m, right));
-        }
-        if (right instanceof Type.Union uRight) {
-            return uRight.members().stream().allMatch(m -> comparable(left, m));
-        }
-        if (isNumeric(left) && isNumeric(right)) {
-            return true;
-        }
-        Class<?> leftClass = JavaTypeBridge.javaClassOf(left);
-        Class<?> rightClass = JavaTypeBridge.javaClassOf(right);
-        return leftClass != null && rightClass != null && Comparable.class.isAssignableFrom(leftClass) && leftClass.isAssignableFrom(rightClass);
-    }
-
-    /**
-     * {@code a + b}, or {@code -a}, on an instance of a class or interface : typed as the call
-     * of its operator method, {@code a.plus(b)} ({@code argument} null for {@code a.neg()}).
-     */
-    private Type operatorCall(Type receiver, String method, ParserRuleContext argument, Type argumentType,
-                              ParserRuleContext at, String receiverText) {
-        return callSolver.operatorCall(receiver, method, argument, argumentType, at, receiverText);
-    }
-
-    // ---------------------------------------------------------------- generics & substitution
-
-    // ---------------------------------------------------------------- assignability
-
-    // ---------------------------------------------------------------- EffectChecker bridge
 
     void effectDiagnostic(String message, ParserRuleContext at) {
         if (!inFile(at)) {
@@ -3720,7 +2652,7 @@ final class TypeChecker {
     }
 
     Type annotationTypeOf(BabbleParser.FunctionTypeContext ft) {
-        return primaryAnnotation(ft, scopeOf(ft), false);
+        return annotator.primaryAnnotation(ft, scopeOf(ft), false);
     }
 
     ScopeNode occurrenceScopeOf(ParserRuleContext ctx) {
@@ -3757,16 +2689,16 @@ final class TypeChecker {
     }
 
     Type implicitTypeForEffects(String name) {
-        Type t = implicitType(name);
+        Type t = operators.implicitType(name);
         return t == Type.ANY ? null : t;
     }
 
     Type packageMemberTypeForEffects(Type.Package pkg, String name) {
-        return packageMember(pkg, name);
+        return members.packageMember(pkg, name);
     }
 
     Type moduleMemberTypeForEffects(ModuleInterface module, String name) {
-        return exportType(module, name);
+        return MemberTypes.exportType(module, name);
     }
 
     private Type remoteMemberType(TypeNode owner, String name, Set<TypeNode> visited) {
@@ -3799,7 +2731,7 @@ final class TypeChecker {
         return null;
     }
 
-    private List<ModuleInterface> allLoadedModules() {
+    List<ModuleInterface> allLoadedModules() {
         List<ModuleInterface> result = new ArrayList<>();
         Set<ModuleInterface> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         Deque<ModuleInterface> queue = new ArrayDeque<>(pass.modules.values());
@@ -3818,7 +2750,7 @@ final class TypeChecker {
 
     Object resolveNamespaceMemberDecl(Type nsType, String name) {
         if (nsType instanceof Type.Package pkg) {
-            List<BabbleParser.PackageExpressionContext> list = localPackages.get(pkg);
+            List<BabbleParser.PackageExpressionContext> list = members.localPackageDeclarations(pkg);
             if (list != null) {
                 for (BabbleParser.PackageExpressionContext p : list) {
                     for (BabbleParser.ExpressionContext st : p.packageBlock.expression()) {
@@ -3909,7 +2841,7 @@ final class TypeChecker {
     }
 
     TypeNode.Member findMemberOnNode(TypeNode node, String name) {
-        return findMember(node, name);
+        return members.findMember(node, name);
     }
 
     Type memberTypeForEffects(TypeNode owner, TypeNode.Member member) {
@@ -3921,14 +2853,8 @@ final class TypeChecker {
     }
 
     boolean isBuiltinFunction(Type.Function fn) {
-        return fn == INT_CONVERSION
-                || fn == DOUBLE_CONVERSION
-                || fn == ASSERT_FUNCTION
-                || fn == SAME_FUNCTION
-                || fn == CLASSOF_FUNCTION
-                || fn == IMPORT_FUNCTION;
+        return OperatorTypes.isBuiltinFunction(fn);
     }
-
     NarrowingInfo extractNarrowingForEffects(BabbleParser.ExpressionContext expr) {
         TypeEnv.Refinement r = extractRefinement(expr);
         return new NarrowingInfo(r.whenTrue(), r.whenFalse());
