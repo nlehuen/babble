@@ -682,6 +682,99 @@ dyn(o) as java.lang.Runnable
 }}}}}
 Type error : expected java.lang.Runnable, got object
 
+{{{{{
+;; Faces default method invocation (FaceHandler & FunctionHandler) via Spliterator + StreamSupport, Object methods, Values.fromJava(FunctionHandler)
+def MySplit = class () implements java.util.Spliterator(int) (
+    def done : bool = false
+    def tryAdvance = mut (action : java.util.function.Consumer(any?)) : bool -> (
+        if this.done then ( false )
+        else ( this.done = true ; action.accept(42) ; true )
+    )
+    def trySplit = () : java.util.Spliterator(int)? -> ( null )
+    def estimateSize = () : int -> ( 1 )
+    def characteristics = () : int -> ( 0 )
+)
+def streamRes = java.util.stream.StreamSupport.stream(MySplit(), false).toList()
+def f1 = java.util.function.Predicate((x : any?) : bool -> ( x == 2 ))
+def f2 = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 10 ))
+def holder : java.util.List(java.util.function.IntUnaryOperator) = java.util.ArrayList()
+holder.add(f2)
+def back = holder.get(0) as java.util.function.IntUnaryOperator
+println(streamRes.size(), ":", streamRes.get(0), ":", java.util.Objects.equals(f1, f1), ":", java.util.Objects.equals(f1, f2), ":", java.util.Objects.hashCode(f1) != 0, ":", java.util.Objects.toString(f2) != "", ":", back.applyAsInt(5))
+}}}}}
+1:42:true:false:true:true:15
 
+{{{{{
+;; JavaDefaultCall catch block via Iterator.remove() throwing UnsupportedOperationException
+def BadIter = class () implements java.util.Iterator(any?) (
+    def hasNext = () : bool -> ( false )
+    def next = () : any? -> ( null )
+)
+BadIter().remove()
+}}}}}
+java.lang.UnsupportedOperationException : remove
 
+{{{{{
+;; JavaLinker isWrappedOf, isWrappedKind, BabbleInstance/BabbleClass/callable loop, fail, Overloads accessible interface
+def B = class (def x : int) ()
+def arr : java.util.List(any?) = java.util.ArrayList()
+def sub : java.util.List(any?) = java.util.ArrayList()
+arr.add(java.lang.StringBuilder("a"))
+arr.add(sub)
+def k = 0
+while k < 2 then (
+    def i = 0
+    while i < 2 then (
+        def elem = arr.get(i)
+        java.util.Objects.equals(elem, "a")
+        java.util.Objects.toString(elem)
+        i += 1
+    )
+    k += 1
+)
+def items : java.util.List(any?) = java.util.ArrayList()
+items.add("hi")
+items.add(B(1))
+items.add(B)
+items.add((x : int) : int -> ( x + 1 ))
+def p = 0
+def lastStr : string? = ""
+while p < 2 then (
+    def j = 0
+    while j < 4 then (
+        lastStr = java.util.Objects.toString(items.get(j))
+        j += 1
+    )
+    p += 1
+)
+def empty : java.util.List(int) = java.util.Collections.emptyList()
+println(lastStr != null, ":", empty.isEmpty(), ":", java.util.List.of(1, 2).isEmpty())
+java.lang.Integer.parseInt("notAnInt")
+}}}}}
+true:true:false
+java.lang.NumberFormatException : For input string: "notAnInt"
 
+{{{{{
+;; Values.same(plain, non-plain), isBuiltin("any"), JavaTypes.checkBoxed Integer null
+def dyn = (v : any?) : any? -> ( v )
+println(same(1, java.lang.Object()), ":", dyn(1) is any, ":", dyn(null) is any, ":", same("a", "a"))
+java.lang.Integer.getInteger("babble.nonexistent.test.key")
+}}}}}
+false:true:false:true
+Type error : expected int, got null
+
+{{{{{
+;; BabbleInterface findDefault multi-parent & extendsId/extendsType diamond, Operators union arithmetic/comparisons
+def ILeft = interface ( def leftM = () : int -> ( 1 ) )
+def IRight = interface ( def rightM = () : int -> ( 2 ) )
+def IChild = interface extends ILeft, IRight ()
+def Impl = class () implements IChild (
+    def leftM = () : int -> ( 10 )
+)
+def c : IChild = Impl()
+def dyn = (v : any?) : any? -> ( v )
+def a : int | double = if true then ( 2 ) else ( 2.5 )
+def b : int | double = if false then ( 3 ) else ( 3.5 )
+println(c.leftM(), ":", c.rightM(), ":", dyn(c) is ILeft, ":", dyn(c) is IRight, ":", a + b, ":", a - b, ":", a * b, ":", a < b, ":", a <= b, ":", b > a, ":", b >= a, ":", a == b)
+}}}}}
+10:2:true:true:5.5:-1.5:7.0:true:true:true:true:false
