@@ -203,3 +203,28 @@ f(1)
 f(1.5)
 }}}}}
 Type error : expected int, got double (x is double because of the call)
+
+{{{{{
+;; Java generic bound check rejects non-Comparable Babble class in Collections.max
+def Box = class (def x : int) ()
+def list : java.util.List(Box) = java.util.ArrayList()
+list.add(Box(1))
+println(java.util.Collections.max(list))
+}}}}}
+Type error : type argument Box does not satisfy bound T of java.util.Collections.max
+
+{{{{{
+;; Generic union rollback (ConstraintStore.reset) and class-to-SAM assignability
+def Box(T) = value class (v : T) ()
+def Pair = value class (v : int) ()
+def wrap(T) = (x : T) : Box(T) -> ( Box(x) )
+def u : string | Box(int) = wrap(42)
+def fn : java.util.function.Function(int, Pair) = Pair
+def a = 1
+a = 2.5
+def b = null
+b = "ok"
+def uv = if u is Box then ( u.v ) else ( 0 )
+println(uv, ":", (fn.apply(7) as Pair).v, ":", a, ":", b)
+}}}}}
+42:7:2.5:ok

@@ -55,3 +55,51 @@ def bad = (p : any) -> (
 )
 }}}}}
 Not a scope : p
+
+{{{{{
+;; Narrowing evicted on while-loop reassignment and branch kill, preserved when unrelated var reassigned
+def Point = class (def x : int) ()
+def testWhileEvict = (p : Point?) : int -> (
+    def cur = p
+    def n = 0
+    if cur != null then (
+        def f = (): int -> ( n = n + 1 ; n )
+        f()
+        while n < 2 then (
+            cur = null
+            n = n + 1
+        )
+    )
+    n
+)
+def testBranchKill = (p : Point?, flag : bool) : int -> (
+    def cur = p
+    if cur != null then (
+        if flag then ( cur = null ) else ( cur.x )
+        if cur != null then ( cur.x ) else ( -1 )
+    ) else (
+        -2
+    )
+)
+println(testWhileEvict(Point(3)), ":", testBranchKill(Point(5), true), ":", testBranchKill(Point(5), false), ":", testBranchKill(null, false))
+}}}}}
+2:-1:5:-2
+
+{{{{{
+;; Reading member after while loop that may reassign narrowed variable fails statically
+def Point = class (def x : int) ()
+def bad = (p : Point?) : int -> (
+    def cur = p
+    def n = 0
+    if cur != null then (
+        while n < 1 then (
+            cur = null
+            n = n + 1
+        )
+        cur.x
+    ) else (
+        0
+    )
+)
+}}}}}
+Not a scope : cur
