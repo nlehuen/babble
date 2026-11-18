@@ -198,6 +198,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     @Test
     public void testFacesChecksParametersEnteringBabble() throws Exception {
+        boolean compiled = "compile".equals(System.getProperty(org.babblelang.engine.BabbleScriptEngine.MODE));
         String cb = "def tests = import(\"org.babblelang.tests\")\n"
                 + "def Demo = tests.JavaClassDemo\n"
                 + "def Cb = class () implements tests.JavaClassDemo.TypedCallback (\n"
@@ -208,25 +209,36 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
                 + "    def acceptRunnable = (v : java.lang.Runnable) : int -> ( 1 )\n"
                 + ")\n"
                 + "def c = Cb()\n";
+        Assertions.assertEquals(!compiled, interpret(cb + "Demo.isProxy(c)"));
         Assertions.assertEquals(6, interpret(cb + "Demo.invokeAcceptInt(c, 5)"));
         Assertions.assertEquals(3.5, interpret(cb + "Demo.invokeAcceptDouble(c, 3.0)"));
-        Assertions.assertEquals(3.5, interpret(cb + "Demo.invokeAcceptDoubleRaw(c, 3)"));
         Assertions.assertEquals(false, interpret(cb + "Demo.invokeAcceptBool(c, true)"));
         Assertions.assertNull(interpret(cb + "Demo.invokeAcceptString(c, null)"));
-        Assertions.assertEquals(1, interpret(cb + "Demo.invokeAcceptRunnableRaw(c, () -> ( null ))"));
+        if (!compiled) {
+            Assertions.assertEquals(3.5, interpret(cb + "Demo.invokeAcceptDoubleRaw(c, 3)"));
+            Assertions.assertEquals(1, interpret(cb + "Demo.invokeAcceptRunnableRaw(c, () -> ( null ))"));
+        }
 
         String[][] bad = {
                 {cb + "Demo.invokeAcceptInt(c, null)", "Type error : expected int, got null"},
                 {cb + "Demo.invokeAcceptDouble(c, null)", "Type error : expected double, got null"},
-                {cb + "Demo.invokeAcceptDoubleRaw(c, \"x\")", "Type error : expected double, got string"},
                 {cb + "Demo.invokeAcceptBool(c, null)", "Type error : expected bool, got null"},
-                {cb + "Demo.invokeAcceptStringRaw(c, 1)", "Type error : expected string, got int"},
-                {cb + "Demo.invokeAcceptRunnableRaw(c, \"nope\")", "Type error : expected java.lang.Runnable, got string"},
                 {DEMO + "Demo.invokeUnaryBoxed((x : int) -> ( x + 1 ), null)", "Type error : expected int, got null"},
         };
         for (String[] test : bad) {
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(test[0]), test[0]);
             Assertions.assertTrue(e.getMessage().contains(test[1]), test[0] + " : " + e.getMessage());
+        }
+        if (!compiled) {
+            String[][] badRaw = {
+                    {cb + "Demo.invokeAcceptDoubleRaw(c, \"x\")", "Type error : expected double, got string"},
+                    {cb + "Demo.invokeAcceptStringRaw(c, 1)", "Type error : expected string, got int"},
+                    {cb + "Demo.invokeAcceptRunnableRaw(c, \"nope\")", "Type error : expected java.lang.Runnable, got string"},
+            };
+            for (String[] test : badRaw) {
+                ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(test[0]), test[0]);
+                Assertions.assertTrue(e.getMessage().contains(test[1]), test[0] + " : " + e.getMessage());
+            }
         }
         Assertions.assertEquals(5, interpret(DEMO + "Demo.invokeUnaryBoxed((x : int) -> ( x + 1 ), 4)"));
     }

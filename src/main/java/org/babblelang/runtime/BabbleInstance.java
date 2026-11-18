@@ -49,6 +49,11 @@ public class BabbleInstance implements HasMembers {
         return true;
     }
 
+    /** Lookup in a compiled subclass's context for invoking Java interface default methods without a Proxy. */
+    protected java.lang.invoke.MethodHandles.Lookup javaDefaultLookup() {
+        return null;
+    }
+
     public BabbleClass babbleClass() {
         return babbleClass;
     }
@@ -130,21 +135,33 @@ public class BabbleInstance implements HasMembers {
     }
 
     /**
-     * What Java sees of this instance : itself, or when its class implements Java
-     * interfaces, a proxy implementing them, always the same one.
+     * What Java sees of this instance : itself when its class implements no Java
+     * interfaces or when this compiled instance already implements them directly,
+     * otherwise a cached proxy implementing them.
      */
     public Object face() {
-        if (babbleClass.javaInterfaces().length == 0) {
+        Class<?>[] interfaces = babbleClass.javaInterfaces();
+        if (interfaces.length == 0) {
             return this;
         }
         if (face == null) {
-            face = Faces.create(this);
+            face = implementsAll(interfaces) ? this : Faces.create(this);
         }
         return face;
     }
 
+    private boolean implementsAll(Class<?>[] interfaces) {
+        for (Class<?> iface : interfaces) {
+            if (!iface.isInstance(this)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Override
     public boolean equals(Object o) {
+        o = Values.fromJava(o);
         if (!babbleClass.shape().isValue()) {
             return this == o;
         }

@@ -137,7 +137,7 @@ public final class Values {
 
     /** A value coming back from Java : the face of a Babble instance is the instance again. */
     public static Object fromJava(Object value) {
-        if (value != null && Proxy.isProxyClass(value.getClass()) && Proxy.getInvocationHandler(value) instanceof Faces.FaceHandler face) {
+        if (value instanceof Proxy && Proxy.getInvocationHandler(value) instanceof Faces.FaceHandler face) {
             return face.instance();
         }
         return value;
