@@ -108,7 +108,8 @@ public final class BabbleSession {
             namespace = namespace.enter(null);
         }
         if (script instanceof CompiledBabbleScript compiled) {
-            analysis.recordCompilation(compiled.getScriptClass().getClassLoader(), compiled.interfaceJvmNames());
+            analysis.recordCompilation(compiled.getScriptClass().getClassLoader(),
+                    compiled.interfaceJvmNames(), compiled.classJvmNames());
         }
         return script.eval(new ScriptRuntime(namespace, context.getWriter(), modules));
     }

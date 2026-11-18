@@ -87,4 +87,12 @@ public final class Classes {
     public static Object setDefault(Namespace namespace, int index, Object value) {
         return ((BabbleInterface) namespace.lookup(INTERFACE)).setDefault(index, value);
     }
+
+    public static BabbleFunction interfaceDefault(Object instance, String ifaceTypeId, int memberIndex) {
+        return ((BabbleInstance) instance).babbleClass().interfaceDefault(ifaceTypeId, memberIndex);
+    }
+
+    public static BabbleFunction interfaceDefault(Object instance, String ifaceTypeId, String memberName) {
+        return ((BabbleInstance) instance).babbleClass().interfaceDefault(ifaceTypeId, memberName);
+    }
 }

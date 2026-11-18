@@ -48,6 +48,7 @@ public final class AnalysisSession {
     final Map<ParserRuleContext, TypeChecker> owners = new HashMap<>();
     private final List<ClassLoader> classLoaders = new ArrayList<>();
     private final Map<String, String> interfaceJvmNames = new LinkedHashMap<>();
+    private final Map<String, String> classJvmNames = new LinkedHashMap<>();
     private final Map<String, ScopeAnalysis.TypeHierarchyInfo> typeHierarchies = new LinkedHashMap<>();
 
     /**
@@ -92,6 +93,10 @@ public final class AnalysisSession {
     }
 
     public void recordCompilation(ClassLoader loader, Map<String, String> interfaceJvmNames) {
+        recordCompilation(loader, interfaceJvmNames, Map.of());
+    }
+
+    public void recordCompilation(ClassLoader loader, Map<String, String> interfaceJvmNames, Map<String, String> classJvmNames) {
         if (loader != null) {
             boolean seen = false;
             for (ClassLoader existing : classLoaders) {
@@ -107,6 +112,9 @@ public final class AnalysisSession {
         if (interfaceJvmNames != null && !interfaceJvmNames.isEmpty()) {
             this.interfaceJvmNames.putAll(interfaceJvmNames);
         }
+        if (classJvmNames != null && !classJvmNames.isEmpty()) {
+            this.classJvmNames.putAll(classJvmNames);
+        }
     }
 
     public List<ClassLoader> classLoaders() {
@@ -115,6 +123,10 @@ public final class AnalysisSession {
 
     public Map<String, String> interfaceJvmNames() {
         return Map.copyOf(interfaceJvmNames);
+    }
+
+    public Map<String, String> classJvmNames() {
+        return Map.copyOf(classJvmNames);
     }
 
     public ScopeAnalysis.TypeHierarchyInfo typeHierarchy(String id) {
