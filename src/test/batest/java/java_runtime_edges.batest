@@ -135,3 +135,55 @@ boom
 assert(false)
 }}}}}
 Assertion failed : false
+
+{{{{{
+;; JavaClass.assign on public non-final fields (StreamTokenizer.nval / sval)
+def st = java.io.StreamTokenizer(java.io.StringReader("1"))
+st.nval = 3.5
+st.sval = "abc"
+println(st.nval, ":", st.sval)
+}}}}}
+3.5:abc
+
+{{{{{
+;; TypeChecker rejects member access on any
+def dyn = (v : any) : any -> ( v )
+def x = dyn(42)
+x.foo
+}}}}}
+Not a scope : x
+
+{{{{{
+;; Escaping this before unboxed primitive field init triggers Member used before definition
+def Esc = class () (
+    def read = (e : Esc) : int -> ( e.v )
+    def a = this.read(this)
+    def v : int = 1
+)
+Esc()
+}}}}}
+Member used before definition : v
+
+{{{{{
+;; Megamorphic TypedCallCache fallback (>4 distinct functions at one typed call site)
+def f0 = (x : int) : int -> ( x + 0 )
+def f1 = (x : int) : int -> ( x + 1 )
+def f2 = (x : int) : int -> ( x + 2 )
+def f3 = (x : int) : int -> ( x + 3 )
+def f4 = (x : int) : int -> ( x + 4 )
+def f5 = (x : int) : int -> ( x + 5 )
+def sum = 0
+def i = 0
+while i < 6 then (
+    def fn : (x : int) : int = if i == 0 then ( f0 )
+        else if i == 1 then ( f1 )
+        else if i == 2 then ( f2 )
+        else if i == 3 then ( f3 )
+        else if i == 4 then ( f4 )
+        else ( f5 )
+    sum += fn(10)
+    i += 1
+)
+println(sum)
+}}}}}
+75
