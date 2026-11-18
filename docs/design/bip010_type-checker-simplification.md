@@ -43,7 +43,7 @@ Following `RM001`, `RM002` (`BIP007-P1`), `BIP009`, and `RM003` (`RM003-P1`–`P
 | Remaining 10 files | 1,250 | 8.8% | `EffectSet`, `Resolver`, `HostEffects`, `ModuleInterface`, `Resolution`, `AnalysisSession`, `TypeNode`, `ScopeNode`, `ModuleLoader`, `AnalysisException` |
 | **Total** | **14,130** | **100.0%** | |
 
-`RM003` illustrated this accretion trend firsthand: adding JVM interface lowering (`TypeHierarchyInfo`, `InterfaceCallTarget`, static singleton `IsTarget` resolution, and `AnalysisSession.owners`) appended another +405 lines directly onto `TypeChecker.java`. With `RM004` (`unique`/`move`/`freeze` ownership lattice & effect-driven bytecode optimizations) and `RM005` (array indexing, destructuring `def`, and structural object types—now unblocked by `RM003`) next on the roadmap ([README.md](README.md)), refactoring the monolith now—while guarded by 758 `.batest` cases and dedicated `RM003` analysis/compiler suites—prevents compounding complexity across `RM004`–`RM007`.
+`RM003` illustrated this accretion trend firsthand: adding JVM interface lowering (`TypeHierarchyInfo`, `InterfaceCallTarget`, static singleton `IsTarget` resolution, and `AnalysisSession.owners`) appended another +405 lines directly onto `TypeChecker.java`. With `BIP011` (core scalars, core collections, and Java nullability alignment), `BIP007-P2`–`P3` (`unique`/`move`/`freeze` ownership lattice & effect-driven bytecode optimizations), and planned language ergonomics (`BIP008` §5.1 array/collection indexing, `BIP005-D3` destructuring `def`, and `BIP003` §6 structural object types—now unblocked by `RM003`) ahead on the roadmap ([README.md](README.md)), refactoring the monolith first—while guarded by 758 `.batest` cases and dedicated `RM003` analysis/compiler suites—prevents compounding complexity across subsequent proposals.
 
 ### 2.2 Anatomy of `TypeChecker.java` (6,828 Lines)
 
@@ -83,7 +83,7 @@ Inspecting `TypeChecker.java` section by section reveals that **11 distinct resp
 - **100% behavioral, diagnostic, and bytecode parity:** Identical type judgements, identical `Error : ...` and `Warning : ...` wording and `line:column` coordinates (including `(widened to ... at line N)` provenance notes), identical `ScopeAnalysis` outputs (`widensToDouble`, `checkedType`, `RM001` primitive kinds and dispatch targets, `RM002` effect summaries, and `RM003` `TypeHierarchyInfo`/`InterfaceCallTarget`/`IsTarget` metadata), and zero changes outside `org.babblelang.analysis`.
 - **Compact, SOTA-grounded core:** Shrink `TypeChecker.java` by **~79%** to **~1,450 lines** and cut ~3,000 lines of duplicated logic across the typing subsystem (~4,130 modular lines including `RM001`/`RM003` lowering vs. 7,153 lines across `TypeChecker.java` + `Type.java` today).
 - **Single-pass non-iterative work:** Resolve type annotations and Java reflection signatures once per compilation; run `RM001`/`RM003`/`T9` lowering once after convergence; free imported and prior-session `TypeChecker` instances immediately after committing immutable module/session summaries.
-- **Extensibility for `RM004`–`RM005`:** Provide clean, isolated extension points for `Type.Frozen` and `unique`/`move` ownership (`RM004`) and array indexing, destructuring `def`, and structural object types (`RM005`).
+- **Extensibility for upcoming language work:** Provide clean, isolated extension points for `BIP011` core types and Java nullability, `Type.Frozen` and `unique`/`move` ownership (`BIP007-P2`), and indexing (`BIP008` §5.1), destructuring `def` (`BIP005-D3`), and structural object types (`BIP003` §6).
 
 **Non-Goals:**
 
@@ -359,7 +359,7 @@ All new collaborators remain package-private inside `org.babblelang.analysis`:
 ### `BIP010-Q6` → `BIP010-D6`: Retiring the `EffectChecker` bridge via `TypedProgram`
 
 - **Question (`BIP010-Q6`):** `EffectChecker` currently calls 30+ package-private methods on `TypeChecker` (`rawExprType`, `narrowedExprType`, `resolveCalleeFunction`, `resolvedJavaMethodAt`, etc.) and triggers two extra `resetPass(); walk(file)` passes in `TypeChecker.run()`. Should `EffectChecker` also be refactored in `BIP010`?
-- **Proposed Decision (`BIP010-D6`):** Keep `BIP010` scoped to `TypeChecker` and its boundary: introduce an explicit package-private `TypedProgram` facade (exposing converged expression types, flow-narrowed expression types, resolved Babble/Java callables at each call site, and `SlotCell` signatures) consumed by both `EffectChecker` and `LoweringAnalyzer`. This deletes the 223-line ad-hoc bridge in `TypeChecker.java` and eliminates the redundant pre-effect `resetPass()` walk without rewriting `EffectChecker`'s internal 3,790-line SCC engine (which can be simplified separately if desired before `RM004`).
+- **Proposed Decision (`BIP010-D6`):** Keep `BIP010` scoped to `TypeChecker` and its boundary: introduce an explicit package-private `TypedProgram` facade (exposing converged expression types, flow-narrowed expression types, resolved Babble/Java callables at each call site, and `SlotCell` signatures) consumed by both `EffectChecker` and `LoweringAnalyzer`. This deletes the 223-line ad-hoc bridge in `TypeChecker.java` and eliminates the redundant pre-effect `resetPass()` walk without rewriting `EffectChecker`'s internal 3,790-line SCC engine (which can be simplified separately if desired before `BIP007-P2`).
 
 ---
 

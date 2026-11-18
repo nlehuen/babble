@@ -694,7 +694,7 @@ Language features :
 
 Implementation features :
 
-- [ ] deep ownership (`unique`, `move`, `freeze`), effect-driven bytecode optimizations, and `axiom` property fuzzing (`RM004`).
+- [ ] deep ownership (`unique`, `move`, `freeze`), effect-driven bytecode optimizations, and `axiom` property fuzzing (see [BIP007](docs/design/bip007_effects.md)).
 - [ ] a Maven goal for ahead-of-time compilation.
 
 TODO : lessons from the ray tracer
