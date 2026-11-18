@@ -9,9 +9,7 @@ import org.babblelang.runtime.Operators;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 
-import static org.babblelang.analysis.TypeAlgebra.isCallable;
 
 /**
  * Operators and implicits : the types of arithmetic, comparisons and equality on numbers,
