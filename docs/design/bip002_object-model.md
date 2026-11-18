@@ -1200,11 +1200,18 @@ Everything in §12 (`BIP002-P1`–`BIP002-P6`) is implemented, in both modes: th
 * **Representation.** In the interpreter, an instance is a `BabbleInstance` (an array of member
   values, indexed through the class's `ClassShape`), and a method is the function value its
   `def` creates when the body runs, so each instance holds its own method closures over the
-  constructor's namespace. Compiler `BIP001-P2` generates a JVM class per class or object
-  expression, extending `BabbleInstance`, with a field per member, methods as JVM instance
-  methods, and hidden fields for the constructor parameters methods capture (§7.1, §7.2;
-  compiler doc §17). Babble interfaces are not JVM interfaces yet, and instances still reach
-  Java through a `Proxy` face (§9.5): both wait for the type checker and compiler `BIP001-P3`.
+  constructor's namespace; Java interfaces on interpreted instances still go through a `Proxy`
+  face (§9.5). Compiler `BIP001-P2` generates a JVM class per class or object expression,
+  extending `BabbleInstance`, with a field per member, methods as JVM instance methods, and
+  hidden fields for the constructor parameters methods capture (§7.1, §7.2; compiler doc §17).
+  `RM003` (compiler doc §20) completes §7.3, §9.3, and §9.5–§9.6: Babble interfaces compile to
+  real JVM interfaces (`INVOKEINTERFACE`, `INSTANCEOF`, `INVOKESPECIAL` `super(I).m()`), compiled
+  classes directly `implements` both Babble and accessible Java interfaces with exact-signature
+  overload bridges (`BabbleInstance.face()` returns `this`, with zero `Proxy` allocation in
+  compiled mode), and `Faces.function` converts Babble callables to `0..16`-argument accessible
+  Java functional interfaces via cached `LambdaMetafactory` (`metafactory` / `altMetafactory`
+  with `FLAG_BRIDGES`), falling back to `Proxy` only for inaccessible, child-`ClassLoader`, or
+  `>16`-argument SAMs.
 * **Analysis.** `BlockScopes` (scopes, members, placement of `this`, `return`, `super`, `private`
   and header `def`s, the value-class rules) is followed by `TypeChecks`, which needs the whole
   file: `implements`/`extends` resolution, completeness, default conflicts, `super`, and the

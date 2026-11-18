@@ -666,7 +666,7 @@ Language features :
 Implementation features :
 
 - [x] interpreted mode running on the parse tree, like 1.8.x Ruby, A.K.A. SLOW MODE : no longer the default, it is the reference implementation the compiler is tested against, and runs scripts on one thread only.
-- [x] compiled mode, the default : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals and classes are JVM classes, calls and member accesses are `invokedynamic` sites with inline caches (phases 1 to 3 of the [bytecode compiler design](docs/design/bip001_bytecode-compiler.md)), and static types from `BIP008` lower non-nullable `int`, `double`, and `bool` locals, closure cells, class fields, arithmetic, comparisons, `$spec` calls, module exports, and resolved Java calls/fields directly to unboxed JVM instructions (`RM001`, §19) : 13x to 769x faster than the interpreter in the benchmarks, and about 22% faster end-to-end on `raytracer-argon`.
+- [x] compiled mode, the default : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals, classes are JVM classes, and interfaces are real JVM interfaces with direct `INVOKEINTERFACE` dispatch and exact-signature Java `implements` bridges (`RM003`, §20), calls and member accesses are `invokedynamic` sites with inline caches (phases 1 to 3 of the [bytecode compiler design](docs/design/bip001_bytecode-compiler.md)), Java functional-interface callbacks use cached `LambdaMetafactory` adapters (`RM003`), and static types from `BIP008` lower non-nullable `int`, `double`, and `bool` locals, closure cells, class fields, arithmetic, comparisons, `$spec` calls, module exports, and resolved Java calls/fields directly to unboxed JVM instructions (`RM001`, §19) : 13x to 769x faster than the interpreter in the benchmarks, and about 22% faster end-to-end on `raytracer-argon`.
 - [x] errors found before running : redefined names, misplaced `return`, `this` or `super`, incomplete or conflicting interface implementations, private members reached from outside.
 - [x] about 100 lines of ANTLR4 grammar (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's parse tree & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
@@ -694,7 +694,6 @@ Language features :
 
 Implementation features :
 
-- [ ] JVM interfaces for Babble interfaces and direct Java interface bridges (`RM003`).
 - [ ] deep ownership (`unique`, `move`, `freeze`), effect-driven bytecode optimizations, and `axiom` property fuzzing (`RM004`).
 - [ ] a Maven goal for ahead-of-time compilation.
 
