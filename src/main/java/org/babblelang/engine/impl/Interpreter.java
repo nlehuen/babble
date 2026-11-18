@@ -643,6 +643,24 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             last = ctx;
             return Types.check(callable.call(runtime, args, callNames.get(ctx), site), scopes.checkedType(ctx));
         }
+        ScopeAnalysis.JavaCallTarget javaCall = scopes.javaCallTarget(ctx);
+        if (javaCall != null && !javaCall.isStatic() && javaCall.unwrapReceiver()
+                && javaCall.method().getDeclaringClass().isInterface()
+                && ctx.expression() instanceof BabbleParser.SelectorContext selector
+                && selector.expression() != null) {
+            BabbleParser.ExpressionContext receiverExpr = selector.expression();
+            Object receiver = visit(receiverExpr);
+            last = selector;
+            Object target = Values.toJava(receiver, javaCall.method().getDeclaringClass(), runtime);
+            Object callee = Types.check(Members.select(target, selector.ID().getText(), receiverExpr.getText()),
+                    scopes.checkedType(selector));
+            last = ctx;
+            CallSite site = callSite(ctx);
+            var callable = Calls.callable(callee, site);
+            Object[] args = arguments(ctx);
+            last = ctx;
+            return Types.check(callable.call(runtime, args, callNames.get(ctx), site), scopes.checkedType(ctx));
+        }
         Object callee = visit(ctx.expression());
         last = ctx;
         CallSite site = callSite(ctx);

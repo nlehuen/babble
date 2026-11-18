@@ -1,0 +1,251 @@
+;; TypeChecker & TypeChecks edge cases: operators, reassignmentJoin, generics, narrowing/casts, recursive inference, Java interop
+
+========== mod_tc_infer.ba ==========
+export def inc = (x : int) -> ( x + 1 )
+export def Box(T) = class (def v : T) ()
+export def id(T) = (x : T) : T -> ( x )
+export def optDef = (x = 7) -> ( x )
+export def lang = import("java.lang")
+
+{{{{{
+;; Cross-module inferred/generic exports + importedPackage type/interface resolution + package-private accessibleType
+def m = import("mod_tc_infer.ba")
+def lang = import("java.lang")
+def MyRun = class (def mut ran : bool) implements lang.Runnable (
+    def run = mut () -> ( this.ran = true )
+)
+def r = MyRun(false)
+r.run()
+def sb : lang.StringBuilder = lang.StringBuilder("hi")
+def it : java.util.Iterator(int) = java.util.Collections.emptyIterator()
+def b : m.Box(int) = m.Box(9)
+def f : (v : int) : int = m.id
+println(m.inc(4), ":", m.optDef(), ":", m.id("ok"), ":", r.ran, ":", sb.toString(), ":", it.hasNext(), ":", b.v, ":", f(8))
+}}}}}
+5:7:ok:true:hi:false:9:8
+
+{{{{{
+;; Narrowing (&&, ||, not, reversed null), runtime subtype/cast checks (Babble/Java interfaces, final classes)
+def IA = interface ( def a : () : int )
+def IB = interface ( def b : () : int )
+def C = class () implements IA, IB (
+    def a = () : int -> ( 1 )
+    def b = () : int -> ( 2 )
+)
+def DynBox = class (def v : any?) ()
+def check = (x : int | string | null, y : int?, ia : IA, cs : java.lang.CharSequence) : string -> (
+    def r1 = if null != y and y > 0 then ( y + 1 ) else ( 0 )
+    def r2 = if null == y or not (x is int) then ( -1 ) else ( x + y )
+    def r3 = if ia is IB then ( ia.b() ) else ( 0 )
+    def r4 = if ia is java.lang.Runnable then ( 1 ) else ( 0 )
+    def r5 = if cs is IA then ( 1 ) else ( 0 )
+    def num : java.lang.Number = 42
+    def r6 = num is java.lang.Comparable
+    def r7 = "hi" is java.lang.CharSequence
+    "" + r1 + ":" + r2 + ":" + r3 + ":" + r4 + ":" + r5 + ":" + r6 + ":" + r7
+)
+println(check(5, 3, C(), java.lang.StringBuilder("z")), "|", check("s", null, C(), java.lang.StringBuilder("z")))
+}}}}}
+4:8:2:0:0:true:true|0:-1:2:0:0:true:true
+
+{{{{{
+;; Impossible cast errors: final String vs Runnable, double as int, parameterized cast
+def s = "abc" as java.lang.Runnable
+}}}}}
+Type error : expected java.lang.Runnable, got string
+
+{{{{{
+def d = 1.5 as int
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+def x : any? = null
+def l = x as java.util.List(int)
+}}}}}
+Cannot cast to parameterized type : java.util.List(int)
+
+{{{{{
+;; Reassignment join (null <-> int, int -> double, fn effect intersect) & intersectCompatibleFunctions
+def a = null
+a = 5
+def b = 1
+b = null
+def c = 2
+c = 3.5
+def d = 1
+d = null
+d = 2.5
+
+def pureFn = (x : int) : int -> ( x + 1 )
+def impFn = impure (x : int) : int -> ( x + 2 )
+def pick = (flag : bool) -> (
+    if flag then ( pureFn ) else ( impFn )
+)
+def fVar = pureFn
+fVar = impFn
+println(a, ":", b, ":", c, ":", d, ":", pick(true)(10), ":", fVar(10))
+}}}}}
+5:null:3.5:2.5:11:12
+
+{{{{{
+;; Widening note on assignment: "because of the assignment"
+def x = 1
+def takeInt = (n : int) : int -> ( n )
+takeInt(x)
+x = 1.5
+}}}}}
+Type error : expected int, got double (x is double because of the assignment)
+
+{{{{{
+;; Widening note on parameter call: "because of the call"
+def f = (x) -> ( x + 1 )
+def takeInt = (n : int) : int -> ( n )
+takeInt(f(1))
+f(1.5)
+}}}}}
+Type error : expected int, got double (x is double because of the call)
+
+{{{{{
+;; BabbleInstance operatorCall success, widening, union, and error paths
+def Vec = class (def x : int) (
+    def plus = (other : Vec) : Vec -> ( Vec(this.x + other.x) )
+    def neg = () : Vec -> ( Vec(-(this.x)) )
+)
+def Alt = class (def x : int) (
+    def plus = (other : int) : Alt -> ( Alt(this.x + other) )
+)
+def WidenOp = class () (
+    def plus = (n) -> ( n + 1 )
+)
+def w = WidenOp()
+println(w + 1, ":", w + 2.5)
+def u : Vec | Vec = Vec(4)
+println((u + Vec(5)).x, ":", (-u).x)
+}}}}}
+2.0:3.5
+9:-4
+
+{{{{{
+def BadPlus = class () ( def plus = 42 )
+def b = BadPlus()
+b + 1
+}}}}}
+b.plus is not callable
+
+{{{{{
+def TwoArgs = class () ( def plus = (a : int, b : int) : int -> ( a + b ) )
+TwoArgs() + 1
+}}}}}
+Missing parameter : b
+
+{{{{{
+def ZeroArgs = class () ( def plus = () : int -> ( 1 ) )
+ZeroArgs() + 1
+}}}}}
+Too many parameters : 0 declared, 1 given
+
+{{{{{
+def f1 = () -> ( 1 )
+def f2 = () -> ( 2 )
+println(f1 < f2)
+}}}}}
+Not comparable : f1 and f2
+
+{{{{{
+;; Compound assignment & assignExpression error paths
+def Val = value class (def x : int) ()
+def v = Val(1)
+v.x += 1
+}}}}}
+Value members are read-only : x
+
+{{{{{
+package pk ( def k = 1 )
+pk.k = 2
+}}}}}
+Cannot assign to a package member : k
+
+{{{{{
+def Box = class (def x : int) (
+    private def priv = 2
+)
+def b = Box(1)
+b.priv = 3
+}}}}}
+priv is private
+
+{{{{{
+def Box = class () ()
+def b = Box()
+b.missing = 3
+}}}}}
+No such member : missing
+
+{{{{{
+1.foo = 2
+}}}}}
+Not a scope : 1
+
+{{{{{
+;; Generic Babble calls: function pattern, BabbleInstance pattern, List pattern, nullable pattern, return hint widening, failure
+def Box(T) = class (def v : T) ()
+def wrap(T) = (x : T) : Box(T) -> ( Box(x) )
+def applyFn(A, B) = (x : A, f : (v : A) : B) : B -> ( f(x) )
+def wrapOpt(T) = (x : T?) : T? -> ( x )
+def firstElem(T) = (xs : java.util.List(T)) : T? -> ( if xs.isEmpty() then ( null ) else ( xs.get(0) ) )
+
+def bd : Box(double) = wrap(1)
+def mapped = applyFn(4, (n) -> ( n * 2 + 1 ))
+def optN = wrapOpt(1)
+def fe = firstElem(java.util.List.of("k"))
+println(bd.v, ":", mapped, ":", optN, ":", fe)
+}}}}}
+1.0:9:1:k
+
+{{{{{
+def Pair(T) = class (def a : T, def b : T) ()
+def badInfer(T) = () : T? -> ( null )
+badInfer()
+}}}}}
+Missing type : cannot infer type arguments for badInfer
+
+{{{{{
+;; Unannotated & recursive function inference + computeBodyResult + null default param + Java SAM / overload / effect assignability
+def fact = (n : int) -> (
+    if n <= 1 then ( 1 ) else ( n * recurse(n - 1) )
+)
+def withEarlyRet = (n : int) -> (
+    if n < 0 then ( return 0.5 )
+    n
+)
+def nullDef = (x = null) -> ( x )
+println(fact(5), ":", withEarlyRet(-1), ":", withEarlyRet(3), ":", nullDef(), ":", nullDef(9))
+
+def fnPrint : (s : string) : () = println
+def fnAppend : (c : java.lang.CharSequence) : java.lang.StringBuilder = java.lang.StringBuilder().append
+def samFn : java.util.function.Function(int, double) = java.util.function.Function((x) -> ( x + 1 ))
+println(samFn.apply(4))
+}}}}}
+120:0.5:3.0:null:9
+5.0
+
+{{{{{
+;; Ambiguous & no applicable overload Java errors + pure mismatch on non-function callable
+def sb = java.lang.StringBuilder()
+sb.append(null)
+}}}}}
+Ambiguous call to java.lang.StringBuilder.append for (null)
+
+{{{{{
+def f : pure (s : string) : null = println
+}}}}}
+Type error : expected pure (s : string) : null, got print
+
+{{{{{
+;; Mutual recursion missing type error
+def a = () -> ( b() )
+def b = () -> ( a() )
+a()
+}}}}}
+Missing type : a (recursive)

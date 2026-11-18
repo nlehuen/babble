@@ -577,3 +577,71 @@ badBool(true)
 }}}}}
 Name used before definition : x
 
+{{{{{
+;; Bootstrap polymorphic CallCache & TypedCallCache mixing CompiledFunction, CompiledMethod, BoundMethod(CompiledFunction)
+def I = interface (
+    def apply = (x : int) : int -> ( x + 100 )
+    def applyBox = (x : int, s : string) : string -> ( s + ":" + x )
+)
+def C = class (def bias : int) implements I (
+    def m = (x : int) : int -> ( x + this.bias )
+    def mBox = (x : int, s : string) : string -> ( s + "=" + (x + this.bias) )
+)
+def c = C(10)
+def f1 = (x : int) : int -> ( x + 1 )
+def f2 = (x : int) : int -> ( x + 2 )
+def b1 = (x : int, s : string) : string -> ( s + "!" )
+def sum = 0
+def out = ""
+def i = 0
+while i < 4 then (
+    def ft : (x : int) : int = if i == 0 then ( f1 ) else if i == 1 then ( f2 ) else if i == 2 then ( c.m ) else ( c.apply )
+    sum += ft(i)
+    def fb : (x : int, s : string) : string = if i == 0 then ( b1 ) else if i == 1 then ( c.mBox ) else ( c.applyBox )
+    out = out + fb(i, "k") + ";"
+    i += 1
+)
+println(sum, "|", out)
+}}}}}
+119|k!;k=11;k:2;k:3;
+
+{{{{{
+;; Bootstrap requireMemberDefined & isMemberDefinedMethod via SelectCache on primitive BabbleInstance field
+def B = class (readNow : bool) (
+    def readFn = (b : B) : int -> ( b.x )
+    def x : int = if readNow then ( this.readFn(this) ) else ( 9 )
+)
+def readB = (b : B) : int -> ( b.x )
+def ok = B(false)
+println(readB(ok))
+readB(B(true))
+}}}}}
+9
+Member used before definition : x
+
+{{{{{
+;; CodeGenerator emitJavaFieldAssign & emitJavaFieldCompoundAssign (int, double, Object) + ScriptClassWriter merges
+def pt = java.awt.geom.Point2D.Double()
+pt.x = 3
+pt.y = 8.0
+pt.x += 2
+pt.y /= 2
+def rect = java.awt.Rectangle()
+rect.width = 10
+rect.width += 5
+def ev = java.awt.Event(null, 0, null)
+ev.arg = "ok"
+def strArg = ev.arg
+ev.arg = 42
+def listA = (flag : bool) : any -> (
+    def a : java.util.ArrayList(int) = java.util.ArrayList()
+    def b : java.util.LinkedList(int) = java.util.LinkedList()
+    if flag then ( a ) else ( b )
+)
+def mixed = (flag : bool) : any -> (
+    if flag then ( object ( def k = 1 ) ) else ( "s" )
+)
+def w = (1 + 2) as double
+println(pt.x, ":", pt.y, ":", rect.width, ":", strArg, ":", ev.arg, ":", w, ":", classof(listA(true)) != null, ":", mixed(false))
+}}}}}
+5.0:4.0:15:ok:42:3.0:true:s
