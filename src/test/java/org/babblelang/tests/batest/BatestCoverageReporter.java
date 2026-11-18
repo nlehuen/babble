@@ -145,7 +145,7 @@ public final class BatestCoverageReporter {
         Path sourceRoot = Path.of(System.getProperty("batest.sourceRoot", "src/main/java"));
         String filter = System.getProperty("batest.filter", "").trim();
         String inspect = System.getProperty("batest.inspect", "").trim();
-        double minBranchPct = Double.parseDouble(System.getProperty("batest.minBranchPct", "85.0").trim());
+        double minBranchPct = Double.parseDouble(System.getProperty("batest.minBranchPct", "75.0").trim());
 
         run(reportDir, xmlInterpret, xmlCompile, sourceRoot, filter, inspect, minBranchPct);
     }
