@@ -54,8 +54,6 @@ import java.util.stream.Collectors;
  * or untyped script bindings cross into typed code (T9).
  */
 final class TypeChecker {
-    record NarrowingInfo(Map<ParserRuleContext, Type> whenTrue, Map<ParserRuleContext, Type> whenFalse) {
-    }
 
     enum Role {
         VALUE,
@@ -200,6 +198,7 @@ final class TypeChecker {
     private final TypeAnnotations annotator = new TypeAnnotations(this);
     private final MemberTypes members = new MemberTypes(this);
     private final OperatorTypes operators = new OperatorTypes(this);
+    private ImportedSummaries imported;
 
     CallSolver callSolver() {
         return callSolver;
@@ -301,8 +300,20 @@ final class TypeChecker {
         return checkingEffects;
     }
 
+    /** The summaries of the session's earlier inputs and of the loaded modules. */
+    ImportedSummaries imported() {
+        if (imported == null) {
+            imported = new ImportedSummaries(pass);
+        }
+        return imported;
+    }
+
     BlockScopes pass() {
         return pass;
+    }
+
+    OperatorTypes operators() {
+        return operators;
     }
 
     MemberTypes members() {
@@ -1074,7 +1085,7 @@ final class TypeChecker {
         return parent != null ? parent.getParent() : null;
     }
 
-    private boolean isExported(BabbleParser.DefExpressionContext def) {
+    boolean isExported(BabbleParser.DefExpressionContext def) {
         if (def == null || !inFile(def)) {
             return false;
         }
@@ -2395,24 +2406,8 @@ final class TypeChecker {
     /** A member's annotation, method signature, or inferred type. */
     Type memberType(TypeNode owner, TypeNode.Member member) {
         if (!isLocal(member.declaration)) {
-            if (owner != null) {
-                if (pass.session != null) {
-                    Map<String, Type> map = pass.session.typeMemberTypes.get(owner);
-                    if (map != null && map.containsKey(member.name)) {
-                        return map.get(member.name);
-                    }
-                }
-                for (ModuleInterface mod : allLoadedModules()) {
-                    TypedModuleSummary s = mod.summary();
-                    if (s != null) {
-                        Type remote = s.memberType(owner, member.name);
-                        if (remote != null) {
-                            return remote;
-                        }
-                    }
-                }
-            }
-            return Type.ERROR;
+            Type imported = owner != null ? imported().memberType(owner, member.name) : null;
+            return imported != null ? imported : Type.ERROR;
         }
         if (!inFile(member.declaration) && pass.session != null) {
             Type frozen = pass.session.memberTypes.get(member.declaration);
@@ -2472,22 +2467,8 @@ final class TypeChecker {
             return List.of();
         }
         if (!(node.ctx instanceof BabbleParser.ClassExpressionContext cls) || !isLocal(cls)) {
-            if (pass.session != null) {
-                List<Type.Parameter> fromSession = pass.session.constructorParams.get(node);
-                if (fromSession != null) {
-                    return fromSession;
-                }
-            }
-            for (ModuleInterface mod : allLoadedModules()) {
-                TypedModuleSummary s = mod.summary();
-                if (s != null) {
-                    List<Type.Parameter> remote = s.constructorParams(node);
-                    if (remote != null) {
-                        return remote;
-                    }
-                }
-            }
-            return List.of();
+            List<Type.Parameter> imported = imported().constructorParams(node);
+            return imported != null ? imported : List.of();
         }
         if (cls.parametersDeclaration() == null) {
             return List.of();
@@ -2562,232 +2543,17 @@ final class TypeChecker {
         effectDiagnostics.add(new Diagnostic(at.getStart().getLine(), at.getStart().getCharPositionInLine() + 1, message));
     }
 
-    Type rawTypeOf(ParserRuleContext ctx) {
-        if (ctx == null) {
-            return Type.ERROR;
-        }
-        Type t = types.get(ctx);
-        return t != null ? t : synth(ctx);
-    }
-
-    Type annotationTypeOf(BabbleParser.FunctionTypeContext ft) {
-        return annotator.primaryAnnotation(ft, scopeOf(ft), false);
-    }
-
     ScopeNode occurrenceScopeOf(ParserRuleContext ctx) {
         ScopeNode occ = occurrenceScopes.get(ctx);
         return occ != null ? occ : scopeOf(ctx);
-    }
-
-    BabbleParser.FunctionLiteralContext enclosingFunctionOf(ParserRuleContext ctx) {
-        return enclosingFunction(ctx);
     }
 
     boolean isReassigned(ParserRuleContext decl) {
         return reassigned.contains(decl);
     }
 
-    boolean isExportedDef(BabbleParser.DefExpressionContext def) {
-        return isExported(def);
-    }
-
-    Class<?> findJavaClass(String qualifiedName) {
-        return JavaTypeBridge.loadTopLevel(qualifiedName);
-    }
-
-    Class<?> findMemberJavaClass(Class<?> enclosing, String simpleName) {
-        return JavaTypeBridge.publicMemberClass(enclosing, simpleName);
-    }
-
-    Object resolveNameForEffects(String name, ScopeNode scope) {
-        return resolveName(null, name, scope);
-    }
-
-    Type typeOfDeclarationForEffects(ParserRuleContext decl) {
-        return typeOfDeclaration(decl);
-    }
-
-    Type implicitTypeForEffects(String name) {
-        Type t = operators.implicitType(name);
-        return t == Type.ANY ? null : t;
-    }
-
-    Type packageMemberTypeForEffects(Type.Package pkg, String name) {
-        return members.packageMember(pkg, name);
-    }
-
-    Type moduleMemberTypeForEffects(ModuleInterface module, String name) {
-        return MemberTypes.exportType(module, name);
-    }
-
-    private Type remoteMemberType(TypeNode owner, String name, Set<TypeNode> visited) {
-        if (!visited.add(owner)) {
-            return null;
-        }
-        if (pass.session != null) {
-            Map<String, Type> map = pass.session.typeMemberTypes.get(owner);
-            if (map != null && map.containsKey(name)) {
-                return map.get(name);
-            }
-        }
-        for (ModuleInterface mod : allLoadedModules()) {
-            TypedModuleSummary s = mod.summary();
-            if (s != null) {
-                Type remote = s.memberType(owner, name);
-                if (remote != null) {
-                    return remote;
-                }
-            }
-        }
-        for (Object parent : owner.parents) {
-            if (parent instanceof TypeNode parentNode) {
-                Type inherited = remoteMemberType(parentNode, name, visited);
-                if (inherited != null) {
-                    return inherited;
-                }
-            }
-        }
-        return null;
-    }
-
-    List<ModuleInterface> allLoadedModules() {
-        List<ModuleInterface> result = new ArrayList<>();
-        Set<ModuleInterface> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-        Deque<ModuleInterface> queue = new ArrayDeque<>(pass.modules.values());
-        if (pass.session != null) {
-            queue.addAll(pass.session.modules.values());
-        }
-        while (!queue.isEmpty()) {
-            ModuleInterface mod = queue.poll();
-            if (mod != null && seen.add(mod)) {
-                result.add(mod);
-                queue.addAll(mod.dependencies());
-            }
-        }
-        return result;
-    }
-
-    Object resolveNamespaceMemberDecl(Type nsType, String name) {
-        if (nsType instanceof Type.Package pkg) {
-            List<BabbleParser.PackageExpressionContext> list = members.localPackageDeclarations(pkg);
-            if (list != null) {
-                for (BabbleParser.PackageExpressionContext p : list) {
-                    for (BabbleParser.ExpressionContext st : p.packageBlock.expression()) {
-                        if (st instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(name)) {
-                            return def;
-                        }
-                    }
-                }
-            }
-            return null;
-        }
-        return null;
-    }
-
-    boolean isModuleExportImmutable(ModuleInterface module, String name, Type resType) {
-        return effectChecker != null && effectChecker.isImmutableConstantValue(resType);
-    }
-
-    EffectChecker.CallableSummary remoteConstructorSummary(TypeNode node) {
-        if (pass.session != null) {
-            EffectChecker.CallableSummary s = pass.session.constructorSummaries.get(node);
-            if (s != null) {
-                return s;
-            }
-        }
-        for (ModuleInterface mod : allLoadedModules()) {
-            TypedModuleSummary summary = mod.summary();
-            if (summary != null) {
-                EffectChecker.CallableSummary s = summary.constructorSummary(node);
-                if (s != null) {
-                    return s;
-                }
-            }
-        }
-        return null;
-    }
-
-    TypedModuleSummary.CallableEffectTemplate remoteCallableTemplate(Type.Function fn) {
-        if (pass.session != null) {
-            TypedModuleSummary.CallableEffectTemplate t = pass.session.callableTemplates.get(fn);
-            if (t != null) {
-                return t;
-            }
-        }
-        for (ModuleInterface mod : allLoadedModules()) {
-            TypedModuleSummary summary = mod.summary();
-            if (summary != null) {
-                TypedModuleSummary.CallableEffectTemplate t = summary.callableTemplate(fn);
-                if (t != null) {
-                    return t;
-                }
-            }
-        }
-        return null;
-    }
-
-    BabbleParser.FunctionLiteralContext literalOf(Type.Function fn) {
-        return functionLiterals.get(fn);
-    }
-
-    int parameterIndexForArg(List<Type.Parameter> parameters,
-                             List<BabbleParser.CallParameterContext> arguments,
-                             BabbleParser.CallParameterContext targetArg) {
-        if (targetArg.ID() != null) {
-            String argName = targetArg.ID().getText();
-            for (int i = 0; i < parameters.size(); i++) {
-                if (parameters.get(i).name().equals(argName)) {
-                    return i;
-                }
-            }
-            return -1;
-        }
-        Type.Parameter[] mapped = CallSolver.mapArgumentsToParameters(parameters, arguments);
-        int argPos = arguments.indexOf(targetArg);
-        if (argPos < 0 || argPos >= mapped.length || mapped[argPos] == null) {
-            return -1;
-        }
-        return parameters.indexOf(mapped[argPos]);
-    }
-
-    boolean hasCallCheck(ParserRuleContext ctx) {
-        return callChecks.containsKey(ctx);
-    }
-
-    List<Type.Parameter> constructorParamsForEffects(TypeNode node) {
-        List<Type.Parameter> params = constructorParameters(node);
-        return params != null ? params : List.of();
-    }
-
-    TypeNode.Member findMemberOnNode(TypeNode node, String name) {
-        return members.findMember(node, name);
-    }
-
-    Type memberTypeForEffects(TypeNode owner, TypeNode.Member member) {
-        return memberType(owner, member);
-    }
-
-    Type instanceMemberTypeForEffects(Type.Instance inst, TypeNode.Member member) {
-        return algebra.substitute(memberType(inst.node(), member), algebra.instanceEnv(inst));
-    }
-
-    boolean isBuiltinFunction(Type.Function fn) {
-        return OperatorTypes.isBuiltinFunction(fn);
-    }
-    NarrowingInfo extractNarrowingForEffects(BabbleParser.ExpressionContext expr) {
-        TypeEnv.Refinement r = extractRefinement(expr);
-        return new NarrowingInfo(r.whenTrue(), r.whenFalse());
-    }
-
     Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
         return effectChecker != null ? effectChecker.exportedJavaEffects() : Map.of();
     }
 
-    Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> committedJavaEffects() {
-        return effectChecker != null ? effectChecker.committedJavaEffects() : Map.of();
-    }
-
-    Map<ParserRuleContext, EffectChecker.CallableSummary> committedCallableSummaries() {
-        return effectChecker != null ? effectChecker.committedCallableSummaries() : Map.of();
-    }
 }

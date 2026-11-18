@@ -2562,7 +2562,6 @@ final class EffectChecker {
         final Set<BabbleParser.FunctionLiteralContext> frameWriteOwners = Collections.newSetFromMap(new IdentityHashMap<>());
 
         private Map<ParserRuleContext, Origin> env = new IdentityHashMap<>();
-        private final Deque<Map<ParserRuleContext, Type>> narrowedScopes = new ArrayDeque<>();
         private final Set<String> reportedMessages = new HashSet<>();
 
         BodyAnalyzer(ParserRuleContext owner,
@@ -2863,7 +2862,7 @@ final class EffectChecker {
                 ScopeNode occScope = checker.occurrenceScopeOf(sel);
                 Object resolved = checker.resolveNameForEffects(sel.ID().getText(), occScope);
                 if (resolved instanceof ParserRuleContext decl) {
-                    Type declType = effectiveDeclType(decl);
+                    Type declType = checker.rawTypeOf(sel);
                     boolean imm = isDeeplyImmutable(declType);
                     if (paramIndex.containsKey(decl)) {
                         return env.getOrDefault(decl, Origin.ofParam(paramIndex.get(decl), decl, imm));
@@ -3598,17 +3597,14 @@ final class EffectChecker {
 
         private Origin evalIf(BabbleParser.IfExpressionContext ctx) {
             eval(ctx.test);
-            TypeChecker.NarrowingInfo nar = checker.extractNarrowingForEffects(ctx.test);
             Map<ParserRuleContext, Origin> snapshot = new IdentityHashMap<>(env);
 
-            Origin thenOrig = withNarrowingMap(nar.whenTrue(), () -> eval(ctx.thenBlock));
+            Origin thenOrig = eval(ctx.thenBlock);
             Map<ParserRuleContext, Origin> afterThen = env;
 
             env = new IdentityHashMap<>(snapshot);
             ParserRuleContext otherwise = ctx.elseBlock != null ? ctx.elseBlock : ctx.elseIf;
-            Origin elseOrig = otherwise != null
-                    ? withNarrowingMap(nar.whenFalse(), () -> eval(otherwise))
-                    : Origin.IMMUTABLE;
+            Origin elseOrig = otherwise != null ? eval(otherwise) : Origin.IMMUTABLE;
             Map<ParserRuleContext, Origin> afterElse = env;
 
             env = mergeEnvs(afterThen, afterElse);
@@ -3620,8 +3616,7 @@ final class EffectChecker {
             while (iter++ < 8) {
                 Map<ParserRuleContext, Origin> before = new IdentityHashMap<>(env);
                 eval(ctx.test);
-                TypeChecker.NarrowingInfo nar = checker.extractNarrowingForEffects(ctx.test);
-                withNarrowingMap(nar.whenTrue(), () -> eval(ctx.whileBlock));
+                eval(ctx.whileBlock);
                 Map<ParserRuleContext, Origin> merged = mergeEnvs(before, env);
                 if (merged.equals(before)) {
                     env = merged;
@@ -3634,10 +3629,8 @@ final class EffectChecker {
 
         private Origin evalBooleanOp(BabbleParser.BooleanOpContext ctx) {
             eval(ctx.left);
-            TypeChecker.NarrowingInfo nar = checker.extractNarrowingForEffects(ctx.left);
-            Map<ParserRuleContext, Type> rhsNarrow = ctx.op.getType() == BabbleParser.AND ? nar.whenTrue() : nar.whenFalse();
             Map<ParserRuleContext, Origin> before = new IdentityHashMap<>(env);
-            withNarrowingMap(rhsNarrow, () -> eval(ctx.right));
+            eval(ctx.right);
             env = mergeEnvs(before, env);
             return Origin.IMMUTABLE;
         }
@@ -3688,38 +3681,11 @@ final class EffectChecker {
             return out;
         }
 
-        private <T> T withNarrowingMap(Map<ParserRuleContext, Type> map, java.util.function.Supplier<T> action) {
-            if (map.isEmpty()) {
-                return action.get();
-            }
-            narrowedScopes.push(map);
-            try {
-                return action.get();
-            } finally {
-                narrowedScopes.pop();
-            }
-        }
-
-        private Type effectiveDeclType(ParserRuleContext decl) {
-            for (Map<ParserRuleContext, Type> scope : narrowedScopes) {
-                if (scope.containsKey(decl)) {
-                    return scope.get(decl);
-                }
-            }
-            return checker.typeOfDeclarationForEffects(decl);
-        }
-
+        /** The type of an expression where it occurs, narrowed by the tests that guard it (as the typing walk recorded it). */
         private Type effectiveType(BabbleParser.ExpressionContext expr) {
             BabbleParser.ExpressionContext unwrapped = unwrapParens(expr);
-            if (unwrapped instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-                Object r = checker.resolveNameForEffects(sel.ID().getText(), checker.occurrenceScopeOf(sel));
-                if (r instanceof ParserRuleContext decl) {
-                    return effectiveDeclType(decl);
-                }
-            }
-            return checker.rawTypeOf(expr);
+            return checker.rawTypeOf(unwrapped instanceof BabbleParser.SelectorContext sel && sel.expression() == null ? unwrapped : expr);
         }
-
         private boolean isRedundantCast(Type src, Type dst) {
             if (src == null || dst == null || src == Type.ERROR || dst == Type.ERROR) {
                 return true;

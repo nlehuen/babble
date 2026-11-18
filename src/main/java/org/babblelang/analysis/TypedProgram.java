@@ -8,8 +8,10 @@ import java.lang.reflect.Method;
 import java.util.List;
 
 /**
- * Read-only typed-program view shared by {@link TypeChecker} with {@link EffectChecker}
- * and {@link LoweringAnalyzer} ({@code docs/design/bip010_type-checker-simplification.md} §4.6).
+ * The typed program {@link EffectChecker} reads ({@code BIP010-D6}) : the type of every
+ * expression where it occurs (narrowed by the tests that guard it), the declarations names
+ * resolve to and their converged types, members, the Babble and Java callables each call
+ * resolved to, and the summaries of other files. Queries only : effects never change types.
  */
 final class TypedProgram {
     private final TypeChecker checker;
@@ -17,6 +19,8 @@ final class TypedProgram {
     TypedProgram(TypeChecker checker) {
         this.checker = checker;
     }
+
+    // ---------------------------------------------------------------- names and scopes
 
     ScopeNode scopeOf(ParserRuleContext ctx) {
         return checker.scopeOf(ctx);
@@ -31,71 +35,101 @@ final class TypedProgram {
     }
 
     boolean isExportedDef(BabbleParser.DefExpressionContext def) {
-        return checker.isExportedDef(def);
+        return checker.isExported(def);
     }
 
     boolean isReassigned(ParserRuleContext decl) {
         return checker.isReassigned(decl);
     }
 
+    /** The function literal {@code ctx} is in, or null. */
     BabbleParser.FunctionLiteralContext enclosingFunctionOf(ParserRuleContext ctx) {
-        return checker.enclosingFunctionOf(ctx);
+        for (ParserRuleContext p = ctx.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof BabbleParser.FunctionLiteralContext function) {
+                return function;
+            }
+        }
+        return null;
     }
 
+    /** What a name refers to from a scope : a declaration, a list of packages, or null. */
     Object resolveNameForEffects(String name, ScopeNode scope) {
-        return checker.resolveNameForEffects(name, scope);
+        return TypeChecker.resolveName(null, name, scope);
     }
 
+    /** The def a member of a package of this file names, or null. */
     Object resolveNamespaceMemberDecl(Type nsType, String name) {
-        return checker.resolveNamespaceMemberDecl(nsType, name);
+        List<BabbleParser.PackageExpressionContext> list = nsType instanceof Type.Package pkg
+                ? checker.members().localPackageDeclarations(pkg) : null;
+        if (list != null) {
+            for (BabbleParser.PackageExpressionContext p : list) {
+                for (BabbleParser.ExpressionContext st : p.packageBlock.expression()) {
+                    if (st instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(name)) {
+                        return def;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
+    // ---------------------------------------------------------------- types
+
+    /** The type of an expression where it occurs. */
     Type rawTypeOf(ParserRuleContext ctx) {
-        return checker.rawTypeOf(ctx);
+        if (ctx == null) {
+            return Type.ERROR;
+        }
+        Type t = checker.types().get(ctx);
+        return t != null ? t : checker.synth(ctx);
     }
 
     Type typeOfDeclarationForEffects(ParserRuleContext decl) {
-        return checker.typeOfDeclarationForEffects(decl);
+        return checker.typeOfDeclaration(decl);
     }
 
     Type annotationTypeOf(BabbleParser.FunctionTypeContext ft) {
-        return checker.annotationTypeOf(ft);
+        return checker.annotator().primaryAnnotation(ft, checker.scopeOf(ft), false);
     }
 
+    /** The type of an implicit name, or null for one that has no precise type. */
     Type implicitTypeForEffects(String name) {
-        return checker.implicitTypeForEffects(name);
+        Type t = checker.operators().implicitType(name);
+        return t == Type.ANY ? null : t;
     }
 
     Type moduleMemberTypeForEffects(ModuleInterface mod, String name) {
-        return checker.moduleMemberTypeForEffects(mod, name);
+        return MemberTypes.exportType(mod, name);
     }
 
     Type packageMemberTypeForEffects(Type.Package pkg, String name) {
-        return checker.packageMemberTypeForEffects(pkg, name);
+        return checker.members().packageMember(pkg, name);
     }
 
     Type memberTypeForEffects(TypeNode owner, TypeNode.Member member) {
-        return checker.memberTypeForEffects(owner, member);
+        return checker.memberType(owner, member);
     }
 
+    /** A member's type as seen through an instance, with its type arguments. */
     Type instanceMemberTypeForEffects(Type.Instance inst, TypeNode.Member member) {
-        return checker.instanceMemberTypeForEffects(inst, member);
+        return checker.algebra().substitute(checker.memberType(inst.node(), member), checker.algebra().instanceEnv(inst));
     }
 
     TypeNode.Member findMemberOnNode(TypeNode node, String name) {
-        return checker.findMemberOnNode(node, name);
+        return MemberTypes.findMember(node, name);
     }
 
     List<Type.Parameter> constructorParamsForEffects(TypeNode node) {
-        return checker.constructorParamsForEffects(node);
+        List<Type.Parameter> params = checker.constructorParameters(node);
+        return params != null ? params : List.of();
     }
 
     boolean isModuleExportImmutable(ModuleInterface mod, String name, Type resType) {
-        return checker.isModuleExportImmutable(mod, name, resType);
+        return checker.effectChecker != null && checker.effectChecker.isImmutableConstantValue(resType);
     }
 
     boolean isBuiltinFunction(Type.Function fn) {
-        return checker.isBuiltinFunction(fn);
+        return OperatorTypes.isBuiltinFunction(fn);
     }
 
     boolean assignable(Type from, Type to) {
@@ -106,12 +140,14 @@ final class TypedProgram {
         return checker.algebra().subtype(from, to);
     }
 
+    // ---------------------------------------------------------------- calls and Java
+
     Class<?> findJavaClass(String name) {
-        return checker.findJavaClass(name);
+        return JavaTypeBridge.loadTopLevel(name);
     }
 
     Class<?> findMemberJavaClass(Class<?> owner, String name) {
-        return checker.findMemberJavaClass(owner, name);
+        return JavaTypeBridge.publicMemberClass(owner, name);
     }
 
     Method resolvedJavaMethodOf(BabbleParser.CallContext call) {
@@ -128,30 +164,45 @@ final class TypedProgram {
                 : LoweringAnalyzer.fieldReadTarget(checker.types().get(sel.expression()), sel.ID().getText(), checker.algebra());
     }
 
+    /** Whether the value of {@code ctx} is checked at runtime (a Java generic result, T9). */
     boolean hasCallCheck(ParserRuleContext ctx) {
-        return checker.hasCallCheck(ctx);
+        return checker.callChecks().containsKey(ctx);
     }
 
+    /** The function literal a function type was typed from, or null. */
     BabbleParser.FunctionLiteralContext literalOf(Type.Function fn) {
-        return checker.literalOf(fn);
+        return checker.functionLiterals().get(fn);
     }
 
+    /** The index of the parameter an argument binds to, or -1. */
     int parameterIndexForArg(List<Type.Parameter> parameters,
                              List<BabbleParser.CallParameterContext> arguments,
                              BabbleParser.CallParameterContext targetArg) {
-        return checker.parameterIndexForArg(parameters, arguments, targetArg);
+        if (targetArg.ID() != null) {
+            String argName = targetArg.ID().getText();
+            for (int i = 0; i < parameters.size(); i++) {
+                if (parameters.get(i).name().equals(argName)) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+        Type.Parameter[] mapped = CallSolver.mapArgumentsToParameters(parameters, arguments);
+        int argPos = arguments.indexOf(targetArg);
+        if (argPos < 0 || argPos >= mapped.length || mapped[argPos] == null) {
+            return -1;
+        }
+        return parameters.indexOf(mapped[argPos]);
     }
 
-    TypeChecker.NarrowingInfo extractNarrowingForEffects(BabbleParser.ExpressionContext expr) {
-        return checker.extractNarrowingForEffects(expr);
-    }
+    // ---------------------------------------------------------------- other files
 
     EffectChecker.CallableSummary remoteConstructorSummary(TypeNode node) {
-        return checker.remoteConstructorSummary(node);
+        return checker.imported().constructorSummary(node);
     }
 
     TypedModuleSummary.CallableEffectTemplate remoteCallableTemplate(Type.Function fn) {
-        return checker.remoteCallableTemplate(fn);
+        return checker.imported().callableTemplate(fn);
     }
 
     void effectDiagnostic(String message, ParserRuleContext at) {

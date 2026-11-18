@@ -84,22 +84,8 @@ final class TypeAnnotations {
             return List.of();
         }
         if (!checker.isLocal(node.ctx)) {
-            if (checker.pass().session != null) {
-                List<Type.TypeVar> fromSession = checker.pass().session.typeNodeVars.get(node);
-                if (fromSession != null) {
-                    return fromSession;
-                }
-            }
-            for (ModuleInterface mod : checker.allLoadedModules()) {
-                TypedModuleSummary s = mod.summary();
-                if (s != null) {
-                    List<Type.TypeVar> remote = s.typeVarsOf(node);
-                    if (remote != null) {
-                        return remote;
-                    }
-                }
-            }
-            return List.of();
+            List<Type.TypeVar> imported = checker.imported().typeVars(node);
+            return imported != null ? imported : List.of();
         }
         if (node.ctx.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == node.ctx) {
             return typeVarsOf(def);
@@ -145,22 +131,8 @@ final class TypeAnnotations {
             return Type.ERROR;
         }
         if (!checker.isLocal(node.ctx)) {
-            if (checker.pass().session != null) {
-                List<Type> fromSession = checker.pass().session.parentTypes.get(node);
-                if (fromSession != null && index < fromSession.size()) {
-                    return fromSession.get(index);
-                }
-            }
-            for (ModuleInterface mod : checker.allLoadedModules()) {
-                TypedModuleSummary s = mod.summary();
-                if (s != null) {
-                    List<Type> remote = s.parentTypesOf(node);
-                    if (remote != null && index < remote.size()) {
-                        return remote.get(index);
-                    }
-                }
-            }
-            return Type.ERROR;
+            Type imported = checker.imported().parentType(node, index);
+            return imported != null ? imported : Type.ERROR;
         }
         if (index >= node.parentTypes.size()) {
             return Type.ERROR;
