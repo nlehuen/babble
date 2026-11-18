@@ -143,6 +143,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     // The JVM classes generated for class and object expressions, and their names.
     private final Map<ParserRuleContext, ClassGen> classGens = new HashMap<>();
     private final java.util.Set<String> generatedClasses = new java.util.HashSet<>();
+    private final Map<String, String> ownInterfaceJvmNames = new java.util.LinkedHashMap<>();
+    private final Map<String, String> allInterfaceJvmNames = new HashMap<>();
+    private final Map<String, List<String>> generatedClassParents = new HashMap<>();
+    private final Map<String, List<String>> generatedInterfaceParents = new HashMap<>();
+    private int interfaceCount = 0;
 
     private final List<Constant> constants = new ArrayList<>();
     private final Map<List<String>, String> stringArrays = new HashMap<>();
@@ -211,7 +216,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             this.ctx = ctx;
             this.name = name;
             this.shape = shape;
-            this.writer = new ScriptClassWriter(name, runtimeLoader, className, generatedClasses);
+            this.writer = new ScriptClassWriter(runtimeLoader, className, generatedClassParents, generatedInterfaceParents);
             for (Resolution.Variable variable : resolution.declared(ctx)) {
                 if (variable.isCell()) {
                     hiddenCells.add(variable);
@@ -463,12 +468,58 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
 
     CodeGenerator(String className, String sourceName, ScopeAnalysis scopes, ClassLoader runtimeLoader) {
+        this(className, sourceName, scopes, runtimeLoader, Map.of());
+    }
+
+    CodeGenerator(String className, String sourceName, ScopeAnalysis scopes, ClassLoader runtimeLoader,
+                  Map<String, String> knownInterfaceJvmNames) {
         this.className = className;
         this.sourceName = sourceName;
         this.scopes = scopes;
         this.resolution = scopes.resolution();
         this.runtimeLoader = runtimeLoader;
-        this.classWriter = new ScriptClassWriter(className, runtimeLoader, className, generatedClasses);
+        if (knownInterfaceJvmNames != null) {
+            this.allInterfaceJvmNames.putAll(knownInterfaceJvmNames);
+        }
+        this.classWriter = new ScriptClassWriter(runtimeLoader, className, generatedClassParents, generatedInterfaceParents);
+    }
+
+    Map<String, String> interfaceJvmNames() {
+        return java.util.Collections.unmodifiableMap(ownInterfaceJvmNames);
+    }
+
+    private void registerInterfaces(BabbleParser.FileContext file) {
+        new BabbleBaseVisitor<Void>() {
+            @Override
+            public Void visitInterfaceExpression(BabbleParser.InterfaceExpressionContext ctx) {
+                ClassShape shape = scopes.shape(ctx);
+                if (shape != null) {
+                    String jvmName = className + "$I" + (interfaceCount++) + "$" + shape.name();
+                    ownInterfaceJvmNames.put(shape.id(), jvmName);
+                    allInterfaceJvmNames.put(shape.id(), jvmName);
+                }
+                return super.visitInterfaceExpression(ctx);
+            }
+        }.visit(file);
+        for (Map.Entry<String, String> entry : ownInterfaceJvmNames.entrySet()) {
+            String ifaceId = entry.getKey();
+            String jvmName = entry.getValue();
+            List<String> parents = new ArrayList<>();
+            ScopeAnalysis.TypeHierarchyInfo info = scopes.typeHierarchy(ifaceId);
+            if (info != null) {
+                for (ScopeAnalysis.ParentRef parent : info.directParents()) {
+                    if (parent.babbleTypeId() != null) {
+                        String parentJvm = allInterfaceJvmNames.get(parent.babbleTypeId());
+                        if (parentJvm != null) {
+                            parents.add(parentJvm);
+                        }
+                    } else if (parent.javaClass() != null) {
+                        parents.add(Type.getInternalName(parent.javaClass()));
+                    }
+                }
+            }
+            generatedInterfaceParents.put(jvmName, List.copyOf(parents));
+        }
     }
 
     /**
@@ -477,6 +528,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * @return the class files, by internal name, the script class first
      */
     Map<String, byte[]> generate(BabbleParser.FileContext file) {
+        registerInterfaces(file);
         classWriter.visit(V21, ACC_FINAL | ACC_SUPER | ACC_SYNTHETIC, className, null, OBJECT, null);
         classWriter.visitSource(sourceName, null);
 
@@ -505,6 +557,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             ClassShape shape = scopes.shape(c);
             String name = className + "$" + (functionCount++) + "$" + shape.name();
             generatedClasses.add(name);
+            generatedClassParents.put(name, List.of(BABBLE_INSTANCE));
             ClassGen gen = new ClassGen(c, name, shape);
             gen.begin();
             return gen;
@@ -3945,19 +3998,24 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     /**
      * {@code COMPUTE_FRAMES} merges types with {@link #getCommonSuperClass}, which by
-     * default loads classes through ASM's own class loader. This answers from the runtime
-     * classes instead, and never tries to load the class being generated.
+     * default loads classes through ASM's own class loader. This answers from both the
+     * runtime/classpath classes and the generated class/interface metadata, and never tries
+     * to load a class currently being generated.
      */
-    private static final class ScriptClassWriter extends ClassWriter {
-        private final String scriptClass;
+    static final class ScriptClassWriter extends ClassWriter {
         private final ClassLoader runtimeLoader;
-        private final java.util.Set<String> generatedClasses;
+        private final String scriptClass;
+        private final Map<String, List<String>> generatedClassParents;
+        private final Map<String, List<String>> generatedInterfaceParents;
 
-        ScriptClassWriter(String className, ClassLoader runtimeLoader, String scriptClass, java.util.Set<String> generatedClasses) {
+        ScriptClassWriter(ClassLoader runtimeLoader, String scriptClass,
+                          Map<String, List<String>> generatedClassParents,
+                          Map<String, List<String>> generatedInterfaceParents) {
             super(COMPUTE_FRAMES);
-            this.scriptClass = scriptClass;
             this.runtimeLoader = runtimeLoader;
-            this.generatedClasses = generatedClasses;
+            this.scriptClass = scriptClass;
+            this.generatedClassParents = generatedClassParents;
+            this.generatedInterfaceParents = generatedInterfaceParents;
         }
 
         @Override
@@ -3970,32 +4028,192 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             if (type1.equals(scriptClass) || type2.equals(scriptClass)) {
                 return OBJECT;
             }
-            // The compiled classes of class expressions all extend BabbleInstance.
-            if (generatedClasses.contains(type1)) {
-                type1 = BABBLE_INSTANCE;
+            if (type1.equals(type2)) {
+                return type1;
             }
-            if (generatedClasses.contains(type2)) {
-                type2 = BABBLE_INSTANCE;
-            }
-            try {
-                Class<?> class1 = Class.forName(type1.replace('/', '.'), false, runtimeLoader);
-                Class<?> class2 = Class.forName(type2.replace('/', '.'), false, runtimeLoader);
-                if (class1.isAssignableFrom(class2)) {
-                    return type1;
-                }
-                if (class2.isAssignableFrom(class1)) {
-                    return type2;
-                }
-                if (class1.isInterface() || class2.isInterface()) {
-                    return OBJECT;
-                }
-                do {
-                    class1 = class1.getSuperclass();
-                } while (!class1.isAssignableFrom(class2));
-                return Type.getInternalName(class1);
-            } catch (ClassNotFoundException e) {
+            if (!exists(type1) || !exists(type2)) {
                 return OBJECT;
             }
+            if (isAssignable(type1, type2)) {
+                return type1;
+            }
+            if (isAssignable(type2, type1)) {
+                return type2;
+            }
+            boolean iface1 = isInterfaceType(type1);
+            boolean iface2 = isInterfaceType(type2);
+            if (iface1 && iface2) {
+                return commonSuperInterface(type1, type2);
+            }
+            if (iface1 || iface2) {
+                // One is an interface and the other is a class; neither is assignable to the other.
+                return OBJECT;
+            }
+            String cur = type1;
+            while (cur != null) {
+                if (isAssignable(cur, type2)) {
+                    return cur;
+                }
+                cur = superclassOf(cur);
+            }
+            return OBJECT;
+        }
+
+        private boolean isGenerated(String internalName) {
+            return generatedClassParents.containsKey(internalName)
+                    || generatedInterfaceParents.containsKey(internalName);
+        }
+
+        private boolean exists(String internalName) {
+            return isGenerated(internalName) || tryLoad(internalName) != null;
+        }
+
+        private boolean isInterfaceType(String internalName) {
+            if (generatedInterfaceParents.containsKey(internalName)) {
+                return true;
+            }
+            if (generatedClassParents.containsKey(internalName)) {
+                return false;
+            }
+            Class<?> cls = tryLoad(internalName);
+            return cls != null && cls.isInterface();
+        }
+
+        private Class<?> tryLoad(String internalName) {
+            try {
+                return Class.forName(internalName.replace('/', '.'), false, runtimeLoader);
+            } catch (ClassNotFoundException | LinkageError e) {
+                return null;
+            }
+        }
+
+        private List<String> directParents(String internalName) {
+            List<String> genClass = generatedClassParents.get(internalName);
+            if (genClass != null) {
+                return genClass;
+            }
+            List<String> genIface = generatedInterfaceParents.get(internalName);
+            if (genIface != null) {
+                return genIface;
+            }
+            Class<?> cls = tryLoad(internalName);
+            if (cls == null) {
+                return List.of();
+            }
+            List<String> parents = new ArrayList<>();
+            if (cls.getSuperclass() != null) {
+                parents.add(Type.getInternalName(cls.getSuperclass()));
+            }
+            for (Class<?> iface : cls.getInterfaces()) {
+                parents.add(Type.getInternalName(iface));
+            }
+            return parents;
+        }
+
+        private String superclassOf(String internalName) {
+            List<String> genClass = generatedClassParents.get(internalName);
+            if (genClass != null) {
+                for (String parent : genClass) {
+                    if (!isInterfaceType(parent)) {
+                        return parent;
+                    }
+                }
+                return OBJECT;
+            }
+            if (generatedInterfaceParents.containsKey(internalName)) {
+                return null;
+            }
+            Class<?> cls = tryLoad(internalName);
+            if (cls == null || cls.getSuperclass() == null) {
+                return null;
+            }
+            return Type.getInternalName(cls.getSuperclass());
+        }
+
+        private boolean isAssignable(String superType, String subType) {
+            if (superType.equals(subType)) {
+                return true;
+            }
+            if (OBJECT.equals(superType)) {
+                return exists(subType);
+            }
+            boolean superGen = isGenerated(superType);
+            if (!superGen && !isGenerated(subType)) {
+                Class<?> sup = tryLoad(superType);
+                Class<?> sub = tryLoad(subType);
+                return sup != null && sub != null && sup.isAssignableFrom(sub);
+            }
+            Class<?> supCls = superGen ? null : tryLoad(superType);
+            java.util.Queue<String> queue = new ArrayDeque<>();
+            java.util.Set<String> visited = new java.util.HashSet<>();
+            visited.add(subType);
+            queue.add(subType);
+            while (!queue.isEmpty()) {
+                String cur = queue.poll();
+                if (cur.equals(superType)) {
+                    return true;
+                }
+                boolean curGen = isGenerated(cur);
+                if (!curGen) {
+                    if (!superGen) {
+                        Class<?> curCls = tryLoad(cur);
+                        if (supCls != null && curCls != null && supCls.isAssignableFrom(curCls)) {
+                            return true;
+                        }
+                    }
+                    continue;
+                }
+                for (String parent : directParents(cur)) {
+                    if (parent != null && visited.add(parent)) {
+                        queue.add(parent);
+                    }
+                }
+            }
+            return false;
+        }
+
+        private String commonSuperInterface(String type1, String type2) {
+            java.util.Set<String> ancestors1 = ancestorInterfaces(type1);
+            java.util.Set<String> ancestors2 = ancestorInterfaces(type2);
+            List<String> common = new ArrayList<>();
+            for (String candidate : ancestors1) {
+                if (ancestors2.contains(candidate)) {
+                    common.add(candidate);
+                }
+            }
+            if (common.isEmpty()) {
+                return OBJECT;
+            }
+            List<String> mostSpecific = new ArrayList<>();
+            for (String candidate : common) {
+                boolean shadowed = false;
+                for (String other : common) {
+                    if (!other.equals(candidate) && isAssignable(candidate, other)) {
+                        shadowed = true;
+                        break;
+                    }
+                }
+                if (!shadowed) {
+                    mostSpecific.add(candidate);
+                }
+            }
+            return mostSpecific.size() == 1 ? mostSpecific.get(0) : OBJECT;
+        }
+
+        private java.util.Set<String> ancestorInterfaces(String root) {
+            java.util.Set<String> result = new java.util.LinkedHashSet<>();
+            java.util.Queue<String> queue = new ArrayDeque<>();
+            result.add(root);
+            queue.add(root);
+            while (!queue.isEmpty()) {
+                String cur = queue.poll();
+                for (String parent : directParents(cur)) {
+                    if (parent != null && !OBJECT.equals(parent) && isInterfaceType(parent) && result.add(parent)) {
+                        queue.add(parent);
+                    }
+                }
+            }
+            return result;
         }
     }
 }

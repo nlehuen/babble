@@ -4,6 +4,7 @@ import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.Token;
 import org.babblelang.analysis.AnalysisSession;
 import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.compiler.CompiledBabbleScript;
 import org.babblelang.runtime.Namespace;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
@@ -105,6 +106,9 @@ public final class BabbleSession {
         BabbleScript script = engine.script(file, scopes, sourceName);
         if (analysis.commit(scopes)) {
             namespace = namespace.enter(null);
+        }
+        if (script instanceof CompiledBabbleScript compiled) {
+            analysis.recordCompilation(compiled.getScriptClass().getClassLoader(), compiled.interfaceJvmNames());
         }
         return script.eval(new ScriptRuntime(namespace, context.getWriter(), modules));
     }

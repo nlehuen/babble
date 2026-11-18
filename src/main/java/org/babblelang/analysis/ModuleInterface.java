@@ -2,7 +2,9 @@ package org.babblelang.analysis;
 
 import org.babblelang.parser.BabbleParser;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -18,10 +20,14 @@ import java.util.Set;
 public final class ModuleInterface {
     private final Set<String> exports;
     private final Map<String, Integer> exportIndices;
+    private final Set<ModuleInterface> dependencies = new LinkedHashSet<>();
     private String name = "<module>";
     private TypeChecks checks;
     private TypeChecker checker;
     private Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects = Map.of();
+    private volatile ClassLoader compiledClassLoader;
+    private volatile Map<String, String> interfaceJvmNames = Map.of();
+    private volatile Map<String, ScopeAnalysis.TypeHierarchyInfo> typeHierarchies = Map.of();
 
     ModuleInterface(BlockScopes pass) {
         String[] ordered = pass.analysis.exports();
@@ -49,6 +55,45 @@ public final class ModuleInterface {
     /** The declaration-order index of an export in {@link org.babblelang.runtime.Module#exportAt}, or -1. */
     public int exportIndex(String name) {
         return exportIndices.getOrDefault(name, -1);
+    }
+
+    void addDependency(ModuleInterface dependency) {
+        if (dependency != null && dependency != this) {
+            synchronized (dependencies) {
+                dependencies.add(dependency);
+            }
+        }
+    }
+
+    public Set<ModuleInterface> dependencies() {
+        synchronized (dependencies) {
+            return Collections.unmodifiableSet(new LinkedHashSet<>(dependencies));
+        }
+    }
+
+    public void setCompilation(ClassLoader classLoader, Map<String, String> interfaceJvmNames) {
+        this.compiledClassLoader = classLoader;
+        this.interfaceJvmNames = interfaceJvmNames != null ? Map.copyOf(interfaceJvmNames) : Map.of();
+    }
+
+    public ClassLoader compiledClassLoader() {
+        return compiledClassLoader;
+    }
+
+    public Map<String, String> interfaceJvmNames() {
+        return interfaceJvmNames;
+    }
+
+    void setTypeHierarchies(Map<String, ScopeAnalysis.TypeHierarchyInfo> hierarchies) {
+        this.typeHierarchies = hierarchies != null ? Map.copyOf(hierarchies) : Map.of();
+    }
+
+    public Map<String, ScopeAnalysis.TypeHierarchyInfo> typeHierarchies() {
+        return typeHierarchies;
+    }
+
+    public ScopeAnalysis.TypeHierarchyInfo typeHierarchy(String id) {
+        return id != null ? typeHierarchies.get(id) : null;
     }
 
     void complete(TypeChecks checks) {

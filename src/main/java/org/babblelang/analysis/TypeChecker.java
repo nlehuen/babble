@@ -129,6 +129,8 @@ final class TypeChecker {
     private final Map<BabbleParser.SelectorContext, ScopeAnalysis.ModuleExportTarget> moduleExportTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.CallContext, BabbleParser.FunctionLiteralContext> babbleCallFunctions = new IdentityHashMap<>();
     private final Map<BabbleParser.CallContext, ScopeAnalysis.FunctionSignature> babbleCallSignatures = new IdentityHashMap<>();
+    private final Map<BabbleParser.IsExpressionContext, ScopeAnalysis.IsTarget> isTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, ScopeAnalysis.InterfaceCallTarget> interfaceCallTargets = new IdentityHashMap<>();
     /**
      * The checkers of the files this one imports statically, transitively, by file : what
      * this file uses from another is typed by that file's checker (docs/design/bip005_modules.md §8.2).
@@ -153,6 +155,7 @@ final class TypeChecker {
             }
         }
         if (pass.session != null) {
+            owners.putAll(pass.session.owners);
             occurrenceScopes.putAll(pass.session.occurrenceScopes);
             reassigned.addAll(pass.session.reassigned);
             capturedReassigned.addAll(pass.session.reassigned);
@@ -252,6 +255,8 @@ final class TypeChecker {
         moduleExportTargets.clear();
         babbleCallFunctions.clear();
         babbleCallSignatures.clear();
+        isTargets.clear();
+        interfaceCallTargets.clear();
     }
 
     private void publishToAnalysis() {
@@ -356,6 +361,155 @@ final class TypeChecker {
         moduleExportTargets.forEach(pass.analysis::setModuleExportTarget);
         babbleCallFunctions.forEach(pass.analysis::setBabbleCallFunction);
         babbleCallSignatures.forEach(pass.analysis::setBabbleCallSignature);
+        isTargets.forEach(pass.analysis::setIsTarget);
+        interfaceCallTargets.forEach(pass.analysis::setInterfaceCallTarget);
+        publishTypeHierarchies();
+        if (pass.analysis.moduleInterface() != null) {
+            pass.analysis.moduleInterface().setTypeHierarchies(pass.analysis.typeHierarchies());
+        }
+    }
+
+    private void publishTypeHierarchies() {
+        for (TypeNode node : pass.types) {
+            if (inFile(node.ctx) && node.isInterface()) {
+                pass.analysis.setTypeHierarchy(node.id, buildTypeHierarchyInfo(node));
+            }
+        }
+        for (TypeNode node : pass.types) {
+            if (inFile(node.ctx) && !node.isInterface()) {
+                pass.analysis.setTypeHierarchy(node.id, buildTypeHierarchyInfo(node));
+            }
+        }
+    }
+
+    private ScopeAnalysis.TypeHierarchyInfo buildTypeHierarchyInfo(TypeNode node) {
+        Set<ScopeAnalysis.ParentRef> seenDirect = new LinkedHashSet<>();
+        for (Object parent : node.parents) {
+            if (parent instanceof TypeNode tn) {
+                seenDirect.add(new ScopeAnalysis.ParentRef(tn.id, null));
+            } else if (parent instanceof Class<?> jc) {
+                seenDirect.add(new ScopeAnalysis.ParentRef(null, jc));
+            }
+        }
+        List<ScopeAnalysis.ParentRef> directParents = List.copyOf(seenDirect);
+
+        Set<String> allBabbleInterfaceIds = new LinkedHashSet<>();
+        Set<Class<?>> allJavaInterfaces = new LinkedHashSet<>();
+        Set<TypeNode> visitedNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+        visitedNodes.add(node);
+        collectAncestorInterfaces(node, allBabbleInterfaceIds, allJavaInterfaces, visitedNodes);
+
+        Map<String, ScopeAnalysis.MemberSpec> interfaceMembers = new LinkedHashMap<>();
+        if (node.isInterface()) {
+            for (TypeNode.Member member : node.members.values()) {
+                boolean hasDefault = member.function != null;
+                boolean required = !hasDefault;
+                Type mt = memberType(member);
+                boolean callable = mt instanceof Type.Function;
+                ScopeAnalysis.FunctionSignature sig = callable ? uninstantiatedSignature((Type.Function) mt) : null;
+                interfaceMembers.put(member.name,
+                        new ScopeAnalysis.MemberSpec(member.name, hasDefault, required, callable, sig));
+            }
+        } else {
+            Map<String, TypeNode.Member> collected = new LinkedHashMap<>();
+            Set<TypeNode> visitedIfaces = Collections.newSetFromMap(new IdentityHashMap<>());
+            for (Object parent : node.parents) {
+                if (parent instanceof TypeNode iface) {
+                    collectInterfaceMembers(iface, collected, visitedIfaces);
+                }
+            }
+            Map<String, TypeChecks.Provider> allInterfaceDefaults = new LinkedHashMap<>();
+            for (Object parent : node.parents) {
+                if (parent instanceof TypeNode iface && iface.defaults != null) {
+                    for (TypeChecks.Provider provider : iface.defaults.values()) {
+                        allInterfaceDefaults.putIfAbsent(provider.name(), provider);
+                    }
+                }
+            }
+            for (TypeNode.Member member : collected.values()) {
+                TypeChecks.Provider provider = allInterfaceDefaults.get(member.name);
+                boolean hasDefault = member.function != null || (provider != null && provider.owner() instanceof TypeNode);
+                boolean required = !hasDefault;
+                Type mt = memberType(member);
+                boolean callable = mt instanceof Type.Function;
+                ScopeAnalysis.FunctionSignature sig = callable ? uninstantiatedSignature((Type.Function) mt) : null;
+                interfaceMembers.put(member.name,
+                        new ScopeAnalysis.MemberSpec(member.name, hasDefault, required, callable, sig));
+            }
+        }
+        return new ScopeAnalysis.TypeHierarchyInfo(
+                node.id,
+                node.kind,
+                node.name,
+                directParents,
+                Collections.unmodifiableSet(allBabbleInterfaceIds),
+                Collections.unmodifiableSet(allJavaInterfaces),
+                Collections.unmodifiableMap(interfaceMembers));
+    }
+
+    private static void collectAncestorInterfaces(TypeNode node, Set<String> babbleIds, Set<Class<?>> javaIfaces,
+                                                  Set<TypeNode> visited) {
+        for (Object parent : node.parents) {
+            if (parent instanceof TypeNode parentNode) {
+                if (visited.add(parentNode)) {
+                    babbleIds.add(parentNode.id);
+                    collectAncestorInterfaces(parentNode, babbleIds, javaIfaces, visited);
+                }
+            } else if (parent instanceof Class<?> javaIface) {
+                collectJavaInterfaces(javaIface, javaIfaces);
+            }
+        }
+    }
+
+    private static void collectJavaInterfaces(Class<?> javaIface, Set<Class<?>> out) {
+        if (javaIface == null || !javaIface.isInterface() || !out.add(javaIface)) {
+            return;
+        }
+        for (Class<?> parent : javaIface.getInterfaces()) {
+            collectJavaInterfaces(parent, out);
+        }
+    }
+
+    private static void collectInterfaceMembers(TypeNode iface, Map<String, TypeNode.Member> out, Set<TypeNode> visited) {
+        if (!visited.add(iface)) {
+            return;
+        }
+        for (TypeNode.Member member : iface.members.values()) {
+            out.putIfAbsent(member.name, member);
+        }
+        for (Object parent : iface.parents) {
+            if (parent instanceof TypeNode parentIface) {
+                collectInterfaceMembers(parentIface, out, visited);
+            }
+        }
+    }
+
+    private static ScopeAnalysis.FunctionSignature uninstantiatedSignature(Type.Function fn) {
+        if (fn == null) {
+            return null;
+        }
+        List<Type.Parameter> params = fn.parameters();
+        if (params.size() > 200) {
+            return null;
+        }
+        ScopeAnalysis.PrimitiveKind[] paramKinds = new ScopeAnalysis.PrimitiveKind[params.size()];
+        int slots = 2;
+        for (int i = 0; i < params.size(); i++) {
+            Type pt = params.get(i).type();
+            ScopeAnalysis.PrimitiveKind pk = pt instanceof Type.TypeVar
+                    ? ScopeAnalysis.PrimitiveKind.NONE
+                    : ScopeAnalysis.PrimitiveKind.of(pt);
+            paramKinds[i] = pk;
+            slots += pk.slots();
+        }
+        if (slots > 200) {
+            return null;
+        }
+        Type rt = fn.result();
+        ScopeAnalysis.PrimitiveKind rk = rt instanceof Type.TypeVar
+                ? ScopeAnalysis.PrimitiveKind.NONE
+                : ScopeAnalysis.PrimitiveKind.of(rt);
+        return new ScopeAnalysis.FunctionSignature(paramKinds, rk);
     }
 
     private static boolean guaranteedApplicable(Class<?> parameter, Type argument) {
@@ -3121,7 +3275,12 @@ final class TypeChecker {
             if (builtin != null) {
                 pass.analysis.setIsBuiltin(ctx, builtin.name());
             } else {
-                typeOf(ctx.right);
+                Type rightType = typeOf(ctx.right);
+                if (inFile(ctx) && !isUnresolved(rightType) && rightType instanceof Type.ClassValue cv) {
+                    if (staticSingletonTypeNode(ctx.right) == cv.node()) {
+                        isTargets.put(ctx, new ScopeAnalysis.IsTarget(cv.node().id, cv.node().kind));
+                    }
+                }
             }
             return Type.BOOL;
         }
@@ -4000,11 +4159,16 @@ final class TypeChecker {
                 bind(function.parameters(), decls, arguments, ctx);
                 if (recordTarget) {
                     recordBabbleCall(function, arguments, ctx);
+                    recordInterfaceCall(arguments, ctx);
                 }
                 return function.result();
             }
-            return genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
+            Type result = genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
                     arguments, ctx, ctx.expression().getText());
+            if (recordTarget && result != Type.ERROR) {
+                recordInterfaceCall(arguments, ctx);
+            }
+            return result;
         }
         if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
             TypeNode node = value.node();
@@ -4092,6 +4256,232 @@ final class TypeChecker {
                 babbleCallSignatures.put(ctx, new ScopeAnalysis.FunctionSignature(paramKinds, returnKind));
             }
         }
+    }
+
+    private record FoundInterfaceMember(TypeNode iface, TypeNode.Member member) {
+    }
+
+    private sealed interface StaticRef {
+    }
+
+    private record StaticType(TypeNode node) implements StaticRef {
+    }
+
+    private record StaticPackage(TypeChecker owner, List<BabbleParser.PackageExpressionContext> packages) implements StaticRef {
+    }
+
+    private record StaticModule(ModuleInterface module) implements StaticRef {
+    }
+
+    private void recordInterfaceCall(List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
+        if (!inFile(ctx) || !(ctx.expression() instanceof BabbleParser.SelectorContext sel)) {
+            return;
+        }
+        if (sel.safe != null || sel.expression() == null || sel.expression() instanceof BabbleParser.SuperExpressionContext) {
+            return;
+        }
+        if (!(types.get(sel.expression()) instanceof Type.Instance recvInst) || !recvInst.node().isInterface()) {
+            return;
+        }
+        for (BabbleParser.CallParameterContext arg : arguments) {
+            if (arg.ID() != null) {
+                return;
+            }
+        }
+        FoundInterfaceMember found = findDeclaringInterfaceMember(recvInst.node(), sel.ID().getText());
+        if (found == null) {
+            return;
+        }
+        Type mt = memberType(found.member());
+        if (!(mt instanceof Type.Function uninstFn)) {
+            return;
+        }
+        if (arguments.size() != uninstFn.parameters().size()) {
+            return;
+        }
+        ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(uninstFn);
+        if (sig == null) {
+            return;
+        }
+        interfaceCallTargets.put(ctx,
+                new ScopeAnalysis.InterfaceCallTarget(found.iface().id, found.member().name, sig, true));
+    }
+
+    private static FoundInterfaceMember findDeclaringInterfaceMember(TypeNode iface, String name) {
+        return findDeclaringInterfaceMember(iface, name, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private static FoundInterfaceMember findDeclaringInterfaceMember(TypeNode iface, String name, Set<TypeNode> visited) {
+        if (iface == null || !iface.isInterface() || !visited.add(iface)) {
+            return null;
+        }
+        TypeNode.Member member = iface.members.get(name);
+        if (member != null) {
+            return new FoundInterfaceMember(iface, member);
+        }
+        for (Object parent : iface.parents) {
+            if (parent instanceof TypeNode parentNode) {
+                FoundInterfaceMember found = findDeclaringInterfaceMember(parentNode, name, visited);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    private TypeNode staticSingletonTypeNode(BabbleParser.ExpressionContext expr) {
+        StaticRef ref = resolveStaticRef(this, expr, 0);
+        return ref instanceof StaticType st ? st.node() : null;
+    }
+
+    private boolean isDefReassigned(TypeChecker defOwner, BabbleParser.DefExpressionContext def) {
+        return reassigned.contains(def) || (defOwner != null && defOwner != this && defOwner.reassigned.contains(def));
+    }
+
+    private StaticRef resolveStaticRef(TypeChecker owner, BabbleParser.ExpressionContext expr, int depth) {
+        if (owner == null || expr == null || depth > 16) {
+            return null;
+        }
+        BabbleParser.ExpressionContext current = expr;
+        while (current instanceof BabbleParser.BlockExpressionContext blockExpr
+                && blockExpr.block().effectDeclaration().isEmpty()
+                && blockExpr.block().expression().size() == 1
+                && !owner.pass.analysis.opensScope(blockExpr.block())) {
+            current = blockExpr.block().expression(0);
+        }
+        if (current instanceof BabbleParser.ClassExpressionContext || current instanceof BabbleParser.InterfaceExpressionContext) {
+            if (!isStaticTopLevelTypeExpr(current)) {
+                return null;
+            }
+            TypeNode node = owner.pass.typeNodes.get(current);
+            return node != null ? new StaticType(node) : null;
+        }
+        if (current instanceof BabbleParser.CallContext call) {
+            ModuleInterface mod = owner.pass.modules.get(call);
+            return mod != null ? new StaticModule(mod) : null;
+        }
+        if (current instanceof BabbleParser.SelectorContext sel) {
+            if (sel.safe != null) {
+                return null;
+            }
+            String name = sel.ID().getText();
+            if (sel.expression() == null) {
+                ScopeNode scope = owner.occurrenceScopes.get(sel);
+                if (scope == null) {
+                    scope = owner.scopeOf(sel);
+                }
+                Object resolved = resolveName(sel, name, scope);
+                if (resolved instanceof BabbleParser.DefExpressionContext def) {
+                    TypeChecker defOwner = owner.ownerOf(def);
+                    if (defOwner == null || isDefReassigned(defOwner, def)) {
+                        return null;
+                    }
+                    return resolveStaticRef(defOwner, def.value, depth + 1);
+                }
+                if (resolved instanceof List<?> rawList) {
+                    List<BabbleParser.PackageExpressionContext> pkgs = staticPackages(rawList);
+                    return pkgs != null ? new StaticPackage(owner, pkgs) : null;
+                }
+                return null;
+            }
+            StaticRef recv = resolveStaticRef(owner, sel.expression(), depth + 1);
+            if (recv instanceof StaticPackage pkgRef) {
+                List<BabbleParser.PackageExpressionContext> nested = new ArrayList<>();
+                for (BabbleParser.PackageExpressionContext pkg : pkgRef.packages()) {
+                    for (BabbleParser.ExpressionContext stmt : pkg.packageBlock.expression()) {
+                        if (stmt instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(name)) {
+                            TypeChecker defOwner = pkgRef.owner().ownerOf(def);
+                            if (defOwner == null || isDefReassigned(defOwner, def)) {
+                                return null;
+                            }
+                            return resolveStaticRef(defOwner, def.value, depth + 1);
+                        }
+                        if (stmt instanceof BabbleParser.PackageExpressionContext inner && inner.name.getText().equals(name)) {
+                            nested.add(inner);
+                        }
+                    }
+                }
+                if (!nested.isEmpty()) {
+                    List<BabbleParser.PackageExpressionContext> pkgs = staticPackages(nested);
+                    return pkgs != null ? new StaticPackage(pkgRef.owner(), pkgs) : null;
+                }
+                return null;
+            }
+            if (recv instanceof StaticModule modRef) {
+                ModuleInterface mod = modRef.module();
+                TypeChecker modChecker = mod.checker();
+                if (modChecker == null || !mod.exports().contains(name)) {
+                    return null;
+                }
+                ParserRuleContext exported = modChecker.pass.fileScope.names.get(name);
+                if (exported instanceof BabbleParser.DefExpressionContext def) {
+                    if (isDefReassigned(modChecker, def)) {
+                        return null;
+                    }
+                    return resolveStaticRef(modChecker, def.value, depth + 1);
+                }
+                List<BabbleParser.PackageExpressionContext> rawPkgs = modChecker.pass.fileScope.packages.get(name);
+                if (rawPkgs != null) {
+                    List<BabbleParser.PackageExpressionContext> pkgs = staticPackages(rawPkgs);
+                    return pkgs != null ? new StaticPackage(modChecker, pkgs) : null;
+                }
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static List<BabbleParser.PackageExpressionContext> staticPackages(List<?> rawList) {
+        if (rawList.isEmpty()) {
+            return null;
+        }
+        List<BabbleParser.PackageExpressionContext> result = new ArrayList<>(rawList.size());
+        for (Object item : rawList) {
+            if (!(item instanceof BabbleParser.PackageExpressionContext pkg) || !isStaticTopLevelPackage(pkg)) {
+                return null;
+            }
+            result.add(pkg);
+        }
+        return result;
+    }
+
+    private static boolean isStaticTopLevelPackage(BabbleParser.PackageExpressionContext pkg) {
+        ParserRuleContext cur = pkg;
+        while (cur != null) {
+            ParserRuleContext parent = cur.getParent();
+            if (parent instanceof BabbleParser.FileContext) {
+                return true;
+            }
+            if (parent instanceof BabbleParser.BlockContext block
+                    && block.getParent() instanceof BabbleParser.PackageExpressionContext enclosingPkg
+                    && enclosingPkg.packageBlock == block) {
+                cur = enclosingPkg;
+            } else {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isStaticTopLevelTypeExpr(ParserRuleContext typeExpr) {
+        ParserRuleContext cur = typeExpr;
+        while (cur != null) {
+            ParserRuleContext parent = cur.getParent();
+            if (parent instanceof BabbleParser.FileContext) {
+                return true;
+            }
+            if (parent instanceof BabbleParser.DefExpressionContext def && def.value == cur) {
+                cur = def;
+            } else if (parent instanceof BabbleParser.BlockContext block
+                    && block.getParent() instanceof BabbleParser.PackageExpressionContext pkg
+                    && pkg.packageBlock == block) {
+                cur = pkg;
+            } else {
+                return false;
+            }
+        }
+        return false;
     }
 
     private Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
@@ -6323,6 +6713,14 @@ final class TypeChecker {
             root = root.getParent();
         }
         return owners.get(root);
+    }
+
+    BabbleParser.FileContext file() {
+        return file;
+    }
+
+    Map<ParserRuleContext, TypeChecker> ownersMap() {
+        return owners;
     }
 
     int parameterIndexForArg(List<Type.Parameter> parameters,

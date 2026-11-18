@@ -19,8 +19,13 @@ public final class CompiledBabbleScript extends BabbleScript {
     private final String sourceName;
     private final int firstLine;
     private final String[] exports;
+    private final Map<String, String> interfaceJvmNames;
 
     CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports) {
+        this(engine, scriptClass, classes, run, sourceName, firstLine, exports, Map.of());
+    }
+
+    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports, Map<String, String> interfaceJvmNames) {
         super(engine);
         this.exports = exports;
         this.scriptClass = scriptClass;
@@ -28,6 +33,7 @@ public final class CompiledBabbleScript extends BabbleScript {
         this.run = run;
         this.sourceName = sourceName;
         this.firstLine = firstLine;
+        this.interfaceJvmNames = interfaceJvmNames != null ? Map.copyOf(interfaceJvmNames) : Map.of();
     }
 
     /** The generated class, for tests and debugging. */
@@ -46,6 +52,11 @@ public final class CompiledBabbleScript extends BabbleScript {
      */
     public Map<String, byte[]> getClasses() {
         return java.util.Collections.unmodifiableMap(classes);
+    }
+
+    /** Internal JVM names of Babble interfaces compiled by this script, keyed by {@code ClassShape.id()}. */
+    public Map<String, String> interfaceJvmNames() {
+        return interfaceJvmNames;
     }
 
     @Override

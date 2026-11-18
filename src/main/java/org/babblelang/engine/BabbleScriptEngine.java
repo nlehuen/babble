@@ -40,13 +40,18 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Queue;
+import java.util.Set;
 
 public class BabbleScriptEngine extends AbstractScriptEngine implements Compilable {
     /**
@@ -403,8 +408,12 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 inProgress.remove(id.key());
             }
             loader.versions.put(id, text.version());
+            BabbleScript compiledScript = script(file, scopes, sourceName, id);
+            if (compiledScript instanceof CompiledBabbleScript compiled && scopes.moduleInterface() != null) {
+                scopes.moduleInterface().setCompilation(compiled.getScriptClass().getClassLoader(), compiled.interfaceJvmNames());
+            }
             CompiledModule module = new CompiledModule(source, mode, Map.copyOf(loader.versions),
-                    script(file, scopes, sourceName, id), scopes.moduleInterface());
+                    compiledScript, scopes.moduleInterface());
             moduleCache.put(id.key(), module);
             return module;
         }
@@ -693,11 +702,51 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         try {
             return switch (getMode()) {
                 case INTERPRET -> new BabbleCompiledScript(this, file, scopes, sourceName);
-                case COMPILE -> BabbleCompiler.compile(this, file, scopes, sourceName, module != null ? module.key() : null);
+                case COMPILE -> {
+                    List<ClassLoader> dependencyLoaders = new ArrayList<>();
+                    Map<String, String> knownInterfaceJvmNames = new LinkedHashMap<>();
+                    collectCompileDependencies(scopes, dependencyLoaders, knownInterfaceJvmNames);
+                    yield BabbleCompiler.compile(this, file, scopes, sourceName,
+                            module != null ? module.key() : null, dependencyLoaders, knownInterfaceJvmNames);
+                }
             };
         } catch (RuntimeException e) {
             // A bad mode, or code the compiler cannot generate (a method over 64 KB).
             throw new ScriptException(e);
+        }
+    }
+
+    private static void collectCompileDependencies(ScopeAnalysis scopes, List<ClassLoader> dependencyLoaders,
+                                                   Map<String, String> knownInterfaceJvmNames) {
+        Queue<ModuleInterface> queue = new ArrayDeque<>();
+        Set<ModuleInterface> visitedModules = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<ClassLoader> seenLoaders = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (ModuleInterface mod : scopes.importedModules()) {
+            if (mod != null && visitedModules.add(mod)) {
+                queue.add(mod);
+            }
+        }
+        while (!queue.isEmpty()) {
+            ModuleInterface mod = queue.poll();
+            ClassLoader cl = mod.compiledClassLoader();
+            if (cl != null && seenLoaders.add(cl)) {
+                dependencyLoaders.add(cl);
+            }
+            knownInterfaceJvmNames.putAll(mod.interfaceJvmNames());
+            for (ModuleInterface dep : mod.dependencies()) {
+                if (dep != null && visitedModules.add(dep)) {
+                    queue.add(dep);
+                }
+            }
+        }
+        AnalysisSession session = scopes.session();
+        if (session != null) {
+            for (ClassLoader cl : session.classLoaders()) {
+                if (cl != null && seenLoaders.add(cl)) {
+                    dependencyLoaders.add(cl);
+                }
+            }
+            knownInterfaceJvmNames.putAll(session.interfaceJvmNames());
         }
     }
 
