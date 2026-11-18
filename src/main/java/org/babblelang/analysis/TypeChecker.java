@@ -108,11 +108,8 @@ final class TypeChecker {
     private final Map<BabbleParser.FunctionLiteralContext, Type> provisionalResults = new IdentityHashMap<>();
     private TypeEnv env = TypeEnv.EMPTY;
     private final Map<ParserRuleContext, Type> inferredDefs = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, Type> nextInferredDefs = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredMembers = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, Type> nextInferredMembers = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredParams = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, Type> nextInferredParams = new IdentityHashMap<>();
     private record SiteKey(int tokenIndex, int line) implements Comparable<SiteKey> {
         @Override
         public int compareTo(SiteKey other) {
@@ -127,9 +124,7 @@ final class TypeChecker {
         Type value;
         int widenedLine = -1;
 
-        boolean record(ParserRuleContext at, Type contributor, int widenLine) {
-            int tok = at != null && at.getStart() != null ? at.getStart().getTokenIndex() : 0;
-            SiteKey key = new SiteKey(tok, widenLine);
+        boolean record(SiteKey key, Type contributor) {
             Type prev = contributors.put(key, contributor);
             if (contributor.equals(prev)) {
                 return false;
@@ -161,6 +156,17 @@ final class TypeChecker {
             return changed;
         }
 
+        /** The fold of the contributions before {@code key} in the source, or null if none. */
+        Type foldBefore(SiteKey key) {
+            Type folded = null;
+            for (Type contribution : contributors.headMap(key, false).values()) {
+                Type joined = folded == null ? contribution : algebra.reassignmentJoin(folded, contribution);
+                if (joined != null) {
+                    folded = joined;
+                }
+            }
+            return folded;
+        }
         void addReader(Integer unitIdx) {
             if (unitIdx != null) {
                 readers.add(unitIdx);
@@ -354,12 +360,8 @@ final class TypeChecker {
         buildTarjanRanks(file);
         runInferenceWorklist(file);
         effectChecker.inferAll(file);
-        resetPass(false);
-        walk(file);
-        for (BabbleParser.FunctionLiteralContext function : functions) {
-            checkResult(function);
-        }
-        commitInferred();
+        // The function types the slots hold now carry their inferred effects.
+        runInferenceWorklist(file);
         this.checkingEffects = true;
         resetPass(true);
         walk(file);
@@ -551,48 +553,11 @@ final class TypeChecker {
         recursiveFunctions.clear();
         provisionalResults.clear();
         env = TypeEnv.EMPTY;
-        nextInferredDefs.clear();
-        nextInferredMembers.clear();
-        nextInferredParams.clear();
         nextEscapingTargets.clear();
         p7Params.clear();
         functionLiterals.clear();
         failedDefs.clear();
         callSolver.reset();
-    }
-
-    private boolean commitInferred() {
-        boolean escapedChanged = escapingTargets.addAll(nextEscapingTargets);
-        Map<ParserRuleContext, Type> filteredDefs = new IdentityHashMap<>();
-        for (Map.Entry<ParserRuleContext, Type> entry : nextInferredDefs.entrySet()) {
-            if (entry.getValue() != Type.NULL) {
-                filteredDefs.put(entry.getKey(), entry.getValue());
-            }
-        }
-        Map<ParserRuleContext, Type> filteredMembers = new IdentityHashMap<>();
-        for (Map.Entry<ParserRuleContext, Type> entry : nextInferredMembers.entrySet()) {
-            if (entry.getValue() != Type.NULL) {
-                filteredMembers.put(entry.getKey(), entry.getValue());
-            }
-        }
-        Map<ParserRuleContext, Type> filteredParams = new IdentityHashMap<>();
-        for (Map.Entry<ParserRuleContext, Type> entry : nextInferredParams.entrySet()) {
-            if (entry.getValue() != Type.NULL && entry.getKey() instanceof BabbleParser.ParameterDeclarationContext param
-                    && !escapingTargets.contains(ownerOfParam(param))) {
-                filteredParams.put(entry.getKey(), entry.getValue());
-            }
-        }
-        boolean changed = escapedChanged || !filteredDefs.equals(inferredDefs) || !filteredMembers.equals(inferredMembers)
-                || !filteredParams.equals(inferredParams);
-        if (changed) {
-            inferredDefs.clear();
-            inferredDefs.putAll(filteredDefs);
-            inferredMembers.clear();
-            inferredMembers.putAll(filteredMembers);
-            inferredParams.clear();
-            inferredParams.putAll(filteredParams);
-        }
-        return changed;
     }
 
     private final class ReturnFinder extends BabbleBaseVisitor<Void> {
@@ -1656,24 +1621,22 @@ final class TypeChecker {
     }
 
     private void recordInferredDef(ParserRuleContext decl, Type valueType, ParserRuleContext at) {
-        if (inferenceMode) {
-            recordSlotCell(defCells, inferredDefs, defWidenings, decl, valueType, at, false);
-            return;
-        }
-        recordInferred(nextInferredDefs, defWidenings, decl, valueType, at);
+        contribute(defCells, inferredDefs, defWidenings, decl, valueType, at, false);
     }
 
     private void recordInferredMember(ParserRuleContext decl, Type valueType, ParserRuleContext at) {
-        if (inferenceMode) {
-            recordSlotCell(memberCells, inferredMembers, memberWidenings, decl, valueType, at, false);
-            return;
-        }
-        recordInferred(nextInferredMembers, memberWidenings, decl, valueType, at);
+        contribute(memberCells, inferredMembers, memberWidenings, decl, valueType, at, false);
     }
 
-    private void recordSlotCell(Map<ParserRuleContext, SlotCell> cells, Map<ParserRuleContext, Type> targetMap,
-                                Map<ParserRuleContext, Widening> widenMap, ParserRuleContext decl,
-                                Type valueType, ParserRuleContext at, boolean isParam) {
+    /**
+     * A value contributed to the slot of an unannotated def, member, or inferred parameter.
+     * While the slots converge, it is recorded in the slot's cell (waking the units that read
+     * it when the slot changes) ; in the final walk, it is checked against the contributions
+     * that precede it in the source, which must join with it.
+     */
+    private void contribute(Map<ParserRuleContext, SlotCell> cells, Map<ParserRuleContext, Type> targetMap,
+                            Map<ParserRuleContext, Widening> widenMap, ParserRuleContext decl,
+                            Type valueType, ParserRuleContext at, boolean isParam) {
         if (isUnresolved(valueType)) {
             failedDefs.add(decl);
             return;
@@ -1691,8 +1654,17 @@ final class TypeChecker {
                 widenLine = site.getStart().getLine();
             }
         }
+        SiteKey key = new SiteKey(at.getStart() != null ? at.getStart().getTokenIndex() : 0, widenLine);
+        if (!inferenceMode) {
+            SlotCell cell = cells.get(decl);
+            Type before = cell != null ? cell.foldBefore(key) : null;
+            if (before != null && algebra.reassignmentJoin(before, valueType) == null) {
+                warn("Type error : expected " + before + ", got " + valueType, at);
+            }
+            return;
+        }
         SlotCell cell = cells.computeIfAbsent(decl, k -> new SlotCell());
-        boolean changed = cell.record(at, valueType, widenLine);
+        boolean changed = cell.record(key, valueType);
         if (cell.value != null && cell.value != Type.NULL
                 && (!isParam || !(decl instanceof BabbleParser.ParameterDeclarationContext param)
                 || !escapingTargets.contains(ownerOfParam(param)))) {
@@ -1705,7 +1677,6 @@ final class TypeChecker {
             wakeReaders(cell);
         }
     }
-
     void recordInferredParam(ParserRuleContext decl, Type valueType, ParserRuleContext at) {
         if (isUnresolved(valueType)) {
             return;
@@ -1720,30 +1691,7 @@ final class TypeChecker {
             }
             return;
         }
-        if (inferenceMode) {
-            recordSlotCell(paramCells, inferredParams, paramWidenings, decl, valueType, at, true);
-            return;
-        }
-        Type current = nextInferredParams.get(decl);
-        if (current == null) {
-            nextInferredParams.put(decl, valueType);
-            return;
-        }
-        Type joined = algebra.reassignmentJoin(current, valueType);
-        if (joined == null) {
-            warn("Type error : expected " + current + ", got " + valueType, at);
-            return;
-        }
-        if (!joined.equals(current)) {
-            nextInferredParams.put(decl, joined);
-            if ((containsType(joined, Type.DOUBLE) && !containsType(current, Type.DOUBLE))
-                    || (Type.containsNull(joined) && !Type.containsNull(current))) {
-                ParserRuleContext site = at.getParent() instanceof BabbleParser.CallParameterContext cp
-                        && cp.getParent() instanceof BabbleParser.CallParametersContext cps
-                        && cps.getParent() instanceof BabbleParser.CallContext call ? call : at;
-                paramWidenings.put(decl, new Widening(joined, site.getStart().getLine()));
-            }
-        }
+        contribute(paramCells, inferredParams, paramWidenings, decl, valueType, at, true);
     }
 
     private static boolean containsUnresolved(Type type) {
@@ -1806,35 +1754,6 @@ final class TypeChecker {
                     if (cls != null && !classSafe) {
                         nextEscapingTargets.add(cls);
                     }
-                }
-            }
-        }
-    }
-
-    private void recordInferred(Map<ParserRuleContext, Type> map, Map<ParserRuleContext, Widening> widenMap,
-                                ParserRuleContext decl, Type valueType, ParserRuleContext at) {
-        if (isUnresolved(valueType)) {
-            failedDefs.add(decl);
-            return;
-        }
-        Type current = map.get(decl);
-        if (current == null) {
-            map.put(decl, valueType);
-            return;
-        }
-        Type joined = algebra.reassignmentJoin(current, valueType);
-        if (joined == null) {
-            warn("Type error : expected " + current + ", got " + valueType, at);
-            return;
-        }
-        if (!joined.equals(current)) {
-            map.put(decl, joined);
-            if ((containsType(joined, Type.DOUBLE) && !containsType(current, Type.DOUBLE))
-                    || (Type.containsNull(joined) && !Type.containsNull(current))) {
-                ParserRuleContext site = at instanceof BabbleParser.AssignExpressionContext ? at
-                        : at.getParent() instanceof BabbleParser.AssignExpressionContext assign ? assign : null;
-                if (site != null) {
-                    widenMap.put(decl, new Widening(joined, site.getStart().getLine()));
                 }
             }
         }
@@ -2620,7 +2539,7 @@ final class TypeChecker {
             if (isInferrableCallable(ownerOfParam(parameter))) {
                 p7Params.add(parameter);
                 if (defType == Type.NULL) {
-                    nextInferredParams.putIfAbsent(parameter, Type.NULL);
+                    contribute(paramCells, inferredParams, paramWidenings, parameter, Type.NULL, parameter, true);
                 }
                 Type inferred = inferredParams.get(parameter);
                 if (inferred != null) {
