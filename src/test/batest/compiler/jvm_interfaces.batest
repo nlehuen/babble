@@ -252,3 +252,19 @@ println(evalM(e), ":", (e is Measurable), ":", (e is Extra), ":", (e is Boxed))
 }}}}}
 12
 16:true:true:false
+
+{{{{{
+;; Inherited default method with widened/adapted signature in sub-interface (emitInheritedDefaultInvoke)
+def Base = interface (
+    def calc = (x : int) : int -> ( x + 1 )
+)
+def Other = interface (
+    def calc : (x : int) : any?
+)
+def Sub = interface extends Other, Base ()
+def Impl = class () implements Sub ()
+def s : Sub = Impl()
+def b : Base = Impl()
+println(s.calc(4), ":", b.calc(4))
+}}}}}
+5:5

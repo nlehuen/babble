@@ -122,3 +122,29 @@ asJava.remove()
 }}}}}
 123
 java.lang.UnsupportedOperationException : remove
+
+{{{{{
+;; LongUnaryOperator, DoublePredicate, BooleanSupplier, and CharSequence.charAt bridges (long, double, boolean, char)
+def LongInc = class (delta : int) implements java.util.function.LongUnaryOperator (
+    def applyAsLong = (x : any?) : int -> ( (x as java.lang.Long).intValue() + delta )
+)
+def IsPos = class () implements java.util.function.DoublePredicate (
+    def test = (d : double) : bool -> ( d > 0.0 )
+)
+def Flag = class (def v : bool) implements java.util.function.BooleanSupplier (
+    def getAsBoolean = () : bool -> ( this.v )
+)
+def Seq = class (s : string) implements java.lang.CharSequence (
+    private def sb = java.lang.StringBuilder(s)
+    def length = () : int -> ( this.sb.length() )
+    def charAt = (i : int) : any -> ( this.sb.charAt(i) )
+    def subSequence = (a : int, b : int) : java.lang.CharSequence -> ( this.sb.subSequence(a, b) )
+    def toString = () : string -> ( this.sb.toString() )
+)
+def longRes = java.util.stream.LongStream.of(10).map(LongInc(5)).sum()
+def dblRes = IsPos().test(1.5) and not IsPos().test(-0.5)
+def boolRes = Flag(true).getAsBoolean()
+def chRes = java.nio.CharBuffer.wrap(Seq("xyz")).charAt(1)
+println(longRes, ":", dblRes, ":", boolRes, ":", chRes)
+}}}}}
+15:true:true:y

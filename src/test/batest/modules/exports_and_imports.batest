@@ -28,6 +28,13 @@ export def calc = (a : int, b : int) : int -> ( w.sumAndMul(a, b) )
 export def pi = 4.0
 export def add = (a : int, b : int) : int -> ( a + b + 1 )
 
+========== hof.ba ==========
+export def Box = class (def x : int) ()
+export def apply = (n : int, f : (v : int) : int) : int -> ( f(n) )
+export def applyOpt = (n : int, f : (v : int) : int = (v : int) : int -> ( v + 1 )) : int -> ( f(n) )
+export def mutateWith = (mut b : Box, f : hermetic (mut m : Box) : int) : int -> ( f(b) )
+export def pureWrap = pure (n : int, f : pure (v : int) : int) : int -> ( f(n) )
+
 {{{{{
 def m = import("math.ba")
 def m2 = import("math.ba")
@@ -83,3 +90,28 @@ def m = if true then ( import("math.ba") ) else ( import("math.ba") )
 m.missing = 1
 }}}}}
 No such export : missing in math.ba
+
+{{{{{
+;; Cross-module higher-order effect specialization (pure callback, optional default, and mut forwarding)
+def h = import("hof.ba")
+def pureCaller = pure (x : int) : int -> (
+    h.apply(x, (v : int) : int -> ( v * 2 ))
+)
+def callMutate = (x : int) : int -> (
+    def box = h.Box(x)
+    h.mutateWith(box, hermetic (mut m : h.Box) : int -> ( m.x += 1 ; m.x ))
+)
+println(pureCaller(5) + h.applyOpt(5), ":", callMutate(16), ":", h.pureWrap(4, (v : int) : int -> ( v + 3 )))
+}}}}}
+16:17:7
+
+{{{{{
+;; Cross-module higher-order effect specialization rejects impure callback in pure caller
+def h = import("hof.ba")
+def bad = pure (x : int) : int -> (
+    h.apply(x, (v : int) : int -> ( println(v) ; v ))
+)
+println(bad(1))
+}}}}}
+Function bad declared pure violates pure guarantee
+
