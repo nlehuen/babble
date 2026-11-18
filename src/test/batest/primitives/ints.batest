@@ -1,0 +1,33 @@
+;; Basic int arithmetic, comparisons, wraparound, and type errors
+
+def Checked = value class (x : int) (
+    def div = (k : int) : int -> (
+        assert(k != 0, "Divide by zero")
+        int(this.x / k)
+    )
+)
+
+{{{{{
+def calc = (a : int, b) -> ( Checked(a) / b )
+print(calc(10, 2))
+}}}}}
+5
+
+{{{{{
+def calc = (a : int, b) -> ( Checked(a) / b )
+print(calc(10, 0))
+}}}}}
+Divide by zero
+
+{{{{{
+def calc = (a : int, b) -> ( Checked(a) / b )
+print(calc(10, "two"))
+}}}}}
+Type error : expected int, got string
+
+{{{{{
+def minV = -2147483648
+def maxV = 2147483647
+println(maxV + 1, ":", minV - 1, ":", -minV, ":", minV * -1)
+}}}}}
+-2147483648:2147483647:-2147483648:-2147483648
