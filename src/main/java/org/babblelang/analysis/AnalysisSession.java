@@ -2,8 +2,11 @@ package org.babblelang.analysis;
 
 import org.antlr.v4.runtime.ParserRuleContext;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -30,7 +33,7 @@ public final class AnalysisSession {
     final Map<ParserRuleContext, ScopeNode> scopeNodes = new HashMap<>();
     final Map<ParserRuleContext, ScopeNode> occurrenceScopes = new HashMap<>();
     /** The interfaces of the files earlier inputs imported statically, by import call. */
-    final Map<org.babblelang.parser.BabbleParser.CallContext, ModuleInterface> modules = new HashMap<>();
+    final Map<org.babblelang.parser.BabbleParser.CallContext, ModuleInterface> modules = new LinkedHashMap<>();
     /** The definitions some input assigned : nothing static is known of them any more. */
     final Set<ParserRuleContext> reassigned = new HashSet<>();
     /** Frozen inferred declaration types from earlier inputs (§6, Q5). */
@@ -41,6 +44,11 @@ public final class AnalysisSession {
     final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> javaEffects = new HashMap<>();
     /** Converged caller-visible summaries of functions and constructors from earlier inputs. */
     final Map<ParserRuleContext, EffectChecker.CallableSummary> callableSummaries = new HashMap<>();
+    /** Checkers of prior inputs and their imported modules by FileContext. */
+    final Map<ParserRuleContext, TypeChecker> owners = new HashMap<>();
+    private final List<ClassLoader> classLoaders = new ArrayList<>();
+    private final Map<String, String> interfaceJvmNames = new LinkedHashMap<>();
+    private final Map<String, ScopeAnalysis.TypeHierarchyInfo> typeHierarchies = new LinkedHashMap<>();
 
     /**
      * Makes an analysed input part of the session, for the inputs that follow.
@@ -54,7 +62,12 @@ public final class AnalysisSession {
         definitionScopes.putAll(pass.definitionScopes);
         scopeNodes.putAll(pass.scopeNodes);
         modules.putAll(pass.modules);
+        typeHierarchies.putAll(analysis.typeHierarchies());
         if (pass.checker != null) {
+            if (pass.checker.file() != null) {
+                owners.put(pass.checker.file(), pass.checker);
+            }
+            owners.putAll(pass.checker.ownersMap());
             declarationTypes.putAll(pass.checker.frozenDeclarations());
             memberTypes.putAll(pass.checker.frozenMembers());
             javaEffects.putAll(pass.checker.committedJavaEffects());
@@ -76,5 +89,35 @@ public final class AnalysisSession {
         }
         scope = file;
         return true;
+    }
+
+    public void recordCompilation(ClassLoader loader, Map<String, String> interfaceJvmNames) {
+        if (loader != null) {
+            boolean seen = false;
+            for (ClassLoader existing : classLoaders) {
+                if (existing == loader) {
+                    seen = true;
+                    break;
+                }
+            }
+            if (!seen) {
+                classLoaders.add(loader);
+            }
+        }
+        if (interfaceJvmNames != null && !interfaceJvmNames.isEmpty()) {
+            this.interfaceJvmNames.putAll(interfaceJvmNames);
+        }
+    }
+
+    public List<ClassLoader> classLoaders() {
+        return List.copyOf(classLoaders);
+    }
+
+    public Map<String, String> interfaceJvmNames() {
+        return Map.copyOf(interfaceJvmNames);
+    }
+
+    public ScopeAnalysis.TypeHierarchyInfo typeHierarchy(String id) {
+        return id != null ? typeHierarchies.get(id) : null;
     }
 }

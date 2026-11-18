@@ -516,6 +516,7 @@ final class TypeChecks {
             }
             pass.superProviders.put(pending.ctx(), provider);
             analysis.setSuperTarget(pending.ctx(), qualifier);
+            analysis.setSuperTargetInfo(pending.ctx(), superTargetInfo(owner, target, provider, member));
             return;
         }
 
@@ -545,6 +546,19 @@ final class TypeChecks {
         Map.Entry<Provider, Integer> chosen = providers.entrySet().iterator().next();
         pass.superProviders.put(pending.ctx(), chosen.getKey());
         analysis.setSuperTarget(pending.ctx(), owner.parentTypes.get(chosen.getValue()));
+        analysis.setSuperTargetInfo(pending.ctx(),
+                superTargetInfo(owner, owner.parents.get(chosen.getValue()), chosen.getKey(), member));
+    }
+
+    private static ScopeAnalysis.SuperTargetInfo superTargetInfo(TypeNode owner, Object direct, Provider provider, String memberName) {
+        return new ScopeAnalysis.SuperTargetInfo(
+                owner.id,
+                owner.isInterface(),
+                direct instanceof TypeNode tn ? tn.id : null,
+                direct instanceof Class<?> jc ? jc : null,
+                provider.owner() instanceof TypeNode tn ? tn.id : null,
+                provider.owner() instanceof Class<?> jc ? jc : null,
+                memberName);
     }
 
     private AnalysisException noDefault(Object parent, String member, int line) {

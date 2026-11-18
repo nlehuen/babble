@@ -81,12 +81,38 @@ public final class ScopeAnalysis {
     public record FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind) {
     }
 
+    public record ParentRef(String babbleTypeId, Class<?> javaClass) {
+    }
+
+    public record MemberSpec(String name, boolean hasDefault, boolean required, boolean callable, FunctionSignature declaredSignature) {
+    }
+
+    public record TypeHierarchyInfo(String id, ClassShape.Kind kind, String name, List<ParentRef> directParents,
+                                    java.util.Set<String> allBabbleInterfaceIds, java.util.Set<Class<?>> allJavaInterfaces,
+                                    Map<String, MemberSpec> interfaceMembers) {
+    }
+
+    public record SuperTargetInfo(String ownerTypeId, boolean ownerIsInterface,
+                                  String directBabbleTypeId, Class<?> directJavaClass,
+                                  String providerBabbleTypeId, Class<?> providerJavaClass,
+                                  String memberName) {
+    }
+
+    public record IsTarget(String typeId, ClassShape.Kind kind) {
+    }
+
+    public record InterfaceCallTarget(String interfaceTypeId, String memberName, FunctionSignature signature, boolean guaranteedCallable) {
+    }
+
     private final ParseTreeProperty<String[]> declared = new ParseTreeProperty<>();
     private final ParseTreeProperty<String[]> parameters = new ParseTreeProperty<>();
     private final ParseTreeProperty<Integer> requiredParameters = new ParseTreeProperty<>();
     private final ParseTreeProperty<ClassShape> shapes = new ParseTreeProperty<>();
     private final ParseTreeProperty<DefTarget> defTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<BabbleParser.TypeContext> superTargets = new ParseTreeProperty<>();
+    private final ParseTreeProperty<SuperTargetInfo> superTargetInfos = new ParseTreeProperty<>();
+    private final ParseTreeProperty<IsTarget> isTargets = new ParseTreeProperty<>();
+    private final ParseTreeProperty<InterfaceCallTarget> interfaceCallTargets = new ParseTreeProperty<>();
     private final List<Warning> warnings = new ArrayList<>();
     private final List<Warning> typeDiagnostics = new ArrayList<>();
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
@@ -104,8 +130,75 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<ModuleExportTarget> moduleExportTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<BabbleParser.FunctionLiteralContext> babbleCallFunctions = new ParseTreeProperty<>();
     private final ParseTreeProperty<FunctionSignature> babbleCallSignatures = new ParseTreeProperty<>();
+    private final Map<String, TypeHierarchyInfo> typeHierarchies = new java.util.LinkedHashMap<>();
+    private AnalysisSession session;
+    private List<ModuleInterface> importedModules = List.of();
     private Resolution resolution;
     private ModuleInterface moduleInterface;
+
+    void setSession(AnalysisSession session) {
+        this.session = session;
+    }
+
+    public AnalysisSession session() {
+        return session;
+    }
+
+    void setImportedModules(java.util.Collection<ModuleInterface> modules) {
+        this.importedModules = modules != null && !modules.isEmpty() ? List.copyOf(modules) : List.of();
+    }
+
+    public List<ModuleInterface> importedModules() {
+        return importedModules;
+    }
+
+    void setTypeHierarchy(String id, TypeHierarchyInfo info) {
+        if (id != null && info != null) {
+            typeHierarchies.put(id, info);
+        }
+    }
+
+    public Map<String, TypeHierarchyInfo> typeHierarchies() {
+        return Map.copyOf(typeHierarchies);
+    }
+
+    public TypeHierarchyInfo typeHierarchy(String id) {
+        if (id == null) {
+            return null;
+        }
+        TypeHierarchyInfo local = typeHierarchies.get(id);
+        if (local != null) {
+            return local;
+        }
+        if (session != null) {
+            TypeHierarchyInfo fromSession = session.typeHierarchy(id);
+            if (fromSession != null) {
+                return fromSession;
+            }
+        }
+        if (!importedModules.isEmpty()) {
+            java.util.Queue<ModuleInterface> queue = new java.util.ArrayDeque<>();
+            java.util.Set<ModuleInterface> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            for (ModuleInterface mod : importedModules) {
+                if (mod != null && visited.add(mod)) {
+                    queue.add(mod);
+                }
+            }
+            while (!queue.isEmpty()) {
+                ModuleInterface mod = queue.poll();
+                TypeHierarchyInfo fromModule = mod.typeHierarchy(id);
+                if (fromModule != null) {
+                    return fromModule;
+                }
+                for (ModuleInterface dep : mod.dependencies()) {
+                    if (dep != null && visited.add(dep)) {
+                        queue.add(dep);
+                    }
+                }
+            }
+        }
+        return null;
+    }
 
     void setModuleInterface(ModuleInterface moduleInterface) {
         this.moduleInterface = moduleInterface;
@@ -149,6 +242,18 @@ public final class ScopeAnalysis {
 
     void setSuperTarget(BabbleParser.SuperExpressionContext superExpression, BabbleParser.TypeContext type) {
         superTargets.put(superExpression, type);
+    }
+
+    void setSuperTargetInfo(BabbleParser.SuperExpressionContext superExpression, SuperTargetInfo info) {
+        superTargetInfos.put(superExpression, info);
+    }
+
+    void setIsTarget(BabbleParser.IsExpressionContext ctx, IsTarget target) {
+        isTargets.put(ctx, target);
+    }
+
+    void setInterfaceCallTarget(BabbleParser.CallContext ctx, InterfaceCallTarget target) {
+        interfaceCallTargets.put(ctx, target);
     }
 
     void setPass(BlockScopes pass) {
@@ -369,6 +474,18 @@ public final class ScopeAnalysis {
      */
     public BabbleParser.TypeContext superTarget(BabbleParser.SuperExpressionContext superExpression) {
         return superTargets.get(superExpression);
+    }
+
+    public SuperTargetInfo superTargetInfo(BabbleParser.SuperExpressionContext superExpression) {
+        return superTargetInfos.get(superExpression);
+    }
+
+    public IsTarget isTarget(BabbleParser.IsExpressionContext ctx) {
+        return isTargets.get(ctx);
+    }
+
+    public InterfaceCallTarget interfaceCallTarget(BabbleParser.CallContext ctx) {
+        return interfaceCallTargets.get(ctx);
     }
 
     private final Map<ParserRuleContext, EffectSet> callableEffects = new HashMap<>();

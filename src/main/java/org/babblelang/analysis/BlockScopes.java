@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -72,7 +73,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final List<PendingImport> imports = new ArrayList<>();
     final List<PendingEffectDecl> effectDeclarations = new ArrayList<>();
     /** The interfaces of the files imported statically, by import call. */
-    final Map<BabbleParser.CallContext, ModuleInterface> modules = new HashMap<>();
+    final Map<BabbleParser.CallContext, ModuleInterface> modules = new LinkedHashMap<>();
 
     /** The interactive session the file is an input of, or null. */
     final AnalysisSession session;
@@ -128,6 +129,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         BlockScopes pass = new BlockScopes(session, hostEffects);
         pass.moduleKey = loader != null ? loader.moduleKey() : null;
         pass.analysis.setPass(pass);
+        if (session != null) {
+            pass.analysis.setSession(session);
+        }
         pass.fileScope = pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
         // The exported names are known : a file importing this one back, in a cycle, sees them.
         ModuleInterface self = new ModuleInterface(pass);
@@ -136,10 +140,13 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             for (PendingImport pending : pass.imports) {
                 // A script that defines its own import calls it, not the implicit one.
                 if (TypeChecks.resolveName("import", pending.scope()) == null) {
-                    pass.modules.put(pending.ctx(), loader.load(pending.name(), pending.ctx().getStart().getLine()));
+                    ModuleInterface imported = loader.load(pending.name(), pending.ctx().getStart().getLine());
+                    pass.modules.put(pending.ctx(), imported);
+                    self.addDependency(imported);
                 }
             }
         }
+        pass.analysis.setImportedModules(pass.modules.values());
         TypeChecks checks = new TypeChecks(pass);
         checks.run();
         self.complete(checks);

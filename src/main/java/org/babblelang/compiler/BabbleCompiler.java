@@ -13,7 +13,9 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -51,9 +53,28 @@ public final class BabbleCompiler {
      */
     public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
                                                String moduleKey) {
+        return compile(engine, file, scopes, sourceName, moduleKey, List.of(), Map.of());
+    }
+
+    public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
+                                               String moduleKey, List<ClassLoader> dependencyLoaders, Map<String, String> knownInterfaceJvmNames) {
         String internalName = moduleKey != null ? className(moduleKey) : PACKAGE + "Script$" + COUNTER.incrementAndGet();
         ClassLoader runtimeLoader = BabbleCompiler.class.getClassLoader();
-        Map<String, byte[]> classes = new CodeGenerator(internalName, sourceName, scopes, runtimeLoader).generate(file);
+        ClassLoader tccl = Thread.currentThread().getContextClassLoader();
+        List<ClassLoader> delegates = new ArrayList<>();
+        if (tccl != null && tccl != runtimeLoader) {
+            delegates.add(tccl);
+        }
+        if (dependencyLoaders != null) {
+            for (ClassLoader dependencyLoader : dependencyLoaders) {
+                if (dependencyLoader != null) {
+                    delegates.add(dependencyLoader);
+                }
+            }
+        }
+        ClassLoader parentLoader = delegates.isEmpty() ? runtimeLoader : new CompositeClassLoader(runtimeLoader, delegates);
+        CodeGenerator generator = new CodeGenerator(internalName, sourceName, scopes, parentLoader, knownInterfaceJvmNames);
+        Map<String, byte[]> classes = generator.generate(file);
 
         String dump = System.getProperty(DUMP_CLASSES);
         Map<String, byte[]> byBinaryName = new LinkedHashMap<>();
@@ -67,7 +88,7 @@ public final class BabbleCompiler {
             byBinaryName.put(generated.getKey().replace('/', '.'), generated.getValue());
         }
 
-        ScriptClassLoader loader = new ScriptClassLoader(runtimeLoader, byBinaryName);
+        ScriptClassLoader loader = new ScriptClassLoader(parentLoader, byBinaryName);
         Class<?> scriptClass;
         try {
             scriptClass = loader.loadClass(internalName.replace('/', '.'));
@@ -87,7 +108,8 @@ public final class BabbleCompiler {
         } catch (ReflectiveOperationException e) {
             throw new BabbleException("Cannot load the compiled script", e);
         }
-        return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, file.getStart().getLine(), scopes.exports());
+        return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, file.getStart().getLine(), scopes.exports(),
+                generator.interfaceJvmNames());
     }
 
     /**
