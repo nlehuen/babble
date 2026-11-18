@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 010 |
 | **Date** | 2026-11-18 |
-| **Status** | Draft |
+| **Status** | Implemented (`RM004`; §7 records what landed and where it departs from this proposal) |
 | **Depends on** | Typed & JVM-interface bytecode lowering ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §19–§20), sessions ([bip004_repl.md](bip004_repl.md)), modules ([bip005_modules.md](bip005_modules.md)), function effects & algebraic contracts ([bip007_effects.md](bip007_effects.md)), mandatory static typing ([bip008_static-typing.md](bip008_static-typing.md)), systematic `.batest` coverage ([bip009_test-coverage.md](bip009_test-coverage.md)) |
 | **Scope** | Internal architecture and algorithms of `org.babblelang.analysis` (`TypeChecker`, `Type`, `ModuleInterface`, `AnalysisSession`, and the `EffectChecker` boundary); zero changes to language semantics, diagnostics, `Babble.g4`, `Formatter`, `org.babblelang.runtime`, `Interpreter`, or `CodeGenerator` |
 
@@ -24,6 +24,8 @@ This proposal specifies a **purely internal, zero-semantic-change refactoring** 
 
 Together, these changes shrink `TypeChecker.java` by **~79%** (from 6,828 lines to ~1,450 lines) and cut **~3,000 lines of duplicated logic** across the typing subsystem while preserving 100% parity across all `TypeCheckerTestCase` `line:column` goldens, all 758 `.batest` cases across 60 files (`BIP009` + `RM003`), `Rm003P1AnalysisTestCase`, `RuntimeBoundaryTestCase`, and `examples/raytracer-argon/scene.ppm`.
 
+
+> **Implemented in `RM004`.** §7 records the result: behavior is unchanged (identical diagnostics, lowering metadata and bytecode), `TypeChecker.java` went from 6,828 to 2,154 lines (−68%), but the subsystem as a whole did not shrink by the ~41% estimated in §4.7 — see §7.4.
 ---
 
 ## 2. Motivation & Quantitative Diagnosis
@@ -394,7 +396,82 @@ Every phase below is a **self-contained, behavior-preserving pull request**. No 
 
 ---
 
-## 7. Bibliography
+## 7. Implementation Notes (`RM004`)
+
+`RM004` implemented `BIP010-P1`–`P6` as a series of behavior-preserving steps. At each step, `mvn -B package` stayed green in both modes, and a parity harness compared the step with the previous one. The harness compiles 879 programs with `babblec`: every non-session `.batest` case, every `src/test/babble` script, and both ray tracers. It requires byte-identical jars, so lowering metadata and generated code are identical, and identical error-writer output, so every diagnostic and warning is identical.
+
+### 7.1 Collaborators
+
+All package-private in `org.babblelang.analysis` (`BIP010-D1`):
+
+| File | Lines | Role |
+|---|---:|---|
+| `TypeChecker.java` | 2,154 | Driver (`run`), expression rules (explicit `typeOf(ctx, expected, role)` dispatch), declarations and function signatures, `subsumes`/`coerce`, diagnostics |
+| `TypeAlgebra.java` | 800 | Instance bound to a five-method `Env`: `relate` (4 modes) + `ConstraintStore`, effect-free function relation, `overlapsErased`, `canCast`, `narrowTarget`/`subtractType`, `join`/`reassignmentJoin` (one function merge), projections, `substitute` |
+| `CallSolver.java` | 851 | Call dispatch (`call`), argument binding, generic Babble calls, function-value instantiation, SAM conversions, Java overloads, operator methods |
+| `JavaTypeBridge.java` | 694 | All `java.lang.reflect` translation, Java member lookup (`JavaMember`, `AssignedField`), class loading |
+| `LoweringAnalyzer.java` | 696 | Post-convergence `RM001`/`RM003`/`T9` publication, deriving every static dispatch target from the converged types |
+| `TypeAnnotations.java` | 476 | What annotations denote, type variables, declared types |
+| `MemberTypes.java` | 416 | Member resolution (instances, classes, packages, modules, Java values) and interface conformance |
+| `TypedModuleSummary.java` | 375 | AST-detached module summary and its builder, with a `Session` part for REPL inputs |
+| `SlotInference.java` | 351 | Tarjan ranking, the worklist, `SlotCell`s (defs, members, parameters, recursive results) |
+| `OperatorTypes.java` | 232 | Operators, operator methods, implicit names |
+| `StaticRefs.java` | 214 | Static singleton resolution for `is` targets and summaries |
+| `TypedProgram.java` | 211 | The queries `EffectChecker` makes, implemented (no forwarding twins left in `TypeChecker`) |
+| `Narrowing.java` | 185 | Refinement extraction (the `TypeEnv` companion), narrowable declarations, loop-assigned locals |
+| `TypeEnv.java` | 126 | Persistent occurrence-typing environment |
+| `ImportedSummaries.java` | 96 | The one lookup of other files: earlier session inputs, then every loaded module's summary |
+
+### 7.2 What landed, by decision
+
+- **`BIP010-D2` — one inference engine, one verification walk.** Inferred def, member, and parameter types come only from `SlotInference`. `run()` proceeds as follows:
+  1. The worklist converges the slots.
+  2. `EffectChecker.inferAll` infers effects.
+  3. The worklist re-converges once, so the function types the slots hold carry their inferred effects.
+  4. A single final walk verifies, checking each contribution against `SlotCell.foldBefore` (the source-ordered fold of the contributions before it).
+
+  The second accumulation path (`nextInferred*`, `recordInferred`, `commitInferred`) and its post-effects walk are deleted. A `null` parameter default seeds the parameter's cell, as it seeded the old path. A self-recursive unannotated function reads its result from a result cell, and the worklist re-evaluates its unit until the result is stable; this replaces `inferFunctionResult`'s nested two-pass trial with diagnostics rollback.
+- **`BIP010-D3`.** `ModuleInterface` holds a `TypedModuleSummary`. `BlockScopes` keeps the summary, never the `TypeChecker`, for sessions too, and `AnalysisSession.commit` reads summaries only. Callable effect templates are keyed by identity in sessions, as in modules. `ImportedSummaries` replaces six hand-written session-then-modules loops.
+- **`BIP010-D4`.** `CallSolver.solveAll` (bounds, then return hints with the `int`→`double` promotion, then completeness) serves Babble generic calls, function-value instantiation, SAM conversions and Java calls.
+- **`BIP010-D5`.** The typing walk records no lowering target. `LoweringAnalyzer` derives Java call, constructor and field targets, array lengths, indexed module exports, direct Babble calls and their primitive signatures, interface calls, and `is` targets from the converged types and the executables `CallSolver` resolved.
+- **`BIP010-D6`.** `TypedProgram` implements the effect queries itself. `EffectChecker` drops its own narrowing stack (`narrowedScopes`, `extractNarrowingForEffects`): the type of a name where it occurs is the narrowed type the typing walk recorded there.
+- **Bidirectional core (`BIP010-P4`).**
+  - The ANTLR visitor and its mutable `currentExpected`/`currentRole` are replaced by an explicit dispatch taking the expected type and role as parameters, threaded into `CallSolver` and function signatures.
+  - Every `int`→`double` conversion is recorded by one `coerce`; `subsumes` is a check plus `coerce`.
+  - `flowInto` replaces four copies of recording a value into a slot.
+- **One algebra (`BIP010-P2`).** Thirty `TypeChecker` wrappers around the algebra are gone. `TypeChecker` imports no `java.lang.reflect`.
+- **One Java generic solver (`BIP010-P3`).** `solveJava` serves both generic Java methods and constructors.
+
+### 7.3 Departures from the proposal
+
+- **Re-convergence after effect inference.** The worklist re-converges once after `inferAll` instead of skipping straight to the final walk. Without it, function types in slots keep their pre-inference effects: a session's summary would freeze `def sq = (x: int): int -> x * x` as not `deterministic`, and a later `pure deterministic` caller would be rejected (`ReplTestCase.testRm002EffectsAndAxiomsAcrossInputs`).
+- **`synth` returns a `Type`.** It does not return a `SynthResult`. `TypeEnv` stays a persistent value held in a field the walker threads through, and `Narrowing` computes `(whenTrue, whenFalse)` refinements from the test expression.
+- **`CallSolver` keeps five entry points.** Babble generic call, function-value instantiation, SAM conversion, Java method, and Java constructor each take different inputs. They share their cores (`matchArguments`, `solveAll`, `solveJava`, `ConstraintStore.solution`) rather than one `CallableSignature`-driven `solve`.
+- **`def` is not an `LValue`.** It is a declaration; `flowInto` unifies how `def`, `=` and `op=` feed inferred slots.
+- **Sessions keep earlier inputs' parse trees.** No earlier `TypeChecker` is retained, but earlier inputs' parse trees stay reachable through their scope nodes, because later inputs resolve names to earlier declarations (and the interpreter runs them). Module parse trees are detached once their summary is published.
+- **Structural `getParent()` walks remain.** Owning def, enclosing function, and argument-to-call walks stay; the role-dependent ones (callee, selector receiver, type-test right side) go through `Role`.
+
+### 7.4 Results
+
+| | Before `RM004` (`51747fd`) | After |
+|---|---:|---:|
+| `TypeChecker.java` | 6,828 lines | 2,154 lines (−68%) |
+| Typing subsystem (§4.7 files and the new collaborators) | 7,153 lines | 8,387 lines in 16 files |
+| `org.babblelang.analysis` | 14,130 lines | 15,554 lines |
+| `babblec`, 879 harness programs, steady-state | 10.4 s | 8.3 s (−21%) |
+| `-Pbatest` analysis coverage | — | 91.1% lines / 78.8% branches (9,000 executable lines) |
+
+The §4.7 estimate of ~4,200 lines for the whole subsystem did not materialize. The duplication removed was real: wrappers, the second inference path, the nested recursion trial, duplicated solvers and lookups, the effect bridge, and the narrowing stack. But splitting the monolith into focused classes added class scaffolding, documentation and cross-collaborator accessors, and the expression rules themselves kept their edge cases.
+
+Verification at the end of `RM004`:
+- `mvn -B package`: 1,398 tests in each of the `interpret` and `compile` (`CheckClassAdapter`) runs.
+- `mvn -q verify -Pbatest`: 869 cases in 61 files, 0 divergences.
+- The parity harness: identical against the commit before.
+- `examples/raytracer-argon/scene.ppm`: byte-identical.
+
+---
+
+## 8. Bibliography
 
 - **`[PT00]`** Benjamin C. Pierce and David N. Turner. *"[Local Type Inference](https://doi.org/10.1145/345099.345100)."* **ACM Transactions on Programming Languages and Systems (TOPLAS)**, 22(1):1–44, January 2000. DOI: [`10.1145/345099.345100`](https://doi.org/10.1145/345099.345100) ([PDF](https://www.cis.upenn.edu/~bcpierce/papers/lti-toplas.pdf)). *(Preliminary version in [POPL 1998, pp. 252–265](https://doi.org/10.1145/268946.268967).)*
   - **Summary:** Pierce and Turner introduce *local type inference* for an impredicative System $F_\le$ calculus extended with `Top` and `Bot`—combining call-site *local type argument synthesis* via variable elimination and matching-modulo-subtyping interval constraints ($S_i <: X_i <: T_i$) solved by variance-sensitive minimal substitutions $\sigma_{CR}$ with syntax-directed *bidirectional checking* ($\Rightarrow$ / $\Leftarrow$)—and prove soundness, completeness, and principal-result optimality relative to explicit Kernel $F_\le$.
