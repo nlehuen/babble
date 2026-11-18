@@ -9,8 +9,9 @@ import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.CallSite;
-import org.babblelang.runtime.Operators;
 import org.babblelang.runtime.ClassShape;
+import org.babblelang.runtime.JavaTypes;
+import org.babblelang.runtime.Operators;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Handle;
 import org.objectweb.asm.Label;
@@ -307,6 +308,214 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             pushStringArray(m, argTexts);
             m.visitMethodInsn(INVOKESPECIAL, CALL_SITE, "<init>", "(Ljava/lang/String;ILjava/lang/String;[Ljava/lang/String;)V", false);
         });
+    }
+
+    private String javaCallSiteField(String calleeText, int arity) {
+        String[] argTexts = new String[arity];
+        for (int i = 0; i < arity; i++) {
+            argTexts[i] = "<argument " + i + ">";
+        }
+        return addConstant("CS", "L" + CALL_SITE + ";", 24 + estimateSize(argTexts), m -> {
+            m.visitTypeInsn(NEW, CALL_SITE);
+            m.visitInsn(DUP);
+            pushString(m, "<java>");
+            pushInt(m, -1);
+            pushString(m, calleeText);
+            pushStringArray(m, argTexts);
+            m.visitMethodInsn(INVOKESPECIAL, CALL_SITE, "<init>", "(Ljava/lang/String;ILjava/lang/String;[Ljava/lang/String;)V", false);
+        });
+    }
+
+    private static void emitPushClassConstant(MethodVisitor m, Class<?> cls) {
+        if (cls.isPrimitive()) {
+            String wrapper = Type.getInternalName(JavaTypes.box(cls));
+            m.visitFieldInsn(GETSTATIC, wrapper, "TYPE", "Ljava/lang/Class;");
+        } else {
+            m.visitLdcInsn(Type.getType(cls));
+        }
+    }
+
+    private static void emitAdaptBoxedAndWiden(MethodVisitor m, ScopeAnalysis.PrimitiveKind targetKind, boolean widensToDouble) {
+        if (targetKind == ScopeAnalysis.PrimitiveKind.NONE && widensToDouble) {
+            m.visitMethodInsn(INVOKESTATIC, VALUES, "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        } else {
+            emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, targetKind);
+        }
+    }
+
+    private static void emitLoadJavaBridgeArg(MethodVisitor m, Class<?> pType, int slot,
+                                              ScopeAnalysis.PrimitiveKind targetKind, boolean widensToDouble) {
+        if (pType == int.class) {
+            m.visitVarInsn(ILOAD, slot);
+            if (targetKind == ScopeAnalysis.PrimitiveKind.DOUBLE) {
+                m.visitInsn(I2D);
+            } else if (targetKind == ScopeAnalysis.PrimitiveKind.NONE && widensToDouble) {
+                m.visitInsn(I2D);
+                boxOn(m, ScopeAnalysis.PrimitiveKind.DOUBLE);
+            } else {
+                emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.INT, targetKind);
+            }
+            return;
+        }
+        if (pType == double.class) {
+            m.visitVarInsn(DLOAD, slot);
+            emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.DOUBLE, targetKind);
+            return;
+        }
+        if (pType == boolean.class) {
+            m.visitVarInsn(ILOAD, slot);
+            emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.BOOL, targetKind);
+            return;
+        }
+        if (pType == byte.class) {
+            m.visitVarInsn(ILOAD, slot);
+            m.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+            emitAdaptBoxedAndWiden(m, targetKind, widensToDouble);
+            return;
+        }
+        if (pType == short.class) {
+            m.visitVarInsn(ILOAD, slot);
+            m.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
+            emitAdaptBoxedAndWiden(m, targetKind, widensToDouble);
+            return;
+        }
+        if (pType == char.class) {
+            m.visitVarInsn(ILOAD, slot);
+            m.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+            emitAdaptBoxedAndWiden(m, targetKind, widensToDouble);
+            return;
+        }
+        if (pType == long.class) {
+            m.visitVarInsn(LLOAD, slot);
+            m.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+            emitAdaptBoxedAndWiden(m, targetKind, widensToDouble);
+            return;
+        }
+        if (pType == float.class) {
+            m.visitVarInsn(FLOAD, slot);
+            m.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+            emitAdaptBoxedAndWiden(m, targetKind, widensToDouble);
+            return;
+        }
+        if (pType == Integer.class || pType == Double.class || pType == Boolean.class) {
+            m.visitLdcInsn(Type.getType(pType));
+            m.visitVarInsn(ALOAD, slot);
+            m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "checkBoxed", "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;", false);
+            emitAdaptBoxedAndWiden(m, targetKind, widensToDouble);
+            return;
+        }
+        m.visitVarInsn(ALOAD, slot);
+        if (pType != String.class) {
+            m.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        }
+        emitAdaptBoxedAndWiden(m, targetKind, widensToDouble);
+    }
+
+    private static void emitPackJavaBridgeArgs(MethodVisitor m, Class<?>[] paramTypes, int[] javaParamSlots) {
+        if (paramTypes.length == 0) {
+            m.visitFieldInsn(GETSTATIC, ARGUMENTS, "NONE", "[Ljava/lang/Object;");
+            return;
+        }
+        pushInt(m, paramTypes.length);
+        m.visitTypeInsn(ANEWARRAY, OBJECT);
+        for (int i = 0; i < paramTypes.length; i++) {
+            m.visitInsn(DUP);
+            pushInt(m, i);
+            emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ScopeAnalysis.PrimitiveKind.NONE, false);
+            m.visitInsn(AASTORE);
+        }
+    }
+
+    private static void emitReturnToJava(MethodVisitor m, ScopeAnalysis.PrimitiveKind fromKind, Class<?> retType,
+                                         String description, int rtSlot) {
+        if (retType == void.class) {
+            m.visitInsn(fromKind == ScopeAnalysis.PrimitiveKind.DOUBLE ? POP2 : POP);
+            m.visitInsn(RETURN);
+            return;
+        }
+        if (retType == int.class && fromKind == ScopeAnalysis.PrimitiveKind.INT) {
+            m.visitInsn(IRETURN);
+            return;
+        }
+        if (retType == double.class && (fromKind == ScopeAnalysis.PrimitiveKind.DOUBLE || fromKind == ScopeAnalysis.PrimitiveKind.INT)) {
+            if (fromKind == ScopeAnalysis.PrimitiveKind.INT) {
+                m.visitInsn(I2D);
+            }
+            m.visitInsn(DRETURN);
+            return;
+        }
+        if (retType == boolean.class && fromKind == ScopeAnalysis.PrimitiveKind.BOOL) {
+            m.visitInsn(IRETURN);
+            return;
+        }
+        boxOn(m, fromKind);
+        emitPushClassConstant(m, retType);
+        pushString(m, description);
+        m.visitVarInsn(ALOAD, rtSlot);
+        m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "convertResult",
+                "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+        if (retType == int.class) {
+            m.visitTypeInsn(CHECKCAST, "java/lang/Integer");
+            m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false);
+            m.visitInsn(IRETURN);
+        } else if (retType == double.class) {
+            m.visitTypeInsn(CHECKCAST, "java/lang/Double");
+            m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Double", "doubleValue", "()D", false);
+            m.visitInsn(DRETURN);
+        } else if (retType == boolean.class) {
+            m.visitTypeInsn(CHECKCAST, "java/lang/Boolean");
+            m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+            m.visitInsn(IRETURN);
+        } else if (retType == long.class) {
+            m.visitTypeInsn(CHECKCAST, "java/lang/Long");
+            m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Long", "longValue", "()J", false);
+            m.visitInsn(LRETURN);
+        } else if (retType == float.class) {
+            m.visitTypeInsn(CHECKCAST, "java/lang/Float");
+            m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Float", "floatValue", "()F", false);
+            m.visitInsn(FRETURN);
+        } else if (retType == short.class) {
+            m.visitTypeInsn(CHECKCAST, "java/lang/Short");
+            m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Short", "shortValue", "()S", false);
+            m.visitInsn(IRETURN);
+        } else if (retType == byte.class) {
+            m.visitTypeInsn(CHECKCAST, "java/lang/Byte");
+            m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Byte", "byteValue", "()B", false);
+            m.visitInsn(IRETURN);
+        } else if (retType == char.class) {
+            m.visitTypeInsn(CHECKCAST, "java/lang/Character");
+            m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Character", "charValue", "()C", false);
+            m.visitInsn(IRETURN);
+        } else {
+            if (retType != Object.class) {
+                m.visitTypeInsn(CHECKCAST, Type.getInternalName(retType));
+            }
+            m.visitInsn(ARETURN);
+        }
+    }
+
+    private static boolean conflictsWithBabbleInstanceMethod(Class<?> jc) {
+        for (java.lang.reflect.Method jm : jc.getMethods()) {
+            if (java.lang.reflect.Modifier.isStatic(jm.getModifiers()) || JavaTypes.isObjectMethod(jm)) {
+                continue;
+            }
+            try {
+                org.babblelang.runtime.BabbleInstance.class.getDeclaredMethod(jm.getName(), jm.getParameterTypes());
+                return true;
+            } catch (NoSuchMethodException ignored) {
+            }
+        }
+        return false;
+    }
+
+    private static void collectImplementableJavaInterfaces(Class<?> iface, java.util.Set<Class<?>> out) {
+        if (iface == null || !iface.isInterface() || !JavaTypes.isAccessible(iface)
+                || conflictsWithBabbleInstanceMethod(iface) || !out.add(iface)) {
+            return;
+        }
+        for (Class<?> parent : iface.getInterfaces()) {
+            collectImplementableJavaInterfaces(parent, out);
+        }
     }
 
     private InheritedDefault findInheritedDefault(ScopeAnalysis.TypeHierarchyInfo ownerHierarchy, String memberName) {
@@ -675,6 +884,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         final ClassShape shape;
         final boolean arrayBacked;
         final String[] implementedInterfaces;
+        final List<Class<?>> javaInterfaces;
         final ClassWriter writer;
         final List<Resolution.Variable> hiddenCells = new ArrayList<>();
         final ScopeAnalysis.PrimitiveKind[] memberKinds;
@@ -682,12 +892,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         final int primDefCount;
         final Map<String, String> superHelpers = new HashMap<>();
 
-        ClassGen(ParserRuleContext ctx, String name, ClassShape shape, boolean arrayBacked, String[] implementedInterfaces) {
+        ClassGen(ParserRuleContext ctx, String name, ClassShape shape, boolean arrayBacked,
+                 String[] implementedInterfaces, List<Class<?>> javaInterfaces) {
             this.ctx = ctx;
             this.name = name;
             this.shape = shape;
             this.arrayBacked = arrayBacked;
             this.implementedInterfaces = implementedInterfaces;
+            this.javaInterfaces = javaInterfaces;
             this.writer = new ScriptClassWriter(runtimeLoader, className, generatedClassParents, generatedInterfaceParents);
             if (arrayBacked) {
                 this.memberKinds = new ScopeAnalysis.PrimitiveKind[0];
@@ -777,6 +989,16 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             writer.visit(V21, ACC_PUBLIC | ACC_FINAL | ACC_SUPER | ACC_SYNTHETIC, name, null, BABBLE_INSTANCE,
                     implementedInterfaces.length == 0 ? null : implementedInterfaces);
             writer.visitSource(sourceName, null);
+            if (!javaInterfaces.isEmpty()) {
+                MethodVisitor lookupMv = writer.visitMethod(ACC_PROTECTED | ACC_SYNTHETIC, "javaDefaultLookup",
+                        "()Ljava/lang/invoke/MethodHandles$Lookup;", null, null);
+                lookupMv.visitCode();
+                lookupMv.visitMethodInsn(INVOKESTATIC, "java/lang/invoke/MethodHandles", "lookup",
+                        "()Ljava/lang/invoke/MethodHandles$Lookup;", false);
+                lookupMv.visitInsn(ARETURN);
+                lookupMv.visitMaxs(0, 0);
+                lookupMv.visitEnd();
+            }
             if (arrayBacked) {
                 MethodVisitor init = writer.visitMethod(ACC_PUBLIC, "<init>", "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)V", null, null);
                 init.visitCode();
@@ -910,6 +1132,166 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 m.visitMaxs(0, 0);
                 m.visitEnd();
             }
+            if (!javaInterfaces.isEmpty()) {
+                emitJavaInterfaceBridges(hierarchy, ancestors);
+            }
+        }
+
+        private void emitJavaInterfaceBridges(ScopeAnalysis.TypeHierarchyInfo hierarchy,
+                                              Map<String, AncestorMethod> babbleAncestors) {
+            java.util.TreeMap<String, List<java.lang.reflect.Method>> grouped = new java.util.TreeMap<>();
+            for (Class<?> jc : javaInterfaces) {
+                for (java.lang.reflect.Method jm : jc.getMethods()) {
+                    if (java.lang.reflect.Modifier.isStatic(jm.getModifiers()) || JavaTypes.isObjectMethod(jm)) {
+                        continue;
+                    }
+                    String key = jm.getName() + "#" + Type.getMethodDescriptor(jm);
+                    grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(jm);
+                }
+            }
+            for (List<java.lang.reflect.Method> candidates : grouped.values()) {
+                candidates.sort(java.util.Comparator
+                        .comparing(java.lang.reflect.Method::isBridge)
+                        .thenComparing(m -> m.getDeclaringClass().getName()));
+                java.lang.reflect.Method jm = candidates.get(0);
+                String mName = jm.getName();
+                int ownIdx = shape.memberIndex(mName);
+                boolean ownMethod = ownIdx >= 0 && shape.isMethod(ownIdx);
+                InheritedDefault inheritedBabbleDefault = ownIdx < 0 ? findInheritedDefault(hierarchy, mName) : null;
+                boolean hasBabbleImpl = ownMethod || inheritedBabbleDefault != null;
+                if (!hasBabbleImpl) {
+                    boolean hasActiveJavaDefault = false;
+                    for (java.lang.reflect.Method cand : candidates) {
+                        if (cand.isDefault()) {
+                            boolean reabstracted = false;
+                            for (java.lang.reflect.Method other : candidates) {
+                                if (!other.isDefault()
+                                        && other.getDeclaringClass() != cand.getDeclaringClass()
+                                        && cand.getDeclaringClass().isAssignableFrom(other.getDeclaringClass())) {
+                                    reabstracted = true;
+                                    break;
+                                }
+                            }
+                            if (!reabstracted) {
+                                hasActiveJavaDefault = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hasActiveJavaDefault) {
+                        continue;
+                    }
+                }
+                emitJavaMethodBridge(jm, ownMethod, inheritedBabbleDefault, babbleAncestors.get(mName));
+            }
+        }
+
+        private void emitJavaMethodBridge(java.lang.reflect.Method jm, boolean ownMethod,
+                                          InheritedDefault inheritedBabbleDefault, AncestorMethod babbleAnc) {
+            String mName = jm.getName();
+            String jvmDesc = Type.getMethodDescriptor(jm);
+            Class<?>[] paramTypes = jm.getParameterTypes();
+            Class<?> retType = jm.getReturnType();
+            int access = ACC_PUBLIC | ACC_SYNTHETIC | (jm.isBridge() ? ACC_BRIDGE : 0);
+            MethodVisitor m = writer.visitMethod(access, mName, jvmDesc, null, null);
+            m.visitCode();
+
+            if (!ownMethod && inheritedBabbleDefault == null) {
+                m.visitTypeInsn(NEW, RUNTIME + "BabbleException");
+                m.visitInsn(DUP);
+                pushString(m, "No implementation of " + JavaTypes.signature(jm));
+                m.visitMethodInsn(INVOKESPECIAL, RUNTIME + "BabbleException", "<init>", "(Ljava/lang/String;)V", false);
+                m.visitInsn(ATHROW);
+                m.visitMaxs(0, 0);
+                m.visitEnd();
+                return;
+            }
+
+            int[] javaParamSlots = new int[paramTypes.length];
+            int nextSlot = 1;
+            for (int i = 0; i < paramTypes.length; i++) {
+                javaParamSlots[i] = nextSlot;
+                nextSlot += (paramTypes[i] == double.class || paramTypes[i] == long.class) ? 2 : 1;
+            }
+            int rtSlot = nextSlot;
+            m.visitVarInsn(ALOAD, 0);
+            m.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "runtime", "()L" + SCRIPT_RUNTIME + ";", false);
+            m.visitVarInsn(ASTORE, rtSlot);
+            String descText = shape.name() + "." + mName;
+
+            if (ownMethod && !arrayBacked) {
+                BabbleParser.FunctionLiteralContext lit = methodLiteral(mName);
+                int litCount = scopes.parameters(lit).length;
+                m.visitVarInsn(ALOAD, 0);
+                m.visitInsn(DUP);
+                m.visitFieldInsn(GETFIELD, name, mName, "Ljava/lang/Object;");
+                m.visitLdcInsn(mName);
+                m.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                m.visitTypeInsn(CHECKCAST, COMPILED_METHOD);
+                m.visitVarInsn(ALOAD, rtSlot);
+                if (hasSpec(lit) && paramTypes.length == litCount) {
+                    List<BabbleParser.ParameterDeclarationContext> decls = lit.parametersDeclaration().parameterDeclaration();
+                    for (int i = 0; i < paramTypes.length; i++) {
+                        BabbleParser.ParameterDeclarationContext decl = decls.get(i);
+                        ScopeAnalysis.PrimitiveKind toK = scopes.declarationKind(decl);
+                        emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], toK, scopes.widensToDouble(decl));
+                    }
+                    m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + "$spec", methodSpecDescriptor(lit), false);
+                    emitReturnToJava(m, scopes.functionReturnKind(lit), retType, descText, rtSlot);
+                } else if (isSpread(lit) && paramTypes.length <= litCount) {
+                    m.visitInsn(ACONST_NULL);
+                    for (int i = 0; i < paramTypes.length; i++) {
+                        emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ScopeAnalysis.PrimitiveKind.NONE, false);
+                    }
+                    for (int i = paramTypes.length; i < litCount; i++) {
+                        m.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
+                    }
+                    m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName), methodDirectDescriptor(lit), false);
+                    emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
+                } else {
+                    String siteField = javaCallSiteField(mName, paramTypes.length);
+                    emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
+                    m.visitInsn(ACONST_NULL);
+                    m.visitFieldInsn(GETSTATIC, className, siteField, "L" + CALL_SITE + ";");
+                    m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + (isSpread(lit) ? "$call" : ""), METHOD_DESCRIPTOR, false);
+                    emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
+                }
+                m.visitMaxs(0, 0);
+                m.visitEnd();
+                return;
+            }
+
+            if (inheritedBabbleDefault != null && babbleAnc != null
+                    && babbleAnc.signature().parameterKinds().length == paramTypes.length) {
+                ScopeAnalysis.FunctionSignature ancSig = babbleAnc.signature();
+                m.visitVarInsn(ALOAD, 0);
+                m.visitVarInsn(ALOAD, rtSlot);
+                for (int i = 0; i < paramTypes.length; i++) {
+                    emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ancSig.parameterKinds()[i], false);
+                }
+                m.visitMethodInsn(INVOKEVIRTUAL, name, bridgeMethodName(mName), babbleAnc.descriptor(), false);
+                emitReturnToJava(m, ancSig.returnKind(), retType, descText, rtSlot);
+                m.visitMaxs(0, 0);
+                m.visitEnd();
+                return;
+            }
+
+            String siteField = javaCallSiteField(mName, paramTypes.length);
+            m.visitVarInsn(ALOAD, 0);
+            m.visitLdcInsn(mName);
+            m.visitInsn(ICONST_0);
+            m.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "getMember", "(Ljava/lang/String;Z)Ljava/lang/Object;", false);
+            m.visitFieldInsn(GETSTATIC, className, siteField, "L" + CALL_SITE + ";");
+            m.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
+            m.visitVarInsn(ALOAD, rtSlot);
+            emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
+            m.visitInsn(ACONST_NULL);
+            m.visitFieldInsn(GETSTATIC, className, siteField, "L" + CALL_SITE + ";");
+            m.visitMethodInsn(INVOKEINTERFACE, CALLABLE, "call",
+                    "(L" + SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", true);
+            emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
+            m.visitMaxs(0, 0);
+            m.visitEnd();
         }
 
         void emitMarkDefined(MethodVisitor m, int instanceLocal, int memberIndex) {
@@ -1157,28 +1539,31 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         for (Map.Entry<String, String> entry : ownInterfaceJvmNames.entrySet()) {
             String ifaceId = entry.getKey();
             String jvmName = entry.getValue();
-            List<String> allParents = new ArrayList<>();
-            List<String> babbleExtended = new ArrayList<>();
+            List<String> extended = new ArrayList<>();
             ScopeAnalysis.TypeHierarchyInfo info = scopes.typeHierarchy(ifaceId);
             if (info != null) {
                 for (ScopeAnalysis.ParentRef parent : info.directParents()) {
                     if (parent.babbleTypeId() != null) {
                         String parentJvm = allInterfaceJvmNames.get(parent.babbleTypeId());
-                        if (parentJvm != null) {
-                            allParents.add(parentJvm);
-                            babbleExtended.add(parentJvm);
+                        if (parentJvm != null && !extended.contains(parentJvm)) {
+                            extended.add(parentJvm);
                         }
                     } else if (parent.javaClass() != null) {
-                        // In RM003-P2, only Babble interfaces are placed in JVM extends; Java interfaces are added in RM003-P3.
-                        allParents.add(Type.getInternalName(parent.javaClass()));
+                        Class<?> jc = parent.javaClass();
+                        if (jc.isInterface() && JavaTypes.isAccessible(jc) && !conflictsWithBabbleInstanceMethod(jc)) {
+                            String javaInternal = Type.getInternalName(jc);
+                            if (!extended.contains(javaInternal)) {
+                                extended.add(javaInternal);
+                            }
+                        }
                     }
                 }
             }
-            generatedInterfaceParents.put(jvmName, List.copyOf(babbleExtended));
+            generatedInterfaceParents.put(jvmName, List.copyOf(extended));
             BabbleParser.InterfaceExpressionContext ctx = localIfaces.get(ifaceId);
             if (ctx != null) {
                 ClassShape shape = scopes.shape(ctx);
-                InterfaceGen gen = new InterfaceGen(ctx, jvmName, shape, babbleExtended.toArray(new String[0]));
+                InterfaceGen gen = new InterfaceGen(ctx, jvmName, shape, extended.toArray(new String[0]));
                 interfaceGens.put(ctx, gen);
                 interfaceGensById.put(ifaceId, gen);
             }
@@ -1222,7 +1607,22 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         return classes;
     }
 
-    private List<String> implementedBabbleInterfaces(ClassShape shape) {
+    private List<Class<?>> implementableJavaInterfaces(ClassShape shape) {
+        if (shape == null) {
+            return List.of();
+        }
+        ScopeAnalysis.TypeHierarchyInfo info = scopes.typeHierarchy(shape.id());
+        if (info == null) {
+            return List.of();
+        }
+        java.util.Set<Class<?>> javaIfaces = new java.util.LinkedHashSet<>();
+        for (Class<?> jc : info.allJavaInterfaces()) {
+            collectImplementableJavaInterfaces(jc, javaIfaces);
+        }
+        return List.copyOf(javaIfaces);
+    }
+
+    private List<String> implementedInterfaces(ClassShape shape, List<Class<?>> javaIfaces) {
         if (shape == null) {
             return List.of();
         }
@@ -1239,6 +1639,12 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 }
             }
         }
+        for (Class<?> jc : javaIfaces) {
+            String javaInternal = Type.getInternalName(jc);
+            if (!implemented.contains(javaInternal)) {
+                implemented.add(javaInternal);
+            }
+        }
         return implemented;
     }
 
@@ -1246,7 +1652,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private ClassGen classGen(ParserRuleContext ctx) {
         ClassShape shape = scopes.shape(ctx);
         boolean arrayBacked = resolution.isNamespaceScope(ctx);
-        List<String> implemented = implementedBabbleInterfaces(shape);
+        List<Class<?>> javaIfaces = implementableJavaInterfaces(shape);
+        List<String> implemented = implementedInterfaces(shape, javaIfaces);
         if (arrayBacked && !preassignedClassNames.containsKey(ctx) && implemented.isEmpty()) {
             return null;
         }
@@ -1258,7 +1665,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             parents.add(BABBLE_INSTANCE);
             parents.addAll(implemented);
             generatedClassParents.put(name, List.copyOf(parents));
-            ClassGen gen = new ClassGen(c, name, shape, arrayBacked, implemented.toArray(new String[0]));
+            ClassGen gen = new ClassGen(c, name, shape, arrayBacked, implemented.toArray(new String[0]), javaIfaces);
             gen.begin();
             return gen;
         });
