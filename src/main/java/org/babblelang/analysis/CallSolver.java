@@ -28,10 +28,119 @@ import java.util.stream.Collectors;
  */
 final class CallSolver {
     private final TypeChecker checker;
+    /** The Java method or constructor each call resolved to (for effects and lowering). */
+    private final Map<BabbleParser.CallContext, Method> resolvedMethods = new java.util.IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, Constructor<?>> resolvedConstructors = new java.util.IdentityHashMap<>();
 
     CallSolver(TypeChecker checker) {
         this.checker = checker;
     }
+
+    /** Forgets what a walk resolved, before the next one. */
+    void reset() {
+        resolvedMethods.clear();
+        resolvedConstructors.clear();
+    }
+
+    Method resolvedMethod(BabbleParser.CallContext call) {
+        return resolvedMethods.get(call);
+    }
+
+    Constructor<?> resolvedConstructor(BabbleParser.CallContext call) {
+        return resolvedConstructors.get(call);
+    }
+
+    /** The type of a call of {@code callee} ; {@code recordTarget} records its static dispatch target (not for a union member). */
+    Type call(Type callee, BabbleParser.CallContext ctx, boolean recordTarget) {
+        List<BabbleParser.CallParameterContext> arguments = ctx.callParameters().callParameter();
+        if (callee == Type.ERROR || callee == Type.NOTHING) {
+            return Type.ERROR;
+        }
+        if (callee == Type.PRINT) {
+            Type appendable = new Type.JavaInstance(Appendable.class);
+            for (BabbleParser.CallParameterContext argument : arguments) {
+                if (argument.ID() != null && "to".equals(argument.ID().getText())) {
+                    checker.subsumes(argument.expression(), null, checker.check(argument.expression(), appendable), appendable);
+                } else {
+                    checker.check(argument.expression(), Type.NULLABLE_ANY);
+                }
+            }
+            return Type.NULL;
+        }
+        if (callee instanceof Type.Union union) {
+            if (Type.containsNull(union)) {
+                checker.warn(ctx.expression().getText() + " is not callable", ctx);
+                return Type.ERROR;
+            }
+            for (Type member : union.members()) {
+                if (!TypeAlgebra.isCallable(member)) {
+                    checker.warn(ctx.expression().getText() + " is not callable", ctx);
+                    return Type.ERROR;
+                }
+            }
+            List<Type> results = new ArrayList<>(union.members().size());
+            for (Type member : union.members()) {
+                Type r = call(member, ctx, false);
+                if (r == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                results.add(r);
+            }
+            return Type.union(results);
+        }
+        if (callee instanceof Type.Function function) {
+            List<BabbleParser.ParameterDeclarationContext> decls = checker.parameterDecls(function);
+            if (function.typeParameters().isEmpty()) {
+                bind(function.parameters(), decls, arguments, ctx);
+                if (recordTarget) {
+                    checker.recordBabbleCall(function, arguments, ctx);
+                    checker.recordInterfaceCall(arguments, ctx);
+                }
+                return function.result();
+            }
+            Type result = genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
+                    arguments, ctx, ctx.expression().getText());
+            if (recordTarget && result != Type.ERROR) {
+                checker.recordInterfaceCall(arguments, ctx);
+            }
+            return result;
+        }
+        if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
+            TypeNode node = value.node();
+            List<Type.TypeVar> classVars = checker.typeVarsOf(node);
+            List<Type.Parameter> parameters = checker.constructorParameters(node);
+            List<BabbleParser.ParameterDeclarationContext> decls = checker.parameterDecls(node);
+            if (classVars.isEmpty()) {
+                if (parameters != null) {
+                    bind(parameters, decls, arguments, ctx);
+                }
+                return new Type.Instance(node);
+            }
+            if (parameters == null) {
+                parameters = List.of();
+            }
+            Type patternReturn = new Type.Instance(node, List.copyOf(classVars));
+            return genericBabbleCall(classVars, parameters, decls, patternReturn, arguments, ctx, node.name);
+        }
+        if (callee instanceof Type.JavaClassValue value) {
+            Class<?> java = value.type();
+            if (java.isInterface() && arguments.size() == 1 && arguments.get(0).ID() == null
+                    && JavaTypes.isFunctionalInterface(java)) {
+                return javaGenericSamCall(java, arguments.get(0).expression(), ctx);
+            }
+            return javaConstructorCall(java, arguments, ctx, recordTarget);
+        }
+        if (callee instanceof Type.JavaMethod method) {
+            List<Method> candidates = JavaTypes.methods(method.owner(), method.name());
+            Map<TypeVariable<?>, Type> receiverEnv = method.typeArguments().isEmpty()
+                    ? Map.of() : JavaTypeBridge.javaTypeEnv(method.owner(), method.typeArguments());
+            return javaMethodCall(candidates, method.owner().getCanonicalName() + "." + method.name(),
+                    receiverEnv, arguments, ctx, recordTarget);
+        }
+        checker.warn(ctx.expression().getText() + " is not callable", ctx);
+        return Type.ERROR;
+    }
+
 
     /**
      * Instantiates an unapplied generic function value {@code fn} against {@code expected}.
@@ -62,17 +171,10 @@ final class CallSolver {
         if (!checker.algebra().relate(unparameterized, expectedFn, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
             return unparameterized;
         }
-        Map<Type.TypeVar, Type> inferred = new HashMap<>();
-        for (Type.TypeVar tv : fn.typeParameters()) {
-            Type resolved = store.lower(tv);
-            if (resolved == null && !store.uppers(tv).isEmpty()) {
-                resolved = store.uppers(tv).get(0);
-            }
-            if (resolved == null) {
-                checker.warn("Missing type : cannot infer type arguments for " + ctx.ID().getText(), ctx);
-                return Type.ERROR;
-            }
-            inferred.put(tv, resolved);
+        Map<Type.TypeVar, Type> inferred = solveAll(fn.typeParameters(), store, Map.of(), List.of(), List.of());
+        if (inferred == null) {
+            checker.warn("Missing type : cannot infer type arguments for " + ctx.ID().getText(), ctx);
+            return Type.ERROR;
         }
         return checker.algebra().substitute(unparameterized, inferred);
     }
@@ -83,28 +185,13 @@ final class CallSolver {
     void bind(List<Type.Parameter> parameters, List<BabbleParser.ParameterDeclarationContext> declarations,
               List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
         int count = arguments.size();
-        String[] names = new String[count];
-        boolean named = false;
-        for (int i = 0; i < count; i++) {
-            if (arguments.get(i).ID() != null) {
-                names[i] = arguments.get(i).ID().getText();
-                named = true;
-            }
-        }
+        String[] names = argumentNames(arguments);
+        boolean named = Arrays.stream(names).anyMatch(java.util.Objects::nonNull);
         boolean[] consumed = new boolean[count];
+        int[] matched = matchArguments(parameters, names, consumed);
         for (int index = 0; index < parameters.size(); index++) {
             Type.Parameter parameter = parameters.get(index);
-            int found = -1;
-            for (int i = 0; i < count; i++) {
-                if (parameter.name().equals(names[i])) {
-                    found = i;
-                    consumed[i] = true;
-                }
-            }
-            if (found < 0 && index < count && names[index] == null) {
-                found = index;
-                consumed[index] = true;
-            }
+            int found = matched[index];
             if (found < 0) {
                 if (!parameter.optional()) {
                     checker.warn("Missing parameter : " + parameter.name(), ctx);
@@ -148,7 +235,7 @@ final class CallSolver {
                               ParserRuleContext argument) {
         if (decl != null && checker.p7Params().contains(decl)) {
             Type inferredParam = checker.inferredParams().get(decl);
-            boolean substitutedClassTypeVar = inferredParam != null && TypeChecker.containsTypeVar(inferredParam)
+            boolean substitutedClassTypeVar = inferredParam != null && inferredParam.hasTypeVar()
                     && !expectedParam.equals(inferredParam);
             if (substitutedClassTypeVar) {
                 checker.subsumes(argument, actual, expectedParam);
@@ -241,15 +328,12 @@ final class CallSolver {
                 }
             }
         }
-        Map<Type.TypeVar, Type> inferred = coalesceAndApplyDoubleWidening(solvingList, store, retHints, paramPatterns, argExprs);
-        boolean argErrored = Arrays.stream(argTypes).anyMatch(TypeChecker::isUnresolved);
-        for (Type.TypeVar tv : solvingList) {
-            if (!inferred.containsKey(tv)) {
-                if (!argErrored) {
-                    checker.warn("Missing type : cannot infer type arguments for " + description, ctx);
-                }
-                return Type.ERROR;
+        Map<Type.TypeVar, Type> inferred = solveAll(solvingList, store, retHints, paramPatterns, argExprs);
+        if (inferred == null) {
+            if (Arrays.stream(argTypes).noneMatch(TypeChecker::isUnresolved)) {
+                checker.warn("Missing type : cannot infer type arguments for " + description, ctx);
             }
+            return Type.ERROR;
         }
         List<Type.Parameter> substitutedParams = new ArrayList<>(parameters.size());
         for (Type.Parameter p : parameters) {
@@ -288,18 +372,17 @@ final class CallSolver {
         if (actualArg instanceof Type.Function actualFn && samFn != null) {
             checker.algebra().relate(actualFn, samFn, TypeAlgebra.RelateMode.ASSIGNABLE, store);
         }
-        Map<Type.TypeVar, Type> inferred = coalesceAndApplyDoubleWidening(
+        Map<Type.TypeVar, Type> inferred = solveAll(
                 solvingList, store, retHints, samFn != null ? List.of(samFn) : List.of(), List.of(argExpr));
+        if (inferred == null) {
+            checker.warn("Missing type : cannot infer type arguments for " + java.getCanonicalName(), ctx);
+            return Type.ERROR;
+        }
         List<Type> solvedArgs = new ArrayList<>(typeParams.length);
         Map<TypeVariable<?>, Type> env = new HashMap<>();
         for (int i = 0; i < typeParams.length; i++) {
-            Type resolved = inferred.get(solvingList.get(i));
-            if (resolved == null) {
-                checker.warn("Missing type : cannot infer type arguments for " + java.getCanonicalName(), ctx);
-                return Type.ERROR;
-            }
-            solvedArgs.add(resolved);
-            env.put(typeParams[i], resolved);
+            solvedArgs.add(inferred.get(solvingList.get(i)));
+            env.put(typeParams[i], inferred.get(solvingList.get(i)));
         }
         for (int i = 0; i < typeParams.length; i++) {
             if (!JavaTypeBridge.satisfiesJavaBounds(solvedArgs.get(i), typeParams[i], env, checker.algebra())) {
@@ -317,91 +400,35 @@ final class CallSolver {
 
     Type javaConstructorCall(Class<?> java, List<BabbleParser.CallParameterContext> arguments,
                              BabbleParser.CallContext ctx, boolean recordTarget) {
-        List<Executable> candidates = Arrays.asList(java.getConstructors());
         List<Type> argumentTypes = new ArrayList<>();
-        List<Executable> matching = javaCall(candidates, java.getCanonicalName(), Map.of(), arguments, ctx, argumentTypes);
+        String description = java.getCanonicalName();
+        List<Executable> matching = javaCall(Arrays.asList(java.getConstructors()), description, Map.of(), arguments, ctx, argumentTypes);
         TypeVariable<?>[] classParams = java.getTypeParameters();
+        Executable winner = matching.isEmpty() ? null : matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching);
         if (classParams.length == 0) {
-            if (!matching.isEmpty()) {
-                Executable winner = matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching);
-                if (winner != null) {
-                    checkJavaArgumentWidening(winner, Map.of(), arguments, argumentTypes);
-                    if (recordTarget) {
-                        recordJavaConstructor(winner, arguments, argumentTypes, ctx);
-                    }
+            if (winner != null) {
+                checkJavaArgumentWidening(winner, Map.of(), arguments, argumentTypes);
+                if (recordTarget) {
+                    recordJavaConstructor(winner, arguments, argumentTypes, ctx);
                 }
             }
             return new Type.JavaInstance(java);
         }
-        if (matching.isEmpty()) {
-            return Type.ERROR;
-        }
-        Executable winner = matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching);
         if (winner == null) {
             return Type.ERROR;
         }
-        Map<TypeVariable<?>, Type.TypeVar> tvToSynthetic = new HashMap<>();
-        List<Type.TypeVar> classSolving = new ArrayList<>(classParams.length);
-        int idx = 0;
-        for (TypeVariable<?> tp : classParams) {
-            Type.TypeVar tv = new Type.TypeVar(null, tp.getName(), idx++);
-            classSolving.add(tv);
-            tvToSynthetic.put(tp, tv);
+        List<TypeVariable<?>> variables = new ArrayList<>(Arrays.asList(classParams));
+        variables.addAll(Arrays.asList(winner.getTypeParameters()));
+        Map<TypeVariable<?>, Type> solved = solveJava(winner, variables, Map.of(),
+                synthetic -> new Type.JavaInstance(java, Arrays.stream(classParams).map(tp -> (Type) synthetic.get(tp)).toList()),
+                arguments, argumentTypes, description, ctx);
+        if (solved == null) {
+            return Type.ERROR;
         }
-        for (TypeVariable<?> tp : winner.getTypeParameters()) {
-            tvToSynthetic.putIfAbsent(tp, new Type.TypeVar(null, tp.getName(), idx++));
-        }
-        List<Type.TypeVar> solvingList = List.copyOf(tvToSynthetic.values());
-        Set<Type.TypeVar> solving = Set.copyOf(solvingList);
-        Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(tvToSynthetic);
-        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
-        java.lang.reflect.Type[] genericParams = winner.getGenericParameterTypes();
-        List<Type> paramPatterns = new ArrayList<>(arguments.size());
-        List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
-        for (int i = 0; i < arguments.size(); i++) {
-            Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
-            paramPatterns.add(paramPat);
-            argExprs.add(arguments.get(i).expression());
-            checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
-        }
-        Type.JavaInstance patternReturn = new Type.JavaInstance(java, List.copyOf(classSolving));
-        Map<Type.TypeVar, Type> retHints = collectReturnHints(patternReturn, checker.currentExpected(), solving);
-        Map<Type.TypeVar, Type> inferred = coalesceAndApplyDoubleWidening(solvingList, store, retHints, paramPatterns, argExprs);
-        boolean argErrored = argumentTypes.stream().anyMatch(TypeChecker::isUnresolved);
-        Map<TypeVariable<?>, Type> solvedEnv = new HashMap<>();
-        List<Type> solvedClassArgs = new ArrayList<>(classParams.length);
-        for (TypeVariable<?> tp : tvToSynthetic.keySet()) {
-            Type resolved = inferred.get(tvToSynthetic.get(tp));
-            if (resolved == null) {
-                if (!argErrored) {
-                    checker.warn("Missing type : cannot infer type arguments for " + java.getCanonicalName(), ctx);
-                }
-                return Type.ERROR;
-            }
-            solvedEnv.put(tp, resolved);
-        }
-        for (int i = 0; i < classParams.length; i++) {
-            Type resolved = solvedEnv.get(classParams[i]);
-            solvedClassArgs.add(resolved);
-            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, classParams[i], solvedEnv, checker.algebra())) {
-                checker.warn("Type error : type argument " + resolved + " does not satisfy bound " + classParams[i].getName()
-                        + " of " + java.getCanonicalName(), ctx);
-                return Type.ERROR;
-            }
-        }
-        for (TypeVariable<?> tp : winner.getTypeParameters()) {
-            Type resolved = solvedEnv.get(tp);
-            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, tp, solvedEnv, checker.algebra())) {
-                checker.warn("Type error : type argument " + resolved + " does not satisfy bound " + tp.getName()
-                        + " of " + java.getCanonicalName(), ctx);
-                return Type.ERROR;
-            }
-        }
-        checkJavaArgumentWidening(winner, solvedEnv, arguments, argumentTypes);
         if (recordTarget) {
             recordJavaConstructor(winner, arguments, argumentTypes, ctx);
         }
-        return new Type.JavaInstance(java, solvedClassArgs);
+        return new Type.JavaInstance(java, Arrays.stream(classParams).map(solved::get).toList());
     }
 
     Type javaMethodCall(List<Method> candidates, String description, Map<TypeVariable<?>, Type> receiverEnv,
@@ -413,9 +440,8 @@ final class CallSolver {
             return Type.ERROR;
         }
         Method best = applicable.size() == 1 ? applicable.get(0) : null;
-        if (best == null) {
-            boolean known = argumentTypes.stream().noneMatch(TypeChecker::isUnresolved);
-            best = known ? JavaTypeBridge.mostSpecific(applicable) : null;
+        if (best == null && argumentTypes.stream().noneMatch(TypeChecker::isUnresolved)) {
+            best = JavaTypeBridge.mostSpecific(applicable);
         }
         if (best == null) {
             Set<Class<?>> results = applicable.stream().map(Method::getReturnType).collect(Collectors.toSet());
@@ -424,68 +450,24 @@ final class CallSolver {
             }
             return Type.ERROR;
         }
-        TypeVariable<?>[] methodParams = best.getTypeParameters();
-        if (methodParams.length == 0) {
+        Map<TypeVariable<?>, Type> env = receiverEnv;
+        if (best.getTypeParameters().length == 0) {
             checkJavaArgumentWidening(best, receiverEnv, arguments, argumentTypes);
-            java.lang.reflect.Type genericRet = best.getGenericReturnType();
-            Type result = JavaTypeBridge.javaResult(genericRet, receiverEnv, checker.algebra());
-            if (genericRet instanceof TypeVariable<?> || genericRet instanceof WildcardType) {
-                String desc = LoweringAnalyzer.descriptor(result);
-                if (desc != null) {
-                    checker.callChecks().put(ctx, desc);
-                }
-            }
-            if (recordTarget) {
-                recordJavaMethodCall(best, arguments, argumentTypes, ctx);
-            }
-            return result;
-        }
-        Map<TypeVariable<?>, Type.TypeVar> tvToSynthetic = new HashMap<>();
-        List<Type.TypeVar> solvingList = new ArrayList<>(methodParams.length);
-        for (int i = 0; i < methodParams.length; i++) {
-            Type.TypeVar tv = new Type.TypeVar(null, methodParams[i].getName(), i);
-            tvToSynthetic.put(methodParams[i], tv);
-            solvingList.add(tv);
-        }
-        Set<Type.TypeVar> solving = Set.copyOf(solvingList);
-        Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(receiverEnv);
-        patternEnv.putAll(tvToSynthetic);
-        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
-        java.lang.reflect.Type[] genericParams = best.getGenericParameterTypes();
-        List<Type> paramPatterns = new ArrayList<>(arguments.size());
-        List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
-        for (int i = 0; i < arguments.size(); i++) {
-            Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
-            paramPatterns.add(paramPat);
-            argExprs.add(arguments.get(i).expression());
-            checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
-        }
-        Type retPat = JavaTypeBridge.fromJavaType(best.getGenericReturnType(), patternEnv, false, false);
-        Map<Type.TypeVar, Type> retHints = collectReturnHints(retPat, checker.currentExpected(), solving);
-        Map<Type.TypeVar, Type> inferred = coalesceAndApplyDoubleWidening(solvingList, store, retHints, paramPatterns, argExprs);
-        boolean argErrored = argumentTypes.stream().anyMatch(TypeChecker::isUnresolved);
-        Map<TypeVariable<?>, Type> solvedEnv = new HashMap<>(receiverEnv);
-        for (TypeVariable<?> tp : methodParams) {
-            Type resolved = inferred.get(tvToSynthetic.get(tp));
-            if (resolved == null) {
-                if (!argErrored) {
-                    checker.warn("Missing type : cannot infer type arguments for " + description, ctx);
-                }
-                return Type.ERROR;
-            }
-            solvedEnv.put(tp, resolved);
-        }
-        for (TypeVariable<?> tp : methodParams) {
-            Type resolved = solvedEnv.get(tp);
-            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, tp, solvedEnv, checker.algebra())) {
-                checker.warn("Type error : type argument " + resolved + " does not satisfy bound " + tp.getName()
-                        + " of " + description, ctx);
+        } else {
+            Method generic = best;
+            env = solveJava(best, Arrays.asList(best.getTypeParameters()), receiverEnv,
+                    synthetic -> {
+                        Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(receiverEnv);
+                        patternEnv.putAll(synthetic);
+                        return JavaTypeBridge.fromJavaType(generic.getGenericReturnType(), patternEnv, false, false);
+                    },
+                    arguments, argumentTypes, description, ctx);
+            if (env == null) {
                 return Type.ERROR;
             }
         }
-        checkJavaArgumentWidening(best, solvedEnv, arguments, argumentTypes);
         java.lang.reflect.Type genericRet = best.getGenericReturnType();
-        Type result = JavaTypeBridge.javaResult(genericRet, solvedEnv, checker.algebra());
+        Type result = JavaTypeBridge.javaResult(genericRet, env, checker.algebra());
         if (genericRet instanceof TypeVariable<?> || genericRet instanceof WildcardType) {
             String desc = LoweringAnalyzer.descriptor(result);
             if (desc != null) {
@@ -496,6 +478,57 @@ final class CallSolver {
             recordJavaMethodCall(best, arguments, argumentTypes, ctx);
         }
         return result;
+    }
+
+    /**
+     * Solves the type {@code variables} of the winning Java {@code executable} (its class's and
+     * its own) from the argument types and the expected result ({@code resultPattern} over their
+     * synthetic variables), checks their bounds, and records the {@code int -> double} argument
+     * widenings ; the solved environment (with {@code knownEnv}), or null after reporting why not.
+     */
+    private Map<TypeVariable<?>, Type> solveJava(Executable executable, List<TypeVariable<?>> variables,
+                                                 Map<TypeVariable<?>, Type> knownEnv,
+                                                 java.util.function.Function<Map<TypeVariable<?>, Type.TypeVar>, Type> resultPattern,
+                                                 List<BabbleParser.CallParameterContext> arguments, List<Type> argumentTypes,
+                                                 String description, BabbleParser.CallContext ctx) {
+        Map<TypeVariable<?>, Type.TypeVar> synthetic = new HashMap<>();
+        for (TypeVariable<?> tp : variables) {
+            synthetic.putIfAbsent(tp, new Type.TypeVar(null, tp.getName(), synthetic.size()));
+        }
+        List<Type.TypeVar> solvingList = List.copyOf(synthetic.values());
+        Set<Type.TypeVar> solving = Set.copyOf(solvingList);
+        Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(knownEnv);
+        patternEnv.putAll(synthetic);
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
+        java.lang.reflect.Type[] genericParams = executable.getGenericParameterTypes();
+        List<Type> paramPatterns = new ArrayList<>(arguments.size());
+        List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
+        for (int i = 0; i < arguments.size(); i++) {
+            Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
+            paramPatterns.add(paramPat);
+            argExprs.add(arguments.get(i).expression());
+            checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
+        }
+        Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern.apply(synthetic), checker.currentExpected(), solving);
+        Map<Type.TypeVar, Type> inferred = solveAll(solvingList, store, retHints, paramPatterns, argExprs);
+        if (inferred == null) {
+            if (argumentTypes.stream().noneMatch(TypeChecker::isUnresolved)) {
+                checker.warn("Missing type : cannot infer type arguments for " + description, ctx);
+            }
+            return null;
+        }
+        Map<TypeVariable<?>, Type> solved = new HashMap<>(knownEnv);
+        synthetic.forEach((tp, tv) -> solved.put(tp, inferred.get(tv)));
+        for (TypeVariable<?> tp : variables) {
+            Type resolved = solved.get(tp);
+            if (!JavaTypeBridge.satisfiesJavaBounds(resolved, tp, solved, checker.algebra())) {
+                checker.warn("Type error : type argument " + resolved + " does not satisfy bound " + tp.getName()
+                        + " of " + description, ctx);
+                return null;
+            }
+        }
+        checkJavaArgumentWidening(executable, solved, arguments, argumentTypes);
+        return solved;
     }
 
     private <E extends Executable> List<E> javaCall(List<E> candidates, String description,
@@ -592,10 +625,7 @@ final class CallSolver {
         Map<TypeVariable<?>, Type> refined = new HashMap<>(receiverEnv);
         Map<Type.TypeVar, Type> finalHints = retHints;
         tvToSyn.forEach((tv, syn) -> {
-            Type solved = store.lower(syn);
-            if (solved == null && !store.uppers(syn).isEmpty()) {
-                solved = store.uppers(syn).get(0);
-            }
+            Type solved = store.solution(syn);
             if (solved == null) {
                 solved = finalHints.get(syn);
             }
@@ -611,7 +641,7 @@ final class CallSolver {
         if (!(winner instanceof Constructor<?> ctor)) {
             return;
         }
-        checker.resolvedJavaConstructors().put(ctx, ctor);
+        resolvedConstructors.put(ctx, ctor);
         if (ctx.expression() instanceof BabbleParser.SelectorContext sel && sel.safe != null) {
             return;
         }
@@ -641,7 +671,7 @@ final class CallSolver {
 
     private void recordJavaMethodCall(Method best, List<BabbleParser.CallParameterContext> arguments,
                                       List<Type> argumentTypes, BabbleParser.CallContext ctx) {
-        checker.resolvedJavaMethods().put(ctx, best);
+        resolvedMethods.put(ctx, best);
         if (!(ctx.expression() instanceof BabbleParser.SelectorContext sel)
                 || sel.safe != null
                 || sel.expression() == null
@@ -715,15 +745,24 @@ final class CallSolver {
         checker.algebra().relate(resultPattern, expBase, TypeAlgebra.RelateMode.SUBTYPE, retStore);
         Map<Type.TypeVar, Type> hints = new HashMap<>();
         for (Type.TypeVar tv : solving) {
-            Type hint = retStore.lower(tv);
-            if (hint == null && !retStore.uppers(tv).isEmpty()) {
-                hint = retStore.uppers(tv).get(0);
-            }
+            Type hint = retStore.solution(tv);
             if (hint != null) {
                 hints.put(tv, hint);
             }
         }
         return hints;
+    }
+
+    /**
+     * The solution of every variable of {@code variables} — its bounds, else the return hint,
+     * promoted from {@code int} to {@code double} where the hint asks for it and every occurrence
+     * can be coerced ({@code BIP010-D4}) — or null when one has none.
+     */
+    private Map<Type.TypeVar, Type> solveAll(List<Type.TypeVar> variables, TypeAlgebra.ConstraintStore store,
+                                             Map<Type.TypeVar, Type> retHints, List<Type> paramPatterns,
+                                             List<BabbleParser.ExpressionContext> argExprs) {
+        Map<Type.TypeVar, Type> inferred = coalesceAndApplyDoubleWidening(variables, store, retHints, paramPatterns, argExprs);
+        return inferred.keySet().containsAll(variables) ? inferred : null;
     }
 
     private Map<Type.TypeVar, Type> coalesceAndApplyDoubleWidening(
@@ -734,10 +773,7 @@ final class CallSolver {
             List<BabbleParser.ExpressionContext> argExprs) {
         Map<Type.TypeVar, Type> inferred = new HashMap<>();
         for (Type.TypeVar tv : solvingList) {
-            Type resolved = store.lower(tv);
-            if (resolved == null && !store.uppers(tv).isEmpty()) {
-                resolved = store.uppers(tv).get(0);
-            }
+            Type resolved = store.solution(tv);
             if (resolved == null) {
                 resolved = retHints.get(tv);
             }
@@ -770,14 +806,14 @@ final class CallSolver {
             }
             if (pat instanceof Type.Function fn
                     && Type.withoutNull(fn.result()).equals(tv)
-                    && fn.parameters().stream().noneMatch(p -> mentionsTypeVar(p.type(), tv))
+                    && fn.parameters().stream().noneMatch(p -> p.type().anyMatch(tv::equals))
                     && i < argExprs.size()) {
                 BabbleParser.FunctionLiteralContext lit = checker.unwrapFunctionLiteral(argExprs.get(i));
                 if (lit != null && lit.type() == null) {
                     continue;
                 }
             }
-            if (mentionsTypeVar(pat, tv)) {
+            if (pat.anyMatch(tv::equals)) {
                 return false;
             }
         }
@@ -789,33 +825,48 @@ final class CallSolver {
         return base == Type.INT || base == Type.DOUBLE;
     }
 
-    private static boolean mentionsTypeVar(Type type, Type.TypeVar target) {
-        return type != null && type.anyMatch(t -> t.equals(target));
-    }
-
-    static Type.Parameter[] mapArgumentsToParameters(List<Type.Parameter> parameters,
-                                                             List<BabbleParser.CallParameterContext> arguments) {
-        int count = arguments.size();
-        Type.Parameter[] mapping = new Type.Parameter[count];
-        String[] names = new String[count];
-        for (int i = 0; i < count; i++) {
+    private static String[] argumentNames(List<BabbleParser.CallParameterContext> arguments) {
+        String[] names = new String[arguments.size()];
+        for (int i = 0; i < names.length; i++) {
             if (arguments.get(i).ID() != null) {
                 names[i] = arguments.get(i).ID().getText();
             }
         }
+        return names;
+    }
+
+    /**
+     * The argument each parameter gets, by the rules of {@code Arguments} : the last argument
+     * named after it, else the positional argument at its index ; -1 for none. {@code consumed}
+     * marks the arguments taken.
+     */
+    private static int[] matchArguments(List<Type.Parameter> parameters, String[] names, boolean[] consumed) {
+        int[] matched = new int[parameters.size()];
         for (int index = 0; index < parameters.size(); index++) {
-            Type.Parameter parameter = parameters.get(index);
             int found = -1;
-            for (int i = 0; i < count; i++) {
-                if (parameter.name().equals(names[i])) {
+            for (int i = 0; i < names.length; i++) {
+                if (parameters.get(index).name().equals(names[i])) {
                     found = i;
+                    consumed[i] = true;
                 }
             }
-            if (found < 0 && index < count && names[index] == null) {
+            if (found < 0 && index < names.length && names[index] == null) {
                 found = index;
+                consumed[index] = true;
             }
-            if (found >= 0) {
-                mapping[found] = parameter;
+            matched[index] = found;
+        }
+        return matched;
+    }
+
+    /** The parameter each argument binds to, or null. */
+    static Type.Parameter[] mapArgumentsToParameters(List<Type.Parameter> parameters,
+                                                     List<BabbleParser.CallParameterContext> arguments) {
+        Type.Parameter[] mapping = new Type.Parameter[arguments.size()];
+        int[] matched = matchArguments(parameters, argumentNames(arguments), new boolean[arguments.size()]);
+        for (int index = 0; index < matched.length; index++) {
+            if (matched[index] >= 0) {
+                mapping[matched[index]] = parameters.get(index);
             }
         }
         return mapping;
@@ -826,10 +877,7 @@ final class CallSolver {
                                                                    Map<Type.TypeVar, Type> hints) {
         Map<Type.TypeVar, Type> env = new HashMap<>(solving.size());
         for (Type.TypeVar tv : solving) {
-            Type resolved = store.lower(tv);
-            if (resolved == null && !store.uppers(tv).isEmpty()) {
-                resolved = store.uppers(tv).get(0);
-            }
+            Type resolved = store.solution(tv);
             if (resolved == null && hints != null) {
                 resolved = hints.get(tv);
             }
@@ -871,7 +919,7 @@ final class CallSolver {
     private boolean paramInputHasSyntheticTypeVar(Type expectedBase) {
         if (expectedBase instanceof Type.Function fn) {
             for (Type.Parameter p : fn.parameters()) {
-                if (containsSyntheticTypeVar(p.type())) {
+                if (p.type() != null && p.type().hasSyntheticTypeVar()) {
                     return true;
                 }
             }
@@ -883,10 +931,7 @@ final class CallSolver {
                 return paramInputHasSyntheticTypeVar(sam);
             }
         }
-        return containsSyntheticTypeVar(expectedBase);
+        return expectedBase != null && expectedBase.hasSyntheticTypeVar();
     }
 
-    private static boolean containsSyntheticTypeVar(Type type) {
-        return type != null && type.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null);
-    }
 }

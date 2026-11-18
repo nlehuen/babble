@@ -15,13 +15,6 @@ import static org.babblelang.analysis.TypeAlgebra.containsType;
 import static org.babblelang.analysis.TypeAlgebra.isCallable;
 import static org.babblelang.analysis.TypeAlgebra.needsDoubleWidening;
 
-import java.lang.reflect.Executable;
-import java.lang.reflect.GenericArrayType;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.TypeVariable;
-import java.lang.reflect.WildcardType;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -202,8 +195,6 @@ final class TypeChecker {
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<BabbleParser.CallContext, ScopeAnalysis.JavaCallTarget> javaCallTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.CallContext, ScopeAnalysis.JavaConstructorTarget> javaConstructorTargets = new IdentityHashMap<>();
-    private final Map<BabbleParser.CallContext, Method> resolvedJavaMethods = new IdentityHashMap<>();
-    private final Map<BabbleParser.CallContext, java.lang.reflect.Constructor<?>> resolvedJavaConstructors = new IdentityHashMap<>();
     private final Map<ParserRuleContext, ScopeAnalysis.JavaFieldTarget> javaFieldTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.SelectorContext, Class<?>> arrayLengthSelectors = new IdentityHashMap<>();
     private final Map<BabbleParser.SelectorContext, ScopeAnalysis.ModuleExportTarget> moduleExportTargets = new IdentityHashMap<>();
@@ -215,6 +206,10 @@ final class TypeChecker {
     private final Map<Type.Package, List<BabbleParser.PackageExpressionContext>> localPackages = new IdentityHashMap<>();
 
     private final CallSolver callSolver = new CallSolver(this);
+
+    CallSolver callSolver() {
+        return callSolver;
+    }
 
     EffectChecker effectChecker;
     private boolean checkingEffects;
@@ -281,14 +276,6 @@ final class TypeChecker {
 
     Map<ParserRuleContext, String> callChecks() {
         return callChecks;
-    }
-
-    Map<BabbleParser.CallContext, Method> resolvedJavaMethods() {
-        return resolvedJavaMethods;
-    }
-
-    Map<BabbleParser.CallContext, java.lang.reflect.Constructor<?>> resolvedJavaConstructors() {
-        return resolvedJavaConstructors;
     }
 
     Map<BabbleParser.CallContext, ScopeAnalysis.JavaCallTarget> javaCallTargets() {
@@ -554,8 +541,7 @@ final class TypeChecker {
         failedDefs.clear();
         javaCallTargets.clear();
         javaConstructorTargets.clear();
-        resolvedJavaMethods.clear();
-        resolvedJavaConstructors.clear();
+        callSolver.reset();
         javaFieldTargets.clear();
         arrayLengthSelectors.clear();
         moduleExportTargets.clear();
@@ -1169,7 +1155,7 @@ final class TypeChecker {
         });
     }
 
-    private List<Type.TypeVar> typeVarsOf(TypeNode node) {
+    List<Type.TypeVar> typeVarsOf(TypeNode node) {
         if (node == null || node.typeParameters.isEmpty()) {
             return List.of();
         }
@@ -1386,7 +1372,7 @@ final class TypeChecker {
             } else {
                 String imported = importedPackage(def.value);
                 if (imported != null) {
-                    Class<?> java = loadClass(imported + "." + String.join(".", path.subList(1, path.size())));
+                    Class<?> java = JavaTypeBridge.loadClass(imported + "." + String.join(".", path.subList(1, path.size())));
                     return java != null ? instantiateJavaType(java, type, scope, allowRaw) : null;
                 }
             }
@@ -1409,7 +1395,7 @@ final class TypeChecker {
             return node != null ? instantiateBabbleType(node, type, scope, allowRaw) : null;
         }
         if (resolved == null && (path.get(0).equals("java") || path.get(0).equals("javax"))) {
-            Class<?> java = loadClass(String.join(".", path));
+            Class<?> java = JavaTypeBridge.loadClass(String.join(".", path));
             return java != null ? instantiateJavaType(java, type, scope, allowRaw) : null;
         }
         return null;
@@ -1459,7 +1445,7 @@ final class TypeChecker {
     }
 
     private Type instantiateJavaType(Class<?> java, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
-        int expected = java.getTypeParameters().length;
+        int expected = JavaTypeBridge.typeParameterCount(java);
         BabbleParser.TypeArgumentsContext argCtx = simple.typeArguments();
         if (argCtx == null) {
             if (expected == 0) {
@@ -1486,7 +1472,7 @@ final class TypeChecker {
         int badArg = JavaTypeBridge.checkJavaTypeArguments(java, args, algebra);
         if (badArg >= 0) {
             warn("Type error : type argument " + args.get(badArg) + " does not satisfy bound "
-                    + java.getTypeParameters()[badArg].getName() + " of " + java.getName(),
+                    + JavaTypeBridge.typeParameterName(java, badArg) + " of " + java.getName(),
                     simple.typeArguments().type(badArg));
             return Type.ERROR;
         }
@@ -1592,21 +1578,6 @@ final class TypeChecker {
             return name.endsWith(".ba") ? null : name;
         }
         return null;
-    }
-
-    private static Class<?> loadClass(String name) {
-        String candidate = name;
-        while (true) {
-            try {
-                return Class.forName(candidate, false, TypeChecker.class.getClassLoader());
-            } catch (ClassNotFoundException | LinkageError e) {
-                int dot = candidate.lastIndexOf('.');
-                if (dot < 0) {
-                    return null;
-                }
-                candidate = candidate.substring(0, dot) + "$" + candidate.substring(dot + 1);
-            }
-        }
     }
 
     // ---------------------------------------------------------------- expressions
@@ -1876,10 +1847,6 @@ final class TypeChecker {
         }
     }
 
-    private static boolean containsSyntheticTypeVar(Type type) {
-        return type != null && type.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null);
-    }
-
     private void applyContextualType(BabbleParser.FunctionLiteralContext literal) {
         Type expected = currentExpected;
         if (expected == null && literal.getParent() instanceof BabbleParser.DefExpressionContext def
@@ -1917,7 +1884,7 @@ final class TypeChecker {
                 BabbleParser.ParameterDeclarationContext param = params.get(i);
                 if (param.type() == null && !declarationTypes.containsKey(param)) {
                     Type paramType = expectedParamTypes.get(i);
-                    if (paramType != null && paramType != Type.ERROR && !containsSyntheticTypeVar(paramType)) {
+                    if (paramType != null && paramType != Type.ERROR && !paramType.hasSyntheticTypeVar()) {
                         declarationTypes.put(param, paramType);
                     }
                 }
@@ -1925,7 +1892,7 @@ final class TypeChecker {
         }
         if (literal.type() == null && expectedResult != null
                 && expectedResult != Type.NULL && !isUnresolved(expectedResult)
-                && !containsSyntheticTypeVar(expectedResult)) {
+                && !expectedResult.hasSyntheticTypeVar()) {
             contextualReturnTypes.putIfAbsent(literal, expectedResult);
         }
     }
@@ -2474,7 +2441,7 @@ final class TypeChecker {
         record Member(BabbleParser.DefExpressionContext declaration, Type declaredType, Type currentType, boolean inferred) implements LValue {
         }
 
-        record JavaField(java.lang.reflect.Field field, Type declaredType, Type currentType) implements LValue {
+        record JavaField(JavaTypeBridge.AssignedField field, Type declaredType, Type currentType) implements LValue {
         }
 
         record Implicit(Type currentType) implements LValue {
@@ -2717,7 +2684,7 @@ final class TypeChecker {
             if (ctx.expression() instanceof BabbleParser.SelectorContext safeSelector && safeSelector.safe != null) {
                 Type callee = typer.selectUninstantiated(safeSelector);
                 types.put(safeSelector, callee == Type.ERROR ? Type.ERROR : Type.nullable(callee));
-                Type result = call(callee, ctx);
+                Type result = callSolver.call(callee, ctx, true);
                 for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
                     synth(argument.expression());
                 }
@@ -2739,7 +2706,7 @@ final class TypeChecker {
                 String target = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
                 result = target.endsWith(".ba") ? Type.ANY : new Type.JavaPackage(target);
             } else {
-                result = call(callee, ctx);
+                result = callSolver.call(callee, ctx, true);
                 for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
                     synth(argument.expression());
                 }
@@ -2875,7 +2842,7 @@ final class TypeChecker {
             if (target == Type.ERROR) {
                 return Type.ERROR;
             }
-            if (containsTypeVar(target)) {
+            if (target != null && target.hasTypeVar()) {
                 warn("Cannot cast to type parameter : " + ctx.right.getText(), ctx.right);
                 return Type.ERROR;
             }
@@ -2946,11 +2913,13 @@ final class TypeChecker {
                 return new LValue.Implicit(readCurrent ? implicitType(name) : Type.ERROR);
             }
             Type receiver = synth(ctx.namespace, Role.SELECTOR_RECEIVER);
-            java.lang.reflect.Field field = assignedJavaField(receiver, name, ctx);
-            if (field != null) {
-                Type declared = JavaTypeBridge.javaFieldType(receiver, field, false, algebra);
-                Type current = readCurrent ? JavaTypeBridge.javaFieldType(receiver, field, true, algebra) : declared;
-                return new LValue.JavaField(field, declared, current);
+            Object field = JavaTypeBridge.assignedField(receiver, name);
+            if (field instanceof String error) {
+                warn(error, ctx);
+            } else if (field instanceof JavaTypeBridge.AssignedField assigned) {
+                Type declared = assigned.type(receiver, false, algebra);
+                Type current = readCurrent ? assigned.type(receiver, true, algebra) : declared;
+                return new LValue.JavaField(assigned, declared, current);
             }
             boolean own = ctx.namespace instanceof BabbleParser.ThisExpressionContext;
             Type declared = assignedMemberType(receiver, name, own, ctx);
@@ -2981,20 +2950,12 @@ final class TypeChecker {
         private void writeLValue(BabbleParser.AssignExpressionContext ctx, LValue target, Type value, ParserRuleContext errorSite) {
             switch (target) {
                 case LValue.JavaField jf -> {
-                    java.lang.reflect.Field field = jf.field();
-                    if (isCallable(value) && JavaTypes.isFunctionalInterface(field.getType())) {
-                        warn("Cannot assign a function to " + field.getDeclaringClass().getCanonicalName() + "." + ctx.name.getText()
-                                + " : convert it first, as " + field.getType().getSimpleName() + "(f)", errorSite);
+                    String error = jf.field().functionError(value, ctx.name.getText());
+                    if (error != null) {
+                        warn(error, errorSite);
                     } else {
                         subsumes(errorSite, ctx, value, jf.declaredType());
-                        if (!Modifier.isFinal(field.getModifiers())
-                                && Modifier.isPublic(field.getModifiers())
-                                && JavaTypes.isAccessible(field.getDeclaringClass())
-                                && JavaTypeBridge.guaranteedApplicable(field.getType(), value)
-                                && JavaTypeBridge.supportedStaticJavaArg(field.getType(), value)) {
-                            boolean isStatic = Modifier.isStatic(field.getModifiers());
-                            javaFieldTargets.put(ctx, new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic));
-                        }
+                        recordJavaFieldWrite(ctx, jf.field().target(value));
                     }
                 }
                 case LValue.Local local -> {
@@ -3022,6 +2983,12 @@ final class TypeChecker {
                 }
                 case LValue.Implicit ignored -> {
                 }
+            }
+        }
+
+        private void recordJavaFieldWrite(BabbleParser.AssignExpressionContext ctx, ScopeAnalysis.JavaFieldTarget target) {
+            if (target != null) {
+                javaFieldTargets.put(ctx, target);
             }
         }
 
@@ -3059,15 +3026,7 @@ final class TypeChecker {
             Type result = binaryOp(arithmeticToken(operator), operator, ctx, org.babblelang.engine.impl.Interpreter.targetText(ctx), ctx, current,
                     ctx.value.getText(), ctx.value, value);
             if (target instanceof LValue.JavaField jf) {
-                java.lang.reflect.Field field = jf.field();
-                if (!Modifier.isFinal(field.getModifiers())
-                        && Modifier.isPublic(field.getModifiers())
-                        && JavaTypes.isAccessible(field.getDeclaringClass())
-                        && JavaTypeBridge.guaranteedApplicable(field.getType(), result)
-                        && JavaTypeBridge.supportedStaticJavaArg(field.getType(), result)) {
-                    boolean isStatic = Modifier.isStatic(field.getModifiers());
-                    javaFieldTargets.put(ctx, new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic));
-                }
+                recordJavaFieldWrite(ctx, jf.field().target(result));
                 subsumes(ctx, result, jf.declaredType());
             } else {
                 writeLValue(ctx, target, result, ctx);
@@ -3221,14 +3180,13 @@ final class TypeChecker {
         }
         if (receiver instanceof Type.JavaPackage pkg) {
             String qualified = pkg.name() + "." + name;
-            Class<?> java = loadTopLevel(qualified);
+            Class<?> java = JavaTypeBridge.loadTopLevel(qualified);
             return java != null ? new Type.JavaClassValue(java) : new Type.JavaPackage(qualified);
         }
         if (receiver instanceof Type.JavaClassValue value) {
-            for (Class<?> memberClass : value.type().getClasses()) {
-                if (memberClass.getSimpleName().equals(name) && Modifier.isPublic(memberClass.getModifiers())) {
-                    return new Type.JavaClassValue(memberClass);
-                }
+            Class<?> memberClass = JavaTypeBridge.publicMemberClass(value.type(), name);
+            if (memberClass != null) {
+                return new Type.JavaClassValue(memberClass);
             }
             return javaMember(value.type(), List.of(), name, true, at, recordTarget);
         }
@@ -3306,7 +3264,7 @@ final class TypeChecker {
         }
         if (receiverInstance != null && !receiverInstance.node().typeParameters.isEmpty() && !own) {
             Type closed = memberType(ownerNode, member);
-            if (closed != Type.ERROR && containsTypeVar(closed)) {
+            if (closed != Type.ERROR && closed.hasTypeVar()) {
                 return algebra.substitute(closed, env);
             }
         }
@@ -3378,7 +3336,7 @@ final class TypeChecker {
                     return inherited;
                 }
             } else if (parent instanceof Type.JavaInstance javaParent
-                    && Arrays.stream(javaParent.type().getMethods()).anyMatch(m -> m.getName().equals(name))) {
+                    && JavaTypeBridge.hasJavaMethod(javaParent.type(), name)) {
                 return new Type.JavaMethod(javaParent.type(), javaParent.typeArguments(), name);
             }
         }
@@ -3489,204 +3447,38 @@ final class TypeChecker {
         return nested.isEmpty() ? null : localPackage(name, nested);
     }
 
-    /** As {@code JavaPackage} finds them : a class with that exact name, else a package. */
-    private static Class<?> loadTopLevel(String name) {
-        try {
-            return Class.forName(name, false, TypeChecker.class.getClassLoader());
-        } catch (ClassNotFoundException | LinkageError e) {
-            return null;
-        }
-    }
-
-    /**
-     * A method or a public field of a Java class, as {@code JavaClass} looks them up : through
-     * the class itself, only a static field.
-     */
+    /** A method or field of a Java class or object, through {@link JavaTypeBridge#javaMember}. */
     private Type javaMember(Class<?> java, List<Type> typeArgs, String name, boolean onClass, ParserRuleContext at, boolean recordTarget) {
-        for (Method method : java.getMethods()) {
-            if (method.getName().equals(name)) {
-                return new Type.JavaMethod(java, onClass ? List.of() : typeArgs, name);
+        JavaTypeBridge.JavaMember found = JavaTypeBridge.javaMember(java, typeArgs, name, onClass, algebra);
+        if (found.error() != null) {
+            warn(found.error(), at);
+            return Type.ERROR;
+        }
+        if (found.checked()) {
+            String desc = LoweringAnalyzer.descriptor(found.type());
+            if (desc != null) {
+                callChecks.put(at, desc);
             }
         }
-        if (java.isInterface() && !onClass) {
-            for (Method method : Object.class.getMethods()) {
-                if (method.getName().equals(name)) {
-                    return new Type.JavaMethod(Object.class, List.of(), name);
-                }
-            }
+        if (recordTarget && found.fieldTarget() != null && at instanceof BabbleParser.SelectorContext selector && selector.safe == null) {
+            javaFieldTargets.put(selector, found.fieldTarget());
         }
-        java.lang.reflect.Field field = JavaTypeBridge.javaField(java, name);
-        if (field != null) {
-            if (onClass && !Modifier.isStatic(field.getModifiers())) {
-                warn("Not a static field : " + java.getCanonicalName() + "." + name, at);
-                return Type.ERROR;
-            }
-            Map<TypeVariable<?>, Type> env = onClass ? Map.of() : JavaTypeBridge.javaTypeEnv(java, typeArgs);
-            java.lang.reflect.Type genericType = field.getGenericType();
-            Type result = JavaTypeBridge.javaResult(genericType, env, algebra);
-            if (genericType instanceof TypeVariable<?> || genericType instanceof WildcardType) {
-                String desc = LoweringAnalyzer.descriptor(result);
-                if (desc != null) {
-                    callChecks.put(at, desc);
-                }
-            }
-            if (recordTarget && at instanceof BabbleParser.SelectorContext selector && selector.safe == null
-                    && Modifier.isPublic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())) {
-                boolean isStatic = Modifier.isStatic(field.getModifiers());
-                javaFieldTargets.put(selector, new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic));
-            }
-            return result;
-        }
-        warn("No such name in " + java.getCanonicalName() + " : " + name, at);
-        return Type.ERROR;
-    }
-
-    /**
-     * The field {@code receiver.name = value} assigns, when the receiver is a Java class or
-     * object, reporting what {@code JavaClass.assign} would refuse. Null when it isn't Java,
-     * or the field can't be assigned.
-     */
-    private java.lang.reflect.Field assignedJavaField(Type receiver, String name, ParserRuleContext at) {
-        if (receiver instanceof Type.JavaArray array) {
-            String description = array.javaClass().getCanonicalName() + "." + name;
-            if ("length".equals(name)) {
-                warn("Cannot assign final field : " + description, at);
-            } else {
-                warn("No such field in " + array.javaClass().getCanonicalName() + " : " + name, at);
-            }
-            return null;
-        }
-        boolean onClass = receiver instanceof Type.JavaClassValue;
-        Class<?> java = onClass ? ((Type.JavaClassValue) receiver).type()
-                : receiver instanceof Type.JavaInstance instance ? instance.type() : null;
-        if (java == null) {
-            return null;
-        }
-        java.lang.reflect.Field field = JavaTypeBridge.javaField(java, name);
-        String description = java.getCanonicalName() + "." + name;
-        if (field == null) {
-            warn("No such field in " + java.getCanonicalName() + " : " + name, at);
-        } else if (onClass && !Modifier.isStatic(field.getModifiers())) {
-            warn("Not a static field : " + description, at);
-        } else if (Modifier.isFinal(field.getModifiers())) {
-            warn("Cannot assign final field : " + description, at);
-        } else {
-            return field;
-        }
-        return null;
+        return found.type();
     }
 
     // ---------------------------------------------------------------- calls
-
-    static boolean containsTypeVar(Type type) {
-        return type != null && type.anyMatch(Type.TypeVar.class::isInstance);
-    }
 
     List<BabbleParser.ParameterDeclarationContext> parameterDecls(Type.Function fn) {
         BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
         return lit != null ? lit.parametersDeclaration().parameterDeclaration() : null;
     }
 
-    private static List<BabbleParser.ParameterDeclarationContext> parameterDecls(TypeNode node) {
+    static List<BabbleParser.ParameterDeclarationContext> parameterDecls(TypeNode node) {
         return node.ctx instanceof BabbleParser.ClassExpressionContext cls && cls.parametersDeclaration() != null
                 ? cls.parametersDeclaration().parameterDeclaration() : null;
     }
 
-    private Type call(Type callee, BabbleParser.CallContext ctx) {
-        return call(callee, ctx, true);
-    }
-
-    private Type call(Type callee, BabbleParser.CallContext ctx, boolean recordTarget) {
-        List<BabbleParser.CallParameterContext> arguments = ctx.callParameters().callParameter();
-        if (callee == Type.ERROR || callee == Type.NOTHING) {
-            return Type.ERROR;
-        }
-        if (callee == Type.PRINT) {
-            Type appendable = new Type.JavaInstance(Appendable.class);
-            for (BabbleParser.CallParameterContext argument : arguments) {
-                if (argument.ID() != null && "to".equals(argument.ID().getText())) {
-                    subsumes(argument.expression(), null, check(argument.expression(), appendable), appendable);
-                } else {
-                    check(argument.expression(), Type.NULLABLE_ANY);
-                }
-            }
-            return Type.NULL;
-        }
-        if (callee instanceof Type.Union union) {
-            if (Type.containsNull(union)) {
-                warn(ctx.expression().getText() + " is not callable", ctx);
-                return Type.ERROR;
-            }
-            for (Type member : union.members()) {
-                if (!isCallable(member)) {
-                    warn(ctx.expression().getText() + " is not callable", ctx);
-                    return Type.ERROR;
-                }
-            }
-            List<Type> results = new ArrayList<>(union.members().size());
-            for (Type member : union.members()) {
-                Type r = call(member, ctx, false);
-                if (r == Type.ERROR) {
-                    return Type.ERROR;
-                }
-                results.add(r);
-            }
-            return Type.union(results);
-        }
-        if (callee instanceof Type.Function function) {
-            List<BabbleParser.ParameterDeclarationContext> decls = parameterDecls(function);
-            if (function.typeParameters().isEmpty()) {
-                callSolver.bind(function.parameters(), decls, arguments, ctx);
-                if (recordTarget) {
-                    recordBabbleCall(function, arguments, ctx);
-                    recordInterfaceCall(arguments, ctx);
-                }
-                return function.result();
-            }
-            Type result = callSolver.genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
-                    arguments, ctx, ctx.expression().getText());
-            if (recordTarget && result != Type.ERROR) {
-                recordInterfaceCall(arguments, ctx);
-            }
-            return result;
-        }
-        if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
-            TypeNode node = value.node();
-            List<Type.TypeVar> classVars = typeVarsOf(node);
-            List<Type.Parameter> parameters = constructorParameters(node);
-            List<BabbleParser.ParameterDeclarationContext> decls = parameterDecls(node);
-            if (classVars.isEmpty()) {
-                if (parameters != null) {
-                    callSolver.bind(parameters, decls, arguments, ctx);
-                }
-                return new Type.Instance(node);
-            }
-            if (parameters == null) {
-                parameters = List.of();
-            }
-            Type patternReturn = new Type.Instance(node, List.copyOf(classVars));
-            return callSolver.genericBabbleCall(classVars, parameters, decls, patternReturn, arguments, ctx, node.name);
-        }
-        if (callee instanceof Type.JavaClassValue value) {
-            Class<?> java = value.type();
-            if (java.isInterface() && arguments.size() == 1 && arguments.get(0).ID() == null
-                    && JavaTypes.isFunctionalInterface(java)) {
-                return callSolver.javaGenericSamCall(java, arguments.get(0).expression(), ctx);
-            }
-            return callSolver.javaConstructorCall(java, arguments, ctx, recordTarget);
-        }
-        if (callee instanceof Type.JavaMethod method) {
-            List<Method> candidates = JavaTypes.methods(method.owner(), method.name());
-            Map<TypeVariable<?>, Type> receiverEnv = method.typeArguments().isEmpty()
-                    ? Map.of() : JavaTypeBridge.javaTypeEnv(method.owner(), method.typeArguments());
-            return callSolver.javaMethodCall(candidates, method.owner().getCanonicalName() + "." + method.name(),
-                    receiverEnv, arguments, ctx, recordTarget);
-        }
-        warn(ctx.expression().getText() + " is not callable", ctx);
-        return Type.ERROR;
-    }
-
-    private void recordBabbleCall(Type.Function function, List<BabbleParser.CallParameterContext> arguments,
+    void recordBabbleCall(Type.Function function, List<BabbleParser.CallParameterContext> arguments,
                                   BabbleParser.CallContext ctx) {
         if (ctx.expression() instanceof BabbleParser.SelectorContext sel && sel.safe != null) {
             return;
@@ -3740,7 +3532,7 @@ final class TypeChecker {
     private record FoundInterfaceMember(TypeNode iface, TypeNode.Member member) {
     }
 
-    private void recordInterfaceCall(List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
+    void recordInterfaceCall(List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
         if (!inFile(ctx) || !(ctx.expression() instanceof BabbleParser.SelectorContext sel)) {
             return;
         }
@@ -3938,7 +3730,7 @@ final class TypeChecker {
     }
 
     /** A class's constructor parameters, or null when they are another file's that can't be typed. */
-    private List<Type.Parameter> constructorParameters(TypeNode node) {
+    List<Type.Parameter> constructorParameters(TypeNode node) {
         if (node == null) {
             return List.of();
         }
@@ -4266,16 +4058,11 @@ final class TypeChecker {
     }
 
     Class<?> findJavaClass(String qualifiedName) {
-        return loadTopLevel(qualifiedName);
+        return JavaTypeBridge.loadTopLevel(qualifiedName);
     }
 
     Class<?> findMemberJavaClass(Class<?> enclosing, String simpleName) {
-        for (Class<?> c : enclosing.getClasses()) {
-            if (c.getSimpleName().equals(simpleName) && Modifier.isPublic(c.getModifiers())) {
-                return c;
-            }
-        }
-        return null;
+        return JavaTypeBridge.publicMemberClass(enclosing, simpleName);
     }
 
     Object resolveNameForEffects(String name, ScopeNode scope) {
@@ -4599,24 +4386,6 @@ final class TypeChecker {
             return -1;
         }
         return parameters.indexOf(mapped[argPos]);
-    }
-
-    Method resolvedJavaMethodOf(BabbleParser.CallContext call) {
-        Method m = resolvedJavaMethods.get(call);
-        if (m != null) {
-            return m;
-        }
-        ScopeAnalysis.JavaCallTarget jct = javaCallTargets.get(call);
-        return jct != null ? jct.method() : null;
-    }
-
-    java.lang.reflect.Constructor<?> resolvedJavaConstructorOf(BabbleParser.CallContext call) {
-        java.lang.reflect.Constructor<?> c = resolvedJavaConstructors.get(call);
-        if (c != null) {
-            return c;
-        }
-        ScopeAnalysis.JavaConstructorTarget jct = javaConstructorTargets.get(call);
-        return jct != null ? jct.constructor() : null;
     }
 
     ScopeAnalysis.JavaFieldTarget javaFieldTargetOf(ParserRuleContext sel) {
