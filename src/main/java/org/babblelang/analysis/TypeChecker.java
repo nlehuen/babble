@@ -175,6 +175,8 @@ final class TypeChecker {
     private final Map<ParserRuleContext, SlotCell> defCells = new IdentityHashMap<>();
     private final Map<ParserRuleContext, SlotCell> memberCells = new IdentityHashMap<>();
     private final Map<ParserRuleContext, SlotCell> paramCells = new IdentityHashMap<>();
+    /** The result of each self-recursive unannotated function, converged with the slots. */
+    private final Map<BabbleParser.FunctionLiteralContext, SlotCell> resultCells = new IdentityHashMap<>();
     private final Map<BabbleParser.WhileExpressionContext, Set<ParserRuleContext>> assignedWhileLocals = new IdentityHashMap<>();
     private final Deque<Integer> activeUnitStack = new ArrayDeque<>();
     private boolean inferenceMode;
@@ -1034,7 +1036,9 @@ final class TypeChecker {
         }
         if (!inferenceStack.isEmpty() && inferenceStack.peek() == literal) {
             recursiveFunctions.add(literal);
-            return recordFunctionLiteral(new Type.Function(tparams, params, Type.NOTHING, effs), literal);
+            SlotCell cell = resultCells.get(literal);
+            Type result = cell != null && cell.value != null ? cell.value : Type.NOTHING;
+            return recordFunctionLiteral(new Type.Function(tparams, params, result, effs), literal);
         }
         for (BabbleParser.FunctionLiteralContext fn : inferenceStack) {
             BabbleParser.DefExpressionContext def = owningDef(fn);
@@ -1267,46 +1271,51 @@ final class TypeChecker {
         return contextualReturnTypes.get(function);
     }
 
+    /**
+     * The inferred result of an unannotated function. A self-recursive function reads its own
+     * result from its result cell, NOTHING at first : while the slots converge, each evaluation
+     * records the result it finds, waking the unit until the result is stable, and the final walk
+     * types the body once against the converged result. A function whose result comes only from
+     * its recursive calls has none.
+     */
     private Type inferFunctionResult(BabbleParser.FunctionLiteralContext literal) {
         if (literal.functionBlock == null) {
             return Type.ERROR;
         }
-        List<Diagnostic> savedDiagnostics = new ArrayList<>(diagnostics);
-        List<Diagnostic> savedWarnings = new ArrayList<>(warnings);
+        SlotCell cell = resultCells.get(literal);
+        if (cell != null && inferenceMode) {
+            cell.addReader(activeUnitStack.peek());
+        }
+        boolean provisional = !inferenceMode && cell != null && cell.value != null;
+        if (provisional) {
+            provisionalResults.put(literal, cell.value);
+        }
         inferringResult.add(literal);
         inferenceStack.push(literal);
-        Type expectedReturn = contextualReturnTypes.get(literal);
-        Type pass1;
         TypeEnv savedEnv = env;
         env = savedEnv.enterCallable(reassigned);
+        Type result;
         try {
-            pass1 = computeBodyResult(literal, expectedReturn);
+            result = computeBodyResult(literal, contextualReturnTypes.get(literal));
         } finally {
             env = savedEnv;
             inferenceStack.pop();
             inferringResult.remove(literal);
+            if (provisional) {
+                provisionalResults.remove(literal);
+            }
         }
-        Type candidate = inferred(pass1);
+        Type candidate = inferred(result);
         if (recursiveFunctions.remove(literal)) {
             if (candidate != Type.ERROR) {
-                diagnostics.clear();
-                diagnostics.addAll(savedDiagnostics);
-                warnings.clear();
-                warnings.addAll(savedWarnings);
-                clearSubtreeTypes(literal.functionBlock);
-                provisionalResults.put(literal, candidate);
-                inferenceStack.push(literal);
-                savedEnv = env;
-                env = savedEnv.enterCallable(reassigned);
-                try {
-                    Type pass2 = computeBodyResult(literal, expectedReturn);
-                    candidate = inferred(pass2);
-                } finally {
-                    env = savedEnv;
-                    inferenceStack.pop();
-                    provisionalResults.remove(literal);
+                if (inferenceMode) {
+                    SlotCell resultCell = resultCells.computeIfAbsent(literal, k -> new SlotCell());
+                    resultCell.addReader(activeUnitStack.peek());
+                    if (resultCell.record(new SiteKey(literal.getStart().getTokenIndex(), -1), candidate)) {
+                        wakeReaders(resultCell);
+                    }
                 }
-            } else if (pass1 == Type.NOTHING) {
+            } else if (result == Type.NOTHING) {
                 BabbleParser.DefExpressionContext def = owningDef(literal);
                 if (def != null) {
                     warn("Missing type : " + def.name.getText() + " (recursive)", def);
@@ -1318,7 +1327,6 @@ final class TypeChecker {
         }
         return candidate;
     }
-
     private Type computeBodyResult(BabbleParser.FunctionLiteralContext literal, Type expectedReturn) {
         Type bodyType = check(literal.functionBlock, expectedReturn);
         Type result = bodyType;
