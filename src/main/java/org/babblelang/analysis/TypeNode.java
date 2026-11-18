@@ -18,14 +18,16 @@ final class TypeNode {
         final String name;
         final int flags;
         final int index;
-        final ParserRuleContext declaration;
+        final boolean hasFunction;
+        ParserRuleContext declaration;
         /** The function literal of a method or default, or null. */
-        final BabbleParser.FunctionLiteralContext function;
+        BabbleParser.FunctionLiteralContext function;
 
         Member(String name, int flags, int index, ParserRuleContext declaration, BabbleParser.FunctionLiteralContext function) {
             this.name = name;
             this.flags = flags;
             this.index = index;
+            this.hasFunction = function != null;
             this.declaration = declaration;
             this.function = function;
         }
@@ -37,6 +39,11 @@ final class TypeNode {
         boolean isPrivate() {
             return (flags & ClassShape.PRIVATE) != 0;
         }
+
+        void detachAst() {
+            this.declaration = null;
+            this.function = null;
+        }
     }
 
     private static final AtomicLong IDS = new AtomicLong();
@@ -46,7 +53,7 @@ final class TypeNode {
         return "T" + IDS.incrementAndGet();
     }
 
-    final ParserRuleContext ctx;
+    ParserRuleContext ctx;
     /**
      * The nominal type the expression defines (T9). In a module, its key and the type's name,
      * {@code lib/vec3.ba#Vec3}, the same every time the module is compiled ; elsewhere, unique
@@ -56,8 +63,8 @@ final class TypeNode {
     final ClassShape.Kind kind;
     final String name;
     /** Where the expression is evaluated. */
-    final ScopeNode scope;
-    final List<BabbleParser.TypeContext> parentTypes;
+    ScopeNode scope;
+    List<BabbleParser.TypeContext> parentTypes;
     final List<String> typeParameters;
 
     final Map<String, Member> members = new LinkedHashMap<>();
@@ -94,7 +101,19 @@ final class TypeNode {
     }
 
     int line() {
-        return ctx.getStart().getLine();
+        return ctx != null ? ctx.getStart().getLine() : 0;
+    }
+
+    void detachAst() {
+        this.ctx = null;
+        this.scope = null;
+        this.parentTypes = List.of();
+        for (Member m : members.values()) {
+            m.detachAst();
+        }
+        for (Member m : statics.values()) {
+            m.detachAst();
+        }
     }
 
     ClassShape shape() {

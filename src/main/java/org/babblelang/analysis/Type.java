@@ -1,13 +1,14 @@
 package org.babblelang.analysis;
 
-import org.babblelang.parser.BabbleParser;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 /**
@@ -59,8 +60,22 @@ sealed interface Type {
         }
     }
 
+    /** Opaque identity key for type variables and package scopes without retaining AST nodes. */
+    static final class SymbolId {
+        private final String label;
+
+        SymbolId(String label) {
+            this.label = label;
+        }
+
+        @Override
+        public String toString() {
+            return label;
+        }
+    }
+
     /** A Babble generic type parameter declared on a class, interface or function def. */
-    record TypeVar(BabbleParser.DefExpressionContext owner, String name, int index) implements Type {
+    record TypeVar(SymbolId owner, String name, int index) implements Type {
         @Override
         public String toString() {
             return name;
@@ -180,7 +195,11 @@ sealed interface Type {
     }
 
     /** A package : structural, its members are its definitions. */
-    record Package(String name, List<BabbleParser.PackageExpressionContext> packages) implements Type {
+    record Package(String name, SymbolId id, Map<String, Type> members) implements Type {
+        Package(String name, SymbolId id) {
+            this(name, id, Map.of());
+        }
+
         @Override
         public String toString() {
             return "package " + name;
@@ -321,5 +340,161 @@ sealed interface Type {
 
     static List<Type> membersOf(Type type) {
         return type instanceof Union union ? union.members() : List.of(type);
+    }
+
+    /** Structural predicate catamorphism over this type and all nested type children. */
+    default boolean anyMatch(Predicate<Type> predicate) {
+        if (predicate.test(this)) {
+            return true;
+        }
+        return switch (this) {
+            case Union u -> {
+                for (Type m : u.members()) {
+                    if (m.anyMatch(predicate)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case JavaArray ja -> ja.element().anyMatch(predicate);
+            case Function fn -> {
+                for (Parameter p : fn.parameters()) {
+                    if (p.type().anyMatch(predicate)) {
+                        yield true;
+                    }
+                }
+                yield fn.result().anyMatch(predicate);
+            }
+            case Instance inst -> {
+                for (Type a : inst.typeArguments()) {
+                    if (a.anyMatch(predicate)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case JavaInstance ji -> {
+                for (Type a : ji.typeArguments()) {
+                    if (a.anyMatch(predicate)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case JavaMethod jm -> {
+                for (Type a : jm.typeArguments()) {
+                    if (a.anyMatch(predicate)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case Package pkg -> {
+                for (Type m : pkg.members().values()) {
+                    if (m.anyMatch(predicate)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case Simple ignored -> false;
+            case TypeVar ignored -> false;
+            case ClassValue ignored -> false;
+            case Module ignored -> false;
+            case JavaPackage ignored -> false;
+            case JavaClassValue ignored -> false;
+            case Print ignored -> false;
+        };
+    }
+
+    /**
+     * Top-down structural map catamorphism: {@code mapper.apply(node)} returns a replacement
+     * to short-circuit, or {@code null} to descend into children. Preserves physical identity
+     * when no child changes.
+     */
+    default Type mapTypes(UnaryOperator<Type> mapper) {
+        Type direct = mapper.apply(this);
+        if (direct != null) {
+            return direct;
+        }
+        return switch (this) {
+            case Union u -> {
+                List<Type> src = u.members();
+                List<Type> out = null;
+                for (int i = 0; i < src.size(); i++) {
+                    Type orig = src.get(i);
+                    Type mapped = orig.mapTypes(mapper);
+                    if (out != null) {
+                        out.add(mapped);
+                    } else if (mapped != orig) {
+                        out = new ArrayList<>(src.size());
+                        for (int j = 0; j < i; j++) {
+                            out.add(src.get(j));
+                        }
+                        out.add(mapped);
+                    }
+                }
+                yield out != null ? union(out) : u;
+            }
+            case JavaArray ja -> {
+                Type elem = ja.element().mapTypes(mapper);
+                yield elem != ja.element() ? new JavaArray(ja.javaClass(), elem) : ja;
+            }
+            case Function fn -> {
+                List<Parameter> src = fn.parameters();
+                List<Parameter> out = null;
+                for (int i = 0; i < src.size(); i++) {
+                    Parameter orig = src.get(i);
+                    Type mappedType = orig.type().mapTypes(mapper);
+                    if (out != null) {
+                        out.add(mappedType != orig.type() ? orig.withType(mappedType) : orig);
+                    } else if (mappedType != orig.type()) {
+                        out = new ArrayList<>(src.size());
+                        for (int j = 0; j < i; j++) {
+                            out.add(src.get(j));
+                        }
+                        out.add(orig.withType(mappedType));
+                    }
+                }
+                Type res = fn.result().mapTypes(mapper);
+                yield (out != null || res != fn.result())
+                        ? new Function(fn.typeParameters(), out != null ? out : src, res, fn.effects())
+                        : fn;
+            }
+            case Instance inst -> {
+                List<Type> mapped = mapList(inst.typeArguments(), mapper);
+                yield mapped != inst.typeArguments() ? new Instance(inst.node(), mapped) : inst;
+            }
+            case JavaInstance ji -> {
+                List<Type> mapped = mapList(ji.typeArguments(), mapper);
+                yield mapped != ji.typeArguments() ? new JavaInstance(ji.type(), mapped) : ji;
+            }
+            case JavaMethod jm -> {
+                List<Type> mapped = mapList(jm.typeArguments(), mapper);
+                yield mapped != jm.typeArguments() ? new JavaMethod(jm.owner(), mapped, jm.name()) : jm;
+            }
+            default -> this;
+        };
+    }
+
+    private static List<Type> mapList(List<Type> src, UnaryOperator<Type> mapper) {
+        if (src.isEmpty()) {
+            return src;
+        }
+        List<Type> out = null;
+        for (int i = 0; i < src.size(); i++) {
+            Type orig = src.get(i);
+            Type mapped = orig.mapTypes(mapper);
+            if (out != null) {
+                out.add(mapped);
+            } else if (mapped != orig) {
+                out = new ArrayList<>(src.size());
+                for (int j = 0; j < i; j++) {
+                    out.add(src.get(j));
+                }
+                out.add(mapped);
+            }
+        }
+        return out != null ? out : src;
     }
 }

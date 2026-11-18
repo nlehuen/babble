@@ -44,8 +44,14 @@ public final class AnalysisSession {
     final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> javaEffects = new HashMap<>();
     /** Converged caller-visible summaries of functions and constructors from earlier inputs. */
     final Map<ParserRuleContext, EffectChecker.CallableSummary> callableSummaries = new HashMap<>();
-    /** Checkers of prior inputs and their imported modules by FileContext. */
-    final Map<ParserRuleContext, TypeChecker> owners = new HashMap<>();
+    /** Detached type-node and HOF effect summaries from earlier inputs and their imports (BIP010-D3). */
+    final Map<TypeNode, List<Type.TypeVar>> typeNodeVars = new HashMap<>();
+    final Map<TypeNode, List<Type>> parentTypes = new HashMap<>();
+    final Map<TypeNode, Map<String, Type>> typeMemberTypes = new HashMap<>();
+    final Map<TypeNode, List<Type.Parameter>> constructorParams = new HashMap<>();
+    final Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries = new HashMap<>();
+    final Map<Type.Function, TypedModuleSummary.CallableEffectTemplate> callableTemplates = new HashMap<>();
+    final Map<ParserRuleContext, Object> staticSingletons = new HashMap<>();
     private final List<ClassLoader> classLoaders = new ArrayList<>();
     private final Map<String, String> interfaceJvmNames = new LinkedHashMap<>();
     private final Map<String, String> classJvmNames = new LinkedHashMap<>();
@@ -65,10 +71,16 @@ public final class AnalysisSession {
         modules.putAll(pass.modules);
         typeHierarchies.putAll(analysis.typeHierarchies());
         if (pass.checker != null) {
-            if (pass.checker.file() != null) {
-                owners.put(pass.checker.file(), pass.checker);
+            TypedModuleSummary summary = pass.checker.summary();
+            if (summary != null) {
+                typeNodeVars.putAll(summary.typeNodeVarsMap());
+                parentTypes.putAll(summary.parentTypesMap());
+                typeMemberTypes.putAll(summary.memberTypesMap());
+                constructorParams.putAll(summary.constructorParamsMap());
+                constructorSummaries.putAll(summary.constructorSummariesMap());
+                callableTemplates.putAll(summary.callableTemplatesMap());
             }
-            owners.putAll(pass.checker.ownersMap());
+            staticSingletons.putAll(pass.checker.frozenStaticSingletons());
             declarationTypes.putAll(pass.checker.frozenDeclarations());
             memberTypes.putAll(pass.checker.frozenMembers());
             javaEffects.putAll(pass.checker.committedJavaEffects());

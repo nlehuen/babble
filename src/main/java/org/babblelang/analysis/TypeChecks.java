@@ -24,7 +24,12 @@ import java.util.Set;
  */
 final class TypeChecks {
     /** A default method : a Babble one, or a Java one. Two providers are the same default when owner and name match. */
-    record Provider(Object owner, String name, BabbleParser.FunctionLiteralContext function) {
+    record Provider(Object owner, String name, BabbleParser.FunctionLiteralContext function,
+                    boolean hasFunction, int minParams, int maxParams, int line) {
+        Provider(Object owner, String name, BabbleParser.FunctionLiteralContext function) {
+            this(owner, name, function, function != null, 0, 0, function != null ? function.getStart().getLine() : 0);
+        }
+
         String ownerName() {
             return TypeChecks.name(owner);
         }
@@ -336,7 +341,9 @@ final class TypeChecks {
         Map<String, Provider> result = mergeDefaults(iface, iface.parents);
         for (TypeNode.Member member : iface.members.values()) {
             if (member.function != null) {
-                result.put(member.name, new Provider(iface, member.name, member.function));
+                int max = analysis.parameters(member.function).length;
+                int min = analysis.requiredParameters(member.function);
+                result.put(member.name, new Provider(iface, member.name, member.function, true, min, max, member.function.getStart().getLine()));
             }
         }
         iface.resolving = false;
@@ -475,21 +482,28 @@ final class TypeChecks {
             for (Method method : JavaTypes.abstractMethods(javaInterface)) {
                 BabbleParser.FunctionLiteralContext function = methods.get(method.getName());
                 String owner = type.name;
+                int max;
+                int min;
+                int line;
                 if (function == null) {
                     Provider provider = defaults.get(method.getName());
-                    if (provider == null || provider.function() == null) {
+                    if (provider == null || !provider.hasFunction()) {
                         continue;
                     }
-                    function = provider.function();
                     owner = provider.ownerName();
+                    max = provider.maxParams();
+                    min = provider.minParams();
+                    line = provider.line();
+                } else {
+                    max = analysis.parameters(function).length;
+                    min = analysis.requiredParameters(function);
+                    line = function.getStart().getLine();
                 }
-                int max = analysis.parameters(function).length;
-                int min = analysis.requiredParameters(function);
                 int passed = method.getParameterCount();
                 if (passed < min || passed > max) {
                     String takes = min == max ? String.valueOf(min) : min + " to " + max;
                     throw new AnalysisException(owner + "." + method.getName() + " takes " + takes + " arguments, but "
-                            + JavaTypes.signature(method) + " passes " + passed, function.getStart().getLine());
+                            + JavaTypes.signature(method) + " passes " + passed, line);
                 }
             }
         }

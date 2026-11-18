@@ -23,8 +23,7 @@ public final class ModuleInterface {
     private final Set<ModuleInterface> dependencies = new LinkedHashSet<>();
     private String name = "<module>";
     private TypeChecks checks;
-    private TypeChecker checker;
-    private Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects = Map.of();
+    private TypedModuleSummary summary;
     private volatile ClassLoader compiledClassLoader;
     private volatile Map<String, String> interfaceJvmNames = Map.of();
     private volatile Map<String, String> classJvmNames = Map.of();
@@ -110,19 +109,18 @@ public final class ModuleInterface {
         this.checks = checks;
     }
 
-    /** The file's checker, once it ran, which types its exports. */
-    void typed(TypeChecker checker) {
-        this.checker = checker;
-        this.exportedJavaEffects = checker.exportedJavaEffects();
+    /** Publishes the file's AST-detached type and effect summary once analysis finishes. */
+    void typed(TypedModuleSummary summary) {
+        this.summary = summary != null ? summary : TypedModuleSummary.EMPTY;
     }
 
-    /** The file's type checker, or null if the file is still being analysed (a cycle). */
-    TypeChecker checker() {
-        return checker;
+    /** The file's published summary, or null if the file is still being analysed (a cycle). */
+    TypedModuleSummary summary() {
+        return summary;
     }
 
     Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
-        return exportedJavaEffects;
+        return summary != null ? summary.exportedJavaEffects() : Map.of();
     }
 
     /**
