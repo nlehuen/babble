@@ -778,3 +778,88 @@ def b : int | double = if false then ( 3 ) else ( 3.5 )
 println(c.leftM(), ":", c.rightM(), ":", dyn(c) is ILeft, ":", dyn(c) is IRight, ":", a + b, ":", a - b, ":", a * b, ":", a < b, ":", a <= b, ":", b > a, ":", b >= a, ":", a == b)
 }}}}}
 10:2:true:true:5.5:-1.5:7.0:true:true:true:true:false
+
+{{{{{
+;; ClassofFunction, ImportFunction package toString, ConvertFunction double->int overflow/NaN
+def C = class () ()
+def o = C()
+println(classof(o) == C, ":", classof(java.lang.Object()) == java.lang.Object, ":", import("java.lang"), ":", int(3.9))
+}}}}}
+true:true:package java.lang:3
+
+{{{{{
+def d = 1000000000000.0 * 1000000000.0
+int(d)
+}}}}}
+Out of the int range : d = 1.0E21
+
+{{{{{
+def d = -1000000000000.0 * 1000000000.0
+int(d)
+}}}}}
+Out of the int range : d = -1.0E21
+
+{{{{{
+int(0.0 / 0.0)
+}}}}}
+Out of the int range : 0.0/0.0 = NaN
+
+{{{{{
+def a : any = java.lang.Object()
+def b : any = java.lang.Object()
+a < b
+}}}}}
+Not comparable : a and b
+
+{{{{{
+;; JavaClass, JavaObject equals/hashCode/toString, array length, Java field write, Values.hash
+def o = java.lang.Object()
+def pt = java.awt.Point(1, 2)
+pt.x = 7
+def arr = java.lang.String("ab").toCharArray()
+def map : java.util.Map(any, string) = java.util.HashMap()
+map.put(1.0, "one")
+map.put(0.0 / 0.0, "nan")
+map.put(pt, "pt")
+map.put(o, "obj")
+println(o == o, ":", o == java.lang.Object(), ":", pt.x, ":", arr.length, ":", java.lang.String == java.lang.String, ":", java.lang.String == java.lang.Integer, ":", map.get(1.0), ":", java.awt.Point(3, 4))
+}}}}}
+true:false:7:2:true:false:one:java.awt.Point[x=3,y=4]
+
+{{{{{
+;; BabbleClass implementsType, BabbleInterface extendsType with Java interface, Supers default call on Java interface
+def asAny = (v : any) : any -> ( v )
+def IRun = interface extends java.lang.Runnable ()
+def Runner = class () implements IRun (
+    def run = () -> ( () )
+)
+def MyComp = class () implements java.util.Comparator(int) (
+    def compare = (a : int, b : int) : int -> ( a - b )
+    def rev = () : java.util.Comparator(any?) -> ( super(java.util.Comparator).reversed() )
+)
+def runner = Runner()
+def obj = object ( def x = 42 )
+println(asAny(runner) is java.lang.Runnable, ":", asAny(runner) is IRun, ":", asAny(runner) is java.io.Serializable, ":", obj.x, ":", MyComp().rev().compare(1, 5) > 0)
+}}}}}
+true:true:false:42:true
+
+{{{{{
+;; Member & name used before definition checks
+def C = class () (
+    def getB = () : int -> ( this.b )
+    def a : int = this.getB()
+    def b = 1
+)
+C()
+}}}}}
+Member used before definition : b
+
+{{{{{
+def C = class () () static (
+    def getB = () : int -> ( C.b )
+    def a : int = C.getB()
+    def b = 1
+)
+println(C.a)
+}}}}}
+Name used before definition : C
