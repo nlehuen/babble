@@ -11,11 +11,11 @@ println(dsum, ":", box.get("k"))
 
 {{{{{
 ;; Faces convertResult type error when SAM implementation returns wrong type
-def list : java.util.List(int) = java.util.ArrayList()
-list.add(1)
-list.add(2)
+def items : java.util.List(int) = java.util.ArrayList()
+items.add(1)
+items.add(2)
 def bad = (x : any?, y : any?) : any? -> ( "oops" )
-java.util.Collections.sort(list, bad)
+java.util.Collections.sort(items, bad)
 }}}}}
 Type error : Comparator.compare must return int, got String
 

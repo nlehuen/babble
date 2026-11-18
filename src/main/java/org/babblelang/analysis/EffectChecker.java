@@ -2716,6 +2716,14 @@ final class EffectChecker {
                 eval(isCtx.right);
                 return Origin.IMMUTABLE;
             }
+            if (ctx instanceof BabbleParser.NonNullAssertionContext nn) {
+                Origin operand = eval(nn.expression());
+                Type src = effectiveType(nn.expression());
+                if (src == null || Type.containsNull(src)) {
+                    nothrow = false;
+                }
+                return operand;
+            }
             if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
                 Origin leftOrig = eval(asCtx.left);
                 Type src = effectiveType(asCtx.left);

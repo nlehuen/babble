@@ -1,0 +1,42 @@
+;; Core type names (byte..string, list..entry, any, void) are keywords : no def, parameter,
+;; type parameter or package can take them, but members can, as Java methods do (List.set,
+;; Stream.map, File.list). A core type name as a value is its conversion function.
+
+;; Java members named after core types stay callable after '.' and '?.'
+def names: java.util.List(string) = java.util.ArrayList()
+names.add("a")
+names.add("b")
+names.set(0, "c")
+assert(names.get(0) == "c")
+def doubled = java.util.List.of(1, 2, 3).stream().map((x) -> (x * 2)).toList()
+assert(doubled.get(2) == 6)
+def maybe: java.util.List(string)? = names
+assert(maybe?.set(1, "d") == "b")
+
+;; Conversions are the core type names called as functions
+assert(int("42") + 1 == 43)
+assert(double(1) == 1.0)
+def convert = int
+assert(convert(2.9) == 2)
+
+;; Type tests on core type names
+def kind = (v: any?): string -> (
+    if v is int then ("int") else if v is double then ("double") else if v is bool then ("bool")
+    else if v is string then ("string") else if v is any then ("any") else ("null")
+)
+def kinds = kind(1) + kind(1.5) + kind(true) + kind("s") + kind(java.lang.Object()) + kind(null)
+assert(kinds == "intdoubleboolstringanynull")
+
+;; void is the type of null : what returns nothing
+def nothing = (): void -> (null)
+def v: void = nothing()
+assert(v == null)
+
+;; The non-null assertion e! : e without null, failing at run time when it is null
+def lookup = (key: string): int? -> (if key == "one" then (1) else (null))
+def one: int = lookup("one")!
+assert(one + 1 == 2)
+def maybeName: string? = "ok"
+assert(maybeName! + "!" == "ok!")
+def firstOf = (xs: java.util.List(string)?): string? -> (xs!.get(0))
+assert(firstOf(names) == "c")

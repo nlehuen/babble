@@ -17,13 +17,13 @@ export def Dup = class (def n : int) ()
 
 {{{{{
 ;; satisfiesJavaBound: Comparable<? super T>, Collection<? extends E>, Comparator<? super T>
-def list : java.util.ArrayList(string) = java.util.ArrayList()
-list.add("c")
-list.add("a")
-list.add("b")
-def m = java.util.Collections.max(list)
-def ro = java.util.List.copyOf(list)
-java.util.Collections.sort(list, (a : java.lang.CharSequence, b : java.lang.CharSequence) : int -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
+def items : java.util.ArrayList(string) = java.util.ArrayList()
+items.add("c")
+items.add("a")
+items.add("b")
+def m = java.util.Collections.max(items)
+def ro = java.util.List.copyOf(items)
+java.util.Collections.sort(items, (a : java.lang.CharSequence, b : java.lang.CharSequence) : int -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
 println(m, ":", ro.size())
 }}}}}
 c:3
@@ -31,8 +31,8 @@ c:3
 {{{{{
 ;; satisfiesJavaBound failure: non-Comparable passed to Collections.max
 def Bad = class () ()
-def list : java.util.List(Bad) = java.util.List.of(Bad())
-java.util.Collections.max(list)
+def items : java.util.List(Bad) = java.util.List.of(Bad())
+java.util.Collections.max(items)
 }}}}}
 Type error : type argument Bad does not satisfy bound T of java.util.Collections.max
 

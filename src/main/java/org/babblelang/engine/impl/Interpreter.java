@@ -17,6 +17,8 @@ import org.babblelang.runtime.BabbleType;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.Calls;
+import org.babblelang.runtime.JavaTypes;
+import org.babblelang.engine.impl.natives.ConvertFunction;
 import org.babblelang.runtime.ClassBody;
 import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.Classes;
@@ -378,6 +380,20 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
         last = ctx;
         return Types.check(result, scopes.checkedType(ctx));
+    }
+
+    @Override
+    public Object visitCoreTypeName(BabbleParser.CoreTypeNameContext ctx) {
+        last = ctx;
+        return ConvertFunction.of(ctx.getText());
+    }
+
+    @Override
+    public Object visitNonNullAssertion(BabbleParser.NonNullAssertionContext ctx) {
+        last = ctx;
+        Object value = visit(ctx.expression());
+        last = ctx;
+        return JavaTypes.checkNotNull(value, scopes.nonNullType(ctx));
     }
 
     @Override

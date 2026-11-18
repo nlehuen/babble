@@ -52,8 +52,8 @@ export only applies to the top-level definitions of a file : bad
 {{{{{
 ;; Java package import via import("java.util")
 def util = import("java.util")
-def list : java.util.List(string) = util.ArrayList()
-list.add("hi")
-println(list.size(), ":", list.get(0))
+def items : java.util.List(string) = util.ArrayList()
+items.add("hi")
+println(items.size(), ":", items.get(0))
 }}}}}
 1:hi

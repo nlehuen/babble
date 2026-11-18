@@ -15,7 +15,7 @@ export def Dup = class (def x : int) ()
 {{{{{
 ;; JavaLinker fast-path caches via loop calls (BoundJavaMethod, JavaMethod, isWrappedOf, bindWrapped,
 ;; bindRaw, isNull, isKind, isWrappedKind, toJava, fail)
-def list : java.util.ArrayList(any?) = java.util.ArrayList()
+def items : java.util.ArrayList(any?) = java.util.ArrayList()
 def addLoop = (target : java.util.ArrayList(any?)) : string -> (
     def addFn : (v : any?) : bool = target.add
     def i = 0
@@ -31,7 +31,7 @@ def staticLoop = () : string -> (
     def valOf : (n : int) : string = java.lang.String.valueOf
     valOf(1) + ":" + valOf(2)
 )
-println(addLoop(list), ":", staticLoop())
+println(addLoop(items), ":", staticLoop())
 }}}}}
 [x, x, null, y]:1:2
 
@@ -77,10 +77,10 @@ println(total)
 def V = value class (a : any?, b : double, c : double) ()
 def v1 = V(null, 2.0, java.lang.Double.MAX_VALUE)
 def v2 = V(2, 2.0, java.lang.Double.MAX_VALUE)
-def map : java.util.Map(V, string) = java.util.HashMap()
-map.put(v1, "one")
-map.put(v2, "two")
-println(v1 == V(null, 2.0, java.lang.Double.MAX_VALUE), ":", map.get(V(null, 2.0, java.lang.Double.MAX_VALUE)), ":", map.get(v2))
+def dict : java.util.Map(V, string) = java.util.HashMap()
+dict.put(v1, "one")
+dict.put(v2, "two")
+println(v1 == V(null, 2.0, java.lang.Double.MAX_VALUE), ":", dict.get(V(null, 2.0, java.lang.Double.MAX_VALUE)), ":", dict.get(v2))
 
 def dyn = (v : any?) : any? -> ( v )
 def dOrS : double | string = dyn(3) as double | string
@@ -135,14 +135,14 @@ println(sumL, ":", c.apply(3), ":", pred.test(java.lang.Boolean.TRUE), ":", comp
 ;; Standard SAMs are LambdaMetafactory-backed (not Proxy); FunctionHandler & JavaTypes.checkParameter covered via >16-arg Proxy fallback SAM
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
-    def list = java.util.Arrays.asList(cls.getMethods())
+    def items = java.util.Arrays.asList(cls.getMethods())
     def i = 0
-    while i < list.size() then (
-        def m = list.get(i) as java.lang.reflect.Method
+    while i < items.size() then (
+        def m = items.get(i) as java.lang.reflect.Method
         if m.getName() == name then ( return m )
         i += 1
     )
-    list.get(0) as java.lang.reflect.Method
+    items.get(0) as java.lang.reflect.Method
 )
 def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
@@ -164,14 +164,14 @@ Type error : expected int, got string
 {{{{{
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
-    def list = java.util.Arrays.asList(cls.getMethods())
+    def items = java.util.Arrays.asList(cls.getMethods())
     def i = 0
-    while i < list.size() then (
-        def m = list.get(i) as java.lang.reflect.Method
+    while i < items.size() then (
+        def m = items.get(i) as java.lang.reflect.Method
         if m.getName() == name then ( return m )
         i += 1
     )
-    list.get(0) as java.lang.reflect.Method
+    items.get(0) as java.lang.reflect.Method
 )
 def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
@@ -191,14 +191,14 @@ Type error : expected double, got string
 {{{{{
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
-    def list = java.util.Arrays.asList(cls.getMethods())
+    def items = java.util.Arrays.asList(cls.getMethods())
     def i = 0
-    while i < list.size() then (
-        def m = list.get(i) as java.lang.reflect.Method
+    while i < items.size() then (
+        def m = items.get(i) as java.lang.reflect.Method
         if m.getName() == name then ( return m )
         i += 1
     )
-    list.get(0) as java.lang.reflect.Method
+    items.get(0) as java.lang.reflect.Method
 )
 def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
@@ -219,14 +219,14 @@ Type error : expected string, got int
 ;; checkParameter double widened from int, and File non-File check via >16-arg Proxy fallback SAM
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
-    def list = java.util.Arrays.asList(cls.getMethods())
+    def items = java.util.Arrays.asList(cls.getMethods())
     def i = 0
-    while i < list.size() then (
-        def m = list.get(i) as java.lang.reflect.Method
+    while i < items.size() then (
+        def m = items.get(i) as java.lang.reflect.Method
         if m.getName() == name then ( return m )
         i += 1
     )
-    list.get(0) as java.lang.reflect.Method
+    items.get(0) as java.lang.reflect.Method
 )
 def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
@@ -262,8 +262,8 @@ Cannot import ../../missing.ba : no such module
 
 {{{{{
 ;; JavaLinker.call (Bootstrap.call with all non-primitive param/return types) & JavaLinker.select (wrapped & raw in loop)
-def map : java.util.Map(any?, any?) = java.util.HashMap()
-def putFn : (k : any?, v : any?) : any? = map.put
+def dict : java.util.Map(any?, any?) = java.util.HashMap()
+def putFn : (k : any?, v : any?) : any? = dict.put
 def toStrFn : (o : any?) : string = java.util.Objects.toString
 def s = ""
 def i = 0
@@ -291,7 +291,7 @@ while i < 3 then (
     bigSum = addBigFn(java.math.BigInteger.ONE)
     i += 1
 )
-println(map.get("k1"), ":", map.get(null), ":", s, ":", total, ":", bigSum.toString())
+println(dict.get("k1"), ":", dict.get(null), ":", s, ":", total, ":", bigSum.toString())
 }}}}}
 v1:sb:xxxnull:y:5:3
 
@@ -655,8 +655,8 @@ Member used before definition : late
 def K = class (def v : int) (
     def toString = () : string -> ( "K" )
 )
-def list : java.util.List(any?) = java.util.ArrayList()
-def addFn : (v : any?) : bool = list.add
+def items : java.util.List(any?) = java.util.ArrayList()
+def addFn : (v : any?) : bool = items.add
 def pickItem = (idx : int) : any? -> (
     if idx == 0 then ( "s" )
     else if idx == 1 then ( null )
@@ -680,7 +680,7 @@ while j < 5 then (
     out = out + toStr(pickItem(j)) + ";"
     j += 1
 )
-println(list.size(), "|", out)
+println(items.size(), "|", out)
 }}}}}
 10|s;null;sb;K;class K;
 
@@ -858,12 +858,12 @@ def o = java.lang.Object()
 def pt = java.awt.Point(1, 2)
 pt.x = 7
 def arr = java.lang.String("ab").toCharArray()
-def map : java.util.Map(any, string) = java.util.HashMap()
-map.put(1.0, "one")
-map.put(0.0 / 0.0, "nan")
-map.put(pt, "pt")
-map.put(o, "obj")
-println(o == o, ":", o == java.lang.Object(), ":", pt.x, ":", arr.length, ":", java.lang.String == java.lang.String, ":", java.lang.String == java.lang.Integer, ":", map.get(1.0), ":", java.awt.Point(3, 4))
+def dict : java.util.Map(any, string) = java.util.HashMap()
+dict.put(1.0, "one")
+dict.put(0.0 / 0.0, "nan")
+dict.put(pt, "pt")
+dict.put(o, "obj")
+println(o == o, ":", o == java.lang.Object(), ":", pt.x, ":", arr.length, ":", java.lang.String == java.lang.String, ":", java.lang.String == java.lang.Integer, ":", dict.get(1.0), ":", java.awt.Point(3, 4))
 }}}}}
 true:false:7:2:true:false:one:java.awt.Point[x=3,y=4]
 

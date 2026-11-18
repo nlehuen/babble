@@ -14,8 +14,8 @@ def sumList = (head): int -> (
     total
 )
 
-def list = Node(1, Node(2, Node(3, null)))
-assert(sumList(list) == 6)
+def nodes = Node(1, Node(2, Node(3, null)))
+assert(sumList(nodes) == 6)
 assert(sumList(null) == 0)
 
 def describe = (x: int | string | null): string -> (
@@ -36,7 +36,7 @@ assert(describe(null) == "null:null")
 def headOrZero = (node): int -> (
     if node then (node.value) else (0)
 )
-assert(headOrZero(list) == 1)
+assert(headOrZero(nodes) == 1)
 assert(headOrZero(null) == 0)
 
 def textOrCount = (v: int | string): string -> (

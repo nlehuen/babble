@@ -132,14 +132,12 @@ final class OperatorTypes {
     static final Type ARGS_TYPE = new Type.JavaInstance(java.util.List.class, List.of(Type.STRING));
 
     /**
-     * A name the analysis doesn't declare : a root Java package, a number conversion
-     * ({@code int(x)}, {@code double(x)}), implicit signatures and {@code any} bindings.
+     * A name the analysis doesn't declare : a root Java package, implicit signatures and
+     * {@code any} bindings.
      */
     Type implicitType(String name) {
         return switch (name) {
             case "java", "javax" -> new Type.JavaPackage(name);
-            case "int" -> INT_CONVERSION;
-            case "double" -> DOUBLE_CONVERSION;
             case "print", "println", "affiche", "afficherc" -> Type.PRINT;
             case "assert", "suppose" -> ASSERT_FUNCTION;
             case "same" -> SAME_FUNCTION;
@@ -148,6 +146,15 @@ final class OperatorTypes {
             case "STDOUT" -> STDOUT_TYPE;
             case "args" -> ARGS_TYPE;
             default -> Type.ANY;
+        };
+    }
+
+    /** The conversion function a core type name denotes as a value ({@code int(x)}), or null. */
+    static Type.Function conversion(String coreType) {
+        return switch (coreType) {
+            case "int" -> INT_CONVERSION;
+            case "double" -> DOUBLE_CONVERSION;
+            default -> null;
         };
     }
 

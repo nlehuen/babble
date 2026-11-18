@@ -188,7 +188,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testPackageMembersAreNotAssignedFromOutside() {
-        assertDiagnostics("package p ( def n : int = 1 ; package q ( def s = \"\" ) ; def set = (v : int) -> ( n = v ) )\np.n = 2\np.q.s += \"x\"\np.set(3)",
+        assertDiagnostics("package p ( def n : int = 1 ; package q ( def s = \"\" ) ; def put = (v : int) -> ( n = v ) )\np.n = 2\np.q.s += \"x\"\np.put(3)",
                 "2:1 Cannot assign to a package member : n",
                 "3:1 Cannot assign to a package member : s");
     }
@@ -563,11 +563,10 @@ public class TypeCheckerTestCase {
                 + "  def ok2 : string = if not (v is string) then ( \"no\" ) else ( v )\n"
                 + "  ok1\n)\n"
                 + "def g2 = (v : any) -> (\n"
-                + "  def int = Point\n"
-                + "  if v is int then ( def bad : string = v.x )\n"
+                + "  if v is int then ( def bad : string = v )\n"
                 + "  0\n)",
-                "9:41 Type error : expected string, got int");
-        // Built-in int(x) conversion is unaffected outside the right of is.
+                "8:41 Type error : expected string, got int");
+        // Core type names are keywords : int(x) is always the conversion.
         assertDiagnostics("def n : int = int(\"42\") + 1");
     }
 
@@ -983,6 +982,26 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testNonNullAssertion() {
+        assertDiagnostics("def id = (v : int?) : int? -> ( v )\n"
+                + "def a : int = id(1)!\n"
+                + "def b : int = id(1)\n"
+                + "def c = null!\n"
+                + "def u = (v : int | string | null) -> ( def w : int | string = v! )",
+                "3:15 Type error : expected int, got int?",
+                "4:9 Type error : expected any, got null");
+        assertWarnings("def n = 1!", "1:9 Redundant non-null assertion : int");
+    }
+
+    @Test
+    public void testCoreTypeKeywords() {
+        assertDiagnostics("def a : void = null\ndef b : int(string) = 1\ndef c = (v : any) -> ( v is list )\ndef d = any",
+                "2:9 Wrong number of type arguments : expected 0, got 1",
+                "3:29 Unknown type : list",
+                "4:9 Not a value : any");
+    }
+
+    @Test
     public void testFunctionReturnWideningSoundness() {
         assertDiagnostics("def f = () -> ( 1 )\n"
                         + "def bad1 : () : double = f\n"
@@ -1081,7 +1100,7 @@ public class TypeCheckerTestCase {
         // Positive cases: Babble generics, Java generics, bounds, covariance, is/as raw narrowing, nullability.
         assertDiagnostics("def id(T) = (x : T) : T -> ( x )\n"
                 + "def Box(T) = class (def value : T) (\n"
-                + "  def map(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )\n"
+                + "  def transform(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )\n"
                 + ")\n"
                 + "def n : int = id(1)\n"
                 + "def idStr : (s : string) : string = id\n"

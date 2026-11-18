@@ -194,6 +194,9 @@ final class TypeAnnotations {
         if (primary instanceof BabbleParser.ParenTypeContext paren) {
             return annotation(paren.type(), scope, allowRaw);
         }
+        if (primary instanceof BabbleParser.CoreTypeContext core) {
+            return coreType(core);
+        }
         BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
         Type result = simpleType(simple, scope, allowRaw);
         if (result == null) {
@@ -222,8 +225,31 @@ final class TypeAnnotations {
         return result;
     }
 
+    /** A core type name : {@code int}, {@code string}, {@code any}, {@code void} (the type of null)... */
+    private Type coreType(BabbleParser.CoreTypeContext core) {
+        String name = core.coreTypeKeyword().getText();
+        Type builtin = switch (name) {
+            case "int" -> Type.INT;
+            case "double" -> Type.DOUBLE;
+            case "bool" -> Type.BOOL;
+            case "string" -> Type.STRING;
+            case "any" -> Type.ANY;
+            case "void" -> Type.NULL;
+            default -> null;
+        };
+        if (builtin == null) {
+            checker.warn("Unknown type : " + core.getText(), core);
+            return Type.ERROR;
+        }
+        if (core.typeArguments() != null) {
+            checker.warn("Wrong number of type arguments : expected 0, got " + core.typeArguments().type().size(), core);
+            return Type.ERROR;
+        }
+        return builtin;
+    }
+
     /**
-     * T1 : the built-in names, generic type parameters, a class or interface literal bound to
+     * T1 : generic type parameters, a class or interface literal bound to
      * a def (possibly reached through packages or modules), or a Java class. Null when unknown.
      */
     private Type simpleType(BabbleParser.SimpleTypeContext type, ScopeNode scope, boolean allowRaw) {
@@ -240,22 +266,7 @@ final class TypeAnnotations {
         }
         Object resolved = TypeChecker.resolveName(null, path.get(0), scope);
         if (path.size() == 1 && resolved == null) {
-            Type builtin = switch (path.get(0)) {
-                case "int" -> Type.INT;
-                case "double" -> Type.DOUBLE;
-                case "bool" -> Type.BOOL;
-                case "string" -> Type.STRING;
-                case "any" -> Type.ANY;
-                default -> null;
-            };
-            if (builtin == null) {
-                return null;
-            }
-            if (type.typeArguments() != null) {
-                checker.warn("Wrong number of type arguments : expected 0, got " + type.typeArguments().type().size(), type);
-                return Type.ERROR;
-            }
-            return builtin;
+            return null;
         }
         if (resolved instanceof BabbleParser.DefExpressionContext def) {
             if (path.size() == 1) {

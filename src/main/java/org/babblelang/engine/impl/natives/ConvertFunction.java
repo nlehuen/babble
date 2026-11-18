@@ -21,6 +21,15 @@ public final class ConvertFunction implements Callable {
     public static final ConvertFunction INT = new ConvertFunction(true);
     public static final ConvertFunction DOUBLE = new ConvertFunction(false);
 
+    /** The conversion function a core type name denotes as a value ({@code int}, {@code double}). */
+    public static Callable of(String coreType) {
+        return switch (coreType) {
+            case "int" -> INT;
+            case "double" -> DOUBLE;
+            default -> throw new BabbleException("Not a value : " + coreType);
+        };
+    }
+
     private String name() {
         return toInt ? "int" : "double";
     }

@@ -1,5 +1,34 @@
 grammar Babble;
 
+@lexer::members {
+    // The core type names are keywords, except as member names : after '.' or '?.', they are
+    // identifiers, so that Java methods such as List.set, Stream.map or File.list stay callable.
+    private int lastDefaultType = -1;
+
+    @Override
+    public Token nextToken() {
+        Token token = super.nextToken();
+        if (token.getChannel() == Token.DEFAULT_CHANNEL) {
+            if ((lastDefaultType == DOT || lastDefaultType == SAFE_DOT) && isCoreTypeKeyword(token.getType())
+                    && token instanceof WritableToken writable) {
+                writable.setType(ID);
+            }
+            lastDefaultType = token.getType();
+        }
+        return token;
+    }
+
+    @Override
+    public void reset() {
+        super.reset();
+        lastDefaultType = -1;
+    }
+
+    public static boolean isCoreTypeKeyword(int type) {
+        return type >= BYTE_KW && type <= VOID_KW;
+    }
+}
+
 @parser::members {
     private static boolean isAxiomOrImpureWord(Token token) {
         if (token == null || token.getType() != ID) {
@@ -151,6 +180,10 @@ expression:
           // A newline may come before the dot : a chain of calls can go on the next lines.
           | expression NL* ('.' | safe='?.') ID               # selector
           | ID                                                # selector
+          // A core type name : as a value, its conversion function (int(x)), or what x is int tests.
+          | coreTypeKeyword                                   # coreTypeName
+          // The non-null assertion : e! is e, failing when it is null. No newline before '!'.
+          | expression BANG                                   # nonNullAssertion
           | expression callParameters                         # call
           | block                                             # blockExpression
           | NOT expression                                    # booleanNot
@@ -211,10 +244,18 @@ nullableType: primaryType question='?'?;
 
 primaryType: {isFunctionTypeStart()}? effectPrefix parametersDeclaration ( ':' type | )   # functionType
            | ID ('.' ID)* typeArguments?                                                  # simpleType
+           | coreTypeKeyword typeArguments?                                               # coreType
            | parametersDeclaration ( ':' type | )                                         # functionType
            | NULL                                                                         # nullType
            | '(' NL* type NL* ')'                                                         # parenType
            ;
+
+// The core type names (they can't be redefined).
+coreScalarKeyword: BYTE_KW | SHORT_KW | INT_KW | LONG_KW | FLOAT_KW | DOUBLE_KW | BOOL_KW | CHAR_KW | STRING_KW;
+
+coreCollectionKeyword: LIST_KW | SET_KW | SORTEDSET_KW | MAP_KW | SORTEDMAP_KW | ENTRY_KW;
+
+coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY_KW | VOID_KW;
 
 // Tokens
 INT: [0-9]+;
@@ -228,6 +269,7 @@ LT: '<';
 LTE: '<=';
 EQ: '==';
 NEQ: '<>' | '!=';
+BANG: '!';
 GTE: '>=';
 GT: '>';
 COLON: ':';
@@ -270,6 +312,24 @@ SUPER: 'super';
 PRIVATE: 'private';
 STATIC: 'static';
 EXPORT: 'export';
+// Core type names : keep them together and in this order (isCoreTypeKeyword).
+BYTE_KW: 'byte';
+SHORT_KW: 'short';
+INT_KW: 'int';
+LONG_KW: 'long';
+FLOAT_KW: 'float';
+DOUBLE_KW: 'double';
+BOOL_KW: 'bool';
+CHAR_KW: 'char';
+STRING_KW: 'string';
+LIST_KW: 'list';
+SET_KW: 'set';
+SORTEDSET_KW: 'sortedset';
+MAP_KW: 'map';
+SORTEDMAP_KW: 'sortedmap';
+ENTRY_KW: 'entry';
+ANY_KW: 'any';
+VOID_KW: 'void';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
 // Comments are kept, on the hidden channel : the parser does not see them, the formatter does.
 MULTILINECOMMENT: ';;(' .*? ';;)' -> channel(HIDDEN);

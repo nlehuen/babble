@@ -385,7 +385,7 @@ public final class Formatter {
         if (before.getType() == OPEN || type == CLOSE || type == BabbleLexer.COMMA || type == BabbleLexer.SEMICOLON
                 || type == BabbleLexer.COLON || type == BabbleLexer.DOT || before.getType() == BabbleLexer.DOT
                 || type == BabbleLexer.SAFE_DOT || before.getType() == BabbleLexer.SAFE_DOT
-                || type == BabbleLexer.QUESTION
+                || type == BabbleLexer.QUESTION || type == BabbleLexer.BANG
                 || before.getType() == BabbleLexer.MINUS && unaryMinus[before.getTokenIndex()] && type != BabbleLexer.MINUS) {
             return false;
         }

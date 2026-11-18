@@ -1394,6 +1394,8 @@ final class TypeChecker {
                 case BabbleParser.SuperExpressionContext c -> visitSuperExpression(c, expected, role);
                 case BabbleParser.SelectorContext c -> visitSelector(c, expected, role);
                 case BabbleParser.CallContext c -> visitCall(c, expected, role);
+                case BabbleParser.CoreTypeNameContext c -> visitCoreTypeName(c, expected, role);
+                case BabbleParser.NonNullAssertionContext c -> visitNonNullAssertion(c, expected, role);
                 case BabbleParser.BlockExpressionContext c -> visitBlockExpression(c, expected, role);
                 case BabbleParser.BlockContext c -> visitBlock(c, expected, role);
                 case BabbleParser.NegateContext c -> visitNegate(c, expected, role);
@@ -1755,11 +1757,47 @@ final class TypeChecker {
             return operators.binaryOp(ctx, synth(ctx.left), synth(ctx.right));
         }
 
+        /** A core type name as a value : its conversion function ({@code int(x)}). */
+        private Type visitCoreTypeName(BabbleParser.CoreTypeNameContext ctx, Type expected, Role role) {
+            if (ctx.getParent() instanceof BabbleParser.IsExpressionContext test && test.right == ctx) {
+                // x is int : a type test, which visitIsExpression checks.
+                return Type.ANY;
+            }
+            Type.Function conversion = OperatorTypes.conversion(ctx.getText());
+            if (conversion == null) {
+                warn("Not a value : " + ctx.getText(), ctx);
+                return Type.ERROR;
+            }
+            return conversion;
+        }
+
+        /** {@code e!} : e without null, failing at run time when it is null. */
+        private Type visitNonNullAssertion(BabbleParser.NonNullAssertionContext ctx, Type expected, Role role) {
+            Type operand = synth(ctx.expression());
+            if (isUnresolved(operand)) {
+                return operand;
+            }
+            if (operand == Type.NULL) {
+                warn("Type error : expected any, got null", ctx.expression());
+                return Type.ERROR;
+            }
+            Type result = operand;
+            if (!Type.containsNull(operand)) {
+                analysisWarn("Redundant non-null assertion : " + operand, ctx);
+            } else {
+                result = Type.withoutNull(operand);
+            }
+            pass.analysis.setNonNullType(ctx, result.toString());
+            return result;
+        }
+
         private Type visitIsExpression(BabbleParser.IsExpressionContext ctx, Type expected, Role role) {
             synth(ctx.left);
             Type.Simple builtin = narrowing.isBuiltinTarget(ctx);
             if (builtin != null) {
                 pass.analysis.setIsBuiltin(ctx, builtin.name());
+            } else if (ctx.right instanceof BabbleParser.CoreTypeNameContext core) {
+                warn("Unknown type : " + core.getText(), core);
             } else {
                 synth(ctx.right, Role.TYPE_TEST_RIGHT);
             }

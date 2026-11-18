@@ -68,10 +68,10 @@ def GoodCons = class () implements java.util.function.Consumer(java.lang.Object)
 )
 def okSam = pure () : int -> (
     def item : java.lang.Object = 1
-    def list : java.util.List(java.lang.Object) = java.util.Collections.singletonList(item)
-    list.forEach((x) -> ( def y = x ))
-    list.forEach(GoodCons())
-    list.size()
+    def items : java.util.List(java.lang.Object) = java.util.Collections.singletonList(item)
+    items.forEach((x) -> ( def y = x ))
+    items.forEach(GoodCons())
+    items.size()
 )
 println(okSam())
 }}}}}
@@ -82,9 +82,9 @@ axiom pure deterministic java.util.ArrayList()
 axiom hermetic mut java.util.ArrayList.add
 axiom pure java.util.ArrayList.forEach
 def badSamLambda = pure () -> (
-    def list : java.util.ArrayList(java.lang.Object) = java.util.ArrayList()
-    list.add(1)
-    list.forEach((x) -> ( println(x) ))
+    def items : java.util.ArrayList(java.lang.Object) = java.util.ArrayList()
+    items.add(1)
+    items.forEach((x) -> ( println(x) ))
 )
 }}}}}
 Function badSamLambda declared pure violates pure guarantee
@@ -97,9 +97,9 @@ def BadCons = class () implements java.util.function.Consumer(java.lang.Object) 
     def accept = (x : java.lang.Object) -> ( println(x) )
 )
 def badSamClass = pure () -> (
-    def list : java.util.ArrayList(java.lang.Object) = java.util.ArrayList()
-    list.add(1)
-    list.forEach(BadCons())
+    def items : java.util.ArrayList(java.lang.Object) = java.util.ArrayList()
+    items.add(1)
+    items.forEach(BadCons())
 )
 }}}}}
 Function badSamClass declared pure violates pure guarantee

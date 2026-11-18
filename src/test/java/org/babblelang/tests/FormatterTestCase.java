@@ -334,6 +334,12 @@ public class FormatterTestCase {
     }
 
     @Test
+    public void testCoreTypesAndNonNullAssertion() throws Exception {
+        assertFormats("def xs: list = m.get(k)!.set(0, int(x)!)\nv is int\n",
+                "def xs:list=m.get(k) !.set(0,int (x) !)\nv is int");
+    }
+
+    @Test
     public void testComments() throws Exception {
         assertFormats("""
                 ;; first
@@ -352,7 +358,7 @@ public class FormatterTestCase {
 
                     ;; last
                 )
-                def long = 1  ;; not aligned with those above
+                def lengthy = 1  ;; not aligned with those above
                 ;; end
                 """, """
                 ;; first  \s
@@ -371,7 +377,7 @@ public class FormatterTestCase {
 
                 ;; last
                 )
-                def long = 1 ;; not aligned with those above
+                def lengthy = 1 ;; not aligned with those above
                 ;; end""");
         // A comment of several lines moves as a whole : its lines stay where they are, relative to its start.
         assertFormats("""

@@ -2967,6 +2967,30 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitCoreTypeName(BabbleParser.CoreTypeNameContext ctx) {
+        mv.visitLdcInsn(ctx.getText());
+        line(ctx);
+        mv.visitMethodInsn(INVOKESTATIC, "org/babblelang/engine/impl/natives/ConvertFunction", "of",
+                "(Ljava/lang/String;)Lorg/babblelang/runtime/Callable;", false);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    @Override
+    public Void visitNonNullAssertion(BabbleParser.NonNullAssertionContext ctx) {
+        emitBoxed(ctx.expression());
+        mv.visitLdcInsn(scopes.nonNullType(ctx));
+        line(ctx);
+        mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "checkNotNull", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        ScopeAnalysis.PrimitiveKind kind = scopes.expressionKind(ctx);
+        if (kind.isPrimitive()) {
+            unbox(kind);
+        }
+        stackKind = kind;
+        return null;
+    }
+
+    @Override
     public Void visitIsExpression(BabbleParser.IsExpressionContext ctx) {
         emitBoxed(ctx.left);
         String builtin = scopes.isBuiltin(ctx);

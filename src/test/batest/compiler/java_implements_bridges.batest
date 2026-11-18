@@ -16,14 +16,14 @@ def c = Counter(5)
 def r : java.lang.Runnable = c
 r.run()
 def sup : java.util.function.IntSupplier = c
-def list : java.util.List(Weight) = java.util.ArrayList()
-list.add(Weight(30))
-list.add(Weight(10))
-list.add(Weight(20))
-java.util.Collections.sort(list)
-def set : java.util.Set(Weight) = java.util.HashSet()
-set.add(Weight(10))
-println(sup.getAsInt(), ":", (list.get(0) as Weight).grams, ":", set.contains(Weight(10)), ":", mulObj.applyAsDouble(2.0, 3.0))
+def items : java.util.List(Weight) = java.util.ArrayList()
+items.add(Weight(30))
+items.add(Weight(10))
+items.add(Weight(20))
+java.util.Collections.sort(items)
+def bag : java.util.Set(Weight) = java.util.HashSet()
+bag.add(Weight(10))
+println(sup.getAsInt(), ":", (items.get(0) as Weight).grams, ":", bag.contains(Weight(10)), ":", mulObj.applyAsDouble(2.0, 3.0))
 }}}}}
 15:10:true:6.5
 

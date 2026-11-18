@@ -147,19 +147,19 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
     def kind = (): string -> ("bvh_node")
 ) static (
     ;; Recursively partitions a HittableList into a balanced BVH tree
-    def fromList = (list: HittableList): Hittable -> (
-        if list.size == 0 then (
+    def fromList = (hittables: HittableList): Hittable -> (
+        if hittables.size == 0 then (
             return emptyHittable
         )
-        if list.size == 1 then (
-            return list.first()
+        if hittables.size == 1 then (
+            return hittables.first()
         )
-        if list.size == 2 then (
-            return this(list.first(), list.second(), list.boundingBox())
+        if hittables.size == 2 then (
+            return this(hittables.first(), hittables.second(), hittables.boundingBox())
         )
-        def box: AABB = list.boundingBox()
+        def box: AABB = hittables.boundingBox()
         def cbox: AABB = AABB.empty
-        def cur: HittableNode? = list.headNode()
+        def cur: HittableNode? = hittables.headNode()
         while cur != null then (
             cbox = cbox.expandPoint(cur.item.boundingBox().center())
             cur = cur.next
@@ -169,7 +169,7 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
 
         def leftList: HittableList = HittableList()
         def rightList: HittableList = HittableList()
-        cur = list.headNode()
+        cur = hittables.headNode()
         while cur != null then (
             def item: Hittable = cur.item
             if item.boundingBox().centroid(axis) < splitVal then (
@@ -185,7 +185,7 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
             leftList.clear()
             rightList.clear()
             def goLeft: bool = true
-            cur = list.headNode()
+            cur = hittables.headNode()
             while cur != null then (
                 if goLeft then (
                     leftList.add(cur.item)

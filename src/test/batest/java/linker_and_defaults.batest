@@ -16,10 +16,10 @@ def rawList = java.util.List.of("a", "b", "c")
 def rawGet = rawList.get
 println(rawGet(1))
 
-def list : java.util.List(any) = java.util.ArrayList()
-def add = list.add
+def items : java.util.List(any) = java.util.ArrayList()
+def add = items.add
 add(sb)
-println(list.size())
+println(items.size())
 
 def intVal = java.lang.Integer.valueOf
 def dblVal = java.lang.Double.valueOf
@@ -45,10 +45,10 @@ abc:null:20:null
 {{{{{
 ;; Polymorphic and megamorphic JavaLinker select & call across wrapped/raw receivers and BabbleInstance args
 def Box = class (def n : int) ()
-def list : java.util.List(any) = java.util.ArrayList()
-def add = list.add
+def items : java.util.List(any) = java.util.ArrayList()
+def add = items.add
 add(Box(1))
-println(list.size())
+println(items.size())
 
 def c0 : java.util.List(int) = java.util.ArrayList()
 def c1 : java.util.List(int) = java.util.LinkedList()
@@ -219,9 +219,9 @@ def C = class (def x : int) (
 def c = C(5)
 def m1 = c.m
 def m2 = c.m
-def set : java.util.Set(any) = java.util.HashSet()
-set.add(m1)
-println(m1 == m2, ":", set.contains(m2), ":", m1)
+def bag : java.util.Set(any) = java.util.HashSet()
+bag.add(m1)
+println(m1 == m2, ":", bag.contains(m2), ":", m1)
 println(classof(c) == C, ":", classof(java.lang.StringBuilder()) == java.lang.StringBuilder)
 println(c.m)
 }}}}}
@@ -281,10 +281,10 @@ IntUnaryOperator.applyAsInt takes 1 arguments, function takes 2
 {{{{{
 ;; Values.hash(null/double), Values.same(JavaObject/null), Values.is / isBuiltin, and Types runtime checks
 def V = value class (d : double, n : any?) ()
-def set : java.util.Set(V) = java.util.HashSet()
-set.add(V(3.5, null))
-set.add(V(2.0, null))
-println(set.contains(V(3.5, null)), ":", set.contains(V(2, null)))
+def bag : java.util.Set(V) = java.util.HashSet()
+bag.add(V(3.5, null))
+bag.add(V(2.0, null))
+println(bag.contains(V(3.5, null)), ":", bag.contains(V(2, null)))
 
 def sb1 = java.lang.StringBuilder("a")
 def sb2 = java.lang.StringBuilder("a")

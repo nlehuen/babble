@@ -43,12 +43,12 @@ assert(apply("abc", id) == "abc")
 
 def Box(T) = class (def value: T) (
     def get = (): T -> (this.value)
-    def map(U) = (fn: (x: T): U): Box(U) -> (Box(fn(this.value)))
+    def transform(U) = (fn: (x: T): U): Box(U) -> (Box(fn(this.value)))
 )
 
 def ib = Box(21)
 assert(ib.get() == 21)
-def sb: Box(string) = ib.map((n) -> ("v=" + n))
+def sb: Box(string) = ib.transform((n) -> ("v=" + n))
 assert(sb.get() == "v=21")
 
 ;; Construction inferred from expected type (including int -> double widening)
@@ -129,25 +129,25 @@ assert((erased as Box).value == "erased")
 
 ;; ---------------------------------------------------------------- Java generics
 
-def list: java.util.List(string) = java.util.ArrayList()
-list.add("b")
-list.add("a")
-def firstElem: string? = list.get(0)
+def names: java.util.List(string) = java.util.ArrayList()
+names.add("b")
+names.add("a")
+def firstElem: string? = names.get(0)
 assert(firstElem == "b")
 if firstElem != null then (
     assert(java.lang.String(firstElem).toUpperCase() == "B")
 )
 
-def map: java.util.Map(string, int) = java.util.HashMap()
-map.put("k", 10)
-def presentVal: int? = map.get("k")
-def missingVal: int? = map.get("missing")
+def counts: java.util.Map(string, int) = java.util.HashMap()
+counts.put("k", 10)
+def presentVal: int? = counts.get("k")
+def missingVal: int? = counts.get("missing")
 assert(presentVal == 10)
 assert(missingVal == null)
 
-def set: java.util.Set(string) = java.util.HashSet()
-set.add("x")
-assert(set.contains("x"))
+def tags: java.util.Set(string) = java.util.HashSet()
+tags.add("x")
+assert(tags.contains("x"))
 
 ;; Contextual type arguments for Java emptyList / singletonList
 def empty: java.util.List(int) = java.util.Collections.emptyList()

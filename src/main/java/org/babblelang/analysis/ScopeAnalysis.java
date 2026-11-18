@@ -117,6 +117,7 @@ public final class ScopeAnalysis {
     private final List<Warning> typeDiagnostics = new ArrayList<>();
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
     private final ParseTreeProperty<String> isBuiltins = new ParseTreeProperty<>();
+    private final ParseTreeProperty<String> nonNullTypes = new ParseTreeProperty<>();
     private final java.util.Set<ParserRuleContext> widensToDouble = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
     private final ParseTreeProperty<PrimitiveKind> expressionKinds = new ParseTreeProperty<>();
@@ -294,6 +295,10 @@ public final class ScopeAnalysis {
         isBuiltins.put(ctx, type);
     }
 
+    void setNonNullType(BabbleParser.NonNullAssertionContext ctx, String type) {
+        nonNullTypes.put(ctx, type);
+    }
+
     void widenToDouble(ParserRuleContext ctx) {
         widensToDouble.add(ctx);
     }
@@ -366,6 +371,12 @@ public final class ScopeAnalysis {
     /** The built-in type name a {@code value is T} test checks, or null for a normal type expression. */
     public String isBuiltin(BabbleParser.IsExpressionContext ctx) {
         return isBuiltins.get(ctx);
+    }
+
+    /** The type an {@code e!} asserts, as its error message names it ({@code Type error : expected int, got null}). */
+    public String nonNullType(BabbleParser.NonNullAssertionContext ctx) {
+        String type = nonNullTypes.get(ctx);
+        return type != null ? type : "any";
     }
 
     /** Whether the value produced by this construct must be converted from int to double. */

@@ -118,10 +118,10 @@ assert(1 == c2())
 assert(3 == c())
 
 ;; using Java classes from Babble
-def list : java.util.List(int) = java.util.ArrayList()
-list.add(3) ; list.add(1) ; list.add(2)
-list.sort((a, b) -> ( a - b ))  ;; a Babble function passed as a Comparator
-assert(list.get(0) == 1)
+def ints : java.util.List(int) = java.util.ArrayList()
+ints.add(3) ; ints.add(1) ; ints.add(2)
+ints.sort((a, b) -> ( a - b ))  ;; a Babble function passed as a Comparator
+assert(ints.get(0) == 1)
 ```
 
 A short tour
@@ -294,10 +294,10 @@ def circle = 2 * java.lang.Math.PI
 def point = java.awt.Point(1, 2)
 point.x = point.x + 10
 
-def list: java.util.List(int) = java.util.ArrayList()
-list.add(3) ; list.add(1) ; list.add(2)
-list.removeIf((v) -> ( v > 2 ))          ;; a Predicate
-assert(list.size() == 2)
+def ints: java.util.List(int) = java.util.ArrayList()
+ints.add(3) ; ints.add(1) ; ints.add(2)
+ints.removeIf((v) -> ( v > 2 ))          ;; a Predicate
+assert(ints.size() == 2)
 
 def Countdown = class (private def n: int) implements java.util.Iterator(int) (
     def hasNext = () -> ( this.n > 0 )
@@ -399,10 +399,27 @@ never uses square brackets — and type arguments are inferred at call sites :
 
 ```
 def Box(T) = class (def value: T) (
-    def map(U) = (fn: (x: T): U): Box(U) -> ( Box(fn(this.value)) )
+    def transform(U) = (fn: (x: T): U): Box(U) -> ( Box(fn(this.value)) )
 )
-def label: Box(string) = Box(21).map((n) -> ( "v=" + n ))
+def label: Box(string) = Box(21).transform((n) -> ( "v=" + n ))
 def names: java.util.List(string) = java.util.ArrayList()
+```
+
+The core type names — `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`,
+`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`, `any` and `void` (the type of `null`, what
+a function returning nothing gives) — are keywords : no definition, parameter or package can take
+one of them, so `int` always means the same thing. They remain member names, as Java's are
+(`xs.set(0, v)`, `stream.map(f)`, `dir.list()`). Called as a function, a scalar type name converts
+(`int("42")`, `double(1)`), and `x is int` tests a value's type.
+
+A postfix `!` asserts that a value is not `null` : `e!` has the type of `e` without `null`, and
+fails with `Type error : expected int, got null` when it is (a non-null `e` gets a
+`Redundant non-null assertion` warning) :
+
+```
+def counts: java.util.Map(string, int) = java.util.HashMap()
+counts.put("a", 1)
+def a: int = counts.get("a")!     ;; int? -> int
 ```
 
 ### Function effects and contracts
@@ -637,8 +654,8 @@ interactive mode does :
 
 ```java
 BabbleSession session = ((BabbleScriptEngine) engine).newSession();
-session.eval("def double = (n: int): int -> ( n * 2 )");
-session.eval("double(21)");    // 42
+session.eval("def twice = (n: int): int -> ( n * 2 )");
+session.eval("twice(21)");    // 42
 ```
 
 Implemented Features
@@ -661,7 +678,8 @@ Language features :
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java (including generic) interfaces.
 - [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md) and [BIP008](docs/design/bip008_static-typing.md)).
 - [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts, and `org.babblelang.effects` host annotations (see [BIP007](docs/design/bip007_effects.md)).
-- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `int` and `double`.
+- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, and the conversions `int(x)` and `double(x)`.
+- [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` (see [BIP011](docs/design/bip011_core-types.md)).
 
 Implementation features :
 

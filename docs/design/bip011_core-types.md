@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 011 |
 | **Date** | 2026-11-18 |
-| **Status** | Draft (`BIP011-D1`–`D13` decided) |
+| **Status** | In progress (`BIP011-D1`–`D13` decided; §11 records what has landed) |
 | **Depends on** | Bytecode compiler, `RM001` primitive lowering & `RM003` JVM/Java interface bridges ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), object model, Java interop & `RM003` `LambdaMetafactory` SAM adapters ([bip002_object-model.md](bip002_object-model.md)), function effects & `RM002` ([bip007_effects.md](bip007_effects.md)), mandatory static typing, nullables & generics ([bip008_static-typing.md](bip008_static-typing.md)), `.batest` coverage harness ([bip009_test-coverage.md](bip009_test-coverage.md)), type-checker architecture ([bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)) |
 | **Scope** | Core scalar types (`byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`), core collection & entry types (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`), Babble-to-Java nullability alignment (`@NotNull`/`@Nullable`/JSpecify, mapped parametric-nullness `java.base` contracts, postfix `e!`, outbound & `RM003` inbound defensive boundary checks), collection invariance & `borrow` covariance, universal call-site type arguments `C(T)(...)`, `Babble.g4` & `Formatter`, `BIP007` built-in effect profiles, and 8-primitive `RM001`/`RM003` bytecode lowering |
 
@@ -644,6 +644,20 @@ Every phase keeps `mvn -B package` (`interpret` + `compile` with `CheckClassAdap
 | **`BIP011-P5`: Built-In `BIP007` Core Effect Profiles** | Register built-in `HostEffects` / `EffectChecker` contracts for scalars, `string`, `entry`, and core collection constructors, `borrow` readers, view sub-references, and `mut` mutators (§8.2); add `.batest` and `EffectsTestCase` suites verifying `pure` and `hermetic` core-type usage without `axiom`s. |
 | **`BIP011-P6`: 8-Primitive `RM001`/`RM003` Unboxed Bytecode Lowering & Coverage Closure** | Extend `ScopeAnalysis.PrimitiveKind`, `ByteCell`/`ShortCell`/`LongCell`/`FloatCell`/`CharCell`, compiled class fields, `$spec` entry points, `RM003-P2` `bm$<name>` Babble JVM interface bridges, `RM003-P3` Java-interface `implements` bridges (`emitLoadJavaBridgeArg`/`emitReturnToJava`), and `Bootstrap` inline caches to all 8 non-nullable primitives (§8.1); run `mvn -q verify -Pbatest` (`BIP009`) across dedicated scalar, collection, variance, and Java-nullability `.batest` suites and update `README.md`, `CLAUDE.md`, and `docs/design/README.md`. |
 
+**Delivery order (amended).** So that every step is a complete language change — through the grammar, the analysis passes, both backends and the formatter, as `CLAUDE.md` requires — the phases above land as sub-phases, in this order :
+
+| Sub-phase | Content | From |
+|---|---|---|
+| `BIP011-P1a` | Reserved core type keywords and member names, core type names as conversion values and `is` targets, `void`, postfix `e!` | `P1` |
+| `BIP011-P2a` | `byte`, `short`, `long`, `float`, `char` : types, literals and escapes, the 9 conversions, JLS promotion, the widening chain, non-numeric `char` | `P2`, and `P1`'s literals |
+| `BIP011-P2b` | `string` exposes `java.lang.String`'s methods | `P2` (§4.5) |
+| `BIP011-P3a` | Nullability annotations, the `java.base` overlay, `JavaTypes.checkNotNull`, with Java defaults unchanged | `P3` |
+| `BIP011-P3b` | Unannotated Java references become `T?`, `checkBoxed` retired, inbound checks follow Babble parameter types | `P3` |
+| `BIP011-P4a` | `C(T)(...)` on Java and Babble generics | `P4`, and `P1`'s `# typeApplyCall` |
+| `BIP011-P4b` | `list`..`sortedmap`, `entry` : types, factories, the `Comparable` check, `is list`..`is entry` | `P4`, and `P1`'s `# coreCollectionCall` |
+| `BIP011-P4c` | Invariance, with covariance on `value class`, `entry`, `Optional` and non-`mut` `borrow` parameters ; `Unchecked cast` | `P4` |
+| `BIP011-P5`, `BIP011-P6` | As above | |
+
 ### 10.3 Repository Migration Impact Audit
 
 A static scan of `src/test/` and `examples/` (including `RM003`'s new test suites) identifies three bounded test adjustments required during `BIP011-P1`–`P4`:
@@ -651,3 +665,20 @@ A static scan of `src/test/` and `examples/` (including `RM003`'s new test suite
 1. **Reserved keyword identifier renames (`BIP011-P1`):** A handful of test snippets declare local variables or Babble test helper methods named `def list = ...`, `def set = ...`, `def map = ...`, or `Box.map` (`src/test/babble/Generics.ba`, `src/test/batest/compiler/java_implements_bridges.batest`, `DifferentialTestCase.java`, `TypeCheckerTestCase.java`, and selected `.batest` files). Selector calls to Java `xs.set(...)`, `stream.map(...)`, and `file.list()` require **zero changes** (`BIP011-D11`); local Babble variable declarations rename cleanly to `xs`, `items`, `dict`, or `transform`.
 2. **Mutable generic covariance tests (`BIP011-P4`):** Test cases in `src/test/babble/Generics.ba` and `src/test/batest/types/generics.batest` that previously asserted `ArrayList(int)` was assignable to `ArrayList(any)` or `Box(int)` to `Box(any)` on mutable classes update to test **invariance errors** on mutable bindings alongside **valid covariance** on `value class`es and `(borrow xs: list(any))` parameters.
 3. **Unannotated Java `Integer`/`Double`/`Boolean`/`String` nullability (`BIP011-P3`):** Tests in `src/test/batest/java/java_runtime_edges.batest`, `src/test/batest/java/sam_metafactory.batest` (`BoxedIntUnaryOperator`), `linker_and_defaults.batest`, and `shared_runtime_edges.batest` that tested `JavaTypes.checkBoxed` / `checkParameter` throwing when an unannotated `Integer` return or SAM parameter carried `null` migrate: unannotated `Integer` returns/parameters now type cleanly as `int?`, while `@NotNull`-annotated Java helpers and generic SAMs (`UnaryOperator(int)`) test the new `JavaTypes.checkNotNull` and Babble-parameter-driven inbound boundary errors (`Type error : expected int, got null`).
+
+---
+
+## 11. Implementation Record
+
+What each sub-phase (§10.2) implemented, and where it departs from the sections above.
+
+### 11.1 `BIP011-P1a` : Core Type Keywords, Conversions as Values, `void`, and `e!`
+
+* **Keywords.** `Babble.g4` has the 17 lexer keywords `BYTE_KW`..`VOID_KW`, contiguous so that `BabbleLexer.isCoreTypeKeyword(type)` is a range test, and the parser rules `coreScalarKeyword`, `coreCollectionKeyword` and `coreTypeKeyword`. No `def`, parameter, type parameter or package can take one (`Syntax error : unexpected 'list'`).
+* **Member names (departs from §7.1).** Rather than a `memberName` parser rule, which would have changed every `selector.ID()` of the front end and both backends, the lexer (`nextToken`) turns a core type keyword that directly follows `.` or `?.` back into an `ID`. Selectors, qualified assignments and effect-target segments therefore accept `xs.set`, `stream.map` and `dir.list()` unchanged. Named-argument labels do not accept keywords : no Babble declaration can have such a parameter, and the core factories' options (`from:`, `capacity:`, `comparator:`) are not keywords.
+* **Core type names as values (departs from §7.2).** Instead of a `# coreConversionCall` alternative, a core type keyword is a primary expression, `# coreTypeName`, and `int(x)` is an ordinary `# call` whose callee is that name : the type checker types `int` and `double` as their conversion functions (`OperatorTypes.conversion`), both backends get the callable from `ConvertFunction.of(name)`, and calls, effects and call sites need nothing new. `int` and `double` are no longer implicit names. The other core type names are not values yet (`Not a value : list`).
+* **`is`.** `x is int` tests through the existing built-in path (`Narrowing.isBuiltinTarget` on a `# coreTypeName` right operand, `Values.isBuiltin`) for `int`, `double`, `bool`, `string` and `any` ; the other names report `Unknown type : list` until their sub-phase.
+* **Types.** Annotations name core types with `# coreType` (`coreTypeKeyword typeArguments?`) ; `void` denotes `Type.NULL`, the type of what returns nothing.
+* **`e!`** (`# nonNullAssertion`, token `BANG`, no newline before it) follows §6.5 : `Type error : expected any, got null` on `null!`, a `Redundant non-null assertion : T` warning on a non-null operand, otherwise the operand's type without `null`. `ScopeAnalysis.nonNullType` keeps the asserted type's name for the runtime message, which both backends raise through `JavaTypes.checkNotNull(value, type)` ; compiled code then unboxes a primitive result. `EffectChecker` makes `e!` `nothrow` only on a non-null operand.
+* **Formatter.** No space before `!`.
+* **Migration.** As §10.3 item 1 expected : test and example locals named `list`, `set`, `map` or `long` were renamed (`items`, `bag`, `dict`, `scene`, `hittables`...), members `map`/`set` of Babble test classes became `transform`/`put`, and the tests that shadowed `int` inside a function were removed, since shadowing a core type name is now impossible.
