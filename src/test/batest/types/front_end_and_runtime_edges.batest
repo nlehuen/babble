@@ -1,0 +1,227 @@
+;; BIP009-P4 Batch 4c: targeted Shared Runtime & Shared Front-End coverage closures
+
+========== fe_mod_b.ba ==========
+export def IB = interface (
+    def id : () : int
+)
+export def DupB = class (def v : int) ()
+
+========== fe_mod_a.ba ==========
+export def sub = import("fe_mod_b.ba")
+export def IA = interface (
+    def get : () : int
+)
+
+{{{{{
+;; Implicit names (int, double, STDOUT, javax) and ClassofFunction (String instance)
+def c = javax.swing.SwingConstants.CENTER
+def s = java.lang.String.valueOf(true)
+println(int, ":", double, ":", STDOUT != null, ":", s, ":", c, ":", classof("hi"))
+}}}}}
+int:double:true:true:0:java.lang.String
+
+{{{{{
+;; ClassofFunction error on JavaPackage and JavaClass
+def u = import("java.util")
+println(classof(u))
+}}}}}
+classof : a package has no class
+
+{{{{{
+;; Types.decodeComponent (%2C), Types.JavaClassType.accepts, Types.UnionType
+def fnOpt : ((a : int, b : int) : int)? = (a : int, b : int) : int -> ( a + b )
+def optVal : ((a : int, b : int) : int)? = null
+def f = fnOpt
+def rAny : any = () -> ( () )
+def r : java.lang.Runnable = rAny as java.lang.Runnable
+r.run()
+println(f != null, ":", optVal == null)
+}}}}}
+true:true
+
+{{{{{
+;; BabbleInterface.extendsType, BabbleClass.implementsType, BabbleInstance.equals, BabbleInterface.findDefault, value class toString
+def IParent = interface (
+    def p = () : int -> ( 42 )
+)
+def IChild = interface extends IParent, java.lang.Runnable (
+    def c : () : int
+)
+def IOther = interface (
+    def o : () : int
+)
+def Impl = class (private def secret : int = 7, def pub : int = 3) implements IChild (
+    def run = () -> ( () )
+    def c = () : int -> ( super.p() )
+)
+def Val = value class (x : int) ()
+def Diff = class (def pub : int = 3) ()
+def inst = Impl()
+def a : any = inst
+def d : any = Diff()
+println(a is IChild, ":", a is IParent, ":", a is java.lang.Runnable, ":", a is IOther, ":", a == inst, ":", a == d, ":", inst.c(), ":", Val(3))
+}}}}}
+true:true:true:false:true:false:42:Val(x: 3)
+
+{{{{{
+;; Supers with Java default method (Comparator.reversed)
+def MyCmp = class (def sign : int) implements java.util.Comparator(java.awt.Point) (
+    def compare = (a : java.awt.Point, b : java.awt.Point) : int -> ( (a.x - b.x) * this.sign )
+    def makeRev = () -> ( super.reversed() )
+)
+def mc = MyCmp(1)
+def p1 = java.awt.Point(1, 0)
+def p2 = java.awt.Point(3, 0)
+println(mc.compare(p1, p2) < 0, ":", mc.makeRev().compare(p1, p2) > 0)
+}}}}}
+true:true
+
+{{{{{
+;; JavaTypes.checkParameter across Double, Boolean, String, JavaInstance; Overloads OBJECT_CLASS_KIND
+def dPred = java.util.function.DoublePredicate((d : double) : bool -> ( d > 0.0 ))
+def bPred = java.util.function.Predicate((b : bool) : bool -> ( b ))
+def sPred = java.util.function.Predicate((s : string) : bool -> ( s == "ok" ))
+def pCons = java.util.function.Consumer((p : java.awt.Point) -> ( println(p.x) ))
+def Holder = class (def x : int) ()
+pCons.accept(java.awt.Point(9, 1))
+println(dPred.test(1.5), ":", bPred.test(true), ":", sPred.test("ok"), ":", java.lang.String.valueOf(Holder) != null)
+}}}}}
+9
+true:true:true:true
+
+{{{{{
+;; Values.is with Java types and builtins via `any`, plus Java array length & package-private accessibleType
+def p : any = java.awt.Point(1, 2)
+def arr = java.util.regex.Pattern.compile(",").split("a,b")
+def it = java.util.Collections.singletonList("a").iterator()
+def i : any = 5
+def d : any = 2.5
+def b : any = true
+def s : any = "hi"
+println(p is java.awt.Point, ":", arr.length, ":", it.hasNext(), ":", i is int, ":", i is double, ":", d is double, ":", b is bool, ":", s is string)
+}}}}}
+true:2:true:true:false:true:true:true
+
+{{{{{
+;; EffectSet.intersect eitherMut, EffectSet.satisfies borrow/mut, Type.Function.describeAgainst
+def C = class (def v : int) (
+    def mMut = hermetic mut () : int -> ( this.v = 1 ; this.v )
+    def mPure = pure () : int -> ( this.v )
+    def pick = (flag : bool) -> (
+        if flag then ( this.mMut ) else ( this.mPure )
+    )
+)
+def obj = C(5)
+println(obj.pick(false)(), ":", obj.pick(true)())
+}}}}}
+5:1
+
+{{{{{
+;; EffectSet.satisfies borrowThis error message & Type.Function.describeAgainst
+def C = class (def v : int) (
+    def make = pure () : C -> ( this )
+)
+def obj = C(4)
+def fn : pure borrow () : C = obj.make
+}}}}}
+Type error : expected pure borrow () : C, got pure () : C
+
+{{{{{
+;; Nested packages in type annotations & TypeChecks.resolveInPackages, TypeChecks.exportedModule, LogicalPaths leading slash
+export package Outer (
+    package Inner (
+        def I = interface ( def f : () : int )
+        def C = class (def x : int) implements I (
+            def f = () : int -> ( this.x )
+        )
+    )
+)
+def ma = import("/fe_mod_a.ba")
+def C2 = class (def n : int) implements Outer.Inner.I, ma.sub.IB, java.lang.Runnable (
+    def f = () : int -> ( this.n )
+    def id = () : int -> ( this.n * 2 )
+    def run = () -> ( () )
+)
+def c1 : Outer.Inner.C = Outer.Inner.C(3)
+def c2 = C2(4)
+c2.run()
+println(c1.f(), ":", c2.f(), ":", c2.id())
+}}}}}
+3:4:8
+
+{{{{{
+;; TypeChecker.satisfiesJavaBound (ParameterizedType bound Enum<E>): valid
+def modes : java.util.EnumSet(java.nio.file.AccessMode) = java.util.EnumSet.of(java.nio.file.AccessMode.READ)
+println(modes.size())
+}}}}}
+1
+
+{{{{{
+;; TypeChecker.satisfiesJavaBound error path
+def badEnum : java.util.EnumSet(java.lang.String)? = null
+}}}}}
+Type error : type argument string does not satisfy bound E of java.util.EnumSet
+
+{{{{{
+;; EffectChecker static block inside hermetic function
+def fHerm = hermetic () -> (
+    def C = class () () static ( println("side") )
+    ()
+)
+}}}}}
+static block inside hermetic function violates hermetic guarantee
+
+{{{{{
+;; EffectChecker static block inside pure function
+def fPure = pure () -> (
+    def C = class () () static ( println("side") )
+    ()
+)
+}}}}}
+static block inside pure function violates pure guarantee
+
+{{{{{
+;; EffectChecker static block inside deterministic function
+def fDet = deterministic () -> (
+    def C = class () () static ( java.lang.System.nanoTime() )
+    ()
+)
+}}}}}
+static block inside deterministic function violates deterministic guarantee
+
+{{{{{
+;; EffectChecker relationalProps negate, double +, int odd *, string concat left/right, compound assign on local var
+def negF : pure monotone (x : double) : double = (x : double) : double -> ( -(-x) )
+def dblSum : pure monotone (x : double) : double = (x : double) : double -> ( x + x )
+def oddMul : pure injective (x : int) : int = (x : int) : int -> ( x * 3 )
+def sLeft : pure injective (x : string) : string = (x : string) : string -> ( x + "!" )
+def sRight : pure injective (x : int) : string = (x : int) : string -> ( "!" + x )
+def loc = 1
+loc += 2
+println(negF(2.5), ":", dblSum(1.5), ":", oddMul(4), ":", sLeft("ok"), ":", sRight(4), ":", loc)
+}}}}}
+2.5:3.0:12:ok!:!4:3
+
+{{{{{
+;; Wrong number of type arguments on primitive type
+def bad : int(int) = 1
+}}}}}
+Wrong number of type arguments : expected 0, got 1
+
+{{{{{
+;; Cannot cast to a function type
+def badFnCast = (x : any) -> ( x as () : int )
+}}}}}
+Cannot cast to a function type
+
+{{{{{
+;; axiom without effect modifier fails cleanly
+axiom java.lang.Math.abs
+}}}}}
+axiom requires at least one effect modifier
+
+{{{{{
+;; classof on a JavaClass
+println(classof(java.lang.String))
+}}}}}
+classof : a class has no class
