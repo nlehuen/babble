@@ -6,6 +6,12 @@ export def val = 42
 ========== dir/sub/leaf.ba ==========
 export def val = import("../top.ba").val
 
+========== mod_box_a.ba ==========
+export def Dup = class (def x : int) ()
+
+========== mod_box_b.ba ==========
+export def Dup = class (def x : int) ()
+
 {{{{{
 ;; JavaLinker fast-path caches via loop calls (BoundJavaMethod, JavaMethod, isWrappedOf, bindWrapped,
 ;; bindRaw, isNull, isKind, isWrappedKind, toJava, fail)
@@ -340,3 +346,112 @@ def Box = class (def x : int) ()
 println(classof(obj) != null, ":", classof(Box(1)) == Box, ":", classof("hi") == classof("yo"), ":", classof(1) != null, ":", classof(1.5) != null, ":", classof(true) != null, ":", classof(null) == null, ":", classof(java.lang.StringBuilder()) != null)
 }}}}}
 true:true:true:true:true:true:true:true
+
+{{{{{
+;; Types: UnionType convert, JavaClassType accepts (BabbleInstance & Callable), FunctionType fail, nominal collision
+def uNum : string | double = 3
+def dyn = (v : any) : any -> ( v )
+def RImpl = class () implements java.lang.Runnable ( def run = () -> () )
+def runR = dyn(RImpl()) as java.lang.Runnable
+def runF = dyn(() -> ()) as java.lang.Runnable
+println(uNum, ":", runR != null, ":", runF != null)
+def fns : java.util.List((x : int) : int) = java.util.ArrayList()
+def rawList = fns as java.util.List
+rawList.add("notfn")
+fns.get(0)
+}}}}}
+Warning : Redundant cast : java.util.List(any?)
+3.0:true:true
+Type error : expected ((x : int) : int)?, got string
+
+{{{{{
+def ma = import("mod_box_a.ba")
+def mb = import("mod_box_b.ba")
+def dyn = (v : any) : any -> ( v )
+def takeB = dyn(ma.Dup(1)) as mb.Dup
+}}}}}
+Type error : expected Dup, got Dup (expected mod_box_b.ba#Dup, got mod_box_a.ba#Dup)
+
+{{{{{
+;; BabbleInterface hierarchy, Values hash/same/is/isBuiltin/fromJava, Arguments rejectLeftovers
+def IA = interface (
+    def ping = () : int -> ( 10 )
+)
+def IB = interface extends IA, java.lang.Runnable (
+    def pong = () : int -> ( 20 )
+)
+def IC = interface extends IB ()
+def Impl = class () implements IC (
+    def run = () -> ()
+)
+def Other = class () ()
+def im = Impl()
+def dyn = (v : any?) : any? -> ( v )
+println(dyn(im) is IC, ":", dyn(im) is IB, ":", dyn(im) is IA, ":", dyn(Other()) is IA, ":", dyn(im) is java.lang.Runnable, ":", dyn(im) is java.io.Serializable)
+println(dyn(java.lang.StringBuilder()) is int, ":", dyn(1) is int, ":", dyn(1.5) is double, ":", dyn("s") is string, ":", dyn(null) is any)
+
+def jlist : java.util.List(java.lang.Runnable) = java.util.ArrayList()
+jlist.add(im)
+def back : java.lang.Runnable? = jlist.get(0)
+println(same(back, im))
+
+def vh = (a : any?) : int -> ( java.util.Objects.hashCode(a) )
+def VBox = value class (x : any?) ()
+println(VBox(java.lang.Long.valueOf(5)) == VBox(java.lang.Integer.valueOf(5)), ":", VBox(1.0) == VBox(1), ":", VBox(1.5) == VBox(1.5), ":", VBox(1.0 * 1000000000 * 1000000000 * 100) == VBox(1.0 * 1000000000 * 1000000000 * 100))
+println(java.util.List.of(VBox(java.lang.Long.valueOf(5)), VBox(java.lang.Short.valueOf("1")), VBox(java.lang.Byte.valueOf("2")), VBox(1.5), VBox(1.0 * 1000000000 * 1000000000 * 100)).hashCode() != 0)
+def ch1 = java.lang.Character.valueOf(java.lang.StringBuilder("a").charAt(0))
+def sb1 = java.lang.StringBuilder("a")
+def sb2 = java.lang.StringBuilder("a")
+println(same(ch1, ch1), ":", same(sb1, sb1), ":", same(sb1, sb2))
+
+def fnRename : (x : int) : int = (y = 0) : int -> ( y + 1 )
+fnRename(x: 5)
+}}}}}
+true:true:true:false:true:false
+false:true:true:true:false
+true
+true:true:true:true
+true
+true:true:false
+No such parameter : x
+
+{{{{{
+;; JavaTypes: functionalMethod (Comparator), Objects.toString loop (isNull/BabbleInstance/JavaObject), AssertFunction, Overloads signature with null
+def nums = java.util.ArrayList(java.util.List.of(3, 1, 2))
+java.util.Collections.sort(nums, (a, b) -> ( a - b ))
+def RImpl = class () implements java.lang.Runnable (
+    def run = () -> ()
+    def toString = () : string -> ( "R" )
+)
+def items : java.util.ArrayList(any?) = java.util.ArrayList()
+items.add("a")
+items.add(null)
+items.add(java.lang.StringBuilder("z"))
+items.add(RImpl())
+def acc = ""
+def i = 0
+def toStrFn : (o : any?, d : string) : string = java.util.Objects.toString
+while i < 4 then (
+    acc = acc + toStrFn(items.get(i), "nil") + ";"
+    i += 1
+)
+println(nums.toString(), "|", acc)
+assert(true, "ok")
+assert(false, "boom")
+}}}}}
+[1, 2, 3]|a;nil;z;R;
+boom
+
+{{{{{
+;; JavaTypes.checkParameter & convertResult & Overloads signature errors via raw Function/UnaryOperator/Comparator
+def dyn = (v : any?) : any? -> ( v )
+def cmp : java.util.Comparator(any?) = (a, b) -> ( 0 )
+def fn = dyn((a : int) : int -> ( a + 1 )) as java.util.function.IntUnaryOperator
+println(fn.applyAsInt(4))
+def sb = java.lang.StringBuilder()
+def appFn : (a : any?, b : any?, c : any?) : any? = sb.append
+appFn(null, "bad", 1)
+}}}}}
+5
+No applicable overload of java.lang.StringBuilder.append for (null, java.lang.String, java.lang.Integer) : candidates are (java.lang.StringBuffer), (java.lang.CharSequence), (java.lang.CharSequence, int, int), (char[]), (java.lang.String), (java.lang.Object), (char), (int), (long), (float), (double), (boolean), (char[], int, int)
+
