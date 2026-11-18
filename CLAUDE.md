@@ -64,6 +64,7 @@ Design documents live in `docs/design/` as numbered BIPs (see `docs/design/READM
 | **BIP007** | `docs/design/bip007_effects.md` | function effects and algebraic properties | `BIP007-P1` (`RM002`) implemented (static effect & algebraic inference/verification, `mut`/`borrow`, `axiom`/`impure`, `org.babblelang.effects`); `BIP007-P2`–`P3` (`unique`/`move`/`freeze`, bytecode optimizer passes, `babble.checkAxioms`) planned for `RM004` |
 | **BIP008** | `docs/design/bip008_static-typing.md` | removing `dynamic` : a sound top type `any`, `as` casts, call-site parameter inference, unions, nullables, and generics | P1–P7 implemented (strict static typing, redundant internal T9 checks removed, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax, and call-site parameter inference) |
 | **BIP009** | `docs/design/bip009_test-coverage.md` | `.batest` systematic test suite and dual-mode JaCoCo coverage harness (`-Pbatest`) | `BIP009-P1`–`P4` implemented (57 `.batest` files / 733 cases, `-Pbatest` dual-JVM JaCoCo reporter, `JavaTypes` invocation unwrapping) |
+| **BIP010** | `docs/design/bip010_type-checker-simplification.md` | simplifying and refactoring `TypeChecker` (`org.babblelang.analysis`) | draft (`BIP010-P1`–`P6` planned: bidirectional `synth`/`check`, local bi-unification `CallSolver`, set-theoretic `TypeAlgebra`, pure occurrence `TypeEnv`, monotone `SlotCell` convergence, `JavaTypeBridge`, post-convergence `LoweringAnalyzer`, and `TypedModuleSummary`) |
 
 ## Architecture
 
