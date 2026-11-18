@@ -204,4 +204,75 @@ public class JavaClassDemo {
     public static void setMemberRaw(Object target, String name, Object value) {
         ((org.babblelang.runtime.HasMembers) target).setMember(name, value, false);
     }
+
+    // RM003-P4 SAM metafactory, bridge, arity, and Proxy-fallback helpers.
+
+    @FunctionalInterface
+    public interface StringCriterion extends java.util.function.Predicate<String> {
+        @Override
+        boolean test(String value);
+    }
+
+    @FunctionalInterface
+    public interface CovariantSupplier extends java.util.function.Supplier<CharSequence> {
+        @Override
+        String get();
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static boolean invokeErasedPredicate(java.util.function.Predicate<?> pred, Object raw) {
+        return ((java.util.function.Predicate) pred).test(raw);
+    }
+
+    public static CharSequence invokeErasedSupplier(java.util.function.Supplier<CharSequence> sup) {
+        return sup.get();
+    }
+
+    @FunctionalInterface
+    public interface Arity16Sam {
+        int apply(int a0, int a1, int a2, int a3, int a4, int a5, int a6, int a7,
+                  int a8, int a9, int a10, int a11, int a12, int a13, int a14, int a15);
+    }
+
+    @FunctionalInterface
+    public interface Arity17Sam {
+        double apply(int a0, double a1, java.io.File a2, String a3,
+                     int a4, int a5, int a6, int a7, int a8, int a9,
+                     int a10, int a11, int a12, int a13, int a14, int a15, int a16);
+
+        default int tag() {
+            return 17;
+        }
+    }
+
+    interface HiddenIntSam {
+        int apply(int x);
+    }
+
+    public static int invokeHiddenSam(HiddenIntSam sam, int x) {
+        if (!isProxy(sam)) {
+            throw new IllegalStateException("Expected Proxy fallback for package-private SAM");
+        }
+        return sam.apply(x);
+    }
+
+    @FunctionalInterface
+    public interface CharSupplier {
+        char getAsChar();
+    }
+
+    @FunctionalInterface
+    public interface ByteUnary {
+        byte apply(byte x);
+    }
+
+    @FunctionalInterface
+    public interface ShortUnary {
+        short apply(short x);
+    }
+
+    @FunctionalInterface
+    public interface FloatUnary {
+        float apply(float x);
+    }
 }

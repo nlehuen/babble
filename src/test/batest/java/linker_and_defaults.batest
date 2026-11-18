@@ -104,13 +104,13 @@ def samObj : any = samProxy
 println(java.util.Objects.equals(predObj, p), ":", java.util.Objects.equals(samObj, samObj))
 println(java.util.Objects.hashCode(predObj) == java.util.Objects.hashCode(p), ":", java.util.Objects.hashCode(samObj) != 0)
 println(java.util.Objects.toString(predObj) == java.util.Objects.toString(p))
-println(java.util.Objects.toString(samObj))
+println(java.util.Objects.toString(samObj) != "" and java.lang.reflect.Proxy.isProxyClass(samProxy.getClass()) == false)
 }}}}}
 true:false:true:false
 true:true
 true:true
 true
-function as IntUnaryOperator
+true
 
 {{{{{
 ;; Multi-level Babble interface inheritance, default lookup, 'is' checks, and interface/class toString
