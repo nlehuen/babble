@@ -338,13 +338,119 @@ println(ctr.bump(5), ":", pickU(true).v, ":", pickU(false).v, ":", gVal.deep(), 
 15:3:7:g0:gg:true:true:true:42:3:3.5:15
 
 {{{{{
-;; SelectCache requireMemberDefined on union primitive field before initialization
-def UB = class (def late : int = 0) ()
+;; SelectCache requireMemberDefined on union primitive field on 2nd call (SelectCache fast path)
+def UB = class (def late : int = 7) ()
 def UA = class (def a : int = 1) (
     def peek = (u : UA | UB) : int -> ( u.late )
+    def ok = this.peek(UB())
     def v = this.peek(if this.a == 1 then ( this ) else ( UB() ))
     def late : int = 5
 )
 UA()
 }}}}}
 Member used before definition : late
+
+{{{{{
+;; Loop calls to exercise Bootstrap isBoundFunction, isBoundFunctionSpec, boundFunction, isSame,
+;; and CodeGenerator Java field assign/compound assign (float, int, double, String, typed Object, boxed fallback)
+def extSpec = (x : int) : int -> ( x + 10 )
+def extSpread = (x : int, y : int = 5) : int -> ( x + y )
+def Holder = class () (
+    def ms = extSpec
+    def md = extSpread
+)
+def h = Holder()
+def bmSpec : (x : int) : int = h.ms
+def bmDirect = h.md
+def s1 = 0
+def s2 = 0
+def i = 0
+while i < 3 then (
+    s1 += bmSpec(i)
+    s2 += bmDirect(i)
+    def eof = java.io.StreamTokenizer(java.io.StringReader("x")).TT_EOF
+    s1 += eof
+    i += 1
+)
+println(s1, ":", s2)
+
+def pf = java.awt.geom.Point2D.Float()
+pf.x = java.lang.Float.valueOf(3)
+pf.y = java.lang.Float.valueOf(4)
+def dynNum = (v : int | double) : int | double -> ( v )
+def pt = java.awt.Point(1, 2)
+pt.x = 5
+pt.x += 3
+pt.x *= 2
+pt.y += 2
+def tk = java.io.StreamTokenizer(java.io.StringReader("hi"))
+tk.nval = 1.5
+tk.nval += 2
+tk.nval += dynNum(2)
+tk.sval = "a"
+tk.sval += "b"
+def gbc = java.awt.GridBagConstraints()
+gbc.insets = java.awt.Insets(1, 2, 3, 4)
+gbc.weightx = 2.0
+gbc.weightx += 1
+println(pf.x, ":", pt.x, ":", pt.y, ":", tk.nval, ":", tk.sval, ":", gbc.insets.top, ":", gbc.weightx)
+}}}}}
+30:18
+3.0:16:4:5.5:ab:1:3.0
+
+{{{{{
+;; CodeGenerator compound assignment boxed/fallback branches (local /=, this./=, dyn +=, static /=)
+;; and condition/negate/binary lowering
+def C = class (def n : int, def d : double, def b : bool) (
+    def run = mut () : string -> (
+        def dynNum = (v : int | double) : int | double -> ( v )
+        def loc : int | double = 9
+        loc /= 2
+        loc += dynNum(2)
+        this.n *= 2
+        this.n -= 1
+        this.d /= 2
+        this.d += dynNum(2)
+        "" + loc + ":" + this.n + ":" + this.d
+    )
+)
+println(C(9, 6.0, true).run())
+
+def StaticBox = class () () static (
+    def sx : int | double = 9
+    def go = () : int | double -> (
+        this.sx /= 2
+        this.sx
+    )
+)
+println(StaticBox.go())
+
+def neg = (a : int, b : double, c : int | double) : string -> (
+    def ia = -a
+    def db = -b
+    def dc = -c
+    "" + ia + ":" + db + ":" + dc
+)
+println(neg(4, 1.5, 9))
+
+def checkConds = (a : int, b : int, d1 : double, d2 : double) : string -> (
+    def out = ""
+    if a == b then ( out += "1" ) else ( out += "0" )
+    if a != b then ( out += "1" ) else ( out += "0" )
+    if d1 == d2 then ( out += "1" ) else ( out += "0" )
+    if d1 != d2 then ( out += "1" ) else ( out += "0" )
+    if d1 < d2 then ( out += "1" ) else ( out += "0" )
+    if d1 <= d2 then ( out += "1" ) else ( out += "0" )
+    if d1 > d2 then ( out += "1" ) else ( out += "0" )
+    if d1 >= d2 then ( out += "1" ) else ( out += "0" )
+    if a > 0 and b > 0 then ( out += "1" ) else ( out += "0" )
+    if a < 0 or b < 0 then ( out += "1" ) else ( out += "0" )
+    out
+)
+println(checkConds(2, 2, 1.0, 2.0), ":", checkConds(2, 3, 2.0, 1.0))
+}}}}}
+6.5:17:5.0
+4.5
+-4:-1.5:-9
+1001110010:0101001110
+

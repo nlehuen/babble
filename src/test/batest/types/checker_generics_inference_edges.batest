@@ -1,0 +1,167 @@
+;; TypeChecker edge cases: Java bounds & wildcards, accessibleType, generic unification,
+;; callable assignability, inferrability, interface conformance, widening notes, import cycles
+
+========== cyc_a.ba ==========
+def b = import("cyc_b.ba")
+export def x = b.y + 1
+
+========== cyc_b.ba ==========
+def a = import("cyc_a.ba")
+export def y = a.x + 1
+
+========== mod_one.ba ==========
+export def Dup = class (def n : int) ()
+
+========== mod_two.ba ==========
+export def Dup = class (def n : int) ()
+
+{{{{{
+;; satisfiesJavaBound: Comparable<? super T>, Collection<? extends E>, Comparator<? super T>
+def list : java.util.ArrayList(string) = java.util.ArrayList()
+list.add("c")
+list.add("a")
+list.add("b")
+def m = java.util.Collections.max(list)
+def ro = java.util.List.copyOf(list)
+java.util.Collections.sort(list, (a : java.lang.CharSequence, b : java.lang.CharSequence) : int -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
+println(m, ":", ro.size())
+}}}}}
+c:3
+
+{{{{{
+;; satisfiesJavaBound failure: non-Comparable passed to Collections.max
+def Bad = class () ()
+def list : java.util.List(Bad) = java.util.List.of(Bad())
+java.util.Collections.max(list)
+}}}}}
+Type error : type argument Bad does not satisfy bound T of java.util.Collections.max
+
+{{{{{
+;; accessibleType: package-private Java collection implementations mapped up to List/Iterator/Set
+def sub = java.util.List.of(10, 20, 30).subList(1, 3)
+def emptyIt : java.util.Iterator(string) = java.util.Collections.emptyIterator()
+def setView = java.util.Collections.singleton("hi")
+println(sub.get(0), ":", emptyIt.hasNext(), ":", setView.contains("hi"))
+}}}}}
+20:false:true
+
+{{{{{
+;; Generic unification: unifyReturnSingle & unify with nested Babble/Java generics and SAMs
+def Box(T) = class (def v : T) ()
+def wrap(T) = (x : T) : Box(T) -> ( Box(x) )
+def unwrap(T) = (b : Box(T)) : T -> ( b.v )
+def id(T) = (x : T) : T -> ( x )
+
+def b1 : Box(int) = wrap(7)
+def b2 : Box(Box(int)) = wrap(wrap(9))
+def fSam : java.util.function.Function(int, int) = id
+def opt : java.util.Optional(int) = java.util.Optional.of(5)
+def emptyL : java.util.List(string) = java.util.Collections.emptyList()
+println(b1.v, ":", unwrap(b2).v, ":", java.util.Optional.of(4).map(fSam).get(), ":", opt.orElse(0), ":", emptyL.size())
+}}}}}
+7:9:4:5:0
+
+{{{{{
+;; Generic class implementing generic interface and checking conformance error
+def Container(T) = interface (
+    def get : () : T
+)
+def BadContainer = class (def v : string) implements Container(int) (
+    def get = () : string -> ( this.v )
+)
+}}}}}
+Type error : expected () : int, got () : string
+
+{{{{{
+;; Inherited default method mismatch in interface conformance
+def GetInt = interface (
+    def get : () : int
+)
+def DefStr = interface (
+    def get = () : string -> ( "hi" )
+)
+def Bad = class () implements GetInt, DefStr ()
+}}}}}
+Type error : expected () : int, got () : string
+
+{{{{{
+;; nonFunctionCallableAssignable: ClassValue, JavaMethod, PRINT (matching & mismatching borrow/mut/effects)
+def C = class (def x : int) ()
+def ctor : (x : int) : C = C
+def parse : (s : string) : int = java.lang.Integer.parseInt
+def pr : (v : string) : () = print
+println(ctor(3).x, ":", parse("4"))
+pr("")
+}}}}}
+3:4
+
+{{{{{
+;; nonFunctionCallableAssignable error: PRINT with borrow parameter target rejected
+def bad : (borrow v : string) : () = print
+}}}}}
+Type error : expected (borrow v : string) : () : any?, got print
+
+{{{{{
+;; nonFunctionCallableAssignable error: pure target assigned impure constructor or method
+def MutBox = class (mut p : java.util.ArrayList(int)) (def ok : bool = p.add(1))
+def f : (p : java.util.ArrayList(int)) : MutBox = MutBox
+}}}}}
+Type error : expected (p : java.util.ArrayList(int)) : MutBox, got class MutBox
+
+{{{{{
+;; Anonymous recursive literal missing return type -> Missing type : function (recursive)
+def bad = ((n : int) -> ( recurse(n - 1) ))(3)
+}}}}}
+Missing type : function (recursive)
+
+{{{{{
+;; checkMissingTypes on unannotated local initialized with null and unannotated parameter
+def x = null
+}}}}}
+Missing type : x
+
+{{{{{
+def f = (x) -> ( 1 )
+}}}}}
+Missing type : x
+
+{{{{{
+;; findWideningNote & assignmentWideningNote (selector, assign, call parameter widening)
+def takeInt = (n : int) : int -> ( n )
+def x = 1
+takeInt(x)
+x = 2.5
+}}}}}
+Type error : expected int, got double (x is double because of the assignment)
+
+{{{{{
+def Box = class (def x : int) ()
+def takeInt = (n : int) : int -> ( n )
+def b = Box(1)
+b.x = 2.5
+}}}}}
+Type error : expected int, got double
+
+{{{{{
+def f = (x) -> ( x )
+def takeInt = (n : int) : int -> ( n )
+takeInt(f(1))
+f(2.5)
+}}}}}
+Type error : expected int, got double (x is double because of the call)
+
+{{{{{
+;; Imported module cycle: Missing type : ... (import cycle with ...)
+def a = import("cyc_a.ba")
+println(a.x)
+}}}}}
+Missing type : x (import cycle with cyc_a.ba)
+
+{{{{{
+;; Types.check two distinct nominal classes with the same simple name across modules
+def m1 = import("mod_one.ba")
+def m2 = import("mod_two.ba")
+def dyn = (v : any?) : any? -> ( v )
+dyn(m1.Dup(1)) as m2.Dup
+}}}}}
+Type error : expected Dup, got Dup (expected mod_two.ba#Dup, got mod_one.ba#Dup)
