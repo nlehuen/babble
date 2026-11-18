@@ -5037,6 +5037,7 @@ final class TypeChecker {
                 || !Modifier.isPublic(accessible.getModifiers())
                 || !Modifier.isPublic(accessible.getDeclaringClass().getModifiers())
                 || !JavaTypes.isAccessible(accessible.getDeclaringClass())
+                || !isBytecodeAccessible(accessible.getReturnType())
                 || accessible.getParameterCount() != arguments.size()) {
             return;
         }
@@ -5079,8 +5080,14 @@ final class TypeChecker {
             }
             return false;
         }
-        return paramType == Object.class || paramType.isArray()
-                || JavaTypes.isAccessible(paramType) || JavaTypes.isFunctionalInterface(paramType);
+        return isBytecodeAccessible(paramType);
+    }
+
+    private static boolean isBytecodeAccessible(Class<?> type) {
+        while (type.isArray()) {
+            type = type.getComponentType();
+        }
+        return type.isPrimitive() || JavaTypes.isAccessible(type);
     }
 
     private void checkJavaArgumentWidening(Executable candidate, Map<TypeVariable<?>, Type> env,

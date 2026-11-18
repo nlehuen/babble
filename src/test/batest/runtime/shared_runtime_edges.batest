@@ -132,7 +132,8 @@ println(sumL, ":", c.apply(3), ":", pred.test(java.lang.Boolean.TRUE), ":", comp
 12:d=3.0:true:8:true:true:true:true:true
 
 {{{{{
-;; JavaTypes.checkParameter error branches via InvocationHandler.invoke on Faces proxies
+;; Standard SAMs are LambdaMetafactory-backed (not Proxy); FunctionHandler & JavaTypes.checkParameter covered via >16-arg Proxy fallback SAM
+def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
     def list = java.util.Arrays.asList(cls.getMethods())
     def i = 0
@@ -143,13 +144,25 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     )
     list.get(0) as java.lang.reflect.Method
 )
+def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
+    def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    l.addAll(java.util.Collections.nCopies(13, 0))
+    l.toArray()
+)
 def fn = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 1 ))
-def h = java.lang.reflect.Proxy.getInvocationHandler(fn)
-h.invoke(fn, findM(fn.getClass(), "applyAsInt"), java.util.List.of("bad").toArray())
+assert(Demo.isProxy(fn) == false)
+def p17 = Demo.Arity17Sam((a0 : int, a1 : double, a2 : java.io.File, a3 : string, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int, a16 : int) : double -> (
+    a0 + a1
+))
+assert(Demo.isProxy(p17) == true)
+assert(p17.equals(p17) and p17.hashCode() != 0 and java.util.Objects.toString(p17) != "" and p17.tag() == 17)
+def h = java.lang.reflect.Proxy.getInvocationHandler(p17)
+h.invoke(p17, findM(p17.getClass(), "apply"), args17("bad", 1.0, java.io.File("."), "s"))
 }}}}}
 Type error : expected int, got string
 
 {{{{{
+def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
     def list = java.util.Arrays.asList(cls.getMethods())
     def i = 0
@@ -160,13 +173,23 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     )
     list.get(0) as java.lang.reflect.Method
 )
+def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
+    def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    l.addAll(java.util.Collections.nCopies(13, 0))
+    l.toArray()
+)
 def fn = java.util.function.DoubleUnaryOperator((x : double) : double -> ( x + 1.0 ))
-def h = java.lang.reflect.Proxy.getInvocationHandler(fn)
-h.invoke(fn, findM(fn.getClass(), "applyAsDouble"), java.util.List.of("bad").toArray())
+assert(Demo.isProxy(fn) == false)
+def p17 = Demo.Arity17Sam((a0 : int, a1 : double, a2 : java.io.File, a3 : string, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int, a16 : int) : double -> (
+    a0 + a1
+))
+def h = java.lang.reflect.Proxy.getInvocationHandler(p17)
+h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, "bad", java.io.File("."), "s"))
 }}}}}
 Type error : expected double, got string
 
 {{{{{
+def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
     def list = java.util.Arrays.asList(cls.getMethods())
     def i = 0
@@ -177,14 +200,24 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     )
     list.get(0) as java.lang.reflect.Method
 )
+def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
+    def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    l.addAll(java.util.Collections.nCopies(13, 0))
+    l.toArray()
+)
 def ff = java.io.FilenameFilter((d : java.io.File, n : string) : bool -> ( true ))
-def h = java.lang.reflect.Proxy.getInvocationHandler(ff)
-h.invoke(ff, findM(ff.getClass(), "accept"), java.util.List.of(java.io.File("."), 123).toArray())
+assert(Demo.isProxy(ff) == false)
+def p17 = Demo.Arity17Sam((a0 : int, a1 : double, a2 : java.io.File, a3 : string, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int, a16 : int) : double -> (
+    a0 + a1
+))
+def h = java.lang.reflect.Proxy.getInvocationHandler(p17)
+h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, 1.0, java.io.File("."), 123))
 }}}}}
 Type error : expected string, got int
 
 {{{{{
-;; checkParameter double widened from int via DoubleUnaryOperator, and FileFilter non-File
+;; checkParameter double widened from int, and File non-File check via >16-arg Proxy fallback SAM
+def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
     def list = java.util.Arrays.asList(cls.getMethods())
     def i = 0
@@ -195,13 +228,21 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     )
     list.get(0) as java.lang.reflect.Method
 )
+def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
+    def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    l.addAll(java.util.Collections.nCopies(13, 0))
+    l.toArray()
+)
 def df = java.util.function.DoubleUnaryOperator((x : double) : double -> ( x + 1.0 ))
-def hd = java.lang.reflect.Proxy.getInvocationHandler(df)
-def r1 = hd.invoke(df, findM(df.getClass(), "applyAsDouble"), java.util.List.of(3).toArray())
 def ff = java.io.FilenameFilter((d : java.io.File, n : string) : bool -> ( true ))
-def hf = java.lang.reflect.Proxy.getInvocationHandler(ff)
+assert(Demo.isProxy(df) == false and Demo.isProxy(ff) == false)
+def p17 = Demo.Arity17Sam((a0 : int, a1 : double, a2 : java.io.File, a3 : string, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int, a16 : int) : double -> (
+    a0 + a1
+))
+def h = java.lang.reflect.Proxy.getInvocationHandler(p17)
+def r1 = h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, 3, java.io.File("."), "a"))
 println(r1)
-hf.invoke(ff, findM(ff.getClass(), "accept"), java.util.List.of(123, "a").toArray())
+h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, 3.0, 123, "a"))
 }}}}}
 4.0
 Type error : expected java.io.File, got int

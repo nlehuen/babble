@@ -174,11 +174,34 @@ public final class JavaTypes {
                     single = m;
                 } else if (!(single.getName().equals(m.getName()) && single.getParameterCount() == m.getParameterCount())) {
                     return NONE;
+                } else if (isMoreSpecific(m, single)) {
+                    single = m;
                 }
             }
             return single == null ? NONE : single;
         });
         return method == NONE ? null : method;
+    }
+
+    private static boolean isMoreSpecific(Method candidate, Method current) {
+        Class<?>[] cp = candidate.getParameterTypes();
+        Class<?>[] cur = current.getParameterTypes();
+        boolean strictlyMore = false;
+        for (int i = 0; i < cp.length; i++) {
+            if (!cur[i].isAssignableFrom(cp[i])) {
+                return false;
+            }
+            if (!cp[i].equals(cur[i])) {
+                strictlyMore = true;
+            }
+        }
+        if (!current.getReturnType().isAssignableFrom(candidate.getReturnType())) {
+            return false;
+        }
+        if (!candidate.getReturnType().equals(current.getReturnType())) {
+            strictlyMore = true;
+        }
+        return strictlyMore;
     }
 
     public static boolean isFunctionalInterface(Class<?> type) {
@@ -246,7 +269,7 @@ public final class JavaTypes {
     }
 
     /**
-     * Checks arguments entering Babble from Java through a {@link Faces} proxy against the
+     * Checks arguments entering Babble from Java through a {@link Faces} adapter against the
      * Java interface method's parameter types (raw Java calls or {@code null} boxed primitives).
      */
     public static Object[] checkParameters(Object[] args, Class<?>[] parameterTypes) {
@@ -256,7 +279,7 @@ public final class JavaTypes {
         return args;
     }
 
-    private static Object checkParameter(Object value, Class<?> type) {
+    static Object checkParameter(Object value, Class<?> type) {
         if (type == Object.class) {
             return value;
         }
