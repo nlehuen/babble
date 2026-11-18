@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 009 |
 | **Date** | 2026-11-17 |
-| **Status** | Draft (`BIP009-Q1`–`BIP009-Q8` → `BIP009-D1`–`BIP009-D8` proposed ; `BIP009-P1`–`BIP009-P4` planned) |
+| **Status** | Accepted & implemented (`BIP009-Q1`–`BIP009-Q8` → `BIP009-D1`–`BIP009-D8` decided; `BIP009-P1`–`BIP009-P4` implemented) |
 | **Depends on** | Dual-mode execution ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), interactive sessions ([bip004_repl.md](bip004_repl.md)), in-memory module sources ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) §4.2), static typing diagnostics ([bip008_static-typing.md](bip008_static-typing.md)) |
 | **Scope** | `.batest` file format, leak-free error normalization (including Java interop unwrapping), JUnit 5 & dual-JVM JaCoCo harness (`-Pbatest`), coverage reporting CLI, and agentic test-synthesis workflow |
 
@@ -471,14 +471,32 @@ src/test/batest/
 
 ---
 
-## 8. Implementation Plan
+## 8. Implementation & Verification Results
 
-* **`BIP009-P1` — `.batest` runner, normalizer & Java exception unwrapping.**
-  * Unwrap `InvocationTargetException` at the five Java interop boundary sites (`BIP009-D7`) and add unit parity tests.
-  * Implement `BatestParser`, `BatestRunner` (with `MapModuleSource`, `BabbleSession` `----------` support, `Kind` classification, and `BIP009-D5` normalization), and JUnit 5 `BatestTestCase` (`@TestFactory`) with `-Dbatest.filter` support running in both Surefire executions of `mvn test`.
-* **`BIP009-P2` — `-Pbatest` JaCoCo profile & `BatestCoverageReporter`.**
-  * Add `jacoco-maven-plugin` and the `batest` profile to `pom.xml` with dual `.exec` files, agent exclusions, non-aborting test collection, `-Dbatest.filter` forwarding, and `BatestCoverageReporter` (`summary.json`, `uncovered.txt`, `-Dbatest.inspect=<Class>`, and non-zero exit on test failure).
-* **`BIP009-P3` — Foundational `.batest` suite.**
-  * Populate the initial `src/test/batest/` directory structure (§6.3) covering every `Babble.g4` grammar alternative, operator, built-in native, static diagnostic family, module construct, session construct, and Java interop form.
-* **`BIP009-P4` — Iterative coverage closure & dead-code audit.**
-  * Drive the two-tier agentic loop (§6.1) until line coverage exceeds **95%** (branch **> 90%**) on `Interpreter` and **90%** (branch **> 85%**) on `CodeGenerator`, `Bootstrap`, `TypeChecker`, and shared `runtime`, pruning or documenting any provably unreachable post-`BIP008` / `RM001` defensive branches uncovered along the way.
+* **`BIP009-P1` — `.batest` runner, normalizer & Java exception unwrapping *(Implemented)*.**
+  * Unwrapped `InvocationTargetException` at the five Java interop boundary sites (`JavaClass`, `JavaLinker`, `JavaMethod`, `JavaDefaultCall`, `JavaTypes.wrapInvocationException`, `BIP009-D7`), plus `PrintFunction` unwrapping `Appendable` wrappers on `to:`.
+  * Implemented `BatestParser`, `BatestRunner` (with `MapModuleSource`, `BabbleSession` `----------` support, `Kind` classification, warning capture, and `BIP009-D5` normalization), and JUnit 5 `BatestTestCase` (`@TestFactory`) with `-Dbatest.filter` support running in both Surefire executions of `mvn test`.
+* **`BIP009-P2` — `-Pbatest` JaCoCo profile & `BatestCoverageReporter` *(Implemented)*.**
+  * Added `jacoco-maven-plugin` and the `batest` profile to `pom.xml` with dual `.exec` files, agent exclusions, non-aborting test collection, `-Dbatest.filter` forwarding, and `BatestCoverageReporter` (`summary.json`, `uncovered.txt`, `-Dbatest.inspect=<Class>`, and non-zero exit on test failure).
+* **`BIP009-P3` — Foundational `.batest` suite *(Implemented)*.**
+  * Populated `src/test/batest/` (§6.3 plus `effects/` and `runtime/` suites) covering grammar alternatives, operators, built-ins, static typing & effect diagnostic families, modules, interactive sessions, and Java interop.
+* **`BIP009-P4` — Iterative coverage closure & dead-code audit *(Implemented)*.**
+  * **Final `.batest`-only corpus:** **57 `.batest` files, 733 cases** — **733 / 733 passed (100.0%)** in both `interpret` and `compile` (`babble.verify=true`), **0 parity divergences**.
+  * **Bugs caught & fixed by the 3-way oracle:**
+    * `CodeGenerator`: avoid double `int`→`double` widening when assigning an already-widened `int` value to a `double` field (`RM001` parity), and coerce functional-interface / Babble-instance receivers via `Values.toJava` on statically resolved Java interface calls.
+    * `Interpreter`: coerce Java interface call receivers via `Values.toJava` when invoking Java interface methods directly on Babble callables/instances (`visitCall` SAM parity).
+    * `PrintFunction`: unwrap `JavaValue` wrappers on `to:` stream arguments (`Values.unwrap(to)`).
+  * **Final JaCoCo coverage (`mvn -q verify -Pbatest`):**
+
+| Scope | Lines | Branches | Notes |
+|---|---:|---:|---|
+| **Interpreter (`impl.*`)** | **97.4%** (`409/420`) | **95.1%** (`175/184`) | Exceeds >95% lines / >90% branches |
+| **Compiler (`codegen+indy`)** | **95.5%** (`3047/3190`) | **85.6%** (`1258/1470`) | Exceeds >90% lines / >85% branches |
+| **Shared Front-End (`analysis`)** | **89.5%** (`7357/8224`) | **76.4%** (`6273/8207`) | Remaining lines/branches audited below |
+| **Shared Runtime (`combined`)** | **89.8%** (`1403/1563`) | **81.2%** (`1021/1258`) | `interpret`: 80.4% ln / 73.9% br; `compile`: 87.8% ln / 78.5% br |
+
+  * **Uncovered code & dead-code audit (`BIP009-P4`):**
+    * *Dead internal helpers removed:* `Namespace.leave()` (0 callers), `Slot.isSet()` (0 callers), `EffectSet.withInferred(...)` (0 callers), and the unreachable non-`this` parameter-target branch in `EffectChecker.sameTargetField` (`params.size() == 1` precludes a separate parameter receiver).
+    * *Host-API & Java-annotation paths (intentionally excluded from pure `.batest` scripts):* `BabbleScriptEngine` host registries (`assumeEffects`, `assumeConstructorEffects`, `markImpure`, `allowAxioms`), `HostEffects.OverrideEntry.fromEffects`, `EffectChecker` `@Pure`..`@Impure` Java reflection annotation scanning, `BabbleSession` programmatic helpers, and `Scope.isDeclared` implementations (`JavaPackage`, `JavaClass`, `JavaObject`, `Namespace`) tested by JUnit (`EffectsTestCase`, `BabbleScriptEngine`, `InterpreterNamespaceTest`).
+    * *Statically preempted runtime guards (preserved for defense-in-depth):* `Members`, `Arguments`, `Calls`, `SameFunction`, `JavaClass.assign`, `BabbleInstance`/`BabbleType` missing/private/read-only member errors, and `Types` descriptor fallback branches guarded by `TypeChecker` at compile time.
+
