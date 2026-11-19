@@ -227,7 +227,7 @@ public class JavaClassDemo {
         return ((java.util.function.Predicate) pred).test(raw);
     }
 
-    public static CharSequence invokeErasedSupplier(java.util.function.Supplier<CharSequence> sup) {
+    public static CharSequence invokeErasedSupplier(java.util.function.Supplier<? extends CharSequence> sup) {
         return sup.get();
     }
 

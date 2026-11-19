@@ -145,7 +145,7 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     xs.get(0) as java.lang.reflect.Method
 )
 def args17 = (a0 : any, a1 : any, a2 : any, a3 : any) -> (
-    def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    def l : java.util.List(any) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
 )
@@ -174,7 +174,7 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     xs.get(0) as java.lang.reflect.Method
 )
 def args17 = (a0 : any, a1 : any, a2 : any, a3 : any) -> (
-    def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    def l : java.util.List(any) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
 )
@@ -201,7 +201,7 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     xs.get(0) as java.lang.reflect.Method
 )
 def args17 = (a0 : any, a1 : any, a2 : any, a3 : any) -> (
-    def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    def l : java.util.List(any) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
 )
@@ -229,7 +229,7 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     xs.get(0) as java.lang.reflect.Method
 )
 def args17 = (a0 : any, a1 : any, a2 : any, a3 : any) -> (
-    def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    def l : java.util.List(any) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
 )
@@ -396,7 +396,6 @@ def rawList = fns as java.util.List
 rawList.add("notfn")
 fns.get(0)
 }}}}}
-Warning : Redundant cast : java.util.List(any?)
 3.0:true:true
 Type error : expected (x : int) : int, got string
 

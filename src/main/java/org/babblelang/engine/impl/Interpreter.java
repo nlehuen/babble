@@ -633,6 +633,27 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitCoreCollectionCall(BabbleParser.CoreCollectionCallContext ctx) {
+        last = ctx;
+        List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
+        Object[] args = params.isEmpty() ? Arguments.NONE : new Object[params.size()];
+        String[] names = null;
+        for (int i = 0; i < params.size(); i++) {
+            BabbleParser.ExpressionContext expr = params.get(i).expression();
+            args[i] = widen(expr, visit(expr));
+            String name = ScopeAnalysis.callParamName(params.get(i));
+            if (name != null) {
+                if (names == null) {
+                    names = new String[params.size()];
+                }
+                names[i] = name;
+            }
+        }
+        last = ctx;
+        return org.babblelang.runtime.CoreCollections.construct(ctx.callee.getText(), args, names, runtime);
+    }
+
+    @Override
     public Object visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
         last = ctx;
         Object callee = visit(ctx.expression());
@@ -652,7 +673,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object[] args = params.isEmpty() ? Arguments.NONE : new Object[params.size()];
         String[] names = null;
         for (int i = 0; i < params.size(); i++) {
-            args[i] = visit(params.get(i).expression());
+            BabbleParser.ExpressionContext expr = params.get(i).expression();
+            args[i] = widen(expr, visit(expr));
             String name = ScopeAnalysis.callParamName(params.get(i));
             if (name != null) {
                 if (names == null) {

@@ -1,0 +1,151 @@
+;; BIP011-P4: Core collections (list, set, sortedset, map, sortedmap, entry), universal C(T)(...), variance, and is-checks
+
+{{{{{
+;; Core collection constructors: explicit C(T)(...), inferred C(...), joins, and entry
+def a = list(int)()
+a.add(10)
+a.add(20)
+def b = list(int?)(1, null, 3)
+def c : list(int) = list()
+c.add(7)
+def d = list(1, 2.5)
+def e = set("a", null)
+def f = set(1, 2, 1)
+def g = map(entry("x", 1), entry("y", 2))
+def h = map(string, int)()
+h.put("k", 9)
+def ent = entry(value: 42, key: "ans")
+println(a.size(), ":", b.get(1), ":", c.get(0), ":", d.get(0), ":", e.size(), ":", f.size(), ":", g.get("y"), ":", h.get("k"), ":", ent.getKey(), "=", ent.getValue())
+}}}}}
+2:null:7:1.0:2:2:2:9:ans=42
+
+{{{{{
+;; Missing type argument on unannotated empty collection constructors
+def xs = list()
+}}}}}
+Missing type : cannot infer type arguments for list
+
+{{{{{
+;; capacity: and from: named constructor arguments
+def capList : list(int) = list(capacity: 4)
+capList.add(1)
+def capSet : set(string) = set(capacity: 4)
+capSet.add("hi")
+def capMap : map(string, int) = map(capacity: 4)
+capMap.put("a", 5)
+def ints = list(1, 2, 3)
+def widenedCopy : list(int?) = list(from: ints)
+widenedCopy.add(null)
+def m1 = map(entry("a", 1))
+def m2 : map(string, int?) = map(from: m1)
+m2.put("b", null)
+println(capList.size(), ":", capSet.size(), ":", capMap.get("a"), ":", widenedCopy.size(), ":", m2.get("b"))
+}}}}}
+1:1:5:4:null
+
+{{{{{
+;; Negative capacity rejected at runtime
+def bad : list(int) = list(capacity: -1)
+}}}}}
+java.lang.IllegalArgumentException : Illegal Capacity: -1
+
+{{{{{
+;; sortedset and sortedmap with natural ordering, Babble Comparable, and lambda comparator:
+def Item = value class (id : int) implements java.lang.Comparable(Item) (
+    def compareTo = (other : Item) : int -> ( this.id - other.id )
+)
+def ss1 = sortedset(3, 1, 2)
+def ss2 = sortedset(Item(2), Item(1))
+def ssDesc = sortedset(comparator: (x : int, y : int) : int -> ( y - x ))
+ssDesc.add(1)
+ssDesc.add(3)
+ssDesc.add(2)
+def ssFrom = sortedset(from: list(1, 3, 2), comparator: (x : int, y : int) : int -> ( y - x ))
+def sm1 = sortedmap(entry("b", 2), entry("a", 1))
+def smDesc = sortedmap(string, int)(comparator: (x : string, y : string) : int -> ( y.compareTo(x) ))
+smDesc.put("a", 1)
+smDesc.put("b", 2)
+println(ss1.first(), ":", ss2.first().id, ":", ssDesc.first(), ":", ssFrom.first(), ":", sm1.firstKey(), ":", smDesc.firstKey())
+}}}}}
+1:1:3:3:a:b
+
+{{{{{
+;; Static Comparable check rejects nullable or unordered keys when comparator: is omitted
+def ssNull = sortedset(1, null)
+}}}}}
+Type error : int? is not Comparable (pass comparator: ...)
+
+{{{{{
+;; Static Comparable check rejects unordered class without comparator:
+def Plain = class (def n : int) ()
+def smBad : sortedmap(Plain, int) = sortedmap()
+}}}}}
+Type error : Plain is not Comparable (pass comparator: ...)
+
+{{{{{
+;; Sortedmap allows nullable values with natural key ordering
+def smNullVal : sortedmap(string, int?) = sortedmap()
+smNullVal.put("k", null)
+println(smNullVal.containsKey("k"), ":", smNullVal.get("k"))
+}}}}}
+true:null
+
+{{{{{
+;; Universal C(T)(...) on Java generics, Babble generic classes, Babble generic functions, and generic Java methods
+def dq = java.util.ArrayDeque(string)()
+dq.add("first")
+def Box(T) = class (def value : T) ()
+def bx = Box(int | string)("hi")
+def id(T) = (x : T) : T -> ( x )
+def d : double = id(double)(1)
+def emp = java.util.Collections.emptyList(string)()
+println(dq.peek(), ":", bx.value, ":", d, ":", emp.size())
+}}}}}
+first:hi:1.0:0
+
+{{{{{
+;; Wrong type-argument arity on C(T)(...)
+def bad = list(int, string)()
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+;; Mutable collection invariance (BIP011-D8)
+def xs : list(int) = list(1, 2)
+def ys : list(int?) = xs
+}}}}}
+Type error : expected list(int?), got list(int)
+
+{{{{{
+;; Mutable generic class invariance (BIP011-D8)
+def Box(T) = class (def value : T) ()
+def b1 : Box(int) = Box(1)
+def b2 : Box(any) = b1
+}}}}}
+Type error : expected Box(any), got Box(int)
+
+{{{{{
+;; Covariance on immutable value class, entry, Optional, and non-mut borrow parameter
+def Pair(A, B) = value class (first : A, second : B) ()
+def p1 : Pair(int, string) = Pair(1, "ok")
+def p2 : Pair(any, any?) = p1
+def e1 : entry(string, int) = entry("k", 7)
+def e2 : entry(any, int?) = e1
+def o1 : java.util.Optional(string) = java.util.Optional.of("hi")
+def o2 : java.util.Optional(any) = o1
+def checkBorrow = (borrow xs : list(any?)) : bool -> ( xs == xs )
+def nums = list(1, 2, 3)
+println(p2.first, ":", e2.getValue(), ":", o2.get(), ":", checkBorrow(nums))
+}}}}}
+1:7:hi:true
+
+{{{{{
+;; is list / set / sortedset / map / sortedmap / entry and narrowing
+def items : list(int) | string = list(10, 20)
+def r1 = if items is list then ( items.get(0) ) else ( 0 )
+def s : any = sortedset(1, 2)
+def m : any = sortedmap(entry("a", 1))
+def e : any = entry("k", 9)
+println(r1, ":", s is set, ":", s is sortedset, ":", m is map, ":", m is sortedmap, ":", e is entry, ":", "no" is list)
+}}}}}
+10:true:true:true:true:true:false

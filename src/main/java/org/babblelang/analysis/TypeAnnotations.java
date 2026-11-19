@@ -240,6 +240,18 @@ final class TypeAnnotations {
         }
         Object resolved = TypeChecker.resolveName(null, path.get(0), scope);
         if (path.size() == 1 && resolved == null) {
+            Class<?> coreCollection = switch (path.get(0)) {
+                case "list" -> java.util.List.class;
+                case "set" -> java.util.Set.class;
+                case "sortedset" -> java.util.SortedSet.class;
+                case "map" -> java.util.Map.class;
+                case "sortedmap" -> java.util.SortedMap.class;
+                case "entry" -> java.util.Map.Entry.class;
+                default -> null;
+            };
+            if (coreCollection != null) {
+                return instantiateJavaType(coreCollection, type, scope, allowRaw);
+            }
             Type builtin = switch (path.get(0)) {
                 case "byte" -> Type.BYTE;
                 case "short" -> Type.SHORT;

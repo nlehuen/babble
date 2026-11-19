@@ -1212,6 +1212,13 @@ final class TypeChecker {
         coerce(widenSite, actual, expected);
     }
 
+    void subsumesBorrow(ParserRuleContext site, Type actual, Type expected) {
+        if (actual != Type.ERROR && expected != Type.ERROR && !algebra.borrowAssignable(actual, expected)) {
+            reportTypeMismatch(actual, expected, site);
+        }
+        coerce(site, actual, expected);
+    }
+
     /**
      * The one coercion point : records that the value {@code site} produces is widened numerically
      * along {@code byte < short < int < long < float < double} where {@code target} is expected.
@@ -1749,9 +1756,9 @@ final class TypeChecker {
 
         private Type visitIsExpression(BabbleParser.IsExpressionContext ctx, Type expected, Role role) {
             synth(ctx.left);
-            Type.Simple builtin = narrowing.isBuiltinTarget(ctx);
+            Type builtin = narrowing.isBuiltinTarget(ctx);
             if (builtin != null) {
-                pass.analysis.setIsBuiltin(ctx, builtin.name());
+                pass.analysis.setIsBuiltin(ctx, ctx.coreType.getText());
             } else if (ctx.coreType != null) {
                 if (ctx.typeArguments() != null) {
                     warn("Cannot test erased type arguments with 'is' : use 'is " + ctx.coreType.getText() + "'", ctx.coreType);
@@ -1787,17 +1794,16 @@ final class TypeChecker {
         }
 
         private Type visitCoreCollectionCall(BabbleParser.CoreCollectionCallContext ctx, Type expected, Role role) {
-            for (BabbleParser.CallParameterContext arg : ctx.callParameters().callParameter()) {
-                synth(arg.expression());
-            }
-            return Type.ANY;
+            return callSolver.coreCollectionCall(ctx, expected);
         }
 
         private Type visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx, Type expected, Role role) {
             Type callee = synth(ctx.expression(), Role.CALLEE);
             boolean genericCallee = (callee instanceof Type.Function f && !f.typeParameters().isEmpty())
                     || (callee instanceof Type.ClassValue cv && !annotator.typeVarsOf(cv.node()).isEmpty())
-                    || (callee instanceof Type.JavaClassValue jcv && jcv.type().getTypeParameters().length > 0);
+                    || (callee instanceof Type.JavaClassValue jcv && jcv.type().getTypeParameters().length > 0)
+                    || (callee instanceof Type.JavaMethod jm
+                            && org.babblelang.runtime.JavaTypes.methods(jm.owner(), jm.name()).stream().anyMatch(m -> m.getTypeParameters().length > 0));
             boolean hasTypeOnlySyntax = false;
             for (BabbleParser.TypeContext t : ctx.typeArguments().type()) {
                 BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(t);
@@ -1808,13 +1814,7 @@ final class TypeChecker {
             }
             if (genericCallee || hasTypeOnlySyntax) {
                 pass.analysis.markTypeApplyCall(ctx);
-                for (BabbleParser.TypeContext t : ctx.typeArguments().type()) {
-                    annotator.annotation(t, scopeOf(ctx), false);
-                }
-                for (BabbleParser.CallParameterContext arg : ctx.callParameters().callParameter()) {
-                    synth(arg.expression());
-                }
-                return Type.ANY;
+                return callSolver.typeApplyCall(ctx, callee, expected);
             }
             // Curried value call: f(a)(b) where f is a non-generic callable returning a callable.
             List<Type> firstArgTypes = new ArrayList<>();

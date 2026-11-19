@@ -111,10 +111,14 @@ def FixedInt = class (def n: int) implements IntContainer (
 assert(FixedInt(6).doubled() == 12)
 assert(FixedInt(6).describe() == "box:6")
 
-;; ---------------------------------------------------------------- Covariant parameterized types and is/as
+;; ---------------------------------------------------------------- Covariant immutable value class types and is/as
 
-def covDoubleUnion: Box(int | double) = ib
-def covAny: Box(any) = ib
+def ValBox(T) = value class (value: T) (
+    def get = (): T -> (this.value)
+)
+def vib: ValBox(int) = ValBox(21)
+def covDoubleUnion: ValBox(int | double) = vib
+def covAny: ValBox(any) = vib
 assert(covDoubleUnion.get() == 21)
 assert(covAny.get() == 21)
 
@@ -177,9 +181,9 @@ assert(scores.get(2) == Score(30))
 def callable = java.util.concurrent.Callable(() -> (123))
 assert(callable.call() == 123)
 
-;; Covariant Java collection & raw `is`/`as`
+;; Mutable Java collection invariance, copy via from:, & raw `is`/`as`
 def ints = java.util.List.of(4, 5)
-def anys: java.util.List(any) = ints
+def anys: list(any) = list(any)(from: ints)
 assert(anys.size() == 2)
 def dynList: any = ints
 if dynList is java.util.List then (

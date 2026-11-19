@@ -261,8 +261,31 @@ sealed interface Type {
 
         @Override
         public String toString() {
-            return typeArguments.isEmpty() ? type.getName()
-                    : type.getName() + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
+            String name = coreCollectionDisplayName(type);
+            return typeArguments.isEmpty() ? name
+                    : name + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
+        }
+
+        private static String coreCollectionDisplayName(Class<?> type) {
+            if (type == java.util.List.class) {
+                return "list";
+            }
+            if (type == java.util.Set.class) {
+                return "set";
+            }
+            if (type == java.util.SortedSet.class) {
+                return "sortedset";
+            }
+            if (type == java.util.Map.class) {
+                return "map";
+            }
+            if (type == java.util.SortedMap.class) {
+                return "sortedmap";
+            }
+            if (type == java.util.Map.Entry.class) {
+                return "entry";
+            }
+            return type.getName();
         }
     }
 

@@ -56,7 +56,7 @@ final class TypeAlgebra {
         }
     }
 
-    private record RelationKey(Type sub, Type sup, RelateMode mode) {
+    private record RelationKey(Type sub, Type sup, RelateMode mode, boolean borrowCovariant) {
     }
 
     /**
@@ -165,17 +165,22 @@ final class TypeAlgebra {
 
     /** Whether a value of type {@code from} can be used where {@code to} is declared. */
     boolean assignable(Type from, Type to) {
-        return relate(from, to, RelateMode.ASSIGNABLE, null);
+        return relate(from, to, RelateMode.ASSIGNABLE, null, new HashSet<>(), false);
+    }
+
+    /** Whether a value of type {@code from} can be passed to a non-{@code mut} {@code borrow} parameter of type {@code to}. */
+    boolean borrowAssignable(Type from, Type to) {
+        return relate(from, to, RelateMode.ASSIGNABLE, null, new HashSet<>(), true);
     }
 
     /** Assignability without the implicit {@code int -> double} widening (container arguments, results). */
     boolean subtype(Type from, Type to) {
-        return relate(from, to, RelateMode.SUBTYPE, null);
+        return relate(from, to, RelateMode.SUBTYPE, null, new HashSet<>(), false);
     }
 
     /** Subtyping of runtime representations (no widening, functions only by identity). */
     boolean runtimeSubtype(Type from, Type to) {
-        return relate(from, to, RelateMode.RUNTIME_EXACT, null);
+        return relate(from, to, RelateMode.RUNTIME_EXACT, null, new HashSet<>(), false);
     }
 
     /** Whether {@code from as to} always holds with no conversion (a redundant cast). */
@@ -191,10 +196,14 @@ final class TypeAlgebra {
     }
 
     boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store) {
-        return relate(sub, sup, mode, store, new HashSet<>());
+        return relate(sub, sup, mode, store, new HashSet<>(), false);
     }
 
-    private boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, Set<RelationKey> active) {
+    boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, boolean borrowCovariant) {
+        return relate(sub, sup, mode, store, new HashSet<>(), borrowCovariant);
+    }
+
+    private boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, Set<RelationKey> active, boolean borrowCovariant) {
         if (sub == Type.ERROR || sup == Type.ERROR || sub == Type.NOTHING) {
             return true;
         }
@@ -218,7 +227,11 @@ final class TypeAlgebra {
         if (sub.equals(sup) && (store == null || !sub.anyMatch(t -> t instanceof Type.TypeVar tv && store.solving().contains(tv)))) {
             return true;
         }
-        RelationKey key = new RelationKey(sub, sup, mode);
+        if (mode == RelateMode.INVARIANT_ARG) {
+            return relate(sub, sup, RelateMode.SUBTYPE, store, active, false)
+                    && relate(sup, sub, RelateMode.SUBTYPE, store, active, false);
+        }
+        RelationKey key = new RelationKey(sub, sup, mode, borrowCovariant);
         if (!active.add(key)) {
             return true;
         }
@@ -226,7 +239,7 @@ final class TypeAlgebra {
             // Left-union universal split ([FCB08])
             if (sub instanceof Type.Union union) {
                 for (Type member : union.members()) {
-                    if (!relate(member, sup, mode, store, active)) {
+                    if (!relate(member, sup, mode, store, active, borrowCovariant)) {
                         return false;
                     }
                 }
@@ -238,14 +251,14 @@ final class TypeAlgebra {
                     return true;
                 }
                 return sup.equals(Type.NULLABLE_ANY)
-                        || (sup instanceof Type.Union union && anyMemberRelates(sub, union, mode, store, active));
+                        || (sup instanceof Type.Union union && anyMemberRelates(sub, union, mode, store, active, borrowCovariant));
             }
             if (sup instanceof Type.TypeVar tv && tv.owner() == null) {
                 return true;
             }
             // Right-union existential search with ConstraintStore rollback
             if (sup instanceof Type.Union union) {
-                return anyMemberRelates(sub, union, mode, store, active);
+                return anyMemberRelates(sub, union, mode, store, active, borrowCovariant);
             }
             if (sub == Type.NULL) {
                 return sup == Type.NULL;
@@ -257,7 +270,9 @@ final class TypeAlgebra {
                     && Type.numericRank(sub) < Type.numericRank(sup)) {
                 return true;
             }
-            RelateMode argMode = mode == RelateMode.INVARIANT_ARG ? RelateMode.INVARIANT_ARG : RelateMode.SUBTYPE;
+            RelateMode argMode = (mode != RelateMode.RUNTIME_EXACT && !borrowCovariant && isMutableParameterized(sup))
+                    ? RelateMode.INVARIANT_ARG
+                    : RelateMode.SUBTYPE;
             if (sup instanceof Type.JavaInstance java) {
                 Type projected = projectToJava(sub, java.type());
                 if (projected instanceof Type.JavaInstance proj) {
@@ -283,7 +298,7 @@ final class TypeAlgebra {
             if (sup instanceof Type.JavaArray target) {
                 return sub instanceof Type.JavaArray array
                         && target.javaClass().isAssignableFrom(array.javaClass())
-                        && relate(array.element(), target.element(), argMode, store, active);
+                        && relate(array.element(), target.element(), argMode, store, active, false);
             }
             if (sup instanceof Type.Instance target) {
                 if (!(sub instanceof Type.Instance instance)
@@ -308,10 +323,20 @@ final class TypeAlgebra {
         }
     }
 
+    private static boolean isMutableParameterized(Type type) {
+        if (type instanceof Type.JavaInstance java) {
+            return java.type() != java.util.Optional.class && java.type() != java.util.Map.Entry.class;
+        }
+        if (type instanceof Type.Instance inst) {
+            return inst.node().kind != org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS;
+        }
+        return false;
+    }
+
     private boolean argumentsRelate(List<Type> subArgs, List<Type> supArgs, RelateMode mode,
                                     ConstraintStore store, Set<RelationKey> active) {
         for (int i = 0; i < supArgs.size(); i++) {
-            if (!relate(subArgs.get(i), supArgs.get(i), mode, store, active)) {
+            if (!relate(subArgs.get(i), supArgs.get(i), mode, store, active, false)) {
                 return false;
             }
         }
@@ -319,10 +344,10 @@ final class TypeAlgebra {
     }
 
     private boolean anyMemberRelates(Type sub, Type.Union supUnion, RelateMode mode,
-                                     ConstraintStore store, Set<RelationKey> active) {
+                                     ConstraintStore store, Set<RelationKey> active, boolean borrowCovariant) {
         for (Type member : supUnion.members()) {
             int mark = store != null ? store.mark() : 0;
-            if (relate(sub, member, mode, store, active)) {
+            if (relate(sub, member, mode, store, active, borrowCovariant)) {
                 return true;
             }
             if (store != null) {
@@ -369,12 +394,12 @@ final class TypeAlgebra {
         for (int i = 0; i < from.parameters().size(); i++) {
             Type.Parameter fp = from.parameters().get(i);
             if (i < to.parameters().size()
-                    ? !relate(to.parameters().get(i).type(), fp.type(), RelateMode.ASSIGNABLE, store, active)
+                    ? !relate(to.parameters().get(i).type(), fp.type(), RelateMode.ASSIGNABLE, store, active, false)
                     : !fp.optional()) {
                 return false;
             }
         }
-        if (!relate(from.result(), to.result(), RelateMode.SUBTYPE, store, active)) {
+        if (!relate(from.result(), to.result(), RelateMode.SUBTYPE, store, active, false)) {
             return false;
         }
         if (!withEffects) {
