@@ -539,6 +539,7 @@ public final class ScopeAnalysis {
     }
 
     private final Map<ParserRuleContext, EffectSet> callableEffects = new HashMap<>();
+    private final Map<ParserRuleContext, Type> callableTypes = new HashMap<>();
     private final Map<BabbleParser.CallContext, EffectSet> callEffects = new HashMap<>();
 
     void setCallableEffects(ParserRuleContext callable, EffectSet effects) {
@@ -548,6 +549,16 @@ public final class ScopeAnalysis {
     /** The converged or declared effect summary of a function literal or class constructor. */
     public EffectSet callableEffects(ParserRuleContext callable) {
         return callableEffects.getOrDefault(callable, EffectSet.EMPTY);
+    }
+
+    void setCallableType(ParserRuleContext callable, Type type) {
+        if (type != null) {
+            callableTypes.put(callable, type);
+        }
+    }
+
+    Type callableType(ParserRuleContext callable) {
+        return callableTypes.get(callable);
     }
 
     void setCallEffects(BabbleParser.CallContext call, EffectSet effects) {
