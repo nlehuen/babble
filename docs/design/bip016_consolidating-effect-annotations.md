@@ -4,9 +4,9 @@
 |---|---|
 | **BIP** | 016 |
 | **Date** | 2026-11-19 |
-| **Status** | Draft — Partially Decided (`BIP016-D1`–`D4` settled; Open Questions `BIP016-Q1`–`Q7`) |
+| **Status** | Draft — Partially Decided (`BIP016-D1`–`D5` settled; Open Questions `BIP016-Q1`–`Q7`) |
 | **Depends on** | Function effects and algebraic properties (`RM002` / `RM007`, [bip007_effects.md](bip007_effects.md)), core scalar & collection types (`RM005`, [bip011_core-types.md](bip011_core-types.md)), predicate-free LL(1)/LL(2) grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)), compiler optimization passes ([bip014_optimization-passes.md](bip014_optimization-passes.md)) |
-| **Scope** | Surface ergonomics of Babble's effect and borrowing annotations: empirical audit of `examples/raytracer-argon/`, separating **internal orthogonal compiler traits** (`@UPPERCASE`: 4 function traits + 3 slot traits) from **surface annotations defined as collections of traits** (`BIP016-D1`), consolidating `pure` = `{@HERMETIC, !@MUTABLE, @DETERMINISTIC}` and `hermetic` = `{@HERMETIC, @DETERMINISTIC}` with `@NOTHROW` & `@TERMINATING` inferred (`BIP016-D2`), using `volatile` for non-deterministic readers (`BIP016-D3`), making `@BORROWED` the unmarked default with no `borrow` keyword and `shared` for `!@BORROWED` (`BIP016-D4`), and aligning with `EffectSet`, `Babble.g4` (`SLL`), `org.babblelang.effects`, and `BIP014` |
+| **Scope** | Surface ergonomics of Babble's effect and borrowing annotations: empirical audit of `examples/raytracer-argon/`, separating **internal orthogonal compiler traits** (`@UPPERCASE`) from **surface annotations defined as collections of traits** (`BIP016-D1`), consolidating `pure` = `{@HERMETIC, !@MUTABLE, @DETERMINISTIC}` and `hermetic` = `{@HERMETIC, @DETERMINISTIC}` with `@NOTHROW` & `@TERMINATING` inferred (`BIP016-D2`), using `volatile` for non-deterministic readers (`BIP016-D3`), making `@BORROWED` the unmarked default with no `borrow` keyword and `shared` for `!@BORROWED` (`BIP016-D4`), unifying `{unique, shared, @BORROWED}` + `frozen T` onto one ownership axis orthogonal to function effects (including `impure`) and `mut` (`BIP016-D5`), and aligning with `EffectSet`, `Babble.g4` (`SLL`), `org.babblelang.effects`, and `BIP014` |
 
 ---
 
@@ -257,13 +257,13 @@ Keep `BIP007`'s exact syntax, but change `BIP007-D2` so that writing `fn pure` o
 
 ---
 
-## 6. Consolidated Semantics (`BIP016-D1`–`D4`)
+## 6. Consolidated Semantics (`BIP016-D1`–`D5`)
 
 ### 6.1 Surface Annotations as Collections of Layer 1 `@TRAITS`
 
 Every surface annotation expands deterministically into Layer 1 orthogonal `@TRAITS` stored in `EffectSet` and `Type.Parameter`:
 
-| Surface Annotation | Internal `@TRAITS` Collection | Per-Slot `@BORROWED` Default *(`BIP016-D4`)* | Typical Use Case |
+| Surface Annotation | Internal `@TRAITS` Collection | Per-Slot `@BORROWED` Default *(`BIP016-D4`/`D5`)* | Typical Use Case |
 |---|---|---|---|
 | `fn pure (...)` | `{@HERMETIC, !@MUTABLE, @DETERMINISTIC}` | `@BORROWED_THIS`, `@BORROWED(*)` *(unless `shared`)* | Mathematical functions, `record` methods, pure queries, throwing pure conversions (`math.sqrt`, `Vec3.dot`, `math.toInt`, `Path.of` — **73.3%** of Argon) |
 | `fn pure nothrow (...)` | `{@HERMETIC, !@MUTABLE, @DETERMINISTIC, @NOTHROW}` | `@BORROWED_THIS`, `@BORROWED(*)` *(unless `shared`)* | Strict no-exception API/interface contracts (e.g., guard-safe filter combinators; concrete `fn pure` bodies infer `@NOTHROW` automatically!) |
@@ -271,11 +271,11 @@ Every surface annotation expands deterministically into Layer 1 orthogonal `@TRA
 | `fn hermetic (...)` | `{@HERMETIC, @DETERMINISTIC}` | `@BORROWED_THIS`, `@BORROWED(*)` *(unless `shared`)* | No globals/I/O, mutates `@MUTABLE` (`mut`) parameter(s) (`Material.scatter`, `Camera.rayColor`, `Vec3.random*`) |
 | `fn hermetic mut (...)` | `{@HERMETIC, @MUT_THIS, @DETERMINISTIC}` | `@BORROWED_THIS`, `@BORROWED(*)` *(unless `shared`)* | No globals/I/O, mutates `this` (`Rng.nextDouble`, `HittableList.clear`, `list.add`) |
 | `fn hermetic [mut] nothrow (...)` | `{@HERMETIC, @DETERMINISTIC, @NOTHROW}` *(+ `@MUT_THIS`)* | `@BORROWED_THIS`, `@BORROWED(*)` *(unless `shared`)* | Strict no-exception locally-mutating API/interface contracts |
-| `fn nothrow (...)` | `{@NOTHROW}` | `@BORROWED` default *(unless `shared`, see `BIP016-Q3`)* | Exception-free but unconstrained on global/mutable state (`BVHNode.fromList`, frame-local closures) |
-| `fn impure (...)` | `{@IMPURE_LOCK}` *(clears all inferred traits)* | See `BIP016-Q3` | Explicit unconstrained opt-out (`Camera.render`, `URL.equals`) |
+| `fn nothrow (...)` | `{@NOTHROW}` | `@BORROWED_THIS`, `@BORROWED(*)` *(unless `shared`)* | Exception-free but unconstrained on global/mutable state (`BVHNode.fromList`, frame-local closures) |
+| `fn impure (...)` | `{@IMPURE_LOCK}` *(locks function effects to `{}`)* | `@BORROWED_THIS`, `@BORROWED(*)` *(unless `shared`, `BIP016-D5`)* | Explicit effect opt-out (`println`, `Camera.render`, `URL.equals`); ownership & `mut` remain orthogonal |
 | `fn (...)` *(unannotated)* | Full `BIP007` fixed-point `@TRAITS` inference | Inferred on bodies; type-position default per `BIP016-Q3` | Ordinary Babble scripts and private helpers (zero migration cost!) |
 
-Per-slot modifiers (`mut`, `shared`, `unique`) simply set or clear the corresponding slot-level traits (`@MUTABLE`, `!@BORROWED`, `@UNIQUE`). **`@BORROWED` has no user-facing keyword** (`borrow` is retired per `BIP016-D4`). **`!@MUTABLE` (`pure`) and `@MUTABLE` (`mut`) remain mutually exclusive**, preserving `BIP007`'s zero weak-purity guarantee, while **`@NOTHROW`** and **`@TERMINATING`** are inferred automatically on every concrete body for `BIP014`.
+Per-slot modifiers (`mut`, `shared`, `unique`) simply set the slot's mutability (`@MUTABLE`) or ownership (`unique` vs. `shared` vs. default `@BORROWED`). **`@BORROWED` has no user-facing keyword** (`borrow` is retired per `BIP016-D4`). **`!@MUTABLE` (`pure`) and `@MUTABLE` (`mut`) remain mutually exclusive**, preserving `BIP007`'s zero weak-purity guarantee, while **`@NOTHROW`** and **`@TERMINATING`** are inferred automatically on every concrete body for `BIP014`.
 
 **Algebraic properties** (`idempotent`, `commutative`, `associative`, `monotone`, `injective`) and **ownership modifiers** (`unique`, `frozen`, `move`, `freeze`, `discard`) compose identically as in `BIP007` — with far less boilerplate:
 
@@ -295,18 +295,19 @@ axiom hermetic mut idempotent commutative on java.util.HashSet.add
 def addComm = fn pure commutative associative (a: int, b: int): int -> (a + b)
 ```
 
-### 6.2 Escape Polarity (`BIP016-D4`) & Unified Ownership Axis (`BIP016-Q3`)
+### 6.2 Escape Polarity (`BIP016-D4`) & Unified Ownership Axis (`BIP016-D5`)
 
 Under `BIP016-D4`, `@BORROWED` is the unmarked default (with no user-facing `borrow` keyword): the callee may manipulate the reference during the call, **and the compiler statically guarantees that the reference is no longer held when the callee terminates**. Allowing a `@BORROWED` reference (or any mutable sub-reference reachable from it) to escape — storing it in a field, collection, or outer/global variable, capturing it in an escaping closure, returning it, or passing it to a `shared` or `unique` parameter — is a **compile-time error** enforced by `EffectChecker`. Authors write **`shared`** (`!@BORROWED`) only on the ~10% of slots whose reference may legitimately outlive the call:
 
 * **On a method:** `def hit = fn pure shared (r: Ray, rayT: Interval): HitRecord? -> (...)` signals that `hit` may share/return references reachable from `this` (`this.mat` inside `HitRecord`), while `r` and `rayT` remain `@BORROWED` (enabling `BIP014` `O9` scalar replacement of temporary `Ray` and `Interval` values).
 * **On a parameter:** `def add = fn hermetic mut shared (shared item: Hittable) -> (...)` documents that `this.head` may outlive the call inside a new node and `item` is stored inside `this`.
 * **On `mut` parameters:** `mut rng: Rng` defaults to `@MUTABLE + @BORROWED` (matching 16/16 occurrences in Argon), whereas `mut shared items: HittableList` marks a mutated parameter whose contents may also remain held after the call.
-* **On unannotated functions & `impure` *(to confirm in `BIP016-Q3`)*:** Concrete unannotated `fn (x: T): R -> (...)` still runs full `EffectChecker` inference (so `def id = fn (x: T): T -> (x)` needs no `shared`), whereas the default on `fn impure` and unannotated function/interface types (`f: fn (item: Hittable)`) is finalized in `BIP016-Q3`.
+* **On `impure` functions (`BIP016-D5`):** `impure` lives strictly on the **function-effect axis** (locking out `@HERMETIC`/`@DETERMINISTIC`/`@NOTHROW`/`@TERMINATING` inference and overriding built-in/axiom defaults). Slot ownership (`@BORROWED` default, `shared`, `unique`) and mutability (`mut`) remain orthogonal, so `fn impure (x: any?)` (like `println`) accepts `unique` locals and `frozen T` cleanly while `fn impure (shared x: T)` explicitly marks escaping parameters.
+* **On unannotated functions (`BIP016-Q3`):** Concrete unannotated `fn (x: T): R -> (...)` still runs full `EffectChecker` inference (so `def id = fn (x: T): T -> (x)` needs no `shared`), whereas the default on unannotated function/interface types (`f: fn (item: Hittable)`) is finalized in `BIP016-Q3`.
 
-#### Single Ownership Axis Candidate (`unique` / `shared` / `borrowed`, plus `frozen`)
+#### Unified Ownership Axis (`unique` / `shared` / `borrowed`, plus `frozen` — `BIP016-D5`)
 
-Because `unique` and `shared` are conceptual antonyms (writing `unique shared` for a consuming move would read like a contradiction), **`unique`, `shared`, and `@BORROWED` (default) naturally unify onto a single mutually exclusive ownership axis** (orthogonal to `@MUTABLE` / `mut`), with **`frozen T`** as the immutable terminal state reached via `freeze(x)`:
+Because `unique` and `shared` are conceptual antonyms (writing `unique shared` for a consuming move would read like a contradiction), **`unique`, `shared`, and `@BORROWED` (default) unify onto a single mutually exclusive ownership axis**, orthogonal to both the function-effect axis (including `impure`) and `mut`, with **`frozen T`** as the immutable terminal state reached via `freeze(x)`:
 
 * **Move semantics on `unique`:** Assigning a `unique` reference to a new binding, storing it into a `unique` container, passing it to a `unique` parameter, or returning it as `: unique T` **moves ownership to the destination and invalidates the source reference** (zero-cost identity at runtime; written explicitly with `move(x)` or inferred on a provable last use per `BIP007-D5`). **The compiler statically guarantees that the source reference is never used after the move** — any subsequent read or write of an invalidated (`@MOVED`) binding is a **compile-time error** enforced by `EffectChecker`'s definite-unassignment analysis.
 
@@ -318,6 +319,7 @@ stateDiagram-v2
     unique --> shared : pass to shared slot or alias (irreversible demotion)
     unique --> borrowed : pass to default slot (call-scoped loan, returns unique*)
     shared --> borrowed : pass to default slot (call-scoped loan, returns shared)
+    frozen --> borrowed : pass to non-mut default slot (call-scoped loan, returns frozen)
     borrowed --> borrowed : re-borrow to nested default slot
 ```
 
@@ -330,13 +332,18 @@ Complete ownership transition & compile-error matrix:
 | **`unique`** *(sole owner)* | **Allowed (`move`)** — transfers ownership to destination and invalidates source (any later use is a compile error) | **Allowed** — one-way irreversible demotion to `shared` | **Allowed** — call-scoped loan; caller retains `unique` *(unless mutated with `shared` input)* | **Allowed** — `freeze(x)` consumes `x` (invalidating source) into deeply immutable `frozen T` |
 | **`shared`** *(multi-owner)* | **Compile error** — other aliases may exist | **Allowed** — freely aliased, stored, or returned | **Allowed (call-scoped loan only)** — callee cannot hold ref past termination; caller's binding stays `shared` | **Compile error** — cannot freeze a shared mutable graph |
 | **`@BORROWED`** *(frame-local loan)* | **Compile error** — callee does not own it | **Compile error** — `@BORROWED` reference MUST NOT escape | **Allowed** — re-borrow to nested `@BORROWED` callee | **Compile error** — callee does not own it |
-| **`frozen T`** *(deeply immutable)* | **Compile error** — immutable forever | **Allowed as `frozen T`** — freely shareable while immutable | **Allowed (non-`mut` only)** — `BIP007-D7` read-only methods | **Allowed** — already `frozen T` |
+| **`frozen T`** *(deeply immutable)* | **Compile error** — immutable forever | **Allowed only as `shared frozen T`** *(compile error to pass as unfrozen `shared T`, which would leak a mutable-typed ref!)* | **Allowed (non-`mut` `@BORROWED T`)** — callee cannot mutate or escape `this`/param, so `frozen T` safely lends as `@BORROWED T` (`BIP007-D7`) | **Allowed** — already `frozen T` |
 
-**Why `shared --> borrowed` is a call-scoped loan (and must be allowed):** A `shared` reference never permanently becomes `borrowed` or `unique` — the caller's binding remains `shared`. However, a caller holding a `shared` reference (e.g., a class field `this.center`, a global, or a `shared` parameter like `world` in `Camera.rayColor`) **must** be able to lend it to a `@BORROWED` parameter/receiver (`this.world.boundingBox()`, `item.boundingBox()`, `this.center.sub(...)`), because `@BORROWED` restricts the *callee* (forbidding it from retaining the reference after termination) rather than requiring exclusivity from the caller. This yields a clean total capability order:
+**Orthogonality with `mut` (`@MUTABLE`):**
+* **`@BORROWED` & `shared`:** `mut` is **100% orthogonal** (`x: T` vs. `mut x: T`, `shared x: T` vs. `mut shared x: T`), because the caller (or other aliases) still hold the reference and can observe mutations (forbidding `pure`).
+* **`unique` (consuming `move`):** Because `move(x)` invalidates the caller's binding, the callee is the sole owner and may mutate the graph privately *even inside `pure`* (`EffectChecker.Origin.ofUniqueParam` leaves parameter-mutation bits empty when consuming), making `mut` redundant as a caller contract on consuming `unique` parameters.
+* **`frozen T`:** `mut` is **forbidden** (compile error — deeply immutable forever), while every non-`mut` `@BORROWED T` method/function automatically accepts `frozen T` with zero extra annotations under `BIP016-D4`!
 
-* **Value / argument capability order:** **`unique`** $<:$ **`shared`** $<:$ **`@BORROWED`**
+**Why `shared --> borrowed` and `frozen --> borrowed` are call-scoped loans (and must be allowed):** Neither `shared` nor `frozen T` permanently changes ownership state — the caller's binding stays `shared` or `frozen T`. However, lending either to a `@BORROWED` slot (`this.world.boundingBox()`, `item.boundingBox()`, or passing a `frozen list of int` to `fn pure (xs: list of int): int`) is 100% sound because `@BORROWED` constrains the *callee* (cannot retain the reference past termination — and for `frozen T`, `!@MUTABLE` ensures it cannot be mutated). This yields a clean capability order:
+
+* **Value / argument capability order:** **`unique`** $<:$ **`shared`** $<:$ **`@BORROWED`** (and **`frozen T`** $<:$ non-`mut` **`@BORROWED T`**)
 * **Function parameter subtyping (contravariant):** **`fn (x: T)`** $<:$ **`fn (shared x: T)`** $<:$ **`fn (unique x: T)`** *(matching `BIP007` §3.4: a callee promising not to keep `x` satisfies one that may keep `x`, which satisfies one demanding ownership of `x`)*.
-* **Trade-off to confirm in `BIP016-Q3`:** Making `{unique, shared, @BORROWED}` strictly mutually exclusive eliminates `unique shared` completely and collapses Layer 1's 3 per-slot booleans into **2 per-slot axes** (mutability + 3-state ownership). The only `BIP007-P2` combination retired is explicit `unique borrow` (`@UNIQUE + @BORROWED` — 0 uses in Argon), which was only needed for deep-disjointness guarantees across *two* simultaneous `mut` parameters (`fn (unique borrow mut a, unique borrow mut b)`), since single-receiver `hermetic mut` and read-only calls already preserve `unique` automatically across `@BORROWED`.
+* **Impact on `BIP007-P2`:** Making `{unique, shared, @BORROWED}` strictly mutually exclusive eliminates `unique shared` completely and collapses Layer 1's 3 per-slot booleans into **2 per-slot axes** (mutability + 3-state ownership), retiring explicit `unique borrow` (`@UNIQUE + @BORROWED`, 0 uses in Argon; single-target read-only and `hermetic mut` calls already preserve `unique` across `@BORROWED`).
 
 ### 6.3 Side-by-Side Impact on Argon (`examples/raytracer-argon/`)
 
@@ -398,15 +405,19 @@ Because consolidation is strictly a **Layer 2 front-end mapping** into Layer 1's
 
 ## 7. Settled Decisions & Open Questions
 
-### 7.1 Settled Decisions (`BIP016-D1`–`D4`)
+### 7.1 Settled Decisions (`BIP016-D1`–`D5`)
 
-* **`BIP016-D1` — Two-layer architecture (Internal Orthogonal `@TRAITS` vs. Surface Annotation Collections):** Complete `BIP007`'s `@UPPERCASE` vs. lowercase separation by modeling all 7 core atomic compiler facts (`@HERMETIC`, `@DETERMINISTIC`, `@NOTHROW`, `@TERMINATING`, per-slot `@MUTABLE`, `@BORROWED`, `@UNIQUE`), 5 algebraic traits, and 2 metadata flags as Layer 1 internal orthogonal traits (`EffectSet` / `Type.Parameter`), and defining Layer 2 surface annotations declaratively as collections (profiles) of traits.
+* **`BIP016-D1` — Two-layer architecture (Internal Orthogonal `@TRAITS` vs. Surface Annotation Collections):** Complete `BIP007`'s `@UPPERCASE` vs. lowercase separation by modeling Babble's atomic compiler facts (4 function-level traits `@HERMETIC`, `@DETERMINISTIC`, `@NOTHROW`, `@TERMINATING`; 2 per-slot axes: mutability `@MUTABLE` and 3-state ownership `unique`/`shared`/`@BORROWED`; plus 5 algebraic traits and 2 metadata flags) as Layer 1 internal traits (`EffectSet` / `Type.Parameter`), and defining Layer 2 surface annotations declaratively as collections (profiles) of traits.
 * **`BIP016-D2` — Consolidated `pure` and `hermetic` allowing exceptions (`@NOTHROW` & `@TERMINATING` inferred):**
   * **`pure`** $\equiv$ `{@HERMETIC, !@MUTABLE, @DETERMINISTIC}` (allows exceptions and loops/recursion — matching Checker Framework `@Pure`, Haskell, and Koka's `pure = <div, exn>`).
   * **`hermetic`** $\equiv$ `{@HERMETIC, @DETERMINISTIC}` (allows `@MUTABLE` slots, exceptions, and loops/recursion; mutually exclusive with `pure`).
   * Both **`@NOTHROW`** and **`@TERMINATING`** remain inferred automatically by `EffectChecker` for `BIP014` optimization passes and `BIP007-D8` unused-pure diagnostics; explicit **`nothrow`** stays purely additive/opt-in for APIs or interfaces requiring a strict no-exception contract. **No `throws` keyword** is added.
 * **`BIP016-D3` — `volatile` keyword for non-deterministic side-effect-free readers:** Use the **`volatile`** keyword (rather than `readonly` or `stable`) for side-effect-free functions lacking `@DETERMINISTIC` (`Instant.now()`, `Files.readString`, mutable outer reads). Exact composability (`pure volatile` / `hermetic volatile` vs. standalone `volatile`) is tracked in `BIP016-Q1`.
-* **`BIP016-D4` — `@BORROWED` is the unmarked default (no `borrow` keyword); `shared` denotes `!@BORROWED`:** Retire the user-facing `borrow` keyword. Receiver (`this`) and parameter slots default to `@BORROWED` (the callee may manipulate the reference during the call, and **the compiler statically guarantees it is no longer held when the callee terminates — allowing a `@BORROWED` reference to escape is a compile-time error**); the inverse `!@BORROWED` is denominated explicitly with the **`shared`** slot qualifier (`fn pure shared (...)`, `(shared item: Hittable)`). Unified ownership-axis rules (`unique`/`shared`/`@BORROWED`) and boundary defaults for `impure` and unannotated signatures are tracked in `BIP016-Q3`.
+* **`BIP016-D4` — `@BORROWED` is the unmarked default (no `borrow` keyword); `shared` denotes `!@BORROWED`:** Retire the user-facing `borrow` keyword. Receiver (`this`) and parameter slots default to `@BORROWED` (the callee may manipulate the reference during the call, and **the compiler statically guarantees it is no longer held when the callee terminates — allowing a `@BORROWED` reference to escape is a compile-time error**); the inverse `!@BORROWED` is denominated explicitly with the **`shared`** slot qualifier (`fn pure shared (...)`, `(shared item: Hittable)`).
+* **`BIP016-D5` — Three orthogonal axes (Function Effects incl. `impure`, Unified Ownership Axis, and `mut`):**
+  * **Unified 3-state ownership axis (`unique` $<:$ `shared` $<:$ `@BORROWED`, plus `frozen T`):** `unique` (consuming `move`, invalidating source with compile-time use-after-move check), `shared` (may escape), and `@BORROWED` (default, no escape) are mutually exclusive on one ownership axis (retiring `unique borrow` and eliminating `unique shared`). `frozen T` is reached irreversibly from `unique` via `freeze(x)` and safely lends to any non-`mut` `@BORROWED T` slot (while rejecting `mut` and unfrozen `shared T`).
+  * **`mut` orthogonality:** `mut` is fully orthogonal to `@BORROWED` vs. `shared` (where mutation is caller-visible, forbidding `pure`); consuming `unique` already permits private mutation even inside `pure` (making `mut` redundant on `unique`); `frozen T` forbids `mut`.
+  * **`impure` stays strictly on the function-effect axis:** `impure` locks out function-level effect inference (`@HERMETIC`, `@DETERMINISTIC`, `@NOTHROW`, `@TERMINATING`) and overrides Java defaults, while keeping slot ownership (`@BORROWED` default, `shared`, `unique`) and `mut` orthogonal (so `fn impure (x: any?)` borrows `x` and accepts `unique` / `frozen T`, while `fn impure (shared x: T)` marks escaping parameters).
 
 ### 7.2 Unsettled Questions (`BIP016-Q1`–`Q7`)
 
@@ -414,10 +425,7 @@ Before committing to implementation, the following design questions remain open:
 
 * **`BIP016-Q1` — `volatile` syntax & composability:** Should `volatile` combine subtractively with `pure`/`hermetic` to clear `@DETERMINISTIC` (**recommended:** `pure volatile` = `{@HERMETIC, !@MUTABLE}` and `hermetic volatile` = `{@HERMETIC}`, avoiding confusion with PostgreSQL's `VOLATILE` meaning side-effectful), or stand alone as a 1-word read-only tier (`fn volatile` = `{@HERMETIC, !@MUTABLE}`, mutually exclusive with `pure`)?
 * **`BIP016-Q2` — `hermetic mut` vs. 1-word mutating shorthand:** Should locally-mutating methods keep two words (`fn hermetic mut` — **recommended**, keeping `mut` orthogonal on `this` and parameters), or gain a 1-word profile shorthand (e.g., `mutating` / `local`)?
-* **`BIP016-Q3` — Unified ownership axis (`unique` / `shared` / `@BORROWED`) & boundary defaults (`impure`, unannotated signatures):** Now that `@BORROWED` is the unmarked default with no `borrow` keyword and `shared` marks `!@BORROWED` (`BIP016-D4`), three boundary rules need to be settled:
-  1. **Unified 3-state ownership axis (`unique` $<:$ `shared` $<:$ `@BORROWED`):** Should `unique`, `shared`, and `@BORROWED` (default) be strictly mutually exclusive states on a single ownership axis (**recommended**, §6.2 — eliminating any `unique shared` contradiction and retiring `unique borrow`, since read-only and `hermetic mut` calls already preserve `unique` across `@BORROWED`), or should Babble retain a 4th exclusive-borrow spelling (e.g. for deep-disjoint dual-`mut` parameters)?
-  2. **`fn impure` signatures:** Should `fn impure (x: T)` also default to `@BORROWED` (so `println(uniqueBuf)` / `println(frozenMap)` work cleanly while `globalList.add` writes `fn impure (shared x: T)`), or default to `shared` (`!@BORROWED`)?
-  3. **Unannotated functions & function types:** Concrete unannotated `fn (x: T) -> (...)` still infers `@BORROWED`/`shared` from its body (`BIP007` §3.1); in **type position** (e.g., `f: fn (item: Hittable)` or an unannotated interface method), should unmarked slots default to `@BORROWED` (so escaping callbacks write `fn (shared item: Hittable)`) or stay unconstrained (`shared`)?
+* **`BIP016-Q3` — Unannotated function types & interface methods (`@BORROWED` vs. unconstrained `shared`):** Concrete unannotated `fn (x: T) -> (...)` still infers `@BORROWED` vs. `shared` from its body (`BIP007` §3.1) so scripts like `def id = fn (x: T): T -> (x)` need no annotations. In **type position** (e.g., a higher-order callback type `f: fn (item: Hittable)` or an unannotated interface method with no effect keywords), should unmarked slots default to `@BORROWED` (so callbacks that may escape write `fn (shared item: Hittable)`, matching `BIP016-D4`/`D5` uniformly) or default to unconstrained `shared`?
 * **`BIP016-Q4` — Fate of `deterministic` (and redundant combinations):** Once `pure` and `hermetic` imply `@DETERMINISTIC`, should `deterministic` be retired from the surface grammar (since standalone `fn deterministic` without `@HERMETIC` is rarely meaningful), or kept as a low-level modifier while diagnosing redundant `pure deterministic` / `hermetic deterministic`?
 * **`BIP016-Q5` — Closed built-in vocabulary vs. user-defined effect profiles/aliases:** Should Babble keep a small, closed built-in vocabulary of trait collections (*recommended* to avoid codebase-specific effect dialects), or also support user-defined `effect Name = ...` aliases (Koka-style)?
 * **`BIP016-Q6` — Java host API alignment (`org.babblelang.effects`):** Should `org.babblelang.effects.Effect` stay aligned 1-to-1 with Layer 1 atomic `@TRAITS` (`HERMETIC`, `DETERMINISTIC`, `NOTHROW`, …) while Java `@Pure` is updated to expand to `{@HERMETIC, !@MUTABLE, @DETERMINISTIC}` (matching Checker Framework `@Pure`, plus adding `@Volatile`), or should `Effect.PURE` itself become the consolidated bundle?
