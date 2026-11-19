@@ -5,35 +5,35 @@ def Rng = import("rng.ba").Rng
 ;; 2.2 Vec3 Value Class (3D points, vectors, and RGB colors)
 ;; ------------------------------------------------------------------------
 export def Vec3 = record (x: double, y: double, z: double) (
-    def neg = fn (): Vec3 -> (
+    def neg = fn pure deterministic nothrow borrow (): Vec3 -> (
         Vec3(-this.x, -this.y, -this.z)
     )
 
-    def plus = fn (v: Vec3): Vec3 -> (
+    def plus = fn pure deterministic nothrow borrow (borrow v: Vec3): Vec3 -> (
         Vec3(this.x + v.x, this.y + v.y, this.z + v.z)
     )
 
-    def minus = fn (v: Vec3): Vec3 -> (
+    def minus = fn pure deterministic nothrow borrow (borrow v: Vec3): Vec3 -> (
         Vec3(this.x - v.x, this.y - v.y, this.z - v.z)
     )
 
-    def mul = fn (v: Vec3): Vec3 -> (
+    def mul = fn pure deterministic nothrow borrow (borrow v: Vec3): Vec3 -> (
         Vec3(this.x * v.x, this.y * v.y, this.z * v.z)
     )
 
-    def times = fn (t: double): Vec3 -> (
+    def times = fn pure deterministic nothrow borrow (t: double): Vec3 -> (
         Vec3(this.x * t, this.y * t, this.z * t)
     )
 
-    def div = fn (t: double): Vec3 -> (
+    def div = fn pure deterministic nothrow borrow (t: double): Vec3 -> (
         this * (1.0 / t)
     )
 
-    def dot = fn (v: Vec3): double -> (
+    def dot = fn pure deterministic nothrow borrow (borrow v: Vec3): double -> (
         this.x * v.x + this.y * v.y + this.z * v.z
     )
 
-    def cross = fn (v: Vec3): Vec3 -> (
+    def cross = fn pure deterministic nothrow borrow (borrow v: Vec3): Vec3 -> (
         Vec3(
             this.y * v.z - this.z * v.y,
             this.z * v.x - this.x * v.z,
@@ -41,30 +41,30 @@ export def Vec3 = record (x: double, y: double, z: double) (
         )
     )
 
-    def lengthSquared = fn (): double -> (
+    def lengthSquared = fn pure deterministic nothrow borrow (): double -> (
         this.x * this.x + this.y * this.y + this.z * this.z
     )
 
-    def length = fn (): double -> (
+    def length = fn pure deterministic nothrow borrow (): double -> (
         math.sqrt(this.lengthSquared())
     )
 
-    def unit = fn (): Vec3 -> (
+    def unit = fn pure deterministic nothrow borrow (): Vec3 -> (
         this / this.length()
     )
 
-    def nearZero = fn (): bool -> (
+    def nearZero = fn pure deterministic nothrow borrow (): bool -> (
         def s: double = 0.00000001
         math.abs(this.x) < s and math.abs(this.y) < s and math.abs(this.z) < s
     )
 
     ;; Specular reflection of incident vector about unit normal n
-    def reflect = fn (n: Vec3): Vec3 -> (
+    def reflect = fn pure deterministic nothrow borrow (borrow n: Vec3): Vec3 -> (
         this - n * (2.0 * this.dot(n))
     )
 
     ;; Snell's law refraction of unit incident vector about normal n
-    def refract = fn (n: Vec3, etaiOverEtat: double): Vec3 -> (
+    def refract = fn pure deterministic nothrow borrow (borrow n: Vec3, etaiOverEtat: double): Vec3 -> (
         def cosTheta: double = math.min((-this).dot(n), 1.0)
         def rOutPerp: Vec3 = (this + n * cosTheta) * etaiOverEtat
         def rOutParallel: Vec3 = n * -math.sqrt(math.abs(1.0 - rOutPerp.lengthSquared()))
@@ -74,11 +74,11 @@ export def Vec3 = record (x: double, y: double, z: double) (
     def zero: Vec3 = this(0.0, 0.0, 0.0)
     def one: Vec3 = this(1.0, 1.0, 1.0)
 
-    def random = fn (mut rng: Rng): Vec3 -> (
+    def random = fn hermetic deterministic nothrow (mut borrow rng: Rng): Vec3 -> (
         this(rng.nextDouble(), rng.nextDouble(), rng.nextDouble())
     )
 
-    def randomRange = fn (mut rng: Rng, minVal: double, maxVal: double): Vec3 -> (
+    def randomRange = fn hermetic deterministic nothrow (mut borrow rng: Rng, minVal: double, maxVal: double): Vec3 -> (
         this(
             rng.nextRange(minVal, maxVal),
             rng.nextRange(minVal, maxVal),
@@ -86,7 +86,7 @@ export def Vec3 = record (x: double, y: double, z: double) (
         )
     )
 
-    def randomUnitVector = fn (mut rng: Rng): Vec3 -> (
+    def randomUnitVector = fn hermetic deterministic nothrow (mut borrow rng: Rng): Vec3 -> (
         while true then (
             def p: Vec3 = this.randomRange(rng, -1.0, 1.0)
             def lensq: double = p.lengthSquared()
@@ -97,7 +97,7 @@ export def Vec3 = record (x: double, y: double, z: double) (
         this.zero
     )
 
-    def randomOnHemisphere = fn (mut rng: Rng, normal: Vec3): Vec3 -> (
+    def randomOnHemisphere = fn hermetic deterministic nothrow (mut borrow rng: Rng, borrow normal: Vec3): Vec3 -> (
         def onUnitSphere: Vec3 = this.randomUnitVector(rng)
         if onUnitSphere.dot(normal) > 0.0 then (
             onUnitSphere
@@ -106,7 +106,7 @@ export def Vec3 = record (x: double, y: double, z: double) (
         )
     )
 
-    def randomInUnitDisk = fn (mut rng: Rng): Vec3 -> (
+    def randomInUnitDisk = fn hermetic deterministic nothrow (mut borrow rng: Rng): Vec3 -> (
         while true then (
             def p: Vec3 = this(
                 rng.nextRange(-1.0, 1.0),

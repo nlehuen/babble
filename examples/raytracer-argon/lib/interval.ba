@@ -4,29 +4,29 @@ def math = import("math.ba")
 ;; 2.4 Interval Value Class
 ;; ------------------------------------------------------------------------
 export def Interval = record (min: double, max: double) (
-    def size = fn (): double -> (
+    def size = fn pure deterministic nothrow borrow (): double -> (
         this.max - this.min
     )
 
-    def midpoint = fn (): double -> (
+    def midpoint = fn pure deterministic nothrow borrow (): double -> (
         0.5 * (this.min + this.max)
     )
 
-    def contains = fn (x: double): bool -> (
+    def contains = fn pure deterministic nothrow borrow (x: double): bool -> (
         this.min <= x and x <= this.max
     )
 
-    def surrounds = fn (x: double): bool -> (
+    def surrounds = fn pure deterministic nothrow borrow (x: double): bool -> (
         this.min < x and x < this.max
     )
 
-    def clamp = fn (x: double): double -> (
+    def clamp = fn pure deterministic nothrow borrow (x: double): double -> (
         if x < this.min then (
             this.min
         ) else if x > this.max then (this.max) else (x)
     )
 
-    def expand = fn (delta: double): Interval -> (
+    def expand = fn pure deterministic nothrow borrow (delta: double): Interval -> (
         def padding: double = delta / 2.0
         Interval(this.min - padding, this.max + padding)
     )
@@ -34,7 +34,7 @@ export def Interval = record (min: double, max: double) (
     def empty: Interval = this(math.infinity, math.negInfinity)
     def universe: Interval = this(math.negInfinity, math.infinity)
 
-    def enclose = fn (a: Interval, b: Interval): Interval -> (
+    def enclose = fn pure deterministic nothrow (borrow a: Interval, borrow b: Interval): Interval -> (
         this(math.min(a.min, b.min), math.max(a.max, b.max))
     )
 )

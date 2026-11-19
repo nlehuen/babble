@@ -57,6 +57,7 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
 - **Named arguments & default parameters**: `Camera(...)`, `Scenes.finalScene(...)`, `println(..., to: out)`.
 - **Runtime type introspection & equality**: `is`, `classof`, `same`, `==`, `assert`.
 - **Type annotations**: Every parameter, return type, and member is annotated and checked statically and at runtime.
+- **Explicit effects & ownership**: Every function, method, interface signature, and callback carries explicit verified effect annotations (`pure`, `hermetic`, `mut`, `borrow`, `unique`, `deterministic`, `nothrow`, `impure`).
 
 ## Running
 
