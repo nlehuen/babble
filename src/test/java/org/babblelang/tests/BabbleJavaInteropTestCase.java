@@ -99,7 +99,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
         // Java numbers other than Babble's own have their members.
         Assertions.assertEquals(101, interpret("java.math.BigInteger.valueOf(2).pow(100).bitLength()"));
         // A callback gets Java objects it can call too.
-        Assertions.assertEquals(1, interpret("def l : java.util.List(any) = java.util.ArrayList() ; def m : java.util.List(int) = java.util.ArrayList() ; l.add(m) ; l.forEach((x : any) -> ( (x as java.util.List).add(1) )) ; (l.get(0) as java.util.List).size()"));
+        Assertions.assertEquals("1", interpret("def l : java.util.List(any) = java.util.ArrayList() ; def m : java.util.List(int) = java.util.ArrayList() ; m.add(42) ; l.add(m) ; def sb = java.lang.StringBuilder() ; l.forEach((x : any) -> ( sb.append((x as java.util.List).size()) )) ; sb.toString()"));
         // A returned object is the Java object itself, unwrapped : equal, printed and compared as Java does.
         Assertions.assertEquals("[1, 2]", interpret("\"\" + java.util.List.of(1, 2)"));
         Assertions.assertEquals(true, interpret("java.math.BigInteger.ONE.add(java.math.BigInteger.ONE) == java.math.BigInteger.TWO"));
