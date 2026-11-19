@@ -1,7 +1,9 @@
 package org.babblelang.analysis;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.ParseTreeProperty;
+import org.antlr.v4.runtime.tree.TerminalNode;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
 
@@ -592,14 +594,107 @@ public final class ScopeAnalysis {
         return ctx.memberName() != null ? ctx.memberName().getStart() : ctx.ID().getSymbol();
     }
 
+    /** True when the LHS of an assignment is a valid target ({@code x} or {@code expr.member}, not {@code expr?.member}). */
+    public static boolean isValidAssignTarget(BabbleParser.AssignExpressionContext ctx) {
+        return ctx.lhs instanceof BabbleParser.SelectorContext sel && sel.safe == null;
+    }
+
+    /** Receiver expression of a qualified assignment ({@code expr.member = v}), or {@code null} for {@code x = v}. */
+    public static BabbleParser.ExpressionContext assignReceiver(BabbleParser.AssignExpressionContext ctx) {
+        return ctx.lhs instanceof BabbleParser.SelectorContext sel ? sel.expression() : null;
+    }
+
+    /** Member name context of a qualified assignment ({@code expr.member = v}), or {@code null} for {@code x = v}. */
+    public static BabbleParser.MemberNameContext assignMember(BabbleParser.AssignExpressionContext ctx) {
+        return ctx.lhs instanceof BabbleParser.SelectorContext sel ? sel.memberName() : null;
+    }
+
     /** Target name of a qualified ({@code expr.member = v}) or unqualified ({@code x = v}) assignment. */
     public static String assignName(BabbleParser.AssignExpressionContext ctx) {
-        return ctx.member != null ? ctx.member.getText() : ctx.name.getText();
+        return ctx.lhs instanceof BabbleParser.SelectorContext sel ? selectorName(sel) : null;
     }
 
     /** Token of the target name of an assignment. */
     public static org.antlr.v4.runtime.Token assignToken(BabbleParser.AssignExpressionContext ctx) {
-        return ctx.member != null ? ctx.member.getStart() : ctx.name;
+        return ctx.lhs instanceof BabbleParser.SelectorContext sel ? selectorToken(sel) : ctx.lhs.getStart();
+    }
+
+    /** True when {@code tree} is a parameter declaration in a class or function header. */
+    public static boolean isParamDecl(ParseTree tree) {
+        return tree instanceof BabbleParser.ClassParamContext || tree instanceof BabbleParser.FnParamContext;
+    }
+
+    /** Parameter declarations of a class expression (empty if omitted). */
+    public static List<? extends ParserRuleContext> paramsOf(BabbleParser.ClassExpressionContext ctx) {
+        return ctx.classParameters() == null ? List.of() : ctx.classParameters().classParam();
+    }
+
+    /** Parameter declarations of a function literal. */
+    public static List<? extends ParserRuleContext> paramsOf(BabbleParser.FunctionLiteralContext ctx) {
+        return ctx.fnParameters().fnParam();
+    }
+
+    /** Identifier terminal of a class, function, or function-type parameter. */
+    public static TerminalNode paramId(ParserRuleContext param) {
+        if (param instanceof BabbleParser.ClassParamContext cp) {
+            return cp.ID();
+        }
+        if (param instanceof BabbleParser.FnParamContext fp) {
+            return fp.ID();
+        }
+        if (param instanceof BabbleParser.FnTypeParamContext ftp) {
+            return ftp.ID();
+        }
+        throw new IllegalArgumentException("Not a parameter context: " + param);
+    }
+
+    /** Optional type annotation of a class, function, or function-type parameter. */
+    public static BabbleParser.TypeContext paramType(ParserRuleContext param) {
+        if (param instanceof BabbleParser.ClassParamContext cp) {
+            return cp.type();
+        }
+        if (param instanceof BabbleParser.FnParamContext fp) {
+            return fp.type();
+        }
+        if (param instanceof BabbleParser.FnTypeParamContext ftp) {
+            return ftp.type();
+        }
+        throw new IllegalArgumentException("Not a parameter context: " + param);
+    }
+
+    /** Optional default value expression of a class or function parameter (null for function-type parameters). */
+    public static BabbleParser.ExpressionContext paramDefault(ParserRuleContext param) {
+        if (param instanceof BabbleParser.ClassParamContext cp) {
+            return cp.defaultValue;
+        }
+        if (param instanceof BabbleParser.FnParamContext fp) {
+            return fp.defaultValue;
+        }
+        return null;
+    }
+
+    /** Effect/ownership modifiers on a class, function, or function-type parameter. */
+    public static List<BabbleParser.ParamModifierContext> paramModifiers(ParserRuleContext param) {
+        if (param instanceof BabbleParser.ClassParamContext cp) {
+            return cp.paramModifier();
+        }
+        if (param instanceof BabbleParser.FnParamContext fp) {
+            return fp.paramModifier();
+        }
+        if (param instanceof BabbleParser.FnTypeParamContext ftp) {
+            return ftp.paramModifier();
+        }
+        throw new IllegalArgumentException("Not a parameter context: " + param);
+    }
+
+    /** True when a class parameter is marked {@code private}. */
+    public static boolean paramIsPrivate(ParserRuleContext param) {
+        return param instanceof BabbleParser.ClassParamContext cp && cp.PRIVATE() != null;
+    }
+
+    /** True when a class parameter is marked {@code def}. */
+    public static boolean paramIsDef(ParserRuleContext param) {
+        return param instanceof BabbleParser.ClassParamContext cp && cp.DEF() != null;
     }
 
     /** Named argument label on a call parameter, or {@code null} if positional. */

@@ -144,7 +144,7 @@ final class MemberTypes {
                 || receiver instanceof Type.JavaClassValue || receiver instanceof Type.JavaInstance
                 || receiver instanceof Type.JavaArray || TypeChecker.isUnresolved(receiver))) {
             String receiverText = at instanceof BabbleParser.AssignExpressionContext assign
-                    ? assign.namespace.getText() : name;
+                    ? ScopeAnalysis.assignReceiver(assign).getText() : name;
             checker.warn("Not a scope : " + receiverText, at);
         }
         if (member == null) {
@@ -158,7 +158,7 @@ final class MemberTypes {
             Type closed = checker.memberType(ownerNode, member);
             return closed == Type.ERROR ? null : checker.algebra().substitute(closed, env);
         }
-        if (member.declaration instanceof BabbleParser.ParameterDeclarationContext) {
+        if (ScopeAnalysis.isParamDecl(member.declaration)) {
             Type type = checker.typeOfDeclaration(member.declaration);
             return type == Type.ERROR ? null : checker.algebra().substitute(type, env);
         }

@@ -32,14 +32,14 @@ public class Function implements BabbleFunction {
         for (int i = 0; i < parameters.length; i++) {
             Object value = binder.take(i);
             if (value == Arguments.MISSING) {
-                BabbleParser.ExpressionContext defaultValue = definition.parametersDeclaration().parameterDeclaration(i).defaultValue;
+                BabbleParser.ExpressionContext defaultValue = definition.fnParameters().fnParam(i).defaultValue;
                 if (defaultValue == null) {
                     throw binder.missing(i);
                 }
                 // A default value belongs to the function's scope, not to the call site.
                 value = interpreter.evaluateDefault(namespace, defaultValue);
             }
-            BabbleParser.ParameterDeclarationContext paramDecl = definition.parametersDeclaration().parameterDeclaration(i);
+            BabbleParser.FnParamContext paramDecl = definition.fnParameters().fnParam(i);
             int paramRank = interpreter.scopes().numericWideningRank(paramDecl);
             if (paramRank >= 0) {
                 value = Values.widenNumeric(value, paramRank);

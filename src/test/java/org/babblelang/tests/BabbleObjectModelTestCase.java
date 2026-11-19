@@ -126,8 +126,8 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testHeaderMembers() throws Exception {
         assertFails("def C = class (def a : int) ( def a = 2 )", "Member already defined : a");
         assertFails("def C = class (a : int, def a : int) ()", "Name already defined : a");
-        assertFails("def f = (def a) -> ( a )", "def parameters are only allowed in a class header");
-        assertFails("def f = (a) : (def b) : int -> ( a )", "def parameters are only allowed in a class header");
+        assertStaticFails("def f = (def a) -> ( a )", "Syntax error : unexpected '->'", 1, 17);
+        assertStaticFails("def f = (a) : (def b) : int -> ( a )", "Syntax error : unexpected 'def'", 1, 16);
         // A header member binds no name.
         assertFails("def C = class (def a : int) ( def get = () -> ( a ) ) ; C(1).get()", "No such name : a");
     }
@@ -169,7 +169,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testPrivatePlacement() {
         assertFails("private def x = 1", "private only applies to members");
         assertFails("def C = class (private a : int) ()", "private only applies to members");
-        assertFails("def f = (private a : int) -> ( a )", "private only applies to members");
+        assertStaticFails("def f = (private a : int) -> ( a )", "Syntax error : unexpected 'a'", 1, 18);
         assertFails("def I = interface ( private def m = () -> ( 1 ) )", "Interface members cannot be private : m");
     }
 

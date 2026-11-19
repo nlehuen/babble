@@ -1,12 +1,17 @@
 ;; Double literals, scientific notation, NaN, signed zero, infinities, and mixed arithmetic
 
 {{{{{
-def a = .5
+def a = 0.5
 def b = 1.25E2
 def c = -2.5
 println(a, ":", b, ":", a + b + c, ":", classof(b))
 }}}}}
 0.5:125.0:123.0:java.lang.Double
+
+{{{{{
+def a = .5
+}}}}}
+Syntax error : unexpected '.'
 
 {{{{{
 def nz = -0.0

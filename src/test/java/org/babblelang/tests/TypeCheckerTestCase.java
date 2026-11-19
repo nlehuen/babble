@@ -1207,10 +1207,11 @@ public class TypeCheckerTestCase {
                         + "def C = class () implements I ( def m = () -> ( super?.m() ) )"));
         Assertions.assertTrue(superSafe.getMessage().contains("super must be called directly"), superSafe.getMessage());
 
-        // Safe assignment a?.x = 1 is not valid syntax.
-        Assertions.assertThrows(
-                org.antlr.v4.runtime.misc.ParseCancellationException.class,
+        // Safe assignment a?.x = 1 is rejected as an invalid assignment target.
+        org.babblelang.analysis.AnalysisException safeAssign = Assertions.assertThrows(
+                org.babblelang.analysis.AnalysisException.class,
                 () -> diagnostics("def A = class (def x : int) () ; def a : A? = null ; a?.x = 1"));
+        Assertions.assertTrue(safeAssign.getMessage().contains("Cannot assign to expression"), safeAssign.getMessage());
     }
 
     @Test

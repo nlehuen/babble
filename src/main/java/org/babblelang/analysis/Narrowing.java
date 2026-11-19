@@ -40,9 +40,10 @@ final class Narrowing {
                 || tree instanceof BabbleParser.InterfaceExpressionContext) {
             return;
         }
-        if (tree instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == null) {
+        if (tree instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) == null) {
             ScopeNode scope = checker.occurrenceScope(assign);
-            if (scope != null && TypeChecker.resolveName(assign, assign.name.getText(), scope) instanceof ParserRuleContext decl) {
+            String name = ScopeAnalysis.assignName(assign);
+            if (scope != null && name != null && TypeChecker.resolveName(assign, name, scope) instanceof ParserRuleContext decl) {
                 assigned.add(decl);
             }
         }
@@ -170,7 +171,7 @@ final class Narrowing {
         if (expr instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
             Object resolved = TypeChecker.resolveName(selector, selector.ID().getText(), checker.occurrenceScope(selector));
             if (resolved instanceof BabbleParser.DefExpressionContext
-                    || resolved instanceof BabbleParser.ParameterDeclarationContext) {
+                    || (resolved instanceof ParserRuleContext prc && ScopeAnalysis.isParamDecl(prc))) {
                 ParserRuleContext decl = (ParserRuleContext) resolved;
                 if (!checker.capturedReassigned().contains(decl)
                         && (!checker.isReassigned(decl) || Objects.equals(TypeChecker.callableScope(checker.occurrenceScope(selector)), TypeChecker.callableScope(checker.scopeOf(decl))))) {

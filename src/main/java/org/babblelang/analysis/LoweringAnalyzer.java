@@ -86,16 +86,17 @@ final class LoweringAnalyzer {
                 if (t != null) {
                     pass.analysis.setDeclarationKind(def, ScopeAnalysis.PrimitiveKind.of(t));
                 }
-            } else if (decl instanceof BabbleParser.ParameterDeclarationContext param) {
-                Type t = declarationTypes.get(param);
-                if (t == null && param.type() != null) {
-                    t = checker.annotations().get(param.type());
+            } else if (ScopeAnalysis.isParamDecl(decl)) {
+                Type t = declarationTypes.get(decl);
+                BabbleParser.TypeContext paramType = ScopeAnalysis.paramType(decl);
+                if (t == null && paramType != null) {
+                    t = checker.annotations().get(paramType);
                 }
                 if (t == null) {
-                    t = inferredParams.get(param);
+                    t = inferredParams.get(decl);
                 }
                 if (t != null) {
-                    pass.analysis.setDeclarationKind(param, ScopeAnalysis.PrimitiveKind.of(t));
+                    pass.analysis.setDeclarationKind(decl, ScopeAnalysis.PrimitiveKind.of(t));
                 }
             }
         }
@@ -108,10 +109,10 @@ final class LoweringAnalyzer {
                     continue;
                 }
                 Type t = checker.annotator().declaredType(member.declaration);
-                if (t == null && member.declaration instanceof BabbleParser.ParameterDeclarationContext param) {
-                    t = declarationTypes.get(param);
+                if (t == null && ScopeAnalysis.isParamDecl(member.declaration)) {
+                    t = declarationTypes.get(member.declaration);
                     if (t == null) {
-                        t = inferredParams.get(param);
+                        t = inferredParams.get(member.declaration);
                     }
                 } else if (t == null && member.declaration instanceof BabbleParser.DefExpressionContext def) {
                     t = inferredMembers.get(def);
@@ -140,14 +141,24 @@ final class LoweringAnalyzer {
     private void deriveTargets(ParseTree tree) {
         if (tree instanceof BabbleParser.SelectorContext selector) {
             deriveSelection(selector);
-        } else if (tree instanceof BabbleParser.AssignExpressionContext assign && assign.namespace != null
-                && JavaTypeBridge.assignedField(types.get(assign.namespace), ScopeAnalysis.assignName(assign)) instanceof JavaTypeBridge.AssignedField field) {
+        } else if (tree instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) != null
+                && JavaTypeBridge.assignedField(types.get(ScopeAnalysis.assignReceiver(assign)), ScopeAnalysis.assignName(assign)) instanceof JavaTypeBridge.AssignedField field) {
             ScopeAnalysis.JavaFieldTarget target = field.target(types.get(assign));
             if (target != null) {
                 pass.analysis.setJavaFieldTarget(assign, target);
             }
         } else if (tree instanceof BabbleParser.CallContext call && checker.inFile(call)) {
             deriveCall(call);
+        }
+        if (tree instanceof BabbleParser.AssignExpressionContext assign) {
+            BabbleParser.ExpressionContext receiver = ScopeAnalysis.assignReceiver(assign);
+            if (receiver != null) {
+                deriveTargets(receiver);
+            }
+            if (assign.value != null) {
+                deriveTargets(assign.value);
+            }
+            return;
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
             deriveTargets(tree.getChild(i));
@@ -452,20 +463,21 @@ final class LoweringAnalyzer {
             Map<ParserRuleContext, Type> inferredDefs,
             Map<ParserRuleContext, Type> inferredMembers,
             Map<ParserRuleContext, Integer> widened) {
-        if (tree instanceof BabbleParser.ParameterDeclarationContext parameter) {
-            Type type = parameter.type() != null
-                    ? checker.annotator().annotation(parameter.type(), checker.scopeOf(parameter))
+        if (tree instanceof ParserRuleContext parameter && ScopeAnalysis.isParamDecl(parameter)) {
+            BabbleParser.TypeContext paramType = ScopeAnalysis.paramType(parameter);
+            Type type = paramType != null
+                    ? checker.annotator().annotation(paramType, checker.scopeOf(parameter))
                     : declarationTypes.get(parameter);
             int targetRank = type != null ? TypeAlgebra.singleNumericRank(type) : -1;
             if (targetRank > 0) {
                 widened.merge(parameter, targetRank, Math::max);
             }
-            if (parameter.type() != null || targetRank > 0) {
+            if (paramType != null || targetRank > 0) {
                 String descriptor = descriptor(type);
                 pass.analysis.setCheckedType(parameter, descriptor);
                 if (parameter.getParent().getParent() instanceof BabbleParser.ClassExpressionContext cls
-                        && (parameter.DEF() != null || pass.typeNodes.get(cls).kind == ClassShape.Kind.VALUE_CLASS)) {
-                    putType(pass.typeNodes.get(cls).memberTypes, parameter.ID().getText(), descriptor);
+                        && (ScopeAnalysis.paramIsDef(parameter) || pass.typeNodes.get(cls).kind == ClassShape.Kind.VALUE_CLASS)) {
+                    putType(pass.typeNodes.get(cls).memberTypes, ScopeAnalysis.paramId(parameter).getText(), descriptor);
                 }
             }
         } else if (tree instanceof BabbleParser.FunctionLiteralContext function && function.type() != null) {
@@ -493,8 +505,9 @@ final class LoweringAnalyzer {
                     putType(checker.scopeOf(def).type.staticTypes, def.name.getText(), descriptor);
                 }
             }
-        } else if (tree instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == null
-                && checker.resolveName(assign, assign.name.getText(), checker.occurrenceScopeOf(assign)) instanceof ParserRuleContext declaration) {
+        } else if (tree instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) == null
+                && ScopeAnalysis.assignName(assign) != null
+                && checker.resolveName(assign, ScopeAnalysis.assignName(assign), checker.occurrenceScopeOf(assign)) instanceof ParserRuleContext declaration) {
             Type declared = checker.annotator().declaredType(declaration);
             if (declared != null) {
                 pass.analysis.setCheckedType(assign, descriptor(declared));

@@ -98,7 +98,7 @@ final class CallSolver {
             return Type.union(results);
         }
         if (callee instanceof Type.Function function) {
-            List<BabbleParser.ParameterDeclarationContext> decls = checker.parameterDecls(function);
+            List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
             if (function.typeParameters().isEmpty()) {
                 bind(function.parameters(), decls, arguments, ctx);
                 return function.result();
@@ -111,7 +111,7 @@ final class CallSolver {
             TypeNode node = value.node();
             List<Type.TypeVar> classVars = checker.annotator().typeVarsOf(node);
             List<Type.Parameter> parameters = checker.constructorParameters(node);
-            List<BabbleParser.ParameterDeclarationContext> decls = checker.parameterDecls(node);
+            List<? extends ParserRuleContext> decls = checker.parameterDecls(node);
             if (classVars.isEmpty()) {
                 if (parameters != null) {
                     bind(parameters, decls, arguments, ctx);
@@ -184,7 +184,7 @@ final class CallSolver {
     /**
      * The argument binding rules of {@code Arguments}, applied to a known signature.
      */
-    void bind(List<Type.Parameter> parameters, List<BabbleParser.ParameterDeclarationContext> declarations,
+    void bind(List<Type.Parameter> parameters, List<? extends ParserRuleContext> declarations,
               List<BabbleParser.CallParameterContext> arguments, ParserRuleContext ctx) {
         int count = arguments.size();
         String[] names = argumentNames(arguments);
@@ -201,7 +201,7 @@ final class CallSolver {
                 continue;
             }
             BabbleParser.ExpressionContext argument = arguments.get(found).expression();
-            BabbleParser.ParameterDeclarationContext decl = declarations != null && index < declarations.size()
+            ParserRuleContext decl = declarations != null && index < declarations.size()
                     ? declarations.get(index) : null;
             Type actual = checker.check(argument, parameter.type());
             bindArgument(decl, actual, parameter.type(), parameter.borrow() && !parameter.mut(), argument);
@@ -233,7 +233,7 @@ final class CallSolver {
         }
     }
 
-    private void bindArgument(BabbleParser.ParameterDeclarationContext decl, Type actual, Type expectedParam,
+    private void bindArgument(ParserRuleContext decl, Type actual, Type expectedParam,
                               boolean borrowReadOnly, ParserRuleContext argument) {
         if (decl != null && checker.p7Params().contains(decl)) {
             Type inferredParam = checker.inferredParams().get(decl);
@@ -280,8 +280,8 @@ final class CallSolver {
             checker.warn("Too many parameters : " + parameters.size() + " declared, " + given + " given", at);
         } else if (argument != null) {
             Type expectedParam = parameters.get(0).type();
-            List<BabbleParser.ParameterDeclarationContext> decls = checker.parameterDecls(function);
-            BabbleParser.ParameterDeclarationContext decl = decls != null && !decls.isEmpty() ? decls.get(0) : null;
+            List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
+            ParserRuleContext decl = decls != null && !decls.isEmpty() ? decls.get(0) : null;
             bindArgument(decl, argumentType, expectedParam,
                     parameters.get(0).borrow() && !parameters.get(0).mut(), argument);
         }
@@ -289,7 +289,7 @@ final class CallSolver {
     }
 
     Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
-                           List<BabbleParser.ParameterDeclarationContext> declarations,
+                           List<? extends ParserRuleContext> declarations,
                            Type resultPattern, List<BabbleParser.CallParameterContext> arguments,
                            BabbleParser.CallContext ctx, String description, Type expected) {
         Type.Parameter[] argParams = mapArgumentsToParameters(parameters, arguments);
@@ -817,7 +817,7 @@ final class CallSolver {
         BabbleParser.FunctionLiteralContext literal = checker.unwrapFunctionLiteral(argExpr);
         if (literal != null) {
             boolean hasUnannotated = false;
-            for (BabbleParser.ParameterDeclarationContext p : literal.parametersDeclaration().parameterDeclaration()) {
+            for (BabbleParser.FnParamContext p : literal.fnParameters().fnParam()) {
                 if (p.type() == null && p.defaultValue == null) {
                     hasUnannotated = true;
                     break;

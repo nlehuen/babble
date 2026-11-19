@@ -116,10 +116,10 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
 
     @Test
     public void testBooleanShortcuts() throws Exception {
-        Assertions.assertEquals(1, interpret(" def a = 1 ; a == 0 and a=2 ; a "));
-        Assertions.assertEquals(2, interpret(" def a = 1 ; a == 0 or a=2 ; a "));
-        Assertions.assertEquals(2, interpret(" def a = 1 ; a == 1 and a=2 ; a "));
-        Assertions.assertEquals(1, interpret(" def a = 1 ; a == 1 or a=2 ; a "));
+        Assertions.assertEquals(1, interpret(" def a = 1 ; a == 0 and (a=2) ; a "));
+        Assertions.assertEquals(2, interpret(" def a = 1 ; a == 0 or (a=2) ; a "));
+        Assertions.assertEquals(2, interpret(" def a = 1 ; a == 1 and (a=2) ; a "));
+        Assertions.assertEquals(1, interpret(" def a = 1 ; a == 1 or (a=2) ; a "));
     }
 
     @Test
@@ -208,5 +208,17 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         ScriptException runtime = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def id = (x : any) : any -> ( x ) ; 1 < (id(\"x\") as int)"));
         Assertions.assertEquals("org.babblelang.runtime.BabbleException: Type error : expected int, got string in <input> at line number 1", runtime.getMessage());
+    }
+
+    @Test
+    public void testBip012P1SyntaxAndAssignments() throws Exception {
+        // Multiline comment on a single line must not be swallowed by COMMENT.
+        Assertions.assertEquals(1, interpret(";;( ok ;;) def x = 1 ; x"));
+        // Invalid assignment targets are rejected in BlockScopes.
+        ScriptException litAssign = Assertions.assertThrows(ScriptException.class, () -> interpret("1 = 2"));
+        Assertions.assertTrue(litAssign.getMessage().contains("Cannot assign to expression"), litAssign.getMessage());
+        ScriptException callAssign = Assertions.assertThrows(ScriptException.class,
+                () -> interpret("def f = () -> ( 1 ) ; f() = 2"));
+        Assertions.assertTrue(callAssign.getMessage().contains("Cannot assign to expression"), callAssign.getMessage());
     }
 }

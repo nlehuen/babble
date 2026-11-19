@@ -7,6 +7,7 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.babblelang.analysis.BlockScopes;
 import org.babblelang.analysis.Resolution;
+import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.junit.jupiter.api.Assertions;
@@ -41,8 +42,15 @@ public class ResolverTestCase {
         String name = null;
         if (tree instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
             name = selector.ID().getText();
-        } else if (tree instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == null) {
-            name = assign.name.getText() + "=";
+        } else if (tree instanceof BabbleParser.AssignExpressionContext assign) {
+            BabbleParser.ExpressionContext recv = ScopeAnalysis.assignReceiver(assign);
+            if (recv == null) {
+                result.add(ScopeAnalysis.assignName(assign) + "= " + kind(assign, resolution.variable(assign)));
+            } else {
+                collect(recv, resolution, result);
+            }
+            collect(assign.value, resolution, result);
+            return;
         } else if (tree instanceof BabbleParser.ThisExpressionContext) {
             name = "this";
         } else if (tree instanceof BabbleParser.RecurseContext) {
@@ -82,7 +90,7 @@ public class ResolverTestCase {
     /** A class's implements list and static block are evaluated where the class expression is. */
     private static boolean isInClassBody(ParserRuleContext ctx, BabbleParser.ClassExpressionContext c) {
         for (ParserRuleContext p = ctx; p != null; p = p.getParent()) {
-            if (p == c.classBlock || p == c.parametersDeclaration()) {
+            if (p == c.classBlock || p == c.classParameters()) {
                 return true;
             }
             if (p == c.staticBlock) {

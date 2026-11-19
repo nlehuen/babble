@@ -225,35 +225,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return member;
     }
 
-    /**
-     * {@code def} and {@code private} on parameters are only for class headers, and a type
-     * annotation can contain parameter declarations too, inside a function type.
-     */
-    private static void checkPlainParameters(ParseTree tree) {
-        if (tree == null) {
-            return;
-        }
-        if (tree instanceof BabbleParser.ParameterDeclarationContext parameter) {
-            checkPlainParameter(parameter);
-        }
-        for (int i = 0; i < tree.getChildCount(); i++) {
-            ParseTree child = tree.getChild(i);
-            // Default values are visited, and checked, as expressions.
-            if (!(child instanceof BabbleParser.ExpressionContext)) {
-                checkPlainParameters(child);
-            }
-        }
-    }
-
-    private static void checkPlainParameter(BabbleParser.ParameterDeclarationContext parameter) {
-        if (parameter.DEF() != null) {
-            throw error("def parameters are only allowed in a class header", parameter.DEF().getSymbol());
-        }
-        if (parameter.PRIVATE() != null) {
-            throw error("private only applies to members", parameter.PRIVATE().getSymbol());
-        }
-    }
-
     private static String typeName(ParserRuleContext ctx, String anonymous) {
         String name = ScopeAnalysis.definedName(ctx);
         return name != null ? name : anonymous;
@@ -273,9 +244,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         TypeNode type = new TypeNode(ctx, typeId(name), kind, name, current(), parentTypes);
         types.add(type);
         typeNodes.put(ctx, type);
-        for (BabbleParser.TypeContext parentType : parentTypes) {
-            checkPlainParameters(parentType);
-        }
         return type;
     }
 
@@ -294,7 +262,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 staticMethod = true;
             }
         }
-        checkPlainParameters(ctx.type());
         TypeNode owner = memberOf;
         boolean isStatic = staticMethod;
         inReturnTarget(ReturnTarget.FUNCTION, () -> {
@@ -303,9 +270,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 current().staticMethod = isStatic;
                 List<String> parameters = new ArrayList<>();
                 int required = 0;
-                for (BabbleParser.ParameterDeclarationContext parameter : ctx.parametersDeclaration().parameterDeclaration()) {
-                    checkPlainParameter(parameter);
-                    checkPlainParameters(parameter.type());
+                for (BabbleParser.FnParamContext parameter : ctx.fnParameters().fnParam()) {
                     declare(parameter.ID().getSymbol(), parameter, false);
                     parameters.add(parameter.ID().getText());
                     if (parameter.defaultValue != null) {
@@ -336,10 +301,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         inReturnTarget(ReturnTarget.CLASS_BODY, () -> {
             inScope(ScopeNode.Kind.CLASS_BODY, ctx, type, () -> {
                 Set<String> parameterNames = new HashSet<>();
-                if (ctx.parametersDeclaration() != null) {
-                    for (BabbleParser.ParameterDeclarationContext parameter : ctx.parametersDeclaration().parameterDeclaration()) {
+                if (ctx.classParameters() != null) {
+                    for (BabbleParser.ClassParamContext parameter : ctx.classParameters().classParam()) {
                         Token name = parameter.ID().getSymbol();
-                        checkPlainParameters(parameter.type());
                         if (!parameterNames.add(name.getText())) {
                             throw error("Name already defined : " + name.getText(), name);
                         }
@@ -455,7 +419,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         if (scope.whileTests > 0) {
             throw error("Definition in a while test : " + ctx.name.getText(), ctx.name);
         }
-        checkPlainParameters(ctx.type());
         export(ctx.EXPORT(), ctx.name);
         boolean isPrivate = ctx.PRIVATE() != null;
         BabbleParser.FunctionLiteralContext function = ctx.value instanceof BabbleParser.FunctionLiteralContext literal ? literal : null;
@@ -575,9 +538,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     /** {@code this.x}, not called : or the target of an assignment, reported as read-only later. */
     private static boolean isFieldRead(BabbleParser.ThisExpressionContext ctx) {
-        if (ctx.getParent() instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == ctx) {
-            return true;
-        }
         return ctx.getParent() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() == ctx
                 && !(selector.getParent() instanceof BabbleParser.CallContext call && call.expression() == selector);
@@ -607,9 +567,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         }
         if (owner == null) {
             throw error("super outside of a method", ctx);
-        }
-        if (ctx.qualifier != null) {
-            checkPlainParameters(ctx.qualifier);
         }
         supers.add(new PendingSuper(ctx, owner, current(), ScopeAnalysis.selectorName(selector)));
         return null;
@@ -664,18 +621,24 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
-        if (ctx.namespace == null) {
-            assignments.add(new PendingAssignment(ctx.name.getText(), current()));
-            occurrences.add(new Occurrence(ctx, ctx.name.getText(), current()));
-        } else {
-            accesses.add(new PendingAccess(ctx, ctx.namespace, ScopeAnalysis.assignName(ctx), true, current()));
+        if (!ScopeAnalysis.isValidAssignTarget(ctx)) {
+            throw error("Cannot assign to expression", ctx.lhs);
         }
-        return visitChildren(ctx);
+        BabbleParser.ExpressionContext receiver = ScopeAnalysis.assignReceiver(ctx);
+        String name = ScopeAnalysis.assignName(ctx);
+        if (receiver == null) {
+            assignments.add(new PendingAssignment(name, current()));
+            occurrences.add(new Occurrence(ctx, name, current()));
+        } else {
+            accesses.add(new PendingAccess(ctx, receiver, name, true, current()));
+            visit(receiver);
+        }
+        visit(ctx.value);
+        return null;
     }
 
     @Override
     public Void visitAsExpression(BabbleParser.AsExpressionContext ctx) {
-        checkPlainParameters(ctx.right);
         return visit(ctx.left);
     }
 }

@@ -165,8 +165,8 @@ final class SlotInference {
             String refName = null;
             if (occ instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
                 refName = sel.ID().getText();
-            } else if (occ instanceof BabbleParser.AssignExpressionContext assign && assign.namespace == null) {
-                refName = assign.name.getText();
+            } else if (occ instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) == null) {
+                refName = ScopeAnalysis.assignName(assign);
             }
             if (refName != null && TypeChecker.resolveName(null, refName, entry.getValue()) instanceof ParserRuleContext decl) {
                 Integer vIdx = topUnitOf(decl);
@@ -282,9 +282,9 @@ final class SlotInference {
 
     private void wakeParamReadersForOwner(ParserRuleContext owner) {
         for (Map.Entry<ParserRuleContext, SlotCell> entry : cells.get(PARAMS).entrySet()) {
-            if (entry.getKey() instanceof BabbleParser.ParameterDeclarationContext param
-                    && TypeChecker.ownerOfParam(param) == owner) {
-                checker.inferredParams().remove(param);
+            if (ScopeAnalysis.isParamDecl(entry.getKey())
+                    && TypeChecker.ownerOfParam(entry.getKey()) == owner) {
+                checker.inferredParams().remove(entry.getKey());
                 wakeReaders(entry.getValue());
             }
         }
@@ -337,8 +337,8 @@ final class SlotInference {
         SlotCell cell = cells.computeIfAbsent(decl, k -> new SlotCell());
         boolean changed = cell.record(key, valueType);
         if (cell.value != null && cell.value != Type.NULL
-                && (!isParam || !(decl instanceof BabbleParser.ParameterDeclarationContext param)
-                || !checker.escapingTargets().contains(TypeChecker.ownerOfParam(param)))) {
+                && (!isParam || !ScopeAnalysis.isParamDecl(decl)
+                || !checker.escapingTargets().contains(TypeChecker.ownerOfParam(decl)))) {
             targetMap.put(decl, cell.value);
             if (cell.widenedLine >= 0) {
                 widenMap.put(decl, new TypeChecker.Widening(cell.value, cell.widenedLine));

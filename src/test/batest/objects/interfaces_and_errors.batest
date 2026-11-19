@@ -56,15 +56,15 @@ true:true:true:false
 deep
 
 {{{{{
-;; BlockScopes parameter and member modifier diagnostics
+;; Parameter modifier syntax errors in function literals (split fnParameters)
 def f = (def x : int) -> ( x )
 }}}}}
-def parameters are only allowed in a class header
+Syntax error : unexpected '->'
 
 {{{{{
 def f = (private x : int) -> ( x )
 }}}}}
-private only applies to members
+Syntax error : unexpected 'x'
 
 {{{{{
 def C = class (x : int, x : int) ()

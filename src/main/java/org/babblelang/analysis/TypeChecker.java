@@ -448,7 +448,7 @@ final class TypeChecker {
         }
         if (tree instanceof BabbleParser.CallContext call && types.get(call.expression()) instanceof Type.Function fn
                 && functionLiterals.get(fn) instanceof BabbleParser.FunctionLiteralContext lit) {
-            for (BabbleParser.ParameterDeclarationContext param : lit.parametersDeclaration().parameterDeclaration()) {
+            for (BabbleParser.FnParamContext param : lit.fnParameters().fnParam()) {
                 String note = wideningNote(param.ID().getText(), paramWidenings.get(param), null, diagnosticLine);
                 if (note != null) {
                     return note;
@@ -459,7 +459,7 @@ final class TypeChecker {
     }
 
     private String assignmentWideningNote(BabbleParser.AssignExpressionContext assign, int diagnosticLine) {
-        return noteForName(assign, ScopeAnalysis.assignName(assign), assign.namespace, diagnosticLine);
+        return noteForName(assign, ScopeAnalysis.assignName(assign), ScopeAnalysis.assignReceiver(assign), diagnosticLine);
     }
 
     /**
@@ -549,9 +549,21 @@ final class TypeChecker {
         } else if (tree instanceof BabbleParser.ExpressionContext || tree instanceof BabbleParser.BlockContext) {
             synth((ParserRuleContext) tree);
         }
-        if (tree instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.defaultValue != null && parameter.type() != null) {
-            Type declared = annotator.annotation(parameter.type(), scopeOf(parameter));
-            subsumes(parameter.defaultValue, null, check(parameter.defaultValue, declared), declared);
+        if (tree instanceof ParserRuleContext parameter && ScopeAnalysis.isParamDecl(parameter)
+                && ScopeAnalysis.paramDefault(parameter) != null && ScopeAnalysis.paramType(parameter) != null) {
+            Type declared = annotator.annotation(ScopeAnalysis.paramType(parameter), scopeOf(parameter));
+            BabbleParser.ExpressionContext defVal = ScopeAnalysis.paramDefault(parameter);
+            subsumes(defVal, null, check(defVal, declared), declared);
+        }
+        if (tree instanceof BabbleParser.AssignExpressionContext assign) {
+            BabbleParser.ExpressionContext receiver = ScopeAnalysis.assignReceiver(assign);
+            if (receiver != null) {
+                walk(receiver);
+            }
+            if (assign.value != null) {
+                walk(assign.value);
+            }
+            return;
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
             walk(tree.getChild(i));
@@ -578,13 +590,23 @@ final class TypeChecker {
                 return super.visitDefExpression(def);
             }
 
-            @Override
-            public Void visitParameterDeclaration(BabbleParser.ParameterDeclarationContext parameter) {
+            private void checkParam(ParserRuleContext parameter) {
                 Type type = declarationTypes.get(parameter);
-                if (parameter.type() == null && (type == null || isUnresolved(type)) && !failedDefs.contains(parameter)) {
-                    warn("Missing type : " + parameter.ID().getText(), parameter);
+                if (ScopeAnalysis.paramType(parameter) == null && (type == null || isUnresolved(type)) && !failedDefs.contains(parameter)) {
+                    warn("Missing type : " + ScopeAnalysis.paramId(parameter).getText(), parameter);
                 }
-                return super.visitParameterDeclaration(parameter);
+            }
+
+            @Override
+            public Void visitClassParam(BabbleParser.ClassParamContext parameter) {
+                checkParam(parameter);
+                return super.visitClassParam(parameter);
+            }
+
+            @Override
+            public Void visitFnParam(BabbleParser.FnParamContext parameter) {
+                checkParam(parameter);
+                return super.visitFnParam(parameter);
             }
         }.visit(file);
     }
@@ -632,8 +654,8 @@ final class TypeChecker {
     static Object resolveName(ParserRuleContext occurrence, String name, ScopeNode scope) {
         for (ScopeNode s = scope; s != null; s = s.parent) {
             ParserRuleContext declaration = s.names.get(name);
-            if (declaration != null && !(occurrence != null && declaration instanceof BabbleParser.ParameterDeclarationContext parameter
-                    && notBoundYet(occurrence, s, parameter))) {
+            if (declaration != null && !(occurrence != null && ScopeAnalysis.isParamDecl(declaration)
+                    && notBoundYet(occurrence, s, declaration))) {
                 return declaration;
             }
         }
@@ -641,15 +663,16 @@ final class TypeChecker {
     }
 
     /** A parameter default doesn't see the parameters from its own onwards (as in Resolver). */
-    private static boolean notBoundYet(ParserRuleContext occurrence, ScopeNode scope, BabbleParser.ParameterDeclarationContext declaration) {
+    private static boolean notBoundYet(ParserRuleContext occurrence, ScopeNode scope, ParserRuleContext declaration) {
         for (ParserRuleContext p = occurrence; p != null && p != scope.owner; p = p.getParent()) {
             if (p instanceof BabbleParser.FunctionLiteralContext) {
                 return false;
             }
-            if (p instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.getParent().getParent() == scope.owner) {
-                List<BabbleParser.ParameterDeclarationContext> parameters =
-                        ((BabbleParser.ParametersDeclarationContext) parameter.getParent()).parameterDeclaration();
-                return parameters.indexOf(parameter) <= parameters.indexOf(declaration);
+            if (ScopeAnalysis.isParamDecl(p) && p.getParent().getParent() == scope.owner) {
+                List<? extends ParserRuleContext> parameters = p instanceof BabbleParser.ClassParamContext
+                        ? ((BabbleParser.ClassParametersContext) p.getParent()).classParam()
+                        : ((BabbleParser.FnParametersContext) p.getParent()).fnParam();
+                return parameters.indexOf(p) <= parameters.indexOf(declaration);
             }
         }
         return false;
@@ -671,8 +694,8 @@ final class TypeChecker {
             declarationTypes.put(declaration, declared);
             return declared;
         }
-        if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.type() != null) {
-            Type declared = annotator.annotation(parameter.type(), scopeOf(parameter));
+        if (ScopeAnalysis.isParamDecl(declaration) && ScopeAnalysis.paramType(declaration) != null) {
+            Type declared = annotator.annotation(ScopeAnalysis.paramType(declaration), scopeOf(declaration));
             declarationTypes.put(declaration, declared);
             return declared;
         }
@@ -686,11 +709,11 @@ final class TypeChecker {
         if (cached != null) {
             return cached;
         }
-        if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter) {
-            slots.read(SlotInference.PARAMS, parameter);
-            Type inferredParam = inferredParams.get(parameter);
-            if (inferredParam != null && isInferrableCallable(ownerOfParam(parameter))) {
-                declarationTypes.put(parameter, inferredParam);
+        if (ScopeAnalysis.isParamDecl(declaration)) {
+            slots.read(SlotInference.PARAMS, declaration);
+            Type inferredParam = inferredParams.get(declaration);
+            if (inferredParam != null && isInferrableCallable(ownerOfParam(declaration))) {
+                declarationTypes.put(declaration, inferredParam);
                 return inferredParam;
             }
         }
@@ -734,8 +757,8 @@ final class TypeChecker {
                     }
                     type = inferred(valueType);
                 }
-            } else if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.defaultValue != null) {
-                Type valueType = synth(parameter.defaultValue);
+            } else if (ScopeAnalysis.isParamDecl(declaration) && ScopeAnalysis.paramDefault(declaration) != null) {
+                Type valueType = synth(ScopeAnalysis.paramDefault(declaration));
                 if (valueType != Type.NULL && !isUnresolved(valueType)) {
                     type = valueType;
                 }
@@ -884,7 +907,7 @@ final class TypeChecker {
         return child.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == child ? def : null;
     }
 
-    static ParserRuleContext ownerOfParam(BabbleParser.ParameterDeclarationContext parameter) {
+    static ParserRuleContext ownerOfParam(ParserRuleContext parameter) {
         ParserRuleContext parent = parameter.getParent();
         return parent != null ? parent.getParent() : null;
     }
@@ -964,10 +987,10 @@ final class TypeChecker {
         if (effectChecker != null && checkingEffects && inFile(literal)) {
             effectChecker.parseFunctionPrefix(literal, true);
         }
-        List<BabbleParser.ParameterDeclarationContext> decls = literal.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> decls = literal.fnParameters().fnParam();
         List<Type.Parameter> result = new ArrayList<>(decls.size());
         for (int i = 0; i < decls.size(); i++) {
-            BabbleParser.ParameterDeclarationContext parameter = decls.get(i);
+            BabbleParser.FnParamContext parameter = decls.get(i);
             Type type = parameterType(parameter, scope);
             EffectChecker.ParamMods pm = effectChecker != null
                     ? effectChecker.parseParamMods(parameter, checkingEffects && inFile(literal))
@@ -981,7 +1004,7 @@ final class TypeChecker {
 
     private void typeDefaultValues(BabbleParser.FunctionLiteralContext literal) {
         ScopeNode scope = scopeOf(literal);
-        for (BabbleParser.ParameterDeclarationContext parameter : literal.parametersDeclaration().parameterDeclaration()) {
+        for (BabbleParser.FnParamContext parameter : literal.fnParameters().fnParam()) {
             if (parameter.defaultValue != null) {
                 Type expected = parameter.type() != null
                         ? annotator.annotation(parameter.type(), scope)
@@ -1022,16 +1045,16 @@ final class TypeChecker {
         if (expectedParamTypes == null) {
             return;
         }
-        List<BabbleParser.ParameterDeclarationContext> params = literal.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> params = literal.fnParameters().fnParam();
         int required = 0;
-        for (BabbleParser.ParameterDeclarationContext param : params) {
+        for (BabbleParser.FnParamContext param : params) {
             if (param.defaultValue == null) {
                 required++;
             }
         }
         if (required <= expectedParamTypes.size() && params.size() >= expectedParamTypes.size()) {
             for (int i = 0; i < expectedParamTypes.size(); i++) {
-                BabbleParser.ParameterDeclarationContext param = params.get(i);
+                BabbleParser.FnParamContext param = params.get(i);
                 if (param.type() == null && !declarationTypes.containsKey(param)) {
                     Type paramType = expectedParamTypes.get(i);
                     if (paramType != null && paramType != Type.ERROR && !paramType.hasSyntheticTypeVar()) {
@@ -1158,7 +1181,7 @@ final class TypeChecker {
             contextualReturnTypes.remove(ctx);
             widened.remove(ctx);
             resolvedLiterals.remove(ctx);
-            if (ctx instanceof BabbleParser.DefExpressionContext || ctx instanceof BabbleParser.ParameterDeclarationContext) {
+            if (ctx instanceof BabbleParser.DefExpressionContext || ScopeAnalysis.isParamDecl(ctx)) {
                 declarationTypes.remove(ctx);
             }
         }
@@ -1374,7 +1397,8 @@ final class TypeChecker {
     private final class Typer {
         Type typeOf(ParserRuleContext ctx, Type expected, Role role) {
             return switch (ctx) {
-                case BabbleParser.IfExpressionContext c -> visitIfExpression(c, expected, role);
+                case BabbleParser.IfExpressionContext c -> type(c.ifExpr(), expected, role);
+                case BabbleParser.IfExprContext c -> visitIfExpr(c, expected, role);
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
                 case BabbleParser.ClassExpressionContext c -> visitClassExpression(c, expected, role);
@@ -1418,7 +1442,7 @@ final class TypeChecker {
             };
         }
 
-        private Type visitIfExpression(BabbleParser.IfExpressionContext ctx, Type expected, Role role) {
+        private Type visitIfExpr(BabbleParser.IfExprContext ctx, Type expected, Role role) {
             synth(ctx.test);
             TypeEnv.Refinement refinement = narrowing.extractRefinement(ctx.test);
             TypeEnv baseEnv = env;
@@ -1519,7 +1543,7 @@ final class TypeChecker {
         }
 
         private Type visitClassExpression(BabbleParser.ClassExpressionContext ctx, Type expected, Role role) {
-            if (ctx.parametersDeclaration() != null) {
+            if (ctx.classParameters() != null) {
                 constructorParameters(pass.typeNodes.get(ctx));
             }
             return new Type.ClassValue(pass.typeNodes.get(ctx));
@@ -1668,7 +1692,8 @@ final class TypeChecker {
                 for (int i = 0; i < statements.size(); i++) {
                     BabbleParser.ExpressionContext statement = statements.get(i);
                     type = i == statements.size() - 1 ? type(statement, expected, role) : stmt(statement);
-                    if (i < statements.size() - 1 && statement instanceof BabbleParser.IfExpressionContext ifCtx) {
+                    if (i < statements.size() - 1 && statement instanceof BabbleParser.IfExpressionContext ifExprCtx) {
+                        BabbleParser.IfExprContext ifCtx = ifExprCtx.ifExpr();
                         Type thenType = types.getOrDefault(ifCtx.thenBlock, Type.ERROR);
                         ParserRuleContext otherwise = ifCtx.elseBlock != null ? ifCtx.elseBlock : ifCtx.elseIf;
                         Type elseType = otherwise != null ? types.getOrDefault(otherwise, Type.ERROR) : Type.NULL;
@@ -1909,7 +1934,8 @@ final class TypeChecker {
 
         private LValue resolveLValue(BabbleParser.AssignExpressionContext ctx, boolean readCurrent) {
             String name = ScopeAnalysis.assignName(ctx);
-            if (ctx.namespace == null) {
+            BabbleParser.ExpressionContext receiverExpr = ScopeAnalysis.assignReceiver(ctx);
+            if (receiverExpr == null) {
                 Object resolved = resolveName(ctx, name, occurrenceScopes.get(ctx));
                 if (resolved instanceof ParserRuleContext declaration) {
                     Type current = Type.ERROR;
@@ -1917,14 +1943,14 @@ final class TypeChecker {
                         Type narrowed = narrowing.narrowedType(declaration);
                         current = narrowed != null ? narrowed : typeOfDeclaration(declaration);
                     }
-                    Type declared = declaration instanceof BabbleParser.ParameterDeclarationContext
+                    Type declared = ScopeAnalysis.isParamDecl(declaration)
                             ? typeOfDeclaration(declaration)
                             : annotator.declaredType(declaration);
                     return new LValue.Local(declaration, declared, current, declared == null);
                 }
                 return new LValue.Implicit(readCurrent ? operators.implicitType(name) : Type.ERROR);
             }
-            Type receiver = synth(ctx.namespace, Role.SELECTOR_RECEIVER);
+            Type receiver = synth(receiverExpr, Role.SELECTOR_RECEIVER);
             Object field = JavaTypeBridge.assignedField(receiver, name);
             if (field instanceof String error) {
                 warn(error, ctx);
@@ -1933,7 +1959,7 @@ final class TypeChecker {
                 Type current = readCurrent ? assigned.type(receiver, true, algebra) : declared;
                 return new LValue.JavaField(assigned, declared, current);
             }
-            boolean own = ctx.namespace instanceof BabbleParser.ThisExpressionContext;
+            boolean own = receiverExpr instanceof BabbleParser.ThisExpressionContext;
             Type declared = members.assignedMemberType(receiver, name, own, ctx);
             TypeNode.Member member = members.assignedBabbleMember(receiver, name, own);
             if (member != null && member.function != null && inFile(member.function)) {
@@ -2199,7 +2225,7 @@ final class TypeChecker {
         if (declared != null) {
             return declared;
         }
-        if (member.declaration instanceof BabbleParser.ParameterDeclarationContext) {
+        if (ScopeAnalysis.isParamDecl(member.declaration)) {
             return typeOfDeclaration(member.declaration);
         }
         if (member.function != null) {
@@ -2231,14 +2257,14 @@ final class TypeChecker {
 
     // ---------------------------------------------------------------- calls
 
-    List<BabbleParser.ParameterDeclarationContext> parameterDecls(Type.Function fn) {
+    List<? extends ParserRuleContext> parameterDecls(Type.Function fn) {
         BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
-        return lit != null ? lit.parametersDeclaration().parameterDeclaration() : null;
+        return lit != null ? lit.fnParameters().fnParam() : null;
     }
 
-    static List<BabbleParser.ParameterDeclarationContext> parameterDecls(TypeNode node) {
-        return node.ctx instanceof BabbleParser.ClassExpressionContext cls && cls.parametersDeclaration() != null
-                ? cls.parametersDeclaration().parameterDeclaration() : null;
+    static List<? extends ParserRuleContext> parameterDecls(TypeNode node) {
+        return node.ctx instanceof BabbleParser.ClassExpressionContext cls && cls.classParameters() != null
+                ? cls.classParameters().classParam() : null;
     }
 
     /** A class's constructor parameters, or null when they are another file's that can't be typed. */
@@ -2250,15 +2276,15 @@ final class TypeChecker {
             List<Type.Parameter> imported = imported().constructorParams(node);
             return imported != null ? imported : List.of();
         }
-        if (cls.parametersDeclaration() == null) {
+        if (cls.classParameters() == null) {
             return List.of();
         }
         ScopeNode scope = scopeOf(cls);
         EffectChecker.CallableSummary cs = (effectChecker != null && node != null) ? effectChecker.constructorSummary(node) : null;
-        List<BabbleParser.ParameterDeclarationContext> decls = cls.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.ClassParamContext> decls = cls.classParameters().classParam();
         List<Type.Parameter> result = new ArrayList<>(decls.size());
         for (int i = 0; i < decls.size(); i++) {
-            BabbleParser.ParameterDeclarationContext parameter = decls.get(i);
+            BabbleParser.ClassParamContext parameter = decls.get(i);
             Type type = parameterType(parameter, scope);
             if (parameter.defaultValue != null && !types.containsKey(parameter.defaultValue)) {
                 Type actual = check(parameter.defaultValue, type != Type.ERROR ? type : null);
@@ -2275,9 +2301,10 @@ final class TypeChecker {
         return result;
     }
 
-    private Type parameterType(BabbleParser.ParameterDeclarationContext parameter, ScopeNode scope) {
-        if (parameter.type() != null) {
-            return annotator.annotation(parameter.type(), scope);
+    private Type parameterType(ParserRuleContext parameter, ScopeNode scope) {
+        BabbleParser.TypeContext paramType = ScopeAnalysis.paramType(parameter);
+        if (paramType != null) {
+            return annotator.annotation(paramType, scope);
         }
         if (!inFile(parameter) && pass.session != null) {
             Type frozen = pass.session.declarationTypes.get(parameter);
@@ -2289,14 +2316,15 @@ final class TypeChecker {
             return declarationTypes.get(parameter);
         }
         Type defType = null;
-        if (parameter.defaultValue != null) {
-            defType = synth(parameter.defaultValue);
+        BabbleParser.ExpressionContext defVal = ScopeAnalysis.paramDefault(parameter);
+        if (defVal != null) {
+            defType = synth(defVal);
             if (defType != Type.NULL && !isUnresolved(defType)) {
                 declarationTypes.put(parameter, defType);
                 return defType;
             }
         }
-        if (parameter.defaultValue == null || defType == Type.NULL) {
+        if (defVal == null || defType == Type.NULL) {
             if (isInferrableCallable(ownerOfParam(parameter))) {
                 p7Params.add(parameter);
                 if (defType == Type.NULL) {
