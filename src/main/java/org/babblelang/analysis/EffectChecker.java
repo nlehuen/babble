@@ -956,6 +956,20 @@ final class EffectChecker {
         if (protocol != null) {
             return protocol;
         }
+        // Tier 6.5 (opt-in BIP007-P3): ASM bytecode static analysis of closed Java helpers.
+        if (exactMethod != null && pass.hostEffects.bytecodeEffectAnalysis()) {
+            BytecodeEffectAnalyzer.Result analyzed = BytecodeEffectAnalyzer.analyze(exactMethod);
+            if (!analyzed.effects().isUnconstrained()) {
+                int pCount = exactMethod.getParameterCount();
+                boolean[] borrowParams = new boolean[pCount];
+                if (analyzed.effects().isPure()) {
+                    Arrays.fill(borrowParams, true);
+                }
+                boolean isStatic = Modifier.isStatic(exactMethod.getModifiers());
+                return new JavaCallProfile(analyzed.effects(), false, !isStatic && analyzed.effects().isPure(),
+                        new boolean[pCount], borrowParams, analyzed.effects().isNothrow());
+            }
+        }
         // Tier 7: Unconstrained default.
         int paramCount = exactMethod != null ? exactMethod.getParameterCount() : 0;
         return new JavaCallProfile(EffectSet.EMPTY, false, false, new boolean[paramCount], new boolean[paramCount], false);

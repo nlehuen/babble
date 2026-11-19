@@ -119,18 +119,28 @@ public final class HostEffects {
         }
     }
 
-    public static final HostEffects DEFAULT = new HostEffects(true, Map.of());
+    public static final HostEffects DEFAULT = new HostEffects(true, false, Map.of());
 
     private final boolean allowAxioms;
+    private final boolean bytecodeEffectAnalysis;
     private final Map<JavaTarget, OverrideEntry> overrides;
 
     public HostEffects(boolean allowAxioms, Map<JavaTarget, OverrideEntry> overrides) {
+        this(allowAxioms, false, overrides);
+    }
+
+    public HostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, Map<JavaTarget, OverrideEntry> overrides) {
         this.allowAxioms = allowAxioms;
+        this.bytecodeEffectAnalysis = bytecodeEffectAnalysis;
         this.overrides = overrides.isEmpty() ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(overrides));
     }
 
     public boolean allowAxioms() {
         return allowAxioms;
+    }
+
+    public boolean bytecodeEffectAnalysis() {
+        return bytecodeEffectAnalysis;
     }
 
     public Map<JavaTarget, OverrideEntry> overrides() {
