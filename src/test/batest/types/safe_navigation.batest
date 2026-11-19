@@ -2,8 +2,8 @@
 
 {{{{{
 def Node = class (def value : int, def next : Node? = null) (
-    def add = (k : int) : Node -> ( Node(this.value + k, this.next) )
-    def read = () : int -> ( this.value )
+    def add = fn (k : int) : Node -> ( Node(this.value + k, this.next) )
+    def read = fn () : int -> ( this.value )
 )
 def head : Node? = Node(10, Node(20))
 def empty : Node? = null
@@ -18,9 +18,9 @@ null:null
 {{{{{
 ;; Short-circuit: receiver is null so arguments of ?.method(arg) are NOT evaluated
 def hits = 0
-def side = () : int -> ( hits += 1 ; 99 )
+def side = fn () : int -> ( hits += 1 ; 99 )
 def C = class (def x : int) (
-    def calc = (k : int) : int -> ( this.x + k )
+    def calc = fn (k : int) : int -> ( this.x + k )
 )
 def present : C? = C(1)
 def absent : C? = null

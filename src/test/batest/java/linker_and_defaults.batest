@@ -90,15 +90,15 @@ No applicable overload of java.lang.StringBuilder.append for ()
 {{{{{
 ;; Java default methods (JavaDefaultCall), super(JavaInterface), and Faces Object methods
 def EvenPred = class () implements java.util.function.IntPredicate (
-    def test = (x : int) : bool -> ( int(x / 2) * 2 == x )
-    def testInverted = (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )
+    def test = fn (x : int) : bool -> ( int(x / 2) * 2 == x )
+    def testInverted = fn (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )
 )
 def p = EvenPred()
 def neg = p.negate()
 println(p.test(4), ":", neg.test(4), ":", neg.test(3), ":", p.testInverted(4))
 
 def pred : java.util.function.IntPredicate = p
-def samProxy : java.util.function.IntUnaryOperator = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 10 ))
+def samProxy : java.util.function.IntUnaryOperator = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x + 10 ))
 def predObj : any = pred
 def samObj : any = samProxy
 println(java.util.Objects.equals(predObj, p), ":", java.util.Objects.equals(samObj, samObj))
@@ -115,15 +115,15 @@ true
 {{{{{
 ;; Multi-level Babble interface inheritance, default lookup, 'is' checks, and interface/class toString
 def Base = interface (
-    def req : () : int
-    def tag = () : string -> ( "base" )
+    def req : fn () : int
+    def tag = fn () : string -> ( "base" )
 )
 def Mid = interface extends Base (
-    def midTag = () : string -> ( super(Base).tag() + "+mid" )
+    def midTag = fn () : string -> ( super(Base).tag() + "+mid" )
 )
 def Impl = class (def v : int) implements Mid (
-    def req = () : int -> ( this.v )
-    def full = () : string -> ( super(Mid).midTag() )
+    def req = fn () : int -> ( this.v )
+    def full = fn () : string -> ( super(Mid).midTag() )
 )
 def x = Impl(7)
 println(x.tag(), ":", x.midTag(), ":", x.full(), ":", x is Base, ":", x is Mid)
@@ -135,10 +135,10 @@ interface Base:class Impl
 {{{{{
 ;; Calling interface method with no default via super fails
 def I = interface (
-    def m : () : int
+    def m : fn () : int
 )
 def C = class () implements I (
-    def m = () : int -> ( super(I).m() )
+    def m = fn () : int -> ( super(I).m() )
 )
 println(C().m())
 }}}}}
@@ -214,7 +214,7 @@ print("line2", to: sw2)
 println(sw2.getBuffer().length() > 5)
 
 def C = class (def x : int) (
-    def m = () : int -> ( this.x )
+    def m = fn () : int -> ( this.x )
 )
 def c = C(5)
 def m1 = c.m
@@ -234,13 +234,13 @@ bound function m
 {{{{{
 ;; Faces equals, FunctionHandler default method (andThen), Java long/float params, Point2D.Float/Event/StreamTokenizer compound assign
 def EvenPred = class () implements java.util.function.IntPredicate (
-    def test = (x : int) : bool -> ( int(x / 2) * 2 == x )
+    def test = fn (x : int) : bool -> ( int(x / 2) * 2 == x )
 )
 def p1 = EvenPred()
 def p2 = EvenPred()
 def pred1 : java.util.function.IntPredicate = p1
-def fn1 : java.util.function.IntUnaryOperator = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 1 ))
-def fn2 : java.util.function.IntUnaryOperator = java.util.function.IntUnaryOperator((x : int) : int -> ( x * 2 ))
+def fn1 : java.util.function.IntUnaryOperator = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x + 1 ))
+def fn2 : java.util.function.IntUnaryOperator = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x * 2 ))
 println(java.util.Objects.equals(pred1, p1), ":", java.util.Objects.equals(pred1, p2), ":", java.util.Objects.equals(fn1, fn1), ":", java.util.Objects.equals(fn1, fn2))
 println(fn1.andThen(fn2).applyAsInt(3))
 
@@ -258,14 +258,14 @@ true:false:true:false
 
 {{{{{
 ;; Faces.function arity mismatch with function, BoundMethod, and BabbleClass (Values.arity)
-def add2 = (a : int, b : int) : int -> ( a + b )
+def add2 = fn (a : int, b : int) : int -> ( a + b )
 def p = java.util.function.IntUnaryOperator(add2)
 }}}}}
 IntUnaryOperator.applyAsInt takes 1 arguments, function takes 2
 
 {{{{{
 def Box = class (def a : int, def b : int) (
-    def m = (x : int, y : int) : int -> ( x + y )
+    def m = fn (x : int, y : int) : int -> ( x + y )
 )
 def bm = Box(1, 2).m
 def p = java.util.function.IntUnaryOperator(bm)
@@ -290,10 +290,10 @@ def sb1 = java.lang.StringBuilder("a")
 def sb2 = java.lang.StringBuilder("a")
 println(same(sb1, sb1), ":", same(sb1, sb2), ":", same(sb1, null), ":", same(null, null))
 
-def I = interface ( def id : () : int )
+def I = interface ( def id : fn () : int )
 def C = class (def v : int) implements I, java.lang.Runnable (
-    def id = () : int -> ( this.v )
-    def run = () -> ( )
+    def id = fn () : int -> ( this.v )
+    def run = fn () -> ( )
 )
 def a : any = 3.5
 def b : any = true
@@ -311,14 +311,14 @@ true:true:true:true
 
 {{{{{
 ;; Casting to a function type is rejected
-def fnAny : any = (x : int) : int -> ( x + 1 )
-def fnCast = fnAny as (x : int) : int
+def fnAny : any = fn (x : int) : int -> ( x + 1 )
+def fnCast = fnAny as fn (x : int) : int
 }}}}}
 Cannot cast to a function type
 
 {{{{{
 ;; Types.NominalType shadowed class name diagnostic (two local classes named P)
-def make = () : any -> (
+def make = fn () : any -> (
     def P = class (def x : int) ()
     P(1)
 )

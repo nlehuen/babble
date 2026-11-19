@@ -35,46 +35,46 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
     @Test
     public void testFunctionsConvertToFunctionalInterfaces() throws Exception {
         String list = "def l : java.util.List(int) = java.util.ArrayList() ; l.add(3) ; l.add(1) ; l.add(2)\n";
-        Assertions.assertEquals("[1, 2, 3]", interpret(list + "l.sort((a : any, b : any) : int -> ( (a as int) - (b as int) )) ; l.toString()"));
-        Assertions.assertEquals("[1, 2]", interpret(list + "l.removeIf((v : any) : bool -> ( (v as int) > 2 )) ; l.toString()"));
+        Assertions.assertEquals("[1, 2, 3]", interpret(list + "l.sort(fn (a : any, b : any) : int -> ( (a as int) - (b as int) )) ; l.toString()"));
+        Assertions.assertEquals("[1, 2]", interpret(list + "l.removeIf(fn (v : any) : bool -> ( (v as int) > 2 )) ; l.toString()"));
         Assertions.assertEquals("hi" + System.lineSeparator(),
-                output("def t = java.lang.Thread(() -> ( println(\"hi\") )) ; t.start() ; t.join()"));
+                output("def t = java.lang.Thread(fn () -> ( println(\"hi\") )) ; t.start() ; t.join()"));
         // Bound methods and class values convert too.
-        Assertions.assertEquals("[3, 2, 1]", interpret(list + "def o = object ( def cmp = (a : any, b : any) : int -> ( (b as int) - (a as int) ) ) ; l.sort(o.cmp) ; l.toString()"));
+        Assertions.assertEquals("[3, 2, 1]", interpret(list + "def o = object ( def cmp = fn (a : any, b : any) : int -> ( (b as int) - (a as int) ) ) ; l.sort(o.cmp) ; l.toString()"));
     }
 
     @Test
     public void testAmbiguousConversionNeedsAnExplicitOne() throws Exception {
         String pool = "def pool = java.util.concurrent.ForkJoinPool()\n";
-        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(pool + "pool.submit(() -> ( 1 ))"));
+        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(pool + "pool.submit(fn () -> ( 1 ))"));
         Assertions.assertTrue(e.getMessage().contains("Ambiguous call to java.util.concurrent.ForkJoinPool.submit"), e.getMessage());
-        Assertions.assertDoesNotThrow(() -> interpret(pool + "pool.submit(java.util.concurrent.Callable(() -> ( 1 ))) ; pool.shutdown()"));
+        Assertions.assertDoesNotThrow(() -> interpret(pool + "pool.submit(java.util.concurrent.Callable(fn () -> ( 1 ))) ; pool.shutdown()"));
     }
 
     @Test
     public void testConversionChecksResultAndArity() {
         String list = "def l : java.util.List(int) = java.util.ArrayList() ; l.add(3) ; l.add(1)\n";
-        ScriptException e1 = Assertions.assertThrows(ScriptException.class, () -> interpret(list + "l.sort((a : any, b : any) -> ( 0.5 ))"));
+        ScriptException e1 = Assertions.assertThrows(ScriptException.class, () -> interpret(list + "l.sort(fn (a : any, b : any) -> ( 0.5 ))"));
         Assertions.assertTrue(e1.getMessage().contains("Type error") || e1.getMessage().contains("No applicable overload"), e1.getMessage());
-        ScriptException e2 = Assertions.assertThrows(ScriptException.class, () -> interpret(list + "l.sort((a : any) -> ( 0 ))"));
+        ScriptException e2 = Assertions.assertThrows(ScriptException.class, () -> interpret(list + "l.sort(fn (a : any) -> ( 0 ))"));
         Assertions.assertTrue(e2.getMessage().contains("No applicable overload") || e2.getMessage().contains("takes 2 arguments"), e2.getMessage());
     }
 
     // ---------------------------------------------------------------- classes implementing Java interfaces
 
     private static final String COUNTDOWN = "def Countdown = class (private def n : int) implements java.util.Iterator(int) (\n"
-            + "    def hasNext = () : bool -> ( this.n > 0 )\n"
-            + "    def next = mut () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
+            + "    def hasNext = fn () : bool -> ( this.n > 0 )\n"
+            + "    def next = fn mut () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
             + ")\n";
 
     @Test
     public void testIteratorWithAJavaDefault() throws Exception {
-        Assertions.assertEquals("321", output(COUNTDOWN + "Countdown(3).forEachRemaining((v : any) -> ( print(v) ))"));
+        Assertions.assertEquals("321", output(COUNTDOWN + "Countdown(3).forEachRemaining(fn (v : any) -> ( print(v) ))"));
         Assertions.assertEquals(true, interpret(COUNTDOWN + "Countdown(1) is java.util.Iterator"));
     }
 
     private static final String MONEY = "def Money = value class (cents : any) implements java.lang.Comparable(Money) (\n"
-            + "    def compareTo = (o : Money) : int -> ( int(double(this.cents) - double(o.cents)) )\n"
+            + "    def compareTo = fn (o : Money) : int -> ( int(double(this.cents) - double(o.cents)) )\n"
             + ")\n"
             + "def wallet : java.util.List(Money) = java.util.ArrayList() ; wallet.add(Money(500)) ; wallet.add(Money(20))\n";
 
@@ -92,12 +92,12 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
     @Test
     public void testCallsFromJavaPrintAndFail() throws Exception {
         String noisy = "def Noisy = class (def v : int) implements java.lang.Comparable(Noisy) (\n"
-                + "    def compareTo = (o : Noisy) : int -> ( print(\"<\") ; this.v - o.v )\n"
+                + "    def compareTo = fn (o : Noisy) : int -> ( print(\"<\") ; this.v - o.v )\n"
                 + ")\n"
                 + "def l : java.util.List(Noisy) = java.util.ArrayList() ; l.add(Noisy(2)) ; l.add(Noisy(1)) ; java.util.Collections.sort(l)";
         Assertions.assertTrue(output(noisy).startsWith("<"));
         String broken = "def Broken = class () implements java.lang.Comparable(Broken) (\n"
-                + "    def compareTo = (o : Broken) : int -> ( nosuchname ; 0 )\n"
+                + "    def compareTo = fn (o : Broken) : int -> ( nosuchname ; 0 )\n"
                 + ")\n"
                 + "def l : java.util.List(Broken) = java.util.ArrayList() ; l.add(Broken()) ; l.add(Broken()) ; java.util.Collections.sort(l)";
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(broken));
@@ -106,12 +106,12 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     private static final String LOG = "def Log = class () implements java.lang.Appendable (\n"
             + "    private def sb = java.lang.StringBuilder()\n"
-            + "    def append = (s : any?, start : any? = null, end : any? = null) : java.lang.Appendable -> (\n"
+            + "    def append = fn (s : any?, start : any? = null, end : any? = null) : java.lang.Appendable -> (\n"
             + "        if s is java.lang.Character then ( this.sb.append(\"'\" + s + \"'\") )\n"
             + "        else ( if start == null then ( this.sb.append(s as java.lang.CharSequence) ) else ( this.sb.append(s as java.lang.CharSequence, start as int, end as int) ) )\n"
             + "        this\n"
             + "    )\n"
-            + "    def text = () : string -> ( this.sb.toString() )\n"
+            + "    def text = fn () : string -> ( this.sb.toString() )\n"
             + ")\n";
 
     @Test
@@ -119,13 +119,13 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         Assertions.assertEquals("abc", interpret(LOG + "def log = Log() ; java.util.Formatter(log).format(\"abc\", null) ; log.text()"));
         // Same-arity overloads are told apart with "is" : here append(char).
         Assertions.assertEquals("'x'", interpret(DEMO + LOG + "def log = Log() ; Demo.appendChar(log, java.lang.String(\"x\").charAt(0)) ; log.text()"));
-        assertFails("def Log = class () implements java.lang.Appendable (\n    def append = (s : any, start : any? = null) -> ( this )\n)",
+        assertFails("def Log = class () implements java.lang.Appendable (\n    def append = fn (s : any, start : any? = null) -> ( this )\n)",
                 "Log.append takes 1 to 2 arguments, but Appendable.append(CharSequence, int, int) passes 3", 2);
     }
 
     @Test
     public void testJavaInterfaceCompleteness() {
-        assertFails("def C = class () implements java.util.Iterator(int) ( def hasNext = () -> ( false ) )",
+        assertFails("def C = class () implements java.util.Iterator(int) ( def hasNext = fn () -> ( false ) )",
                 "C does not implement java.util.Iterator.next", 1);
         assertFails("def C = class () implements java.lang.Runnable ( def run = 1 )",
                 "C does not implement java.lang.Runnable.run", 1);
@@ -135,28 +135,28 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
     @Test
     public void testJavaInterfacesThroughImport() throws Exception {
         Assertions.assertEquals(true, interpret("def util = import(\"java.util\")\n"
-                + "def E = class () implements util.Iterator(any?) ( def hasNext = () : bool -> ( false ) ; def next = () : any? -> ( null ) )\n"
+                + "def E = class () implements util.Iterator(any?) ( def hasNext = fn () : bool -> ( false ) ; def next = fn () : any? -> ( null ) )\n"
                 + "E() is java.util.Iterator"));
     }
 
     @Test
     public void testOverridingAJavaDefault() throws Exception {
         Assertions.assertEquals("[321]", output("def Countdown = class (private def n : int) implements java.util.Iterator(int) (\n"
-                + "    def hasNext = () : bool -> ( this.n > 0 )\n"
-                + "    def next = mut () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
-                + "    def forEachRemaining = (f : java.util.function.Consumer(any?)) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
+                + "    def hasNext = fn () : bool -> ( this.n > 0 )\n"
+                + "    def next = fn mut () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
+                + "    def forEachRemaining = fn (f : java.util.function.Consumer(any?)) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
                 + ")\n"
-                + "Countdown(3).forEachRemaining(java.util.function.Consumer((v : any?) -> ( print(v) )))"));
+                + "Countdown(3).forEachRemaining(java.util.function.Consumer(fn (v : any?) -> ( print(v) )))"));
     }
 
     // ---------------------------------------------------------------- Babble interfaces extending Java ones
 
     private static final String ORDERED = "def Ordered = interface extends java.lang.Comparable(Ordered) (\n"
-            + "    def key : () : int\n"
-            + "    def compareTo = (o : Ordered) : int -> ( this.key() - o.key() )\n"
+            + "    def key : fn () : int\n"
+            + "    def compareTo = fn (o : Ordered) : int -> ( this.key() - o.key() )\n"
             + ")\n"
             + "def Task = class (def name : string, def priority : int) implements Ordered (\n"
-            + "    def key = () : int -> ( this.priority )\n"
+            + "    def key = fn () : int -> ( this.priority )\n"
             + ")\n";
 
     @Test
@@ -164,28 +164,28 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         Assertions.assertEquals("plan", interpret(ORDERED + "def tasks : java.util.List(Task) = java.util.ArrayList() ; tasks.add(Task(\"write\", 2)) ; tasks.add(Task(\"plan\", 1))\n"
                 + "java.util.Collections.sort(tasks) ; (tasks.get(0) as Task).name"));
         Assertions.assertEquals(true, interpret(ORDERED + "Task(\"x\", 1) is java.lang.Comparable"));
-        assertFails("def Ordered = interface extends java.lang.Comparable(Ordered) (\n    def compareTo = () -> ( 0 )\n)",
+        assertFails("def Ordered = interface extends java.lang.Comparable(Ordered) (\n    def compareTo = fn () -> ( 0 )\n)",
                 "Ordered.compareTo takes 0 arguments, but Comparable.compareTo(Object) passes 1", 2);
         // Completeness through a default, or through a class method.
         assertFails("def O = interface extends java.lang.Comparable(any?) ()\ndef C = class () implements O ()",
                 "C does not implement java.lang.Comparable.compareTo", 2);
-        Assertions.assertDoesNotThrow(() -> interpret("def O = interface extends java.lang.Comparable(any?) ()\ndef C = class () implements O ( def compareTo = (o : any) : int -> ( 0 ) )"));
+        Assertions.assertDoesNotThrow(() -> interpret("def O = interface extends java.lang.Comparable(any?) ()\ndef C = class () implements O ( def compareTo = fn (o : any) : int -> ( 0 ) )"));
     }
 
     @Test
     public void testJavaAndBabbleDefaultsConflict() {
-        assertFails("def R = interface ( def remove = () -> ( 1 ) )\n"
-                        + "def C = class () implements java.util.Iterator(int), R ( def hasNext = () -> ( false ) ; def next = () -> ( 1 ) )",
+        assertFails("def R = interface ( def remove = fn () -> ( 1 ) )\n"
+                        + "def C = class () implements java.util.Iterator(int), R ( def hasNext = fn () -> ( false ) ; def next = fn () -> ( 1 ) )",
                 "Conflicting defaults for remove : java.util.Iterator, R", 2);
     }
 
     @Test
     public void testAnInterfaceDefaultOverridingAJavaDefault() throws Exception {
         Assertions.assertEquals("[1]", output("def Loud = interface extends java.util.Iterator(int) (\n"
-                + "    def forEachRemaining = (f : java.util.function.Consumer(any?)) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
+                + "    def forEachRemaining = fn (f : java.util.function.Consumer(any?)) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
                 + ")\n"
-                + "def One = class () implements Loud ( def done = false ; def hasNext = () : bool -> ( not this.done ) ; def next = mut () : int -> ( this.done = true ; 1 ) )\n"
-                + "One().forEachRemaining(java.util.function.Consumer((v : any?) -> ( print(v) )))"));
+                + "def One = class () implements Loud ( def done = false ; def hasNext = fn () : bool -> ( not this.done ) ; def next = fn mut () : int -> ( this.done = true ; 1 ) )\n"
+                + "One().forEachRemaining(java.util.function.Consumer(fn (v : any?) -> ( print(v) )))"));
     }
 
     @Test
@@ -202,11 +202,11 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         String cb = "def tests = import(\"org.babblelang.tests\")\n"
                 + "def Demo = tests.JavaClassDemo\n"
                 + "def Cb = class () implements tests.JavaClassDemo.TypedCallback (\n"
-                + "    def acceptInt = (v : int) : int -> ( v + 1 )\n"
-                + "    def acceptDouble = (v : double) : double -> ( v + 0.5 )\n"
-                + "    def acceptBool = (v : bool) : bool -> ( not v )\n"
-                + "    def acceptString = (v : string?) : string? -> ( v )\n"
-                + "    def acceptRunnable = (v : java.lang.Runnable) : int -> ( 1 )\n"
+                + "    def acceptInt = fn (v : int) : int -> ( v + 1 )\n"
+                + "    def acceptDouble = fn (v : double) : double -> ( v + 0.5 )\n"
+                + "    def acceptBool = fn (v : bool) : bool -> ( not v )\n"
+                + "    def acceptString = fn (v : string?) : string? -> ( v )\n"
+                + "    def acceptRunnable = fn (v : java.lang.Runnable) : int -> ( 1 )\n"
                 + ")\n"
                 + "def c = Cb()\n";
         Assertions.assertEquals(!compiled, interpret(cb + "Demo.isProxy(c)"));
@@ -216,14 +216,14 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         Assertions.assertNull(interpret(cb + "Demo.invokeAcceptString(c, null)"));
         if (!compiled) {
             Assertions.assertEquals(3.5, interpret(cb + "Demo.invokeAcceptDoubleRaw(c, 3)"));
-            Assertions.assertEquals(1, interpret(cb + "Demo.invokeAcceptRunnableRaw(c, () -> ( null ))"));
+            Assertions.assertEquals(1, interpret(cb + "Demo.invokeAcceptRunnableRaw(c, fn () -> ( null ))"));
         }
 
         String[][] bad = {
                 {cb + "Demo.invokeAcceptInt(c, null)", "Type error : expected int, got null"},
                 {cb + "Demo.invokeAcceptDouble(c, null)", "Type error : expected double, got null"},
                 {cb + "Demo.invokeAcceptBool(c, null)", "Type error : expected bool, got null"},
-                {DEMO + "Demo.invokeUnaryBoxed((x : int) -> ( x + 1 ), null)", "Type error : expected int, got null"},
+                {DEMO + "Demo.invokeUnaryBoxed(fn (x : int) -> ( x + 1 ), null)", "Type error : expected int, got null"},
         };
         for (String[] test : bad) {
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(test[0]), test[0]);
@@ -240,7 +240,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
                 Assertions.assertTrue(e.getMessage().contains(test[1]), test[0] + " : " + e.getMessage());
             }
         }
-        Assertions.assertEquals(5, interpret(DEMO + "Demo.invokeUnaryBoxed((x : int) -> ( x + 1 ), 4)"));
+        Assertions.assertEquals(5, interpret(DEMO + "Demo.invokeUnaryBoxed(fn (x : int) -> ( x + 1 ), 4)"));
     }
 
     @Test

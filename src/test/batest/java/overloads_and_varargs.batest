@@ -42,7 +42,7 @@ No applicable overload of java.lang.Integer.parseInt for (bool)
 
 {{{{{
 ;; Calling overloaded Java method on any receiver (JavaLinker runtime overload selection)
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 def sb : java.lang.StringBuilder = java.lang.StringBuilder("x")
 def obj = dyn(sb)
 def ok = obj.toString()

@@ -39,7 +39,7 @@ public class BatestHarnessTestCase {
     public void testParserModulesAndSessionsAndGitConflictMarkersDoNotClash() {
         String content = """
                 ========== lib/math.ba ==========
-                export def sq = (n : int) : int -> ( n * n )
+                export def sq = fn (n : int) : int -> ( n * n )
 
                 ==========
                 def math = import("lib/math.ba")
@@ -55,7 +55,7 @@ public class BatestHarnessTestCase {
                 <<<<<<< ======= >>>>>>>
                 """;
         BatestFile file = BatestParser.parseString(content, "mod_session.batest");
-        Assertions.assertEquals("export def sq = (n : int) : int -> ( n * n )", file.modules().get("lib/math.ba"));
+        Assertions.assertEquals("export def sq = fn (n : int) : int -> ( n * n )", file.modules().get("lib/math.ba"));
         Assertions.assertEquals("def math = import(\"lib/math.ba\")", file.preamble());
         Assertions.assertEquals(1, file.cases().size());
         BatestFile.BatestCase c = file.cases().get(0);
@@ -124,8 +124,8 @@ public class BatestHarnessTestCase {
 
                 {{{{{
                 def It = class () implements java.util.Iterator(int) (
-                    def hasNext = () : bool -> ( false )
-                    def next = () : int -> ( 0 )
+                    def hasNext = fn () : bool -> ( false )
+                    def next = fn () : int -> ( 0 )
                 )
                 It().remove()
                 }}}}}
@@ -135,12 +135,12 @@ public class BatestHarnessTestCase {
                 def l : java.util.List(int) = java.util.ArrayList()
                 l.add(2)
                 l.add(1)
-                l.sort((a : int, b : int) : int -> ( assert(false, "boom") ; 0 ))
+                l.sort(fn (a : int, b : int) : int -> ( assert(false, "boom") ; 0 ))
                 }}}}}
                 boom
 
                 {{{{{
-                def loop = (n : int) : int -> ( recurse(n + 1) )
+                def loop = fn (n : int) : int -> ( recurse(n + 1) )
                 loop(0)
                 }}}}}
                 Stack overflow
@@ -187,7 +187,7 @@ public class BatestHarnessTestCase {
     public void testWarningsPreErrorStdoutAndModulesAndSessions() {
         String batest = """
                 ========== helper.ba ==========
-                export def twice = (n : int) : int -> ( n * 2 )
+                export def twice = fn (n : int) : int -> ( n * 2 )
 
                 ==========
                 def h = import("helper.ba")
@@ -214,7 +214,7 @@ public class BatestHarnessTestCase {
 
                 {{{{{
                 def x = 1
-                def get = () : int -> ( x )
+                def get = fn () : int -> ( x )
                 ----------
                 x = 5
                 ----------

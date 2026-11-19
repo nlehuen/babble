@@ -2,14 +2,14 @@
 
 ========== fe_mod_b.ba ==========
 export def IB = interface (
-    def id : () : int
+    def id : fn () : int
 )
 export def DupB = class (def v : int) ()
 
 ========== fe_mod_a.ba ==========
 export def sub = import("fe_mod_b.ba")
 export def IA = interface (
-    def get : () : int
+    def get : fn () : int
 )
 
 {{{{{
@@ -29,10 +29,10 @@ classof : a package has no class
 
 {{{{{
 ;; Types.decodeComponent (%2C), Types.JavaClassType.accepts, Types.UnionType
-def fnOpt : ((a : int, b : int) : int)? = (a : int, b : int) : int -> ( a + b )
-def optVal : ((a : int, b : int) : int)? = null
+def fnOpt : (fn (a : int, b : int) : int)? = fn (a : int, b : int) : int -> ( a + b )
+def optVal : (fn (a : int, b : int) : int)? = null
 def f = fnOpt
-def rAny : any = () -> ( () )
+def rAny : any = fn () -> ( () )
 def r : java.lang.Runnable = rAny as java.lang.Runnable
 r.run()
 println(f != null, ":", optVal == null)
@@ -42,17 +42,17 @@ true:true
 {{{{{
 ;; BabbleInterface.extendsType, BabbleClass.implementsType, BabbleInstance.equals, BabbleInterface.findDefault, value class toString
 def IParent = interface (
-    def p = () : int -> ( 42 )
+    def p = fn () : int -> ( 42 )
 )
 def IChild = interface extends IParent, java.lang.Runnable (
-    def c : () : int
+    def c : fn () : int
 )
 def IOther = interface (
-    def o : () : int
+    def o : fn () : int
 )
 def Impl = class (private def secret : int = 7, def pub : int = 3) implements IChild (
-    def run = () -> ( () )
-    def c = () : int -> ( super.p() )
+    def run = fn () -> ( () )
+    def c = fn () : int -> ( super.p() )
 )
 def Val = value class (x : int) ()
 def Diff = class (def pub : int = 3) ()
@@ -66,8 +66,8 @@ true:true:true:false:true:false:42:Val(x: 3)
 {{{{{
 ;; Supers with Java default method (Comparator.reversed)
 def MyCmp = class (def sign : int) implements java.util.Comparator(java.awt.Point) (
-    def compare = (a : java.awt.Point, b : java.awt.Point) : int -> ( (a.x - b.x) * this.sign )
-    def makeRev = () -> ( super.reversed() )
+    def compare = fn (a : java.awt.Point, b : java.awt.Point) : int -> ( (a.x - b.x) * this.sign )
+    def makeRev = fn () -> ( super.reversed() )
 )
 def mc = MyCmp(1)
 def p1 = java.awt.Point(1, 0)
@@ -78,10 +78,10 @@ true:true
 
 {{{{{
 ;; JavaTypes.checkParameter across Double, Boolean, String, JavaInstance; Overloads OBJECT_CLASS_KIND
-def dPred = java.util.function.DoublePredicate((d : double) : bool -> ( d > 0.0 ))
-def bPred = java.util.function.Predicate((b : bool) : bool -> ( b ))
-def sPred = java.util.function.Predicate((s : string) : bool -> ( s == "ok" ))
-def pCons = java.util.function.Consumer((p : java.awt.Point) -> ( println(p.x) ))
+def dPred = java.util.function.DoublePredicate(fn (d : double) : bool -> ( d > 0.0 ))
+def bPred = java.util.function.Predicate(fn (b : bool) : bool -> ( b ))
+def sPred = java.util.function.Predicate(fn (s : string) : bool -> ( s == "ok" ))
+def pCons = java.util.function.Consumer(fn (p : java.awt.Point) -> ( println(p.x) ))
 def Holder = class (def x : int) ()
 pCons.accept(java.awt.Point(9, 1))
 println(dPred.test(1.5), ":", bPred.test(true), ":", sPred.test("ok"), ":", java.lang.String.valueOf(Holder) != null)
@@ -105,9 +105,9 @@ true:2:true:true:false:true:true:true
 {{{{{
 ;; EffectSet.intersect eitherMut, EffectSet.satisfies borrow/mut, Type.Function.describeAgainst
 def C = class (def v : int) (
-    def mMut = hermetic mut () : int -> ( this.v = 1 ; this.v )
-    def mPure = pure () : int -> ( this.v )
-    def pick = (flag : bool) -> (
+    def mMut = fn hermetic mut () : int -> ( this.v = 1 ; this.v )
+    def mPure = fn pure () : int -> ( this.v )
+    def pick = fn (flag : bool) -> (
         if flag then ( this.mMut ) else ( this.mPure )
     )
 )
@@ -119,24 +119,24 @@ println(obj.pick(false)(), ":", obj.pick(true)())
 {{{{{
 ;; EffectSet.satisfies borrowThis error message & Type.Function.describeAgainst
 def C = class (def v : int) (
-    def make = pure () : C -> ( this )
+    def make = fn pure () : C -> ( this )
 )
 def obj = C(4)
-def fn : pure borrow () : C = obj.make
+def func : fn pure borrow () : C = obj.make
 }}}}}
 Type error : expected pure borrow () : C, got pure () : C
 
 {{{{{
 ;; TypeChecks.exportedModule and LogicalPaths leading slash
-def I = interface ( def f : () : int )
+def I = interface ( def f : fn () : int )
 def C = class (def x : int) implements I (
-    def f = () : int -> ( this.x )
+    def f = fn () : int -> ( this.x )
 )
 def ma = import("/fe_mod_a.ba")
 def C2 = class (def n : int) implements I, ma.sub.IB, java.lang.Runnable (
-    def f = () : int -> ( this.n )
-    def id = () : int -> ( this.n * 2 )
-    def run = () -> ( () )
+    def f = fn () : int -> ( this.n )
+    def id = fn () : int -> ( this.n * 2 )
+    def run = fn () -> ( () )
 )
 def c1 : C = C(3)
 def c2 = C2(4)
@@ -160,7 +160,7 @@ Type error : type argument string does not satisfy bound E of java.util.EnumSet
 
 {{{{{
 ;; EffectChecker static block inside hermetic function
-def fHerm = hermetic () -> (
+def fHerm = fn hermetic () -> (
     def C = class () () static ( println("side") )
     ()
 )
@@ -169,7 +169,7 @@ static block inside hermetic function violates hermetic guarantee
 
 {{{{{
 ;; EffectChecker static block inside pure function
-def fPure = pure () -> (
+def fPure = fn pure () -> (
     def C = class () () static ( println("side") )
     ()
 )
@@ -178,7 +178,7 @@ static block inside pure function violates pure guarantee
 
 {{{{{
 ;; EffectChecker static block inside deterministic function
-def fDet = deterministic () -> (
+def fDet = fn deterministic () -> (
     def C = class () () static ( java.lang.System.nanoTime() )
     ()
 )
@@ -187,11 +187,11 @@ static block inside deterministic function violates deterministic guarantee
 
 {{{{{
 ;; EffectChecker relationalProps negate, double +, int odd *, string concat left/right, compound assign on local var
-def negF : pure monotone (x : double) : double = (x : double) : double -> ( -(-x) )
-def dblSum : pure monotone (x : double) : double = (x : double) : double -> ( x + x )
-def oddMul : pure injective (x : int) : int = (x : int) : int -> ( x * 3 )
-def sLeft : pure injective (x : string) : string = (x : string) : string -> ( x + "!" )
-def sRight : pure injective (x : int) : string = (x : int) : string -> ( "!" + x )
+def negF : fn pure monotone (x : double) : double = fn (x : double) : double -> ( -(-x) )
+def dblSum : fn pure monotone (x : double) : double = fn (x : double) : double -> ( x + x )
+def oddMul : fn pure injective (x : int) : int = fn (x : int) : int -> ( x * 3 )
+def sLeft : fn pure injective (x : string) : string = fn (x : string) : string -> ( x + "!" )
+def sRight : fn pure injective (x : int) : string = fn (x : int) : string -> ( "!" + x )
 def loc = 1
 loc += 2
 println(negF(2.5), ":", dblSum(1.5), ":", oddMul(4), ":", sLeft("ok"), ":", sRight(4), ":", loc)
@@ -206,13 +206,13 @@ Wrong number of type arguments : expected 0, got 1
 
 {{{{{
 ;; Cannot cast to a function type
-def badFnCast = (x : any) -> ( x as () : int )
+def badFnCast = fn (x : any) -> ( x as fn () : int )
 }}}}}
 Cannot cast to a function type
 
 {{{{{
 ;; axiom without effect modifier fails cleanly
-axiom java.lang.Math.abs
+axiom on java.lang.Math.abs
 }}}}}
 axiom requires at least one effect modifier
 

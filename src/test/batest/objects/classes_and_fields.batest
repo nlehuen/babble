@@ -4,14 +4,14 @@
 ;; Basic class with constructor parameter fields, local-only constructor param, body fields, methods, static block
 def Counter = class (def label : string, seed : int = 0) (
     private def count = seed
-    def step = mut (delta : int = 1) : int -> (
+    def step = fn mut (delta : int = 1) : int -> (
         this.count += delta
         this.count
     )
-    def describe = () : string -> ( this.label + "=" + this.count )
+    def describe = fn () : string -> ( this.label + "=" + this.count )
 ) static (
     def initial = 10
-    def create = (name : string) : Counter -> ( this(name, this.initial) )
+    def create = fn (name : string) : Counter -> ( this(name, this.initial) )
 )
 def c = Counter.create("hits")
 c.step()
@@ -23,8 +23,8 @@ hits=16
 {{{{{
 ;; Unboxed int/double/bool fields + forward member read before definition ($defined bitmask)
 def Vec = class (def i : int, def d : double, def b : bool) (
-    def sum = () : double -> ( this.i + this.d )
-    def toggle = mut () : bool -> ( this.b = not this.b ; this.b )
+    def sum = fn () : double -> ( this.i + this.d )
+    def toggle = fn mut () : bool -> ( this.b = not this.b ; this.b )
 )
 def v = Vec(3, 1.5, true)
 println(v.sum(), ":", v.toggle(), ":", v.b)
@@ -45,7 +45,7 @@ Member used before definition : b
 ;; Private member access from outside is rejected
 def Box = class () (
     private def secret = 99
-    def get = () : int -> ( this.secret )
+    def get = fn () : int -> ( this.secret )
 )
 def b = Box()
 print(b.secret)
@@ -55,7 +55,7 @@ secret is private
 {{{{{
 ;; Accessing non-existent member and assigning to a method
 def Box = class () (
-    def get = () : int -> ( 1 )
+    def get = fn () : int -> ( 1 )
 )
 def b = Box()
 print(b.missing)
@@ -64,7 +64,7 @@ No such member : missing
 
 {{{{{
 def Box = class () (
-    def get = () : int -> ( 1 )
+    def get = fn () : int -> ( 1 )
 )
 def b = Box()
 b.get = b.get

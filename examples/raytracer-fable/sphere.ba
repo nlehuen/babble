@@ -20,9 +20,9 @@ export def Sphere = class (def center: Vec3, def radius: double, def material: M
         )
     )
 
-    def boundingBox = (): AABB -> (this.bbox)
+    def boundingBox = fn (): AABB -> (this.bbox)
 
-    def hit = (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
         def oc: Vec3 = this.center - r.origin
         def a: double = r.direction.lengthSquared()
         def h: double = r.direction.dot(oc)

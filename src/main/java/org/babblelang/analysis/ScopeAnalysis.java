@@ -715,11 +715,18 @@ public final class ScopeAnalysis {
         return path;
     }
 
-    /** Member segments of an {@code effectTarget} (all segments after the root ID / import(...)). */
+    /** Root segment of an {@code effectTarget} (either the import ID or the leading memberName). */
+    public static String effectTargetRoot(BabbleParser.EffectTargetContext ctx) {
+        return ctx.ID() != null ? ctx.ID().getText() : ctx.memberName(0).getText();
+    }
+
+    /** Member segments of an {@code effectTarget} (all segments after the root / import(...)). */
     public static List<String> effectTargetMembers(BabbleParser.EffectTargetContext ctx) {
-        List<String> members = new ArrayList<>();
-        for (BabbleParser.MemberNameContext m : ctx.memberName()) {
-            members.add(m.getText());
+        List<BabbleParser.MemberNameContext> all = ctx.memberName();
+        int start = ctx.ID() != null ? 0 : 1;
+        List<String> members = new ArrayList<>(Math.max(0, all.size() - start));
+        for (int i = start; i < all.size(); i++) {
+            members.add(all.get(i).getText());
         }
         return members;
     }

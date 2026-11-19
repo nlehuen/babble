@@ -22,13 +22,13 @@ public class BabbleEqualityTestCase extends BabbleTestBase {
 
     @Test
     public void testFunctionsCompareByIdentity() throws Exception {
-        Assertions.assertEquals(true, interpret("def f = () -> ( 1 ) ; f == f"));
-        Assertions.assertEquals(false, interpret("def mk = () -> ( () -> ( 1 ) ) ; mk() == mk()"));
+        Assertions.assertEquals(true, interpret("def f = fn () -> ( 1 ) ; f == f"));
+        Assertions.assertEquals(false, interpret("def mk = fn () -> ( fn () -> ( 1 ) ) ; mk() == mk()"));
     }
 
     @Test
     public void testSelectingAMethodTwiceGivesEqualValues() throws Exception {
-        Assertions.assertEquals(true, interpret("def C = class () ( def m = () -> ( 1 ) ) ; def o = C() ; o.m == o.m"));
-        Assertions.assertEquals(false, interpret("def C = class () ( def m = () -> ( 1 ) ) ; C().m == C().m"));
+        Assertions.assertEquals(true, interpret("def C = class () ( def m = fn () -> ( 1 ) ) ; def o = C() ; o.m == o.m"));
+        Assertions.assertEquals(false, interpret("def C = class () ( def m = fn () -> ( 1 ) ) ; C().m == C().m"));
     }
 }

@@ -2,29 +2,29 @@
 
 ========== shapes.ba ==========
 export def Shape = interface (
-    def area : () : double
-    def scale : (factor : double) : double = (factor : double) : double -> ( this.area() * factor )
+    def area : fn () : double
+    def scale : fn (factor : double) : double = fn (factor : double) : double -> ( this.area() * factor )
 )
 
 export def Circle = value class (r : double) implements Shape (
-    def area = () : double -> ( 3.0 * this.r * this.r )
+    def area = fn () : double -> ( 3.0 * this.r * this.r )
 )
 
 export def Tag = interface (
-    def label = () : string -> ( "tag" )
+    def label = fn () : string -> ( "tag" )
 )
 export def Tagged = class (name : string) implements Tag (
-    def label = () : string -> ( super.label() + ":" + name )
+    def label = fn () : string -> ( super.label() + ":" + name )
 )
 
 {{{{{
 ;; Primitive & reference interface methods, defaults calling abstract methods on `this`, and `is` checks
 def Calc = interface (
-    def compute : (a : int, b : double, negate : bool) : double
-    def check = (x : int) : double -> ( this.compute(x, 2.5, false) + this.compute(x, 0.5, true) )
+    def compute : fn (a : int, b : double, negate : bool) : double
+    def check = fn (x : int) : double -> ( this.compute(x, 2.5, false) + this.compute(x, 0.5, true) )
 )
 def Impl = class (bias : double) implements Calc (
-    def compute = (a : int, b : double, negate : bool) : double -> (
+    def compute = fn (a : int, b : double, negate : bool) : double -> (
         def v = a + b + bias
         if negate then ( -v ) else ( v )
     )
@@ -36,15 +36,15 @@ println(c.compute(3, 1.5, false), ":", c.check(4), ":", (c is Calc), ":", (c is 
 
 {{{{{
 ;; Multi-evaluation closure-capturing interface factory: each BabbleInterface keeps its own captured cell
-def makeAdder = (offset : int) -> (
+def makeAdder = fn (offset : int) -> (
     def I = interface (
-        def add = (x : int) : int -> ( x + offset )
+        def add = fn (x : int) : int -> ( x + offset )
     )
     def C = class (mul : int) implements I (
-        def run = (x : int) : int -> ( super.add(x) * mul )
+        def run = fn (x : int) : int -> ( super.add(x) * mul )
     )
     object (
-        def eval = (m : int, x : int) : int -> (
+        def eval = fn (m : int, x : int) : int -> (
             def inst = C(m)
             def asI : I = inst
             asI.add(x) + inst.run(x)
@@ -60,7 +60,7 @@ println(a10.eval(2, 5), ":", a100.eval(3, 5))
 {{{{{
 ;; Diamond inheritance and sibling abstract + default resolution (JVMS 5.4.3.3 bridge conflict prevention)
 def Base = interface (
-    def id = (x : int) : int -> ( x + 1 )
+    def id = fn (x : int) : int -> ( x + 1 )
 )
 def Left = interface extends Base ()
 def Right = interface extends Base ()
@@ -68,10 +68,10 @@ def Diamond = interface extends Left, Right ()
 def DiamondImpl = class () implements Diamond ()
 
 def AbsA = interface (
-    def f : (x : int) : int
+    def f : fn (x : int) : int
 )
 def DefB = interface (
-    def f = (x : int) : int -> ( x * 3 )
+    def f = fn (x : int) : int -> ( x * 3 )
 )
 def Combined = interface extends AbsA, DefB ()
 def CombinedImpl = class () implements Combined ()
@@ -86,10 +86,10 @@ println(d.id(9), ":", cb.f(7), ":", ca.f(7), ":", (d is Base), ":", (cb is AbsA)
 {{{{{
 ;; Re-abstracted default method hidden along one branch and supplied along a sibling branch
 def Root = interface (
-    def val : () : int = () : int -> ( 42 )
+    def val : fn () : int = fn () : int -> ( 42 )
 )
 def ReAbstracted = interface extends Root (
-    def val : () : int
+    def val : fn () : int
 )
 def Kept = interface extends Root ()
 def Sub = interface extends ReAbstracted, Kept ()
@@ -103,10 +103,10 @@ println(r.val(), ":", s.val())
 {{{{{
 ;; Re-abstracted interface default without sibling provider still requires implementation
 def Root = interface (
-    def val : () : int = () : int -> ( 42 )
+    def val : fn () : int = fn () : int -> ( 42 )
 )
 def ReAbstracted = interface extends Root (
-    def val : () : int
+    def val : fn () : int
 )
 def Bad = class () implements ReAbstracted ()
 }}}}}
@@ -115,26 +115,26 @@ Bad does not implement ReAbstracted.val
 {{{{{
 ;; Generic Box(T) interface with primitive specializations, Box(double) int widening, and emitAs widened-int expression
 def Box(T) = interface (
-    def get : () : T
-    def transform : (x : T) : T = (x : T) : T -> ( x )
+    def get : fn () : T
+    def transform : fn (x : T) : T = fn (x : T) : T -> ( x )
 )
 def IntBox = class (v : int) implements Box(int) (
-    def get = () : int -> ( v )
-    def transform = (x : int) : int -> ( x + v )
+    def get = fn () : int -> ( v )
+    def transform = fn (x : int) : int -> ( x + v )
 )
 def DoubleBox = class (v : double) implements Box(double) (
-    def get = () : double -> ( v )
-    def transform = (x : double) : double -> ( x + v )
+    def get = fn () : double -> ( v )
+    def transform = fn (x : double) : double -> ( x + v )
 )
 def ib : Box(int) = IntBox(10)
 def db : Box(double) = DoubleBox(0.5)
 def cond = true
 ;; If-expression of ints widened to double and passed to a primitive-double receiver
 def takeDouble = interface (
-    def accept : (d : double) : double
+    def accept : fn (d : double) : double
 )
 def Sink = class () implements takeDouble (
-    def accept = (d : double) : double -> ( d * 2.0 )
+    def accept = fn (d : double) : double -> ( d * 2.0 )
 )
 def sink : takeDouble = Sink()
 def boxedIntExpr = if cond then ( def a = 3 ; a ) else ( 4 )
@@ -145,14 +145,14 @@ println(ib.get(), ":", ib.transform(5), ":", db.get(), ":", db.transform(4), ":"
 {{{{{
 ;; Interface override adding optional defaulted parameters and dispatch through base signature
 def Unary = interface (
-    def apply : (x : int) : int
+    def apply : fn (x : int) : int
 )
 def WithOptional = interface extends Unary (
-    def apply = (x : int, step : int = 10) : int -> ( x + step )
+    def apply = fn (x : int, step : int = 10) : int -> ( x + step )
 )
 def DefaultImpl = class () implements WithOptional ()
 def CustomImpl = class () implements WithOptional (
-    def apply = (x : int, step : int = 25) : int -> ( x + step )
+    def apply = fn (x : int, step : int = 25) : int -> ( x + step )
 )
 def u1 : Unary = DefaultImpl()
 def w1 : WithOptional = DefaultImpl()
@@ -165,16 +165,16 @@ println(u1.apply(5), ":", w1.apply(5, 2), ":", u2.apply(5), ":", w2.apply(5, 3))
 {{{{{
 ;; Field-holding-function implementation and super default call in class implementing interface
 def Op = interface (
-    def run : (x : int) : int
-    def base = (x : int) : int -> ( x + 100 )
+    def run : fn (x : int) : int
+    def base = fn (x : int) : int -> ( x + 100 )
 )
-def FieldImpl = class (fn : (x : int) : int) implements Op (
-    def run = fn
+def FieldImpl = class (func : fn (x : int) : int) implements Op (
+    def run = func
 )
 def NsImpl = class (delta : int) implements Op (
-    def run = (x : int) : int -> ( super.base(x) + delta )
+    def run = fn (x : int) : int -> ( super.base(x) + delta )
 )
-def f : Op = FieldImpl((x : int) : int -> ( x * 4 ))
+def f : Op = FieldImpl(fn (x : int) : int -> ( x * 4 ))
 def n : Op = NsImpl(7)
 println(f.run(6), ":", f.base(6), ":", n.run(6), ":", (n is NsImpl), ":", (n is Op))
 }}}}}
@@ -183,20 +183,20 @@ println(f.run(6), ":", f.base(6), ":", n.run(6), ":", (n is NsImpl), ":", (n is 
 {{{{{
 ;; Nested lambdas calling super.m() and super(Parent).m() inside both interface defaults and class methods
 def P1 = interface (
-    def score : (x : int) : int = (x : int) : int -> ( x + 10 )
+    def score : fn (x : int) : int = fn (x : int) : int -> ( x + 10 )
 )
 def P2 = interface (
-    def score : (x : int) : int = (x : int) : int -> ( x * 10 )
+    def score : fn (x : int) : int = fn (x : int) : int -> ( x * 10 )
 )
 def ChildIface = interface extends P1, P2 (
-    def score : (x : int) : int = (x : int) : int -> (
-        def thunk = () : int -> ( super(P1).score(x) + super(P2).score(x) )
+    def score : fn (x : int) : int = fn (x : int) : int -> (
+        def thunk = fn () : int -> ( super(P1).score(x) + super(P2).score(x) )
         thunk()
     )
 )
 def ChildClass = class (bonus : int) implements ChildIface (
-    def score : (x : int) : int = (x : int) : int -> (
-        def inner = (k : int) : int -> ( super.score(x) + k + bonus )
+    def score : fn (x : int) : int = fn (x : int) : int -> (
+        def inner = fn (k : int) : int -> ( super.score(x) + k + bonus )
         inner(1)
     )
 )
@@ -209,8 +209,8 @@ println(ci.score(3))
 ;; Cross-module JVM interface implementation, dispatch, super, and `is` checks
 def shapes = import("shapes.ba")
 def Rect = class (w : double, h : double) implements shapes.Shape (
-    def area = () : double -> ( w * h )
-    def scale = (f : double) : double -> ( super.scale(f) + 1.0 )
+    def area = fn () : double -> ( w * h )
+    def scale = fn (f : double) : double -> ( super.scale(f) + 1.0 )
 )
 def s1 : shapes.Shape = shapes.Circle(2.0)
 def s2 : shapes.Shape = Rect(3.0, 4.0)
@@ -229,18 +229,18 @@ Name used before definition : Later
 {{{{{
 ;; Multi-input REPL session sharing compiled JVM interfaces and classes across ScriptClassLoaders
 def Measurable = interface (
-    def measure : () : int
-    def doubled = () : int -> ( this.measure() * 2 )
+    def measure : fn () : int
+    def doubled = fn () : int -> ( this.measure() * 2 )
 )
 def Boxed = class (n : int) implements Measurable (
-    def measure = () : int -> ( n )
+    def measure = fn () : int -> ( n )
 )
-def evalM = (m : Measurable) : int -> ( m.measure() + m.doubled() )
+def evalM = fn (m : Measurable) : int -> ( m.measure() + m.doubled() )
 println(evalM(Boxed(4)))
 ----------
 def Extra = class (a : int, b : int) implements Measurable (
-    def measure = () : int -> ( a + b )
-    def doubled = () : int -> ( super.doubled() + 1 )
+    def measure = fn () : int -> ( a + b )
+    def doubled = fn () : int -> ( super.doubled() + 1 )
 )
 def e : Measurable = Extra(2, 3)
 println(evalM(e), ":", (e is Measurable), ":", (e is Extra), ":", (e is Boxed))
@@ -251,10 +251,10 @@ println(evalM(e), ":", (e is Measurable), ":", (e is Extra), ":", (e is Boxed))
 {{{{{
 ;; Inherited default method with widened/adapted signature in sub-interface (emitInheritedDefaultInvoke)
 def Base = interface (
-    def calc = (x : int) : int -> ( x + 1 )
+    def calc = fn (x : int) : int -> ( x + 1 )
 )
 def Other = interface (
-    def calc : (x : int) : any?
+    def calc : fn (x : int) : any?
 )
 def Sub = interface extends Other, Base ()
 def Impl = class () implements Sub ()

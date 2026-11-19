@@ -24,7 +24,7 @@ Type error : expected any, got null
 
 {{{{{
 ;; Non-null assertion inside nothrow function fails effect check
-def f = nothrow (s : string?) : string -> (
+def f = fn nothrow (s : string?) : string -> (
     s!
 )
 println(f("ok"))

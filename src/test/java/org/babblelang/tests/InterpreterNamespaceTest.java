@@ -52,11 +52,11 @@ public class InterpreterNamespaceTest {
 
     @Test
     public void testCallFailureRestoresNamespace() {
-        assertNamespaceRestored("def f = () -> ( nosuchname ) ; f()");
+        assertNamespaceRestored("def f = fn () -> ( nosuchname ) ; f()");
     }
 
     @Test
     public void testParameterBindingFailureRestoresNamespace() {
-        assertNamespaceRestored("def f = (a) -> ( a ) ; f()");
+        assertNamespaceRestored("def f = fn (a) -> ( a ) ; f()");
     }
 }

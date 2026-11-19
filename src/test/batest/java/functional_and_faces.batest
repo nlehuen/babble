@@ -2,7 +2,7 @@
 
 {{{{{
 ;; Passing Babble lambda directly to Java SAM interfaces: Function, Predicate, Comparator
-def mapped = java.util.Optional.of(6).map((x : int) : int -> ( x * x )).get()
+def mapped = java.util.Optional.of(6).map(fn (x : int) : int -> ( x * x )).get()
 println(mapped)
 
 def xs : java.util.List(int) = java.util.ArrayList()
@@ -10,8 +10,8 @@ xs.add(3)
 xs.add(1)
 xs.add(4)
 xs.add(2)
-xs.removeIf((x) -> ( x > 2 ))
-xs.sort((a, b) -> ( a - b ))
+xs.removeIf(fn (x) -> ( x > 2 ))
+xs.sort(fn (a, b) -> ( a - b ))
 println(xs.toString())
 }}}}}
 36
@@ -20,7 +20,7 @@ println(xs.toString())
 {{{{{
 ;; Babble class implementing a Java interface (Faces dynamic proxy bridge)
 def Greeter = class (def tag : string) implements java.util.function.Supplier(string) (
-    def get = () : string -> ( "sup:" + this.tag )
+    def get = fn () : string -> ( "sup:" + this.tag )
 )
 def sup : java.util.function.Supplier(string) = Greeter("ok")
 println(sup.get())
@@ -33,7 +33,7 @@ def names : java.util.List(string) = java.util.ArrayList()
 names.add("pear")
 names.add("fig")
 names.add("apple")
-java.util.Collections.sort(names, (a : string, b : string) : int -> (
+java.util.Collections.sort(names, fn (a : string, b : string) : int -> (
     def la = java.lang.StringBuilder(a).length()
     def lb = java.lang.StringBuilder(b).length()
     la - lb

@@ -1,21 +1,21 @@
 ;; EffectChecker modifier validation, def-level axioms/impure, import("pkg") targets, SAM propagation, and algebraic errors
 
 ========== eff_mod.ba ==========
-export axiom pure deterministic nothrow java.lang.Math.abs
-export axiom mut java.util.List.add
-export def abs2 = axiom pure deterministic nothrow java.lang.Math.abs
+export axiom pure deterministic nothrow on java.lang.Math.abs
+export axiom mut on java.util.List.add
+export def abs2 = axiom pure deterministic nothrow on java.lang.Math.abs
 
 {{{{{
 ;; Module-exported axioms, def-level axiom/impure, import("java.lang") target, and Java inner class axiom
 def em = import("eff_mod.ba")
 def jmath = import("java.lang").Math
 def jmathPkg = import("java.lang")
-axiom pure deterministic nothrow import("java.lang").Math.max
-axiom pure deterministic nothrow jmathPkg.StrictMath.min
-axiom pure java.util.AbstractMap.SimpleEntry
-def myAbs = axiom pure deterministic nothrow java.lang.Math.abs
-def ext = impure java.lang.System.currentTimeMillis
-def compute = pure (x : int, y : int) : int -> (
+axiom pure deterministic nothrow on import("java.lang").Math.max
+axiom pure deterministic nothrow on jmathPkg.StrictMath.min
+axiom pure on java.util.AbstractMap.SimpleEntry
+def myAbs = axiom pure deterministic nothrow on java.lang.Math.abs
+def ext = impure on java.lang.System.currentTimeMillis
+def compute = fn pure (x : int, y : int) : int -> (
     def p : java.util.AbstractMap.SimpleEntry(int, int) = java.util.AbstractMap.SimpleEntry(x, y)
     def ok = p.getKey() != null
     java.lang.Math.max(em.abs2(x), jmathPkg.StrictMath.min(x, y)) + myAbs(-1) + (if ok then ( 0 ) else ( 1 ))
@@ -26,112 +26,112 @@ println(compute(-5, 3), ":", ext() > 0)
 
 {{{{{
 ;; Function modifier validation diagnostics
-def f = pure (mut x : int) : int -> ( x )
+def f = fn pure (mut x : int) : int -> ( x )
 }}}}}
 pure and mut are mutually exclusive : use hermetic with mut parameters
 
 {{{{{
-def f = axiom () : int -> ( 1 )
+def f = fn axiom () : int -> ( 1 )
 }}}}}
 axiom requires at least one effect modifier
 
 {{{{{
-def f = pure axiom () : int -> ( 1 )
+def f = fn pure axiom () : int -> ( 1 )
 }}}}}
 axiom must appear first before effect modifiers
 
 {{{{{
-def f = axiom impure () : int -> ( 1 )
+def f = fn axiom impure () : int -> ( 1 )
 }}}}}
 axiom and impure cannot be combined
 
 {{{{{
-def f = impure pure () : int -> ( 1 )
+def f = fn impure pure () : int -> ( 1 )
 }}}}}
 impure cannot be combined with effect modifiers
 
 {{{{{
-def f = pure pure () : int -> ( 1 )
+def f = fn pure pure () : int -> ( 1 )
 }}}}}
 Duplicate effect modifier : pure
 
 {{{{{
-def f = (mut mut x : int) : int -> ( x )
+def f = fn (mut mut x : int) : int -> ( x )
 }}}}}
 Duplicate parameter modifier : mut
 
 {{{{{
-def f = (borrow borrow x : int) : int -> ( 0 )
+def f = fn (borrow borrow x : int) : int -> ( 0 )
 }}}}}
 Duplicate parameter modifier : borrow
 
 {{{{{
-def f = mut () : int -> ( 1 )
+def f = fn mut () : int -> ( 1 )
 }}}}}
 mut on a function requires a receiver (this) : mark mutated parameters with mut
 
 {{{{{
-def f = borrow () : int -> ( 1 )
+def f = fn borrow () : int -> ( 1 )
 }}}}}
 borrow on a function requires a receiver (this) : mark borrowed parameters with borrow
 
 {{{{{
-def f : axiom () : int = () : int -> ( 1 )
+def f : fn axiom () : int = fn () : int -> ( 1 )
 }}}}}
 axiom is not allowed in a function type
 
 {{{{{
-def f : impure () : int = () : int -> ( 1 )
+def f : fn impure () : int = fn () : int -> ( 1 )
 }}}}}
 impure is not allowed in a function type
 
 {{{{{
 def C = class () (
-    def m = pure mut () : int -> ( 1 )
+    def m = fn pure mut () : int -> ( 1 )
 )
 }}}}}
 pure and mut are mutually exclusive : use hermetic mut
 
 {{{{{
 ;; Java target validation errors
-axiom pure import("eff_mod.ba").abs2
+axiom pure on import("eff_mod.ba").abs2
 }}}}}
 Java effect target cannot be a .ba module : eff_mod.ba
 
 {{{{{
-axiom pure unknownPkg.Foo
+axiom pure on unknownPkg.Foo
 }}}}}
 Unknown identifier in effect declaration : unknownPkg
 
 {{{{{
-axiom pure java.lang.Math.noSuchMethod
+axiom pure on java.lang.Math.noSuchMethod
 }}}}}
 No such Java method : noSuchMethod on java.lang.Math
 
 {{{{{
-axiom pure java.lang.Math.NoInner.foo
+axiom pure on java.lang.Math.NoInner.foo
 }}}}}
 Unknown Java member class : NoInner on java.lang.Math
 
 {{{{{
 def em = import("eff_mod.ba")
-axiom pure em.missing
+axiom pure on em.missing
 }}}}}
 Unknown export : missing in eff_mod.ba
 
 {{{{{
-def bad = axiom mut java.lang.StringBuilder
+def bad = axiom mut on java.lang.StringBuilder
 }}}}}
 Bare class axiom cannot declare mut : declare mut on specific methods instead
 
 {{{{{
-axiom mut java.lang.StringBuilder()
+axiom mut on java.lang.StringBuilder()
 }}}}}
 Constructor axiom cannot declare mut
 
 {{{{{
-def f = pure () : int -> (
-    axiom pure java.lang.Math.abs
+def f = fn pure () : int -> (
+    axiom pure on java.lang.Math.abs
     1
 )
 }}}}}
@@ -139,32 +139,32 @@ axiom declaration is not allowed inside a verified constrained function
 
 {{{{{
 ;; Valid algebraic properties & failure diagnostics + SAM callback propagation & borrow escape
-def idemp = pure deterministic nothrow idempotent (x : int) : int -> ( x )
-def comm = pure deterministic nothrow commutative (a : double, b : double) : double -> ( a + b )
-def assoc = pure deterministic nothrow associative (a : int, b : int) : int -> ( a + b )
-def inj = pure deterministic nothrow injective (x : int) : int -> ( -x )
-def monoD = pure deterministic nothrow monotone (x : double) : double -> ( x * 2.0 )
+def idemp = fn pure deterministic nothrow idempotent (x : int) : int -> ( x )
+def comm = fn pure deterministic nothrow commutative (a : double, b : double) : double -> ( a + b )
+def assoc = fn pure deterministic nothrow associative (a : int, b : int) : int -> ( a + b )
+def inj = fn pure deterministic nothrow injective (x : int) : int -> ( -x )
+def monoD = fn pure deterministic nothrow monotone (x : double) : double -> ( x * 2.0 )
 println(idemp(3), ":", comm(1.0, 2.0), ":", assoc(1, 2), ":", inj(4), ":", monoD(3.0))
 }}}}}
 3:3.0:3:-4:6.0
 
 {{{{{
-def badComm = pure deterministic commutative (a : int, b : int) : int -> ( a - b )
+def badComm = fn pure deterministic commutative (a : int, b : int) : int -> ( a - b )
 }}}}}
 Function badComm declared commutative violates commutative guarantee
 
 {{{{{
-def badAssoc = pure deterministic associative (a : string, b : string) : string -> ( a + b + "!" )
+def badAssoc = fn pure deterministic associative (a : string, b : string) : string -> ( a + b + "!" )
 }}}}}
 Function badAssoc declared associative violates associative guarantee
 
 {{{{{
-def badIdemp = pure deterministic idempotent (x : int) : int -> ( x + 1 )
+def badIdemp = fn pure deterministic idempotent (x : int) : int -> ( x + 1 )
 }}}}}
 Function badIdemp declared idempotent violates idempotent guarantee
 
 {{{{{
-def badInj = pure deterministic injective (x : int) : int -> ( x * 0 )
+def badInj = fn pure deterministic injective (x : int) : int -> ( x * 0 )
 }}}}}
 Function badInj declared injective violates injective guarantee
 
@@ -172,8 +172,8 @@ Function badInj declared injective violates injective guarantee
 ;; SAM callback propagation: impure lambda inside pure function violates pure
 def l : java.util.List(int) = java.util.ArrayList()
 l.add(1)
-def p = pure (xs : java.util.List(int)) -> (
-    xs.forEach((x) -> ( println(x) ))
+def p = fn pure (xs : java.util.List(int)) -> (
+    xs.forEach(fn (x) -> ( println(x) ))
 )
 }}}}}
 Function p declared pure violates pure guarantee
@@ -181,21 +181,21 @@ Function p declared pure violates pure guarantee
 {{{{{
 ;; borrow escape and inner closure mutating this
 def Box = class (def v : int) (
-    def escape = borrow () : Box -> ( this )
+    def escape = fn borrow () : Box -> ( this )
 )
 }}}}}
 borrow receiver this escapes via return value
 
 {{{{{
 def Box = class (def v : int) ()
-def leak = (borrow x : Box) : Box -> ( x )
+def leak = fn (borrow x : Box) : Box -> ( x )
 }}}}}
 borrow parameter x escapes via return value
 
 {{{{{
 def Box = class (def v : int) (
-    def bad = borrow () -> (
-        def inner = () -> ( this.v += 1 )
+    def bad = fn borrow () -> (
+        def inner = fn () -> ( this.v += 1 )
         inner()
     )
 )
@@ -204,8 +204,8 @@ Inner closure mutates this : enclosing function is not declared mut
 
 {{{{{
 def C = class (def v : int) (
-    def mutThis = () -> ( this.v += 1 )
+    def mutThis = fn () -> ( this.v += 1 )
 )
-def g = pure (c : C) -> ( c.mutThis() )
+def g = fn pure (c : C) -> ( c.mutThis() )
 }}}}}
 Cannot mutate parameter c (mut method c.mutThis) : mark parameter as mut c

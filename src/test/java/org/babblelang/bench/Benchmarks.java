@@ -29,11 +29,11 @@ public final class Benchmarks {
 
         Map<String, String> scripts = new LinkedHashMap<>();
         scripts.put("fib(25) : calls and arithmetic",
-                "def fib = (n : int) : int -> ( if n < 2 then ( n ) else ( fib(n - 1) + fib(n - 2) ) ) ; fib(25)");
+                "def fib = fn (n : int) : int -> ( if n < 2 then ( n ) else ( fib(n - 1) + fib(n - 2) ) ) ; fib(25)");
         scripts.put("while loop : locals and while",
-                "def loop = (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(300000)");
+                "def loop = fn (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(300000)");
         scripts.put("Counter.ba closure : captured variables",
-                "def counter = () -> ( def c = 0 ; () -> ( c = c + 1 ) ) ; def c = counter() ; def i = 0\n"
+                "def counter = fn () -> ( def c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; def i = 0\n"
                         + "while i < 200000 then ( c() ; i = i + 1 ) ; c()");
         scripts.put("Stack.ba push/pop : objects and methods",
                 stack + "def l : stack.Stack(int) = stack.create() ; def i = 0\n"

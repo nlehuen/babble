@@ -72,7 +72,7 @@ public class FileModulesTestCase {
 
     @Test
     public void everySpellingOfAFileIsOneModule() throws Exception {
-        file("lib/counter.ba", "println(\"loading\")\ndef n = 0\nexport def next = () -> ( n = n + 1 )");
+        file("lib/counter.ba", "println(\"loading\")\ndef n = 0\nexport def next = fn () -> ( n = n + 1 )");
         Files.createSymbolicLink(directory.resolve("link.ba"), directory.resolve("lib/counter.ba"));
         Object result = run("import(\"lib/counter.ba\").next()\nimport(\"lib/../lib/counter.ba\").next()\nimport(\"link.ba\").next()");
         Assertions.assertEquals(3, result);
@@ -98,7 +98,7 @@ public class FileModulesTestCase {
 
     @Test
     public void aRootedSourceNamesModulesFromItsRoot() throws Exception {
-        file("app/lib/shapes.ba", "export def Shape = interface ( def area : () : double )");
+        file("app/lib/shapes.ba", "export def Shape = interface ( def area : fn () : double )");
         file("app/lib/broken.ba", "def shapes = import(\"shapes.ba\")\nexport def y = 1 + null");
         FileModuleSource source = FileModuleSource.rooted(directory.resolve("app"));
         // Display names are relative to the root : the same on every machine.

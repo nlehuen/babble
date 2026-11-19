@@ -16,8 +16,8 @@ import java.nio.file.Path;
  * and its options.
  */
 public class BabblefmtTestCase {
-    private static final String UNFORMATTED = "def f=(a)->(\na+1\n)\n";
-    private static final String FORMATTED = "def f = (a) -> (\n    a + 1\n)\n";
+    private static final String UNFORMATTED = "def f=fn (a)->(\na+1\n)\n";
+    private static final String FORMATTED = "def f = fn (a) -> (\n    a + 1\n)\n";
 
     @TempDir
     Path directory;

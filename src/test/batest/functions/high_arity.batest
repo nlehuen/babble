@@ -1,7 +1,7 @@
 ;; High-arity function (>200 parameters) exercising CodeGenerator Object[] array-adapter fallback
 
 {{{{{
-def big = (
+def big = fn (
     p001 : int = 1, p002 : int = 1, p003 : int = 1, p004 : int = 1, p005 : int = 1,
     p006 : int = 1, p007 : int = 1, p008 : int = 1, p009 : int = 1, p010 : int = 1,
     p011 : int = 1, p012 : int = 1, p013 : int = 1, p014 : int = 1, p015 : int = 1,

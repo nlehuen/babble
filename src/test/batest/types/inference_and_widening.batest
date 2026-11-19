@@ -29,14 +29,14 @@ Type error : expected int, got double
 
 {{{{{
 ;; BIP008-P7 call-site parameter inference with unannotated parameter and typed callback
-def transform = (n, fn : (k : int) : double) -> ( fn(n) )
-def res = transform(5, (k) -> ( k * 2.5 ))
+def transform = fn (n, func : fn (k : int) : double) -> ( func(n) )
+def res = transform(5, fn (k) -> ( k * 2.5 ))
 println(res, ":", classof(res))
 }}}}}
 12.5:java.lang.Double
 
 {{{{{
 ;; Unannotated function never called reports missing parameter type
-def unused = (x) -> ( x + 1 )
+def unused = fn (x) -> ( x + 1 )
 }}}}}
 Missing type : x

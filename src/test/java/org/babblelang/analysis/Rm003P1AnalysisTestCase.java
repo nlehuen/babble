@@ -115,25 +115,25 @@ public class Rm003P1AnalysisTestCase {
         }
         String source = ""
                 + "def Base = interface (\n"
-                + "  def req : (x : int) : int\n"
+                + "  def req : fn (x : int) : int\n"
                 + "  def prop : string\n"
-                + "  def defMethod = () : int -> ( 10 )\n"
+                + "  def defMethod = fn () : int -> ( 10 )\n"
                 + ")\n"
                 + "def Box(T) = interface (\n"
-                + "  def get : () : T\n"
-                + "  def put : (v : T) : null\n"
+                + "  def get : fn () : T\n"
+                + "  def put : fn (v : T) : null\n"
                 + ")\n"
                 + "def Huge = interface (\n"
-                + "  def big : (" + hugeParams + ") : int\n"
+                + "  def big : fn (" + hugeParams + ") : int\n"
                 + ")\n"
                 + "def Sub = interface extends Base, java.lang.Runnable (\n"
-                + "  def subDef = (d : double) : double -> ( d + 1.0 )\n"
+                + "  def subDef = fn (d : double) : double -> ( d + 1.0 )\n"
                 + ")\n"
                 + "def Impl = class () implements Sub (\n"
-                + "  def req = (x : int) : int -> ( x + 1 )\n"
+                + "  def req = fn (x : int) : int -> ( x + 1 )\n"
                 + "  def prop = \"ok\"\n"
-                + "  def subDef = (d : double) : double -> ( d * 2.0 )\n"
-                + "  def run = () -> ( null )\n"
+                + "  def subDef = fn (d : double) : double -> ( d * 2.0 )\n"
+                + "  def run = fn () -> ( null )\n"
                 + ")\n";
 
         BabbleParser.FileContext file = BabbleScriptEngine.parseSource(source, "hier.ba");
@@ -202,9 +202,9 @@ public class Rm003P1AnalysisTestCase {
     @Test
     public void testCrossModuleAndCrossReplTypeHierarchyLookup() throws Exception {
         MapModuleSource src = new MapModuleSource()
-                .put("base.ba", "export def RootI = interface ( def r = () : int -> ( 1 ) )\n")
-                .put("mid.ba", "def b = import(\"base.ba\")\nexport def MidI = interface extends b.RootI ( def m : () : int )\n")
-                .put("main.ba", "def mid = import(\"mid.ba\")\ndef C = class () implements mid.MidI ( def m = () : int -> ( 2 ) )\n");
+                .put("base.ba", "export def RootI = interface ( def r = fn () : int -> ( 1 ) )\n")
+                .put("mid.ba", "def b = import(\"base.ba\")\nexport def MidI = interface extends b.RootI ( def m : fn () : int )\n")
+                .put("main.ba", "def mid = import(\"mid.ba\")\ndef C = class () implements mid.MidI ( def m = fn () : int -> ( 2 ) )\n");
 
         ScopeAnalysis mainAnalysis = analyzeWithModules(src, "main.ba");
         Assertions.assertNotNull(mainAnalysis.typeHierarchy("base.ba#RootI"));
@@ -234,16 +234,16 @@ public class Rm003P1AnalysisTestCase {
     @Test
     public void testSuperTargetInfoQualifiedAndUnqualified() throws Exception {
         String source = ""
-                + "def Root = interface ( def f = () : int -> ( 1 ) )\n"
+                + "def Root = interface ( def f = fn () : int -> ( 1 ) )\n"
                 + "def Mid = interface extends Root ()\n"
-                + "def Other = interface ( def f = () : int -> ( 2 ) )\n"
-                + "def Sub = interface extends Mid ( def m = () : int -> ( super.f() ) )\n"
+                + "def Other = interface ( def f = fn () : int -> ( 2 ) )\n"
+                + "def Sub = interface extends Mid ( def m = fn () : int -> ( super.f() ) )\n"
                 + "def C = class () implements Mid, Other (\n"
-                + "  def f = () : int -> ( super(Mid).f() + super(Other).f() )\n"
+                + "  def f = fn () : int -> ( super(Mid).f() + super(Other).f() )\n"
                 + ")\n"
                 + "def Comp = class () implements java.util.Comparator(any?) (\n"
-                + "  def compare = (a : any?, b : any?) : int -> ( 0 )\n"
-                + "  def rev = () -> ( super.reversed() )\n"
+                + "  def compare = fn (a : any?, b : any?) : int -> ( 0 )\n"
+                + "  def rev = fn () -> ( super.reversed() )\n"
                 + ")\n";
 
         BabbleParser.FileContext file = BabbleScriptEngine.parseSource(source, "super.ba");
@@ -291,7 +291,7 @@ public class Rm003P1AnalysisTestCase {
                         + "def TopAlias = TopC\n"
                         + "def ReassignedAlias : any = TopC ; ReassignedAlias = TopI\n"
                         + "def Outer = class () () static ( def StC = class () () )\n"
-                        + "def f = (x : any?, flag : bool) -> (\n"
+                        + "def f = fn (x : any?, flag : bool) -> (\n"
                         + "  def LocalC = class () ()\n"
                         + "  def ParenBlockC = (class () ())\n"
                         + "  def condT : any = if flag then ( TopC ) else ( TopI )\n"
@@ -338,7 +338,7 @@ public class Rm003P1AnalysisTestCase {
                 "RA = C2", "r2.ba"), session);
         session.commit(r2);
         ScopeAnalysis r3Clean = BlockScopes.analyze(BabbleScriptEngine.parseSource(
-                "def check = (x : any) -> ( x is C1 ; x is RA )", "r3c.ba"), session);
+                "def check = fn (x : any) -> ( x is C1 ; x is RA )", "r3c.ba"), session);
         Assertions.assertEquals(List.of(), r3Clean.typeDiagnostics());
         List<BabbleParser.IsExpressionContext> r3IsList = isExpressions((BabbleParser.FileContext) r3Clean.pass().fileScope.owner);
         Assertions.assertNotNull(r3Clean.isTarget(r3IsList.get(0)));
@@ -349,20 +349,20 @@ public class Rm003P1AnalysisTestCase {
     public void testInterfaceCallTargetRecordingAndExclusions() throws Exception {
         String source = ""
                 + "def Base = interface (\n"
-                + "  def baseFn : (x : int) : int\n"
-                + "  def defSelf = (a : int) : int -> ( this.baseFn(a) )\n"
+                + "  def baseFn : fn (x : int) : int\n"
+                + "  def defSelf = fn (a : int) : int -> ( this.baseFn(a) )\n"
                 + ")\n"
                 + "def Box(T) = interface extends Base (\n"
-                + "  def get : () : T\n"
-                + "  def id(U) = (u : U) : U -> ( u )\n"
-                + "  def opt = (a : int, b : int = 2) : int -> ( a + b )\n"
+                + "  def get : fn () : T\n"
+                + "  def id(U) = fn (u : U) : U -> ( u )\n"
+                + "  def opt = fn (a : int, b : int = 2) : int -> ( a + b )\n"
                 + ")\n"
-                + "def Alt = interface ( def baseFn : (x : int) : int )\n"
+                + "def Alt = interface ( def baseFn : fn (x : int) : int )\n"
                 + "def Impl = class () implements Box(int) (\n"
-                + "  def baseFn = (x : int) : int -> ( x )\n"
-                + "  def get = () : int -> ( 1 )\n"
+                + "  def baseFn = fn (x : int) : int -> ( x )\n"
+                + "  def get = fn () : int -> ( 1 )\n"
                 + ")\n"
-                + "def caller = (b : Box(int), mb : Box(int)?, u : Base | Alt, c : Impl, r : java.lang.Runnable) -> (\n"
+                + "def caller = fn (b : Box(int), mb : Box(int)?, u : Base | Alt, c : Impl, r : java.lang.Runnable) -> (\n"
                 + "  b.baseFn(1)\n"
                 + "  b.get()\n"
                 + "  b.id(42)\n"

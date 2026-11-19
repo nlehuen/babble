@@ -4,7 +4,7 @@
 def Point = class (def x : int) ()
 def Pair = class (def x : int, def y : int) ()
 
-def describe = (v : Point | Pair | string | null) : string -> (
+def describe = fn (v : Point | Pair | string | null) : string -> (
     if v is Pair then (
         "pair:" + (v.x + v.y)
     ) else if v is Point then (
@@ -22,9 +22,9 @@ pt:3|pair:9|str:ok|null
 {{{{{
 ;; Logical-path narrowing with short-circuit 'and' / 'or' and negated guard with early return
 def Point = class (def x : int) ()
-def checkAnd = (p : any?) : bool -> ( p is Point and p.x > 0 )
-def checkOr = (p : any?) : bool -> ( not (p is Point) or p.x > 0 )
-def getX = (p : any?) : int -> (
+def checkAnd = fn (p : any?) : bool -> ( p is Point and p.x > 0 )
+def checkOr = fn (p : any?) : bool -> ( not (p is Point) or p.x > 0 )
+def getX = fn (p : any?) : int -> (
     if not (p is Point) then ( return -1 )
     p.x
 )
@@ -39,7 +39,7 @@ true:false:true
 {{{{{
 ;; 'is null' and negated narrowing on nullable class
 def Box = class (def v : int) ()
-def unwrap = (b : Box?) : int -> (
+def unwrap = fn (b : Box?) : int -> (
     if b == null then ( return 0 )
     b.v
 )
@@ -50,7 +50,7 @@ println(unwrap(Box(7)), ":", unwrap(null))
 {{{{{
 ;; Un-narrowed branch member access still rejected statically
 def Point = class (def x : int) ()
-def bad = (p : any) -> (
+def bad = fn (p : any) -> (
     if not (p is Point) then ( p.x ) else ( 0 )
 )
 }}}}}
@@ -59,11 +59,11 @@ Not a scope : p
 {{{{{
 ;; Narrowing evicted on while-loop reassignment and branch kill, preserved when unrelated var reassigned
 def Point = class (def x : int) ()
-def testWhileEvict = (p : Point?) : int -> (
+def testWhileEvict = fn (p : Point?) : int -> (
     def cur = p
     def n = 0
     if cur != null then (
-        def f = (): int -> ( n = n + 1 ; n )
+        def f = fn (): int -> ( n = n + 1 ; n )
         f()
         while n < 2 then (
             cur = null
@@ -72,7 +72,7 @@ def testWhileEvict = (p : Point?) : int -> (
     )
     n
 )
-def testBranchKill = (p : Point?, flag : bool) : int -> (
+def testBranchKill = fn (p : Point?, flag : bool) : int -> (
     def cur = p
     if cur != null then (
         if flag then ( cur = null ) else ( cur.x )
@@ -88,7 +88,7 @@ println(testWhileEvict(Point(3)), ":", testBranchKill(Point(5), true), ":", test
 {{{{{
 ;; Reading member after while loop that may reassign narrowed variable fails statically
 def Point = class (def x : int) ()
-def bad = (p : Point?) : int -> (
+def bad = fn (p : Point?) : int -> (
     def cur = p
     def n = 0
     if cur != null then (
@@ -106,12 +106,12 @@ Not a scope : cur
 
 {{{{{
 ;; canMatchAtRuntime & isRuntimeSubtype across interfaces, Java classes, unions, and any
-def I1 = interface ( def a = () : int -> ( 1 ) )
-def I2 = interface ( def b = () : int -> ( 2 ) )
+def I1 = interface ( def a = fn () : int -> ( 1 ) )
+def I2 = interface ( def b = fn () : int -> ( 2 ) )
 def Both = class () implements I1, I2, java.lang.Runnable (
-    def run = () -> ( )
+    def run = fn () -> ( )
 )
-def checkIfaces = (x : I1, y : java.lang.Runnable, u : int | string, d : any) : string -> (
+def checkIfaces = fn (x : I1, y : java.lang.Runnable, u : int | string, d : any) : string -> (
     def b1 = x is I2
     def b2 = x is java.lang.Runnable
     def b3 = y is I1
@@ -131,7 +131,7 @@ true:true:true:false:true:true:true
 def I1 = interface ()
 def I2 = interface ()
 def Both = class () implements I1, I2, java.lang.Runnable (
-    def run = () -> ( )
+    def run = fn () -> ( )
 )
 def i1 : I1 = Both()
 def r1 : I2 = i1 as I2
@@ -158,7 +158,7 @@ Type error : expected int, got null
 
 {{{{{
 ;; Invalid cast between Java interface and final Java class
-def bad = (x : java.lang.Runnable) : java.lang.String -> ( x as java.lang.String )
+def bad = fn (x : java.lang.Runnable) : java.lang.String -> ( x as java.lang.String )
 }}}}}
 Type error : expected string, got java.lang.Runnable
 
@@ -166,7 +166,7 @@ Type error : expected string, got java.lang.Runnable
 ;; reassignmentJoin and compoundAssignment across locals, params, this, objects, nullables, and functions
 def Counter = class () (
     def v : int = 1
-    def inc = mut (d : int) : int -> (
+    def inc = fn mut (d : int) : int -> (
         this.v += d
         this.v
     )
@@ -179,8 +179,8 @@ def y = 1
 y = null
 def z = null
 z = "ok"
-def f = hermetic (borrow a : int) : int -> ( a + 1 )
-f = pure (a : int) : int -> ( a + 2 )
+def f = fn hermetic (borrow a : int) : int -> ( a + 1 )
+f = fn pure (a : int) : int -> ( a + 2 )
 def c = Counter()
 println(c.inc(4), ":", obj.n, ":", x, ":", y, ":", z, ":", f(10))
 }}}}}

@@ -3,14 +3,14 @@
 {{{{{
 ;; Primitive & reference Java interfaces on class, value class, and object literal
 def Counter = class (private def n : int) implements java.util.function.IntSupplier, java.lang.Runnable (
-    def run = mut () : any? -> ( this.n += 10 ; null )
-    def getAsInt = () : int -> ( this.n )
+    def run = fn mut () : any? -> ( this.n += 10 ; null )
+    def getAsInt = fn () : int -> ( this.n )
 )
 def Weight = value class (grams : int) implements java.lang.Comparable(Weight) (
-    def compareTo = (other : Weight) : int -> ( this.grams - other.grams )
+    def compareTo = fn (other : Weight) : int -> ( this.grams - other.grams )
 )
 def mulObj = object implements java.util.function.DoubleBinaryOperator (
-    def applyAsDouble = (a : double, b : double) : double -> ( a * b + 0.5 )
+    def applyAsDouble = fn (a : double, b : double) : double -> ( a * b + 0.5 )
 )
 def c = Counter(5)
 def r : java.lang.Runnable = c
@@ -30,12 +30,12 @@ println(sup.getAsInt(), ":", xs.get(0).grams, ":", uniq.contains(Weight(10)), ":
 {{{{{
 ;; Babble interface extending Java interface with default method, implemented by class & cross-called from Java
 def Ranked = interface extends java.lang.Comparable(Ranked) (
-    def rank : () : int
-    def compareTo = (other : Ranked) : int -> ( this.rank() - other.rank() )
+    def rank : fn () : int
+    def compareTo = fn (other : Ranked) : int -> ( this.rank() - other.rank() )
 )
 def Item = class (def label : string, def r : int) implements Ranked (
-    def rank = () : int -> ( this.r )
-    def toString = () : string -> ( this.label + "#" + this.r )
+    def rank = fn () : int -> ( this.r )
+    def toString = fn () : string -> ( this.label + "#" + this.r )
 )
 def items : java.util.List(Item) = java.util.ArrayList()
 items.add(Item("b", 2))
@@ -50,16 +50,16 @@ println(java.util.Objects.toString(items), ":", (items.get(0) is java.lang.Compa
 ;; Overloaded Java interface methods (CharSequence + Appendable) served by Babble methods with optional params
 def Buf = class () implements java.lang.Appendable, java.lang.CharSequence (
     private def sb = java.lang.StringBuilder()
-    def append = (v : any?, start : int = -1, end : int = -1) : java.lang.Appendable -> (
+    def append = fn (v : any?, start : int = -1, end : int = -1) : java.lang.Appendable -> (
         if v is java.lang.Character then ( this.sb.append("[" + v + "]") )
         else if start < 0 then ( this.sb.append(v as java.lang.CharSequence) )
         else ( this.sb.append(v as java.lang.CharSequence, start, end) )
         this
     )
-    def length = () : int -> ( this.sb.length() )
-    def charAt = (idx : int) : any -> ( this.sb.charAt(idx) )
-    def subSequence = (s : int, e : int) : java.lang.CharSequence -> ( this.sb.subSequence(s, e) )
-    def toString = () : string -> ( this.sb.toString() )
+    def length = fn () : int -> ( this.sb.length() )
+    def charAt = fn (idx : int) : any -> ( this.sb.charAt(idx) )
+    def subSequence = fn (s : int, e : int) : java.lang.CharSequence -> ( this.sb.subSequence(s, e) )
+    def toString = fn () : string -> ( this.sb.toString() )
 )
 def b = Buf()
 java.util.Formatter(b).format("%s-%d", java.util.List.of("ok", 7).toArray())
@@ -72,24 +72,24 @@ println(cs.length(), ":", cs.subSequence(0, 4), ":", java.lang.String.valueOf(cs
 {{{{{
 ;; Java default method inheritance and super(JavaInterface).m(...) override in both Babble interface and class
 def WrappingIter = interface extends java.util.Iterator(int) (
-    def forEachRemaining = (action : java.util.function.Consumer(any?)) : any? -> (
+    def forEachRemaining = fn (action : java.util.function.Consumer(any?)) : any? -> (
         print("<")
         super(java.util.Iterator).forEachRemaining(action)
         print(">")
     )
 )
 def RangeIter = class (private def cur : int, def stop : int) implements WrappingIter (
-    def hasNext = () : bool -> ( this.cur < this.stop )
-    def next = mut () : int -> (
+    def hasNext = fn () : bool -> ( this.cur < this.stop )
+    def next = fn mut () : int -> (
         def v = this.cur
         this.cur += 1
         v
     )
 )
 def AddOp = class (delta : int) implements java.util.function.IntUnaryOperator (
-    def applyAsInt = (x : int) : int -> ( x + delta )
+    def applyAsInt = fn (x : int) : int -> ( x + delta )
 )
-RangeIter(1, 4).forEachRemaining(java.util.function.Consumer((x : any?) -> ( print(x) )))
+RangeIter(1, 4).forEachRemaining(java.util.function.Consumer(fn (x : any?) -> ( print(x) )))
 def composed = AddOp(2).andThen(AddOp(10))
 println(":", composed.applyAsInt(5))
 }}}}}
@@ -99,7 +99,7 @@ println(":", composed.applyAsInt(5))
 ;; Primitive return widening (int -> long via IntToLongFunction)
 def Widener = class (scale : int) implements java.util.function.IntToLongFunction (
     def factor = 2
-    def applyAsLong = (x : int) : int -> ( x * scale * this.factor )
+    def applyAsLong = fn (x : int) : int -> ( x * scale * this.factor )
 )
 def sum = java.util.stream.IntStream.range(1, 4).mapToLong(Widener(5)).sum()
 println(sum)
@@ -110,8 +110,8 @@ println(sum)
 ;; Field with same name as Java default method does not shadow Java default method when invoked from Java
 def SingleIter = class () implements java.util.Iterator(int) (
     def remove = 123
-    def hasNext = () : bool -> ( false )
-    def next = () : int -> ( 0 )
+    def hasNext = fn () : bool -> ( false )
+    def next = fn () : int -> ( 0 )
 )
 def it = SingleIter()
 println(it.remove)
@@ -124,20 +124,20 @@ java.lang.UnsupportedOperationException : remove
 {{{{{
 ;; LongUnaryOperator, DoublePredicate, BooleanSupplier, and CharSequence.charAt bridges (long, double, boolean, char)
 def LongInc = class (delta : int) implements java.util.function.LongUnaryOperator (
-    def applyAsLong = (x : any?) : int -> ( int(x as long) + delta )
+    def applyAsLong = fn (x : any?) : int -> ( int(x as long) + delta )
 )
 def IsPos = class () implements java.util.function.DoublePredicate (
-    def test = (d : double) : bool -> ( d > 0.0 )
+    def test = fn (d : double) : bool -> ( d > 0.0 )
 )
 def Flag = class (def v : bool) implements java.util.function.BooleanSupplier (
-    def getAsBoolean = () : bool -> ( this.v )
+    def getAsBoolean = fn () : bool -> ( this.v )
 )
 def Seq = class (s : string) implements java.lang.CharSequence (
     private def sb = java.lang.StringBuilder(s)
-    def length = () : int -> ( this.sb.length() )
-    def charAt = (i : int) : any -> ( this.sb.charAt(i) )
-    def subSequence = (a : int, b : int) : java.lang.CharSequence -> ( this.sb.subSequence(a, b) )
-    def toString = () : string -> ( this.sb.toString() )
+    def length = fn () : int -> ( this.sb.length() )
+    def charAt = fn (i : int) : any -> ( this.sb.charAt(i) )
+    def subSequence = fn (a : int, b : int) : java.lang.CharSequence -> ( this.sb.subSequence(a, b) )
+    def toString = fn () : string -> ( this.sb.toString() )
 )
 def longRes = java.util.stream.LongStream.of(10).map(LongInc(5)).sum()
 def dblRes = IsPos().test(1.5) and not IsPos().test(-0.5)

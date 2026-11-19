@@ -140,9 +140,9 @@ public class Rm003P1CompilerTestCase {
 
     @Test
     public void testInterfaceJvmNamesAreDeterministicAndPropagateAcrossModulesAndRepl() throws Exception {
-        String libSource = "export def A = interface ( def x : () : int )\n"
-                + "export def fn = (v : int) : int -> ( v + 1 )\n"
-                + "export def B = interface extends A ( def y = () : int -> ( this.x() ) )\n";
+        String libSource = "export def A = interface ( def x : fn () : int )\n"
+                + "export def inc = fn (v : int) : int -> ( v + 1 )\n"
+                + "export def B = interface extends A ( def y = fn () : int -> ( this.x() ) )\n";
 
         MapModuleSource src1 = new MapModuleSource().put("pkg/lib.ba", libSource);
         BabbleScriptEngine engine1 = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
@@ -164,23 +164,23 @@ public class Rm003P1CompilerTestCase {
         Assertions.assertEquals(ifaces1, ifaces2);
 
         // Multi-hop module compilation + REPL session propagation must succeed cleanly without losing interface JVM names.
-        String midSource = "def lib = import(\"lib.ba\")\nexport def C = interface extends lib.B ( def z : () : int )\n";
+        String midSource = "def lib = import(\"lib.ba\")\nexport def C = interface extends lib.B ( def z : fn () : int )\n";
         MapModuleSource multiSrc = new MapModuleSource()
                 .put("pkg/lib.ba", libSource)
                 .put("pkg/mid.ba", midSource)
-                .put("main.ba", "def mid = import(\"pkg/mid.ba\") ; def Impl = class () implements mid.C ( def x = () : int -> ( 2 ) ; def z = () : int -> ( 3 ) ) ; Impl().y() + Impl().z()");
+                .put("main.ba", "def mid = import(\"pkg/mid.ba\") ; def Impl = class () implements mid.C ( def x = fn () : int -> ( 2 ) ; def z = fn () : int -> ( 3 ) ) ; Impl().y() + Impl().z()");
         BabbleScriptEngine multiEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         multiEngine.put(BabbleScriptEngine.MODE, "compile");
         multiEngine.put(BabbleScriptEngine.MODULE_SOURCE, multiSrc);
         List<BabbleScriptEngine.ProgramModule> multiProg = multiEngine.compileProgram(multiSrc, "main.ba");
-        Assertions.assertEquals(5, multiEngine.eval("def mid = import(\"pkg/mid.ba\") ; def Impl = class () implements mid.C ( def x = () : int -> ( 2 ) ; def z = () : int -> ( 3 ) ) ; Impl().y() + Impl().z()"));
+        Assertions.assertEquals(5, multiEngine.eval("def mid = import(\"pkg/mid.ba\") ; def Impl = class () implements mid.C ( def x = fn () : int -> ( 2 ) ; def z = fn () : int -> ( 3 ) ) ; Impl().y() + Impl().z()"));
         Assertions.assertTrue(multiProg.stream().anyMatch(m -> m.id().key().equals("pkg/lib.ba")));
 
         BabbleScriptEngine replEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         replEngine.put(BabbleScriptEngine.MODE, "compile");
         replEngine.put(ScriptEngine.FILENAME, "repl.ba");
         BabbleSession session = replEngine.newSession();
-        session.eval("def RepI = interface ( def val = () : int -> ( 9 ) )");
+        session.eval("def RepI = interface ( def val = fn () : int -> ( 9 ) )");
         Assertions.assertEquals(9, session.eval("def RepC = class () implements RepI () ; RepC().val()"));
     }
 }

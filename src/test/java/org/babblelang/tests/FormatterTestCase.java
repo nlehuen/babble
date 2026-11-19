@@ -24,16 +24,16 @@ public class FormatterTestCase {
     public void testSpaces() throws Exception {
         assertFormats("def x = 1 + 2 * (3 - 4) / 5\n", "def  x=1+2*(3-4)/5");
         assertFormats("f(a, b: 2)(c).d.e = not (g() == h)\n", "f ( a ,b:2 ) (c) . d . e=not(g()==h)");
-        assertFormats("def add: (a: int, b: int): int = (a: int, b: int = 1): int -> (a + b)\n",
-                "def add:(a:int,b:int):int=(a:int,b:int=1):int->( a+b )");
-        assertFormats("def f = () -> ()\n", "def f=()->( )");
+        assertFormats("def add: fn (a: int, b: int): int = fn (a: int, b: int = 1): int -> (a + b)\n",
+                "def add:fn (a:int,b:int):int=fn (a:int,b:int=1):int->( a+b )");
+        assertFormats("def f = fn () -> ()\n", "def f=fn ()->( )");
         assertFormats("x += 1\no.n -= int(2.5)\ny *= 2; z /= 3\n", "x+=1\no . n-=int( 2.5 )\ny*=2;z/=3");
         assertFormats("x is java.util.List and x <> null or y != 1.5\n", "x  is java . util . List and x<>null or y!=1.5");
         assertFormats("def x = a + b as int == 1\n", "def x=a+b   as  int==1");
-        assertFormats("def f = x as (a: int, b: string): bool\n", "def f = x as(a:int,b:string):bool");
+        assertFormats("def f = x as fn (a: int, b: string): bool\n", "def f = x as fn (a:int,b:string):bool");
         assertFormats("x is int and y is string\n", "x  is  int  and  y  is  string");
-        assertFormats("def x: int | string?\ndef y: (int | string)? = null\ndef z: ((n: int): int)? = (n: int): int -> (n)\n",
-                "def x:int|string ?\ndef y:(int|string)?=null\ndef z:((n:int):int)?=(n:int):int->(n)");
+        assertFormats("def x: int | string?\ndef y: (int | string)? = null\ndef z: (fn (n: int): int)? = fn (n: int): int -> (n)\n",
+                "def x:int|string ?\ndef y:(int|string)?=null\ndef z:(fn (n:int):int)?=fn (n:int):int->(n)");
         assertFormats("def n: null = null\n", "def  n : null = null");
         assertFormats("return (a)\n", "return(a)");
     }
@@ -41,17 +41,17 @@ public class FormatterTestCase {
     @Test
     public void testGenerics() throws Exception {
         assertFormats("""
-                def id(T): (x: T): T = (x: T): T -> (x)
+                def id(T): fn (x: T): T = fn (x: T): T -> (x)
                 def Stack(T) = class (def value: T, def next: Stack(T)?) ()
                 def l: java.util.List(string) = java.util.ArrayList()
                 def m: java.util.Map(string, Stack(int)?) = java.util.HashMap()
-                def f: ((x: int): Box(int | string))? = null
+                def f: (fn (x: int): Box(int | string))? = null
                 """, """
-                def id ( T ) : ( x : T ) : T = ( x : T ) : T -> ( x )
+                def id ( T ) : fn ( x : T ) : T = fn ( x : T ) : T -> ( x )
                 def Stack ( T ) = class ( def value : T , def next : Stack ( T ) ? ) ( )
                 def l : java.util.List ( string ) = java.util.ArrayList ( )
                 def m : java.util.Map ( string , Stack ( int ) ? ) = java.util.HashMap ( )
-                def f : ( ( x : int ) : Box ( int | string ) ) ? = null
+                def f : ( fn ( x : int ) : Box ( int | string ) ) ? = null
                 """);
     }
 
@@ -61,7 +61,7 @@ public class FormatterTestCase {
         assertFormats("def x = -3 - -y * f(-1, - -z)\n", "def x = - 3--y*f(- 1,- - z)");
         // An "else if" chain is brought back on the lines of its parentheses, as "else" is.
         assertFormats("""
-                def sign = (n) -> (
+                def sign = fn (n) -> (
                     if n < 0 then (
                         "negative"
                     ) else if n == 0 then ("zero") else if n < 10 then (
@@ -69,7 +69,7 @@ public class FormatterTestCase {
                     ) else ("large")
                 )
                 """, """
-                def sign = (n) -> (
+                def sign = fn (n) -> (
                 if n < 0 then (
                 "negative"
                 ) else
@@ -97,7 +97,7 @@ public class FormatterTestCase {
     public void testClassesAndInterfaces() throws Exception {
         assertFormats("""
                 def Point = value class (def x: double, private def y = 0.0) implements Shape, java.lang.Runnable (
-                    def norm = () -> (super(Shape).norm() + super.size())
+                    def norm = fn () -> (super(Shape).norm() + super.size())
                 ) static (
                     def origin = this(0.0)
                 )
@@ -109,7 +109,7 @@ public class FormatterTestCase {
                 )
                 """, """
                 def Point = value class(def x:double,private def y=0.0)implements Shape,java.lang.Runnable(
-                def norm = ()->(super (Shape).norm()+super.size())
+                def norm = fn ()->(super (Shape).norm()+super.size())
                 )
                 static
                 (
@@ -129,7 +129,7 @@ public class FormatterTestCase {
     public void testIndentationFollowsParentheses() throws Exception {
         assertFormats("""
                 object (
-                    def f = (n) -> (
+                    def f = fn (n) -> (
                         if n < 2 then (
                             1
                         ) else (
@@ -146,7 +146,7 @@ public class FormatterTestCase {
                 )
                 """, """
                 object (
-                def f = (n) -> (
+                def f = fn (n) -> (
                       if n < 2 then (
                   1
                          ) else (
@@ -173,7 +173,7 @@ public class FormatterTestCase {
                     ) else (
                         2
                     )
-                    def f = () -> (
+                    def f = fn () -> (
                         3
                     )
                 )
@@ -188,7 +188,7 @@ public class FormatterTestCase {
                     (
                         2
                     )
-                    def f = () ->
+                    def f = fn () ->
 
                     (
                         3
@@ -220,14 +220,14 @@ public class FormatterTestCase {
     @Test
     public void testContinuationLines() throws Exception {
         assertFormats("""
-                def f = () -> (
+                def f = fn () -> (
                     def total = first +
                         second +
                         third(
                             1
                         )
                     def g =
-                        (a) -> (
+                        fn (a) -> (
                             a
                         )
                     total =
@@ -240,14 +240,14 @@ public class FormatterTestCase {
                 def C = class () implements A,
                     B ()
                 """, """
-                def f = () -> (
+                def f = fn () -> (
                 def total = first +
                 second +
                 third(
                 1
                 )
                 def g =
-                (a) -> (
+                fn (a) -> (
                 a
                 )
                 total =
@@ -265,7 +265,7 @@ public class FormatterTestCase {
     @Test
     public void testParameterLists() throws Exception {
         assertFormats("""
-                def f = (
+                def f = fn (
                     a,
                     b = 1
                 ) -> (
@@ -278,7 +278,7 @@ public class FormatterTestCase {
                 f(1,
                     2)
                 """, """
-                def f = (
+                def f = fn (
                 a,
                 b=1
                 ) -> (
@@ -303,7 +303,7 @@ public class FormatterTestCase {
         assertFormats("""
                 a
 
-                def f = () -> (
+                def f = fn () -> (
                     b
 
                     c
@@ -317,7 +317,7 @@ public class FormatterTestCase {
 
 
 
-                def f = () -> (
+                def f = fn () -> (
 
                     b
                 \t
@@ -343,7 +343,7 @@ public class FormatterTestCase {
                       lines
 
                 ;;)
-                def f = () -> (  ;; a function
+                def f = fn () -> (  ;; a function
                     ;; alone
                     a      ;; aligned
                     b + c  ;; with the line above
@@ -362,7 +362,7 @@ public class FormatterTestCase {
                       lines
                   \s
                 ;;)
-                def f = () -> (;; a function
+                def f = fn () -> (;; a function
                 ;; alone
                 a ;; aligned
                 b+c ;; with the line above
@@ -450,41 +450,41 @@ public class FormatterTestCase {
     @Test
     public void testRm002EffectsAndAxioms() throws Exception {
         assertFormats("""
-                axiom pure deterministic java.lang.Math
-                axiom mut java.util.List.add
-                axiom pure java.awt.Point()
-                export axiom pure import("java.time")
-                impure java.lang.System.nanoTime
-                def m = axiom pure java.lang.Math
-                def r = impure java.lang.Math.random
-                def add: pure deterministic nothrow (a: int, b: int): int = pure deterministic nothrow (a: int, b: int): int -> (
+                axiom pure deterministic on java.lang.Math
+                axiom mut on java.util.List.add
+                axiom pure on java.awt.Point()
+                export axiom pure on import("java.time")
+                impure on java.lang.System.nanoTime
+                def m = axiom pure on java.lang.Math
+                def r = impure on java.lang.Math.random
+                def add: fn pure deterministic nothrow (a: int, b: int): int = fn pure deterministic nothrow (a: int, b: int): int -> (
                     a + b
                 )
-                def id(T) = pure (x: T): T -> (x)
-                def step = hermetic (mut p: Point, borrow q: Point): int -> (
+                def id(T) = fn pure (x: T): T -> (x)
+                def step = fn hermetic (mut p: Point, borrow q: Point): int -> (
                     p.x = q.x
                     p.x
                 )
-                def pure = (axiom: int, mut: int): int -> (axiom + mut)
-                pure(1, 2)
+                def unnamed: fn (int, int): int = fn (a: int, b: int): int -> (a + b)
+                unnamed(1, 2)
                 """, """
-                axiom   pure   deterministic   java . lang . Math
-                axiom mut java.util.List.add
-                axiom pure java.awt.Point ( )
-                export   axiom  pure  import ( "java.time" )
-                impure   java.lang.System.nanoTime
-                def m = axiom   pure  java.lang.Math
-                def r = impure   java.lang.Math.random
-                def add : pure  deterministic  nothrow ( a : int , b : int ) : int = pure  deterministic  nothrow ( a : int , b : int ) : int -> (
+                axiom   pure   deterministic  on  java . lang . Math
+                axiom mut on java.util.List.add
+                axiom pure on java.awt.Point ( )
+                export   axiom  pure  on  import ( "java.time" )
+                impure   on  java.lang.System.nanoTime
+                def m = axiom   pure  on  java.lang.Math
+                def r = impure   on  java.lang.Math.random
+                def add : fn  pure  deterministic  nothrow ( a : int , b : int ) : int = fn  pure  deterministic  nothrow ( a : int , b : int ) : int -> (
                 a+b
                 )
-                def id ( T ) = pure ( x : T ) : T -> ( x )
-                def step = hermetic ( mut  p : Point , borrow  q : Point ) : int -> (
+                def id ( T ) = fn  pure ( x : T ) : T -> ( x )
+                def step = fn  hermetic ( mut  p : Point , borrow  q : Point ) : int -> (
                 p.x = q.x
                 p.x
                 )
-                def pure = ( axiom : int , mut : int ) : int -> ( axiom + mut )
-                pure ( 1 , 2 )
+                def unnamed : fn ( int , int ) : int = fn ( a : int , b : int ) : int -> ( a + b )
+                unnamed ( 1 , 2 )
                 """);
     }
 

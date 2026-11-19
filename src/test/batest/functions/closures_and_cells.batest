@@ -2,12 +2,12 @@
 
 {{{{{
 ;; Mutable captures across all 4 cell specializations: IntCell, DoubleCell, BoolCell, reference Cell
-def makeCounter = () -> (
+def makeCounter = fn () -> (
     def i = 0
     def d = 0.5
     def b = false
     def s = "x"
-    def step = () : string -> (
+    def step = fn () : string -> (
         i += 1
         d += 1.25
         b = not b
@@ -28,10 +28,10 @@ println(c2())
 
 {{{{{
 ;; Shared mutable capture between two sibling closures and enclosing block
-def shared = () : string -> (
+def shared = fn () : string -> (
     def count = 10
-    def inc = (k : int) : int -> ( count += k ; count )
-    def read = () : int -> ( count )
+    def inc = fn (k : int) : int -> ( count += k ; count )
+    def read = fn () : int -> ( count )
     def a = inc(5)
     def b = read()
     count += 1
@@ -44,22 +44,22 @@ println(shared())
 
 {{{{{
 ;; Multi-level capture (inner closure reads outer variable unused in middle closure)
-def outer = (x : int) -> (
-    def mid = () -> (
-        () : int -> ( x + 100 )
+def outer = fn (x : int) -> (
+    def mid = fn () -> (
+        fn () : int -> ( x + 100 )
     )
     mid()
 )
-def fn = outer(7)
-println(fn())
+def func = outer(7)
+println(func())
 }}}}}
 107
 
 {{{{{
 ;; Widening a captured int variable to double (uses DoubleCell instead of IntCell)
-def widenCapture = () : string -> (
+def widenCapture = fn () : string -> (
     def v = 1
-    def read = () -> ( v )
+    def read = fn () -> ( v )
     v = 2.5
     "" + read() + ":" + classof(read())
 )

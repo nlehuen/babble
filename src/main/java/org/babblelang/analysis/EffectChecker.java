@@ -275,7 +275,7 @@ final class EffectChecker {
             }
         }
         ParsedPrefix parsed = parseWords(
-                ctx.effectPrefix() != null ? ctx.effectPrefix().effectWord().stream().map(w -> w.ID().getSymbol()).toList() : List.of(),
+                ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of(),
                 false, canReferenceThis(checker.scopeOf(ctx)), ctx, reportErrors);
         // Check pure + mut parameter conflict.
         boolean hasMutParam = false;
@@ -311,11 +311,22 @@ final class EffectChecker {
         return parsed;
     }
 
+    private static List<Token> effectPrefixTokens(BabbleParser.EffectPrefixContext prefix) {
+        return prefix.effectWord().stream().map(ParserRuleContext::getStart).toList();
+    }
+
+    private static List<Token> effectClauseTokens(BabbleParser.EffectClauseContext clause) {
+        List<Token> words = new ArrayList<>();
+        words.add(clause.getStart());
+        for (BabbleParser.EffectWordContext w : clause.effectWord()) {
+            words.add(w.getStart());
+        }
+        return words;
+    }
+
     ParsedPrefix parseFunctionTypePrefix(BabbleParser.FunctionTypeContext ctx, boolean reportErrors) {
         boolean report = reportErrors && validatedTypeTrees.add(ctx);
-        List<Token> words = ctx.effectPrefix() != null
-                ? ctx.effectPrefix().effectWord().stream().map(w -> w.ID().getSymbol()).toList()
-                : List.of();
+        List<Token> words = ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of();
         ParsedPrefix parsed = parseWords(words, true, true, ctx, report);
         boolean hasMutParam = false;
         for (BabbleParser.FnTypeParamContext param : ctx.fnTypeParameters().fnTypeParam()) {
@@ -344,7 +355,7 @@ final class EffectChecker {
         boolean mut = false;
         boolean borrow = false;
         for (BabbleParser.ParamModifierContext modCtx : ScopeAnalysis.paramModifiers(param)) {
-            Token tok = modCtx.ID().getSymbol();
+            Token tok = modCtx.getStart();
             switch (tok.getText()) {
                 case "mut" -> {
                     if (mut && reportErrors) {
@@ -593,7 +604,7 @@ final class EffectChecker {
         for (BlockScopes.PendingEffectDecl pending : pass.effectDeclarations) {
             BabbleParser.EffectDeclarationContext ctx = pending.ctx();
             ScopeNode scope = pending.scope();
-            List<Token> words = ctx.targetEffectPrefix().targetEffectWord().stream().map(w -> w.ID().getSymbol()).toList();
+            List<Token> words = effectClauseTokens(ctx.effectClause());
             boolean isCtor = ctx.ctorOpen != null;
             ParsedPrefix prefix = parseTargetPrefix(words, isCtor, ctx);
             if (!pass.hostEffects.allowAxioms()) {
@@ -616,13 +627,13 @@ final class EffectChecker {
             }
         }
 
-        // 2. DefExpressions with targetEffectPrefix (e.g. def mkdirs = axiom idempotent Files.createDirectories).
+        // 2. DefExpressions with effectClause (e.g. def mkdirs = axiom idempotent on Files.createDirectories).
         collectDefAxioms(file);
     }
 
     private void collectDefAxioms(ParseTree tree) {
-        if (tree instanceof BabbleParser.DefExpressionContext def && def.targetEffectPrefix() != null) {
-            List<Token> words = def.targetEffectPrefix().targetEffectWord().stream().map(w -> w.ID().getSymbol()).toList();
+        if (tree instanceof BabbleParser.DefExpressionContext def && def.effectClause() != null) {
+            List<Token> words = effectClauseTokens(def.effectClause());
             ParsedPrefix prefix = parseTargetPrefix(words, false, def);
             defPrefixes.put(def, prefix);
             ScopeNode scope = pass.definitionScopes.get(def);
@@ -686,7 +697,7 @@ final class EffectChecker {
                                                        boolean isCtor,
                                                        ScopeNode scope,
                                                        ParserRuleContext reportAt) {
-        String first = targetCtx.ID().getText();
+        String first = ScopeAnalysis.effectTargetRoot(targetCtx);
         List<String> members = ScopeAnalysis.effectTargetMembers(targetCtx);
         Type current;
         if (targetCtx.STRING() != null) {

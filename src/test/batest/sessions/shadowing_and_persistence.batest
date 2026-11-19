@@ -4,7 +4,7 @@
 def x = 10
 def acc = 0
 ----------
-def inc = (k : int) : int -> ( acc += k ; acc )
+def inc = fn (k : int) : int -> ( acc += k ; acc )
 println(x, ":", inc(5))
 ----------
 def x = "shadowed"
@@ -28,7 +28,7 @@ Type error : expected int, got double
 {{{{{
 ;; Shadowing with def in subsequent input changes type cleanly for later code
 def v = 1
-def readOld = () : int -> ( v + 10 )
+def readOld = fn () : int -> ( v + 10 )
 ----------
 def v = 2.5
 println(v, ":", classof(v), ":", readOld())

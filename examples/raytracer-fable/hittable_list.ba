@@ -10,20 +10,20 @@ export def HittableList = class () implements Hittable (
     def objects: java.util.List(Hittable) = java.util.ArrayList()
     private def bbox: AABB = AABB.empty
 
-    def add = mut (item: Hittable): bool -> (
+    def add = fn mut (item: Hittable): bool -> (
         this.bbox = AABB.enclose(this.bbox, item.boundingBox())
         this.objects.add(item)
     )
 
-    def clear = mut (): null -> (
+    def clear = fn mut (): null -> (
         this.objects.clear()
         this.bbox = AABB.empty
         null
     )
 
-    def boundingBox = (): AABB -> (this.bbox)
+    def boundingBox = fn (): AABB -> (this.bbox)
 
-    def hit = (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
         def closest: HitRecord? = null
         def closestSoFar: double = tmax
         def count: int = this.objects.size()

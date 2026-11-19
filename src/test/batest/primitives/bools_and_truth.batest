@@ -2,7 +2,7 @@
 
 {{{{{
 def calls = 0
-def bump = (r : bool) : bool -> ( calls += 1 ; r )
+def bump = fn (r : bool) : bool -> ( calls += 1 ; r )
 println(false and bump(true), ":", calls)
 println(true or bump(true), ":", calls)
 println(true and bump(true), ":", calls)
@@ -27,8 +27,8 @@ true:true:true
 
 {{{{{
 ;; Truthiness with dynamic values in if/while (only null, false, 0, 0.0 are falsy; "" is truthy)
-def dyn = (v : any?) : any? -> ( v )
-def check = (v : any?) : string -> ( if v then ( "T" ) else ( "F" ) )
+def dyn = fn (v : any?) : any? -> ( v )
+def check = fn (v : any?) : string -> ( if v then ( "T" ) else ( "F" ) )
 println(check(dyn(null)), check(dyn(false)), check(dyn(true)), check(dyn(0)), check(dyn(2)), check(dyn(0.0)), check(dyn(0.1)), check(dyn("")), check(dyn("hi")))
 }}}}}
 FFTFTFTTT
@@ -50,7 +50,7 @@ assert(1)
 Type error : expected bool, got int
 
 {{{{{
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 assert(dyn(1))
 }}}}}
 Type error : expected bool, got any

@@ -7,12 +7,12 @@ def Stack(T) = class () (
     def size = 0
     def head: Node(T)? = null
 
-    def push = mut (a: T) -> (
+    def push = fn mut (a: T) -> (
         this.size = this.size + 1
         this.head = Node(a, this.head)
     )
 
-    def first = (): T? -> (
+    def first = fn (): T? -> (
         def head = this.head
         if head == null then (
             null
@@ -21,7 +21,7 @@ def Stack(T) = class () (
         )
     )
 
-    def pop = mut (): T? -> (
+    def pop = fn mut (): T? -> (
         def head = this.head
         if head == null then (
             null
@@ -37,7 +37,7 @@ def Stack(T) = class () (
         A recursive method : "recurse" evaluates to the method bound to the
         receiver, so that "this" still designates it in the recursive call.
     ;;)
-    def clear = () -> (
+    def clear = fn () -> (
         if this.head == null then (
             this.size
         ) else (
@@ -46,7 +46,7 @@ def Stack(T) = class () (
         )
     )
 
-    def join = (sep = " ") -> (
+    def join = fn (sep = " ") -> (
         def current = this.head
         def result = ""
         def first = true
@@ -66,9 +66,9 @@ def Stack(T) = class () (
     )
 )
 
-def create(T) = (): Stack(T) -> (Stack())
+def create(T) = fn (): Stack(T) -> (Stack())
 
-def test = () -> (
+def test = fn () -> (
     def l: Stack(string) = create()
     assert(l.size == 0)
     l.push("world")
@@ -85,7 +85,7 @@ def test = () -> (
 
 test()
 
-def testRecursiveMethod = () -> (
+def testRecursiveMethod = fn () -> (
     def l: Stack(string) = Stack()
     l.push("c")
     l.push("b")

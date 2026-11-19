@@ -31,8 +31,8 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     }
 
     private static final String POINT = "def Point = class (def x : int, def y : int) (\n"
-            + "    def norm2 = () : int -> ( this.x * this.x + this.y * this.y )\n"
-            + "    def plus = (other : Point) : Point -> ( Point(this.x + other.x, this.y + other.y) )\n"
+            + "    def norm2 = fn () : int -> ( this.x * this.x + this.y * this.y )\n"
+            + "    def plus = fn (other : Point) : Point -> ( Point(this.x + other.x, this.y + other.y) )\n"
             + ")\n";
 
     // ---------------------------------------------------------------- classes
@@ -46,7 +46,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     @Test
     public void testConstructorParametersAndDefaults() throws Exception {
         String account = "def Account = class (def owner : string, def balance = 0) (\n"
-                + "    def deposit = mut (n : int) -> ( this.balance = this.balance + n )\n"
+                + "    def deposit = fn mut (n : int) -> ( this.balance = this.balance + n )\n"
                 + ")\n";
         Assertions.assertEquals(5, interpret(account + "def a = Account(\"ann\") ; a.deposit(5) ; a.balance"));
         Assertions.assertEquals(12, interpret(account + "def a = Account(\"ann\", balance: 7) ; a.deposit(5)"));
@@ -57,7 +57,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testPlainParametersAreLexicalVariables() throws Exception {
         // A plain parameter is visible in the whole body, methods included, and is not a member.
         String counter = "def Counter = class (start : int, step = 1) (\n"
-                + "    def next = () -> ( start = start + step )\n"
+                + "    def next = fn () -> ( start = start + step )\n"
                 + ")\n";
         Assertions.assertEquals(14, interpret(counter + "def c = Counter(10, 2) ; c.next() ; c.next()"));
         assertStaticFails(counter + "Counter(1).start", "No such member : start", 4, 1);
@@ -75,7 +75,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testMembersAreReachedThroughThisOnly() {
-        assertFails("def C = class () ( def size = 0 ; def get = () -> ( size ) ) ; C().get()", "No such name : size");
+        assertFails("def C = class () ( def size = 0 ; def get = fn () -> ( size ) ) ; C().get()", "No such name : size");
         // obj.x sees the object's members, and nothing of the scope that created it.
         assertStaticFails("def hidden = 1 ; def o = object ( def v = 1 ) ; o.hidden", "No such member : hidden", 1, 49);
         assertStaticFails("def o = object ( def v = 1 ) ; o.println", "No such member : println", 1, 32);
@@ -84,35 +84,35 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     @Test
     public void testFixedMemberSetAndReadOnlyMethods() {
         assertStaticFails("def o = object ( def v = 1 ) ; o.w = 2", "No such member : w", 1, 32);
-        assertStaticFails("def o = object ( def m = () -> ( 1 ) ) ; o.m = 2", "Type error : expected () : int, got int", 1, 48);
+        assertStaticFails("def o = object ( def m = fn () -> ( 1 ) ) ; o.m = 2", "Type error : expected () : int, got int", 1, 51);
     }
 
     @Test
     public void testMemberUsedBeforeDefinition() {
-        assertFails("def C = class () (\n  def a = this.get()\n  def b = 1\n  def get = () -> ( this.b )\n)\nC()",
+        assertFails("def C = class () (\n  def a = this.get()\n  def b = 1\n  def get = fn () -> ( this.b )\n)\nC()",
                 "Member used before definition : get", 2);
     }
 
     @Test
     public void testBoundMethodsAndFieldsHoldingFunctions() throws Exception {
         // A method selected without a call stays bound to its receiver.
-        Assertions.assertEquals(3, interpret("def C = class (def n : int) ( def get = () -> ( this.n ) ) ; def f = C(3).get ; f()"));
+        Assertions.assertEquals(3, interpret("def C = class (def n : int) ( def get = fn () -> ( this.n ) ) ; def f = C(3).get ; f()"));
         // A field holding a function is just a value : calling it binds nothing.
-        Assertions.assertEquals(7, interpret("def C = class (def cb : () : int) () ; def c = C(() -> ( 7 )) ; c.cb()"));
-        assertFails("def C = class (def cb : () : any) () ; def c = C(() -> ( this )) ; c.cb()", "this outside of a class");
+        Assertions.assertEquals(7, interpret("def C = class (def cb : fn () : int) () ; def c = C(fn () -> ( 7 )) ; c.cb()"));
+        assertFails("def C = class (def cb : fn () : any) () ; def c = C(fn () -> ( this )) ; c.cb()", "this outside of a class");
     }
 
     @Test
     public void testThisAndReturnPlacement() {
         assertFails("this", "this outside of a class");
-        assertFails("def f = () -> ( this ) ; 1", "this outside of a class");
+        assertFails("def f = fn () -> ( this ) ; 1", "this outside of a class");
         assertFails("def C = class () ( return 1 )", "return in a class body");
         assertFails("def C = class () () static ( return 1 )", "return in a class body");
     }
 
     @Test
     public void testThisIsCapturedByNestedFunctions() throws Exception {
-        Assertions.assertEquals(5, interpret("def C = class (def n : int) ( def later = () -> ( () -> ( this.n ) ) ) ; C(5).later()()"));
+        Assertions.assertEquals(5, interpret("def C = class (def n : int) ( def later = fn () -> ( fn () -> ( this.n ) ) ) ; C(5).later()()"));
     }
 
     @Test
@@ -126,10 +126,10 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testHeaderMembers() throws Exception {
         assertFails("def C = class (def a : int) ( def a = 2 )", "Member already defined : a");
         assertFails("def C = class (a : int, def a : int) ()", "Name already defined : a");
-        assertStaticFails("def f = (def a) -> ( a )", "Syntax error : unexpected '->'", 1, 17);
-        assertStaticFails("def f = (a) : (def b) : int -> ( a )", "Syntax error : unexpected 'def'", 1, 16);
+        assertStaticFails("def f = fn (def a) -> ( a )", "Syntax error : unexpected 'def'", 1, 13);
+        assertStaticFails("def f = fn (a) : fn (def b) : int -> ( a )", "Syntax error : unexpected 'def'", 1, 22);
         // A header member binds no name.
-        assertFails("def C = class (def a : int) ( def get = () -> ( a ) ) ; C(1).get()", "No such name : a");
+        assertFails("def C = class (def a : int) ( def get = fn () -> ( a ) ) ; C(1).get()", "No such name : a");
     }
 
     @Test
@@ -146,10 +146,10 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     private static final String COUNTER = "def Counter = class (private def step = 1) (\n"
             + "    private def n = 0\n"
-            + "    private def bump = () -> ( this.n = this.n + this.step )\n"
-            + "    def next = () -> ( this.bump() ; this.n )\n"
-            + "    def bumper = () -> ( this.bump )\n"
-            + "    def nested = () -> ( (() -> ( this.n ))() )\n"
+            + "    private def bump = fn () -> ( this.n = this.n + this.step )\n"
+            + "    def next = fn () -> ( this.bump() ; this.n )\n"
+            + "    def bumper = fn () -> ( this.bump )\n"
+            + "    def nested = fn () -> ( (fn () -> ( this.n ))() )\n"
             + ")\n";
 
     @Test
@@ -161,23 +161,23 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         // Rejected before running when the receiver's class is known.
         assertFails(COUNTER + "def c = Counter() ; c.n", "n is private", 8);
         assertFails(COUNTER + "Counter().bump()", "bump is private", 8);
-        assertStaticFails("def C = class () ( private def n = 0 ; def alias = () -> ( def me = this ; me.n ) )", "n is private", 1, 76);
-        assertStaticFails("def C = class () ( private def n = 0 ; def peek = (other : C) -> ( other.n ) )", "n is private", 1, 68);
+        assertStaticFails("def C = class () ( private def n = 0 ; def alias = fn () -> ( def me = this ; me.n ) )", "n is private", 1, 79);
+        assertStaticFails("def C = class () ( private def n = 0 ; def peek = fn (other : C) -> ( other.n ) )", "n is private", 1, 71);
     }
 
     @Test
     public void testPrivatePlacement() {
         assertFails("private def x = 1", "private only applies to members");
         assertFails("def C = class (private a : int) ()", "private only applies to members");
-        assertStaticFails("def f = (private a : int) -> ( a )", "Syntax error : unexpected 'a'", 1, 18);
-        assertFails("def I = interface ( private def m = () -> ( 1 ) )", "Interface members cannot be private : m");
+        assertStaticFails("def f = fn (private a : int) -> ( a )", "Syntax error : unexpected 'private'", 1, 13);
+        assertFails("def I = interface ( private def m = fn () -> ( 1 ) )", "Interface members cannot be private : m");
     }
 
     @Test
     public void testPrivateMembersAndInterfaces() {
-        assertFails("def S = interface ( def area : () : int )\ndef Sq = class () implements S ( private def area = () -> ( 1 ) )",
+        assertFails("def S = interface ( def area : fn () : int )\ndef Sq = class () implements S ( private def area = fn () -> ( 1 ) )",
                 "Sq.area is private and cannot implement S.area", 2);
-        assertFails("def S = interface ( def d = () -> ( 1 ) )\ndef Sq = class () implements S ( private def d = () -> ( 2 ) )",
+        assertFails("def S = interface ( def d = fn () -> ( 1 ) )\ndef Sq = class () implements S ( private def d = fn () -> ( 2 ) )",
                 "d is private but S provides a public d", 2);
     }
 
@@ -192,16 +192,16 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     // ---------------------------------------------------------------- statics
 
     private static final String STATIC_POINT = "def Point = value class (x : int, y : int) (\n"
-            + "    def plus = (o : Point) : Point -> ( Point(this.x + o.x, this.y + o.y) )\n"
+            + "    def plus = fn (o : Point) : Point -> ( Point(this.x + o.x, this.y + o.y) )\n"
             + ")\n"
             + "static (\n"
             + "    def origin = this(0, 0)\n"
             + "    private def created = 0\n"
-            + "    def make = (x : int, y : int) : Point -> (\n"
+            + "    def make = fn (x : int, y : int) : Point -> (\n"
             + "        this.created = this.created + 1\n"
             + "        this(x, y)\n"
             + "    )\n"
-            + "    def count = () -> ( this.created )\n"
+            + "    def count = fn () -> ( this.created )\n"
             + ")\n";
 
     @Test
@@ -225,8 +225,8 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testInterfaceStaticsAreNotInherited() throws Exception {
-        String shape = "def S = interface ( def area : () : int ) static ( def unit = 1 )\n"
-                + "def Sq = class () implements S ( def area = () -> ( 1 ) )\n";
+        String shape = "def S = interface ( def area : fn () : int ) static ( def unit = 1 )\n"
+                + "def Sq = class () implements S ( def area = fn () -> ( 1 ) )\n";
         Assertions.assertEquals(1, interpret(shape + "S.unit"));
         assertStaticFails(shape + "Sq.unit", "No such member : unit", 3, 1);
     }
@@ -239,21 +239,21 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         Assertions.assertEquals(true, interpret("def l : java.util.List(int) = java.util.ArrayList() ; classof(l) == java.util.ArrayList"));
         Assertions.assertEquals(true, interpret("classof(\"s\") == java.lang.String and classof(1) == java.lang.Integer"));
         Assertions.assertEquals(null, interpret("classof(null)"));
-        Assertions.assertEquals(false, interpret("def mk = () -> ( class () () ) ; def A = mk() ; classof(A()) == mk()"));
-        assertFails("classof(() -> ( 1 ))", "classof : a function has no class");
+        Assertions.assertEquals(false, interpret("def mk = fn () -> ( class () () ) ; def A = mk() ; classof(A()) == mk()"));
+        assertFails("classof(fn () -> ( 1 ))", "classof : a function has no class");
         assertFails(POINT + "classof(Point)", "classof : a class has no class", 5);
     }
 
     @Test
     public void testIs() throws Exception {
-        String shapes = "def S = interface ( def area : () : int )\n"
+        String shapes = "def S = interface ( def area : fn () : int )\n"
                 + "def T = interface extends S ()\n"
-                + "def Sq = class () implements T ( def area = () -> ( 1 ) )\n"
+                + "def Sq = class () implements T ( def area = fn () -> ( 1 ) )\n"
                 + "def C = class () ()\n";
         Assertions.assertEquals(true, interpret(shapes + "Sq() is Sq and Sq() is T and Sq() is S"));
         Assertions.assertEquals(false, interpret(shapes + "C() is S or Sq() is C or null is C or 1 is S"));
         Assertions.assertEquals(true, interpret("def l : java.util.List(int) = java.util.ArrayList() ; \"s\" is java.lang.String and 1 is java.lang.Number and l is java.util.List"));
-        Assertions.assertEquals(false, interpret("def mk = () -> ( class () () ) ; def A = mk() ; A() is mk()"));
+        Assertions.assertEquals(false, interpret("def mk = fn () -> ( class () () ) ; def A = mk() ; A() is mk()"));
         assertFails("1 is 2", "Not a type : 2");
     }
 
@@ -268,14 +268,14 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testToString() throws Exception {
-        Assertions.assertEquals("<C!>", interpret("def C = class () ( def toString = () -> ( \"C!\" ) ) ; \"<\" + C() + \">\""));
+        Assertions.assertEquals("<C!>", interpret("def C = class () ( def toString = fn () -> ( \"C!\" ) ) ; \"<\" + C() + \">\""));
         Assertions.assertEquals(true, interpret("def C = class () () ; def s = \"\" + C() ; java.lang.String(s).startsWith(\"C@\")"));
         Assertions.assertEquals("Point(x: 1, y: 2.5)", interpret("def Point = value class (x : int, y : double) () ; \"\" + Point(1, 2.5)"));
-        Assertions.assertEquals("P!", interpret("def Point = value class (x : int) ( def toString = () -> ( \"P!\" ) ) ; \"\" + Point(1)"));
+        Assertions.assertEquals("P!", interpret("def Point = value class (x : int) ( def toString = fn () -> ( \"P!\" ) ) ; \"\" + Point(1)"));
         StringWriter out = new StringWriter();
         ScriptContext context = new SimpleScriptContext();
         context.setWriter(out);
-        BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval("def C = class () ( def toString = () -> ( \"C!\" ) ) ; print(C())", context);
+        BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval("def C = class () ( def toString = fn () -> ( \"C!\" ) ) ; print(C())", context);
         Assertions.assertEquals("C!", out.toString());
     }
 
@@ -283,12 +283,12 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testValueEquality() throws Exception {
-        String point = "def Point = value class (x : double, y : double) ( def area = () -> ( this.x * this.y ) ) ; ";
+        String point = "def Point = value class (x : double, y : double) ( def area = fn () -> ( this.x * this.y ) ) ; ";
         Assertions.assertEquals(true, interpret(point + "Point(1, 2) == Point(1, 2)"));
         Assertions.assertEquals(true, interpret(point + "Point(1, 2) == Point(1.0, 2.0)"));
         Assertions.assertEquals(false, interpret(point + "Point(1, 2) == Point(2, 1)"));
         // Equality needs the same class value.
-        Assertions.assertEquals(false, interpret("def mk = () -> ( value class (x : int) () ) ; mk()(1) == mk()(1)"));
+        Assertions.assertEquals(false, interpret("def mk = fn () -> ( value class (x : int) () ) ; mk()(1) == mk()(1)"));
         Assertions.assertEquals(true, interpret(point + "def s : java.util.Set(Point) = java.util.HashSet() ; s.add(Point(1, 2)) ; s.contains(Point(1.0, 2))"));
         Assertions.assertEquals("b", interpret(point + "def m : java.util.Map(Point, string) = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.get(Point(1, 2))"));
         Assertions.assertEquals(1, interpret(point + "def m : java.util.Map(Point, string) = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.size()"));
@@ -300,16 +300,16 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testValueMembersAreReadOnly() {
         String point = "def Point = value class (x : int, y : int) ()\n";
         assertFails(point + "def p = Point(1, 2) ; p.x = 5", "Value members are read-only : x", 2);
-        assertFails(point + "def f = (p : Point) -> ( p.x = 5 ) ; f(Point(1, 2))", "Value members are read-only : x", 2);
-        assertFails("def P = value class (x : int) ( def m = () -> ( this.x = 2 ) )", "Value members are read-only : x");
+        assertFails(point + "def f = fn (p : Point) -> ( p.x = 5 ) ; f(Point(1, 2))", "Value members are read-only : x", 2);
+        assertFails("def P = value class (x : int) ( def m = fn () -> ( this.x = 2 ) )", "Value members are read-only : x");
     }
 
     @Test
     public void testValueClassRules() {
-        assertFails("def P = value class (x : int) ( def equals = (o : any) -> ( true ) )", "equals is generated for value classes");
-        assertFails("def P = value class (x : int) ( def hashCode = () -> ( 1 ) )", "hashCode is generated for value classes");
+        assertFails("def P = value class (x : int) ( def equals = fn (o : any) -> ( true ) )", "equals is generated for value classes");
+        assertFails("def P = value class (x : int) ( def hashCode = fn () -> ( 1 ) )", "hashCode is generated for value classes");
         assertFails("def P = value class (x : int) ( println(this) )", "this cannot escape a value class under construction");
-        assertFails("def P = value class (x : int) ( def m = () -> ( 1 ) ; this.m() )", "this cannot escape a value class under construction");
+        assertFails("def P = value class (x : int) ( def m = fn () -> ( 1 ) ; this.m() )", "this cannot escape a value class under construction");
         Assertions.assertDoesNotThrow(() -> interpret("def P = value class (w : int, h : int) ( def area = this.w * this.h ) ; P(2, 3).area"));
     }
 
@@ -319,29 +319,29 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         ScriptContext context = new SimpleScriptContext();
         StringWriter errors = new StringWriter();
         context.setErrorWriter(errors);
-        engine.eval("def C = class () (\n  def equals = (o : any) -> ( true )\n)\nC() == C()", context);
+        engine.eval("def C = class () (\n  def equals = fn (o : any) -> ( true )\n)\nC() == C()", context);
         Assertions.assertEquals("Warning : equals has no effect on == : use a value class in <input> at line number 2" + System.lineSeparator(), errors.toString());
     }
 
     // ---------------------------------------------------------------- interfaces
 
     private static final String SHAPE = "def Shape = interface (\n"
-            + "    def area : () : double\n"
+            + "    def area : fn () : double\n"
             + "    def name : string\n"
-            + "    def describe = () -> ( this.name + \" of area \" + this.area() )\n"
+            + "    def describe = fn () -> ( this.name + \" of area \" + this.area() )\n"
             + ")\n";
 
     @Test
     public void testInterfacesAndDefaults() throws Exception {
         String square = SHAPE + "def Square = class (def side : int) implements Shape (\n"
                 + "    def name = \"square\"\n"
-                + "    def area = () : double -> ( this.side * this.side )\n"
+                + "    def area = fn () : double -> ( this.side * this.side )\n"
                 + ")\n";
         Assertions.assertEquals("square of area 4.0", interpret(square + "Square(2).describe()"));
-        Assertions.assertEquals("o of area 1.0", interpret(SHAPE + "def o = object implements Shape ( def name = \"o\" ; def area = () : double -> ( 1 ) ) ; o.describe()"));
+        Assertions.assertEquals("o of area 1.0", interpret(SHAPE + "def o = object implements Shape ( def name = \"o\" ; def area = fn () : double -> ( 1 ) ) ; o.describe()"));
         assertFails(SHAPE + "def Square = class () implements Shape ( def name = \"s\" )", "Square does not implement Shape.area", 6);
         // Conformance is declared : having the members is not enough.
-        assertFails(SHAPE + "def o = object ( def name = \"o\" ; def area = () -> ( 1 ) ) ; suppose(o is Shape)",
+        assertFails(SHAPE + "def o = object ( def name = \"o\" ; def area = fn () -> ( 1 ) ) ; suppose(o is Shape)",
                 "Assertion failed at line 6 : oisShape", 6);
     }
 
@@ -349,23 +349,23 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testInterfaceRules() {
         assertFails("def I = interface ( def size = 0 )", "An interface default must be a function literal : size");
         assertFails("def I = interface ( println(1) )", "An interface can only declare members");
-        assertFails("def I = interface ( def d = () -> ( this.nothing ) )", "nothing is not a member of I");
+        assertFails("def I = interface ( def d = fn () -> ( this.nothing ) )", "nothing is not a member of I");
     }
 
     @Test
     public void testConflictingDefaults() throws Exception {
-        String two = "def A = interface ( def d = () -> ( \"a\" ) )\ndef B = interface ( def d = () -> ( \"b\" ) )\n";
+        String two = "def A = interface ( def d = fn () -> ( \"a\" ) )\ndef B = interface ( def d = fn () -> ( \"b\" ) )\n";
         assertFails(two + "def C = class () implements A, B ()", "Conflicting defaults for d : A, B", 3);
-        Assertions.assertEquals("a/b", interpret(two + "def C = class () implements A, B ( def d = () -> ( super(A).d() + \"/\" + super(B).d() ) ) ; C().d()"));
+        Assertions.assertEquals("a/b", interpret(two + "def C = class () implements A, B ( def d = fn () -> ( super(A).d() + \"/\" + super(B).d() ) ) ; C().d()"));
         // The same default reached twice is not a conflict.
-        Assertions.assertEquals("base", interpret("def Base = interface ( def d = () -> ( \"base\" ) )\n"
+        Assertions.assertEquals("base", interpret("def Base = interface ( def d = fn () -> ( \"base\" ) )\n"
                 + "def A = interface extends Base ()\ndef B = interface extends Base ()\n"
                 + "def C = class () implements A, B () ; C().d()"));
     }
 
     @Test
     public void testImplementsMustBeStatic() {
-        assertFails("def mk = () -> ( interface () ) ; def C = class () implements mk ()", "implements needs a statically known interface");
+        assertFails("def mk = fn () -> ( interface () ) ; def C = class () implements mk ()", "implements needs a statically known interface");
         assertFails("def I = interface () ; I = 1 ; def C = class () implements I ()", "implements needs a statically known interface");
         assertFails("def D = class () () ; def C = class () implements D ()", "implements needs a statically known interface");
         assertFails("def C = class () implements Nothing ()", "implements needs a statically known interface");
@@ -378,37 +378,37 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testSuper() throws Exception {
         String square = SHAPE + "def Square = class (def side : int) implements Shape (\n"
                 + "    def name = \"square\"\n"
-                + "    def area = () : double -> ( this.side * this.side )\n"
-                + "    def describe = () -> ( \"[\" + super.describe() + \"]\" )\n"
-                + "    def later = () -> ( () -> ( super(Shape).describe() ) )\n"
+                + "    def area = fn () : double -> ( this.side * this.side )\n"
+                + "    def describe = fn () -> ( \"[\" + super.describe() + \"]\" )\n"
+                + "    def later = fn () -> ( fn () -> ( super(Shape).describe() ) )\n"
                 + ")\n";
         Assertions.assertEquals("[square of area 4.0]", interpret(square + "Square(2).describe()"));
         Assertions.assertEquals("square of area 9.0", interpret(square + "Square(3).later()()"));
         // A default inherited through extends, and super in an interface default.
-        Assertions.assertEquals("base+", interpret("def Base = interface ( def d = () -> ( \"base\" ) )\n"
-                + "def Mid = interface extends Base ( def d = () -> ( super.d() + \"+\" ) )\n"
+        Assertions.assertEquals("base+", interpret("def Base = interface ( def d = fn () -> ( \"base\" ) )\n"
+                + "def Mid = interface extends Base ( def d = fn () -> ( super.d() + \"+\" ) )\n"
                 + "def C = class () implements Mid () ; C().d()"));
-        Assertions.assertEquals("base!", interpret("def Base = interface ( def d = () -> ( \"base\" ) )\n"
+        Assertions.assertEquals("base!", interpret("def Base = interface ( def d = fn () -> ( \"base\" ) )\n"
                 + "def Mid = interface extends Base ()\n"
-                + "def C = class () implements Mid ( def d = () -> ( super.d() + \"!\" ) ) ; C().d()"));
+                + "def C = class () implements Mid ( def d = fn () -> ( super.d() + \"!\" ) ) ; C().d()"));
     }
 
     @Test
     public void testSuperRejections() {
-        String two = "def A = interface ( def d = () -> ( \"a\" ) ; def r : () : int )\ndef B = interface ( def d = () -> ( \"b\" ) )\n";
-        assertFails(two + "def C = class () implements A, B ( def r = () -> ( 1 ) ; def d = () -> ( super.d() ) )",
+        String two = "def A = interface ( def d = fn () -> ( \"a\" ) ; def r : fn () : int )\ndef B = interface ( def d = fn () -> ( \"b\" ) )\n";
+        assertFails(two + "def C = class () implements A, B ( def r = fn () -> ( 1 ) ; def d = fn () -> ( super.d() ) )",
                 "Ambiguous super.d : A, B. Write super(A).d()", 3);
-        assertFails(two + "def C = class () implements A ( def r = () -> ( super.r() ) )", "A.r has no default", 3);
-        assertFails(two + "def C = class () implements A ( def r = () -> ( super.x() ) )", "No default x to call", 3);
-        assertFails(two + "def C = class () implements A ( def r = () -> ( super(B).d() ) )", "B is not implemented directly by C", 3);
-        assertFails(two + "def C = class () implements A ( def r = () -> ( def f = super.d ; 1 ) )", "super must be called directly", 3);
+        assertFails(two + "def C = class () implements A ( def r = fn () -> ( super.r() ) )", "A.r has no default", 3);
+        assertFails(two + "def C = class () implements A ( def r = fn () -> ( super.x() ) )", "No default x to call", 3);
+        assertFails(two + "def C = class () implements A ( def r = fn () -> ( super(B).d() ) )", "B is not implemented directly by C", 3);
+        assertFails(two + "def C = class () implements A ( def r = fn () -> ( def f = super.d ; 1 ) )", "super must be called directly", 3);
         assertFails("super.x()", "super outside of a method");
-        assertFails(two + "def C = class () implements A ( def r = () -> ( 1 ) ; super.d() )", "super outside of a method", 3);
+        assertFails(two + "def C = class () implements A ( def r = fn () -> ( 1 ) ; super.d() )", "super outside of a method", 3);
     }
 
     @Test
     public void testEqualityOfJavaCollectionsAndBoundMethods() throws Exception {
         Assertions.assertEquals(true, interpret("def a : java.util.Map(int, int) = java.util.HashMap() ; def b : java.util.Map(int, int) = java.util.HashMap() ; a.put(1, 2) ; b.put(1, 2) ; a == b"));
-        Assertions.assertEquals(true, interpret("def o = object ( def m = () -> ( 1 ) ) ; o.m == o.m"));
+        Assertions.assertEquals(true, interpret("def o = object ( def m = fn () -> ( 1 ) ) ; o.m == o.m"));
     }
 }

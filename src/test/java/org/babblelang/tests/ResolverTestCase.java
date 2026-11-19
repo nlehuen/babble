@@ -103,43 +103,43 @@ public class ResolverTestCase {
     @Test
     public void testFunctionLocalsAndGlobals() {
         Assertions.assertEquals(List.of("i LOCAL", "n LOCAL", "s= LOCAL", "s LOCAL", "i LOCAL", "i= LOCAL", "i LOCAL", "s LOCAL", "loop DYNAMIC", "println DYNAMIC"),
-                bindings("def loop = (n) -> ( def i = 0 ; def s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(3) ; println(1)"));
+                bindings("def loop = fn (n) -> ( def i = 0 ; def s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(3) ; println(1)"));
     }
 
     @Test
     public void testCapturedVariablesAreCells() {
         Assertions.assertEquals(List.of("c= CAPTURED", "c CAPTURED", "counter DYNAMIC"),
-                bindings("def counter = () -> ( def c = 0 ; () -> ( c = c + 1 ) ) ; counter()"));
+                bindings("def counter = fn () -> ( def c = 0 ; fn () -> ( c = c + 1 ) ) ; counter()"));
         // Through two levels : the middle function carries the cell.
         Assertions.assertEquals(List.of("a CAPTURED", "b LOCAL"),
-                bindings("def f = (a) -> ( () -> ( (b) -> ( a + b ) ) )"));
+                bindings("def f = fn (a) -> ( fn () -> ( fn (b) -> ( a + b ) ) )"));
     }
 
     @Test
     public void testThisAndRecurse() {
         // this in a method is its own ; a nested function captures it.
         Assertions.assertEquals(List.of("this LOCAL", "this CAPTURED"),
-                bindings("def C = class () ( def v = 1 ; def m = () -> ( this.v ) ; def n = () -> ( () -> ( this.v ) ) )"));
+                bindings("def C = class () ( def v = 1 ; def m = fn () -> ( this.v ) ; def n = fn () -> ( fn () -> ( this.v ) ) )"));
         Assertions.assertEquals(List.of("n LOCAL", "n LOCAL", "recurse LOCAL", "n LOCAL", "recurse DYNAMIC"),
-                bindings("def f = (n) -> ( if n < 2 then ( n ) else ( recurse(n - 1) ) ) ; recurse"));
+                bindings("def f = fn (n) -> ( if n < 2 then ( n ) else ( recurse(n - 1) ) ) ; recurse"));
     }
 
     @Test
     public void testConstructorParametersUsedByMethodsAreCells() {
         // Read by the constructor itself, the parameter is a cell there, since a method captures it.
         Assertions.assertEquals(List.of("start= CAPTURED", "start CAPTURED", "start CELL"),
-                bindings("def C = class (start) ( def next = () -> ( start = start + 1 ) ; def first = start )"));
+                bindings("def C = class (start) ( def next = fn () -> ( start = start + 1 ) ; def first = start )"));
     }
 
     @Test
     public void testFileNamesAreDynamic() {
         Assertions.assertEquals(List.of("x DYNAMIC", "x DYNAMIC", "y DYNAMIC"),
-                bindings("def x = 1 ; def y = x ; def f = () -> ( x + y )"));
+                bindings("def x = 1 ; def y = x ; def f = fn () -> ( x + y )"));
     }
 
     @Test
     public void testParametersAreNotVisibleToEarlierDefaults() {
         Assertions.assertEquals(List.of("c DYNAMIC", "a LOCAL", "b LOCAL"),
-                bindings("def f = (a, b = c, c = a) -> ( b )"));
+                bindings("def f = fn (a, b = c, c = a) -> ( b )"));
     }
 }

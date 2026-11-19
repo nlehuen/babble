@@ -2,7 +2,7 @@
 
 {{{{{
 ;; Forward capture of bool, double, int, and reference before def triggers Cell use-before-def errors (BoolCell.read)
-def f = () : bool -> ( b )
+def f = fn () : bool -> ( b )
 f()
 def b = true
 }}}}}
@@ -10,7 +10,7 @@ Name used before definition : b
 
 {{{{{
 ;; DoubleCell read before definition
-def f = () : double -> ( d )
+def f = fn () : double -> ( d )
 f()
 def d = 1.5
 }}}}}
@@ -18,7 +18,7 @@ Name used before definition : d
 
 {{{{{
 ;; Reference Cell read before definition
-def f = () : string -> ( s )
+def f = fn () : string -> ( s )
 f()
 def s = "hi"
 }}}}}
@@ -26,7 +26,7 @@ Name used before definition : s
 
 {{{{{
 ;; BoolCell assign before definition
-def f = () -> ( b = false )
+def f = fn () -> ( b = false )
 f()
 def b = true
 }}}}}
@@ -34,7 +34,7 @@ Name used before definition : b
 
 {{{{{
 ;; DoubleCell assign before definition
-def f = () -> ( d = 2.5 )
+def f = fn () -> ( d = 2.5 )
 f()
 def d = 1.5
 }}}}}
@@ -42,7 +42,7 @@ Name used before definition : d
 
 {{{{{
 ;; IntCell assign before definition
-def f = () -> ( x = 2 )
+def f = fn () -> ( x = 2 )
 f()
 def x = 1
 }}}}}
@@ -52,7 +52,7 @@ Name used before definition : x
 ;; Uninitialized non-captured double and ref locals hoisted to scope block (pushDefaultZero DOUBLE/NONE)
 def cond = false
 if cond then ( def x = 1.0 ) else ( )
-def f = () : double -> ( if cond then ( y ) else ( 0.0 ) )
+def f = fn () : double -> ( if cond then ( y ) else ( 0.0 ) )
 println(f())
 def y = 3.5
 }}}}}
@@ -60,33 +60,33 @@ def y = 3.5
 
 {{{{{
 ;; Non-primitive ($direct-only, hasSpec == false) function, recursion, optional params, and Bootstrap TypedCallCache paths
-def join = (a : string, b : string = "!") : string -> ( a + b )
-def repeat = (s : string, n : int = 2) : string -> ( if n <= 0 then ( "" ) else ( s + recurse(s, n - 1) ) )
-def noPrimRec = (s : string) : string -> ( if java.lang.StringBuilder(s).length() >= 3 then ( s ) else ( recurse(s + "x") ) )
+def join = fn (a : string, b : string = "!") : string -> ( a + b )
+def repeat = fn (s : string, n : int = 2) : string -> ( if n <= 0 then ( "" ) else ( s + recurse(s, n - 1) ) )
+def noPrimRec = fn (s : string) : string -> ( if java.lang.StringBuilder(s).length() >= 3 then ( s ) else ( recurse(s + "x") ) )
 println(join("hi"), ":", join("yo", "?"), ":", repeat("a"), ":", noPrimRec("z"))
 
 ;; TypedCallCache compatibleSpec return/param mismatch (int vs int?) + megamorphic TypedCallCache (>4 callees)
-def f0 = (x : int) : int -> ( x + 1 )
-def f1 = (x : int?) : int? -> ( if x == null then ( 0 ) else ( x + 2 ) )
-def f2 = (x : int) : int? -> ( x + 3 )
-def f3 = (x : int) : int? -> ( x + 4 )
-def f4 = (x : int) : int? -> ( x + 5 )
-def f5 = (x : int) : int? -> ( x + 6 )
-def callTyped = (fn : (x : int) : int?, v : int) : int? -> ( fn(v) )
+def f0 = fn (x : int) : int -> ( x + 1 )
+def f1 = fn (x : int?) : int? -> ( if x == null then ( 0 ) else ( x + 2 ) )
+def f2 = fn (x : int) : int? -> ( x + 3 )
+def f3 = fn (x : int) : int? -> ( x + 4 )
+def f4 = fn (x : int) : int? -> ( x + 5 )
+def f5 = fn (x : int) : int? -> ( x + 6 )
+def callTyped = fn (func : fn (x : int) : int?, v : int) : int? -> ( func(v) )
 
 def i = 0
 def total = 0
 while i < 12 then (
     def k = i - int(i / 6) * 6
-    def fn : (x : int) : int? = if k == 0 then ( f0 ) else if k == 1 then ( f1 ) else if k == 2 then ( f2 ) else if k == 3 then ( f3 ) else if k == 4 then ( f4 ) else ( f5 )
-    def r = callTyped(fn, 1)
+    def func : fn (x : int) : int? = if k == 0 then ( f0 ) else if k == 1 then ( f1 ) else if k == 2 then ( f2 ) else if k == 3 then ( f3 ) else if k == 4 then ( f4 ) else ( f5 )
+    def r = callTyped(func, 1)
     if r != null then ( total += r )
     i += 1
 )
 println(total, ":", f0)
 
-def widenParam = (fn : (x : int) : int, v : int) : int -> ( fn(v) )
-def gNullable = (x : int?) : int -> ( if x == null then ( 0 ) else ( x + 10 ) )
+def widenParam = fn (func : fn (x : int) : int, v : int) : int -> ( func(v) )
+def gNullable = fn (x : int?) : int -> ( if x == null then ( 0 ) else ( x + 10 ) )
 println(widenParam(gNullable, 5))
 }}}}}
 hi!:yo?:aa:zxx
@@ -96,24 +96,24 @@ hi!:yo?:aa:zxx
 {{{{{
 ;; Dynamic bound method call through TypedCallCache (IS_BOUND_FUNCTION / IS_BOUND_METHOD / incompatible spec)
 def C = class (def base : int) (
-    def fInt = (x : int) : int -> ( this.base + x )
-    def fOpt = (x : int, d : int = 5) : int -> ( this.base + x + d )
-    def fStr = (s : string) : string -> ( s + this.base )
+    def fInt = fn (x : int) : int -> ( this.base + x )
+    def fOpt = fn (x : int, d : int = 5) : int -> ( this.base + x + d )
+    def fStr = fn (s : string) : string -> ( s + this.base )
 )
 def c = C(10)
 def dynF = c.fInt
 def dynOpt = c.fOpt
 def dynStr = c.fStr
-def boxFn : (x : int) : int? = dynF
+def boxFn : fn (x : int) : int? = dynF
 println(dynF(2), ":", dynOpt(3), ":", dynStr("v="), ":", boxFn(4))
 
-def fOuter = (a : int) -> (
-    def inner = (x : int) : int -> ( a + x )
+def fOuter = fn (a : int) -> (
+    def inner = fn (x : int) : int -> ( a + x )
     inner
 )
 def g1 = fOuter(10)
-def g2 : (x : int) : int? = fOuter(20)
-def applyTyped = (fn : (x : int) : int?, x : int) : int? -> ( fn(x) )
+def g2 : fn (x : int) : int? = fOuter(20)
+def applyTyped = fn (func : fn (x : int) : int?, x : int) : int? -> ( func(x) )
 println(applyTyped(g1, 1), ":", applyTyped(g2, 2))
 }}}}}
 12:18:v=10:14
@@ -121,7 +121,7 @@ println(applyTyped(g1, 1), ":", applyTyped(g2, 2))
 
 {{{{{
 ;; Positional call with > 200 arguments exercises Object[] array-adapter path at call site
-def sum205 = (
+def sum205 = fn (
     a001 : int = 0, a002 : int = 0, a003 : int = 0, a004 : int = 0, a005 : int = 0,
     a006 : int = 0, a007 : int = 0, a008 : int = 0, a009 : int = 0, a010 : int = 0,
     a011 : int = 0, a012 : int = 0, a013 : int = 0, a014 : int = 0, a015 : int = 0,
