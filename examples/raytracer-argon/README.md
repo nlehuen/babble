@@ -29,7 +29,7 @@ The rendered scene implements the Chapter 14 cover scene from *Ray Tracing in On
 
 ### Zero Java Builtins
 Every primitive that would ordinarily rely on the JDK is implemented directly in Babble:
-- **`package math` (no `java.lang.Math`)**:
+- **`lib/math.ba` module (no `java.lang.Math`)**:
   - `math.sqrt(x)`: Range-scaling + 10-iteration Newton-Raphson (Heron's method) to full IEEE-754 `double` precision.
   - `math.sin(x)`, `math.cos(x)`, `math.tan(x)`: Angle wrapping into $[-\pi, \pi]$ followed by 10-term Taylor series expansion.
   - `math.powInt(base, exp)`: Recursive exponentiation using Babble's `recurse` keyword (for Schlick's glass reflectance polynomial).

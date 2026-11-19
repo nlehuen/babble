@@ -161,12 +161,6 @@ v.x += 1
 Value members are read-only : x
 
 {{{{{
-package pk ( def k = 1 )
-pk.k = 2
-}}}}}
-Cannot assign to a package member : k
-
-{{{{{
 def Box = class (def x : int) (
     private def priv = 2
 )

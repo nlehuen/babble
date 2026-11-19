@@ -369,7 +369,6 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         assertFails("def I = interface () ; I = 1 ; def C = class () implements I ()", "implements needs a statically known interface");
         assertFails("def D = class () () ; def C = class () implements D ()", "implements needs a statically known interface");
         assertFails("def C = class () implements Nothing ()", "implements needs a statically known interface");
-        Assertions.assertDoesNotThrow(() -> interpret("package shapes ( def S = interface () ) ; def C = class () implements shapes.S () ; C() is shapes.S"));
         assertFails("def I = interface extends I ()", "Interface extends itself : I");
     }
 

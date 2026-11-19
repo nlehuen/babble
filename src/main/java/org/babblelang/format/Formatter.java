@@ -209,7 +209,7 @@ public final class Formatter {
             return IN_LIST;
         }
         // In these, a newline can only come before a block, "else" or "static".
-        if (parent instanceof BabbleParser.PackageExpressionContext || parent instanceof BabbleParser.IfExpressionContext
+        if (parent instanceof BabbleParser.IfExpressionContext
                 || parent instanceof BabbleParser.WhileExpressionContext || parent instanceof BabbleParser.ClassExpressionContext
                 || parent instanceof BabbleParser.InterfaceExpressionContext || parent instanceof BabbleParser.ObjectExpressionContext
                 || parent instanceof BabbleParser.FunctionLiteralContext) {

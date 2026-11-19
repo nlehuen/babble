@@ -482,7 +482,7 @@ memberName
     ;
 ```
 
-* **Forbidden (`ID` required):** `def` names (`def list = 1` $\to$ syntax error), parameter names (`(map: int) -> ...` $\to$ syntax error), type parameter names (`def f(int) = ...` $\to$ syntax error), `package` names, and unqualified variable assignments.
+* **Forbidden (`ID` required):** `def` names (`def list = 1` $\to$ syntax error), parameter names (`(map: int) -> ...` $\to$ syntax error), type parameter names (`def f(int) = ...` $\to$ syntax error), and unqualified variable assignments.
 * **Allowed (`memberName` accepted):**
   * Member selection after `.` and `?.`: `xs.set(0, 42)`, `stream.map((x) -> x + 1)`, `opt.map(fn)`, `dir.list()`.
   * Qualified member assignment: `obj.set = ...` (Java fields named after keywords, if any).
@@ -617,7 +617,7 @@ Notice the immediate payoff:
 * **`BIP011-Q10` → `BIP011-D10` (Collection constructor arguments):** *What arguments do `list`, `set`, `sortedset`, `map`, `sortedmap`, and `entry` accept?*
   **Decided (`BIP011-D10`):** Support empty `()`, variadic initial elements/entries (`list(1, 2, 3)`, `map(entry("a", 1))`), and named options (`from:`, `capacity:` via JDK 21 `newLinkedHashSet`/`newLinkedHashMap`, and `comparator:` on `sortedset`/`sortedmap` with static `Comparable` verification when `comparator:` is omitted) (§5.3).
 * **`BIP011-Q11` → `BIP011-D11` (Keyword reservation vs JDK `.set`/`.map`/`.list` methods):** *How do reserved core type names avoid breaking calls to `List.set`, `Stream.map`, and `File.list`?*
-  **Decided (`BIP011-D11`):** Reserve all 17 core type keywords in declaration, unqualified expression, and type positions (forbidding shadowing via `def`, parameter, type-parameter, or `package`), while allowing `memberName: ID | coreTypeKeyword` after `.` and `?.` (and in `effectTarget` / named-arg labels) so all Java methods remain directly callable (§7.1).
+  **Decided (`BIP011-D11`):** Reserve all 17 core type keywords in declaration, unqualified expression, and type positions (forbidding shadowing via `def`, parameter, or type-parameter), while allowing `memberName: ID | coreTypeKeyword` after `.` and `?.` (and in `effectTarget` / named-arg labels) so all Java methods remain directly callable (§7.1).
 * **`BIP011-Q12` → `BIP011-D12` (`BIP007` effect integration):** *Should core types carry built-in `BIP007` effect contracts?*
   **Decided (`BIP011-D12`):** Yes—ship built-in `HostEffects` / `EffectChecker` profiles (`pure deterministic` for scalars/`string`/`entry`, `hermetic deterministic` constructors, `hermetic borrow` readers, `hermetic mut` mutators, plus sub-reference alias tracking on collection views) (§8.2).
 * **`BIP011-Q13` → `BIP011-D13` (`RM001` & `RM003` bytecode unboxing for new primitives):** *Should `CodeGenerator` unbox all 8 primitives or box the 5 new ones?*

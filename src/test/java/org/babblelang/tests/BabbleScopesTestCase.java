@@ -7,27 +7,6 @@ import javax.script.ScriptException;
 
 public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
-    public void testPackageScope() throws Exception {
-        Assertions.assertEquals(2, interpret("package test ( def value = 1 ) ; test.value + 1"));
-        Assertions.assertEquals(6, interpret("package test ( def value = 1 ; package test2 ( def value = 3 ) ; value = value + 1 ) ; test.value + test.test2.value + 1"));
-    }
-
-    @Test
-    public void testPackagesChangeOnlyThroughTheirOwnCode() throws Exception {
-        // From inside : its code assigns its names directly.
-        Assertions.assertEquals(3, interpret("package p ( def n = 1 ; def add = (k : int) -> ( n += k ) ) ; p.add(2) ; p.n"));
-        // From outside, through a member : refused statically when the package is known.
-        for (String assignment : new String[]{"p.n = 5", "p.n += 1", "p.q.m = 2"}) {
-            assertFailsWith("package p ( def n = 1 ; package q ( def m = 1 ) ) ; " + assignment, "Cannot assign to a package member : ");
-        }
-    }
-
-    private void assertFailsWith(String source, String message) {
-        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(source), source);
-        Assertions.assertTrue(e.getMessage().contains(message), e.getMessage());
-    }
-
-    @Test
     public void testIncr() throws Exception {
         Assertions.assertEquals(2, interpret("def i = 0 ; ( i = i + 1 ) ; i = i + 1 ; i"));
     }
@@ -35,8 +14,8 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testPrecedence() throws Exception {
         Assertions.assertEquals(2, interpret("def value = 1; value = value + 1 ; value"));
-        Assertions.assertEquals(2, interpret("package test (def value = 1) ; def value = test.value + 1 ; value"));
-        Assertions.assertEquals(1, interpret("package test (def value = 1) ; def value : any? ; value = test.value ; value"));
+        Assertions.assertEquals(2, interpret("def o = object (def value = 1) ; def value = o.value + 1 ; value"));
+        Assertions.assertEquals(1, interpret("def o = object (def value = 1) ; def value : any? ; value = o.value ; value"));
     }
 
     @Test
@@ -138,7 +117,6 @@ public class BabbleScopesTestCase extends BabbleTestBase {
 
     @Test
     public void testSelectingFromAScopeStillWorks() throws Exception {
-        Assertions.assertEquals(1, interpret("package test ( def value = 1 ) ; test.value"));
         Assertions.assertEquals(1, interpret("def o = object ( def value = 1 ) ; o.value"));
     }
 

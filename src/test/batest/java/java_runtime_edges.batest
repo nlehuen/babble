@@ -232,13 +232,6 @@ def s : java.lang.String = dyn(Foo()) as java.lang.String
 Type error : expected string, got Foo
 
 {{{{{
-;; Package member assignment rejected
-package p ( def x = 1 )
-p.x = 2
-}}}}}
-Cannot assign to a package member : x
-
-{{{{{
 ;; Value class member assignment rejected
 def Pt = value class (def x : int) ()
 def pt = Pt(3)

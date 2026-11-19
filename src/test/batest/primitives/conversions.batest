@@ -77,12 +77,6 @@ print(classof(I))
 classof : an interface has no class
 
 {{{{{
-package p ()
-print(classof(p))
-}}}}}
-classof : a package has no class
-
-{{{{{
 def f = () -> ( 1 )
 print(classof(f))
 }}}}}

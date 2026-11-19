@@ -59,19 +59,19 @@ public final class Classes {
 
     /** The namespace of a constructor call, a child of the class's closure. */
     public static Namespace constructorScope(BabbleClass babbleClass, BabbleInstance instance) {
-        Namespace namespace = babbleClass.closure().enter(null);
+        Namespace namespace = babbleClass.closure().enter();
         namespace.define("this", true).set(instance);
         return namespace;
     }
 
     public static Namespace staticScope(Namespace outer, BabbleType type) {
-        Namespace namespace = outer.enter(null);
+        Namespace namespace = outer.enter();
         namespace.define("this", true).set(type);
         return namespace;
     }
 
     public static Namespace interfaceScope(Namespace outer, BabbleInterface type) {
-        Namespace namespace = outer.enter(null);
+        Namespace namespace = outer.enter();
         namespace.define(INTERFACE, true).set(type);
         return namespace;
     }

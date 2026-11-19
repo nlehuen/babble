@@ -1,9 +1,6 @@
 ;; EffectChecker modifier validation, def-level axioms/impure, import("pkg") targets, SAM propagation, and algebraic errors
 
 ========== eff_mod.ba ==========
-export package ep (
-    def y = 1
-)
 export axiom pure deterministic nothrow java.lang.Math.abs
 export axiom mut java.util.List.add
 export def abs2 = axiom pure deterministic nothrow java.lang.Math.abs
@@ -121,12 +118,6 @@ def em = import("eff_mod.ba")
 axiom pure em.missing
 }}}}}
 Unknown export : missing in eff_mod.ba
-
-{{{{{
-def em = import("eff_mod.ba")
-axiom pure em.ep.missing
-}}}}}
-Unknown member : missing in package ep
 
 {{{{{
 def bad = axiom mut java.lang.StringBuilder

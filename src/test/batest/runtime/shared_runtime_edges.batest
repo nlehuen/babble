@@ -325,17 +325,12 @@ def v = Val(1)
 println(v == Val2(1), ":", v == Val(2), ":", v == v, ":", Ref(5))
 println(Ref(1) == Ref(1), ":", java.util.Objects.equals(v, Val(1)), ":", java.util.List.of(v).hashCode() != 0)
 
-package reopen ( def a = 10 )
-package reopen ( def b = 20 )
-println(reopen.a + reopen.b)
-
 def dyn = (v : any?) : any? -> ( v )
 println(same(1.0, 1), ":", same(null, 1), ":", dyn(1.5) is double, ":", dyn(null) is string, ":", dyn("hi") is string, ":", dyn(false) is any)
 }}}}}
 true
 false:false:true:Ref(5)
 false:true:true
-30
 true:false:true:false:true:true
 
 {{{{{

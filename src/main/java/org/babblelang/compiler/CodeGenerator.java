@@ -35,12 +35,11 @@ import static org.objectweb.asm.Opcodes.*;
  * Names are resolved statically ({@link Resolution}, phase 2) : the variables of
  * functions, blocks and class bodies are JVM locals of the method they are compiled into,
  * or {@link org.babblelang.runtime.Cell}s when a nested function captures them, and a
- * function or class value carries the cells it captured. The file, packages and interface
- * bodies keep their runtime {@code Namespace}, as in phase 1, and so does any function or
- * class body that declares a package : names found there, or nowhere, are looked up in
- * the namespace held in a JVM local of the method being generated. The one invariant of
- * the generator is that <b>every expression leaves exactly one Object on the operand
- * stack</b>.
+ * function or class value carries the cells it captured. The file and interface
+ * bodies keep their runtime {@code Namespace}, as in phase 1 : names found there,
+ * or nowhere, are looked up in the namespace held in a JVM local of the method being
+ * generated. The one invariant of the generator is that <b>every expression leaves
+ * exactly one Object on the operand stack</b>.
  * <ul>
  * <li>{@code static Object run(ScriptRuntime rt, Namespace ns)} runs the file. It is split
  * into {@code run$0}, {@code run$1}, ... when the file is large.</li>
@@ -52,7 +51,7 @@ import static org.objectweb.asm.Opcodes.*;
  * <li>The static descriptions of call sites, operator sites and parameter tables are
  * static fields, built once in {@code <clinit>}.</li>
  * </ul>
- * Package and object bodies are compiled inline, so a {@code return} inside one is a
+ * Object bodies are compiled inline, so a {@code return} inside one is a
  * plain {@code ARETURN} from the enclosing function.
  */
 final class CodeGenerator extends BabbleBaseVisitor<Void> {
@@ -1491,10 +1490,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             if (parent instanceof BabbleParser.DefExpressionContext def && def.value == cur) {
                 cur = def;
             } else if (parent instanceof BabbleParser.BlockContext block
-                    && block.getParent() instanceof BabbleParser.PackageExpressionContext pkg
-                    && pkg.packageBlock == block) {
-                cur = pkg;
-            } else if (parent instanceof BabbleParser.BlockContext block
                     && block.getParent() instanceof BabbleParser.BlockExpressionContext blockExpr
                     && blockExpr.block() == block
                     && block.effectDeclaration().isEmpty()
@@ -2770,22 +2765,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     // ---------------------------------------------------------------- expressions
 
-    @Override
-    public Void visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
-        line(ctx);
-        mv.visitVarInsn(ALOAD, nsLocal);
-        mv.visitLdcInsn(ctx.name.getText());
-        getStringArray(scopes.declared(ctx));
-        mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "enterPackage", "(Ljava/lang/String;[Ljava/lang/String;)L" + NAMESPACE + ";", false);
-        int namespace = newLocal();
-        mv.visitVarInsn(ASTORE, namespace);
-        withNamespace(namespace, () -> statements(ctx.packageBlock.expression()));
-        pop(stackKind);
-        mv.visitInsn(ACONST_NULL);
-        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-        return null;
-    }
-
     // ---------------------------------------------------------------- classes
 
     private String shapeField(ClassShape shape) {
@@ -3021,10 +3000,6 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         for (BabbleParser.ExpressionContext stmt : currentFile.expression()) {
             if (stmt instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(rootName)) {
                 if (def.getStop().getStopIndex() >= useStart) {
-                    return false;
-                }
-            } else if (stmt instanceof BabbleParser.PackageExpressionContext pkg && pkg.name.getText().equals(rootName)) {
-                if (pkg.getStop().getStopIndex() >= useStart) {
                     return false;
                 }
             }

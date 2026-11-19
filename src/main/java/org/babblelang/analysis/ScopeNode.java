@@ -4,7 +4,6 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.babblelang.parser.BabbleParser;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,7 +13,7 @@ import java.util.Map;
  */
 final class ScopeNode {
     enum Kind {
-        FILE, FUNCTION, PACKAGE,
+        FILE, FUNCTION,
         /** A class or object body : the constructor's scope. Its defs are members. */
         CLASS_BODY,
         /** An interface body : its defs are required members or default methods. */
@@ -29,7 +28,6 @@ final class ScopeNode {
     final ParserRuleContext owner;
     /** Lexical names, in declaration order : DefExpressionContext or ParameterDeclarationContext. */
     final Map<String, ParserRuleContext> names = new LinkedHashMap<>();
-    final Map<String, List<BabbleParser.PackageExpressionContext>> packages = new HashMap<>();
     /** The names defined here, declared when the scope is entered (hoisting). */
     final List<String> declared = new ArrayList<>();
     /** For class, interface and static bodies : the type. */

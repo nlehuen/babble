@@ -118,23 +118,6 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return result;
     }
 
-    @Override
-    public Object visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
-        last = ctx;
-        Namespace before = namespace;
-        namespace = namespace.enterPackage(ctx.name.getText(), scopes.declared(ctx));
-        try {
-            visitStatements(ctx.packageBlock.expression());
-            last = ctx;
-        } finally {
-            // Restoring the saved namespace rather than calling leave() keeps the
-            // interpreter consistent even when the body unwinds. "last" stays where
-            // the failure happened, so the reported line still points at it.
-            namespace = before;
-        }
-        return null;
-    }
-
     // ---------------------------------------------------------------- classes
 
     /**
@@ -324,7 +307,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     /**
-     * A block that defines names gets a namespace of its own. Function, package and
+     * A block that defines names gets a namespace of its own. Function and
      * object bodies never do : their owner already provides it.
      */
     @Override

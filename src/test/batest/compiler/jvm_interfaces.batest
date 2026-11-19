@@ -10,13 +10,11 @@ export def Circle = value class (r : double) implements Shape (
     def area = () : double -> ( 3.0 * this.r * this.r )
 )
 
-export package nested (
-    def Tag = interface (
-        def label = () : string -> ( "tag" )
-    )
-    def Tagged = class (name : string) implements Tag (
-        def label = () : string -> ( super.label() + ":" + name )
-    )
+export def Tag = interface (
+    def label = () : string -> ( "tag" )
+)
+export def Tagged = class (name : string) implements Tag (
+    def label = () : string -> ( super.label() + ":" + name )
 )
 
 {{{{{
@@ -165,7 +163,7 @@ println(u1.apply(5), ":", w1.apply(5, 2), ":", u2.apply(5), ":", w2.apply(5, 3))
 15:7:30:8
 
 {{{{{
-;; Field-holding-function implementation and namespace-scoped (package-containing) class implementing interface
+;; Field-holding-function implementation and super default call in class implementing interface
 def Op = interface (
     def run : (x : int) : int
     def base = (x : int) : int -> ( x + 100 )
@@ -174,9 +172,6 @@ def FieldImpl = class (fn : (x : int) : int) implements Op (
     def run = fn
 )
 def NsImpl = class (delta : int) implements Op (
-    package meta (
-        def tag = "ns"
-    )
     def run = (x : int) : int -> ( super.base(x) + delta )
 )
 def f : Op = FieldImpl((x : int) : int -> ( x * 4 ))
@@ -219,8 +214,8 @@ def Rect = class (w : double, h : double) implements shapes.Shape (
 )
 def s1 : shapes.Shape = shapes.Circle(2.0)
 def s2 : shapes.Shape = Rect(3.0, 4.0)
-def t : shapes.nested.Tag = shapes.nested.Tagged("ok")
-println(s1.area(), ":", s1.scale(2.0), ":", s2.scale(2.0), ":", (s1 is shapes.Circle), ":", (s2 is shapes.Shape), ":", t.label(), ":", (t is shapes.nested.Tagged))
+def t : shapes.Tag = shapes.Tagged("ok")
+println(s1.area(), ":", s1.scale(2.0), ":", s2.scale(2.0), ":", (s1 is shapes.Circle), ":", (s2 is shapes.Shape), ":", t.label(), ":", (t is shapes.Tagged))
 }}}}}
 12.0:24.0:25.0:true:true:tag:ok:true
 

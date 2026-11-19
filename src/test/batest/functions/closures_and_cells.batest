@@ -67,15 +67,3 @@ println(widenCapture())
 }}}}}
 2.5:java.lang.Double
 
-{{{{{
-;; Package inside a function forces Namespace-backed scope rather than flat JVM locals
-def pkgClosure = (n : int) : int -> (
-    package p (
-        def k = 10
-    )
-    def reader = () : int -> ( p.k + n )
-    reader()
-)
-println(pkgClosure(5))
-}}}}}
-15

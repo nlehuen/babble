@@ -215,12 +215,10 @@ public class BabbleCompilerTestCase {
                 "def i = 0 ; while i < 3 then ( i = i + 1 ) ; null",
                 "def a = 1 ; a == 0 and ( a = 2 ; true ) ; a == 1 or ( a = 3 ; true ) ; not (a == 1)",
                 "def f = (a : int, b = a + 1, c : () : int = () -> ( b )) -> ( a + c() ) ; f(1) + f(1, c: () -> ( 10 ))",
-                "package p ( def x = 1 ; package q ( def y = x + 1 ) ) ; p.q.y",
                 "def C = class (def v : int) ( def m = () -> ( this.v ) ) ; C(4).m()",
-                "def f = () -> ( package p ( def v = ( return 2 ) ) ; 3 ) ; f()",
                 "( def a = 1 ; ( def b = a + 1 ; ( def c = b + 1 ; c ) ) )",
         };
-        Object[] expected = {2, 3, null, false, 14, 2, 4, 2, 3};
+        Object[] expected = {2, 3, null, false, 14, 4, 3};
         for (int i = 0; i < scripts.length; i++) {
             CompiledBabbleScript script = compile(scripts[i]);
             assertVerifies(script);

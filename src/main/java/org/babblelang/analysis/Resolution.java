@@ -15,9 +15,7 @@ import java.util.Set;
  * <p>
  * A scope is either a <em>frame</em> scope, whose variables are JVM locals of the method
  * it is compiled into, or a <em>namespace</em> scope, whose names stay in a runtime
- * {@code Namespace} as in phase 1 : the file, packages, interface bodies, and any
- * function, class body or static block that declares a package somewhere in it, since a
- * package needs a namespace to live in.
+ * {@code Namespace} as in phase 1 : the file and interface bodies.
  * <p>
  * The methods of the generated class are the file's {@code run}, one per function
  * literal, and one per class or object body (its constructor). Everything else is

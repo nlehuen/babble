@@ -61,8 +61,8 @@ public final class AnalysisSession {
     /**
      * Makes an analysed input part of the session, for the inputs that follow.
      *
-     * @return whether the input opened a scope of its own : it defines names or
-     * packages, and must then run in a namespace nested in the previous one
+     * @return whether the input opened a scope of its own : it defines names,
+     * and must then run in a namespace nested in the previous one
      */
     public boolean commit(ScopeAnalysis analysis) {
         BlockScopes pass = analysis.pass();
@@ -98,7 +98,7 @@ public final class AnalysisSession {
             }
         }
         ScopeNode file = pass.fileScope;
-        if (file.names.isEmpty() && pass.packages.isEmpty()) {
+        if (file.names.isEmpty()) {
             // Nothing the following inputs could see : they stay nested in the same scope.
             return false;
         }

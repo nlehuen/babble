@@ -19,9 +19,6 @@ import java.util.Map;
  * ({@code docs/design/bip010_type-checker-simplification.md} §4.6, {@code BIP010-D3}).
  */
 final class TypedModuleSummary {
-    /** A static package namespace of {@link TypeNode}s, nested {@link StaticPackageMap}s, or {@link ModuleInterface}s. */
-    record StaticPackageMap(Map<String, Object> members) {
-    }
 
     /**
      * AST-free higher-order effect specialization template for an exported or
@@ -148,7 +145,7 @@ final class TypedModuleSummary {
         for (Map.Entry<String, ParserRuleContext> entry : pass.fileScope.names.entrySet()) {
             String name = entry.getKey();
             ParserRuleContext decl = entry.getValue();
-            Type t = freezeType(checker, checker.typeOfDeclaration(decl));
+            Type t = checker.typeOfDeclaration(decl);
             if (t != null) {
                 exports.put(name, t);
             }
@@ -156,17 +153,6 @@ final class TypedModuleSummary {
                 Object ref = refs.freeze(refs.resolve(def.value, 0));
                 if (ref != null) {
                     staticSingletons.put(name, ref);
-                }
-            }
-        }
-        for (Map.Entry<String, List<BabbleParser.PackageExpressionContext>> entry : pass.fileScope.packages.entrySet()) {
-            String name = entry.getKey();
-            List<BabbleParser.PackageExpressionContext> list = entry.getValue();
-            if (list != null && !list.isEmpty()) {
-                exports.putIfAbsent(name, freezeType(checker, checker.members().localPackage(name, list)));
-                List<BabbleParser.PackageExpressionContext> staticPkgs = StaticRefs.staticPackages(list);
-                if (staticPkgs != null) {
-                    staticSingletons.putIfAbsent(name, refs.freezePackages(staticPkgs));
                 }
             }
         }
@@ -243,31 +229,6 @@ final class TypedModuleSummary {
                         refs.frozenSingletons(),
                         checker.effectChecker != null ? checker.effectChecker.committedJavaEffects() : Map.of(),
                         checker.effectChecker != null ? checker.effectChecker.committedCallableSummaries() : Map.of()));
-    }
-
-    private static Type freezeType(TypeChecker checker, Type type) {
-        if (type instanceof Type.Package pkg) {
-            List<BabbleParser.PackageExpressionContext> list = checker.localPackageDeclarations(pkg);
-            if (list == null) {
-                return pkg;
-            }
-            Map<String, Type> members = new LinkedHashMap<>();
-            Map<String, List<BabbleParser.PackageExpressionContext>> nested = new LinkedHashMap<>();
-            for (BabbleParser.PackageExpressionContext expr : list) {
-                for (BabbleParser.ExpressionContext stmt : expr.packageBlock.expression()) {
-                    if (stmt instanceof BabbleParser.DefExpressionContext def) {
-                        members.put(def.name.getText(), freezeType(checker, checker.typeOfDeclaration(def)));
-                    } else if (stmt instanceof BabbleParser.PackageExpressionContext inner) {
-                        nested.computeIfAbsent(inner.name.getText(), k -> new ArrayList<>()).add(inner);
-                    }
-                }
-            }
-            for (Map.Entry<String, List<BabbleParser.PackageExpressionContext>> entry : nested.entrySet()) {
-                members.put(entry.getKey(), freezeType(checker, checker.members().localPackage(entry.getKey(), entry.getValue())));
-            }
-            return new Type.Package(pkg.name(), pkg.id(), Map.copyOf(members));
-        }
-        return type;
     }
 
     private static Map<ParserRuleContext, Type> frozenDeclarations(TypeChecker checker) {

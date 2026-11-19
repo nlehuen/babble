@@ -187,13 +187,6 @@ public class TypeCheckerTestCase {
     }
 
     @Test
-    public void testPackageMembersAreNotAssignedFromOutside() {
-        assertDiagnostics("package p ( def n : int = 1 ; package q ( def s = \"\" ) ; def set = (v : int) -> ( n = v ) )\np.n = 2\np.q.s += \"x\"\np.set(3)",
-                "2:1 Cannot assign to a package member : n",
-                "3:1 Cannot assign to a package member : s");
-    }
-
-    @Test
     public void testOperators() {
         assertDiagnostics("def a : int = 1 + 2\ndef b : int = 1 + 2.0\ndef c : int = 4 / 2\ndef d : string = \"a\" + 1\ndef e : bool = 1 < 2",
                 "2:15 Type error : expected int, got double",
@@ -313,13 +306,6 @@ public class TypeCheckerTestCase {
                 "4:15 Type error : expected int, got double");
         assertDiagnostics(shape + "def i : Sq = Sq(1)\ndef j : Shape = i\ndef k : Sq = j",
                 "5:14 Type error : expected Sq, got Shape");
-    }
-
-    @Test
-    public void testPackages() {
-        assertDiagnostics("package p ( def x : int = 1 ; package q ( def y = \"s\" ) )\ndef a : string = p.x\ndef b : int = p.q.y",
-                "2:18 Type error : expected string, got int",
-                "3:15 Type error : expected int, got string");
     }
 
     @Test
@@ -1230,12 +1216,10 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testP7CallSiteParameterInference() {
-        // Functions, package defs, widening (int -> double, T <-> null), named/default args, methods, operators, constructors, recursion.
+        // Functions, widening (int -> double, T <-> null), named/default args, methods, operators, constructors, recursion.
         assertDiagnostics("def area = (w, h) -> ( w * h )\n"
                 + "area(2, 3)\n"
                 + "def d : double = area(1.5, 2)\n"
-                + "package pkg ( def sq = (x) -> ( x * x ) )\n"
-                + "def sqr : int = pkg.sq(4)\n"
                 + "def opt = (a = null, b = 10) -> ( (if a == null then ( \"none\" ) else ( a )) + \":\" + b )\n"
                 + "def o1 : string = opt()\n"
                 + "def o2 : string = opt(b: 5, a: \"ok\")\n"
@@ -1275,7 +1259,7 @@ public class TypeCheckerTestCase {
                 "4:6 Type error : expected double, got string",
                 "5:36 Type error : expected int, got double (x is double because of the call at line 7)");
 
-        // Exclusions: escaping functions, exported defs/packages/classes, interface implementations, escaping classes, never-called & null-only.
+        // Exclusions: escaping functions, exported defs/classes, interface implementations, escaping classes, never-called & null-only.
         assertDiagnostics("def esc1 = (x) -> ( x )\n"
                         + "def ref = esc1\n"
                         + "esc1(1)\n"
@@ -1289,8 +1273,6 @@ public class TypeCheckerTestCase {
                         + "reass(1)\n"
                         + "export def expFn = (x) -> ( x )\n"
                         + "expFn(1)\n"
-                        + "export package expPkg ( def pf = (x) -> ( x ) )\n"
-                        + "expPkg.pf(1)\n"
                         + "export def ExpCls = class (hx) (\n"
                         + "  def pubM = (y) -> ( y )\n"
                         + "  private def privM = (z) -> ( this.pubM(z) )\n"
@@ -1319,17 +1301,16 @@ public class TypeCheckerTestCase {
                 "7:13 Missing type : x",
                 "9:14 Missing type : x",
                 "12:21 Missing type : x",
-                "14:35 Missing type : x",
-                "16:28 Missing type : hx",
-                "17:15 Missing type : y",
-                "21:13 Missing type : w",
-                "25:38 Missing type : a",
-                "27:57 Missing type : x",
-                "29:92 Missing type : x",
-                "31:21 Missing type : x",
-                "34:22 Missing type : x",
-                "36:14 Missing type : x",
-                "37:17 Missing type : x");
+                "14:28 Missing type : hx",
+                "15:15 Missing type : y",
+                "19:13 Missing type : w",
+                "23:38 Missing type : a",
+                "25:57 Missing type : x",
+                "27:92 Missing type : x",
+                "29:21 Missing type : x",
+                "32:22 Missing type : x",
+                "34:14 Missing type : x",
+                "35:17 Missing type : x");
     }
 
     @Test

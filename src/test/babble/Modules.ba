@@ -27,9 +27,6 @@ assert(import("modules/shapes.ba").count() == 2)
 ;; shapes.ba imported vectors.ba itself : it got the same module, so the same class
 assert(shapes.unitSquare().corner is Vec)
 
-;; exported packages
-assert(shapes.units.m == 100 * shapes.units.cm)
-
 ;; modules importing each other
 def even = import("modules/even.ba")
 assert(even.isEven(10))

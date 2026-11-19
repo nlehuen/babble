@@ -111,20 +111,6 @@ println(xs.get(0))
 ok
 
 {{{{{
-;; Unknown type paths inside packages
-package p (
-    def a = 1
-)
-def x : p.Missing = 1
-}}}}}
-Unknown type : p.Missing
-
-{{{{{
-def x : p.a = 1
-}}}}}
-Unknown type : p.a
-
-{{{{{
 ;; Cannot infer type arguments for generic Java static method / constructor
 def o = java.util.Optional.empty()
 }}}}}

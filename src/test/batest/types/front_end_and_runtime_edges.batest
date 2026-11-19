@@ -127,22 +127,18 @@ def fn : pure borrow () : C = obj.make
 Type error : expected pure borrow () : C, got pure () : C
 
 {{{{{
-;; Nested packages in type annotations & TypeChecks.resolveInPackages, TypeChecks.exportedModule, LogicalPaths leading slash
-export package Outer (
-    package Inner (
-        def I = interface ( def f : () : int )
-        def C = class (def x : int) implements I (
-            def f = () : int -> ( this.x )
-        )
-    )
+;; TypeChecks.exportedModule and LogicalPaths leading slash
+def I = interface ( def f : () : int )
+def C = class (def x : int) implements I (
+    def f = () : int -> ( this.x )
 )
 def ma = import("/fe_mod_a.ba")
-def C2 = class (def n : int) implements Outer.Inner.I, ma.sub.IB, java.lang.Runnable (
+def C2 = class (def n : int) implements I, ma.sub.IB, java.lang.Runnable (
     def f = () : int -> ( this.n )
     def id = () : int -> ( this.n * 2 )
     def run = () -> ( () )
 )
-def c1 : Outer.Inner.C = Outer.Inner.C(3)
+def c1 : C = C(3)
 def c2 = C2(4)
 c2.run()
 println(c1.f(), ":", c2.f(), ":", c2.id())

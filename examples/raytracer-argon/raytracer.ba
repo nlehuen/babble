@@ -11,8 +11,8 @@
 
     The program is split into modules in lib/ : math, rng, vec3, ray, interval, aabb,
     hittable (interfaces, materials, spheres, lists and the BVH), color, camera and
-    scenes. lib/raytracer.ba re-exports them all, as the raytracer package of a single
-    file did, so this file uses them as raytracer.Vec3, raytracer.Camera...
+    scenes. lib/raytracer.ba re-exports them all from one facade module, so this file
+    uses them as raytracer.Vec3, raytracer.Camera...
 ;;)
 
 def math = import("lib/math.ba")

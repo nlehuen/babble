@@ -84,8 +84,6 @@ public class ReplTestCase {
         Assertions.assertEquals(10, session.eval("x * 2"));
         session.eval("def twice = (f : (n : int) : int, v : int) : int -> ( f(f(v)) )");
         Assertions.assertEquals(7, session.eval("twice((n : int) : int -> ( n + 1 ), x)"));
-        session.eval("package p ( def a = 1 )");
-        Assertions.assertEquals(1, session.eval("p.a"));
         Assertions.assertNull(session.eval("println(x)"));
     }
 
@@ -239,9 +237,9 @@ public class ReplTestCase {
     @Test
     public void testValuesAreShown() throws Exception {
         Assertions.assertEquals(List.of("3", "\"a\\\"b\"", "1.5", "true", "function f", "function", "class P", "P(x: 1, y: 2)", "interface I", "[1]", "package java.util",
-                        "java.lang.Math", "package", "hi"),
+                        "java.lang.Math", "hi"),
                 transcript("1 + 2", "\"a\\\"b\"", "1.5", "1 < 2", "def f = () -> ( 1 )", "() -> ( 1 )", "def P = value class (x : int, y : int) ()", "P(1, 2)", "def I = interface ()",
-                        "def l : java.util.List(int) = java.util.ArrayList() ; l.add(1) ; l", "java.util", "java.lang.Math", "package p ( def a = 1 ) ; p",
+                        "def l : java.util.List(int) = java.util.ArrayList() ; l.add(1) ; l", "java.util", "java.lang.Math",
                         // null is not shown, and output is.
                         "null", "def n : any?", "println(\"hi\")"));
     }
