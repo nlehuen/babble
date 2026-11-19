@@ -3115,21 +3115,23 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     ? allInterfaceJvmNames.get(isTarget.typeId())
                     : allClassJvmNames.get(isTarget.typeId());
             if (targetJvm != null) {
-                if (!isDefinitelyEvaluatedStaticTypeRef(ctx.right, ctx)) {
-                    emitBoxed(ctx.right);
-                    mv.visitInsn(POP);
-                }
                 line(ctx);
                 mv.visitTypeInsn(INSTANCEOF, targetJvm);
                 stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
                 return null;
             }
         }
-        emitBoxed(ctx.right);
-        pushString(mv, ctx.right.getText());
+        String descriptor = scopes.checkedType(ctx);
+        if (descriptor == null) {
+            mv.visitInsn(POP);
+            mv.visitInsn(ICONST_1);
+            stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
+            return null;
+        }
+        pushString(mv, descriptor);
         line(ctx);
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "is", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
-        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Types", "matches", "(Ljava/lang/Object;Ljava/lang/String;)Z", false);
+        stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
         return null;
     }
 

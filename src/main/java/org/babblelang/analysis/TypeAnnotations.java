@@ -306,9 +306,11 @@ final class TypeAnnotations {
         }
         if (resolved instanceof BabbleParser.DefExpressionContext def) {
             if (path.size() == 1) {
-                TypeNode node = classNode(def.value);
-                if (node != null) {
-                    return instantiateBabbleType(node, type, scope, allowRaw);
+                if (!checker.isReassigned(def)) {
+                    TypeNode node = classNode(def.value, checker.scopeOf(def), 0);
+                    if (node != null) {
+                        return instantiateBabbleType(node, type, scope, allowRaw);
+                    }
                 }
             } else {
                 String imported = importedPackage(def.value);
@@ -477,9 +479,18 @@ final class TypeAnnotations {
         return type instanceof Type.ClassValue value ? new Type.Instance(value.node()) : null;
     }
 
-    private TypeNode classNode(BabbleParser.ExpressionContext value) {
+    private TypeNode classNode(BabbleParser.ExpressionContext value, ScopeNode scope, int depth) {
+        if (value == null || depth > 16) {
+            return null;
+        }
         if (value instanceof BabbleParser.ClassExpressionContext || value instanceof BabbleParser.InterfaceExpressionContext) {
             return checker.pass().typeNodes.get(value);
+        }
+        if (value instanceof BabbleParser.SelectorContext selector && selector.expression() == null && scope != null) {
+            Object resolved = TypeChecker.resolveName(null, selector.ID().getText(), scope);
+            if (resolved instanceof BabbleParser.DefExpressionContext def && !checker.isReassigned(def) && def.value != null) {
+                return classNode(def.value, checker.scopeOf(def), depth + 1);
+            }
         }
         return null;
     }

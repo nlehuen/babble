@@ -80,7 +80,7 @@ final class StaticRefs {
         return null;
     }
 
-    private static boolean isStaticTopLevelTypeExpr(ParserRuleContext typeExpr) {
+    static boolean isStaticTopLevelTypeExpr(ParserRuleContext typeExpr) {
         ParserRuleContext cur = typeExpr;
         while (cur != null) {
             ParserRuleContext parent = cur.getParent();

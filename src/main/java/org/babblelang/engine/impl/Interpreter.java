@@ -252,9 +252,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             last = ctx;
             return Values.isBuiltin(value, builtin);
         }
-        Object type = visit(ctx.right);
         last = ctx;
-        return Values.is(value, type, ctx.right.getText());
+        return Types.matches(value, scopes.checkedType(ctx));
     }
 
     @Override

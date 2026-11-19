@@ -220,11 +220,12 @@ println(s1.area(), ":", s1.scale(2.0), ":", s2.scale(2.0), ":", (s1 is shapes.Ci
 12.0:24.0:25.0:true:true:tag:ok:true
 
 {{{{{
-;; Forward reference on `is` target still reports Name used before definition
+;; Forward reference on `is` target resolves as a static type (BIP012-D8)
 def check = 1 is Later
 def Later = class () ()
+println(check, ":", Later() is Later)
 }}}}}
-Name used before definition : Later
+false:true
 
 {{{{{
 ;; Multi-input REPL session sharing compiled JVM interfaces and classes across ScriptClassLoaders

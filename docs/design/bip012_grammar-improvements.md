@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 012 |
 | **Date** | 2026-11-19 |
-| **Status** | Draft (`BIP012-Q1`–`Q9` → `BIP012-D1`–`D9` decided) |
+| **Status** | Implemented in `RM006` (`BIP012-Q1`–`Q9` → `BIP012-D1`–`D9`, `BIP012-P1`–`P4`) |
 | **Depends on** | Object model ([bip002_object-model.md](bip002_object-model.md)), interactive mode ([bip004_repl.md](bip004_repl.md)), modules ([bip005_modules.md](bip005_modules.md)), function effects & `RM002` ([bip007_effects.md](bip007_effects.md)), mandatory static typing & generics ([bip008_static-typing.md](bip008_static-typing.md)), core types ([bip011_core-types.md](bip011_core-types.md)) |
 | **Scope** | Comprehensive audit of ambiguities, context-sensitivities, semantic predicates, custom lookahead, and precedence/lexer defects in `src/main/antlr4/org/babblelang/parser/Babble.g4` (and `BIP011` / `BIP007-P2` syntax), plus a concrete, predicate-free LL(1)/LL(2) grammar redesign under Babble's single-bracket `()` constraint, along with `Formatter`, `BabbleSession`, and migration impact |
 
@@ -658,3 +658,12 @@ Building directly on landed `RM005` (`BIP012-D9`), each phase keeps `mvn -B pack
    Switch type arguments (`BIP012-D2`), `def` type parameters (`BIP012-D3`), and call-site/standalone type applications (`BIP012-D4`) to `of`—deleting `RM005`'s `isTypeApplicationCall()` predicate (P9), `ScopeAnalysis.typeApplyCalls`, `BlockScopes.visitTypeApplyCall`, and the curried-call fallback in `CallSolver`, `Interpreter`, and `CodeGenerator`; enforce mandatory `classParameters` with `NL*` before `classBlock` (`BIP012-D5`); replace `value class` with `record` (`BIP012-D6`); migrate `.ba`, `.batest`, and `examples/` scripts.
 4. **`BIP012-P4` — Precedence alignment, `SLL` fast path & doc sync:**
    Apply `BIP012-D8` (`is` with `type` RHS above `==`—deleting `RM005`'s `isCoreTypeAfterIs()` (P10) and the last remaining `@parser::members` code—`as` above `*`/`+`, `not` below `==`/`is`), enable `PredictionMode.SLL` → `LL` in `BabbleScriptEngine.parse`, and update `BIP002`, `BIP007` §4.1, `BIP011` §5.2/§7, `README.md`, and `CLAUDE.md`.
+
+---
+
+## 10. Implementation Notes (`RM006`)
+
+* **`OF` in `memberName`:** In addition to `RECORD`, `coreTypeKeyword`, and the 13 `BIP007-P1` effect keywords, `OF` is exempted in `memberName` so standard Java factory methods such as `java.util.List.of(...)`, `java.util.Set.of(...)`, and `java.util.Optional.of(...)` remain valid member selectors with zero grammar ambiguity.
+* **Unified `is` runtime semantics:** Because `isExpression` now takes `right=type` (supporting built-in types, Babble classes/interfaces, Java types, unions, nullables, and `null`), `Types.matches(Object, String)` provides exact runtime `isInstance` checks without numeric widening or SAM coercion, while `CodeGenerator` retains the direct `INSTANCEOF` fast path for static top-level Babble classes/interfaces and `Values.isBuiltin` for built-in types.
+* **Verified pure-`SLL` parsing:** `ParserGrammarTestCase` enforces zero `@parser::members` blocks and zero semantic predicates (`}?`) in `Babble.g4`, and parses every `.ba` script in `src/test/babble/` and `examples/` plus every valid `.batest` snippet in `PredictionMode.SLL` alone (zero LL fallback).
+
