@@ -16,6 +16,7 @@ import org.babblelang.effects.Monotone;
 import org.babblelang.effects.Mut;
 import org.babblelang.effects.Nothrow;
 import org.babblelang.effects.Pure;
+import org.babblelang.effects.Unique;
 import org.babblelang.engine.impl.Interpreter;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
@@ -56,34 +57,55 @@ final class EffectChecker {
     record ParsedPrefix(EnumSet<Effect> effects,
                         boolean mutThis,
                         boolean borrowThis,
+                        boolean uniqueReturn,
                         boolean axiom,
                         boolean impure,
                         boolean hasAnyModifier) {
         static final ParsedPrefix EMPTY = new ParsedPrefix(
-                EnumSet.noneOf(Effect.class), false, false, false, false, false);
+                EnumSet.noneOf(Effect.class), false, false, false, false, false, false);
+
+        ParsedPrefix(EnumSet<Effect> effects, boolean mutThis, boolean borrowThis,
+                     boolean axiom, boolean impure, boolean hasAnyModifier) {
+            this(effects, mutThis, borrowThis, false, axiom, impure, hasAnyModifier);
+        }
 
         EffectSet toEffectSet() {
             if (impure) {
                 return EffectSet.IMPURE_DECLARED;
             }
-            return EffectSet.ofDeclared(effects, mutThis, borrowThis, axiom);
+            return EffectSet.ofDeclared(effects, mutThis, borrowThis, uniqueReturn, axiom);
         }
     }
 
-    record ParamMods(boolean mut, boolean borrow) {
-        static final ParamMods NONE = new ParamMods(false, false);
+    record ParamMods(boolean mut, boolean borrow, boolean unique) {
+        static final ParamMods NONE = new ParamMods(false, false, false);
+
+        ParamMods(boolean mut, boolean borrow) {
+            this(mut, borrow, false);
+        }
     }
 
-    record CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams,
+    record CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
                            Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
                            Set<BabbleParser.FunctionLiteralContext> frameWriteOwners) {
+        CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams,
+                        Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
+                        Set<BabbleParser.FunctionLiteralContext> frameWriteOwners) {
+            this(effects, mutParams, borrowParams, new boolean[mutParams.length], frameReadOwners, frameWriteOwners);
+        }
+
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams) {
-            this(effects, mutParams, borrowParams, Set.of(), Set.of());
+            this(effects, mutParams, borrowParams, new boolean[mutParams.length], Set.of(), Set.of());
         }
     }
 
     record JavaCallProfile(EffectSet effects, boolean mutReceiver, boolean borrowReceiver,
-                           boolean[] mutParams, boolean[] borrowParams, boolean explicitNothrow) {
+                           boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
+                           boolean explicitNothrow) {
+        JavaCallProfile(EffectSet effects, boolean mutReceiver, boolean borrowReceiver,
+                        boolean[] mutParams, boolean[] borrowParams, boolean explicitNothrow) {
+            this(effects, mutReceiver, borrowReceiver, mutParams, borrowParams, new boolean[mutParams.length], explicitNothrow);
+        }
     }
 
     /** Tracks alias provenance and direct binding identity for static mut/borrow/exclusivity checks. */
@@ -277,19 +299,21 @@ final class EffectChecker {
         ParsedPrefix parsed = parseWords(
                 ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of(),
                 false, canReferenceThis(checker.scopeOf(ctx)), ctx, reportErrors);
+        boolean uniqueReturn = ctx.uniqueReturn != null || parsed.uniqueReturn();
         // Check pure + mut parameter conflict.
         boolean hasMutParam = false;
         boolean hasAnyParamMod = false;
         for (BabbleParser.FnParamContext param : ctx.fnParameters().fnParam()) {
             ParamMods pm = parseParamMods(param, reportErrors);
             hasMutParam |= pm.mut();
-            hasAnyParamMod |= pm.mut() || pm.borrow();
+            hasAnyParamMod |= pm.mut() || pm.borrow() || pm.unique();
         }
         if (reportErrors) {
             if (parsed.effects().contains(Effect.PURE) && hasMutParam) {
                 checker.effectDiagnostic("pure and mut are mutually exclusive : use hermetic with mut parameters", ctx);
             }
-            if (parsed.axiom() && parsed.effects().isEmpty() && !parsed.mutThis() && !parsed.borrowThis() && !hasAnyParamMod) {
+            if (parsed.axiom() && parsed.effects().isEmpty() && !parsed.mutThis() && !parsed.borrowThis()
+                    && !uniqueReturn && !hasAnyParamMod) {
                 checker.effectDiagnostic("axiom requires at least one effect modifier", ctx);
             }
             if (parsed.axiom() && !pass.hostEffects.allowAxioms()) {
@@ -303,7 +327,11 @@ final class EffectChecker {
             EnumSet<Effect> fixed = EffectSet.copySet(parsed.effects());
             fixed.remove(Effect.PURE);
             fixed.add(Effect.HERMETIC);
-            parsed = new ParsedPrefix(fixed, parsed.mutThis(), parsed.borrowThis(), parsed.axiom(), parsed.impure(), true);
+            parsed = new ParsedPrefix(fixed, parsed.mutThis(), parsed.borrowThis(), uniqueReturn,
+                    parsed.axiom(), parsed.impure(), true);
+        } else if (uniqueReturn != parsed.uniqueReturn()) {
+            parsed = new ParsedPrefix(parsed.effects(), parsed.mutThis(), parsed.borrowThis(), uniqueReturn,
+                    parsed.axiom(), parsed.impure(), true);
         }
         if (checker.inFile(ctx)) {
             fnPrefixes.put(ctx, parsed);
@@ -317,9 +345,13 @@ final class EffectChecker {
 
     private static List<Token> effectClauseTokens(BabbleParser.EffectClauseContext clause) {
         List<Token> words = new ArrayList<>();
-        words.add(clause.getStart());
-        for (BabbleParser.EffectWordContext w : clause.effectWord()) {
-            words.add(w.getStart());
+        for (int i = 0; i < clause.getChildCount(); i++) {
+            ParseTree child = clause.getChild(i);
+            if (child instanceof ParserRuleContext prc) {
+                words.add(prc.getStart());
+            } else if (child instanceof org.antlr.v4.runtime.tree.TerminalNode tn) {
+                words.add(tn.getSymbol());
+            }
         }
         return words;
     }
@@ -328,6 +360,7 @@ final class EffectChecker {
         boolean report = reportErrors && validatedTypeTrees.add(ctx);
         List<Token> words = ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of();
         ParsedPrefix parsed = parseWords(words, true, true, ctx, report);
+        boolean uniqueReturn = ctx.uniqueReturn != null || parsed.uniqueReturn();
         boolean hasMutParam = false;
         for (BabbleParser.FnTypeParamContext param : ctx.fnTypeParameters().fnTypeParam()) {
             ParamMods pm = parseParamMods(param, report);
@@ -340,7 +373,10 @@ final class EffectChecker {
             EnumSet<Effect> fixed = EffectSet.copySet(parsed.effects());
             fixed.remove(Effect.PURE);
             fixed.add(Effect.HERMETIC);
-            return new ParsedPrefix(fixed, parsed.mutThis(), parsed.borrowThis(), false, false, true);
+            return new ParsedPrefix(fixed, parsed.mutThis(), parsed.borrowThis(), uniqueReturn, false, false, true);
+        }
+        if (uniqueReturn != parsed.uniqueReturn()) {
+            return new ParsedPrefix(parsed.effects(), parsed.mutThis(), parsed.borrowThis(), uniqueReturn, false, false, true);
         }
         return parsed;
     }
@@ -354,6 +390,7 @@ final class EffectChecker {
         }
         boolean mut = false;
         boolean borrow = false;
+        boolean unique = false;
         for (BabbleParser.ParamModifierContext modCtx : ScopeAnalysis.paramModifiers(param)) {
             Token tok = modCtx.getStart();
             switch (tok.getText()) {
@@ -369,6 +406,12 @@ final class EffectChecker {
                     }
                     borrow = true;
                 }
+                case "unique" -> {
+                    if (unique && reportErrors) {
+                        checker.effectDiagnostic("Duplicate parameter modifier : unique", modCtx);
+                    }
+                    unique = true;
+                }
                 default -> {
                     if (reportErrors) {
                         checker.effectDiagnostic("Unknown parameter modifier : " + tok.getText(), modCtx);
@@ -376,7 +419,7 @@ final class EffectChecker {
                 }
             }
         }
-        ParamMods mods = (mut || borrow) ? new ParamMods(mut, borrow) : ParamMods.NONE;
+        ParamMods mods = (mut || borrow || unique) ? new ParamMods(mut, borrow, unique) : ParamMods.NONE;
         if (checker.inFile(param)) {
             paramModsMap.put(param, mods);
         }
@@ -391,6 +434,7 @@ final class EffectChecker {
         EnumSet<Effect> effects = EnumSet.noneOf(Effect.class);
         boolean mutThis = false;
         boolean borrowThis = false;
+        boolean uniqueReturn = false;
         boolean axiom = false;
         boolean impure = false;
         Set<String> seen = new HashSet<>();
@@ -426,6 +470,7 @@ final class EffectChecker {
                 case "associative" -> effects.add(Effect.ASSOCIATIVE);
                 case "monotone" -> effects.add(Effect.MONOTONE);
                 case "injective" -> effects.add(Effect.INJECTIVE);
+                case "unique" -> uniqueReturn = true;
                 case "mut" -> {
                     if (!hasThis && reportErrors) {
                         checker.effectDiagnostic("mut on a function requires a receiver (this) : mark mutated parameters with mut", owner);
@@ -448,7 +493,7 @@ final class EffectChecker {
         if (reportErrors) {
             if (axiom && impure) {
                 checker.effectDiagnostic("axiom and impure cannot be combined", owner);
-            } else if (impure && (!effects.isEmpty() || mutThis || borrowThis)) {
+            } else if (impure && (!effects.isEmpty() || mutThis || borrowThis || uniqueReturn)) {
                 checker.effectDiagnostic("impure cannot be combined with effect modifiers", owner);
             }
             if (effects.contains(Effect.PURE) && mutThis) {
@@ -461,7 +506,7 @@ final class EffectChecker {
         } else if (effects.contains(Effect.PURE)) {
             effects.add(Effect.HERMETIC);
         }
-        return new ParsedPrefix(effects, mutThis, borrowThis, axiom, impure, true);
+        return new ParsedPrefix(effects, mutThis, borrowThis, uniqueReturn, axiom, impure, true);
     }
 
     private static boolean canReferenceThis(ScopeNode scope) {
@@ -944,6 +989,7 @@ final class EffectChecker {
                 borrowParams[i] = true;
             }
         }
+        boolean[] uniqueParams = new boolean[paramCount];
         if (exec != null) {
             Parameter[] params = exec.getParameters();
             for (int i = 0; i < params.length; i++) {
@@ -953,10 +999,13 @@ final class EffectChecker {
                 if (params[i].isAnnotationPresent(Borrow.class)) {
                     borrowParams[i] = true;
                 }
+                if (params[i].isAnnotationPresent(Unique.class)) {
+                    uniqueParams[i] = true;
+                }
             }
         }
-        EffectSet set = EffectSet.ofDeclared(entry.effects(), mutReceiver, !isStaticOrCtor && borrowAll, true);
-        return new JavaCallProfile(set, mutReceiver, !isStaticOrCtor && borrowAll, mutParams, borrowParams, explicitNothrow);
+        EffectSet set = EffectSet.ofDeclared(entry.effects(), mutReceiver, !isStaticOrCtor && borrowAll, entry.uniqueResult(), true);
+        return new JavaCallProfile(set, mutReceiver, !isStaticOrCtor && borrowAll, mutParams, borrowParams, uniqueParams, explicitNothrow);
     }
 
     private static boolean hasAnyEffectAnnotation(Executable exec) {
@@ -964,7 +1013,7 @@ final class EffectChecker {
             return true;
         }
         for (Parameter p : exec.getParameters()) {
-            if (p.isAnnotationPresent(Mut.class) || p.isAnnotationPresent(Borrow.class)) {
+            if (p.isAnnotationPresent(Mut.class) || p.isAnnotationPresent(Borrow.class) || p.isAnnotationPresent(Unique.class)) {
                 return true;
             }
         }
@@ -980,6 +1029,7 @@ final class EffectChecker {
                 || el.isAnnotationPresent(Hermetic.class)
                 || el.isAnnotationPresent(Mut.class)
                 || el.isAnnotationPresent(Borrow.class)
+                || el.isAnnotationPresent(Unique.class)
                 || el.isAnnotationPresent(Deterministic.class)
                 || el.isAnnotationPresent(Nothrow.class)
                 || el.isAnnotationPresent(Idempotent.class)
@@ -994,9 +1044,10 @@ final class EffectChecker {
         int paramCount = exec != null ? exec.getParameterCount() : 0;
         boolean[] mutParams = new boolean[paramCount];
         boolean[] borrowParams = new boolean[paramCount];
+        boolean[] uniqueParams = new boolean[paramCount];
         AnnotatedElement primary = (!classLevelOnly && exec != null) ? exec : classSource;
         if (primary.isAnnotationPresent(Impure.class)) {
-            return new JavaCallProfile(EffectSet.IMPURE_DECLARED, false, false, mutParams, borrowParams, false);
+            return new JavaCallProfile(EffectSet.IMPURE_DECLARED, false, false, mutParams, borrowParams, uniqueParams, false);
         }
         EnumSet<Effect> effects = EnumSet.noneOf(Effect.class);
         collectAnnotationsInto(classSource, effects);
@@ -1007,6 +1058,7 @@ final class EffectChecker {
         boolean mutReceiver = !classLevelOnly && exec instanceof Method && !isStaticOrCtor
                 && exec.isAnnotationPresent(Mut.class) && exec.getDeclaringClass() != String.class;
         boolean borrowReceiver = !classLevelOnly && exec != null && exec.isAnnotationPresent(Borrow.class);
+        boolean uniqueResult = !classLevelOnly && exec != null && exec.isAnnotationPresent(Unique.class);
         if (exec != null) {
             Parameter[] params = exec.getParameters();
             for (int i = 0; i < params.length; i++) {
@@ -1016,14 +1068,17 @@ final class EffectChecker {
                 if (params[i].isAnnotationPresent(Borrow.class) || (exec instanceof Constructor<?> && borrowReceiver)) {
                     borrowParams[i] = true;
                 }
+                if (params[i].isAnnotationPresent(Unique.class)) {
+                    uniqueParams[i] = true;
+                }
             }
         }
         if (mutReceiver || anyTrue(mutParams)) {
             effects.remove(Effect.PURE);
         }
         boolean explicitNothrow = effects.contains(Effect.NOTHROW);
-        EffectSet set = EffectSet.ofDeclared(effects, mutReceiver, !isStaticOrCtor && borrowReceiver, true);
-        return new JavaCallProfile(set, mutReceiver, !isStaticOrCtor && borrowReceiver, mutParams, borrowParams, explicitNothrow);
+        EffectSet set = EffectSet.ofDeclared(effects, mutReceiver, !isStaticOrCtor && borrowReceiver, uniqueResult, true);
+        return new JavaCallProfile(set, mutReceiver, !isStaticOrCtor && borrowReceiver, mutParams, borrowParams, uniqueParams, explicitNothrow);
     }
 
     private static void collectAnnotationsInto(AnnotatedElement el, EnumSet<Effect> out) {
@@ -1189,11 +1244,11 @@ final class EffectChecker {
 
     Type.Function applySamJavaEffects(Method samMethod, Type.Function rawSam) {
         JavaCallProfile profile = resolveJavaMethodProfile(samMethod.getDeclaringClass(), samMethod.getName(), samMethod);
-        if (profile.effects().isUnconstrained() && !anyTrue(profile.mutParams()) && !anyTrue(profile.borrowParams())) {
+        if (profile.effects().isUnconstrained() && !anyTrue(profile.mutParams()) && !anyTrue(profile.borrowParams()) && !anyTrue(profile.uniqueParams())) {
             return rawSam;
         }
         // Only attach explicit annotations/overrides on the SAM interface method itself (not Object defaults).
-        if (!profile.effects().hasExplicitAnnotations() && !anyTrue(profile.mutParams()) && !anyTrue(profile.borrowParams())) {
+        if (!profile.effects().hasExplicitAnnotations() && !anyTrue(profile.mutParams()) && !anyTrue(profile.borrowParams()) && !anyTrue(profile.uniqueParams())) {
             return rawSam;
         }
         List<Type.Parameter> updated = new ArrayList<>(rawSam.parameters().size());
@@ -1201,10 +1256,13 @@ final class EffectChecker {
             Type.Parameter p = rawSam.parameters().get(i);
             boolean mut = i < profile.mutParams().length && profile.mutParams()[i];
             boolean borrow = i < profile.borrowParams().length && profile.borrowParams()[i];
-            updated.add(new Type.Parameter(p.name(), p.type(), p.optional(), mut, borrow, borrow));
+            boolean unique = i < profile.uniqueParams().length && profile.uniqueParams()[i];
+            updated.add(new Type.Parameter(p.name(), p.type(), p.optional(), mut, borrow, borrow, unique));
         }
         EffectSet fnEffects = new EffectSet(profile.effects().effects(), profile.effects().effects(),
-                false, false, false, false, false);
+                false, false, false, false, false,
+                profile.effects().uniqueResult(), profile.effects().explicitUniqueResult(),
+                profile.effects().terminating());
         return new Type.Function(rawSam.typeParameters(), updated, rawSam.result(), fnEffects);
     }
 

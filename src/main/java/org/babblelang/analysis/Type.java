@@ -118,26 +118,69 @@ sealed interface Type {
         }
     }
 
+    /** A deeply immutable frozen view of a nominal/reference type (BIP007-P2, BIP007-D7). */
+    record Frozen(Type of) implements Type {
+        @Override
+        public String toString() {
+            return "frozen " + (of instanceof Union || of instanceof Function ? "(" + of + ")" : of);
+        }
+    }
+
+    /**
+     * Wraps {@code type} in {@link Frozen} per BIP007-D7 : simplifies only on the 9 core scalars
+     * and {@code null}, distributes over {@link Union} ({@code frozen T?} becomes
+     * {@code (frozen T)?}), and never unwraps nominal/reference types.
+     */
+    static Type frozen(Type type) {
+        if (type == null || type == ERROR || type == NOTHING || type == NULL || isCoreScalar(type)) {
+            return type;
+        }
+        if (type instanceof Frozen) {
+            return type;
+        }
+        if (type instanceof Union u) {
+            List<Type> out = new ArrayList<>(u.members().size());
+            for (Type m : u.members()) {
+                out.add(frozen(m));
+            }
+            return union(out);
+        }
+        return new Frozen(type);
+    }
+
+    /** The universal nullable frozen top type {@code frozen any?}. */
+    Type FROZEN_ANY = new Frozen(ANY);
+    Type NULLABLE_FROZEN_ANY = new Union(List.of(FROZEN_ANY, NULL));
+
     /** A parameter of a function type : its name is part of the type, since calls bind by name. */
-    record Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitBorrow) {
+    record Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitBorrow, boolean unique) {
         Parameter(String name, Type type, boolean optional) {
-            this(name, type, optional, false, false, false);
+            this(name, type, optional, false, false, false, false);
         }
 
         Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow) {
-            this(name, type, optional, mut, borrow, borrow);
+            this(name, type, optional, mut, borrow, borrow, false);
+        }
+
+        Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitBorrow) {
+            this(name, type, optional, mut, borrow, explicitBorrow, false);
         }
 
         Parameter withType(Type newType) {
-            return new Parameter(name, newType, optional, mut, borrow, explicitBorrow);
+            return new Parameter(name, newType, optional, mut, borrow, explicitBorrow, unique);
         }
 
         Parameter withModifiers(boolean newMut, boolean newBorrow) {
-            return new Parameter(name, type, optional, newMut, newBorrow || explicitBorrow, explicitBorrow);
+            return new Parameter(name, type, optional, newMut, newBorrow || explicitBorrow, explicitBorrow, unique);
+        }
+
+        Parameter withModifiers(boolean newMut, boolean newBorrow, boolean newUnique) {
+            return new Parameter(name, type, optional, newMut, newBorrow || explicitBorrow, explicitBorrow, newUnique);
         }
 
         String format(boolean showBorrow) {
-            return (mut ? "mut " : "")
+            return (unique ? "unique " : "")
+                    + (mut ? "mut " : "")
                     + ((showBorrow ? borrow : explicitBorrow) ? "borrow " : "")
                     + name
                     + (type == ERROR ? "" : " : " + type)
@@ -179,11 +222,15 @@ sealed interface Type {
                     shown.add(req);
                 }
             }
+            boolean showUniqueReturn = effects.explicitUniqueResult()
+                    || (expected.effects().uniqueResult() && effects.uniqueResult());
             EffectSet displaySet = new EffectSet(
                     shown, shown,
                     effects.mutThis(),
                     effects.explicitBorrowThis() || (expected.effects().borrowThis() && effects.borrowThis()),
                     effects.explicitBorrowThis() || (expected.effects().borrowThis() && effects.borrowThis()),
+                    showUniqueReturn, showUniqueReturn,
+                    effects.terminating(),
                     false, false);
             String tp = typeParameters.isEmpty() ? ""
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
@@ -196,7 +243,8 @@ sealed interface Type {
                 params.append(parameters.get(i).format(showBorrow));
             }
             params.append(")");
-            return displaySet.formatDeclaredPrefix() + tp + params + (result == ERROR ? "" : " : " + result);
+            return displaySet.formatDeclaredPrefix() + tp + params
+                    + (result == ERROR ? "" : " : " + (showUniqueReturn ? "unique " : "") + result);
         }
 
         @Override
@@ -205,7 +253,7 @@ sealed interface Type {
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
             return effects.formatDeclaredPrefix() + tp
                     + parameters.stream().map(Parameter::toString).collect(Collectors.joining(", ", "(", ")"))
-                    + (result == ERROR ? "" : " : " + result);
+                    + (result == ERROR ? "" : " : " + (effects.explicitUniqueResult() ? "unique " : "") + result);
         }
     }
 
@@ -352,6 +400,7 @@ sealed interface Type {
         Set<Type> nonNull = new LinkedHashSet<>();
         boolean hasNull = false;
         boolean hasAny = false;
+        boolean hasFrozenAny = false;
         for (Type t : types) {
             if (t == ERROR) {
                 return ERROR;
@@ -365,6 +414,8 @@ sealed interface Type {
                         hasNull = true;
                     } else if (member == ANY) {
                         hasAny = true;
+                    } else if (member instanceof Frozen f && f.of() == ANY) {
+                        hasFrozenAny = true;
                     } else if (member != NOTHING) {
                         nonNull.add(member);
                     }
@@ -373,12 +424,28 @@ sealed interface Type {
                 hasNull = true;
             } else if (t == ANY) {
                 hasAny = true;
+            } else if (t instanceof Frozen f && f.of() == ANY) {
+                hasFrozenAny = true;
             } else if (t != NOTHING) {
                 nonNull.add(t);
             }
         }
         if (hasAny) {
-            return hasNull ? NULLABLE_ANY : ANY;
+            nonNull.removeIf(m -> !(m instanceof Frozen));
+            if (nonNull.isEmpty() && !hasFrozenAny) {
+                return hasNull ? NULLABLE_ANY : ANY;
+            }
+            Set<Type> combined = new LinkedHashSet<>();
+            combined.add(ANY);
+            if (hasFrozenAny) {
+                combined.add(FROZEN_ANY);
+            } else {
+                combined.addAll(nonNull);
+            }
+            nonNull = combined;
+        } else if (hasFrozenAny) {
+            nonNull.removeIf(m -> m instanceof Frozen);
+            nonNull.add(FROZEN_ANY);
         }
         if (nonNull.isEmpty()) {
             return hasNull ? NULL : NOTHING;
@@ -442,6 +509,7 @@ sealed interface Type {
                 }
                 yield false;
             }
+            case Frozen f -> f.of().anyMatch(predicate);
             case JavaArray ja -> ja.element().anyMatch(predicate);
             case Function fn -> {
                 for (Parameter p : fn.parameters()) {
@@ -521,6 +589,10 @@ sealed interface Type {
                     }
                 }
                 yield out != null ? union(out) : u;
+            }
+            case Frozen f -> {
+                Type inner = f.of().mapTypes(mapper);
+                yield inner != f.of() ? frozen(inner) : f;
             }
             case JavaArray ja -> {
                 Type elem = ja.element().mapTypes(mapper);

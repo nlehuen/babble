@@ -51,6 +51,20 @@ final class TypeAlgebra {
         /** Whether a callable that is not a Babble function (a Java method, a constructor, print) satisfies the effects of {@code target}. */
         boolean callableSatisfies(Type from, Type.Function target);
 
+        /** Whether a value of {@code type} is deeply immutable (scalars, null, frozen, deep record, deep entry). */
+        default boolean isDeeplyImmutable(Type type) {
+            if (type == null || Type.isCoreScalar(type) || type == Type.NULL || type instanceof Type.Frozen) {
+                return true;
+            }
+            if (type instanceof Type.Union u) {
+                return u.members().stream().allMatch(this::isDeeplyImmutable);
+            }
+            if (type instanceof Type.JavaInstance ji && ji.type() == java.util.Map.Entry.class) {
+                return !ji.typeArguments().isEmpty() && ji.typeArguments().stream().allMatch(this::isDeeplyImmutable);
+            }
+            return false;
+        }
+
         /** {@link #substitute} derived {@code to} from {@code from} (to track which literal a function type comes from). */
         default void derived(Type.Function from, Type.Function to) {
         }
@@ -263,6 +277,18 @@ final class TypeAlgebra {
             if (sub == Type.NULL) {
                 return sup == Type.NULL;
             }
+            if (sup instanceof Type.Frozen sf) {
+                if (sub instanceof Type.Frozen subf) {
+                    return relate(subf.of(), sf.of(), mode, store, active, true);
+                }
+                if (sub != Type.ANY && env.isDeeplyImmutable(sub)) {
+                    return relate(sub, sf.of(), mode, store, active, true);
+                }
+                return false;
+            }
+            if (sub instanceof Type.Frozen) {
+                return false;
+            }
             if (sup == Type.ANY) {
                 return true;
             }
@@ -411,7 +437,7 @@ final class TypeAlgebra {
         for (int i = 0; i < to.parameters().size(); i++) {
             Type.Parameter fp = from.parameters().get(i);
             Type.Parameter tp = to.parameters().get(i);
-            if (fp.mut() && !tp.mut() || tp.borrow() && !fp.borrow()) {
+            if (fp.mut() && !tp.mut() || tp.borrow() && !fp.borrow() || fp.unique() && !tp.unique()) {
                 return false;
             }
         }
@@ -422,7 +448,7 @@ final class TypeAlgebra {
 
     private boolean isErasedSubtype(Type from, Type to) {
         if (to == Type.ANY) {
-            return true;
+            return !(from instanceof Type.Frozen);
         }
         if (from instanceof Type.Instance f && to instanceof Type.Instance t) {
             return isSubtype(f.node(), t.node());
@@ -447,6 +473,15 @@ final class TypeAlgebra {
         }
         if (a == Type.NULL || b == Type.NULL) {
             return a == b;
+        }
+        if (a instanceof Type.Frozen af && b instanceof Type.Frozen bf) {
+            return overlapsErased(af.of(), bf.of());
+        }
+        if (a instanceof Type.Frozen af) {
+            return overlapsErased(af.of(), b);
+        }
+        if (b instanceof Type.Frozen bf) {
+            return overlapsErased(a, bf.of());
         }
         if (a instanceof Type.TypeVar || b instanceof Type.TypeVar || a == Type.ANY || b == Type.ANY) {
             return true;
@@ -493,6 +528,18 @@ final class TypeAlgebra {
         if (from == Type.NULL || to == Type.NULL) {
             return from == to;
         }
+        if (from instanceof Type.Frozen ff) {
+            if (to instanceof Type.Frozen tf) {
+                return canCast(ff.of(), tf.of());
+            }
+            if (Type.isCoreScalar(to)) {
+                return canCast(ff.of(), to);
+            }
+            return false;
+        }
+        if (to instanceof Type.Frozen tf) {
+            return env.isDeeplyImmutable(from) && canCast(from, tf.of());
+        }
         if (from instanceof Type.TypeVar || to instanceof Type.TypeVar || from == Type.ANY || to == Type.ANY) {
             return true;
         }
@@ -502,14 +549,20 @@ final class TypeAlgebra {
         return assignable(from, to) || assignable(to, from) || overlapsErased(from, to);
     }
 
-    /** What {@code x is target} narrows {@code current} to. */
+    /** What {@code x is target} narrows {@code current} to (preserving {@code frozen} per BIP007-D7). */
     Type narrowTarget(Type current, Type target) {
         List<Type> narrowed = new ArrayList<>();
         for (Type member : Type.membersOf(current)) {
             if (member == Type.NULL) {
                 continue;
             }
-            if (runtimeSubtype(member, target)) {
+            if (member instanceof Type.Frozen mf) {
+                if (runtimeSubtype(mf.of(), target)) {
+                    narrowed.add(member);
+                } else if (overlapsErased(mf.of(), target)) {
+                    narrowed.add(Type.frozen(target));
+                }
+            } else if (runtimeSubtype(member, target)) {
                 narrowed.add(member);
             } else if (overlapsErased(member, target)) {
                 narrowed.add(target);
@@ -522,7 +575,11 @@ final class TypeAlgebra {
     Type subtractType(Type current, Type target) {
         List<Type> remaining = new ArrayList<>();
         for (Type member : Type.membersOf(current)) {
-            if (!runtimeSubtype(member, target)) {
+            if (member instanceof Type.Frozen mf) {
+                if (!runtimeSubtype(mf.of(), target)) {
+                    remaining.add(member);
+                }
+            } else if (!runtimeSubtype(member, target)) {
                 remaining.add(member);
             }
         }
@@ -628,7 +685,8 @@ final class TypeAlgebra {
             boolean mut = a.mut() || b.mut();
             anyMutParam |= mut;
             params.add(new Type.Parameter(a.name(), a.type(), a.optional(), mut,
-                    a.borrow() && b.borrow(), a.explicitBorrow() && b.explicitBorrow()));
+                    a.borrow() && b.borrow(), a.explicitBorrow() && b.explicitBorrow(),
+                    a.unique() || b.unique()));
         }
         EffectSet common = first.effects().intersect(second.effects());
         if (anyMutParam && common.isPure()) {
@@ -637,7 +695,8 @@ final class TypeAlgebra {
             EnumSet<Effect> decl = EffectSet.copySet(common.declared());
             decl.remove(Effect.PURE);
             common = new EffectSet(effs, decl, common.mutThis(), common.borrowThis(),
-                    common.explicitBorrowThis(), false, common.axiomatic());
+                    common.explicitBorrowThis(), common.uniqueResult(), common.explicitUniqueResult(),
+                    common.terminating(), false, common.axiomatic());
         }
         return new Type.Function(first.typeParameters(), params, first.result(), common);
     }

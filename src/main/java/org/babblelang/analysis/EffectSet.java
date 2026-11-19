@@ -31,17 +31,20 @@ public final class EffectSet {
 
     public static final EffectSet EMPTY = new EffectSet(
             EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
-            false, false, false, false, false);
+            false, false, false, false, false, false, false, false);
 
     public static final EffectSet IMPURE_DECLARED = new EffectSet(
             EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
-            false, false, false, true, false);
+            false, false, false, false, false, false, true, false);
 
     private final EnumSet<Effect> effects;
     private final EnumSet<Effect> declared;
     private final boolean mutThis;
     private final boolean borrowThis;
     private final boolean explicitBorrowThis;
+    private final boolean uniqueResult;
+    private final boolean explicitUniqueResult;
+    private final boolean terminating;
     private final boolean impure;
     private final boolean axiomatic;
 
@@ -56,9 +59,23 @@ public final class EffectSet {
                      boolean explicitBorrowThis,
                      boolean impure,
                      boolean axiomatic) {
+        this(effects, declared, mutThis, borrowThis, explicitBorrowThis, false, false, false, impure, axiomatic);
+    }
+
+    public EffectSet(Set<Effect> effects,
+                     Set<Effect> declared,
+                     boolean mutThis,
+                     boolean borrowThis,
+                     boolean explicitBorrowThis,
+                     boolean uniqueResult,
+                     boolean explicitUniqueResult,
+                     boolean terminating,
+                     boolean impure,
+                     boolean axiomatic) {
         EnumSet<Effect> norm = copySet(effects);
         norm.remove(Effect.MUT);
         norm.remove(Effect.BORROW);
+        norm.remove(Effect.UNIQUE);
         norm.remove(Effect.IMPURE);
         if (impure) {
             norm.clear();
@@ -72,16 +89,31 @@ public final class EffectSet {
         this.mutThis = !impure && mutThis;
         this.borrowThis = !impure && (borrowThis || explicitBorrowThis);
         this.explicitBorrowThis = !impure && explicitBorrowThis;
+        this.uniqueResult = !impure && (uniqueResult || explicitUniqueResult);
+        this.explicitUniqueResult = !impure && explicitUniqueResult;
+        this.terminating = !impure && terminating;
         this.impure = impure;
         this.axiomatic = axiomatic;
     }
 
     public static EffectSet ofInferred(Set<Effect> effects, boolean mutThis, boolean borrowThis) {
-        return new EffectSet(effects, EnumSet.noneOf(Effect.class), mutThis, borrowThis, false, false, false);
+        return new EffectSet(effects, EnumSet.noneOf(Effect.class), mutThis, borrowThis, false, false, false, false, false, false);
+    }
+
+    public static EffectSet ofInferred(Set<Effect> effects, boolean mutThis, boolean borrowThis,
+                                       boolean uniqueResult, boolean terminating) {
+        return new EffectSet(effects, EnumSet.noneOf(Effect.class), mutThis, borrowThis, false,
+                uniqueResult, false, terminating, false, false);
     }
 
     public static EffectSet ofDeclared(Set<Effect> effects, boolean mutThis, boolean explicitBorrowThis, boolean axiomatic) {
-        return new EffectSet(effects, effects, mutThis, explicitBorrowThis, explicitBorrowThis, false, axiomatic);
+        return new EffectSet(effects, effects, mutThis, explicitBorrowThis, explicitBorrowThis, false, false, false, false, axiomatic);
+    }
+
+    public static EffectSet ofDeclared(Set<Effect> effects, boolean mutThis, boolean explicitBorrowThis,
+                                       boolean explicitUniqueResult, boolean axiomatic) {
+        return new EffectSet(effects, effects, mutThis, explicitBorrowThis, explicitBorrowThis,
+                explicitUniqueResult, explicitUniqueResult, false, false, axiomatic);
     }
 
     public Set<Effect> effects() {
@@ -98,6 +130,9 @@ public final class EffectSet {
         }
         if (effect == Effect.BORROW) {
             return borrowThis;
+        }
+        if (effect == Effect.UNIQUE) {
+            return uniqueResult;
         }
         if (effect == Effect.IMPURE) {
             return impure;
@@ -133,6 +168,18 @@ public final class EffectSet {
         return explicitBorrowThis;
     }
 
+    public boolean uniqueResult() {
+        return uniqueResult;
+    }
+
+    public boolean explicitUniqueResult() {
+        return explicitUniqueResult;
+    }
+
+    public boolean terminating() {
+        return terminating;
+    }
+
     public boolean impure() {
         return impure;
     }
@@ -142,24 +189,27 @@ public final class EffectSet {
     }
 
     public boolean hasExplicitAnnotations() {
-        return impure || axiomatic || mutThis || explicitBorrowThis || !declared.isEmpty();
+        return impure || axiomatic || mutThis || explicitBorrowThis || explicitUniqueResult || !declared.isEmpty();
     }
 
     public boolean isUnconstrained() {
-        return effects.isEmpty() && !mutThis && !borrowThis;
+        return effects.isEmpty() && !mutThis && !borrowThis && !uniqueResult;
     }
 
     /**
      * Whether a callable with {@code this} effect summary satisfies {@code required} on a
      * function type or interface slot : it must guarantee every positive effect in
-     * {@code required}, borrow {@code this} if required, and mutate {@code this} only if
-     * {@code required} permits {@code mutThis}.
+     * {@code required}, borrow {@code this} if required, return {@code unique} if required,
+     * and mutate {@code this} only if {@code required} permits {@code mutThis}.
      */
     public boolean satisfies(EffectSet required) {
         if (!effects.containsAll(required.effects)) {
             return false;
         }
         if (required.borrowThis && !borrowThis) {
+            return false;
+        }
+        if (required.uniqueResult && !uniqueResult) {
             return false;
         }
         if (mutThis && !required.mutThis) {
@@ -183,6 +233,9 @@ public final class EffectSet {
                 eitherMut,
                 borrowThis && other.borrowThis,
                 explicitBorrowThis && other.explicitBorrowThis,
+                uniqueResult && other.uniqueResult,
+                explicitUniqueResult && other.explicitUniqueResult,
+                terminating && other.terminating,
                 false,
                 axiomatic && other.axiomatic);
     }
@@ -193,6 +246,7 @@ public final class EffectSet {
             case HERMETIC -> "hermetic";
             case MUT -> "mut";
             case BORROW -> "borrow";
+            case UNIQUE -> "unique";
             case DETERMINISTIC -> "deterministic";
             case NOTHROW -> "nothrow";
             case IDEMPOTENT -> "idempotent";
@@ -243,6 +297,9 @@ public final class EffectSet {
         return mutThis == that.mutThis
                 && borrowThis == that.borrowThis
                 && explicitBorrowThis == that.explicitBorrowThis
+                && uniqueResult == that.uniqueResult
+                && explicitUniqueResult == that.explicitUniqueResult
+                && terminating == that.terminating
                 && impure == that.impure
                 && axiomatic == that.axiomatic
                 && effects.equals(that.effects)
@@ -251,7 +308,8 @@ public final class EffectSet {
 
     @Override
     public int hashCode() {
-        return Objects.hash(effects, declared, mutThis, borrowThis, explicitBorrowThis, impure, axiomatic);
+        return Objects.hash(effects, declared, mutThis, borrowThis, explicitBorrowThis,
+                uniqueResult, explicitUniqueResult, terminating, impure, axiomatic);
     }
 
     @Override
@@ -260,6 +318,9 @@ public final class EffectSet {
             return "impure";
         }
         String prefix = formatFullPrefix(true).trim();
+        if (uniqueResult) {
+            prefix = prefix.isEmpty() ? "unique" : prefix + " unique";
+        }
         return prefix.isEmpty() ? "<unconstrained>" : prefix;
     }
 }

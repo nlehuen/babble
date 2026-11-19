@@ -52,6 +52,13 @@ final class MemberTypes {
             }
             return Type.union(memberTypes);
         }
+        if (receiver instanceof Type.Frozen frozen) {
+            Type inner = member(frozen.of(), name, own, at, receiverText);
+            if (inner == Type.ERROR || inner instanceof Type.Function || inner instanceof Type.JavaMethod) {
+                return inner;
+            }
+            return Type.frozen(inner);
+        }
         if (receiver instanceof Type.Instance instance) {
             ResolvedMember resolved = findMember(instance, name);
             if (resolved != null) {
@@ -120,6 +127,10 @@ final class MemberTypes {
 
     /** What {@code receiver.name = value} must assign : the member's declared or closed type, or null if inferred locally. */
     Type assignedMemberType(Type receiver, String name, boolean own, ParserRuleContext at) {
+        if (receiver instanceof Type.Frozen) {
+            checker.warn("Cannot assign to field of frozen value", at);
+            return null;
+        }
         TypeNode ownerNode = null;
         TypeNode.Member member = null;
         Map<Type.TypeVar, Type> env = Map.of();

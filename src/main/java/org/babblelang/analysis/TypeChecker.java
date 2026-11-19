@@ -5,6 +5,7 @@ import org.antlr.v4.runtime.tree.ParseTree;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.Operators;
 
 import static org.babblelang.analysis.TypeAlgebra.canBeNull;
@@ -154,6 +155,11 @@ final class TypeChecker {
         }
 
         @Override
+        public boolean isDeeplyImmutable(Type type) {
+            return TypeChecker.this.isDeeplyImmutable(type, Collections.newSetFromMap(new IdentityHashMap<>()));
+        }
+
+        @Override
         public void derived(Type.Function from, Type.Function to) {
             BabbleParser.FunctionLiteralContext literal = functionLiterals.get(from);
             if (literal != null) {
@@ -161,6 +167,47 @@ final class TypeChecker {
             }
         }
     });
+
+    boolean isDeeplyImmutable(Type type) {
+        return isDeeplyImmutable(type, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private boolean isDeeplyImmutable(Type type, Set<TypeNode> visiting) {
+        if (type == null || Type.isCoreScalar(type) || type == Type.NULL || type instanceof Type.Frozen) {
+            return true;
+        }
+        if (type instanceof Type.Union u) {
+            return u.members().stream().allMatch(m -> isDeeplyImmutable(m, visiting));
+        }
+        if (type instanceof Type.JavaInstance ji && ji.type() == java.util.Map.Entry.class) {
+            return !ji.typeArguments().isEmpty() && ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
+        }
+        if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+            if (!visiting.add(inst.node())) {
+                return true;
+            }
+            try {
+                Map<Type.TypeVar, Type> env = algebra.instanceEnv(inst);
+                for (TypeNode.Member member : inst.node().members.values()) {
+                    if (member.isMethod() || member.hasFunction) {
+                        continue;
+                    }
+                    Type mt = memberType(inst.node(), member);
+                    if (mt == Type.ERROR) {
+                        return false;
+                    }
+                    mt = algebra.substitute(mt, env);
+                    if (!isDeeplyImmutable(mt, visiting)) {
+                        return false;
+                    }
+                }
+                return true;
+            } finally {
+                visiting.remove(inst.node());
+            }
+        }
+        return false;
+    }
 
     TypeChecker(BlockScopes pass) {
         this.pass = pass;
@@ -638,8 +685,18 @@ final class TypeChecker {
                 return Type.ERROR;
             }
         }
+        if (singleSimple != null && singleSimple.frozen != null) {
+            warn("Cannot test 'frozen' with 'is'", singleSimple);
+            isTargetTypes.put(ctx, Type.ERROR);
+            return Type.ERROR;
+        }
         Type target = annotator.annotation(ctx.right, scopeOf(ctx), true);
         if (target == Type.ERROR) {
+            isTargetTypes.put(ctx, Type.ERROR);
+            return Type.ERROR;
+        }
+        if (target.anyMatch(Type.Frozen.class::isInstance)) {
+            warn("Cannot test 'frozen' with 'is'", ctx.right);
             isTargetTypes.put(ctx, Type.ERROR);
             return Type.ERROR;
         }
@@ -2287,7 +2344,8 @@ final class TypeChecker {
                     ? effectChecker.parseParamMods(parameter, checkingEffects) : EffectChecker.ParamMods.NONE;
             boolean mut = cs != null && i < cs.mutParams().length ? cs.mutParams()[i] : pm.mut();
             boolean borrow = cs != null && i < cs.borrowParams().length ? cs.borrowParams()[i] : pm.borrow();
-            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null, mut, borrow, pm.borrow()));
+            boolean unique = cs != null && i < cs.uniqueParams().length ? cs.uniqueParams()[i] : pm.unique();
+            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null, mut, borrow, pm.borrow(), unique));
         }
         return result;
     }

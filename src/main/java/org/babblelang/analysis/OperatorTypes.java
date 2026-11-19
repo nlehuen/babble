@@ -148,11 +148,16 @@ final class OperatorTypes {
     }
 
     static final EffectSet PURE_DET = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false);
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false, false, true);
     static final EffectSet PURE_DET_NOTHROW = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false);
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false, false, true);
+    static final EffectSet PURE_DET_NOTHROW_UNIQUE = EffectSet.ofInferred(
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false, true, true);
     static final EffectSet SAME_EFFECTS = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW, Effect.COMMUTATIVE), false, false);
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW, Effect.COMMUTATIVE), false, false, false, true);
+
+    /** Accepts any value including {@code null} and {@code frozen T} without unwrapping {@code frozen} (BIP007-D8/D9). */
+    static final Type ANY_OR_FROZEN = Type.union(Type.NULLABLE_ANY, Type.FROZEN_ANY);
 
     private static final Type JAVA_NUMBER = new Type.JavaInstance(Number.class);
     private static final Type INTEGRAL_CONVERSION_INPUT = Type.union(List.of(
@@ -187,12 +192,25 @@ final class OperatorTypes {
                     new Type.Parameter("message", Type.NULLABLE_ANY, true, false, true, false)),
             Type.BOOL, PURE_DET);
     static final Type.Function SAME_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("a", Type.NULLABLE_ANY, false, false, true, false),
-                    new Type.Parameter("b", Type.NULLABLE_ANY, false, false, true, false)),
+            List.of(new Type.Parameter("a", ANY_OR_FROZEN, false, false, true, false),
+                    new Type.Parameter("b", ANY_OR_FROZEN, false, false, true, false)),
             Type.BOOL, SAME_EFFECTS);
     static final Type.Function CLASSOF_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("v", Type.NULLABLE_ANY, false, false, true, false)),
+            List.of(new Type.Parameter("v", ANY_OR_FROZEN, false, false, true, false)),
             Type.NULLABLE_ANY, PURE_DET_NOTHROW);
+    private static final Type.TypeVar MOVE_TV = new Type.TypeVar(new Type.SymbolId("move"), "T", 0);
+    private static final Type.TypeVar FREEZE_TV = new Type.TypeVar(new Type.SymbolId("freeze"), "T", 0);
+    static final Type.Function MOVE_FUNCTION = new Type.Function(
+            List.of(MOVE_TV),
+            List.of(new Type.Parameter("value", MOVE_TV, false, false, false, false, true)),
+            MOVE_TV, PURE_DET_NOTHROW_UNIQUE);
+    static final Type.Function FREEZE_FUNCTION = new Type.Function(
+            List.of(FREEZE_TV),
+            List.of(new Type.Parameter("value", FREEZE_TV, false, false, false, false, true)),
+            new Type.Frozen(FREEZE_TV), PURE_DET_NOTHROW);
+    static final Type.Function DISCARD_FUNCTION = new Type.Function(
+            List.of(new Type.Parameter("value", ANY_OR_FROZEN, false, false, true, false)),
+            Type.NULL, PURE_DET_NOTHROW);
     static final Type.Function IMPORT_FUNCTION = new Type.Function(
             List.of(new Type.Parameter("name", Type.STRING, false)), Type.ANY);
     static final Type STDOUT_TYPE = new Type.JavaInstance(java.io.PrintWriter.class);
@@ -218,6 +236,9 @@ final class OperatorTypes {
             case "assert", "suppose" -> ASSERT_FUNCTION;
             case "same" -> SAME_FUNCTION;
             case "classof" -> CLASSOF_FUNCTION;
+            case "move" -> MOVE_FUNCTION;
+            case "freeze" -> FREEZE_FUNCTION;
+            case "discard" -> DISCARD_FUNCTION;
             case "import", "importe" -> IMPORT_FUNCTION;
             case "STDOUT" -> STDOUT_TYPE;
             case "args" -> ARGS_TYPE;
@@ -308,6 +329,9 @@ final class OperatorTypes {
                 || fn == ASSERT_FUNCTION
                 || fn == SAME_FUNCTION
                 || fn == CLASSOF_FUNCTION
+                || fn == MOVE_FUNCTION
+                || fn == FREEZE_FUNCTION
+                || fn == DISCARD_FUNCTION
                 || fn == IMPORT_FUNCTION;
     }
 }
