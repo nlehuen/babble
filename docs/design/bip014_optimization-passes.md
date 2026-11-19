@@ -38,6 +38,30 @@ HotSpot C2 is extraordinarily good at low-level machine optimizations (register 
 4. **Babble abstractions inflate C2's inlining budget:** Higher-order lambdas (`CompiledFunction`, `FunctionBody`, `LambdaMetafactory`), `record` wrappers (`Vec3` in `examples/raytracer-argon`), `Cell` captures, and `invokedynamic` call sites consume HotSpot's `MaxInlineSize` (35 bytes) and `FreqInlineSize` (325 bytes) budgets. Inlining small Babble functions, eliminating dead branches, and scalar-replacing `borrow` `record`s *before* bytecode emission shrinks hot methods so C2 optimizes the remaining loop dramatically better.
 5. **Cold & startup performance (AOT `babblec` and scripts):** Short-lived scripts and CLI tools compiled with `babblec` (`BIP006`) often finish before C2 finishes tier-4 compilation; compile-time optimizations pay off from the very first iteration.
 
+### 2.1 The One-Way Bytecode Boundary: Why Low-Level Passes Unlock High-Level Passes
+
+A subtler pitfall is assuming that any optimization marked **"Partial"** in §3.1 (`O1`, `O2`, `O4`, `O5`, `O8`, `O9`) can simply be skipped and left to C2. Because bytecode emission erases all `BIP007` annotations, **the bytecode boundary is a one-way wall**: C2 can never feed a low-level simplification back up into Babble's high-level passes, and C2 itself lacks the `BIP007` contracts needed to exploit the newly exposed opportunity.
+
+Concrete examples where skipping a "C2-redundant" pass blinds Babble's high-level optimizer:
+
+* **Inlining (`O8`) + Constant Propagation (`O1`) + Dead Branch Pruning (`O4`) $\to$ `idempotent` collapse (`O2`):**
+  ```babble
+  def clean = fn pure deterministic (s: string, lower: bool): string -> (
+      def t = s.trim()
+      if lower then ( t.toLowerCase() ) else ( t )
+  )
+  def out = clean(raw.trim(), false)
+  ```
+  Only *after* Babble inlines `clean`, propagates `lower = false`, and prunes the `then` branch does `raw.trim().trim()` appear—unlocking `O2` `idempotent` collapse to `raw.trim()`. Deferring branch pruning to C2 hides the redundant `.trim()` from Babble, while C2 does not know `String.trim` is `idempotent`.
+* **Constant Folding (`O1`) + Reassociation (`O3`) $\to$ CSE (`O5`) / LICM (`O6`) of `axiom pure deterministic` calls:**
+  For `expensive((i + 1) + 2)` and `expensive(3 + i)`, only *after* Babble folds `1 + 2 -> 3`, reassociates, and canonically orders `3 + i -> i + 3` do both calls share the same argument value, letting `O5` eliminate the second `expensive(...)` call. C2 can fold the arithmetic, but cannot CSE `expensive(...)` without Babble's `axiom`.
+* **Inlining (`O8`) + `borrow` Scalar Replacement (`O9`) $\to$ LICM (`O6`):**
+  Passing a loop-local `Config(scale, bias)` `record` into a helper computing `Math.exp(cfg.scale) * x + cfg.bias` hides the loop invariance of `Math.exp(scale)` until Babble inlines the helper and scalar-replaces `cfg`. C2 can inline and scalar-replace `cfg`, but still will not hoist an `axiom pure deterministic` call across the loop.
+* **Constant Propagation (`O1`) + Dead Branch Pruning (`O4`) $\to$ FBIP in-place reuse (`O10`):**
+  A dead debug guard `if DEBUG then ( log(xs) )` before `sort(xs)` makes `xs` look shared until `O1` + `O4` eliminate the branch; once pruned, `sort(xs)` becomes the sole consumer and qualifies for zero-allocation in-place reuse.
+
+For this reason, `BIP014` runs `HIR` passes in a **bounded fixed-point loop** (`PassManager`, §6.5) before lowering to bytecode.
+
 ---
 
 ## 3. Catalogue of Optimizations in Scope
@@ -46,20 +70,20 @@ Every optimization below is strictly gated on `BIP007` static contracts and must
 
 ### 3.1 Summary Matrix
 
-| # | Optimization | Required `BIP007` Contract | `BIP007` Phase | Granularity |
-|---|---|---|---|---|
-| **O1** | Constant Folding & Constant Propagation | Built-in ops; for calls: `pure deterministic` + deeply immutable args & result (+ `nothrow` if guarded) | `P1` (`P2` for `frozen`) | Local (literals) / Pass (propagation) |
-| **O2** | Algebraic Identities, Strength Reduction & `idempotent` Collapse | `pure deterministic` (+ `idempotent` for `f(f(x)) -> f(x)`; effect `idempotent` for discarded duplicate) | `P1` | Local / Pass |
-| **O3** | Associative Reassociation & `commutative` Canonicalization | `pure deterministic nothrow` + `associative` / `commutative` (never IEEE-754 `float`/`double` without `axiom`) | `P1` | Pass |
-| **O4** | Dead-Code & Dead-Expression Elimination (DCE) | Unreachable CFG always; dead expression requires `pure nothrow @TERMINATING` | `P1` (CFG) / `P2` (`@TERMINATING`) | Pass |
-| **O5** | Common Subexpression Elimination (CSE / GVN) | `pure deterministic` + deeply immutable result + no intervening write to reachable arg state (`commutative` merges `f(a,b)`/`f(b,a)`) | `P1` (`P2` for `frozen`) | Pass (CFG/SSA) |
-| **O6** | Loop-Invariant Code Motion (LICM / Loop Hoisting) | `pure deterministic` + deeply immutable result (+ `nothrow @TERMINATING` when loop may run 0 times or across guard) | `P1` / `P2` | Pass (CFG/SSA) |
-| **O7** | No-Alias (`unique mut`) & `frozen` Redundant-Load Elimination (RLE) | `unique mut` parameter (deep disjointness) or `frozen T` / deep `record` field reads | `P2` (deep `record`s in `P1`) | Pass (CFG/SSA) |
-| **O8** | Small-Function & `borrow`-Lambda Inlining | Static Babble call target (`ScopeAnalysis.babbleCallFunctions`); `borrow` guarantees closure non-escape | `P1` | Pass (`HIR`) |
-| **O9** | Scalar Replacement / Stack Unboxing of `borrow` `record`s & Captures | `borrow` parameter + statically known `record` / fresh allocation | `P1` | Pass (`HIR`) |
-| **O10** | Functional-But-In-Place (FBIP) Reuse | `unique` parameter + `move(x)` (single live owner) + `hermetic mut` core collection/class | `P2` | Pass (`HIR`) |
-| **O11** | Guard-Safe Predicate Reordering & Short-Circuit Simplification | `pure nothrow` on both predicates + no `BIP007-D1` `Narrowing` guard dependency | `P1` | Pass (`HIR`/`MIR`) |
-| **O12** | Pipeline Push-Down / Push-Up & Tree Reduction | `pure deterministic nothrow` + `monotone` / `injective` / `associative` | `P1` (+ `std/` combinators) | Pass (`HIR`) |
+| # | Optimization | Required `BIP007` Contract | `BIP007` Phase | Granularity | Redundant with C2 |
+|---|---|---|---|---|---|
+| **O1** | Constant Folding & Constant Propagation | Built-in ops; for calls: `pure deterministic` + deeply immutable args & result (+ `nothrow` if guarded) | `P1` (`P2` for `frozen`) | Local (literals) / Pass (propagation) | **Partial** — C2 folds hot primitive ops, not `axiom pure deterministic` JDK/Babble calls or cold/startup code; early folding also shrinks bytecode for C2's inlining budget |
+| **O2** | Algebraic Identities, Strength Reduction & `idempotent` Collapse | `pure deterministic` (+ `idempotent` for `f(f(x)) -> f(x)`; effect `idempotent` for discarded duplicate) | `P1` | Local / Pass | **Partial** — C2 does basic int/bool identities, never `idempotent` (`f(f(x)) -> f(x)` or duplicate `set.add` suppression) |
+| **O3** | Associative Reassociation & `commutative` Canonicalization | `pure deterministic nothrow` + `associative` / `commutative` (never IEEE-754 `float`/`double` without `axiom`) | `P1` | Pass | **No** — C2 does limited int idealization, never `axiom associative`/`commutative` functions or `string +` |
+| **O4** | Dead-Code & Dead-Expression Elimination (DCE) | Unreachable CFG always; dead expression requires `pure nothrow @TERMINATING` | `P1` (CFG) / `P2` (`@TERMINATING`) | Pass | **Partial** — C2 drops dead primitive/unreachable code on hot paths, not calls to `pure nothrow @TERMINATING` functions it cannot prove side-effect-free |
+| **O5** | Common Subexpression Elimination (CSE / GVN) | `pure deterministic` + deeply immutable result + no intervening write to reachable arg state (`commutative` merges `f(a,b)`/`f(b,a)`) | `P1` (`P2` for `frozen`) | Pass (CFG/SSA) | **Partial** — C2 GVNs primitive ops and inlined loads, not non-inlined `pure deterministic` / `axiom` calls or `commutative` `f(b,a)` matching |
+| **O6** | Loop-Invariant Code Motion (LICM / Loop Hoisting) | `pure deterministic` + deeply immutable result (+ `nothrow @TERMINATING` when loop may run 0 times or across guard) | `P1` / `P2` | Pass (CFG/SSA) | **Partial** — C2 hoists primitive ops and inlined loads, not non-inlined `pure deterministic nothrow` calls (`Math.cos`, `normalize`) or cross-call `frozen` reads |
+| **O7** | No-Alias (`unique mut`) & `frozen` Redundant-Load Elimination (RLE) | `unique mut` parameter (deep disjointness) or `frozen T` / deep `record` field reads | `P2` (deep `record`s in `P1`) | Pass (CFG/SSA) | **No** — C2 cannot prove `unique mut` deep disjointness or `frozen T` deep immutability across non-inlined calls or collection backing arrays |
+| **O8** | Small-Function & `borrow`-Lambda Inlining | Static Babble call target (`ScopeAnalysis.babbleCallFunctions`); `borrow` guarantees closure non-escape | `P1` | Pass (`HIR`) | **Partial** — C2 inlines hot monomorphic methods up to `MaxInlineSize`/`FreqInlineSize`, but stalls on megamorphic `CompiledFunction`/`invokedynamic` lambdas; AOT inlining frees C2's budget |
+| **O9** | Scalar Replacement / Stack Unboxing of `borrow` `record`s & Captures | `borrow` parameter + statically known `record` / fresh allocation | `P1` | Pass (`HIR`) | **Partial** — C2 escape analysis requires inlining every callee into one compilation unit; `$unboxed` `borrow` entry points eliminate allocation even across non-inlined/megamorphic calls |
+| **O10** | Functional-But-In-Place (FBIP) Reuse | `unique` parameter + `move(x)` (single live owner) + `hermetic mut` core collection/class | `P2` | Pass (`HIR`) | **No** — C2 cannot turn an allocating functional update into in-place mutation without static `unique` ownership |
+| **O11** | Guard-Safe Predicate Reordering & Short-Circuit Simplification | `pure nothrow` on both predicates + no `BIP007-D1` `Narrowing` guard dependency | `P1` | Pass (`HIR`/`MIR`) | **No** — C2 does not reorder method calls or collection filters by cost/selectivity using `pure nothrow` contracts |
+| **O12** | Pipeline Push-Down / Push-Up & Tree Reduction | `pure deterministic nothrow` + `monotone` / `injective` / `associative` | `P1` (+ `std/` combinators) | Pass (`HIR`) | **No** — C2 has no knowledge of `monotone`/`injective`/`associative` contracts and cannot fuse pipelines or tree-reduce custom combiners |
 
 ---
 
