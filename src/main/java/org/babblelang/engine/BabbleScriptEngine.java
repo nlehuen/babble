@@ -126,6 +126,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private final Map<String, ModuleId> compiledAs = new HashMap<>();
 
     private boolean allowAxioms = true;
+    private boolean bytecodeEffectAnalysis = false;
     private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> hostEffectOverrides = new LinkedHashMap<>();
 
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
@@ -156,6 +157,26 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     public boolean allowsAxioms() {
         synchronized (moduleLock) {
             return allowAxioms;
+        }
+    }
+
+    /**
+     * Opt-in ASM bytecode static effect analysis for unannotated closed Java helper methods
+     * ({@code BIP007-P3}, default {@code false}).
+     */
+    public BabbleScriptEngine enableBytecodeEffectAnalysis(boolean enable) {
+        synchronized (moduleLock) {
+            if (this.bytecodeEffectAnalysis != enable) {
+                this.bytecodeEffectAnalysis = enable;
+                this.moduleCache.clear();
+            }
+        }
+        return this;
+    }
+
+    public boolean isBytecodeEffectAnalysisEnabled() {
+        synchronized (moduleLock) {
+            return bytecodeEffectAnalysis;
         }
     }
 
@@ -230,10 +251,10 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     HostEffects hostEffects() {
         synchronized (moduleLock) {
-            if (allowAxioms && hostEffectOverrides.isEmpty()) {
+            if (allowAxioms && !bytecodeEffectAnalysis && hostEffectOverrides.isEmpty()) {
                 return HostEffects.DEFAULT;
             }
-            return new HostEffects(allowAxioms, hostEffectOverrides);
+            return new HostEffects(allowAxioms, bytecodeEffectAnalysis, hostEffectOverrides);
         }
     }
 
