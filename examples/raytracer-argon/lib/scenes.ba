@@ -3,7 +3,6 @@ def Vec3 = import("vec3.ba").Vec3
 def Dielectric = import("materials.ba").Dielectric
 def HittableList = import("hittables.ba").HittableList
 def Lambertian = import("materials.ba").Lambertian
-def Material = import("interfaces.ba").Material
 def Metal = import("materials.ba").Metal
 def Sphere = import("hittables.ba").Sphere
 
@@ -12,28 +11,21 @@ def Sphere = import("hittables.ba").Sphere
 ;; ------------------------------------------------------------------------
 export def Scenes = object (
     ;; Chapter 13: Hollow glass sphere + Lambertian center + Metal right
-    def threeSpheres = fn (): HittableList -> (
+    def threeSpheres = fn pure deterministic nothrow borrow (): unique HittableList -> (
         def world: HittableList = HittableList()
-        def matGround: Material = Lambertian(Vec3(0.8, 0.8, 0.0))
-        def matCenter: Material = Lambertian(Vec3(0.1, 0.2, 0.5))
-        def matLeft: Material = Dielectric(1.50)
-        def matBubble: Material = Dielectric(1.00 / 1.50)
-        def matRight: Material = Metal(Vec3(0.8, 0.6, 0.2), 1.0)
-
-        world.add(Sphere(Vec3(0.0, -100.5, -1.0), 100.0, matGround))
-        world.add(Sphere(Vec3(0.0, 0.0, -1.2), 0.5, matCenter))
-        world.add(Sphere(Vec3(-1.0, 0.0, -1.0), 0.5, matLeft))
-        world.add(Sphere(Vec3(-1.0, 0.0, -1.0), 0.4, matBubble))
-        world.add(Sphere(Vec3(1.0, 0.0, -1.0), 0.5, matRight))
+        world.add(Sphere(Vec3(0.0, -100.5, -1.0), 100.0, Lambertian(Vec3(0.8, 0.8, 0.0))))
+        world.add(Sphere(Vec3(0.0, 0.0, -1.2), 0.5, Lambertian(Vec3(0.1, 0.2, 0.5))))
+        world.add(Sphere(Vec3(-1.0, 0.0, -1.0), 0.5, Dielectric(1.50)))
+        world.add(Sphere(Vec3(-1.0, 0.0, -1.0), 0.4, Dielectric(1.00 / 1.50)))
+        world.add(Sphere(Vec3(1.0, 0.0, -1.0), 0.5, Metal(Vec3(0.8, 0.6, 0.2), 1.0)))
         world
     )
 
     ;; Chapter 14: "Where Next?" Final Cover Scene
-    def finalScene = fn (mut rng: Rng = Rng(42), gridRadius: int = 11): HittableList -> (
+    def finalScene = fn hermetic deterministic nothrow borrow (mut borrow rng: Rng = Rng(42), gridRadius: int = 11): unique HittableList -> (
         def world: HittableList = HittableList()
 
-        def groundMaterial: Material = Lambertian(Vec3(0.5, 0.5, 0.5))
-        world.add(Sphere(Vec3(0.0, -1000.0, 0.0), 1000.0, groundMaterial))
+        world.add(Sphere(Vec3(0.0, -1000.0, 0.0), 1000.0, Lambertian(Vec3(0.5, 0.5, 0.5))))
 
         def a: int = -gridRadius
         while a < gridRadius then (
@@ -66,14 +58,9 @@ export def Scenes = object (
             a += 1
         )
 
-        def material1: Material = Dielectric(1.5)
-        world.add(Sphere(Vec3(0.0, 1.0, 0.0), 1.0, material1))
-
-        def material2: Material = Lambertian(Vec3(0.4, 0.2, 0.1))
-        world.add(Sphere(Vec3(-4.0, 1.0, 0.0), 1.0, material2))
-
-        def material3: Material = Metal(Vec3(0.7, 0.6, 0.5), 0.0)
-        world.add(Sphere(Vec3(4.0, 1.0, 0.0), 1.0, material3))
+        world.add(Sphere(Vec3(0.0, 1.0, 0.0), 1.0, Dielectric(1.5)))
+        world.add(Sphere(Vec3(-4.0, 1.0, 0.0), 1.0, Lambertian(Vec3(0.4, 0.2, 0.1))))
+        world.add(Sphere(Vec3(4.0, 1.0, 0.0), 1.0, Metal(Vec3(0.7, 0.6, 0.5), 0.0)))
 
         world
     )

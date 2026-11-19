@@ -21,7 +21,7 @@ def raytracer = import("lib/raytracer.ba")
 ;; ============================================================================
 ;; 3. Self-Verification Suite (assert / suppose, value equality, is, classof, same)
 ;; ============================================================================
-def runTests = fn () -> (
+def runTests = fn impure () -> (
     ;; Math checks
     assert(math.abs(-3.5) == 3.5, "abs failed")
     assert(math.min(2.0, 5.0) == 2.0 and math.max(2.0, 5.0) == 5.0, "min/max failed")
@@ -81,7 +81,7 @@ def runTests = fn () -> (
 
     def sceneList: raytracer.HittableList = raytracer.Scenes.threeSpheres()
     assert(sceneList.size == 5, "threeSpheres size failed")
-    assert(sceneList.countWhere(fn (h: raytracer.Hittable): bool -> (h is raytracer.Sphere)) == 5, "countWhere failed")
+    assert(sceneList.countWhere(fn pure deterministic nothrow (borrow h: raytracer.Hittable): bool -> (h is raytracer.Sphere)) == 5, "countWhere failed")
     def bvh: raytracer.Hittable = raytracer.BVHNode.fromList(sceneList)
     def hitList: raytracer.HitRecord? = sceneList.hit(r, raytracer.Interval(0.001, math.infinity))
     def hitBvh: raytracer.HitRecord? = bvh.hit(r, raytracer.Interval(0.001, math.infinity))
@@ -109,7 +109,7 @@ runTests()
 ;; ============================================================================
 ;; 4. Render the Final Scene in PPM Format to STDOUT
 ;; ============================================================================
-def renderMain = fn () -> (
+def renderMain = fn impure () -> (
     def rng: raytracer.Rng = raytracer.Rng(2026)
     def worldList: raytracer.HittableList = raytracer.Scenes.finalScene(rng: rng, gridRadius: 11)
     def world: raytracer.Hittable = raytracer.BVHNode.fromList(worldList)
