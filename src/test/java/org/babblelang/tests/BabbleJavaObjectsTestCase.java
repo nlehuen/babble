@@ -193,7 +193,9 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         String base = "def tests = import(\"org.babblelang.tests\")\n"
                 + "def C = class () implements tests.JavaClassDemo.BoxedDefault ()\n";
         Assertions.assertEquals(7, interpret(base + "C().getBoxedDefault(true)"));
-        assertFails(base + "C().getBoxedDefault(false)", "Type error : expected int, got null", 3);
+        // An unannotated Integer is an int? (BIP011-D6) : null comes back, and e! rejects it.
+        Assertions.assertNull(interpret(base + "C().getBoxedDefault(false)"));
+        assertFails(base + "C().getBoxedDefault(false)!", "Type error : expected int, got null", 3);
     }
 
     @Test

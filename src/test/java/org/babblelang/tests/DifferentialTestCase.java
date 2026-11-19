@@ -58,6 +58,13 @@ public class DifferentialTestCase {
                 "def id = (v : any?) : any? -> ( v ) ; def s : any = id(null)!",
                 "null!",
                 "def x = list",
+                // Java nullness : nullable unannotated results, soft @NotNull checked at the boundary.
+                "import(\"org\").babblelang.tests.NullnessFixtures.promised(true)",
+                "import(\"org\").babblelang.tests.NullnessFixtures.Marked.name(true).length()",
+                "def s : string = import(\"org\").babblelang.tests.NullnessFixtures.plain(false)",
+                "import(\"org\").babblelang.tests.NullnessFixtures.plain(false).length()",
+                "def m : java.util.Map(string, int) = java.util.HashMap() ; def v : int = m.get(\"a\")",
+                "def x : int? = java.lang.Integer.getInteger(\"babble.none\") ; x",
                 // The nine scalars : literals, ranges, promotion, conversions, non-numeric char.
                 "def b : byte = 300",
                 "def b : byte = 1 ; b += 2",

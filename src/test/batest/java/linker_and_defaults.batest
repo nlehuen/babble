@@ -165,10 +165,10 @@ true
 7:12:b:9000000000:2.5:true:6:3.0:true
 
 {{{{{
-;; Null boxed Integer return into typed non-nullable int (checkBoxed)
+;; An unannotated Integer return is an int? (BIP011-D6) : not an int
 def x : int = java.lang.Integer.getInteger("babble.nonexistent.prop")
 }}}}}
-Type error : expected int, got null
+Type error : expected int, got int?
 
 {{{{{
 ;; Java public mutable fields: double, float, long, int, String, Object (assign & compound assign)
@@ -249,7 +249,7 @@ pf.x = java.lang.Float.parseFloat("5")
 def ev = java.awt.Event("s", java.lang.Long.numberOfLeadingZeros(8), 1, 2, 3, 4, 5, "a")
 def st = java.io.StreamTokenizer(java.io.StringReader("a"))
 st.sval = "go"
-st.sval += "!"
+st.sval = st.sval! + "!"
 println(pf.x, ":", ev.when > 0, ":", st.sval)
 }}}}}
 true:false:true:false

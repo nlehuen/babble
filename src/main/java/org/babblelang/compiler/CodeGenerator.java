@@ -398,9 +398,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             return;
         }
         if (pType == Integer.class || pType == Double.class || pType == Boolean.class) {
-            m.visitLdcInsn(Type.getType(pType));
-            m.visitVarInsn(ALOAD, slot);
-            m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "checkBoxed", "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;", false);
+            if (targetKind.isPrimitive()) {
+                // Java may pass null (BIP011-D7) : a non-null Babble parameter rejects it.
+                m.visitLdcInsn(Type.getType(pType));
+                m.visitVarInsn(ALOAD, slot);
+                m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "checkBoxed", "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;", false);
+            } else {
+                m.visitVarInsn(ALOAD, slot);
+            }
             emitAdaptBoxedAndWiden(m, targetKind, widensToDouble);
             return;
         }
@@ -4071,24 +4076,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         } else if (type == float.class) {
             mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-        } else if (type == Integer.class) {
-            mv.visitLdcInsn(Type.getType("Ljava/lang/Integer;"));
-            mv.visitInsn(SWAP);
-            mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "checkBoxed", "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;", false);
-            unbox(ScopeAnalysis.PrimitiveKind.INT);
-            stackKind = ScopeAnalysis.PrimitiveKind.INT;
-        } else if (type == Double.class) {
-            mv.visitLdcInsn(Type.getType("Ljava/lang/Double;"));
-            mv.visitInsn(SWAP);
-            mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "checkBoxed", "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;", false);
-            unbox(ScopeAnalysis.PrimitiveKind.DOUBLE);
-            stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
-        } else if (type == Boolean.class) {
-            mv.visitLdcInsn(Type.getType("Ljava/lang/Boolean;"));
-            mv.visitInsn(SWAP);
-            mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "checkBoxed", "(Ljava/lang/Class;Ljava/lang/Object;)Ljava/lang/Object;", false);
-            unbox(ScopeAnalysis.PrimitiveKind.BOOL);
-            stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
+        } else if (type == Integer.class || type == Double.class || type == Boolean.class) {
+            // Maybe null (BIP011-D6) : what Babble typed non-null, the call site checks.
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         } else {
             if (type == Object.class || type.isInterface()) {
                 mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);

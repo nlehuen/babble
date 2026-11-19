@@ -38,7 +38,6 @@ public final class JavaLinker {
     private static final MethodHandle IS_NULL;
     private static final MethodHandle TO_JAVA;
     private static final MethodHandle FROM_JAVA;
-    private static final MethodHandle CHECK_BOXED;
     private static final MethodHandle FAIL;
     private static final MethodHandle IS_WRAPPED_OF;
     private static final MethodHandle BIND_WRAPPED;
@@ -54,7 +53,6 @@ public final class JavaLinker {
             IS_NULL = LOOKUP.findStatic(JavaLinker.class, "isNull", MethodType.methodType(boolean.class, Object.class));
             TO_JAVA = LOOKUP.findStatic(JavaLinker.class, "toJava", MethodType.methodType(Object.class, Class.class, Object.class));
             FROM_JAVA = LOOKUP.findStatic(Values.class, "fromJava", MethodType.methodType(Object.class, Object.class));
-            CHECK_BOXED = LOOKUP.findStatic(JavaTypes.class, "checkBoxed", MethodType.methodType(Object.class, Class.class, Object.class));
             FAIL = LOOKUP.findStatic(JavaLinker.class, "fail", MethodType.methodType(Object.class, Throwable.class));
             IS_WRAPPED_OF = LOOKUP.findStatic(JavaLinker.class, "isWrappedOf", MethodType.methodType(boolean.class, JavaClass.class, Object.class));
             BIND_WRAPPED = LOOKUP.findStatic(JavaLinker.class, "bindWrapped", MethodType.methodType(Object.class, JavaMethod.class, Object.class));
@@ -140,9 +138,9 @@ public final class JavaLinker {
 
         Class<?> result = resolved.getReturnType();
         h = h.asType(h.type().changeReturnType(Object.class));
-        if (result == Integer.class || result == Double.class || result == Boolean.class) {
-            h = MethodHandles.filterReturnValue(h, CHECK_BOXED.bindTo(result));
-        } else if (!result.isPrimitive() && result != String.class) {
+        // A boxed result may be null (BIP011-D6) : what Babble typed non-null, the call site checks.
+        if (!result.isPrimitive() && result != String.class && result != Integer.class && result != Double.class
+                && result != Boolean.class) {
             h = MethodHandles.filterReturnValue(h, FROM_JAVA);
         }
         h = isStatic ? MethodHandles.dropArguments(h, 0, Callable.class) : MethodHandles.filterArguments(h, 0, RECEIVER);

@@ -138,11 +138,11 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     def items = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < items.size() then (
-        def m = items.get(i) as java.lang.reflect.Method
+        def m = items.get(i)
         if m.getName() == name then ( return m )
         i += 1
     )
-    items.get(0) as java.lang.reflect.Method
+    items.get(0)
 )
 def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
@@ -156,7 +156,7 @@ def p17 = Demo.Arity17Sam((a0 : int, a1 : double, a2 : java.io.File, a3 : string
 ))
 assert(Demo.isProxy(p17) == true)
 assert(p17.equals(p17) and p17.hashCode() != 0 and java.util.Objects.toString(p17) != "" and p17.tag() == 17)
-def h = java.lang.reflect.Proxy.getInvocationHandler(p17)
+def h = java.lang.reflect.Proxy.getInvocationHandler(p17)!
 h.invoke(p17, findM(p17.getClass(), "apply"), args17("bad", 1.0, java.io.File("."), "s"))
 }}}}}
 Type error : expected int, got string
@@ -167,11 +167,11 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     def items = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < items.size() then (
-        def m = items.get(i) as java.lang.reflect.Method
+        def m = items.get(i)
         if m.getName() == name then ( return m )
         i += 1
     )
-    items.get(0) as java.lang.reflect.Method
+    items.get(0)
 )
 def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
@@ -183,7 +183,7 @@ assert(Demo.isProxy(fn) == false)
 def p17 = Demo.Arity17Sam((a0 : int, a1 : double, a2 : java.io.File, a3 : string, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int, a16 : int) : double -> (
     a0 + a1
 ))
-def h = java.lang.reflect.Proxy.getInvocationHandler(p17)
+def h = java.lang.reflect.Proxy.getInvocationHandler(p17)!
 h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, "bad", java.io.File("."), "s"))
 }}}}}
 Type error : expected double, got string
@@ -194,11 +194,11 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     def items = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < items.size() then (
-        def m = items.get(i) as java.lang.reflect.Method
+        def m = items.get(i)
         if m.getName() == name then ( return m )
         i += 1
     )
-    items.get(0) as java.lang.reflect.Method
+    items.get(0)
 )
 def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
@@ -210,7 +210,7 @@ assert(Demo.isProxy(ff) == false)
 def p17 = Demo.Arity17Sam((a0 : int, a1 : double, a2 : java.io.File, a3 : string, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int, a16 : int) : double -> (
     a0 + a1
 ))
-def h = java.lang.reflect.Proxy.getInvocationHandler(p17)
+def h = java.lang.reflect.Proxy.getInvocationHandler(p17)!
 h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, 1.0, java.io.File("."), 123))
 }}}}}
 Type error : expected string, got int
@@ -222,11 +222,11 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     def items = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < items.size() then (
-        def m = items.get(i) as java.lang.reflect.Method
+        def m = items.get(i)
         if m.getName() == name then ( return m )
         i += 1
     )
-    items.get(0) as java.lang.reflect.Method
+    items.get(0)
 )
 def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
@@ -239,7 +239,7 @@ assert(Demo.isProxy(df) == false and Demo.isProxy(ff) == false)
 def p17 = Demo.Arity17Sam((a0 : int, a1 : double, a2 : java.io.File, a3 : string, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int, a16 : int) : double -> (
     a0 + a1
 ))
-def h = java.lang.reflect.Proxy.getInvocationHandler(p17)
+def h = java.lang.reflect.Proxy.getInvocationHandler(p17)!
 def r1 = h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, 3, java.io.File("."), "a"))
 println(r1)
 h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, 3.0, 123, "a"))
@@ -339,10 +339,12 @@ false:true:true
 true:false:true:false:true:true
 
 {{{{{
-;; JavaTypes.checkBoxed null return, ConvertFunction errors, PrintFunction Appendable & null error
+;; A nullable Integer return (BIP011-D6), asserted with e!
 def v = java.lang.Integer.getInteger("babble.nonexistent.prop.xyz")
 println(v)
+println(v!)
 }}}}}
+null
 Type error : expected int, got null
 
 {{{{{
@@ -403,7 +405,7 @@ fns.get(0)
 }}}}}
 Warning : Redundant cast : java.util.List(any?)
 3.0:true:true
-Type error : expected ((x : int) : int)?, got string
+Type error : expected (x : int) : int, got string
 
 {{{{{
 def ma = import("mod_box_a.ba")
@@ -746,7 +748,7 @@ def f1 = java.util.function.Predicate((x : any?) : bool -> ( x == 2 ))
 def f2 = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 10 ))
 def holder : java.util.List(java.util.function.IntUnaryOperator) = java.util.ArrayList()
 holder.add(f2)
-def back = holder.get(0) as java.util.function.IntUnaryOperator
+def back = holder.get(0)
 println(streamRes.size(), ":", streamRes.get(0), ":", java.util.Objects.equals(f1, f1), ":", java.util.Objects.equals(f1, f2), ":", java.util.Objects.hashCode(f1) != 0, ":", java.util.Objects.toString(f2) != "", ":", back.applyAsInt(5))
 }}}}}
 1:42:true:false:true:true:15
@@ -802,10 +804,10 @@ true:true:false
 java.lang.NumberFormatException : For input string: "notAnInt"
 
 {{{{{
-;; Values.same(plain, non-plain), isBuiltin("any"), JavaTypes.checkBoxed Integer null
+;; Values.same(plain, non-plain), isBuiltin("any"), a null Integer asserted non-null
 def dyn = (v : any?) : any? -> ( v )
 println(same(1, java.lang.Object()), ":", dyn(1) is any, ":", dyn(null) is any, ":", same("a", "a"))
-java.lang.Integer.getInteger("babble.nonexistent.test.key")
+java.lang.Integer.getInteger("babble.nonexistent.test.key")!
 }}}}}
 false:true:false:true
 Type error : expected int, got null

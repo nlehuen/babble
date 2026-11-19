@@ -300,6 +300,37 @@ final class JavaTypeBridge {
         return makeAccessible(fromJavaType(genericType, env, true, false), algebra);
     }
 
+    /**
+     * What a Java method returns (BIP011-D6, D7) : as Java declares it when it is non-null
+     * (a primitive, an annotation, {@code @NullMarked}, the {@code java.base} overlay), as null as
+     * its type argument when it is parametric ({@code List.get}), else nullable.
+     */
+    static Type javaResult(Method method, Map<TypeVariable<?>, Type> env, TypeAlgebra algebra) {
+        return javaResult(method.getGenericReturnType(), JavaNullness.ofReturn(method), env, algebra);
+    }
+
+    static Type javaResult(java.lang.reflect.Type genericType, JavaNullness.Nullness nullness,
+                           Map<TypeVariable<?>, Type> env, TypeAlgebra algebra) {
+        Type type = switch (nullness) {
+            case NON_NULL -> {
+                Type declared = fromJavaType(genericType, env, false, false);
+                yield declared == Type.NULL ? declared : Type.withoutNull(declared);
+            }
+            case PARAMETRIC -> fromJavaType(genericType, env, false, false);
+            case NULLABLE -> Type.nullable(fromJavaType(genericType, env, true, false));
+        };
+        return makeAccessible(type, algebra);
+    }
+
+    /**
+     * Whether a Java result of that type must be checked where it enters Babble : a reference
+     * typed non-null ({@code @NotNull} is soft, BIP011-D7), or what an erased type variable gives.
+     */
+    static boolean checksResult(java.lang.reflect.Type genericType, Class<?> raw, Type result) {
+        return genericType instanceof TypeVariable<?> || genericType instanceof WildcardType
+                || !raw.isPrimitive() && result != Type.NULL && !Type.containsNull(result);
+    }
+
     static Type makeAccessible(Type type, TypeAlgebra algebra) {
         if (type instanceof Type.Union union) {
             return Type.union(union.members().stream().map(m -> makeAccessible(m, algebra)).toList());
@@ -465,10 +496,11 @@ final class JavaTypeBridge {
         }
         Map<TypeVariable<?>, Type> env = onClass ? Map.of() : javaTypeEnv(java, typeArgs);
         java.lang.reflect.Type genericType = field.getGenericType();
-        boolean checked = genericType instanceof TypeVariable<?> || genericType instanceof WildcardType;
+        Type type = javaResult(genericType, JavaNullness.ofField(field), env, algebra);
+        boolean checked = checksResult(genericType, field.getType(), type);
         ScopeAnalysis.JavaFieldTarget target = Modifier.isPublic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())
                 ? new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic) : null;
-        return new JavaMember(javaResult(genericType, env, algebra), null, checked, target);
+        return new JavaMember(type, null, checked, target);
     }
 
     /** A Java field an assignment writes. */
@@ -530,11 +562,20 @@ final class JavaTypeBridge {
         return new AssignedField(field);
     }
 
+    /**
+     * A field's type as an assignment sees it : what it holds, when {@code widenTopTypeVar} (the
+     * value read before a compound assignment), else what it takes, null too unless non-null.
+     */
     static Type javaFieldType(Type receiver, Field field, boolean widenTopTypeVar, TypeAlgebra algebra) {
         Map<TypeVariable<?>, Type> env = receiver instanceof Type.JavaInstance ji
                 ? javaTypeEnv(ji.type(), ji.typeArguments())
                 : Map.of();
-        return makeAccessible(fromJavaType(field.getGenericType(), env, widenTopTypeVar, false), algebra);
+        JavaNullness.Nullness nullness = JavaNullness.ofField(field);
+        if (widenTopTypeVar) {
+            return javaResult(field.getGenericType(), nullness, env, algebra);
+        }
+        Type type = makeAccessible(fromJavaType(field.getGenericType(), env, false, false), algebra);
+        return nullness == JavaNullness.Nullness.NULLABLE && !field.getType().isPrimitive() ? Type.nullable(type) : type;
     }
 
     static Class<?> javaClassOf(Type type) {

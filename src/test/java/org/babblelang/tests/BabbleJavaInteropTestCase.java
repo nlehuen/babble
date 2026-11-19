@@ -204,19 +204,24 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
     }
 
     @Test
-    public void testBoxedPrimitiveReturnsAndFieldsRejectNull() throws Exception {
+    public void testBoxedPrimitiveReturnsAndFieldsAreNullable() throws Exception {
         Assertions.assertEquals(42, interpret(DEMO + "Demo.boxedInt(true)"));
         Assertions.assertEquals(1.5, interpret(DEMO + "Demo.boxedDouble(true)"));
         Assertions.assertEquals(true, interpret(DEMO + "Demo.boxedBool(true)"));
 
+        // Unannotated Integer, Double and Boolean results are nullable (BIP011-D6) : null comes back,
+        // and e! asserts them.
+        Assertions.assertNull(interpret(DEMO + "Demo.boxedInt(false)"));
+        Assertions.assertNull(interpret(DEMO + "Demo().instanceBoxedInt"));
         String[][] failures = {
-                {"Demo.boxedInt(false)", "Type error : expected int, got null"},
-                {"Demo.boxedDouble(false)", "Type error : expected double, got null"},
-                {"Demo.boxedBool(false)", "Type error : expected bool, got null"},
-                {"def i = 0 ; while i < 5 then ( Demo.boxedInt(i < 4) ; i = i + 1 )", "Type error : expected int, got null"},
-                {"Demo.setStaticBoxedInt(null) ; Demo.staticBoxedInt", "Type error : expected int, got null"},
-                {"Demo.STATIC_FINAL_NULL_INT", "Type error : expected int, got null"},
-                {"Demo().instanceBoxedInt", "Type error : expected int, got null"},
+                {"Demo.boxedInt(false)!", "Type error : expected int, got null"},
+                {"Demo.boxedDouble(false)!", "Type error : expected double, got null"},
+                {"Demo.boxedBool(false)!", "Type error : expected bool, got null"},
+                {"def i = 0 ; while i < 5 then ( Demo.boxedInt(i < 4)! ; i = i + 1 )", "Type error : expected int, got null"},
+                {"Demo.setStaticBoxedInt(null) ; Demo.staticBoxedInt!", "Type error : expected int, got null"},
+                {"Demo.STATIC_FINAL_NULL_INT!", "Type error : expected int, got null"},
+                {"Demo().instanceBoxedInt!", "Type error : expected int, got null"},
+                {"def n : int = Demo.boxedInt(true)", "Type error : expected int, got int?"},
         };
         for (String[] c : failures) {
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(DEMO + c[0]), c[0]);

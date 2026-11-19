@@ -656,10 +656,10 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(workOps.stream().noneMatch(o -> o.contains("org/babblelang/runtime/JavaLinker")
                 || o.startsWith("INDY:org/babblelang/runtime/Bootstrap.")), workOps.toString());
 
-        CompiledBabbleScript nullArr = compile("java.lang.Class.forName(\"java.lang.String\").getEnumConstants().length");
+        CompiledBabbleScript nullArr = compile("java.lang.Class.forName(\"java.lang.String\").getEnumConstants()!.length");
         assertVerifies(nullArr);
         ScriptException nullErr = Assertions.assertThrows(ScriptException.class, () -> nullArr.eval(new SimpleBindings()));
-        Assertions.assertTrue(nullErr.getMessage().contains("Not a scope"), nullErr.getMessage());
+        Assertions.assertTrue(nullErr.getMessage().contains("got null"), nullErr.getMessage());
 
         CompiledBabbleScript retInJavaArg = compile(
                 "def g = () : int -> ( java.lang.Math.max(1, return 42) ) ; g()");

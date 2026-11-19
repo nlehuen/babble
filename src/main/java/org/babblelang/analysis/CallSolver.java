@@ -444,7 +444,7 @@ final class CallSolver {
         if (best == null) {
             Set<Class<?>> results = applicable.stream().map(Method::getReturnType).collect(Collectors.toSet());
             if (results.size() == 1 && applicable.stream().allMatch(m -> m.getTypeParameters().length == 0)) {
-                return JavaTypeBridge.javaResult(applicable.get(0).getGenericReturnType(), receiverEnv, checker.algebra());
+                return JavaTypeBridge.javaResult(applicable.get(0), receiverEnv, checker.algebra());
             }
             return Type.ERROR;
         }
@@ -465,8 +465,8 @@ final class CallSolver {
             }
         }
         java.lang.reflect.Type genericRet = best.getGenericReturnType();
-        Type result = JavaTypeBridge.javaResult(genericRet, env, checker.algebra());
-        if (genericRet instanceof TypeVariable<?> || genericRet instanceof WildcardType) {
+        Type result = JavaTypeBridge.javaResult(best, env, checker.algebra());
+        if (JavaTypeBridge.checksResult(genericRet, best.getReturnType(), result)) {
             String desc = LoweringAnalyzer.descriptor(result);
             if (desc != null) {
                 checker.callChecks().put(ctx, desc);

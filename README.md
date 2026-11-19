@@ -301,6 +301,14 @@ them or a Java call returned them, and Java classes their public static fields. 
 other scalars have no members. Babble functions convert to Java functional interfaces, and Babble
 classes can implement Java interfaces.
 
+What Java returns is nullable unless Java says otherwise : `System.getenv(name)` is a `string?`,
+`Integer.getInteger(name)` an `int?`, `map.get(k)` a `V?`, to narrow, navigate with `?.` or
+assert with `!`. Primitives are never null, nor is what `@NotNull`/`@NonNull` annotations
+(JetBrains, JSpecify, Jakarta... matched by name) or a JSpecify `@NullMarked` scope promise, nor
+what the JDK's everyday classes return (`String`, `StringBuilder`, `Math`, the wrappers, streams,
+collections : `list.get(i)` is as null as the list's elements, `map.getOrDefault(k, d)` a `V`).
+Such a promise is checked where the value enters Babble, as Java doesn't enforce it.
+
 ```
 def cores = java.lang.Runtime.getRuntime().availableProcessors()
 def circle = 2 * java.lang.Math.PI
@@ -692,7 +700,7 @@ Language features :
 - [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md) and [BIP008](docs/design/bip008_static-typing.md)).
 - [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts, and `org.babblelang.effects` host annotations (see [BIP007](docs/design/bip007_effects.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, and the conversions `byte(x)`..`string(x)`.
-- [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` ; `string` methods are `java.lang.String`'s (see [BIP011](docs/design/bip011_core-types.md)).
+- [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` ; `string` methods are `java.lang.String`'s ; Java results nullable unless annotated or known non-null (see [BIP011](docs/design/bip011_core-types.md)).
 
 Implementation features :
 

@@ -40,7 +40,7 @@ class JavaMethod implements Callable {
         } catch (Throwable t) {
             throw JavaTypes.wrapInvocationException(t);
         }
-        return JavaTypes.checkBoxed(method.getReturnType(), Values.fromJava(result));
+        return Values.fromJava(result);
     }
 
     /** The overload these arguments call, by their kinds : what {@link JavaLinker} guards on. */

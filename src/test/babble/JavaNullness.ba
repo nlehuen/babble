@@ -1,0 +1,32 @@
+;; Java nullness (BIP011-D6, D7) : unannotated references are nullable, annotated or overlaid
+;; ones are what they say, checked where they enter Babble.
+def F = import("org.babblelang.tests").NullnessFixtures
+
+;; Unannotated : string? -- narrow, ?. or e!
+def plain: string? = F.plain(false)
+assert(plain?.length() == 5 and F.plain(true) == null)
+def sure: string = F.plain(false)!
+assert(sure == "plain")
+
+;; Annotated
+def promised: string = F.promised(false)
+def count: int = F.count()
+def maybe: int? = F.maybeCount(true)
+assert(promised.length() == 8 and count + 1 == 8 and maybe == null and F.maybeCount(false)! == 3)
+assert(F.label.length() == 5 and F.unlabelled?.length() == 10)
+
+;; @NullMarked : non-null unless @Nullable
+assert(F.Marked.name(false).length() == 6 and F.Marked.optional() == null)
+
+;; java.base overlay : String, StringBuilder, Math... never null ; Map.get is ; List.get is as
+;; null as its elements
+def counts: java.util.Map(string, int) = java.util.HashMap()
+counts.put("a", 1)
+def a: int? = counts.get("a")
+def z: int = counts.getOrDefault("z", 0)
+def items: java.util.List(int) = java.util.ArrayList()
+items.add(4)
+def first: int = items.get(0)
+assert(a == 1 and z == 0 and first == 4 and "  x ".trim().length() == 1)
+def home = java.lang.System.getenv("BABBLE_SURELY_UNSET_VARIABLE")
+assert(home == null)

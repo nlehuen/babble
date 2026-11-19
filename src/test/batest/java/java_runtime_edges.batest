@@ -20,8 +20,8 @@ java.util.Collections.sort(items, bad)
 Type error : Comparator.compare must return int, got String
 
 {{{{{
-;; JavaTypes.checkBoxed (Integer.getInteger returns null for missing property -> Type error)
-def v : int = java.lang.Integer.getInteger("babble.nonexistent.prop")
+;; Integer.getInteger returns null for a missing property : an int?, which e! asserts (BIP011-D6)
+def v : int = java.lang.Integer.getInteger("babble.nonexistent.prop")!
 println(v)
 }}}}}
 Type error : expected int, got null
@@ -68,14 +68,14 @@ true:false:true:false:true:false
 def ip : java.util.function.IntPredicate = (x : int) -> ( x > 0 )
 def dp : java.util.function.DoublePredicate = (x : double) -> ( x > 1.0 )
 def ff : java.io.FilenameFilter = (d, s) -> ( s == "pom.xml" )
-def found = java.io.File(".").list(ff)
+def found = java.io.File(".").list(ff)!
 println(java.util.stream.IntStream.range(1, 4).allMatch(ip), ":", java.util.stream.DoubleStream.of(1.5).allMatch(dp), ":", found.length >= 0)
 }}}}}
 true:true:true
 
 {{{{{
 def ip : java.util.function.IntPredicate = (x : int) -> ( x > 0 )
-def im = java.util.Arrays.stream(java.lang.Class.forName("java.util.function.IntPredicate").getDeclaredMethods()).filter((m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
+def im = java.util.Arrays.stream(java.lang.Class.forName("java.util.function.IntPredicate").getDeclaredMethods()).filter((m) -> ( m.getName() == "test" )).findFirst().get()
 def badArgs : java.util.List(any) = java.util.List.of("bad")
 im.invoke(ip, badArgs.toArray())
 }}}}}

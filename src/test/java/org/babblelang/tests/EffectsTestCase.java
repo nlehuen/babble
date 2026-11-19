@@ -82,7 +82,7 @@ public class EffectsTestCase {
         @Deterministic
         @Nothrow
         @Injective
-        public static String hexKey(int x) {
+        public static @org.babblelang.effects.NotNull String hexKey(int x) {
             return Integer.toHexString(x);
         }
 
