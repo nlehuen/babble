@@ -606,6 +606,11 @@ final class EffectChecker {
 
         // Tarjan emits SCCs in reverse topological order (callees before callers)!
         for (List<ParserRuleContext> scc : sccs) {
+            boolean cyclic = scc.size() > 1
+                    || (scc.size() == 1 && edges.getOrDefault(scc.get(0), Set.of()).contains(scc.get(0)));
+            if (cyclic) {
+                cyclicCallables.addAll(scc);
+            }
             int iter = 0;
             boolean changed;
             do {
@@ -903,7 +908,7 @@ final class EffectChecker {
         if (prefix.impure()) {
             return HostEffects.OverrideEntry.impureEntry();
         }
-        return new HostEffects.OverrideEntry(prefix.effects(), prefix.mutThis(), prefix.borrowThis(), false);
+        return new HostEffects.OverrideEntry(prefix.effects(), prefix.mutThis(), prefix.borrowThis(), prefix.uniqueReturn(), false);
     }
 
     // ================================================================ 4. 7-Tier Java Effect Resolution
@@ -1582,6 +1587,14 @@ final class EffectChecker {
             return;
         }
         if (tree instanceof BabbleParser.CallContext call) {
+            if (call.expression() instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
+                Object resolved = checker.resolveNameForEffects(sel.ID().getText(), checker.occurrenceScopeOf(sel));
+                if (resolved instanceof BabbleParser.DefExpressionContext def
+                        && def.value instanceof BabbleParser.FunctionLiteralContext lit
+                        && callableSet.contains(lit)) {
+                    out.add(lit);
+                }
+            }
             Type callee = checker.rawTypeOf(call.expression());
             for (Type m : Type.membersOf(callee)) {
                 if (m instanceof Type.Function fn) {
@@ -1966,11 +1979,11 @@ final class EffectChecker {
                                 + " violates " + EffectSet.keywordOf(req) + " guarantee", fn);
                     }
                 }
-                if (prefix.uniqueReturn() && !actual.uniqueResult()) {
-                    String fnLabel = ScopeAnalysis.functionName(fn);
-                    String prefixMsg = fnLabel != null ? "Function " + fnLabel : "Function";
-                    checker.effectDiagnostic(prefixMsg + " declared unique return violates unique guarantee", fn);
-                }
+            }
+            if (!prefix.impure() && prefix.uniqueReturn() && !converged.effects().uniqueResult()) {
+                String fnLabel = ScopeAnalysis.functionName(fn);
+                String prefixMsg = fnLabel != null ? "Function " + fnLabel : "Function";
+                checker.effectDiagnostic(prefixMsg + " declared unique return violates unique guarantee", fn);
             }
             return;
         }
@@ -3839,7 +3852,9 @@ final class EffectChecker {
             if (effectiveMutRecv) {
                 recordTargetMutation(recvOrig, receiverExpr, "mut Java method " + calleeExpr.getText(), call);
             }
-            if (receiverExpr != null && !profile.borrowReceiver() && !profile.effects().isPure()) {
+            boolean recvCanEscape = !profile.borrowReceiver() && !profile.effects().isPure()
+                    && !(profile.effects().isHermetic() && !anyTrue(profile.mutParams()) && isDeeplyImmutable(resType));
+            if (receiverExpr != null && recvCanEscape) {
                 if (recvOrig.unique && recvOrig.uniqueOwner != null) {
                     demoteUniqueOwner(recvOrig.uniqueOwner, Origin.IMMUTABLE);
                 }
@@ -3992,10 +4007,12 @@ final class EffectChecker {
                         || (calleeExpr instanceof BabbleParser.SelectorContext s && s.expression() instanceof BabbleParser.SuperExpressionContext);
                 Origin effectiveRecvOrig = (calleeExpr instanceof BabbleParser.SelectorContext s && s.expression() instanceof BabbleParser.SuperExpressionContext)
                         ? Origin.ofThis(THIS_KEY, false) : recvOrig;
+                boolean effectiveBorrowRecv = !isMethodCall || summary.effects().borrowThis()
+                        || (summary.effects().isHermetic() && !anyTrue(summary.mutParams()) && isDeeplyImmutable(resType));
                 applyBabbleArgEffects(call, calleeExpr, fn.parameters(), summary.mutParams(), summary.borrowParams(), summary.uniqueParams(),
                         isMethodCall ? receiverExpr : null, effectiveRecvOrig,
                         isMethodCall && summary.effects().mutThis(),
-                        !isMethodCall || summary.effects().borrowThis(),
+                        effectiveBorrowRecv,
                         args, argExprs, argOrigins);
                 Origin memberOut;
                 if (summary.effects().uniqueResult()) {
@@ -4436,6 +4453,8 @@ final class EffectChecker {
         }
 
         private Origin evalWhile(BabbleParser.WhileExpressionContext ctx) {
+            terminating = false;
+            stmtHasSideEffect = true;
             int iter = 0;
             while (iter++ < 8) {
                 Map<ParserRuleContext, Origin> before = new IdentityHashMap<>(env);

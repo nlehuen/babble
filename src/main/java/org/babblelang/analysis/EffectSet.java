@@ -89,7 +89,7 @@ public final class EffectSet {
         this.mutThis = !impure && mutThis;
         this.borrowThis = !impure && (borrowThis || explicitBorrowThis);
         this.explicitBorrowThis = !impure && explicitBorrowThis;
-        this.uniqueResult = !impure && (uniqueResult || explicitUniqueResult);
+        this.uniqueResult = !impure && uniqueResult;
         this.explicitUniqueResult = !impure && explicitUniqueResult;
         this.terminating = !impure && terminating;
         this.impure = impure;
