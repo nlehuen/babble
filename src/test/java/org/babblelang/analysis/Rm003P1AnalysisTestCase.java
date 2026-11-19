@@ -288,14 +288,14 @@ public class Rm003P1AnalysisTestCase {
                         + "def TopAlias = TopC\n"
                         + "def f = fn (x : any?) -> (\n"
                         + "  def LocalC = class () ()\n"
-                        + "  x is TopC\n"           // 0: positive
-                        + "  x is (TopAlias)\n"     // 1: positive (parenthesized alias)
-                        + "  x is TopI\n"           // 2: positive
-                        + "  x is m.Exp\n"          // 3: positive
-                        + "  x is m.Alias\n"        // 4: positive
-                        + "  x is LocalC\n"         // 5: negative (inside function)
-                        + "  x is int\n"            // 6: negative (builtin)
-                        + "  x is java.lang.String\n" // 7: negative (Java class)
+                        + "  discard(x is TopC)\n"           // 0: positive
+                        + "  discard(x is (TopAlias))\n"     // 1: positive (parenthesized alias)
+                        + "  discard(x is TopI)\n"           // 2: positive
+                        + "  discard(x is m.Exp)\n"          // 3: positive
+                        + "  discard(x is m.Alias)\n"        // 4: positive
+                        + "  discard(x is LocalC)\n"         // 5: negative (inside function)
+                        + "  discard(x is int)\n"            // 6: negative (builtin)
+                        + "  x is java.lang.String\n"        // 7: negative (Java class)
                         + ")\n");
 
         Map<String, ModuleInterface> cache = new HashMap<>();
@@ -325,7 +325,7 @@ public class Rm003P1AnalysisTestCase {
                 "RA = C2", "r2.ba"), session);
         session.commit(r2);
         ScopeAnalysis r3 = BlockScopes.analyze(BabbleScriptEngine.parseSource(
-                "def check = fn (x : any) -> ( x is C1 ; x is RA )", "r3c.ba"), session);
+                "def check = fn (x : any) -> ( discard(x is C1) ; x is RA )", "r3c.ba"), session);
         Assertions.assertEquals(1, r3.typeDiagnostics().size());
         Assertions.assertEquals("Unknown type : RA", r3.typeDiagnostics().get(0).message());
         List<BabbleParser.IsExpressionContext> r3IsList = isExpressions((BabbleParser.FileContext) r3.pass().fileScope.owner);
@@ -350,15 +350,15 @@ public class Rm003P1AnalysisTestCase {
                 + "  def get = fn () : int -> ( 1 )\n"
                 + ")\n"
                 + "def caller = fn (b : Box of int, mb : (Box of int)?, u : Base | Alt, c : Impl, r : java.lang.Runnable) -> (\n"
-                + "  b.baseFn(1)\n"
-                + "  b.get()\n"
-                + "  b.id(42)\n"
-                + "  b.opt(1)\n"          // optional omitted -> null
-                + "  b.opt(a: 1, b: 2)\n" // named args -> null
-                + "  mb?.baseFn(1)\n"     // safe nav -> null
-                + "  u.baseFn(1)\n"       // union receiver -> null
-                + "  c.baseFn(1)\n"       // concrete class receiver -> null
-                + "  r.run()\n"           // Java interface -> null
+                + "  def r1 = b.baseFn(1)\n"
+                + "  def r2 = b.get()\n"
+                + "  def r3 = b.id(42)\n"
+                + "  def r4 = b.opt(1)\n"          // optional omitted -> null
+                + "  def r5 = b.opt(a: 1, b: 2)\n" // named args -> null
+                + "  def r6 = mb?.baseFn(1)\n"     // safe nav -> null
+                + "  def r7 = u.baseFn(1)\n"       // union receiver -> null
+                + "  def r8 = c.baseFn(1)\n"       // concrete class receiver -> null
+                + "  r.run()\n"                    // Java interface -> null
                 + ")\n";
 
         ScopeAnalysis analysis = analyzeSingle(source);

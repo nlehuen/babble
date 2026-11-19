@@ -144,8 +144,8 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testBlockResult() throws Exception {
         Assertions.assertEquals(6, interpret("( 1 + 2 + 3 )"));
-        Assertions.assertEquals(3, interpret("( 1 ; 2 ; 3 )"));
-        Assertions.assertEquals(3, interpret("( 1 \n 2 \n 3 )"));
+        Assertions.assertEquals(3, interpret("( discard(1) ; discard(2) ; 3 )"));
+        Assertions.assertEquals(3, interpret("( discard(1) \n discard(2) \n 3 )"));
     }
 
     @Test

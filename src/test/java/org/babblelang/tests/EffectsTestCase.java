@@ -706,7 +706,7 @@ public class EffectsTestCase {
         Assertions.assertEquals(15, eval(engine, """
                 def UH = import("org.babblelang.tests").EffectsTestCase.UnassumedHelper
                 def f = fn pure deterministic nothrow (x: int): int -> (
-                    UH()
+                    discard(UH())
                     UH.compute(x)
                 )
                 f(10)

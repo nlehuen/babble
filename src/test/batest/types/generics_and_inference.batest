@@ -182,10 +182,10 @@ Type error : expected int, got double (x is double because of the assignment)
 {{{{{
 def takeInt = fn (n : int) -> ( n )
 def f = fn (x) -> (
-    takeInt(x)
+    discard(takeInt(x))
     x
 )
-f(1)
+discard(f(1))
 f(1.5)
 }}}}}
 Type error : expected int, got double (x is double because of the call)

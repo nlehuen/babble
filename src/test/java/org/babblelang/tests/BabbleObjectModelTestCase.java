@@ -70,7 +70,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         Assertions.assertEquals(6, interpret("def R = class (def w : int, def h : int) ( def area = this.w * this.h ) ; R(2, 3).area"));
         assertFails("def C = class (n : int) ( if n < 0 then ( suppose(false, \"negative\") ) ) ; C(0 - 1)", "negative");
         // The construction yields the instance, not the body's last value.
-        Assertions.assertEquals(true, interpret("def C = class () ( 42 ) ; C() is C"));
+        Assertions.assertEquals(true, interpret("def C = class () ( discard(42) ) ; C() is C"));
     }
 
     @Test
