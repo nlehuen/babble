@@ -2,9 +2,9 @@
 
 {{{{{
 ;; Generic Babble function value instantiation (to function type & Java SAM) and inference failure
-def id(T) = (x : T) : T -> ( x )
-def intId : (x : int) : int = id
-def strId : (x : string) : string = id
+def id(T) = fn (x : T) : T -> ( x )
+def intId : fn (x : int) : int = id
+def strId : fn (x : string) : string = id
 def s = java.util.stream.IntStream.range(1, 4).map(id).sum()
 def o = java.util.Optional.of(5).map(id).get()
 println(intId(4), ":", strId("ok"), ":", s, ":", o)
@@ -12,23 +12,23 @@ println(intId(4), ":", strId("ok"), ":", s, ":", o)
 4:ok:6:5
 
 {{{{{
-def id(T) = (x : T) : T -> ( x )
+def id(T) = fn (x : T) : T -> ( x )
 def bad = id
 }}}}}
 Missing type : cannot infer type arguments for id
 
 {{{{{
-;; Deferred lambda arg + return-type hint fallback + widening hints across union/fn/class/Java
-def id(T) = (x : T) : T -> ( x )
-def apply(A, B) = (x : A, f : (a : A) : B) : B -> ( f(x) )
+;; Deferred lambda arg + return-type hint fallback + widening hints across union/func/class/Java
+def id(T) = fn (x : T) : T -> ( x )
+def apply(A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
 def d1 : double = id(1)
 def u1 : int | double = id(2)
-def r = apply(3, (x) -> ( x * 2.5 ))
+def r = apply(3, fn (x) -> ( x * 2.5 ))
 def Box(T) = class (def v : T) ()
 def opt : java.util.Optional(int) = java.util.Optional.of(5)
-def opt2 = opt.map((x) -> ( x + 1 ))
+def opt2 = opt.map(fn (x) -> ( x + 1 ))
 def b1 : Box(double) = Box(3)
-def mkPair(A, B) = (a : A, b : B) : A -> ( a )
+def mkPair(A, B) = fn (a : A, b : B) : A -> ( a )
 def p : double = mkPair(2, "z")
 println(d1, ":", u1, ":", r, ":", opt2.get(), ":", b1.v, ":", p)
 }}}}}
@@ -36,38 +36,38 @@ println(d1, ":", u1, ":", r, ":", opt2.get(), ":", b1.v, ":", p)
 
 {{{{{
 ;; Generic Java SAM target typing (deferred lambda) + Collections.sort / List.replaceAll
-def lenOpt = java.util.Optional.of("abc").map((s) -> ( java.lang.StringBuilder(s).length() )).get()
-def fn : java.util.function.Function(string, int) = (s) -> ( java.lang.StringBuilder(s).length() )
+def lenOpt = java.util.Optional.of("abc").map(fn (s) -> ( java.lang.StringBuilder(s).length() )).get()
+def func : java.util.function.Function(string, int) = fn (s) -> ( java.lang.StringBuilder(s).length() )
 def xs : java.util.List(string) = java.util.ArrayList()
 xs.add("bb")
 xs.add("a")
 xs.add("ccc")
-java.util.Collections.sort(xs, (a, b) -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
-xs.replaceAll((s) -> ( s + ":" + java.util.Optional.of(s).map(fn).get() ))
+java.util.Collections.sort(xs, fn (a, b) -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
+xs.replaceAll(fn (s) -> ( s + ":" + java.util.Optional.of(s).map(func).get() ))
 println(lenOpt, ":", xs.get(0), ",", xs.get(1), ",", xs.get(2))
 }}}}}
 3:a:1,bb:2,ccc:3
 
 {{{{{
-def fn = java.util.function.Function((s) -> ( s ))
+def func = java.util.function.Function(fn (s) -> ( s ))
 }}}}}
 Missing type : cannot infer type arguments for java.util.function.Function
 
 {{{{{
 ;; Generic interface extending generic interface with default substitution
 def BaseI(A) = interface (
-    def get : () : A
-    def pair = () : java.util.List(A) -> (
+    def get : fn () : A
+    def pair = fn () : java.util.List(A) -> (
         def out : java.util.List(A) = java.util.ArrayList()
         out.add(this.get())
         out
     )
 )
 def SubI(B) = interface extends BaseI(B) (
-    def get2 = () : B -> ( this.get() )
+    def get2 = fn () : B -> ( this.get() )
 )
 def Impl(C) = class (def item : C) implements SubI(C) (
-    def get = () : C -> ( this.item )
+    def get = fn () : C -> ( this.item )
 )
 def i : SubI(string) = Impl("hi")
 println(i.get(), ":", i.get2(), ":", i.pair().get(0))
@@ -123,19 +123,19 @@ Missing type : cannot infer type arguments for java.util.ArrayList
 
 {{{{{
 ;; Recursive expression cycle without declared return type
-def f = (n : int) -> ( f(n - 1) )
+def f = fn (n : int) -> ( f(n - 1) )
 }}}}}
 Missing type : f (recursive)
 
 {{{{{
-def f = (n : int) : int -> ( if n <= 0 then ( 1 ) else ( n * recurse(n - 1) ) )
+def f = fn (n : int) : int -> ( if n <= 0 then ( 1 ) else ( n * recurse(n - 1) ) )
 println(f(4))
 }}}}}
 24
 
 {{{{{
 ;; Return type errors & empty block against expected return type
-def f = (flag : bool) : int -> (
+def f = fn (flag : bool) : int -> (
     if flag then ( return 1 )
     return "no"
 )
@@ -143,21 +143,21 @@ def f = (flag : bool) : int -> (
 Type error : expected int, got string
 
 {{{{{
-def f = () : int -> ( )
+def f = fn () : int -> ( )
 }}}}}
 Type error : expected int, got null
 
 {{{{{
 ;; Unary minus on union int|double and nullable union, plus union of functions call
-def negU = (flag : bool) : int | double -> (
+def negU = fn (flag : bool) : int | double -> (
     def v : int | double = if flag then ( 3 ) else ( 2.5 )
     -v
 )
-def f1 = (x : int) : int -> ( x + 1 )
-def f2 = (x : int) : double -> ( x * 0.5 )
-def pick = (flag : bool) -> (
-    def fn = if flag then ( f1 ) else ( f2 )
-    fn(4)
+def f1 = fn (x : int) : int -> ( x + 1 )
+def f2 = fn (x : int) : double -> ( x * 0.5 )
+def pick = fn (flag : bool) -> (
+    def func = if flag then ( f1 ) else ( f2 )
+    func(4)
 )
 println(negU(true), ":", negU(false), ":", pick(true), ":", pick(false))
 }}}}}
@@ -165,7 +165,7 @@ println(negU(true), ":", negU(false), ":", pick(true), ":", pick(false))
 
 {{{{{
 ;; Calling union containing null fails TypeChecker
-def f : ((x : int) : int)? = null
+def f : (fn (x : int) : int)? = null
 f(1)
 }}}}}
 f is not callable
@@ -173,15 +173,15 @@ f is not callable
 {{{{{
 ;; Widening notes ("because of the assignment" and "because of the call")
 def x = 1
-def takeInt = (n : int) -> ( n )
+def takeInt = fn (n : int) -> ( n )
 takeInt(x)
 x = 1.5
 }}}}}
 Type error : expected int, got double (x is double because of the assignment)
 
 {{{{{
-def takeInt = (n : int) -> ( n )
-def f = (x) -> (
+def takeInt = fn (n : int) -> ( n )
+def f = fn (x) -> (
     takeInt(x)
     x
 )
@@ -203,14 +203,14 @@ Type error : type argument Box does not satisfy bound T of java.util.Collections
 ;; Generic union rollback (ConstraintStore.reset) and class-to-SAM assignability
 def Box(T) = value class (v : T) ()
 def Pair = value class (v : int) ()
-def wrap(T) = (x : T) : Box(T) -> ( Box(x) )
+def wrap(T) = fn (x : T) : Box(T) -> ( Box(x) )
 def u : string | Box(int) = wrap(42)
-def fn : java.util.function.Function(int, Pair) = Pair
+def func : java.util.function.Function(int, Pair) = Pair
 def a = 1
 a = 2.5
 def b = null
 b = "ok"
 def uv = if u is Box then ( u.v ) else ( 0 )
-println(uv, ":", fn.apply(7).v, ":", a, ":", b)
+println(uv, ":", func.apply(7).v, ":", a, ":", b)
 }}}}}
 42:7:2.5:ok

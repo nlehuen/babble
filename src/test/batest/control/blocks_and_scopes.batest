@@ -31,8 +31,8 @@ Name already defined : x
 
 {{{{{
 ;; Variable read before definition in same block (hoisted slot throws Runtime error)
-def f = () -> ( a )
-def g = () -> (
+def f = fn () -> ( a )
+def g = fn () -> (
     def x = a
     def a = 5
     x
@@ -43,7 +43,7 @@ Name used before definition : a
 
 {{{{{
 ;; Assignment before definition in same block
-def f = () -> (
+def f = fn () -> (
     a = 10
     def a = 5
 )
@@ -53,8 +53,8 @@ Name used before definition : a
 
 {{{{{
 ;; Read/assign captured variable from closure before def runs
-def maker = () -> (
-    def readA = () : int -> ( a )
+def maker = fn () -> (
+    def readA = fn () : int -> ( a )
     def r = readA()
     def a = 1
     r

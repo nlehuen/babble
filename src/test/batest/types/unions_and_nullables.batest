@@ -1,7 +1,7 @@
 ;; Union types, nullability (T?), parenthesized type annotations, and nullability mismatches
 
 {{{{{
-def fmt = (v : int | string | null) : string -> (
+def fmt = fn (v : int | string | null) : string -> (
     if v == null then ( "nil" )
     else if v is int then ( "int:" + v )
     else ( "str:" + v )

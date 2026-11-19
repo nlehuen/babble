@@ -51,10 +51,10 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
             Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not a number : null in <input> at line number 1 at column number 3", e.getMessage());
         }
         ScriptException staticFail = Assertions.assertThrows(ScriptException.class,
-                () -> interpret("def id = (x : any) : any -> ( x ) ; 12 + id(\"to\")"));
+                () -> interpret("def id = fn (x : any) : any -> ( x ) ; 12 + id(\"to\")"));
         Assertions.assertTrue(staticFail.getMessage().contains("Not a number : id(\"to\")"), staticFail.getMessage());
         ScriptException runtime = Assertions.assertThrows(ScriptException.class,
-                () -> interpret("def id = (x : any) : any -> ( x ) ; 12 + (id(\"to\") as int)"));
+                () -> interpret("def id = fn (x : any) : any -> ( x ) ; 12 + (id(\"to\") as int)"));
         Assertions.assertEquals("org.babblelang.runtime.BabbleException: Type error : expected int, got string in <input> at line number 1", runtime.getMessage());
     }
 
@@ -203,10 +203,10 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
             Assertions.assertEquals("org.babblelang.runtime.BabbleException: Not comparable : null and 1 in <input> at line number 1 at column number 2", e.getMessage());
         }
         ScriptException staticFail = Assertions.assertThrows(ScriptException.class,
-                () -> interpret("def id = (x : any) : any -> ( x ) ; 1 < id(\"x\")"));
+                () -> interpret("def id = fn (x : any) : any -> ( x ) ; 1 < id(\"x\")"));
         Assertions.assertTrue(staticFail.getMessage().contains("Not comparable : 1 and id(\"x\")"), staticFail.getMessage());
         ScriptException runtime = Assertions.assertThrows(ScriptException.class,
-                () -> interpret("def id = (x : any) : any -> ( x ) ; 1 < (id(\"x\") as int)"));
+                () -> interpret("def id = fn (x : any) : any -> ( x ) ; 1 < (id(\"x\") as int)"));
         Assertions.assertEquals("org.babblelang.runtime.BabbleException: Type error : expected int, got string in <input> at line number 1", runtime.getMessage());
     }
 
@@ -218,7 +218,7 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
         ScriptException litAssign = Assertions.assertThrows(ScriptException.class, () -> interpret("1 = 2"));
         Assertions.assertTrue(litAssign.getMessage().contains("Cannot assign to expression"), litAssign.getMessage());
         ScriptException callAssign = Assertions.assertThrows(ScriptException.class,
-                () -> interpret("def f = () -> ( 1 ) ; f() = 2"));
+                () -> interpret("def f = fn () -> ( 1 ) ; f() = 2"));
         Assertions.assertTrue(callAssign.getMessage().contains("Cannot assign to expression"), callAssign.getMessage());
     }
 }

@@ -1,7 +1,7 @@
-def counter = () -> (
+def counter = fn () -> (
     def c = 0
 
-    () -> (
+    fn () -> (
         c = c + 1
     )
 )

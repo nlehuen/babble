@@ -7,17 +7,17 @@ def Interval = import("interval.ba").Interval
 ;; 2.5 Axis-Aligned Bounding Box (AABB) Value Class for BVH Acceleration
 ;; ------------------------------------------------------------------------
 export def AABB = value class (x: Interval, y: Interval, z: Interval) (
-    def centroid = (axis: int): double -> (
+    def centroid = fn (axis: int): double -> (
         if axis == 0 then (
             this.x.midpoint()
         ) else if axis == 1 then (this.y.midpoint()) else (this.z.midpoint())
     )
 
-    def center = (): Vec3 -> (
+    def center = fn (): Vec3 -> (
         Vec3(this.x.midpoint(), this.y.midpoint(), this.z.midpoint())
     )
 
-    def expandPoint = (p: Vec3): AABB -> (
+    def expandPoint = fn (p: Vec3): AABB -> (
         AABB(
             Interval(math.min(this.x.min, p.x), math.max(this.x.max, p.x)),
             Interval(math.min(this.y.min, p.y), math.max(this.y.max, p.y)),
@@ -25,7 +25,7 @@ export def AABB = value class (x: Interval, y: Interval, z: Interval) (
         )
     )
 
-    def longestAxis = (): int -> (
+    def longestAxis = fn (): int -> (
         def sx: double = this.x.size()
         def sy: double = this.y.size()
         def sz: double = this.z.size()
@@ -34,7 +34,7 @@ export def AABB = value class (x: Interval, y: Interval, z: Interval) (
         ) else if sy >= sz then (1) else (2)
     )
 
-    def hit = (r: Ray, rayT: Interval): bool -> (
+    def hit = fn (r: Ray, rayT: Interval): bool -> (
         def tMin: double = rayT.min
         def tMax: double = rayT.max
 
@@ -71,7 +71,7 @@ export def AABB = value class (x: Interval, y: Interval, z: Interval) (
 ) static (
     def empty: AABB = this(Interval.empty, Interval.empty, Interval.empty)
 
-    def fromPoints = (a: Vec3, b: Vec3): AABB -> (
+    def fromPoints = fn (a: Vec3, b: Vec3): AABB -> (
         this(
             Interval(math.min(a.x, b.x), math.max(a.x, b.x)),
             Interval(math.min(a.y, b.y), math.max(a.y, b.y)),
@@ -79,7 +79,7 @@ export def AABB = value class (x: Interval, y: Interval, z: Interval) (
         )
     )
 
-    def enclose = (box0: AABB, box1: AABB): AABB -> (
+    def enclose = fn (box0: AABB, box1: AABB): AABB -> (
         this(
             Interval.enclose(box0.x, box1.x),
             Interval.enclose(box0.y, box1.y),

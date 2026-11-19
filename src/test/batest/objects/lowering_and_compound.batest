@@ -4,7 +4,7 @@
 {{{{{
 ;; Class constructor-local variables & non-def constructor params captured by methods (hiddenCells)
 def Account = class (initial : int, rate : double = 1.5, tag : string = "acct") (
-    def add = (amount : int) : string -> (
+    def add = fn (amount : int) : string -> (
         initial += amount
         rate += amount * 0.5
         tag += "!"
@@ -19,11 +19,11 @@ println(a.add(5))
 {{{{{
 ;; Class method recurse ($spec & $direct) and inner class closures capturing this & constructor param (hiddenCell)
 def Rec = class (def base : int, extra : int = 100) (
-    def sumSpec = (n : int) : int -> ( if n <= 0 then ( 0 ) else ( n + recurse(n - 1) ) )
-    def sumDirect = (s : string, n : int = 2) : string -> (
+    def sumSpec = fn (n : int) : int -> ( if n <= 0 then ( 0 ) else ( n + recurse(n - 1) ) )
+    def sumDirect = fn (s : string, n : int = 2) : string -> (
         if n <= 0 then ( s ) else ( recurse(s + ".", n - 1) )
     )
-    def makeAdder = (k : int) -> ( () : int -> ( this.base + extra + k ) )
+    def makeAdder = fn (k : int) -> ( fn () : int -> ( this.base + extra + k ) )
 )
 def r = Rec(7)
 def adder = r.makeAdder(3)
@@ -34,16 +34,16 @@ println(r.sumSpec(4), ":", r.sumDirect("x"), ":", adder())
 {{{{{
 ;; Compound assignments across local int/double, this.field (int/double/ref), external obj.field, and Vec operators
 def Vec = class (def x : int, def y : int) (
-    def plus = (o : Vec) : Vec -> ( Vec(this.x + o.x, this.y + o.y) )
-    def minus = (o : Vec) : Vec -> ( Vec(this.x - o.x, this.y - o.y) )
-    def times = (o : Vec) : Vec -> ( Vec(this.x * o.x, this.y * o.y) )
-    def div = (o : Vec) : Vec -> ( Vec(int(this.x / o.x), int(this.y / o.y)) )
-    def neg = () : Vec -> ( Vec(-this.x, -this.y) )
-    def toString = () : string -> ( "V(" + this.x + "," + this.y + ")" )
+    def plus = fn (o : Vec) : Vec -> ( Vec(this.x + o.x, this.y + o.y) )
+    def minus = fn (o : Vec) : Vec -> ( Vec(this.x - o.x, this.y - o.y) )
+    def times = fn (o : Vec) : Vec -> ( Vec(this.x * o.x, this.y * o.y) )
+    def div = fn (o : Vec) : Vec -> ( Vec(int(this.x / o.x), int(this.y / o.y)) )
+    def neg = fn () : Vec -> ( Vec(-this.x, -this.y) )
+    def toString = fn () : string -> ( "V(" + this.x + "," + this.y + ")" )
 )
 
 def C = class (def iv : int, def dv : double, def sv : string, def vec : Vec) (
-    def tick = mut () : string -> (
+    def tick = fn mut () : string -> (
         this.iv += 2
         this.iv -= 1
         this.iv *= 3
@@ -79,11 +79,11 @@ println(c.iv, ":", v, ":", nv)
 {{{{{
 ;; Static class fields/methods, static block `this`, mutable static assign & compound assign
 def Counter = class (def n : int) (
-    def id = () : int -> ( this.n )
+    def id = fn () : int -> ( this.n )
 ) static (
     def count = 0
-    def selfTag = () : string -> ( "" + this.count )
-    def peek = () : int -> ( Counter.count )
+    def selfTag = fn () : string -> ( "" + this.count )
+    def peek = fn () : int -> ( Counter.count )
 )
 Counter.count = 10
 Counter.count += 5
@@ -95,7 +95,7 @@ println(Counter.selfTag(), ":", Counter.peek())
 ;; Static member missing/private/assign-method errors (BabbleType)
 def C = class () () static (
     private def sec = 1
-    def fn = () : int -> ( 2 )
+    def func = fn () : int -> ( 2 )
 )
 C.missing
 }}}}}
@@ -112,7 +112,7 @@ sec is private
 
 {{{{{
 ;; Arithmetic identity folding, constant folding, and comparisons across int/double/any
-def f = (a : int, b : double, s : any) : string -> (
+def f = fn (a : int, b : double, s : any) : string -> (
     def r1 = (a + 0) + (0 + a) + (a - 0) + (0 - a) + (a * 1) + (1 * a) + (a * 0) + (0 * a)
     def c1 = (10 - 3) + (4 * 5) + (-(-a))
     def cmp = "" + (a < 10) + ":" + (a <= 5) + ":" + (a > 4) + ":" + (a >= 5) + ":" + (a == 5) + ":" + (a != 6)
@@ -139,10 +139,10 @@ Integer out of range : 2147483648
 
 {{{{{
 ;; Nested block scope shadowing, reference-typed while loop body, and common superclass frame merging
-def I = interface ( def tag : () : string )
-def A = class () implements I ( def tag = () : string -> ( "A" ) )
-def B = class () implements I ( def tag = () : string -> ( "B" ) )
-def pick = (flag : bool) : I -> (
+def I = interface ( def tag : fn () : string )
+def A = class () implements I ( def tag = fn () : string -> ( "A" ) )
+def B = class () implements I ( def tag = fn () : string -> ( "B" ) )
+def pick = fn (flag : bool) : I -> (
     def a = A()
     def b = B()
     if flag then ( a ) else ( b )

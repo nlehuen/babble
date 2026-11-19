@@ -45,7 +45,7 @@ public class MainTestCase {
 
     @Test
     public void testAScriptRunsWithoutTheInteractiveMode() throws Exception {
-        String hello = script("hello.ba", ";; greets\ndef greet = (name : string) : string -> ( \"Hello, \" + name )\nprintln(greet(\"world\"))\n42\n");
+        String hello = script("hello.ba", ";; greets\ndef greet = fn (name : string) : string -> ( \"Hello, \" + name )\nprintln(greet(\"world\"))\n42\n");
         // What is typed is not read, and the script's value is not shown.
         Run run = run("1 + 1\n", hello);
         Assertions.assertEquals(new Run(0, List.of("Hello, world"), List.of()), run);
@@ -62,7 +62,7 @@ public class MainTestCase {
 
     @Test
     public void testKeepAliveContinuesInTheInteractiveMode() throws Exception {
-        String definitions = script("definitions.ba", "def twice = (n : int) : int -> ( n * 2 )\nprintln(\"loaded\")");
+        String definitions = script("definitions.ba", "def twice = fn (n : int) : int -> ( n * 2 )\nprintln(\"loaded\")");
         Run run = run("twice(21)\nargs.get(0)\n", "-keep-alive", definitions, "x");
         Assertions.assertEquals(new Run(0, List.of("loaded", "42", "\"x\""), List.of()), run);
         Assertions.assertEquals(List.of("loaded", "4"), run("twice(2)\n", "--keep-alive", definitions).out());
@@ -80,7 +80,7 @@ public class MainTestCase {
         String syntax = script("syntax.ba", "def a = 1\ndef = 2");
         Assertions.assertEquals(new Run(Main.FAILED, List.of(), List.of("Error : Syntax error : unexpected '=' in " + syntax + " at line number 2 at column number 5")),
                 run("", syntax));
-        String overflow = script("overflow.ba", "def r = (n : int) : int -> ( recurse(n + 1) )\nr(1)");
+        String overflow = script("overflow.ba", "def r = fn (n : int) : int -> ( recurse(n + 1) )\nr(1)");
         Assertions.assertEquals(new Run(Main.FAILED, List.of(), List.of("Error : Stack overflow in " + overflow)), run("", overflow));
     }
 

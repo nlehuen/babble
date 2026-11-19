@@ -2,19 +2,19 @@
 ;; and `int`-to-`double` conversion on `if` and inferred return joins.
 
 ;; ---- `any` top type and expected-type `if` branches
-def putAny = (v: any?): any? -> (v)
+def putAny = fn (v: any?): any? -> (v)
 assert(putAny(1) == 1)
 assert(putAny("hello") == "hello")
 assert(putAny(null) == null)
 
-def branchAny = (c: bool): any -> (
+def branchAny = fn (c: bool): any -> (
     if c then (1) else ("alt")
 )
 assert(branchAny(true) == 1)
 assert(branchAny(false) == "alt")
 
 ;; ---- `is` on built-in types and flow-sensitive narrowing
-def describe = (v: any?): string -> (
+def describe = fn (v: any?): string -> (
     if v is int then (
         "int:" + (v + 1)
     ) else if v is double then (
@@ -38,7 +38,7 @@ assert(java.lang.String(describe(java.lang.Object())).startsWith("any:"))
 assert(describe(null) == "null")
 
 ;; Early-return narrowing and boolean short-circuit narrowing
-def strOrDefault = (v: any?): string -> (
+def strOrDefault = fn (v: any?): string -> (
     if not (v is string) then (return "default")
     v
 )
@@ -46,7 +46,7 @@ assert(strOrDefault("abc") == "abc")
 assert(strOrDefault(123) == "default")
 assert(strOrDefault(null) == "default")
 
-def positiveInt = (v: any): bool -> (
+def positiveInt = fn (v: any): bool -> (
     v is int and v > 0
 )
 assert(positiveInt(5))
@@ -54,7 +54,7 @@ assert(not positiveInt(-1))
 assert(not positiveInt("5"))
 
 def Box = class (def value: int) ()
-def readBox = (v: any) -> (
+def readBox = fn (v: any) -> (
     if v is Box then (v.value) else (0)
 )
 assert(readBox(Box(42)) == 42)
@@ -71,10 +71,10 @@ assert((null as string?) == null)
 assert((null as Box?) == null)
 
 def Shape = interface (
-    def area: (): double
+    def area: fn (): double
 )
 def Square = class (def side) implements Shape (
-    def area = () -> (this.side * this.side)
+    def area = fn () -> (this.side * this.side)
 )
 def shape: Shape = Square(3.0)
 assert((shape as Square).side == 3.0)
@@ -86,14 +86,14 @@ assert(java.lang.reflect.Array.get(parts, 1) == "two")
 assert(java.util.Arrays.asList(parts).size() == 3)
 
 ;; ---- `int`-to-`double` conversion on `if` and inferred function results
-def pickNumber = (c) -> (
+def pickNumber = fn (c) -> (
     if c then (1) else (2.0)
 )
 def w = pickNumber(true)
 assert(w is double)
 assert(w + w == 2.0)
 
-def pickEarly = (c) -> (
+def pickEarly = fn (c) -> (
     if c then (return 1)
     2.0
 )

@@ -40,15 +40,15 @@ public class Rm003P3JavaImplementsTestCase {
     public void testCompiledInstancesImplementJavaInterfacesDirectlyWithoutProxy() throws Exception {
         CompiledBabbleScript script = compile("""
                 def Ordered = interface extends java.lang.Comparable(Ordered) (
-                    def key : () : int
-                    def compareTo = (o : Ordered) : int -> ( this.key() - o.key() )
+                    def key : fn () : int
+                    def compareTo = fn (o : Ordered) : int -> ( this.key() - o.key() )
                 )
                 def Node = class (def k : int) implements Ordered, java.util.function.IntUnaryOperator, java.util.Iterator(int) (
                     private def used = false
-                    def key = () : int -> ( this.k )
-                    def applyAsInt = (x : int) : int -> ( x + this.k )
-                    def hasNext = () : bool -> ( not this.used )
-                    def next = mut () : int -> ( this.used = true ; this.k )
+                    def key = fn () : int -> ( this.k )
+                    def applyAsInt = fn (x : int) : int -> ( x + this.k )
+                    def hasNext = fn () : bool -> ( not this.used )
+                    def next = fn mut () : int -> ( this.used = true ; this.k )
                 )
                 Node(7)
                 """);

@@ -2,36 +2,36 @@
 
 ========== math.ba ==========
 def loads = 0
-def bump = () : int -> ( loads += 1 ; loads )
+def bump = fn () : int -> ( loads += 1 ; loads )
 def secret = 99
 export def pi = 3.0
-export def add = (a : int, b : int) : int -> ( a + b )
+export def add = fn (a : int, b : int) : int -> ( a + b )
 export def Box = class (def x : int) (
-    def get = () : int -> ( this.x )
+    def get = fn () : int -> ( this.x )
 )
-export def mul = (a : int, b : int) : int -> ( a * b )
-export def hits = () : int -> ( loads )
+export def mul = fn (a : int, b : int) : int -> ( a * b )
+export def hits = fn () : int -> ( loads )
 bump()
 
 ========== wrap.ba ==========
 def m = import("math.ba")
-export def sumAndMul = (a : int, b : int) : int -> ( m.add(a, b) + m.mul(a, b) )
-export axiom pure deterministic nothrow java.lang.Math.max
+export def sumAndMul = fn (a : int, b : int) : int -> ( m.add(a, b) + m.mul(a, b) )
+export axiom pure deterministic nothrow on java.lang.Math.max
 
 ========== sub/deep.ba ==========
 def w = import("../wrap.ba")
-export def calc = (a : int, b : int) : int -> ( w.sumAndMul(a, b) )
+export def calc = fn (a : int, b : int) : int -> ( w.sumAndMul(a, b) )
 
 ========== math2.ba ==========
 export def pi = 4.0
-export def add = (a : int, b : int) : int -> ( a + b + 1 )
+export def add = fn (a : int, b : int) : int -> ( a + b + 1 )
 
 ========== hof.ba ==========
 export def Box = class (def x : int) ()
-export def apply = (n : int, f : (v : int) : int) : int -> ( f(n) )
-export def applyOpt = (n : int, f : (v : int) : int = (v : int) : int -> ( v + 1 )) : int -> ( f(n) )
-export def mutateWith = (mut b : Box, f : hermetic (mut m : Box) : int) : int -> ( f(b) )
-export def pureWrap = pure (n : int, f : pure (v : int) : int) : int -> ( f(n) )
+export def apply = fn (n : int, f : fn (v : int) : int) : int -> ( f(n) )
+export def applyOpt = fn (n : int, f : fn (v : int) : int = fn (v : int) : int -> ( v + 1 )) : int -> ( f(n) )
+export def mutateWith = fn (mut b : Box, f : fn hermetic (mut m : Box) : int) : int -> ( f(b) )
+export def pureWrap = fn pure (n : int, f : fn pure (v : int) : int) : int -> ( f(n) )
 
 {{{{{
 def m = import("math.ba")
@@ -48,7 +48,7 @@ println(w.sumAndMul(3, 4), ":", m.hits(), ":", same(m, m2))
 ;; Relative path normalization ("sub/deep.ba" importing "../wrap.ba") and exported axiom
 def d = import("sub/deep.ba")
 def w = import("wrap.ba")
-def check = pure () : int -> ( java.lang.Math.max(d.calc(2, 5), 10) )
+def check = fn pure () : int -> ( java.lang.Math.max(d.calc(2, 5), 10) )
 println(check())
 }}}}}
 17
@@ -85,22 +85,22 @@ No such export : missing in math.ba
 {{{{{
 ;; Cross-module higher-order effect specialization (pure callback, optional default, and mut forwarding)
 def h = import("hof.ba")
-def pureCaller = pure (x : int) : int -> (
-    h.apply(x, (v : int) : int -> ( v * 2 ))
+def pureCaller = fn pure (x : int) : int -> (
+    h.apply(x, fn (v : int) : int -> ( v * 2 ))
 )
-def callMutate = (x : int) : int -> (
+def callMutate = fn (x : int) : int -> (
     def box = h.Box(x)
-    h.mutateWith(box, hermetic (mut m : h.Box) : int -> ( m.x += 1 ; m.x ))
+    h.mutateWith(box, fn hermetic (mut m : h.Box) : int -> ( m.x += 1 ; m.x ))
 )
-println(pureCaller(5) + h.applyOpt(5), ":", callMutate(16), ":", h.pureWrap(4, (v : int) : int -> ( v + 3 )))
+println(pureCaller(5) + h.applyOpt(5), ":", callMutate(16), ":", h.pureWrap(4, fn (v : int) : int -> ( v + 3 )))
 }}}}}
 16:17:7
 
 {{{{{
 ;; Cross-module higher-order effect specialization rejects impure callback in pure caller
 def h = import("hof.ba")
-def bad = pure (x : int) : int -> (
-    h.apply(x, (v : int) : int -> ( println(v) ; v ))
+def bad = fn pure (x : int) : int -> (
+    h.apply(x, fn (v : int) : int -> ( println(v) ; v ))
 )
 println(bad(1))
 }}}}}

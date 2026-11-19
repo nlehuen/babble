@@ -40,7 +40,7 @@ println(r)
 
 {{{{{
 ;; Dynamic truthy condition in while loop (counts down 3, 2, 1, stops at 0)
-def dyn = (v : int) : any -> ( v )
+def dyn = fn (v : int) : any -> ( v )
 def n = 3
 def sum = 0
 while dyn(n) then (
@@ -54,10 +54,10 @@ println(sum, ":", n)
 {{{{{
 ;; Mutation inside loop that captures loop-local variable per iteration
 def i = 0
-def lastFn : () : int = () -> ( 0 )
+def lastFn : fn () : int = fn () -> ( 0 )
 while i < 3 then (
     def snap = i * 2
-    lastFn = () : int -> ( snap )
+    lastFn = fn () : int -> ( snap )
     i += 1
 )
 println(lastFn())

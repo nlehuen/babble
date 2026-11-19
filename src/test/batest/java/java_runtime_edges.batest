@@ -2,7 +2,7 @@
 
 {{{{{
 ;; JavaTypes widen (int->double), Faces convertResult check, and Map boxed get
-def dsum = java.util.List.of(1, 2, 3).stream().mapToDouble((x : int) -> ( x + 1 )).sum()
+def dsum = java.util.List.of(1, 2, 3).stream().mapToDouble(fn (x : int) -> ( x + 1 )).sum()
 def box : java.util.Map(string, any?) = java.util.HashMap()
 box.put("k", 42)
 println(dsum, ":", box.get("k"))
@@ -14,7 +14,7 @@ println(dsum, ":", box.get("k"))
 def xs : java.util.List(int) = java.util.ArrayList()
 xs.add(1)
 xs.add(2)
-def bad = (x : any?, y : any?) : any? -> ( "oops" )
+def bad = fn (x : any?, y : any?) : any? -> ( "oops" )
 java.util.Collections.sort(xs, bad)
 }}}}}
 Type error : Comparator.compare must return int, got String
@@ -28,27 +28,27 @@ Type error : expected int, got null
 
 {{{{{
 ;; JavaTypes.wrapInvocationException with NullPointerException (null message) and exception message
-def bad = () -> ( java.util.Objects.requireNonNull(null) )
+def bad = fn () -> ( java.util.Objects.requireNonNull(null) )
 bad()
 }}}}}
 java.lang.NullPointerException
 
 {{{{{
-def bad = () -> ( java.lang.Integer.parseInt("notanumber") )
+def bad = fn () -> ( java.lang.Integer.parseInt("notanumber") )
 bad()
 }}}}}
 java.lang.NumberFormatException : For input string: "notanumber"
 
 {{{{{
 ;; Operators: Not comparable & Not a number via dynamic any values
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 def C = class () ()
 println(dyn(C()) < dyn(C()))
 }}}}}
 Not comparable : dyn(C()) and dyn(C())
 
 {{{{{
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 println(-dyn("abc"))
 }}}}}
 Not a number : dyn("abc")
@@ -65,17 +65,17 @@ true:false:true:false:true:false
 
 {{{{{
 ;; JavaTypes.checkParameters via IntStream, DoubleStream, and FilenameFilter invoked by Java
-def ip : java.util.function.IntPredicate = (x : int) -> ( x > 0 )
-def dp : java.util.function.DoublePredicate = (x : double) -> ( x > 1.0 )
-def ff : java.io.FilenameFilter = (d, s) -> ( s == "pom.xml" )
+def ip : java.util.function.IntPredicate = fn (x : int) -> ( x > 0 )
+def dp : java.util.function.DoublePredicate = fn (x : double) -> ( x > 1.0 )
+def ff : java.io.FilenameFilter = fn (d, s) -> ( s == "pom.xml" )
 def found = java.io.File(".").list(ff)!
 println(java.util.stream.IntStream.range(1, 4).allMatch(ip), ":", java.util.stream.DoubleStream.of(1.5).allMatch(dp), ":", found.length >= 0)
 }}}}}
 true:true:true
 
 {{{{{
-def ip : java.util.function.IntPredicate = (x : int) -> ( x > 0 )
-def im = java.util.Arrays.stream(java.lang.Class.forName("java.util.function.IntPredicate").getDeclaredMethods()).filter((m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
+def ip : java.util.function.IntPredicate = fn (x : int) -> ( x > 0 )
+def im = java.util.Arrays.stream(java.lang.Class.forName("java.util.function.IntPredicate").getDeclaredMethods()).filter(fn (m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
 def badArgs : java.util.List(any) = java.util.List.of(any)("bad")
 im.invoke(ip, badArgs.toArray())
 }}}}}
@@ -84,30 +84,30 @@ java.lang.IllegalArgumentException : object is not an instance of declaring clas
 {{{{{
 ;; JavaLinker selectCache + BoundJavaMethod calls + BabbleInstance/callable Object args
 def sb = java.lang.StringBuilder("hello")
-def getLen : () : int = sb.length
-def appStr : (s : string) : java.lang.StringBuilder = sb.append
-def appInt : (n : int) : java.lang.StringBuilder = sb.append
-def appBool : (b : bool) : java.lang.StringBuilder = sb.append
-def appDbl : (d : double) : java.lang.StringBuilder = sb.append
+def getLen : fn () : int = sb.length
+def appStr : fn (s : string) : java.lang.StringBuilder = sb.append
+def appInt : fn (n : int) : java.lang.StringBuilder = sb.append
+def appBool : fn (b : bool) : java.lang.StringBuilder = sb.append
+def appDbl : fn (d : double) : java.lang.StringBuilder = sb.append
 appStr("!")
 appInt(7)
 appBool(true)
 appDbl(2.5)
 def C = class (def n : int) (
-    def toString = () : string -> ( "C" + this.n )
+    def toString = fn () : string -> ( "C" + this.n )
 )
 def objList : java.util.List(any?) = java.util.ArrayList()
 objList.add(C(9))
 objList.add(C)
-objList.add((x : int) -> ( x ))
+objList.add(fn (x : int) -> ( x ))
 println(getLen(), ":", sb.toString(), ":", objList.get(0), ":", objList.size())
 }}}}}
 14:hello!7true2.5:C9:3
 
 {{{{{
 ;; Dynamic JavaLinker wrong arg types through dynamic BoundJavaMethod calls
-def dyn = (v : any) : any -> ( v )
-def parse : (s : string) : int = java.lang.Integer.parseInt
+def dyn = fn (v : any) : any -> ( v )
+def parse : fn (s : string) : int = java.lang.Integer.parseInt
 def s = dyn(123)
 println(java.lang.Integer.parseInt(s as string))
 }}}}}
@@ -147,7 +147,7 @@ println(st.nval, ":", st.sval)
 
 {{{{{
 ;; TypeChecker rejects member access on any
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 def x = dyn(42)
 x.foo
 }}}}}
@@ -156,7 +156,7 @@ Not a scope : x
 {{{{{
 ;; Escaping this before unboxed primitive field init triggers Member used before definition
 def Esc = class () (
-    def read = (e : Esc) : int -> ( e.v )
+    def read = fn (e : Esc) : int -> ( e.v )
     def a = this.read(this)
     def v : int = 1
 )
@@ -166,22 +166,22 @@ Member used before definition : v
 
 {{{{{
 ;; Megamorphic TypedCallCache fallback (>4 distinct functions at one typed call site)
-def f0 = (x : int) : int -> ( x + 0 )
-def f1 = (x : int) : int -> ( x + 1 )
-def f2 = (x : int) : int -> ( x + 2 )
-def f3 = (x : int) : int -> ( x + 3 )
-def f4 = (x : int) : int -> ( x + 4 )
-def f5 = (x : int) : int -> ( x + 5 )
+def f0 = fn (x : int) : int -> ( x + 0 )
+def f1 = fn (x : int) : int -> ( x + 1 )
+def f2 = fn (x : int) : int -> ( x + 2 )
+def f3 = fn (x : int) : int -> ( x + 3 )
+def f4 = fn (x : int) : int -> ( x + 4 )
+def f5 = fn (x : int) : int -> ( x + 5 )
 def sum = 0
 def i = 0
 while i < 6 then (
-    def fn : (x : int) : int = if i == 0 then ( f0 )
+    def func : fn (x : int) : int = if i == 0 then ( f0 )
         else if i == 1 then ( f1 )
         else if i == 2 then ( f2 )
         else if i == 3 then ( f3 )
         else if i == 4 then ( f4 )
         else ( f5 )
-    sum += fn(10)
+    sum += func(10)
     i += 1
 )
 println(sum)
@@ -191,7 +191,7 @@ println(sum)
 {{{{{
 ;; FaceHandler Object methods (equals, hashCode, toString) on Java interface proxy
 def Task = class (id : int) implements java.lang.Runnable (
-    def run = () -> ( )
+    def run = fn () -> ( )
 )
 def t1 : java.lang.Runnable = Task(1)
 def t2 : java.lang.Runnable = Task(1)
@@ -213,10 +213,10 @@ true:false:false:true:false:false
 {{{{{
 ;; BabbleInterface extendsType with Java superinterface and instance-of checks
 def JList = interface extends java.lang.Runnable (
-    def ping = () : int -> ( 7 )
+    def ping = fn () : int -> ( 7 )
 )
 def Impl = class () implements JList (
-    def run = () -> ( )
+    def run = fn () -> ( )
 )
 def x = Impl()
 println(x is JList, ":", x is java.lang.Runnable, ":", x is java.lang.AutoCloseable)
@@ -226,7 +226,7 @@ true:true:false
 {{{{{
 ;; JavaTypes.describe on BabbleInstance in runtime cast failure
 def Foo = class () ()
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 def s : java.lang.String = dyn(Foo()) as java.lang.String
 }}}}}
 Type error : expected string, got Foo
@@ -247,7 +247,7 @@ Cannot assign final field : java.lang.Integer.MAX_VALUE
 
 {{{{{
 ;; Operators runtime dispatch on int, double, string, and comparisons
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 def a = dyn(7)
 def b = dyn(2)
 def d = dyn(2.5)
@@ -258,7 +258,7 @@ false:true:true:x7
 {{{{{
 ;; Faces FaceHandler & JavaTypes checkParameter with BabbleInstance implementing Java interface
 def R = class implements java.lang.Runnable (
-    def run = () -> ( println("ran") )
+    def run = fn () -> ( println("ran") )
 )
 def r : java.lang.Runnable = R()
 r.run()
@@ -274,8 +274,8 @@ true:false:true:true
 
 {{{{{
 ;; DoubleSupplier and BooleanSupplier SAM invocations
-def ds : java.util.function.DoubleSupplier = () : double -> ( 3.5 )
-def bs : java.util.function.BooleanSupplier = () : bool -> ( true )
+def ds : java.util.function.DoubleSupplier = fn () : double -> ( 3.5 )
+def bs : java.util.function.BooleanSupplier = fn () : bool -> ( true )
 println(ds.getAsDouble(), ":", bs.getAsBoolean())
 }}}}}
 3.5:true
@@ -283,18 +283,18 @@ println(ds.getAsDouble(), ":", bs.getAsBoolean())
 {{{{{
 ;; Values.fromJava Proxy unwrap + BabbleClass.implementsType(Java) + Operators runtime lt/le/gt
 def R = class implements java.lang.Runnable (
-    def run = () -> ( )
+    def run = fn () -> ( )
 )
 def xs = java.util.Collections.singletonList(R())
 def got = xs.get(0)
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 def a : any = R()
 println((got is java.lang.Runnable), ":", (a is java.lang.Runnable))
 }}}}}
 true:true
 
 {{{{{
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 dyn(1) < dyn(2)
 }}}}}
 Not comparable : dyn(1) and dyn(2)
@@ -302,27 +302,27 @@ Not comparable : dyn(1) and dyn(2)
 {{{{{
 ;; FaceHandler Java interface default methods (IntPredicate.negate, IntUnaryOperator.compose) & FunctionHandler Object methods
 def P = class () implements java.util.function.IntPredicate (
-    def test = (x : int) : bool -> ( x > 0 )
+    def test = fn (x : int) : bool -> ( x > 0 )
 )
 def p : java.util.function.IntPredicate = P()
 def pNeg = p.negate()
-def u : java.util.function.IntUnaryOperator = (x : int) : int -> ( x + 1 )
-def uComp = u.compose((x : int) : int -> ( x * 2 ))
-def fn : java.util.function.IntPredicate = (x : int) : bool -> ( x > 0 )
+def u : java.util.function.IntUnaryOperator = fn (x : int) : int -> ( x + 1 )
+def uComp = u.compose(fn (x : int) : int -> ( x * 2 ))
+def func : java.util.function.IntPredicate = fn (x : int) : bool -> ( x > 0 )
 def ch = java.lang.String("abc").charAt(0)
-println(pNeg.test(5), ":", uComp.applyAsInt(3), ":", java.util.Objects.equals(fn, fn), ":", (java.util.Objects.hashCode(fn) != 0), ":", (java.lang.String.valueOf(fn) != null), ":", ch)
+println(pNeg.test(5), ":", uComp.applyAsInt(3), ":", java.util.Objects.equals(func, func), ":", (java.util.Objects.hashCode(func) != 0), ":", (java.lang.String.valueOf(func) != null), ":", ch)
 }}}}}
 false:7:true:true:true:a
 
 {{{{{
 ;; No applicable overload for any argument
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 java.lang.Boolean.logicalAnd(dyn("bad"), true)
 }}}}}
 No applicable overload of java.lang.Boolean.logicalAnd for (any, bool)
 
 {{{{{
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 java.lang.Integer.parseInt(dyn(123))
 }}}}}
 No applicable overload of java.lang.Integer.parseInt for (any)

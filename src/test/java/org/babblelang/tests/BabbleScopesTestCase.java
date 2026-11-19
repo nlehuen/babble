@@ -63,33 +63,33 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         Assertions.assertEquals(4, interpret("def i = 0 ; def s = 0 ; while i < 3 then ( def x = i * 2 ; s = s + x ; i = i + 1 ) ; s - 2"));
         // Closures created in different iterations capture different variables.
         Assertions.assertEquals(3, interpret(
-                "def Box = class (def f : () : int) ()\n"
+                "def Box = class (def f : fn () : int) ()\n"
                         + "def l : java.util.List(Box) = java.util.ArrayList() ; def i = 0\n"
-                        + "while i < 3 then ( def x = i ; l.add(Box(() -> ( x ))) ; i = i + 1 )\n"
+                        + "while i < 3 then ( def x = i ; l.add(Box(fn () -> ( x ))) ; i = i + 1 )\n"
                         + "(l.get(0) as Box).f() + (l.get(1) as Box).f() + (l.get(2) as Box).f()"));
     }
 
     @Test
     public void testNamesAreHoistedToTheStartOfTheirScope() {
         // The local "a" shadows the outer one from the start of the function body.
-        assertFails("def a = 1 ; def f = () -> ( def b = a ; def a = 2 ; b + a ) ; f()", "Name used before definition : a");
-        assertFails("def f = () -> ( x = 1 ; def x = 2 ) ; f()", "Name used before definition : x");
+        assertFails("def a = 1 ; def f = fn () -> ( def b = a ; def a = 2 ; b + a ) ; f()", "Name used before definition : a");
+        assertFails("def f = fn () -> ( x = 1 ; def x = 2 ) ; f()", "Name used before definition : x");
         // At the top level, an implicit of the same name is shadowed too.
-        assertFails("println(1) ; def println = (x : any) -> ( x )", "Name used before definition : println");
+        assertFails("println(1) ; def println = fn (x : any) -> ( x )", "Name used before definition : println");
     }
 
     @Test
     public void testRedefinitionsAreRejectedBeforeRunning() {
-        assertFails("def f = (a : int) -> ( def a = 2 ) ; 1", "Name already defined : a");
-        assertFails("def f = (a : int, a : int) -> ( a ) ; 1", "Name already defined : a");
-        assertFails("def i = 0 ; def f = (v : int) -> ( i < 1 ) ; while f(def x = 1) then ( i = 1 )", "Definition in a while test : x");
+        assertFails("def f = fn (a : int) -> ( def a = 2 ) ; 1", "Name already defined : a");
+        assertFails("def f = fn (a : int, a : int) -> ( a ) ; 1", "Name already defined : a");
+        assertFails("def i = 0 ; def f = fn (v : int) -> ( i < 1 ) ; while f(def x = 1) then ( i = 1 )", "Definition in a while test : x");
         // A block in the test is a scope of its own, entered on every evaluation.
         Assertions.assertDoesNotThrow(() -> interpret("def i = 0 ; while ( def x = i ; x < 2 ) then ( i = i + 1 )"));
     }
 
     @Test
     public void testDefinitionNestedInAnExpressionBelongsToTheEnclosingScope() throws Exception {
-        Assertions.assertEquals(2, interpret("def f = (v : int) -> ( v ) ; f(def x = 1) ; x + 1"));
+        Assertions.assertEquals(2, interpret("def f = fn (v : int) -> ( v ) ; f(def x = 1) ; x + 1"));
         Assertions.assertEquals(1, interpret("if def x = 1 then ( x ) else ( 0 )"));
     }
 
@@ -107,8 +107,8 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         assertStaticFails("def n = 1 ; n.value", "Not a scope : n", 13);
         // null is not a scope either, and used to surface as a NullPointerException.
         assertStaticFails("def n : any? = null ; n.value", "Not a scope : n", 23);
-        assertStaticFails("def f = () -> ( 1 ) ; f().value", "Not a scope : f()", 23);
-        assertStaticFails("def f = (x : any) : any -> ( x ) ; f(1).value", "Not a scope : f(1)", 36);
+        assertStaticFails("def f = fn () -> ( 1 ) ; f().value", "Not a scope : f()", 26);
+        assertStaticFails("def f = fn (x : any) : any -> ( x ) ; f(1).value", "Not a scope : f(1)", 39);
     }
 
     @Test

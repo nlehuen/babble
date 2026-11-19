@@ -1,26 +1,26 @@
 ;; Int arithmetic, comparisons, range limits, wraparound, and errors
 
 def Checked = value class (x : int) (
-    def div = (k : int) : int -> (
+    def div = fn (k : int) : int -> (
         assert(k != 0, "Divide by zero")
         int(this.x / k)
     )
 )
 
 {{{{{
-def calc = (a : int, b) -> ( Checked(a) / b )
+def calc = fn (a : int, b) -> ( Checked(a) / b )
 print(calc(10, 2))
 }}}}}
 5
 
 {{{{{
-def calc = (a : int, b) -> ( Checked(a) / b )
+def calc = fn (a : int, b) -> ( Checked(a) / b )
 print(calc(10, 0))
 }}}}}
 Divide by zero
 
 {{{{{
-def calc = (a : int, b) -> ( Checked(a) / b )
+def calc = fn (a : int, b) -> ( Checked(a) / b )
 print(calc(10, "two"))
 }}}}}
 Type error : expected int, got string

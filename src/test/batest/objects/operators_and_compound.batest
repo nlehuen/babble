@@ -3,11 +3,11 @@
 {{{{{
 ;; Value class overloading +, -, *, /, unary -, and compound +=, -=, *=, /=
 def Vec = value class (x : double, y : double) (
-    def plus = (o : Vec) : Vec -> ( Vec(this.x + o.x, this.y + o.y) )
-    def minus = (o : Vec) : Vec -> ( Vec(this.x - o.x, this.y - o.y) )
-    def times = (k : double) : Vec -> ( Vec(this.x * k, this.y * k) )
-    def div = (k : double) : Vec -> ( Vec(this.x / k, this.y / k) )
-    def neg = () : Vec -> ( Vec(-this.x, -this.y) )
+    def plus = fn (o : Vec) : Vec -> ( Vec(this.x + o.x, this.y + o.y) )
+    def minus = fn (o : Vec) : Vec -> ( Vec(this.x - o.x, this.y - o.y) )
+    def times = fn (k : double) : Vec -> ( Vec(this.x * k, this.y * k) )
+    def div = fn (k : double) : Vec -> ( Vec(this.x / k, this.y / k) )
+    def neg = fn () : Vec -> ( Vec(-this.x, -this.y) )
 )
 def a = Vec(2.0, 3.0)
 def b = Vec(1.0, 1.5)
@@ -26,7 +26,7 @@ Vec(x: 1.0, y: 1.0)
 ;; Compound assignment on member field evaluates receiver only once
 def Box = class (def x : int) ()
 def calls = 0
-def getBox = (b : Box) : Box -> ( calls += 1 ; b )
+def getBox = fn (b : Box) : Box -> ( calls += 1 ; b )
 def b = Box(10)
 getBox(b).x += 5
 getBox(b).x -= 3
@@ -40,7 +40,7 @@ Type error : expected int, got double
 ;; Single evaluation of receiver for +=, -=, *= on mutable object field
 def Box = class (def x : double) ()
 def calls = 0
-def getBox = (b : Box) : Box -> ( calls += 1 ; b )
+def getBox = fn (b : Box) : Box -> ( calls += 1 ; b )
 def b = Box(10.0)
 getBox(b).x += 5
 getBox(b).x -= 3
@@ -68,7 +68,7 @@ No such member : neg
 
 {{{{{
 ;; Dynamic operator lookup on any value wrapping non-number
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 def x : any = dyn(true)
 x += 1
 }}}}}

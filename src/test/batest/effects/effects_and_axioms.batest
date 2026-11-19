@@ -2,32 +2,32 @@
 
 {{{{{
 ;; Explicit pure / deterministic / nothrow / idempotent / commutative / associative / monotone / injective
-def inc = pure deterministic nothrow monotone (x : double) : double -> ( x + 1.0 )
-def add = pure deterministic nothrow commutative associative (a : int, b : int) : int -> ( a + b )
-def oddScale = pure deterministic nothrow injective (x : int) : int -> ( x * 3 )
-def keep = pure idempotent (x : int) : int -> ( x )
-def herm = hermetic (x : int) : int -> ( x * 2 )
-def sum3 = pure (a : int, b : int, c : int) : int -> ( add(oddScale(a), b) + keep(c) )
+def inc = fn pure deterministic nothrow monotone (x : double) : double -> ( x + 1.0 )
+def add = fn pure deterministic nothrow commutative associative (a : int, b : int) : int -> ( a + b )
+def oddScale = fn pure deterministic nothrow injective (x : int) : int -> ( x * 3 )
+def keep = fn pure idempotent (x : int) : int -> ( x )
+def herm = fn hermetic (x : int) : int -> ( x * 2 )
+def sum3 = fn pure (a : int, b : int, c : int) : int -> ( add(oddScale(a), b) + keep(c) )
 println(inc(1.5), ":", sum3(1, 2, 3), ":", herm(5))
 }}}}}
 2.5:8:10
 
 {{{{{
 ;; Wrapping 32-bit int addition cannot satisfy monotone guarantee
-def badMono = pure deterministic monotone (x : int) : int -> ( x + 1 )
+def badMono = fn pure deterministic monotone (x : int) : int -> ( x + 1 )
 }}}}}
 Function badMono declared monotone violates monotone guarantee
 
 {{{{{
 ;; Parameter mut and borrow modifiers on functions and methods
 def Box = class (def value : int) (
-    def addTo = mut (k : int) : int -> ( this.value += k ; this.value )
-    def read = borrow () : int -> ( this.value )
+    def addTo = fn mut (k : int) : int -> ( this.value += k ; this.value )
+    def read = fn borrow () : int -> ( this.value )
 )
-def bumpBox = (mut b : Box, delta : int) : int -> (
+def bumpBox = fn (mut b : Box, delta : int) : int -> (
     b.addTo(delta)
 )
-def inspectBox = pure (borrow b : Box) : int -> (
+def inspectBox = fn pure (borrow b : Box) : int -> (
     b.read()
 )
 def box = Box(10)
@@ -37,10 +37,10 @@ println(bumpBox(box, 5), ":", inspectBox(box))
 
 {{{{{
 ;; Axiom and impure declarations for Java methods
-axiom pure deterministic nothrow java.lang.Math.abs
-axiom mut java.util.List.add
-axiom pure java.util.List.size
-def compute = pure (x : int) : int -> ( java.lang.Math.abs(x) )
+axiom pure deterministic nothrow on java.lang.Math.abs
+axiom mut on java.util.List.add
+axiom pure on java.util.List.size
+def compute = fn pure (x : int) : int -> ( java.lang.Math.abs(x) )
 def l : java.util.List(int) = java.util.ArrayList()
 l.add(-7)
 println(compute(-7), ":", l.size())
@@ -50,18 +50,18 @@ println(compute(-7), ":", l.size())
 {{{{{
 ;; Violation: mutating non-mut parameter inside function fails EffectChecker
 def Box = class (def v : int) (
-    def putVal = mut (x : int) : int -> ( this.v = x ; this.v )
+    def putVal = fn mut (x : int) : int -> ( this.v = x ; this.v )
 )
-def bad = (b : Box) -> ( b.putVal(1) )
+def bad = fn (b : Box) -> ( b.putVal(1) )
 }}}}}
 Cannot mutate parameter b (mut method b.putVal) : mark parameter as mut b
 
 {{{{{
 ;; Violation: aliasing same variable to two mut parameters in a single call
 def Box = class (def v : int) (
-    def add = mut (k : int) : int -> ( this.v += k ; this.v )
+    def add = fn mut (k : int) : int -> ( this.v += k ; this.v )
 )
-def swapAdd = (mut a : Box, mut b : Box) -> ( a.add(b.v) )
+def swapAdd = fn (mut a : Box, mut b : Box) -> ( a.add(b.v) )
 def x = Box(3)
 swapAdd(x, x)
 }}}}}
@@ -70,6 +70,6 @@ Exclusivity error : mut target x aliases argument x
 {{{{{
 ;; Violation: mut inside pure function rejected
 def g = 0
-def badPure = pure () : int -> ( g += 1 ; g )
+def badPure = fn pure () : int -> ( g += 1 ; g )
 }}}}}
 Function badPure declared pure violates pure guarantee

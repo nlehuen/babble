@@ -4,15 +4,15 @@
 
 ;; ---------------------------------------------------------------- Generic Babble functions
 
-def id(T) = (x: T): T -> (x)
+def id(T) = fn (x: T): T -> (x)
 assert(id(42) == 42)
 assert(id("hello") == "hello")
 
-def first(A, B) = (a: A, b: B): A -> (a)
+def first(A, B) = fn (a: A, b: B): A -> (a)
 assert(first(10, "ignored") == 10)
 assert(first("kept", true) == "kept")
 
-def firstOrNull(T) = (cond: bool, x: T): T? -> (
+def firstOrNull(T) = fn (cond: bool, x: T): T? -> (
     if cond then (x) else (null)
 )
 def present: int? = firstOrNull(true, 7)
@@ -21,34 +21,34 @@ assert(present == 7)
 assert(absent == null)
 
 ;; Higher-order generic functions and inferred lambda parameters
-def apply(A, B) = (x: A, fn: (a: A): B): B -> (fn(x))
-assert(apply(5, (n) -> (n * 2)) == 10)
+def apply(A, B) = fn (x: A, f: fn (a: A): B): B -> (f(x))
+assert(apply(5, fn (n) -> (n * 2)) == 10)
 
-def compose(A, B, C) = (f: (b: B): C, g: (a: A): B, x: A): C -> (f(g(x)))
-assert(compose((s) -> (s + "!"), (n: int) -> ("" + n), 9) == "9!")
+def compose(A, B, C) = fn (f: fn (b: B): C, g: fn (a: A): B, x: A): C -> (f(g(x)))
+assert(compose(fn (s) -> (s + "!"), fn (n: int) -> ("" + n), 9) == "9!")
 
 ;; Recursive generic function
-def repeatText(T) = (n: int, item: T): string -> (
+def repeatText(T) = fn (n: int, item: T): string -> (
     if n <= 0 then ("") else if n == 1 then ("" + item) else ("" + item + "," + recurse(n - 1, item))
 )
 assert(repeatText(3, 1) == "1,1,1")
 assert(repeatText(2, "ab") == "ab,ab")
 
 ;; Generic function instantiated as a function value from expected type
-def idInt: (x: int): int = id
+def idInt: fn (x: int): int = id
 assert(idInt(99) == 99)
 assert(apply("abc", id) == "abc")
 
 ;; ---------------------------------------------------------------- Generic Babble classes and value classes
 
 def Box(T) = class (def value: T) (
-    def get = (): T -> (this.value)
-    def mapBox(U) = (fn: (x: T): U): Box(U) -> (Box(fn(this.value)))
+    def get = fn (): T -> (this.value)
+    def mapBox(U) = fn (f: fn (x: T): U): Box(U) -> (Box(f(this.value)))
 )
 
 def ib = Box(21)
 assert(ib.get() == 21)
-def sb: Box(string) = ib.mapBox((n) -> ("v=" + n))
+def sb: Box(string) = ib.mapBox(fn (n) -> ("v=" + n))
 assert(sb.get() == "v=21")
 
 ;; Construction inferred from expected type (including int -> double widening)
@@ -57,7 +57,7 @@ assert(db.get() == 3.0)
 assert(db.get() is double)
 
 def Pair(A, B) = value class (a: A, b: B) (
-    def swap = (): Pair(B, A) -> (Pair(this.b, this.a))
+    def swap = fn (): Pair(B, A) -> (Pair(this.b, this.a))
 )
 def p1 = Pair(1, "two")
 def p2 = Pair(1, "two")
@@ -68,9 +68,9 @@ assert(pd == Pair(1.0, 2.0))
 
 ;; Generic method on a non-generic class
 def Mapper = class () (
-    def mapPair(A, B) = (p: Pair(A, B), fn: (a: A): B): Pair(B, B) -> (Pair(fn(p.a), p.b))
+    def mapPair(A, B) = fn (p: Pair(A, B), f: fn (a: A): B): Pair(B, B) -> (Pair(f(p.a), p.b))
 )
-assert(Mapper().mapPair(Pair(4, "4"), (n) -> ("" + n)) == Pair("4", "4"))
+assert(Mapper().mapPair(Pair(4, "4"), fn (n) -> ("" + n)) == Pair("4", "4"))
 
 ;; Static blocks on a generic class work without type parameters of the class
 def Tagged(T) = class (def value: T) () static (
@@ -82,31 +82,31 @@ assert(Tagged(true).value == true)
 ;; ---------------------------------------------------------------- Generic interfaces, inheritance and defaults
 
 def Container(T) = interface (
-    def get: (): T
-    def describe = (): string -> ("box:" + this.get())
+    def get: fn (): T
+    def describe = fn (): string -> ("box:" + this.get())
 )
 
 def Mappable(T) = interface extends Container(T) (
-    def applyTwice = (fn: (x: T): T): T -> (fn(fn(this.get())))
+    def applyTwice = fn (f: fn (x: T): T): T -> (f(f(this.get())))
 )
 
 def Holder(T) = class (def item: T) implements Mappable(T) (
-    def get = (): T -> (this.item)
-    def describe = (): string -> ("[" + super.describe() + "]")
+    def get = fn (): T -> (this.item)
+    def describe = fn (): string -> ("[" + super.describe() + "]")
 )
 
 def h = Holder(5)
 assert(h is Container)
 assert(h is Mappable)
 assert(h.describe() == "[box:5]")
-assert(h.applyTwice((x) -> (x + 3)) == 11)
+assert(h.applyTwice(fn (x) -> (x + 3)) == 11)
 
 ;; Multi-level concrete instantiation of a generic interface
 def IntContainer = interface extends Container(int) (
-    def doubled = (): int -> (this.get() * 2)
+    def doubled = fn (): int -> (this.get() * 2)
 )
 def FixedInt = class (def n: int) implements IntContainer (
-    def get = (): int -> (this.n)
+    def get = fn (): int -> (this.n)
 )
 assert(FixedInt(6).doubled() == 12)
 assert(FixedInt(6).describe() == "box:6")
@@ -114,7 +114,7 @@ assert(FixedInt(6).describe() == "box:6")
 ;; ---------------------------------------------------------------- Covariant immutable value class types and is/as
 
 def ValBox(T) = value class (value: T) (
-    def get = (): T -> (this.value)
+    def get = fn (): T -> (this.value)
 )
 def vib: ValBox(int) = ValBox(21)
 def covDoubleUnion: ValBox(int | double) = vib
@@ -161,13 +161,13 @@ assert(single.get(0) == "only")
 
 ;; Java streams, Optional and SAM lambdas
 def opt = java.util.Optional.of(41)
-assert(opt.map((x) -> (x + 1)).get() == 42)
-def mapped = java.util.List.of(1, 2, 3).stream().map((x) -> (x * 10)).toList()
+assert(opt.map(fn (x) -> (x + 1)).get() == 42)
+def mapped = java.util.List.of(1, 2, 3).stream().map(fn (x) -> (x * 10)).toList()
 assert(mapped.toString() == "[10, 20, 30]")
 
 ;; Java generic bounds: Collections.sort on Comparable Babble value class
 def Score = value class (points: int) implements java.lang.Comparable(Score) (
-    def compareTo = (o: Score): int -> (this.points - o.points)
+    def compareTo = fn (o: Score): int -> (this.points - o.points)
 )
 def scores: java.util.List(Score) = java.util.ArrayList()
 scores.add(Score(30))
@@ -178,7 +178,7 @@ assert(scores.get(0) == Score(10))
 assert(scores.get(2) == Score(30))
 
 ;; Generic Java functional interface wrapper
-def callable = java.util.concurrent.Callable(() -> (123))
+def callable = java.util.concurrent.Callable(fn () -> (123))
 assert(callable.call() == 123)
 
 ;; Mutable Java collection invariance, copy via from:, & raw `is`/`as`

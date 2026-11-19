@@ -20,7 +20,7 @@ Syntax error : unexpected '+'
 
 {{{{{
 ;; Dot and safe-dot continuation on next line
-def C = class (def x : int) ( def inc = () : C -> ( C(this.x + 1) ) )
+def C = class (def x : int) ( def inc = fn () : C -> ( C(this.x + 1) ) )
 def v = C(1)
   .inc()
   .inc()
@@ -62,7 +62,7 @@ Missing type : e
 
 {{{{{
 ;; Call juxtaposition is suppressed across newlines: f\n(10) assigns f then evaluates (10)
-def f = (x : int) : int -> ( x + 1 )
+def f = fn (x : int) : int -> ( x + 1 )
 def r = f
 (10)
 println(r(10))

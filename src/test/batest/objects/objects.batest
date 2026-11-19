@@ -4,8 +4,8 @@
 ;; Singleton object expression with private state and methods
 def counter = object (
     private def n = 0
-    def inc = mut (k : int = 1) : int -> ( this.n += k ; this.n )
-    def read = () : int -> ( this.n )
+    def inc = fn mut (k : int = 1) : int -> ( this.n += k ; this.n )
+    def read = fn () : int -> ( this.n )
 )
 println(counter.inc(), ":", counter.inc(4), ":", counter.read())
 }}}}}
@@ -22,7 +22,7 @@ hidden is private
 
 {{{{{
 ;; Non-assignable primitives fail scope check
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 dyn(1).x = 2
 }}}}}
 Not a scope : dyn(1)

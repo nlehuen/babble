@@ -54,16 +54,16 @@ export def Camera = class (
     private def defocusDiskU: Vec3 = this.u * this.defocusRadius
     private def defocusDiskV: Vec3 = this.v * this.defocusRadius
 
-    private def sampleSquare = (mut rng): Vec3 -> (
+    private def sampleSquare = fn (mut rng): Vec3 -> (
         Vec3(rng.nextDouble() - 0.5, rng.nextDouble() - 0.5, 0.0)
     )
 
-    private def defocusDiskSample = (mut rng): Vec3 -> (
+    private def defocusDiskSample = fn (mut rng): Vec3 -> (
         def p: Vec3 = Vec3.randomInUnitDisk(rng)
         this.center + this.defocusDiskU * p.x + this.defocusDiskV * p.y
     )
 
-    def getRay = (i: int, j: int, mut rng: Rng): Ray -> (
+    def getRay = fn (i: int, j: int, mut rng: Rng): Ray -> (
         def offset: Vec3 = this.sampleSquare(rng)
         def pixelSample: Vec3 = this.pixel00Loc +
             this.pixelDeltaU * (i + offset.x) +
@@ -78,7 +78,7 @@ export def Camera = class (
     )
 
     ;; Recursive path tracer using Babble's "recurse" keyword
-    def rayColor = (r: Ray, depth: int, world: Hittable, mut rng: Rng): Vec3 -> (
+    def rayColor = fn (r: Ray, depth: int, world: Hittable, mut rng: Rng): Vec3 -> (
         if depth <= 0 then (
             return Vec3.zero
         )
@@ -95,7 +95,7 @@ export def Camera = class (
         Vec3.one * (1.0 - a) + Vec3(0.5, 0.7, 1.0) * a
     )
 
-    def renderPixel = (i: int, j: int, world: Hittable, mut rng: Rng): Vec3 -> (
+    def renderPixel = fn (i: int, j: int, world: Hittable, mut rng: Rng): Vec3 -> (
         def pixelColor: Vec3 = Vec3.zero
         def sample: int = 0
         while sample < this.samplesPerPixel then (
@@ -106,7 +106,7 @@ export def Camera = class (
         pixelColor * this.pixelSamplesScale
     )
 
-    def render = (world: Hittable, mut rng: Rng = Rng(1337), out = STDOUT) -> (
+    def render = fn (world: Hittable, mut rng: Rng = Rng(1337), out = STDOUT) -> (
         println("P3", to: out)
         println(this.imageWidth, " ", this.imageHeight, to: out)
         println(255, to: out)

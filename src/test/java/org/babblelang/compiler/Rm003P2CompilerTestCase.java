@@ -95,17 +95,17 @@ public class Rm003P2CompilerTestCase {
     public void testInterfaceDispatchInstanceofAndSuperOpcodes() throws Exception {
         String src = """
                 def Shape = interface (
-                    def area : () : double
-                    def scaled = (factor : double) : double -> ( this.area() * factor )
+                    def area : fn () : double
+                    def scaled = fn (factor : double) : double -> ( this.area() * factor )
                 )
                 def Extra = interface (
-                    def tag = () : string -> ( "E" )
+                    def tag = fn () : string -> ( "E" )
                 )
                 def Rect = class (w : double, h : double) implements Shape, Extra (
-                    def area = () : double -> ( w * h )
-                    def scaled = (factor : double) : double -> ( super.scaled(factor) + 1.0 )
-                    def tag = () : string -> (
-                        def thunk = () : string -> ( super(Extra).tag() + "!" )
+                    def area = fn () : double -> ( w * h )
+                    def scaled = fn (factor : double) : double -> ( super.scaled(factor) + 1.0 )
+                    def tag = fn () : string -> (
+                        def thunk = fn () : string -> ( super(Extra).tag() + "!" )
                         thunk()
                     )
                 )
@@ -172,16 +172,16 @@ public class Rm003P2CompilerTestCase {
         engine.put(BabbleScriptEngine.MODULE_SOURCE, new MapModuleSource()
                 .put("api.ba", """
                         export def Named = interface (
-                            def name : () : string
+                            def name : fn () : string
                         )
                         export def DefaultNamed = class (v : string) implements Named (
-                            def name = () : string -> ( v )
+                            def name = fn () : string -> ( v )
                         )
                         """)
                 .put("impl.ba", """
                         def api = import("api.ba")
                         export def Custom = class (p : string) implements api.Named (
-                            def name = () : string -> ( "C:" + p )
+                            def name = fn () : string -> ( "C:" + p )
                         )
                         """));
 
@@ -200,9 +200,9 @@ public class Rm003P2CompilerTestCase {
         Assertions.assertTrue(customInstance.getClass().getInterfaces()[0].getName().contains("$I0$Named"));
 
         BabbleSession session = compilingEngine().newSession();
-        session.eval("def Counter = interface ( def next : () : int )");
-        Object c1 = session.eval("def Step = class (n : int) implements Counter ( def next = () : int -> ( n + 1 ) ) ; Step(4)");
-        Object res = session.eval("def read = (c : Counter) : int -> ( c.next() ) ; (c1 : any) -> ( 0 ) ; read(Step(9))");
+        session.eval("def Counter = interface ( def next : fn () : int )");
+        Object c1 = session.eval("def Step = class (n : int) implements Counter ( def next = fn () : int -> ( n + 1 ) ) ; Step(4)");
+        Object res = session.eval("def read = fn (c : Counter) : int -> ( c.next() ) ; fn (c1 : any) -> ( 0 ) ; read(Step(9))");
         Assertions.assertEquals(10, res);
         Assertions.assertEquals(1, c1.getClass().getInterfaces().length);
         Assertions.assertTrue(c1.getClass().getInterfaces()[0].getName().contains("$I0$Counter"));

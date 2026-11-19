@@ -99,7 +99,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
         // Java numbers other than Babble's own have their members.
         Assertions.assertEquals(101, interpret("java.math.BigInteger.valueOf(2).pow(100).bitLength()"));
         // A callback gets Java objects it can call too.
-        Assertions.assertEquals("1", interpret("def l : java.util.List(any) = java.util.ArrayList() ; def m : java.util.List(int) = java.util.ArrayList() ; m.add(42) ; l.add(m) ; def sb = java.lang.StringBuilder() ; l.forEach((x : any) -> ( sb.append((x as java.util.List).size()) )) ; sb.toString()"));
+        Assertions.assertEquals("1", interpret("def l : java.util.List(any) = java.util.ArrayList() ; def m : java.util.List(int) = java.util.ArrayList() ; m.add(42) ; l.add(m) ; def sb = java.lang.StringBuilder() ; l.forEach(fn (x : any) -> ( sb.append((x as java.util.List).size()) )) ; sb.toString()"));
         // A returned object is the Java object itself, unwrapped : equal, printed and compared as Java does.
         Assertions.assertEquals("[1, 2]", interpret("\"\" + java.util.List.of(1, 2)"));
         Assertions.assertEquals(true, interpret("java.math.BigInteger.ONE.add(java.math.BigInteger.ONE) == java.math.BigInteger.TWO"));
@@ -108,8 +108,8 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
 
     @Test
     public void testBabbleValuesHaveNoJavaMembers() {
-        for (String value : new String[]{"\"abc\"", "1", "1.5", "true", "null", "(x : any) -> ( x )"}) {
-            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret("def f = (v : any) -> ( v.toString() ) ; f(" + value + ")"));
+        for (String value : new String[]{"\"abc\"", "1", "1.5", "true", "null", "fn (x : any) -> ( x )"}) {
+            ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret("def f = fn (v : any) -> ( v.toString() ) ; f(" + value + ")"));
             Assertions.assertTrue(e.getMessage().contains("Not a scope : v"), value + " : " + e.getMessage());
         }
     }
@@ -145,7 +145,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
         // A static field that isn't final can be assigned too.
         Assertions.assertEquals(5, interpret(DEMO + "Demo.counter = 5 ; Demo.counter"));
         // A function goes to a functional interface's field once converted.
-        Assertions.assertEquals(1, interpret(DEMO + "def d = Demo() ; def n = 0 ; d.action = java.lang.Runnable(() -> ( n = n + 1 )) ; d.runAction() ; n"));
+        Assertions.assertEquals(1, interpret(DEMO + "def d = Demo() ; def n = 0 ; d.action = java.lang.Runnable(fn () -> ( n = n + 1 )) ; d.runAction() ; n"));
     }
 
     @Test
@@ -157,7 +157,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
                 {"java.awt.Point.x = 1", "Not a static field : java.awt.Point.x"},
                 {"def l : java.util.ArrayList(int) = java.util.ArrayList() ; l.size = 1", "No such field in java.util.ArrayList : size"},
                 {"def l : java.util.ArrayList(int) = java.util.ArrayList() ; l.nope", "No such name in java.util.ArrayList : nope"},
-                {"Demo().action = () -> ( 1 )", "Cannot assign a function to org.babblelang.tests.JavaClassDemo.action : convert it first, as Runnable(f)"},
+                {"Demo().action = fn () -> ( 1 )", "Cannot assign a function to org.babblelang.tests.JavaClassDemo.action : convert it first, as Runnable(f)"},
         };
         for (String[] c : staticCases) {
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(DEMO + c[0]));

@@ -100,14 +100,14 @@ public class ModuleSourcesTestCase {
         return engine.eval(script, context);
     }
 
-    private static final String SHAPES = "export def Shape = interface ( def area : () : double ; def describe = () -> ( \"area \" + this.area() ) )";
+    private static final String SHAPES = "export def Shape = interface ( def area : fn () : double ; def describe = fn () -> ( \"area \" + this.area() ) )";
 
     @Test
     public void importsReadModulesFromTheSource() throws Exception {
         MemorySource source = new MemorySource()
                 .put("/app/lib/shapes.ba", SHAPES)
                 .put("/app/lib/square.ba", "def shapes = import(\"shapes.ba\")\n"
-                        + "export def Square = class (def side : int) implements shapes.Shape ( def area = () : double -> ( this.side * this.side ) )");
+                        + "export def Square = class (def side : int) implements shapes.Shape ( def area = fn () : double -> ( this.side * this.side ) )");
         Object result = run(engine(source), "import(\"lib/square.ba\").Square(3).describe()", "/app/main.ba");
         Assertions.assertEquals("area 9.0", result);
         // Names are resolved by the source, from the importing module : the main script is
@@ -132,7 +132,7 @@ public class ModuleSourcesTestCase {
         MemorySource source = new MemorySource()
                 .put("/lib/registry.ba", "export def values : java.util.List(int) = java.util.ArrayList()")
                 .put("/lib/data.ba", "import(\"registry.ba\").values.add(7)")
-                .put("/lib/loader.ba", "def registry = import(\"registry.ba\")\nexport def load = (name : string) : int -> ( import(name) ; registry.values.get(0) as int )");
+                .put("/lib/loader.ba", "def registry = import(\"registry.ba\")\nexport def load = fn (name : string) : int -> ( import(name) ; registry.values.get(0) as int )");
         // A dynamic import : resolved when it runs, from the module the function is in.
         Assertions.assertEquals(7, run(engine(source), "import(\"lib/loader.ba\").load(\"data.ba\")", "/main.ba"));
         Assertions.assertTrue(source.resolved.contains("data.ba from /lib/loader.ba -> /lib/data.ba"), source.resolved.toString());
@@ -187,17 +187,17 @@ public class ModuleSourcesTestCase {
         MemorySource source = new MemorySource()
                 .put("/shapes.ba", SHAPES)
                 .put("/square.ba", "def shapes = import(\"shapes.ba\")\n"
-                        + "export def Square = class () implements shapes.Shape ( def area = () : double -> ( 4 ) )");
+                        + "export def Square = class () implements shapes.Shape ( def area = fn () : double -> ( 4 ) )");
         ScriptEngine engine = engine(source);
         Assertions.assertEquals(4.0, run(engine, "import(\"square.ba\").Square().area()", "/main.ba"));
-        source.put("/shapes.ba", SHAPES.replace("def area : () : double", "def area : () : double ; def perimeter : () : double"));
+        source.put("/shapes.ba", SHAPES.replace("def area : fn () : double", "def area : fn () : double ; def perimeter : fn () : double"));
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, "import(\"square.ba\").Square().area()", "/main.ba"));
         Assertions.assertTrue(e.getMessage().contains("Square does not implement Shape.perimeter"), e.getMessage());
     }
 
     @Test
     public void twoNamesForOneKeyAreOneModule() throws Exception {
-        MemorySource source = new MemorySource().put("/lib/counter.ba", "println(\"loading\")\ndef n = 0\nexport def next = () -> ( n = n + 1 )");
+        MemorySource source = new MemorySource().put("/lib/counter.ba", "println(\"loading\")\ndef n = 0\nexport def next = fn () -> ( n = n + 1 )");
         Object result = run(engine(source), "import(\"lib/counter.ba\").next()\nimport(\"lib/../lib/./counter.ba\").next()", "/main.ba");
         Assertions.assertEquals(2, result);
         Assertions.assertEquals("loading" + System.lineSeparator(), output.toString());

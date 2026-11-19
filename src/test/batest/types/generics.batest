@@ -2,12 +2,12 @@
 
 {{{{{
 ;; Generic functions and generic classes with generic methods
-def id(T) = (x : T) : T -> ( x )
+def id(T) = fn (x : T) : T -> ( x )
 def Box(T) = class (def value : T) (
-    def mapBox(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )
+    def mapBox(U) = fn (func : fn (x : T) : U) : Box(U) -> ( Box(func(this.value)) )
 )
 def bi : Box(int) = Box(5)
-def bd : Box(double) = bi.mapBox((x) -> ( x * 1.5 ))
+def bd : Box(double) = bi.mapBox(fn (x) -> ( x * 1.5 ))
 def s : string = id("hello")
 println(bi.value, ":", bd.value, ":", s)
 }}}}}
@@ -28,10 +28,10 @@ println(bu.value, ":", ba.value, ":", n)
 {{{{{
 ;; Generic interface implemented by generic class
 def Getter(T) = interface (
-    def get : () : T
+    def get : fn () : T
 )
 def Holder(T) = class (def v : T) implements Getter(T) (
-    def get = () : T -> ( this.v )
+    def get = fn () : T -> ( this.v )
 )
 def g : Getter(string) = Holder("babble")
 println(g.get())
@@ -55,7 +55,7 @@ def bad = anyVal as Box(int)
 Cannot cast to parameterized type : Box(int)
 
 {{{{{
-def bad(T) = (x : any) -> ( x as T )
+def bad(T) = fn (x : any) -> ( x as T )
 }}}}}
 Cannot cast to type parameter : T
 

@@ -1,107 +1,6 @@
 grammar Babble;
 
 @parser::members {
-    private static boolean isAxiomOrImpureWord(Token token) {
-        if (token == null || token.getType() != ID) {
-            return false;
-        }
-        String text = token.getText();
-        return "axiom".equals(text) || "impure".equals(text);
-    }
-
-    private static boolean isParamModWord(Token token) {
-        if (token == null || token.getType() != ID) {
-            return false;
-        }
-        String text = token.getText();
-        return "mut".equals(text) || "borrow".equals(text);
-    }
-
-    private static boolean isEffectOrAxiomWord(Token token) {
-        if (token == null || token.getType() != ID) {
-            return false;
-        }
-        return switch (token.getText()) {
-            case "axiom", "impure", "pure", "hermetic", "mut", "borrow",
-                 "deterministic", "nothrow", "idempotent", "commutative",
-                 "associative", "monotone", "injective" -> true;
-            default -> false;
-        };
-    }
-
-    private boolean isParamModifier() {
-        return isParamModWord(_input.LT(1)) && _input.LT(2).getType() == ID;
-    }
-
-    private boolean isFunctionLiteralStart() {
-        int i = 1;
-        if (!isEffectOrAxiomWord(_input.LT(i))) {
-            return false;
-        }
-        while (isEffectOrAxiomWord(_input.LT(i))) {
-            i++;
-        }
-        if (_input.LT(i).getType() != LPAREN) {
-            return false;
-        }
-        int depth = 0;
-        int firstInside = i + 1;
-        while (_input.LT(firstInside).getType() == NL) {
-            firstInside++;
-        }
-        while (true) {
-            int t = _input.LT(i).getType();
-            if (t == Token.EOF) {
-                Token first = _input.LT(firstInside);
-                return first.getType() == PRIVATE || first.getType() == DEF || isParamModWord(first);
-            }
-            if (t == LPAREN) {
-                depth++;
-            } else if (t == RPAREN) {
-                depth--;
-                if (depth == 0) {
-                    i++;
-                    break;
-                }
-            }
-            i++;
-        }
-        int after = _input.LT(i).getType();
-        return after == ARROW || after == COLON;
-    }
-
-    private boolean isFunctionTypeStart() {
-        int i = 1;
-        if (!isEffectOrAxiomWord(_input.LT(i))) {
-            return false;
-        }
-        while (isEffectOrAxiomWord(_input.LT(i))) {
-            i++;
-        }
-        return _input.LT(i).getType() == LPAREN;
-    }
-
-    private boolean isDefEffectStart() {
-        if (!isAxiomOrImpureWord(_input.LT(1)) || isFunctionLiteralStart()) {
-            return false;
-        }
-        return _input.LT(2).getType() == ID;
-    }
-
-    private boolean isEffectDeclarationStart() {
-        if (_input.LT(1).getType() == EXPORT) {
-            return isAxiomOrImpureWord(_input.LT(2));
-        }
-        if (!isAxiomOrImpureWord(_input.LT(1)) || isFunctionLiteralStart()) {
-            return false;
-        }
-        return _input.LT(2).getType() == ID;
-    }
-
-    private boolean isTargetEffectWord() {
-        return isEffectOrAxiomWord(_input.LT(1)) && _input.LT(2).getType() == ID;
-    }
-
     private static boolean isCoreTypeToken(int t) {
         return t == BYTE || t == SHORT || t == INT_KW || t == LONG_KW
                 || t == FLOAT_KW || t == DOUBLE_KW || t == BOOL_KW || t == CHAR_KW || t == STRING_KW
@@ -109,10 +8,16 @@ grammar Babble;
                 || t == ANY || t == VOID;
     }
 
+    private static boolean isEffectToken(int t) {
+        return t == AXIOM || t == IMPURE || t == PURE || t == HERMETIC || t == MUT || t == BORROW
+                || t == DETERMINISTIC || t == NOTHROW || t == IDEMPOTENT || t == COMMUTATIVE
+                || t == ASSOCIATIVE || t == MONOTONE || t == INJECTIVE;
+    }
+
     private static boolean isTypeToken(int t) {
         return t == ID || t == DOT || t == QUESTION || t == PIPE || t == COMMA
                 || t == LPAREN || t == RPAREN || t == COLON || t == NULL || t == NL
-                || isCoreTypeToken(t);
+                || t == FN || isCoreTypeToken(t) || isEffectToken(t);
     }
 
     /**
@@ -173,8 +78,8 @@ grammar Babble;
     }
 }
 
-file: sep? ({isEffectDeclarationStart()}? effectDeclaration | expression)
-      (sep ({isEffectDeclarationStart()}? effectDeclaration | expression))* sep? EOF;
+file: sep? (effectDeclaration | expression)
+      (sep (effectDeclaration | expression))* sep? EOF;
 
 // Statements are separated by newlines or semicolons.
 // Newlines are ignored only after tokens that require a continuation
@@ -188,24 +93,25 @@ coreScalarKeyword: BYTE | SHORT | INT_KW | LONG_KW | FLOAT_KW | DOUBLE_KW | BOOL
 
 coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 
-memberName: ID | coreTypeKeyword;
+effectModifier: PURE | HERMETIC | MUT | BORROW | DETERMINISTIC | NOTHROW
+              | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-effectDeclaration: EXPORT? targetEffectPrefix effectTarget (ctorOpen='(' ctorClose=')')?;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | IMPURE;
 
-effectTarget: (ID '(' STRING ')' | ID) ('.' memberName)*;
+effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
+
+effectTarget: (ID '(' STRING ')' | memberName) ('.' memberName)*;
+
+effectClause: (AXIOM | IMPURE) effectWord*;
 
 effectPrefix: effectWord+;
 
-effectWord: {isEffectOrAxiomWord(_input.LT(1))}? ID;
-
-targetEffectPrefix: targetEffectWord+;
-
-targetEffectWord: {isTargetEffectWord()}? ID;
+effectWord: AXIOM | IMPURE | effectModifier;
 
 expression:
           ifExpr                                              # ifExpression
           | (EXPORT | PRIVATE)? DEF name=ID typeParameters? (':' type)?
-                     ('=' NL* ({isDefEffectStart()}? targetEffectPrefix)? value=expression)?   # defExpression
+                     ('=' NL* (effectClause ON)? value=expression)?   # defExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           // "value class" : the modifier is a contextual keyword, checked by the analysis.
           // No newline before the body : "class (a)" followed by "(b)" on the next line
@@ -215,9 +121,9 @@ expression:
           | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block
                 (NL* STATIC NL* staticBlock=block)?           # interfaceExpression
           | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block   # objectExpression
+          | FN effectPrefix? fnParameters (':' type)? '->' NL* functionBlock=block  # functionLiteral
           | THIS                                              # thisExpression
           | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
-          | {isFunctionLiteralStart()}? effectPrefix fnParameters ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
           // A newline may come before the dot : a chain of calls can go on the next lines.
           | expression NL* ('.' | safe='?.') memberName      # selector
           | ID                                                # selector
@@ -240,7 +146,6 @@ expression:
           | left=expression {!isCoreTypeAfterIs()}? IS NL* right=expression # isExpression
           | left=expression op=AND NL* right=expression           # booleanOp
           | left=expression op=OR NL* right=expression            # booleanOp
-          | fnParameters ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
           // Compound assignment : "x += v" is "x = x + v" (and -=, *=, /=), with the target's
           // receiver evaluated once.
           | <assoc=right> lhs=expression op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression # assignExpression
@@ -263,25 +168,25 @@ ifExpr: IF test=expression THEN NL* thenBlock=block
         (NL* ELSE NL* (elseIf=ifExpr | elseBlock=block))?;
 
 block: '(' sep? ')'
-     | '(' sep? ({isEffectDeclarationStart()}? effectDeclaration | expression)
-       (sep ({isEffectDeclarationStart()}? effectDeclaration | expression))* sep? ')';
+     | '(' sep? (effectDeclaration | expression)
+       (sep (effectDeclaration | expression))* sep? ')';
 
 classParameters: '(' NL* classParam (NL* ',' NL* classParam)* NL* ')'
                | '(' NL* ')';
 
-classParam: PRIVATE? DEF? ({isParamModifier()}? paramModifier)* ID (':' type)? ('=' NL* defaultValue=expression)?;
+classParam: PRIVATE? DEF? paramModifier* ID (':' type)? ('=' NL* defaultValue=expression)?;
 
 fnParameters: '(' NL* fnParam (NL* ',' NL* fnParam)* NL* ')'
             | '(' NL* ')';
 
-fnParam: ({isParamModifier()}? paramModifier)* ID (':' type)? ('=' NL* defaultValue=expression)?;
+fnParam: paramModifier* ID (':' type)? ('=' NL* defaultValue=expression)?;
 
 fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* NL* ')'
                 | '(' NL* ')';
 
-fnTypeParam: ({isParamModifier()}? paramModifier)* ID (':' type)?;
+fnTypeParam: paramModifier* (ID ':')? type;
 
-paramModifier: ID;
+paramModifier: MUT | BORROW;
 
 typeParameters: '(' NL* ID (NL* ',' NL* ID)* NL* ')';
 
@@ -298,9 +203,8 @@ type: nullableType ('|' NL* nullableType)*;
 
 nullableType: primaryType question='?'?;
 
-primaryType: {isFunctionTypeStart()}? effectPrefix fnTypeParameters ( ':' type | )   # functionType
+primaryType: FN effectPrefix? fnTypeParameters (':' type)?                            # functionType
            | (coreTypeKeyword | ID ('.' memberName)*) typeArguments?                  # simpleType
-           | fnTypeParameters ( ':' type | )                                          # functionType
            | NULL                                                                     # nullType
            | '(' NL* type NL* ')'                                                     # parenType
            ;
@@ -365,6 +269,21 @@ SUPER: 'super';
 PRIVATE: 'private';
 STATIC: 'static';
 EXPORT: 'export';
+FN: 'fn';
+ON: 'on';
+AXIOM: 'axiom';
+IMPURE: 'impure';
+PURE: 'pure';
+HERMETIC: 'hermetic';
+MUT: 'mut';
+BORROW: 'borrow';
+DETERMINISTIC: 'deterministic';
+NOTHROW: 'nothrow';
+IDEMPOTENT: 'idempotent';
+COMMUTATIVE: 'commutative';
+ASSOCIATIVE: 'associative';
+MONOTONE: 'monotone';
+INJECTIVE: 'injective';
 BYTE: 'byte';
 SHORT: 'short';
 INT_KW: 'int';

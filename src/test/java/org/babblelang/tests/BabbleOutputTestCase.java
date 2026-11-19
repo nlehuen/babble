@@ -34,7 +34,7 @@ public class BabbleOutputTestCase extends BabbleTestBase {
     @Test
     public void testOutputOfAFunctionCalledElsewhereGoesToTheSameWriter() throws Exception {
         StringWriter out = new StringWriter();
-        engine.eval("def f = () -> ( print(\"in f\") ) ; def g = () -> ( def STDOUT : any? = null ; f() ) ; g()", context(out));
+        engine.eval("def f = fn () -> ( print(\"in f\") ) ; def g = fn () -> ( def STDOUT : any? = null ; f() ) ; g()", context(out));
         Assertions.assertEquals("in f", out.toString());
     }
 

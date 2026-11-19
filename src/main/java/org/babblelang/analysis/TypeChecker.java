@@ -749,7 +749,7 @@ final class TypeChecker {
                         return recursiveSignature(literal);
                     }
                     Type valueType = synth(def.value);
-                    if (def.targetEffectPrefix() != null && effectChecker != null && valueType instanceof Type.Function fn) {
+                    if (def.effectClause() != null && effectChecker != null && valueType instanceof Type.Function fn) {
                         EffectSet override = effectChecker.defOverrideEffects(def);
                         if (override != null) {
                             valueType = fn.withEffects(override, fn.parameters());
@@ -1496,7 +1496,7 @@ final class TypeChecker {
             }
             Type declared = ctx.type() != null ? annotator.declaredType(ctx) : null;
             Type value = ctx.value != null ? check(ctx.value, declared) : Type.NULL;
-            if (ctx.targetEffectPrefix() != null && effectChecker != null && value instanceof Type.Function fn) {
+            if (ctx.effectClause() != null && effectChecker != null && value instanceof Type.Function fn) {
                 EffectSet override = effectChecker.defOverrideEffects(ctx);
                 if (override != null) {
                     value = fn.withEffects(override, fn.parameters());

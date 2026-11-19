@@ -3,7 +3,7 @@
     This tests forward declarations.
 ;;)
 
-def fib = (n): int -> (
+def fib = fn (n): int -> (
     if n < 2 then (
         1
     ) else (
@@ -11,7 +11,7 @@ def fib = (n): int -> (
     )
 )
 
-def fib2 = (n): int -> (
+def fib2 = fn (n): int -> (
     if n < 2 then (
         1
     ) else (

@@ -2,13 +2,13 @@
 
 {{{{{
 ;; Redundant casts, runtime casts, array/interface/Java casts
-def I1 = interface ( def a : () : int )
-def I2 = interface ( def b : () : string )
+def I1 = interface ( def a : fn () : int )
+def I2 = interface ( def b : fn () : string )
 def C = class (def x : int) implements I1 (
-    def a = () : int -> ( this.x )
+    def a = fn () : int -> ( this.x )
 )
 def C2 = class () implements I1 (
-    def a = () : int -> ( 0 )
+    def a = fn () : int -> ( 0 )
 )
 def D = class () ()
 def c = C(4)
@@ -24,13 +24,13 @@ Warning : Redundant cast : int
 4:3:4:true
 
 {{{{{
-def I1 = interface ( def a : () : int )
-def I2 = interface ( def b : () : string )
+def I1 = interface ( def a : fn () : int )
+def I2 = interface ( def b : fn () : string )
 def C = class (def x : int) implements I1 (
-    def a = () : int -> ( this.x )
+    def a = fn () : int -> ( this.x )
 )
 def C2 = class () implements I1 (
-    def a = () : int -> ( 0 )
+    def a = fn () : int -> ( 0 )
 )
 def i1 : I1 = if true then ( C(4) ) else ( C2() )
 println(i1 as I2?)
@@ -38,7 +38,7 @@ println(i1 as I2?)
 Type error : expected I2?, got C
 
 {{{{{
-def I1 = interface ( def a : () : int )
+def I1 = interface ( def a : fn () : int )
 def D = class () ()
 def d = D()
 def bad = d as I1
@@ -52,14 +52,14 @@ Type error : expected int, got string
 
 {{{{{
 def Box(T) = class (def v : T) ()
-def mix = (flag : bool) -> ( if flag then ( Box(1) ) else ( 2 ) )
+def mix = fn (flag : bool) -> ( if flag then ( Box(1) ) else ( 2 ) )
 def bad = mix(true) as int
 println(bad)
 }}}}}
 Type error : expected int, got Box
 
 {{{{{
-def mix = (flag : bool) -> ( if flag then ( 1 ) else ( "s" ) )
+def mix = fn (flag : bool) -> ( if flag then ( 1 ) else ( "s" ) )
 def bad = mix(true) as string
 println(bad)
 }}}}}
@@ -67,7 +67,7 @@ Type error : expected string, got int
 
 {{{{{
 ;; Flow-sensitive narrowing: is double, is bool, is any, and, or, early return, and kill on reassign
-def checkAll = (x : any?, flag : bool) : string -> (
+def checkAll = fn (x : any?, flag : bool) : string -> (
     def r1 = if x is double then ( "d:" + (x + 1.0) )
         else if x is bool then ( "b:" + (not x) )
         else if x is any then ( "a" )
@@ -75,7 +75,7 @@ def checkAll = (x : any?, flag : bool) : string -> (
     def y : int | string = 10
     def ok1 = if (y is int) and (y > 5) then ( y + 1 ) else ( 0 )
     def z : int? = if flag then ( 7 ) else ( null )
-    def early = () : int -> (
+    def early = fn () : int -> (
         if z == null or not flag then ( return -1 )
         z + 2
     )
@@ -87,9 +87,9 @@ def checkAll = (x : any?, flag : bool) : string -> (
     def k : int | string = 3
     if flag then ( k = "z" )
     def u = 2
-    def closureKill = () : int | string -> ( u )
+    def closureKill = fn () : int | string -> ( u )
     if u is int then (
-        def f = () -> ( u = 9 )
+        def f = fn () -> ( u = 9 )
         f()
     )
     r1 + ":" + ok1 + ":" + early() + ":" + killedIf + ":" + closureKill() + ":" + (k is string)
@@ -101,7 +101,7 @@ d:3.5:11:9:1:9:true|b:true:11:-1:1:9:false|a:11:9:1:9:true|null:11:9:1:9:true
 {{{{{
 ;; Parameter default skips later parameter in same list via notBoundYet (binds outer b)
 def b = 10
-def f = (a : int = b, b : int = 1) : int -> ( a + b )
+def f = fn (a : int = b, b : int = 1) : int -> ( a + b )
 println(f())
 }}}}}
 11
@@ -112,38 +112,38 @@ def Box = class (def v : int) ()
 def MutBox = class (def v : int) (
     def n = ( println(this.v) ; 1 )
 )
-def apply = (x : int, fn : (a : int) : Box) : int -> ( fn(x).v )
-def mk : (a : int) : Box = Box
-def takeMut = (m : MutBox) -> ( m )
+def apply = fn (x : int, func : fn (a : int) : Box) : int -> ( func(x).v )
+def mk : fn (a : int) : Box = Box
+def takeMut = fn (m : MutBox) -> ( m )
 println(apply(5, Box), ":", mk(7).v)
 }}}}}
 5:7
 
 {{{{{
 def Box = class (def v : int) ( def log = ( println(this.v) ; 1 ) )
-def bad : pure (v : int) : Box = Box
+def bad : fn pure (v : int) : Box = Box
 }}}}}
 Type error : expected pure (v : int) : Box, got class Box
 
 {{{{{
-def p = () : int -> ( println(1) ; 1 )
-def f : pure () : int = p
+def p = fn () : int -> ( println(1) ; 1 )
+def f : fn pure () : int = p
 }}}}}
 Type error : expected pure () : int, got () : int
 
 {{{{{
-def imp = () : int -> ( println(1) ; 1 )
-def bad : pure deterministic nothrow () : int = imp
+def imp = fn () : int -> ( println(1) ; 1 )
+def bad : fn pure deterministic nothrow () : int = imp
 }}}}}
 Type error : expected pure deterministic nothrow () : int, got () : int
 
 {{{{{
-def bad : pure () = java.lang.System.gc
+def bad : fn pure () = java.lang.System.gc
 }}}}}
 Type error : expected pure () : any?, got java.lang.System.gc
 
 {{{{{
-def bad : pure (x : int) = print
+def bad : fn pure (x : int) = print
 }}}}}
 Type error : expected pure (x : int) : any?, got print
 
@@ -176,12 +176,12 @@ Not a static field : java.awt.Point.x
 
 {{{{{
 def st = java.io.StreamTokenizer(java.io.StringReader("a"))
-st.sval = (x : int) -> ( x )
+st.sval = fn (x : int) -> ( x )
 }}}}}
 Type error : expected string?, got (x : int) : int
 
 {{{{{
-def r : () = () -> ( )
+def r : fn () = fn () -> ( )
 def holder = java.lang.Thread(r)
 println(holder != null)
 }}}}}

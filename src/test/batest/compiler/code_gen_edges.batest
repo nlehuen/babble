@@ -6,12 +6,12 @@
 ;; and method capturing enclosing mutable cell (methodClass != null in loadCapturedCells)
 def enclosing = 10
 def C = class (def d : double, def label : string) (
-    def specM = (a : int) : int -> ( a + 1 )
-    def optM = (a : int, b : int = 10) : int -> ( a + b )
-    def recOpt = (n : int, step : int = 1) : int -> (
+    def specM = fn (a : int) : int -> ( a + 1 )
+    def optM = fn (a : int, b : int = 10) : int -> ( a + b )
+    def recOpt = fn (n : int, step : int = 1) : int -> (
         if n <= 0 then ( 0 ) else ( step + recurse(n - 1) )
     )
-    def runAll = mut () : string -> (
+    def runAll = fn mut () : string -> (
         this.label = "abc"
         this.label += "!"
         this.d = this.optM(1)
@@ -26,15 +26,15 @@ println(C(0.0, "init").runAll())
 {{{{{
 ;; Static block `this` assign / compound assign
 def C = class () (
-    def getV = () : int -> ( 7 )
+    def getV = fn () : int -> ( 7 )
 ) static (
     def x = 1
-    def bump = () : string -> (
+    def bump = fn () : string -> (
         this.x = 2
         this.x += 3
         "" + this.x
     )
-    def me = () -> ( this )
+    def me = fn () -> ( this )
 )
 println(C().getV(), ":", C.bump(), ":", C.me() == C)
 }}}}}
@@ -42,7 +42,7 @@ println(C().getV(), ":", C.bump(), ":", C.me() == C)
 
 {{{{{
 ;; Top-level recursive function omitting optional parameter (Arguments.MISSING in recurse)
-def sumDown = (n : int, step : int = 2) : int -> (
+def sumDown = fn (n : int, step : int = 2) : int -> (
     if n <= 0 then ( 0 ) else ( step + recurse(n - 1) )
 )
 println(sumDown(3))
@@ -52,7 +52,7 @@ println(sumDown(3))
 {{{{{
 ;; Member used before definition in compiled class constructor (defSlot + Bootstrap.requireMemberDefined)
 def Box = class () (
-    def peek = () : int -> ( this.late )
+    def peek = fn () : int -> ( this.late )
     def a = this.peek()
     def late : int = 5
 )
@@ -62,11 +62,11 @@ Member used before definition : late
 
 {{{{{
 ;; Reading captured BoolCell before definition throws Name used before definition
-def f = () : () : bool -> (
-    def r = () : bool -> ( b )
+def f = fn () : fn () : bool -> (
+    def r = fn () : bool -> ( b )
     def g = r()
     def b = true
-    () : bool -> ( g )
+    fn () : bool -> ( g )
 )
 f()
 }}}}}
@@ -74,8 +74,8 @@ Name used before definition : b
 
 {{{{{
 ;; Assigning captured BoolCell before definition throws Name used before definition
-def f = () : bool -> (
-    def w = () : bool -> ( b = false )
+def f = fn () : bool -> (
+    def w = fn () : bool -> ( b = false )
     w()
     def b = true
     b
@@ -86,11 +86,11 @@ Name used before definition : b
 
 {{{{{
 ;; Reading captured DoubleCell before definition throws Name used before definition
-def f = () : () : double -> (
-    def r = () : double -> ( d )
+def f = fn () : fn () : double -> (
+    def r = fn () : double -> ( d )
     def g = r()
     def d = 1.5
-    () : double -> ( g )
+    fn () : double -> ( g )
 )
 f()
 }}}}}
@@ -98,8 +98,8 @@ Name used before definition : d
 
 {{{{{
 ;; Assigning captured DoubleCell before definition throws Name used before definition
-def f = () : double -> (
-    def w = () : double -> ( d = 2.5 )
+def f = fn () : double -> (
+    def w = fn () : double -> ( d = 2.5 )
     w()
     def d = 1.5
     d
@@ -110,8 +110,8 @@ Name used before definition : d
 
 {{{{{
 ;; Assigning captured IntCell before definition throws Name used before definition
-def f = () : int -> (
-    def w = () : int -> ( i = 9 )
+def f = fn () : int -> (
+    def w = fn () : int -> ( i = 9 )
     w()
     def i = 1
     i
@@ -122,7 +122,7 @@ Name used before definition : i
 
 {{{{{
 ;; Reading and assigning uncaptured ref local before definition (Frames.defined / Frames.checkAssignable)
-def readRef = () : string -> (
+def readRef = fn () : string -> (
     def x = s
     def s = "hi"
     x
@@ -132,7 +132,7 @@ readRef()
 Name used before definition : s
 
 {{{{{
-def assignRef = () : string -> (
+def assignRef = fn () : string -> (
     s = "ok"
     def s = "hi"
     s
@@ -163,8 +163,8 @@ if d >= 2.5 then ( hits += 1 )
 if d > 2.0 then ( hits += 1 )
 println(hits)
 
-def wf1 = () : double -> ( 1 )
-def wf2 = (flag : bool) : double -> ( if flag then ( 1 ) else ( 2.5 ) )
+def wf1 = fn () : double -> ( 1 )
+def wf2 = fn (flag : bool) : double -> ( if flag then ( 1 ) else ( 2.5 ) )
 println(wf1(), ":", wf2(true), ":", 1 as double)
 def obj = object ( def k : int = 7 )
 println(obj.k)
@@ -182,15 +182,15 @@ no
 ;; static field on non-pure Java receiver, and ScriptClassWriter.getCommonSuperClass merges
 println(java.lang.Long.sum(3, 4), ":", java.lang.Float.sum(3, 4), ":", (java.lang.Math).abs(-5))
 
-def mkSt = () : java.io.StreamTokenizer -> ( java.io.StreamTokenizer(java.io.StringReader("hi")) )
+def mkSt = fn () : java.io.StreamTokenizer -> ( java.io.StreamTokenizer(java.io.StringReader("hi")) )
 println(mkSt().TT_EOF)
 
-def pickBuf = (flag : bool) : any -> (
+def pickBuf = fn (flag : bool) : any -> (
     if flag then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuffer("b") )
 )
 def A = class () ()
 def B = class () ()
-def pickCls = (flag : bool) : any -> (
+def pickCls = fn (flag : bool) : any -> (
     if flag then ( A() ) else ( B() )
 )
 println(java.util.Objects.toString(pickBuf(true)), ":", java.util.Objects.toString(pickBuf(false)), ":", classof(pickCls(true)) == A)
@@ -201,31 +201,31 @@ a:b:true
 
 {{{{{
 ;; Bootstrap BoundMethod(CompiledFunction) spec/direct, TypedCallCache 0-arg, and MAX_DEPTH (>4) caches
-def extSpec = (x : int) : int -> ( x + 10 )
-def extSpread = (x : int, y : int = 5) : int -> ( x + y )
+def extSpec = fn (x : int) : int -> ( x + 10 )
+def extSpread = fn (x : int, y : int = 5) : int -> ( x + y )
 def Holder = class () (
     def ms = extSpec
     def md = extSpread
 )
 def h = Holder()
-def bmSpec : (x : int) : int = h.ms
+def bmSpec : fn (x : int) : int = h.ms
 def bmDirect = h.md
 println(bmSpec(4), ":", bmDirect(4))
 
 def Z = class () ()
-def makeZ : () : Z = Z
+def makeZ : fn () : Z = Z
 def z = makeZ()
 println(classof(z) == Z)
 
 ;; Exceed MAX_DEPTH (4) in SelectCache, CallCache, and TypedCallCache
-def HasV = interface ( def getV : () : int )
-def S1 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
-def S2 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
-def S3 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
-def S4 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
-def S5 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
-def S6 = class (def v : int) implements HasV ( def getV = () : int -> ( this.v ) )
-def pickObj = (k : int) : HasV -> (
+def HasV = interface ( def getV : fn () : int )
+def S1 = class (def v : int) implements HasV ( def getV = fn () : int -> ( this.v ) )
+def S2 = class (def v : int) implements HasV ( def getV = fn () : int -> ( this.v ) )
+def S3 = class (def v : int) implements HasV ( def getV = fn () : int -> ( this.v ) )
+def S4 = class (def v : int) implements HasV ( def getV = fn () : int -> ( this.v ) )
+def S5 = class (def v : int) implements HasV ( def getV = fn () : int -> ( this.v ) )
+def S6 = class (def v : int) implements HasV ( def getV = fn () : int -> ( this.v ) )
+def pickObj = fn (k : int) : HasV -> (
     if k == 0 then ( S1(1) )
     else if k == 1 then ( S2(2) )
     else if k == 2 then ( S3(3) )
@@ -240,13 +240,13 @@ while i < 6 then (
     i += 1
 )
 
-def f1 = (x : int) : int -> ( x + 1 )
-def f2 = (x : int) : int -> ( x + 2 )
-def f3 = (x : int) : int -> ( x + 3 )
-def f4 = (x : int) : int -> ( x + 4 )
-def f5 = (x : int) : int -> ( x + 5 )
-def f6 = (x : int) : int -> ( x + 6 )
-def pickFn = (k : int) : (x : int) : int -> (
+def f1 = fn (x : int) : int -> ( x + 1 )
+def f2 = fn (x : int) : int -> ( x + 2 )
+def f3 = fn (x : int) : int -> ( x + 3 )
+def f4 = fn (x : int) : int -> ( x + 4 )
+def f5 = fn (x : int) : int -> ( x + 5 )
+def f6 = fn (x : int) : int -> ( x + 6 )
+def pickFn = fn (k : int) : fn (x : int) : int -> (
     if k == 0 then ( f1 )
     else if k == 1 then ( f2 )
     else if k == 2 then ( f3 )
@@ -254,13 +254,13 @@ def pickFn = (k : int) : (x : int) : int -> (
     else if k == 4 then ( f5 )
     else ( f6 )
 )
-def g1 = (x : int, y : int = 0) : int -> ( x + y + 1 )
-def g2 = (x : int, y : int = 0) : int -> ( x + y + 2 )
-def g3 = (x : int, y : int = 0) : int -> ( x + y + 3 )
-def g4 = (x : int, y : int = 0) : int -> ( x + y + 4 )
-def g5 = (x : int, y : int = 0) : int -> ( x + y + 5 )
-def g6 = (x : int, y : int = 0) : int -> ( x + y + 6 )
-def pickOpt = (k : int) : (x : int) : int -> (
+def g1 = fn (x : int, y : int = 0) : int -> ( x + y + 1 )
+def g2 = fn (x : int, y : int = 0) : int -> ( x + y + 2 )
+def g3 = fn (x : int, y : int = 0) : int -> ( x + y + 3 )
+def g4 = fn (x : int, y : int = 0) : int -> ( x + y + 4 )
+def g5 = fn (x : int, y : int = 0) : int -> ( x + y + 5 )
+def g6 = fn (x : int, y : int = 0) : int -> ( x + y + 6 )
+def pickOpt = fn (k : int) : fn (x : int) : int -> (
     if k == 0 then ( g1 )
     else if k == 1 then ( g2 )
     else if k == 2 then ( g3 )
@@ -271,8 +271,8 @@ def pickOpt = (k : int) : (x : int) : int -> (
 def fsum = 0
 i = 0
 while i < 6 then (
-    def fn = pickFn(i)
-    fsum += fn(10)
+    def func = pickFn(i)
+    fsum += func(10)
     def opt = pickOpt(i)
     fsum += opt(0)
     i += 1
@@ -287,37 +287,37 @@ true
 ;; this.field compound assign, union primitive field SelectCache, BabbleInterface 2-level super/extends,
 ;; Bootstrap BoundMethod(CompiledFunction) direct & TypedCallCache 0-arg BoundJavaMethod, Java compound assign
 def Counter = class (def n : int) (
-    def bump = mut (d : int) : int -> ( this.n += d ; this.n )
+    def bump = fn mut (d : int) : int -> ( this.n += d ; this.n )
 )
 def ctr = Counter(10)
 
 def UA = class (def v : int) ()
 def UB = class (def v : int) ()
-def pickU = (flag : bool) : UA | UB -> ( if flag then ( UA(3) ) else ( UB(7) ) )
+def pickU = fn (flag : bool) : UA | UB -> ( if flag then ( UA(3) ) else ( UB(7) ) )
 
 def G0 = interface (
-    def deep = () : string -> ( "g0" )
+    def deep = fn () : string -> ( "g0" )
 )
 def G1 = interface extends G0 ()
 def G2 = interface extends G1 ()
 def GG = class () implements G2 (
-    def deep = () : string -> ( super(G2).deep() + ":gg" )
+    def deep = fn () : string -> ( super(G2).deep() + ":gg" )
 )
 def SubP = interface extends java.util.function.IntPredicate (
-    def test = (x : int) : bool -> ( x > 0 )
+    def test = fn (x : int) : bool -> ( x > 0 )
 )
 def SubPC = class () implements SubP ()
 def sp = SubPC()
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 def gVal : G0 = dyn(GG()) as G0
 
 def IfaceDef = interface (
-    def defm = (x : int | string) : any -> ( x )
+    def defm = fn (x : int | string) : any -> ( x )
 )
 def CDef = class () implements IfaceDef ()
-def callAny : (x : int) : any = CDef().defm
+def callAny : fn (x : int) : any = CDef().defm
 def sb = java.lang.StringBuilder("abc")
-def sbLen : () : int = sb.length
+def sbLen : fn () : int = sb.length
 
 def tk = java.io.StreamTokenizer(java.io.StringReader("1"))
 tk.nval = 1.5
@@ -333,7 +333,7 @@ println(ctr.bump(5), ":", pickU(true).v, ":", pickU(false).v, ":", gVal.deep(), 
 ;; SelectCache requireMemberDefined on union primitive field on 2nd call (SelectCache fast path)
 def UB = class (def late : int = 7) ()
 def UA = class (def a : int = 1) (
-    def peek = (u : UA | UB) : int -> ( u.late )
+    def peek = fn (u : UA | UB) : int -> ( u.late )
     def ok = this.peek(UB())
     def v = this.peek(if this.a == 1 then ( this ) else ( UB() ))
     def late : int = 5
@@ -345,14 +345,14 @@ Member used before definition : late
 {{{{{
 ;; Loop calls to exercise Bootstrap isBoundFunction, isBoundFunctionSpec, boundFunction, isSame,
 ;; and CodeGenerator Java field assign/compound assign (float, int, double, String, typed Object, boxed fallback)
-def extSpec = (x : int) : int -> ( x + 10 )
-def extSpread = (x : int, y : int = 5) : int -> ( x + y )
+def extSpec = fn (x : int) : int -> ( x + 10 )
+def extSpread = fn (x : int, y : int = 5) : int -> ( x + y )
 def Holder = class () (
     def ms = extSpec
     def md = extSpread
 )
 def h = Holder()
-def bmSpec : (x : int) : int = h.ms
+def bmSpec : fn (x : int) : int = h.ms
 def bmDirect = h.md
 def s1 = 0
 def s2 = 0
@@ -369,7 +369,7 @@ println(s1, ":", s2)
 def pf = java.awt.geom.Point2D.Float()
 pf.x = java.lang.Float.valueOf(3)
 pf.y = java.lang.Float.valueOf(4)
-def dynNum = (v : int | double) : int | double -> ( v )
+def dynNum = fn (v : int | double) : int | double -> ( v )
 def pt = java.awt.Point(1, 2)
 pt.x = 5
 pt.x += 3
@@ -395,8 +395,8 @@ println(pf.x, ":", pt.x, ":", pt.y, ":", tk.nval, ":", demo.nonNullLabel, ":", g
 ;; CodeGenerator compound assignment boxed/fallback branches (local /=, this./=, dyn +=, static /=)
 ;; and condition/negate/binary lowering
 def C = class (def n : int, def d : double, def b : bool) (
-    def run = mut () : string -> (
-        def dynNum = (v : int | double) : int | double -> ( v )
+    def run = fn mut () : string -> (
+        def dynNum = fn (v : int | double) : int | double -> ( v )
         def loc : int | double = 9
         loc /= 2
         loc += dynNum(2)
@@ -411,14 +411,14 @@ println(C(9, 6.0, true).run())
 
 def StaticBox = class () () static (
     def sx : int | double = 9
-    def go = () : int | double -> (
+    def go = fn () : int | double -> (
         this.sx /= 2
         this.sx
     )
 )
 println(StaticBox.go())
 
-def neg = (a : int, b : double, c : int | double) : string -> (
+def neg = fn (a : int, b : double, c : int | double) : string -> (
     def ia = -a
     def db = -b
     def dc = -c
@@ -426,7 +426,7 @@ def neg = (a : int, b : double, c : int | double) : string -> (
 )
 println(neg(4, 1.5, 9))
 
-def checkConds = (a : int, b : int, d1 : double, d2 : double) : string -> (
+def checkConds = fn (a : int, b : int, d1 : double, d2 : double) : string -> (
     def out = ""
     if a == b then ( out += "1" ) else ( out += "0" )
     if a != b then ( out += "1" ) else ( out += "0" )
@@ -449,10 +449,10 @@ println(checkConds(2, 2, 1.0, 2.0), ":", checkConds(2, 3, 2.0, 1.0))
 
 {{{{{
 ;; Captured outer & class-constructor double cell inside enclosing function (publishCell, loadCapturedCells, loadCell, DoubleCell.of)
-def make = (start : double) -> (
+def make = fn (start : double) -> (
     def outer = start
     def C = class (p : double) (
-        def bump = mut () : double -> (
+        def bump = fn mut () : double -> (
             outer += 1.0
             p += 0.5
             outer + p
@@ -468,14 +468,14 @@ println(inst.bump(), ":", inst.bump())
 {{{{{
 ;; Interface default methods called via bound function refs in loops (Bootstrap isBoundFunctionSpec, isBoundFunction, boundFunction)
 def IDef = interface (
-    def dmSpec = (x : int) : int -> ( x + 10 )
-    def dmSpread = (x : int, y : int = 5) : int -> ( x + y )
-    def dmAny = (x : any?, y : any? = 5) : any? -> ( (x as int) + (y as int) )
+    def dmSpec = fn (x : int) : int -> ( x + 10 )
+    def dmSpread = fn (x : int, y : int = 5) : int -> ( x + y )
+    def dmAny = fn (x : any?, y : any? = 5) : any? -> ( (x as int) + (y as int) )
 )
 def CImpl = class () implements IDef ()
 def ci = CImpl()
-def fSpec : (x : int) : int = ci.dmSpec
-def fSpread : (x : int) : int = ci.dmSpread
+def fSpec : fn (x : int) : int = ci.dmSpec
+def fSpread : fn (x : int) : int = ci.dmSpread
 def fAny = ci.dmAny
 def s1 = 0
 def s2 = 0
@@ -493,7 +493,7 @@ println(s1, ":", s2, ":", s3)
 
 {{{{{
 ;; Constant folding identities, block/while double widening, Rectangle2D.Double compound ops, and common superclass merges
-def fold = (x : int) : string -> (
+def fold = fn (x : int) : string -> (
     def a = x + 0
     def b = 0 + x
     def c = x - 0
@@ -522,11 +522,11 @@ pt.x -= 2
 pt.y *= 3
 println(r.x, ":", r.y, ":", r.width, ":", r.height, ":", pt.x, ":", pt.y)
 
-def pickColl = (flag : bool) : any -> (
+def pickColl = fn (flag : bool) : any -> (
     if flag then ( java.util.List.of(1) ) else ( java.util.Set.of(2) )
 )
-def pickFn = (flag : bool) : () : int -> (
-    if flag then ( () : int -> ( 1 ) ) else ( () : int -> ( 2 ) )
+def pickFn = fn (flag : bool) : fn () : int -> (
+    if flag then ( fn () : int -> ( 1 ) ) else ( fn () : int -> ( 2 ) )
 )
 println(pickColl(true), ":", pickColl(false), ":", pickFn(true)(), ":", pickFn(false)())
 }}}}}
@@ -537,7 +537,7 @@ println(pickColl(true), ":", pickColl(false), ":", pickFn(true)(), ":", pickFn(f
 
 {{{{{
 ;; Uncaptured primitive locals read before definition (defSlot + Frames.checkDefined)
-def safeRead = (flag : bool) : int -> (
+def safeRead = fn (flag : bool) : int -> (
     def a = if flag then ( x ) else ( 0 )
     def x : int = 7
     a + x
@@ -550,7 +550,7 @@ Name used before definition : x
 
 {{{{{
 ;; Uncaptured double local read before definition
-def badDouble = (flag : bool) : double -> (
+def badDouble = fn (flag : bool) : double -> (
     def a = if flag then ( x ) else ( 0.0 )
     def x : double = 2.5
     a + x
@@ -561,7 +561,7 @@ Name used before definition : x
 
 {{{{{
 ;; Uncaptured bool local read before definition
-def badBool = (flag : bool) : bool -> (
+def badBool = fn (flag : bool) : bool -> (
     def a = if flag then ( x ) else ( false )
     def x : bool = true
     a or x
@@ -573,24 +573,24 @@ Name used before definition : x
 {{{{{
 ;; Bootstrap polymorphic CallCache & TypedCallCache mixing CompiledFunction, CompiledMethod, BoundMethod(CompiledFunction)
 def I = interface (
-    def apply = (x : int) : int -> ( x + 100 )
-    def applyBox = (x : int, s : string) : string -> ( s + ":" + x )
+    def apply = fn (x : int) : int -> ( x + 100 )
+    def applyBox = fn (x : int, s : string) : string -> ( s + ":" + x )
 )
 def C = class (def bias : int) implements I (
-    def m = (x : int) : int -> ( x + this.bias )
-    def mBox = (x : int, s : string) : string -> ( s + "=" + (x + this.bias) )
+    def m = fn (x : int) : int -> ( x + this.bias )
+    def mBox = fn (x : int, s : string) : string -> ( s + "=" + (x + this.bias) )
 )
 def c = C(10)
-def f1 = (x : int) : int -> ( x + 1 )
-def f2 = (x : int) : int -> ( x + 2 )
-def b1 = (x : int, s : string) : string -> ( s + "!" )
+def f1 = fn (x : int) : int -> ( x + 1 )
+def f2 = fn (x : int) : int -> ( x + 2 )
+def b1 = fn (x : int, s : string) : string -> ( s + "!" )
 def sum = 0
 def out = ""
 def i = 0
 while i < 4 then (
-    def ft : (x : int) : int = if i == 0 then ( f1 ) else if i == 1 then ( f2 ) else if i == 2 then ( c.m ) else ( c.apply )
+    def ft : fn (x : int) : int = if i == 0 then ( f1 ) else if i == 1 then ( f2 ) else if i == 2 then ( c.m ) else ( c.apply )
     sum += ft(i)
-    def fb : (x : int, s : string) : string = if i == 0 then ( b1 ) else if i == 1 then ( c.mBox ) else ( c.applyBox )
+    def fb : fn (x : int, s : string) : string = if i == 0 then ( b1 ) else if i == 1 then ( c.mBox ) else ( c.applyBox )
     out = out + fb(i, "k") + ";"
     i += 1
 )
@@ -601,10 +601,10 @@ println(sum, "|", out)
 {{{{{
 ;; Bootstrap requireMemberDefined & isMemberDefinedMethod via SelectCache on primitive BabbleInstance field
 def B = class (readNow : bool) (
-    def readFn = (b : B) : int -> ( b.x )
+    def readFn = fn (b : B) : int -> ( b.x )
     def x : int = if readNow then ( this.readFn(this) ) else ( 9 )
 )
-def readB = (b : B) : int -> ( b.x )
+def readB = fn (b : B) : int -> ( b.x )
 def ok = B(false)
 println(readB(ok))
 readB(B(true))
@@ -626,12 +626,12 @@ def ev = java.awt.Event(null, 0, null)
 ev.arg = "ok"
 def strArg = ev.arg
 ev.arg = 42
-def listA = (flag : bool) : any -> (
+def listA = fn (flag : bool) : any -> (
     def a : java.util.ArrayList(int) = java.util.ArrayList()
     def b : java.util.LinkedList(int) = java.util.LinkedList()
     if flag then ( a ) else ( b )
 )
-def mixed = (flag : bool) : any -> (
+def mixed = fn (flag : bool) : any -> (
     if flag then ( object ( def k = 1 ) ) else ( "s" )
 )
 def w = (1 + 2) as double
@@ -643,28 +643,28 @@ println(pt.x, ":", pt.y, ":", rect.width, ":", strArg, ":", ev.arg, ":", w, ":",
 ;; Bootstrap CallCache & TypedCallCache polymorphic predicate guards (isFunction, isBoundFunction, isBoundFunctionSpec, isBoundMethod)
 ;; plus SelectCache javaDefaultMethods miss on BabbleInstance & BabbleInstance operatorCall/neg/arithmetic
 def I1 = interface (
-    def dmSpec = (x : int) : int -> ( x + 100 )
-    def dmSpread = (x : int, y : int = 10) : int -> ( x + y + 100 )
+    def dmSpec = fn (x : int) : int -> ( x + 100 )
+    def dmSpread = fn (x : int, y : int = 10) : int -> ( x + y + 100 )
 )
 def I2 = interface (
-    def dmSpec2 = (x : int) : int -> ( x + 200 )
-    def dmSpread2 = (x : int, y : int = 20) : int -> ( x + y + 200 )
+    def dmSpec2 = fn (x : int) : int -> ( x + 200 )
+    def dmSpread2 = fn (x : int, y : int = 20) : int -> ( x + y + 200 )
 )
 def Impl1 = class (def bias : int) implements I1, java.util.Comparator(int) (
-    def mSpec = (x : int) : int -> ( x + this.bias )
-    def mSpread = (x : int, y : int = 1) : int -> ( x + y + this.bias )
-    def compare = (a : int, b : int) : int -> ( a - b )
+    def mSpec = fn (x : int) : int -> ( x + this.bias )
+    def mSpread = fn (x : int, y : int = 1) : int -> ( x + y + this.bias )
+    def compare = fn (a : int, b : int) : int -> ( a - b )
 )
 def Impl2 = class (def bias : int) implements I2 (
-    def mSpec2 = (x : int) : int -> ( x + this.bias )
-    def mSpread2 = (x : int, y : int = 2) : int -> ( x + y + this.bias )
+    def mSpec2 = fn (x : int) : int -> ( x + this.bias )
+    def mSpread2 = fn (x : int, y : int = 2) : int -> ( x + y + this.bias )
 )
 def c1 = Impl1(10)
 def c2 = Impl2(20)
-def fSpec = (x : int) : int -> ( x + 1 )
-def fSpec2 = (x : int) : int -> ( x + 2 )
-def fSpread = (x : int, y : int = 3) : int -> ( x + y )
-def fSpread2 = (x : int, y : int = 4) : int -> ( x + y )
+def fSpec = fn (x : int) : int -> ( x + 1 )
+def fSpec2 = fn (x : int) : int -> ( x + 2 )
+def fSpread = fn (x : int, y : int = 3) : int -> ( x + y )
+def fSpread2 = fn (x : int, y : int = 4) : int -> ( x + y )
 
 def totalCall = 0
 def totalTyped = 0
@@ -672,16 +672,16 @@ def pass = 0
 while pass < 2 then (
     def i = 0
     while i < 4 then (
-        def fnSpread : (x : int) : int = if i == 0 then ( c1.dmSpread ) else if i == 1 then ( c2.dmSpread2 ) else if i == 2 then ( c1.mSpread ) else ( fSpread )
+        def fnSpread : fn (x : int) : int = if i == 0 then ( c1.dmSpread ) else if i == 1 then ( c2.dmSpread2 ) else if i == 2 then ( c1.mSpread ) else ( fSpread )
         totalCall += fnSpread(i)
 
-        def fnSpreadB : (x : int) : int = if i == 0 then ( c1.mSpread ) else if i == 1 then ( c2.mSpread2 ) else if i == 2 then ( fSpread ) else ( fSpread2 )
+        def fnSpreadB : fn (x : int) : int = if i == 0 then ( c1.mSpread ) else if i == 1 then ( c2.mSpread2 ) else if i == 2 then ( fSpread ) else ( fSpread2 )
         totalCall += fnSpreadB(i)
 
-        def fnSpec : (x : int) : int = if i == 0 then ( c1.dmSpec ) else if i == 1 then ( c2.dmSpec2 ) else if i == 2 then ( c1.mSpec ) else ( fSpec )
+        def fnSpec : fn (x : int) : int = if i == 0 then ( c1.dmSpec ) else if i == 1 then ( c2.dmSpec2 ) else if i == 2 then ( c1.mSpec ) else ( fSpec )
         totalTyped += fnSpec(i)
 
-        def fnSpecB : (x : int) : int = if i == 0 then ( c1.mSpec ) else if i == 1 then ( c2.mSpec2 ) else if i == 2 then ( fSpec ) else ( fSpec2 )
+        def fnSpecB : fn (x : int) : int = if i == 0 then ( c1.mSpec ) else if i == 1 then ( c2.mSpec2 ) else if i == 2 then ( fSpec ) else ( fSpec2 )
         totalTyped += fnSpecB(i)
         i += 1
     )
@@ -692,11 +692,11 @@ def rev1 = c1.reversed()
 def rev2 = c1.reversed()
 
 def Vec = class (def n : int) (
-    def neg = () : Vec -> ( Vec(-this.n) )
-    def plus = (o : any) : Vec -> ( Vec(this.n + (o as int)) )
-    def minus = (o : any) : Vec -> ( Vec(this.n - (o as int)) )
-    def times = (o : any) : Vec -> ( Vec(this.n * (o as int)) )
-    def div = (o : any) : Vec -> ( Vec(int(this.n / (o as int))) )
+    def neg = fn () : Vec -> ( Vec(-this.n) )
+    def plus = fn (o : any) : Vec -> ( Vec(this.n + (o as int)) )
+    def minus = fn (o : any) : Vec -> ( Vec(this.n - (o as int)) )
+    def times = fn (o : any) : Vec -> ( Vec(this.n * (o as int)) )
+    def div = fn (o : any) : Vec -> ( Vec(int(this.n / (o as int))) )
 )
 def v = Vec(10)
 def negV = -v
@@ -770,18 +770,18 @@ println(st.nval, ":", st.ttype, ":", demo.nonNullLabel)
 
 {{{{{
 ;; ScriptClassWriter getCommonSuperClass / commonSuperInterface / ancestorInterfaces / isAssignable merges
-def Root = interface ( def tag : () : string )
+def Root = interface ( def tag : fn () : string )
 def I1 = interface extends Root ()
 def I2 = interface extends Root ()
-def C1 = class () implements I1 ( def tag = () : string -> ( "c1" ) )
-def C2 = class () implements I2 ( def tag = () : string -> ( "c2" ) )
-def pickRoot = (flag : bool) : Root -> (
+def C1 = class () implements I1 ( def tag = fn () : string -> ( "c1" ) )
+def C2 = class () implements I2 ( def tag = fn () : string -> ( "c2" ) )
+def pickRoot = fn (flag : bool) : Root -> (
     if flag then ( C1() ) else ( C2() )
 )
-def pickMixed = (flag : bool, a : I1, b : C2) : Root -> (
+def pickMixed = fn (flag : bool, a : I1, b : C2) : Root -> (
     if flag then ( a ) else ( b )
 )
-def pickIfaces = (flag : bool, a : I1, b : I2) : Root -> (
+def pickIfaces = fn (flag : bool, a : I1, b : I2) : Root -> (
     if flag then ( a ) else ( b )
 )
 def c1 = C1()
@@ -793,8 +793,8 @@ c1:c2:c1:c2
 {{{{{
 ;; InterfaceGen default method, own default invoke, and int->double widening
 def CalcIface = interface (
-    def base = () : int -> ( 10 )
-    def plusBase = (k : int) : double -> (
+    def base = fn () : int -> ( 10 )
+    def plusBase = fn (k : int) : double -> (
         def mul = 2
         this.base() * mul + k
     )
@@ -807,12 +807,12 @@ println(ci.plusBase(5))
 
 {{{{{
 ;; emitReturnToJava double->void POP2 on Runnable and Object->double on DoubleSupplier
-def dyn = (v : any) : any -> ( v )
+def dyn = fn (v : any) : any -> ( v )
 def DS = class () implements java.util.function.DoubleSupplier (
-    def getAsDouble = () : any -> ( dyn(3.5) )
+    def getAsDouble = fn () : any -> ( dyn(3.5) )
 )
 def f2 : java.util.function.DoubleSupplier = DS()
-def r : java.lang.Runnable = () -> ( 1.5 + 2.5 )
+def r : java.lang.Runnable = fn () -> ( 1.5 + 2.5 )
 r.run()
 println(f2.getAsDouble())
 }}}}}
@@ -841,16 +841,16 @@ println(pt.x, ":", pt.y, ":", d1, ":", d2, ":", d3, ":", d4, ":", d5, ":", d6, "
 
 {{{{{
 ;; ScriptClassWriter getCommonSuperClass / commonSuperInterface on unannotated if/else joins
-def Root = interface ( def tag : () : string )
+def Root = interface ( def tag : fn () : string )
 def I1 = interface extends Root ()
 def I2 = interface extends Root ()
-def C1 = class () implements I1 ( def tag = () : string -> ( "c1" ) )
-def C2 = class () implements I2 ( def tag = () : string -> ( "c2" ) )
-def joinIface = (flag : bool, a : I1, b : I2) -> (
+def C1 = class () implements I1 ( def tag = fn () : string -> ( "c1" ) )
+def C2 = class () implements I2 ( def tag = fn () : string -> ( "c2" ) )
+def joinIface = fn (flag : bool, a : I1, b : I2) -> (
     def r = if flag then ( a ) else ( b )
     r.tag()
 )
-def joinJava = (flag : bool) : int -> (
+def joinJava = fn (flag : bool) : int -> (
     def xs = if flag then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuffer("bc") )
     xs.length()
 )
@@ -861,12 +861,12 @@ c1:c2:1:2
 {{{{{
 ;; Paren-wrapped class/Java static chains, safe-nav static chain, method recurse, and interface constant
 def Box = ( class (def v : int) (
-    def fact = (n : int) : int -> (
+    def fact = fn (n : int) : int -> (
         if n <= 1 then ( 1 ) else ( n * recurse(n - 1) )
     )
 ) )
 def IWithConst = interface (
-    def get = () : int -> ( 3 )
+    def get = fn () : int -> ( 3 )
 )
 def Impl = class () implements IWithConst ()
 def b = Box(5)
@@ -894,11 +894,11 @@ println(after)
 {{{{{
 ;; Safe-navigation call on nullable Babble & Java receivers and super default call
 def I1 = interface (
-    def greet = (x : int) : int -> ( x + 10 )
+    def greet = fn (x : int) : int -> ( x + 10 )
 )
 def I2 = interface extends I1 ()
 def C = class (def v : int) implements I2 (
-    def greet = (x : int) : int -> ( super.greet(x) + this.v )
+    def greet = fn (x : int) : int -> ( super.greet(x) + this.v )
 )
 def opt : C? = C(5)
 def nil : C? = null
@@ -911,10 +911,10 @@ println(opt?.greet(2), ":", nil?.greet(2), ":", s1?.length(), ":", s2?.length())
 {{{{{
 ;; InterfaceGen signature adaptation bridge + inherited default through intermediate interface + float field int assign
 def IBase = interface (
-    def calc = (x : int) : any -> ( x * 0 )
+    def calc = fn (x : int) : any -> ( x * 0 )
 )
 def IMid = interface extends IBase (
-    def calc = (x : any) : int -> ( 5 )
+    def calc = fn (x : any) : int -> ( 5 )
 )
 def ILeaf = interface extends IMid ()
 def C1 = class () implements ILeaf ()
@@ -927,27 +927,27 @@ println(c1.calc(4), ":", C1().calc(4), ":", pf.x)
 
 {{{{{
 ;; ScriptClassWriter interface-interface & class-interface joins + Java primitive bridge args (DoublePredicate, IntToDoubleFunction, LongUnaryOperator)
-def getList = () : java.util.List(string) -> ( java.util.Collections.singletonList("a") )
-def getSet = () : java.util.Set(string) -> ( java.util.Collections.singleton("b") )
-def joinCol = (c : bool) : java.util.Collection(string) -> (
+def getList = fn () : java.util.List(string) -> ( java.util.Collections.singletonList("a") )
+def getSet = fn () : java.util.Set(string) -> ( java.util.Collections.singleton("b") )
+def joinCol = fn (c : bool) : java.util.Collection(string) -> (
     if c then ( getList() ) else ( getSet() )
 )
-def IBase = interface ( def tag : () : int )
-def IA = interface extends IBase ( def tag = () : int -> ( 1 ) )
-def IB = interface extends IBase ( def tag = () : int -> ( 2 ) )
+def IBase = interface ( def tag : fn () : int )
+def IA = interface extends IBase ( def tag = fn () : int -> ( 1 ) )
+def IB = interface extends IBase ( def tag = fn () : int -> ( 2 ) )
 def CA = class () implements IA ()
 def CB = class () implements IB ()
-def joinB = (c : bool) : IBase -> (
+def joinB = fn (c : bool) : IBase -> (
     if c then ( CA() ) else ( CB() )
 )
 def DP = class () implements java.util.function.DoublePredicate (
-    def test = (d : double) : bool -> ( d > 0.0 )
+    def test = fn (d : double) : bool -> ( d > 0.0 )
 )
 def I2D = class () implements java.util.function.IntToDoubleFunction (
-    def applyAsDouble = (i : int) : double -> ( i + 0.5 )
+    def applyAsDouble = fn (i : int) : double -> ( i + 0.5 )
 )
 def IP = class () implements java.util.function.IntPredicate (
-    def test = (i : int) : bool -> ( i > 0 )
+    def test = fn (i : int) : bool -> ( i > 0 )
 )
 def dp : java.util.function.DoublePredicate = DP()
 def i2d : java.util.function.IntToDoubleFunction = I2D()
@@ -959,14 +959,14 @@ println(joinCol(true).size(), ":", joinCol(false).size(), ":", joinB(true).tag()
 {{{{{
 ;; superCall inside Babble interface default method, inside nested lambda in class, and with named arg
 def I1 = interface (
-    def calc = (x : int) : int -> ( x + 10 )
+    def calc = fn (x : int) : int -> ( x + 10 )
 )
 def I2 = interface extends I1 (
-    def calc = (x : int) : int -> ( super.calc(x) + 2 )
+    def calc = fn (x : int) : int -> ( super.calc(x) + 2 )
 )
 def C2 = class () implements I2 (
-    def run = (x : int) : int -> (
-        def inner = () : int -> ( super.calc(x) + 1 )
+    def run = fn (x : int) : int -> (
+        def inner = fn () : int -> ( super.calc(x) + 1 )
         inner() + super.calc(x = x + 1)
     )
 )

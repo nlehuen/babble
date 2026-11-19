@@ -11,7 +11,7 @@ export def y = "b" + a.x
 ========== mut_a.ba ==========
 def b = import("mut_b.ba")
 export def name = "a"
-export def tag = () : string -> ( b.name + ":" + name )
+export def tag = fn () : string -> ( b.name + ":" + name )
 
 ========== mut_b.ba ==========
 def a = import("mut_a.ba")
@@ -43,7 +43,7 @@ Type error : expected string, got int
 
 {{{{{
 ;; Export modifier is illegal inside nested block or function
-def f = () -> (
+def f = fn () -> (
     export def bad = 1
 )
 }}}}}

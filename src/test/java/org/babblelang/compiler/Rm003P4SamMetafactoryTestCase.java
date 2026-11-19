@@ -27,7 +27,7 @@ public class Rm003P4SamMetafactoryTestCase {
         Class<?> childCaller = childLoader.defineChildCaller(childSam);
         Method runIt = childCaller.getMethod("call", childSam, int.class);
 
-        Object callable = BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval("(x : int) : int -> ( x + 40 )");
+        Object callable = BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval("fn (x : int) : int -> ( x + 40 )");
         ScriptRuntime rt = new ScriptRuntime(Implicits.create(), new PrintWriter(Writer.nullWriter()), null);
         Object adapted = Values.toJava(callable, childSam, rt);
 

@@ -19,11 +19,11 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
     private def rVec: Vec3 = Vec3(this.rAbs, this.rAbs, this.rAbs)
     private def bbox: AABB = AABB.fromPoints(this.center - this.rVec, this.center + this.rVec)
 
-    def boundingBox = (): AABB -> (
+    def boundingBox = fn (): AABB -> (
         this.bbox
     )
 
-    def hit = (r: Ray, rayT: Interval): HitRecord? -> (
+    def hit = fn (r: Ray, rayT: Interval): HitRecord? -> (
         def oc: Vec3 = this.center - r.origin
         def a: double = r.dir.lengthSquared()
         def h: double = r.dir.dot(oc)
@@ -45,9 +45,9 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
         HitRecord.create(r, p, outwardNormal, root, this.mat)
     )
 
-    def kind = (): string -> ("sphere")
+    def kind = fn (): string -> ("sphere")
 
-    def describe = (): string -> (
+    def describe = fn (): string -> (
         super(Hittable).describe() + "(r=" + this.radius + ")"
     )
 )
@@ -60,49 +60,49 @@ export def HittableList = class () implements Hittable (
     private def head: HittableNode? = null
     private def bbox: AABB = AABB.empty
 
-    def add = mut (item: Hittable) -> (
+    def add = fn mut (item: Hittable) -> (
         this.head = HittableNode(item, this.head)
         this.size += 1
         this.bbox = AABB.enclose(this.bbox, item.boundingBox())
     )
 
-    def clear = () -> (
+    def clear = fn () -> (
         this.head = null
         this.size = 0
         this.bbox = AABB.empty
     )
 
-    def headNode = (): HittableNode? -> (
+    def headNode = fn (): HittableNode? -> (
         this.head
     )
 
-    def first = (): Hittable -> (
+    def first = fn (): Hittable -> (
         def item = this.head?.item
         if item != null then (item) else (emptyHittable)
     )
 
-    def second = (): Hittable -> (
+    def second = fn (): Hittable -> (
         def item = this.head?.next?.item
         if item != null then (item) else (emptyHittable)
     )
 
-    def boundingBox = (): AABB -> (
+    def boundingBox = fn (): AABB -> (
         this.bbox
     )
 
     ;; Higher-order iteration over all hittables in the list
-    def forEach = (fn: (item: Hittable): any?) -> (
+    def forEach = fn (f: fn (item: Hittable): any?) -> (
         def cur: HittableNode? = this.head
         while cur != null then (
-            fn(cur.item)
+            f(cur.item)
             cur = cur.next
         )
     )
 
     ;; Higher-order predicate counter using a closure over a mutable local
-    def countWhere = (pred: (item: Hittable): bool): int -> (
+    def countWhere = fn (pred: fn (item: Hittable): bool): int -> (
         def matched: int = 0
-        this.forEach((item: Hittable) -> (
+        this.forEach(fn (item: Hittable) -> (
             if pred(item) then (
                 matched += 1
             )
@@ -110,7 +110,7 @@ export def HittableList = class () implements Hittable (
         matched
     )
 
-    def hit = (r: Ray, rayT: Interval): HitRecord? -> (
+    def hit = fn (r: Ray, rayT: Interval): HitRecord? -> (
         def closestRecord: HitRecord? = null
         def closestSoFar: double = rayT.max
         def cur: HittableNode? = this.head
@@ -125,16 +125,16 @@ export def HittableList = class () implements Hittable (
         closestRecord
     )
 
-    def kind = (): string -> ("hittable_list")
+    def kind = fn (): string -> ("hittable_list")
 )
 
 ;; Pure-Babble Bounding Volume Hierarchy (BVH) Node
 export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: AABB) implements Hittable (
-    def boundingBox = (): AABB -> (
+    def boundingBox = fn (): AABB -> (
         this.bbox
     )
 
-    def hit = (r: Ray, rayT: Interval): HitRecord? -> (
+    def hit = fn (r: Ray, rayT: Interval): HitRecord? -> (
         if not this.bbox.hit(r, rayT) then (
             return null
         )
@@ -144,10 +144,10 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
         if hitRight != null then (hitRight) else (hitLeft)
     )
 
-    def kind = (): string -> ("bvh_node")
+    def kind = fn (): string -> ("bvh_node")
 ) static (
     ;; Recursively partitions a HittableList into a balanced BVH tree
-    def fromList = (items: HittableList): Hittable -> (
+    def fromList = fn (items: HittableList): Hittable -> (
         if items.size == 0 then (
             return emptyHittable
         )

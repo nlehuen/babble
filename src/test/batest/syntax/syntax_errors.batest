@@ -16,7 +16,7 @@ if true ( 1 )
 Syntax error : unexpected end of input
 
 {{{{{
-def f = (a : int -> ( a )
+def f = fn (a : int -> ( a )
 }}}}}
 Syntax error : unexpected '->'
 

@@ -1,7 +1,7 @@
 ;; Built-in conversions: int(), double(), classof(), dynamic ConvertFunction errors
 
-def dyn = (v : any) : any -> ( v )
-def dynOpt = (v : any?) : any? -> ( v )
+def dyn = fn (v : any) : any -> ( v )
+def dynOpt = fn (v : any?) : any? -> ( v )
 
 {{{{{
 println(int(3), ":", int(2.9), ":", int(-2.9), ":", int("42"), ":", int("-7"))
@@ -77,7 +77,7 @@ print(classof(I))
 classof : an interface has no class
 
 {{{{{
-def f = () -> ( 1 )
+def f = fn () -> ( 1 )
 print(classof(f))
 }}}}}
 classof : a function has no class

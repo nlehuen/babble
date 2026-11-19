@@ -5,25 +5,25 @@
     comments
 ;;)
 
-def add = (a, b) -> (  ;;
+def add = fn (a, b) -> (  ;;
     a + b              ;; function literal
 )                      ;;
 
 ;; optional types
-def add2 = (a: int, b: int): int -> (
+def add2 = fn (a: int, b: int): int -> (
     a + b
 )
 
 ;; function as first-type objects
 ;; closure support
-def adder = (a: int): (b: int): int -> (
-    return (b: int): int -> (
+def adder = fn (a: int): fn (b: int): int -> (
+    return fn (b: int): int -> (
         a + b
     )
 )
 
 ;; loops
-def fac2 = (n) -> (
+def fac2 = fn (n) -> (
     def result = 1
     while n > 1 then (
         ;; use ";" to put several statements on one line
@@ -33,7 +33,7 @@ def fac2 = (n) -> (
 )
 
 ;; recursion
-def fac = (n) -> (
+def fac = fn (n) -> (
     if n < 2 then (
         1
     ) else (
@@ -50,7 +50,7 @@ def fac = (n) -> (
 )
 
 ;; an early return abandons the rest of the function body
-def sign = (n) -> (
+def sign = fn (n) -> (
     if n > 0 then (
         return "positive"
     )
@@ -61,29 +61,29 @@ def sign = (n) -> (
 )
 
 ;; default values, including function literals
-def apply = (a, f: (v: int): int = (v: int) -> (v)) -> (f(a))
+def apply = fn (a, f: fn (v: int): int = fn (v: int) -> (v)) -> (f(a))
 
 ;; using function scopes as poor man's objects
 ;; like in Javascript
-def counter = () -> (
+def counter = fn () -> (
     def c = 0
 
-    () -> (
+    fn () -> (
         c = c + 1
     )
 )
 
 ;; object literals : members are reached through "this"
-def counter2 = () -> (
+def counter2 = fn () -> (
     return object (
         def v = 0
-        def inc = () -> (
+        def inc = fn () -> (
             this.v = this.v + 1
         )
     )
 )
 
-def main = () -> (
+def main = fn () -> (
     def local = "world !"
 
     ;; println is a native function
@@ -105,7 +105,7 @@ def main = () -> (
 assert(1 < 2, "Something is wrong")
 
 assert(apply(1) == 1, "apply is broken")
-assert(apply(1, (v) -> (v + 1)) == 2, "apply is broken")
+assert(apply(1, fn (v) -> (v + 1)) == 2, "apply is broken")
 
 assert("ok:4:120:720" == main(), "Test failed")
 

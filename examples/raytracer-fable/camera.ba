@@ -57,14 +57,14 @@ export def Camera = class (
     private def defocusDiskV: Vec3 = this.v * this.defocusRadius
 
     ;; a random point in the camera defocus disk
-    private def defocusDiskSample = (rng): Vec3 -> (
+    private def defocusDiskSample = fn (rng): Vec3 -> (
         def p: Vec3 = Vec3.randomInUnitDisk(rng)
         this.center + this.defocusDiskU * p.x + this.defocusDiskV * p.y
     )
 
     ;; a camera ray originating from the defocus disk and directed at a randomly
     ;; sampled point around the pixel location i, j
-    private def getRay = (i, j, rng): Ray -> (
+    private def getRay = fn (i, j, rng): Ray -> (
         def pixelSample: Vec3 = this.pixel00 +
             this.pixelDeltaU * (i + rng.nextDouble() - 0.5) +
             this.pixelDeltaV * (j + rng.nextDouble() - 0.5)
@@ -72,7 +72,7 @@ export def Camera = class (
         Ray(origin, pixelSample - origin)
     )
 
-    private def rayColor = (r, depth, world, rng): Vec3 -> (
+    private def rayColor = fn (r, depth, world, rng): Vec3 -> (
         ;; if we've exceeded the ray bounce limit, no more light is gathered
         if depth <= 0 then (return Vec3(0.0, 0.0, 0.0))
 
@@ -90,18 +90,18 @@ export def Camera = class (
     )
 
     ;; a linear color component as a gamma 2 byte
-    private def toByte = (linear): int -> (
+    private def toByte = fn (linear): int -> (
         def gamma: double = if linear > 0 then (Math.sqrt(linear)) else (0.0)
         int(256 * Math.max(0.0, Math.min(gamma, 0.999)))
     )
 
     ;; Renders the world to a java.awt.image.BufferedImage. The threads take scanlines
     ;; from a shared counter until none is left.
-    def render = (world: Hittable, threads: int = 1): java.awt.image.BufferedImage -> (
+    def render = fn (world: Hittable, threads: int = 1): java.awt.image.BufferedImage -> (
         def image = java.awt.image.BufferedImage(this.imageWidth, this.imageHeight, java.awt.image.BufferedImage.TYPE_INT_RGB)
         def nextLine = java.util.concurrent.atomic.AtomicInteger()
 
-        def renderLines = (): null -> (
+        def renderLines = fn (): null -> (
             def rng = java.util.Random()
             def j: int = nextLine.getAndIncrement()
             while j < this.imageHeight then (
@@ -123,7 +123,7 @@ export def Camera = class (
         )
 
         ;; start the other threads, render on this one too, then wait for the others
-        def start = (n): null -> (
+        def start = fn (n): null -> (
             if n > 1 then (
                 def thread = java.lang.Thread(renderLines)
                 thread.start()

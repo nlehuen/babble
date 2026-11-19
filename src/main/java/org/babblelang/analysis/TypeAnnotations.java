@@ -205,19 +205,16 @@ final class TypeAnnotations {
 
     private List<Type.Parameter> functionTypeParameters(BabbleParser.FnTypeParametersContext declaration, ScopeNode scope) {
         List<Type.Parameter> result = new ArrayList<>();
+        int index = 0;
         for (BabbleParser.FnTypeParamContext parameter : declaration.fnTypeParam()) {
-            Type type;
-            if (parameter.type() != null) {
-                type = annotation(parameter.type(), scope);
-            } else {
-                checker.warn("Missing type : " + parameter.ID().getText(), parameter);
-                type = Type.ERROR;
-            }
+            Type type = annotation(parameter.type(), scope);
             EffectChecker.ParamMods pm = checker.effectChecker != null
                     ? checker.effectChecker.parseParamMods(parameter, checker.checkingEffects())
                     : EffectChecker.ParamMods.NONE;
-            result.add(new Type.Parameter(parameter.ID().getText(), type, false,
+            String name = parameter.ID() != null ? parameter.ID().getText() : "p" + index;
+            result.add(new Type.Parameter(name, type, false,
                     pm.mut(), pm.borrow(), pm.borrow()));
+            index++;
         }
         return result;
     }

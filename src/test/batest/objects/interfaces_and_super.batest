@@ -3,11 +3,11 @@
 {{{{{
 ;; Interface with abstract signature, default method calling this, and class implementing it
 def Shape = interface (
-    def area : () : double
-    def describe = () : string -> ( "area=" + this.area() )
+    def area : fn () : double
+    def describe = fn () : string -> ( "area=" + this.area() )
 )
 def Rect = class (def w : double, def h : double) implements Shape (
-    def area = () : double -> ( this.w * this.h )
+    def area = fn () : double -> ( this.w * this.h )
 )
 def s : Shape = Rect(3.0, 4.0)
 println(s.area(), ":", s.describe(), ":", (s is Shape), ":", (s is Rect))
@@ -17,20 +17,20 @@ println(s.area(), ":", s.describe(), ":", (s is Shape), ":", (s is Rect))
 {{{{{
 ;; Interface extends multiple interfaces + qualified super(I).m() and unqualified super.m()
 def Named = interface (
-    def tag = () : string -> ( "Named" )
+    def tag = fn () : string -> ( "Named" )
 )
 def Tagged = interface extends Named (
-    def tag = () : string -> ( super.tag() + "+Tagged" )
+    def tag = fn () : string -> ( super.tag() + "+Tagged" )
 )
 def Left = interface (
-    def side = () : string -> ( "L" )
+    def side = fn () : string -> ( "L" )
 )
 def Right = interface (
-    def side = () : string -> ( "R" )
+    def side = fn () : string -> ( "R" )
 )
 def Both = class () implements Tagged, Left, Right (
-    def tag = () : string -> ( super.tag() + "+Both" )
-    def side = () : string -> ( super(Left).side() + ":" + super(Right).side() )
+    def tag = fn () : string -> ( super.tag() + "+Both" )
+    def side = fn () : string -> ( super(Left).side() + ":" + super(Right).side() )
 )
 def b = Both()
 println(b.tag(), ":", b.side())
@@ -40,10 +40,10 @@ Named+Tagged+Both:L:R
 {{{{{
 ;; Singleton object implementing an interface with super
 def Greeter = interface (
-    def hello = () : string -> ( "hi" )
+    def hello = fn () : string -> ( "hi" )
 )
 def loud = object implements Greeter (
-    def hello = () : string -> ( super.hello() + "!" )
+    def hello = fn () : string -> ( super.hello() + "!" )
 )
 println(loud.hello())
 }}}}}
@@ -52,12 +52,12 @@ hi!
 {{{{{
 ;; Interface static block and 'is' check
 def Printable = interface (
-    def show : () : string
+    def show : fn () : string
 ) static (
     def prefix = "[P]"
 )
 def Item = class (def s : string) implements Printable (
-    def show = () : string -> ( Printable.prefix + this.s )
+    def show = fn () : string -> ( Printable.prefix + this.s )
 )
 println(Item("ok").show())
 }}}}}
@@ -65,24 +65,24 @@ println(Item("ok").show())
 
 {{{{{
 ;; Missing required interface method error
-def I = interface ( def run : () : int )
+def I = interface ( def run : fn () : int )
 def Bad = class () implements I ()
 }}}}}
 Bad does not implement I.run
 
 {{{{{
 ;; Ambiguous unqualified super call across multiple interfaces
-def A = interface ( def m = () : int -> ( 1 ) )
-def B = interface ( def m = () : int -> ( 2 ) )
+def A = interface ( def m = fn () : int -> ( 1 ) )
+def B = interface ( def m = fn () : int -> ( 2 ) )
 def C = class () implements A, B (
-    def m = () : int -> ( super.m() )
+    def m = fn () : int -> ( super.m() )
 )
 }}}}}
 Ambiguous super.m : A, B. Write super(A).m()
 
 {{{{{
 ;; Unimplemented interface type cannot be instantiated directly
-def I = interface ( def m = () : int -> ( 1 ) )
+def I = interface ( def m = fn () : int -> ( 1 ) )
 print(I())
 }}}}}
 I is not callable

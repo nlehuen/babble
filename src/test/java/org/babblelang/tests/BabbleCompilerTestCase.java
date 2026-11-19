@@ -108,7 +108,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testMethodsAreNamedAfterTheirDefinitions() throws Exception {
-        CompiledBabbleScript script = compile("def add = (a : int, b : int) -> ( a + b ) ; def twice = (f : () : int) -> ( () -> ( f() + f() ) ) ; add(1, 2)");
+        CompiledBabbleScript script = compile("def add = fn (a : int, b : int) -> ( a + b ) ; def twice = fn (f : fn () : int) -> ( fn () -> ( f() + f() ) ) ; add(1, 2)");
         List<String> names = methodNames(script);
         Assertions.assertTrue(names.containsAll(List.of("run", "fn$0$add", "fn$1$twice", "fn$2", "<clinit>")), names.toString());
         Assertions.assertEquals(3, script.eval(new SimpleBindings()));
@@ -141,8 +141,8 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testClassesCompileToJvmClasses() throws Exception {
-        CompiledBabbleScript script = compile("def Point = value class (x : int, y : int) ( def norm = () -> ( this.x + this.y ) ) static ( def o = this(0, 0) )\n"
-                + "def S = interface ( def d = () -> ( 1 ) ) ; def o = object implements S () ; Point(1, 2).norm() + o.d()");
+        CompiledBabbleScript script = compile("def Point = value class (x : int, y : int) ( def norm = fn () -> ( this.x + this.y ) ) static ( def o = this(0, 0) )\n"
+                + "def S = interface ( def d = fn () -> ( 1 ) ) ; def o = object implements S () ; Point(1, 2).norm() + o.d()");
         Assertions.assertEquals(4, script.eval(new SimpleBindings()));
         assertVerifies(script);
 
@@ -161,7 +161,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testConstructorVariablesCapturedByMethodsAreHiddenFields() throws Exception {
-        CompiledBabbleScript script = compile("def C = class (start : int) ( def next = () -> ( start = start + 1 ) ) ; def c = C(10) ; c.next() ; c.next()");
+        CompiledBabbleScript script = compile("def C = class (start : int) ( def next = fn () -> ( start = start + 1 ) ) ; def c = C(10) ; c.next() ; c.next()");
         Assertions.assertEquals(12, script.eval(new SimpleBindings()));
         byte[] c = script.getClasses().entrySet().stream().filter(e -> e.getKey().endsWith("$C")).findFirst().orElseThrow().getValue();
         Assertions.assertEquals(List.of("next", "$v$start"), fieldNames(c));
@@ -176,7 +176,7 @@ public class BabbleCompilerTestCase {
         Bindings bindings = engine.createBindings();
         bindings.put("capture", capture);
         bindings.put(ScriptEngine.FILENAME, "trace.ba");
-        engine.eval("def inner = () -> (\n  (capture as java.lang.Runnable).run()\n)\ndef outer = () -> (\n  1\n  inner()\n)\nouter()", bindings);
+        engine.eval("def inner = fn () -> (\n  (capture as java.lang.Runnable).run()\n)\ndef outer = fn () -> (\n  1\n  inner()\n)\nouter()", bindings);
 
         StackTraceElement inner = captured.stream().filter(e -> e.getMethodName().equals("fn$0$inner")).findFirst().orElseThrow();
         Assertions.assertEquals(2, inner.getLineNumber());
@@ -198,7 +198,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testACompiledScriptCanBeEvaluatedManyTimes() throws Exception {
-        CompiledBabbleScript script = compile("def counter = () -> ( def c = 0 ; () -> ( c = c + 1 ) ) ; def c = counter() ; c() ; c() + (start as int)");
+        CompiledBabbleScript script = compile("def counter = fn () -> ( def c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; c() ; c() + (start as int)");
         Bindings first = new SimpleBindings();
         first.put("start", 10);
         Bindings second = new SimpleBindings();
@@ -210,12 +210,12 @@ public class BabbleCompilerTestCase {
     @Test
     public void testTrickyShapesVerify() throws Exception {
         String[] scripts = {
-                "def g = (a : int, b : int) -> ( a + b ) ; def f = () : int -> ( g(1, return 2) ) ; f()",
-                "def f = (n : int) : int -> ( def r = 0 ; while n > 0 then ( if n == 3 then ( return n ) ; r = r + n ; n = n - 1 ) ; r ) ; f(5)",
+                "def g = fn (a : int, b : int) -> ( a + b ) ; def f = fn () : int -> ( g(1, return 2) ) ; f()",
+                "def f = fn (n : int) : int -> ( def r = 0 ; while n > 0 then ( if n == 3 then ( return n ) ; r = r + n ; n = n - 1 ) ; r ) ; f(5)",
                 "def i = 0 ; while i < 3 then ( i = i + 1 ) ; null",
                 "def a = 1 ; a == 0 and ( a = 2 ; true ) ; a == 1 or ( a = 3 ; true ) ; not (a == 1)",
-                "def f = (a : int, b = a + 1, c : () : int = () -> ( b )) -> ( a + c() ) ; f(1) + f(1, c: () -> ( 10 ))",
-                "def C = class (def v : int) ( def m = () -> ( this.v ) ) ; C(4).m()",
+                "def f = fn (a : int, b = a + 1, c : fn () : int = fn () -> ( b )) -> ( a + c() ) ; f(1) + f(1, c: fn () -> ( 10 ))",
+                "def C = class (def v : int) ( def m = fn () -> ( this.v ) ) ; C(4).m()",
                 "( def a = 1 ; ( def b = a + 1 ; ( def c = b + 1 ; c ) ) )",
         };
         Object[] expected = {2, 3, null, false, 14, 4, 3};
@@ -241,7 +241,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testFunctionsAndMethodsHaveDirectEntryPoints() throws Exception {
-        CompiledBabbleScript script = compile("def add = (a : int, b = 1) -> ( a + b ) ; def C = class () ( def m = (x : int) -> ( x ) ) ; add(1) + add(b: 2, a: 3) + C().m(4)");
+        CompiledBabbleScript script = compile("def add = fn (a : int, b = 1) -> ( a + b ) ; def C = class () ( def m = fn (x : int) -> ( x ) ) ; add(1) + add(b: 2, a: 3) + C().m(4)");
         Assertions.assertEquals(11, script.eval(new SimpleBindings()));
         assertVerifies(script);
         // The direct entry point takes the arguments spread ; the $call adapter takes an array.
@@ -250,7 +250,7 @@ public class BabbleCompilerTestCase {
                 .filter(e -> e.getKey().endsWith("$C")).findFirst().orElseThrow();
         Assertions.assertTrue(methodNames(c.getValue()).containsAll(List.of("m$m", "m$m$call")), methodNames(c.getValue()).toString());
 
-        CompiledFunction add = (CompiledFunction) compile("def add = (a : int, b = 1) -> ( a + b ) ; add").eval(new SimpleBindings());
+        CompiledFunction add = (CompiledFunction) compile("def add = fn (a : int, b = 1) -> ( a + b ) ; add").eval(new SimpleBindings());
         Assertions.assertEquals(MethodType.methodType(Object.class, CompiledFunction.class, Object.class, ScriptRuntime.class,
                 Arguments.Binder.class, Object.class, Object.class), add.direct().type());
     }
@@ -268,24 +268,24 @@ public class BabbleCompilerTestCase {
             sum.append(" + p").append(i);
             arguments.append(i > 0 ? ", " : "").append(i);
         }
-        String definitions = "def f = (" + parameters + ") -> ( " + sum + " )\n"
-                + "def C = class () ( def m = (" + parameters + ") -> ( " + sum + " ) ; def n = () -> ( this.m(" + arguments + ") ) )\n";
+        String definitions = "def f = fn (" + parameters + ") -> ( " + sum + " )\n"
+                + "def C = class () ( def m = fn (" + parameters + ") -> ( " + sum + " ) ; def n = fn () -> ( this.m(" + arguments + ") ) )\n";
         CompiledBabbleScript script = compile(definitions + "f() + f(" + arguments + ") + f(p3: 100) + C().m() + C().n()");
         assertVerifies(script);
         Assertions.assertTrue(methodNames(script).contains("fn$0$f") && !methodNames(script).contains("fn$0$f$call"), methodNames(script).toString());
         int total = count * (count - 1) / 2;
         Assertions.assertEquals(count + total + (count + 99) + count + total, script.eval(new SimpleBindings()));
 
-        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run("def g = (a : int) -> ( a ) ; g(" + arguments + ")"));
+        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run("def g = fn (a : int) -> ( a ) ; g(" + arguments + ")"));
         Assertions.assertTrue(e.getMessage().contains("Too many parameters : 1 declared, " + count + " given"), e.getMessage());
     }
 
     @Test
     public void testACallSiteSeesManyFunctions() throws Exception {
         // More function literals than a site caches, each called many times from the same site.
-        StringBuilder source = new StringBuilder("def Box = class (def f : (x : int) : int) ()\ndef fs : java.util.List(Box) = java.util.ArrayList()\n");
+        StringBuilder source = new StringBuilder("def Box = class (def f : fn (x : int) : int) ()\ndef fs : java.util.List(Box) = java.util.ArrayList()\n");
         for (int i = 0; i < 10; i++) {
-            source.append("fs.add(Box((x : int, y : int = ").append(i).append(") -> ( x * y )))\n");
+            source.append("fs.add(Box(fn (x : int, y : int = ").append(i).append(") -> ( x * y )))\n");
         }
         source.append("def total = 0 ; def i = 0 ; def k = 0\n"
                 + "while i < 1000 then ( total = total + (fs.get(k) as Box).f(i) ; i = i + 1 ; k = if k == 9 then ( 0 ) else ( k + 1 ) ) ; total");
@@ -300,7 +300,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testManyCallSitesAndLongTexts() throws Exception {
-        StringBuilder source = new StringBuilder("def f = (a : any) : any -> ( a )\ndef n = 0\n");
+        StringBuilder source = new StringBuilder("def f = fn (a : any) : any -> ( a )\ndef n = 0\n");
         for (int i = 0; i < 3000; i++) {
             source.append("n = n + (f(").append(i).append(") as int)\n");
         }
@@ -332,7 +332,7 @@ public class BabbleCompilerTestCase {
     }
 
     private static final String VEC3 = "export def Vec3 = value class (x : double, y : double) (\n"
-            + "    def plus = (o : Vec3) : Vec3 -> ( Vec3(this.x + o.x, this.y + o.y) )\n"
+            + "    def plus = fn (o : Vec3) : Vec3 -> ( Vec3(this.x + o.x, this.y + o.y) )\n"
             + ")\n"
             + "export def zero = Vec3(0.0, 0.0)\n";
 
@@ -399,7 +399,7 @@ public class BabbleCompilerTestCase {
     public void testP5OmitsRedundantRuntimeTypeChecksAndKeepsAsCasts() throws Exception {
         CompiledBabbleScript checked = compile(
                 "def Box = class (def x : double = 1) (\n"
-                        + "  def putVal = mut (v : double = 2) : double -> (\n"
+                        + "  def putVal = fn mut (v : double = 2) : double -> (\n"
                         + "    this.x = v\n"
                         + "    this.x += 1\n"
                         + "    if v > 0.0 then ( return 1 )\n"
@@ -409,7 +409,7 @@ public class BabbleCompilerTestCase {
                         + "def d : double = 1\n"
                         + "d = 2\n"
                         + "d += 3\n"
-                        + "def f = (a : int, b : double = 4) : double -> ( a + b )\n"
+                        + "def f = fn (a : int, b : double = 4) : double -> ( a + b )\n"
                         + "def b = Box()\n"
                         + "d + f(1) + b.putVal(3) + b.putVal() + b.x");
         assertVerifies(checked);
@@ -420,7 +420,7 @@ public class BabbleCompilerTestCase {
         }
         Assertions.assertEquals(15.0, checked.eval(new SimpleBindings()));
 
-        CompiledBabbleScript cast = compile("def id = (x : any) : any -> ( x ) ; id(7) as int");
+        CompiledBabbleScript cast = compile("def id = fn (x : any) : any -> ( x ) ; id(7) as int");
         assertVerifies(cast);
         Assertions.assertTrue(typesCalls(cast).stream().anyMatch(c -> c.endsWith("->check")), typesCalls(cast).toString());
         Assertions.assertTrue(fieldNames(cast.getClassBytes()).stream().anyMatch(n -> n.startsWith("TYPE")),
@@ -431,10 +431,10 @@ public class BabbleCompilerTestCase {
     @Test
     public void testP6aUnionsAndNullablesCompileCleanly() throws Exception {
         CompiledBabbleScript verified = compile(
-                "def f = (x : int | string?, flag : bool) : double? -> (\n"
+                "def f = fn (x : int | string?, flag : bool) : double? -> (\n"
                         + "  if x is int then ( x ) else if flag then ( 2.5 ) else ( null )\n"
                         + ")\n"
-                        + "def cb : ((n : int) : int)? = null\n"
+                        + "def cb : (fn (n : int) : int)? = null\n"
                         + "def r1 = f(3, false)\n"
                         + "def r2 = f(\"a\", true)\n"
                         + "def r3 = f(null, false)\n"
@@ -445,7 +445,7 @@ public class BabbleCompilerTestCase {
         Assertions.assertEquals("java.lang.Double:3.0:2.5:null", verified.eval(new SimpleBindings()));
 
         CompiledBabbleScript checked = compile(
-                "def id = (v : any?) : any? -> ( v )\n"
+                "def id = fn (v : any?) : any? -> ( v )\n"
                         + "def n = id(5) as int?\n"
                         + "def u = id(\"hi\") as (int | string)\n"
                         + "\"\" + n + \":\" + u");
@@ -458,11 +458,11 @@ public class BabbleCompilerTestCase {
     public void testP6bGenericsCompileCleanly() throws Exception {
         CompiledBabbleScript babbleGenerics = compile(
                 "def Box(T) = class (def v : T) (\n"
-                        + "  def mapBox(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.v)) )\n"
+                        + "  def mapBox(U) = fn (f : fn (x : T) : U) : Box(U) -> ( Box(f(this.v)) )\n"
                         + ")\n"
-                        + "def id(T) = (x : T) : T -> ( x )\n"
+                        + "def id(T) = fn (x : T) : T -> ( x )\n"
                         + "def db : Box(double) = Box(3)\n"
-                        + "def sb : Box(string) = db.mapBox((d) -> ( \"\" + id(d) ))\n"
+                        + "def sb : Box(string) = db.mapBox(fn (d) -> ( \"\" + id(d) ))\n"
                         + "\"\" + classof(db.v) + \":\" + sb.v");
         assertVerifies(babbleGenerics);
         Assertions.assertEquals(List.of(), typesCalls(babbleGenerics));
@@ -481,10 +481,10 @@ public class BabbleCompilerTestCase {
         CompiledBabbleScript safe = compile(
                 "def B = class (def v : int) ()\n"
                         + "def A = class (def next : A? = null, def x : int = 7) (\n"
-                        + "  def f = () : B -> ( B(this.x) )\n"
-                        + "  def getInt = () : int -> ( this.x )\n"
+                        + "  def f = fn () : B -> ( B(this.x) )\n"
+                        + "  def getInt = fn () : int -> ( this.x )\n"
                         + ")\n"
-                        + "def mk = (flag : bool) : A? -> ( if flag then ( A(A(null, 5), 3) ) else ( null ) )\n"
+                        + "def mk = fn (flag : bool) : A? -> ( if flag then ( A(A(null, 5), 3) ) else ( null ) )\n"
                         + "def a1 = mk(true)\n"
                         + "def a0 = mk(false)\n"
                         + "def b1 : B? = a1?.f()\n"
@@ -567,28 +567,28 @@ public class BabbleCompilerTestCase {
     public void testRm001UnboxedPrimitivesSpecEntryPointsAndFields() throws Exception {
         CompiledBabbleScript script = compile(
                 "def Point = value class (x : int, y : int) (\n"
-                        + "  def norm = () : int -> ( this.x * this.x + this.y * this.y )\n"
+                        + "  def norm = fn () : int -> ( this.x * this.x + this.y * this.y )\n"
                         + ")\n"
                         + "def Early = class () (\n"
-                        + "  def readBefore = () : int -> ( this.late )\n"
+                        + "  def readBefore = fn () : int -> ( this.late )\n"
                         + "  def late : int = 7\n"
                         + ")\n"
                         + "def Lazy = class (early : bool) (\n"
                         + "  def a : int = if early then ( this.b ) else ( 0 )\n"
                         + "  def b : int = 5\n"
                         + ")\n"
-                        + "def fib = (n : int) : int -> ( if n < 2 then ( n ) else ( recurse(n - 1) + recurse(n - 2) ) )\n"
-                        + "def loop = (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s += i ; i += 1 ) ; s )\n"
-                        + "def counter = () -> ( def c = 0 ; () : int -> ( c = c + 1 ) )\n"
-                        + "def widenJoin = (c : bool) : double -> ( if c then ( 1 ) else ( 2.5 ) )\n"
-                        + "def foldCheck = (n : int) : int -> (\n"
+                        + "def fib = fn (n : int) : int -> ( if n < 2 then ( n ) else ( recurse(n - 1) + recurse(n - 2) ) )\n"
+                        + "def loop = fn (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s += i ; i += 1 ) ; s )\n"
+                        + "def counter = fn () -> ( def c = 0 ; fn () : int -> ( c = c + 1 ) )\n"
+                        + "def widenJoin = fn (c : bool) : double -> ( if c then ( 1 ) else ( 2.5 ) )\n"
+                        + "def foldCheck = fn (n : int) : int -> (\n"
                         + "  def touched = 0\n"
-                        + "  def inc = () : int -> ( touched = touched + 1 ; 99 )\n"
+                        + "  def inc = fn () : int -> ( touched = touched + 1 ; 99 )\n"
                         + "  def z = inc() * 0\n"
                         + "  def folded = 1 + 2 * 3\n"
                         + "  touched * 100 + z + folded + n\n"
                         + ")\n"
-                        + "def pureFold = () : int -> ( 1 + 2 * 3 )\n"
+                        + "def pureFold = fn () : int -> ( 1 + 2 * 3 )\n"
                         + "def c = counter()\n"
                         + "\"\" + Point(3, 4).norm() + \":\" + Early().readBefore() + \":\" + Lazy(false).b + \":\" + fib(6) + \":\" + loop(5) + \":\" + (c() + c()) + \":\" + widenJoin(true) + \":\" + foldCheck(4) + \":\" + pureFold() + \":\" + classof(1) + \":\" + classof(1.5) + \":\" + classof(true)");
         assertVerifies(script);
@@ -636,7 +636,7 @@ public class BabbleCompilerTestCase {
     @Test
     public void testRm001StaticJavaDispatchAndIndexedModuleExports() throws Exception {
         CompiledBabbleScript typedJava = compile(
-                "def work = (sb : java.lang.StringBuilder, items : java.util.List(int), xs) : double -> (\n"
+                "def work = fn (sb : java.lang.StringBuilder, items : java.util.List(int), xs) : double -> (\n"
                         + "  sb.append(\"a\")\n"
                         + "  sb.length() + items.size() + xs.length + java.lang.Math.sqrt(9)\n"
                         + ")\n"
@@ -659,15 +659,15 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(nullErr.getMessage().contains("Not a scope"), nullErr.getMessage());
 
         CompiledBabbleScript retInJavaArg = compile(
-                "def g = () : int -> ( java.lang.Math.max(1, return 42) ) ; g()");
+                "def g = fn () : int -> ( java.lang.Math.max(1, return 42) ) ; g()");
         assertVerifies(retInJavaArg);
         Assertions.assertEquals(42, retInJavaArg.eval(new SimpleBindings()));
 
         String modSource = "export def scale : int = 3\n"
                 + "export def Vec = value class (x : double, y : double) (\n"
-                + "  def dot = (o : Vec) : double -> ( this.x * o.x + this.y * o.y )\n"
+                + "  def dot = fn (o : Vec) : double -> ( this.x * o.x + this.y * o.y )\n"
                 + ")\n"
-                + "export def addInts = (a : int, b : int) : int -> ( a + b )\n";
+                + "export def addInts = fn (a : int, b : int) : int -> ( a + b )\n";
         String mainSource = "def m = import(\"lib/vec.ba\")\n"
                 + "def p = m.Vec(1.0, 2.0)\n"
                 + "m.scale + m.addInts(4, 5) + p.dot(m.Vec(3.0, 4.0))\n";

@@ -47,9 +47,9 @@ while n < 5 then (
 )
 assert(total == 15)
 
-def counter = () -> (
+def counter = fn () -> (
     def count = 0
-    () -> (count += 1)
+    fn () -> (count += 1)
 )
 def next = counter()
 next()
@@ -58,8 +58,8 @@ assert(next() == 2)
 ;; ---- on members
 def Account = class () (
     def balance: int = 0
-    def deposit = (amount) -> (this.balance += amount)
-    def withdraw = (amount) -> (this.balance -= amount)
+    def deposit = fn (amount) -> (this.balance += amount)
+    def withdraw = fn (amount) -> (this.balance -= amount)
 )
 def account = Account()
 account.deposit(100)
@@ -73,7 +73,7 @@ assert(box.v == 2)
 
 ;; The receiver is evaluated once.
 def calls = 0
-def get = () -> (
+def get = fn () -> (
     calls += 1
     box
 )
@@ -83,8 +83,8 @@ assert(calls == 1)
 
 ;; ---- with operator methods : x += v calls x.plus(v)
 def V = value class (x, y) (
-    def plus = (o): V -> (V(this.x + o.x, this.y + o.y))
-    def times = (k): V -> (V(this.x * k, this.y * k))
+    def plus = fn (o): V -> (V(this.x + o.x, this.y + o.y))
+    def times = fn (k): V -> (V(this.x * k, this.y * k))
 )
 def v = V(1, 2)
 v += V(10, 20)
@@ -93,7 +93,7 @@ assert(v == V(22, 44))
 
 def Particle = class () (
     def position = V(0, 0)
-    def move = (d) -> (this.position += d)
+    def move = fn (d) -> (this.position += d)
 )
 def p = Particle()
 p.move(V(1, 1))
