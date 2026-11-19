@@ -181,7 +181,7 @@ final class TypeAlgebra {
     /** Whether {@code from as to} always holds with no conversion (a redundant cast). */
     boolean alwaysIs(Type from, Type to) {
         return from != Type.ERROR && to != Type.ERROR && from != Type.NOTHING && from != Type.NULL
-                && !needsDoubleWidening(from, to)
+                && !needsNumericWidening(from, to)
                 && assignable(from, to);
     }
 
@@ -253,7 +253,8 @@ final class TypeAlgebra {
             if (sup == Type.ANY) {
                 return true;
             }
-            if (mode == RelateMode.ASSIGNABLE && sub == Type.INT && sup == Type.DOUBLE) {
+            if (mode == RelateMode.ASSIGNABLE && Type.isNumericScalar(sub) && Type.isNumericScalar(sup)
+                    && Type.numericRank(sub) < Type.numericRank(sup)) {
                 return true;
             }
             RelateMode argMode = mode == RelateMode.INVARIANT_ARG ? RelateMode.INVARIANT_ARG : RelateMode.SUBTYPE;
@@ -470,11 +471,8 @@ final class TypeAlgebra {
         if (from instanceof Type.TypeVar || to instanceof Type.TypeVar || from == Type.ANY || to == Type.ANY) {
             return true;
         }
-        if (from == Type.INT && to == Type.DOUBLE) {
-            return true;
-        }
-        if (from == Type.DOUBLE && to == Type.INT) {
-            return false;
+        if (Type.isNumericScalar(from) && Type.isNumericScalar(to)) {
+            return Type.numericRank(from) <= Type.numericRank(to);
         }
         return assignable(from, to) || assignable(to, from) || overlapsErased(from, to);
     }
@@ -510,7 +508,7 @@ final class TypeAlgebra {
 
     /**
      * The type of a value that is one of two ({@code if} branches, a loop or null), widening
-     * {@code int} and {@code double} to {@code double} and uniting other types ; null when an
+     * along {@code byte < short < int < long < float < double} and uniting other types ; null when an
      * error prevents joining.
      */
     Type join(Type a, Type b) {
@@ -528,17 +526,19 @@ final class TypeAlgebra {
                 && sameParameters(fa, fb)) {
             return mergeFunctions(fa, fb);
         }
-        if (isIntOrDouble(a) && isIntOrDouble(b) && (containsType(a, Type.DOUBLE) || containsType(b, Type.DOUBLE))
-                && !mixesIntAndDouble(a) && !mixesIntAndDouble(b)) {
-            return (Type.containsNull(a) || Type.containsNull(b)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
+        int ra = singleNumericRank(a);
+        int rb = singleNumericRank(b);
+        if (ra >= 0 && rb >= 0 && ra != rb) {
+            Type joined = Type.numericOfRank(Math.max(ra, rb));
+            return (Type.containsNull(a) || Type.containsNull(b)) ? Type.nullable(joined) : joined;
         }
         return Type.union(a, b);
     }
 
     /**
-     * Widening allowed across the reassignments of an unannotated def or member : only
-     * {@code int -> double}, {@code T <-> null}, and compatible functions (intersecting their
-     * effects) ; null for heterogeneous types.
+     * Widening allowed across the reassignments of an unannotated def or member :
+     * numeric widening along {@code byte..double}, {@code T <-> null}, and compatible functions
+     * (intersecting their effects) ; null for heterogeneous types.
      */
     Type reassignmentJoin(Type current, Type value) {
         if (current == Type.ERROR || value == Type.ERROR) {
@@ -566,11 +566,11 @@ final class TypeAlgebra {
         if (Type.withoutNull(current).equals(Type.withoutNull(value))) {
             return Type.union(current, value);
         }
-        if (isIntOrDouble(current) && isIntOrDouble(value)
-                && (containsType(current, Type.INT) || containsType(value, Type.INT))
-                && (containsType(current, Type.DOUBLE) || containsType(value, Type.DOUBLE))
-                && !mixesIntAndDouble(current) && !mixesIntAndDouble(value)) {
-            return (Type.containsNull(current) || Type.containsNull(value)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
+        int rc = singleNumericRank(current);
+        int rv = singleNumericRank(value);
+        if (rc >= 0 && rv >= 0 && rc != rv) {
+            Type joined = Type.numericOfRank(Math.max(rc, rv));
+            return (Type.containsNull(current) || Type.containsNull(value)) ? Type.nullable(joined) : joined;
         }
         return null;
     }
@@ -734,12 +734,50 @@ final class TypeAlgebra {
                 || type == Type.PRINT;
     }
 
+    /**
+     * Target numeric rank (1=short, 2=int, 3=long, 4=float, 5=double) when {@code from} contains
+     * a numeric scalar strictly narrower than the unique numeric scalar in {@code to} (and {@code to}
+     * does not already contain that narrower scalar), else -1.
+     */
+    static int numericWideningTargetRank(Type from, Type to) {
+        if (from == Type.ERROR || to == Type.ERROR) {
+            return -1;
+        }
+        int targetRank = -1;
+        for (Type m : Type.membersOf(to)) {
+            int r = Type.numericRank(m);
+            if (r >= 0) {
+                if (targetRank >= 0 && targetRank != r) {
+                    return -1;
+                }
+                targetRank = r;
+            }
+        }
+        if (targetRank <= 0) {
+            return -1;
+        }
+        for (Type m : Type.membersOf(from)) {
+            int r = Type.numericRank(m);
+            if (r >= 0 && r < targetRank && !containsType(to, m)) {
+                return targetRank;
+            }
+        }
+        return -1;
+    }
+
+    static boolean needsNumericWidening(Type from, Type to) {
+        return numericWideningTargetRank(from, to) >= 0;
+    }
+
     /** Whether a value of type {@code from} is converted to {@code double} where {@code to} is expected. */
     static boolean needsDoubleWidening(Type from, Type to) {
-        return from != Type.ERROR && to != Type.ERROR
-                && containsType(from, Type.INT)
-                && containsType(to, Type.DOUBLE)
-                && !containsType(to, Type.INT);
+        return numericWideningTargetRank(from, to) == 5;
+    }
+
+    /** The unique numeric rank if {@code type} (ignoring {@code null}) is a single numeric scalar, else -1. */
+    static int singleNumericRank(Type type) {
+        Type base = Type.withoutNull(type);
+        return Type.numericRank(base);
     }
 
     static boolean containsType(Type type, Type target) {
@@ -761,18 +799,14 @@ final class TypeAlgebra {
         return type instanceof Type.Union union && union.members().stream().anyMatch(TypeAlgebra::containsFunction);
     }
 
-    /** Whether a type is {@code int}, {@code double}, or a union of them, possibly nullable. */
+    /** Whether a type is a numeric scalar (or a union of them), possibly nullable. */
     static boolean isIntOrDouble(Type type) {
         Type base = Type.withoutNull(type);
-        if (base == Type.INT || base == Type.DOUBLE) {
+        if (Type.isNumericScalar(base)) {
             return true;
         }
         return base instanceof Type.Union u
-                && u.members().stream().allMatch(m -> m == Type.INT || m == Type.DOUBLE);
-    }
-
-    private static boolean mixesIntAndDouble(Type type) {
-        return containsType(type, Type.INT) && containsType(type, Type.DOUBLE);
+                && u.members().stream().allMatch(Type::isNumericScalar);
     }
 
     /** Whether a class or interface is {@code target} or has it among its ancestors. */

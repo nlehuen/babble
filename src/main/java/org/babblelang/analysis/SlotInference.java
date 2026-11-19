@@ -61,7 +61,7 @@ final class SlotInference {
                         continue;
                     }
                     if (!joined.equals(folded)) {
-                        if ((containsType(joined, Type.DOUBLE) && !containsType(folded, Type.DOUBLE))
+                        if (TypeAlgebra.needsNumericWidening(folded, joined)
                                 || (Type.containsNull(joined) && !Type.containsNull(folded))) {
                             if (e.getKey().line() >= 0) {
                                 newWidenedLine = e.getKey().line();

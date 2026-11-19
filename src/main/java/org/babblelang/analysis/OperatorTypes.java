@@ -72,7 +72,10 @@ final class OperatorTypes {
                 }
                 boolean numbers = number(left, leftText, leftAt) & number(right, rightText, rightAt);
                 if (op == BabbleLexer.DIV) {
-                    return Type.DOUBLE;
+                    if (!numbers || TypeChecker.isUnresolved(left) || TypeChecker.isUnresolved(right)) {
+                        return Type.DOUBLE;
+                    }
+                    return divisionResult(left, right);
                 }
                 if (seeding && numbers) {
                     if (left == Type.NOTHING && isNumber(right)) {
@@ -98,10 +101,50 @@ final class OperatorTypes {
         List<Type> results = new ArrayList<>();
         for (Type l : Type.membersOf(left)) {
             for (Type r : Type.membersOf(right)) {
-                results.add(l == Type.INT && r == Type.INT ? Type.INT : Type.DOUBLE);
+                results.add(promoteArithmetic(l, r));
             }
         }
         return Type.union(results);
+    }
+
+    private static Type promoteArithmetic(Type l, Type r) {
+        int rl = Type.numericRank(l);
+        int rr = Type.numericRank(r);
+        if (rl < 0 || rr < 0) {
+            return Type.DOUBLE;
+        }
+        int max = Math.max(rl, rr);
+        return max <= 2 ? Type.INT : Type.numericOfRank(max);
+    }
+
+    static Type divisionResult(Type left, Type right) {
+        List<Type> results = new ArrayList<>();
+        for (Type l : Type.membersOf(left)) {
+            for (Type r : Type.membersOf(right)) {
+                results.add(promoteDivision(l, r));
+            }
+        }
+        return Type.union(results);
+    }
+
+    private static Type promoteDivision(Type l, Type r) {
+        int rl = Type.numericRank(l);
+        int rr = Type.numericRank(r);
+        if (rl < 0 || rr < 0) {
+            return Type.DOUBLE;
+        }
+        // float / {byte, short, int, float} (either side) stays float; everything else is double.
+        boolean hasFloat = (l == Type.FLOAT || r == Type.FLOAT);
+        boolean hasWide = (l == Type.DOUBLE || r == Type.DOUBLE || l == Type.LONG || r == Type.LONG);
+        return hasFloat && !hasWide ? Type.FLOAT : Type.DOUBLE;
+    }
+
+    static Type negateResult(Type operand) {
+        int r = Type.numericRank(operand);
+        if (r < 0) {
+            return Type.DOUBLE;
+        }
+        return r <= 2 ? Type.INT : operand;
     }
 
     static final EffectSet PURE_DET = EffectSet.ofInferred(
@@ -111,10 +154,34 @@ final class OperatorTypes {
     static final EffectSet SAME_EFFECTS = EffectSet.ofInferred(
             EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW, Effect.COMMUTATIVE), false, false);
 
+    private static final Type JAVA_NUMBER = new Type.JavaInstance(Number.class);
+    private static final Type INTEGRAL_CONVERSION_INPUT = Type.union(List.of(
+            Type.BYTE, Type.SHORT, Type.INT, Type.LONG, Type.FLOAT, Type.DOUBLE, JAVA_NUMBER, Type.CHAR, Type.STRING));
+    private static final Type FLOAT_CONVERSION_INPUT = Type.union(List.of(
+            Type.BYTE, Type.SHORT, Type.INT, Type.LONG, Type.FLOAT, Type.DOUBLE, JAVA_NUMBER, Type.STRING));
+    private static final Type BOOL_CONVERSION_INPUT = Type.union(List.of(Type.BOOL, Type.STRING));
+    private static final Type CHAR_CONVERSION_INPUT = Type.union(List.of(
+            Type.CHAR, Type.BYTE, Type.SHORT, Type.INT, Type.LONG, Type.STRING));
+
+    static final Type.Function BYTE_CONVERSION = new Type.Function(
+            List.of(new Type.Parameter("value", INTEGRAL_CONVERSION_INPUT, false, false, true, false)), Type.BYTE, PURE_DET);
+    static final Type.Function SHORT_CONVERSION = new Type.Function(
+            List.of(new Type.Parameter("value", INTEGRAL_CONVERSION_INPUT, false, false, true, false)), Type.SHORT, PURE_DET);
     static final Type.Function INT_CONVERSION = new Type.Function(
             List.of(new Type.Parameter("value", Type.ANY, false, false, true, false)), Type.INT, PURE_DET);
+    static final Type.Function LONG_CONVERSION = new Type.Function(
+            List.of(new Type.Parameter("value", INTEGRAL_CONVERSION_INPUT, false, false, true, false)), Type.LONG, PURE_DET);
+    static final Type.Function FLOAT_CONVERSION = new Type.Function(
+            List.of(new Type.Parameter("value", FLOAT_CONVERSION_INPUT, false, false, true, false)), Type.FLOAT, PURE_DET);
     static final Type.Function DOUBLE_CONVERSION = new Type.Function(
             List.of(new Type.Parameter("value", Type.ANY, false, false, true, false)), Type.DOUBLE, PURE_DET);
+    static final Type.Function BOOL_CONVERSION = new Type.Function(
+            List.of(new Type.Parameter("value", BOOL_CONVERSION_INPUT, false, false, true, false)), Type.BOOL, PURE_DET);
+    static final Type.Function CHAR_CONVERSION = new Type.Function(
+            List.of(new Type.Parameter("value", CHAR_CONVERSION_INPUT, false, false, true, false)), Type.CHAR, PURE_DET);
+    static final Type.Function STRING_CONVERSION = new Type.Function(
+            List.of(new Type.Parameter("value", Type.NULLABLE_ANY, false, false, true, false)), Type.STRING, PURE_DET);
+
     static final Type.Function ASSERT_FUNCTION = new Type.Function(
             List.of(new Type.Parameter("c", Type.BOOL, false, false, true, false),
                     new Type.Parameter("message", Type.NULLABLE_ANY, true, false, true, false)),
@@ -132,14 +199,21 @@ final class OperatorTypes {
     static final Type ARGS_TYPE = new Type.JavaInstance(java.util.List.class, List.of(Type.STRING));
 
     /**
-     * A name the analysis doesn't declare : a root Java package, a number conversion
-     * ({@code int(x)}, {@code double(x)}), implicit signatures and {@code any} bindings.
+     * A name the analysis doesn't declare : a root Java package, scalar conversions
+     * ({@code byte(x)}..{@code string(x)}), implicit signatures and {@code any} bindings.
      */
     Type implicitType(String name) {
         return switch (name) {
             case "java", "javax" -> new Type.JavaPackage(name);
+            case "byte" -> BYTE_CONVERSION;
+            case "short" -> SHORT_CONVERSION;
             case "int" -> INT_CONVERSION;
+            case "long" -> LONG_CONVERSION;
+            case "float" -> FLOAT_CONVERSION;
             case "double" -> DOUBLE_CONVERSION;
+            case "bool" -> BOOL_CONVERSION;
+            case "char" -> CHAR_CONVERSION;
+            case "string" -> STRING_CONVERSION;
             case "print", "println", "affiche", "afficherc" -> Type.PRINT;
             case "assert", "suppose" -> ASSERT_FUNCTION;
             case "same" -> SAME_FUNCTION;
@@ -166,7 +240,7 @@ final class OperatorTypes {
         if (type instanceof Type.Union union) {
             return union.members().stream().allMatch(OperatorTypes::isNumber);
         }
-        return type == Type.INT || type == Type.DOUBLE;
+        return Type.isNumericScalar(type);
     }
 
     /** Whether an operand can be a number, reporting it when it can't. */
@@ -178,7 +252,7 @@ final class OperatorTypes {
         if (type instanceof Type.Union union) {
             return union.members().stream().allMatch(OperatorTypes::isNumeric);
         }
-        return type == Type.INT || type == Type.DOUBLE
+        return Type.isNumericScalar(type)
                 || type instanceof Type.JavaInstance instance && Number.class.isAssignableFrom(instance.type());
     }
 
@@ -222,8 +296,15 @@ final class OperatorTypes {
 
     /** Whether a function type is one of the built-in functions'. */
     static boolean isBuiltinFunction(Type.Function fn) {
-        return fn == INT_CONVERSION
+        return fn == BYTE_CONVERSION
+                || fn == SHORT_CONVERSION
+                || fn == INT_CONVERSION
+                || fn == LONG_CONVERSION
+                || fn == FLOAT_CONVERSION
                 || fn == DOUBLE_CONVERSION
+                || fn == BOOL_CONVERSION
+                || fn == CHAR_CONVERSION
+                || fn == STRING_CONVERSION
                 || fn == ASSERT_FUNCTION
                 || fn == SAME_FUNCTION
                 || fn == CLASSOF_FUNCTION

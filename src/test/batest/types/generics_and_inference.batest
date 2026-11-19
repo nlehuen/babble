@@ -49,7 +49,7 @@ println(lenOpt, ":", xs.get(0), ",", xs.get(1), ",", xs.get(2))
 3:a:1,bb:2,ccc:3
 
 {{{{{
-def fn = java.util.function.Function((s : string) -> ( s.length() ))
+def fn = java.util.function.Function((s) -> ( s ))
 }}}}}
 Missing type : cannot infer type arguments for java.util.function.Function
 

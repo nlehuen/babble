@@ -34,13 +34,16 @@ public final class Members {
     }
 
     /**
-     * A Java object with Java members, as opposed to a value of Babble's own : null, its
-     * numbers, booleans and strings, and its callables. Other Java numbers ({@code long},
-     * {@code BigInteger}) and characters are Java objects.
+     * A Java object with Java members (including {@code String}), as opposed to Babble's
+     * memberless values: null, the 8 primitive scalars, and callables (BIP011-D5).
      */
     private static boolean isJavaObject(Object target) {
-        return target != null && !(target instanceof Integer) && !(target instanceof Double)
-                && !(target instanceof Boolean) && !(target instanceof String) && !(target instanceof Callable);
+        return target != null
+                && !(target instanceof Byte) && !(target instanceof Short)
+                && !(target instanceof Integer) && !(target instanceof Long)
+                && !(target instanceof Float) && !(target instanceof Double)
+                && !(target instanceof Boolean) && !(target instanceof Character)
+                && !(target instanceof Callable);
     }
 
     /** {@code this.name} */

@@ -35,8 +35,15 @@ public final class Implicits {
         implicits.define("suppose", true).set(new AssertFunction());
         implicits.define("same", true).set(new SameFunction());
         implicits.define("classof", true).set(new ClassofFunction());
+        implicits.define("byte", true).set(ConvertFunction.BYTE);
+        implicits.define("short", true).set(ConvertFunction.SHORT);
         implicits.define("int", true).set(ConvertFunction.INT);
+        implicits.define("long", true).set(ConvertFunction.LONG);
+        implicits.define("float", true).set(ConvertFunction.FLOAT);
         implicits.define("double", true).set(ConvertFunction.DOUBLE);
+        implicits.define("bool", true).set(ConvertFunction.BOOL);
+        implicits.define("char", true).set(ConvertFunction.CHAR);
+        implicits.define("string", true).set(ConvertFunction.STRING);
         return implicits;
     }
 

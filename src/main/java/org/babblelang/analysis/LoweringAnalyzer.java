@@ -50,10 +50,13 @@ final class LoweringAnalyzer {
         Map<ParserRuleContext, Type> inferredDefs = checker.inferredDefs();
         Map<ParserRuleContext, Type> inferredMembers = checker.inferredMembers();
         Map<ParserRuleContext, Type> inferredParams = checker.inferredParams();
-        Set<ParserRuleContext> widened = checker.widened();
+        Map<ParserRuleContext, Integer> widened = checker.widened();
         recordChecksTree(file, pass, checker, declarationTypes, inferredDefs, inferredMembers, widened);
-        for (ParserRuleContext ctx : widened) {
-            pass.analysis.widenToDouble(ctx);
+        for (Map.Entry<ParserRuleContext, Integer> entry : widened.entrySet()) {
+            pass.analysis.widenNumeric(entry.getKey(), entry.getValue());
+        }
+        for (Map.Entry<ParserRuleContext, Object> entry : checker.resolvedLiterals().entrySet()) {
+            pass.analysis.setResolvedLiteral(entry.getKey(), entry.getValue());
         }
         for (Map.Entry<ParserRuleContext, String> entry : checker.callChecks().entrySet()) {
             pass.analysis.setCheckedType(entry.getKey(), entry.getValue());
@@ -424,7 +427,7 @@ final class LoweringAnalyzer {
             Map<ParserRuleContext, Type> declarationTypes,
             Map<ParserRuleContext, Type> inferredDefs,
             Map<ParserRuleContext, Type> inferredMembers,
-            Set<ParserRuleContext> widened) {
+            Map<ParserRuleContext, Integer> widened) {
         if (tree instanceof BabbleParser.TypeContext || tree instanceof BabbleParser.TypeListContext
                 || tree instanceof BabbleParser.SuperExpressionContext) {
             return;
@@ -448,15 +451,16 @@ final class LoweringAnalyzer {
             Map<ParserRuleContext, Type> declarationTypes,
             Map<ParserRuleContext, Type> inferredDefs,
             Map<ParserRuleContext, Type> inferredMembers,
-            Set<ParserRuleContext> widened) {
+            Map<ParserRuleContext, Integer> widened) {
         if (tree instanceof BabbleParser.ParameterDeclarationContext parameter) {
             Type type = parameter.type() != null
                     ? checker.annotator().annotation(parameter.type(), checker.scopeOf(parameter))
                     : declarationTypes.get(parameter);
-            if (type != null && TypeAlgebra.containsType(type, Type.DOUBLE) && !TypeAlgebra.containsType(type, Type.INT)) {
-                widened.add(parameter);
+            int targetRank = type != null ? TypeAlgebra.singleNumericRank(type) : -1;
+            if (targetRank > 0) {
+                widened.merge(parameter, targetRank, Math::max);
             }
-            if (parameter.type() != null || (type != null && TypeAlgebra.containsType(type, Type.DOUBLE) && !TypeAlgebra.containsType(type, Type.INT))) {
+            if (parameter.type() != null || targetRank > 0) {
                 String descriptor = descriptor(type);
                 pass.analysis.setCheckedType(parameter, descriptor);
                 if (parameter.getParent().getParent() instanceof BabbleParser.ClassExpressionContext cls
@@ -477,7 +481,7 @@ final class LoweringAnalyzer {
             } else {
                 Type inferred = (kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC)
                         ? inferredMembers.get(def) : inferredDefs.get(def);
-                if (inferred != null && TypeAlgebra.containsType(inferred, Type.DOUBLE) && !TypeAlgebra.containsType(inferred, Type.INT)) {
+                if (inferred != null && TypeAlgebra.singleNumericRank(inferred) > 0) {
                     descriptor = descriptor(inferred);
                 }
             }
@@ -496,7 +500,7 @@ final class LoweringAnalyzer {
                 pass.analysis.setCheckedType(assign, descriptor(declared));
             } else {
                 Type inferred = checker.typeOfDeclaration(declaration);
-                if (inferred != null && TypeAlgebra.containsType(inferred, Type.DOUBLE) && !TypeAlgebra.containsType(inferred, Type.INT)) {
+                if (inferred != null && TypeAlgebra.singleNumericRank(inferred) > 0) {
                     pass.analysis.setCheckedType(assign, descriptor(inferred));
                 }
             }
@@ -511,8 +515,7 @@ final class LoweringAnalyzer {
 
     /** How the runtime checks a type ({@code Types}), or null when it needs no check. */
     static String descriptor(Type type) {
-        if (type == Type.INT || type == Type.DOUBLE || type == Type.BOOL || type == Type.STRING
-                || type == Type.NULL || type == Type.ANY) {
+        if (Type.isCoreScalar(type) || type == Type.NULL || type == Type.ANY) {
             return type + "|" + type + "|";
         }
         if (type == Type.NULLABLE_ANY || type instanceof Type.TypeVar) {

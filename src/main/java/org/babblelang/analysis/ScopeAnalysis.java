@@ -119,7 +119,8 @@ public final class ScopeAnalysis {
     private final List<Warning> typeDiagnostics = new ArrayList<>();
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
     private final ParseTreeProperty<String> isBuiltins = new ParseTreeProperty<>();
-    private final java.util.Set<ParserRuleContext> widensToDouble = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private final java.util.Map<ParserRuleContext, Integer> numericWidenings = new java.util.IdentityHashMap<>();
+    private final java.util.Map<ParserRuleContext, Object> resolvedLiterals = new java.util.IdentityHashMap<>();
     private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
     private final ParseTreeProperty<PrimitiveKind> expressionKinds = new ParseTreeProperty<>();
     private final ParseTreeProperty<PrimitiveKind> declarationKinds = new ParseTreeProperty<>();
@@ -296,8 +297,22 @@ public final class ScopeAnalysis {
         isBuiltins.put(ctx, type);
     }
 
+    void widenNumeric(ParserRuleContext ctx, int targetRank) {
+        if (targetRank >= 1 && targetRank <= 5) {
+            numericWidenings.merge(ctx, targetRank, Math::max);
+        }
+    }
+
     void widenToDouble(ParserRuleContext ctx) {
-        widensToDouble.add(ctx);
+        widenNumeric(ctx, 5);
+    }
+
+    void setResolvedLiteral(ParserRuleContext ctx, Object value) {
+        if (value == null) {
+            resolvedLiterals.remove(ctx);
+        } else {
+            resolvedLiterals.put(ctx, value);
+        }
     }
 
     void setExpressionKind(ParserRuleContext ctx, PrimitiveKind kind) {
@@ -370,9 +385,20 @@ public final class ScopeAnalysis {
         return isBuiltins.get(ctx);
     }
 
-    /** Whether the value produced by this construct must be converted from int to double. */
+    /** Target numeric rank (1=short, 2=int, 3=long, 4=float, 5=double) if this construct widens numerically, else -1. */
+    public int numericWideningRank(ParserRuleContext ctx) {
+        Integer rank = numericWidenings.get(ctx);
+        return rank != null ? rank : -1;
+    }
+
+    /** Whether the value produced by this construct must be converted to double. */
     public boolean widensToDouble(ParserRuleContext ctx) {
-        return widensToDouble.contains(ctx);
+        return numericWideningRank(ctx) == 5;
+    }
+
+    /** Contextually typed or range-folded literal value, or null to use default literal parsing. */
+    public Object resolvedLiteral(ParserRuleContext ctx) {
+        return resolvedLiterals.get(ctx);
     }
 
     /** The primitive kind of an expression, or {@link PrimitiveKind#NONE} for references/boxed values. */

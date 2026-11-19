@@ -241,11 +241,17 @@ final class TypeAnnotations {
         Object resolved = TypeChecker.resolveName(null, path.get(0), scope);
         if (path.size() == 1 && resolved == null) {
             Type builtin = switch (path.get(0)) {
+                case "byte" -> Type.BYTE;
+                case "short" -> Type.SHORT;
                 case "int" -> Type.INT;
+                case "long" -> Type.LONG;
+                case "float" -> Type.FLOAT;
                 case "double" -> Type.DOUBLE;
                 case "bool" -> Type.BOOL;
+                case "char" -> Type.CHAR;
                 case "string" -> Type.STRING;
                 case "any" -> Type.ANY;
+                case "void" -> Type.NULL;
                 default -> null;
             };
             if (builtin == null) {

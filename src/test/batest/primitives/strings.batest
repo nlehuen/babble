@@ -28,7 +28,7 @@ true:true:true:true:false
 {{{{{
 print("hello".length())
 }}}}}
-Not a scope : "hello"
+5
 
 {{{{{
 print(1 - "a")

@@ -104,14 +104,16 @@ final class MemberTypes {
         if (receiver instanceof Type.JavaInstance instance) {
             return javaMember(instance.type(), instance.typeArguments(), name, false, at);
         }
+        if (receiver == Type.STRING) {
+            return javaMember(String.class, List.of(), name, false, at);
+        }
         if (receiver instanceof Type.JavaArray array) {
             if ("length".equals(name)) {
                 return Type.INT;
             }
             return javaMember(array.javaClass(), List.of(), name, false, at);
         }
-        // Numbers, booleans, strings, null, functions, any : nothing has members but objects,
-        // classes, packages and Java values.
+        // The 8 primitives, null, functions, any : memberless.
         checker.warn("Not a scope : " + receiverText, at);
         return Type.ERROR;
     }

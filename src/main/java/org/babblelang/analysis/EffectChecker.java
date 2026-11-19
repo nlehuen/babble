@@ -2381,7 +2381,7 @@ final class EffectChecker {
         if (type == null || type == Type.ERROR || type == Type.NOTHING) {
             return true;
         }
-        if (type == Type.INT || type == Type.DOUBLE || type == Type.BOOL || type == Type.STRING || type == Type.NULL) {
+        if (Type.isCoreScalar(type) || type == Type.NULL) {
             return true;
         }
         if (type instanceof Type.Union u) {
@@ -2421,7 +2421,7 @@ final class EffectChecker {
         if (type == null || type == Type.ERROR) {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
         }
-        if (type == Type.INT || type == Type.DOUBLE || type == Type.BOOL || type == Type.STRING || type == Type.NULL) {
+        if (Type.isCoreScalar(type) || type == Type.NULL) {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
         }
         if (type instanceof Type.Union u) {
@@ -2475,8 +2475,7 @@ final class EffectChecker {
     }
 
     private EffectSet singleEqualityProfile(Type type) {
-        if (type == null || type == Type.ERROR || type == Type.INT || type == Type.DOUBLE
-                || type == Type.BOOL || type == Type.STRING || type == Type.NULL
+        if (type == null || type == Type.ERROR || Type.isCoreScalar(type) || type == Type.NULL
                 || type instanceof Type.Function || type instanceof Type.ClassValue
                 || type instanceof Type.JavaClassValue) {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
@@ -2521,7 +2520,7 @@ final class EffectChecker {
     }
 
     private static boolean isPrimitiveOrString(Type t) {
-        return t == Type.INT || t == Type.DOUBLE || t == Type.BOOL || t == Type.STRING;
+        return Type.isCoreScalar(t);
     }
 
     // ================================================================ 11. Intra-Procedural Flow & Alias Analyzer

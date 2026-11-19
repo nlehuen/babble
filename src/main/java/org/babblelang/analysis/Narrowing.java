@@ -141,9 +141,14 @@ final class Narrowing {
     Type.Simple isBuiltinTarget(BabbleParser.IsExpressionContext ctx) {
         if (ctx.coreType != null && ctx.typeArguments() == null) {
             return switch (ctx.coreType.getText()) {
+                case "byte" -> Type.BYTE;
+                case "short" -> Type.SHORT;
                 case "int" -> Type.INT;
+                case "long" -> Type.LONG;
+                case "float" -> Type.FLOAT;
                 case "double" -> Type.DOUBLE;
                 case "bool" -> Type.BOOL;
+                case "char" -> Type.CHAR;
                 case "string" -> Type.STRING;
                 case "any" -> Type.ANY;
                 default -> null;

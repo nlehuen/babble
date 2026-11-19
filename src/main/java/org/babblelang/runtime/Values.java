@@ -78,24 +78,44 @@ public final class Values {
         throw new BabbleException("Not a type : " + typeText);
     }
 
-    /** {@code value is type} for a built-in type name : {@code int}, {@code double}, {@code bool}, {@code string}, {@code any}. */
+    /** {@code value is type} for a built-in type name. */
     public static Object isBuiltin(Object value, String type) {
         if (value instanceof JavaValue wrapper) {
             value = wrapper.javaValue();
         }
         return switch (type) {
+            case "byte" -> value instanceof Byte;
+            case "short" -> value instanceof Short;
             case "int" -> value instanceof Integer;
+            case "long" -> value instanceof Long;
+            case "float" -> value instanceof Float;
             case "double" -> value instanceof Double;
             case "bool" -> value instanceof Boolean;
+            case "char" -> value instanceof Character;
             case "string" -> value instanceof String;
             case "any" -> value != null;
             default -> throw new BabbleException("Not a type : " + type);
         };
     }
 
-    /** Converts a joined {@code int} value to {@code double} when static inference widened it. */
+    /** Converts a widened numeric value to {@code double} when static inference widened it. */
     public static Object toDouble(Object value) {
-        return value instanceof Integer i ? (double) i : value;
+        return value instanceof Number n && !(value instanceof Double) ? n.doubleValue() : value;
+    }
+
+    /** Converts a widened numeric value to {@code short}, {@code int}, {@code long}, {@code float}, or {@code double}. */
+    public static Object widenNumeric(Object value, int targetRank) {
+        if (!(value instanceof Number n)) {
+            return value;
+        }
+        return switch (targetRank) {
+            case 1 -> value instanceof Short ? value : n.shortValue();
+            case 2 -> value instanceof Integer ? value : n.intValue();
+            case 3 -> value instanceof Long ? value : n.longValue();
+            case 4 -> value instanceof Float ? value : n.floatValue();
+            case 5 -> value instanceof Double ? value : n.doubleValue();
+            default -> value;
+        };
     }
 
     /** A function, a bound method or a class value : what converts to a Java functional interface. */

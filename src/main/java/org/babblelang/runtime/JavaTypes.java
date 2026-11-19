@@ -22,11 +22,10 @@ public final class JavaTypes {
             double.class, Double.class,
             void.class, Void.class);
 
-    /** Widening primitive conversions (JLS 5.1.2), expressed over the wrapper types. */
+    /** Widening numeric primitive conversions (BIP011-D4: char is strictly non-numeric). */
     private static final Map<Class<?>, List<Class<?>>> WIDENINGS = Map.of(
             Byte.class, List.of(Short.class, Integer.class, Long.class, Float.class, Double.class),
             Short.class, List.of(Integer.class, Long.class, Float.class, Double.class),
-            Character.class, List.of(Integer.class, Long.class, Float.class, Double.class),
             Integer.class, List.of(Long.class, Float.class, Double.class),
             Long.class, List.of(Float.class, Double.class),
             Float.class, List.of(Double.class));
@@ -332,7 +331,7 @@ public final class JavaTypes {
         throw new BabbleException("Type error : expected " + expected.getCanonicalName() + ", got " + Types.describe(value));
     }
 
-    private static Object widen(Object value, Class<?> to) {
+    static Object widen(Object value, Class<?> to) {
         if (value instanceof Character c) {
             value = (int) c;
         }

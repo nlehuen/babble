@@ -30,10 +30,46 @@ sealed interface Type {
     /** The type of an expression that never yields a value : {@code return}. */
     Simple NOTHING = new Simple("nothing", null);
     Simple NULL = new Simple("null", null);
+    Simple BYTE = new Simple("byte", Byte.class);
+    Simple SHORT = new Simple("short", Short.class);
     Simple INT = new Simple("int", Integer.class);
+    Simple LONG = new Simple("long", Long.class);
+    Simple FLOAT = new Simple("float", Float.class);
     Simple DOUBLE = new Simple("double", Double.class);
     Simple BOOL = new Simple("bool", Boolean.class);
+    Simple CHAR = new Simple("char", Character.class);
     Simple STRING = new Simple("string", String.class);
+
+    /** Position in the strict widening chain {@code byte < short < int < long < float < double}, or -1. */
+    static int numericRank(Type type) {
+        if (type == BYTE) return 0;
+        if (type == SHORT) return 1;
+        if (type == INT) return 2;
+        if (type == LONG) return 3;
+        if (type == FLOAT) return 4;
+        if (type == DOUBLE) return 5;
+        return -1;
+    }
+
+    static Simple numericOfRank(int rank) {
+        return switch (rank) {
+            case 0 -> BYTE;
+            case 1 -> SHORT;
+            case 2 -> INT;
+            case 3 -> LONG;
+            case 4 -> FLOAT;
+            case 5 -> DOUBLE;
+            default -> throw new IllegalArgumentException("Invalid numeric rank: " + rank);
+        };
+    }
+
+    static boolean isNumericScalar(Type type) {
+        return numericRank(type) >= 0;
+    }
+
+    static boolean isCoreScalar(Type type) {
+        return isNumericScalar(type) || type == BOOL || type == CHAR || type == STRING;
+    }
 
     /** A union of distinct non-union, non-nothing, non-error types (with {@code null}, if present, last). */
     record Union(List<Type> members) implements Type {
