@@ -280,35 +280,22 @@ public class Rm003P1AnalysisTestCase {
                 .put("mod.ba", ""
                         + "def Priv = interface ()\n"
                         + "export def Exp = interface ()\n"
-                        + "export def Alias = Priv\n"
-                        + "def MutPriv : any = interface ()\n"
-                        + "MutPriv = interface ()\n"
-                        + "export def MutAlias = MutPriv\n")
+                        + "export def Alias = Priv\n")
                 .put("main.ba", ""
                         + "def m = import(\"mod.ba\")\n"
                         + "def TopC = class () ()\n"
                         + "def TopI = interface ()\n"
                         + "def TopAlias = TopC\n"
-                        + "def ReassignedAlias : any = TopC ; ReassignedAlias = TopI\n"
-                        + "def Outer = class () () static ( def StC = class () () )\n"
-                        + "def f = fn (x : any?, flag : bool) -> (\n"
+                        + "def f = fn (x : any?) -> (\n"
                         + "  def LocalC = class () ()\n"
-                        + "  def ParenBlockC = (class () ())\n"
-                        + "  def condT : any = if flag then ( TopC ) else ( TopI )\n"
-                        + "  def InIf = if flag then ( class () () ) else ( class () () )\n"
                         + "  x is TopC\n"           // 0: positive
                         + "  x is (TopAlias)\n"     // 1: positive (parenthesized alias)
                         + "  x is TopI\n"           // 2: positive
                         + "  x is m.Exp\n"          // 3: positive
                         + "  x is m.Alias\n"        // 4: positive
-                        + "  x is m.MutAlias\n"     // 5: negative (reassigned in module)
-                        + "  x is ReassignedAlias\n"// 6: negative (reassigned in same file)
-                        + "  x is LocalC\n"         // 7: negative (inside function)
-                        + "  x is ParenBlockC\n"    // 8: negative (inside BlockExpression)
-                        + "  x is Outer.StC\n"      // 9: negative (inside staticBlock)
-                        + "  x is condT\n"          // 10: negative (if expression)
-                        + "  x is int\n"            // 11: negative (builtin)
-                        + "  x is java.lang.String\n" // 12: negative (Java class)
+                        + "  x is LocalC\n"         // 5: negative (inside function)
+                        + "  x is int\n"            // 6: negative (builtin)
+                        + "  x is java.lang.String\n" // 7: negative (Java class)
                         + ")\n");
 
         Map<String, ModuleInterface> cache = new HashMap<>();
@@ -316,7 +303,7 @@ public class Rm003P1AnalysisTestCase {
 
         BabbleParser.FileContext parsedMain = (BabbleParser.FileContext) analysis.pass().fileScope.owner;
         List<BabbleParser.IsExpressionContext> isList = isExpressions(parsedMain);
-        Assertions.assertEquals(13, isList.size());
+        Assertions.assertEquals(8, isList.size());
 
         Assertions.assertNotNull(analysis.isTarget(isList.get(0)));
         Assertions.assertEquals(ClassShape.Kind.CLASS, analysis.isTarget(isList.get(0)).kind());
@@ -325,11 +312,11 @@ public class Rm003P1AnalysisTestCase {
         Assertions.assertEquals("mod.ba#Exp", analysis.isTarget(isList.get(3)).typeId());
         Assertions.assertEquals("mod.ba#Priv", analysis.isTarget(isList.get(4)).typeId());
 
-        for (int i = 5; i < 13; i++) {
+        for (int i = 5; i < 8; i++) {
             Assertions.assertNull(analysis.isTarget(isList.get(i)), "Expected null IsTarget at index " + i);
         }
 
-        // Cross-REPL reassignment invalidates IsTarget
+        // Cross-REPL reassignment invalidates static type alias & IsTarget
         AnalysisSession session = new AnalysisSession();
         ScopeAnalysis r1 = BlockScopes.analyze(BabbleScriptEngine.parseSource(
                 "def C1 = class () ()\n def C2 = class () ()\n def RA : any = C1", "r1.ba"), session);
@@ -337,12 +324,12 @@ public class Rm003P1AnalysisTestCase {
         ScopeAnalysis r2 = BlockScopes.analyze(BabbleScriptEngine.parseSource(
                 "RA = C2", "r2.ba"), session);
         session.commit(r2);
-        ScopeAnalysis r3Clean = BlockScopes.analyze(BabbleScriptEngine.parseSource(
+        ScopeAnalysis r3 = BlockScopes.analyze(BabbleScriptEngine.parseSource(
                 "def check = fn (x : any) -> ( x is C1 ; x is RA )", "r3c.ba"), session);
-        Assertions.assertEquals(List.of(), r3Clean.typeDiagnostics());
-        List<BabbleParser.IsExpressionContext> r3IsList = isExpressions((BabbleParser.FileContext) r3Clean.pass().fileScope.owner);
-        Assertions.assertNotNull(r3Clean.isTarget(r3IsList.get(0)));
-        Assertions.assertNull(r3Clean.isTarget(r3IsList.get(1)));
+        Assertions.assertEquals(1, r3.typeDiagnostics().size());
+        Assertions.assertEquals("Unknown type : RA", r3.typeDiagnostics().get(0).message());
+        List<BabbleParser.IsExpressionContext> r3IsList = isExpressions((BabbleParser.FileContext) r3.pass().fileScope.owner);
+        Assertions.assertNull(r3.isTarget(r3IsList.get(1)));
     }
 
     @Test

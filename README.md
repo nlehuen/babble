@@ -32,25 +32,25 @@ What does it look like ?
     comments
 ;;)
 
-def add = (a: int, b: int) -> (    ;;
+def add = fn (a: int, b: int) -> ( ;;
     a + b                          ;; function literal
 )                                  ;;
 
 ;; explicit return type
-def add2 = (a: int, b: int): int -> (
+def add2 = fn (a: int, b: int): int -> (
     a + b
 )
 
 ;; function as first-type objects
 ;; closure support
-def adder = (a: int): (b: int): int -> (
-    return (b: int): int -> (
+def adder = fn (a: int): fn (b: int): int -> (
+    return fn (b: int): int -> (
         a + b
     )
 )
 
 ;; loops
-def fac2 = (n: int): int -> (
+def fac2 = fn (n: int): int -> (
     def result = 1
     while n > 1 then (
         ;; use ";" to put several statements on one line
@@ -60,7 +60,7 @@ def fac2 = (n: int): int -> (
 )
 
 ;; recursion
-def fac = (n: int): int -> (
+def fac = fn (n: int): int -> (
     if n < 2 then (
         1
      ) else (
@@ -69,18 +69,18 @@ def fac = (n: int): int -> (
 )
 
 ;; default values, including function literals
-def apply = (a: int, f: (v: int): int = (v) -> (v)) -> ( f(a) )
+def apply = fn (a: int, f: fn (v: int): int = fn (v) -> (v)) -> ( f(a) )
 
 ;; closures
-def counter = () -> (
+def counter = fn () -> (
     def c = 0
 
-    () -> (
+    fn () -> (
         c = c + 1
     )
 )
 
-def main = () -> (
+def main = fn () -> (
     def local = "world !"
 
     ;; println is a native function
@@ -102,7 +102,7 @@ def main = () -> (
 assert (1 < 2, "Something is wrong")
 
 assert (test1.apply(1) == 1, "apply is broken")
-assert (test1.apply(1, (v) -> (v+1)) == 2, "apply is broken")
+assert (test1.apply(1, fn (v) -> (v+1)) == 2, "apply is broken")
 
 assert("ok:4:120:720" == main(), "Test failed")
 
@@ -115,9 +115,9 @@ assert(1 == c2())
 assert(3 == c())
 
 ;; using Java classes from Babble
-def list : java.util.List(int) = java.util.ArrayList()
+def list : java.util.List of int = java.util.ArrayList()
 list.add(3) ; list.add(1) ; list.add(2)
-list.sort((a, b) -> ( a - b ))  ;; a Babble function passed as a Comparator
+list.sort(fn (a, b) -> ( a - b ))  ;; a Babble function passed as a Comparator
 assert(list.get(0) == 1)
 ```
 
@@ -131,7 +131,7 @@ without `else` is `null` when the test fails, and `while` is worth its last iter
 `else` is followed by a block, or by another `if`.
 
 ```
-def sign = (n: int) -> ( if n > 0 then ( "positive" ) else if n < 0 then ( "negative" ) else ( "zero" ) )
+def sign = fn (n: int) -> ( if n > 0 then ( "positive" ) else if n < 0 then ( "negative" ) else ( "zero" ) )
 assert(sign(-3) == "negative")
 
 def i = 0
@@ -145,7 +145,7 @@ Numbers are `int`s (32 bits) or `double`s. `+`, `-` and `*` on two `int`s give a
 on overflow; any other mix gives a `double`. `/` always gives a `double`, even between two `int`s,
 and dividing by zero gives an infinity or `NaN` rather than an error. Comparisons and `==`
 compare an `int` and a `double` by value. (On instances, these operators call methods : see
-*Value classes* below.)
+*Records* below.)
 
 ```
 assert(7 / 2 == 3.5)
@@ -204,16 +204,16 @@ reached through `this` or a receiver : a bare name is never a member.
 
 ```
 def Account = class (def owner: string, def balance = 0) (     ;; "def" : the parameter is also a member
-    private def history: java.util.List(int) = java.util.ArrayList()        ;; private : only reachable as this.history
+    private def history: java.util.List of int = java.util.ArrayList()        ;; private : only reachable as this.history
 
-    def deposit = mut (n: int) -> (
+    def deposit = mut fn (n: int) -> (
         this.history.add(n)
         this.balance += n
     )
-    def operations = () -> ( this.history.size() )
+    def operations = fn () -> ( this.history.size() )
 )
 static (
-    def open = (owner: string) -> ( this(owner) )              ;; in a static block, this is the class
+    def open = fn (owner: string) -> ( this(owner) )           ;; in a static block, this is the class
 )
 
 def a = Account.open("ann")
@@ -229,17 +229,17 @@ def origin = object (
 assert(origin.x == 0)
 ```
 
-### Value classes
+### Records
 
-A value class compares by value, prints its fields, and its members are read-only. On any
+A record compares by value, prints its fields, and its members are read-only. On any
 instance, the arithmetic operators call methods : `a + b` is `a.plus(b)`, and `-`, `*`, `/` and
 unary `-` call `minus`, `times`, `div` and `neg`, and so do `+=`, `-=`, `*=` and `/=` : `p += q`
 is `p = p.plus(q)`. The left operand decides : `2 * p` is an error.
 
 ```
-def Point = value class (x: double, y: double) (
-    def plus = (o: Point): Point -> ( Point(this.x + o.x, this.y + o.y) )
-    def times = (k: double): Point -> ( Point(this.x * k, this.y * k) )
+def Point = record (x: double, y: double) (
+    def plus = fn (o: Point): Point -> ( Point(this.x + o.x, this.y + o.y) )
+    def times = fn (k: double): Point -> ( Point(this.x * k, this.y * k) )
 )
 
 assert(Point(1, 2).plus(Point(3, 4)) == Point(4, 6))
@@ -257,17 +257,17 @@ it replaces with `super`.
 
 ```
 def Shape = interface (
-    def area : () : double                                   ;; required
-    def describe = () -> ( "area " + this.area() )           ;; a default method
+    def area : fn () : double                                ;; required
+    def describe = fn () -> ( "area " + this.area() )        ;; a default method
 )
 
 def Square = class (def side: int) implements Shape (
-    def area = (): double -> ( this.side * this.side )
+    def area = fn (): double -> ( this.side * this.side )
 )
 
 def Circle = class (def r: int) implements Shape (
-    def area = (): double -> ( 3 * this.r * this.r )
-    def describe = () -> ( "round, " + super.describe() )
+    def area = fn (): double -> ( 3 * this.r * this.r )
+    def describe = fn () -> ( "round, " + super.describe() )
 )
 
 assert(Square(2).describe() == "area 4.0")
@@ -291,23 +291,23 @@ def circle = 2 * java.lang.Math.PI
 def point = java.awt.Point(1, 2)
 point.x = point.x + 10
 
-def list: java.util.List(int) = java.util.ArrayList()
+def list: java.util.List of int = java.util.ArrayList()
 list.add(3) ; list.add(1) ; list.add(2)
-list.removeIf((v) -> ( v > 2 ))          ;; a Predicate
+list.removeIf(fn (v) -> ( v > 2 ))          ;; a Predicate
 assert(list.size() == 2)
 
-def Countdown = class (private def n: int) implements java.util.Iterator(int) (
-    def hasNext = () -> ( this.n > 0 )
-    def next = () -> ( this.n = this.n - 1 ; this.n + 1 )
+def Countdown = class (private def n: int) implements java.util.Iterator of int (
+    def hasNext = fn () -> ( this.n > 0 )
+    def next = fn () -> ( this.n = this.n - 1 ; this.n + 1 )
 )
-def seen: java.util.List(int) = java.util.ArrayList()
-Countdown(3).forEachRemaining((v) -> ( seen.add(v) ))   ;; a Java default method
+def seen: java.util.List of int = java.util.ArrayList()
+Countdown(3).forEachRemaining(fn (v) -> ( seen.add(v) ))   ;; a Java default method
 assert(seen.toString() == "[3, 2, 1]")
 
-def Money = value class (cents: int) implements java.lang.Comparable(Money) (
-    def compareTo = (o: Money): int -> ( this.cents - o.cents )
+def Money = record (cents: int) implements java.lang.Comparable of Money (
+    def compareTo = fn (o: Money): int -> ( this.cents - o.cents )
 )
-def wallet: java.util.List(Money) = java.util.ArrayList()
+def wallet: java.util.List of Money = java.util.ArrayList()
 wallet.add(Money(500)) ; wallet.add(Money(20))
 java.util.Collections.sort(wallet)                 ;; Java calls Money.compareTo
 assert(wallet.get(0) == Money(20))
@@ -322,10 +322,10 @@ the file and gives its exports. The path is relative to the importing file.
 ;; shapes.ba
 def pi = 3.14159                                   ;; not exported : private to this file
 export def Shape = interface (
-    def area : () : double
+    def area : fn () : double
 )
 export def Circle = class (def r: double) implements Shape (
-    def area = () -> ( pi * this.r * this.r )
+    def area = fn () -> ( pi * this.r * this.r )
 )
 export def unit = Circle(1)
 ```
@@ -352,7 +352,7 @@ runs, and classes can implement the interfaces it exports :
 ;; square.ba
 def shapes = import("shapes.ba")
 export def Square = class (def side: double) implements shapes.Shape (
-    def area = () -> ( this.side * this.side )
+    def area = fn () -> ( this.side * this.side )
 )
 ```
 
@@ -371,7 +371,7 @@ and assignments (including widening `int` to `double`), and every expression is 
 the script runs :
 
 ```
-def area = (w, h) -> ( w * h )
+def area = fn (w, h) -> ( w * h )
 area(2, 3)      ;; infers w: int, h: int
 area(2, "3")    ;; Error : Type error : expected int, got string ... at line number 3, column 9
 area(2)         ;; Error : Missing parameter : h ...
@@ -386,20 +386,20 @@ with `?.`, which short-circuits to `null` when the receiver is `null` (and is re
 receiver is provably non-null) :
 
 ```
-def id = (x: any?): any? -> ( x )
-def half = (n: int): double -> ( n / 2 )
+def id = fn (x: any?): any? -> ( x )
+def half = fn (n: int): double -> ( n / 2 )
 half(id("4") as int)   ;; Type error : expected int, got string, at line number 3
 ```
 
-Functions, classes and interfaces can also take type parameters in parentheses `(T)` — Babble
-never uses square brackets — and type arguments are inferred at call sites :
+Functions, classes and interfaces can also take type parameters with `of` — Babble never uses
+square or angle brackets — and type arguments are inferred at call sites :
 
 ```
-def Box(T) = class (def value: T) (
-    def map(U) = (fn: (x: T): U): Box(U) -> ( Box(fn(this.value)) )
+def Box of T = class (def value: T) (
+    def map of U = fn (f: fn (x: T): U): Box of U -> ( Box(f(this.value)) )
 )
-def label: Box(string) = Box(21).map((n) -> ( "v=" + n ))
-def names: java.util.List(string) = java.util.ArrayList()
+def label: Box of string = Box(21).map(fn (n) -> ( "v=" + n ))
+def names: java.util.List of string = java.util.ArrayList()
 ```
 
 ### Function effects and contracts
@@ -411,14 +411,14 @@ Typed functions that mutate `this` or a parameter declare `mut` explicitly, and 
 that a `mut` argument does not alias another argument :
 
 ```
-axiom pure deterministic nothrow java.lang.Math
+axiom pure deterministic nothrow on java.lang.Math
 
-def hypot = pure deterministic nothrow (x: double, y: double): double -> (
+def hypot = pure deterministic nothrow fn (x: double, y: double): double -> (
     java.lang.Math.sqrt(x * x + y * y)
 )
 
 def Counter = class (def value: int = 0) (
-    def addFrom = hermetic mut (borrow other: Counter) -> (
+    def addFrom = hermetic mut fn (borrow other: Counter) -> (
         this.value += other.value
     )
 )
@@ -439,17 +439,17 @@ starts again. An input continues on the next line while it is incomplete : insid
 parentheses, or after an operator, a comma, `=`, `->`, `then` or `else`.
 
 ```
->> def twice = (f: (n: int): int, v: int): int -> (
+>> def twice = fn (f: fn (n: int): int, v: int): int -> (
 ..   f(f(v))
 .. )
 function twice
->> twice((n) -> ( n + 1 ), 5)
+>> twice(fn (n) -> ( n + 1 ), 5)
 7
 >> def name = "world"
 "world"
 >> println("Hello, ", name)
 Hello, world
->> def Point = value class (x: int, y: int) ()
+>> def Point = record (x: int, y: int) ()
 class Point
 >> Point(1, 2)
 Point(x: 1, y: 2)
@@ -473,7 +473,7 @@ Ray tracing demo
 
 [examples/raytracer-fable](examples/raytracer-fable/raytracer.ba) is a port of
 [_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
-to Babble : vectors as a value class, spheres and materials as classes implementing
+to Babble : vectors as a record, spheres and materials as classes implementing
 interfaces, a bounding volume hierarchy, a camera with depth of field, and the final scene
 of the book. It is split into modules along the files of the book (`rtweekend.ba`,
 `vec3.ba`, `ray.ba`, `aabb.ba`, `hittable.ba`, `sphere.ba`, `hittable_list.ba`, `bvh.ba`,
@@ -522,7 +522,7 @@ java -jar target/babble-1.0-SNAPSHOT.jar script.ba [arguments...]     # runs a s
 java -jar target/babble-1.0-SNAPSHOT.jar -keep-alive script.ba ...    # runs it, then the interactive mode
 ```
 
-A script finds its arguments in `args`, a `java.util.List(string)` :
+A script finds its arguments in `args`, a `java.util.List of string` :
 
 ```
 ;; hello.ba
@@ -581,13 +581,13 @@ From Java, it is `org.babblelang.format.Formatter.format(source)`.
 It keeps your line breaks, and settles the rest :
 
 ```
-def fac=(n:int):int->(          def fac = (n: int): int -> (
-  if n<2 then                       if n < 2 then (
-  (                                     1  ;; done
-    1 ;; done                       ) else (
-  )                                     n * recurse(n - 1)
-  else (                            )
-      n*recurse( n-1 );         )
+def fac=fn(n:int):int->(          def fac = fn (n: int): int -> (
+  if n<2 then                         if n < 2 then (
+  (                                       1  ;; done
+    1 ;; done                         ) else (
+  )                                       n * recurse(n - 1)
+  else (                              )
+      n*recurse( n-1 );           )
   )
 
 )
@@ -634,7 +634,7 @@ interactive mode does :
 
 ```java
 BabbleSession session = ((BabbleScriptEngine) engine).newSession();
-session.eval("def double = (n: int): int -> ( n * 2 )");
+session.eval("def double = fn (n: int): int -> ( n * 2 )");
 session.eval("double(21)");    // 42
 ```
 
@@ -644,19 +644,19 @@ Implemented Features
 Language features :
 
 - [x] no C-style brackets ! Those are nasty to type on most keyboards, especially on Apple keyboards.
-- [x] in fact, there is only one type of brackets in Babble : parentheses `( )`. The grammar is simple enough, and the parser clever enough (thanks to [ANTLR4](https://www.antlr.org/)) to get away with it.
+- [x] in fact, there is only one type of brackets in Babble : parentheses `( )`. The grammar is predicate-free LL(1)/LL(2) (`BIP012`, `RM006`) and parses in ANTLR4's fast `PredictionMode.SLL`.
 - [x] no semicolons at end of line : newlines are significant and end the current statement, except after tokens that call for a continuation (operators, `,`, `=`, `->`, `then`, ...). Semicolons are only needed to separate multiple statements on the same line.
 - [x] everything is an expression, including blocks, `if` and `while`.
 - [x] block scope : blocks, `if` branches and `while` bodies are scopes, and names are hoisted to the start of their scope.
-- [x] functions, supporting recursion (`recurse`) and closures.
+- [x] functions (`fn (...) -> (...)`), supporting recursion (`recurse`) and closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional & named parameters in function calls, and default values for parameters.
-- [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions, union types (`A | B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types (`Box(T)`, `list(int)`, `java.util.List(string)`).
+- [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions (`fn (...) : R`), union types (`A | B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types (`Box of T`, `list of int`, `java.util.List of string`).
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
-- [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md)).
+- [x] object model : classes, object literals, interfaces with default methods, records (`record`), private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md) and [BIP012](docs/design/bip012_grammar-improvements.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, Babble classes implementing Java (including generic) interfaces, and Java nullability alignment (`@NotNull`/`@Nullable`/JSpecify, mapped `java.base` parametric nullness, and defensive boundary checks, see [BIP011](docs/design/bip011_core-types.md)).
-- [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference (`C(T)(...)` and inferred `C(...)`), strict non-nullability with `T?` and `e!`, union types (`A | B`), safe navigation (`?.`), invariant mutable generics with covariant `value class`/`entry`/`borrow` parameters, flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md), [BIP008](docs/design/bip008_static-typing.md), and [BIP011](docs/design/bip011_core-types.md)).
-- [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts, `org.babblelang.effects` host annotations, and built-in core type effect profiles (see [BIP007](docs/design/bip007_effects.md) and [BIP011](docs/design/bip011_core-types.md)).
+- [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference (`C of T (...)` and inferred `C(...)`), strict non-nullability with `T?` and `e!`, union types (`A | B`), safe navigation (`?.`), invariant mutable generics with covariant `record`/`entry`/`borrow` parameters, flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md), [BIP008](docs/design/bip008_static-typing.md), and [BIP011](docs/design/bip011_core-types.md)).
+- [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts (`axiom ... on Target`), `org.babblelang.effects` host annotations, and built-in core type effect profiles (see [BIP007](docs/design/bip007_effects.md) and [BIP011](docs/design/bip011_core-types.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, all 9 scalar conversions (`byte`..`string`), and core collection factories (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`).
 
 Implementation features :
@@ -664,7 +664,7 @@ Implementation features :
 - [x] interpreted mode running on the parse tree, like 1.8.x Ruby, A.K.A. SLOW MODE : no longer the default, it is the reference implementation the compiler is tested against, and runs scripts on one thread only.
 - [x] compiled mode, the default : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals, classes are JVM classes, and interfaces are real JVM interfaces with direct `INVOKEINTERFACE` dispatch and exact-signature Java `implements` bridges (`RM003`, §20), calls and member accesses are `invokedynamic` sites with inline caches (phases 1 to 3 of the [bytecode compiler design](docs/design/bip001_bytecode-compiler.md)), Java functional-interface callbacks use cached `LambdaMetafactory` adapters (`RM003`), and static types from `BIP008`/`BIP011` lower all 8 non-nullable JVM primitives (`byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`) across locals, closure cells, class fields, arithmetic, comparisons, `$spec` calls, module exports, and resolved Java calls/fields directly to unboxed JVM instructions (`RM001`/`RM005`, §19) : 13x to 769x faster than the interpreter in the benchmarks, and about 22% faster end-to-end on `raytracer-argon`.
 - [x] errors found before running : redefined names, misplaced `return`, `this` or `super`, incomplete or conflicting interface implementations, private members reached from outside.
-- [x] about 100 lines of ANTLR4 grammar (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4)).
+- [x] clean, predicate-free ANTLR4 grammar with zero embedded target-language code and `PredictionMode.SLL` fast-path parsing (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4) and [BIP012](docs/design/bip012_grammar-improvements.md)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's parse tree & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
 - [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker (see [BIP004](docs/design/bip004_repl.md)).

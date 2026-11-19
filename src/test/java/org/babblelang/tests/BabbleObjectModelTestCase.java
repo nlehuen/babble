@@ -253,8 +253,8 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         Assertions.assertEquals(true, interpret(shapes + "Sq() is Sq and Sq() is T and Sq() is S"));
         Assertions.assertEquals(false, interpret(shapes + "C() is S or Sq() is C or null is C or 1 is S"));
         Assertions.assertEquals(true, interpret("def l : java.util.List of int = java.util.ArrayList() ; \"s\" is java.lang.String and 1 is java.lang.Number and l is java.util.List"));
-        Assertions.assertEquals(false, interpret("def mk = fn () -> ( class () () ) ; def A = mk() ; A() is mk()"));
-        assertFails("1 is 2", "Not a type : 2");
+        assertStaticFails("1 is 2", "Syntax error : unexpected '2'", 1, 6);
+        assertStaticFails("def mk = fn () -> ( class () () ) ; def A = mk() ; A() is mk", "Unknown type : mk", 1, 59);
     }
 
     @Test

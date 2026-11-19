@@ -6,8 +6,8 @@
 ;;)
 
 def add = fn (a, b) -> (  ;;
-    a + b              ;; function literal
-)                      ;;
+    a + b                 ;; function literal
+)                         ;;
 
 ;; optional types
 def add2 = fn (a: int, b: int): int -> (

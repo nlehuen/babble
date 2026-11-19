@@ -33,8 +33,13 @@ public final class Types {
             this.display = display;
         }
 
-        /** Whether a value has the type. */
+        /** Whether a value has the type (allowing numeric widening and SAM conversion, for casts/annotations). */
         abstract boolean accepts(Object value);
+
+        /** Exact runtime type test for {@code is} (no numeric widening, no SAM conversion). */
+        boolean isInstance(Object value) {
+            return accepts(value);
+        }
 
         /** The value to store : the value itself, or an int widened to a double. */
         Object convert(Object value) {
@@ -58,6 +63,12 @@ public final class Types {
         @Override
         boolean accepts(Object value) {
             return value != null && (javaClass.isInstance(value) || JavaTypes.isWidening(value.getClass(), javaClass));
+        }
+
+        @Override
+        boolean isInstance(Object value) {
+            Object java = value instanceof JavaValue wrapper ? wrapper.javaValue() : value;
+            return java != null && javaClass.isInstance(java);
         }
 
         @Override
@@ -92,6 +103,13 @@ public final class Types {
             return java != null && (javaClass.isInstance(java)
                     || java instanceof BabbleInstance instance && instance.babbleClass().isJava(javaClass)
                     || Values.isBabbleCallable(java) && JavaTypes.isFunctionalInterface(javaClass));
+        }
+
+        @Override
+        boolean isInstance(Object value) {
+            Object java = value instanceof JavaValue wrapper ? wrapper.javaValue() : value;
+            return java != null && (JavaTypes.box(javaClass).isInstance(java)
+                    || java instanceof BabbleInstance instance && instance.babbleClass().isJava(javaClass));
         }
     }
 
@@ -143,6 +161,16 @@ public final class Types {
         boolean accepts(Object value) {
             for (Type member : members) {
                 if (member.accepts(value)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        boolean isInstance(Object value) {
+            for (Type member : members) {
+                if (member.isInstance(value)) {
                     return true;
                 }
             }
@@ -261,6 +289,11 @@ public final class Types {
     /** The same, by descriptor : no check for a null one. */
     public static Object check(Object value, String descriptor) {
         return descriptor == null ? value : check(value, parse(descriptor));
+    }
+
+    /** Exact runtime type test for {@code is} : null descriptor means {@code any?}, matching everything. */
+    public static boolean matches(Object value, String descriptor) {
+        return descriptor == null || parse(descriptor).isInstance(value);
     }
 
     /** What a value is, in the words of the type checker. */

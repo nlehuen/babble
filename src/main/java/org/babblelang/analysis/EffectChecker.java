@@ -2822,9 +2822,6 @@ final class EffectChecker {
             }
             if (ctx instanceof BabbleParser.IsExpressionContext isCtx) {
                 eval(isCtx.left);
-                if (isCtx.right != null) {
-                    eval(isCtx.right);
-                }
                 return Origin.IMMUTABLE;
             }
             if (ctx instanceof BabbleParser.NonNullAssertionContext nna) {

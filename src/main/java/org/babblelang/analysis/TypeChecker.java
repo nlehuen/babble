@@ -98,6 +98,7 @@ final class TypeChecker {
     private final Map<ParserRuleContext, Type> inferredDefs = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredMembers = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredParams = new IdentityHashMap<>();
+    private final Map<BabbleParser.IsExpressionContext, Type> isTargetTypes = new IdentityHashMap<>();
 
 
     private final Map<ParserRuleContext, Widening> defWidenings = new IdentityHashMap<>();
@@ -360,6 +361,7 @@ final class TypeChecker {
         inProgress.clear();
         functions.clear();
         diagnostics.clear();
+        isTargetTypes.clear();
         warnings.clear();
         widened.clear();
         resolvedLiterals.clear();
@@ -510,8 +512,9 @@ final class TypeChecker {
     /** Types every expression and block, and resolves every annotation, in source order. */
     void walk(ParseTree tree) {
         if (tree instanceof BabbleParser.TypeContext type) {
-            // Only annotations are walked to : implements lists, super qualifiers, and as targets are handled elsewhere.
-            if (type.getParent() instanceof BabbleParser.AsExpressionContext asCtx && asCtx.right == type) {
+            // Only annotations are walked to : implements lists, super qualifiers, and is/as targets are handled elsewhere.
+            if (type.getParent() instanceof BabbleParser.AsExpressionContext asCtx && asCtx.right == type
+                    || type.getParent() instanceof BabbleParser.IsExpressionContext isCtx && isCtx.right == type) {
                 return;
             }
             annotator.annotation(type, scopeOf(type));
@@ -609,6 +612,53 @@ final class TypeChecker {
                 return super.visitFnParam(parameter);
             }
         }.visit(file);
+    }
+
+    Type isTargetType(BabbleParser.IsExpressionContext ctx) {
+        return isTargetTypes.get(ctx);
+    }
+
+    Type resolveIsTarget(BabbleParser.IsExpressionContext ctx) {
+        if (isTargetTypes.containsKey(ctx)) {
+            return isTargetTypes.get(ctx);
+        }
+        BabbleParser.SimpleTypeContext singleSimple = null;
+        if (ctx.right.nullableType().size() == 1
+                && ctx.right.nullableType(0) instanceof BabbleParser.NonParenTypeContext nonParen
+                && nonParen.nonParenNullableType() instanceof BabbleParser.SimpleTypeContext simple) {
+            singleSimple = simple;
+            if ("void".equals(simple.typeName().getText())) {
+                warn("Type error : cannot test 'is void'", simple);
+                isTargetTypes.put(ctx, Type.ERROR);
+                return Type.ERROR;
+            }
+            if (simple.OF() != null) {
+                warn("Cannot test erased type arguments with 'is' : use 'is " + simple.typeName().getText() + "'", simple);
+                isTargetTypes.put(ctx, Type.ERROR);
+                return Type.ERROR;
+            }
+        }
+        Type target = annotator.annotation(ctx.right, scopeOf(ctx), true);
+        if (target == Type.ERROR) {
+            isTargetTypes.put(ctx, Type.ERROR);
+            return Type.ERROR;
+        }
+        if (target.hasTypeVar()) {
+            warn("Cannot test type parameter with 'is' : " + ctx.right.getText(), ctx.right);
+            isTargetTypes.put(ctx, Type.ERROR);
+            return Type.ERROR;
+        }
+        if (containsFunction(target)) {
+            warn("Cannot test a function type with 'is'", ctx.right);
+            isTargetTypes.put(ctx, Type.ERROR);
+            return Type.ERROR;
+        }
+        if (singleSimple != null && singleSimple.typeName().coreTypeKeyword() != null && singleSimple.question == null) {
+            pass.analysis.setIsBuiltin(ctx, singleSimple.typeName().getText());
+        }
+        pass.analysis.setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
+        isTargetTypes.put(ctx, target);
+        return target;
     }
 
     static ScopeNode callableScope(ScopeNode scope) {
@@ -1781,18 +1831,7 @@ final class TypeChecker {
 
         private Type visitIsExpression(BabbleParser.IsExpressionContext ctx, Type expected, Role role) {
             synth(ctx.left);
-            Type builtin = narrowing.isBuiltinTarget(ctx);
-            if (builtin != null) {
-                pass.analysis.setIsBuiltin(ctx, ctx.coreType.getText());
-            } else if (ctx.coreType != null) {
-                if (ctx.typeArguments() != null) {
-                    warn("Cannot test erased type arguments with 'is' : use 'is " + ctx.coreType.getText() + "'", ctx.coreType);
-                } else {
-                    warn("Type error : cannot test 'is " + ctx.coreType.getText() + "'", ctx.coreType);
-                }
-            } else {
-                synth(ctx.right, Role.TYPE_TEST_RIGHT);
-            }
+            resolveIsTarget(ctx);
             return Type.BOOL;
         }
 

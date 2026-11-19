@@ -104,10 +104,7 @@ final class Narrowing {
             if (decl == null) {
                 return TypeEnv.Refinement.EMPTY;
             }
-            Type target = isBuiltinTarget(isCtx);
-            if (target == null) {
-                target = instanceTypeOfTypeValue(checker.synth(isCtx.right, TypeChecker.Role.TYPE_TEST_RIGHT));
-            }
+            Type target = checker.resolveIsTarget(isCtx);
             Type current = checker.synth(isCtx.left);
             if (target == null || target == Type.ERROR
                     || (!TypeChecker.isUnresolved(current) && checker.algebra().runtimeSubtype(current, target))) {
@@ -137,31 +134,6 @@ final class Narrowing {
             expr = block.block().expression(0);
         }
         return expr instanceof BabbleParser.NullContext;
-    }
-
-    Type isBuiltinTarget(BabbleParser.IsExpressionContext ctx) {
-        if (ctx.coreType != null && ctx.typeArguments() == null) {
-            return switch (ctx.coreType.getText()) {
-                case "byte" -> Type.BYTE;
-                case "short" -> Type.SHORT;
-                case "int" -> Type.INT;
-                case "long" -> Type.LONG;
-                case "float" -> Type.FLOAT;
-                case "double" -> Type.DOUBLE;
-                case "bool" -> Type.BOOL;
-                case "char" -> Type.CHAR;
-                case "string" -> Type.STRING;
-                case "any" -> Type.ANY;
-                case "list" -> JavaTypeBridge.rawJavaInstance(java.util.List.class);
-                case "set" -> JavaTypeBridge.rawJavaInstance(java.util.Set.class);
-                case "sortedset" -> JavaTypeBridge.rawJavaInstance(java.util.SortedSet.class);
-                case "map" -> JavaTypeBridge.rawJavaInstance(java.util.Map.class);
-                case "sortedmap" -> JavaTypeBridge.rawJavaInstance(java.util.SortedMap.class);
-                case "entry" -> JavaTypeBridge.rawJavaInstance(java.util.Map.Entry.class);
-                default -> null;
-            };
-        }
-        return null;
     }
 
     ParserRuleContext narrowableDeclaration(BabbleParser.ExpressionContext expr) {

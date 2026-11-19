@@ -610,23 +610,32 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      * @throws ParseFailure on a lexical or syntax error
      */
     static BabbleParser.FileContext parse(CharStream input) {
-        BabbleParser parser = new BabbleParser(new CommonTokenStream(lexer(input)));
+        CommonTokenStream tokens = new CommonTokenStream(lexer(input));
+        BabbleParser parser = new BabbleParser(tokens);
         // BailErrorStrategy already aborts on a syntax error ; dropping the default
         // listener just stops it printing to stderr on the way out.
         parser.removeErrorListeners();
         parser.setErrorHandler(new BailErrorStrategy());
+        parser.getInterpreter().setPredictionMode(org.antlr.v4.runtime.atn.PredictionMode.SLL);
         try {
             return parser.file();
-        } catch (ParseCancellationException e) {
-            Token token = e.getCause() instanceof RecognitionException recognition && recognition.getOffendingToken() != null
-                    ? recognition.getOffendingToken() : parser.getCurrentToken();
-            String found = switch (token.getType()) {
-                case Token.EOF -> "end of input";
-                case BabbleLexer.NL -> "end of line";
-                default -> "'" + token.getText() + "'";
-            };
-            throw new ParseFailure("Syntax error : unexpected " + found, token.getLine(), token.getCharPositionInLine() + 1,
-                    false, token.getType() == Token.EOF);
+        } catch (ParseCancellationException sllFailure) {
+            tokens.seek(0);
+            parser.reset();
+            parser.getInterpreter().setPredictionMode(org.antlr.v4.runtime.atn.PredictionMode.LL);
+            try {
+                return parser.file();
+            } catch (ParseCancellationException e) {
+                Token token = e.getCause() instanceof RecognitionException recognition && recognition.getOffendingToken() != null
+                        ? recognition.getOffendingToken() : parser.getCurrentToken();
+                String found = switch (token.getType()) {
+                    case Token.EOF -> "end of input";
+                    case BabbleLexer.NL -> "end of line";
+                    default -> "'" + token.getText() + "'";
+                };
+                throw new ParseFailure("Syntax error : unexpected " + found, token.getLine(), token.getCharPositionInLine() + 1,
+                        false, token.getType() == Token.EOF);
+            }
         }
     }
 

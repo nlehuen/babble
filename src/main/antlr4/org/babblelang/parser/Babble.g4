@@ -1,24 +1,6 @@
 grammar Babble;
 
-@parser::members {
-    private static boolean isCoreTypeToken(int t) {
-        return t == BYTE || t == SHORT || t == INT_KW || t == LONG_KW
-                || t == FLOAT_KW || t == DOUBLE_KW || t == BOOL_KW || t == CHAR_KW || t == STRING_KW
-                || t == LIST || t == SET || t == SORTEDSET || t == MAP || t == SORTEDMAP || t == ENTRY
-                || t == ANY || t == VOID;
-    }
-
-    boolean isCoreTypeAfterIs() {
-        if (_input.LT(1).getType() != IS) {
-            return false;
-        }
-        int i = 2;
-        while (_input.LT(i).getType() == NL) {
-            i++;
-        }
-        return isCoreTypeToken(_input.LT(i).getType());
-    }
-}
+// Zero @parser::members. Zero semantic predicates. Single bracket type: ().
 
 file: sep? (effectDeclaration | expression)
       (sep (effectDeclaration | expression))* sep? EOF;
@@ -72,17 +54,16 @@ expression:
           | expression OF typeArguments                       # typeApply
           | expression callParameters                         # call
           | block                                             # blockExpression
-          | NOT expression                                    # booleanNot
           // Unary minus binds tighter than any binary operator : "-a * b" is "(-a) * b". A
           // newline before it separates : "a" then "-b" on the next line are two expressions.
           | '-' operand=expression                            # negate
+          | left=expression AS NL* right=type                     # asExpression
           | left=expression op=('*' | '/') NL* right=expression   # binaryOp
           | left=expression op=('+' | '-') NL* right=expression   # binaryOp
-          | left=expression AS NL* right=type                     # asExpression
+          | left=expression IS NL* right=type                     # isExpression
           | left=expression op=('<' | '<=' | '==' | NEQ
                        | '>=' | '>') NL* right=expression         # binaryOp
-          | left=expression IS NL* coreType=coreTypeKeyword (OF typeArguments)? # isExpression
-          | left=expression {!isCoreTypeAfterIs()}? IS NL* right=expression # isExpression
+          | NOT expression                                    # booleanNot
           | left=expression op=AND NL* right=expression           # booleanOp
           | left=expression op=OR NL* right=expression            # booleanOp
           // Compound assignment : "x += v" is "x = x + v" (and -=, *=, /=), with the target's

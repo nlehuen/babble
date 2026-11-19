@@ -66,10 +66,9 @@ final class LoweringAnalyzer {
                 pass.analysis.setExpressionKind(entry.getKey(), ScopeAnalysis.PrimitiveKind.of(entry.getValue()));
             }
             if (entry.getKey() instanceof BabbleParser.IsExpressionContext isCtx && checker.inFile(isCtx)
-                    && checker.narrowing().isBuiltinTarget(isCtx) == null
-                    && types.get(isCtx.right) instanceof Type.ClassValue cv
-                    && refs.singletonTypeNode(isCtx.right) == cv.node()) {
-                pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(cv.node().id, cv.node().kind));
+                    && checker.isTargetType(isCtx) instanceof Type.Instance inst
+                    && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
+                pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
             }
         }
         for (ParserRuleContext decl : pass.definitionScopes.keySet()) {
