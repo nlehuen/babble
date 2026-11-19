@@ -283,12 +283,20 @@ public class EffectsTestCase {
                 def g: int = 0
                 def f = fn hermetic (x: int): int -> (g = x; x)
                 """, "hermetic");
-        assertHasError("""
+        assertClean("""
                 def Box = class (def x: int) ()
                 def f = fn pure (): int -> (
                     def b = Box(1)
                     b.x = 2
                     b.x
+                )
+                """);
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def g = Box(1)
+                def f = fn pure (): int -> (
+                    g.x = 2
+                    g.x
                 )
                 """, "Cannot mutate object in pure function");
 

@@ -97,11 +97,11 @@ println(appendAndSet(xs, 3), ":", xs, ":", putEntry(m, "x", 42), ":", m)
 3:[99, 2, 3]:null:{x=42}
 
 {{{{{
-;; Pure rejects collection mutation
+;; Pure rejects external collection mutation (fresh local list is unique under BIP007-P2)
+def g = list(1, 2)
 def badPureList = fn pure () : list of int -> (
-    def xs = list(1, 2)
-    xs.add(3)
-    xs
+    g.add(3)
+    g
 )
 }}}}}
 Function badPureList declared pure violates pure guarantee
