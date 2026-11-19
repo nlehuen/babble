@@ -390,9 +390,9 @@ println(iNeg(5), ":", iAdd(3), ":", iSub(4), ":", iMulOdd(2), ":", dMono1(3.0), 
 {{{{{
 ;; SAM Java callback effect propagation inside pure/hermetic functions
 def countPure = hermetic () : int -> (
-    def list = java.util.Arrays.asList("a", "bb")
+    def xs = java.util.Arrays.asList("a", "bb")
     def total = 0
-    list.forEach((s : string) -> ( total += 1 ))
+    xs.forEach((s : string) -> ( total += 1 ))
     total
 )
 println(countPure())

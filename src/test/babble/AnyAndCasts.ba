@@ -53,14 +53,12 @@ assert(positiveInt(5))
 assert(not positiveInt(-1))
 assert(not positiveInt("5"))
 
-;; Shadowing a built-in type name on the right of `is`
 def Box = class (def value: int) ()
-def readShadowed = (v: any) -> (
-    def int = Box
-    if v is int then (v.value) else (0)
+def readBox = (v: any) -> (
+    if v is Box then (v.value) else (0)
 )
-assert(readShadowed(Box(42)) == 42)
-assert(readShadowed(42) == 0)
+assert(readBox(Box(42)) == 42)
+assert(readBox(42) == 0)
 assert(int("7") == 7)
 
 ;; ---- `as` casts and operator precedence

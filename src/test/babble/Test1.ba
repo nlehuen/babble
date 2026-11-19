@@ -129,7 +129,7 @@ assert(2 == c3.inc())
 assert(3 == c3.inc())
 
 ;; importing Java classes and using them in Babble
-def list: java.util.List(int) = java.util.ArrayList()
+def xs: java.util.List(int) = java.util.ArrayList()
 ;; TODO : find proper methods
-;; list.add(1) ; list.add(2)
-assert(list.size() == 0)
+;; xs.add(1) ; xs.add(2)
+assert(xs.size() == 0)

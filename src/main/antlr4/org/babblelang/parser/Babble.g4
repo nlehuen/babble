@@ -101,6 +101,76 @@ grammar Babble;
     private boolean isTargetEffectWord() {
         return isEffectOrAxiomWord(_input.LT(1)) && _input.LT(2).getType() == ID;
     }
+
+    private static boolean isCoreTypeToken(int t) {
+        return t == BYTE || t == SHORT || t == INT_KW || t == LONG_KW
+                || t == FLOAT_KW || t == DOUBLE_KW || t == BOOL_KW || t == CHAR_KW || t == STRING_KW
+                || t == LIST || t == SET || t == SORTEDSET || t == MAP || t == SORTEDMAP || t == ENTRY
+                || t == ANY || t == VOID;
+    }
+
+    private static boolean isTypeToken(int t) {
+        return t == ID || t == DOT || t == QUESTION || t == PIPE || t == COMMA
+                || t == LPAREN || t == RPAREN || t == COLON || t == NULL || t == NL
+                || isCoreTypeToken(t);
+    }
+
+    /**
+     * Lookahead for {@code expr(T1, T2)(args...)} : checks that the immediately following
+     * balanced {@code (...)} (with no preceding newline) is non-empty, contains only tokens
+     * valid inside a {@code typeArguments} list (never a named-arg {@code id : expr} at depth 1),
+     * and is immediately followed (with no newline) by {@code (}.
+     */
+    private boolean isTypeApplicationCall() {
+        if (_input.LT(1).getType() != LPAREN) {
+            return false;
+        }
+        int i = 2;
+        int depth = 1;
+        boolean hasContent = false;
+        int prevNonNl = LPAREN;
+        while (true) {
+            int t = _input.LT(i).getType();
+            if (t == Token.EOF) {
+                return false;
+            }
+            if (t == LPAREN) {
+                depth++;
+                hasContent = true;
+                prevNonNl = t;
+            } else if (t == RPAREN) {
+                depth--;
+                if (depth == 0) {
+                    return hasContent && _input.LT(i + 1).getType() == LPAREN;
+                }
+                prevNonNl = t;
+            } else {
+                if (!isTypeToken(t)) {
+                    return false;
+                }
+                if (t == COLON && depth == 1 && prevNonNl != RPAREN) {
+                    // Named argument "name: expr" at top level of (...) — not a type argument list.
+                    return false;
+                }
+                if (t != NL) {
+                    hasContent = true;
+                    prevNonNl = t;
+                }
+            }
+            i++;
+        }
+    }
+
+    boolean isCoreTypeAfterIs() {
+        if (_input.LT(1).getType() != IS) {
+            return false;
+        }
+        int i = 2;
+        while (_input.LT(i).getType() == NL) {
+            i++;
+        }
+        return isCoreTypeToken(_input.LT(i).getType());
+    }
 }
 
 file: sep? ({isEffectDeclarationStart()}? effectDeclaration | expression)
@@ -112,9 +182,17 @@ file: sep? ({isEffectDeclarationStart()}? effectDeclaration | expression)
 // expression and a following '(' : that would be ambiguous with a call.
 sep: (';' | NL)+;
 
+coreCollectionKeyword: LIST | SET | SORTEDSET | MAP | SORTEDMAP | ENTRY;
+
+coreScalarKeyword: BYTE | SHORT | INT_KW | LONG_KW | FLOAT_KW | DOUBLE_KW | BOOL_KW | CHAR_KW | STRING_KW;
+
+coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
+
+memberName: ID | coreTypeKeyword;
+
 effectDeclaration: EXPORT? targetEffectPrefix effectTarget (ctorOpen='(' ctorClose=')')?;
 
-effectTarget: (ID '(' STRING ')' | ID) ('.' ID)*;
+effectTarget: (ID '(' STRING ')' | ID) ('.' memberName)*;
 
 effectPrefix: effectWord+;
 
@@ -147,8 +225,12 @@ expression:
           | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
           | {isFunctionLiteralStart()}? effectPrefix parametersDeclaration ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
           // A newline may come before the dot : a chain of calls can go on the next lines.
-          | expression NL* ('.' | safe='?.') ID               # selector
+          | expression NL* ('.' | safe='?.') memberName      # selector
           | ID                                                # selector
+          | expression '!'                                    # nonNullAssertion
+          | callee=coreCollectionKeyword typeArguments? callParameters   # coreCollectionCall
+          | coreScalarKeyword                                 # coreScalarRef
+          | expression {isTypeApplicationCall()}? typeArguments callParameters # typeApplyCall
           | expression callParameters                         # call
           | block                                             # blockExpression
           | NOT expression                                    # booleanNot
@@ -160,19 +242,23 @@ expression:
           | left=expression AS NL* right=type                     # asExpression
           | left=expression op=('<' | '<=' | '==' | NEQ
                        | '>=' | '>') NL* right=expression         # binaryOp
-          | left=expression IS NL* right=expression               # isExpression
+          | left=expression IS NL* coreType=coreTypeKeyword typeArguments? # isExpression
+          | left=expression {!isCoreTypeAfterIs()}? IS NL* right=expression # isExpression
           | left=expression op=AND NL* right=expression           # booleanOp
           | left=expression op=OR NL* right=expression            # booleanOp
           | parametersDeclaration ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
           // Compound assignment : "x += v" is "x = x + v" (and -=, *=, /=), with the target's
           // receiver evaluated once.
-          | namespace=expression NL* '.' name=ID op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression # assignExpression
+          | namespace=expression NL* '.' member=memberName op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression # assignExpression
           | name=ID op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression   # assignExpression
           | NULL                                              # null
           | BOOLEAN                                           # boolean
           | RECURSE                                           # recurse
+          | LONG_LIT                                          # longLiteral
           | INT                                               # integer
-          | FLOAT                                             # double
+          | FLOAT_LIT                                         # floatLiteral
+          | DOUBLE_LIT                                        # double
+          | CHAR_LIT                                          # charLiteral
           | STRING                                            # string
           // "return" is a prefix alternative, so its operand is parsed at this
           // alternative's precedence. It must therefore come last, or "return a + b"
@@ -199,7 +285,7 @@ typeArguments: '(' NL* type (NL* ',' NL* type)* NL* ')';
 callParameters: '(' NL* callParameter (NL* ',' NL* callParameter)* NL* ')'
               | '(' NL* ')';
 
-callParameter: (ID ':')? expression;
+callParameter: (memberName ':')? expression;
 
 typeList: type (NL* ',' NL* type)*;
 
@@ -208,16 +294,22 @@ type: nullableType ('|' NL* nullableType)*;
 nullableType: primaryType question='?'?;
 
 primaryType: {isFunctionTypeStart()}? effectPrefix parametersDeclaration ( ':' type | )   # functionType
-           | ID ('.' ID)* typeArguments?                                                  # simpleType
+           | (coreTypeKeyword | ID ('.' memberName)*) typeArguments?                      # simpleType
            | parametersDeclaration ( ':' type | )                                         # functionType
            | NULL                                                                         # nullType
            | '(' NL* type NL* ')'                                                         # parenType
            ;
 
 // Tokens
+LONG_LIT: [0-9]+ [lL];
+FLOAT_LIT: ([0-9]* '.' [0-9]+ ([eE] [+-]? [0-9]+)? | [0-9]+ ([eE] [+-]? [0-9]+)) [fF]
+         | [0-9]+ [fF];
+DOUBLE_LIT: [0-9]* '.' [0-9]+ ([eE] [+-]? [0-9]+)? [dD]?
+          | [0-9]+ [eE] [+-]? [0-9]+ [dD]?
+          | [0-9]+ [dD];
 INT: [0-9]+;
-FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;
-STRING: '"' (~[\\"]|'\\\\'|'\\"')*? '"';
+CHAR_LIT: '\'' ( ~['\\\r\n] | '\\' ( [btnfr"'\\0] | 'u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] ) ) '\'';
+STRING: '"' ( ~[\\"] | '\\' ( [btnfr"'\\0] | 'u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] ) )* '"';
 PLUS: '+';
 MINUS: '-';
 MUL: '*';
@@ -228,6 +320,7 @@ EQ: '==';
 NEQ: '<>' | '!=';
 GTE: '>=';
 GT: '>';
+BANG: '!';
 COLON: ':';
 SEMICOLON: ';';
 ASSIGN: '=';
@@ -267,6 +360,23 @@ SUPER: 'super';
 PRIVATE: 'private';
 STATIC: 'static';
 EXPORT: 'export';
+BYTE: 'byte';
+SHORT: 'short';
+INT_KW: 'int';
+LONG_KW: 'long';
+FLOAT_KW: 'float';
+DOUBLE_KW: 'double';
+BOOL_KW: 'bool';
+CHAR_KW: 'char';
+STRING_KW: 'string';
+LIST: 'list';
+SET: 'set';
+SORTEDSET: 'sortedset';
+MAP: 'map';
+SORTEDMAP: 'sortedmap';
+ENTRY: 'entry';
+ANY: 'any';
+VOID: 'void';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
 // Comments are kept, on the hidden channel : the parser does not see them, the formatter does.
 MULTILINECOMMENT: ';;(' .*? ';;)' -> channel(HIDDEN);

@@ -5,14 +5,14 @@
 def mapped = java.util.Optional.of(6).map((x : int) : int -> ( x * x )).get()
 println(mapped)
 
-def list : java.util.List(int) = java.util.ArrayList()
-list.add(3)
-list.add(1)
-list.add(4)
-list.add(2)
-list.removeIf((x) -> ( x > 2 ))
-list.sort((a, b) -> ( a - b ))
-println(list.toString())
+def xs : java.util.List(int) = java.util.ArrayList()
+xs.add(3)
+xs.add(1)
+xs.add(4)
+xs.add(2)
+xs.removeIf((x) -> ( x > 2 ))
+xs.sort((a, b) -> ( a - b ))
+println(xs.toString())
 }}}}}
 36
 [1, 2]

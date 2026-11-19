@@ -21,7 +21,7 @@ java.lang.ArithmeticException : / by zero
 
 {{{{{
 ;; Constructor throwing IllegalArgumentException is unwrapped
-def list : java.util.List(int) = java.util.ArrayList(-1)
+def xs : java.util.List(int) = java.util.ArrayList(-1)
 }}}}}
 java.lang.IllegalArgumentException : Illegal Capacity: -1
 

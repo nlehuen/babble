@@ -64,7 +64,7 @@ final class CallSolver {
         if (callee == Type.PRINT) {
             Type appendable = new Type.JavaInstance(Appendable.class);
             for (BabbleParser.CallParameterContext argument : arguments) {
-                if (argument.ID() != null && "to".equals(argument.ID().getText())) {
+                if ("to".equals(ScopeAnalysis.callParamName(argument))) {
                     checker.subsumes(argument.expression(), null, checker.check(argument.expression(), appendable), appendable);
                 } else {
                     checker.check(argument.expression(), Type.NULLABLE_ANY);
@@ -122,7 +122,7 @@ final class CallSolver {
         }
         if (callee instanceof Type.JavaClassValue value) {
             Class<?> java = value.type();
-            if (java.isInterface() && arguments.size() == 1 && arguments.get(0).ID() == null
+            if (java.isInterface() && arguments.size() == 1 && ScopeAnalysis.callParamName(arguments.get(0)) == null
                     && JavaTypes.isFunctionalInterface(java)) {
                 return javaGenericSamCall(java, arguments.get(0).expression(), ctx, expected);
             }
@@ -145,7 +145,7 @@ final class CallSolver {
      */
     Type instantiateFunctionValue(Type.Function fn, BabbleParser.SelectorContext ctx, Type expected) {
         if (expected == null) {
-            checker.warn("Missing type : cannot infer type arguments for " + ctx.ID().getText(), ctx);
+            checker.warn("Missing type : cannot infer type arguments for " + ScopeAnalysis.selectorName(ctx), ctx);
             return Type.ERROR;
         }
         Type target = Type.withoutNull(expected);
@@ -156,7 +156,7 @@ final class CallSolver {
             expectedFn = JavaTypeBridge.samFunctionType(ji, checker.effectChecker());
         }
         if (expectedFn == null || !expectedFn.typeParameters().isEmpty()) {
-            checker.warn("Missing type : cannot infer type arguments for " + ctx.ID().getText(), ctx);
+            checker.warn("Missing type : cannot infer type arguments for " + ScopeAnalysis.selectorName(ctx), ctx);
             return Type.ERROR;
         }
         Set<Type.TypeVar> solving = Set.copyOf(fn.typeParameters());
@@ -171,7 +171,7 @@ final class CallSolver {
         }
         Map<Type.TypeVar, Type> inferred = solveAll(fn.typeParameters(), store, Map.of(), List.of(), List.of());
         if (inferred == null) {
-            checker.warn("Missing type : cannot infer type arguments for " + ctx.ID().getText(), ctx);
+            checker.warn("Missing type : cannot infer type arguments for " + ScopeAnalysis.selectorName(ctx), ctx);
             return Type.ERROR;
         }
         return checker.algebra().substitute(unparameterized, inferred);
@@ -742,9 +742,7 @@ final class CallSolver {
     private static String[] argumentNames(List<BabbleParser.CallParameterContext> arguments) {
         String[] names = new String[arguments.size()];
         for (int i = 0; i < names.length; i++) {
-            if (arguments.get(i).ID() != null) {
-                names[i] = arguments.get(i).ID().getText();
-            }
+            names[i] = ScopeAnalysis.callParamName(arguments.get(i));
         }
         return names;
     }

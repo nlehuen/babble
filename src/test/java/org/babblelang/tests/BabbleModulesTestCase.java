@@ -575,14 +575,14 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         file("gen.ba", "export def Container(T) = interface ( def get : () : T )\n"
                 + "export def Box(T) = class (def value : T) implements Container(T) (\n"
                 + "  def get = () : T -> ( this.value )\n"
-                + "  def map(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )\n"
+                + "  def mapBox(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )\n"
                 + ")\n"
                 + "export def id(T) = (x : T) : T -> ( x )");
         Assertions.assertEquals("42:hi", run(
                 "def gen = import(\"gen.ba\")\n"
                         + "def b : gen.Box(int) = gen.Box(42)\n"
                         + "def c : gen.Container(int) = b\n"
-                        + "def s = b.map((n) -> ( \"hi\" ))\n"
+                        + "def s = b.mapBox((n) -> ( \"hi\" ))\n"
                         + "\"\" + c.get() + \":\" + gen.id(s.get())"));
         Assertions.assertEquals(java.util.List.of(
                 "main.ba:2:26 Type error : expected Box(int), got Box(string)"),

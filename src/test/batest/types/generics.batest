@@ -4,10 +4,10 @@
 ;; Generic functions and generic classes with generic methods
 def id(T) = (x : T) : T -> ( x )
 def Box(T) = class (def value : T) (
-    def map(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )
+    def mapBox(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )
 )
 def bi : Box(int) = Box(5)
-def bd : Box(double) = bi.map((x) -> ( x * 1.5 ))
+def bd : Box(double) = bi.mapBox((x) -> ( x * 1.5 ))
 def s : string = id("hello")
 println(bi.value, ":", bd.value, ":", s)
 }}}}}

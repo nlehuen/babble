@@ -2708,7 +2708,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     private String callSiteField(BabbleParser.CallContext ctx) {
-        CallSite site = Interpreter.callSite(ctx, sourceName);
+        return callSiteField(Interpreter.callSite(ctx, sourceName));
+    }
+
+    private String callSiteField(CallSite site) {
         return addConstant("CS", "L" + CALL_SITE + ";", 24 + estimateSize(site.argTexts()), m -> {
             m.visitTypeInsn(NEW, CALL_SITE);
             m.visitInsn(DUP);
@@ -2809,16 +2812,16 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * @param occurrence what the resolution bound the first name of the type for
      */
     private void type(BabbleParser.TypeContext type, ParserRuleContext occurrence) {
-        List<org.antlr.v4.runtime.tree.TerminalNode> ids = org.babblelang.analysis.ScopeAnalysis.simpleType(type).ID();
+        List<String> ids = org.babblelang.analysis.ScopeAnalysis.simpleTypePath(org.babblelang.analysis.ScopeAnalysis.simpleType(type));
         line(type);
-        loadName(occurrence, ids.get(0).getText());
+        loadName(occurrence, ids.get(0));
         convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
-        StringBuilder text = new StringBuilder(ids.get(0).getText());
+        StringBuilder text = new StringBuilder(ids.get(0));
         for (int i = 1; i < ids.size(); i++) {
-            mv.visitLdcInsn(ids.get(i).getText());
+            mv.visitLdcInsn(ids.get(i));
             pushString(mv, text.toString());
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
-            text.append('.').append(ids.get(i).getText());
+            text.append('.').append(ids.get(i));
         }
         pushString(mv, type.getText());
         mv.visitMethodInsn(INVOKESTATIC, CLASSES, "type", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
@@ -3136,7 +3139,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         loadName(selector, "this");
         convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
         type(scopes.superTarget(superExpression), superExpression);
-        mv.visitLdcInsn(selector.ID().getText());
+        mv.visitLdcInsn(ScopeAnalysis.selectorName(selector));
         mv.visitVarInsn(ALOAD, rtLocal);
         arguments(parameters);
         if (names != null) {
@@ -3381,7 +3384,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitSelector(BabbleParser.SelectorContext ctx) {
-        String name = ctx.ID().getText();
+        String name = ScopeAnalysis.selectorName(ctx);
         BabbleParser.ExpressionContext expression = ctx.expression();
         if (expression == null) {
             loadName(ctx, name);
@@ -3520,7 +3523,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitInsn(ACONST_NULL);
             mv.visitJumpInsn(GOTO, end);
             mv.visitLabel(nonNull);
-            selectReceiverMember(selector, receiver, selector.ID().getText());
+            selectReceiverMember(selector, receiver, ScopeAnalysis.selectorName(selector));
             String selectorChecked = scopes.checkedType(selector);
             if (selectorChecked != null) {
                 line(selector);
@@ -3662,7 +3665,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.ThisExpressionContext thisExpression) {
             ClassGen gen = thisClassAt(thisExpression);
-            String member = selector.ID().getText();
+            String member = ScopeAnalysis.selectorName(selector);
             int index = gen != null ? gen.shape.memberIndex(member) : -1;
             if (index >= 0 && gen.shape.isMethod(index)) {
                 // A method of this compiled class : a direct call of its JVM method, once its def has run.
@@ -4590,7 +4593,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             compoundAssignment(ctx, operator);
             return null;
         }
-        String name = ctx.name.getText();
+        String name = ScopeAnalysis.assignName(ctx);
         if (ctx.namespace == null) {
             Resolution.Variable variable = resolution.variable(ctx);
             if (variable != null) {
@@ -4706,7 +4709,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * the stack.
      */
     private void compoundAssignment(BabbleParser.AssignExpressionContext ctx, String operator) {
-        String name = ctx.name.getText();
+        String name = ScopeAnalysis.assignName(ctx);
         if (ctx.namespace == null) {
             Resolution.Variable variable = resolution.variable(ctx);
             if (variable != null) {
@@ -5240,6 +5243,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitLongLiteral(BabbleParser.LongLiteralContext ctx) {
+        String text = ctx.getText();
+        mv.visitLdcInsn(Long.parseLong(text.substring(0, text.length() - 1)));
+        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    @Override
     public Void visitInteger(BabbleParser.IntegerContext ctx) {
         integer(ctx, ctx.getText());
         return null;
@@ -5258,6 +5270,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitFloatLiteral(BabbleParser.FloatLiteralContext ctx) {
+        String text = ctx.getText();
+        mv.visitLdcInsn(Float.parseFloat(text.substring(0, text.length() - 1)));
+        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    @Override
     public Void visitDouble(BabbleParser.DoubleContext ctx) {
         mv.visitLdcInsn(Double.parseDouble(ctx.getText()));
         stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
@@ -5265,8 +5286,119 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitCharLiteral(BabbleParser.CharLiteralContext ctx) {
+        pushInt(mv, Interpreter.unescapeChar(ctx.CHAR_LIT().getText()));
+        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    @Override
     public Void visitString(BabbleParser.StringContext ctx) {
         pushString(mv, Interpreter.unescape(ctx.STRING().getText()));
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    @Override
+    public Void visitNonNullAssertion(BabbleParser.NonNullAssertionContext ctx) {
+        String expected = scopes.nonNullAssertionTarget(ctx);
+        if (expected == null) {
+            visit(ctx.expression());
+            return null;
+        }
+        emitBoxed(ctx.expression());
+        mv.visitLdcInsn(expected);
+        line(ctx);
+        mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "checkNotNull", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        ScopeAnalysis.PrimitiveKind targetKind = scopes.expressionKind(ctx);
+        if (targetKind.isPrimitive()) {
+            unbox(targetKind);
+            stackKind = targetKind;
+        } else {
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        }
+        return null;
+    }
+
+    @Override
+    public Void visitCoreScalarRef(BabbleParser.CoreScalarRefContext ctx) {
+        loadName(ctx, ctx.coreScalarKeyword().getText());
+        return null;
+    }
+
+    @Override
+    public Void visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
+        emitBoxed(ctx.expression());
+        if (!scopes.isTypeApplyCall(ctx)) {
+            // Curried value call: f(a)(b)
+            List<BabbleParser.TypeContext> firstArgs = ctx.typeArguments().type();
+            String[] firstTexts = new String[firstArgs.size()];
+            for (int i = 0; i < firstArgs.size(); i++) {
+                firstTexts[i] = firstArgs.get(i).getText();
+            }
+            String firstSite = callSiteField(new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), firstTexts));
+            mv.visitFieldInsn(GETSTATIC, className, firstSite, "L" + CALL_SITE + ";");
+            line(ctx);
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + RUNTIME + "Callable;", false);
+            mv.visitVarInsn(ALOAD, rtLocal);
+            pushInt(mv, firstArgs.size());
+            mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
+            for (int i = 0; i < firstArgs.size(); i++) {
+                mv.visitInsn(DUP);
+                pushInt(mv, i);
+                BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(firstArgs.get(i));
+                List<String> ids = ScopeAnalysis.simpleTypePath(simple);
+                loadName(simple, ids.get(0));
+                convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
+                StringBuilder text = new StringBuilder(ids.get(0));
+                for (int j = 1; j < ids.size(); j++) {
+                    mv.visitLdcInsn(ids.get(j));
+                    pushString(mv, text.toString());
+                    mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
+                    text.append('.').append(ids.get(j));
+                }
+                mv.visitInsn(AASTORE);
+            }
+            mv.visitInsn(ACONST_NULL);
+            mv.visitFieldInsn(GETSTATIC, className, firstSite, "L" + CALL_SITE + ";");
+            line(ctx);
+            mv.visitMethodInsn(INVOKEINTERFACE, RUNTIME + "Callable", "call",
+                    "(L" + RUNTIME + "ScriptRuntime;[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", true);
+        }
+        List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
+        String[] argTexts = new String[params.size()];
+        String[] names = null;
+        for (int i = 0; i < params.size(); i++) {
+            argTexts[i] = params.get(i).expression().getText();
+            String name = ScopeAnalysis.callParamName(params.get(i));
+            if (name != null) {
+                if (names == null) {
+                    names = new String[params.size()];
+                }
+                names[i] = name;
+            }
+        }
+        String site = callSiteField(new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), argTexts));
+        mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
+        line(ctx);
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + RUNTIME + "Callable;", false);
+        mv.visitVarInsn(ALOAD, rtLocal);
+        arguments(params);
+        if (names != null) {
+            getStringArray(names);
+        } else {
+            mv.visitInsn(ACONST_NULL);
+        }
+        mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
+        line(ctx);
+        mv.visitMethodInsn(INVOKEINTERFACE, RUNTIME + "Callable", "call",
+                "(L" + RUNTIME + "ScriptRuntime;[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", true);
+        String checked = scopes.checkedType(ctx);
+        if (checked != null) {
+            line(ctx);
+            checkType(checked);
+        }
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         return null;
     }

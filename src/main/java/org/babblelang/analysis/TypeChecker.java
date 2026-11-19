@@ -424,7 +424,7 @@ final class TypeChecker {
     /** The first note found in {@code tree}, innermost names first, then the parameters of a call's function. */
     private String findWideningNote(ParseTree tree, int diagnosticLine) {
         if (tree instanceof BabbleParser.SelectorContext selector) {
-            String note = noteForName(selector, selector.ID().getText(), selector.expression(), diagnosticLine);
+            String note = noteForName(selector, ScopeAnalysis.selectorName(selector), selector.expression(), diagnosticLine);
             if (note != null) {
                 return note;
             }
@@ -453,7 +453,7 @@ final class TypeChecker {
     }
 
     private String assignmentWideningNote(BabbleParser.AssignExpressionContext assign, int diagnosticLine) {
-        return noteForName(assign, assign.name.getText(), assign.namespace, diagnosticLine);
+        return noteForName(assign, ScopeAnalysis.assignName(assign), assign.namespace, diagnosticLine);
     }
 
     /**
@@ -1364,6 +1364,10 @@ final class TypeChecker {
                 case BabbleParser.ThisExpressionContext c -> visitThisExpression(c, expected, role);
                 case BabbleParser.SuperExpressionContext c -> visitSuperExpression(c, expected, role);
                 case BabbleParser.SelectorContext c -> visitSelector(c, expected, role);
+                case BabbleParser.NonNullAssertionContext c -> visitNonNullAssertion(c, expected, role);
+                case BabbleParser.CoreScalarRefContext c -> visitCoreScalarRef(c, expected, role);
+                case BabbleParser.CoreCollectionCallContext c -> visitCoreCollectionCall(c, expected, role);
+                case BabbleParser.TypeApplyCallContext c -> visitTypeApplyCall(c, expected, role);
                 case BabbleParser.CallContext c -> visitCall(c, expected, role);
                 case BabbleParser.BlockExpressionContext c -> visitBlockExpression(c, expected, role);
                 case BabbleParser.BlockContext c -> visitBlock(c, expected, role);
@@ -1378,8 +1382,11 @@ final class TypeChecker {
                 case BabbleParser.NullContext c -> visitNull(c, expected, role);
                 case BabbleParser.BooleanContext c -> visitBoolean(c, expected, role);
                 case BabbleParser.RecurseContext c -> visitRecurse(c, expected, role);
+                case BabbleParser.LongLiteralContext c -> visitLongLiteral(c, expected, role);
                 case BabbleParser.IntegerContext c -> visitInteger(c, expected, role);
+                case BabbleParser.FloatLiteralContext c -> visitFloatLiteral(c, expected, role);
                 case BabbleParser.DoubleContext c -> visitDouble(c, expected, role);
+                case BabbleParser.CharLiteralContext c -> visitCharLiteral(c, expected, role);
                 case BabbleParser.StringContext c -> visitString(c, expected, role);
                 case BabbleParser.ReturnExpressionContext c -> visitReturnExpression(c, expected, role);
                 default -> {
@@ -1533,7 +1540,7 @@ final class TypeChecker {
         }
 
         private Type selectUninstantiated(BabbleParser.SelectorContext ctx) {
-            String name = ctx.ID().getText();
+            String name = ScopeAnalysis.selectorName(ctx);
             BabbleParser.ExpressionContext receiver = ctx.expression();
             if (receiver == null) {
                 Object resolved = resolveName(ctx, name, occurrenceScopes.get(ctx));
@@ -1601,7 +1608,7 @@ final class TypeChecker {
                 result = new Type.Module(module);
             } else if (isUnshadowedImport(ctx.expression())
                     && ctx.callParameters().callParameter().size() == 1
-                    && ctx.callParameters().callParameter(0).ID() == null
+                    && ScopeAnalysis.callParamName(ctx.callParameters().callParameter(0)) == null
                     && ctx.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
                 synth(string);
                 String target = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
@@ -1722,10 +1729,102 @@ final class TypeChecker {
             Type.Simple builtin = narrowing.isBuiltinTarget(ctx);
             if (builtin != null) {
                 pass.analysis.setIsBuiltin(ctx, builtin.name());
+            } else if (ctx.coreType != null) {
+                if (ctx.typeArguments() != null) {
+                    warn("Cannot test erased type arguments with 'is' : use 'is " + ctx.coreType.getText() + "'", ctx.coreType);
+                } else {
+                    warn("Type error : cannot test 'is " + ctx.coreType.getText() + "'", ctx.coreType);
+                }
             } else {
                 synth(ctx.right, Role.TYPE_TEST_RIGHT);
             }
             return Type.BOOL;
+        }
+
+        private Type visitNonNullAssertion(BabbleParser.NonNullAssertionContext ctx, Type expected, Role role) {
+            Type source = synth(ctx.expression());
+            if (source == Type.ERROR || source == Type.NOTHING) {
+                return source;
+            }
+            if (source == Type.NULL) {
+                warn("Type error : expected any, got null", ctx.expression());
+                return Type.ERROR;
+            }
+            if (!Type.containsNull(source)) {
+                analysisWarn("Redundant non-null assertion : " + source, ctx);
+                return source;
+            }
+            Type nonNull = Type.withoutNull(source);
+            pass.analysis.setNonNullAssertionTarget(ctx, nonNull.toString());
+            return nonNull;
+        }
+
+        private Type visitCoreScalarRef(BabbleParser.CoreScalarRefContext ctx, Type expected, Role role) {
+            return operators.implicitType(ctx.coreScalarKeyword().getText());
+        }
+
+        private Type visitCoreCollectionCall(BabbleParser.CoreCollectionCallContext ctx, Type expected, Role role) {
+            for (BabbleParser.CallParameterContext arg : ctx.callParameters().callParameter()) {
+                synth(arg.expression());
+            }
+            return Type.ANY;
+        }
+
+        private Type visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx, Type expected, Role role) {
+            Type callee = synth(ctx.expression(), Role.CALLEE);
+            boolean genericCallee = (callee instanceof Type.Function f && !f.typeParameters().isEmpty())
+                    || (callee instanceof Type.ClassValue cv && !annotator.typeVarsOf(cv.node()).isEmpty())
+                    || (callee instanceof Type.JavaClassValue jcv && jcv.type().getTypeParameters().length > 0);
+            boolean hasTypeOnlySyntax = false;
+            for (BabbleParser.TypeContext t : ctx.typeArguments().type()) {
+                BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(t);
+                if (simple == null || simple.coreTypeKeyword() != null || simple.typeArguments() != null) {
+                    hasTypeOnlySyntax = true;
+                    break;
+                }
+            }
+            if (genericCallee || hasTypeOnlySyntax) {
+                pass.analysis.markTypeApplyCall(ctx);
+                for (BabbleParser.TypeContext t : ctx.typeArguments().type()) {
+                    annotator.annotation(t, scopeOf(ctx), false);
+                }
+                for (BabbleParser.CallParameterContext arg : ctx.callParameters().callParameter()) {
+                    synth(arg.expression());
+                }
+                return Type.ANY;
+            }
+            // Curried value call: f(a)(b) where f is a non-generic callable returning a callable.
+            List<Type> firstArgTypes = new ArrayList<>();
+            for (BabbleParser.TypeContext t : ctx.typeArguments().type()) {
+                BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(t);
+                List<String> path = ScopeAnalysis.simpleTypePath(simple);
+                Object resolved = resolveName(simple, path.get(0), occurrenceScopes.get(simple));
+                Type argType;
+                if (resolved instanceof ParserRuleContext decl) {
+                    Type narrowed = narrowing.narrowedType(decl);
+                    argType = narrowed != null ? narrowed : typeOfDeclaration(decl);
+                } else {
+                    argType = operators.implicitType(path.get(0));
+                }
+                for (int i = 1; i < path.size(); i++) {
+                    argType = members.member(argType, path.get(i), false, simple, String.join(".", path.subList(0, i)));
+                }
+                firstArgTypes.add(argType);
+            }
+            Type intermediate = Type.ANY;
+            if (callee instanceof Type.Function fn) {
+                for (int i = 0; i < Math.min(fn.parameters().size(), firstArgTypes.size()); i++) {
+                    subsumes(ctx.typeArguments().type(i), null, firstArgTypes.get(i), fn.parameters().get(i).type());
+                }
+                intermediate = fn.result();
+            }
+            for (BabbleParser.CallParameterContext arg : ctx.callParameters().callParameter()) {
+                synth(arg.expression());
+            }
+            if (intermediate instanceof Type.Function fn2) {
+                return fn2.result();
+            }
+            return Type.ANY;
         }
 
         private Type visitAsExpression(BabbleParser.AsExpressionContext ctx, Type expected, Role role) {
@@ -1786,7 +1885,7 @@ final class TypeChecker {
         }
 
         private LValue resolveLValue(BabbleParser.AssignExpressionContext ctx, boolean readCurrent) {
-            String name = ctx.name.getText();
+            String name = ScopeAnalysis.assignName(ctx);
             if (ctx.namespace == null) {
                 Object resolved = resolveName(ctx, name, occurrenceScopes.get(ctx));
                 if (resolved instanceof ParserRuleContext declaration) {
@@ -1840,7 +1939,7 @@ final class TypeChecker {
         private void writeLValue(BabbleParser.AssignExpressionContext ctx, LValue target, Type value, ParserRuleContext errorSite) {
             switch (target) {
                 case LValue.JavaField jf -> {
-                    String error = jf.field().functionError(value, ctx.name.getText());
+                    String error = jf.field().functionError(value, ScopeAnalysis.assignName(ctx));
                     if (error != null) {
                         warn(error, errorSite);
                     } else {
@@ -1929,6 +2028,10 @@ final class TypeChecker {
             return signature(function, expected);
         }
 
+        private Type visitLongLiteral(BabbleParser.LongLiteralContext ctx, Type expected, Role role) {
+            return new Type.JavaInstance(Long.class);
+        }
+
         private Type visitInteger(BabbleParser.IntegerContext ctx, Type expected, Role role) {
             try {
                 Integer.parseInt(ctx.getText());
@@ -1938,8 +2041,16 @@ final class TypeChecker {
             return Type.INT;
         }
 
+        private Type visitFloatLiteral(BabbleParser.FloatLiteralContext ctx, Type expected, Role role) {
+            return new Type.JavaInstance(Float.class);
+        }
+
         private Type visitDouble(BabbleParser.DoubleContext ctx, Type expected, Role role) {
             return Type.DOUBLE;
+        }
+
+        private Type visitCharLiteral(BabbleParser.CharLiteralContext ctx, Type expected, Role role) {
+            return new Type.JavaInstance(Character.class);
         }
 
         private Type visitString(BabbleParser.StringContext ctx, Type expected, Role role) {

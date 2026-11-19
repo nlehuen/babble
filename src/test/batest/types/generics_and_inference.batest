@@ -38,13 +38,13 @@ println(d1, ":", u1, ":", r, ":", opt2.get(), ":", b1.v, ":", p)
 ;; Generic Java SAM target typing (deferred lambda) + Collections.sort / List.replaceAll
 def lenOpt = java.util.Optional.of("abc").map((s) -> ( java.lang.StringBuilder(s).length() )).get()
 def fn : java.util.function.Function(string, int) = (s) -> ( java.lang.StringBuilder(s).length() )
-def list : java.util.List(string) = java.util.ArrayList()
-list.add("bb")
-list.add("a")
-list.add("ccc")
-java.util.Collections.sort(list, (a, b) -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
-list.replaceAll((s) -> ( s + ":" + java.util.Optional.of(s).map(fn).get() ))
-println(lenOpt, ":", list.get(0), ",", list.get(1), ",", list.get(2))
+def xs : java.util.List(string) = java.util.ArrayList()
+xs.add("bb")
+xs.add("a")
+xs.add("ccc")
+java.util.Collections.sort(xs, (a, b) -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
+xs.replaceAll((s) -> ( s + ":" + java.util.Optional.of(s).map(fn).get() ))
+println(lenOpt, ":", xs.get(0), ",", xs.get(1), ",", xs.get(2))
 }}}}}
 3:a:1,bb:2,ccc:3
 
@@ -193,9 +193,9 @@ Type error : expected int, got double (x is double because of the call)
 {{{{{
 ;; Java generic bound check rejects non-Comparable Babble class in Collections.max
 def Box = class (def x : int) ()
-def list : java.util.List(Box) = java.util.ArrayList()
-list.add(Box(1))
-println(java.util.Collections.max(list))
+def xs : java.util.List(Box) = java.util.ArrayList()
+xs.add(Box(1))
+println(java.util.Collections.max(xs))
 }}}}}
 Type error : type argument Box does not satisfy bound T of java.util.Collections.max
 

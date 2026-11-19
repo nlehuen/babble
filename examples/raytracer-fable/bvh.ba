@@ -20,27 +20,27 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
     )
 ) static (
     ;; Recursively partitions a HittableList into a balanced BVH tree
-    def fromList = (list: HittableList): Hittable -> (
-        def count: int = list.objects.size()
-        if count == 0 then (return list)
+    def fromList = (items: HittableList): Hittable -> (
+        def count: int = items.objects.size()
+        if count == 0 then (return items)
         if count == 1 then (
-            def only = list.objects.get(0)
+            def only = items.objects.get(0)
             if only != null then (return only)
-            return list
+            return items
         )
         if count == 2 then (
-            def first = list.objects.get(0)
-            def second = list.objects.get(1)
+            def first = items.objects.get(0)
+            def second = items.objects.get(1)
             if first != null and second != null then (
-                return this(first, second, list.boundingBox())
+                return this(first, second, items.boundingBox())
             )
-            return list
+            return items
         )
 
         def cbox: AABB = AABB.empty
         def i: int = 0
         while i < count then (
-            def center = list.objects.get(i)?.boundingBox()?.center()
+            def center = items.objects.get(i)?.boundingBox()?.center()
             if center != null then (
                 cbox = cbox.expandPoint(center)
             )
@@ -53,7 +53,7 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
         def rightList: HittableList = HittableList()
         i = 0
         while i < count then (
-            def item = list.objects.get(i)
+            def item = items.objects.get(i)
             if item != null then (
                 if item.boundingBox().centroid(axis) < splitVal then (
                     leftList.add(item)
@@ -71,7 +71,7 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
             def goLeft: bool = true
             i = 0
             while i < count then (
-                def item = list.objects.get(i)
+                def item = items.objects.get(i)
                 if item != null then (
                     if goLeft then (
                         leftList.add(item)
@@ -84,6 +84,6 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
             )
         )
 
-        this(recurse(leftList), recurse(rightList), list.boundingBox())
+        this(recurse(leftList), recurse(rightList), items.boundingBox())
     )
 )

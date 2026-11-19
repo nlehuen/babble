@@ -79,11 +79,11 @@ def runTests = () -> (
     if scatterGlass == null then (return assert(false, "Dielectric scatter failed"))
     assert(scatterGlass.attenuation == Vec3.one, "Dielectric scatter failed")
 
-    def list: raytracer.HittableList = raytracer.Scenes.threeSpheres()
-    assert(list.size == 5, "threeSpheres size failed")
-    assert(list.countWhere((h: raytracer.Hittable): bool -> (h is raytracer.Sphere)) == 5, "countWhere failed")
-    def bvh: raytracer.Hittable = raytracer.BVHNode.fromList(list)
-    def hitList: raytracer.HitRecord? = list.hit(r, raytracer.Interval(0.001, math.infinity))
+    def sceneList: raytracer.HittableList = raytracer.Scenes.threeSpheres()
+    assert(sceneList.size == 5, "threeSpheres size failed")
+    assert(sceneList.countWhere((h: raytracer.Hittable): bool -> (h is raytracer.Sphere)) == 5, "countWhere failed")
+    def bvh: raytracer.Hittable = raytracer.BVHNode.fromList(sceneList)
+    def hitList: raytracer.HitRecord? = sceneList.hit(r, raytracer.Interval(0.001, math.infinity))
     def hitBvh: raytracer.HitRecord? = bvh.hit(r, raytracer.Interval(0.001, math.infinity))
     assert(hitList == hitBvh, "BVH and HittableList diverged")
 

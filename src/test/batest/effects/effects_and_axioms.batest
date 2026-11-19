@@ -50,11 +50,11 @@ println(compute(-7), ":", l.size())
 {{{{{
 ;; Violation: mutating non-mut parameter inside function fails EffectChecker
 def Box = class (def v : int) (
-    def set = mut (x : int) : int -> ( this.v = x ; this.v )
+    def putVal = mut (x : int) : int -> ( this.v = x ; this.v )
 )
-def bad = (b : Box) -> ( b.set(1) )
+def bad = (b : Box) -> ( b.putVal(1) )
 }}}}}
-Cannot mutate parameter b (mut method b.set) : mark parameter as mut b
+Cannot mutate parameter b (mut method b.putVal) : mark parameter as mut b
 
 {{{{{
 ;; Violation: aliasing same variable to two mut parameters in a single call

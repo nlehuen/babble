@@ -352,7 +352,7 @@ public class FormatterTestCase {
 
                     ;; last
                 )
-                def long = 1  ;; not aligned with those above
+                def longer = 1  ;; not aligned with those above
                 ;; end
                 """, """
                 ;; first  \s
@@ -371,7 +371,7 @@ public class FormatterTestCase {
 
                 ;; last
                 )
-                def long = 1 ;; not aligned with those above
+                def longer = 1 ;; not aligned with those above
                 ;; end""");
         // A comment of several lines moves as a whole : its lines stay where they are, relative to its start.
         assertFormats("""
@@ -485,6 +485,27 @@ public class FormatterTestCase {
                 )
                 def pure = ( axiom : int , mut : int ) : int -> ( axiom + mut )
                 pure ( 1 , 2 )
+                """);
+    }
+
+    @Test
+    public void testBip011CoreTypesSyntax() throws Exception {
+        assertFormats("""
+                def s: string? = "hi"
+                def u = s!.toUpperCase()
+                def a = 42L
+                def b = 1.5f
+                def c = 'a'
+                def xs = list(int)(1, 2)
+                def ys = xs.set(0, 3)
+                """, """
+                def s : string? = "hi"
+                def u = s ! . toUpperCase ( )
+                def a = 42L
+                def b = 1.5f
+                def c = 'a'
+                def xs = list ( int ) ( 1 , 2 )
+                def ys = xs . set ( 0 , 3 )
                 """);
     }
 }

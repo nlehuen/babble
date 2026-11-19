@@ -437,11 +437,11 @@ public class EffectsTestCase {
                     a.x = b.x
                     b.x = t
                 )
-                def list: java.util.List(Box) = java.util.ArrayList()
-                list.add(Box(1))
-                list.add(Box(2))
-                def a = list.get(0)
-                def b = list.get(1)
+                def xs: java.util.List(Box) = java.util.ArrayList()
+                xs.add(Box(1))
+                xs.add(Box(2))
+                def a = xs.get(0)
+                def b = xs.get(1)
                 if a != null and b != null then (
                     swap(a, b)
                 )

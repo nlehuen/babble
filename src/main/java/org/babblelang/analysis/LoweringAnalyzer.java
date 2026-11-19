@@ -138,7 +138,7 @@ final class LoweringAnalyzer {
         if (tree instanceof BabbleParser.SelectorContext selector) {
             deriveSelection(selector);
         } else if (tree instanceof BabbleParser.AssignExpressionContext assign && assign.namespace != null
-                && JavaTypeBridge.assignedField(types.get(assign.namespace), assign.name.getText()) instanceof JavaTypeBridge.AssignedField field) {
+                && JavaTypeBridge.assignedField(types.get(assign.namespace), ScopeAnalysis.assignName(assign)) instanceof JavaTypeBridge.AssignedField field) {
             ScopeAnalysis.JavaFieldTarget target = field.target(types.get(assign));
             if (target != null) {
                 pass.analysis.setJavaFieldTarget(assign, target);
@@ -156,7 +156,7 @@ final class LoweringAnalyzer {
         if (selector.expression() == null || selector.safe != null || !(types.get(selector.expression()) instanceof Type receiver)) {
             return;
         }
-        String name = selector.ID().getText();
+        String name = ScopeAnalysis.selectorName(selector);
         if (receiver instanceof Type.Module module) {
             int index = module.module().exportIndex(name);
             if (module.module().summary() != null && module.module().exports().contains(name) && index >= 0) {
@@ -219,7 +219,7 @@ final class LoweringAnalyzer {
         }
         for (int i = 0; i < paramTypes.length; i++) {
             Type argType = types.get(arguments.get(i).expression());
-            if (arguments.get(i).ID() != null
+            if (ScopeAnalysis.callParamName(arguments.get(i)) != null
                     || !JavaTypeBridge.guaranteedApplicable(paramTypes[i], argType)
                     || !JavaTypeBridge.supportedStaticJavaArg(paramTypes[i], argType)) {
                 return false;
@@ -275,7 +275,7 @@ final class LoweringAnalyzer {
             return;
         }
         for (BabbleParser.CallParameterContext arg : arguments) {
-            if (arg.ID() != null) {
+            if (ScopeAnalysis.callParamName(arg) != null) {
                 return;
             }
         }
@@ -329,11 +329,11 @@ final class LoweringAnalyzer {
             return;
         }
         for (BabbleParser.CallParameterContext arg : arguments) {
-            if (arg.ID() != null) {
+            if (ScopeAnalysis.callParamName(arg) != null) {
                 return;
             }
         }
-        FoundInterfaceMember found = findDeclaringInterfaceMember(recvInst.node(), sel.ID().getText());
+        FoundInterfaceMember found = findDeclaringInterfaceMember(recvInst.node(), ScopeAnalysis.selectorName(sel));
         if (found == null) {
             return;
         }

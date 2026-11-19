@@ -227,7 +227,7 @@ final class TypeAnnotations {
      * a def (possibly reached through packages or modules), or a Java class. Null when unknown.
      */
     private Type simpleType(BabbleParser.SimpleTypeContext type, ScopeNode scope, boolean allowRaw) {
-        List<String> path = type.ID().stream().map(Object::toString).toList();
+        List<String> path = ScopeAnalysis.simpleTypePath(type);
         if (path.size() == 1) {
             Type.TypeVar tv = resolveTypeVar(path.get(0), type, scope);
             if (tv != null) {
@@ -434,7 +434,7 @@ final class TypeAnnotations {
     private static String importedPackage(BabbleParser.ExpressionContext value) {
         if (value instanceof BabbleParser.SelectorContext selector && selector.expression() != null) {
             String base = importedPackage(selector.expression());
-            return base != null ? base + "." + selector.ID().getText() : null;
+            return base != null ? base + "." + ScopeAnalysis.selectorName(selector) : null;
         }
         if (value instanceof BabbleParser.CallContext call
                 && call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null

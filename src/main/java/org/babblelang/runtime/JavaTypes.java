@@ -234,6 +234,17 @@ public final class JavaTypes {
     }
 
     /**
+     * Checks that a value entering a non-nullable Babble type is non-null, throwing the
+     * standard {@code Type error : expected <T>, got null} diagnostic if null.
+     */
+    public static Object checkNotNull(Object value, String expectedType) {
+        if (value == null) {
+            throw new BabbleException("Type error : expected " + expectedType + ", got null");
+        }
+        return value;
+    }
+
+    /**
      * Checks a value returned or read from Java against a boxed primitive type that Babble
      * maps to a non-nullable primitive ({@code int}, {@code double}, {@code bool}).
      */
