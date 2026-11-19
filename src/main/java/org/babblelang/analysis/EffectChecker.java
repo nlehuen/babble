@@ -31,6 +31,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.Deque;
@@ -544,6 +545,9 @@ final class EffectChecker {
             mutParams = profile.mutParams();
             borrowParams = profile.borrowParams();
             borrowRest = profile.borrowReceiver();
+            if (!target.effects().hasExplicitAnnotations() && effects.mutThis()) {
+                effects = EffectSet.ofInferred(effects.effects(), false, effects.borrowThis());
+            }
         } else if (from instanceof Type.ClassValue cv && !cv.node().isInterface()) {
             CallableSummary summary = constructorSummary(cv.node());
             effects = summary != null ? summary.effects() : EffectSet.EMPTY;
@@ -859,8 +863,21 @@ final class EffectChecker {
         if (hasClassEffectAnnotation(owner)) {
             return profileFromAnnotations(exactCtor, owner, true);
         }
-        // Tier 7: Unconstrained default.
+        // Tier 6: Built-in BIP011 core type constructor profiles.
         int paramCount = exactCtor != null ? exactCtor.getParameterCount() : 0;
+        if (owner == String.class) {
+            boolean[] borrowParams = new boolean[paramCount];
+            Arrays.fill(borrowParams, true);
+            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false);
+            return new JavaCallProfile(set, false, false, new boolean[paramCount], borrowParams, false);
+        }
+        if (isCoreCollectionClass(owner)
+                || owner == java.util.AbstractMap.SimpleImmutableEntry.class
+                || owner == java.util.AbstractMap.SimpleEntry.class) {
+            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), false, false);
+            return new JavaCallProfile(set, false, false, new boolean[paramCount], new boolean[paramCount], false);
+        }
+        // Tier 7: Unconstrained default.
         return new JavaCallProfile(EffectSet.EMPTY, false, false, new boolean[paramCount], new boolean[paramCount], false);
     }
 
@@ -1032,9 +1049,99 @@ final class EffectChecker {
         }
     }
 
-    /** Tier 6 : Standard value protocol defaults (bip007_effects.md §4.3, §6.2). */
+    private static final Set<String> STRING_NOTHROW_METHODS = Set.of(
+            "length", "isEmpty", "isBlank", "trim", "strip", "stripLeading", "stripTrailing",
+            "toLowerCase", "toUpperCase", "startsWith", "endsWith", "contains", "indexOf",
+            "lastIndexOf", "equals", "equalsIgnoreCase", "contentEquals", "compareTo",
+            "compareToIgnoreCase", "hashCode", "toString", "concat", "replace");
+
+    private static final Set<String> COLLECTION_READ_METHODS = Set.of(
+            "size", "isEmpty", "get", "getOrDefault", "contains", "containsKey",
+            "containsValue", "indexOf", "lastIndexOf", "first", "last", "getFirst",
+            "getLast", "firstKey", "lastKey", "hasNext", "hasPrevious", "peek",
+            "element", "comparator");
+
+    private static final Set<String> COLLECTION_READ_NOTHROW_METHODS = Set.of(
+            "size", "isEmpty", "hasNext", "hasPrevious", "comparator");
+
+    private static final Set<String> COLLECTION_VIEW_METHODS = Set.of(
+            "iterator", "listIterator", "subList", "keySet", "values", "entrySet",
+            "headSet", "tailSet", "subSet", "headMap", "tailMap", "subMap",
+            "reversed", "descendingSet", "descendingMap");
+
+    private static final Set<String> COLLECTION_VIEW_NOTHROW_METHODS = Set.of(
+            "iterator", "keySet", "values", "entrySet", "reversed",
+            "descendingSet", "descendingMap");
+
+    private static final Set<String> COLLECTION_MUT_METHODS = Set.of(
+            "add", "addAll", "addFirst", "addLast", "set", "put", "putIfAbsent",
+            "putAll", "putFirst", "putLast", "remove", "removeFirst", "removeLast",
+            "removeAll", "retainAll", "replace", "replaceAll", "clear", "sort");
+
+    private static final Set<String> COLLECTION_MUT_BORROW_ARG_METHODS = Set.of(
+            "addAll", "putAll", "removeAll", "retainAll");
+
+    private static boolean isCoreCollectionClass(Class<?> cls) {
+        return cls != null && (java.util.Collection.class.isAssignableFrom(cls)
+                || java.util.Map.class.isAssignableFrom(cls)
+                || cls == java.lang.Iterable.class
+                || java.util.Iterator.class.isAssignableFrom(cls));
+    }
+
+    private static boolean isViewMethod(Class<?> owner, String methodName) {
+        return isCoreCollectionClass(owner) && COLLECTION_VIEW_METHODS.contains(methodName);
+    }
+
+    /** Tier 6 : Standard value protocol & BIP011 core type defaults (bip007_effects.md §4.3, §6.2; bip011 §8.2). */
     private static JavaCallProfile standardProtocolDefault(Class<?> owner, String methodName, Method exactMethod) {
         int paramCount = exactMethod != null ? exactMethod.getParameterCount() : -1;
+        if (owner == String.class) {
+            boolean isNothrow = STRING_NOTHROW_METHODS.contains(methodName);
+            EnumSet<Effect> effs = isNothrow
+                    ? EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW)
+                    : EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC);
+            int pCount = Math.max(paramCount, 0);
+            boolean[] borrowParams = new boolean[pCount];
+            Arrays.fill(borrowParams, true);
+            boolean isStatic = exactMethod != null && Modifier.isStatic(exactMethod.getModifiers());
+            EffectSet set = EffectSet.ofInferred(effs, false, !isStatic);
+            return new JavaCallProfile(set, false, !isStatic, new boolean[pCount], borrowParams, isNothrow);
+        }
+        if (owner != null && java.util.Map.Entry.class.isAssignableFrom(owner)) {
+            if (("getKey".equals(methodName) || "getValue".equals(methodName)) && (paramCount == -1 || paramCount == 0)) {
+                EffectSet set = EffectSet.ofInferred(
+                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+                return new JavaCallProfile(set, false, true, new boolean[0], new boolean[0], true);
+            }
+            if ("setValue".equals(methodName) && (paramCount == -1 || paramCount == 1)) {
+                EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), true, false);
+                return new JavaCallProfile(set, true, false, new boolean[1], new boolean[1], false);
+            }
+        }
+        if (isCoreCollectionClass(owner)) {
+            if (COLLECTION_READ_METHODS.contains(methodName) || COLLECTION_VIEW_METHODS.contains(methodName)) {
+                boolean isNothrow = COLLECTION_READ_NOTHROW_METHODS.contains(methodName)
+                        || COLLECTION_VIEW_NOTHROW_METHODS.contains(methodName);
+                EnumSet<Effect> effs = isNothrow
+                        ? EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW)
+                        : EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC);
+                int pCount = Math.max(paramCount, 0);
+                boolean[] borrowParams = new boolean[pCount];
+                Arrays.fill(borrowParams, true);
+                EffectSet set = EffectSet.ofInferred(effs, false, true);
+                return new JavaCallProfile(set, false, true, new boolean[pCount], borrowParams, isNothrow);
+            }
+            if (COLLECTION_MUT_METHODS.contains(methodName)) {
+                EnumSet<Effect> effs = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC);
+                int pCount = Math.max(paramCount, 0);
+                boolean[] borrowParams = new boolean[pCount];
+                if (COLLECTION_MUT_BORROW_ARG_METHODS.contains(methodName)) {
+                    Arrays.fill(borrowParams, true);
+                }
+                EffectSet set = EffectSet.ofInferred(effs, true, false);
+                return new JavaCallProfile(set, true, false, new boolean[pCount], borrowParams, false);
+            }
+        }
         if ("equals".equals(methodName) && (paramCount == -1 || paramCount == 1)) {
             EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
             return new JavaCallProfile(set, false, true, new boolean[]{false}, new boolean[]{true}, false);
@@ -1046,7 +1153,9 @@ final class EffectChecker {
         }
         if (("hashCode".equals(methodName) || "toString".equals(methodName)) && (paramCount == -1 || paramCount == 0)) {
             Class<?> decl = resolveDeclaringClass(owner, methodName);
-            boolean deterministic = decl != null && decl != Object.class && !decl.isInterface();
+            boolean deterministic = isCoreCollectionClass(owner)
+                    || (owner != null && java.util.Map.Entry.class.isAssignableFrom(owner))
+                    || (decl != null && decl != Object.class && !decl.isInterface());
             EnumSet<Effect> effs = deterministic
                     ? EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC)
                     : EnumSet.of(Effect.PURE, Effect.HERMETIC);
@@ -2712,17 +2821,10 @@ final class EffectChecker {
                 return isDeeplyImmutable(dst) ? Origin.IMMUTABLE : orig;
             }
             if (ctx instanceof BabbleParser.TypeApplyCallContext tac) {
-                eval(tac.expression());
-                for (BabbleParser.CallParameterContext p : tac.callParameters().callParameter()) {
-                    eval(p.expression());
-                }
-                return Origin.IMMUTABLE;
+                return evalCallLike(tac, tac.expression(), tac.callParameters().callParameter());
             }
             if (ctx instanceof BabbleParser.CoreCollectionCallContext ccc) {
-                for (BabbleParser.CallParameterContext p : ccc.callParameters().callParameter()) {
-                    eval(p.expression());
-                }
-                return Origin.IMMUTABLE;
+                return evalCoreCollectionCall(ccc);
             }
             if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
                 Origin leftOrig = eval(asCtx.left);
@@ -2962,9 +3064,12 @@ final class EffectChecker {
         }
 
         private Origin evalCall(BabbleParser.CallContext call) {
-            List<BabbleParser.CallParameterContext> args = call.callParameters().callParameter();
-            BabbleParser.ExpressionContext calleeExpr = call.expression();
+            return evalCallLike(call, call.expression(), call.callParameters().callParameter());
+        }
 
+        private Origin evalCallLike(ParserRuleContext call,
+                                    BabbleParser.ExpressionContext calleeExpr,
+                                    List<BabbleParser.CallParameterContext> args) {
             // Evaluate receiver / callee expression and arguments!
             Origin recvOrig = Origin.IMMUTABLE;
             BabbleParser.ExpressionContext receiverExpr = null;
@@ -2988,7 +3093,10 @@ final class EffectChecker {
             Type resType = checker.rawTypeOf(call);
             Type calleeType = resolveCalleeType(calleeExpr);
 
-            // 1. Built-in `print` / `println` / `import`
+            // 1. Built-in `print` / `println` / `import` / scalar conversions
+            if (calleeExpr instanceof BabbleParser.CoreScalarRefContext) {
+                return evalCoreConversionCall(resType, argExprs);
+            }
             if (calleeType == Type.PRINT) {
                 hermetic = false;
                 deterministic = false;
@@ -3007,20 +3115,23 @@ final class EffectChecker {
             if (rm != null) {
                 JavaCallProfile profile = resolveJavaMethodProfile(rm.getDeclaringClass(), rm.getName(), rm);
                 BabbleParser.ExpressionContext instanceRecv = Modifier.isStatic(rm.getModifiers()) ? null : receiverExpr;
-                return applyJavaCall(call, profile, rm.getParameterTypes(), instanceRecv, recvOrig, argExprs, argOrigins, resType);
+                return applyJavaCall(call, calleeExpr, profile, rm.getDeclaringClass(), rm.getName(),
+                        rm.getParameterTypes(), instanceRecv, recvOrig, argExprs, argOrigins, resType);
             }
             if (calleeType instanceof Type.JavaMethod jm) {
                 JavaCallProfile profile = resolveJavaMethodProfile(jm.owner(), jm.name(), null);
                 Class<?>[] samTypes = findOverloadSamTypes(jm.owner(), jm.name(), args.size());
                 boolean isClassRecv = receiverExpr != null && checker.rawTypeOf(receiverExpr) instanceof Type.JavaClassValue;
-                return applyJavaCall(call, profile, samTypes, isClassRecv ? null : receiverExpr, recvOrig, argExprs, argOrigins, resType);
+                return applyJavaCall(call, calleeExpr, profile, jm.owner(), jm.name(),
+                        samTypes, isClassRecv ? null : receiverExpr, recvOrig, argExprs, argOrigins, resType);
             }
 
             // 3. Java constructor call or Java functional interface SAM conversion `Predicate(fn)`
             Constructor<?> rc = checker.resolvedJavaConstructorOf(call);
             if (rc != null) {
                 JavaCallProfile profile = resolveJavaConstructorProfile(rc.getDeclaringClass(), rc);
-                return applyJavaCall(call, profile, rc.getParameterTypes(), null, Origin.IMMUTABLE, argExprs, argOrigins, resType);
+                return applyJavaCall(call, calleeExpr, profile, rc.getDeclaringClass(), "<init>",
+                        rc.getParameterTypes(), null, Origin.IMMUTABLE, argExprs, argOrigins, resType);
             }
             if (calleeType instanceof Type.JavaClassValue jcv) {
                 if (jcv.type().isInterface() && args.size() == 1 && JavaTypes.isFunctionalInterface(jcv.type())) {
@@ -3028,7 +3139,8 @@ final class EffectChecker {
                     return argOrigins[0];
                 }
                 JavaCallProfile profile = resolveJavaConstructorProfile(jcv.type(), null);
-                return applyJavaCall(call, profile, null, null, Origin.IMMUTABLE, argExprs, argOrigins, resType);
+                return applyJavaCall(call, calleeExpr, profile, jcv.type(), "<init>",
+                        null, null, Origin.IMMUTABLE, argExprs, argOrigins, resType);
             }
 
             // 4. Babble class constructor call `Point(1, 2)`
@@ -3037,7 +3149,7 @@ final class EffectChecker {
                 if (cs != null) {
                     applyEffects(cs.effects());
                     List<Type.Parameter> cParams = checker.constructorParamsForEffects(cv.node());
-                    applyBabbleArgEffects(call, cParams, cs.mutParams(), cs.borrowParams(),
+                    applyBabbleArgEffects(call, calleeExpr, cParams, cs.mutParams(), cs.borrowParams(),
                             null, Origin.IMMUTABLE, false, true, args, argExprs, argOrigins);
                 }
                 return Origin.ofExternal(call, isDeeplyImmutable(resType));
@@ -3051,7 +3163,7 @@ final class EffectChecker {
                 List<Type.Parameter> fParams = selfRaw instanceof Type.Function tf ? tf.parameters() : List.of();
                 boolean hasRecv = canReferenceThis(ownerScope);
                 Origin selfRecv = hasRecv ? Origin.ofThis(THIS_KEY, false) : Origin.IMMUTABLE;
-                applyBabbleArgEffects(call, fParams, selfSum.mutParams(), selfSum.borrowParams(),
+                applyBabbleArgEffects(call, calleeExpr, fParams, selfSum.mutParams(), selfSum.borrowParams(),
                         null, selfRecv, selfSum.effects().mutThis(), selfSum.effects().borrowThis(),
                         args, argExprs, argOrigins);
                 return deriveCallReturnOrigin(resType, selfRecv, selfSum.effects().borrowThis(), argOrigins, selfSum.borrowParams(), fParams, args);
@@ -3066,6 +3178,102 @@ final class EffectChecker {
             return Origin.IMMUTABLE;
         }
 
+        private Origin evalCoreConversionCall(Type target, BabbleParser.ExpressionContext[] argExprs) {
+            if (argExprs.length != 1) {
+                return Origin.IMMUTABLE;
+            }
+            Type src = effectiveType(argExprs[0]);
+            if (target == Type.STRING) {
+                applyEffects(toStringProfile(src));
+                return Origin.IMMUTABLE;
+            }
+            boolean isTotalNumericWidening = Type.isNumericScalar(src) && Type.isNumericScalar(target)
+                    && Type.numericRank(src) <= Type.numericRank(target);
+            boolean isTotalCharWidening = src == Type.CHAR
+                    && (target == Type.INT || target == Type.LONG || target == Type.FLOAT || target == Type.DOUBLE);
+            if (target != src && !isTotalNumericWidening && !isTotalCharWidening) {
+                nothrow = false;
+            }
+            return Origin.IMMUTABLE;
+        }
+
+        private Origin evalCoreCollectionCall(BabbleParser.CoreCollectionCallContext ccc) {
+            String kind = ccc.callee.getText();
+            List<BabbleParser.CallParameterContext> paramsList = ccc.callParameters().callParameter();
+            BabbleParser.ExpressionContext[] argExprs = new BabbleParser.ExpressionContext[paramsList.size()];
+            Origin[] argOrigins = new Origin[paramsList.size()];
+            for (int i = 0; i < paramsList.size(); i++) {
+                argExprs[i] = paramsList.get(i).expression();
+                argOrigins[i] = eval(argExprs[i]);
+            }
+            if ("entry".equals(kind)) {
+                boolean immutableEntry = true;
+                for (int i = 0; i < argExprs.length; i++) {
+                    Type argType = effectiveType(argExprs[i]);
+                    if (!isDeeplyImmutable(argType)) {
+                        immutableEntry = false;
+                        markStoredOrigin(argOrigins[i], "entry", argExprs[i]);
+                    }
+                }
+                if (!immutableEntry) {
+                    applyEffects(EffectSet.ofInferred(
+                            EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true));
+                    return Origin.ofExternal(ccc, false);
+                }
+                return Origin.IMMUTABLE;
+            }
+
+            // list, set, sortedset, map, sortedmap: hermetic deterministic allocation
+            applyEffects(EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true));
+            boolean hasCapacity = false;
+            boolean hasFrom = false;
+            boolean hasComparator = false;
+            boolean hasElements = false;
+            for (int i = 0; i < paramsList.size(); i++) {
+                BabbleParser.CallParameterContext p = paramsList.get(i);
+                String name = p.memberName() != null ? p.memberName().getText() : null;
+                if ("capacity".equals(name)) {
+                    hasCapacity = true;
+                } else if ("from".equals(name)) {
+                    hasFrom = true;
+                    // `from:` borrows the source collection
+                } else if ("comparator".equals(name)) {
+                    hasComparator = true;
+                    markStoredOrigin(argOrigins[i], kind + " comparator", argExprs[i]);
+                    propagateSamCallbackEffects(effectiveType(argExprs[i]), java.util.Comparator.class);
+                } else {
+                    hasElements = true;
+                    Type argType = effectiveType(argExprs[i]);
+                    if (!isDeeplyImmutable(argType)) {
+                        markStoredOrigin(argOrigins[i], kind, argExprs[i]);
+                    }
+                    if ("set".equals(kind)) {
+                        applyEffects(equalityProfile(argType, argType));
+                    } else if ("map".equals(kind)) {
+                        if (argType instanceof Type.JavaInstance ji
+                                && java.util.Map.Entry.class.isAssignableFrom(ji.type())
+                                && !ji.typeArguments().isEmpty()) {
+                            Type keyType = ji.typeArguments().get(0);
+                            applyEffects(equalityProfile(keyType, keyType));
+                        }
+                    } else if ("sortedset".equals(kind) && !hasComparator) {
+                        applyEffects(comparisonProfile(argType, argType));
+                    } else if ("sortedmap".equals(kind) && !hasComparator) {
+                        if (argType instanceof Type.JavaInstance ji
+                                && java.util.Map.Entry.class.isAssignableFrom(ji.type())
+                                && !ji.typeArguments().isEmpty()) {
+                            Type keyType = ji.typeArguments().get(0);
+                            applyEffects(comparisonProfile(keyType, keyType));
+                        }
+                    }
+                }
+            }
+            if (hasCapacity || ((hasFrom || hasElements) && ("sortedset".equals(kind) || "sortedmap".equals(kind)))) {
+                nothrow = false;
+            }
+            return Origin.ofExternal(ccc, false);
+        }
+
         private Type resolveCalleeType(BabbleParser.ExpressionContext calleeExpr) {
             if (specializedParams != null && calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
                 Object r = checker.resolveNameForEffects(sel.ID().getText(), checker.occurrenceScopeOf(sel));
@@ -3077,7 +3285,7 @@ final class EffectChecker {
         }
 
         private boolean isImportCall(BabbleParser.ExpressionContext calleeExpr) {
-            if (BlockScopes.staticImport((BabbleParser.CallContext) calleeExpr.getParent()) != null) {
+            if (calleeExpr.getParent() instanceof BabbleParser.CallContext cc && BlockScopes.staticImport(cc) != null) {
                 // Even static import("...ba") executes module initialization at runtime unless top-level!
                 return true;
             }
@@ -3106,8 +3314,11 @@ final class EffectChecker {
             return res;
         }
 
-        private Origin applyJavaCall(BabbleParser.CallContext call,
+        private Origin applyJavaCall(ParserRuleContext call,
+                                     BabbleParser.ExpressionContext calleeExpr,
                                      JavaCallProfile profile,
+                                     Class<?> owner,
+                                     String methodName,
                                      Class<?>[] javaParamTypes,
                                      BabbleParser.ExpressionContext receiverExpr,
                                      Origin recvOrig,
@@ -3123,7 +3334,7 @@ final class EffectChecker {
             Type recvType = receiverExpr != null ? effectiveType(receiverExpr) : null;
             boolean effectiveMutRecv = profile.mutReceiver() && receiverExpr != null && recvType != Type.STRING;
             if (effectiveMutRecv) {
-                recordTargetMutation(recvOrig, receiverExpr, "mut Java method " + call.expression().getText(), call);
+                recordTargetMutation(recvOrig, receiverExpr, "mut Java method " + calleeExpr.getText(), call);
             }
             if (receiverExpr != null && !profile.borrowReceiver() && !profile.effects().isPure()) {
                 markStoredOrigin(recvOrig, "Java method call", call);
@@ -3156,7 +3367,13 @@ final class EffectChecker {
             if (isDeeplyImmutable(resType)) {
                 return Origin.IMMUTABLE;
             }
+            if (receiverExpr != null && isViewMethod(owner, methodName)) {
+                return recvOrig.deriveMember("$" + methodName, false);
+            }
             Origin out = Origin.ofExternal(call, false);
+            if ("<init>".equals(methodName) || isCollectionFactoryMethod(owner, methodName)) {
+                return out;
+            }
             if (receiverExpr != null) {
                 out = out.join(recvOrig.stripDirectIdentity(false));
             }
@@ -3167,6 +3384,25 @@ final class EffectChecker {
                 }
             }
             return out;
+        }
+
+        private static boolean isCollectionFactoryMethod(Class<?> owner, String methodName) {
+            if (owner == null || methodName == null) {
+                return false;
+            }
+            if (owner == java.util.List.class || owner == java.util.Set.class || owner == java.util.Map.class) {
+                return "of".equals(methodName) || "copyOf".equals(methodName);
+            }
+            if (owner == java.util.Arrays.class) {
+                return "asList".equals(methodName);
+            }
+            if (owner == java.util.Collections.class) {
+                return "nCopies".equals(methodName) || "singletonList".equals(methodName)
+                        || "singleton".equals(methodName) || "singletonMap".equals(methodName)
+                        || "emptyList".equals(methodName) || "emptySet".equals(methodName)
+                        || "emptyMap".equals(methodName);
+            }
+            return false;
         }
 
         private void propagateSamCallbackEffects(Type argType, Class<?> samClass) {
@@ -3200,7 +3436,7 @@ final class EffectChecker {
             }
         }
 
-        private Origin applyBabbleCallableType(BabbleParser.CallContext call,
+        private Origin applyBabbleCallableType(ParserRuleContext call,
                                                BabbleParser.ExpressionContext calleeExpr,
                                                Type calleeType,
                                                BabbleParser.ExpressionContext receiverExpr,
@@ -3221,7 +3457,7 @@ final class EffectChecker {
                         || (calleeExpr instanceof BabbleParser.SelectorContext s && s.expression() instanceof BabbleParser.SuperExpressionContext);
                 Origin effectiveRecvOrig = (calleeExpr instanceof BabbleParser.SelectorContext s && s.expression() instanceof BabbleParser.SuperExpressionContext)
                         ? Origin.ofThis(THIS_KEY, false) : recvOrig;
-                applyBabbleArgEffects(call, fn.parameters(), summary.mutParams(), summary.borrowParams(),
+                applyBabbleArgEffects(call, calleeExpr, fn.parameters(), summary.mutParams(), summary.borrowParams(),
                         isMethodCall ? receiverExpr : null, effectiveRecvOrig,
                         isMethodCall && summary.effects().mutThis(),
                         !isMethodCall || summary.effects().borrowThis(),
@@ -3338,7 +3574,8 @@ final class EffectChecker {
             return checker.literalOf(fn);
         }
 
-        private void applyBabbleArgEffects(BabbleParser.CallContext call,
+        private void applyBabbleArgEffects(ParserRuleContext call,
+                                           BabbleParser.ExpressionContext calleeExpr,
                                            List<Type.Parameter> calleeParams,
                                            boolean[] calleeMut,
                                            boolean[] calleeBorrow,
@@ -3353,10 +3590,10 @@ final class EffectChecker {
                     && (receiverExpr == null || effectiveType(receiverExpr) != Type.STRING);
             if (effectiveMutRecv) {
                 recordTargetMutation(recvOrig, receiverExpr != null ? receiverExpr : call,
-                        "mut method " + call.expression().getText(), call);
+                        "mut method " + calleeExpr.getText(), call);
             }
             if (!borrowRecv) {
-                markStoredOrigin(recvOrig, "method call " + call.expression().getText(), call);
+                markStoredOrigin(recvOrig, "method call " + calleeExpr.getText(), call);
             }
 
             boolean[] argIsMut = new boolean[args.size()];
@@ -3371,7 +3608,7 @@ final class EffectChecker {
                             "mut parameter " + calleeParams.get(pIdx).name(), argExprs[i]);
                 }
                 if (!borrowP) {
-                    markStoredOrigin(argOrigins[i], "call to " + call.expression().getText(), argExprs[i]);
+                    markStoredOrigin(argOrigins[i], "call to " + calleeExpr.getText(), argExprs[i]);
                 }
             }
 
@@ -3408,7 +3645,7 @@ final class EffectChecker {
                                           BabbleParser.ExpressionContext[] argExprs,
                                           Origin[] argOrigins,
                                           boolean[] argIsMut,
-                                          BabbleParser.CallContext call) {
+                                          ParserRuleContext call) {
             int total = (receiverExpr != null ? 1 : 0) + argExprs.length;
             if (total < 2) {
                 return;

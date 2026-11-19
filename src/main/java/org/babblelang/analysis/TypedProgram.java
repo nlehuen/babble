@@ -130,11 +130,11 @@ final class TypedProgram {
         return JavaTypeBridge.publicMemberClass(owner, name);
     }
 
-    Method resolvedJavaMethodOf(BabbleParser.CallContext call) {
+    Method resolvedJavaMethodOf(ParserRuleContext call) {
         return checker.callSolver().resolvedMethod(call);
     }
 
-    Constructor<?> resolvedJavaConstructorOf(BabbleParser.CallContext call) {
+    Constructor<?> resolvedJavaConstructorOf(ParserRuleContext call) {
         return checker.callSolver().resolvedConstructor(call);
     }
 

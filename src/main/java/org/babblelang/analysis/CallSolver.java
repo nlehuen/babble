@@ -32,8 +32,8 @@ import java.util.stream.Collectors;
 final class CallSolver {
     private final TypeChecker checker;
     /** The Java method or constructor each call resolved to (for effects and lowering). */
-    private final Map<BabbleParser.CallContext, Method> resolvedMethods = new java.util.IdentityHashMap<>();
-    private final Map<BabbleParser.CallContext, Constructor<?>> resolvedConstructors = new java.util.IdentityHashMap<>();
+    private final Map<ParserRuleContext, Method> resolvedMethods = new java.util.IdentityHashMap<>();
+    private final Map<ParserRuleContext, Constructor<?>> resolvedConstructors = new java.util.IdentityHashMap<>();
 
     CallSolver(TypeChecker checker) {
         this.checker = checker;
@@ -45,17 +45,17 @@ final class CallSolver {
         resolvedConstructors.clear();
     }
 
-    private void recordConstructor(Executable winner, BabbleParser.CallContext ctx) {
+    private void recordConstructor(Executable winner, ParserRuleContext ctx) {
         if (winner instanceof Constructor<?> constructor) {
             resolvedConstructors.put(ctx, constructor);
         }
     }
 
-    Method resolvedMethod(BabbleParser.CallContext call) {
+    Method resolvedMethod(ParserRuleContext call) {
         return resolvedMethods.get(call);
     }
 
-    Constructor<?> resolvedConstructor(BabbleParser.CallContext call) {
+    Constructor<?> resolvedConstructor(ParserRuleContext call) {
         return resolvedConstructors.get(call);
     }
 
