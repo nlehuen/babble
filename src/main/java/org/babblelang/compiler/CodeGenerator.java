@@ -5380,6 +5380,168 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitCoreCollectionCall(BabbleParser.CoreCollectionCallContext ctx) {
+        String kind = ctx.callee.getText();
+        List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
+        int count = params.size();
+        String n0 = count > 0 ? ScopeAnalysis.callParamName(params.get(0)) : null;
+        String n1 = count > 1 ? ScopeAnalysis.callParamName(params.get(1)) : null;
+        String coreCollections = RUNTIME + "CoreCollections";
+        line(ctx);
+        if ("entry".equals(kind)) {
+            if (count == 2) {
+                int keyIdx = "value".equals(n0) && "key".equals(n1) ? 1 : 0;
+                int valIdx = 1 - keyIdx;
+                emitBoxed(params.get(keyIdx).expression());
+                emitBoxed(params.get(valIdx).expression());
+                mv.visitMethodInsn(INVOKESTATIC, coreCollections, "entry",
+                        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;", false);
+                stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+                return null;
+            }
+        } else if (count == 0) {
+            String method = switch (kind) {
+                case "list" -> "listEmpty";
+                case "set" -> "setEmpty";
+                case "sortedset" -> "sortedSetEmpty";
+                case "map" -> "mapEmpty";
+                case "sortedmap" -> "sortedMapEmpty";
+                default -> throw new IllegalStateException("Unknown core collection: " + kind);
+            };
+            String desc = switch (kind) {
+                case "list" -> "()Ljava/util/List;";
+                case "set" -> "()Ljava/util/Set;";
+                case "sortedset" -> "()Ljava/util/SortedSet;";
+                case "map" -> "()Ljava/util/Map;";
+                case "sortedmap" -> "()Ljava/util/SortedMap;";
+                default -> throw new IllegalStateException();
+            };
+            mv.visitMethodInsn(INVOKESTATIC, coreCollections, method, desc, false);
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return null;
+        } else if (count == 1 && "capacity".equals(n0)) {
+            emitAs(params.get(0).expression(), ScopeAnalysis.PrimitiveKind.INT);
+            String method = switch (kind) {
+                case "list" -> "listCapacity";
+                case "set" -> "setCapacity";
+                case "map" -> "mapCapacity";
+                default -> throw new IllegalStateException("capacity not supported for " + kind);
+            };
+            String desc = switch (kind) {
+                case "list" -> "(I)Ljava/util/List;";
+                case "set" -> "(I)Ljava/util/Set;";
+                case "map" -> "(I)Ljava/util/Map;";
+                default -> throw new IllegalStateException();
+            };
+            mv.visitMethodInsn(INVOKESTATIC, coreCollections, method, desc, false);
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return null;
+        } else if (count == 1 && "comparator".equals(n0)) {
+            emitBoxed(params.get(0).expression());
+            mv.visitVarInsn(ALOAD, rtLocal);
+            String method = "sortedset".equals(kind) ? "sortedSetComparator" : "sortedMapComparator";
+            String desc = "sortedset".equals(kind)
+                    ? "(Ljava/lang/Object;L" + RUNTIME + "ScriptRuntime;)Ljava/util/SortedSet;"
+                    : "(Ljava/lang/Object;L" + RUNTIME + "ScriptRuntime;)Ljava/util/SortedMap;";
+            mv.visitMethodInsn(INVOKESTATIC, coreCollections, method, desc, false);
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return null;
+        } else if (count == 1 && "from".equals(n0)) {
+            emitBoxed(params.get(0).expression());
+            if ("map".equals(kind) || "sortedmap".equals(kind)) {
+                mv.visitTypeInsn(CHECKCAST, "java/util/Map");
+            } else {
+                mv.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
+            }
+            switch (kind) {
+                case "list" -> mv.visitMethodInsn(INVOKESTATIC, coreCollections, "listFrom", "(Ljava/lang/Iterable;)Ljava/util/List;", false);
+                case "set" -> mv.visitMethodInsn(INVOKESTATIC, coreCollections, "setFrom", "(Ljava/lang/Iterable;)Ljava/util/Set;", false);
+                case "map" -> mv.visitMethodInsn(INVOKESTATIC, coreCollections, "mapFrom", "(Ljava/util/Map;)Ljava/util/Map;", false);
+                case "sortedset" -> {
+                    mv.visitInsn(ACONST_NULL);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, coreCollections, "sortedSetFrom",
+                            "(Ljava/lang/Iterable;Ljava/lang/Object;L" + RUNTIME + "ScriptRuntime;)Ljava/util/SortedSet;", false);
+                }
+                case "sortedmap" -> {
+                    mv.visitInsn(ACONST_NULL);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, coreCollections, "sortedMapFrom",
+                            "(Ljava/util/Map;Ljava/lang/Object;L" + RUNTIME + "ScriptRuntime;)Ljava/util/SortedMap;", false);
+                }
+                default -> throw new IllegalStateException();
+            }
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return null;
+        } else if (count == 2 && (("from".equals(n0) && "comparator".equals(n1)) || ("comparator".equals(n0) && "from".equals(n1)))) {
+            int fromIdx = "from".equals(n0) ? 0 : 1;
+            int compIdx = 1 - fromIdx;
+            emitBoxed(params.get(fromIdx).expression());
+            if ("sortedmap".equals(kind)) {
+                mv.visitTypeInsn(CHECKCAST, "java/util/Map");
+            } else {
+                mv.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
+            }
+            emitBoxed(params.get(compIdx).expression());
+            mv.visitVarInsn(ALOAD, rtLocal);
+            if ("sortedset".equals(kind)) {
+                mv.visitMethodInsn(INVOKESTATIC, coreCollections, "sortedSetFrom",
+                        "(Ljava/lang/Iterable;Ljava/lang/Object;L" + RUNTIME + "ScriptRuntime;)Ljava/util/SortedSet;", false);
+            } else {
+                mv.visitMethodInsn(INVOKESTATIC, coreCollections, "sortedMapFrom",
+                        "(Ljava/util/Map;Ljava/lang/Object;L" + RUNTIME + "ScriptRuntime;)Ljava/util/SortedMap;", false);
+            }
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return null;
+        }
+        // Positional variadic elements / entries (or fallback)
+        if (n0 == null && !"entry".equals(kind)) {
+            arguments(params);
+            String method = switch (kind) {
+                case "list" -> "listOf";
+                case "set" -> "setOf";
+                case "sortedset" -> "sortedSetOf";
+                case "map" -> "mapOf";
+                case "sortedmap" -> "sortedMapOf";
+                default -> throw new IllegalStateException();
+            };
+            String desc = switch (kind) {
+                case "list" -> "([Ljava/lang/Object;)Ljava/util/List;";
+                case "set" -> "([Ljava/lang/Object;)Ljava/util/Set;";
+                case "sortedset" -> "([Ljava/lang/Object;)Ljava/util/SortedSet;";
+                case "map" -> "([Ljava/lang/Object;)Ljava/util/Map;";
+                case "sortedmap" -> "([Ljava/lang/Object;)Ljava/util/SortedMap;";
+                default -> throw new IllegalStateException();
+            };
+            mv.visitMethodInsn(INVOKESTATIC, coreCollections, method, desc, false);
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return null;
+        }
+        mv.visitLdcInsn(kind);
+        arguments(params);
+        String[] names = null;
+        for (int i = 0; i < count; i++) {
+            String name = ScopeAnalysis.callParamName(params.get(i));
+            if (name != null) {
+                if (names == null) {
+                    names = new String[count];
+                }
+                names[i] = name;
+            }
+        }
+        if (names != null) {
+            getStringArray(names);
+        } else {
+            mv.visitInsn(ACONST_NULL);
+        }
+        mv.visitVarInsn(ALOAD, rtLocal);
+        mv.visitMethodInsn(INVOKESTATIC, coreCollections, "construct",
+                "(Ljava/lang/String;[Ljava/lang/Object;[Ljava/lang/String;L" + RUNTIME + "ScriptRuntime;)Ljava/lang/Object;", false);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    @Override
     public Void visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
         emitBoxed(ctx.expression());
         if (!scopes.isTypeApplyCall(ctx)) {

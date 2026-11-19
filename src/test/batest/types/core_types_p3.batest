@@ -56,7 +56,6 @@ def raw = xs as java.util.List
 raw.add(null)
 xs.get(0)
 }}}}}
-Warning : Redundant cast : java.util.List(any?)
 Type error : expected int, got null
 
 {{{{{
@@ -66,5 +65,4 @@ def raw = xs as java.util.List
 raw.add("oops")
 xs.get(0)
 }}}}}
-Warning : Redundant cast : java.util.List(any?)
 Type error : expected int, got string

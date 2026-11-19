@@ -237,6 +237,7 @@ final class JavaNullability {
                 || java.util.stream.BaseStream.class.isAssignableFrom(owner)
                 || owner == java.util.stream.StreamSupport.class
                 || owner == java.util.regex.Pattern.class
+                || owner == ProcessBuilder.class
                 || "java.util.function".equals(owner.getPackageName())
                 || isBoxedWrapper(owner);
     }

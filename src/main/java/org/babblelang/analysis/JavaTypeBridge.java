@@ -731,6 +731,13 @@ final class JavaTypeBridge {
         env.putAll(tvToSyn);
         Type paramPattern = javaExecutableParamType(candidate, index, env);
         if (!paramPattern.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null)) {
+            if (genericParam instanceof ParameterizedType pt && hasWildcard(pt)
+                    && !(Type.withoutNull(argument) instanceof Type.Function)) {
+                if (!Type.containsNull(paramPattern) && Type.containsNull(argument)) {
+                    return false;
+                }
+                return satisfiesJavaBound(Type.withoutNull(argument), pt, env, algebra);
+            }
             return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null);
         }
         Type unwrappedPattern = Type.withoutNull(paramPattern);
@@ -752,6 +759,15 @@ final class JavaTypeBridge {
         Set<Type.TypeVar> solving = Set.copyOf(tvToSyn.values());
         TypeAlgebra.ConstraintStore store = algebra.store(solving, true);
         return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store);
+    }
+
+    private static boolean hasWildcard(ParameterizedType pt) {
+        for (java.lang.reflect.Type arg : pt.getActualTypeArguments()) {
+            if (arg instanceof WildcardType || (arg instanceof ParameterizedType nested && hasWildcard(nested))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The overload more specific than all the others, as {@code Overloads.resolve} finds it, or null. */

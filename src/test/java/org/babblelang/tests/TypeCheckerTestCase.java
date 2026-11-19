@@ -448,7 +448,7 @@ public class TypeCheckerTestCase {
                 "4:1 No applicable overload of java.lang.Math.abs for (string)",
                 "5:18 Type error : expected string, got int",
                 "6:1 No such name in java.lang.Math : nope",
-                "8:38 Type error : expected java.util.Map(string, int), got java.util.ArrayList(int)");
+                "8:38 Type error : expected map(string, int), got java.util.ArrayList(int)");
         // Babble functions convert to functional interfaces, and classes implement Java interfaces.
         assertDiagnostics("def l : java.util.List(any) = java.util.ArrayList()\nl.removeIf((v) -> ( v is int and v > 2 ))\n"
                 + "def R = class () implements java.lang.Runnable ( def run = () -> ( null ) )\njava.lang.Thread(R())\ndef r : java.lang.Runnable = R()\n"
@@ -1064,9 +1064,9 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testP6bGenerics() {
-        // Positive cases: Babble generics, Java generics, bounds, covariance, is/as raw narrowing, nullability.
+        // Positive cases: Babble generics, Java generics, bounds, value-class covariance, is/as raw narrowing, nullability.
         assertDiagnostics("def id(T) = (x : T) : T -> ( x )\n"
-                + "def Box(T) = class (def value : T) (\n"
+                + "def Box(T) = value class (def value : T) (\n"
                 + "  def mapBox(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )\n"
                 + ")\n"
                 + "def n : int = id(1)\n"

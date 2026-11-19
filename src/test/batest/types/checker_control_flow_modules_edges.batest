@@ -120,7 +120,7 @@ Not a number : bad
 {{{{{
 ;; Java arrays, Object[] assignability, cast/is on Java & Babble interfaces, TypeVar assignability, stream deferred lambda
 def parts = java.util.regex.Pattern.compile(",").split("a,b,c")
-def takeArr = (arr : java.util.List(any?)) : int -> ( arr.size() )
+def takeArr = (arr : list(string)) : int -> ( arr.size() )
 def asList = java.util.Arrays.asList(parts)
 
 def id(T) = (x : T) : any? -> (
@@ -144,7 +144,7 @@ println(takeArr(asList), ":", parts.length, ":", id(7), ":", mapped.toString(), 
 ;; Generic List subtype mismatch error
 def badList : java.util.List(string) = java.util.ArrayList(java.util.List.of(1, 2))
 }}}}}
-Type error : expected java.util.List(string), got java.util.ArrayList(int)
+Type error : expected list(string), got java.util.ArrayList(int)
 
 {{{{{
 ;; Cross-module interface, super default call, and TypeChecks errors

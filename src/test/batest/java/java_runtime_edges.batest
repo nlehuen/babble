@@ -76,7 +76,7 @@ true:true:true
 {{{{{
 def ip : java.util.function.IntPredicate = (x : int) -> ( x > 0 )
 def im = java.util.Arrays.stream(java.lang.Class.forName("java.util.function.IntPredicate").getDeclaredMethods()).filter((m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
-def badArgs : java.util.List(any) = java.util.List.of("bad")
+def badArgs : java.util.List(any) = java.util.List.of(any)("bad")
 im.invoke(ip, badArgs.toArray())
 }}}}}
 java.lang.IllegalArgumentException : object is not an instance of declaring class

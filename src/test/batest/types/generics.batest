@@ -14,8 +14,8 @@ println(bi.value, ":", bd.value, ":", s)
 5:7.5:hello
 
 {{{{{
-;; Covariance to Box(int | double) and Box(any), and raw 'is Box' narrowing on nullable generic
-def Box(T) = class (def value : T) ()
+;; Covariance on value class to Box(int | double) and Box(any), and raw 'is Box' narrowing on nullable generic
+def Box(T) = value class (value : T) ()
 def bi : Box(int) = Box(9)
 def bu : Box(int | double) = bi
 def ba : Box(any) = bi

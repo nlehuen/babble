@@ -94,6 +94,12 @@ public final class Values {
             case "char" -> value instanceof Character;
             case "string" -> value instanceof String;
             case "any" -> value != null;
+            case "list" -> value instanceof java.util.List;
+            case "set" -> value instanceof java.util.Set;
+            case "sortedset" -> value instanceof java.util.SortedSet;
+            case "map" -> value instanceof java.util.Map;
+            case "sortedmap" -> value instanceof java.util.SortedMap;
+            case "entry" -> value instanceof java.util.Map.Entry;
             default -> throw new BabbleException("Not a type : " + type);
         };
     }
