@@ -6,7 +6,7 @@ assert(java.lang <> null)
 assert(java.lang.Number <> null)
 assert(java.util.ArrayList <> null)
 
-def xs: java.util.List(string) = java.util.ArrayList()
+def xs: java.util.List of string = java.util.ArrayList()
 assert(xs.size() == 0)
 
 ;; methods taking arguments : "add" is declared as add(Object), so the String

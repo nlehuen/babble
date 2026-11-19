@@ -41,7 +41,7 @@ axiom pure deterministic nothrow on java.lang.Math.abs
 axiom mut on java.util.List.add
 axiom pure on java.util.List.size
 def compute = fn pure (x : int) : int -> ( java.lang.Math.abs(x) )
-def l : java.util.List(int) = java.util.ArrayList()
+def l : java.util.List of int = java.util.ArrayList()
 l.add(-7)
 println(compute(-7), ":", l.size())
 }}}}}

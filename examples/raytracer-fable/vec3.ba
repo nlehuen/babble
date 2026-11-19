@@ -5,7 +5,7 @@ def Math = rtweekend.Math
 def randomDouble = rtweekend.randomDouble
 
 ;; Points, directions and colors. Babble has no operator overloading, hence the methods.
-export def Vec3 = value class (x: double, y: double, z: double) (
+export def Vec3 = record (x: double, y: double, z: double) (
     def neg = fn (): Vec3 -> (Vec3(-this.x, -this.y, -this.z))
     def plus = fn (v: Vec3): Vec3 -> (Vec3(this.x + v.x, this.y + v.y, this.z + v.z))
     def minus = fn (v: Vec3): Vec3 -> (Vec3(this.x - v.x, this.y - v.y, this.z - v.z))

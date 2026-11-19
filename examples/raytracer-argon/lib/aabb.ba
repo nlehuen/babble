@@ -6,7 +6,7 @@ def Interval = import("interval.ba").Interval
 ;; ------------------------------------------------------------------------
 ;; 2.5 Axis-Aligned Bounding Box (AABB) Value Class for BVH Acceleration
 ;; ------------------------------------------------------------------------
-export def AABB = value class (x: Interval, y: Interval, z: Interval) (
+export def AABB = record (x: Interval, y: Interval, z: Interval) (
     def centroid = fn (axis: int): double -> (
         if axis == 0 then (
             this.x.midpoint()

@@ -1,11 +1,11 @@
 ;;(
     Implementation of a simple LIFO stack
 ;;)
-def Node(T) = class (def value: T, def next: Node(T)?) ()
+def Node of T = class (def value: T, def next: (Node of T)?) ()
 
-def Stack(T) = class () (
+def Stack of T = class () (
     def size = 0
-    def head: Node(T)? = null
+    def head: (Node of T)? = null
 
     def push = fn mut (a: T) -> (
         this.size = this.size + 1
@@ -66,10 +66,10 @@ def Stack(T) = class () (
     )
 )
 
-def create(T) = fn (): Stack(T) -> (Stack())
+def create of T = fn (): Stack of T -> (Stack())
 
 def test = fn () -> (
-    def l: Stack(string) = create()
+    def l: Stack of string = create()
     assert(l.size == 0)
     l.push("world")
     assert(l.size == 1)
@@ -86,7 +86,7 @@ def test = fn () -> (
 test()
 
 def testRecursiveMethod = fn () -> (
-    def l: Stack(string) = Stack()
+    def l: Stack of string = Stack()
     l.push("c")
     l.push("b")
     l.push("a")

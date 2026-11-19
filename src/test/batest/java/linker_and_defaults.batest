@@ -16,7 +16,7 @@ def rawList = java.util.List.of("a", "b", "c")
 def rawGet = rawList.get
 println(rawGet(1))
 
-def xs : java.util.List(any) = java.util.ArrayList()
+def xs : java.util.List of any = java.util.ArrayList()
 def add = xs.add
 add(sb)
 println(xs.size())
@@ -36,8 +36,8 @@ b
 ;; Safe navigation on Java receivers (Bootstrap.select -> JavaLinker.select -> JavaLinker.call)
 def sb : java.lang.StringBuilder? = java.lang.StringBuilder("ab")
 def noneSb : java.lang.StringBuilder? = null
-def raw : java.util.List(int)? = java.util.List.of(10, 20)
-def noneRaw : java.util.List(int)? = null
+def raw : (java.util.List of int)? = java.util.List.of(10, 20)
+def noneRaw : (java.util.List of int)? = null
 println(sb?.append("c")?.toString(), ":", noneSb?.toString(), ":", raw?.get(1), ":", noneRaw?.size())
 }}}}}
 abc:null:20:null
@@ -45,24 +45,24 @@ abc:null:20:null
 {{{{{
 ;; Polymorphic and megamorphic JavaLinker select & call across wrapped/raw receivers and BabbleInstance args
 def Box = class (def n : int) ()
-def xs : java.util.List(any) = java.util.ArrayList()
+def xs : java.util.List of any = java.util.ArrayList()
 def add = xs.add
 add(Box(1))
 println(xs.size())
 
-def c0 : java.util.List(int) = java.util.ArrayList()
-def c1 : java.util.List(int) = java.util.LinkedList()
-def c2 : java.util.List(int) = java.util.Vector()
-def c3 : java.util.List(int) = java.util.Stack()
-def c4 : java.util.List(int) = java.util.List.of(1, 2)
-def c5 : java.util.List(int) = java.util.Collections.singletonList(9)
-def cols : java.util.List(java.util.List(int)) = java.util.List.of(c0, c1, c2, c3, c4, c5)
+def c0 : java.util.List of int = java.util.ArrayList()
+def c1 : java.util.List of int = java.util.LinkedList()
+def c2 : java.util.List of int = java.util.Vector()
+def c3 : java.util.List of int = java.util.Stack()
+def c4 : java.util.List of int = java.util.List.of(1, 2)
+def c5 : java.util.List of int = java.util.Collections.singletonList(9)
+def cols : java.util.List of java.util.List of int = java.util.List.of(c0, c1, c2, c3, c4, c5)
 
 def sum = 0
 def i = 0
 while i < 12 then (
     def k = i - int(i / 6) * 6
-    def c : java.util.List(int)? = cols.get(k)
+    def c : (java.util.List of int)? = cols.get(k)
     def sz = c?.size()
     if sz != null then ( sum += sz )
     i += 1
@@ -153,7 +153,7 @@ def s = java.lang.Short.parseShort("12")
 def ch = java.lang.Character.valueOf(java.lang.StringBuilder("abc").charAt(1))
 def lg = java.lang.Long.parseLong("9000000000")
 def fl = java.lang.Float.parseFloat("2.5")
-def arr : java.util.List(int) = java.util.ArrayList()
+def arr : java.util.List of int = java.util.ArrayList()
 arr.add(1)
 arr.clear()
 def ib = java.lang.Integer.valueOf(5)
@@ -219,7 +219,7 @@ def C = class (def x : int) (
 def c = C(5)
 def m1 = c.m
 def m2 = c.m
-def uniq : java.util.Set(any) = java.util.HashSet()
+def uniq : java.util.Set of any = java.util.HashSet()
 uniq.add(m1)
 println(m1 == m2, ":", uniq.contains(m2), ":", m1)
 println(classof(c) == C, ":", classof(java.lang.StringBuilder()) == java.lang.StringBuilder)
@@ -280,8 +280,8 @@ IntUnaryOperator.applyAsInt takes 1 arguments, function takes 2
 
 {{{{{
 ;; Values.hash(null/double), Values.same(JavaObject/null), Values.is / isBuiltin, and Types runtime checks
-def V = value class (d : double, n : any?) ()
-def uniq : java.util.Set(V) = java.util.HashSet()
+def V = record (d : double, n : any?) ()
+def uniq : java.util.Set of V = java.util.HashSet()
 uniq.add(V(3.5, null))
 uniq.add(V(2.0, null))
 println(uniq.contains(V(3.5, null)), ":", uniq.contains(V(2, null)))
@@ -299,7 +299,7 @@ def a : any = 3.5
 def b : any = true
 def c : any = C(9)
 def n : any? = null
-def jlTyped : java.util.List(any) = java.util.ArrayList()
+def jlTyped : java.util.List of any = java.util.ArrayList()
 def jl : any = jlTyped
 println(a is double, ":", b is bool, ":", a is any, ":", n is any)
 println(c is I, ":", c is C, ":", c is java.lang.Runnable, ":", jl is java.util.List)

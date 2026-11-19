@@ -161,7 +161,7 @@ injective requires at least one parameter, no mut, and a non-null return type
 
 {{{{{
 ;; Compositional algebraic inference: relationalProps, binaryWrapperProps, isUnaryIdempotentWrapper, mut idempotent/commutative
-def V = value class (x : int) (
+def V = record (x : int) (
     def get = fn pure () : int -> ( this.x )
 )
 def addInt = fn (a : int, b : int) : int -> ( a + b )
@@ -223,12 +223,12 @@ println(m1(2.0), ":", m2(1.0, 99.0), ":", m3(4), ":", i3(7), ":", catRev("a", "b
 
 {{{{{
 ;; Value class constructor constraints: mut param, impure ctor, non-deterministic ctor
-def BadV1 = value class (mut x : int) ()
+def BadV1 = record (mut x : int) ()
 }}}}}
 value class constructor parameter cannot be mut : x
 
 {{{{{
-def BadV2 = value class (x : int) (
+def BadV2 = record (x : int) (
     println(x)
 )
 }}}}}
@@ -237,7 +237,7 @@ value class BadV2 constructor must be pure
 {{{{{
 def g = 1
 g = 2
-def BadV3 = value class (x : int) (
+def BadV3 = record (x : int) (
     def y = g
 )
 }}}}}
@@ -245,7 +245,7 @@ value class BadV3 constructor must be deterministic
 
 {{{{{
 ;; toStringProfile, equalityProfile, comparisonProfile, inline object inside pure, redundant cast
-def V = value class (x : int) ()
+def V = record (x : int) ()
 def R = class (def x : int) ()
 def Custom = class (def x : int) (
     def toString = fn pure deterministic () : string -> ( "C" )

@@ -5,7 +5,7 @@
 ;; not exported : only this file can use it
 def square = fn (n) -> (n * n)
 
-export def Vec = value class (x: int, y: int) (
+export def Vec = record (x: int, y: int) (
     def plus = fn (o: Vec): Vec -> (Vec(this.x + o.x, this.y + o.y))
     def lengthSquared = fn () -> (square(this.x) + square(this.y))
 )

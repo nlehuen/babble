@@ -57,11 +57,11 @@ println(sum)
 
 {{{{{
 ;; Polymorphic and megamorphic Java overload/method calls on distinct Java receiver classes
-def c1 : java.util.Collection(int) = java.util.ArrayList()
-def c2 : java.util.Collection(int) = java.util.LinkedList()
-def c3 : java.util.Collection(int) = java.util.Vector()
-def c4 : java.util.Collection(int) = java.util.Stack()
-def c5 : java.util.Collection(int) = java.util.ArrayDeque()
+def c1 : java.util.Collection of int = java.util.ArrayList()
+def c2 : java.util.Collection of int = java.util.LinkedList()
+def c3 : java.util.Collection of int = java.util.Vector()
+def c4 : java.util.Collection of int = java.util.Stack()
+def c5 : java.util.Collection of int = java.util.ArrayDeque()
 def items = java.util.List.of(c1, c2, c3, c4, c5)
 def sizes = 0
 def j = 0

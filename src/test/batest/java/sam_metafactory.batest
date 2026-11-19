@@ -38,8 +38,8 @@ def Adder = class (def base : int) (
     def add = fn (x : int) : int -> ( this.base + x )
 )
 def boundOp = java.util.function.IntUnaryOperator(Adder(100).add)
-def Pair = value class (a : int, b : int) ()
-def pairMaker : java.util.function.BiFunction(int, int, Pair) = java.util.function.BiFunction(Pair)
+def Pair = record (a : int, b : int) ()
+def pairMaker : java.util.function.BiFunction of (int, int, Pair) = java.util.function.BiFunction(Pair)
 def p = pairMaker.apply(3, 4)
 
 def nested = java.util.function.Supplier(fn () : java.lang.Runnable -> ( fn () -> () ))

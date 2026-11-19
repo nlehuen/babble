@@ -1,6 +1,6 @@
 ;; Int arithmetic, comparisons, range limits, wraparound, and errors
 
-def Checked = value class (x : int) (
+def Checked = record (x : int) (
     def div = fn (k : int) : int -> (
         assert(k != 0, "Divide by zero")
         int(this.x / k)

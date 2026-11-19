@@ -15,8 +15,8 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
     @Test
     public void testArgumentsAreMatchedByAssignability() throws Exception {
         // add is declared as add(Object) : an exact-type lookup would never find it.
-        Assertions.assertEquals(1, interpret("def l : java.util.List(string) = java.util.ArrayList() ; l.add(\"a\") ; l.size()"));
-        Assertions.assertEquals("a", interpret("def l : java.util.List(string) = java.util.ArrayList() ; l.add(\"a\") ; l.get(0)"));
+        Assertions.assertEquals(1, interpret("def l : java.util.List of string = java.util.ArrayList() ; l.add(\"a\") ; l.size()"));
+        Assertions.assertEquals("a", interpret("def l : java.util.List of string = java.util.ArrayList() ; l.add(\"a\") ; l.get(0)"));
     }
 
     @Test
@@ -92,14 +92,14 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
     @Test
     public void testMembersOfReturnedJavaObjects() throws Exception {
         Assertions.assertEquals(true, interpret("java.lang.Runtime.getRuntime().availableProcessors() > 0"));
-        Assertions.assertEquals(1, interpret("def l : java.util.List(java.util.List(int)) = java.util.ArrayList() ; def m : java.util.List(int) = java.util.ArrayList() ; m.add(1) ; l.add(m) ; (l.get(0) as java.util.List).size()"));
+        Assertions.assertEquals(1, interpret("def l : java.util.List of java.util.List of int = java.util.ArrayList() ; def m : java.util.List of int = java.util.ArrayList() ; m.add(1) ; l.add(m) ; (l.get(0) as java.util.List).size()"));
         Assertions.assertEquals("ab", interpret("java.lang.StringBuilder().append(\"a\").append(\"b\").toString()"));
         // Of a class Babble can't reach : called through the public interface, List.
         Assertions.assertEquals(2, interpret("java.util.List.of(1, 2, 3).get(1)"));
         // Java numbers other than Babble's own have their members.
         Assertions.assertEquals(101, interpret("java.math.BigInteger.valueOf(2).pow(100).bitLength()"));
         // A callback gets Java objects it can call too.
-        Assertions.assertEquals("1", interpret("def l : java.util.List(any) = java.util.ArrayList() ; def m : java.util.List(int) = java.util.ArrayList() ; m.add(42) ; l.add(m) ; def sb = java.lang.StringBuilder() ; l.forEach(fn (x : any) -> ( sb.append((x as java.util.List).size()) )) ; sb.toString()"));
+        Assertions.assertEquals("1", interpret("def l : java.util.List of any = java.util.ArrayList() ; def m : java.util.List of int = java.util.ArrayList() ; m.add(42) ; l.add(m) ; def sb = java.lang.StringBuilder() ; l.forEach(fn (x : any) -> ( sb.append((x as java.util.List).size()) )) ; sb.toString()"));
         // A returned object is the Java object itself, unwrapped : equal, printed and compared as Java does.
         Assertions.assertEquals("[1, 2]", interpret("\"\" + java.util.List.of(1, 2)"));
         Assertions.assertEquals(true, interpret("java.math.BigInteger.ONE.add(java.math.BigInteger.ONE) == java.math.BigInteger.TWO"));
@@ -125,7 +125,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
         Assertions.assertEquals(true, interpret("java.math.BigInteger.ONE.signum() == 1"));
         // A static field that isn't final is read each time, from the same place in the code too.
         Assertions.assertEquals("[0, 1, 2]", interpret(DEMO + "Demo.reset()\n"
-                + "def seen : java.util.List(int) = java.util.ArrayList()\n"
+                + "def seen : java.util.List of int = java.util.ArrayList()\n"
                 + "def i = 0\n"
                 + "while i < 3 then ( seen.add(Demo.counter) ; Demo.bump() ; i = i + 1 )\n"
                 + "seen.toString()"));
@@ -155,8 +155,8 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
                 {"java.lang.Math.PI = 3", "Cannot assign final field : java.lang.Math.PI"},
                 {"java.awt.Point.x", "Not a static field : java.awt.Point.x"},
                 {"java.awt.Point.x = 1", "Not a static field : java.awt.Point.x"},
-                {"def l : java.util.ArrayList(int) = java.util.ArrayList() ; l.size = 1", "No such field in java.util.ArrayList : size"},
-                {"def l : java.util.ArrayList(int) = java.util.ArrayList() ; l.nope", "No such name in java.util.ArrayList : nope"},
+                {"def l : java.util.ArrayList of int = java.util.ArrayList() ; l.size = 1", "No such field in java.util.ArrayList : size"},
+                {"def l : java.util.ArrayList of int = java.util.ArrayList() ; l.nope", "No such name in java.util.ArrayList : nope"},
                 {"Demo().action = fn () -> ( 1 )", "Cannot assign a function to org.babblelang.tests.JavaClassDemo.action : convert it first, as Runnable(f)"},
         };
         for (String[] c : staticCases) {

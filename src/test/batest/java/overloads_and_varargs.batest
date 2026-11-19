@@ -14,7 +14,7 @@ true:99
 
 {{{{{
 ;; Fixed-arity Java overloads (List.of 0/3 args) and passing an array to a varargs parameter
-def empty : java.util.List(string) = java.util.List.of()
+def empty : java.util.List of string = java.util.List.of()
 def three = java.util.List.of("a", "b", "c")
 def fromArr = java.util.Arrays.asList(java.util.List.of("x", "y").toArray())
 println(empty.size(), ":", three.size(), ":", three.get(1), ":", fromArr.size(), ":", fromArr.get(0))

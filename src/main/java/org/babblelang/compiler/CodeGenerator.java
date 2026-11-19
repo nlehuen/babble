@@ -3702,6 +3702,12 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     private void emitCall(BabbleParser.CallContext ctx) {
+        BabbleParser.ExpressionContext directCallee = ctx.expression() instanceof BabbleParser.TypeApplyContext ta
+                ? ta.expression() : ctx.expression();
+        if (directCallee instanceof BabbleParser.CoreCollectionContext cc) {
+            emitCoreCollectionCall(cc.coreCollectionKeyword().getText(), ctx);
+            return;
+        }
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpression) {
             superCall(ctx, selector, superExpression);
@@ -5591,8 +5597,16 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     @Override
-    public Void visitCoreCollectionCall(BabbleParser.CoreCollectionCallContext ctx) {
-        String kind = ctx.callee.getText();
+    public Void visitCoreCollection(BabbleParser.CoreCollectionContext ctx) {
+        line(ctx);
+        mv.visitLdcInsn(ctx.coreCollectionKeyword().getText());
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "CoreCollections", "constructor",
+                "(Ljava/lang/String;)L" + RUNTIME + "Callable;", false);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    private void emitCoreCollectionCall(String kind, BabbleParser.CallContext ctx) {
         List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
         int count = params.size();
         String n0 = count > 0 ? ScopeAnalysis.callParamName(params.get(0)) : null;
@@ -5608,7 +5622,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitMethodInsn(INVOKESTATIC, coreCollections, "entry",
                         "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;", false);
                 stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-                return null;
+                return;
             }
         } else if (count == 0) {
             String method = switch (kind) {
@@ -5629,7 +5643,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             };
             mv.visitMethodInsn(INVOKESTATIC, coreCollections, method, desc, false);
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-            return null;
+            return;
         } else if (count == 1 && "capacity".equals(n0)) {
             emitAs(params.get(0).expression(), ScopeAnalysis.PrimitiveKind.INT);
             String method = switch (kind) {
@@ -5646,7 +5660,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             };
             mv.visitMethodInsn(INVOKESTATIC, coreCollections, method, desc, false);
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-            return null;
+            return;
         } else if (count == 1 && "comparator".equals(n0)) {
             emitBoxed(params.get(0).expression());
             mv.visitVarInsn(ALOAD, rtLocal);
@@ -5656,7 +5670,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     : "(Ljava/lang/Object;L" + RUNTIME + "ScriptRuntime;)Ljava/util/SortedMap;";
             mv.visitMethodInsn(INVOKESTATIC, coreCollections, method, desc, false);
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-            return null;
+            return;
         } else if (count == 1 && "from".equals(n0)) {
             emitBoxed(params.get(0).expression());
             if ("map".equals(kind) || "sortedmap".equals(kind)) {
@@ -5683,7 +5697,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 default -> throw new IllegalStateException();
             }
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-            return null;
+            return;
         } else if (count == 2 && (("from".equals(n0) && "comparator".equals(n1)) || ("comparator".equals(n0) && "from".equals(n1)))) {
             int fromIdx = "from".equals(n0) ? 0 : 1;
             int compIdx = 1 - fromIdx;
@@ -5703,7 +5717,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                         "(Ljava/util/Map;Ljava/lang/Object;L" + RUNTIME + "ScriptRuntime;)Ljava/util/SortedMap;", false);
             }
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-            return null;
+            return;
         }
         // Positional variadic elements / entries (or fallback)
         if (n0 == null && !"entry".equals(kind)) {
@@ -5726,7 +5740,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             };
             mv.visitMethodInsn(INVOKESTATIC, coreCollections, method, desc, false);
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-            return null;
+            return;
         }
         mv.visitLdcInsn(kind);
         arguments(params);
@@ -5749,82 +5763,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitMethodInsn(INVOKESTATIC, coreCollections, "construct",
                 "(Ljava/lang/String;[Ljava/lang/Object;[Ljava/lang/String;L" + RUNTIME + "ScriptRuntime;)Ljava/lang/Object;", false);
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-        return null;
     }
 
     @Override
-    public Void visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
+    public Void visitTypeApply(BabbleParser.TypeApplyContext ctx) {
         emitBoxed(ctx.expression());
-        if (!scopes.isTypeApplyCall(ctx)) {
-            // Curried value call: f(a)(b)
-            List<BabbleParser.TypeContext> firstArgs = ctx.typeArguments().type();
-            String[] firstTexts = new String[firstArgs.size()];
-            for (int i = 0; i < firstArgs.size(); i++) {
-                firstTexts[i] = firstArgs.get(i).getText();
-            }
-            String firstSite = callSiteField(new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), firstTexts));
-            mv.visitFieldInsn(GETSTATIC, className, firstSite, "L" + CALL_SITE + ";");
-            line(ctx);
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + RUNTIME + "Callable;", false);
-            mv.visitVarInsn(ALOAD, rtLocal);
-            pushInt(mv, firstArgs.size());
-            mv.visitTypeInsn(ANEWARRAY, "java/lang/Object");
-            for (int i = 0; i < firstArgs.size(); i++) {
-                mv.visitInsn(DUP);
-                pushInt(mv, i);
-                BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(firstArgs.get(i));
-                List<String> ids = ScopeAnalysis.simpleTypePath(simple);
-                loadName(simple, ids.get(0));
-                convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
-                StringBuilder text = new StringBuilder(ids.get(0));
-                for (int j = 1; j < ids.size(); j++) {
-                    mv.visitLdcInsn(ids.get(j));
-                    pushString(mv, text.toString());
-                    mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
-                    text.append('.').append(ids.get(j));
-                }
-                mv.visitInsn(AASTORE);
-            }
-            mv.visitInsn(ACONST_NULL);
-            mv.visitFieldInsn(GETSTATIC, className, firstSite, "L" + CALL_SITE + ";");
-            line(ctx);
-            mv.visitMethodInsn(INVOKEINTERFACE, RUNTIME + "Callable", "call",
-                    "(L" + RUNTIME + "ScriptRuntime;[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", true);
-        }
-        List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
-        String[] argTexts = new String[params.size()];
-        String[] names = null;
-        for (int i = 0; i < params.size(); i++) {
-            argTexts[i] = params.get(i).expression().getText();
-            String name = ScopeAnalysis.callParamName(params.get(i));
-            if (name != null) {
-                if (names == null) {
-                    names = new String[params.size()];
-                }
-                names[i] = name;
-            }
-        }
-        String site = callSiteField(new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), argTexts));
-        mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
-        line(ctx);
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + RUNTIME + "Callable;", false);
-        mv.visitVarInsn(ALOAD, rtLocal);
-        arguments(params);
-        if (names != null) {
-            getStringArray(names);
-        } else {
-            mv.visitInsn(ACONST_NULL);
-        }
-        mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
-        line(ctx);
-        mv.visitMethodInsn(INVOKEINTERFACE, RUNTIME + "Callable", "call",
-                "(L" + RUNTIME + "ScriptRuntime;[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", true);
-        String checked = scopes.checkedType(ctx);
-        if (checked != null) {
-            line(ctx);
-            checkType(checked);
-        }
-        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         return null;
     }
 

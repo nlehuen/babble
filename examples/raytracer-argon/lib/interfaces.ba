@@ -15,14 +15,14 @@ export def Describable = interface (
     )
 )
 
-export def ScatterResult = value class (attenuation: Vec3, scattered: Ray) ()
+export def ScatterResult = record (attenuation: Vec3, scattered: Ray) ()
 
 export def Material = interface extends Describable (
     def scatter: fn (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult?
     def kind = fn (): string -> ("material")
 )
 
-export def HitRecord = value class (
+export def HitRecord = record (
     p: Vec3,
     normal: Vec3,
     mat: Material,

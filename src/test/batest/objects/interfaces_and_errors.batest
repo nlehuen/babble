@@ -77,21 +77,21 @@ def C = class (private x : int) ()
 private only applies to members
 
 {{{{{
-def V = value class (def x : int) ()
+def V = record (def x : int) ()
 println(V(3).x)
 }}}}}
 Warning : def is redundant on a value class parameter : x
 3
 
 {{{{{
-def V = value class (def x : int) (
+def V = record (def x : int) (
     def equals = fn () : bool -> ( true )
 )
 }}}}}
 equals is generated for value classes
 
 {{{{{
-def V = value class (def x : int) (
+def V = record (def x : int) (
     def hashCode = fn () : int -> ( 1 )
 )
 }}}}}
@@ -144,12 +144,12 @@ def f = fn () -> (
 private only applies to members
 
 {{{{{
-def f(T, T) = fn (x : T) : T -> ( x )
+def f of (T, T) = fn (x : T) : T -> ( x )
 }}}}}
 Name already defined : T
 
 {{{{{
-def x(T) = 1
+def x of T = 1
 }}}}}
 Type parameters only apply to functions, classes, and interfaces : x
 
@@ -178,7 +178,7 @@ def C = class () (
 return in a class body
 
 {{{{{
-def V = value class (x : int) (
+def V = record (x : int) (
     def self = this
 )
 }}}}}
@@ -300,14 +300,14 @@ def I = interface (
 missing is not a member of I
 
 {{{{{
-def V = value class (x : int) (
+def V = record (x : int) (
     def bump = fn () -> ( this.x = 2 )
 )
 }}}}}
 Value members are read-only : x
 
 {{{{{
-def V = value class (x : int) ()
+def V = record (x : int) ()
 def v = V(1)
 v.x = 2
 }}}}}

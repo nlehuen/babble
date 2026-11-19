@@ -8,64 +8,6 @@ grammar Babble;
                 || t == ANY || t == VOID;
     }
 
-    private static boolean isEffectToken(int t) {
-        return t == AXIOM || t == IMPURE || t == PURE || t == HERMETIC || t == MUT || t == BORROW
-                || t == DETERMINISTIC || t == NOTHROW || t == IDEMPOTENT || t == COMMUTATIVE
-                || t == ASSOCIATIVE || t == MONOTONE || t == INJECTIVE;
-    }
-
-    private static boolean isTypeToken(int t) {
-        return t == ID || t == DOT || t == QUESTION || t == PIPE || t == COMMA
-                || t == LPAREN || t == RPAREN || t == COLON || t == NULL || t == NL
-                || t == FN || isCoreTypeToken(t) || isEffectToken(t);
-    }
-
-    /**
-     * Lookahead for {@code expr(T1, T2)(args...)} : checks that the immediately following
-     * balanced {@code (...)} (with no preceding newline) is non-empty, contains only tokens
-     * valid inside a {@code typeArguments} list (never a named-arg {@code id : expr} at depth 1),
-     * and is immediately followed (with no newline) by {@code (}.
-     */
-    private boolean isTypeApplicationCall() {
-        if (_input.LT(1).getType() != LPAREN) {
-            return false;
-        }
-        int i = 2;
-        int depth = 1;
-        boolean hasContent = false;
-        int prevNonNl = LPAREN;
-        while (true) {
-            int t = _input.LT(i).getType();
-            if (t == Token.EOF) {
-                return false;
-            }
-            if (t == LPAREN) {
-                depth++;
-                hasContent = true;
-                prevNonNl = t;
-            } else if (t == RPAREN) {
-                depth--;
-                if (depth == 0) {
-                    return hasContent && _input.LT(i + 1).getType() == LPAREN;
-                }
-                prevNonNl = t;
-            } else {
-                if (!isTypeToken(t)) {
-                    return false;
-                }
-                if (t == COLON && depth == 1 && prevNonNl != RPAREN) {
-                    // Named argument "name: expr" at top level of (...) — not a type argument list.
-                    return false;
-                }
-                if (t != NL) {
-                    hasContent = true;
-                    prevNonNl = t;
-                }
-            }
-            i++;
-        }
-    }
-
     boolean isCoreTypeAfterIs() {
         if (_input.LT(1).getType() != IS) {
             return false;
@@ -96,7 +38,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 effectModifier: PURE | HERMETIC | MUT | BORROW | DETERMINISTIC | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | IMPURE;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | IMPURE | RECORD | OF;
 
 effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
 
@@ -110,13 +52,10 @@ effectWord: AXIOM | IMPURE | effectModifier;
 
 expression:
           ifExpr                                              # ifExpression
-          | (EXPORT | PRIVATE)? DEF name=ID typeParameters? (':' type)?
+          | (EXPORT | PRIVATE)? DEF name=ID (OF typeParameters)? (':' type)?
                      ('=' NL* (effectClause ON)? value=expression)?   # defExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
-          // "value class" : the modifier is a contextual keyword, checked by the analysis.
-          // No newline before the body : "class (a)" followed by "(b)" on the next line
-          // would be ambiguous between a header and a body.
-          | modifier=ID? CLASS classParameters? (IMPLEMENTS typeList)? classBlock=block
+          | (CLASS | RECORD) classParameters (IMPLEMENTS typeList)? NL* classBlock=block
                 (NL* STATIC NL* staticBlock=block)?           # classExpression
           | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block
                 (NL* STATIC NL* staticBlock=block)?           # interfaceExpression
@@ -128,9 +67,9 @@ expression:
           | expression NL* ('.' | safe='?.') memberName      # selector
           | ID                                                # selector
           | expression '!'                                    # nonNullAssertion
-          | callee=coreCollectionKeyword typeArguments? callParameters   # coreCollectionCall
+          | coreCollectionKeyword                             # coreCollection
           | coreScalarKeyword                                 # coreScalarRef
-          | expression {isTypeApplicationCall()}? typeArguments callParameters # typeApplyCall
+          | expression OF typeArguments                       # typeApply
           | expression callParameters                         # call
           | block                                             # blockExpression
           | NOT expression                                    # booleanNot
@@ -142,7 +81,7 @@ expression:
           | left=expression AS NL* right=type                     # asExpression
           | left=expression op=('<' | '<=' | '==' | NEQ
                        | '>=' | '>') NL* right=expression         # binaryOp
-          | left=expression IS NL* coreType=coreTypeKeyword typeArguments? # isExpression
+          | left=expression IS NL* coreType=coreTypeKeyword (OF typeArguments)? # isExpression
           | left=expression {!isCoreTypeAfterIs()}? IS NL* right=expression # isExpression
           | left=expression op=AND NL* right=expression           # booleanOp
           | left=expression op=OR NL* right=expression            # booleanOp
@@ -188,9 +127,11 @@ fnTypeParam: paramModifier* (ID ':')? type;
 
 paramModifier: MUT | BORROW;
 
-typeParameters: '(' NL* ID (NL* ',' NL* ID)* NL* ')';
+typeParameters: ID
+              | '(' NL* ID (NL* ',' NL* ID)* NL* ')';
 
-typeArguments: '(' NL* type (NL* ',' NL* type)* NL* ')';
+typeArguments: '(' NL* type (NL* ',' NL* type)* NL* ')'
+             | nonParenNullableType;
 
 callParameters: '(' NL* callParameter (NL* ',' NL* callParameter)* NL* ')'
               | '(' NL* ')';
@@ -201,13 +142,20 @@ typeList: type (NL* ',' NL* type)*;
 
 type: nullableType ('|' NL* nullableType)*;
 
-nullableType: primaryType question='?'?;
+nullableType: nonParenNullableType                                                    # nonParenType
+            | '(' NL* type NL* ')' question='?'?                                      # parenType
+            ;
 
-primaryType: FN effectPrefix? fnTypeParameters (':' type)?                            # functionType
-           | (coreTypeKeyword | ID ('.' memberName)*) typeArguments?                  # simpleType
-           | NULL                                                                     # nullType
-           | '(' NL* type NL* ')'                                                     # parenType
-           ;
+nonParenNullableType: typeName ( OF ( '(' NL* type (NL* ',' NL* type)* NL* ')' question='?'?
+                                    | nonParenNullableType )
+                               | question='?'? )                                      # simpleType
+                    | FN effectPrefix? fnTypeParameters (':' type)?                   # functionType
+                    | NULL                                                            # nullType
+                    ;
+
+typeName: coreTypeKeyword
+        | ID ('.' memberName)*
+        ;
 
 // Tokens
 LONG_LIT: [0-9]+ [lL];
@@ -259,6 +207,7 @@ BOOLEAN: 'true' | 'false';
 RECURSE: 'recurse';
 OBJECT: 'object';
 CLASS: 'class';
+RECORD: 'record';
 INTERFACE: 'interface';
 IMPLEMENTS: 'implements';
 EXTENDS: 'extends';
@@ -270,6 +219,7 @@ PRIVATE: 'private';
 STATIC: 'static';
 EXPORT: 'export';
 FN: 'fn';
+OF: 'of';
 ON: 'on';
 AXIOM: 'axiom';
 IMPURE: 'impure';

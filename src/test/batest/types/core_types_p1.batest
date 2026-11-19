@@ -33,7 +33,7 @@ Function f declared nothrow violates nothrow guarantee
 
 {{{{{
 ;; Core type keywords allowed as member names after '.' (e.g., Java List.set)
-def xs : java.util.ArrayList(int) = java.util.ArrayList()
+def xs : java.util.ArrayList of int = java.util.ArrayList()
 xs.add(1)
 xs.set(0, 7)
 println(xs.get(0))

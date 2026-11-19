@@ -181,7 +181,7 @@ public class TypeCheckerTestCase {
                 "1:57 Type error : expected int, got double",
                 "4:8 Not a number : \"x\"",
                 "5:1 No such member : q");
-        assertDiagnostics("def V = value class (x : int) ( def plus = fn (o : V) : V -> ( V(this.x + o.x) ) )\ndef v : V = V(1)\nv += V(2)\nv += 1\nv -= V(1)",
+        assertDiagnostics("def V = record (x : int) ( def plus = fn (o : V) : V -> ( V(this.x + o.x) ) )\ndef v : V = V(1)\nv += V(2)\nv += 1\nv -= V(1)",
                 "4:6 Type error : expected V, got int",
                 "5:1 No such member : minus");
     }
@@ -217,7 +217,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testOperatorMethods() {
-        assertDiagnostics("def V = value class (x : double) ( def plus = fn (o : V) : V -> ( V(this.x + o.x) ) ; def times = fn (k : double) : V -> ( V(this.x * k) ) ; def neg = fn () : V -> ( this * -1.0 ) )\n"
+        assertDiagnostics("def V = record (x : double) ( def plus = fn (o : V) : V -> ( V(this.x + o.x) ) ; def times = fn (k : double) : V -> ( V(this.x * k) ) ; def neg = fn () : V -> ( this * -1.0 ) )\n"
                         + "def a = V(1.0)\n"
                         + "def b : V = a + a * 2.0 + -a\n"
                         + "def c : double = a + a\n"
@@ -442,15 +442,15 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testJava() {
-        assertDiagnostics("def l : java.util.ArrayList(int) = java.util.ArrayList()\nl.add(1)\nl.nope()\njava.lang.Math.abs(\"x\")\ndef m : string = java.lang.Math.max(1, 2)\njava.lang.Math.nope\n"
-                        + "def b : java.util.List(int) = l\ndef c : java.util.Map(string, int) = l",
+        assertDiagnostics("def l : java.util.ArrayList of int = java.util.ArrayList()\nl.add(1)\nl.nope()\njava.lang.Math.abs(\"x\")\ndef m : string = java.lang.Math.max(1, 2)\njava.lang.Math.nope\n"
+                        + "def b : java.util.List of int = l\ndef c : java.util.Map of (string, int) = l",
                 "3:1 No such name in java.util.ArrayList : nope",
                 "4:1 No applicable overload of java.lang.Math.abs for (string)",
                 "5:18 Type error : expected string, got int",
                 "6:1 No such name in java.lang.Math : nope",
-                "8:38 Type error : expected map(string, int), got java.util.ArrayList(int)");
+                "8:42 Type error : expected map(string, int), got java.util.ArrayList(int)");
         // Babble functions convert to functional interfaces, and classes implement Java interfaces.
-        assertDiagnostics("def l : java.util.List(any) = java.util.ArrayList()\nl.removeIf(fn (v) -> ( v is int and v > 2 ))\n"
+        assertDiagnostics("def l : java.util.List of any = java.util.ArrayList()\nl.removeIf(fn (v) -> ( v is int and v > 2 ))\n"
                 + "def R = class () implements java.lang.Runnable ( def run = fn () -> ( null ) )\njava.lang.Thread(R())\ndef r : java.lang.Runnable = R()\n"
                 + "def P = class () ()\njava.lang.Thread(P())",
                 "7:1 No applicable overload of java.lang.Thread for (P)");
@@ -491,7 +491,7 @@ public class TypeCheckerTestCase {
                 + "  def ok2 : bool = v != null\n"
                 + "  def ok3 : string = \"x = \" + v\n"
                 + "  println(v) ; same(v, 1) ; classof(v) ; java.lang.System.out.println(v)\n"
-                + "  def l : java.util.List(any?) = java.util.ArrayList() ; l.add(v)\n"
+                + "  def l : java.util.List of any? = java.util.ArrayList() ; l.add(v)\n"
                 + "  def cond = true\n"
                 + "  def ok4 : any = if cond then ( 1 ) else ( \"a\" )\n"
                 + "  def ok5 : any? = if cond then ( 1 )\n"
@@ -1015,7 +1015,7 @@ public class TypeCheckerTestCase {
                         + "def BadArity = class () implements I ( def area = fn (n : int) : double -> ( 1.0 * n ) ; def count = 1 )\n"
                         + "def BadParam = interface ( def apply : fn (x : int) : int )\n"
                         + "def BadParamImpl = class () implements BadParam ( def apply = fn (x : string) : int -> ( 1 ) )\n"
-                        + "def BadVal = value class (area : fn () : double, count : string) implements I ()\n"
+                        + "def BadVal = record (area : fn () : double, count : string) implements I ()\n"
                         + "def BadHeader = class (def area : fn () : double, def count : bool) implements I ()\n"
                         + "def badObj = object implements I ( def area = fn () -> ( 1 ) ; def count = \"no\" )\n"
                         + "def Sub = interface extends I ( def area : fn () : int )",
@@ -1028,7 +1028,7 @@ public class TypeCheckerTestCase {
                 "8:51 Type error : expected int, got (n : int) : int",
                 "9:40 Type error : expected () : double, got (n : int) : double",
                 "11:51 Type error : expected (x : int) : int, got (x : string) : int",
-                "12:50 Type error : expected int, got string",
+                "12:45 Type error : expected int, got string",
                 "13:51 Type error : expected int, got bool",
                 "14:36 Type error : expected () : double, got () : int",
                 "14:64 Type error : expected int, got string",
@@ -1065,71 +1065,71 @@ public class TypeCheckerTestCase {
     @Test
     public void testP6bGenerics() {
         // Positive cases: Babble generics, Java generics, bounds, value-class covariance, is/as raw narrowing, nullability.
-        assertDiagnostics("def id(T) = fn (x : T) : T -> ( x )\n"
-                + "def Box(T) = value class (def value : T) (\n"
-                + "  def mapBox(U) = fn (f : fn (x : T) : U) : Box(U) -> ( Box(f(this.value)) )\n"
+        assertDiagnostics("def id of T = fn (x : T) : T -> ( x )\n"
+                + "def Box of T = record (def value : T) (\n"
+                + "  def mapBox of U = fn (f : fn (x : T) : U) : Box of U -> ( Box(f(this.value)) )\n"
                 + ")\n"
                 + "def n : int = id(1)\n"
                 + "def idStr : fn (s : string) : string = id\n"
                 + "def s : string = idStr(\"ok\")\n"
-                + "def bi : Box(int) = Box(5)\n"
-                + "def bu : Box(int | double) = bi\n"
-                + "def ba : Box(any) = bi\n"
-                + "def mb : Box(int)? = bi\n"
+                + "def bi : Box of int = Box(5)\n"
+                + "def bu : Box of (int | double) = bi\n"
+                + "def ba : Box of any = bi\n"
+                + "def mb : (Box of int)? = bi\n"
                 + "def narrowed : int = if mb is Box then ( mb.value ) else ( 0 )\n"
                 + "def rawCast : any = (\"hi\" as any)\n"
-                + "def jl : java.util.List(string) = java.util.ArrayList()\n"
+                + "def jl : java.util.List of string = java.util.ArrayList()\n"
                 + "def first : string? = jl.get(0)\n"
-                + "def takeNullable(T) = fn (x : T) : any? -> ( x )\n"
+                + "def takeNullable of T = fn (x : T) : any? -> ( x )\n"
                 + "takeNullable(1)");
 
         // Negative cases: missing type args, wrong arity, uninferred, bounds, covariance, as targets, T vs any, static scope.
-        assertDiagnostics("def Box(T) = class (def value : T) () static ( def bad : T? = null )\n"
-                + "def id(T) = fn (x : T) : T -> ( x )\n"
+        assertDiagnostics("def Box of T = class (def value : T) () static ( def bad : T? = null )\n"
+                + "def id of T = fn (x : T) : T -> ( x )\n"
                 + "def rawAnnot : java.util.List = java.util.List.of(1)\n"
                 + "def rawBabble : Box = Box(1)\n"
-                + "def badArity : Box(int, string) = Box(1)\n"
-                + "def badPrimArg : int(string) = 1\n"
-                + "def badTvArg(T) = fn (x : T(int)) -> ( x )\n"
+                + "def badArity : Box of (int, string) = Box(1)\n"
+                + "def badPrimArg : int of string = 1\n"
+                + "def badTvArg of T = fn (x : T of int) -> ( x )\n"
                 + "def uninferredJava = java.util.ArrayList()\n"
                 + "def uninferredFn = id\n"
-                + "def bi : Box(int) = Box(1)\n"
-                + "def bd : Box(double) = bi\n"
+                + "def bi : Box of int = Box(1)\n"
+                + "def bd : Box of double = bi\n"
                 + "def anyVal : any = bi\n"
-                + "def paramCast = anyVal as Box(int)\n"
-                + "def tvCast(T) = fn (x : any) -> ( x as T )\n"
-                + "def tvToAny(T) = fn (x : T) : any -> ( x )\n"
-                + "def jl : java.util.List(string) = java.util.ArrayList()\n"
+                + "def paramCast = anyVal as Box of int\n"
+                + "def tvCast of T = fn (x : any) -> ( x as T )\n"
+                + "def tvToAny of T = fn (x : T) : any -> ( x )\n"
+                + "def jl : java.util.List of string = java.util.ArrayList()\n"
                 + "jl.add(42)\n"
                 + "def il = java.util.List.of(1, 2)\n"
                 + "def badElem : int = il.get(0)\n"
                 + "def badElemCast = il.get(0) as string\n"
                 + "def ptList = java.util.List.of(object ())\n"
                 + "java.util.Collections.sort(ptList)",
-                "1:58 Unknown type : T",
+                "1:60 Unknown type : T",
                 "3:16 Missing type arguments : java.util.List",
                 "4:17 Missing type arguments : Box",
                 "5:16 Wrong number of type arguments : expected 1, got 2",
                 "6:18 Wrong number of type arguments : expected 0, got 1",
-                "7:27 Wrong number of type arguments : expected 0, got 1",
+                "7:29 Wrong number of type arguments : expected 0, got 1",
                 "8:22 Missing type : cannot infer type arguments for java.util.ArrayList",
                 "9:20 Missing type : cannot infer type arguments for id",
-                "11:24 Type error : expected Box(double), got Box(int)",
-                "13:27 Cannot cast to parameterized type : Box(int)",
-                "14:40 Cannot cast to type parameter : T",
-                "15:40 Type error : expected any, got T",
+                "11:26 Type error : expected Box(double), got Box(int)",
+                "13:27 Cannot cast to parameterized type : Box of int",
+                "14:42 Cannot cast to type parameter : T",
+                "15:42 Type error : expected any, got T",
                 "17:1 No applicable overload of java.util.List.add for (int)",
                 "20:19 Type error : expected string, got int",
                 "22:1 Type error : type argument object does not satisfy bound T of java.util.Collections.sort");
 
         org.babblelang.analysis.AnalysisException dup = Assertions.assertThrows(
                 org.babblelang.analysis.AnalysisException.class,
-                () -> diagnostics("def f(T, T) = fn (x : T) -> ( x )"));
+                () -> diagnostics("def f of (T, T) = fn (x : T) -> ( x )"));
         Assertions.assertTrue(dup.getMessage().contains("Name already defined : T"), dup.getMessage());
 
         org.babblelang.analysis.AnalysisException misplaced = Assertions.assertThrows(
                 org.babblelang.analysis.AnalysisException.class,
-                () -> diagnostics("def bad(T) = 42"));
+                () -> diagnostics("def bad of T = 42"));
         Assertions.assertTrue(misplaced.getMessage().contains("Type parameters only apply to functions, classes, and interfaces : bad"), misplaced.getMessage());
     }
 
@@ -1140,7 +1140,7 @@ public class TypeCheckerTestCase {
                 + "def A = class (def x : int, def next : A? = null, def cb : (fn () : int)? = null) (\n"
                 + "  def f = fn (d : int = 1) : B -> ( B(this.x + d) )\n"
                 + "  def getInt = fn () : int -> ( this.x )\n"
-                + "  def id(T) = fn (v : T) : T -> ( v )\n"
+                + "  def id of T = fn (v : T) : T -> ( v )\n"
                 + ")\n"
                 + "def opt : A? = A(1, A(2))\n"
                 + "def b : B? = opt?.f()\n"
@@ -1156,7 +1156,7 @@ public class TypeCheckerTestCase {
                 + "def k : int? = u?.k\n"
                 + "def iface : I? = u\n"
                 + "def ik : int? = iface?.k\n"
-                + "def jl : java.util.List(B)? = java.util.List.of(B(9))\n"
+                + "def jl : (java.util.List of B)? = java.util.List.of(B(9))\n"
                 + "def jv : int? = jl?.get(0)?.v\n"
                 + "def late = A(4)\n"
                 + "def lateB : B? = late?.f()\n"
@@ -1223,7 +1223,7 @@ public class TypeCheckerTestCase {
                 + "def opt = fn (a = null, b = 10) -> ( (if a == null then ( \"none\" ) else ( a )) + \":\" + b )\n"
                 + "def o1 : string = opt()\n"
                 + "def o2 : string = opt(b: 5, a: \"ok\")\n"
-                + "def Point = value class (x, y) (\n"
+                + "def Point = record (x, y) (\n"
                 + "  def plus = fn (o) -> ( Point(this.x + o.x, this.y + o.y) )\n"
                 + "  def scale = fn (k) -> ( this.move(this.x * k, this.y * k) )\n"
                 + "  private def move = fn (nx, ny) -> ( Point(nx, ny) )\n"
@@ -1243,8 +1243,8 @@ public class TypeCheckerTestCase {
                 + "def even = fn (n) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
                 + "def odd = fn (n) : bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )\n"
                 + "def e4 : bool = even(4)\n"
-                + "def Box(T) = class (def v : T) ( def tag = fn (label) -> ( label ) )\n"
-                + "def b : Box(int) = Box(1)\n"
+                + "def Box of T = class (def v : T) ( def tag = fn (label) -> ( label ) )\n"
+                + "def b : Box of int = Box(1)\n"
                 + "def lbl : string = b.tag(\"box\")");
 
         // Conflicts in source order and widening notes for earlier diagnostics.

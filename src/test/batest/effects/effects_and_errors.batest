@@ -16,7 +16,7 @@ axiom pure on java.util.AbstractMap.SimpleEntry
 def myAbs = axiom pure deterministic nothrow on java.lang.Math.abs
 def ext = impure on java.lang.System.currentTimeMillis
 def compute = fn pure (x : int, y : int) : int -> (
-    def p : java.util.AbstractMap.SimpleEntry(int, int) = java.util.AbstractMap.SimpleEntry(x, y)
+    def p : java.util.AbstractMap.SimpleEntry of (int, int) = java.util.AbstractMap.SimpleEntry(x, y)
     def ok = p.getKey() != null
     java.lang.Math.max(em.abs2(x), jmathPkg.StrictMath.min(x, y)) + myAbs(-1) + (if ok then ( 0 ) else ( 1 ))
 )
@@ -170,9 +170,9 @@ Function badInj declared injective violates injective guarantee
 
 {{{{{
 ;; SAM callback propagation: impure lambda inside pure function violates pure
-def l : java.util.List(int) = java.util.ArrayList()
+def l : java.util.List of int = java.util.ArrayList()
 l.add(1)
-def p = fn pure (xs : java.util.List(int)) -> (
+def p = fn pure (xs : java.util.List of int) -> (
     xs.forEach(fn (x) -> ( println(x) ))
 )
 }}}}}

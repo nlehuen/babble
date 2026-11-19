@@ -108,7 +108,7 @@ println(runScaler(MyScaler(3L)))
 def op : java.util.function.LongUnaryOperator = fn (x : long) : long -> ( x * 3L + 1L )
 println(op.applyAsLong(10L))
 
-def func : java.util.function.ToLongFunction(string) = fn (s : string) : long -> ( long(s.length()) * 100L )
+def func : java.util.function.ToLongFunction of string = fn (s : string) : long -> ( long(s.length()) * 100L )
 println(func.applyAsLong("hello"))
 }}}}}
 20.0

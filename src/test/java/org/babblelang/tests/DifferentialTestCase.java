@@ -41,8 +41,8 @@ public class DifferentialTestCase {
                 "def o = object ( def v = 1 ) ; o.v += 2 ; o.v",
                 "def o = object ( def v = 1 ) ; def x = o ; x.w += 2",
                 "def C = class () ( private def n = 1 ; def up = fn () -> ( this.n *= 3 ) ) ; def c = C() ; c.up() ; c.up()",
-                "def P = value class (x : int) ( def plus = fn (o : int) : P -> ( P(this.x + o) ) ) ; def p = P(1) ; p += 2 ; p",
-                "def P = value class (x : int) () ; def p = P(1) ; p.x += 1",
+                "def P = record (x : int) ( def plus = fn (o : int) : P -> ( P(this.x + o) ) ) ; def p = P(1) ; p += 2 ; p",
+                "def P = record (x : int) () ; def p = P(1) ; p.x += 1",
                 "def n = null ; n += 1",
                 "int(2.5) + int(\"3\") + double(1)",
                 "int(1 / 0)",
@@ -69,8 +69,8 @@ public class DifferentialTestCase {
                 "def o = object ( def v = 1 ; def get = fn () -> ( this.v ) ) ; o.v = 2 ; o.get()",
                 "def mk = fn () -> ( def hidden = 5 ; object ( def v = 1 ) ) ; mk().hidden",
                 "def o = object ( def v = 1 ; def up = fn () -> ( this.v = this.v + 1 ) ) ; o.up() ; o.up()",
-                "def P = value class (x : int, y : int) ( def plus = fn (o : P) : P -> ( P(this.x + o.x, this.y + o.y) ) ) ; P(1, 2).plus(P(3, 4))",
-                "def P = value class (x : double, y : double) () ; P(1, 2) == P(1.0, 2.0) and not same(P(1, 2), P(1, 2))",
+                "def P = record (x : int, y : int) ( def plus = fn (o : P) : P -> ( P(this.x + o.x, this.y + o.y) ) ) ; P(1, 2).plus(P(3, 4))",
+                "def P = record (x : double, y : double) () ; P(1, 2) == P(1.0, 2.0) and not same(P(1, 2), P(1, 2))",
                 "def C = class (private def n = 0) ( def next = fn () -> ( this.n = this.n + 1 ) ) ; def c = C() ; c.next() ; def d = c ; d.n",
                 "def C = class () ( def a = this.b ; def b = 1 ) ; C()",
                 "def S = interface ( def area : fn () : double\n def describe = fn () -> ( \"area \" + this.area() ) )\n"
@@ -148,9 +148,9 @@ public class DifferentialTestCase {
                 "def s = java.lang.StringBuilder()\n  .append(\"a\")\n\n  .append(-1)\n  .toString()\ns",
                 "def o = object ( def v = 1 )\no\n  .v = 2\no.v",
                 // Operator methods : a + b is a.plus(b) on a Babble instance.
-                "def V = value class (x : double, y : double) ( def plus = fn (o : V) : V -> ( V(this.x + o.x, this.y + o.y) ) ; def minus = fn (o : V) : V -> ( V(this.x - o.x, this.y - o.y) )\n" + "  def times = fn (k : double) : V -> ( V(this.x * k, this.y * k) ) ; def div = fn (k : double) : V -> ( this * (1.0 / k) ) ; def neg = fn () : V -> ( V(-this.x, -this.y) ) )\ndef a = V(1, 2) ; def b = V(3, 5) ; \"\" + (a + b) + (a - b * 2) + -a + (a + b) / 2 + -(-a) + (\"<\" + a + \">\")",
-                "def V = value class (x : double, y : double) ( def plus = fn (o : V) : V -> ( V(this.x + o.x, this.y + o.y) ) ; def minus = fn (o : V) : V -> ( V(this.x - o.x, this.y - o.y) )\n" + "  def times = fn (k : double) : V -> ( V(this.x * k, this.y * k) ) ; def div = fn (k : double) : V -> ( this * (1.0 / k) ) ; def neg = fn () : V -> ( V(-this.x, -this.y) ) )\ndef i = 0 ; def s = V(0, 0) ; while i < 5 then ( s = s + V(i, 1) * 2 - V(1, 1) ; i = i + 1 ) ; s",
-                "def V = value class (x : double, y : double) ( def plus = fn (o : V) : V -> ( V(this.x + o.x, this.y + o.y) ) ; def minus = fn (o : V) : V -> ( V(this.x - o.x, this.y - o.y) )\n" + "  def times = fn (k : double) : V -> ( V(this.x * k, this.y * k) ) ; def div = fn (k : double) : V -> ( this * (1.0 / k) ) ; def neg = fn () : V -> ( V(-this.x, -this.y) ) )\ndef add = fn (p, q) -> ( p + q ) ; def i = 0 ; def s = \"\" ; while i < 4 then ( s = s + add(V(i, i), V(1, 1)) + add(i, 1) + add(\"x\", i) ; i = i + 1 ) ; s",
+                "def V = record (x : double, y : double) ( def plus = fn (o : V) : V -> ( V(this.x + o.x, this.y + o.y) ) ; def minus = fn (o : V) : V -> ( V(this.x - o.x, this.y - o.y) )\n" + "  def times = fn (k : double) : V -> ( V(this.x * k, this.y * k) ) ; def div = fn (k : double) : V -> ( this * (1.0 / k) ) ; def neg = fn () : V -> ( V(-this.x, -this.y) ) )\ndef a = V(1, 2) ; def b = V(3, 5) ; \"\" + (a + b) + (a - b * 2) + -a + (a + b) / 2 + -(-a) + (\"<\" + a + \">\")",
+                "def V = record (x : double, y : double) ( def plus = fn (o : V) : V -> ( V(this.x + o.x, this.y + o.y) ) ; def minus = fn (o : V) : V -> ( V(this.x - o.x, this.y - o.y) )\n" + "  def times = fn (k : double) : V -> ( V(this.x * k, this.y * k) ) ; def div = fn (k : double) : V -> ( this * (1.0 / k) ) ; def neg = fn () : V -> ( V(-this.x, -this.y) ) )\ndef i = 0 ; def s = V(0, 0) ; while i < 5 then ( s = s + V(i, 1) * 2 - V(1, 1) ; i = i + 1 ) ; s",
+                "def V = record (x : double, y : double) ( def plus = fn (o : V) : V -> ( V(this.x + o.x, this.y + o.y) ) ; def minus = fn (o : V) : V -> ( V(this.x - o.x, this.y - o.y) )\n" + "  def times = fn (k : double) : V -> ( V(this.x * k, this.y * k) ) ; def div = fn (k : double) : V -> ( this * (1.0 / k) ) ; def neg = fn () : V -> ( V(-this.x, -this.y) ) )\ndef add = fn (p, q) -> ( p + q ) ; def i = 0 ; def s = \"\" ; while i < 4 then ( s = s + add(V(i, i), V(1, 1)) + add(i, 1) + add(\"x\", i) ; i = i + 1 ) ; s",
                 "def C = class (def n : int) ( def plus = fn (o : int) : C -> ( C(this.n + o) ) ; def get = fn () -> ( this.n ) ; def twice = fn () : int -> ( (this + this.n).get() ) ) ; (C(2) + 3).get() + C(5).twice()",
                 "def o = object ( def plus = fn (x : int) -> ( x * 10 ) ; def neg = fn () -> ( \"negated\" ) ) ; \"\" + (o + 4) + -o",
                 "def S = interface ( def n : int ; def plus = fn (o : S) : int -> ( this.n + o.n ) ) ; def A = class (def n : int) implements S () ; A(1) + A(2)",
@@ -267,7 +267,7 @@ public class DifferentialTestCase {
                 id + "def P = class (def x : int, y : double = 0) ( def label : string = \"p\" ; def set = fn (v : any) -> ( this.label = v as string ) ) ; def p = P(1, id(2) as double) ; p.set(id(\"q\")) ; p.label + p.x\np.set(id(2))",
                 id + "def P = class (def x : int) () ; P(id(\"a\") as int)",
                 id + "def P = class () ( def n : int = 0 ) ; def p = P() ; p.n = id(5) as int ; p.n = id(\"z\") as int",
-                id + "def P = value class (x : int, y : int) () ; P(1, 2) == P(id(1) as int, 2)\nP(1, id(2.5) as int)",
+                id + "def P = record (x : int, y : int) () ; P(1, 2) == P(id(1) as int, 2)\nP(1, id(2.5) as int)",
                 id + "def S = interface ( def area : fn () : double )\ndef Sq = class (def s : int) implements S ( def area = fn () : double -> ( 1.0 * this.s * this.s ) )\n"
                         + "def T = class () ()\ndef f = fn (s : S) : double -> ( s.area() )\nf(Sq(2)) + f(id(Sq(3)) as S)\nf(id(T()) as S)",
                 id + "def S = interface ( def k : int ) ; def o = object implements S ( def k = 1 ) ; def f = fn (s : S) -> ( s.k ) ; f(id(o) as S)\nf(id(object ()) as S)",
@@ -286,7 +286,7 @@ public class DifferentialTestCase {
                 "def id = fn (x : any?) : any? -> ( x )\ndef d : double? = id(2) as double?\n\"\" + classof(d) + \":\" + d + \":\" + (id(null) as double?)",
                 "def id = fn (x : any?) : any? -> ( x )\ndef u : int | double = id(2) as (int | double)\nclassof(u)",
                 // P6b : Java generic boundary check rejects corrupted element read and permits null.
-                "def l : java.util.List(int) = java.util.ArrayList()\n(l as java.util.List).add(null)\nl.get(0)\n(l as java.util.List).add(\"bad\")\nl.get(1)"
+                "def l : java.util.List of int = java.util.ArrayList()\n(l as java.util.List).add(null)\nl.get(0)\n(l as java.util.List).add(\"bad\")\nl.get(1)"
         );
     }
 
@@ -317,14 +317,14 @@ public class DifferentialTestCase {
                 "def f : fn () : double? = fn () -> ( 1 ) ; def v = f() ; \"\" + classof(v) + \":\" + v",
                 "def I = interface ( def x : double ) ; def C = class () implements I ( def x = 1 ; def widen = fn () -> ( this.x = 1.5 ) ) ; def i : I = C() ; \"\" + classof(i.x) + \":\" + i.x",
                 // P6b : generic double widening, covariant narrowing with is, generic methods and Java collections.
-                "def Box(T) = class (def v : T) ()\ndef b : Box(double) = Box(1)\ndef l : java.util.List(double) = java.util.ArrayList() ; l.add(2)\n\"\" + classof(b.v) + \":\" + classof(l.get(0))",
+                "def Box of T = class (def v : T) ()\ndef b : Box of double = Box(1)\ndef l : java.util.List of double = java.util.ArrayList() ; l.add(2)\n\"\" + classof(b.v) + \":\" + classof(l.get(0))",
                 // Safe navigation (?.) : calls, field reads, chains, single LHS eval, short-circuit args, int -> double? widening.
                 "def B = class (def v : int) () ; def A = class (def n : A? = null) ( def f = fn () : B -> ( B(9) ) ) ; def mk = fn (b : bool) : A? -> ( if b then ( A(A()) ) else ( null ) ) ; \"\" + mk(true)?.f()?.v + \":\" + mk(false)?.f()?.v + \":\" + mk(true)?.n?.f()?.v",
                 "def n = 0 ; def m = 0 ; def A = class () ( def f = fn (x : int) -> ( x + 1 ) ) ; def recv = fn (b : bool) : A? -> ( n += 1 ; if b then ( A() ) else ( null ) ) ; def arg = fn () : int -> ( m += 1 ; 5 ) ; def r1 = recv(false)?.f(arg()) ; def r2 = recv(true)?.f(arg()) ; \"\" + r1 + \":\" + r2 + \":\" + n + \":\" + m",
                 "def A = class () ( def g = fn () : int -> ( 3 ) ) ; def mk = fn (b : bool) : A? -> ( if b then ( A() ) else ( null ) ) ; def d1 : double? = mk(true)?.g() ; def d0 : double? = mk(false)?.g() ; \"\" + classof(d1) + \":\" + d1 + \":\" + d0",
                 // P7 : call-site parameter inference, int -> double conversion, methods, operators, constructors, recursion, nullables.
                 "def f = fn (w) -> ( \"\" + classof(w) + \":\" + w ) ; f(2) + \"|\" + f(1.5)",
-                "def V = value class (x, y) ( def plus = fn (o) -> ( V(this.x + o.x, this.y + o.y) ) ; def scale = fn (k = 1) -> ( V(this.x * k, this.y * k) ) ) static ( def of = fn (a, b) -> ( this(a, b) ) ) ; def v = V.of(1, 2) + V(1.5, 3) ; \"\" + v.scale(2) + \"|\" + v.scale()",
+                "def V = record (x, y) ( def plus = fn (o) -> ( V(this.x + o.x, this.y + o.y) ) ; def scale = fn (k = 1) -> ( V(this.x * k, this.y * k) ) ) static ( def make = fn (a, b) -> ( this(a, b) ) ) ; def v = V.make(1, 2) + V(1.5, 3) ; \"\" + v.scale(2) + \"|\" + v.scale()",
                 "def fac = fn (n) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) ) ; fac(6)",
                 "def takesStr = fn (x : string) -> ( x + \"!\" ) ; def greet = fn (s = null) -> ( if s == null then ( \"none\" ) else ( takesStr(s) ) ) ; greet() + \",\" + greet(\"abc\")",
                 // RM001 : edge-case parity for NaN, -0.0, int wraparound, narrowed nullables, array.length, Java fields and exceptions.

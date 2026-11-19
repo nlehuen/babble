@@ -2,6 +2,6 @@
 
 def Vec3 = import("vec3.ba").Vec3
 
-export def Ray = value class (origin: Vec3, direction: Vec3) (
+export def Ray = record (origin: Vec3, direction: Vec3) (
     def at = fn (t: double): Vec3 -> (this.origin + this.direction * t)
 )

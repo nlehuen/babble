@@ -17,7 +17,7 @@ export def Dup = class (def n : int) ()
 
 {{{{{
 ;; satisfiesJavaBound: Comparable<? super T>, Collection<? extends E>, Comparator<? super T>
-def xs : java.util.ArrayList(string) = java.util.ArrayList()
+def xs : java.util.ArrayList of string = java.util.ArrayList()
 xs.add("c")
 xs.add("a")
 xs.add("b")
@@ -31,7 +31,7 @@ c:3
 {{{{{
 ;; satisfiesJavaBound failure: non-Comparable passed to Collections.max
 def Bad = class () ()
-def xs : java.util.List(Bad) = java.util.List.of(Bad())
+def xs : java.util.List of Bad = java.util.List.of(Bad())
 java.util.Collections.max(xs)
 }}}}}
 Type error : type argument Bad does not satisfy bound T of java.util.Collections.max
@@ -39,7 +39,7 @@ Type error : type argument Bad does not satisfy bound T of java.util.Collections
 {{{{{
 ;; accessibleType: package-private Java collection implementations mapped up to List/Iterator/Set
 def sub = java.util.List.of(10, 20, 30).subList(1, 3)
-def emptyIt : java.util.Iterator(string) = java.util.Collections.emptyIterator()
+def emptyIt : java.util.Iterator of string = java.util.Collections.emptyIterator()
 def setView = java.util.Collections.singleton("hi")
 println(sub.get(0), ":", emptyIt.hasNext(), ":", setView.contains("hi"))
 }}}}}
@@ -47,26 +47,26 @@ println(sub.get(0), ":", emptyIt.hasNext(), ":", setView.contains("hi"))
 
 {{{{{
 ;; Generic unification: unifyReturnSingle & unify with nested Babble/Java generics and SAMs
-def Box(T) = class (def v : T) ()
-def wrap(T) = fn (x : T) : Box(T) -> ( Box(x) )
-def unwrap(T) = fn (b : Box(T)) : T -> ( b.v )
-def id(T) = fn (x : T) : T -> ( x )
+def Box of T = class (def v : T) ()
+def wrap of T = fn (x : T) : Box of T -> ( Box(x) )
+def unwrap of T = fn (b : Box of T) : T -> ( b.v )
+def id of T = fn (x : T) : T -> ( x )
 
-def b1 : Box(int) = wrap(7)
-def b2 : Box(Box(int)) = wrap(wrap(9))
-def fSam : java.util.function.Function(int, int) = id
-def opt : java.util.Optional(int) = java.util.Optional.of(5)
-def emptyL : java.util.List(string) = java.util.Collections.emptyList()
+def b1 : Box of int = wrap(7)
+def b2 : Box of Box of int = wrap(wrap(9))
+def fSam : java.util.function.Function of (int, int) = id
+def opt : java.util.Optional of int = java.util.Optional.of(5)
+def emptyL : java.util.List of string = java.util.Collections.emptyList()
 println(b1.v, ":", unwrap(b2).v, ":", java.util.Optional.of(4).map(fSam).get(), ":", opt.orElse(0), ":", emptyL.size())
 }}}}}
 7:9:4:5:0
 
 {{{{{
 ;; Generic class implementing generic interface and checking conformance error
-def Container(T) = interface (
+def Container of T = interface (
     def get : fn () : T
 )
-def BadContainer = class (def v : string) implements Container(int) (
+def BadContainer = class (def v : string) implements Container of int (
     def get = fn () : string -> ( this.v )
 )
 }}}}}
@@ -103,8 +103,8 @@ Type error : expected (borrow v : string) : () : any?, got print
 
 {{{{{
 ;; nonFunctionCallableAssignable error: pure target assigned impure constructor or method
-def MutBox = class (mut p : java.util.ArrayList(int)) (def ok : bool = p.add(1))
-def f : fn (p : java.util.ArrayList(int)) : MutBox = MutBox
+def MutBox = class (mut p : java.util.ArrayList of int) (def ok : bool = p.add(1))
+def f : fn (p : java.util.ArrayList of int) : MutBox = MutBox
 }}}}}
 Type error : expected (p : java.util.ArrayList(int)) : MutBox, got class MutBox
 

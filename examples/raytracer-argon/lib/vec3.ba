@@ -4,7 +4,7 @@ def Rng = import("rng.ba").Rng
 ;; ------------------------------------------------------------------------
 ;; 2.2 Vec3 Value Class (3D points, vectors, and RGB colors)
 ;; ------------------------------------------------------------------------
-export def Vec3 = value class (x: double, y: double, z: double) (
+export def Vec3 = record (x: double, y: double, z: double) (
     def neg = fn (): Vec3 -> (
         Vec3(-this.x, -this.y, -this.z)
     )

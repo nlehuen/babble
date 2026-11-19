@@ -6,7 +6,7 @@ def infinity = rtweekend.infinity
 def Vec3 = import("vec3.ba").Vec3
 def Ray = import("ray.ba").Ray
 
-export def AABB = value class (
+export def AABB = record (
     minX: double, maxX: double,
     minY: double, maxY: double,
     minZ: double, maxZ: double

@@ -97,6 +97,9 @@ final class CallSolver {
             }
             return Type.union(results);
         }
+        if (callee instanceof Type.CoreCollection cc) {
+            return coreCollectionCall(cc.kind(), cc.typeArguments().isEmpty() ? null : cc.typeArguments(), ctx, expected);
+        }
         if (callee instanceof Type.Function function) {
             List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
             if (function.typeParameters().isEmpty()) {
@@ -112,6 +115,23 @@ final class CallSolver {
             List<Type.TypeVar> classVars = checker.annotator().typeVarsOf(node);
             List<Type.Parameter> parameters = checker.constructorParameters(node);
             List<? extends ParserRuleContext> decls = checker.parameterDecls(node);
+            if (!value.typeArguments().isEmpty()) {
+                Map<Type.TypeVar, Type> env = new HashMap<>();
+                for (int i = 0; i < value.typeArguments().size(); i++) {
+                    env.put(classVars.get(i), value.typeArguments().get(i));
+                }
+                if (parameters != null) {
+                    List<Type.Parameter> substitutedParams = new ArrayList<>(parameters.size());
+                    for (Type.Parameter p : parameters) {
+                        substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), env)));
+                    }
+                    bind(substitutedParams, decls, arguments, ctx);
+                } else if (!arguments.isEmpty()) {
+                    checker.warn("Too many parameters : 0 declared, " + arguments.size() + " given", ctx);
+                    synthAll(arguments);
+                }
+                return new Type.Instance(node, value.typeArguments());
+            }
             if (classVars.isEmpty()) {
                 if (parameters != null) {
                     bind(parameters, decls, arguments, ctx);
@@ -126,6 +146,33 @@ final class CallSolver {
         }
         if (callee instanceof Type.JavaClassValue value) {
             Class<?> java = value.type();
+            if (!value.typeArguments().isEmpty()) {
+                List<Type> explicitTypeArgs = value.typeArguments();
+                if (java.isInterface() && arguments.size() == 1 && ScopeAnalysis.callParamName(arguments.get(0)) == null
+                        && JavaTypes.isFunctionalInterface(java)) {
+                    Type.JavaInstance samTarget = new Type.JavaInstance(java, explicitTypeArgs);
+                    Type actualArg = checker.check(arguments.get(0).expression(), samTarget);
+                    checker.subsumes(arguments.get(0).expression(), actualArg, samTarget);
+                    return samTarget;
+                }
+                TypeVariable<?>[] classParams = java.getTypeParameters();
+                Map<TypeVariable<?>, Type> env = new HashMap<>();
+                for (int i = 0; i < classParams.length; i++) {
+                    env.put(classParams[i], explicitTypeArgs.get(i));
+                }
+                List<Type> argumentTypes = new ArrayList<>();
+                List<Executable> matching = javaCall(Arrays.asList(java.getConstructors()), java.getCanonicalName(),
+                        env, arguments, ctx, expected, argumentTypes);
+                Executable winner = matching.isEmpty() ? null
+                        : matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching);
+                if (winner != null) {
+                    if (recordTarget) {
+                        recordConstructor(winner, ctx);
+                    }
+                    checkJavaArgumentWidening(winner, env, arguments, argumentTypes);
+                }
+                return new Type.JavaInstance(java, explicitTypeArgs);
+            }
             if (java.isInterface() && arguments.size() == 1 && ScopeAnalysis.callParamName(arguments.get(0)) == null
                     && JavaTypes.isFunctionalInterface(java)) {
                 return javaGenericSamCall(java, arguments.get(0).expression(), ctx, expected);
@@ -133,10 +180,45 @@ final class CallSolver {
             return javaConstructorCall(java, arguments, ctx, expected, recordTarget);
         }
         if (callee instanceof Type.JavaMethod method) {
-            List<Method> candidates = JavaTypes.methods(method.owner(), method.name());
+            List<Method> all = JavaTypes.methods(method.owner(), method.name());
             Map<TypeVariable<?>, Type> receiverEnv = method.typeArguments().isEmpty()
                     ? Map.of() : JavaTypeBridge.javaTypeEnv(method.owner(), method.typeArguments());
-            return javaMethodCall(candidates, method.owner().getCanonicalName() + "." + method.name(),
+            if (!method.methodTypeArguments().isEmpty()) {
+                List<Type> explicitTypeArgs = method.methodTypeArguments();
+                List<Method> candidates = matchingGenericJavaMethods(all, receiverEnv, explicitTypeArgs);
+                if (candidates.isEmpty()) {
+                    checker.warn(ctx.expression().getText() + " is not generic", ctx);
+                    synthAll(arguments);
+                    return Type.ERROR;
+                }
+                Method sample = candidates.get(0);
+                Map<TypeVariable<?>, Type> callEnv = new HashMap<>(receiverEnv);
+                TypeVariable<?>[] sampleParams = sample.getTypeParameters();
+                for (int i = 0; i < sampleParams.length; i++) {
+                    callEnv.put(sampleParams[i], explicitTypeArgs.get(i));
+                }
+                List<Type> argumentTypes = new ArrayList<>();
+                List<Method> applicable = javaCall(candidates, method.owner().getCanonicalName() + "." + method.name(),
+                        callEnv, arguments, ctx, expected, argumentTypes);
+                if (applicable.isEmpty()) {
+                    return Type.ERROR;
+                }
+                Method best = applicable.size() == 1 ? applicable.get(0) : JavaTypeBridge.mostSpecific(applicable);
+                if (best == null) {
+                    return Type.ERROR;
+                }
+                if (recordTarget) {
+                    resolvedMethods.put(ctx, best);
+                }
+                Map<TypeVariable<?>, Type> bestEnv = new HashMap<>(receiverEnv);
+                TypeVariable<?>[] bestParams = best.getTypeParameters();
+                for (int i = 0; i < bestParams.length; i++) {
+                    bestEnv.put(bestParams[i], explicitTypeArgs.get(i));
+                }
+                checkJavaArgumentWidening(best, bestEnv, arguments, argumentTypes);
+                return JavaTypeBridge.javaMethodResult(best, bestEnv, checker.algebra());
+            }
+            return javaMethodCall(all, method.owner().getCanonicalName() + "." + method.name(),
                     receiverEnv, arguments, ctx, expected, recordTarget);
         }
         checker.warn(ctx.expression().getText() + " is not callable", ctx);
@@ -861,8 +943,7 @@ final class CallSolver {
         return expectedBase != null && expectedBase.hasSyntheticTypeVar();
     }
 
-    Type coreCollectionCall(BabbleParser.CoreCollectionCallContext ctx, Type expected) {
-        String kind = ctx.callee.getText();
+    Type coreCollectionCall(String kind, List<Type> explicitArgs, BabbleParser.CallContext ctx, Type expected) {
         Class<?> javaClass = switch (kind) {
             case "list" -> List.class;
             case "set" -> Set.class;
@@ -874,24 +955,6 @@ final class CallSolver {
         };
         int expectedArity = ("map".equals(kind) || "sortedmap".equals(kind) || "entry".equals(kind)) ? 2 : 1;
         List<BabbleParser.CallParameterContext> args = ctx.callParameters().callParameter();
-        List<Type> explicitArgs = null;
-        if (ctx.typeArguments() != null) {
-            List<BabbleParser.TypeContext> typeNodes = ctx.typeArguments().type();
-            if (typeNodes.size() != expectedArity) {
-                checker.warn("Wrong number of type arguments : expected " + expectedArity + ", got " + typeNodes.size(), ctx.typeArguments());
-                synthAll(args);
-                return Type.ERROR;
-            }
-            explicitArgs = new ArrayList<>(expectedArity);
-            for (BabbleParser.TypeContext t : typeNodes) {
-                Type resolved = checker.annotator().annotation(t, checker.scopeOf(ctx), false);
-                if (resolved == Type.ERROR) {
-                    synthAll(args);
-                    return Type.ERROR;
-                }
-                explicitArgs.add(resolved);
-            }
-        }
         List<Type> expectedTypeArgs = extractExpectedCollectionArgs(expected, javaClass, expectedArity);
         if ("entry".equals(kind)) {
             return checkEntryCall(args, explicitArgs, expectedTypeArgs, ctx);
@@ -926,7 +989,7 @@ final class CallSolver {
     }
 
     private Type checkEntryCall(List<BabbleParser.CallParameterContext> args, List<Type> explicitArgs,
-                                List<Type> expectedArgs, BabbleParser.CoreCollectionCallContext ctx) {
+                                List<Type> expectedArgs, BabbleParser.CallContext ctx) {
         if (args.size() != 2) {
             checker.warn(args.size() < 2 ? "Missing parameter : " + (args.isEmpty() ? "key" : "value")
                     : "Too many parameters : 2 declared, " + args.size() + " given", ctx);
@@ -962,7 +1025,7 @@ final class CallSolver {
 
     private Type checkSeqCollectionCall(String kind, Class<?> javaClass, List<BabbleParser.CallParameterContext> args,
                                         List<Type> explicitArgs, List<Type> expectedArgs,
-                                        BabbleParser.CoreCollectionCallContext ctx) {
+                                        BabbleParser.CallContext ctx) {
         boolean isSorted = "sortedset".equals(kind);
         Type hintT = explicitArgs != null ? explicitArgs.get(0) : (expectedArgs != null ? expectedArgs.get(0) : null);
         int count = args.size();
@@ -1072,7 +1135,7 @@ final class CallSolver {
 
     private Type checkMapCall(String kind, Class<?> javaClass, List<BabbleParser.CallParameterContext> args,
                               List<Type> explicitArgs, List<Type> expectedArgs,
-                              BabbleParser.CoreCollectionCallContext ctx) {
+                              BabbleParser.CallContext ctx) {
         boolean isSorted = "sortedmap".equals(kind);
         Type hintK = explicitArgs != null ? explicitArgs.get(0) : (expectedArgs != null ? expectedArgs.get(0) : null);
         Type hintV = explicitArgs != null ? explicitArgs.get(1) : (expectedArgs != null ? expectedArgs.get(1) : null);
@@ -1208,7 +1271,7 @@ final class CallSolver {
     }
 
     private Type checkComparatorArg(BabbleParser.ExpressionContext compExpr, Type hintT, String kind,
-                                    BabbleParser.CoreCollectionCallContext ctx) {
+                                    BabbleParser.CallContext ctx) {
         if (hintT != null) {
             Type compPattern = new Type.JavaInstance(Comparator.class, List.of(hintT));
             Type compType = checker.check(compExpr, compPattern);
@@ -1272,27 +1335,60 @@ final class CallSolver {
         return false;
     }
 
-    Type typeApplyCall(BabbleParser.TypeApplyCallContext ctx, Type callee, Type expected) {
-        List<BabbleParser.TypeContext> typeNodes = ctx.typeArguments().type();
-        List<Type> explicitTypeArgs = new ArrayList<>(typeNodes.size());
-        boolean badTypeArg = false;
-        for (BabbleParser.TypeContext t : typeNodes) {
-            Type resolved = checker.annotator().annotation(t, checker.scopeOf(ctx), false);
-            if (resolved == Type.ERROR) {
-                badTypeArg = true;
+    private List<Method> matchingGenericJavaMethods(List<Method> all, Map<TypeVariable<?>, Type> receiverEnv,
+                                                    List<Type> explicitTypeArgs) {
+        List<Method> candidates = new ArrayList<>();
+        for (Method m : all) {
+            TypeVariable<?>[] mParams = m.getTypeParameters();
+            if (mParams.length != explicitTypeArgs.size()) {
+                continue;
             }
-            explicitTypeArgs.add(resolved);
+            Map<TypeVariable<?>, Type> env = new HashMap<>(receiverEnv);
+            for (int i = 0; i < mParams.length; i++) {
+                env.put(mParams[i], explicitTypeArgs.get(i));
+            }
+            boolean boundsOk = true;
+            for (int i = 0; i < mParams.length; i++) {
+                if (!JavaTypeBridge.satisfiesJavaBounds(explicitTypeArgs.get(i), mParams[i], env, checker.algebra())) {
+                    boundsOk = false;
+                    break;
+                }
+            }
+            if (boundsOk) {
+                candidates.add(m);
+            }
         }
-        List<BabbleParser.CallParameterContext> arguments = ctx.callParameters().callParameter();
-        if (badTypeArg || callee == Type.ERROR || callee == Type.NOTHING) {
-            synthAll(arguments);
+        return candidates;
+    }
+
+    /** First-class generic type application {@code expr of typeArguments} (BIP012-D4). */
+    Type applyTypes(BabbleParser.TypeApplyContext ctx, Type target) {
+        List<Type> explicitTypeArgs = checker.annotator().resolveTypeArguments(ctx.typeArguments(), checker.scopeOf(ctx));
+        boolean badTypeArg = explicitTypeArgs.contains(Type.ERROR);
+        if (badTypeArg || target == Type.ERROR || target == Type.NOTHING) {
             return Type.ERROR;
         }
-        if (callee instanceof Type.Function fn) {
+        if (target instanceof Type.CoreCollection cc) {
+            if (!cc.typeArguments().isEmpty()) {
+                checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
+                return Type.ERROR;
+            }
+            int expectedArity = ("map".equals(cc.kind()) || "sortedmap".equals(cc.kind()) || "entry".equals(cc.kind())) ? 2 : 1;
+            if (explicitTypeArgs.size() != expectedArity) {
+                checker.warn("Wrong number of type arguments : expected " + expectedArity
+                        + ", got " + explicitTypeArgs.size(), ctx.typeArguments());
+                return Type.ERROR;
+            }
+            return new Type.CoreCollection(cc.kind(), explicitTypeArgs);
+        }
+        if (target instanceof Type.Function fn) {
+            if (fn.typeParameters().isEmpty()) {
+                checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
+                return Type.ERROR;
+            }
             if (fn.typeParameters().size() != explicitTypeArgs.size()) {
                 checker.warn("Wrong number of type arguments : expected " + fn.typeParameters().size()
                         + ", got " + explicitTypeArgs.size(), ctx.typeArguments());
-                synthAll(arguments);
                 return Type.ERROR;
             }
             Map<Type.TypeVar, Type> env = new HashMap<>();
@@ -1303,42 +1399,38 @@ final class CallSolver {
             for (Type.Parameter p : fn.parameters()) {
                 substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), env)));
             }
-            bind(substitutedParams, checker.parameterDecls(fn), arguments, ctx);
-            return checker.algebra().substitute(fn.result(), env);
+            Type substitutedResult = checker.algebra().substitute(fn.result(), env);
+            Type.Function specialized = new Type.Function(substitutedParams, substitutedResult, fn.effects());
+            BabbleParser.FunctionLiteralContext lit = checker.functionLiterals().get(fn);
+            if (lit != null) {
+                checker.functionLiterals().put(specialized, lit);
+            }
+            return specialized;
         }
-        if (callee instanceof Type.ClassValue cv && !cv.node().isInterface()) {
+        if (target instanceof Type.ClassValue cv && !cv.node().isInterface()) {
+            if (!cv.typeArguments().isEmpty()) {
+                checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
+                return Type.ERROR;
+            }
             TypeNode node = cv.node();
             List<Type.TypeVar> classVars = checker.annotator().typeVarsOf(node);
             if (classVars.size() != explicitTypeArgs.size()) {
                 checker.warn("Wrong number of type arguments : expected " + classVars.size()
                         + ", got " + explicitTypeArgs.size(), ctx.typeArguments());
-                synthAll(arguments);
                 return Type.ERROR;
             }
-            Map<Type.TypeVar, Type> env = new HashMap<>();
-            for (int i = 0; i < explicitTypeArgs.size(); i++) {
-                env.put(classVars.get(i), explicitTypeArgs.get(i));
-            }
-            List<Type.Parameter> params = checker.constructorParameters(node);
-            if (params != null) {
-                List<Type.Parameter> substitutedParams = new ArrayList<>(params.size());
-                for (Type.Parameter p : params) {
-                    substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), env)));
-                }
-                bind(substitutedParams, checker.parameterDecls(node), arguments, ctx);
-            } else if (!arguments.isEmpty()) {
-                checker.warn("Too many parameters : 0 declared, " + arguments.size() + " given", ctx);
-                synthAll(arguments);
-            }
-            return new Type.Instance(node, explicitTypeArgs);
+            return new Type.ClassValue(node, explicitTypeArgs);
         }
-        if (callee instanceof Type.JavaClassValue jcv) {
+        if (target instanceof Type.JavaClassValue jcv) {
+            if (!jcv.typeArguments().isEmpty()) {
+                checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
+                return Type.ERROR;
+            }
             Class<?> java = jcv.type();
             TypeVariable<?>[] classParams = java.getTypeParameters();
             if (classParams.length != explicitTypeArgs.size()) {
                 checker.warn("Wrong number of type arguments : expected " + classParams.length
                         + ", got " + explicitTypeArgs.size(), ctx.typeArguments());
-                synthAll(arguments);
                 return Type.ERROR;
             }
             Map<TypeVariable<?>, Type> env = new HashMap<>();
@@ -1348,84 +1440,29 @@ final class CallSolver {
             for (int i = 0; i < classParams.length; i++) {
                 if (!JavaTypeBridge.satisfiesJavaBounds(explicitTypeArgs.get(i), classParams[i], env, checker.algebra())) {
                     checker.warn("Type error : type argument " + explicitTypeArgs.get(i) + " does not satisfy bound "
-                            + classParams[i].getName() + " of " + java.getCanonicalName(), ctx.typeArguments().type(i));
-                    synthAll(arguments);
+                            + classParams[i].getName() + " of " + java.getCanonicalName(),
+                            TypeAnnotations.typeArgumentNode(ctx.typeArguments(), i));
                     return Type.ERROR;
                 }
             }
-            if (java.isInterface() && arguments.size() == 1 && ScopeAnalysis.callParamName(arguments.get(0)) == null
-                    && JavaTypes.isFunctionalInterface(java)) {
-                Type.JavaInstance samTarget = new Type.JavaInstance(java, explicitTypeArgs);
-                Type actualArg = checker.check(arguments.get(0).expression(), samTarget);
-                checker.subsumes(arguments.get(0).expression(), actualArg, samTarget);
-                return samTarget;
-            }
-            List<Type> argumentTypes = new ArrayList<>();
-            List<Executable> matching = javaCall(Arrays.asList(java.getConstructors()), java.getCanonicalName(),
-                    env, arguments, ctx, expected, argumentTypes);
-            Executable winner = matching.isEmpty() ? null
-                    : matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching);
-            if (winner != null) {
-                checkJavaArgumentWidening(winner, env, arguments, argumentTypes);
-            }
-            return new Type.JavaInstance(java, explicitTypeArgs);
+            return new Type.JavaClassValue(java, explicitTypeArgs);
         }
-        if (callee instanceof Type.JavaMethod method) {
+        if (target instanceof Type.JavaMethod method) {
+            if (!method.methodTypeArguments().isEmpty()) {
+                checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
+                return Type.ERROR;
+            }
             List<Method> all = JavaTypes.methods(method.owner(), method.name());
-            List<Method> candidates = new ArrayList<>();
             Map<TypeVariable<?>, Type> receiverEnv = method.typeArguments().isEmpty()
                     ? Map.of() : JavaTypeBridge.javaTypeEnv(method.owner(), method.typeArguments());
-            for (Method m : all) {
-                TypeVariable<?>[] mParams = m.getTypeParameters();
-                if (mParams.length != explicitTypeArgs.size()) {
-                    continue;
-                }
-                Map<TypeVariable<?>, Type> env = new HashMap<>(receiverEnv);
-                for (int i = 0; i < mParams.length; i++) {
-                    env.put(mParams[i], explicitTypeArgs.get(i));
-                }
-                boolean boundsOk = true;
-                for (int i = 0; i < mParams.length; i++) {
-                    if (!JavaTypeBridge.satisfiesJavaBounds(explicitTypeArgs.get(i), mParams[i], env, checker.algebra())) {
-                        boundsOk = false;
-                        break;
-                    }
-                }
-                if (boundsOk) {
-                    candidates.add(m);
-                }
-            }
+            List<Method> candidates = matchingGenericJavaMethods(all, receiverEnv, explicitTypeArgs);
             if (candidates.isEmpty()) {
                 checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
-                synthAll(arguments);
                 return Type.ERROR;
             }
-            Method sample = candidates.get(0);
-            Map<TypeVariable<?>, Type> callEnv = new HashMap<>(receiverEnv);
-            TypeVariable<?>[] sampleParams = sample.getTypeParameters();
-            for (int i = 0; i < sampleParams.length; i++) {
-                callEnv.put(sampleParams[i], explicitTypeArgs.get(i));
-            }
-            List<Type> argumentTypes = new ArrayList<>();
-            List<Method> applicable = javaCall(candidates, method.owner().getCanonicalName() + "." + method.name(),
-                    callEnv, arguments, ctx, expected, argumentTypes);
-            if (applicable.isEmpty()) {
-                return Type.ERROR;
-            }
-            Method best = applicable.size() == 1 ? applicable.get(0) : JavaTypeBridge.mostSpecific(applicable);
-            if (best == null) {
-                return Type.ERROR;
-            }
-            Map<TypeVariable<?>, Type> bestEnv = new HashMap<>(receiverEnv);
-            TypeVariable<?>[] bestParams = best.getTypeParameters();
-            for (int i = 0; i < bestParams.length; i++) {
-                bestEnv.put(bestParams[i], explicitTypeArgs.get(i));
-            }
-            checkJavaArgumentWidening(best, bestEnv, arguments, argumentTypes);
-            return JavaTypeBridge.javaMethodResult(best, bestEnv, checker.algebra());
+            return new Type.JavaMethod(method.owner(), method.typeArguments(), method.name(), explicitTypeArgs);
         }
         checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
-        synthAll(arguments);
         return Type.ERROR;
     }
 

@@ -15,8 +15,8 @@ export def Dup = class (def x : int) ()
 {{{{{
 ;; JavaLinker fast-path caches via loop calls (BoundJavaMethod, JavaMethod, isWrappedOf, bindWrapped,
 ;; bindRaw, isNull, isKind, isWrappedKind, toJava, fail)
-def xs : java.util.ArrayList(any?) = java.util.ArrayList()
-def addLoop = fn (target : java.util.ArrayList(any?)) : string -> (
+def xs : java.util.ArrayList of any? = java.util.ArrayList()
+def addLoop = fn (target : java.util.ArrayList of any?) : string -> (
     def addFn : fn (v : any?) : bool = target.add
     def i = 0
     while i < 2 then (
@@ -74,10 +74,10 @@ println(total)
 {{{{{
 ;; Values.hash (via value class with null, int, 2.0, MAX_VALUE), UnionType.convert (double | string),
 ;; AnyType, and Types.describe variants
-def V = value class (a : any?, b : double, c : double) ()
+def V = record (a : any?, b : double, c : double) ()
 def v1 = V(null, 2.0, java.lang.Double.MAX_VALUE)
 def v2 = V(2, 2.0, java.lang.Double.MAX_VALUE)
-def tbl : java.util.Map(V, string) = java.util.HashMap()
+def tbl : java.util.Map of (V, string) = java.util.HashMap()
 tbl.put(v1, "one")
 tbl.put(v2, "two")
 println(v1 == V(null, 2.0, java.lang.Double.MAX_VALUE), ":", tbl.get(V(null, 2.0, java.lang.Double.MAX_VALUE)), ":", tbl.get(v2))
@@ -123,7 +123,7 @@ def inc = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x + 1 ))
 def dbl = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x * 2 ))
 def comp = inc.andThen(dbl)
 
-def CompCls = value class (n : int) implements java.util.Comparator(CompCls) (
+def CompCls = record (n : int) implements java.util.Comparator of CompCls (
     def compare = fn (a : CompCls, b : CompCls) : int -> ( a.n - b.n )
 )
 def objList = java.util.List.of(CompCls(1), CompCls(2))
@@ -134,7 +134,7 @@ println(sumL, ":", c.apply(3), ":", pred.test(java.lang.Boolean.TRUE), ":", comp
 {{{{{
 ;; Standard SAMs are LambdaMetafactory-backed (not Proxy); FunctionHandler & JavaTypes.checkParameter covered via >16-arg Proxy fallback SAM
 def Demo = import("org.babblelang.tests").JavaClassDemo
-def findM = fn (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
+def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < xs.size() then (
@@ -145,7 +145,7 @@ def findM = fn (cls : java.lang.Class(any?), name : string) : java.lang.reflect.
     xs.get(0) as java.lang.reflect.Method
 )
 def args17 = fn (a0 : any, a1 : any, a2 : any, a3 : any) -> (
-    def l : java.util.List(any) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    def l : java.util.List of any = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
 )
@@ -163,7 +163,7 @@ Type error : expected int, got string
 
 {{{{{
 def Demo = import("org.babblelang.tests").JavaClassDemo
-def findM = fn (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
+def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < xs.size() then (
@@ -174,7 +174,7 @@ def findM = fn (cls : java.lang.Class(any?), name : string) : java.lang.reflect.
     xs.get(0) as java.lang.reflect.Method
 )
 def args17 = fn (a0 : any, a1 : any, a2 : any, a3 : any) -> (
-    def l : java.util.List(any) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    def l : java.util.List of any = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
 )
@@ -190,7 +190,7 @@ Type error : expected double, got string
 
 {{{{{
 def Demo = import("org.babblelang.tests").JavaClassDemo
-def findM = fn (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
+def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < xs.size() then (
@@ -201,7 +201,7 @@ def findM = fn (cls : java.lang.Class(any?), name : string) : java.lang.reflect.
     xs.get(0) as java.lang.reflect.Method
 )
 def args17 = fn (a0 : any, a1 : any, a2 : any, a3 : any) -> (
-    def l : java.util.List(any) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    def l : java.util.List of any = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
 )
@@ -218,7 +218,7 @@ Type error : expected string, got int
 {{{{{
 ;; checkParameter double widened from int, and File non-File check via >16-arg Proxy fallback SAM
 def Demo = import("org.babblelang.tests").JavaClassDemo
-def findM = fn (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Method -> (
+def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < xs.size() then (
@@ -229,7 +229,7 @@ def findM = fn (cls : java.lang.Class(any?), name : string) : java.lang.reflect.
     xs.get(0) as java.lang.reflect.Method
 )
 def args17 = fn (a0 : any, a1 : any, a2 : any, a3 : any) -> (
-    def l : java.util.List(any) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
+    def l : java.util.List of any = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
 )
@@ -262,7 +262,7 @@ Cannot import ../../missing.ba : no such module
 
 {{{{{
 ;; JavaLinker.call (Bootstrap.call with all non-primitive param/return types) & JavaLinker.select (wrapped & raw in loop)
-def tbl : java.util.Map(any?, any?) = java.util.HashMap()
+def tbl : java.util.Map of (any?, any?) = java.util.HashMap()
 def putFn : fn (k : any?, v : any?) : any? = tbl.put
 def toStrFn : fn (o : any?) : string = java.util.Objects.toString
 def s = ""
@@ -308,15 +308,15 @@ java.lang.NumberFormatException : For input string: "bad"
 
 {{{{{
 ;; Supers default Java interface call, BabbleInstance value equals/toString, Namespace reopen, same(), is/as edges
-def Cmp = class () implements java.util.Comparator(int) (
+def Cmp = class () implements java.util.Comparator of int (
     def compare = fn (a : int, b : int) : int -> ( a - b )
     def rev = fn () -> ( super(java.util.Comparator).reversed() )
 )
 def rcmp = Cmp().rev()
 println(rcmp.compare(1, 5) > 0)
 
-def Val = value class (x : int) ()
-def Val2 = value class (x : int) ()
+def Val = record (x : int) ()
+def Val2 = record (x : int) ()
 def Ref = class (def x : int) (
     private def p = 9
     def toString = fn () : string -> ( "Ref(" + this.x + ")" )
@@ -391,7 +391,7 @@ def RImpl = class () implements java.lang.Runnable ( def run = fn () -> () )
 def runR = dyn(RImpl()) as java.lang.Runnable
 def runF = dyn(fn () -> ()) as java.lang.Runnable
 println(uNum, ":", runR != null, ":", runF != null)
-def fns : java.util.List(fn (x : int) : int) = java.util.ArrayList()
+def fns : java.util.List of fn (x : int) : int = java.util.ArrayList()
 def rawList = fns as java.util.List
 rawList.add("notfn")
 fns.get(0)
@@ -425,13 +425,13 @@ def dyn = fn (v : any?) : any? -> ( v )
 println(dyn(im) is IC, ":", dyn(im) is IB, ":", dyn(im) is IA, ":", dyn(Other()) is IA, ":", dyn(im) is java.lang.Runnable, ":", dyn(im) is java.io.Serializable)
 println(dyn(java.lang.StringBuilder()) is int, ":", dyn(1) is int, ":", dyn(1.5) is double, ":", dyn("s") is string, ":", dyn(null) is any)
 
-def jlist : java.util.List(java.lang.Runnable) = java.util.ArrayList()
+def jlist : java.util.List of java.lang.Runnable = java.util.ArrayList()
 jlist.add(im)
 def back : java.lang.Runnable? = jlist.get(0)
 println(same(back, im))
 
 def vh = fn (a : any?) : int -> ( java.util.Objects.hashCode(a) )
-def VBox = value class (x : any?) ()
+def VBox = record (x : any?) ()
 println(VBox(java.lang.Long.valueOf(5)) == VBox(java.lang.Integer.valueOf(5)), ":", VBox(1.0) == VBox(1), ":", VBox(1.5) == VBox(1.5), ":", VBox(1.0 * 1000000000 * 1000000000 * 100) == VBox(1.0 * 1000000000 * 1000000000 * 100))
 println(java.util.List.of(VBox(java.lang.Long.valueOf(5)), VBox(java.lang.Short.valueOf("1")), VBox(java.lang.Byte.valueOf("2")), VBox(1.5), VBox(1.0 * 1000000000 * 1000000000 * 100)).hashCode() != 0)
 def ch1 = java.lang.Character.valueOf(java.lang.StringBuilder("a").charAt(0))
@@ -458,7 +458,7 @@ def RImpl = class () implements java.lang.Runnable (
     def run = fn () -> ()
     def toString = fn () : string -> ( "R" )
 )
-def items : java.util.ArrayList(any?) = java.util.ArrayList()
+def items : java.util.ArrayList of any? = java.util.ArrayList()
 items.add("a")
 items.add(null)
 items.add(java.lang.StringBuilder("z"))
@@ -480,7 +480,7 @@ boom
 {{{{{
 ;; JavaTypes.checkParameter & convertResult & Overloads signature errors via raw Function/UnaryOperator/Comparator
 def dyn = fn (v : any?) : any? -> ( v )
-def cmp : java.util.Comparator(any?) = fn (a, b) -> ( 0 )
+def cmp : java.util.Comparator of any? = fn (a, b) -> ( 0 )
 def func = dyn(fn (a : int) : int -> ( a + 1 )) as java.util.function.IntUnaryOperator
 println(func.applyAsInt(4))
 def sb = java.lang.StringBuilder()
@@ -500,10 +500,10 @@ def C = class (def x : int) (
     def sv = 10
     def sm = fn () : int -> ( this.sp )
 )
-def V = value class (x : int) (
+def V = record (x : int) (
     def toString = fn (unused : int) : string -> ( "hi" )
 )
-def Comp = class () implements java.util.Comparator(int) (
+def Comp = class () implements java.util.Comparator of int (
     def compare = fn (a : int, b : int) : int -> ( a - b )
 )
 C.sv = 25
@@ -589,7 +589,7 @@ def iB = dyn(java.lang.Byte.valueOf("5"))
 def dF = dyn(java.lang.Float.valueOf("1.5"))
 def huge = 1.0 * 100000000000000000000.0
 println(iL == iS, ":", iS == iB, ":", dF == dyn(1.5), ":", dyn(huge) == dyn(huge))
-def VBox = value class (x : any?) ()
+def VBox = record (x : any?) ()
 println(VBox(java.lang.Float.valueOf("1.5")) == VBox(1.5), ":", VBox(1.0 / 0.0) == VBox(1.0 / 0.0), ":", java.util.List.of(VBox(java.lang.Float.valueOf("1.5")), VBox(1.0 / 0.0)).hashCode() != 0)
 }}}}}
 true:true:true:true
@@ -648,7 +648,7 @@ Member used before definition : late
 def K = class (def v : int) (
     def toString = fn () : string -> ( "K" )
 )
-def xs : java.util.List(any?) = java.util.ArrayList()
+def xs : java.util.List of any? = java.util.ArrayList()
 def addFn : fn (v : any?) : bool = xs.add
 def pickItem = fn (idx : int) : any? -> (
     if idx == 0 then ( "s" )
@@ -679,7 +679,7 @@ println(xs.size(), "|", out)
 
 {{{{{
 ;; BabbleInterface extendsType with super Java interface (is Collection via List), ClassofFunction on classes
-def SubOp = interface extends java.util.function.UnaryOperator(int) ()
+def SubOp = interface extends java.util.function.UnaryOperator of int ()
 def LImpl = class () implements SubOp (
     def apply = fn (x : int) : int -> ( x )
 )
@@ -718,20 +718,20 @@ Type error : expected java.lang.Runnable, got object
 
 {{{{{
 ;; Faces default method invocation (FaceHandler & FunctionHandler) via Spliterator + StreamSupport, Object methods, Values.fromJava(FunctionHandler)
-def MySplit = class () implements java.util.Spliterator(int) (
+def MySplit = class () implements java.util.Spliterator of int (
     def done : bool = false
-    def tryAdvance = fn mut (action : java.util.function.Consumer(any?)) : bool -> (
+    def tryAdvance = fn mut (action : java.util.function.Consumer of any?) : bool -> (
         if this.done then ( false )
         else ( this.done = true ; action.accept(42) ; true )
     )
-    def trySplit = fn () : java.util.Spliterator(int)? -> ( null )
+    def trySplit = fn () : (java.util.Spliterator of int)? -> ( null )
     def estimateSize = fn () : int -> ( 1 )
     def characteristics = fn () : int -> ( 0 )
 )
 def streamRes = java.util.stream.StreamSupport.stream(MySplit(), false).toList()
 def f1 = java.util.function.Predicate(fn (x : any?) : bool -> ( x == 2 ))
 def f2 = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x + 10 ))
-def holder : java.util.List(java.util.function.IntUnaryOperator) = java.util.ArrayList()
+def holder : java.util.List of java.util.function.IntUnaryOperator = java.util.ArrayList()
 holder.add(f2)
 def back = holder.get(0)
 println(streamRes.size(), ":", streamRes.get(0), ":", java.util.Objects.equals(f1, f1), ":", java.util.Objects.equals(f1, f2), ":", java.util.Objects.hashCode(f1) != 0, ":", java.util.Objects.toString(f2) != "", ":", back.applyAsInt(5))
@@ -740,7 +740,7 @@ println(streamRes.size(), ":", streamRes.get(0), ":", java.util.Objects.equals(f
 
 {{{{{
 ;; JavaDefaultCall catch block via Iterator.remove() throwing UnsupportedOperationException
-def BadIter = class () implements java.util.Iterator(any?) (
+def BadIter = class () implements java.util.Iterator of any? (
     def hasNext = fn () : bool -> ( false )
     def next = fn () : any? -> ( null )
 )
@@ -751,8 +751,8 @@ java.lang.UnsupportedOperationException : remove
 {{{{{
 ;; JavaLinker isWrappedOf, isWrappedKind, BabbleInstance/BabbleClass/callable loop, fail, Overloads accessible interface
 def B = class (def x : int) ()
-def arr : java.util.List(any?) = java.util.ArrayList()
-def sub : java.util.List(any?) = java.util.ArrayList()
+def arr : java.util.List of any? = java.util.ArrayList()
+def sub : java.util.List of any? = java.util.ArrayList()
 arr.add(java.lang.StringBuilder("a"))
 arr.add(sub)
 def k = 0
@@ -766,7 +766,7 @@ while k < 2 then (
     )
     k += 1
 )
-def items : java.util.List(any?) = java.util.ArrayList()
+def items : java.util.List of any? = java.util.ArrayList()
 items.add("hi")
 items.add(B(1))
 items.add(B)
@@ -781,7 +781,7 @@ while p < 2 then (
     )
     p += 1
 )
-def empty : java.util.List(int) = java.util.Collections.emptyList()
+def empty : java.util.List of int = java.util.Collections.emptyList()
 println(lastStr != null, ":", empty.isEmpty(), ":", java.util.List.of(1, 2).isEmpty())
 java.lang.Integer.parseInt("notAnInt")
 }}}}}
@@ -851,7 +851,7 @@ def o = java.lang.Object()
 def pt = java.awt.Point(1, 2)
 pt.x = 7
 def arr = java.lang.String("ab").toCharArray()
-def tbl : java.util.Map(any, string) = java.util.HashMap()
+def tbl : java.util.Map of (any, string) = java.util.HashMap()
 tbl.put(1.0, "one")
 tbl.put(0.0 / 0.0, "nan")
 tbl.put(pt, "pt")
@@ -867,9 +867,9 @@ def IRun = interface extends java.lang.Runnable ()
 def Runner = class () implements IRun (
     def run = fn () -> ( () )
 )
-def MyComp = class () implements java.util.Comparator(int) (
+def MyComp = class () implements java.util.Comparator of int (
     def compare = fn (a : int, b : int) : int -> ( a - b )
-    def rev = fn () : java.util.Comparator(any?) -> ( super(java.util.Comparator).reversed() )
+    def rev = fn () : java.util.Comparator of any? -> ( super(java.util.Comparator).reversed() )
 )
 def runner = Runner()
 def obj = object ( def x = 42 )

@@ -53,9 +53,9 @@ def buildAndRead = fn hermetic deterministic () : int -> (
     xs.size() + xs.get(1) + s.size() + (m.get("k")!)
 )
 def emptyNothrow = fn hermetic deterministic nothrow () : int -> (
-    def xs = list(int)()
-    def s = set(string)()
-    def m = map(string, int)()
+    def xs = list of int ()
+    def s = set of string ()
+    def m = map of (string, int) ()
     xs.size() + s.size() + m.size()
 )
 println(buildAndRead(), ":", emptyNothrow())
@@ -64,13 +64,13 @@ println(buildAndRead(), ":", emptyNothrow())
 
 {{{{{
 ;; Borrow collection readers + covariance + list(from: xs) borrowing
-def sumSize = fn hermetic deterministic (borrow xs : list(any)) : int -> (
+def sumSize = fn hermetic deterministic (borrow xs : list of any) : int -> (
     xs.size()
 )
-def cloneList = fn hermetic deterministic (borrow xs : list(int)) : list(int) -> (
-    list(int)(from: xs)
+def cloneList = fn hermetic deterministic (borrow xs : list of int) : list of int -> (
+    list of int (from: xs)
 )
-def readMap = fn hermetic deterministic (borrow m : map(string, int), k : string) : int -> (
+def readMap = fn hermetic deterministic (borrow m : map of (string, int), k : string) : int -> (
     if m.containsKey(k) then ( m.getOrDefault(k, 0) ) else ( 0 )
 )
 def nums = list(1, 2, 3)
@@ -82,23 +82,23 @@ println(sumSize(nums), ":", cloned, ":", readMap(m, "a"), ":", readMap(m, "b"))
 
 {{{{{
 ;; Mutators on mut collection parameters
-def appendAndSet = fn hermetic deterministic (mut xs : list(int), v : int) : int -> (
+def appendAndSet = fn hermetic deterministic (mut xs : list of int, v : int) : int -> (
     xs.add(v)
     xs.set(0, 99)
     xs.size()
 )
-def putEntry = fn hermetic deterministic (mut m : map(string, int), k : string, v : int) : int? -> (
+def putEntry = fn hermetic deterministic (mut m : map of (string, int), k : string, v : int) : int? -> (
     m.put(k, v)
 )
 def xs = list(1, 2)
-def m = map(string, int)()
+def m = map of (string, int) ()
 println(appendAndSet(xs, 3), ":", xs, ":", putEntry(m, "x", 42), ":", m)
 }}}}}
 3:[99, 2, 3]:null:{x=42}
 
 {{{{{
 ;; Pure rejects collection mutation
-def badPureList = fn pure () : list(int) -> (
+def badPureList = fn pure () : list of int -> (
     def xs = list(1, 2)
     xs.add(3)
     xs
@@ -108,17 +108,17 @@ Function badPureList declared pure violates pure guarantee
 
 {{{{{
 ;; Non-mut parameter cannot be mutated via collection mutator
-def badMut = fn hermetic (xs : list(int)) -> ( xs.add(1) )
+def badMut = fn hermetic (xs : list of int) -> ( xs.add(1) )
 }}}}}
 Cannot mutate parameter xs (mut Java method xs.add) : mark parameter as mut xs
 
 {{{{{
 ;; Collection view/iterator sub-reference tracking (subList, keySet)
-def mutSub = fn hermetic deterministic (mut xs : list(int)) -> (
+def mutSub = fn hermetic deterministic (mut xs : list of int) -> (
     def sub = xs.subList(0, 1)
     sub.add(99)
 )
-def mutKeySet = fn hermetic deterministic (mut m : map(string, int)) -> (
+def mutKeySet = fn hermetic deterministic (mut m : map of (string, int)) -> (
     def ks = m.keySet()
     ks.remove("a")
 )
@@ -132,7 +132,7 @@ println(xs, ":", m)
 
 {{{{{
 ;; Mutating a view of a borrow/non-mut parameter is rejected
-def badSubMut = fn hermetic (borrow xs : list(int)) -> (
+def badSubMut = fn hermetic (borrow xs : list of int) -> (
     def sub = xs.subList(0, 1)
     sub.add(99)
 )
@@ -141,7 +141,7 @@ Cannot mutate parameter xs (mut Java method sub.add) : mark parameter as mut xs
 
 {{{{{
 ;; Returning a view of a borrow parameter is rejected as borrow escape
-def badSubEscape = fn hermetic (borrow xs : list(int)) : list(int) -> (
+def badSubEscape = fn hermetic (borrow xs : list of int) : list of int -> (
     return xs.subList(0, 1)
 )
 }}}}}
@@ -149,7 +149,7 @@ borrow parameter xs escapes via return value
 
 {{{{{
 ;; Mutating a keySet view of a borrow map parameter is rejected
-def badKeySetMut = fn hermetic (borrow m : map(string, int)) -> (
+def badKeySetMut = fn hermetic (borrow m : map of (string, int)) -> (
     def ks = m.keySet()
     ks.remove("a")
 )
@@ -158,11 +158,11 @@ Cannot mutate parameter m (mut Java method ks.remove) : mark parameter as mut m
 
 {{{{{
 ;; list.get(i) is not nothrow; list.size() is nothrow
-def badGet = fn hermetic deterministic nothrow (borrow xs : list(int)) : int -> ( xs.get(0) )
+def badGet = fn hermetic deterministic nothrow (borrow xs : list of int) : int -> ( xs.get(0) )
 }}}}}
 Function badGet declared nothrow violates nothrow guarantee
 
 {{{{{
-def badCap = fn hermetic deterministic nothrow () : list(int) -> ( list(int)(capacity: 4) )
+def badCap = fn hermetic deterministic nothrow () : list of int -> ( list of int (capacity: 4) )
 }}}}}
 Function badCap declared nothrow violates nothrow guarantee

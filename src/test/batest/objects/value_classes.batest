@@ -1,7 +1,7 @@
 ;; Value classes: structural equality, hashCode, toString, read-only fields, and invalid modifier error
 
 {{{{{
-def Point = value class (x : int, y : double, flag : bool = true) ()
+def Point = record (x : int, y : double, flag : bool = true) ()
 def p1 = Point(3, 4.0)
 def p2 = Point(3, 4.0)
 def p3 = Point(3, 5.0)
@@ -15,7 +15,7 @@ true:true
 
 {{{{{
 ;; Value class nested value comparison and explicit constructor def disallowed? Allowed/read-only
-def Pair = value class (left : string, right : int) ()
+def Pair = record (left : string, right : int) ()
 def a = Pair("k", 1)
 def b = Pair("k", 1)
 println(a == b, ":", a.left, ":", a.right)
@@ -24,14 +24,14 @@ true:k:1
 
 {{{{{
 ;; Value class members are read-only
-def Point = value class (x : int) ()
+def Point = record (x : int) ()
 def p = Point(1)
 p.x = 2
 }}}}}
 Value members are read-only : x
 
 {{{{{
-;; Invalid class modifier rejected cleanly
+;; Invalid class modifier rejected cleanly (BIP012-D6: only class and record exist)
 def Bad = final class (x : int) ()
 }}}}}
-Unknown class modifier : final
+Syntax error : unexpected 'class'

@@ -560,7 +560,6 @@ public final class ScopeAnalysis {
     }
 
     private final Map<BabbleParser.NonNullAssertionContext, String> nonNullAssertionTargets = new HashMap<>();
-    private final Set<BabbleParser.TypeApplyCallContext> typeApplyCalls = new HashSet<>();
 
     void setNonNullAssertionTarget(BabbleParser.NonNullAssertionContext ctx, String expectedType) {
         nonNullAssertionTargets.put(ctx, expectedType);
@@ -569,15 +568,6 @@ public final class ScopeAnalysis {
     /** The non-null target type name for {@code e!}, or {@code null} if {@code e} is statically non-null. */
     public String nonNullAssertionTarget(BabbleParser.NonNullAssertionContext ctx) {
         return nonNullAssertionTargets.get(ctx);
-    }
-
-    void markTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
-        typeApplyCalls.add(ctx);
-    }
-
-    /** True when {@code expr(T)(args)} resolved as generic type application rather than a curried value call. */
-    public boolean isTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
-        return typeApplyCalls.contains(ctx);
     }
 
     public List<Warning> warnings() {
@@ -704,12 +694,13 @@ public final class ScopeAnalysis {
 
     /** Path segments of a {@code simpleType} ({@code coreTypeKeyword} or {@code ID ('.' memberName)*}). */
     public static List<String> simpleTypePath(BabbleParser.SimpleTypeContext ctx) {
-        if (ctx.coreTypeKeyword() != null) {
-            return List.of(ctx.coreTypeKeyword().getText());
+        BabbleParser.TypeNameContext name = ctx.typeName();
+        if (name.coreTypeKeyword() != null) {
+            return List.of(name.coreTypeKeyword().getText());
         }
         List<String> path = new ArrayList<>();
-        path.add(ctx.ID().getText());
-        for (BabbleParser.MemberNameContext m : ctx.memberName()) {
+        path.add(name.ID().getText());
+        for (BabbleParser.MemberNameContext m : name.memberName()) {
             path.add(m.getText());
         }
         return path;
@@ -756,14 +747,16 @@ public final class ScopeAnalysis {
                 return null;
             }
             BabbleParser.NullableTypeContext nullable = type.nullableType(0);
-            if (nullable.question != null) {
+            if (nullable instanceof BabbleParser.NonParenTypeContext nonParen) {
+                if (nonParen.nonParenNullableType() instanceof BabbleParser.SimpleTypeContext simple) {
+                    return simple.question != null ? null : simple;
+                }
                 return null;
             }
-            BabbleParser.PrimaryTypeContext primary = nullable.primaryType();
-            if (primary instanceof BabbleParser.SimpleTypeContext simple) {
-                return simple;
-            }
-            if (primary instanceof BabbleParser.ParenTypeContext paren) {
+            if (nullable instanceof BabbleParser.ParenTypeContext paren) {
+                if (paren.question != null) {
+                    return null;
+                }
                 type = paren.type();
             } else {
                 return null;

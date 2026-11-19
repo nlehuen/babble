@@ -7,7 +7,7 @@ def HitRecord = hittable.HitRecord
 def Ray = import("ray.ba").Ray
 
 export def HittableList = class () implements Hittable (
-    def objects: java.util.List(Hittable) = java.util.ArrayList()
+    def objects: java.util.List of Hittable = java.util.ArrayList()
     private def bbox: AABB = AABB.empty
 
     def add = fn mut (item: Hittable): bool -> (

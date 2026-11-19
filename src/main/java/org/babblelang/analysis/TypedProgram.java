@@ -73,7 +73,7 @@ final class TypedProgram {
     }
 
     Type annotationTypeOf(BabbleParser.FunctionTypeContext ft) {
-        return checker.annotator().primaryAnnotation(ft, checker.scopeOf(ft), false);
+        return checker.annotator().nonParenAnnotation(ft, checker.scopeOf(ft), false);
     }
 
     /** The type of an implicit name, or null for one that has no precise type. */

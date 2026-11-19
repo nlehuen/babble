@@ -172,14 +172,18 @@ final class TypeAnnotations {
     }
 
     private Type nullableAnnotation(BabbleParser.NullableTypeContext nullable, ScopeNode scope, boolean allowRaw) {
-        Type base = primaryAnnotation(nullable.primaryType(), scope, allowRaw);
+        if (nullable instanceof BabbleParser.NonParenTypeContext nonParen) {
+            return nonParenAnnotation(nonParen.nonParenNullableType(), scope, allowRaw);
+        }
+        BabbleParser.ParenTypeContext paren = (BabbleParser.ParenTypeContext) nullable;
+        Type base = annotation(paren.type(), scope, allowRaw);
         if (base == Type.ERROR) {
             return Type.ERROR;
         }
-        return nullable.question != null ? Type.nullable(base) : base;
+        return paren.question != null ? Type.nullable(base) : base;
     }
 
-    Type primaryAnnotation(BabbleParser.PrimaryTypeContext primary, ScopeNode scope, boolean allowRaw) {
+    Type nonParenAnnotation(BabbleParser.NonParenNullableTypeContext primary, ScopeNode scope, boolean allowRaw) {
         if (primary instanceof BabbleParser.FunctionTypeContext function) {
             EffectSet effs = checker.effectChecker != null
                     ? checker.effectChecker.parseFunctionTypePrefix(function, checker.checkingEffects()).toEffectSet()
@@ -191,16 +195,44 @@ final class TypeAnnotations {
         if (primary instanceof BabbleParser.NullTypeContext) {
             return Type.NULL;
         }
-        if (primary instanceof BabbleParser.ParenTypeContext paren) {
-            return annotation(paren.type(), scope, allowRaw);
-        }
         BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
         Type result = simpleType(simple, scope, allowRaw);
         if (result == null) {
-            checker.warn("Unknown type : " + simple.getText(), simple);
+            checker.warn("Unknown type : " + simple.typeName().getText(), simple);
             return Type.ERROR;
         }
-        return result;
+        if (result == Type.ERROR) {
+            return Type.ERROR;
+        }
+        return simple.question != null ? Type.nullable(result) : result;
+    }
+
+    /** Resolves {@code typeArguments} ({@code T} or {@code (T1, T2)}) in {@code expr of typeArguments}. */
+    List<Type> resolveTypeArguments(BabbleParser.TypeArgumentsContext ta, ScopeNode scope) {
+        if (ta.nonParenNullableType() != null) {
+            return List.of(nonParenAnnotation(ta.nonParenNullableType(), scope, false));
+        }
+        List<Type> args = new ArrayList<>(ta.type().size());
+        for (BabbleParser.TypeContext arg : ta.type()) {
+            args.add(annotation(arg, scope, false));
+        }
+        return args;
+    }
+
+    /** Parser rule node for the i-th type argument in {@code typeArguments} (for error locations). */
+    static ParserRuleContext typeArgumentNode(BabbleParser.TypeArgumentsContext ta, int index) {
+        return ta.nonParenNullableType() != null ? ta.nonParenNullableType() : ta.type(index);
+    }
+
+    private static int simpleTypeArgCount(BabbleParser.SimpleTypeContext simple) {
+        if (simple.OF() == null) {
+            return 0;
+        }
+        return simple.nonParenNullableType() != null ? 1 : simple.type().size();
+    }
+
+    private static ParserRuleContext simpleTypeArgNode(BabbleParser.SimpleTypeContext simple, int index) {
+        return simple.nonParenNullableType() != null ? simple.nonParenNullableType() : simple.type(index);
     }
 
     private List<Type.Parameter> functionTypeParameters(BabbleParser.FnTypeParametersContext declaration, ScopeNode scope) {
@@ -228,8 +260,8 @@ final class TypeAnnotations {
         if (path.size() == 1) {
             Type.TypeVar tv = resolveTypeVar(path.get(0), type, scope);
             if (tv != null) {
-                if (type.typeArguments() != null) {
-                    checker.warn("Wrong number of type arguments : expected 0, got " + type.typeArguments().type().size(), type);
+                if (type.OF() != null) {
+                    checker.warn("Wrong number of type arguments : expected 0, got " + simpleTypeArgCount(type), type);
                     return Type.ERROR;
                 }
                 return tv;
@@ -266,8 +298,8 @@ final class TypeAnnotations {
             if (builtin == null) {
                 return null;
             }
-            if (type.typeArguments() != null) {
-                checker.warn("Wrong number of type arguments : expected 0, got " + type.typeArguments().type().size(), type);
+            if (type.OF() != null) {
+                checker.warn("Wrong number of type arguments : expected 0, got " + simpleTypeArgCount(type), type);
                 return Type.ERROR;
             }
             return builtin;
@@ -305,11 +337,15 @@ final class TypeAnnotations {
     }
 
     private List<Type> resolveTypeArguments(BabbleParser.SimpleTypeContext type, ScopeNode scope) {
-        if (type.typeArguments() == null) {
+        if (type.OF() == null) {
             return null;
         }
-        List<Type> args = new ArrayList<>(type.typeArguments().type().size());
-        for (BabbleParser.TypeContext arg : type.typeArguments().type()) {
+        if (type.nonParenNullableType() != null) {
+            Type resolved = nonParenAnnotation(type.nonParenNullableType(), scope, false);
+            return resolved == Type.ERROR ? null : List.of(resolved);
+        }
+        List<Type> args = new ArrayList<>(type.type().size());
+        for (BabbleParser.TypeContext arg : type.type()) {
             Type resolved = annotation(arg, scope, false);
             if (resolved == Type.ERROR) {
                 return null;
@@ -319,21 +355,25 @@ final class TypeAnnotations {
         return args;
     }
 
+    private static String sourceText(ParserRuleContext ctx) {
+        return ctx.getStart().getInputStream().getText(
+                org.antlr.v4.runtime.misc.Interval.of(ctx.getStart().getStartIndex(), ctx.getStop().getStopIndex()));
+    }
+
     private Type instantiateBabbleType(TypeNode node, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
         int expected = node.typeParameters.size();
-        BabbleParser.TypeArgumentsContext argCtx = simple.typeArguments();
-        if (argCtx == null) {
+        if (simple.OF() == null) {
             if (expected == 0) {
                 return new Type.Instance(node);
             }
             if (allowRaw) {
                 return rawInstance(node);
             }
-            checker.warn("Missing type arguments : " + simple.getText(), simple);
+            checker.warn("Missing type arguments : " + sourceText(simple), simple);
             return Type.ERROR;
         }
         if (allowRaw) {
-            checker.warn("Cannot cast to parameterized type : " + simple.getText(), simple);
+            checker.warn("Cannot cast to parameterized type : " + sourceText(simple), simple);
             return Type.ERROR;
         }
         List<Type> args = resolveTypeArguments(simple, scope);
@@ -349,19 +389,18 @@ final class TypeAnnotations {
 
     private Type instantiateJavaType(Class<?> java, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
         int expected = JavaTypeBridge.typeParameterCount(java);
-        BabbleParser.TypeArgumentsContext argCtx = simple.typeArguments();
-        if (argCtx == null) {
+        if (simple.OF() == null) {
             if (expected == 0) {
                 return JavaTypeBridge.fromJava(java);
             }
             if (allowRaw) {
                 return JavaTypeBridge.rawJavaInstance(java);
             }
-            checker.warn("Missing type arguments : " + simple.getText(), simple);
+            checker.warn("Missing type arguments : " + sourceText(simple), simple);
             return Type.ERROR;
         }
         if (allowRaw) {
-            checker.warn("Cannot cast to parameterized type : " + simple.getText(), simple);
+            checker.warn("Cannot cast to parameterized type : " + sourceText(simple), simple);
             return Type.ERROR;
         }
         List<Type> args = resolveTypeArguments(simple, scope);
@@ -376,7 +415,7 @@ final class TypeAnnotations {
         if (badArg >= 0) {
             checker.warn("Type error : type argument " + args.get(badArg) + " does not satisfy bound "
                     + JavaTypeBridge.typeParameterName(java, badArg) + " of " + java.getName(),
-                    simple.typeArguments().type(badArg));
+                    simpleTypeArgNode(simple, badArg));
             return Type.ERROR;
         }
         return new Type.JavaInstance(java, args);

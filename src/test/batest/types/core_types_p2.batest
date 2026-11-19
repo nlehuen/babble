@@ -190,7 +190,7 @@ def s : string = "hello"
 def opt : string? = "world"
 def empty : string? = null
 def cs : java.lang.CharSequence = s
-def cmp : java.lang.Comparable(string) = s
+def cmp : java.lang.Comparable of string = s
 println(s.length(), ":", s.toUpperCase(), ":", opt!.toUpperCase(), ":", empty?.toUpperCase(), ":", cs.length(), ":", cmp.compareTo("hello") == 0)
 }}}}}
 5:HELLO:WORLD:null:5:true

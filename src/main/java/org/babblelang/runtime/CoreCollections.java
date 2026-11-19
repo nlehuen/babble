@@ -20,7 +20,25 @@ import java.util.TreeSet;
  * {@code sortedset}, {@code map}, {@code sortedmap}, {@code entry}) ({@code BIP011-D10}).
  */
 public final class CoreCollections {
+    private static final Map<String, Callable> CONSTRUCTORS = Map.of(
+            "list", (rt, args, names, site) -> construct("list", args, names, rt),
+            "set", (rt, args, names, site) -> construct("set", args, names, rt),
+            "sortedset", (rt, args, names, site) -> construct("sortedset", args, names, rt),
+            "map", (rt, args, names, site) -> construct("map", args, names, rt),
+            "sortedmap", (rt, args, names, site) -> construct("sortedmap", args, names, rt),
+            "entry", (rt, args, names, site) -> construct("entry", args, names, rt)
+    );
+
     private CoreCollections() {
+    }
+
+    /** First-class callable constructor for a core collection keyword ({@code list}, {@code set}, etc.). */
+    public static Callable constructor(String kind) {
+        Callable c = CONSTRUCTORS.get(kind);
+        if (c == null) {
+            throw new BabbleException("Unknown core collection : " + kind);
+        }
+        return c;
     }
 
     public static List<Object> listEmpty() {

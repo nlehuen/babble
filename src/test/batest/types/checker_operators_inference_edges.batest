@@ -2,8 +2,8 @@
 
 ========== mod_tc_infer.ba ==========
 export def inc = fn (x : int) -> ( x + 1 )
-export def Box(T) = class (def v : T) ()
-export def id(T) = fn (x : T) : T -> ( x )
+export def Box of T = class (def v : T) ()
+export def id of T = fn (x : T) : T -> ( x )
 export def optDef = fn (x = 7) -> ( x )
 export def lang = import("java.lang")
 
@@ -17,8 +17,8 @@ def MyRun = class (def mut ran : bool) implements lang.Runnable (
 def r = MyRun(false)
 r.run()
 def sb : lang.StringBuilder = lang.StringBuilder("hi")
-def it : java.util.Iterator(int) = java.util.Collections.emptyIterator()
-def b : m.Box(int) = m.Box(9)
+def it : java.util.Iterator of int = java.util.Collections.emptyIterator()
+def b : m.Box of int = m.Box(9)
 def f : fn (v : int) : int = m.id
 println(m.inc(4), ":", m.optDef(), ":", m.id("ok"), ":", r.ran, ":", sb.toString(), ":", it.hasNext(), ":", b.v, ":", f(8))
 }}}}}
@@ -61,9 +61,9 @@ Type error : expected int, got double
 
 {{{{{
 def x : any? = null
-def l = x as java.util.List(int)
+def l = x as java.util.List of int
 }}}}}
-Cannot cast to parameterized type : java.util.List(int)
+Cannot cast to parameterized type : java.util.List of int
 
 {{{{{
 ;; Reassignment join (null <-> int, int -> double, func effect intersect) & intersectCompatibleFunctions
@@ -154,7 +154,7 @@ Not comparable : f1 and f2
 
 {{{{{
 ;; Compound assignment & assignExpression error paths
-def Val = value class (def x : int) ()
+def Val = record (def x : int) ()
 def v = Val(1)
 v.x += 1
 }}}}}
@@ -183,13 +183,13 @@ Not a scope : 1
 
 {{{{{
 ;; Generic Babble calls: function pattern, BabbleInstance pattern, List pattern, nullable pattern, return hint widening, failure
-def Box(T) = class (def v : T) ()
-def wrap(T) = fn (x : T) : Box(T) -> ( Box(x) )
-def applyFn(A, B) = fn (x : A, f : fn (v : A) : B) : B -> ( f(x) )
-def wrapOpt(T) = fn (x : T?) : T? -> ( x )
-def firstElem(T) = fn (xs : java.util.List(T)) : T? -> ( if xs.isEmpty() then ( null ) else ( xs.get(0) ) )
+def Box of T = class (def v : T) ()
+def wrap of T = fn (x : T) : Box of T -> ( Box(x) )
+def applyFn of (A, B) = fn (x : A, f : fn (v : A) : B) : B -> ( f(x) )
+def wrapOpt of T = fn (x : T?) : T? -> ( x )
+def firstElem of T = fn (xs : java.util.List of T) : T? -> ( if xs.isEmpty() then ( null ) else ( xs.get(0) ) )
 
-def bd : Box(double) = wrap(1)
+def bd : Box of double = wrap(1)
 def mapped = applyFn(4, fn (n) -> ( n * 2 + 1 ))
 def optN = wrapOpt(1)
 def fe = firstElem(java.util.List.of("k"))
@@ -198,8 +198,8 @@ println(bd.v, ":", mapped, ":", optN, ":", fe)
 1.0:9:1:k
 
 {{{{{
-def Pair(T) = class (def a : T, def b : T) ()
-def badInfer(T) = fn () : T? -> ( null )
+def Pair of T = class (def a : T, def b : T) ()
+def badInfer of T = fn () : T? -> ( null )
 badInfer()
 }}}}}
 Missing type : cannot infer type arguments for badInfer
@@ -218,7 +218,7 @@ println(fact(5), ":", withEarlyRet(-1), ":", withEarlyRet(3), ":", nullDef(), ":
 
 def fnPrint : fn (s : string) : fn () = println
 def fnAppend : fn (c : java.lang.CharSequence) : java.lang.StringBuilder = java.lang.StringBuilder().append
-def samFn : java.util.function.Function(int, double) = java.util.function.Function(fn (x) -> ( x + 1 ))
+def samFn : java.util.function.Function of (int, double) = java.util.function.Function(fn (x) -> ( x + 1 ))
 println(samFn.apply(4))
 }}}}}
 120:0.5:3.0:null:9

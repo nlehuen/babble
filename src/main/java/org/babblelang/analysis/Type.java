@@ -222,11 +222,30 @@ sealed interface Type {
         }
     }
 
-    /** The value of a class or interface expression : its constructor and statics. */
-    record ClassValue(TypeNode node) implements Type {
+    /** The value of a class or interface expression : its constructor and statics, optionally specialized via {@code of}. */
+    record ClassValue(TypeNode node, List<Type> typeArguments) implements Type {
+        ClassValue(TypeNode node) {
+            this(node, List.of());
+        }
+
         @Override
         public String toString() {
-            return (node.isInterface() ? "interface " : "class ") + node.name;
+            String base = (node.isInterface() ? "interface " : "class ") + node.name;
+            return typeArguments.isEmpty() ? base
+                    : base + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
+        }
+    }
+
+    /** A core collection constructor value ({@code list}, {@code list of int}, {@code map of (string, int)}, etc.). */
+    record CoreCollection(String kind, List<Type> typeArguments) implements Type {
+        CoreCollection(String kind) {
+            this(kind, List.of());
+        }
+
+        @Override
+        public String toString() {
+            return typeArguments.isEmpty() ? kind
+                    : kind + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
         }
     }
 
@@ -245,11 +264,17 @@ sealed interface Type {
         }
     }
 
-    /** A Java class as a value : its constructors, static methods and member classes. */
-    record JavaClassValue(Class<?> type) implements Type {
+    /** A Java class as a value : its constructors, static methods and member classes, optionally specialized via {@code of}. */
+    record JavaClassValue(Class<?> type, List<Type> typeArguments) implements Type {
+        JavaClassValue(Class<?> type) {
+            this(type, List.of());
+        }
+
         @Override
         public String toString() {
-            return "class " + type.getName();
+            String base = "class " + type.getName();
+            return typeArguments.isEmpty() ? base
+                    : base + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
         }
     }
 
@@ -290,9 +315,13 @@ sealed interface Type {
     }
 
     /** The methods of a Java class with one name, selected through the class or an instance. */
-    record JavaMethod(Class<?> owner, List<Type> typeArguments, String name) implements Type {
+    record JavaMethod(Class<?> owner, List<Type> typeArguments, String name, List<Type> methodTypeArguments) implements Type {
         JavaMethod(Class<?> owner, String name) {
-            this(owner, List.of(), name);
+            this(owner, List.of(), name, List.of());
+        }
+
+        JavaMethod(Class<?> owner, List<Type> typeArguments, String name) {
+            this(owner, typeArguments, name, List.of());
         }
 
         @Override
@@ -432,6 +461,14 @@ sealed interface Type {
             }
             case JavaInstance ji -> {
                 for (Type a : ji.typeArguments()) {
+                    if (a.anyMatch(predicate)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case CoreCollection cc -> {
+                for (Type a : cc.typeArguments()) {
                     if (a.anyMatch(predicate)) {
                         yield true;
                     }

@@ -6,7 +6,7 @@ export def Shape = interface (
     def scale : fn (factor : double) : double = fn (factor : double) : double -> ( this.area() * factor )
 )
 
-export def Circle = value class (r : double) implements Shape (
+export def Circle = record (r : double) implements Shape (
     def area = fn () : double -> ( 3.0 * this.r * this.r )
 )
 
@@ -114,20 +114,20 @@ Bad does not implement ReAbstracted.val
 
 {{{{{
 ;; Generic Box(T) interface with primitive specializations, Box(double) int widening, and emitAs widened-int expression
-def Box(T) = interface (
+def Box of T = interface (
     def get : fn () : T
     def transform : fn (x : T) : T = fn (x : T) : T -> ( x )
 )
-def IntBox = class (v : int) implements Box(int) (
+def IntBox = class (v : int) implements Box of int (
     def get = fn () : int -> ( v )
     def transform = fn (x : int) : int -> ( x + v )
 )
-def DoubleBox = class (v : double) implements Box(double) (
+def DoubleBox = class (v : double) implements Box of double (
     def get = fn () : double -> ( v )
     def transform = fn (x : double) : double -> ( x + v )
 )
-def ib : Box(int) = IntBox(10)
-def db : Box(double) = DoubleBox(0.5)
+def ib : Box of int = IntBox(10)
+def db : Box of double = DoubleBox(0.5)
 def cond = true
 ;; If-expression of ints widened to double and passed to a primitive-double receiver
 def takeDouble = interface (

@@ -238,8 +238,8 @@ public class ReplTestCase {
     public void testValuesAreShown() throws Exception {
         Assertions.assertEquals(List.of("3", "\"a\\\"b\"", "1.5", "true", "function f", "function", "class P", "P(x: 1, y: 2)", "interface I", "[1]", "package java.util",
                         "java.lang.Math", "hi"),
-                transcript("1 + 2", "\"a\\\"b\"", "1.5", "1 < 2", "def f = fn () -> ( 1 )", "fn () -> ( 1 )", "def P = value class (x : int, y : int) ()", "P(1, 2)", "def I = interface ()",
-                        "def l : java.util.List(int) = java.util.ArrayList() ; l.add(1) ; l", "java.util", "java.lang.Math",
+                transcript("1 + 2", "\"a\\\"b\"", "1.5", "1 < 2", "def f = fn () -> ( 1 )", "fn () -> ( 1 )", "def P = record (x : int, y : int) ()", "P(1, 2)", "def I = interface ()",
+                        "def l : java.util.List of int = java.util.ArrayList() ; l.add(1) ; l", "java.util", "java.lang.Math",
                         // null is not shown, and output is.
                         "null", "def n : any?", "println(\"hi\")"));
     }

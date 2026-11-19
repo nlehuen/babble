@@ -7,7 +7,7 @@
 
 axiom pure deterministic nothrow on java.lang.Math
 
-def Vec2 = value class (x: double, y: double) (
+def Vec2 = record (x: double, y: double) (
     def dot = fn pure deterministic nothrow (other: Vec2): double -> (
         this.x * other.x + this.y * other.y
     )

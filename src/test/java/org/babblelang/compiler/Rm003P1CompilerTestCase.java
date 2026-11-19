@@ -121,7 +121,7 @@ public class Rm003P1CompilerTestCase {
         // Two generated classes sharing an interface merge on their common superclass (BabbleInstance)
         Assertions.assertEquals(babbleInstance, writer.getCommonSuperClass("gen/C1", "gen/C2"));
 
-        // Mixed class & interface: returns interface iff class implements it, else Object
+        // Mixed class & interface: returns interface iff class () implements it, else Object
         Assertions.assertEquals("gen/Left", writer.getCommonSuperClass("gen/C1", "gen/Left"));
         Assertions.assertEquals("gen/Base", writer.getCommonSuperClass("gen/C1", "gen/Base"));
         Assertions.assertEquals("java/lang/Runnable", writer.getCommonSuperClass("gen/C1", "java/lang/Runnable"));

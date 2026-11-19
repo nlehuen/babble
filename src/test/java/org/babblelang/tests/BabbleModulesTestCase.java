@@ -83,7 +83,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
 
     @Test
     public void aModuleRunsOncePerEval() throws Exception {
-        file("lib.ba", "println(\"loading\")\nexport def counter : java.util.List(int) = java.util.ArrayList()");
+        file("lib.ba", "println(\"loading\")\nexport def counter : java.util.List of int = java.util.ArrayList()");
         file("user.ba", "def lib = import(\"lib.ba\")\nexport def add = fn (v : int) -> ( lib.counter.add(v) )");
         Object size = run("def lib = import(\"lib.ba\") ; def user = import(\"user.ba\") ; user.add(1) ; import(\"./lib.ba\").counter.size()");
         Assertions.assertEquals(1, size);
@@ -161,7 +161,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
 
     @Test
     public void exportedClasses() throws Exception {
-        file("lib.ba", "export def Point = value class (x : int, y : int) () ; export def zero = Point(0, 0)\n"
+        file("lib.ba", "export def Point = record (x : int, y : int) () ; export def zero = Point(0, 0)\n"
                 + "export def Counter = class () ( def n = 0 ; def next = fn () -> ( this.n = this.n + 1 ) ) static ( def start = fn () -> ( this() ) )");
         Assertions.assertEquals(true, run("def lib = import(\"lib.ba\") ; lib.zero == lib.Point(0, 0)"));
         Assertions.assertEquals(2, run("def Counter = import(\"lib.ba\").Counter ; def c = Counter.start() ; c.next() ; c.next()"));
@@ -350,7 +350,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     @Test
     public void anEngineCompilesAModuleOnceUntilItChanges() throws Exception {
         // The module warns when it is analysed : the warnings count its analyses.
-        file("lib.ba", "def other = import(\"other.ba\")\nexport def P = value class (def x : int) ()\nexport def f = fn () -> ( other.x )");
+        file("lib.ba", "def other = import(\"other.ba\")\nexport def P = record (def x : int) ()\nexport def f = fn () -> ( other.x )");
         file("other.ba", "export def x = 1");
         ScriptEngine engine = newEngine();
         run(engine, "import(\"lib.ba\")");
@@ -567,26 +567,26 @@ public class BabbleModulesTestCase extends BabbleTestBase {
 
     @Test
     public void javaPackagesAreStillImported() throws Exception {
-        Assertions.assertEquals(0, run("def util = import(\"java\").util ; def l : util.List(int) = util.ArrayList() ; l.size()"));
+        Assertions.assertEquals(0, run("def util = import(\"java\").util ; def l : util.List of int = util.ArrayList() ; l.size()"));
     }
 
     @Test
     public void crossModuleGenericsWork() throws Exception {
-        file("gen.ba", "export def Container(T) = interface ( def get : fn () : T )\n"
-                + "export def Box(T) = class (def value : T) implements Container(T) (\n"
+        file("gen.ba", "export def Container of T = interface ( def get : fn () : T )\n"
+                + "export def Box of T = class (def value : T) implements Container of T (\n"
                 + "  def get = fn () : T -> ( this.value )\n"
-                + "  def mapBox(U) = fn (f : fn (x : T) : U) : Box(U) -> ( Box(f(this.value)) )\n"
+                + "  def mapBox of U = fn (f : fn (x : T) : U) : Box of U -> ( Box(f(this.value)) )\n"
                 + ")\n"
-                + "export def id(T) = fn (x : T) : T -> ( x )");
+                + "export def id of T = fn (x : T) : T -> ( x )");
         Assertions.assertEquals("42:hi", run(
                 "def gen = import(\"gen.ba\")\n"
-                        + "def b : gen.Box(int) = gen.Box(42)\n"
-                        + "def c : gen.Container(int) = b\n"
+                        + "def b : gen.Box of int = gen.Box(42)\n"
+                        + "def c : gen.Container of int = b\n"
                         + "def s = b.mapBox(fn (n) -> ( \"hi\" ))\n"
                         + "\"\" + c.get() + \":\" + gen.id(s.get())"));
         Assertions.assertEquals(java.util.List.of(
-                "main.ba:2:26 Type error : expected Box(int), got Box(string)"),
-                typeErrors("def gen = import(\"gen.ba\")\ndef bad : gen.Box(int) = gen.Box(\"wrong\")"));
+                "main.ba:2:28 Type error : expected Box(int), got Box(string)"),
+                typeErrors("def gen = import(\"gen.ba\")\ndef bad : gen.Box of int = gen.Box(\"wrong\")"));
     }
 
     @Test

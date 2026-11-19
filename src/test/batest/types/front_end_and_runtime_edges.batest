@@ -54,7 +54,7 @@ def Impl = class (private def secret : int = 7, def pub : int = 3) implements IC
     def run = fn () -> ( () )
     def c = fn () : int -> ( super.p() )
 )
-def Val = value class (x : int) ()
+def Val = record (x : int) ()
 def Diff = class (def pub : int = 3) ()
 def inst = Impl()
 def a : any = inst
@@ -65,7 +65,7 @@ true:true:true:false:true:false:42:Val(x: 3)
 
 {{{{{
 ;; Supers with Java default method (Comparator.reversed)
-def MyCmp = class (def sign : int) implements java.util.Comparator(java.awt.Point) (
+def MyCmp = class (def sign : int) implements java.util.Comparator of java.awt.Point (
     def compare = fn (a : java.awt.Point, b : java.awt.Point) : int -> ( (a.x - b.x) * this.sign )
     def makeRev = fn () -> ( super.reversed() )
 )
@@ -147,14 +147,14 @@ println(c1.f(), ":", c2.f(), ":", c2.id())
 
 {{{{{
 ;; TypeChecker.satisfiesJavaBound (ParameterizedType bound Enum<E>): valid
-def modes : java.util.EnumSet(java.nio.file.AccessMode) = java.util.EnumSet.of(java.nio.file.AccessMode.READ)
+def modes : java.util.EnumSet of java.nio.file.AccessMode = java.util.EnumSet.of(java.nio.file.AccessMode.READ)
 println(modes.size())
 }}}}}
 1
 
 {{{{{
 ;; TypeChecker.satisfiesJavaBound error path
-def badEnum : java.util.EnumSet(java.lang.String)? = null
+def badEnum : (java.util.EnumSet of java.lang.String)? = null
 }}}}}
 Type error : type argument string does not satisfy bound E of java.util.EnumSet
 
@@ -200,7 +200,7 @@ println(negF(2.5), ":", dblSum(1.5), ":", oddMul(4), ":", sLeft("ok"), ":", sRig
 
 {{{{{
 ;; Wrong number of type arguments on primitive type
-def bad : int(int) = 1
+def bad : int of int = 1
 }}}}}
 Wrong number of type arguments : expected 0, got 1
 
