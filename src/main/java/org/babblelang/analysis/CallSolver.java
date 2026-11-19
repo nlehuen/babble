@@ -200,6 +200,11 @@ final class CallSolver {
             BabbleParser.ParameterDeclarationContext decl = declarations != null && index < declarations.size()
                     ? declarations.get(index) : null;
             Type actual = checker.check(argument, parameter.type());
+            if (parameter.explicitBorrow() && !parameter.mut() && (decl == null || !checker.p7Params().contains(decl))) {
+                // A borrow parameter reads its argument only : its type arguments may be narrower.
+                checker.subsumesReadOnly(argument, actual, parameter.type());
+                continue;
+            }
             bindArgument(decl, actual, parameter.type(), argument);
         }
         if (!named) {
@@ -505,7 +510,8 @@ final class CallSolver {
             Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
             paramPatterns.add(paramPat);
             argExprs.add(arguments.get(i).expression());
-            checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
+            // Java's use-site wildcards (Collection<? extends T>) aren't in Babble types : read-only, as before.
+            checker.algebra().relateReadOnly(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
         }
         Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern.apply(synthetic), expected, solving);
         Map<Type.TypeVar, Type> inferred = solveAll(solvingList, store, retHints, paramPatterns, argExprs);
@@ -603,7 +609,7 @@ final class CallSolver {
         for (int i = 0; i < argTypes.length; i++) {
             if (!deferred[i] && argTypes[i] != null) {
                 Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
-                checker.algebra().relate(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
+                checker.algebra().relateReadOnly(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
             }
         }
         Type ctxExpected = expected;
@@ -647,6 +653,28 @@ final class CallSolver {
 
     // ---------------------------------------------------------------- constraint helpers
 
+    /**
+     * The type variables of the last result pattern {@link #collectReturnHints} read that sit in
+     * an invariant type argument ({@code T} of {@code Box(T)}) : the expected type must fix them.
+     */
+    private Set<Type.TypeVar> invariantHintVars = Set.of();
+
+    private static void collectInvariantVars(Type type, boolean invariant, Set<Type.TypeVar> found) {
+        if (type instanceof Type.TypeVar tv) {
+            if (invariant) {
+                found.add(tv);
+            }
+        } else if (type instanceof Type.Union union) {
+            union.members().forEach(m -> collectInvariantVars(m, invariant, found));
+        } else if (type instanceof Type.Instance instance) {
+            boolean inner = invariant || instance.node().kind != org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS;
+            instance.typeArguments().forEach(a -> collectInvariantVars(a, inner, found));
+        } else if (type instanceof Type.JavaInstance java) {
+            boolean inner = invariant || TypeAlgebra.isInvariant(java.type());
+            java.typeArguments().forEach(a -> collectInvariantVars(a, inner, found));
+        }
+    }
+
     private Map<Type.TypeVar, Type> collectReturnHints(Type resultPattern, Type actualExpected, Set<Type.TypeVar> solving) {
         if (resultPattern == null || actualExpected == null || actualExpected == Type.ERROR || resultPattern == Type.ERROR) {
             return Map.of();
@@ -657,6 +685,8 @@ final class CallSolver {
         }
         TypeAlgebra.ConstraintStore retStore = checker.algebra().store(solving, false);
         checker.algebra().relate(resultPattern, expBase, TypeAlgebra.RelateMode.SUBTYPE, retStore);
+        invariantHintVars = new java.util.HashSet<>();
+        collectInvariantVars(resultPattern, false, invariantHintVars);
         Map<Type.TypeVar, Type> hints = new HashMap<>();
         for (Type.TypeVar tv : solving) {
             Type hint = retStore.solution(tv);
@@ -702,6 +732,10 @@ final class CallSolver {
             if (current != null && isNumber(current) && TypeAlgebra.needsDoubleWidening(current, hint)
                     && canWidenTypeVarToDouble(tv, paramPatterns, argExprs)) {
                 inferred.put(tv, TypeAlgebra.widenTo(current, hint));
+            } else if (current != null && !current.equals(hint) && !hint.hasTypeVar() && invariantHintVars.contains(tv)
+                    && checker.algebra().relate(current, hint, TypeAlgebra.RelateMode.SUBTYPE, null)) {
+                // def b: Box(int?) = Box(5) : the expected type argument, as invariance requires (BIP011-D8).
+                inferred.put(tv, hint);
             }
         }
         return inferred;

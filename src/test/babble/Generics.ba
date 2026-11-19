@@ -111,12 +111,19 @@ def FixedInt = class (def n: int) implements IntContainer (
 assert(FixedInt(6).doubled() == 12)
 assert(FixedInt(6).describe() == "box:6")
 
-;; ---------------------------------------------------------------- Covariant parameterized types and is/as
+;; ---------------------------------------------------------------- Variance and is/as
 
-def covDoubleUnion: Box(int | double) = ib
-def covAny: Box(any) = ib
+;; A mutable generic class is invariant (a Box(int) isn't a Box(any)) ; a value class is covariant
+def Frozen(T) = value class (v: T) (
+    def get = (): T -> (this.v)
+)
+def fi: Frozen(int) = Frozen(21)
+def covDoubleUnion: Frozen(int | double) = fi
+def covAny: Frozen(any) = fi
 assert(covDoubleUnion.get() == 21)
 assert(covAny.get() == 21)
+def exactAny: Box(any) = Box(any)(21)
+assert(exactAny.get() == 21)
 
 def maybeBox: Box(int)? = Box(7)
 if maybeBox is Box then (
@@ -177,9 +184,9 @@ assert(scores.get(2) == Score(30))
 def callable = java.util.concurrent.Callable(() -> (123))
 assert(callable.call() == 123)
 
-;; Covariant Java collection & raw `is`/`as`
+;; Java collections are invariant, as Java's are ; raw `is`/`as`
 def ints = java.util.List.of(4, 5)
-def anys: java.util.List(any) = ints
+def anys: java.util.List(any) = java.util.List.of(4, 5)
 assert(anys.size() == 2)
 def dynList: any = ints
 if dynList is java.util.List then (

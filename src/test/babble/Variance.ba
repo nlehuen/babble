@@ -1,0 +1,30 @@
+;; Variance (BIP011-D8) : mutable generic types are invariant, so nothing can put a null or a
+;; string into a list(int) through a list(int?) or a list(any) ; immutable ones are covariant.
+
+def Box(T) = class (def value: T) ()
+def Frozen(T) = value class (value: T) ()
+
+;; Value classes, entry and Optional are covariant
+def frozenInt: Frozen(int) = Frozen(1)
+def frozenAny: Frozen(any?) = frozenInt
+def pair: entry(string, int?) = entry("k", 1)
+def anyPair: entry(any, any?) = pair
+def present: java.util.Optional(any) = java.util.Optional.of(3)
+assert(frozenAny.value == 1 and anyPair.getValue() == 1 and present.get() == 3)
+
+;; The expected type fixes an invariant type argument
+def nullableBox: Box(int?) = Box(5)
+nullableBox.value = null
+def nullables: list(int?) = list(1, 2)
+nullables.add(null)
+assert(nullableBox.value == null and nullables.size() == 3)
+
+;; A borrow parameter that isn't mut only reads : it takes narrower type arguments
+def describe = (borrow b: Box(any?)): string -> ("box of " + b.value)
+assert(describe(Box(7)) == "box of 7")
+
+;; A copy changes the type arguments safely
+def ints = list(1, 2)
+def widened: list(int?) = list(from: ints)
+widened.add(null)
+assert(ints.size() == 2 and widened.size() == 3)

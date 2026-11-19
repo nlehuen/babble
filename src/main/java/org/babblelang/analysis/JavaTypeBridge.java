@@ -79,7 +79,7 @@ final class JavaTypeBridge {
             return new Type.JavaInstance(JavaTypes.box(java));
         }
         if (java.getTypeParameters().length > 0) {
-            return new Type.JavaInstance(java, Collections.nCopies(java.getTypeParameters().length, Type.NULLABLE_ANY));
+            return new Type.JavaInstance(java, Collections.nCopies(java.getTypeParameters().length, Type.RAW_ANY));
         }
         return new Type.JavaInstance(java);
     }
@@ -89,7 +89,7 @@ final class JavaTypeBridge {
         if (params.length == 0) {
             return fromJava(java);
         }
-        return new Type.JavaInstance(java, Collections.nCopies(params.length, Type.NULLABLE_ANY));
+        return new Type.JavaInstance(java, Collections.nCopies(params.length, Type.RAW_ANY));
     }
 
     /** The only public method of {@code owner} named {@code name} with {@code arity} parameters, or null. */
@@ -654,7 +654,8 @@ final class JavaTypeBridge {
         env.putAll(tvToSyn);
         Type paramPattern = fromJavaType(genericParam, env, false, true);
         if (!paramPattern.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null)) {
-            return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null);
+            // Java's use-site wildcards (List<?>, Collection<? extends E>) aren't in Babble types : read-only.
+            return algebra.relateReadOnly(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null);
         }
         if (argument instanceof Type.Function aFn && paramPattern instanceof Type.JavaInstance pJava
                 && JavaTypes.isFunctionalInterface(pJava.type())) {

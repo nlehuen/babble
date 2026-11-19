@@ -72,6 +72,14 @@ public class DifferentialTestCase {
                 "def m : map(string, int) = map(entry(\"a\", \"b\"))",
                 "def n : list(int) = list(1, 2) ; n.add(null)",
                 "map(string)()",
+                // Variance : invariant mutable generics, covariant immutable ones and borrow parameters.
+                "def xs = list(1) ; def ys : list(int?) = xs",
+                "def Box(T) = class (def v : T) () ; def b : Box(any) = Box(int)(1)",
+                "def Box(T) = class (def v : T) () ; def put = (b : Box(any?)) -> ( b.v = null ) ; put(Box(int)(1))",
+                "def Box(T) = class (def v : T) () ; def put = (borrow mut b : Box(any?)) -> ( b.v = null ) ; put(Box(int)(1))",
+                "def Box(T) = class (def v : T) () ; def get = (borrow b : Box(any?)) : string -> ( \"\" + b.v ) ; get(Box(int)(1))",
+                "def V(T) = value class (v : T) () ; def b : V(any?) = V(1) ; b.v",
+                "def anything : any = list(1) ; (anything as list(string)).get(0)",
                 // Explicit type arguments, C(T)(...).
                 "def Box(T) = class (def value : T) () ; Box(int, string)(1)",
                 "def Box(T) = class (def value : T) () ; Box(int)(\"x\")",

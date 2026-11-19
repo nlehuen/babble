@@ -547,7 +547,7 @@ final class TypeChecker {
         return null;
     }
 
-    private void analysisWarn(String message, ParserRuleContext at) {
+    void analysisWarn(String message, ParserRuleContext at) {
         if (!inFile(at)) {
             return;
         }
@@ -1269,6 +1269,14 @@ final class TypeChecker {
 
     void subsumes(ParserRuleContext site, Type actual, Type expected) {
         subsumes(site, site, actual, expected);
+    }
+
+    /** {@link #subsumes} for a {@code borrow} parameter, which takes narrower type arguments (BIP011-D8). */
+    void subsumesReadOnly(ParserRuleContext site, Type actual, Type expected) {
+        if (actual != Type.ERROR && expected != Type.ERROR && !algebra.assignableReadOnly(actual, expected)) {
+            reportTypeMismatch(actual, expected, site);
+        }
+        coerce(site, actual, expected);
     }
 
     void subsumes(ParserRuleContext errorSite, ParserRuleContext widenSite, Type actual, Type expected) {

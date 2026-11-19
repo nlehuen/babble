@@ -264,7 +264,8 @@ final class TypeAlgebra {
                     if (proj.typeArguments().size() != java.typeArguments().size()) {
                         return java.type().isAssignableFrom(proj.type());
                     }
-                    return argumentsRelate(proj.typeArguments(), java.typeArguments(), argMode, store, active);
+                    return argumentsRelate(proj.typeArguments(), java.typeArguments(), argMode, store, active,
+                            mode != RelateMode.RUNTIME_EXACT && isInvariant(java.type()));
                 }
                 if (projected != null) {
                     return true;
@@ -291,7 +292,8 @@ final class TypeAlgebra {
                     return false;
                 }
                 return proj.typeArguments().size() != target.typeArguments().size()
-                        || argumentsRelate(proj.typeArguments(), target.typeArguments(), argMode, store, active);
+                        || argumentsRelate(proj.typeArguments(), target.typeArguments(), argMode, store, active,
+                        mode != RelateMode.RUNTIME_EXACT && target.node().kind != org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS);
             }
             if (sup instanceof Type.Function target) {
                 if (mode == RelateMode.RUNTIME_EXACT) {
@@ -308,14 +310,66 @@ final class TypeAlgebra {
         }
     }
 
+    /**
+     * Type arguments : covariant on immutable types, invariant on mutable ones (BIP011-D8), so
+     * that a {@code list(int)} can't pass for a {@code list(int?)} into which null would go. A raw
+     * type's arguments ({@link Type#RAW_ANY}) are wildcards.
+     */
     private boolean argumentsRelate(List<Type> subArgs, List<Type> supArgs, RelateMode mode,
-                                    ConstraintStore store, Set<RelationKey> active) {
+                                    ConstraintStore store, Set<RelationKey> active, boolean invariant) {
+        invariant &= readOnlyDepth == 0;
         for (int i = 0; i < supArgs.size(); i++) {
-            if (!relate(subArgs.get(i), supArgs.get(i), mode, store, active)) {
+            Type sub = subArgs.get(i);
+            Type sup = supArgs.get(i);
+            boolean exact = invariant && sup != Type.RAW_ANY;
+            if (!relate(sub, sup, exact && store != null ? RelateMode.INVARIANT_ARG : mode, store, active)) {
+                return false;
+            }
+            if (exact && !mentionsSolving(sub, store) && !mentionsSolving(sup, store)
+                    && !relate(sup, sub, RelateMode.SUBTYPE, null, active)) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static boolean mentionsSolving(Type type, ConstraintStore store) {
+        return store != null && type.anyMatch(t -> t instanceof Type.TypeVar tv && store.solving().contains(tv));
+    }
+
+    /**
+     * Whether a Java generic type is invariant : any but the immutable {@code Optional},
+     * {@code Map.Entry} and {@code Class}, and functional interfaces, whose type arguments are
+     * what they take and give.
+     */
+    static boolean isInvariant(Class<?> type) {
+        return type != java.util.Optional.class && !java.util.Map.Entry.class.isAssignableFrom(type)
+                && type != Class.class && !JavaTypes.isFunctionalInterface(type);
+    }
+
+    /** Nonzero while relating read-only : type arguments covariant, as a {@code borrow} parameter may take them. */
+    private int readOnlyDepth;
+
+    /**
+     * Assignability to a {@code borrow} parameter that isn't {@code mut} (BIP011-D8) : it can't
+     * mutate or keep its argument, so a {@code list(int)} can pass for a {@code list(any?)}.
+     */
+    boolean relateReadOnly(Type sub, Type sup, RelateMode mode, ConstraintStore store) {
+        readOnlyDepth++;
+        try {
+            return relate(sub, sup, mode, store);
+        } finally {
+            readOnlyDepth--;
+        }
+    }
+
+    boolean assignableReadOnly(Type from, Type to) {
+        readOnlyDepth++;
+        try {
+            return relate(from, to, RelateMode.ASSIGNABLE, null);
+        } finally {
+            readOnlyDepth--;
+        }
     }
 
     private boolean anyMemberRelates(Type sub, Type.Union supUnion, RelateMode mode,

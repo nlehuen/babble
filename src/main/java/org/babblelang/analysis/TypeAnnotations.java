@@ -250,6 +250,10 @@ final class TypeAnnotations {
                 checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), core);
                 return Type.ERROR;
             }
+            if (allowRaw) {
+                // A cast checks the class only : its type arguments are erased (BIP011, §7.4).
+                checker.analysisWarn("Unchecked cast : " + new Type.JavaInstance(collection, args), core);
+            }
             return new Type.JavaInstance(collection, List.copyOf(args));
         }
         Type builtin = switch (name) {
@@ -382,10 +386,6 @@ final class TypeAnnotations {
             checker.warn("Missing type arguments : " + simple.getText(), simple);
             return Type.ERROR;
         }
-        if (allowRaw) {
-            checker.warn("Cannot cast to parameterized type : " + simple.getText(), simple);
-            return Type.ERROR;
-        }
         List<Type> args = resolveTypeArguments(simple, scope);
         if (args == null) {
             return Type.ERROR;
@@ -393,6 +393,10 @@ final class TypeAnnotations {
         if (args.size() != expected) {
             checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
             return Type.ERROR;
+        }
+        if (allowRaw) {
+            // A cast checks the class only : its type arguments are erased (BIP011, §7.4).
+            checker.analysisWarn("Unchecked cast : " + new Type.JavaInstance(java, args), simple);
         }
         int badArg = JavaTypeBridge.checkJavaTypeArguments(java, args, checker.algebra());
         if (badArg >= 0) {
@@ -408,7 +412,7 @@ final class TypeAnnotations {
         if (node.typeParameters.isEmpty()) {
             return new Type.Instance(node);
         }
-        return new Type.Instance(node, Collections.nCopies(node.typeParameters.size(), Type.NULLABLE_ANY));
+        return new Type.Instance(node, Collections.nCopies(node.typeParameters.size(), Type.RAW_ANY));
     }
 
     /**

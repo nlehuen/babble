@@ -63,7 +63,8 @@ Type error : expected int, got double
 def x : any? = null
 def l = x as java.util.List(int)
 }}}}}
-Cannot cast to parameterized type : java.util.List(int)
+Warning : Unchecked cast : list(int)
+Type error : expected java.util.List, got null
 
 {{{{{
 ;; Reassignment join (null <-> int, int -> double, fn effect intersect) & intersectCompatibleFunctions

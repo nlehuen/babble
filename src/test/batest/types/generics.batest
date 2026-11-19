@@ -14,8 +14,8 @@ println(bi.value, ":", bd.value, ":", s)
 5:7.5:hello
 
 {{{{{
-;; Covariance to Box(int | double) and Box(any), and raw 'is Box' narrowing on nullable generic
-def Box(T) = class (def value : T) ()
+;; Value classes are covariant : to Box(int | double) and Box(any) ; raw 'is Box' narrowing on nullable generic
+def Box(T) = value class (value : T) ()
 def bi : Box(int) = Box(9)
 def bu : Box(int | double) = bi
 def ba : Box(any) = bi
@@ -24,6 +24,14 @@ def n = if mb is Box then ( mb.value ) else ( 0 )
 println(bu.value, ":", ba.value, ":", n)
 }}}}}
 9:9:9
+
+{{{{{
+;; Mutable generic classes are invariant (BIP011-D8) : a Box(int) would take a null as a Box(int?)
+def Box(T) = class (def value : T) ()
+def bi : Box(int) = Box(9)
+def bn : Box(int?) = bi
+}}}}}
+Type error : expected Box(int?), got Box(int)
 
 {{{{{
 ;; Generic interface implemented by generic class

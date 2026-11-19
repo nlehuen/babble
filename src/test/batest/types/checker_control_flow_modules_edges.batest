@@ -122,7 +122,7 @@ Not a number : bad
 {{{{{
 ;; Java arrays, Object[] assignability, cast/is on Java & Babble interfaces, TypeVar assignability, stream deferred lambda
 def parts = java.util.regex.Pattern.compile(",").split("a,b,c")
-def takeArr = (arr : java.util.List(any?)) : int -> ( arr.size() )
+def takeArr = (arr : java.util.List(string)) : int -> ( arr.size() )
 def asList = java.util.Arrays.asList(parts)
 
 def id(T) = (x : T) : any? -> (

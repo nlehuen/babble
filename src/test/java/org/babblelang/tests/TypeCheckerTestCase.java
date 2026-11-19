@@ -995,6 +995,25 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testVariance() {
+        assertDiagnostics("def Box(T) = class (def v : T) ()\n"
+                + "def V(T) = value class (v : T) ()\n"
+                + "def xs = list(1)\n"
+                + "def ys : list(int?) = xs\n"
+                + "def b : Box(any) = Box(int)(1)\n"
+                + "def c : V(any) = V(1)\n"
+                + "def e : entry(any, any) = entry(1, 2)\n"
+                + "def r = (borrow x : Box(any?)) : string -> ( \"\" + x.v )\n"
+                + "r(Box(3))\n"
+                + "def w = (borrow mut x : Box(any?)) -> ( x.v = null )\n"
+                + "w(Box(int)(3))",
+                "4:23 Type error : expected list(int?), got list(int)",
+                "5:20 Type error : expected Box(any), got Box(int)",
+                "11:3 Type error : expected Box(any?), got Box(int)");
+        assertWarnings("def a : any = list(1)\ndef b = a as list(int)", "2:14 Unchecked cast : list(int)");
+    }
+
+    @Test
     public void testCoreCollections() {
         assertDiagnostics("def a = list()\n"
                 + "def b = sortedset(1, null)\n"
@@ -1164,8 +1183,8 @@ public class TypeCheckerTestCase {
                 + "def idStr : (s : string) : string = id\n"
                 + "def s : string = idStr(\"ok\")\n"
                 + "def bi : Box(int) = Box(5)\n"
-                + "def bu : Box(int | double) = bi\n"
-                + "def ba : Box(any) = bi\n"
+                + "def V(T) = value class (v : T) () ; def vi : V(int) = V(5)\n"
+                + "def bu : V(int | double) = vi ; def ba : V(any) = vi\n"
                 + "def mb : Box(int)? = bi\n"
                 + "def narrowed : int = if mb is Box then ( mb.value ) else ( 0 )\n"
                 + "def rawCast : any = (\"hi\" as any)\n"

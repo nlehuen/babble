@@ -85,6 +85,12 @@ sealed interface Type {
     /** The universal nullable top type {@code any?}. */
     Type NULLABLE_ANY = new Union(List.of(ANY, NULL));
 
+    /**
+     * The type arguments of a raw type ({@code x is list}, an erased Java signature) : {@code any?},
+     * equal to it, but a wildcard where type arguments are invariant, told apart by identity.
+     */
+    Type RAW_ANY = new Union(List.of(ANY, NULL));
+
     /** A Java array, with {@code length} and assignable to matching Java array parameters. */
     record JavaArray(Class<?> javaClass, Type element) implements Type {
         @Override
