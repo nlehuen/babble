@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 014 |
 | **Date** | 2026-11-19 |
-| **Status** | Draft (`BIP014-Q1`–`Q7` open) |
+| **Status** | Draft (`BIP014-Q1`–`Q7` → `BIP014-D1`–`D7` decided) |
 | **Depends on** | Bytecode compiler, `RM001` primitive lowering & `RM003` JVM/Java interface bridges ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §19–§20), object model & `record`s ([bip002_object-model.md](bip002_object-model.md)), function effects, algebraic properties & ownership ([bip007_effects.md](bip007_effects.md), `BIP007-P1`–`P2`, `BIP007-D10`), mandatory static typing ([bip008_static-typing.md](bip008_static-typing.md)), `.batest` differential harness ([bip009_test-coverage.md](bip009_test-coverage.md)), modular front end & `LoweringAnalyzer` (`RM004`, [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), 8-primitive unboxing & core collections (`RM005`, [bip011_core-types.md](bip011_core-types.md)), predicate-free grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)), and optionally `for` loops ([bip013_iterators.md](bip013_iterators.md)) |
 | **Scope** | In-scope optimization catalogue unlocked by `BIP007` annotations, SOTA compiler pass architecture survey, introduction of a typed compiler IR (`org.babblelang.ir`) and pass pipeline (`org.babblelang.opt`), local vs. graph-level optimization boundary, interaction with HotSpot C2 and the `Interpreter` reference oracle, and an incremental migration path from the current parse-tree `CodeGenerator` |
 
@@ -156,7 +156,7 @@ Every optimization below is strictly gated on `BIP007` static contracts and must
 * **Why it is pivotal:** Inlining is the **enabling pass** for almost everything else. In `examples/raytracer-argon`, `Vec3.plus`, `Vec3.times`, `Vec3.dot`, and `Ray.at` are tiny 1–3 line methods. Inlining them exposes temporary `Vec3` allocations to `O9` (scalar replacement), exposes repeated subexpressions to `O5` (CSE), and eliminates `invokedynamic` / `$spec` call overhead.
 * **Soundness rules:**
   * Bounded by an AST/IR node budget and recursion-depth limit (never infinitely inline recursive or mutually recursive SCCs).
-  * Respects `BIP007-D2` cross-module boundaries (see `BIP014-Q2`).
+  * Respects `BIP007-D2` cross-module boundaries (`BIP014-D2`).
   * Preserves `return` semantics (converting inner `return` into a jump to the inlined call's merge block) and preserves call-site + callee line numbers for stack traces.
 
 #### O9 — Scalar Replacement / Stack Unboxing of `borrow` `record`s & Captures
@@ -385,8 +385,8 @@ Rather than Sea-of-Nodes' complex effect-chain graphs, `MIR` keeps instructions 
 * **`PassManager` (`org.babblelang.opt`):** Sequences small, single-purpose passes (`HirPass` / `MirPass`), supports bounded fixed-point iteration (e.g., `ConstFold` + `Inline` + `DCE` repeating until no change or a max iteration cap of 3), and tracks per-pass rewrite counts.
 * **Optimization levels:** Controlled via CLI (`babble -O0/-O1/-O2`, `babblec -O0/-O1/-O2`), engine attribute, or system property `-Dbabble.opt=0|1|2`:
   * `-O0`: `HIR` direct emission only (zero optimization passes; fastest compile time, easiest debugging).
-  * `-O1` (default candidate — see `BIP014-Q1`): Fast `HIR` Nanopass pipeline (`ConstFold`, `AlgebraicSimplify`, `Inline`, `HirDce`, `ScalarReplace`).
-  * `-O2`: Full `HIR` + per-function SSA `MIR` pipeline (`SCCP`, `GVN/CSE`, `LICM`, `AliasRle`, `MirDce`, plus `FBIP` and pipeline rewrites).
+  * `-O1` (default once `P2` lands — `BIP014-D1`): Fast `HIR` Nanopass pipeline (`ConstFold`, `AlgebraicSimplify`, `Inline`, `HirDce`, `ScalarReplace`).
+  * `-O2` (opt-in until `P3` stabilizes — `BIP014-D1`, `BIP014-D3`): Full `HIR` + per-function SSA `MIR` pipeline (`SCCP`, `GVN/CSE`, `LICM`, `AliasRle`, `MirDce`, plus `FBIP` and `aegraph` pipeline rewrites).
 * **IR Verifiers (`HirVerifier`, `MirVerifier`):** Whenever `babble.verify=true` (always on in Maven's `compiled-tests`!), the verifier runs **after every single pass**, checking:
   * Type & `PrimitiveKind` consistency on every node/instruction
   * SSA dominance (every use dominated by its definition) and block-parameter arity/type matching
@@ -400,12 +400,16 @@ Rather than Sea-of-Nodes' complex effect-chain graphs, `MIR` keeps instructions 
 
 ### 7.1 Cross-Module Optimization & `TypedModuleSummary` (`BIP007-D2`, `BIP010-D3`)
 * **Effect contracts:** Cross-module optimizations (CSE, LICM, `idempotent`/`commutative`/`associative` rewrites, `unique mut` RLE) already have everything they need from `TypedModuleSummary` (`BIP007-D2`): unannotated `export def` exports its inferred `EffectSet`, while explicitly annotated exports expose only their declared contract.
-* **Cross-module inlining:** By default, inlining operates **intra-module** only (so modules remain independently compilable and `TypedModuleSummary` stays tiny). Under `babblec` AOT (`BIP006`), where the full closed module graph is compiled into a single jar, an optional small-inline `HirFunction` summary (e.g., functions $\le$ 25 `HIR` nodes, such as `Vec3` helpers in `examples/raytracer-fable/vec3.ba`) can be attached to `TypedModuleSummary` for cross-module inlining (see `BIP014-Q2`).
+* **Cross-module inlining (`BIP014-D2`):** By default, inlining operates **intra-module** only (so modules remain independently compilable and `TypedModuleSummary` stays tiny). Under `babblec` AOT (`BIP006`), where the full closed module graph is compiled into a single jar, an optional small-inline `HirFunction` summary ($\le$ 25 `HIR` nodes, such as `Vec3` helpers in `examples/raytracer-fable/vec3.ba`) is attached to `TypedModuleSummary` for cross-module inlining.
 
 ### 7.2 Interactive Mode / REPL (`BIP004`)
 * Each REPL input compiles independently against `AnalysisSession` (which persists committed `EffectSet`s). Intra-input optimizations (`-O1`/`-O2`) work out of the box; top-level session variables live in `Namespace` scopes and are conservatively treated as `AliasClass.SHARED` (never assumed invariant across REPL inputs).
 
-### 7.3 Differential & Performance Testing (`BIP009`)
+### 7.3 Future Babble Macros & Compile-Time Evaluation Synergy (`BIP014-D4`)
+* Babble plans to support **Babble macros written in Babble**, requiring a compile-time macro expansion/evaluation phase that should itself run fast.
+* Rather than building a throwaway HIR tree-walking interpreter inside `ConstFoldPass`, `BIP014` keeps `HIR` self-contained and immutable (a clean target for future macro expansion) and keeps `-O1` compilation fast so future Babble macros can be **compiled through `BabbleCompiler` itself into optimized `-O1` JVM bytecode** and executed directly on the JVM under `BIP007` `pure deterministic` sandboxing. Once that compiled comptime runtime exists, it can also back general compile-time evaluation (CTFE) of `@TERMINATING pure deterministic` user functions.
+
+### 7.4 Differential & Performance Testing (`BIP009`)
 Every phase of `BIP014` is guarded by four automated gates:
 1. **Three-way differential parity:** Run the entire `.ba` + `.batest` corpus (`67+` files, `869+` cases) across `interpret`, `compile -O0`, and `compile -O1`/`-O2` with `babble.verify=true` (verifying `HirVerifier`, `MirVerifier`, and ASM `CheckClassAdapter` on every generated class).
 2. **Golden IR unit tests (`OptimizerTestCase`):** Focused unit tests asserting exact before/after `HIR`/`MIR` transformations for each pass (e.g., verifying that `Math.cos(angle)` is actually hoisted out of a `while` loop, that `a != null and a.x > 0` is *not* reordered, and that `float` `a + b + c` is *not* reassociated).
@@ -418,7 +422,7 @@ Every phase of `BIP014` is guarded by four automated gates:
 
 Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and delivers standalone value:
 
-### `BIP014-P0` — `CodeGenerator` Seam Extraction, Opt Flags & Local Peepholes
+### `BIP014-P0` — `CodeGenerator` Seam Extraction, Opt Flags & Local Peepholes (`BIP014-D7`)
 * Extract `ClassGen`, `InterfaceGen`, and `ConstantPool` out of the 5,996-line `CodeGenerator.java` into package-private collaborators inside `org.babblelang.compiler` (zero behavioral change, mirroring `BIP010`'s decomposition of `TypeChecker.java`).
 * Add `-Dbabble.opt=0|1|2` and `-Dbabble.dumpIr` plumbing, plus optimizer microbenchmarks in `org.babblelang.bench.Benchmarks`.
 * Expand existing local constant folding (`RM001` `int` folding) to all 8 primitives, `string`, boolean identities, and constant `if (true)`/`if (false)` pruning.
@@ -429,19 +433,20 @@ Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and d
 * Implement `HirEmitter` emitting ASM method bodies from `HirModule`, replacing `CodeGenerator`'s parse-tree expression visitor while reusing `P0`'s class/interface/constant scaffolding.
 * **Exit criterion:** 100% dual-mode `mvn package` + `-Pbatest` + `CheckClassAdapter` + byte-identical `raytracer-argon/scene.ppm` at `-O0` with `HirVerifier` enabled.
 
-### `BIP014-P2` — `HIR` Nanopass Pipeline (`BIP007-P1` Optimizations)
+### `BIP014-P2` — `HIR` Nanopass Pipeline (`BIP007-P1` Optimizations, `-O1` Default per `BIP014-D1`)
 * Create `org.babblelang.opt` (`PassManager`, `HirPass`, fixed-point driver) and `OptimizerTestCase` golden IR tests.
-* Implement the first wave of `BIP007-P1`-unlocked passes:
-  * `ConstFoldPass` (constant propagation + folding of built-ins and safe `pure deterministic` calls — `O1`)
+* Implement the first wave of `BIP007-P1`-unlocked passes (enabling `-O1` by default in `compile` mode per `BIP014-D1`):
+  * `ConstFoldPass` (constant propagation + folding of built-in operators and whitelisted `pure deterministic` JDK methods — `O1`, `BIP014-D4`)
   * `AlgebraicSimplifyPass` (integer/bool identities, `idempotent` collapse, `associative`/`commutative` canonicalization — `O2`, `O3`)
-  * `InlinePass` (intra-module small functions & `borrow` lambdas — `O8`)
+  * `InlinePass` (strictly intra-module small functions & `borrow` lambdas in `P2`, preserving `ExprMeta.line` per `BIP014-D5`; cross-module small-export inlining unlocked for `babblec` AOT per `BIP014-D2` — `O8`)
   * `HirDcePass` (unreachable branches & dead pure expressions — `O4`)
   * Structured `HirLicmPass` (hoisting simple `pure deterministic nothrow` loop invariants out of `while` / `BIP013` `for` loops — `O6` subset)
 
-### `BIP014-P3` — Per-Function SSA `MIR` & Dataflow Optimizations
+### `BIP014-P3` — Per-Function SSA `MIR` & Dataflow Optimizations (Gated per `BIP014-D3`)
+* Gated on `raytracer-argon`, `raytracer-fable`, and `Benchmarks` measurements after `P2` (`BIP014-D3`).
 * Create `org.babblelang.ir.mir` (`MirFunction`, `BasicBlock`, `BlockParam`, `MirInst`, `AliasClass`, `MirLowerer`, `MirPrinter`, `MirVerifier`, `MirEmitter`).
-* Implement SSA dataflow passes under `-O2`:
-  * `SccpPass` (Sparse Conditional Constant Propagation — `O1` + `O4`)
+* Implement SSA dataflow passes under opt-in `-O2`:
+  * `SccpPass` (Sparse Conditional Constant Propagation `[WZ91]` — `O1` + `O4`)
   * `GvnCsePass` (dominator-based GVN/CSE with `commutative` canonicalization and effect invalidation — `O5`)
   * `LicmPass` (general loop-nest preheader hoisting + guarded hoisting for may-throw invariants — `O6`)
   * `AliasRlePass` (`frozen` / deep `record` / `unique mut` redundant-load elimination & field load hoisting — `O7`, full `unique mut` active once `BIP007-P2` lands)
@@ -450,24 +455,24 @@ Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and d
 
 ### `BIP014-P4` — Ownership & Allocation Optimizations (`BIP007-P2` Unlocked)
 * `ScalarReplacePass` (`O9`): stack-unbox non-escaping `record` allocations and `borrow` parameters across all 8 `RM005` primitives (both after inlining and via flattened `$unboxed` entry points for non-inlined `borrow` callees).
-* `FbipReusePass` (`O10`): specialize `unique` + `move(...)` collection/buffer operations to in-place reuse.
+* `FbipReusePass` (`O10`): specialize `unique` + `move(...)` collection/buffer operations to in-place reuse (`[RXdML21]`, `[LLS23]`).
 * Complete `@TERMINATING`-gated dead-call elimination (`O4`) and full `unique mut` RLE (`O7`).
 
-### `BIP014-P5` — High-Level Pipeline Rewrites & Optional Declarative Rewrite Engine
-* `PipelineRewritePass` (`O12`): filter fusion, filter reordering, `map`+`filter` push-down, `monotone` range pruning, `injective` equality/`distinct` push-down, and `associative` loop/fold reassociation over `std/` combinators.
-* Evaluate a bounded **acyclic e-graph (`aegraph`)** rewrite pass (inspired by Cranelift) for composing `BIP007` Axis 3 algebraic axioms (`associative`, `commutative`, `idempotent`, `monotone`, `injective`) without phase-ordering sensitivity.
+### `BIP014-P5` — Bounded Acyclic E-Graph (`aegraph`) & High-Level Pipeline Rewrites (`BIP014-D6`)
+* Implement a bounded **acyclic e-graph (`aegraph`)** rewrite engine (`[Fal22]`, `[Fal26]`, `[WNW+21]`) over pure expression subgraphs with a CFG side-effect skeleton as the canonical rewrite pass for `BIP007` Axis 3 algebraic axioms (`associative`, `commutative`, `idempotent`, `monotone`, `injective`), eliminating phase-ordering sensitivity across algebraic and pipeline rules.
+* Implement `PipelineRewritePass` (`O12`) on top of the `aegraph` engine: filter fusion, guard-safe filter reordering, `map`+`filter` push-down, `monotone` range pruning, `injective` equality/`distinct` push-down, and `associative` loop/fold reassociation over `std/` combinators.
 
 ---
 
-## 9. Open Questions
+## 9. Settled Design Decisions
 
-* **`BIP014-Q1` — Default optimization level:** Should `-O1` (`HIR` Nanopass pipeline) be the default for `compile` mode (with `-O0` available for debugging and `-O2` opt-in initially), or should all optimizations remain opt-in until `P2`/`P3` stabilize?
-* **`BIP014-Q2` — Cross-module inlining scope:** Should `InlinePass` stay strictly intra-module in `P2`, and enable cross-module inlining of small `export`ed functions only in `babblec` AOT (`BIP006`) where the module set is closed, or also across dynamically cached static imports?
-* **`BIP014-Q3` — Two-tier (`HIR` + SSA `MIR`) vs. `HIR`-only first:** Is committing to `HIR` (`P1`–`P2`) first and gating `MIR` (`P3`) on benchmark measurements from `raytracer-argon` / `raytracer-fable` the right checkpoint?
-* **`BIP014-Q4` — Compile-time evaluation of user Babble functions (`O1`):** Should `ConstFoldPass` fold only built-in operators and whitelisted JDK `axiom pure deterministic` methods (e.g., `Math.*`, `String.*`), or also evaluate small `@TERMINATING` user-defined `pure deterministic` Babble functions with a step-count fuel budget?
-* **`BIP014-Q5` — Stack-trace line fidelity under inlining and LICM:** When an inlined function or hoisted expression throws an exception, should emitted `LineNumberNode`s preserve the original expression's line (matching the `Interpreter` for single-line errors, though without the inlined frame), or should `InlinePass` skip inlining calls that are not `nothrow` when exact stack-frame parity is required?
-* **`BIP014-Q6` — Declarative `aegraph` vs. hand-written algebraic passes (`P5`):** Is a lightweight bounded acyclic e-graph worth introducing in `P5` for `BIP007` Axis 3 algebraic axioms, or are hand-written Nanopass rewriters sufficient for Babble's scale?
-* **`BIP014-Q7` — `CodeGenerator` refactoring boundary (`P0`):** Should `P0` extract `ClassGen`/`InterfaceGen`/`ConstantPool` into separate files immediately before `P1`, or perform the extraction alongside `HirEmitter` in `P1`?
+* **`BIP014-D1` (resolves `BIP014-Q1`) — Default optimization level:** Enable `-O1` (`HIR` Nanopass pipeline) by default in `compile` mode once `BIP014-P2` lands so every `mvn package` and `-Pbatest` run continuously differential-tests the optimizer against `Interpreter`. Keep `-O0` available for debugging and three-way parity checks, and keep `-O2` (SSA `MIR`) opt-in until `BIP014-P3` stabilizes.
+* **`BIP014-D2` (resolves `BIP014-Q2`) — Cross-module inlining scope:** Keep `InlinePass` strictly intra-module in `BIP014-P2`, then enable cross-module inlining of small `export`ed `HirFunction`s ($\le 25$ nodes) in `babblec` AOT jars (`BIP006`) where the module graph is closed and compiled together.
+* **`BIP014-D3` (resolves `BIP014-Q3`) — Progressive two-tier IR (`HIR` first, gated SSA `MIR`):** Build `HIR` (`BIP014-P1`–`P2`) first, then gate per-function SSA CFG `MIR` (`BIP014-P3`) on concrete benchmark results from `examples/raytracer-argon`, `examples/raytracer-fable`, and `org.babblelang.bench.Benchmarks`.
+* **`BIP014-D4` (resolves `BIP014-Q4`) — Constant folding & future Babble macro/comptime alignment:** In `BIP014-P2`, `ConstFoldPass` folds built-in operators and whitelisted `pure deterministic` JDK methods, while `InlinePass` + `ConstFoldPass` fixed-point folds small user Babble functions—avoiding a separate throwaway HIR interpreter. Future Babble macros written in Babble will be compiled through `BabbleCompiler` itself into optimized `-O1` JVM bytecode and executed under `BIP007` `pure deterministic` sandboxing, and that same compiled comptime evaluator can later back general compile-time evaluation of `@TERMINATING pure deterministic` user functions (§7.3).
+* **`BIP014-D5` (resolves `BIP014-Q5`) — Stack-trace line fidelity under inlining and LICM:** Preserve each expression's original `ExprMeta.line` on inlined and hoisted nodes, maintaining exact innermost error-line parity with `Interpreter` while accepting that inlined frames are elided from JVM stack traces.
+* **`BIP014-D6` (resolves `BIP014-Q6`) — Bounded `aegraph` engine in `BIP014-P5`:** Commit to a bounded acyclic e-graph (`aegraph`) engine (`[Fal22]`, `[Fal26]`, `[WNW+21]`) in `BIP014-P5` as the canonical algebraic and pipeline rewrite pass for `BIP007` Axis 3 axioms (`associative`, `commutative`, `idempotent`, `monotone`, `injective`), while keeping lightweight hand-written Nanopass rewriters for `BIP014-P2`.
+* **`BIP014-D7` (resolves `BIP014-Q7`) — Upfront `CodeGenerator` decomposition (`BIP014-P0`):** Extract `ClassGen`, `InterfaceGen`, and `ConstantPool` out of `CodeGenerator.java` upfront in `BIP014-P0` with zero behavioral change so `BIP014-P1` focuses purely on `HIR`, `HirBuilder`, and `HirEmitter`.
 
 ---
 
@@ -499,15 +504,15 @@ Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and d
 
 - **`[WNW+21]`** Max Willsey, Chandrakana Nandi, Yisu Remy Wang, Oliver Flatt, Zachary Tatlock, and Pavel Panchekha. *"[egg: Fast and Extensible Equality Saturation](https://doi.org/10.1145/3434304)."* **Proceedings of the ACM on Programming Languages (PACMPL)**, 5(POPL), Article 23, pp. 1–29, January 2021. DOI: [`10.1145/3434304`](https://doi.org/10.1145/3434304) ([`arXiv:2004.03082`](https://arxiv.org/abs/2004.03082)).
   - **Summary:** `[WNW+21]` makes e-graph equality saturation practical for rewrite-driven optimization via amortized congruence-closure *rebuilding* and extensible *e-class analyses*, allowing algebraic rewrite rules to fire without destructive phase-ordering conflicts before cost-based extraction.
-  - **Contribution to `BIP014`:** `[WNW+21]` frames the equality-saturation design point surveyed in §4 and evaluated in `BIP014-P5` / `BIP014-Q6` for composing `BIP007` Axis 3 algebraic axioms (`associative`, `commutative`, `idempotent`, `monotone`, `injective`).
+  - **Contribution to `BIP014`:** `[WNW+21]` frames the equality-saturation design point surveyed in §4 and adopted via Cranelift's bounded `aegraph` in `BIP014-P5` (`BIP014-D6`) for composing `BIP007` Axis 3 algebraic axioms (`associative`, `commutative`, `idempotent`, `monotone`, `injective`).
 
 - **`[Fal22]`** Chris Fallin. *"[Cranelift: Using E-Graphs for Verified, Cooperating Middle-End Optimizations](https://github.com/bytecodealliance/rfcs/blob/main/accepted/cranelift-egraph.md)."* **Bytecode Alliance Accepted RFC**, 2022.
   - **Summary:** `[Fal22]` designs Cranelift's e-graph mid-end optimizer, introducing **acyclic e-graphs (`aegraph`)** coupled to a CFG side-effect skeleton and declarative ISLE rewrite rules to unify GVN, LICM, constant folding, and algebraic simplification in a fast compiler.
-  - **Contribution to `BIP014`:** `[Fal22]` shows how to combine a conventional CFG skeleton (preserving side effects and control flow) with e-graph rewrites over pure subexpressions, informing `BIP014-P5` and `BIP014-Q6` (§4, §8, §9).
+  - **Contribution to `BIP014`:** `[Fal22]` shows how to combine a conventional CFG skeleton (preserving side effects and control flow) with e-graph rewrites over pure subexpressions, directly shaping `BIP014-P5` and `BIP014-D6` (§4, §8, §9).
 
 - **`[Fal26]`** Chris Fallin. *"[The acyclic e-graph: Cranelift's mid-end optimizer](https://cfallin.org/blog/2026/04/09/aegraph/)."* Technical Blog, April 9, 2026.
   - **Summary:** `[Fal26]` retrospectively explains Cranelift's production `aegraph` architecture—embedding append-only union nodes directly in SSA value space, eagerly rewriting pure nodes in a single domtree-preorder pass without parent pointers, and returning to linear CFG via scoped elaboration (subsuming GVN, DCE, and LICM).
-  - **Contribution to `BIP014`:** `[Fal26]` clarifies the exact compile-time trade-offs between full equality saturation (`[WNW+21]`) and single-pass `aegraph` rewriting, reinforcing why `BIP014` starts with straightforward CFG SSA (`P3`) and treats `aegraph` as a targeted `P5` option.
+  - **Contribution to `BIP014`:** `[Fal26]` clarifies the exact compile-time trade-offs between full equality saturation (`[WNW+21]`) and single-pass `aegraph` rewriting, reinforcing why `BIP014` starts with straightforward CFG SSA (`P3`) and commits to a bounded `aegraph` in `P5` (`BIP014-D6`).
 
 - **`[LAB+21]`** Chris Lattner, Mehdi Amini, Uday Bondhugula, Albert Cohen, Andy Davis, Jacques Pienaar, River Riddle, Tatiana Shpeisman, Nicolas Vasilache, and Oleksandr Zinenko. *"[MLIR: Scaling Compiler Infrastructure for Domain Specific Computation](https://doi.org/10.1109/CGO51591.2021.9370308)."* In **2021 IEEE/ACM International Symposium on Code Generation and Optimization (CGO '21)**, pp. 2–14, February 2021. DOI: [`10.1109/CGO51591.2021.9370308`](https://doi.org/10.1109/CGO51591.2021.9370308). *(Earlier preprint: "[MLIR: A Compiler Infrastructure for the End of Moore's Law](https://arxiv.org/abs/2002.11054)," [`arXiv:2002.11054`](https://arxiv.org/abs/2002.11054), February 2020.)*
   - **Summary:** `[LAB+21]` introduces MLIR, demonstrating progressive lowering across multiple levels of abstraction with first-class source-location tracking, SSA block arguments, and IR verification so high-level domain optimizations run before lowering erases semantic structure.
