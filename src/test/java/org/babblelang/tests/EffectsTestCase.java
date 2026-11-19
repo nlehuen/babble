@@ -78,6 +78,7 @@ public class EffectsTestCase {
             return Math.exp(x);
         }
 
+        @org.babblelang.effects.NotNull
         @Pure
         @Deterministic
         @Nothrow

@@ -444,7 +444,7 @@ final class CallSolver {
         if (best == null) {
             Set<Class<?>> results = applicable.stream().map(Method::getReturnType).collect(Collectors.toSet());
             if (results.size() == 1 && applicable.stream().allMatch(m -> m.getTypeParameters().length == 0)) {
-                return JavaTypeBridge.javaResult(applicable.get(0).getGenericReturnType(), receiverEnv, checker.algebra());
+                return JavaTypeBridge.javaMethodResult(applicable.get(0), receiverEnv, checker.algebra());
             }
             return Type.ERROR;
         }
@@ -457,16 +457,16 @@ final class CallSolver {
                     synthetic -> {
                         Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(receiverEnv);
                         patternEnv.putAll(synthetic);
-                        return JavaTypeBridge.fromJavaType(generic.getGenericReturnType(), patternEnv, false, false);
+                        return JavaTypeBridge.fromJavaType(generic.getGenericReturnType(), generic.getAnnotatedReturnType(),
+                                patternEnv, false, false, JavaNullability.returnNullness(generic), JavaNullability.isNullMarked(generic));
                     },
                     arguments, argumentTypes, description, ctx, expected);
             if (env == null) {
                 return Type.ERROR;
             }
         }
-        java.lang.reflect.Type genericRet = best.getGenericReturnType();
-        Type result = JavaTypeBridge.javaResult(genericRet, env, checker.algebra());
-        if (genericRet instanceof TypeVariable<?> || genericRet instanceof WildcardType) {
+        Type result = JavaTypeBridge.javaMethodResult(best, env, checker.algebra());
+        if (!best.getReturnType().isPrimitive() && !Type.containsNull(result)) {
             String desc = LoweringAnalyzer.descriptor(result);
             if (desc != null) {
                 checker.callChecks().put(ctx, desc);
@@ -502,7 +502,7 @@ final class CallSolver {
         List<Type> paramPatterns = new ArrayList<>(arguments.size());
         List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
         for (int i = 0; i < arguments.size(); i++) {
-            Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
+            Type paramPat = JavaTypeBridge.javaExecutableParamType(executable, i, patternEnv);
             paramPatterns.add(paramPat);
             argExprs.add(arguments.get(i).expression());
             checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
@@ -599,10 +599,9 @@ final class CallSolver {
         Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(receiverEnv);
         patternEnv.putAll(tvToSyn);
         TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
-        java.lang.reflect.Type[] genericParams = cand.getGenericParameterTypes();
         for (int i = 0; i < argTypes.length; i++) {
             if (!deferred[i] && argTypes[i] != null) {
-                Type paramPat = JavaTypeBridge.fromJavaType(genericParams[i], patternEnv, false, true);
+                Type paramPat = JavaTypeBridge.javaExecutableParamType(cand, i, patternEnv);
                 checker.algebra().relate(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
             }
         }
@@ -611,7 +610,8 @@ final class CallSolver {
         if (ctxExpected != null && ctxExpected != Type.ERROR) {
             Type retPat;
             if (cand instanceof Method m) {
-                retPat = JavaTypeBridge.fromJavaType(m.getGenericReturnType(), patternEnv, false, false);
+                retPat = JavaTypeBridge.fromJavaType(m.getGenericReturnType(), m.getAnnotatedReturnType(),
+                        patternEnv, false, false, JavaNullability.returnNullness(m), JavaNullability.isNullMarked(m));
             } else {
                 Class<?> cls = cand.getDeclaringClass();
                 List<Type> clsVars = Arrays.stream(cls.getTypeParameters())
@@ -636,11 +636,15 @@ final class CallSolver {
 
     private void checkJavaArgumentWidening(Executable candidate, Map<TypeVariable<?>, Type> env,
                                            List<BabbleParser.CallParameterContext> arguments, List<Type> argumentTypes) {
-        java.lang.reflect.Type[] genericParams = candidate.getGenericParameterTypes();
         for (int i = 0; i < arguments.size(); i++) {
             if (i < argumentTypes.size()) {
-                Type paramType = JavaTypeBridge.fromJavaType(genericParams[i], env, false, true);
-                checker.coerce(arguments.get(i).expression(), argumentTypes.get(i), paramType);
+                BabbleParser.ExpressionContext argExpr = arguments.get(i).expression();
+                Type argType = argumentTypes.get(i);
+                Type paramType = JavaTypeBridge.javaExecutableParamType(candidate, i, env);
+                if (!Type.containsNull(paramType) && Type.containsNull(argType) && !TypeChecker.isUnresolved(argType)) {
+                    checker.subsumes(argExpr, argType, paramType);
+                }
+                checker.coerce(argExpr, argType, paramType);
             }
         }
     }

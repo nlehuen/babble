@@ -23,7 +23,7 @@ xs.add(Weight(20))
 java.util.Collections.sort(xs)
 def uniq : java.util.Set(Weight) = java.util.HashSet()
 uniq.add(Weight(10))
-println(sup.getAsInt(), ":", (xs.get(0) as Weight).grams, ":", uniq.contains(Weight(10)), ":", mulObj.applyAsDouble(2.0, 3.0))
+println(sup.getAsInt(), ":", xs.get(0).grams, ":", uniq.contains(Weight(10)), ":", mulObj.applyAsDouble(2.0, 3.0))
 }}}}}
 15:10:true:6.5
 

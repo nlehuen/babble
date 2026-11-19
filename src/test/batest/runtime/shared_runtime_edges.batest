@@ -144,7 +144,7 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     )
     xs.get(0) as java.lang.reflect.Method
 )
-def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
+def args17 = (a0 : any, a1 : any, a2 : any, a3 : any) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
@@ -173,7 +173,7 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     )
     xs.get(0) as java.lang.reflect.Method
 )
-def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
+def args17 = (a0 : any, a1 : any, a2 : any, a3 : any) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
@@ -200,7 +200,7 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     )
     xs.get(0) as java.lang.reflect.Method
 )
-def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
+def args17 = (a0 : any, a1 : any, a2 : any, a3 : any) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
@@ -228,7 +228,7 @@ def findM = (cls : java.lang.Class(any?), name : string) : java.lang.reflect.Met
     )
     xs.get(0) as java.lang.reflect.Method
 )
-def args17 = (a0 : any?, a1 : any?, a2 : any?, a3 : any?) -> (
+def args17 = (a0 : any, a1 : any, a2 : any, a3 : any) -> (
     def l : java.util.List(any?) = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
@@ -335,7 +335,7 @@ true:false:true:false:true:true
 
 {{{{{
 ;; JavaTypes.checkBoxed null return, ConvertFunction errors, PrintFunction Appendable & null error
-def v = java.lang.Integer.getInteger("babble.nonexistent.prop.xyz")
+def v = java.lang.Integer.getInteger("babble.nonexistent.prop.xyz")!
 println(v)
 }}}}}
 Type error : expected int, got null
@@ -398,7 +398,7 @@ fns.get(0)
 }}}}}
 Warning : Redundant cast : java.util.List(any?)
 3.0:true:true
-Type error : expected ((x : int) : int)?, got string
+Type error : expected (x : int) : int, got string
 
 {{{{{
 def ma = import("mod_box_a.ba")
@@ -734,7 +734,7 @@ def f1 = java.util.function.Predicate((x : any?) : bool -> ( x == 2 ))
 def f2 = java.util.function.IntUnaryOperator((x : int) : int -> ( x + 10 ))
 def holder : java.util.List(java.util.function.IntUnaryOperator) = java.util.ArrayList()
 holder.add(f2)
-def back = holder.get(0) as java.util.function.IntUnaryOperator
+def back = holder.get(0)
 println(streamRes.size(), ":", streamRes.get(0), ":", java.util.Objects.equals(f1, f1), ":", java.util.Objects.equals(f1, f2), ":", java.util.Objects.hashCode(f1) != 0, ":", java.util.Objects.toString(f2) != "", ":", back.applyAsInt(5))
 }}}}}
 1:42:true:false:true:true:15
@@ -793,7 +793,7 @@ java.lang.NumberFormatException : For input string: "notAnInt"
 ;; Values.same(plain, non-plain), isBuiltin("any"), JavaTypes.checkBoxed Integer null
 def dyn = (v : any?) : any? -> ( v )
 println(same(1, java.lang.Object()), ":", dyn(1) is any, ":", dyn(null) is any, ":", same("a", "a"))
-java.lang.Integer.getInteger("babble.nonexistent.test.key")
+java.lang.Integer.getInteger("babble.nonexistent.test.key")!
 }}}}}
 false:true:false:true
 Type error : expected int, got null
