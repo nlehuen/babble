@@ -656,8 +656,8 @@ Language features :
 - [x] object model : classes, object literals, interfaces with default methods, records (`record`), private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md) and [BIP012](docs/design/bip012_grammar-improvements.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, Babble classes implementing Java (including generic) interfaces, and Java nullability alignment (`@NotNull`/`@Nullable`/JSpecify, mapped `java.base` parametric nullness, and defensive boundary checks, see [BIP011](docs/design/bip011_core-types.md)).
 - [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference (`C of T (...)` and inferred `C(...)`), strict non-nullability with `T?` and `e!`, union types (`A | B`), safe navigation (`?.`), invariant mutable generics with covariant `record`/`entry`/`borrow` parameters, flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md), [BIP008](docs/design/bip008_static-typing.md), and [BIP011](docs/design/bip011_core-types.md)).
-- [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts (`axiom ... on Target`), `org.babblelang.effects` host annotations, and built-in core type effect profiles (see [BIP007](docs/design/bip007_effects.md) and [BIP011](docs/design/bip011_core-types.md)).
-- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, all 9 scalar conversions (`byte`..`string`), and core collection factories (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`).
+- [x] static function effects, ownership, and algebraic contracts (`RM002`, `RM007`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `unique`, `frozen`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, `unique` ownership with `move`/`freeze`/`discard`, `@TERMINATING` inference, unused pure expression checks, higher-order call-site specialization, `axiom`/`impure` Java contracts (`axiom ... on Target`), `org.babblelang.effects` host annotations (`@Pure`..`@Unique`), opt-in ASM bytecode effect analysis, property-based `babble.checkAxioms` fuzzing, and built-in core type effect profiles (see [BIP007](docs/design/bip007_effects.md) and [BIP011](docs/design/bip011_core-types.md)).
+- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `move`, `freeze`, `discard`, all 9 scalar conversions (`byte`..`string`), and core collection factories (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`).
 
 Implementation features :
 
@@ -689,7 +689,7 @@ Language features :
 
 Implementation features :
 
-- [ ] deep ownership (`unique`, `move`, `freeze`), effect-driven bytecode optimizations, and `axiom` property fuzzing (see [BIP007](docs/design/bip007_effects.md)).
+- [ ] effect-driven bytecode optimizations (leveraging `BIP007` effect and algebraic annotations).
 - [ ] a Maven goal for ahead-of-time compilation.
 
 TODO : lessons from the ray tracer

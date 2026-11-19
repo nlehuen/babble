@@ -2,7 +2,7 @@
 
 **BIP:** 007  
 **Date:** 2026-11-14 (updated 2026-11-19 for `RM005` / `BIP011` and `RM006` / `BIP012`)  
-**Status:** Partially implemented (`BIP007-P1` landed in `RM002`, core-type profiles landed in `RM005` / `BIP011-P5`, predicate-free syntax landed in `RM006` / `BIP012`; `BIP007-D1`–`D10` decided; `BIP007-P2`–`P3` planned; optimizer passes postponed beyond `BIP007` per `BIP007-D10`)  
+**Status:** Implemented (`BIP007-P1` landed in `RM002`, core-type profiles landed in `RM005` / `BIP011-P5`, predicate-free syntax landed in `RM006` / `BIP012`, and `BIP007-P2`–`P3` landed in `RM007`; `BIP007-D1`–`D10` settled; optimizer passes postponed beyond `BIP007` per `BIP007-D10`)  
 **Depends on:** [bip008_static-typing.md](bip008_static-typing.md) (`BIP008-P1`–`P7`), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md) (`RM004`: `TypedProgram`, `LoweringAnalyzer`, `TypedModuleSummary`), [bip011_core-types.md](bip011_core-types.md) (`RM005`: 9 scalars, core collections, Java nullability, `e!`, 8-primitive unboxing), [bip012_grammar-improvements.md](bip012_grammar-improvements.md) (`RM006`: predicate-free `fn`/`of`/`on`/`record` LL(1)/LL(2) grammar)  
 **Scope:** Static type system, effect inference & verification engine, `axiom` declarations, optimizer contract, Java interop, and runtime/bytecode compiler integration.
 
