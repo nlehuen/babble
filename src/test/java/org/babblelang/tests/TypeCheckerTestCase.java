@@ -549,10 +549,10 @@ public class TypeCheckerTestCase {
                 + "  def ok2 : string = if not (v is string) then ( \"no\" ) else ( v )\n"
                 + "  ok1\n)\n"
                 + "def g2 = (v : any) -> (\n"
-                + "  def int = Point\n"
-                + "  if v is int then ( def bad : string = v.x )\n"
+                + "  def P = Point\n"
+                + "  if v is P then ( def bad : string = v.x )\n"
                 + "  0\n)",
-                "9:41 Type error : expected string, got int");
+                "9:39 Type error : expected string, got int");
         // Built-in int(x) conversion is unaffected outside the right of is.
         assertDiagnostics("def n : int = int(\"42\") + 1");
     }
@@ -1067,7 +1067,7 @@ public class TypeCheckerTestCase {
         // Positive cases: Babble generics, Java generics, bounds, covariance, is/as raw narrowing, nullability.
         assertDiagnostics("def id(T) = (x : T) : T -> ( x )\n"
                 + "def Box(T) = class (def value : T) (\n"
-                + "  def map(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )\n"
+                + "  def mapBox(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.value)) )\n"
                 + ")\n"
                 + "def n : int = id(1)\n"
                 + "def idStr : (s : string) : string = id\n"

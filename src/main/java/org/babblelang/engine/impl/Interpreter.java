@@ -185,12 +185,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
      * evaluated like the equivalent expression.
      */
     private Object type(BabbleParser.TypeContext type) {
-        List<org.antlr.v4.runtime.tree.TerminalNode> ids = org.babblelang.analysis.ScopeAnalysis.simpleType(type).ID();
-        Object value = namespace.lookup(ids.get(0).getText());
-        StringBuilder text = new StringBuilder(ids.get(0).getText());
+        List<String> ids = org.babblelang.analysis.ScopeAnalysis.simpleTypePath(org.babblelang.analysis.ScopeAnalysis.simpleType(type));
+        Object value = namespace.lookup(ids.get(0));
+        StringBuilder text = new StringBuilder(ids.get(0));
         for (int i = 1; i < ids.size(); i++) {
-            value = Members.select(value, ids.get(i).getText(), text.toString());
-            text.append('.').append(ids.get(i).getText());
+            value = Members.select(value, ids.get(i), text.toString());
+            text.append('.').append(ids.get(i));
         }
         return value;
     }
@@ -336,7 +336,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitSelector(BabbleParser.SelectorContext ctx) {
         last = ctx;
-        String name = ctx.ID().getText();
+        String name = ScopeAnalysis.selectorName(ctx);
         BabbleParser.ExpressionContext expression = ctx.expression();
         if (expression == null) {
             return namespace.lookup(name);
@@ -467,7 +467,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
      * left operand of the operator a compound assignment applies.
      */
     public static String targetText(BabbleParser.AssignExpressionContext ctx) {
-        return ctx.namespace == null ? ctx.name.getText() : ctx.namespace.getText() + "." + ctx.name.getText();
+        String name = ScopeAnalysis.assignName(ctx);
+        return ctx.namespace == null ? name : ctx.namespace.getText() + "." + name;
     }
 
     /**
@@ -527,7 +528,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         last = ctx;
-        String name = ctx.name.getText();
+        String name = ScopeAnalysis.assignName(ctx);
         // For x op= v, the target's value is read before v is evaluated, as in x = x op v.
         String operator = Operators.compound(ctx.op.getText());
         if (ctx.namespace == null) {
@@ -572,9 +573,23 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitLongLiteral(BabbleParser.LongLiteralContext ctx) {
+        last = ctx;
+        String text = ctx.getText();
+        return Long.parseLong(text.substring(0, text.length() - 1));
+    }
+
+    @Override
     public Object visitInteger(BabbleParser.IntegerContext ctx) {
         last = ctx;
         return Integer.parseInt(ctx.getText());
+    }
+
+    @Override
+    public Object visitFloatLiteral(BabbleParser.FloatLiteralContext ctx) {
+        last = ctx;
+        String text = ctx.getText();
+        return Float.parseFloat(text.substring(0, text.length() - 1));
     }
 
     @Override
@@ -584,17 +599,117 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitCharLiteral(BabbleParser.CharLiteralContext ctx) {
+        last = ctx;
+        return unescapeChar(ctx.CHAR_LIT().getText());
+    }
+
+    @Override
     public Object visitString(BabbleParser.StringContext ctx) {
         last = ctx;
         return unescape(ctx.STRING().getText());
+    }
+
+    @Override
+    public Object visitNonNullAssertion(BabbleParser.NonNullAssertionContext ctx) {
+        last = ctx;
+        Object value = visit(ctx.expression());
+        last = ctx;
+        String expected = scopes.nonNullAssertionTarget(ctx);
+        if (expected != null) {
+            return org.babblelang.runtime.JavaTypes.checkNotNull(value, expected);
+        }
+        return value;
+    }
+
+    @Override
+    public Object visitCoreScalarRef(BabbleParser.CoreScalarRefContext ctx) {
+        last = ctx;
+        return namespace.lookup(ctx.coreScalarKeyword().getText());
+    }
+
+    @Override
+    public Object visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
+        last = ctx;
+        Object callee = visit(ctx.expression());
+        last = ctx;
+        if (!scopes.isTypeApplyCall(ctx)) {
+            // Curried value call: f(a)(b)
+            List<BabbleParser.TypeContext> firstArgs = ctx.typeArguments().type();
+            Object[] firstValues = new Object[firstArgs.size()];
+            for (int i = 0; i < firstArgs.size(); i++) {
+                firstValues[i] = type(firstArgs.get(i));
+            }
+            CallSite firstSite = new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), new String[firstArgs.size()]);
+            callee = Calls.callable(callee, firstSite).call(runtime, firstValues, null, firstSite);
+            last = ctx;
+        }
+        List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
+        Object[] args = params.isEmpty() ? Arguments.NONE : new Object[params.size()];
+        String[] names = null;
+        for (int i = 0; i < params.size(); i++) {
+            args[i] = visit(params.get(i).expression());
+            String name = ScopeAnalysis.callParamName(params.get(i));
+            if (name != null) {
+                if (names == null) {
+                    names = new String[params.size()];
+                }
+                names[i] = name;
+            }
+        }
+        last = ctx;
+        String[] argTexts = new String[params.size()];
+        for (int i = 0; i < params.size(); i++) {
+            argTexts[i] = params.get(i).expression().getText();
+        }
+        CallSite site = new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), argTexts);
+        return Types.check(Calls.callable(callee, site).call(runtime, args, names, site), scopes.checkedType(ctx));
     }
 
     /**
      * The value of a string literal, given its source text with the quotes.
      */
     public static String unescape(String literal) {
-        literal = literal.substring(1, literal.length() - 1);
-        return literal.replace("\\\\", "\\").replace("\\\"", "\"");
+        String body = literal.substring(1, literal.length() - 1);
+        if (body.indexOf('\\') < 0) {
+            return body;
+        }
+        StringBuilder out = new StringBuilder(body.length());
+        for (int i = 0; i < body.length(); i++) {
+            char c = body.charAt(i);
+            if (c == '\\' && i + 1 < body.length()) {
+                char next = body.charAt(++i);
+                switch (next) {
+                    case 'b' -> out.append('\b');
+                    case 't' -> out.append('\t');
+                    case 'n' -> out.append('\n');
+                    case 'f' -> out.append('\f');
+                    case 'r' -> out.append('\r');
+                    case '"' -> out.append('"');
+                    case '\'' -> out.append('\'');
+                    case '\\' -> out.append('\\');
+                    case '0' -> out.append('\0');
+                    case 'u' -> {
+                        if (i + 4 < body.length()) {
+                            out.append((char) Integer.parseInt(body.substring(i + 1, i + 5), 16));
+                            i += 4;
+                        } else {
+                            out.append('u');
+                        }
+                    }
+                    default -> out.append(next);
+                }
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
+    }
+
+    /** The value of a character literal, given its source text with the single quotes. */
+    public static char unescapeChar(String literal) {
+        String decoded = unescape(literal);
+        return decoded.charAt(0);
     }
 
     @Override
@@ -617,7 +732,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             if (receiver == null) {
                 return null;
             }
-            Object callee = Types.check(Members.select(receiver, selector.ID().getText(), receiverExpr.getText()),
+            Object callee = Types.check(Members.select(receiver, ScopeAnalysis.selectorName(selector), receiverExpr.getText()),
                     scopes.checkedType(selector));
             last = ctx;
             CallSite site = callSite(ctx);
@@ -635,7 +750,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             Object receiver = visit(receiverExpr);
             last = selector;
             Object target = Values.toJava(receiver, javaCall.method().getDeclaringClass(), runtime);
-            Object callee = Types.check(Members.select(target, selector.ID().getText(), receiverExpr.getText()),
+            Object callee = Types.check(Members.select(target, ScopeAnalysis.selectorName(selector), receiverExpr.getText()),
                     scopes.checkedType(selector));
             last = ctx;
             CallSite site = callSite(ctx);
@@ -660,7 +775,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         CallSite site = callSite(ctx);
         Object[] args = arguments(ctx);
         last = ctx;
-        return Supers.call(thiz, type, selector.ID().getText(), runtime, args, callNames.get(ctx), site);
+        return Supers.call(thiz, type, ScopeAnalysis.selectorName(selector), runtime, args, callNames.get(ctx), site);
     }
 
     private Object[] arguments(BabbleParser.CallContext ctx) {
@@ -703,11 +818,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
         String[] names = null;
         for (int i = 0; i < parameters.size(); i++) {
-            if (parameters.get(i).ID() != null) {
+            String name = org.babblelang.analysis.ScopeAnalysis.callParamName(parameters.get(i));
+            if (name != null) {
                 if (names == null) {
                     names = new String[parameters.size()];
                 }
-                names[i] = parameters.get(i).ID().getText();
+                names[i] = name;
             }
         }
         return names;

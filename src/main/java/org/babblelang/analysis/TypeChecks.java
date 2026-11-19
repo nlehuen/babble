@@ -119,7 +119,7 @@ final class TypeChecks {
         if (simple == null) {
             throw notStatic(type);
         }
-        List<String> path = simple.ID().stream().map(Object::toString).toList();
+        List<String> path = ScopeAnalysis.simpleTypePath(simple);
         ParserRuleContext definition = resolveName(path.get(0), scope);
         if (definition != null) {
             return resolveDefinition(definition, path, 1, type, forInterface, 0);
@@ -154,7 +154,7 @@ final class TypeChecks {
             ModuleInterface module = moduleOf(selector.expression(), scope, depth + 1);
             if (module != null) {
                 List<String> rest = new ArrayList<>();
-                rest.add(selector.ID().getText());
+                rest.add(ScopeAnalysis.selectorName(selector));
                 rest.addAll(path.subList(index, path.size()));
                 return module.resolveType(rest, 0, type, forInterface);
             }
@@ -203,7 +203,7 @@ final class TypeChecks {
         if (expression instanceof BabbleParser.SelectorContext selector) {
             if (selector.expression() != null) {
                 ModuleInterface module = moduleOf(selector.expression(), scope, depth + 1);
-                return module != null ? module.exportedModule(selector.ID().getText(), depth + 1) : null;
+                return module != null ? module.exportedModule(ScopeAnalysis.selectorName(selector), depth + 1) : null;
             }
             BabbleParser.DefExpressionContext def = definitionOf(selector, scope);
             if (def != null) {
@@ -598,8 +598,8 @@ final class TypeChecks {
         } else {
             return;
         }
-        org.antlr.v4.runtime.Token token = access.ctx() instanceof BabbleParser.SelectorContext selector ? selector.ID().getSymbol()
-                : ((BabbleParser.AssignExpressionContext) access.ctx()).name;
+        org.antlr.v4.runtime.Token token = access.ctx() instanceof BabbleParser.SelectorContext selector ? ScopeAnalysis.selectorToken(selector)
+                : ScopeAnalysis.assignToken((BabbleParser.AssignExpressionContext) access.ctx());
         analysis.typeDiagnostic(message, token.getLine(), token.getCharPositionInLine() + 1);
     }
 

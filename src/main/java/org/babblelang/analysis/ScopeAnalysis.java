@@ -7,8 +7,10 @@ import org.babblelang.runtime.ClassShape;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * What the analysis computes for a file : which constructs open a scope, the names each
@@ -509,8 +511,76 @@ public final class ScopeAnalysis {
         return callEffects.getOrDefault(call, EffectSet.EMPTY);
     }
 
+    private final Map<BabbleParser.NonNullAssertionContext, String> nonNullAssertionTargets = new HashMap<>();
+    private final Set<BabbleParser.TypeApplyCallContext> typeApplyCalls = new HashSet<>();
+
+    void setNonNullAssertionTarget(BabbleParser.NonNullAssertionContext ctx, String expectedType) {
+        nonNullAssertionTargets.put(ctx, expectedType);
+    }
+
+    /** The non-null target type name for {@code e!}, or {@code null} if {@code e} is statically non-null. */
+    public String nonNullAssertionTarget(BabbleParser.NonNullAssertionContext ctx) {
+        return nonNullAssertionTargets.get(ctx);
+    }
+
+    void markTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
+        typeApplyCalls.add(ctx);
+    }
+
+    /** True when {@code expr(T)(args)} resolved as generic type application rather than a curried value call. */
+    public boolean isTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
+        return typeApplyCalls.contains(ctx);
+    }
+
     public List<Warning> warnings() {
         return warnings;
+    }
+
+    /** Name selected by a qualified ({@code expr.memberName}) or unqualified ({@code ID}) selector. */
+    public static String selectorName(BabbleParser.SelectorContext ctx) {
+        return ctx.memberName() != null ? ctx.memberName().getText() : ctx.ID().getText();
+    }
+
+    /** Token of the name selected by a qualified or unqualified selector. */
+    public static org.antlr.v4.runtime.Token selectorToken(BabbleParser.SelectorContext ctx) {
+        return ctx.memberName() != null ? ctx.memberName().getStart() : ctx.ID().getSymbol();
+    }
+
+    /** Target name of a qualified ({@code expr.member = v}) or unqualified ({@code x = v}) assignment. */
+    public static String assignName(BabbleParser.AssignExpressionContext ctx) {
+        return ctx.member != null ? ctx.member.getText() : ctx.name.getText();
+    }
+
+    /** Token of the target name of an assignment. */
+    public static org.antlr.v4.runtime.Token assignToken(BabbleParser.AssignExpressionContext ctx) {
+        return ctx.member != null ? ctx.member.getStart() : ctx.name;
+    }
+
+    /** Named argument label on a call parameter, or {@code null} if positional. */
+    public static String callParamName(BabbleParser.CallParameterContext ctx) {
+        return ctx.memberName() != null ? ctx.memberName().getText() : null;
+    }
+
+    /** Path segments of a {@code simpleType} ({@code coreTypeKeyword} or {@code ID ('.' memberName)*}). */
+    public static List<String> simpleTypePath(BabbleParser.SimpleTypeContext ctx) {
+        if (ctx.coreTypeKeyword() != null) {
+            return List.of(ctx.coreTypeKeyword().getText());
+        }
+        List<String> path = new ArrayList<>();
+        path.add(ctx.ID().getText());
+        for (BabbleParser.MemberNameContext m : ctx.memberName()) {
+            path.add(m.getText());
+        }
+        return path;
+    }
+
+    /** Member segments of an {@code effectTarget} (all segments after the root ID / import(...)). */
+    public static List<String> effectTargetMembers(BabbleParser.EffectTargetContext ctx) {
+        List<String> members = new ArrayList<>();
+        for (BabbleParser.MemberNameContext m : ctx.memberName()) {
+            members.add(m.getText());
+        }
+        return members;
     }
 
     /**

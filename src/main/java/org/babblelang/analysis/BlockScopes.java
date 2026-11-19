@@ -611,7 +611,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         if (ctx.qualifier != null) {
             checkPlainParameters(ctx.qualifier);
         }
-        supers.add(new PendingSuper(ctx, owner, current(), selector.ID().getText()));
+        supers.add(new PendingSuper(ctx, owner, current(), ScopeAnalysis.selectorName(selector)));
         return null;
     }
 
@@ -624,12 +624,25 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return visitChildren(ctx);
     }
 
+    @Override
+    public Void visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
+        visit(ctx.expression());
+        for (BabbleParser.TypeContext t : ctx.typeArguments().type()) {
+            BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(t);
+            if (simple != null && simple.coreTypeKeyword() == null && simple.typeArguments() == null) {
+                occurrences.add(new Occurrence(simple, simple.ID().getText(), current()));
+            }
+        }
+        visit(ctx.callParameters());
+        return null;
+    }
+
     /** The file a call imports statically : {@code import("….ba")} with a string literal, or null. */
     static String staticImport(BabbleParser.CallContext call) {
         if (call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
                 && callee.ID().getText().equals("import")
                 && call.callParameters().callParameter().size() == 1
-                && call.callParameters().callParameter(0).ID() == null
+                && ScopeAnalysis.callParamName(call.callParameters().callParameter(0)) == null
                 && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
             String name = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
             return name.endsWith(".ba") ? name : null;
@@ -644,7 +657,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             occurrences.add(new Occurrence(ctx, ctx.ID().getText(), current()));
         }
         if (receiver != null && !(receiver instanceof BabbleParser.SuperExpressionContext)) {
-            accesses.add(new PendingAccess(ctx, receiver, ctx.ID().getText(), false, current()));
+            accesses.add(new PendingAccess(ctx, receiver, ScopeAnalysis.selectorName(ctx), false, current()));
         }
         return visitChildren(ctx);
     }
@@ -655,7 +668,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             assignments.add(new PendingAssignment(ctx.name.getText(), current()));
             occurrences.add(new Occurrence(ctx, ctx.name.getText(), current()));
         } else {
-            accesses.add(new PendingAccess(ctx, ctx.namespace, ctx.name.getText(), true, current()));
+            accesses.add(new PendingAccess(ctx, ctx.namespace, ScopeAnalysis.assignName(ctx), true, current()));
         }
         return visitChildren(ctx);
     }

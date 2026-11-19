@@ -139,18 +139,15 @@ final class Narrowing {
     }
 
     Type.Simple isBuiltinTarget(BabbleParser.IsExpressionContext ctx) {
-        if (ctx.right instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
-            String name = selector.ID().getText();
-            if (TypeChecker.resolveName(selector, name, checker.occurrenceScope(selector)) == null) {
-                return switch (name) {
-                    case "int" -> Type.INT;
-                    case "double" -> Type.DOUBLE;
-                    case "bool" -> Type.BOOL;
-                    case "string" -> Type.STRING;
-                    case "any" -> Type.ANY;
-                    default -> null;
-                };
-            }
+        if (ctx.coreType != null && ctx.typeArguments() == null) {
+            return switch (ctx.coreType.getText()) {
+                case "int" -> Type.INT;
+                case "double" -> Type.DOUBLE;
+                case "bool" -> Type.BOOL;
+                case "string" -> Type.STRING;
+                case "any" -> Type.ANY;
+                default -> null;
+            };
         }
         return null;
     }

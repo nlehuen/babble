@@ -54,7 +54,7 @@ final class StaticRefs {
             if (sel.safe != null) {
                 return null;
             }
-            String name = sel.ID().getText();
+            String name = ScopeAnalysis.selectorName(sel);
             if (sel.expression() == null) {
                 Object resolved = TypeChecker.resolveName(sel, name, checker.occurrenceScopeOf(sel));
                 if (resolved instanceof BabbleParser.DefExpressionContext def) {

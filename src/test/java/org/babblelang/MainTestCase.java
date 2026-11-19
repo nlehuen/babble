@@ -62,10 +62,10 @@ public class MainTestCase {
 
     @Test
     public void testKeepAliveContinuesInTheInteractiveMode() throws Exception {
-        String definitions = script("definitions.ba", "def double = (n : int) : int -> ( n * 2 )\nprintln(\"loaded\")");
-        Run run = run("double(21)\nargs.get(0)\n", "-keep-alive", definitions, "x");
+        String definitions = script("definitions.ba", "def twice = (n : int) : int -> ( n * 2 )\nprintln(\"loaded\")");
+        Run run = run("twice(21)\nargs.get(0)\n", "-keep-alive", definitions, "x");
         Assertions.assertEquals(new Run(0, List.of("loaded", "42", "\"x\""), List.of()), run);
-        Assertions.assertEquals(List.of("loaded", "4"), run("double(2)\n", "--keep-alive", definitions).out());
+        Assertions.assertEquals(List.of("loaded", "4"), run("twice(2)\n", "--keep-alive", definitions).out());
     }
 
     @Test

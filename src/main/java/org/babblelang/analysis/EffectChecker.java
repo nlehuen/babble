@@ -682,11 +682,10 @@ final class EffectChecker {
                                                        boolean isCtor,
                                                        ScopeNode scope,
                                                        ParserRuleContext reportAt) {
-        List<org.antlr.v4.runtime.tree.TerminalNode> ids = targetCtx.ID();
-        int idx = 0;
+        String first = targetCtx.ID().getText();
+        List<String> members = ScopeAnalysis.effectTargetMembers(targetCtx);
         Type current;
         if (targetCtx.STRING() != null) {
-            String first = ids.get(0).getText();
             if (!"import".equals(first) && !"importe".equals(first)) {
                 checker.effectDiagnostic("Invalid target : expected import(\"...\") or Java class path", reportAt);
                 return null;
@@ -702,9 +701,7 @@ final class EffectChecker {
             }
             Class<?> directClass = checker.findJavaClass(pkg);
             current = directClass != null ? new Type.JavaClassValue(directClass) : new Type.JavaPackage(pkg);
-            idx = 1;
         } else {
-            String first = ids.get(0).getText();
             Object resolved = checker.resolveNameForEffects(first, scope);
             if (resolved instanceof ParserRuleContext decl) {
                 current = checker.typeOfDeclarationForEffects(decl);
@@ -715,12 +712,11 @@ final class EffectChecker {
                     return null;
                 }
             }
-            idx = 1;
         }
 
-        while (idx < ids.size()) {
-            String step = ids.get(idx).getText();
-            boolean last = (idx == ids.size() - 1);
+        for (int idx = 0; idx < members.size(); idx++) {
+            String step = members.get(idx);
+            boolean last = (idx == members.size() - 1);
             if (current instanceof Type.JavaPackage jp) {
                 String qualified = jp.name() + "." + step;
                 Class<?> cls = checker.findJavaClass(qualified);
@@ -752,7 +748,6 @@ final class EffectChecker {
                 checker.effectDiagnostic("Invalid effect declaration target : " + targetCtx.getText(), reportAt);
                 return null;
             }
-            idx++;
         }
 
         if (current instanceof Type.JavaClassValue jcv) {
@@ -1367,7 +1362,7 @@ final class EffectChecker {
             Type recv = checker.rawTypeOf(sel.expression());
             for (Type m : Type.membersOf(recv)) {
                 if (m instanceof Type.Instance inst) {
-                    TypeNode.Member mem = inst.node().members.get(sel.ID().getText());
+                    TypeNode.Member mem = inst.node().members.get(ScopeAnalysis.selectorName(sel));
                     if (mem != null && mem.function != null && callableSet.contains(mem.function)) {
                         out.add(mem.function);
                     }
@@ -2185,7 +2180,7 @@ final class EffectChecker {
         }
         if (expr instanceof BabbleParser.CallContext call) {
             List<BabbleParser.CallParameterContext> args = call.callParameters().callParameter();
-            if (args.size() != 2 || args.get(0).ID() != null || args.get(1).ID() != null) {
+            if (args.size() != 2 || ScopeAnalysis.callParamName(args.get(0)) != null || ScopeAnalysis.callParamName(args.get(1)) != null) {
                 return WrapperProps.NONE;
             }
             int order = matchBinaryParams(args.get(0).expression(), args.get(1).expression(), p0, p1);
@@ -2224,7 +2219,7 @@ final class EffectChecker {
         }
         if (expr instanceof BabbleParser.CallContext call) {
             List<BabbleParser.CallParameterContext> args = call.callParameters().callParameter();
-            if (args.size() == 1 && args.get(0).ID() == null && resolvePlainParam(unwrapParens(args.get(0).expression())) == p0) {
+            if (args.size() == 1 && ScopeAnalysis.callParamName(args.get(0)) == null && resolvePlainParam(unwrapParens(args.get(0).expression())) == p0) {
                 EffectSet effs = calleeIntrinsicOrResolvedEffects(call);
                 return effs != null && effs.isPure() && effs.has(Effect.IDEMPOTENT);
             }
@@ -2249,7 +2244,7 @@ final class EffectChecker {
             if ((mutThis && ns instanceof BabbleParser.ThisExpressionContext)
                     || (resolvePlainParam(ns) instanceof BabbleParser.ParameterDeclarationContext p
                     && params.indexOf(p) >= 0 && mutParams[params.indexOf(p)])) {
-                if (!readsField(assign.value, assign.name.getText())) {
+                if (!readsField(assign.value, ScopeAnalysis.assignName(assign))) {
                     return true;
                 }
             }
@@ -2278,9 +2273,10 @@ final class EffectChecker {
             }
             if ("=".equals(op) && targetType == Type.INT && params.size() == 1
                     && assign.value instanceof BabbleParser.BinaryOpContext bin && "+".equals(bin.op.getText())) {
-                if ((sameTargetField(assign.namespace, assign.name.getText(), bin.left)
+                String assignedName = ScopeAnalysis.assignName(assign);
+                if ((sameTargetField(assign.namespace, assignedName, bin.left)
                         && resolvePlainParam(unwrapParens(bin.right)) == params.get(0))
-                        || (sameTargetField(assign.namespace, assign.name.getText(), bin.right)
+                        || (sameTargetField(assign.namespace, assignedName, bin.right)
                         && resolvePlainParam(unwrapParens(bin.left)) == params.get(0))) {
                     return true;
                 }
@@ -2295,7 +2291,7 @@ final class EffectChecker {
 
     private boolean sameTargetField(BabbleParser.ExpressionContext ns, String field, BabbleParser.ExpressionContext expr) {
         expr = unwrapParens(expr);
-        if (!(expr instanceof BabbleParser.SelectorContext sel) || sel.expression() == null || !field.equals(sel.ID().getText())) {
+        if (!(expr instanceof BabbleParser.SelectorContext sel) || sel.expression() == null || !field.equals(ScopeAnalysis.selectorName(sel))) {
             return false;
         }
         BabbleParser.ExpressionContext r1 = unwrapParens(ns);
@@ -2305,7 +2301,7 @@ final class EffectChecker {
 
     private static boolean readsField(ParseTree tree, String fieldName) {
         if (tree instanceof BabbleParser.SelectorContext sel && sel.expression() != null
-                && fieldName.equals(sel.ID().getText())) {
+                && fieldName.equals(ScopeAnalysis.selectorName(sel))) {
             return true;
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
@@ -2703,7 +2699,30 @@ final class EffectChecker {
             }
             if (ctx instanceof BabbleParser.IsExpressionContext isCtx) {
                 eval(isCtx.left);
-                eval(isCtx.right);
+                if (isCtx.right != null) {
+                    eval(isCtx.right);
+                }
+                return Origin.IMMUTABLE;
+            }
+            if (ctx instanceof BabbleParser.NonNullAssertionContext nna) {
+                Origin orig = eval(nna.expression());
+                if (pass.analysis.nonNullAssertionTarget(nna) != null) {
+                    nothrow = false;
+                }
+                Type dst = checker.rawTypeOf(nna);
+                return isDeeplyImmutable(dst) ? Origin.IMMUTABLE : orig;
+            }
+            if (ctx instanceof BabbleParser.TypeApplyCallContext tac) {
+                eval(tac.expression());
+                for (BabbleParser.CallParameterContext p : tac.callParameters().callParameter()) {
+                    eval(p.expression());
+                }
+                return Origin.IMMUTABLE;
+            }
+            if (ctx instanceof BabbleParser.CoreCollectionCallContext ccc) {
+                for (BabbleParser.CallParameterContext p : ccc.callParameters().callParameter()) {
+                    eval(p.expression());
+                }
                 return Origin.IMMUTABLE;
             }
             if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
@@ -2827,16 +2846,17 @@ final class EffectChecker {
                     || isPrimitiveOrString(recvType) || recvType instanceof Type.Function) {
                 return rhs;
             }
-            if (recvType instanceof Type.JavaClassValue || recvType instanceof Type.ClassValue
-                    || recvType instanceof Type.Module) {
-                // Static / module field write -> global mutation!
-                hermetic = false;
-                markStoredOrigin(rhs, "static member " + assign.name.getText(), assign);
+                String assignedName = ScopeAnalysis.assignName(assign);
+                if (recvType instanceof Type.JavaClassValue || recvType instanceof Type.ClassValue
+                        || recvType instanceof Type.Module) {
+                    // Static / module field write -> global mutation!
+                    hermetic = false;
+                    markStoredOrigin(rhs, "static member " + assignedName, assign);
+                    return rhs;
+                }
+                recordTargetMutation(recvOrig, assign.namespace, "field assignment ." + assignedName, assign);
+                markStoredIntoTarget(recvOrig, rhs, assignedName, assign);
                 return rhs;
-            }
-            recordTargetMutation(recvOrig, assign.namespace, "field assignment ." + assign.name.getText(), assign);
-            markStoredIntoTarget(recvOrig, rhs, assign.name.getText(), assign);
-            return rhs;
         }
 
         private void checkCompoundArithmeticEffects(String op, Type resType, BabbleParser.AssignExpressionContext assign) {
@@ -2884,7 +2904,7 @@ final class EffectChecker {
             Type recvType = effectiveType(sel.expression());
             Type resType = checker.rawTypeOf(sel);
             boolean immRes = isDeeplyImmutable(resType);
-            String fieldName = sel.ID().getText();
+            String fieldName = ScopeAnalysis.selectorName(sel);
 
             // Check Java static or instance field access:
             ScopeAnalysis.JavaFieldTarget jft = checker.javaFieldTargetOf(sel);

@@ -399,7 +399,7 @@ public class BabbleCompilerTestCase {
     public void testP5OmitsRedundantRuntimeTypeChecksAndKeepsAsCasts() throws Exception {
         CompiledBabbleScript checked = compile(
                 "def Box = class (def x : double = 1) (\n"
-                        + "  def set = mut (v : double = 2) : double -> (\n"
+                        + "  def putVal = mut (v : double = 2) : double -> (\n"
                         + "    this.x = v\n"
                         + "    this.x += 1\n"
                         + "    if v > 0.0 then ( return 1 )\n"
@@ -411,7 +411,7 @@ public class BabbleCompilerTestCase {
                         + "d += 3\n"
                         + "def f = (a : int, b : double = 4) : double -> ( a + b )\n"
                         + "def b = Box()\n"
-                        + "d + f(1) + b.set(3) + b.set() + b.x");
+                        + "d + f(1) + b.putVal(3) + b.putVal() + b.x");
         assertVerifies(checked);
         Assertions.assertEquals(List.of(), typesCalls(checked));
         for (byte[] classFile : checked.getClasses().values()) {
@@ -458,11 +458,11 @@ public class BabbleCompilerTestCase {
     public void testP6bGenericsCompileCleanly() throws Exception {
         CompiledBabbleScript babbleGenerics = compile(
                 "def Box(T) = class (def v : T) (\n"
-                        + "  def map(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.v)) )\n"
+                        + "  def mapBox(U) = (fn : (x : T) : U) : Box(U) -> ( Box(fn(this.v)) )\n"
                         + ")\n"
                         + "def id(T) = (x : T) : T -> ( x )\n"
                         + "def db : Box(double) = Box(3)\n"
-                        + "def sb : Box(string) = db.map((d) -> ( \"\" + id(d) ))\n"
+                        + "def sb : Box(string) = db.mapBox((d) -> ( \"\" + id(d) ))\n"
                         + "\"\" + classof(db.v) + \":\" + sb.v");
         assertVerifies(babbleGenerics);
         Assertions.assertEquals(List.of(), typesCalls(babbleGenerics));
@@ -636,9 +636,9 @@ public class BabbleCompilerTestCase {
     @Test
     public void testRm001StaticJavaDispatchAndIndexedModuleExports() throws Exception {
         CompiledBabbleScript typedJava = compile(
-                "def work = (sb : java.lang.StringBuilder, list : java.util.List(int), xs) : double -> (\n"
+                "def work = (sb : java.lang.StringBuilder, items : java.util.List(int), xs) : double -> (\n"
                         + "  sb.append(\"a\")\n"
-                        + "  sb.length() + list.size() + xs.length + java.lang.Math.sqrt(9)\n"
+                        + "  sb.length() + items.size() + xs.length + java.lang.Math.sqrt(9)\n"
                         + ")\n"
                         + "def l : java.util.List(int) = java.util.ArrayList() ; l.add(10)\n"
                         + "def arr = java.util.regex.Pattern.compile(\",\").split(\"x,y\")\n"

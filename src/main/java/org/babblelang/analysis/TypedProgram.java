@@ -141,7 +141,7 @@ final class TypedProgram {
     /** The Java field a selection reads, when it has a static target. */
     ScopeAnalysis.JavaFieldTarget javaFieldTargetOf(BabbleParser.SelectorContext sel) {
         return sel.expression() == null || sel.safe != null ? null
-                : LoweringAnalyzer.fieldReadTarget(checker.types().get(sel.expression()), sel.ID().getText(), checker.algebra());
+                : LoweringAnalyzer.fieldReadTarget(checker.types().get(sel.expression()), ScopeAnalysis.selectorName(sel), checker.algebra());
     }
 
     /** Whether the value of {@code ctx} is checked at runtime (a Java generic result, T9). */
@@ -158,8 +158,8 @@ final class TypedProgram {
     int parameterIndexForArg(List<Type.Parameter> parameters,
                              List<BabbleParser.CallParameterContext> arguments,
                              BabbleParser.CallParameterContext targetArg) {
-        if (targetArg.ID() != null) {
-            String argName = targetArg.ID().getText();
+        String argName = ScopeAnalysis.callParamName(targetArg);
+        if (argName != null) {
             for (int i = 0; i < parameters.size(); i++) {
                 if (parameters.get(i).name().equals(argName)) {
                     return i;
