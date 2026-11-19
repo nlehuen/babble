@@ -74,9 +74,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private static final String BABBLE_INTERFACE = RUNTIME + "BabbleInterface";
     private static final String CLASSES = RUNTIME + "Classes";
     private static final String CELL = RUNTIME + "Cell";
+    private static final String BYTE_CELL = RUNTIME + "ByteCell";
+    private static final String SHORT_CELL = RUNTIME + "ShortCell";
     private static final String INT_CELL = RUNTIME + "IntCell";
+    private static final String LONG_CELL = RUNTIME + "LongCell";
+    private static final String FLOAT_CELL = RUNTIME + "FloatCell";
     private static final String DOUBLE_CELL = RUNTIME + "DoubleCell";
     private static final String BOOL_CELL = RUNTIME + "BoolCell";
+    private static final String CHAR_CELL = RUNTIME + "CharCell";
     private static final String COMPILED_METHOD = RUNTIME + "CompiledMethod";
     private static final String METHOD_BODY = RUNTIME + "MethodBody";
     private static final String INSTANCE_FACTORY = RUNTIME + "InstanceFactory";
@@ -236,11 +241,69 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private static void loadKindOn(MethodVisitor m, ScopeAnalysis.PrimitiveKind kind, int slot) {
         int op = switch (kind) {
-            case INT, BOOL -> ILOAD;
+            case BYTE, SHORT, INT, BOOL, CHAR -> ILOAD;
+            case LONG -> LLOAD;
+            case FLOAT -> FLOAD;
             case DOUBLE -> DLOAD;
             case NONE -> ALOAD;
         };
         m.visitVarInsn(op, slot);
+    }
+
+    private static boolean isNumericKind(ScopeAnalysis.PrimitiveKind kind) {
+        return switch (kind) {
+            case BYTE, SHORT, INT, LONG, FLOAT, DOUBLE -> true;
+            default -> false;
+        };
+    }
+
+    private static int numericOrder(ScopeAnalysis.PrimitiveKind kind) {
+        return switch (kind) {
+            case BYTE -> 0;
+            case SHORT -> 1;
+            case INT -> 2;
+            case LONG -> 3;
+            case FLOAT -> 4;
+            case DOUBLE -> 5;
+            default -> -1;
+        };
+    }
+
+    private static boolean emitPrimitiveWidening(MethodVisitor m, ScopeAnalysis.PrimitiveKind from, ScopeAnalysis.PrimitiveKind to) {
+        if (from == to) {
+            return true;
+        }
+        if (from == ScopeAnalysis.PrimitiveKind.CHAR && isNumericKind(to) && numericOrder(to) >= 2) {
+            return emitPrimitiveWidening(m, ScopeAnalysis.PrimitiveKind.INT, to);
+        }
+        int f = numericOrder(from);
+        int t = numericOrder(to);
+        if (f < 0 || t < 0 || f > t) {
+            return false;
+        }
+        if (f <= 2) { // BYTE, SHORT, INT are all 32-bit int on JVM stack
+            switch (to) {
+                case BYTE, SHORT, INT -> { }
+                case LONG -> m.visitInsn(I2L);
+                case FLOAT -> m.visitInsn(I2F);
+                case DOUBLE -> m.visitInsn(I2D);
+                default -> { return false; }
+            }
+            return true;
+        }
+        if (from == ScopeAnalysis.PrimitiveKind.LONG) {
+            switch (to) {
+                case FLOAT -> m.visitInsn(L2F);
+                case DOUBLE -> m.visitInsn(L2D);
+                default -> { return false; }
+            }
+            return true;
+        }
+        if (from == ScopeAnalysis.PrimitiveKind.FLOAT && to == ScopeAnalysis.PrimitiveKind.DOUBLE) {
+            m.visitInsn(F2D);
+            return true;
+        }
+        return false;
     }
 
     private static void emitAdaptKind(MethodVisitor m, ScopeAnalysis.PrimitiveKind from, ScopeAnalysis.PrimitiveKind to) {
@@ -251,15 +314,30 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             boxOn(m, from);
             return;
         }
-        if (from == ScopeAnalysis.PrimitiveKind.INT && to == ScopeAnalysis.PrimitiveKind.DOUBLE) {
-            m.visitInsn(I2D);
+        if (emitPrimitiveWidening(m, from, to)) {
             return;
         }
         if (from == ScopeAnalysis.PrimitiveKind.NONE) {
             switch (to) {
+                case BYTE -> {
+                    m.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "byteValue", "()B", false);
+                }
+                case SHORT -> {
+                    m.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "shortValue", "()S", false);
+                }
                 case INT -> {
-                    m.visitTypeInsn(CHECKCAST, "java/lang/Integer");
-                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false);
+                    m.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "intValue", "()I", false);
+                }
+                case LONG -> {
+                    m.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
+                }
+                case FLOAT -> {
+                    m.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "floatValue", "()F", false);
                 }
                 case DOUBLE -> {
                     m.visitTypeInsn(CHECKCAST, "java/lang/Number");
@@ -268,6 +346,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 case BOOL -> {
                     m.visitTypeInsn(CHECKCAST, "java/lang/Boolean");
                     m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+                }
+                case CHAR -> {
+                    m.visitTypeInsn(CHECKCAST, "java/lang/Character");
+                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Character", "charValue", "()C", false);
                 }
                 case NONE -> {
                 }
@@ -351,65 +433,55 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
     }
 
+    private static void emitLoadPrimitiveBridgeArg(MethodVisitor m, ScopeAnalysis.PrimitiveKind fromKind, int slot,
+                                                   ScopeAnalysis.PrimitiveKind targetKind, int widenRank) {
+        loadKindOn(m, fromKind, slot);
+        if (targetKind == ScopeAnalysis.PrimitiveKind.NONE && widenRank >= 0) {
+            boxOn(m, fromKind);
+            emitWidenBoxed(m, widenRank);
+        } else {
+            emitAdaptKind(m, fromKind, targetKind);
+        }
+    }
+
     private static void emitLoadJavaBridgeArg(MethodVisitor m, Class<?> pType, int slot,
                                               ScopeAnalysis.PrimitiveKind targetKind, int widenRank, String checkedDesc) {
-        if (pType == int.class) {
-            m.visitVarInsn(ILOAD, slot);
-            if (targetKind == ScopeAnalysis.PrimitiveKind.DOUBLE) {
-                m.visitInsn(I2D);
-            } else if (targetKind == ScopeAnalysis.PrimitiveKind.NONE && widenRank == 5) {
-                m.visitInsn(I2D);
-                boxOn(m, ScopeAnalysis.PrimitiveKind.DOUBLE);
-            } else if (targetKind == ScopeAnalysis.PrimitiveKind.NONE && widenRank >= 0) {
-                boxOn(m, ScopeAnalysis.PrimitiveKind.INT);
-                emitWidenBoxed(m, widenRank);
-            } else {
-                emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.INT, targetKind);
-            }
-            return;
-        }
-        if (pType == double.class) {
-            m.visitVarInsn(DLOAD, slot);
-            emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.DOUBLE, targetKind);
-            return;
-        }
-        if (pType == boolean.class) {
-            m.visitVarInsn(ILOAD, slot);
-            emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.BOOL, targetKind);
-            return;
-        }
         if (pType == byte.class) {
-            m.visitVarInsn(ILOAD, slot);
-            m.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
-            emitAdaptBoxedAndWiden(m, targetKind, widenRank);
+            emitLoadPrimitiveBridgeArg(m, ScopeAnalysis.PrimitiveKind.BYTE, slot, targetKind, widenRank);
             return;
         }
         if (pType == short.class) {
-            m.visitVarInsn(ILOAD, slot);
-            m.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
-            emitAdaptBoxedAndWiden(m, targetKind, widenRank);
+            emitLoadPrimitiveBridgeArg(m, ScopeAnalysis.PrimitiveKind.SHORT, slot, targetKind, widenRank);
             return;
         }
-        if (pType == char.class) {
-            m.visitVarInsn(ILOAD, slot);
-            m.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
-            emitAdaptBoxedAndWiden(m, targetKind, widenRank);
+        if (pType == int.class) {
+            emitLoadPrimitiveBridgeArg(m, ScopeAnalysis.PrimitiveKind.INT, slot, targetKind, widenRank);
             return;
         }
         if (pType == long.class) {
-            m.visitVarInsn(LLOAD, slot);
-            m.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-            emitAdaptBoxedAndWiden(m, targetKind, widenRank);
+            emitLoadPrimitiveBridgeArg(m, ScopeAnalysis.PrimitiveKind.LONG, slot, targetKind, widenRank);
             return;
         }
         if (pType == float.class) {
-            m.visitVarInsn(FLOAD, slot);
-            m.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
-            emitAdaptBoxedAndWiden(m, targetKind, widenRank);
+            emitLoadPrimitiveBridgeArg(m, ScopeAnalysis.PrimitiveKind.FLOAT, slot, targetKind, widenRank);
+            return;
+        }
+        if (pType == double.class) {
+            emitLoadPrimitiveBridgeArg(m, ScopeAnalysis.PrimitiveKind.DOUBLE, slot, targetKind, widenRank);
+            return;
+        }
+        if (pType == boolean.class) {
+            emitLoadPrimitiveBridgeArg(m, ScopeAnalysis.PrimitiveKind.BOOL, slot, targetKind, widenRank);
+            return;
+        }
+        if (pType == char.class) {
+            emitLoadPrimitiveBridgeArg(m, ScopeAnalysis.PrimitiveKind.CHAR, slot, targetKind, widenRank);
             return;
         }
         m.visitVarInsn(ALOAD, slot);
-        if (pType != String.class && pType != Integer.class && pType != Double.class && pType != Boolean.class) {
+        if (pType != String.class && pType != Byte.class && pType != Short.class
+                && pType != Integer.class && pType != Long.class && pType != Float.class
+                && pType != Double.class && pType != Boolean.class && pType != Character.class) {
             m.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         }
         if (checkedDesc != null) {
@@ -434,27 +506,31 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
     }
 
+    private static ScopeAnalysis.PrimitiveKind javaPrimitiveKind(Class<?> cls) {
+        if (cls == byte.class) return ScopeAnalysis.PrimitiveKind.BYTE;
+        if (cls == short.class) return ScopeAnalysis.PrimitiveKind.SHORT;
+        if (cls == int.class) return ScopeAnalysis.PrimitiveKind.INT;
+        if (cls == long.class) return ScopeAnalysis.PrimitiveKind.LONG;
+        if (cls == float.class) return ScopeAnalysis.PrimitiveKind.FLOAT;
+        if (cls == double.class) return ScopeAnalysis.PrimitiveKind.DOUBLE;
+        if (cls == boolean.class) return ScopeAnalysis.PrimitiveKind.BOOL;
+        if (cls == char.class) return ScopeAnalysis.PrimitiveKind.CHAR;
+        return ScopeAnalysis.PrimitiveKind.NONE;
+    }
+
     private static void emitReturnToJava(MethodVisitor m, ScopeAnalysis.PrimitiveKind fromKind, Class<?> retType,
                                          String description, int rtSlot) {
         if (retType == void.class) {
-            m.visitInsn(fromKind == ScopeAnalysis.PrimitiveKind.DOUBLE ? POP2 : POP);
+            m.visitInsn(fromKind.slots() == 2 ? POP2 : POP);
             m.visitInsn(RETURN);
             return;
         }
-        if (retType == int.class && fromKind == ScopeAnalysis.PrimitiveKind.INT) {
-            m.visitInsn(IRETURN);
-            return;
-        }
-        if (retType == double.class && (fromKind == ScopeAnalysis.PrimitiveKind.DOUBLE || fromKind == ScopeAnalysis.PrimitiveKind.INT)) {
-            if (fromKind == ScopeAnalysis.PrimitiveKind.INT) {
-                m.visitInsn(I2D);
+        ScopeAnalysis.PrimitiveKind retKind = javaPrimitiveKind(retType);
+        if (retKind.isPrimitive() && fromKind.isPrimitive()) {
+            if (fromKind == retKind || (isNumericKind(fromKind) && isNumericKind(retKind) && emitPrimitiveWidening(m, fromKind, retKind))) {
+                m.visitInsn(returnInsn(retKind));
+                return;
             }
-            m.visitInsn(DRETURN);
-            return;
-        }
-        if (retType == boolean.class && fromKind == ScopeAnalysis.PrimitiveKind.BOOL) {
-            m.visitInsn(IRETURN);
-            return;
         }
         boxOn(m, fromKind);
         emitPushClassConstant(m, retType);
@@ -1396,9 +1472,25 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                         m.visitVarInsn(ALOAD, 0);
                         m.visitVarInsn(ALOAD, 2);
                         switch (mk) {
+                            case BYTE -> {
+                                m.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                                m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "byteValue", "()B", false);
+                            }
+                            case SHORT -> {
+                                m.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                                m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "shortValue", "()S", false);
+                            }
                             case INT -> {
                                 m.visitTypeInsn(CHECKCAST, "java/lang/Integer");
                                 m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Integer", "intValue", "()I", false);
+                            }
+                            case LONG -> {
+                                m.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                                m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
+                            }
+                            case FLOAT -> {
+                                m.visitTypeInsn(CHECKCAST, "java/lang/Number");
+                                m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "floatValue", "()F", false);
                             }
                             case DOUBLE -> {
                                 m.visitTypeInsn(CHECKCAST, "java/lang/Number");
@@ -1407,6 +1499,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                             case BOOL -> {
                                 m.visitTypeInsn(CHECKCAST, "java/lang/Boolean");
                                 m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+                            }
+                            case CHAR -> {
+                                m.visitTypeInsn(CHECKCAST, "java/lang/Character");
+                                m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Character", "charValue", "()C", false);
                             }
                             case NONE -> {
                             }
@@ -1747,18 +1843,28 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private static String jvmDescriptor(ScopeAnalysis.PrimitiveKind kind) {
         return switch (kind) {
+            case BYTE -> "B";
+            case SHORT -> "S";
             case INT -> "I";
+            case LONG -> "J";
+            case FLOAT -> "F";
             case DOUBLE -> "D";
             case BOOL -> "Z";
+            case CHAR -> "C";
             case NONE -> "Ljava/lang/Object;";
         };
     }
 
     private static String cellClass(ScopeAnalysis.PrimitiveKind kind) {
         return switch (kind) {
+            case BYTE -> BYTE_CELL;
+            case SHORT -> SHORT_CELL;
             case INT -> INT_CELL;
+            case LONG -> LONG_CELL;
+            case FLOAT -> FLOAT_CELL;
             case DOUBLE -> DOUBLE_CELL;
             case BOOL -> BOOL_CELL;
+            case CHAR -> CHAR_CELL;
             case NONE -> CELL;
         };
     }
@@ -1770,7 +1876,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private void loadLocal(ScopeAnalysis.PrimitiveKind kind, int slot) {
         int op = switch (kind) {
-            case INT, BOOL -> ILOAD;
+            case BYTE, SHORT, INT, BOOL, CHAR -> ILOAD;
+            case LONG -> LLOAD;
+            case FLOAT -> FLOAD;
             case DOUBLE -> DLOAD;
             case NONE -> ALOAD;
         };
@@ -1779,7 +1887,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private void storeLocal(ScopeAnalysis.PrimitiveKind kind, int slot) {
         int op = switch (kind) {
-            case INT, BOOL -> ISTORE;
+            case BYTE, SHORT, INT, BOOL, CHAR -> ISTORE;
+            case LONG -> LSTORE;
+            case FLOAT -> FSTORE;
             case DOUBLE -> DSTORE;
             case NONE -> ASTORE;
         };
@@ -1787,16 +1897,18 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     private void dup(ScopeAnalysis.PrimitiveKind kind) {
-        mv.visitInsn(kind == ScopeAnalysis.PrimitiveKind.DOUBLE ? DUP2 : DUP);
+        mv.visitInsn(kind.slots() == 2 ? DUP2 : DUP);
     }
 
     private void pop(ScopeAnalysis.PrimitiveKind kind) {
-        mv.visitInsn(kind == ScopeAnalysis.PrimitiveKind.DOUBLE ? POP2 : POP);
+        mv.visitInsn(kind.slots() == 2 ? POP2 : POP);
     }
 
     private static int returnInsn(ScopeAnalysis.PrimitiveKind kind) {
         return switch (kind) {
-            case INT, BOOL -> IRETURN;
+            case BYTE, SHORT, INT, BOOL, CHAR -> IRETURN;
+            case LONG -> LRETURN;
+            case FLOAT -> FRETURN;
             case DOUBLE -> DRETURN;
             case NONE -> ARETURN;
         };
@@ -1804,7 +1916,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private void pushDefaultZero(ScopeAnalysis.PrimitiveKind kind) {
         switch (kind) {
-            case INT, BOOL -> mv.visitInsn(ICONST_0);
+            case BYTE, SHORT, INT, BOOL, CHAR -> mv.visitInsn(ICONST_0);
+            case LONG -> mv.visitInsn(LCONST_0);
+            case FLOAT -> mv.visitInsn(FCONST_0);
             case DOUBLE -> mv.visitInsn(DCONST_0);
             case NONE -> mv.visitInsn(ACONST_NULL);
         }
@@ -1816,9 +1930,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private static void boxOn(MethodVisitor m, ScopeAnalysis.PrimitiveKind kind) {
         switch (kind) {
+            case BYTE -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
+            case SHORT -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
             case INT -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
+            case LONG -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+            case FLOAT -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
             case DOUBLE -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
             case BOOL -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
+            case CHAR -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
             case NONE -> {
             }
         }
@@ -1826,9 +1945,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private void unbox(ScopeAnalysis.PrimitiveKind kind) {
         switch (kind) {
+            case BYTE -> mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxByte", "(Ljava/lang/Object;)B", false);
+            case SHORT -> mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxShort", "(Ljava/lang/Object;)S", false);
             case INT -> mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxInt", "(Ljava/lang/Object;)I", false);
+            case LONG -> mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxLong", "(Ljava/lang/Object;)J", false);
+            case FLOAT -> mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxFloat", "(Ljava/lang/Object;)F", false);
             case DOUBLE -> mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxDouble", "(Ljava/lang/Object;)D", false);
             case BOOL -> mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxBool", "(Ljava/lang/Object;)Z", false);
+            case CHAR -> mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxChar", "(Ljava/lang/Object;)C", false);
             case NONE -> {
             }
         }
@@ -1842,8 +1966,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             box(from);
         } else if (from == ScopeAnalysis.PrimitiveKind.NONE) {
             unbox(to);
-        } else if (from == ScopeAnalysis.PrimitiveKind.INT && to == ScopeAnalysis.PrimitiveKind.DOUBLE) {
-            mv.visitInsn(I2D);
+        } else if (emitPrimitiveWidening(mv, from, to)) {
+            // Widened directly on the JVM stack.
         } else {
             box(from);
             unbox(to);
@@ -1851,9 +1975,19 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         stackKind = to;
     }
 
+    private static ScopeAnalysis.PrimitiveKind targetKindForRank(int rank) {
+        return switch (rank) {
+            case 1 -> ScopeAnalysis.PrimitiveKind.SHORT;
+            case 2 -> ScopeAnalysis.PrimitiveKind.INT;
+            case 3 -> ScopeAnalysis.PrimitiveKind.LONG;
+            case 4 -> ScopeAnalysis.PrimitiveKind.FLOAT;
+            case 5 -> ScopeAnalysis.PrimitiveKind.DOUBLE;
+            default -> ScopeAnalysis.PrimitiveKind.NONE;
+        };
+    }
+
     private void widenStackToDouble() {
-        if (stackKind == ScopeAnalysis.PrimitiveKind.INT) {
-            mv.visitInsn(I2D);
+        if (emitPrimitiveWidening(mv, stackKind, ScopeAnalysis.PrimitiveKind.DOUBLE)) {
             stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
         } else if (stackKind == ScopeAnalysis.PrimitiveKind.NONE) {
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
@@ -1863,6 +1997,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private void widenStackFor(ParserRuleContext ctx) {
         int rank = scopes.numericWideningRank(ctx);
         if (rank < 0) {
+            return;
+        }
+        ScopeAnalysis.PrimitiveKind target = targetKindForRank(rank);
+        if (stackKind.isPrimitive() && target != ScopeAnalysis.PrimitiveKind.NONE) {
+            convertStack(stackKind, target);
             return;
         }
         if (rank == 5) {
@@ -1887,13 +2026,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private void emitAs(ParserRuleContext ctx, ScopeAnalysis.PrimitiveKind desired) {
         emitAndWidenIfMarked(ctx);
-        if (stackKind == ScopeAnalysis.PrimitiveKind.NONE && desired == ScopeAnalysis.PrimitiveKind.DOUBLE
-                && scopes.expressionKind(ctx) == ScopeAnalysis.PrimitiveKind.INT
-                && scopes.numericWideningRank(ctx) < 0) {
-            unbox(ScopeAnalysis.PrimitiveKind.INT);
-            mv.visitInsn(I2D);
-            stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
-            return;
+        if (stackKind == ScopeAnalysis.PrimitiveKind.NONE && desired.isPrimitive()) {
+            ScopeAnalysis.PrimitiveKind exprKind = scopes.expressionKind(ctx);
+            if (exprKind.isPrimitive() && scopes.numericWideningRank(ctx) < 0 && exprKind != desired) {
+                unbox(exprKind);
+                stackKind = exprKind;
+                convertStack(stackKind, desired);
+                return;
+            }
         }
         convertStack(stackKind, desired);
     }
@@ -4010,20 +4150,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         } else if (type == boolean.class) {
             stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
         } else if (type == byte.class) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
-            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            stackKind = ScopeAnalysis.PrimitiveKind.BYTE;
         } else if (type == short.class) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
-            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            stackKind = ScopeAnalysis.PrimitiveKind.SHORT;
         } else if (type == char.class) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
-            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            stackKind = ScopeAnalysis.PrimitiveKind.CHAR;
         } else if (type == long.class) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            stackKind = ScopeAnalysis.PrimitiveKind.LONG;
         } else if (type == float.class) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
-            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            stackKind = ScopeAnalysis.PrimitiveKind.FLOAT;
         } else {
             if (type == Object.class || type.isInterface()) {
                 mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
@@ -4130,7 +4265,17 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         emitExpr(expr);
         switch (stackKind) {
-            case BOOL, INT -> mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
+            case BOOL, BYTE, SHORT, INT, CHAR -> mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
+            case LONG -> {
+                mv.visitInsn(LCONST_0);
+                mv.visitInsn(LCMP);
+                mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
+            }
+            case FLOAT -> {
+                mv.visitInsn(FCONST_0);
+                mv.visitInsn(FCMPL);
+                mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
+            }
             case DOUBLE -> {
                 mv.visitInsn(DCONST_0);
                 mv.visitInsn(DCMPL);
@@ -4156,16 +4301,18 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         if (lk == ScopeAnalysis.PrimitiveKind.BOOL && rk == ScopeAnalysis.PrimitiveKind.BOOL) {
             return ctx.op.getType() == BabbleLexer.EQ || ctx.op.getType() == BabbleLexer.NEQ;
         }
-        return (lk == ScopeAnalysis.PrimitiveKind.INT || lk == ScopeAnalysis.PrimitiveKind.DOUBLE)
-                && (rk == ScopeAnalysis.PrimitiveKind.INT || rk == ScopeAnalysis.PrimitiveKind.DOUBLE);
+        if (lk == ScopeAnalysis.PrimitiveKind.CHAR && rk == ScopeAnalysis.PrimitiveKind.CHAR) {
+            return true;
+        }
+        return isNumericKind(lk) && isNumericKind(rk);
     }
 
     private void emitComparison(BabbleParser.BinaryOpContext ctx, boolean branchIfTrue, Label target) {
         ScopeAnalysis.PrimitiveKind lk = scopes.expressionKind(ctx.left);
         ScopeAnalysis.PrimitiveKind rk = scopes.expressionKind(ctx.right);
         int opType = ctx.op.getType();
-        if (lk == ScopeAnalysis.PrimitiveKind.INT && rk == ScopeAnalysis.PrimitiveKind.INT
-                || lk == ScopeAnalysis.PrimitiveKind.BOOL && rk == ScopeAnalysis.PrimitiveKind.BOOL) {
+        if ((lk == ScopeAnalysis.PrimitiveKind.BOOL && rk == ScopeAnalysis.PrimitiveKind.BOOL)
+                || (lk == ScopeAnalysis.PrimitiveKind.CHAR && rk == ScopeAnalysis.PrimitiveKind.CHAR)) {
             emitAs(ctx.left, lk);
             emitAs(ctx.right, rk);
             int jump = switch (opType) {
@@ -4180,9 +4327,31 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitJumpInsn(jump, target);
             return;
         }
-        emitAs(ctx.left, ScopeAnalysis.PrimitiveKind.DOUBLE);
-        emitAs(ctx.right, ScopeAnalysis.PrimitiveKind.DOUBLE);
-        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "compare", "(DD)I", false);
+        ScopeAnalysis.PrimitiveKind common = numericOrder(lk) >= numericOrder(rk) ? lk : rk;
+        if (numericOrder(common) <= 2) {
+            emitAs(ctx.left, common);
+            emitAs(ctx.right, common);
+            int jump = switch (opType) {
+                case BabbleLexer.LT -> branchIfTrue ? IF_ICMPLT : IF_ICMPGE;
+                case BabbleLexer.LTE -> branchIfTrue ? IF_ICMPLE : IF_ICMPGT;
+                case BabbleLexer.EQ -> branchIfTrue ? IF_ICMPEQ : IF_ICMPNE;
+                case BabbleLexer.NEQ -> branchIfTrue ? IF_ICMPNE : IF_ICMPEQ;
+                case BabbleLexer.GTE -> branchIfTrue ? IF_ICMPGE : IF_ICMPLT;
+                case BabbleLexer.GT -> branchIfTrue ? IF_ICMPGT : IF_ICMPLE;
+                default -> throw new IllegalStateException();
+            };
+            mv.visitJumpInsn(jump, target);
+            return;
+        }
+        emitAs(ctx.left, common);
+        emitAs(ctx.right, common);
+        if (common == ScopeAnalysis.PrimitiveKind.LONG) {
+            mv.visitInsn(LCMP);
+        } else if (common == ScopeAnalysis.PrimitiveKind.FLOAT) {
+            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "compare", "(FF)I", false);
+        } else {
+            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "compare", "(DD)I", false);
+        }
         int jump = switch (opType) {
             case BabbleLexer.LT -> branchIfTrue ? IFLT : IFGE;
             case BabbleLexer.LTE -> branchIfTrue ? IFLE : IFGT;
@@ -4331,9 +4500,52 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             return null;
         }
 
+        if (isNumericKind(lk) && isNumericKind(rk)
+                && (opType == BabbleLexer.PLUS || opType == BabbleLexer.MINUS || opType == BabbleLexer.MUL)) {
+            if (resultKind == ScopeAnalysis.PrimitiveKind.INT) {
+                emitAs(ctx.left, ScopeAnalysis.PrimitiveKind.INT);
+                emitAs(ctx.right, ScopeAnalysis.PrimitiveKind.INT);
+                mv.visitInsn(switch (opType) {
+                    case BabbleLexer.PLUS -> IADD;
+                    case BabbleLexer.MINUS -> ISUB;
+                    case BabbleLexer.MUL -> IMUL;
+                    default -> throw new IllegalStateException();
+                });
+                stackKind = ScopeAnalysis.PrimitiveKind.INT;
+                return null;
+            }
+            if (resultKind == ScopeAnalysis.PrimitiveKind.LONG) {
+                emitAs(ctx.left, ScopeAnalysis.PrimitiveKind.LONG);
+                emitAs(ctx.right, ScopeAnalysis.PrimitiveKind.LONG);
+                mv.visitInsn(switch (opType) {
+                    case BabbleLexer.PLUS -> LADD;
+                    case BabbleLexer.MINUS -> LSUB;
+                    case BabbleLexer.MUL -> LMUL;
+                    default -> throw new IllegalStateException();
+                });
+                stackKind = ScopeAnalysis.PrimitiveKind.LONG;
+                return null;
+            }
+        }
+
+        if (resultKind == ScopeAnalysis.PrimitiveKind.FLOAT
+                && isNumericKind(lk) && isNumericKind(rk)
+                && (opType == BabbleLexer.PLUS || opType == BabbleLexer.MINUS || opType == BabbleLexer.MUL || opType == BabbleLexer.DIV)) {
+            emitAs(ctx.left, ScopeAnalysis.PrimitiveKind.FLOAT);
+            emitAs(ctx.right, ScopeAnalysis.PrimitiveKind.FLOAT);
+            mv.visitInsn(switch (opType) {
+                case BabbleLexer.PLUS -> FADD;
+                case BabbleLexer.MINUS -> FSUB;
+                case BabbleLexer.MUL -> FMUL;
+                case BabbleLexer.DIV -> FDIV;
+                default -> throw new IllegalStateException();
+            });
+            stackKind = ScopeAnalysis.PrimitiveKind.FLOAT;
+            return null;
+        }
+
         if (resultKind == ScopeAnalysis.PrimitiveKind.DOUBLE
-                && (lk == ScopeAnalysis.PrimitiveKind.INT || lk == ScopeAnalysis.PrimitiveKind.DOUBLE)
-                && (rk == ScopeAnalysis.PrimitiveKind.INT || rk == ScopeAnalysis.PrimitiveKind.DOUBLE)
+                && isNumericKind(lk) && isNumericKind(rk)
                 && (opType == BabbleLexer.PLUS || opType == BabbleLexer.MINUS || opType == BabbleLexer.MUL || opType == BabbleLexer.DIV)) {
             emitAs(ctx.left, ScopeAnalysis.PrimitiveKind.DOUBLE);
             emitAs(ctx.right, ScopeAnalysis.PrimitiveKind.DOUBLE);
@@ -5124,19 +5336,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitVarInsn(ALOAD, recvLocal);
         }
         mv.visitVarInsn(ALOAD, resObj);
-        if (fieldType == int.class) {
-            unbox(ScopeAnalysis.PrimitiveKind.INT);
-        } else if (fieldType == boolean.class) {
-            unbox(ScopeAnalysis.PrimitiveKind.BOOL);
-        } else if (fieldType == double.class) {
-            mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-            mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-        } else if (fieldType == long.class) {
-            unbox(ScopeAnalysis.PrimitiveKind.INT);
-            mv.visitInsn(I2L);
-        } else if (fieldType == float.class) {
-            unbox(ScopeAnalysis.PrimitiveKind.INT);
-            mv.visitInsn(I2F);
+        ScopeAnalysis.PrimitiveKind fieldKind = javaPrimitiveKind(fieldType);
+        if (fieldKind != ScopeAnalysis.PrimitiveKind.NONE) {
+            unbox(fieldKind);
         } else {
             mv.visitLdcInsn(Type.getType(fieldType));
             mv.visitVarInsn(ALOAD, rtLocal);
@@ -5177,23 +5379,19 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         if (resolved instanceof Byte b) {
             pushInt(mv, b);
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
-            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            stackKind = ScopeAnalysis.PrimitiveKind.BYTE;
         } else if (resolved instanceof Short s) {
             pushInt(mv, s);
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
-            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            stackKind = ScopeAnalysis.PrimitiveKind.SHORT;
         } else if (resolved instanceof Integer i) {
             pushInt(mv, i);
             stackKind = ScopeAnalysis.PrimitiveKind.INT;
         } else if (resolved instanceof Long l) {
             mv.visitLdcInsn(l);
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            stackKind = ScopeAnalysis.PrimitiveKind.LONG;
         } else if (resolved instanceof Float f) {
             mv.visitLdcInsn(f);
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
-            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            stackKind = ScopeAnalysis.PrimitiveKind.FLOAT;
         } else if (resolved instanceof Double d) {
             mv.visitLdcInsn(d);
             stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
@@ -5215,14 +5413,25 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         ScopeAnalysis.PrimitiveKind ok = scopes.expressionKind(ctx.operand);
         ScopeAnalysis.PrimitiveKind rk = scopes.expressionKind(ctx);
-        if (rk == ScopeAnalysis.PrimitiveKind.INT && ok == ScopeAnalysis.PrimitiveKind.INT) {
+        if (rk == ScopeAnalysis.PrimitiveKind.INT && isNumericKind(ok) && numericOrder(ok) <= 2) {
             emitAs(ctx.operand, ScopeAnalysis.PrimitiveKind.INT);
             mv.visitInsn(INEG);
             stackKind = ScopeAnalysis.PrimitiveKind.INT;
             return null;
         }
-        if (rk == ScopeAnalysis.PrimitiveKind.DOUBLE
-                && (ok == ScopeAnalysis.PrimitiveKind.DOUBLE || ok == ScopeAnalysis.PrimitiveKind.INT)) {
+        if (rk == ScopeAnalysis.PrimitiveKind.LONG && isNumericKind(ok) && numericOrder(ok) <= 3) {
+            emitAs(ctx.operand, ScopeAnalysis.PrimitiveKind.LONG);
+            mv.visitInsn(LNEG);
+            stackKind = ScopeAnalysis.PrimitiveKind.LONG;
+            return null;
+        }
+        if (rk == ScopeAnalysis.PrimitiveKind.FLOAT && isNumericKind(ok) && numericOrder(ok) <= 4) {
+            emitAs(ctx.operand, ScopeAnalysis.PrimitiveKind.FLOAT);
+            mv.visitInsn(FNEG);
+            stackKind = ScopeAnalysis.PrimitiveKind.FLOAT;
+            return null;
+        }
+        if (rk == ScopeAnalysis.PrimitiveKind.DOUBLE && isNumericKind(ok)) {
             emitAs(ctx.operand, ScopeAnalysis.PrimitiveKind.DOUBLE);
             mv.visitInsn(DNEG);
             stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
@@ -5289,8 +5498,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         String text = ctx.getText();
         mv.visitLdcInsn(Long.parseLong(text.substring(0, text.length() - 1)));
-        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        stackKind = ScopeAnalysis.PrimitiveKind.LONG;
         return null;
     }
 
@@ -5322,8 +5530,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         String text = ctx.getText();
         mv.visitLdcInsn(Float.parseFloat(text.substring(0, text.length() - 1)));
-        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
-        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        stackKind = ScopeAnalysis.PrimitiveKind.FLOAT;
         return null;
     }
 
@@ -5340,8 +5547,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitCharLiteral(BabbleParser.CharLiteralContext ctx) {
         pushInt(mv, Interpreter.unescapeChar(ctx.CHAR_LIT().getText()));
-        mv.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
-        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        stackKind = ScopeAnalysis.PrimitiveKind.CHAR;
         return null;
     }
 

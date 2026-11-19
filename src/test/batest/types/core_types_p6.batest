@@ -1,0 +1,260 @@
+;; BIP011-P6: Full 8-Primitive Unboxed Lowering (byte, short, int, long, float, double, bool, char)
+
+{{{{{
+;; Unboxed locals, arithmetic, unary negation, widening, and 2-slot long/double parameters
+def mix = (b : byte, s : short, i : int, l : long, f : float, d : double, c : char, flag : bool) : double -> (
+    def nb : int = -b
+    def ns : int = -s
+    def nl : long = -l + 10L
+    def nf : float = -f + 1.5f
+    def sumL : long = l + long(i) + long(b) + long(s) + nl
+    def sumF : float = f + nf + float(i)
+    if flag and c == 'A' then (
+        double(sumL) + double(sumF) + d + double(nb + ns)
+    ) else (
+        0.0
+    )
+)
+println(mix(byte(2), short(3), 4, 100L, 2.5f, 1.0, 'A', true))
+println(mix(byte(2), short(3), 4, 100L, 2.5f, 1.0, 'B', true))
+}}}}}
+20.5
+0.0
+
+{{{{{
+;; Comparisons and truthiness on byte, short, long, float, char
+def b0 : byte = 0
+def b1 : byte = 5
+def s0 : short = 0
+def s1 : short = 7
+def l0 : long = 0L
+def l1 : long = 10000000000L
+def f0 : float = 0.0f
+def f1 : float = 1.5f
+def c0 : char = 'a'
+def c1 : char = 'z'
+
+println(if b0 then ( 1 ) else ( 0 ), if b1 then ( 1 ) else ( 0 ))
+println(if s0 then ( 1 ) else ( 0 ), if s1 then ( 1 ) else ( 0 ))
+println(if l0 then ( 1 ) else ( 0 ), if l1 then ( 1 ) else ( 0 ))
+println(if f0 then ( 1 ) else ( 0 ), if f1 then ( 1 ) else ( 0 ))
+println(b0 < b1, s1 > s0, l1 > 5000000000L, f1 >= 1.5f, c0 < c1, c0 == 'a')
+}}}}}
+01
+01
+01
+01
+truetruetruetruetruetrue
+
+{{{{{
+;; Captured mutable primitive cells (ByteCell, ShortCell, LongCell, FloatCell, CharCell)
+def makeCounters = () -> (
+    def b : byte = 1
+    def s : short = 10
+    def l : long = 100L
+    def f : float = 1.5f
+    def c : char = 'a'
+    def step = () : string -> (
+        b = byte(int(b) + 1)
+        s = short(int(s) + 2)
+        l = l + 10L
+        f = f + 0.5f
+        c = char(int(c) + 1)
+        string(b) + ":" + string(s) + ":" + string(l) + ":" + string(f) + ":" + string(c)
+    )
+    step
+)
+def step = makeCounters()
+println(step())
+println(step())
+}}}}}
+2:12:110:2.0:b
+3:14:120:2.5:c
+
+{{{{{
+;; Class fields of byte, short, long, float, char + $spec + dynamic field/setField + method calls
+def Holder = class (def b : byte, def s : short, def l : long, def f : float, def c : char) (
+    def summary = (extra : long) : string -> (
+        string(this.b) + ":" + string(this.s) + ":" + string(this.l + extra) + ":" + string(this.f) + ":" + string(this.c)
+    )
+)
+def h = Holder(byte(3), short(9), 1000L, 2.25f, 'K')
+println(h.summary(50L))
+h.b = byte(4)
+h.s = short(12)
+h.l = 2000L
+h.f = 3.5f
+h.c = 'Z'
+println(h.summary(1L))
+}}}}}
+3:9:1050:2.25:K
+4:12:2001:3.5:Z
+
+{{{{{
+;; Babble interface bridges and Java functional interface bridges with long/double/float/char
+def Scaler = interface (
+    def scale : (x : long, factor : float) : double
+)
+def MyScaler = class (def base : long) implements Scaler (
+    def scale = (x : long, factor : float) : double -> (
+        double(this.base + x) * double(factor)
+    )
+)
+def runScaler = (sc : Scaler) : double -> (
+    sc.scale(5L, 2.5f)
+)
+println(runScaler(MyScaler(3L)))
+
+def op : java.util.function.LongUnaryOperator = (x : long) : long -> ( x * 3L + 1L )
+println(op.applyAsLong(10L))
+
+def fn : java.util.function.ToLongFunction(string) = (s : string) : long -> ( long(s.length()) * 100L )
+println(fn.applyAsLong("hello"))
+}}}}}
+20.0
+31
+500
+
+{{{{{
+;; Non-null assertion unboxing to byte, short, long, float, char
+def unwrapAll = (b : byte?, s : short?, l : long?, f : float?, c : char?) : string -> (
+    def ub : byte = b!
+    def us : short = s!
+    def ul : long = l!
+    def uf : float = f!
+    def uc : char = c!
+    string(ub) + ":" + string(us) + ":" + string(ul) + ":" + string(uf) + ":" + string(uc)
+)
+println(unwrapAll(byte(1), short(2), 3L, 4.5f, 'Q'))
+}}}}}
+1:2:3:4.5:Q
+
+{{{{{
+;; Captured primitive parameters (ByteCell.of, ShortCell.of, LongCell.of, FloatCell.of, CharCell.of)
+def capParams = (b : byte, s : short, l : long, f : float, c : char) -> (
+    () : string -> ( string(b) + ":" + string(s) + ":" + string(l) + ":" + string(f) + ":" + string(c) )
+)
+println(capParams(byte(1), short(2), 3L, 4.5f, 'Z')())
+}}}}}
+1:2:3:4.5:Z
+
+{{{{{
+;; Read before definition on captured ByteCell
+def run = () : byte -> (
+    def f = () : byte -> ( x )
+    def r = f()
+    def x : byte = 1
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Assign before definition on captured ByteCell
+def run = () : byte -> (
+    def f = () : byte -> ( x = byte(2) )
+    def r = f()
+    def x : byte = 1
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Read before definition on captured ShortCell
+def run = () : short -> (
+    def f = () : short -> ( x )
+    def r = f()
+    def x : short = 1
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Assign before definition on captured ShortCell
+def run = () : short -> (
+    def f = () : short -> ( x = short(2) )
+    def r = f()
+    def x : short = 1
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Read before definition on captured LongCell
+def run = () : long -> (
+    def f = () : long -> ( x )
+    def r = f()
+    def x : long = 1L
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Assign before definition on captured LongCell
+def run = () : long -> (
+    def f = () : long -> ( x = 2L )
+    def r = f()
+    def x : long = 1L
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Read before definition on captured FloatCell
+def run = () : float -> (
+    def f = () : float -> ( x )
+    def r = f()
+    def x : float = 1.0f
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Assign before definition on captured FloatCell
+def run = () : float -> (
+    def f = () : float -> ( x = 2.0f )
+    def r = f()
+    def x : float = 1.0f
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Read before definition on captured CharCell
+def run = () : char -> (
+    def f = () : char -> ( x )
+    def r = f()
+    def x : char = 'a'
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Assign before definition on captured CharCell
+def run = () : char -> (
+    def f = () : char -> ( x = 'b' )
+    def r = f()
+    def x : char = 'a'
+    r
+)
+println(run())
+}}}}}
+Name used before definition : x
+

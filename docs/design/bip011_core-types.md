@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 011 |
 | **Date** | 2026-11-18 |
-| **Status** | Draft (`BIP011-D1`–`D13` decided) |
+| **Status** | Implemented in `RM005` (`BIP011-D1`–`D13`, `BIP011-P1`–`P6`) |
 | **Depends on** | Bytecode compiler, `RM001` primitive lowering & `RM003` JVM/Java interface bridges ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), object model, Java interop & `RM003` `LambdaMetafactory` SAM adapters ([bip002_object-model.md](bip002_object-model.md)), function effects & `RM002` ([bip007_effects.md](bip007_effects.md)), mandatory static typing, nullables & generics ([bip008_static-typing.md](bip008_static-typing.md)), `.batest` coverage harness ([bip009_test-coverage.md](bip009_test-coverage.md)), type-checker architecture ([bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)) |
 | **Scope** | Core scalar types (`byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`), core collection & entry types (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`), Babble-to-Java nullability alignment (`@NotNull`/`@Nullable`/JSpecify, mapped parametric-nullness `java.base` contracts, postfix `e!`, outbound & `RM003` inbound defensive boundary checks), collection invariance & `borrow` covariance, universal call-site type arguments `C(T)(...)`, `Babble.g4` & `Formatter`, `BIP007` built-in effect profiles, and 8-primitive `RM001`/`RM003` bytecode lowering |
 

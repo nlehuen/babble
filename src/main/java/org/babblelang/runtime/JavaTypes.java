@@ -138,6 +138,41 @@ public final class JavaTypes {
         return ((Boolean) value).booleanValue();
     }
 
+    public static byte unboxByte(Object value) {
+        if (value == null) {
+            throw new BabbleException("Type error : expected byte, got null");
+        }
+        return ((Byte) value).byteValue();
+    }
+
+    public static short unboxShort(Object value) {
+        if (value == null) {
+            throw new BabbleException("Type error : expected short, got null");
+        }
+        return ((Short) value).shortValue();
+    }
+
+    public static long unboxLong(Object value) {
+        if (value == null) {
+            throw new BabbleException("Type error : expected long, got null");
+        }
+        return ((Long) value).longValue();
+    }
+
+    public static float unboxFloat(Object value) {
+        if (value == null) {
+            throw new BabbleException("Type error : expected float, got null");
+        }
+        return ((Float) value).floatValue();
+    }
+
+    public static char unboxChar(Object value) {
+        if (value == null) {
+            throw new BabbleException("Type error : expected char, got null");
+        }
+        return ((Character) value).charValue();
+    }
+
     public static boolean isWidening(Class<?> from, Class<?> to) {
         return WIDENINGS.getOrDefault(from, List.of()).contains(to);
     }
