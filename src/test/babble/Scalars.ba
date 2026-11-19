@@ -18,7 +18,7 @@ assert(-9223372036854775808L < 0L)
 assert(d == 1000.0 and 1.5d == 1.5 and 2e-1 == 0.2)
 
 ;; Escapes, in strings and characters
-assert(java.lang.StringBuilder("a\tb").length() == 3 and "\u0041" == "A" and '\n' == '\u000a' and '\'' == '\u0027')
+assert("a\tb".length() == 3 and "\u0041" == "A" and '\n' == '\u000a' and '\'' == '\u0027')
 
 ;; Promotion (JLS 5.6.2) : bytes and shorts make ints, a long a long, a float a float
 def byteSum = b + b
@@ -60,6 +60,6 @@ assert(kind(b) + kind(s) + kind(l) + kind(f) + kind(c) == "byteshortlongfloatcha
 
 ;; Java : long, float and char arguments and results
 assert(java.lang.Math.max(l, 1) == l and java.lang.Math.abs(-g) == g)
-assert(java.lang.Character.isLetter(c) and java.lang.StringBuilder("abc").charAt(1) == 'b')
+assert(java.lang.Character.isLetter(c) and "abc".charAt(1) == 'b')
 def millis: long = java.lang.System.currentTimeMillis()
 assert(millis > 0)

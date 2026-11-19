@@ -26,9 +26,9 @@ println("abc" == "abc", ":", "abc" < "abd", ":", "b" > "a", ":", "a" <= "a", ":"
 true:true:true:true:false
 
 {{{{{
-print("hello".length())
+print("hello".length(), ":", "hello".toUpperCase(), ":", "a-b".replace("-", "+"))
 }}}}}
-Not a scope : "hello"
+5:HELLO:a+b
 
 {{{{{
 print(1 - "a")

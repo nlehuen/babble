@@ -125,8 +125,12 @@ final class MemberTypes {
             }
             return javaMember(array.javaClass(), List.of(), name, false, at);
         }
-        // Numbers, booleans, strings, null, functions, any : nothing has members but objects,
-        // classes, packages and Java values.
+        if (receiver == Type.STRING) {
+            // A string is a java.lang.String, with its methods (BIP011-D5).
+            return javaMember(String.class, List.of(), name, false, at);
+        }
+        // Numbers, booleans, characters, null, functions, any : nothing has members but objects,
+        // strings, classes, packages and Java values.
         checker.warn("Not a scope : " + receiverText, at);
         return Type.ERROR;
     }

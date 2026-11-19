@@ -692,3 +692,9 @@ What each sub-phase (§10.2) implemented, and where it departs from the sections
 * **`char`.** Not a number : no arithmetic (`Not a number : 'a'`), comparisons between `char`s, and `JavaTypes.WIDENINGS` no longer widens `Character`, so a `char` never passes for an `int`, not even returned to a Java SAM (`IntSupplier.getAsInt must return int, got Character`).
 * **Conversions (§4.3).** `ConvertFunction` has the nine conversions, typed by `OperatorTypes.conversion` (`any` in, the scalar out ; `string` takes `any?`). The messages keep the wording of the existing `int` and `double` : `Out of the byte range : 300`, `Not a char : "ab"`, `Not a bool : "yes"`.
 * **Compiled code.** The five new primitives are boxed (`PrimitiveKind.NONE`) until `BIP011-P6`. Static Java calls and field writes accept them : a boxed number goes to a primitive parameter or field through `Number.xValue()`.
+
+### 11.3 `BIP011-P2b` : `string` Methods
+
+* `MemberTypes` types the members of `string` as `java.lang.String`'s, so calls go through `CallSolver`'s Java path, and `LoweringAnalyzer` makes them direct `INVOKEVIRTUAL java/lang/String.*` (it already accepted a `string` receiver). At run time, `Members.isJavaObject` no longer excludes strings ; it excludes every boxed number, `Boolean` and `Character`, so the other scalars stay memberless (`Not a scope : c`).
+* `string` already related to `CharSequence`, `Comparable` and `Serializable` through `JavaTypeBridge`'s projection. Until `BIP011-P3b`, `String` results keep their non-null mapping (`s.trim(): string`).
+* Side effect : `java.util.function.Function((s: string) -> (s.length()))` now infers `Function(string, int)`, where it failed before for want of a member.

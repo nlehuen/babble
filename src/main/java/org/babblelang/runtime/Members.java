@@ -39,8 +39,9 @@ public final class Members {
      * {@code BigInteger}) and characters are Java objects.
      */
     private static boolean isJavaObject(Object target) {
-        return target != null && !(target instanceof Integer) && !(target instanceof Double)
-                && !(target instanceof Boolean) && !(target instanceof String) && !(target instanceof Callable);
+        // Strings are Java's, with their methods ; the other scalars have no members.
+        return target != null && !(target instanceof Number && Values.numericRank(target) >= 0)
+                && !(target instanceof Boolean) && !(target instanceof Character) && !(target instanceof Callable);
     }
 
     /** {@code this.name} */

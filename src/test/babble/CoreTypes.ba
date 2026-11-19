@@ -40,3 +40,13 @@ def maybeName: string? = "ok"
 assert(maybeName! + "!" == "ok!")
 def firstOf = (xs: java.util.List(string)?): string? -> (xs!.get(0))
 assert(firstOf(names) == "c")
+
+;; A string is a java.lang.String, with its methods ; the other scalars have no members
+def padded = "  Babble  "
+def word: string = padded.trim()
+assert(word.toUpperCase() == "BABBLE" and word.length() == 6 and word.charAt(0) == 'B')
+assert("a,b,c".split(",").length == 3 and "ab".repeat(2) == "abab" and "abc".compareTo("abd") < 0)
+def absent: string? = null
+assert(absent?.length() == null)
+def chars: java.lang.CharSequence = word
+assert(chars.length() == 6)

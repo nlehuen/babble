@@ -50,8 +50,9 @@ println(lenOpt, ":", items.get(0), ",", items.get(1), ",", items.get(2))
 
 {{{{{
 def fn = java.util.function.Function((s : string) -> ( s.length() ))
+println(fn.apply("four"))
 }}}}}
-Missing type : cannot infer type arguments for java.util.function.Function
+4
 
 {{{{{
 ;; Generic interface extending generic interface with default substitution
