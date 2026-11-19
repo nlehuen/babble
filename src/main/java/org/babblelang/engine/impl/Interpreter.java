@@ -377,6 +377,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visitTypeApplication(BabbleParser.TypeApplicationContext ctx) {
+        // Box(int?) : type arguments are erased.
+        return visit(ctx.expression());
+    }
+
+    @Override
     public Object visitCoreTypeName(BabbleParser.CoreTypeNameContext ctx) {
         last = ctx;
         return ConvertFunction.of(ctx.getText());
@@ -680,6 +686,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitCall(BabbleParser.CallContext ctx) {
         last = ctx;
+        if (scopes.isTypeApplication(ctx)) {
+            // Box(int) in Box(int)(x) : type arguments are erased.
+            return visit(ctx.expression());
+        }
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpression) {
             return Types.check(superCall(ctx, selector, superExpression), scopes.checkedType(ctx));

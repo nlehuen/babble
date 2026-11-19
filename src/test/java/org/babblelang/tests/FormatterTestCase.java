@@ -334,6 +334,11 @@ public class FormatterTestCase {
     }
 
     @Test
+    public void testTypeApplication() throws Exception {
+        assertFormats("def b = Box(int?)(null)\ndef u = Box(int | string)(\"s\")\n", "def b = Box (int?) (null)\ndef u = Box( int|string )( \"s\" )");
+    }
+
+    @Test
     public void testScalarLiterals() throws Exception {
         assertFormats("def a = -42L + 1.5f * 2e-3d - 'x'\n", "def a=-42L+1.5f*2e-3d-'x'");
     }

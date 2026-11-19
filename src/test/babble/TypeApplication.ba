@@ -1,0 +1,35 @@
+;; Explicit type arguments, C(T)(...) (BIP011-D9) : on generic functions, Babble classes and Java
+;; classes. Names only (Box(int)) parse as a call, which is a type application when the callee is
+;; generic and every argument is a type ; a nullable or a union (Box(int?)) is one in the syntax.
+
+def Box(T) = class (def value: T) ()
+def Pair(A, B) = value class (first: A, second: B) ()
+def id(T) = (x: T): T -> (x)
+
+def empty = Box(int?)(null)
+assert(empty.value == null)
+def five = Box(int)(5)
+assert(five.value + 1 == 6)
+def either = Box(int | string)("hi")
+assert(either.value == "hi")
+def widened = id(double)(1)
+assert(widened == 1.0 and classof(widened) == java.lang.Double)
+def pair = Pair(string, long)("n", 3)
+assert(pair.second == 3L)
+
+;; Java generic classes
+def queue = java.util.ArrayDeque(string)()
+queue.add("first")
+assert(queue.peek() == "first")
+def maybes = java.util.ArrayList(int?)()
+maybes.add(null)
+assert(maybes.size() == 1)
+
+;; In a generic function, its own type parameters
+def boxed(T) = (x: T): Box(T) -> (Box(T)(x))
+assert(boxed("s").value == "s")
+
+;; Curried calls stay calls : the argument is a value
+def add = (x: int) -> ((y: int) -> (x + y))
+def three = 3
+assert(add(three)(4) == 7)

@@ -127,6 +127,35 @@ grammar Babble;
         return _input.LT(2).getType() == ID;
     }
 
+    /**
+     * Whether the parentheses ahead hold type arguments only a type can have : a nullable
+     * {@code ?} or a union {@code |}, as in {@code Box(int?)(null)}. Those with names only,
+     * {@code Box(int)}, parse as a call, which the type checker tells from a type application.
+     */
+    private boolean isTypeApplicationStart() {
+        if (_input.LA(1) != LPAREN) {
+            return false;
+        }
+        int depth = 0;
+        boolean typeOnly = false;
+        for (int i = 1; ; i++) {
+            int t = _input.LA(i);
+            if (t == Token.EOF) {
+                return false;
+            }
+            if (t == LPAREN) {
+                depth++;
+            } else if (t == RPAREN) {
+                depth--;
+                if (depth == 0) {
+                    return typeOnly;
+                }
+            } else if (t == QUESTION || t == PIPE) {
+                typeOnly = true;
+            }
+        }
+    }
+
     private boolean isTargetEffectWord() {
         return isEffectOrAxiomWord(_input.LT(1)) && _input.LT(2).getType() == ID;
     }
@@ -184,6 +213,8 @@ expression:
           | coreTypeKeyword                                   # coreTypeName
           // The non-null assertion : e! is e, failing when it is null. No newline before '!'.
           | expression BANG                                   # nonNullAssertion
+          // Explicit type arguments that only a type can have : Box(int?)(null), f(int | string).
+          | expression {isTypeApplicationStart()}? typeArguments   # typeApplication
           | expression callParameters                         # call
           | block                                             # blockExpression
           | NOT expression                                    # booleanNot

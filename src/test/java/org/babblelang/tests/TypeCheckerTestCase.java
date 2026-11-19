@@ -995,6 +995,24 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testTypeApplication() {
+        assertDiagnostics("def Box(T) = class (def value : T) ()\n"
+                + "def id(T) = (x : T) : T -> ( x )\n"
+                + "def a = Box(int, string)(1)\n"
+                + "def b = Box(int)(\"x\")\n"
+                + "def c : string = id(int?)(1)\n"
+                + "def d = java.util.ArrayList(int)()\n"
+                + "d.add(null)\n"
+                + "def e = java.lang.Comparable(int)\n"
+                + "def f = java.util.HashMap(string)()",
+                "3:9 Wrong number of type arguments : expected 1, got 2",
+                "4:18 Type error : expected int, got string",
+                "5:18 Type error : expected string, got int?",
+                "7:1 No applicable overload of java.util.ArrayList.add for (null)",
+                "9:9 Wrong number of type arguments : expected 2, got 1");
+    }
+
+    @Test
     public void testScalars() {
         assertDiagnostics("def b : byte = 128\n"
                 + "def s : short = 1\n"

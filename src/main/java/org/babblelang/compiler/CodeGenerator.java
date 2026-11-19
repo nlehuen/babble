@@ -2982,6 +2982,12 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitTypeApplication(BabbleParser.TypeApplicationContext ctx) {
+        // Box(int?) : type arguments are erased.
+        return visit(ctx.expression());
+    }
+
+    @Override
     public Void visitCoreTypeName(BabbleParser.CoreTypeNameContext ctx) {
         mv.visitLdcInsn(ctx.getText());
         line(ctx);
@@ -3567,6 +3573,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitCall(BabbleParser.CallContext ctx) {
+        if (scopes.isTypeApplication(ctx)) {
+            // Box(int) in Box(int)(x) : type arguments are erased.
+            return visit(ctx.expression());
+        }
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector && selector.safe != null) {
             Label nonNull = new Label();
             Label end = new Label();

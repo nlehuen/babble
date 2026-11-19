@@ -58,6 +58,13 @@ public class DifferentialTestCase {
                 "def id = (v : any?) : any? -> ( v ) ; def s : any = id(null)!",
                 "null!",
                 "def x = list",
+                // Explicit type arguments, C(T)(...).
+                "def Box(T) = class (def value : T) () ; Box(int, string)(1)",
+                "def Box(T) = class (def value : T) () ; Box(int)(\"x\")",
+                "def Box(T) = class (def value : T) () ; Box(double)(1).value",
+                "def id(T) = (x : T) : T -> ( x ) ; id(int?)(\"x\")",
+                "def f = (x : int) -> ( x ) ; f(int?)(1)",
+                "java.util.ArrayList(int?)().add(null)",
                 // Java nullness : nullable unannotated results, soft @NotNull checked at the boundary.
                 "import(\"org\").babblelang.tests.NullnessFixtures.promised(true)",
                 "import(\"org\").babblelang.tests.NullnessFixtures.Marked.name(true).length()",

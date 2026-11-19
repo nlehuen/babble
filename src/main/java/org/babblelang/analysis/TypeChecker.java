@@ -85,6 +85,10 @@ final class TypeChecker {
     private final Set<Diagnostic> warnings = new TreeSet<>(ORDER);
     private final Map<ParserRuleContext, Integer> widened = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Object> literalValues = new IdentityHashMap<>();
+    /** What a type application ({@code Box(int)} called at once) makes its call construct : {@code Box(int)}. */
+    private final Map<ParserRuleContext, Type> explicitInstances = new IdentityHashMap<>();
+    /** The calls that are type applications, {@code f(int)} in {@code f(int)(x)}, whose arguments are types. */
+    private final Set<BabbleParser.CallContext> typeApplied = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<ParserRuleContext, String> callChecks = new IdentityHashMap<>();
     private final Typer typer = new Typer();
     private final Map<BabbleParser.FunctionLiteralContext, Type> contextualReturnTypes = new IdentityHashMap<>();
@@ -403,6 +407,50 @@ final class TypeChecker {
         return null;
     }
 
+    /** What {@code attempt} gives when it reports nothing ; else null, and its reports are dropped. */
+    <T> T quietly(java.util.function.Supplier<T> attempt) {
+        Set<Diagnostic> before = new TreeSet<>(ORDER);
+        before.addAll(diagnostics);
+        T result = attempt.get();
+        if (diagnostics.size() != before.size() || !diagnostics.equals(before)) {
+            diagnostics.retainAll(before);
+            return null;
+        }
+        return result;
+    }
+
+    /**
+     * Call parameters reread as type arguments, {@code (int, list(string))}, with the original
+     * tokens' positions ; null when they aren't types.
+     */
+    static BabbleParser.TypeArgumentsContext reparseTypeArguments(BabbleParser.CallParametersContext parameters) {
+        List<org.antlr.v4.runtime.Token> tokens = new ArrayList<>();
+        collectTokens(parameters, tokens);
+        org.antlr.v4.runtime.CommonToken eof = new org.antlr.v4.runtime.CommonToken(org.antlr.v4.runtime.Token.EOF);
+        tokens.add(eof);
+        BabbleParser parser = new BabbleParser(new org.antlr.v4.runtime.CommonTokenStream(
+                new org.antlr.v4.runtime.ListTokenSource(tokens)));
+        parser.removeErrorListeners();
+        parser.setErrorHandler(new org.antlr.v4.runtime.BailErrorStrategy());
+        try {
+            BabbleParser.TypeArgumentsContext result = parser.typeArguments();
+            return parser.getCurrentToken().getType() == org.antlr.v4.runtime.Token.EOF ? result : null;
+        } catch (org.antlr.v4.runtime.misc.ParseCancellationException | org.antlr.v4.runtime.RecognitionException e) {
+            return null;
+        }
+    }
+
+    private static void collectTokens(ParseTree tree, List<org.antlr.v4.runtime.Token> tokens) {
+        if (tree instanceof org.antlr.v4.runtime.tree.TerminalNode terminal) {
+            // Copies : the new stream renumbers its tokens.
+            tokens.add(new org.antlr.v4.runtime.CommonToken(terminal.getSymbol()));
+            return;
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            collectTokens(tree.getChild(i), tokens);
+        }
+    }
+
     void warn(String message, ParserRuleContext at) {
         if (!inFile(at)) {
             // In a session, typing a name can lead into an earlier input, reported when it was one.
@@ -515,6 +563,11 @@ final class TypeChecker {
 
     /** Types every expression and block, and resolves every annotation, in source order. */
     void walk(ParseTree tree) {
+        if (tree instanceof BabbleParser.CallParametersContext parameters
+                && parameters.getParent() instanceof BabbleParser.CallContext call && typeApplied.contains(call)) {
+            // Type arguments, f(int) in f(int)(x) : not values.
+            return;
+        }
         if (tree instanceof BabbleParser.TypeContext type) {
             // Only annotations are walked to : implements lists, super qualifiers, and as targets are handled elsewhere.
             if (type.getParent() instanceof BabbleParser.AsExpressionContext asCtx && asCtx.right == type) {
@@ -1169,6 +1222,7 @@ final class TypeChecker {
             contextualReturnTypes.remove(ctx);
             widened.remove(ctx);
             literalValues.remove(ctx);
+            explicitInstances.remove(ctx);
             if (ctx instanceof BabbleParser.DefExpressionContext || ctx instanceof BabbleParser.ParameterDeclarationContext) {
                 declarationTypes.remove(ctx);
             }
@@ -1392,6 +1446,7 @@ final class TypeChecker {
                 case BabbleParser.SuperExpressionContext c -> visitSuperExpression(c, expected, role);
                 case BabbleParser.SelectorContext c -> visitSelector(c, expected, role);
                 case BabbleParser.CallContext c -> visitCall(c, expected, role);
+                case BabbleParser.TypeApplicationContext c -> visitTypeApplication(c, expected, role);
                 case BabbleParser.CoreTypeNameContext c -> visitCoreTypeName(c, expected, role);
                 case BabbleParser.NonNullAssertionContext c -> visitNonNullAssertion(c, expected, role);
                 case BabbleParser.BlockExpressionContext c -> visitBlockExpression(c, expected, role);
@@ -1623,6 +1678,50 @@ final class TypeChecker {
         }
 
         private Type visitCall(BabbleParser.CallContext ctx, Type expected, Role role) {
+            List<Type> typeArguments = typeArgumentsOf(ctx);
+            if (typeArguments != null) {
+                typeApplied.add(ctx);
+                pass.analysis.setTypeApplication(ctx);
+                return applyTypeArguments(ctx, ctx.expression(), typeArguments);
+            }
+            if (ctx.expression() instanceof BabbleParser.CallContext
+                    || ctx.expression() instanceof BabbleParser.TypeApplicationContext) {
+                synth(ctx.expression(), Role.CALLEE);
+            }
+            Type explicit = explicitInstances.get(ctx.expression());
+            if (explicit instanceof Type.Instance instance) {
+                // Box(int)(x) : the constructor's parameters with the class's type arguments.
+                List<Type.TypeVar> vars = annotator.typeVarsOf(instance.node());
+                Map<Type.TypeVar, Type> bindings = new HashMap<>();
+                for (int i = 0; i < vars.size(); i++) {
+                    bindings.put(vars.get(i), instance.typeArguments().get(i));
+                }
+                List<Type.Parameter> parameters = constructorParameters(instance.node());
+                List<Type.Parameter> substituted = new ArrayList<>();
+                for (Type.Parameter parameter : parameters != null ? parameters : List.<Type.Parameter>of()) {
+                    substituted.add(new Type.Parameter(parameter.name(), algebra.substitute(parameter.type(), bindings),
+                            parameter.optional(), parameter.mut(), parameter.borrow(), parameter.explicitBorrow()));
+                }
+                callSolver.bind(substituted, parameterDecls(instance.node()), ctx.callParameters().callParameter(), ctx);
+                for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
+                    synth(argument.expression());
+                }
+                return explicit;
+            }
+            if (explicit != null) {
+                // java.util.ArrayList(string)() : a constructor call of that type.
+                Type result = callSolver.call(synth(ctx.expression(), Role.CALLEE), ctx, explicit, true);
+                for (BabbleParser.CallParameterContext argument : ctx.callParameters().callParameter()) {
+                    synth(argument.expression());
+                }
+                if (result == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                if (!algebra.assignable(result, explicit)) {
+                    reportTypeMismatch(result, explicit, ctx);
+                }
+                return explicit;
+            }
             if (ctx.expression() instanceof BabbleParser.SelectorContext safeSelector && safeSelector.safe != null) {
                 Type callee = typer.selectUninstantiated(safeSelector);
                 types.put(safeSelector, callee == Type.ERROR ? Type.ERROR : Type.nullable(callee));
@@ -1654,6 +1753,118 @@ final class TypeChecker {
                 }
             }
             return result;
+        }
+
+        /** {@code Box(int?)} : explicit type arguments only a type can have (BIP011-D9). */
+        private Type visitTypeApplication(BabbleParser.TypeApplicationContext ctx, Type expected, Role role) {
+            List<Type> arguments = new ArrayList<>();
+            for (BabbleParser.TypeContext type : ctx.typeArguments().type()) {
+                Type argument = annotator.annotation(type, scopeOf(type));
+                if (argument == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                arguments.add(argument);
+            }
+            return applyTypeArguments(ctx, ctx.expression(), arguments);
+        }
+
+        /**
+         * The type arguments of a call that is a type application : {@code f(int)} called at once
+         * ({@code f(int)(x)}), where {@code f} is generic and every argument is a type. Null for an
+         * ordinary call, such as a curried {@code add(a)(b)}.
+         */
+        private List<Type> typeArgumentsOf(BabbleParser.CallContext inner) {
+            if (!(inner.getParent() instanceof BabbleParser.CallContext outer) || outer.expression() != inner) {
+                return null;
+            }
+            List<BabbleParser.CallParameterContext> parameters = inner.callParameters().callParameter();
+            if (parameters.isEmpty() || parameters.stream().anyMatch(p -> p.ID() != null)) {
+                return null;
+            }
+            BabbleParser.TypeArgumentsContext parsed = reparseTypeArguments(inner.callParameters());
+            if (parsed == null) {
+                return null;
+            }
+            Type callee = synth(inner.expression(), Role.CALLEE);
+            if (!isGeneric(callee)) {
+                return null;
+            }
+            ScopeNode scope = scopeOf(inner);
+            return quietly(() -> {
+                List<Type> arguments = new ArrayList<>();
+                for (BabbleParser.TypeContext type : parsed.type()) {
+                    Type argument = annotator.annotation(type, scope);
+                    if (argument == null || argument == Type.ERROR) {
+                        return null;
+                    }
+                    arguments.add(argument);
+                }
+                return arguments;
+            });
+        }
+
+        private boolean isGeneric(Type callee) {
+            return callee instanceof Type.Function fn && !fn.typeParameters().isEmpty()
+                    || callee instanceof Type.ClassValue cv && !cv.node().isInterface() && !annotator.typeVarsOf(cv.node()).isEmpty()
+                    || callee instanceof Type.JavaClassValue jcv && jcv.type().getTypeParameters().length > 0;
+        }
+
+        /**
+         * {@code callee} with explicit type arguments : a generic function instantiated, or a
+         * generic class whose next call constructs that instance type ({@link #explicitInstances}).
+         */
+        private Type applyTypeArguments(ParserRuleContext app, BabbleParser.ExpressionContext calleeExpr, List<Type> arguments) {
+            Type callee = synth(calleeExpr, Role.CALLEE);
+            if (isUnresolved(callee)) {
+                return callee;
+            }
+            if (callee instanceof Type.Function fn && !fn.typeParameters().isEmpty()) {
+                if (!sameArity(fn.typeParameters().size(), arguments, app)) {
+                    return Type.ERROR;
+                }
+                Map<Type.TypeVar, Type> bindings = new HashMap<>();
+                for (int i = 0; i < arguments.size(); i++) {
+                    bindings.put(fn.typeParameters().get(i), arguments.get(i));
+                }
+                Type.Function instance = (Type.Function) algebra.substitute(
+                        new Type.Function(List.of(), fn.parameters(), fn.result(), fn.effects()), bindings);
+                BabbleParser.FunctionLiteralContext literal = functionLiterals.get(fn);
+                if (literal != null) {
+                    functionLiterals.put(instance, literal);
+                }
+                return instance;
+            }
+            if (callee instanceof Type.ClassValue cv && !cv.node().isInterface() && !annotator.typeVarsOf(cv.node()).isEmpty()) {
+                if (!sameArity(annotator.typeVarsOf(cv.node()).size(), arguments, app)) {
+                    return Type.ERROR;
+                }
+                explicitInstances.put(app, new Type.Instance(cv.node(), List.copyOf(arguments)));
+                return callee;
+            }
+            if (callee instanceof Type.JavaClassValue jcv && jcv.type().getTypeParameters().length > 0) {
+                Class<?> java = jcv.type();
+                if (!sameArity(java.getTypeParameters().length, arguments, app)) {
+                    return Type.ERROR;
+                }
+                int bad = JavaTypeBridge.checkJavaTypeArguments(java, arguments, algebra);
+                if (bad >= 0) {
+                    warn("Type error : type argument " + arguments.get(bad) + " does not satisfy bound "
+                            + JavaTypeBridge.typeParameterName(java, bad) + " of " + java.getName(), app);
+                    return Type.ERROR;
+                }
+                explicitInstances.put(app, new Type.JavaInstance(java, List.copyOf(arguments)));
+                return callee;
+            }
+            warn("Wrong number of type arguments : expected 0, got " + arguments.size(), app);
+            return Type.ERROR;
+        }
+
+        private boolean sameArity(int expected, List<Type> arguments, ParserRuleContext at) {
+            if (expected != arguments.size()) {
+                warn("Wrong number of type arguments : expected " + expected + ", got " + arguments.size(), at);
+                return false;
+            }
+            return true;
         }
 
         private boolean isUnshadowedImport(BabbleParser.ExpressionContext expression) {

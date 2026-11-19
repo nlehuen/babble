@@ -2694,7 +2694,13 @@ final class EffectChecker {
                 return evalSelector(sel);
             }
             if (ctx instanceof BabbleParser.CallContext call) {
+                if (pass.analysis.isTypeApplication(call)) {
+                    return eval(call.expression());
+                }
                 return evalCall(call);
+            }
+            if (ctx instanceof BabbleParser.TypeApplicationContext app) {
+                return eval(app.expression());
             }
             if (ctx instanceof BabbleParser.IfExpressionContext ifCtx) {
                 return evalIf(ifCtx);

@@ -426,6 +426,10 @@ def label: Box(string) = Box(21).transform((n) -> ( "v=" + n ))
 def names: java.util.List(string) = java.util.ArrayList()
 ```
 
+Type arguments can also be given explicitly, before the call's : `Box(int?)(null)`,
+`java.util.ArrayDeque(string)()`, `id(double)(1)`. A call whose callee is generic and whose
+arguments are all types is a type application ; a curried call such as `add(a)(b)` stays a call.
+
 The core type names — `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`,
 `list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`, `any` and `void` (the type of `null`, what
 a function returning nothing gives) — are keywords : no definition, parameter or package can take
@@ -700,7 +704,7 @@ Language features :
 - [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md) and [BIP008](docs/design/bip008_static-typing.md)).
 - [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts, and `org.babblelang.effects` host annotations (see [BIP007](docs/design/bip007_effects.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, and the conversions `byte(x)`..`string(x)`.
-- [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` ; `string` methods are `java.lang.String`'s ; Java results nullable unless annotated or known non-null (see [BIP011](docs/design/bip011_core-types.md)).
+- [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` ; `string` methods are `java.lang.String`'s ; Java results nullable unless annotated or known non-null ; explicit type arguments `Box(int?)(null)` (see [BIP011](docs/design/bip011_core-types.md)).
 
 Implementation features :
 

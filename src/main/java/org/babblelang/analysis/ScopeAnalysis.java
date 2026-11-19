@@ -118,6 +118,7 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
     private final ParseTreeProperty<String> isBuiltins = new ParseTreeProperty<>();
     private final ParseTreeProperty<String> nonNullTypes = new ParseTreeProperty<>();
+    private final java.util.Set<ParserRuleContext> typeApplications = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private final java.util.Map<ParserRuleContext, Integer> widenings = new java.util.IdentityHashMap<>();
     private final java.util.Map<ParserRuleContext, Object> literalValues = new java.util.IdentityHashMap<>();
     private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
@@ -294,6 +295,18 @@ public final class ScopeAnalysis {
 
     void setIsBuiltin(BabbleParser.IsExpressionContext ctx, String type) {
         isBuiltins.put(ctx, type);
+    }
+
+    void setTypeApplication(BabbleParser.CallContext ctx) {
+        typeApplications.add(ctx);
+    }
+
+    /**
+     * Whether a call is a type application, {@code Box(int)} in {@code Box(int)(x)} : its
+     * arguments are types, and both backends evaluate it as its callee (type arguments are erased).
+     */
+    public boolean isTypeApplication(BabbleParser.CallContext ctx) {
+        return typeApplications.contains(ctx);
     }
 
     void setNonNullType(BabbleParser.NonNullAssertionContext ctx, String type) {
