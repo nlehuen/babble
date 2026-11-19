@@ -39,7 +39,7 @@ public class ClassofFunction implements Callable {
         if (value instanceof BabbleInterface) {
             throw new BabbleException("classof : an interface has no class");
         }
-        if (value instanceof Namespace || value instanceof JavaPackage) {
+        if (value instanceof JavaPackage) {
             throw new BabbleException("classof : a package has no class");
         }
         if (value instanceof Callable) {

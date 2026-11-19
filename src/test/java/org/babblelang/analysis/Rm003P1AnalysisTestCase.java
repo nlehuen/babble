@@ -283,15 +283,13 @@ public class Rm003P1AnalysisTestCase {
                         + "export def Alias = Priv\n"
                         + "def MutPriv : any = interface ()\n"
                         + "MutPriv = interface ()\n"
-                        + "export def MutAlias = MutPriv\n"
-                        + "export package sub ( def P = class () () )\n")
+                        + "export def MutAlias = MutPriv\n")
                 .put("main.ba", ""
                         + "def m = import(\"mod.ba\")\n"
                         + "def TopC = class () ()\n"
                         + "def TopI = interface ()\n"
                         + "def TopAlias = TopC\n"
                         + "def ReassignedAlias : any = TopC ; ReassignedAlias = TopI\n"
-                        + "package pk ( package nested ( def PkI = interface () ) )\n"
                         + "def Outer = class () () static ( def StC = class () () )\n"
                         + "def f = (x : any?, flag : bool) -> (\n"
                         + "  def LocalC = class () ()\n"
@@ -300,18 +298,17 @@ public class Rm003P1AnalysisTestCase {
                         + "  def InIf = if flag then ( class () () ) else ( class () () )\n"
                         + "  x is TopC\n"           // 0: positive
                         + "  x is (TopAlias)\n"     // 1: positive (parenthesized alias)
-                        + "  x is pk.nested.PkI\n"  // 2: positive
+                        + "  x is TopI\n"           // 2: positive
                         + "  x is m.Exp\n"          // 3: positive
                         + "  x is m.Alias\n"        // 4: positive
-                        + "  x is m.sub.P\n"        // 5: positive
-                        + "  x is m.MutAlias\n"     // 6: negative (reassigned in module)
-                        + "  x is ReassignedAlias\n"// 7: negative (reassigned in same file)
-                        + "  x is LocalC\n"         // 8: negative (inside function)
-                        + "  x is ParenBlockC\n"    // 9: negative (inside BlockExpression)
-                        + "  x is Outer.StC\n"      // 10: negative (inside staticBlock)
-                        + "  x is condT\n"          // 11: negative (if expression)
-                        + "  x is int\n"            // 12: negative (builtin)
-                        + "  x is java.lang.String\n" // 13: negative (Java class)
+                        + "  x is m.MutAlias\n"     // 5: negative (reassigned in module)
+                        + "  x is ReassignedAlias\n"// 6: negative (reassigned in same file)
+                        + "  x is LocalC\n"         // 7: negative (inside function)
+                        + "  x is ParenBlockC\n"    // 8: negative (inside BlockExpression)
+                        + "  x is Outer.StC\n"      // 9: negative (inside staticBlock)
+                        + "  x is condT\n"          // 10: negative (if expression)
+                        + "  x is int\n"            // 11: negative (builtin)
+                        + "  x is java.lang.String\n" // 12: negative (Java class)
                         + ")\n");
 
         Map<String, ModuleInterface> cache = new HashMap<>();
@@ -319,7 +316,7 @@ public class Rm003P1AnalysisTestCase {
 
         BabbleParser.FileContext parsedMain = (BabbleParser.FileContext) analysis.pass().fileScope.owner;
         List<BabbleParser.IsExpressionContext> isList = isExpressions(parsedMain);
-        Assertions.assertEquals(14, isList.size());
+        Assertions.assertEquals(13, isList.size());
 
         Assertions.assertNotNull(analysis.isTarget(isList.get(0)));
         Assertions.assertEquals(ClassShape.Kind.CLASS, analysis.isTarget(isList.get(0)).kind());
@@ -327,9 +324,8 @@ public class Rm003P1AnalysisTestCase {
         Assertions.assertEquals(ClassShape.Kind.INTERFACE, analysis.isTarget(isList.get(2)).kind());
         Assertions.assertEquals("mod.ba#Exp", analysis.isTarget(isList.get(3)).typeId());
         Assertions.assertEquals("mod.ba#Priv", analysis.isTarget(isList.get(4)).typeId());
-        Assertions.assertEquals("mod.ba#P", analysis.isTarget(isList.get(5)).typeId());
 
-        for (int i = 6; i < 14; i++) {
+        for (int i = 5; i < 13; i++) {
             Assertions.assertNull(analysis.isTarget(isList.get(i)), "Expected null IsTarget at index " + i);
         }
 

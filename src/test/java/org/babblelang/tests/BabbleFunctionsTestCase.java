@@ -104,13 +104,11 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         }
         // Rejected before running, so even when it would never run.
         assertRejected("if false then ( return 1 ) ; 2", "return outside of a function", 1);
-        assertRejected("1\npackage p ( return 1 )", "return outside of a function", 2);
         assertRejected("def o = object ( def v = ( return 2 ) )", "return in a class body", 1);
     }
 
     @Test
-    public void testReturnInsidePackageBodyReturnsFromTheFunction() throws Exception {
-        Assertions.assertEquals(4, interpret("def g = () -> ( package p ( return 4 ) ; 3 ) ; g()"));
+    public void testReturnInsideObjectBodyIsRejected() throws Exception {
         // An object body is a constructor : a return there has nothing to return from.
         assertRejected("def g = () -> ( object ( def v = ( return 2 ) ) ; 3 ) ; g()", "return in a class body", 1);
     }

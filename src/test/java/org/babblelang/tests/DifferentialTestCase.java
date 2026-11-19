@@ -33,9 +33,6 @@ public class DifferentialTestCase {
                 "1 + 2 * 3",
                 "2147483647 + 1",
                 "4 / 2",
-                "package p ( def n = 1 ; def inc = () -> ( n += 1 ) ) ; p.inc() ; p.inc()",
-                "package p ( def n = 1 ) ; def id = (v : any) : any -> ( v ) ; id(p).n = 2",
-                "package p ( def n = 1 ) ; def id = (v : any) : any -> ( v ) ; id(p).n += 2",
                 "def x = 1 ; x += 2 ; x *= 2.5 ; x -= 1 ; x /= 2 ; x",
                 "def s = \"a\" ; s += 1 ; s",
                 "def b = (v : any) : any -> ( v ) ; def x : any = b(true) ; x += 1",
@@ -86,8 +83,6 @@ public class DifferentialTestCase {
                 "def It = class (private def n : int) implements java.util.Iterator ( def hasNext = () : bool -> ( this.n > 0 ) ; def next = () : any -> ( this.n = this.n - 1 ; this.n + 1 ) )\n"
                         + "def it = It(3) ; it.forEachRemaining((v) -> ( print(v) ))",
                 "def fac = (n : int) : int -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) ) ; fac(10)",
-                "package p ( def a = 1 ) ; package p ( def b = a + 1 ) ; p.b",
-                "package p ( def a = 1 ) ; package p ( def a = 2 )",
                 "def a = 1 ; def f = () -> ( def b = a ; def a = 2 ; b ) ; f()",
                 "def x : any\nx = x + 1",
                 "def f = (a : int, b = c, c = 1) -> ( b ) ; f(1)",
@@ -97,7 +92,6 @@ public class DifferentialTestCase {
                 "println(\"a\", 1, null, to: STDOUT) ; print(1.5)",
                 // Phase 2 : variables as JVM locals and cells.
                 "def Box = class (def f : () : int) () ; def l = java.util.ArrayList() ; def i = 0 ; while i < 3 then ( def x = i ; l.add(Box(() -> ( x ))) ; i = i + 1 ) ; (l.get(0) as Box).f() + (l.get(2) as Box).f()",
-                "def f = () -> ( def a = 1 ; package p ( def b = a + 1 ) ; p.b ) ; f()",
                 "def f = (a : int, b = () -> ( c ), c = 5) -> ( b() ) ; f(1)",
                 "def f = (a : int, b = c) -> ( b ) ; f(1)",
                 "def c = 7 ; def f = (a : int, b = c, c = 1) -> ( b ) ; f(1)",
@@ -118,7 +112,6 @@ public class DifferentialTestCase {
                 "def Box = class (def fn : (x : int) : int) () ; def fs = java.util.ArrayList() ; fs.add(Box((a : int, b : int = 10) -> ( a + b ))) ; fs.add(Box((a : int) -> ( a * 2 ))) ; fs.add(Box(java.lang.Math.abs))\n"
                         + "fs.add(Box((x : int, y : int = 1, z : int = 2) -> ( x + y + z ))) ; fs.add(Box(object ( def m = (v : int) -> ( v - 1 ) ).m)) ; fs.add(Box((v : int) -> ( v )))\n"
                         + "def i = 0 ; def s = \"\" ; while i < 12 then ( s = s + (fs.get(if i < 6 then ( i ) else ( i - 6 )) as Box).fn(i - 3) + \",\" ; i = i + 1 ) ; s",
-                "def f = (x : int, y = 2) -> ( package p ( def b = x + y ) ; p.b ) ; def i = 0 ; def s = 0 ; while i < 3 then ( s = s + f(i) + f(i, 1) ; i = i + 1 ) ; s",
                 "def call = (h : (a : int, b : int) : int) -> ( h(1, 2) ) ; call((a, b) -> ( b )) + call((a, b, c = 5) -> ( c )) ; call((a) -> ( a ))",
                 "def f = (a : int, b : int) -> ( a ) ; def i = 0 ; while i < 3 then ( f(i, i) ; i = i + 1 ) ; f(1)",
                 "def f = (a : int, b = 2) -> ( a - b ) ; def i = 0 ; def s = 0 ; while i < 5 then ( s = s + f(b: i, a: 10) + f(i) ; i = i + 1 ) ; s",
@@ -128,9 +121,9 @@ public class DifferentialTestCase {
                 "def C = class () ( def m = (x : int) -> ( x ) ; def n = () -> ( this.m() ) ) ; C().n()",
                 "def S = interface ( def k : int ; def d = (x = 1) -> ( x + this.k ) ) ; def A = class (def k : int) implements S () ; def B = class () implements S ( def k = 10 )\n"
                         + "def xs = java.util.ArrayList() ; xs.add(A(1)) ; xs.add(B()) ; xs.add(A(2)) ; def i = 0 ; def s = 0 ; while i < 6 then ( s = s + (xs.get(if i < 3 then ( i ) else ( i - 3 )) as S).d() ; i = i + 1 ) ; s",
-                "def A = class () ( def v = 1 ) ; def B = class () ( def v = () -> ( 2 ) ) ; package p ( def v = 3 ) ; def D = class () () static ( def v = 5 )\n"
-                        + "def vs = java.util.ArrayList() ; vs.add(A()) ; vs.add(B()) ; vs.add(object ( def v = 4 )) ; vs.add(p) ; vs.add(D) ; vs.add(A())\n"
-                        + "def get = (o) -> ( o.v ) ; def i = 0 ; def s = 0 ; while i < 6 then ( def v = get(vs.get(i)) ; s = s + (if v is java.lang.Integer then ( v ) else ( v() )) ; i = i + 1 ) ; s",
+                "def A = class () ( def v = 1 ) ; def B = class () ( def v = () -> ( 2 ) ) ; def D = class () () static ( def v = 5 )\n"
+                        + "def vs = java.util.ArrayList() ; vs.add(A()) ; vs.add(B()) ; vs.add(object ( def v = 4 )) ; vs.add(D) ; vs.add(A())\n"
+                        + "def get = (o) -> ( o.v ) ; def i = 0 ; def s = 0 ; while i < 5 then ( def v = get(vs.get(i)) ; s = s + (if v is java.lang.Integer then ( v ) else ( v() )) ; i = i + 1 ) ; s",
                 "def peek = (o) -> ( o.b ) ; def C = class (early : bool) ( def a = if early then ( peek(this) ) else ( 0 ) ; def b = 1 ) ; peek(C(false)) + peek(C(false)) ; C(true)",
                 "def A = class () ( def x = 1 ) ; def B = class () ( private def x = 2 ) ; def get = (o : any) -> ( o.x ) ; get(A()) + get(A()) ; get(B())",
                 "def get = (o : any) -> ( o.x ) ; get(object ( def x = 1 )) ; get(1)",

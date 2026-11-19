@@ -9,10 +9,8 @@ export def ExportCls = class (def n : int) (
     private def priv = (a : int) -> ( a + this.n )
     def pub = (a : int) : int -> ( this.priv(a) )
 )
-export package ModPkg (
-    def IMod = interface (
-        def id : () : int
-    )
+export def IMod = interface (
+    def id : () : int
 )
 export def ModWrap(T) = class (def v : T) ()
 export def x = 10
@@ -182,16 +180,10 @@ def badInjNull = (f : pure injective (x : int) : null) : int -> ( 1 )
 injective requires at least one parameter, no mut, and a non-null return type
 
 {{{{{
-;; Type.toString variants: JavaArray, Package, Module, JavaPackage, JavaClassValue, describeAgainst
+;; Type.toString variants: JavaArray, Module, JavaPackage, JavaClassValue, describeAgainst
 def e1 : int = java.util.regex.Pattern.compile(",").split("a,b")
 }}}}}
 Type error : expected int, got string[]
-
-{{{{{
-package P ( def k = 1 )
-def e2 : int = P
-}}}}}
-Type error : expected int, got package P
 
 {{{{{
 def m = import("ce_mod_a.ba")
@@ -218,7 +210,7 @@ def expectedFn : pure (borrow a : Box, b : Box) : int = mutFn
 Type error : expected pure (borrow a : Box, b : Box) : int, got hermetic (mut a : Box, b : Box) : int
 
 {{{{{
-;; TypeChecks: nested Java interface, invalid Java parent, package interface, multi-arg checkJavaArity, super errors, module exports
+;; TypeChecks: nested Java interface, invalid Java parent, multi-arg checkJavaArity, super errors, module exports
 def EntryImpl = class (def k : java.lang.Object, def v : java.lang.Object) implements java.util.Map.Entry(java.lang.Object, java.lang.Object) (
     def getKey = () -> ( this.k )
     def getValue = () -> ( this.v )
@@ -229,10 +221,8 @@ def EntryImpl = class (def k : java.lang.Object, def v : java.lang.Object) imple
     )
 )
 def I1 = interface ( def a : () : int )
-package Pkg (
-    def IPkg = interface ( def b : () : int )
-)
-def C1 = class () implements I1, Pkg.IPkg (
+def I2 = interface ( def b : () : int )
+def C1 = class () implements I1, I2 (
     def a = () : int -> ( 1 )
     def b = () : int -> ( 2 )
 )

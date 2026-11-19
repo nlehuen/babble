@@ -21,13 +21,8 @@ import java.util.Set;
 final class Resolver {
     /** Scopes compiled into a method of their own. */
     private static final Set<ScopeNode.Kind> METHODS = EnumSet.of(ScopeNode.Kind.FILE, ScopeNode.Kind.FUNCTION, ScopeNode.Kind.CLASS_BODY);
-    /** Scopes whose blocks share their representation. */
-    private static final Set<ScopeNode.Kind> ROOTS = EnumSet.of(ScopeNode.Kind.FILE, ScopeNode.Kind.PACKAGE, ScopeNode.Kind.FUNCTION,
-            ScopeNode.Kind.CLASS_BODY, ScopeNode.Kind.STATIC_BODY, ScopeNode.Kind.INTERFACE_BODY);
-
     private final BlockScopes pass;
     private final Resolution resolution = new Resolution();
-    private final Set<ScopeNode> namespaceRoots = new HashSet<>();
     private final Map<ScopeNode, Map<String, Resolution.Variable>> variables = new LinkedHashMap<>();
 
     Resolver(BlockScopes pass) {
@@ -35,7 +30,6 @@ final class Resolver {
     }
 
     Resolution run() {
-        findNamespaceScopes();
         for (ScopeNode scope : pass.scopeNodes.values()) {
             if (isNamespace(scope)) {
                 resolution.namespaceScopes.add(scope.owner);
@@ -75,14 +69,6 @@ final class Resolver {
 
     // ---------------------------------------------------------------- representation
 
-    private static ScopeNode root(ScopeNode scope) {
-        ScopeNode s = scope;
-        while (!ROOTS.contains(s.kind)) {
-            s = s.parent;
-        }
-        return s;
-    }
-
     private static ScopeNode method(ScopeNode scope) {
         ScopeNode s = scope;
         while (!METHODS.contains(s.kind)) {
@@ -91,28 +77,8 @@ final class Resolver {
         return s;
     }
 
-    /**
-     * A package lives in the namespace of the scope it is evaluated in. Where that scope
-     * would otherwise be a frame, its whole root keeps namespaces, as in phase 1.
-     */
-    private void findNamespaceScopes() {
-        for (BabbleParser.PackageExpressionContext pkg : pass.packages) {
-            ScopeNode landing = pass.packageScopes.get(pkg);
-            while (landing.kind == ScopeNode.Kind.BLOCK && landing.declared.isEmpty()) {
-                landing = landing.parent;
-            }
-            if (landing.kind != ScopeNode.Kind.FILE && landing.kind != ScopeNode.Kind.PACKAGE) {
-                namespaceRoots.add(root(landing));
-            }
-        }
-    }
-
     private boolean isNamespace(ScopeNode scope) {
-        return switch (scope.kind) {
-            case FILE, PACKAGE, INTERFACE_BODY -> true;
-            case FUNCTION, CLASS_BODY, STATIC_BODY -> namespaceRoots.contains(scope);
-            case BLOCK -> namespaceRoots.contains(root(scope));
-        };
+        return scope.kind == ScopeNode.Kind.FILE || scope.kind == ScopeNode.Kind.INTERFACE_BODY;
     }
 
     private void declareVariables(ScopeNode scope) {
@@ -153,7 +119,7 @@ final class Resolver {
                     resolution.bindings.put(occurrence, variable);
                     return;
                 }
-            } else if (s.names.containsKey(name) || s.packages.containsKey(name)
+            } else if (s.names.containsKey(name)
                     || name.equals("this") && (s.kind == ScopeNode.Kind.CLASS_BODY || s.kind == ScopeNode.Kind.STATIC_BODY
                     || s.kind == ScopeNode.Kind.FUNCTION && s.memberOf != null)
                     || name.equals("$recurse") && s.kind == ScopeNode.Kind.FUNCTION) {

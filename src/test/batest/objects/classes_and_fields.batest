@@ -72,18 +72,6 @@ b.get = b.get
 Cannot assign method : get
 
 {{{{{
-;; Class body containing a package uses Namespace-backed storage
-def Host = class (def x : int) (
-    package inner (
-        def factor = 3
-    )
-    def scaled = () : int -> ( this.x * inner.factor )
-)
-println(Host(4).scaled())
-}}}}}
-12
-
-{{{{{
 ;; 'this' outside of a class, interface, or object fails
 print(this)
 }}}}}

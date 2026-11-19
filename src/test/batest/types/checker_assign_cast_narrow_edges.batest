@@ -192,13 +192,6 @@ A() < B()
 Not comparable : A() and B()
 
 {{{{{
-;; Assignment & compound assignment member errors
-package p ( def x = 1 )
-p.x = 2
-}}}}}
-Cannot assign to a package member : x
-
-{{{{{
 (5).x = 1
 }}}}}
 Not a scope : (5)

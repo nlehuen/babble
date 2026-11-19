@@ -1,4 +1,4 @@
-;; Virtual modules: export def, export package, nested imports, caching of module init, and export axioms
+;; Virtual modules: export def, nested imports, caching of module init, and export axioms
 
 ========== math.ba ==========
 def loads = 0
@@ -9,15 +9,13 @@ export def add = (a : int, b : int) : int -> ( a + b )
 export def Box = class (def x : int) (
     def get = () : int -> ( this.x )
 )
-export package ops (
-    def mul = (a : int, b : int) : int -> ( a * b )
-)
+export def mul = (a : int, b : int) : int -> ( a * b )
 export def hits = () : int -> ( loads )
 bump()
 
 ========== wrap.ba ==========
 def m = import("math.ba")
-export def sumAndMul = (a : int, b : int) : int -> ( m.add(a, b) + m.ops.mul(a, b) )
+export def sumAndMul = (a : int, b : int) : int -> ( m.add(a, b) + m.mul(a, b) )
 export axiom pure deterministic nothrow java.lang.Math.max
 
 ========== sub/deep.ba ==========
@@ -40,7 +38,7 @@ def m = import("math.ba")
 def m2 = import("math.ba")
 def w = import("wrap.ba")
 def b = m.Box(7)
-println(m.add(2, 3), ":", m.ops.mul(2, 3), ":", b.get(), ":", m.pi)
+println(m.add(2, 3), ":", m.mul(2, 3), ":", b.get(), ":", m.pi)
 println(w.sumAndMul(3, 4), ":", m.hits(), ":", same(m, m2))
 }}}}}
 5:6:7:3.0
@@ -61,13 +59,6 @@ def m = import("math.ba")
 print(m.secret)
 }}}}}
 No such export : secret in math.ba
-
-{{{{{
-;; Exported package member cannot be mutated from importer
-def m = import("math.ba")
-m.ops.mul = (a : int, b : int) : int -> ( 0 )
-}}}}}
-Cannot assign to a package member : mul
 
 {{{{{
 ;; Dynamic Module receiver exercises Bootstrap.SelectCache Module path and Module.getMember

@@ -16,21 +16,8 @@ public class Namespace implements Scope<Object> {
         this.parent = parent;
     }
 
-    public Namespace enter(String name) {
-        Namespace newNamespace;
-        if (name != null) {
-            Slot<Object> slot = locals.get(name);
-            if (slot != null) {
-                newNamespace = (Namespace) slot.get();
-            } else {
-                slot = define(name, true);
-                newNamespace = new Namespace(this);
-                slot.set(newNamespace);
-            }
-        } else {
-            newNamespace = new Namespace(this);
-        }
-        return newNamespace;
+    public Namespace enter() {
+        return new Namespace(this);
     }
 
     /**
@@ -41,16 +28,6 @@ public class Namespace implements Scope<Object> {
         Namespace child = new Namespace(this);
         child.declare(declared);
         return child;
-    }
-
-    /**
-     * Enters, or reopens, the package {@code name}, and declares the names its body
-     * defines.
-     */
-    public Namespace enterPackage(String name, String[] declared) {
-        Namespace namespace = enter(name);
-        namespace.declare(declared);
-        return namespace;
     }
 
     public Slot<Object> define(String key, boolean isFinal) {

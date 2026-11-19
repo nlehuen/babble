@@ -430,7 +430,7 @@ public final class ScopeAnalysis {
 
     /**
      * The names defined in the scope that {@code owner} opens, which is the file, a
-     * function literal, a package or a block. Parameters are not included. Empty for a
+     * function literal or a block. Parameters are not included. Empty for a
      * construct that opens no scope of its own, and for class and interface bodies,
      * whose defs are members rather than names.
      */
@@ -441,7 +441,7 @@ public final class ScopeAnalysis {
 
     /**
      * Whether a block needs a namespace of its own : it is a scope, rather than the body
-     * of a function, package, class or object, and it defines names. A block that defines
+     * of a function, class or object, and it defines names. A block that defines
      * nothing behaves the same without one.
      */
     public boolean opensScope(BabbleParser.BlockContext block) {

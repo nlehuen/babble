@@ -290,11 +290,6 @@ final class TypeChecker {
         return inferredDefs;
     }
 
-    /** The package expressions a package type of this file stands for, or null for another file's. */
-    List<BabbleParser.PackageExpressionContext> localPackageDeclarations(Type.Package pkg) {
-        return members.localPackageDeclarations(pkg);
-    }
-
     TypedModuleSummary summary() {
         return builtSummary;
     }
@@ -543,8 +538,7 @@ final class TypeChecker {
         } else if (tree instanceof BabbleParser.BlockContext block
                 && (block.getParent() instanceof BabbleParser.ClassExpressionContext
                 || block.getParent() instanceof BabbleParser.InterfaceExpressionContext
-                || block.getParent() instanceof BabbleParser.ObjectExpressionContext
-                || block.getParent() instanceof BabbleParser.PackageExpressionContext)) {
+                || block.getParent() instanceof BabbleParser.ObjectExpressionContext)) {
             stmt(block);
         } else if (tree instanceof BabbleParser.ExpressionContext || tree instanceof BabbleParser.BlockContext) {
             synth((ParserRuleContext) tree);
@@ -626,9 +620,8 @@ final class TypeChecker {
     }
 
     /**
-     * What a name refers to from a scope : a def or parameter declaration, the list of
-     * package expressions of that name, or null for a name the analysis doesn't know (the
-     * script's bindings and the implicits).
+     * What a name refers to from a scope : a def or parameter declaration, or null for a
+     * name the analysis doesn't know (the script's bindings and the implicits).
      */
     static Object resolveName(ParserRuleContext occurrence, String name, ScopeNode scope) {
         for (ScopeNode s = scope; s != null; s = s.parent) {
@@ -636,10 +629,6 @@ final class TypeChecker {
             if (declaration != null && !(occurrence != null && declaration instanceof BabbleParser.ParameterDeclarationContext parameter
                     && notBoundYet(occurrence, s, parameter))) {
                 return declaration;
-            }
-            List<BabbleParser.PackageExpressionContext> packages = s.packages.get(name);
-            if (packages != null) {
-                return packages;
             }
         }
         return null;
@@ -895,24 +884,7 @@ final class TypeChecker {
     }
 
     boolean isExported(BabbleParser.DefExpressionContext def) {
-        if (def == null || !inFile(def)) {
-            return false;
-        }
-        if (def.EXPORT() != null) {
-            return true;
-        }
-        BabbleParser.PackageExpressionContext outermost = null;
-        for (ParserRuleContext p = def.getParent(); p != null; p = p.getParent()) {
-            if (p instanceof BabbleParser.PackageExpressionContext pkg) {
-                outermost = pkg;
-            } else if (p instanceof BabbleParser.FunctionLiteralContext
-                    || p instanceof BabbleParser.ClassExpressionContext
-                    || p instanceof BabbleParser.InterfaceExpressionContext
-                    || p instanceof BabbleParser.ObjectExpressionContext) {
-                return false;
-            }
-        }
-        return outermost != null && pass.analysis.exportsName(outermost.name.getText());
+        return def != null && inFile(def) && def.EXPORT() != null;
     }
 
     private static boolean implementsInterfaceMethod(TypeNode node, String name) {
@@ -1383,7 +1355,6 @@ final class TypeChecker {
     private final class Typer {
         Type typeOf(ParserRuleContext ctx, Type expected, Role role) {
             return switch (ctx) {
-                case BabbleParser.PackageExpressionContext c -> visitPackageExpression(c, expected, role);
                 case BabbleParser.IfExpressionContext c -> visitIfExpression(c, expected, role);
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
@@ -1419,10 +1390,6 @@ final class TypeChecker {
                     yield last;
                 }
             };
-        }
-
-        private Type visitPackageExpression(BabbleParser.PackageExpressionContext ctx, Type expected, Role role) {
-            return Type.NULL;
         }
 
         private Type visitIfExpression(BabbleParser.IfExpressionContext ctx, Type expected, Role role) {
@@ -1573,11 +1540,6 @@ final class TypeChecker {
                 if (resolved instanceof ParserRuleContext declaration) {
                     Type narrowed = narrowing.narrowedType(declaration);
                     return narrowed != null ? narrowed : typeOfDeclaration(declaration);
-                }
-                if (resolved instanceof List<?> packages) {
-                    @SuppressWarnings("unchecked")
-                    List<BabbleParser.PackageExpressionContext> list = (List<BabbleParser.PackageExpressionContext>) packages;
-                    return members.localPackage(name, list);
                 }
                 return operators.implicitType(name);
             }

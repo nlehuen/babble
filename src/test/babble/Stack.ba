@@ -1,78 +1,75 @@
 ;;(
     Implementation of a simple LIFO stack
 ;;)
-package stack (
-    def Node(T) = class (def value: T, def next: Node(T)?) ()
+def Node(T) = class (def value: T, def next: Node(T)?) ()
 
-    def Stack(T) = class () (
-        def size = 0
-        def head: Node(T)? = null
+def Stack(T) = class () (
+    def size = 0
+    def head: Node(T)? = null
 
-        def push = mut (a: T) -> (
-            this.size = this.size + 1
-            this.head = Node(a, this.head)
+    def push = mut (a: T) -> (
+        this.size = this.size + 1
+        this.head = Node(a, this.head)
+    )
+
+    def first = (): T? -> (
+        def head = this.head
+        if head == null then (
+            null
+        ) else (
+            head.value
         )
+    )
 
-        def first = (): T? -> (
-            def head = this.head
-            if head == null then (
-                null
-            ) else (
-                head.value
-            )
-        )
-
-        def pop = mut (): T? -> (
-            def head = this.head
-            if head == null then (
-                null
-            ) else (
-                def result = head.value
-                this.head = head.next
-                this.size = this.size - 1
-                result
-            )
-        )
-
-        ;;(
-            A recursive method : "recurse" evaluates to the method bound to the
-            receiver, so that "this" still designates it in the recursive call.
-        ;;)
-        def clear = () -> (
-            if this.head == null then (
-                this.size
-            ) else (
-                this.pop()
-                recurse()
-            )
-        )
-
-        def join = (sep = " ") -> (
-            def current = this.head
-            def result = ""
-            def first = true
-
-            while current then (
-                if first then (
-                    first = false
-                ) else (
-                    result = result + sep
-                )
-
-                result = result + current.value
-                current = current.next
-            )
-
+    def pop = mut (): T? -> (
+        def head = this.head
+        if head == null then (
+            null
+        ) else (
+            def result = head.value
+            this.head = head.next
+            this.size = this.size - 1
             result
         )
     )
 
-    ;; keeps stack.create() working
-    def create(T) = (): Stack(T) -> (Stack())
+    ;;(
+        A recursive method : "recurse" evaluates to the method bound to the
+        receiver, so that "this" still designates it in the recursive call.
+    ;;)
+    def clear = () -> (
+        if this.head == null then (
+            this.size
+        ) else (
+            this.pop()
+            recurse()
+        )
+    )
+
+    def join = (sep = " ") -> (
+        def current = this.head
+        def result = ""
+        def first = true
+
+        while current then (
+            if first then (
+                first = false
+            ) else (
+                result = result + sep
+            )
+
+            result = result + current.value
+            current = current.next
+        )
+
+        result
+    )
 )
 
+def create(T) = (): Stack(T) -> (Stack())
+
 def test = () -> (
-    def l: stack.Stack(string) = stack.create()
+    def l: Stack(string) = create()
     assert(l.size == 0)
     l.push("world")
     assert(l.size == 1)
@@ -89,7 +86,7 @@ def test = () -> (
 test()
 
 def testRecursiveMethod = () -> (
-    def l: stack.Stack(string) = stack.Stack()
+    def l: Stack(string) = Stack()
     l.push("c")
     l.push("b")
     l.push("a")

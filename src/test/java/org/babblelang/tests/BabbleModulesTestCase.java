@@ -153,8 +153,6 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         for (String script : new String[]{
                 "def f = () -> ( export def x = 1 )",
                 "if true then ( export def x = 1 )",
-                "package p ( export def x = 1 )",
-                "package p ( export package q ( ) )",
                 "def C = class () ( export def x = 1 )"}) {
             String message = failure(script);
             Assertions.assertTrue(message.contains("export only applies to the top-level definitions of a file"), message);
@@ -162,10 +160,10 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     }
 
     @Test
-    public void exportedPackagesAndClasses() throws Exception {
-        file("lib.ba", "export package geo ( def Point = value class (x : int, y : int) () ; def zero = Point(0, 0) )\n"
+    public void exportedClasses() throws Exception {
+        file("lib.ba", "export def Point = value class (x : int, y : int) () ; export def zero = Point(0, 0)\n"
                 + "export def Counter = class () ( def n = 0 ; def next = () -> ( this.n = this.n + 1 ) ) static ( def start = () -> ( this() ) )");
-        Assertions.assertEquals(true, run("def lib = import(\"lib.ba\") ; lib.geo.zero == lib.geo.Point(0, 0)"));
+        Assertions.assertEquals(true, run("def lib = import(\"lib.ba\") ; lib.zero == lib.Point(0, 0)"));
         Assertions.assertEquals(2, run("def Counter = import(\"lib.ba\").Counter ; def c = Counter.start() ; c.next() ; c.next()"));
     }
 
@@ -189,15 +187,15 @@ public class BabbleModulesTestCase extends BabbleTestBase {
 
     @Test
     public void typesFromModulesAreChecked() throws Exception {
-        file("lib.ba", "export def Circle = class (def r : int) ()\nexport package geo ( def Point = value class (x : int, y : int) () )");
+        file("lib.ba", "export def Circle = class (def r : int) ()");
         ScriptEngine engine = newEngine();
         ScriptContext context = new SimpleScriptContext();
         context.setAttribute(ScriptEngine.FILENAME, "main.ba", ScriptContext.ENGINE_SCOPE);
         context.setErrorWriter(errors);
         Object result = engine.eval("def lib = import(\"lib.ba\") ; def Circle = lib.Circle\n"
-                + "def a : lib.Circle = Circle(1) ; def b : Circle = lib.Circle(2) ; def p : lib.geo.Point = lib.geo.Point(1, 2)\n"
-                + "def sum = (x : Circle, y : lib.Circle) : int -> ( x.r + y.r ) ; sum(a, b) + p.x", context);
-        Assertions.assertEquals(4, result);
+                + "def a : lib.Circle = Circle(1) ; def b : Circle = lib.Circle(2)\n"
+                + "def sum = (x : Circle, y : lib.Circle) : int -> ( x.r + y.r ) ; sum(a, b)", context);
+        Assertions.assertEquals(3, result);
         Assertions.assertEquals("", errors.toString());
         // The types the module declares for itself are still enforced.
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> engine.eval("import(\"lib.ba\").Circle(\"wide\")", context));
@@ -298,16 +296,14 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     }
 
     @Test
-    public void reExportsAndExportedPackagesHoldInterfaces() throws Exception {
+    public void reExportsHoldInterfaces() throws Exception {
         file("shapes.ba", SHAPES);
         file("lib/all.ba", "export def Shape = import(\"../shapes.ba\").Shape\n"
-                + "export def shapes = import(\"../shapes.ba\")\n"
-                + "export package geo ( def Solid = interface ( def volume : () : double ) )");
-        Assertions.assertEquals(8.0, run("def all = import(\"lib/all.ba\")\n"
+                + "export def shapes = import(\"../shapes.ba\")");
+        Assertions.assertEquals(3.0, run("def all = import(\"lib/all.ba\")\n"
                 + "def A = class () implements all.Shape ( def area = () : double -> ( 1 ) )\n"
                 + "def B = class () implements all.shapes.Shape ( def area = () : double -> ( 2 ) )\n"
-                + "def C = class () implements all.geo.Solid ( def volume = () : double -> ( 5 ) )\n"
-                + "1.0 * A().area() + B().area() + C().volume()"));
+                + "1.0 * A().area() + B().area()"));
     }
 
     @Test
@@ -443,8 +439,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     private static final String LIB = "export def half = (n : int) : double -> ( n / 2 )\n"
             + "export def Circle = class (def r : int) ( def area = () : double -> ( 3.14 * this.r * this.r ) )\n"
             + "export def Square = class (def side : int) ()\n"
-            + "export def count = 1\n"
-            + "export package geo ( def Point = value class (x : int, y : int) () )\n";
+            + "export def count = 1\n";
 
     @Test
     public void exportsHaveTheirTypes() throws Exception {
@@ -481,17 +476,15 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         Assertions.assertEquals(java.util.List.of(
                 "main.ba:3:22 Type error : expected Circle, got Square",
                 "main.ba:4:18 Type error : expected Circle, got int",
-                "main.ba:5:25 Type error : expected Point, got Circle",
-                "main.ba:6:9 Unknown type : lib.Nope",
-                "main.ba:7:9 Unknown type : lib.count"),
+                "main.ba:5:9 Unknown type : lib.Nope",
+                "main.ba:6:9 Unknown type : lib.count"),
                 typeErrors("def lib = import(\"lib.ba\")\n"
                         + "def Circle = lib.Circle\n"
                         + "def a : lib.Circle = lib.Square(1)\n"
                         + "def b : Circle = 1\n"
-                        + "def p : lib.geo.Point = Circle(1)\n"
                         + "def x : lib.Nope = 1\n"
                         + "def y : lib.count = 1\n"
-                        + "def ok : lib.Circle = Circle(2) ; def pt : lib.geo.Point = lib.geo.Point(1, 2)"));
+                        + "def ok : lib.Circle = Circle(2)"));
     }
 
     @Test

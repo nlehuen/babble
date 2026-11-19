@@ -282,12 +282,6 @@ final class TypeAnnotations {
             }
             return null;
         }
-        if (resolved instanceof List<?> packages) {
-            @SuppressWarnings("unchecked")
-            List<BabbleParser.PackageExpressionContext> list = (List<BabbleParser.PackageExpressionContext>) packages;
-            TypeNode node = nodeInPackages(list, path, 1);
-            return node != null ? instantiateBabbleType(node, type, scope, allowRaw) : null;
-        }
         if (resolved == null && (path.get(0).equals("java") || path.get(0).equals("javax"))) {
             Class<?> java = JavaTypeBridge.loadClass(String.join(".", path));
             return java != null ? instantiateJavaType(java, type, scope, allowRaw) : null;
@@ -419,8 +413,6 @@ final class TypeAnnotations {
                     return Type.ERROR;
                 }
                 type = MemberTypes.exportType(module.module(), path.get(i));
-            } else if (type instanceof Type.Package pkg) {
-                type = checker.members().packageMember(pkg, path.get(i));
             } else {
                 return null;
             }
@@ -436,24 +428,6 @@ final class TypeAnnotations {
             return checker.pass().typeNodes.get(value);
         }
         return null;
-    }
-
-    private TypeNode nodeInPackages(List<BabbleParser.PackageExpressionContext> packages, List<String> path, int index) {
-        if (index >= path.size()) {
-            return null;
-        }
-        List<BabbleParser.PackageExpressionContext> nested = new ArrayList<>();
-        for (BabbleParser.PackageExpressionContext pkg : packages) {
-            for (BabbleParser.ExpressionContext statement : pkg.packageBlock.expression()) {
-                if (statement instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(path.get(index))) {
-                    return index == path.size() - 1 ? classNode(def.value) : null;
-                }
-                if (statement instanceof BabbleParser.PackageExpressionContext inner && inner.name.getText().equals(path.get(index))) {
-                    nested.add(inner);
-                }
-            }
-        }
-        return nested.isEmpty() ? null : nodeInPackages(nested, path, index + 1);
     }
 
     /** The literal argument of {@code import("…")}, or a subpackage selected from it, or null. */

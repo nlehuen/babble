@@ -124,16 +124,9 @@ public class ResolverTestCase {
     }
 
     @Test
-    public void testFileAndPackageNamesAreDynamic() {
+    public void testFileNamesAreDynamic() {
         Assertions.assertEquals(List.of("x DYNAMIC", "x DYNAMIC", "y DYNAMIC"),
-                bindings("def x = 1 ; package p ( def y = x ; def f = () -> ( x + y ) )"));
-    }
-
-    @Test
-    public void testAPackageInAFunctionKeepsItsNamespace() {
-        // The function keeps a namespace for the package to live in, and its names stay dynamic.
-        Assertions.assertEquals(List.of("a DYNAMIC", "p DYNAMIC"),
-                bindings("def f = () -> ( def a = 1 ; package p ( def b = a ) ; p )"));
+                bindings("def x = 1 ; def y = x ; def f = () -> ( x + y )"));
     }
 
     @Test

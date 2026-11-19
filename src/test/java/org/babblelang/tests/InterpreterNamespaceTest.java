@@ -46,11 +46,6 @@ public class InterpreterNamespaceTest {
     }
 
     @Test
-    public void testPackageBodyFailureRestoresNamespace() {
-        assertNamespaceRestored("package p ( nosuchname )");
-    }
-
-    @Test
     public void testObjectBodyFailureRestoresNamespace() {
         assertNamespaceRestored("def o = object ( nosuchname )");
     }

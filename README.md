@@ -32,54 +32,51 @@ What does it look like ?
     comments
 ;;)
 
-;; a package is just a namespace
-package test1 (
-    def add = (a: int, b: int) -> (    ;;
-        a + b                          ;; function literal
-    )                                  ;;
+def add = (a: int, b: int) -> (    ;;
+    a + b                          ;; function literal
+)                                  ;;
 
-    ;; explicit return type
-    def add2 = (a: int, b: int): int -> (
+;; explicit return type
+def add2 = (a: int, b: int): int -> (
+    a + b
+)
+
+;; function as first-type objects
+;; closure support
+def adder = (a: int): (b: int): int -> (
+    return (b: int): int -> (
         a + b
     )
+)
 
-    ;; function as first-type objects
-    ;; closure support
-    def adder = (a: int): (b: int): int -> (
-        return (b: int): int -> (
-            a + b
-        )
+;; loops
+def fac2 = (n: int): int -> (
+    def result = 1
+    while n > 1 then (
+        ;; use ";" to put several statements on one line
+        result = result * n ; n = n - 1
     )
+    return result
+)
 
-    ;; loops
-    def fac2 = (n: int): int -> (
-        def result = 1
-        while n > 1 then (
-            ;; use ";" to put several statements on one line
-            result = result * n ; n = n - 1
-        )
-        return result
-    )
+;; recursion
+def fac = (n: int): int -> (
+    if n < 2 then (
+        1
+     ) else (
+        n * recurse(n - 1)
+     )
+)
 
-    ;; recursion
-    def fac = (n: int): int -> (
-        if n < 2 then (
-            1
-         ) else (
-            n * recurse(n - 1)
-         )
-    )
+;; default values, including function literals
+def apply = (a: int, f: (v: int): int = (v) -> (v)) -> ( f(a) )
 
-    ;; default values, including function literals
-    def apply = (a: int, f: (v: int): int = (v) -> (v)) -> ( f(a) )
+;; closures
+def counter = () -> (
+    def c = 0
 
-    ;; closures
-    def counter = () -> (
-        def c = 0
-
-        () -> (
-            c = c + 1
-        )
+    () -> (
+        c = c + 1
     )
 )
 
@@ -90,15 +87,15 @@ def main = () -> (
     println ("Hello, ", local)
 
     ;; positional parameters
-    println("0+1=", test1.add(0,1))
+    println("0+1=", add(0,1))
     ;; named parameters
-    println("1+2=", test1.add(a:1,b:2))
+    println("1+2=", add(a:1,b:2))
     ;; named parameters can have their order changed
-    println("2+3=", test1.add2(b:3,a:2))
+    println("2+3=", add2(b:3,a:2))
 
-    def result = test1.adder(2)(2)
+    def result = adder(2)(2)
 
-    return "ok:" + result + ":" + test1.fac(5) + ":" + test1.fac2(6)
+    return "ok:" + result + ":" + fac(5) + ":" + fac2(6)
 )
 
 ;; Assertions
@@ -344,8 +341,8 @@ assert(same(import("shapes.ba"), shapes))          ;; a file runs once, however 
 
 A module has its own top-level names : it sees neither the names of the scripts importing it
 nor those of other modules, and only its exports can be read from outside, where they are
-read-only. Packages can be exported too (`export package units ( … )`), and files may import
-each other, as long as none reads an export of another before its definition has run.
+read-only. Files may import each other, as long as none reads an export of another before its
+definition has run.
 
 When the path is a string literal, the import is static : the file is read when the importing
 script is compiled, so a missing or broken file, or a missing export, is reported before anything
@@ -655,7 +652,6 @@ Language features :
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional & named parameters in function calls, and default values for parameters.
 - [x] basic types : boolean, int, double, string, `null`, functions, union types (`A | B`), nullable types (`T?`), `any` / `any?`, and generic/parameterized types (`Box(T)`, `java.util.List(string)`).
-- [x] packages as namespaces, which change only through their own code : `p.x = 1` from outside is an error.
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java (including generic) interfaces.
@@ -686,7 +682,7 @@ Language features :
 - [ ] better, more user-friendly error reports.
 - [ ] structural object types.
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
-  a module, an object or a package, instead of one `def` per name.
+  a module or an object, instead of one `def` per name.
 - [ ] collection classes (mapped from Java).
 - [ ] first-class iterator support (`for` loop).
 - [ ] `yield` keyword : transform functions/method into iterators.

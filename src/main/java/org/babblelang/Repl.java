@@ -120,9 +120,6 @@ public final class Repl {
         if (value instanceof String string) {
             return "\"" + string.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
         }
-        if (value instanceof Namespace) {
-            return "package";
-        }
         if (value instanceof JavaValue wrapper) {
             return String.valueOf(wrapper.javaValue());
         }

@@ -106,30 +106,13 @@ final class TypeChecks {
             if (definition != null) {
                 return definition;
             }
-            if (s.packages.containsKey(name)) {
-                return null;
-            }
-        }
-        return null;
-    }
-
-    private static List<BabbleParser.PackageExpressionContext> resolvePackage(String name, ScopeNode scope) {
-        for (ScopeNode s = scope; s != null; s = s.parent) {
-            if (s.names.containsKey(name)) {
-                return null;
-            }
-            List<BabbleParser.PackageExpressionContext> packages = s.packages.get(name);
-            if (packages != null) {
-                return packages;
-            }
         }
         return null;
     }
 
     /**
      * Resolves an entry of an {@code implements} or {@code extends} list, or a {@code super}
-     * qualifier : a def initialised with an interface literal and never reassigned, possibly
-     * reached through packages, or a Java interface.
+     * qualifier : a def initialised with an interface literal and never reassigned, or a Java interface.
      */
     private Object resolveType(BabbleParser.TypeContext type, ScopeNode scope, boolean forInterface) {
         BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(type);
@@ -140,10 +123,6 @@ final class TypeChecks {
         ParserRuleContext definition = resolveName(path.get(0), scope);
         if (definition != null) {
             return resolveDefinition(definition, path, 1, type, forInterface, 0);
-        }
-        List<BabbleParser.PackageExpressionContext> packages = resolvePackage(path.get(0), scope);
-        if (packages != null) {
-            return resolveInPackages(packages, path, 1, type);
         }
         if (path.get(0).equals("java") || path.get(0).equals("javax")) {
             return loadJava(String.join(".", path), type, forInterface);
@@ -207,10 +186,6 @@ final class TypeChecks {
         if (definition != null) {
             return resolveDefinition(definition, path, index + 1, type, forInterface, 0);
         }
-        List<BabbleParser.PackageExpressionContext> packages = pass.fileScope.packages.get(name);
-        if (packages != null) {
-            return resolveInPackages(packages, path, index + 1, type);
-        }
         throw notStatic(type);
     }
 
@@ -248,32 +223,6 @@ final class TypeChecks {
             return moduleOf(def.value, pass.definitionScopes.get(def), depth + 1);
         }
         return null;
-    }
-
-    private Object resolveInPackages(List<BabbleParser.PackageExpressionContext> packages, List<String> path, int index,
-                                     BabbleParser.TypeContext type) {
-        if (index >= path.size()) {
-            throw notStatic(type);
-        }
-        String name = path.get(index);
-        List<BabbleParser.PackageExpressionContext> nested = new ArrayList<>();
-        for (BabbleParser.PackageExpressionContext pkg : packages) {
-            for (BabbleParser.ExpressionContext statement : pkg.packageBlock.expression()) {
-                if (statement instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(name)) {
-                    if (index == path.size() - 1 && def.value instanceof BabbleParser.InterfaceExpressionContext iface && !reassigned.contains(def)) {
-                        return pass.typeNodes.get(iface);
-                    }
-                    throw notStatic(type);
-                }
-                if (statement instanceof BabbleParser.PackageExpressionContext inner && inner.name.getText().equals(name)) {
-                    nested.add(inner);
-                }
-            }
-        }
-        if (nested.isEmpty()) {
-            throw notStatic(type);
-        }
-        return resolveInPackages(nested, path, index + 1, type);
     }
 
     /** The literal argument of {@code import("…")}, or null. */

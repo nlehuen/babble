@@ -1,4 +1,4 @@
-;; Everything the ray tracer is made of, re-exported : what used to be "package raytracer".
+;; Everything the ray tracer is made of, re-exported from one facade module.
 
 export def Rng = import("rng.ba").Rng
 export def Vec3 = import("vec3.ba").Vec3

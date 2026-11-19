@@ -52,25 +52,9 @@ final class TypedProgram {
         return null;
     }
 
-    /** What a name refers to from a scope : a declaration, a list of packages, or null. */
+    /** What a name refers to from a scope : a declaration, or null. */
     Object resolveNameForEffects(String name, ScopeNode scope) {
         return TypeChecker.resolveName(null, name, scope);
-    }
-
-    /** The def a member of a package of this file names, or null. */
-    Object resolveNamespaceMemberDecl(Type nsType, String name) {
-        List<BabbleParser.PackageExpressionContext> list = nsType instanceof Type.Package pkg
-                ? checker.members().localPackageDeclarations(pkg) : null;
-        if (list != null) {
-            for (BabbleParser.PackageExpressionContext p : list) {
-                for (BabbleParser.ExpressionContext st : p.packageBlock.expression()) {
-                    if (st instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(name)) {
-                        return def;
-                    }
-                }
-            }
-        }
-        return null;
     }
 
     // ---------------------------------------------------------------- types
@@ -100,10 +84,6 @@ final class TypedProgram {
 
     Type moduleMemberTypeForEffects(ModuleInterface mod, String name) {
         return MemberTypes.exportType(mod, name);
-    }
-
-    Type packageMemberTypeForEffects(Type.Package pkg, String name) {
-        return checker.members().packageMember(pkg, name);
     }
 
     Type memberTypeForEffects(TypeNode owner, TypeNode.Member member) {

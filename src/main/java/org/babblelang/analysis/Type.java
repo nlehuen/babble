@@ -60,7 +60,7 @@ sealed interface Type {
         }
     }
 
-    /** Opaque identity key for type variables and package scopes without retaining AST nodes. */
+    /** Opaque identity key for type variables without retaining AST nodes. */
     static final class SymbolId {
         private final String label;
 
@@ -191,18 +191,6 @@ sealed interface Type {
         @Override
         public String toString() {
             return (node.isInterface() ? "interface " : "class ") + node.name;
-        }
-    }
-
-    /** A package : structural, its members are its definitions. */
-    record Package(String name, SymbolId id, Map<String, Type> members) implements Type {
-        Package(String name, SymbolId id) {
-            this(name, id, Map.of());
-        }
-
-        @Override
-        public String toString() {
-            return "package " + name;
         }
     }
 
@@ -394,14 +382,6 @@ sealed interface Type {
             case JavaMethod jm -> {
                 for (Type a : jm.typeArguments()) {
                     if (a.anyMatch(predicate)) {
-                        yield true;
-                    }
-                }
-                yield false;
-            }
-            case Package pkg -> {
-                for (Type m : pkg.members().values()) {
-                    if (m.anyMatch(predicate)) {
                         yield true;
                     }
                 }

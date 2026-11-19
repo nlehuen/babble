@@ -5,37 +5,31 @@ export def MI = interface (
     def tag : () : string
     def shared = () : string -> ( "mod:" + this.tag() )
 )
-export package mp (
-    def PI = interface (
-        def code : () : int
-    )
+export def PI = interface (
+    def code : () : int
 )
 
 {{{{{
-;; Package, nested package, module-exported, module-package, alias, imported Java package, and inner Java Map.Entry
+;; Module-exported, local, alias, imported Java package, and inner Java Map.Entry
 def m = import("iface_mod.ba")
 def jutil = import("java.util")
-package outer (
-    package inner (
-        def LocalI = interface (
-            def ping = () : int -> ( 7 )
-        )
-    )
+def LocalI = interface (
+    def ping = () : int -> ( 7 )
 )
 def AliasMI = m.MI
 def Entry = java.util.Map.Entry
 
-def Multi = class (def n : int) implements AliasMI, m.mp.PI, outer.inner.LocalI, java.lang.Runnable (
+def Multi = class (def n : int) implements AliasMI, m.PI, LocalI, java.lang.Runnable (
     def tag = () : string -> ( "m" + this.n )
     def code = () : int -> ( this.n * 10 )
     def run = () -> ( println("run:" + this.tag()) )
 )
 def multi = Multi(3)
 def mi : m.MI = multi
-def pi : m.mp.PI = multi
-def li : outer.inner.LocalI = multi
+def pi : m.PI = multi
+def li : LocalI = multi
 println(mi.shared(), ":", pi.code(), ":", li.ping())
-println(multi is m.MI, ":", multi is AliasMI, ":", multi is outer.inner.LocalI, ":", multi is java.lang.Runnable)
+println(multi is m.MI, ":", multi is AliasMI, ":", multi is LocalI, ":", multi is java.lang.Runnable)
 def r : java.lang.Runnable = multi
 r.run()
 

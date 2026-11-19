@@ -128,7 +128,7 @@ public class FormatterTestCase {
     @Test
     public void testIndentationFollowsParentheses() throws Exception {
         assertFormats("""
-                package p (
+                object (
                     def f = (n) -> (
                         if n < 2 then (
                             1
@@ -145,7 +145,7 @@ public class FormatterTestCase {
                     )
                 )
                 """, """
-                package p (
+                object (
                 def f = (n) -> (
                       if n < 2 then (
                   1
@@ -167,7 +167,7 @@ public class FormatterTestCase {
     @Test
     public void testBlockParenthesesJoinTheirLine() throws Exception {
         assertFormats("""
-                package p (
+                object (
                     if a then (
                         1
                     ) else (
@@ -178,7 +178,7 @@ public class FormatterTestCase {
                     )
                 )
                 """, """
-                package p
+                object
                 (
                     if a then
                     (

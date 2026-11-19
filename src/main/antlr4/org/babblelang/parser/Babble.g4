@@ -125,9 +125,7 @@ targetEffectPrefix: targetEffectWord+;
 targetEffectWord: {isTargetEffectWord()}? ID;
 
 expression:
-          // "export" is only accepted at the top level of a file, which the analysis checks.
-          EXPORT? PACKAGE name=ID NL* packageBlock=block      # packageExpression
-          | IF test=expression THEN NL* thenBlock=block
+          IF test=expression THEN NL* thenBlock=block
                      (NL* ELSE NL* elseBlock=block)?          # ifExpression
           // "else if" chains, without a block around each "if" : elseIf is an if expression,
           // which the predicate makes sure of. As the alternative ends with it, it is parsed
@@ -245,7 +243,6 @@ QUESTION: '?';
 LPAREN: '(';
 RPAREN: ')';
 COMMA: ',';
-PACKAGE: 'package';
 IF: 'if';
 THEN: 'then';
 ELSE: 'else';

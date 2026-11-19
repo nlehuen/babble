@@ -5,11 +5,9 @@ export def IExp = interface (
     def ping : () : int
     def defm = () : int -> ( 9 )
 )
-export package expPkg (
-    def InnerC = class () ()
-    def INested = interface (
-        def pong : () : int
-    )
+export def InnerC = class () ()
+export def INested = interface (
+    def pong : () : int
 )
 
 {{{{{
@@ -149,21 +147,19 @@ def badList : java.util.List(string) = java.util.ArrayList(java.util.List.of(1, 
 Type error : expected java.util.List(string), got java.util.ArrayList(int)
 
 {{{{{
-;; Cross-module interface, package-qualified interface, super default call, and TypeChecks errors
+;; Cross-module interface, super default call, and TypeChecks errors
 def m = import("tc_exp.ba")
-package localPkg (
-    def ILocal = interface (
-        def val : () : int
-    )
+def ILocal = interface (
+    def val : () : int
 )
-def Impl = class () implements m.IExp, localPkg.ILocal, m.expPkg.INested (
+def Impl = class () implements m.IExp, ILocal, m.INested (
     def ping = () : int -> ( 1 )
     def val = () : int -> ( 2 )
     def pong = () : int -> ( 3 )
     def callSuper = () : int -> ( super(m.IExp).defm() )
 )
 def im = Impl()
-println(im.ping(), ":", im.val(), ":", im.pong(), ":", im.callSuper(), ":", im is m.IExp, ":", im is localPkg.ILocal)
+println(im.ping(), ":", im.val(), ":", im.pong(), ":", im.callSuper(), ":", im is m.IExp, ":", im is ILocal)
 }}}}}
 1:2:3:9:true:true
 

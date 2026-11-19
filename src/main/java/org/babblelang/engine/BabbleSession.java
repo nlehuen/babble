@@ -105,7 +105,7 @@ public final class BabbleSession {
         ScopeAnalysis scopes = engine.analyze(file, sourceName, context, analysis);
         BabbleScript script = engine.script(file, scopes, sourceName);
         if (analysis.commit(scopes)) {
-            namespace = namespace.enter(null);
+            namespace = namespace.enter();
         }
         if (script instanceof CompiledBabbleScript compiled) {
             analysis.recordCompilation(compiled.getScriptClass().getClassLoader(),

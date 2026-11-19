@@ -742,12 +742,6 @@ final class EffectChecker {
                     checker.effectDiagnostic("Unknown Java member class : " + step + " on " + jcv.type().getName(), reportAt);
                     return null;
                 }
-            } else if (current instanceof Type.Package pkg) {
-                current = checker.packageMemberTypeForEffects(pkg, step);
-                if (current == null) {
-                    checker.effectDiagnostic("Unknown member : " + step + " in package " + pkg.name(), reportAt);
-                    return null;
-                }
             } else if (current instanceof Type.Module mod) {
                 current = checker.moduleMemberTypeForEffects(mod.module(), step);
                 if (current == null) {
@@ -1116,7 +1110,6 @@ final class EffectChecker {
                 ScopeNode defScope = pass.definitionScopes.get(def);
                 if (defScope != null
                         && defScope.kind != ScopeNode.Kind.FILE
-                        && defScope.kind != ScopeNode.Kind.PACKAGE
                         && defScope.kind != ScopeNode.Kind.CLASS_BODY
                         && defScope.kind != ScopeNode.Kind.INTERFACE_BODY
                         && defScope.kind != ScopeNode.Kind.STATIC_BODY
@@ -2421,7 +2414,7 @@ final class EffectChecker {
         }
         if (type instanceof Type.Function || type instanceof Type.ClassValue
                 || type instanceof Type.JavaClassValue || type instanceof Type.JavaPackage
-                || type instanceof Type.JavaMethod || type instanceof Type.Module || type instanceof Type.Package) {
+                || type instanceof Type.JavaMethod || type instanceof Type.Module) {
             return true;
         }
         return false;
@@ -2676,9 +2669,6 @@ final class EffectChecker {
                 }
                 return Origin.ofExternal(obj, isDeeplyImmutable(checker.rawTypeOf(obj)));
             }
-            if (ctx instanceof BabbleParser.PackageExpressionContext pkg) {
-                return evalBlock(pkg.packageBlock, false);
-            }
             if (ctx instanceof BabbleParser.DefExpressionContext def) {
                 return evalDef(def);
             }
@@ -2766,8 +2756,7 @@ final class EffectChecker {
             BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
             if (owner instanceof BabbleParser.FunctionLiteralContext) {
                 return declFn == owner
-                        && declScope.kind != ScopeNode.Kind.FILE
-                        && declScope.kind != ScopeNode.Kind.PACKAGE;
+                        && declScope.kind != ScopeNode.Kind.FILE;
             }
             if (owner instanceof BabbleParser.FileContext || owner instanceof BabbleParser.BlockContext) {
                 return declFn == null;
@@ -2839,8 +2828,8 @@ final class EffectChecker {
                 return rhs;
             }
             if (recvType instanceof Type.JavaClassValue || recvType instanceof Type.ClassValue
-                    || recvType instanceof Type.Package || recvType instanceof Type.Module) {
-                // Static / package field write -> global mutation!
+                    || recvType instanceof Type.Module) {
+                // Static / module field write -> global mutation!
                 hermetic = false;
                 markStoredOrigin(rhs, "static member " + assign.name.getText(), assign);
                 return rhs;
@@ -2932,15 +2921,6 @@ final class EffectChecker {
                 }
                 return Origin.ofExternal(null, immRes);
             }
-            if (recvType instanceof Type.Package) {
-                Object memberDecl = checker.resolveNamespaceMemberDecl(recvType, fieldName);
-                if (memberDecl instanceof ParserRuleContext decl && (checker.isReassigned(decl) || !isImmutableOuterBinding(decl, resType))) {
-                    deterministic = false;
-                } else if (memberDecl == null && !isImmutableConstantValue(resType)) {
-                    deterministic = false;
-                }
-                return Origin.ofExternal(memberDecl, immRes);
-            }
             if (checker.hasCallCheck(sel)) {
                 nothrow = false;
             }
@@ -2972,7 +2952,7 @@ final class EffectChecker {
             if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
                 receiverExpr = sel.expression();
                 Type recvType = effectiveType(receiverExpr);
-                if (!(recvType instanceof Type.JavaPackage || recvType instanceof Type.Package || recvType instanceof Type.Module)) {
+                if (!(recvType instanceof Type.JavaPackage || recvType instanceof Type.Module)) {
                     recvOrig = eval(receiverExpr);
                 }
             } else {

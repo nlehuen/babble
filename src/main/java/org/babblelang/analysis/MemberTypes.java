@@ -13,22 +13,15 @@ import java.util.Map;
 
 /**
  * Member resolution : the type of {@code receiver.name} read or assigned, on instances (with
- * their type arguments and inherited defaults), classes, packages, modules, and Java classes,
+ * their type arguments and inherited defaults), classes, modules, and Java classes,
  * objects and arrays, reporting what the runtime would refuse ({@code No such member},
- * {@code is private}, {@code Not a scope}, {@code Cannot assign to a package member}).
+ * {@code is private}, {@code Not a scope}).
  */
 final class MemberTypes {
     private final TypeChecker checker;
-    private final Map<List<BabbleParser.PackageExpressionContext>, Type.SymbolId> packageSymbolIds = new IdentityHashMap<>();
-    private final Map<Type.Package, List<BabbleParser.PackageExpressionContext>> localPackages = new IdentityHashMap<>();
 
     MemberTypes(TypeChecker checker) {
         this.checker = checker;
-    }
-
-    /** The package expressions a package type of this file stands for, or null for another file's. */
-    List<BabbleParser.PackageExpressionContext> localPackageDeclarations(Type.Package pkg) {
-        return localPackages.get(pkg);
     }
 
     record ResolvedMember(TypeNode owner, TypeNode.Member member, Map<Type.TypeVar, Type> env) {
@@ -83,14 +76,6 @@ final class MemberTypes {
                     return Type.ERROR;
                 }
                 return checker.memberType(value.node(), member);
-            }
-            checker.warn("No such member : " + name, at);
-            return Type.ERROR;
-        }
-        if (receiver instanceof Type.Package pkg) {
-            Type found = packageMember(pkg, name);
-            if (found != null) {
-                return found;
             }
             checker.warn("No such member : " + name, at);
             return Type.ERROR;
@@ -153,9 +138,6 @@ final class MemberTypes {
             if (member == null) {
                 checker.warn("No such member : " + name, at);
             }
-        } else if (receiver instanceof Type.Package) {
-            // Bound to fail : a package changes only through its own code.
-            checker.warn("Cannot assign to a package member : " + name, at);
         } else if (!(receiver instanceof Type.Module || receiver instanceof Type.JavaPackage
                 || receiver instanceof Type.JavaClassValue || receiver instanceof Type.JavaInstance
                 || receiver instanceof Type.JavaArray || TypeChecker.isUnresolved(receiver))) {
@@ -280,32 +262,6 @@ final class MemberTypes {
         }
         Type t = summary.exportType(name);
         return t != null ? t : Type.ERROR;
-    }
-
-    Type.Package localPackage(String name, List<BabbleParser.PackageExpressionContext> list) {
-        Type.SymbolId id = packageSymbolIds.computeIfAbsent(list, k -> new Type.SymbolId(name));
-        Type.Package pkg = new Type.Package(name, id);
-        localPackages.put(pkg, list);
-        return pkg;
-    }
-
-    Type packageMember(Type.Package pkg, String name) {
-        List<BabbleParser.PackageExpressionContext> list = localPackages.get(pkg);
-        if (list == null) {
-            return pkg.members().get(name);
-        }
-        List<BabbleParser.PackageExpressionContext> nested = new ArrayList<>();
-        for (BabbleParser.PackageExpressionContext expression : list) {
-            for (BabbleParser.ExpressionContext statement : expression.packageBlock.expression()) {
-                if (statement instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(name)) {
-                    return checker.typeOfDeclaration(def);
-                }
-                if (statement instanceof BabbleParser.PackageExpressionContext inner && inner.name.getText().equals(name)) {
-                    nested.add(inner);
-                }
-            }
-        }
-        return nested.isEmpty() ? null : localPackage(name, nested);
     }
 
     /** A method or field of a Java class or object, through {@link JavaTypeBridge#javaMember}. */

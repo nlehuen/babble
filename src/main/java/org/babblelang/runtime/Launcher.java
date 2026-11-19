@@ -142,7 +142,7 @@ public final class Launcher {
 
     /** A module's root namespace : the built-ins, the output, and {@code args}, as the engine gives a script's bindings. */
     private Namespace newRoot() {
-        Namespace root = Implicits.withOutput(implicits, out).enter(null);
+        Namespace root = Implicits.withOutput(implicits, out).enter();
         root.define("args", false).set(args);
         return root;
     }

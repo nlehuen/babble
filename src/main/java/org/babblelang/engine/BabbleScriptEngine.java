@@ -260,7 +260,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     private ScriptRuntime createRuntime(ScriptContext context, Modules modules) {
-        Namespace root = Implicits.withOutput(implicits, context.getWriter()).enter(null);
+        Namespace root = Implicits.withOutput(implicits, context.getWriter()).enter();
 
         // TODO : handle ScriptContext.GLOBAL_SCOPE
         for (Map.Entry<String, Object> binding : context.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {

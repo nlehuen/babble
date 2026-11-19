@@ -68,8 +68,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final Map<ParserRuleContext, TypeNode> typeNodes = new HashMap<>();
     final Map<ParserRuleContext, ScopeNode> scopeNodes = new HashMap<>();
     final List<Occurrence> occurrences = new ArrayList<>();
-    final List<BabbleParser.PackageExpressionContext> packages = new ArrayList<>();
-    final Map<BabbleParser.PackageExpressionContext, ScopeNode> packageScopes = new HashMap<>();
     final List<PendingImport> imports = new ArrayList<>();
     final List<PendingEffectDecl> effectDeclarations = new ArrayList<>();
     /** The interfaces of the files imported statically, by import call. */
@@ -324,16 +322,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     @Override
-    public Void visitPackageExpression(BabbleParser.PackageExpressionContext ctx) {
-        export(ctx.EXPORT(), ctx.name);
-        current().packages.computeIfAbsent(ctx.name.getText(), n -> new ArrayList<>()).add(ctx);
-        packages.add(ctx);
-        packageScopes.put(ctx, current());
-        inScope(ScopeNode.Kind.PACKAGE, ctx, null, () -> visitChildren(ctx.packageBlock));
-        return null;
-    }
-
-    @Override
     public Void visitClassExpression(BabbleParser.ClassExpressionContext ctx) {
         boolean value = false;
         if (ctx.modifier != null) {
@@ -426,7 +414,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     /**
-     * Only reached for blocks that open a scope of their own : function, package, class,
+     * Only reached for blocks that open a scope of their own : function, class,
      * object and interface bodies are visited through their owner.
      */
     @Override
@@ -450,7 +438,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     // ---------------------------------------------------------------- definitions
 
-    /** {@code export def} and {@code export package} : only for the names of the file itself. */
+    /** {@code export def} : only for the names of the file itself. */
     private void export(org.antlr.v4.runtime.tree.TerminalNode export, Token name) {
         if (export == null) {
             return;

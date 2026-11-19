@@ -22,9 +22,3 @@ export def unitSquare = () -> (
     Square(vectors.origin, 1)
 )
 export def count = () -> (created)
-
-;; a package can be exported too
-export package units (
-    def cm = 1
-    def m = 100
-)

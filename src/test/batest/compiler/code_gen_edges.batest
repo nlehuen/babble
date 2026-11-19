@@ -24,27 +24,21 @@ println(C(0.0, "init").runAll())
 3:12:13:3:11.0:abc!:11
 
 {{{{{
-;; Constructor package scope, static package scope, and static block `this` assign / compound assign
+;; Static block `this` assign / compound assign
 def C = class () (
-    package inner (
-        def v = 7
-    )
-    def getV = () : int -> ( inner.v )
+    def getV = () : int -> ( 7 )
 ) static (
-    package sp (
-        def k = 5
-    )
     def x = 1
     def bump = () : string -> (
         this.x = 2
         this.x += 3
-        "" + this.x + ":" + sp.k
+        "" + this.x
     )
     def me = () -> ( this )
 )
 println(C().getV(), ":", C.bump(), ":", C.me() == C)
 }}}}}
-7:5:5:true
+7:5:true
 
 {{{{{
 ;; Top-level recursive function omitting optional parameter (Arguments.MISSING in recurse)
@@ -169,7 +163,6 @@ if d >= 2.5 then ( hits += 1 )
 if d > 2.0 then ( hits += 1 )
 println(hits)
 
-println(( package p ( def a = 9 ) ; p.a ))
 def wf1 = () : double -> ( 1 )
 def wf2 = (flag : bool) : double -> ( if flag then ( 1 ) else ( 2.5 ) )
 println(wf1(), ":", wf2(true), ":", 1 as double)
@@ -181,7 +174,6 @@ false:true
 ge5
 no
 6
-9
 1.0:1.0:1.0
 7
 
@@ -797,12 +789,12 @@ println(pickRoot(true).tag(), ":", pickRoot(false).tag(), ":", pickMixed(true, c
 c1:c2:c1:c2
 
 {{{{{
-;; InterfaceGen namespace-backed default method, own default invoke, and int->double widening
+;; InterfaceGen default method, own default invoke, and int->double widening
 def CalcIface = interface (
     def base = () : int -> ( 10 )
     def plusBase = (k : int) : double -> (
-        package local ( def mul = 2 )
-        this.base() * local.mul + k
+        def mul = 2
+        this.base() * mul + k
     )
 )
 def CalcImpl = class () implements CalcIface ()

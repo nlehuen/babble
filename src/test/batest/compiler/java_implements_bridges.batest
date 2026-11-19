@@ -96,12 +96,10 @@ println(":", composed.applyAsInt(5))
 <123>:17
 
 {{{{{
-;; Primitive return widening (int -> long via IntToLongFunction) and namespace-scoped (package) class implementing Java interface
+;; Primitive return widening (int -> long via IntToLongFunction)
 def Widener = class (scale : int) implements java.util.function.IntToLongFunction (
-    package meta (
-        def factor = 2
-    )
-    def applyAsLong = (x : int) : int -> ( x * scale * meta.factor )
+    def factor = 2
+    def applyAsLong = (x : int) : int -> ( x * scale * this.factor )
 )
 def sum = java.util.stream.IntStream.range(1, 4).mapToLong(Widener(5)).sum()
 println(sum)

@@ -50,18 +50,6 @@ println(check(Box(2), Box(3), true), ":", check(null, Box(4), false))
 235p!T:-4nz
 
 {{{{{
-;; resolveStaticRef: nested packages
-package outer (
-    package inner (
-        def Pair = class (def a : int, def b : int) ()
-    )
-)
-def x : outer.inner.Pair = outer.inner.Pair(4, 5)
-println(x.a + x.b)
-}}}}}
-9
-
-{{{{{
 ;; binaryOp type errors: invalid subtraction, invalid comparison
 def bad = "a" - 1
 }}}}}
@@ -395,31 +383,6 @@ def g = (x = null) -> ( x )
 }}}}}
 Missing type : x
 
-{{{{{
-;; resolveStaticRef: package nested, reassigned package ref
-package a (
-    package b (
-        def C = class (def v = 3) ()
-    )
-)
-def p1 = a
-def p2 = a
-p2 = a
-println(a.b.C().v, ":", p1.b.C().v, ":", p2.b.C().v)
-}}}}}
-3:3:3
-
-{{{{{
-package a (
-    package b (
-        def C = class (def v = 3) ()
-    )
-)
-def p2 = a
-def p3 = a.b
-p2 = p3
-}}}}}
-Type error : expected package a, got package b
 
 
 

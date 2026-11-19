@@ -45,7 +45,7 @@ public final class Implicits {
      * writer. A script's root namespace goes under it.
      */
     public static Namespace withOutput(Namespace implicits, Writer writer) {
-        Namespace output = implicits.enter(null);
+        Namespace output = implicits.enter();
         output.define("STDOUT", true).set(writer == null || writer instanceof PrintWriter ? writer : new PrintWriter(writer));
         return output;
     }

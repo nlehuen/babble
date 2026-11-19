@@ -111,13 +111,6 @@ C.sec
 sec is private
 
 {{{{{
-;; Assigning to a package member from outside is forbidden
-package p ( def x = 1 )
-p.x = 2
-}}}}}
-Cannot assign to a package member : x
-
-{{{{{
 ;; Arithmetic identity folding, constant folding, and comparisons across int/double/any
 def f = (a : int, b : double, s : any) : string -> (
     def r1 = (a + 0) + (0 + a) + (a - 0) + (0 - a) + (a * 1) + (1 * a) + (a * 0) + (0 * a)
