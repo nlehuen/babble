@@ -195,7 +195,7 @@ final class TypeAnnotations {
             return annotation(paren.type(), scope, allowRaw);
         }
         if (primary instanceof BabbleParser.CoreTypeContext core) {
-            return coreType(core);
+            return coreType(core, scope, allowRaw);
         }
         BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
         Type result = simpleType(simple, scope, allowRaw);
@@ -225,9 +225,33 @@ final class TypeAnnotations {
         return result;
     }
 
-    /** A core type name : {@code int}, {@code string}, {@code any}, {@code void} (the type of null)... */
-    private Type coreType(BabbleParser.CoreTypeContext core) {
+    /** A core type name : {@code int}, {@code string}, {@code any}, {@code void} (the type of null), {@code list(int)}... */
+    private Type coreType(BabbleParser.CoreTypeContext core, ScopeNode scope, boolean allowRaw) {
         String name = core.coreTypeKeyword().getText();
+        Class<?> collection = Type.collection(name);
+        if (collection != null) {
+            if (core.typeArguments() == null) {
+                if (allowRaw) {
+                    return JavaTypeBridge.rawJavaInstance(collection);
+                }
+                checker.warn("Missing type arguments : " + name, core);
+                return Type.ERROR;
+            }
+            int expected = collection.getTypeParameters().length;
+            List<Type> args = new ArrayList<>();
+            for (BabbleParser.TypeContext argument : core.typeArguments().type()) {
+                Type type = annotation(argument, scope);
+                if (type == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                args.add(type);
+            }
+            if (args.size() != expected) {
+                checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), core);
+                return Type.ERROR;
+            }
+            return new Type.JavaInstance(collection, List.copyOf(args));
+        }
         Type builtin = switch (name) {
             case "any" -> Type.ANY;
             case "void" -> Type.NULL;

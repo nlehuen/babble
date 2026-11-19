@@ -301,6 +301,22 @@ them or a Java call returned them, and Java classes their public static fields. 
 other scalars have no members. Babble functions convert to Java functional interfaces, and Babble
 classes can implement Java interfaces.
 
+The core collections are Java's : `list(T)` is a `java.util.List<T>`, `set(T)` a `Set<T>`,
+`sortedset(T)` a `SortedSet<T>`, `map(K, V)` a `Map<K, V>`, `sortedmap(K, V)` a `SortedMap<K, V>`
+and `entry(K, V)` a `Map.Entry<K, V>`, so any implementation does where one is expected. Their
+names make them, with deterministic classes (`ArrayList`, `LinkedHashSet`, `TreeSet`,
+`LinkedHashMap`, `TreeMap`), from elements or entries, or from `capacity:`, `from:` or, sorted,
+`comparator:` ; their type arguments come from explicit ones, the expected type or the elements :
+
+```
+def xs = list(1, 2, 3)                           ;; list(int)
+def ys: list(string) = list()
+def counts = map(entry("a", 1), entry("b", 2))   ;; map(string, int)
+def byLength = sortedset(comparator: (a: string, b: string): int -> (a.length() - b.length()))
+def maybes = list(int?)(1, null)
+assert(xs.get(0) + counts.getOrDefault("c", 0) == 1 and xs is list)
+```
+
 What Java returns is nullable unless Java says otherwise : `System.getenv(name)` is a `string?`,
 `Integer.getInteger(name)` an `int?`, `map.get(k)` a `V?`, to narrow, navigate with `?.` or
 assert with `!`. Primitives are never null, nor is what `@NotNull`/`@NonNull` annotations
@@ -704,7 +720,7 @@ Language features :
 - [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md) and [BIP008](docs/design/bip008_static-typing.md)).
 - [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts, and `org.babblelang.effects` host annotations (see [BIP007](docs/design/bip007_effects.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, and the conversions `byte(x)`..`string(x)`.
-- [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` ; `string` methods are `java.lang.String`'s ; Java results nullable unless annotated or known non-null ; explicit type arguments `Box(int?)(null)` (see [BIP011](docs/design/bip011_core-types.md)).
+- [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` ; `string` methods are `java.lang.String`'s ; Java results nullable unless annotated or known non-null ; explicit type arguments `Box(int?)(null)` ; core collections `list`..`sortedmap` and `entry`, Java's interfaces with deterministic factories (see [BIP011](docs/design/bip011_core-types.md)).
 
 Implementation features :
 
@@ -730,7 +746,6 @@ Language features :
 - [ ] structural object types.
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module, an object or a package, instead of one `def` per name.
-- [ ] collection classes (mapped from Java).
 - [ ] first-class iterator support (`for` loop).
 - [ ] `yield` keyword : transform functions/method into iterators.
 - [ ] functional-style programming : `map`.

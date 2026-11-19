@@ -403,7 +403,7 @@ def rawList = fns as java.util.List
 rawList.add("notfn")
 fns.get(0)
 }}}}}
-Warning : Redundant cast : java.util.List(any?)
+Warning : Redundant cast : list(any?)
 3.0:true:true
 Type error : expected (x : int) : int, got string
 

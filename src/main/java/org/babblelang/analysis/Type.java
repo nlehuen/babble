@@ -270,9 +270,51 @@ sealed interface Type {
 
         @Override
         public String toString() {
-            return typeArguments.isEmpty() ? type.getName()
-                    : type.getName() + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
+            String core = collectionName(type);
+            String name = core != null ? core : type.getName();
+            return typeArguments.isEmpty() ? name
+                    : name + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
         }
+    }
+
+    /**
+     * The core collections (BIP011-D1) : {@code list(T)} is {@code java.util.List<T>}, {@code set(T)}
+     * {@code Set<T>}, {@code sortedset(T)} {@code SortedSet<T>}, {@code map(K, V)} {@code Map<K, V>},
+     * {@code sortedmap(K, V)} {@code SortedMap<K, V>}, {@code entry(K, V)} {@code Map.Entry<K, V>}.
+     */
+    static Class<?> collection(String name) {
+        return switch (name) {
+            case "list" -> java.util.List.class;
+            case "set" -> java.util.Set.class;
+            case "sortedset" -> java.util.SortedSet.class;
+            case "map" -> java.util.Map.class;
+            case "sortedmap" -> java.util.SortedMap.class;
+            case "entry" -> java.util.Map.Entry.class;
+            default -> null;
+        };
+    }
+
+    /** A core collection's name ({@code list}...) for its interface, or null. */
+    static String collectionName(Class<?> type) {
+        if (type == java.util.List.class) {
+            return "list";
+        }
+        if (type == java.util.Set.class) {
+            return "set";
+        }
+        if (type == java.util.SortedSet.class) {
+            return "sortedset";
+        }
+        if (type == java.util.Map.class) {
+            return "map";
+        }
+        if (type == java.util.SortedMap.class) {
+            return "sortedmap";
+        }
+        if (type == java.util.Map.Entry.class) {
+            return "entry";
+        }
+        return null;
     }
 
     /** The methods of a Java class with one name, selected through the class or an instance. */

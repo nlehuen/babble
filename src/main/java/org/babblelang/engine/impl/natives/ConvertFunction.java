@@ -35,8 +35,15 @@ public final class ConvertFunction implements Callable {
     public static final ConvertFunction CHAR = new ConvertFunction("char");
     public static final ConvertFunction STRING = new ConvertFunction("string");
 
-    /** The conversion function a core type name denotes as a value ({@code int}, {@code double}...). */
+    /**
+     * What a core type name is as a value : a scalar's conversion function ({@code int},
+     * {@code double}...), or a collection's factory ({@code list}...).
+     */
     public static Callable of(String coreType) {
+        CollectionFactory factory = CollectionFactory.of(coreType);
+        if (factory != null) {
+            return factory;
+        }
         return switch (coreType) {
             case "byte" -> BYTE;
             case "short" -> SHORT;

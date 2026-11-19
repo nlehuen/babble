@@ -1,0 +1,40 @@
+;; The core collections (BIP011-D1, D9, D10) : list, set, sortedset, map, sortedmap and entry are
+;; java.util's interfaces, made by deterministic factories.
+
+def xs = list(1, 2, 3)
+def ys: list(int) = list()
+ys.add(4)
+def maybes = list(int?)(1, null)
+def mixed = list(1, 2.5)
+def tags = set("b", "a", "b")
+def ordered = sortedset(3, 1, 2)
+def byLength = sortedset(comparator: (a: string, b: string): int -> (a.length() - b.length()))
+byLength.add("ccc")
+byLength.add("a")
+def counts = map(entry("x", 1), entry("y", 2))
+def sorted = sortedmap(entry("b", 2), entry("a", 1))
+def pair = entry(key: "k", value: 3)
+def copy = list(from: xs)
+def sized = list(int)(capacity: 10)
+def nested: map(string, list(int)) = map()
+nested.put("evens", list(2, 4))
+
+assert(xs.size() == 3 and xs.get(0) + 1 == 2 and ys.get(0) == 4 and maybes.get(1) == null)
+assert(classof(mixed.get(0)) == java.lang.Double)
+assert(tags.size() == 2 and tags.iterator().next() == "b")
+assert(ordered.first() == 1 and byLength.first() == "a")
+assert(counts.get("x") == 1 and counts.get("z") == null and counts.getOrDefault("z", 0) == 0)
+assert(sorted.firstKey() == "a" and pair.getKey() == "k" and pair.getValue() == 3)
+assert(copy.size() == 3 and sized.isEmpty() and nested.get("evens")!.get(1) == 4)
+
+;; Deterministic classes, and any java.util implementation where one is expected
+assert(classof(xs) == java.util.ArrayList and classof(tags) == java.util.LinkedHashSet)
+assert(classof(ordered) == java.util.TreeSet and classof(counts) == java.util.LinkedHashMap)
+assert(classof(sorted) == java.util.TreeMap)
+def linked: list(int) = java.util.LinkedList(int)()
+linked.add(7)
+assert(linked.get(0) == 7)
+
+;; Type tests
+def v: any = xs
+assert(v is list and not (v is set) and counts is map and pair is entry and sorted is sortedmap)

@@ -118,6 +118,7 @@ final class TypeChecker {
     private final TypeAnnotations annotator = new TypeAnnotations(this);
     private final MemberTypes members = new MemberTypes(this);
     private final OperatorTypes operators = new OperatorTypes(this);
+    private final CoreCollections collections = new CoreCollections(this);
     private final Narrowing narrowing = new Narrowing(this);
     private ImportedSummaries imported;
 
@@ -1689,6 +1690,16 @@ final class TypeChecker {
                 synth(ctx.expression(), Role.CALLEE);
             }
             Type explicit = explicitInstances.get(ctx.expression());
+            String factory = CoreCollections.factoryName(ctx.expression());
+            if (explicit instanceof Type.JavaInstance applied && calleeOf(ctx.expression()) != null) {
+                factory = CoreCollections.factoryName(calleeOf(ctx.expression()));
+                if (factory != null) {
+                    return collections.call(factory, applied, ctx, expected);
+                }
+            }
+            if (factory != null) {
+                return collections.call(factory, null, ctx, expected);
+            }
             if (explicit instanceof Type.Instance instance) {
                 // Box(int)(x) : the constructor's parameters with the class's type arguments.
                 List<Type.TypeVar> vars = annotator.typeVarsOf(instance.node());
@@ -1785,8 +1796,7 @@ final class TypeChecker {
             if (parsed == null) {
                 return null;
             }
-            Type callee = synth(inner.expression(), Role.CALLEE);
-            if (!isGeneric(callee)) {
+            if (CoreCollections.factoryName(inner.expression()) == null && !isGeneric(synth(inner.expression(), Role.CALLEE))) {
                 return null;
             }
             ScopeNode scope = scopeOf(inner);
@@ -1803,6 +1813,14 @@ final class TypeChecker {
             });
         }
 
+        /** The callee of a type application, {@code list} in {@code list(int)} : null for anything else. */
+        private BabbleParser.ExpressionContext calleeOf(BabbleParser.ExpressionContext application) {
+            if (application instanceof BabbleParser.TypeApplicationContext app) {
+                return app.expression();
+            }
+            return application instanceof BabbleParser.CallContext call && typeApplied.contains(call) ? call.expression() : null;
+        }
+
         private boolean isGeneric(Type callee) {
             return callee instanceof Type.Function fn && !fn.typeParameters().isEmpty()
                     || callee instanceof Type.ClassValue cv && !cv.node().isInterface() && !annotator.typeVarsOf(cv.node()).isEmpty()
@@ -1814,6 +1832,17 @@ final class TypeChecker {
          * generic class whose next call constructs that instance type ({@link #explicitInstances}).
          */
         private Type applyTypeArguments(ParserRuleContext app, BabbleParser.ExpressionContext calleeExpr, List<Type> arguments) {
+            String factory = CoreCollections.factoryName(calleeExpr);
+            if (factory != null) {
+                // list(int)() : the factory's call makes that type.
+                synth(calleeExpr);
+                Class<?> collection = Type.collection(factory);
+                if (!sameArity(collection.getTypeParameters().length, arguments, app)) {
+                    return Type.ERROR;
+                }
+                explicitInstances.put(app, new Type.JavaInstance(collection, List.copyOf(arguments)));
+                return Type.ANY;
+            }
             Type callee = synth(calleeExpr, Role.CALLEE);
             if (isUnresolved(callee)) {
                 return callee;
@@ -1986,6 +2015,12 @@ final class TypeChecker {
                 // x is int : a type test, which visitIsExpression checks.
                 return Type.ANY;
             }
+            if (Type.collection(ctx.getText()) != null
+                    && (ctx.getParent() instanceof BabbleParser.CallContext call && call.expression() == ctx
+                    || ctx.getParent() instanceof BabbleParser.TypeApplicationContext app && app.expression() == ctx)) {
+                // list(...) : a factory call, which visitCall types.
+                return Type.ANY;
+            }
             Type.Function conversion = OperatorTypes.conversion(ctx.getText());
             if (conversion == null) {
                 warn("Not a value : " + ctx.getText(), ctx);
@@ -2016,9 +2051,9 @@ final class TypeChecker {
 
         private Type visitIsExpression(BabbleParser.IsExpressionContext ctx, Type expected, Role role) {
             synth(ctx.left);
-            Type.Simple builtin = narrowing.isBuiltinTarget(ctx);
+            Type builtin = narrowing.isBuiltinTarget(ctx);
             if (builtin != null) {
-                pass.analysis.setIsBuiltin(ctx, builtin.name());
+                pass.analysis.setIsBuiltin(ctx, ctx.right.getText());
             } else if (ctx.right instanceof BabbleParser.CoreTypeNameContext core) {
                 warn("Unknown type : " + core.getText(), core);
             } else {

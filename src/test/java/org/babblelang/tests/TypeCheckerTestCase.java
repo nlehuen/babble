@@ -463,7 +463,7 @@ public class TypeCheckerTestCase {
                 "4:1 No applicable overload of java.lang.Math.abs for (string)",
                 "5:18 Type error : expected string, got int",
                 "6:1 No such name in java.lang.Math : nope",
-                "8:38 Type error : expected java.util.Map(string, int), got java.util.ArrayList(int)");
+                "8:38 Type error : expected map(string, int), got java.util.ArrayList(int)");
         // Babble functions convert to functional interfaces, and classes implement Java interfaces.
         assertDiagnostics("def l : java.util.List(any) = java.util.ArrayList()\nl.removeIf((v) -> ( v is int and v > 2 ))\n"
                 + "def R = class () implements java.lang.Runnable ( def run = () -> ( null ) )\njava.lang.Thread(R())\ndef r : java.lang.Runnable = R()\n"
@@ -995,6 +995,25 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testCoreCollections() {
+        assertDiagnostics("def a = list()\n"
+                + "def b = sortedset(1, null)\n"
+                + "def c = list(1, capacity: 3)\n"
+                + "def d : list(double) = list(from: list(1, 2))\n"
+                + "def e = map(entry(\"a\", 1), 2)\n"
+                + "def f : set(string) = set(1)\n"
+                + "def g = entry(1)",
+                "1:9 Missing type : cannot infer type arguments for list",
+                "2:9 Type error : int? is not Comparable (pass comparator: ...)",
+                "3:27 Too many parameters : list(...) takes elements, or options",
+                "4:35 Type error : expected list(double), got list(int)",
+                "5:13 Type error : expected entry(any?, any?), got entry(string, int) | int",
+                "6:27 Type error : expected string, got int",
+                "7:9 Missing parameter : entry(key, value)");
+        assertDiagnostics("def a = list(1, 2.5)\ndef b : double = a.get(0)\ndef c = map(entry(\"k\", list(1)))\ndef d : list(int) = c.get(\"k\")!");
+    }
+
+    @Test
     public void testTypeApplication() {
         assertDiagnostics("def Box(T) = class (def value : T) ()\n"
                 + "def id(T) = (x : T) : T -> ( x )\n"
@@ -1034,10 +1053,10 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testCoreTypeKeywords() {
-        assertDiagnostics("def a : void = null\ndef b : int(string) = 1\ndef c = (v : any) -> ( v is list )\ndef d = any",
+        assertDiagnostics("def a : void = null\ndef b : int(string) = 1\ndef c = (v : any) -> ( v is list )\ndef d = any\ndef e : list = list(1)",
                 "2:9 Wrong number of type arguments : expected 0, got 1",
-                "3:29 Unknown type : list",
-                "4:9 Not a value : any");
+                "4:9 Not a value : any",
+                "5:9 Missing type arguments : list");
     }
 
     @Test
