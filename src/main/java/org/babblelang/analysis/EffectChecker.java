@@ -220,7 +220,7 @@ final class EffectChecker {
     private final Map<BabbleParser.DefExpressionContext, ParsedPrefix> defPrefixes = new IdentityHashMap<>();
 
     private final Map<BabbleParser.FunctionLiteralContext, ParsedPrefix> fnPrefixes = new IdentityHashMap<>();
-    private final Map<BabbleParser.ParameterDeclarationContext, ParamMods> paramModsMap = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, ParamMods> paramModsMap = new IdentityHashMap<>();
     private final Set<ParseTree> validatedTypeTrees = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** Closures proven not to escape their enclosing function {@code F} (only called or passed to borrow slots). */
@@ -280,7 +280,7 @@ final class EffectChecker {
         // Check pure + mut parameter conflict.
         boolean hasMutParam = false;
         boolean hasAnyParamMod = false;
-        for (BabbleParser.ParameterDeclarationContext param : ctx.parametersDeclaration().parameterDeclaration()) {
+        for (BabbleParser.FnParamContext param : ctx.fnParameters().fnParam()) {
             ParamMods pm = parseParamMods(param, reportErrors);
             hasMutParam |= pm.mut();
             hasAnyParamMod |= pm.mut() || pm.borrow();
@@ -318,7 +318,7 @@ final class EffectChecker {
                 : List.of();
         ParsedPrefix parsed = parseWords(words, true, true, ctx, report);
         boolean hasMutParam = false;
-        for (BabbleParser.ParameterDeclarationContext param : ctx.parametersDeclaration().parameterDeclaration()) {
+        for (BabbleParser.FnTypeParamContext param : ctx.fnTypeParameters().fnTypeParam()) {
             ParamMods pm = parseParamMods(param, report);
             hasMutParam |= pm.mut();
         }
@@ -334,7 +334,7 @@ final class EffectChecker {
         return parsed;
     }
 
-    ParamMods parseParamMods(BabbleParser.ParameterDeclarationContext param, boolean reportErrors) {
+    ParamMods parseParamMods(ParserRuleContext param, boolean reportErrors) {
         if (!reportErrors) {
             ParamMods cached = paramModsMap.get(param);
             if (cached != null) {
@@ -343,7 +343,7 @@ final class EffectChecker {
         }
         boolean mut = false;
         boolean borrow = false;
-        for (BabbleParser.ParamModifierContext modCtx : param.paramModifier()) {
+        for (BabbleParser.ParamModifierContext modCtx : ScopeAnalysis.paramModifiers(param)) {
             Token tok = modCtx.ID().getSymbol();
             switch (tok.getText()) {
                 case "mut" -> {
@@ -1301,11 +1301,11 @@ final class EffectChecker {
     }
 
     private boolean parameterNeverEscapesSyntactically(BabbleParser.FunctionLiteralContext lit, int paramIdx) {
-        List<BabbleParser.ParameterDeclarationContext> params = lit.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> params = lit.fnParameters().fnParam();
         if (paramIdx < 0 || paramIdx >= params.size()) {
             return false;
         }
-        BabbleParser.ParameterDeclarationContext targetParam = params.get(paramIdx);
+        BabbleParser.FnParamContext targetParam = params.get(paramIdx);
         for (BlockScopes.Occurrence occ : pass.occurrences) {
             if (checker.resolveNameForEffects(occ.name(), occ.scope()) == targetParam) {
                 if (!(occ.ctx().getParent() instanceof BabbleParser.CallContext c && c.expression() == occ.ctx())) {
@@ -1353,7 +1353,7 @@ final class EffectChecker {
         if (prefix.hasAnyModifier() || fn.type() != null) {
             return false;
         }
-        for (BabbleParser.ParameterDeclarationContext param : fn.parametersDeclaration().parameterDeclaration()) {
+        for (BabbleParser.FnParamContext param : fn.fnParameters().fnParam()) {
             ParamMods pm = parseParamMods(param, false);
             if (param.type() != null || pm.mut() || pm.borrow()) {
                 return false;
@@ -1373,7 +1373,7 @@ final class EffectChecker {
     private CallableSummary initialSummary(ParserRuleContext callable) {
         if (callable instanceof BabbleParser.FunctionLiteralContext fn) {
             ParsedPrefix prefix = parseFunctionPrefix(fn, true);
-            List<BabbleParser.ParameterDeclarationContext> params = fn.parametersDeclaration().parameterDeclaration();
+            List<BabbleParser.FnParamContext> params = fn.fnParameters().fnParam();
             int n = params.size();
             boolean[] mutParams = new boolean[n];
             boolean[] borrowParams = new boolean[n];
@@ -1400,8 +1400,8 @@ final class EffectChecker {
         }
         // ClassExpressionContext constructor:
         BabbleParser.ClassExpressionContext cls = (BabbleParser.ClassExpressionContext) callable;
-        List<BabbleParser.ParameterDeclarationContext> params = cls.parametersDeclaration() != null
-                ? cls.parametersDeclaration().parameterDeclaration() : List.of();
+        List<BabbleParser.ClassParamContext> params = cls.classParameters() != null
+                ? cls.classParameters().classParam() : List.of();
         int n = params.size();
         boolean[] mutParams = new boolean[n];
         boolean[] borrowParams = new boolean[n];
@@ -1564,7 +1564,7 @@ final class EffectChecker {
                                                 Map<ParserRuleContext, Type.Function> specializedParams,
                                                 boolean emitDiagnostics) {
         ParsedPrefix prefix = parseFunctionPrefix(fn, false);
-        List<BabbleParser.ParameterDeclarationContext> params = fn.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> params = fn.fnParameters().fnParam();
         int n = params.size();
         boolean untyped = isCompletelyUntyped(fn) && specializedParams == null;
 
@@ -1588,7 +1588,7 @@ final class EffectChecker {
                 emitDiagnostics);
 
         // Parameter defaults execute when omitted at call sites.
-        for (BabbleParser.ParameterDeclarationContext p : params) {
+        for (BabbleParser.FnParamContext p : params) {
             if (p.defaultValue != null) {
                 analyzer.eval(p.defaultValue);
             }
@@ -1623,8 +1623,8 @@ final class EffectChecker {
                                                    boolean emitDiagnostics) {
         TypeNode node = pass.typeNodes.get(cls);
         boolean isValue = node != null && node.kind == ClassShape.Kind.VALUE_CLASS;
-        List<BabbleParser.ParameterDeclarationContext> params = cls.parametersDeclaration() != null
-                ? cls.parametersDeclaration().parameterDeclaration() : List.of();
+        List<BabbleParser.ClassParamContext> params = cls.classParameters() != null
+                ? cls.classParameters().classParam() : List.of();
         boolean[] mutParams = current.mutParams().clone();
         boolean[] borrowParams = current.borrowParams().clone();
         ParsedPrefix pseudoPrefix = isValue
@@ -1647,7 +1647,7 @@ final class EffectChecker {
         analyzer.constructingSelf = true;
 
         for (int i = 0; i < params.size(); i++) {
-            BabbleParser.ParameterDeclarationContext p = params.get(i);
+            BabbleParser.ClassParamContext p = params.get(i);
             if (p.defaultValue != null) {
                 analyzer.eval(p.defaultValue);
             }
@@ -1694,9 +1694,9 @@ final class EffectChecker {
             TypeNode node = pass.typeNodes.get(cls);
             if (node != null && node.kind == ClassShape.Kind.VALUE_CLASS
                     && effs.contains(Effect.PURE) && effs.contains(Effect.DETERMINISTIC)
-                    && cls.parametersDeclaration() != null
-                    && !cls.parametersDeclaration().parameterDeclaration().isEmpty()
-                    && cls.parametersDeclaration().parameterDeclaration().get(0).defaultValue == null) {
+                    && cls.classParameters() != null
+                    && !cls.classParameters().classParam().isEmpty()
+                    && cls.classParameters().classParam().get(0).defaultValue == null) {
                 // Value class constructor stores parameter 0 losslessly into field 0 -> injective!
                 effs.add(Effect.INJECTIVE);
             }
@@ -1719,9 +1719,9 @@ final class EffectChecker {
             return internal;
         }
         ParsedPrefix prefix = parseFunctionPrefix(fn, false);
-        List<BabbleParser.ParameterDeclarationContext> params = fn.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> params = fn.fnParameters().fnParam();
         boolean hasAnyExplicit = prefix.hasAnyModifier();
-        for (BabbleParser.ParameterDeclarationContext p : params) {
+        for (BabbleParser.FnParamContext p : params) {
             ParamMods pm = parseParamMods(p, false);
             hasAnyExplicit |= pm.mut() || pm.borrow();
         }
@@ -1980,7 +1980,7 @@ final class EffectChecker {
                                           EnumSet<Effect> effs,
                                           boolean[] mutParams,
                                           boolean mutThis) {
-        List<BabbleParser.ParameterDeclarationContext> paramDecls = fn.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> paramDecls = fn.fnParameters().fnParam();
         Type fnRaw = checker.rawTypeOf(fn);
         if (!(fnRaw instanceof Type.Function tf)) {
             return;
@@ -1993,7 +1993,7 @@ final class EffectChecker {
         if (!anyMut && effs.contains(Effect.PURE) && effs.contains(Effect.DETERMINISTIC) && single != null) {
             // 1. Compositional monotone & injective in parameter 0 (when other parameters are untouched constants).
             if (!paramDecls.isEmpty()) {
-                BabbleParser.ParameterDeclarationContext p0 = paramDecls.get(0);
+                BabbleParser.FnParamContext p0 = paramDecls.get(0);
                 RelProps rel = relationalProps(single, p0);
                 if (rel.monotoneSign == 1 && isOrderedType(params.get(0).type()) && isOrderedType(result)) {
                     effs.add(Effect.MONOTONE);
@@ -2004,8 +2004,8 @@ final class EffectChecker {
             }
             // 2. Binary single-op wrapper for commutative & associative.
             if (paramDecls.size() == 2 && sameDomainType(params.get(0).type(), params.get(1).type())) {
-                BabbleParser.ParameterDeclarationContext p0 = paramDecls.get(0);
-                BabbleParser.ParameterDeclarationContext p1 = paramDecls.get(1);
+                BabbleParser.FnParamContext p0 = paramDecls.get(0);
+                BabbleParser.FnParamContext p1 = paramDecls.get(1);
                 WrapperProps wp = binaryWrapperProps(single, p0, p1);
                 if (wp.commutative) {
                     effs.add(Effect.COMMUTATIVE);
@@ -2066,7 +2066,7 @@ final class EffectChecker {
         return expr;
     }
 
-    private RelProps relationalProps(BabbleParser.ExpressionContext raw, BabbleParser.ParameterDeclarationContext targetParam) {
+    private RelProps relationalProps(BabbleParser.ExpressionContext raw, BabbleParser.FnParamContext targetParam) {
         BabbleParser.ExpressionContext expr = unwrapParens(raw);
         if (!referencesDecl(expr, targetParam)) {
             return RelProps.CONST;
@@ -2253,8 +2253,8 @@ final class EffectChecker {
     }
 
     private WrapperProps binaryWrapperProps(BabbleParser.ExpressionContext raw,
-                                            BabbleParser.ParameterDeclarationContext p0,
-                                            BabbleParser.ParameterDeclarationContext p1) {
+                                            BabbleParser.FnParamContext p0,
+                                            BabbleParser.FnParamContext p1) {
         BabbleParser.ExpressionContext expr = unwrapParens(raw);
         if (expr instanceof BabbleParser.BinaryOpContext bin) {
             int order = matchBinaryParams(bin.left, bin.right, p0, p1);
@@ -2306,8 +2306,8 @@ final class EffectChecker {
     }
 
     private int matchBinaryParams(BabbleParser.ExpressionContext a, BabbleParser.ExpressionContext b,
-                                  BabbleParser.ParameterDeclarationContext p0,
-                                  BabbleParser.ParameterDeclarationContext p1) {
+                                  BabbleParser.FnParamContext p0,
+                                  BabbleParser.FnParamContext p1) {
         Object ra = resolvePlainParam(unwrapParens(a));
         Object rb = resolvePlainParam(unwrapParens(b));
         if (ra == p0 && rb == p1) {
@@ -2320,7 +2320,7 @@ final class EffectChecker {
     }
 
     private boolean isUnaryIdempotentWrapper(BabbleParser.ExpressionContext raw,
-                                             BabbleParser.ParameterDeclarationContext p0) {
+                                             BabbleParser.FnParamContext p0) {
         BabbleParser.ExpressionContext expr = unwrapParens(raw);
         if (resolvePlainParam(expr) == p0) {
             // Identity function `(x) -> (x)` is idempotent!
@@ -2343,15 +2343,15 @@ final class EffectChecker {
 
     private boolean isMutIdempotentBody(BabbleParser.FunctionLiteralContext fn,
                                         BabbleParser.ExpressionContext raw,
-                                        List<BabbleParser.ParameterDeclarationContext> params,
+                                        List<BabbleParser.FnParamContext> params,
                                         boolean[] mutParams,
                                         boolean mutThis) {
         BabbleParser.ExpressionContext expr = unwrapParens(raw);
         // 1. Direct overwrite `this.field = val` or `mutParam.field = val` where `val` does not read the overwritten field!
-        if (expr instanceof BabbleParser.AssignExpressionContext assign && "=".equals(assign.op.getText()) && assign.namespace != null) {
-            BabbleParser.ExpressionContext ns = unwrapParens(assign.namespace);
+        if (expr instanceof BabbleParser.AssignExpressionContext assign && "=".equals(assign.op.getText()) && ScopeAnalysis.assignReceiver(assign) != null) {
+            BabbleParser.ExpressionContext ns = unwrapParens(ScopeAnalysis.assignReceiver(assign));
             if ((mutThis && ns instanceof BabbleParser.ThisExpressionContext)
-                    || (resolvePlainParam(ns) instanceof BabbleParser.ParameterDeclarationContext p
+                    || (resolvePlainParam(ns) instanceof BabbleParser.FnParamContext p
                     && params.indexOf(p) >= 0 && mutParams[params.indexOf(p)])) {
                 if (!readsField(assign.value, ScopeAnalysis.assignName(assign))) {
                     return true;
@@ -2368,12 +2368,13 @@ final class EffectChecker {
 
     private boolean isMutCommutativeBody(BabbleParser.FunctionLiteralContext fn,
                                          BabbleParser.ExpressionContext raw,
-                                         List<BabbleParser.ParameterDeclarationContext> params,
+                                         List<BabbleParser.FnParamContext> params,
                                          boolean[] mutParams,
                                          boolean mutThis) {
         BabbleParser.ExpressionContext expr = unwrapParens(raw);
         // `this.x += delta` on int (`+` is associative & commutative!) or forwarding to a `mut commutative` method!
-        if (expr instanceof BabbleParser.AssignExpressionContext assign && assign.namespace != null) {
+        if (expr instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) != null) {
+            BabbleParser.ExpressionContext recv = ScopeAnalysis.assignReceiver(assign);
             String op = assign.op.getText();
             Type targetType = checker.rawTypeOf(assign);
             if ("+=".equals(op) && targetType == Type.INT && params.size() == 1
@@ -2383,9 +2384,9 @@ final class EffectChecker {
             if ("=".equals(op) && targetType == Type.INT && params.size() == 1
                     && assign.value instanceof BabbleParser.BinaryOpContext bin && "+".equals(bin.op.getText())) {
                 String assignedName = ScopeAnalysis.assignName(assign);
-                if ((sameTargetField(assign.namespace, assignedName, bin.left)
+                if ((sameTargetField(recv, assignedName, bin.left)
                         && resolvePlainParam(unwrapParens(bin.right)) == params.get(0))
-                        || (sameTargetField(assign.namespace, assignedName, bin.right)
+                        || (sameTargetField(recv, assignedName, bin.right)
                         && resolvePlainParam(unwrapParens(bin.left)) == params.get(0))) {
                     return true;
                 }
@@ -2424,7 +2425,7 @@ final class EffectChecker {
     private Object resolvePlainParam(BabbleParser.ExpressionContext expr) {
         if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
             Object r = checker.resolveNameForEffects(sel.ID().getText(), checker.occurrenceScopeOf(sel));
-            if (r instanceof BabbleParser.ParameterDeclarationContext) {
+            if (r instanceof ParserRuleContext prc && ScopeAnalysis.isParamDecl(prc)) {
                 return r;
             }
         }
@@ -2637,7 +2638,7 @@ final class EffectChecker {
     private final class BodyAnalyzer {
         private final ParserRuleContext owner;
         private final ScopeNode ownerScope;
-        private final List<BabbleParser.ParameterDeclarationContext> params;
+        private final List<? extends ParserRuleContext> params;
         private final Map<ParserRuleContext, Integer> paramIndex = new IdentityHashMap<>();
         private final boolean inferMut;
         final boolean[] mutParams;
@@ -2662,7 +2663,7 @@ final class EffectChecker {
 
         BodyAnalyzer(ParserRuleContext owner,
                      ScopeNode ownerScope,
-                     List<BabbleParser.ParameterDeclarationContext> params,
+                     List<? extends ParserRuleContext> params,
                      boolean inferMut,
                      boolean[] mutParams,
                      boolean[] borrowParams,
@@ -2686,7 +2687,7 @@ final class EffectChecker {
             this.emitDiagnostics = emitDiagnostics;
 
             for (int i = 0; i < params.size(); i++) {
-                BabbleParser.ParameterDeclarationContext p = params.get(i);
+                ParserRuleContext p = params.get(i);
                 paramIndex.put(p, i);
                 Type pType = checker.typeOfDeclarationForEffects(p);
                 env.put(p, Origin.ofParam(i, p, isDeeplyImmutable(pType)));
@@ -2786,6 +2787,9 @@ final class EffectChecker {
                 return evalCall(call);
             }
             if (ctx instanceof BabbleParser.IfExpressionContext ifCtx) {
+                return evalIf(ifCtx.ifExpr());
+            }
+            if (ctx instanceof BabbleParser.IfExprContext ifCtx) {
                 return evalIf(ifCtx);
             }
             if (ctx instanceof BabbleParser.WhileExpressionContext whileCtx) {
@@ -2896,13 +2900,15 @@ final class EffectChecker {
 
         private Origin evalAssign(BabbleParser.AssignExpressionContext assign) {
             String compoundOp = Operators.compound(assign.op.getText());
-            if (assign.namespace == null) {
+            BabbleParser.ExpressionContext recv = ScopeAnalysis.assignReceiver(assign);
+            String assignedName = ScopeAnalysis.assignName(assign);
+            if (recv == null) {
                 Origin rhs = eval(assign.value);
                 if (compoundOp != null) {
                     checkCompoundArithmeticEffects(compoundOp, checker.rawTypeOf(assign), assign);
                 }
                 ScopeNode occScope = checker.occurrenceScopeOf(assign);
-                Object resolved = checker.resolveNameForEffects(assign.name.getText(), occScope);
+                Object resolved = checker.resolveNameForEffects(assignedName, occScope);
                 if (resolved instanceof ParserRuleContext decl) {
                     if (paramIndex.containsKey(decl)) {
                         // Local parameter variable reassignment (rebinds local slot, does NOT mutate caller's object!).
@@ -2924,12 +2930,12 @@ final class EffectChecker {
                     if (declFn != null && frameChain.contains(declFn) && !escapedCapturedLocals.contains(decl)) {
                         // Frame-local (`borrow`) helper closure reassigning enclosing F's unescaped local `def` (§4.5)!
                         frameWriteOwners.add(declFn);
-                        markStoredOrigin(rhs, "outer variable " + assign.name.getText(), assign);
+                        markStoredOrigin(rhs, "outer variable " + assignedName, assign);
                         return rhs;
                     }
                     // Outer / package / file / static variable write -> breaks hermetic/pure!
                     hermetic = false;
-                    markStoredOrigin(rhs, "outer variable " + assign.name.getText(), assign);
+                    markStoredOrigin(rhs, "outer variable " + assignedName, assign);
                     return rhs;
                 }
                 hermetic = false;
@@ -2937,27 +2943,26 @@ final class EffectChecker {
             }
 
             // Member assignment: `receiver.field = value` (or compound `+=`, etc.)
-            Origin recvOrig = eval(assign.namespace);
+            Origin recvOrig = eval(recv);
             Origin rhs = eval(assign.value);
             if (compoundOp != null) {
                 checkCompoundArithmeticEffects(compoundOp, checker.rawTypeOf(assign), assign);
             }
-            Type recvType = effectiveType(assign.namespace);
+            Type recvType = effectiveType(recv);
             if (recvType == Type.ERROR || recvType == Type.ANY || Type.containsNull(recvType)
                     || isPrimitiveOrString(recvType) || recvType instanceof Type.Function) {
                 return rhs;
             }
-                String assignedName = ScopeAnalysis.assignName(assign);
-                if (recvType instanceof Type.JavaClassValue || recvType instanceof Type.ClassValue
-                        || recvType instanceof Type.Module) {
-                    // Static / module field write -> global mutation!
-                    hermetic = false;
-                    markStoredOrigin(rhs, "static member " + assignedName, assign);
-                    return rhs;
-                }
-                recordTargetMutation(recvOrig, assign.namespace, "field assignment ." + assignedName, assign);
-                markStoredIntoTarget(recvOrig, rhs, assignedName, assign);
+            if (recvType instanceof Type.JavaClassValue || recvType instanceof Type.ClassValue
+                    || recvType instanceof Type.Module) {
+                // Static / module field write -> global mutation!
+                hermetic = false;
+                markStoredOrigin(rhs, "static member " + assignedName, assign);
                 return rhs;
+            }
+            recordTargetMutation(recvOrig, recv, "field assignment ." + assignedName, assign);
+            markStoredIntoTarget(recvOrig, rhs, assignedName, assign);
+            return rhs;
         }
 
         private void checkCompoundArithmeticEffects(String op, Type resType, BabbleParser.AssignExpressionContext assign) {
@@ -3722,7 +3727,7 @@ final class EffectChecker {
                 } else if (inferMut) {
                     mutParams[p] = true;
                 } else {
-                    String pName = params.get(p).ID().getText();
+                    String pName = ScopeAnalysis.paramId(params.get(p)).getText();
                     reportOnce("Cannot mutate parameter " + pName + " (" + reason + ") : mark parameter as mut " + pName, at);
                 }
             }
@@ -3766,7 +3771,7 @@ final class EffectChecker {
             }
             ParamMods declared = parseParamMods(params.get(p), false);
             if (declared.borrow()) {
-                reportOnce("borrow parameter " + params.get(p).ID().getText() + " escapes via " + destination, at);
+                reportOnce("borrow parameter " + ScopeAnalysis.paramId(params.get(p)).getText() + " escapes via " + destination, at);
             }
         }
 
@@ -3830,7 +3835,7 @@ final class EffectChecker {
             return false;
         }
 
-        private Origin evalIf(BabbleParser.IfExpressionContext ctx) {
+        private Origin evalIf(BabbleParser.IfExprContext ctx) {
             eval(ctx.test);
             Map<ParserRuleContext, Origin> snapshot = new IdentityHashMap<>(env);
 
@@ -3989,7 +3994,7 @@ final class EffectChecker {
         if (activeSpecializations.size() >= MAX_SPECIALIZATION_DEPTH) {
             return null;
         }
-        List<BabbleParser.ParameterDeclarationContext> paramDecls = targetLit.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> paramDecls = targetLit.fnParameters().fnParam();
         Map<ParserRuleContext, Type.Function> boundCallbacks = new IdentityHashMap<>();
         List<Object> keyItems = new ArrayList<>(paramDecls.size());
         boolean anyCallback = false;
@@ -4065,7 +4070,7 @@ final class EffectChecker {
         }
         ParsedPrefix prefix = parseFunctionPrefix(lit, false);
         boolean hasExplicit = prefix.hasAnyModifier() || prefix.axiom() || prefix.impure();
-        List<BabbleParser.ParameterDeclarationContext> paramDecls = lit.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> paramDecls = lit.fnParameters().fnParam();
         int n = paramDecls.size();
         if (hasExplicit || n == 0) {
             return new TypedModuleSummary.CallableEffectTemplate(

@@ -45,7 +45,7 @@ final class Resolver {
             Map<String, Resolution.Variable> declaredHere = variables.get(definition.getValue());
             if (declaredHere != null) {
                 String name = definition.getKey() instanceof BabbleParser.DefExpressionContext def
-                        ? def.name.getText() : ((BabbleParser.ParameterDeclarationContext) definition.getKey()).ID().getText();
+                        ? def.name.getText() : ScopeAnalysis.paramId(definition.getKey()).getText();
                 resolution.bindings.put(definition.getKey(), declaredHere.get(name));
             }
         }
@@ -142,10 +142,11 @@ final class Resolver {
             if (p instanceof BabbleParser.FunctionLiteralContext) {
                 return false;
             }
-            if (p instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.getParent().getParent() == scope.owner) {
-                List<BabbleParser.ParameterDeclarationContext> parameters =
-                        ((BabbleParser.ParametersDeclarationContext) parameter.getParent()).parameterDeclaration();
-                return parameters.indexOf(parameter) <= parameters.indexOf(variable.declaration());
+            if (ScopeAnalysis.isParamDecl(p) && p.getParent().getParent() == scope.owner) {
+                List<? extends ParserRuleContext> parameters = p instanceof BabbleParser.ClassParamContext
+                        ? ((BabbleParser.ClassParametersContext) p.getParent()).classParam()
+                        : ((BabbleParser.FnParametersContext) p.getParent()).fnParam();
+                return parameters.indexOf(p) <= parameters.indexOf(variable.declaration());
             }
         }
         return false;

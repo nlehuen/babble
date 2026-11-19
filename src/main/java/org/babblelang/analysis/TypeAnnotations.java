@@ -58,8 +58,8 @@ final class TypeAnnotations {
             }
             return declared;
         }
-        if (declaration instanceof BabbleParser.ParameterDeclarationContext parameter && parameter.type() != null) {
-            return annotation(parameter.type(), checker.scopeOf(parameter));
+        if (ScopeAnalysis.isParamDecl(declaration) && ScopeAnalysis.paramType(declaration) != null) {
+            return annotation(ScopeAnalysis.paramType(declaration), checker.scopeOf(declaration));
         }
         return null;
     }
@@ -184,7 +184,7 @@ final class TypeAnnotations {
             EffectSet effs = checker.effectChecker != null
                     ? checker.effectChecker.parseFunctionTypePrefix(function, checker.checkingEffects()).toEffectSet()
                     : EffectSet.EMPTY;
-            return new Type.Function(functionTypeParameters(function.parametersDeclaration(), scope),
+            return new Type.Function(functionTypeParameters(function.fnTypeParameters(), scope),
                     function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY,
                     effs);
         }
@@ -203,9 +203,9 @@ final class TypeAnnotations {
         return result;
     }
 
-    private List<Type.Parameter> functionTypeParameters(BabbleParser.ParametersDeclarationContext declaration, ScopeNode scope) {
+    private List<Type.Parameter> functionTypeParameters(BabbleParser.FnTypeParametersContext declaration, ScopeNode scope) {
         List<Type.Parameter> result = new ArrayList<>();
-        for (BabbleParser.ParameterDeclarationContext parameter : declaration.parameterDeclaration()) {
+        for (BabbleParser.FnTypeParamContext parameter : declaration.fnTypeParam()) {
             Type type;
             if (parameter.type() != null) {
                 type = annotation(parameter.type(), scope);
@@ -216,7 +216,7 @@ final class TypeAnnotations {
             EffectChecker.ParamMods pm = checker.effectChecker != null
                     ? checker.effectChecker.parseParamMods(parameter, checker.checkingEffects())
                     : EffectChecker.ParamMods.NONE;
-            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null,
+            result.add(new Type.Parameter(parameter.ID().getText(), type, false,
                     pm.mut(), pm.borrow(), pm.borrow()));
         }
         return result;

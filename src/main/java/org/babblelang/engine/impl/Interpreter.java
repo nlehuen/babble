@@ -216,13 +216,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 Object value = binder.take(i);
                 if (value == Arguments.MISSING) {
                     BabbleParser.ExpressionContext defaultValue = ((BabbleParser.ClassExpressionContext) ctx)
-                            .parametersDeclaration().parameterDeclaration(i).defaultValue;
+                            .classParameters().classParam(i).defaultValue;
                     if (defaultValue == null) {
                         throw binder.missing(i);
                     }
                     value = evaluateDefault(scope, defaultValue);
                 }
-                value = widen(((BabbleParser.ClassExpressionContext) ctx).parametersDeclaration().parameterDeclaration(i), value);
+                value = widen(((BabbleParser.ClassExpressionContext) ctx).classParameters().classParam(i), value);
                 int member = shape.parameterMember(i);
                 if (member >= 0) {
                     instance.initMember(member, value);
@@ -465,7 +465,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
      */
     public static String targetText(BabbleParser.AssignExpressionContext ctx) {
         String name = ScopeAnalysis.assignName(ctx);
-        return ctx.namespace == null ? name : ctx.namespace.getText() + "." + name;
+        BabbleParser.ExpressionContext receiver = ScopeAnalysis.assignReceiver(ctx);
+        return receiver == null ? name : receiver.getText() + "." + name;
     }
 
     /**
@@ -489,6 +490,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitIfExpression(BabbleParser.IfExpressionContext ctx) {
+        return visitIfExpr(ctx.ifExpr());
+    }
+
+    @Override
+    public Object visitIfExpr(BabbleParser.IfExprContext ctx) {
         last = ctx;
         if (Truth.test(visit(ctx.test))) {
             last = ctx;
@@ -523,9 +529,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitAssignExpression(BabbleParser.AssignExpressionContext ctx) {
         last = ctx;
         String name = ScopeAnalysis.assignName(ctx);
+        BabbleParser.ExpressionContext receiver = ScopeAnalysis.assignReceiver(ctx);
         // For x op= v, the target's value is read before v is evaluated, as in x = x op v.
         String operator = Operators.compound(ctx.op.getText());
-        if (ctx.namespace == null) {
+        if (receiver == null) {
             Object current = operator == null ? null : namespace.lookup(name);
             Object value = visit(ctx.value);
             if (operator != null) {
@@ -535,7 +542,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             value = widen(ctx, value);
             return namespace.assign(name, value);
         }
-        if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
+        if (receiver instanceof BabbleParser.ThisExpressionContext) {
             Object thiz = namespace.lookup("this");
             Object current = operator == null ? null : Members.selectOwn(thiz, name);
             Object value = visit(ctx.value);
@@ -547,10 +554,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             return Members.assignOwn(thiz, value, name);
         }
         // The target is checked before the value is evaluated.
-        Object target = visit(ctx.namespace);
+        Object target = visit(receiver);
         last = ctx;
-        Object scope = Members.assignable(target, ctx.namespace.getText());
-        Object current = operator == null ? null : Members.select(scope, name, ctx.namespace.getText());
+        Object scope = Members.assignable(target, receiver.getText());
+        Object current = operator == null ? null : Members.select(scope, name, receiver.getText());
         Object value = visit(ctx.value);
         if (operator != null) {
             value = compound(ctx, operator, current, value);

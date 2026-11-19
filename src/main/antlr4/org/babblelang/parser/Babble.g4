@@ -203,27 +203,21 @@ targetEffectPrefix: targetEffectWord+;
 targetEffectWord: {isTargetEffectWord()}? ID;
 
 expression:
-          IF test=expression THEN NL* thenBlock=block
-                     (NL* ELSE NL* elseBlock=block)?          # ifExpression
-          // "else if" chains, without a block around each "if" : elseIf is an if expression,
-          // which the predicate makes sure of. As the alternative ends with it, it is parsed
-          // at this alternative's precedence : "… else (c) + 1" adds to the whole chain.
-          | IF test=expression THEN NL* thenBlock=block
-                     NL* ELSE NL* {_input.LA(1) == IF}? elseIf=expression   # ifExpression
+          ifExpr                                              # ifExpression
           | (EXPORT | PRIVATE)? DEF name=ID typeParameters? (':' type)?
                      ('=' NL* ({isDefEffectStart()}? targetEffectPrefix)? value=expression)?   # defExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           // "value class" : the modifier is a contextual keyword, checked by the analysis.
           // No newline before the body : "class (a)" followed by "(b)" on the next line
           // would be ambiguous between a header and a body.
-          | modifier=ID? CLASS parametersDeclaration? (IMPLEMENTS typeList)? classBlock=block
+          | modifier=ID? CLASS classParameters? (IMPLEMENTS typeList)? classBlock=block
                 (NL* STATIC NL* staticBlock=block)?           # classExpression
           | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block
                 (NL* STATIC NL* staticBlock=block)?           # interfaceExpression
           | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block   # objectExpression
           | THIS                                              # thisExpression
           | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
-          | {isFunctionLiteralStart()}? effectPrefix parametersDeclaration ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
+          | {isFunctionLiteralStart()}? effectPrefix fnParameters ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
           // A newline may come before the dot : a chain of calls can go on the next lines.
           | expression NL* ('.' | safe='?.') memberName      # selector
           | ID                                                # selector
@@ -246,11 +240,10 @@ expression:
           | left=expression {!isCoreTypeAfterIs()}? IS NL* right=expression # isExpression
           | left=expression op=AND NL* right=expression           # booleanOp
           | left=expression op=OR NL* right=expression            # booleanOp
-          | parametersDeclaration ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
+          | fnParameters ( ':' type | ) '->' NL* functionBlock=block  # functionLiteral
           // Compound assignment : "x += v" is "x = x + v" (and -=, *=, /=), with the target's
           // receiver evaluated once.
-          | namespace=expression NL* '.' member=memberName op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression # assignExpression
-          | name=ID op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression   # assignExpression
+          | <assoc=right> lhs=expression op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression # assignExpression
           | NULL                                              # null
           | BOOLEAN                                           # boolean
           | RECURSE                                           # recurse
@@ -266,15 +259,27 @@ expression:
           | RETURN expression                                 # returnExpression
           ;
 
+ifExpr: IF test=expression THEN NL* thenBlock=block
+        (NL* ELSE NL* (elseIf=ifExpr | elseBlock=block))?;
+
 block: '(' sep? ')'
      | '(' sep? ({isEffectDeclarationStart()}? effectDeclaration | expression)
        (sep ({isEffectDeclarationStart()}? effectDeclaration | expression))* sep? ')';
 
-parametersDeclaration: '(' NL* parameterDeclaration (NL* ',' NL* parameterDeclaration)* NL* ')'
-                     | '(' NL* ')';
+classParameters: '(' NL* classParam (NL* ',' NL* classParam)* NL* ')'
+               | '(' NL* ')';
 
-// PRIVATE and DEF are only accepted in class headers, which the analysis checks.
-parameterDeclaration: PRIVATE? DEF? ({isParamModifier()}? paramModifier)* ID (':' type)? ('=' NL* defaultValue=expression)?;
+classParam: PRIVATE? DEF? ({isParamModifier()}? paramModifier)* ID (':' type)? ('=' NL* defaultValue=expression)?;
+
+fnParameters: '(' NL* fnParam (NL* ',' NL* fnParam)* NL* ')'
+            | '(' NL* ')';
+
+fnParam: ({isParamModifier()}? paramModifier)* ID (':' type)? ('=' NL* defaultValue=expression)?;
+
+fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* NL* ')'
+                | '(' NL* ')';
+
+fnTypeParam: ({isParamModifier()}? paramModifier)* ID (':' type)?;
 
 paramModifier: ID;
 
@@ -293,18 +298,18 @@ type: nullableType ('|' NL* nullableType)*;
 
 nullableType: primaryType question='?'?;
 
-primaryType: {isFunctionTypeStart()}? effectPrefix parametersDeclaration ( ':' type | )   # functionType
-           | (coreTypeKeyword | ID ('.' memberName)*) typeArguments?                      # simpleType
-           | parametersDeclaration ( ':' type | )                                         # functionType
-           | NULL                                                                         # nullType
-           | '(' NL* type NL* ')'                                                         # parenType
+primaryType: {isFunctionTypeStart()}? effectPrefix fnTypeParameters ( ':' type | )   # functionType
+           | (coreTypeKeyword | ID ('.' memberName)*) typeArguments?                  # simpleType
+           | fnTypeParameters ( ':' type | )                                          # functionType
+           | NULL                                                                     # nullType
+           | '(' NL* type NL* ')'                                                     # parenType
            ;
 
 // Tokens
 LONG_LIT: [0-9]+ [lL];
-FLOAT_LIT: ([0-9]* '.' [0-9]+ ([eE] [+-]? [0-9]+)? | [0-9]+ ([eE] [+-]? [0-9]+)) [fF]
+FLOAT_LIT: ([0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)? | [0-9]+ ([eE] [+-]? [0-9]+)) [fF]
          | [0-9]+ [fF];
-DOUBLE_LIT: [0-9]* '.' [0-9]+ ([eE] [+-]? [0-9]+)? [dD]?
+DOUBLE_LIT: [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)? [dD]?
           | [0-9]+ [eE] [+-]? [0-9]+ [dD]?
           | [0-9]+ [dD];
 INT: [0-9]+;
@@ -380,6 +385,6 @@ VOID: 'void';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;
 // Comments are kept, on the hidden channel : the parser does not see them, the formatter does.
 MULTILINECOMMENT: ';;(' .*? ';;)' -> channel(HIDDEN);
-COMMENT: ';;' ~[\r\n]* -> channel(HIDDEN);
+COMMENT: ';;' (~[(\r\n] ~[\r\n]*)? -> channel(HIDDEN);
 NL: '\r'? '\n';
 WS: [ \t]+ -> skip;

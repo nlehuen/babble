@@ -856,7 +856,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     "(Ljava/lang/Object;Ljava/lang/String;I)L" + RUNTIME + "BabbleFunction;", false);
 
             if (fnMethod != null && hasSpec(lit) && ifaceCount == litCount) {
-                List<BabbleParser.ParameterDeclarationContext> decls = lit.parametersDeclaration().parameterDeclaration();
+                List<BabbleParser.FnParamContext> decls = lit.fnParameters().fnParam();
                 m.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
                 m.visitVarInsn(ALOAD, 0);
                 m.visitVarInsn(ALOAD, 1);
@@ -1001,11 +1001,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             this.primDefBits = new int[count];
             Arrays.fill(this.memberKinds, ScopeAnalysis.PrimitiveKind.NONE);
             Arrays.fill(this.primDefBits, -1);
-            if (ctx instanceof BabbleParser.ClassExpressionContext c && c.parametersDeclaration() != null) {
+            if (ctx instanceof BabbleParser.ClassExpressionContext c && c.classParameters() != null) {
                 for (int p = 0; p < shape.parameters().length; p++) {
                     int idx = shape.parameterMember(p);
                     if (idx >= 0 && !shape.isMethod(idx)) {
-                        this.memberKinds[idx] = scopes.declarationKind(c.parametersDeclaration().parameterDeclaration(p));
+                        this.memberKinds[idx] = scopes.declarationKind(c.classParameters().classParam(p));
                     }
                 }
             }
@@ -1157,7 +1157,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     m.visitTypeInsn(CHECKCAST, COMPILED_METHOD);
                     m.visitVarInsn(ALOAD, 1);
                     if (hasSpec(lit) && ifaceCount == litCount) {
-                        List<BabbleParser.ParameterDeclarationContext> decls = lit.parametersDeclaration().parameterDeclaration();
+                        List<BabbleParser.FnParamContext> decls = lit.fnParameters().fnParam();
                         for (int i = 0; i < ifaceCount; i++) {
                             ScopeAnalysis.PrimitiveKind fromK = sig.parameterKinds()[i];
                             ScopeAnalysis.PrimitiveKind toK = scopes.declarationKind(decls.get(i));
@@ -1314,9 +1314,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 m.visitTypeInsn(CHECKCAST, COMPILED_METHOD);
                 m.visitVarInsn(ALOAD, rtSlot);
                 if (hasSpec(lit) && paramTypes.length == litCount) {
-                    List<BabbleParser.ParameterDeclarationContext> decls = lit.parametersDeclaration().parameterDeclaration();
+                    List<BabbleParser.FnParamContext> decls = lit.fnParameters().fnParam();
                     for (int i = 0; i < paramTypes.length; i++) {
-                        BabbleParser.ParameterDeclarationContext decl = decls.get(i);
+                        BabbleParser.FnParamContext decl = decls.get(i);
                         ScopeAnalysis.PrimitiveKind toK = scopes.declarationKind(decl);
                         emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], toK, scopes.numericWideningRank(decl), scopes.checkedType(decl));
                     }
@@ -2130,7 +2130,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         boolean hasPrimitive = scopes.functionReturnKind(literal).isPrimitive();
         int slots = 3;
-        for (BabbleParser.ParameterDeclarationContext decl : literal.parametersDeclaration().parameterDeclaration()) {
+        for (BabbleParser.FnParamContext decl : literal.fnParameters().fnParam()) {
             ScopeAnalysis.PrimitiveKind kind = scopes.declarationKind(decl);
             if (kind.isPrimitive()) {
                 hasPrimitive = true;
@@ -2150,7 +2150,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private String functionSpecDescriptor(BabbleParser.FunctionLiteralContext literal) {
         StringBuilder sb = new StringBuilder();
         sb.append("(L").append(COMPILED_FUNCTION).append(";Ljava/lang/Object;L").append(SCRIPT_RUNTIME).append(';');
-        for (BabbleParser.ParameterDeclarationContext decl : literal.parametersDeclaration().parameterDeclaration()) {
+        for (BabbleParser.FnParamContext decl : literal.fnParameters().fnParam()) {
             sb.append(jvmDescriptor(scopes.declarationKind(decl)));
         }
         sb.append(')').append(jvmDescriptor(scopes.functionReturnKind(literal)));
@@ -2167,7 +2167,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private String methodSpecDescriptor(BabbleParser.FunctionLiteralContext literal) {
         StringBuilder sb = new StringBuilder();
         sb.append("(L").append(COMPILED_METHOD).append(";L").append(SCRIPT_RUNTIME).append(';');
-        for (BabbleParser.ParameterDeclarationContext decl : literal.parametersDeclaration().parameterDeclaration()) {
+        for (BabbleParser.FnParamContext decl : literal.fnParameters().fnParam()) {
             sb.append(jvmDescriptor(scopes.declarationKind(decl)));
         }
         sb.append(')').append(jvmDescriptor(scopes.functionReturnKind(literal)));
@@ -2194,7 +2194,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     private void generateFunctionSpec(BabbleParser.FunctionLiteralContext literal, String method) {
-        List<BabbleParser.ParameterDeclarationContext> decls = literal.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> decls = literal.fnParameters().fnParam();
         int[] paramSlots = new int[decls.size()];
         int nextParam = 3;
         for (int i = 0; i < decls.size(); i++) {
@@ -2274,7 +2274,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     private void generateMethodSpec(BabbleParser.FunctionLiteralContext literal, ClassGen gen, String method) {
-        List<BabbleParser.ParameterDeclarationContext> decls = literal.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> decls = literal.fnParameters().fnParam();
         int[] paramSlots = new int[decls.size()];
         int nextParam = 3;
         for (int i = 0; i < decls.size(); i++) {
@@ -2337,7 +2337,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private void functionBody(BabbleParser.FunctionLiteralContext literal, String paramsField, String selfType) {
         initFrameLocals(literal, selfType);
-        bindParameters(paramsField, scopes.parameters(literal), literal.parametersDeclaration().parameterDeclaration(), null);
+        bindParameters(paramsField, scopes.parameters(literal), literal.fnParameters().fnParam(), null);
 
         List<BabbleParser.ExpressionContext> body = literal.functionBlock.expression();
         statements(body);
@@ -2350,9 +2350,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private void functionBodySpec(BabbleParser.FunctionLiteralContext literal, String selfType, int[] paramSlots) {
         initFrameLocals(literal, selfType);
         String[] parameters = scopes.parameters(literal);
-        List<BabbleParser.ParameterDeclarationContext> decls = literal.parametersDeclaration().parameterDeclaration();
+        List<BabbleParser.FnParamContext> decls = literal.fnParameters().fnParam();
         for (int i = 0; i < parameters.length; i++) {
-            BabbleParser.ParameterDeclarationContext decl = decls.get(i);
+            BabbleParser.FnParamContext decl = decls.get(i);
             ScopeAnalysis.PrimitiveKind pk = scopes.declarationKind(decl);
             Resolution.Variable variable = resolution.variable(decl);
             if (variable != null) {
@@ -2386,7 +2386,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * numbers, so its errors are reported at the line of the construction.
      */
     private void generateClassBody(ParserRuleContext ctx, String method, ClassShape shape, BabbleParser.BlockContext body,
-                                   List<BabbleParser.ParameterDeclarationContext> declarations) {
+                                   List<? extends ParserRuleContext> declarations) {
         beginMethod(ctx, ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, method, CLASS_BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS);
         loadCapturedCells(BABBLE_CLASS);
 
@@ -2428,7 +2428,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      * don't cover the binding. With a class shape, header members are stored into the
      * instance instead of being defined as names.
      */
-    private void bindParameters(String paramsField, String[] parameters, List<BabbleParser.ParameterDeclarationContext> declarations, ClassShape shape) {
+    private void bindParameters(String paramsField, String[] parameters, List<? extends ParserRuleContext> declarations, ClassShape shape) {
         // In a direct entry point, the arguments are parameters, MISSING when not given.
         boolean spread = parameterBase >= 0;
         int binder = spread ? BINDER_LOCAL : newLocal();
@@ -2442,7 +2442,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
 
         for (int i = 0; i < parameters.length; i++) {
-            BabbleParser.ExpressionContext defaultValue = declarations.get(i).defaultValue;
+            BabbleParser.ExpressionContext defaultValue = ScopeAnalysis.paramDefault(declarations.get(i));
             Label bind = new Label();
             int value = spread ? parameterBase + i : arrayValue;
 
@@ -2929,7 +2929,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     /** Pushes the shape, the closure and the constructor of a class or object literal. */
-    private void classValueArguments(ParserRuleContext ctx, BabbleParser.BlockContext body, List<BabbleParser.ParameterDeclarationContext> declarations) {
+    private void classValueArguments(ParserRuleContext ctx, BabbleParser.BlockContext body, List<? extends ParserRuleContext> declarations) {
         ClassShape shape = scopes.shape(ctx);
         String name = shape.name();
         String method = "cls$" + (functionCount++) + "$" + name;
@@ -3027,8 +3027,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitClassExpression(BabbleParser.ClassExpressionContext ctx) {
-        List<BabbleParser.ParameterDeclarationContext> declarations = ctx.parametersDeclaration() != null
-                ? ctx.parametersDeclaration().parameterDeclaration() : List.of();
+        List<BabbleParser.ClassParamContext> declarations = ctx.classParameters() != null
+                ? ctx.classParameters().classParam() : List.of();
         ClassGen gen = classGen(ctx);
         classValueArguments(ctx, ctx.classBlock, declarations);
         types(ctx.typeList());
@@ -3321,6 +3321,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitIfExpression(BabbleParser.IfExpressionContext ctx) {
+        return visitIfExpr(ctx.ifExpr());
+    }
+
+    @Override
+    public Void visitIfExpr(BabbleParser.IfExprContext ctx) {
         ScopeAnalysis.PrimitiveKind target = scopes.expressionKind(ctx);
         Label otherwise = new Label();
         Label end = new Label();
@@ -3710,7 +3715,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 && methodOwner instanceof BabbleParser.FunctionLiteralContext fnLit) {
             Resolution.Variable v = resolution.variable(recurseCtx);
             if (v != null && v.method() == methodOwner) {
-                List<BabbleParser.ParameterDeclarationContext> decls = fnLit.parametersDeclaration().parameterDeclaration();
+                List<BabbleParser.FnParamContext> decls = fnLit.fnParameters().fnParam();
                 int count = decls.size();
                 if (hasSpec(fnLit) && parameters.size() == count) {
                     if (methodClass != null) {
@@ -3778,7 +3783,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         // Direct free Babble function call resolved statically to a FunctionLiteralContext
         BabbleParser.FunctionLiteralContext targetFn = scopes.babbleCallFunction(ctx);
         if (targetFn != null && names == null && parameters.size() == scopes.parameters(targetFn).length) {
-            List<BabbleParser.ParameterDeclarationContext> decls = targetFn.parametersDeclaration().parameterDeclaration();
+            List<BabbleParser.FnParamContext> decls = targetFn.fnParameters().fnParam();
             boolean spec = hasSpec(targetFn);
             if (spec || isSpread(targetFn)) {
                 emitBoxed(ctx.expression());
@@ -3816,7 +3821,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             if (index >= 0 && gen.shape.isMethod(index)) {
                 // A method of this compiled class : a direct call of its JVM method, once its def has run.
                 BabbleParser.FunctionLiteralContext literal = gen.methodLiteral(member);
-                List<BabbleParser.ParameterDeclarationContext> decls = literal.parametersDeclaration().parameterDeclaration();
+                List<BabbleParser.FnParamContext> decls = literal.fnParameters().fnParam();
                 loadThisAs(thisExpression, gen);
                 mv.visitInsn(DUP);
                 mv.visitFieldInsn(GETFIELD, gen.name, member, "Ljava/lang/Object;");
@@ -4763,7 +4768,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         ParserRuleContext child = thisExpression;
         for (ParserRuleContext p = thisExpression.getParent(); p != null; child = p, p = p.getParent()) {
             if (p instanceof BabbleParser.ClassExpressionContext c) {
-                if (child == c.classBlock || child == c.parametersDeclaration()) {
+                if (child == c.classBlock || child == c.classParameters()) {
                     ClassGen gen = classGens.get(c);
                     return gen != null && !gen.arrayBacked ? gen : null;
                 }
@@ -4806,7 +4811,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             return null;
         }
         String name = ScopeAnalysis.assignName(ctx);
-        if (ctx.namespace == null) {
+        if (ScopeAnalysis.assignReceiver(ctx) == null) {
             Resolution.Variable variable = resolution.variable(ctx);
             if (variable != null) {
                 ScopeAnalysis.PrimitiveKind vk = variableKind(variable);
@@ -4826,14 +4831,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
             return null;
         }
-        if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
-            ClassGen gen = thisClassAt(ctx.namespace);
+        if (ScopeAnalysis.assignReceiver(ctx) instanceof BabbleParser.ThisExpressionContext) {
+            ClassGen gen = thisClassAt(ScopeAnalysis.assignReceiver(ctx));
             int idx = fieldIndex(gen, name);
             if (idx >= 0 && !gen.shape.isValue()) {
                 ScopeAnalysis.PrimitiveKind mk = gen.memberKinds[idx];
                 if (mk.isPrimitive()) {
                     int recv = newLocal();
-                    loadThisAs(ctx.namespace, gen);
+                    loadThisAs(ScopeAnalysis.assignReceiver(ctx), gen);
                     mv.visitVarInsn(ASTORE, recv);
                     emitAndWidenIfMarked(ctx.value);
                     widenStackFor(ctx);
@@ -4857,7 +4862,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     return null;
                 }
                 // A field of this compiled class : checked defined, then written directly.
-                loadThisAs(ctx.namespace, gen);
+                loadThisAs(ScopeAnalysis.assignReceiver(ctx), gen);
                 emitBoxed(ctx.value);
                 mv.visitInsn(SWAP);
                 mv.visitInsn(DUP);
@@ -4873,7 +4878,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 stackKind = ScopeAnalysis.PrimitiveKind.NONE;
                 return null;
             }
-            emitBoxed(ctx.namespace);
+            emitBoxed(ScopeAnalysis.assignReceiver(ctx));
             emitAndWidenIfMarked(ctx.value);
             widenStackFor(ctx);
             convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
@@ -4889,9 +4894,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             return null;
         }
         // The target is checked before the value is evaluated.
-        emitBoxed(ctx.namespace);
+        emitBoxed(ScopeAnalysis.assignReceiver(ctx));
         line(ctx);
-        pushString(mv, ctx.namespace.getText());
+        pushString(mv, ScopeAnalysis.assignReceiver(ctx).getText());
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignable", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
         emitAndWidenIfMarked(ctx.value);
         widenStackFor(ctx);
@@ -4910,7 +4915,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      */
     private void compoundAssignment(BabbleParser.AssignExpressionContext ctx, String operator) {
         String name = ScopeAnalysis.assignName(ctx);
-        if (ctx.namespace == null) {
+        if (ScopeAnalysis.assignReceiver(ctx) == null) {
             Resolution.Variable variable = resolution.variable(ctx);
             if (variable != null) {
                 ScopeAnalysis.PrimitiveKind vk = variableKind(variable);
@@ -4976,15 +4981,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             return;
         }
         int current = newLocal();
-        if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
-            ClassGen gen = thisClassAt(ctx.namespace);
+        if (ScopeAnalysis.assignReceiver(ctx) instanceof BabbleParser.ThisExpressionContext) {
+            ClassGen gen = thisClassAt(ScopeAnalysis.assignReceiver(ctx));
             int idx = fieldIndex(gen, name);
             if (idx >= 0 && !gen.shape.isValue()) {
                 ScopeAnalysis.PrimitiveKind mk = gen.memberKinds[idx];
                 ScopeAnalysis.PrimitiveKind rk = scopes.expressionKind(ctx.value);
                 if (mk == ScopeAnalysis.PrimitiveKind.INT && rk == ScopeAnalysis.PrimitiveKind.INT && !"/".equals(operator)) {
                     int recv = newLocal();
-                    loadThisAs(ctx.namespace, gen);
+                    loadThisAs(ScopeAnalysis.assignReceiver(ctx), gen);
                     mv.visitVarInsn(ASTORE, recv);
                     gen.emitCheckDefined(mv, recv, idx, name, ctx);
                     mv.visitVarInsn(ALOAD, recv);
@@ -5014,7 +5019,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 if (mk == ScopeAnalysis.PrimitiveKind.DOUBLE
                         && (rk == ScopeAnalysis.PrimitiveKind.INT || rk == ScopeAnalysis.PrimitiveKind.DOUBLE)) {
                     int recv = newLocal();
-                    loadThisAs(ctx.namespace, gen);
+                    loadThisAs(ScopeAnalysis.assignReceiver(ctx), gen);
                     mv.visitVarInsn(ASTORE, recv);
                     gen.emitCheckDefined(mv, recv, idx, name, ctx);
                     mv.visitVarInsn(ALOAD, recv);
@@ -5044,7 +5049,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 }
                 if (mk.isPrimitive()) {
                     int recv = newLocal();
-                    loadThisAs(ctx.namespace, gen);
+                    loadThisAs(ScopeAnalysis.assignReceiver(ctx), gen);
                     mv.visitVarInsn(ASTORE, recv);
                     gen.emitCheckDefined(mv, recv, idx, name, ctx);
                     mv.visitVarInsn(ALOAD, recv);
@@ -5064,7 +5069,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     return;
                 }
                 // A field of this compiled class : read, checked defined, then written directly.
-                loadThisAs(ctx.namespace, gen);
+                loadThisAs(ScopeAnalysis.assignReceiver(ctx), gen);
                 mv.visitFieldInsn(GETFIELD, gen.name, name, "Ljava/lang/Object;");
                 mv.visitLdcInsn(name);
                 line(ctx);
@@ -5072,7 +5077,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitVarInsn(ASTORE, current);
                 compound(ctx, operator, current);
                 widenStackFor(ctx);
-                loadThisAs(ctx.namespace, gen);
+                loadThisAs(ScopeAnalysis.assignReceiver(ctx), gen);
                 mv.visitInsn(SWAP);
                 mv.visitInsn(DUP_X1);
                 mv.visitFieldInsn(PUTFIELD, gen.name, name, "Ljava/lang/Object;");
@@ -5080,7 +5085,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 return;
             }
             int thiz = newLocal();
-            emitBoxed(ctx.namespace);
+            emitBoxed(ScopeAnalysis.assignReceiver(ctx));
             mv.visitVarInsn(ASTORE, thiz);
             mv.visitVarInsn(ALOAD, thiz);
             mv.visitLdcInsn(name);
@@ -5104,14 +5109,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         // The target is checked, then read, before the value is evaluated.
         int scope = newLocal();
-        emitBoxed(ctx.namespace);
+        emitBoxed(ScopeAnalysis.assignReceiver(ctx));
         line(ctx);
-        pushString(mv, ctx.namespace.getText());
+        pushString(mv, ScopeAnalysis.assignReceiver(ctx).getText());
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignable", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
         mv.visitVarInsn(ASTORE, scope);
         mv.visitVarInsn(ALOAD, scope);
         mv.visitLdcInsn(name);
-        pushString(mv, ctx.namespace.getText());
+        pushString(mv, ScopeAnalysis.assignReceiver(ctx).getText());
         line(ctx);
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
         mv.visitVarInsn(ASTORE, current);
@@ -5132,12 +5137,12 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         String desc = Type.getDescriptor(fieldType);
         int recvLocal = -1;
         if (target.isStatic()) {
-            if (!isPureStaticJavaChain(ctx.namespace)) {
-                emitCheckedJavaReceiver(ctx.namespace, ctx, false, OBJECT, "notAssignable");
+            if (!isPureStaticJavaChain(ScopeAnalysis.assignReceiver(ctx))) {
+                emitCheckedJavaReceiver(ScopeAnalysis.assignReceiver(ctx), ctx, false, OBJECT, "notAssignable");
                 mv.visitInsn(POP);
             }
         } else {
-            emitCheckedJavaReceiver(ctx.namespace, ctx, target.unwrapReceiver(), owner, "notAssignable");
+            emitCheckedJavaReceiver(ScopeAnalysis.assignReceiver(ctx), ctx, target.unwrapReceiver(), owner, "notAssignable");
             recvLocal = newLocal();
             mv.visitVarInsn(ASTORE, recvLocal);
         }
@@ -5247,12 +5252,12 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         String desc = Type.getDescriptor(fieldType);
         int recvLocal = -1;
         if (target.isStatic()) {
-            if (!isPureStaticJavaChain(ctx.namespace)) {
-                emitCheckedJavaReceiver(ctx.namespace, ctx, false, OBJECT, "notAssignable");
+            if (!isPureStaticJavaChain(ScopeAnalysis.assignReceiver(ctx))) {
+                emitCheckedJavaReceiver(ScopeAnalysis.assignReceiver(ctx), ctx, false, OBJECT, "notAssignable");
                 mv.visitInsn(POP);
             }
         } else {
-            emitCheckedJavaReceiver(ctx.namespace, ctx, target.unwrapReceiver(), owner, "notAssignable");
+            emitCheckedJavaReceiver(ScopeAnalysis.assignReceiver(ctx), ctx, target.unwrapReceiver(), owner, "notAssignable");
             recvLocal = newLocal();
             mv.visitVarInsn(ASTORE, recvLocal);
         }
