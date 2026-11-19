@@ -49,6 +49,7 @@ final class TypedModuleSummary {
                 return base;
             }
             EnumSet<Effect> effs = EffectSet.copySet(residualEffects.effects());
+            boolean terminating = residualEffects.terminating();
             boolean[] mutParams = residualMutParams.clone();
             boolean[] borrowParams = residualBorrowParams.clone();
             for (int i = 0; i < forwardedCallbackParams.length; i++) {
@@ -61,6 +62,7 @@ final class TypedModuleSummary {
                         : (i < defaultCallbackEffects.length ? defaultCallbackEffects[i] : null);
                 if (cbEffects != null) {
                     effs.retainAll(cbEffects.effects());
+                    terminating &= cbEffects.terminating();
                 }
                 if (argFn != null && paramMutFromCallbackArg != null && i < paramMutFromCallbackArg.length) {
                     long[] argMasks = paramMutFromCallbackArg[i];
@@ -80,8 +82,9 @@ final class TypedModuleSummary {
                     }
                 }
             }
-            EffectSet combined = EffectSet.ofInferred(effs, residualEffects.mutThis(), residualEffects.borrowThis());
-            return new EffectChecker.CallableSummary(combined, mutParams, borrowParams);
+            EffectSet combined = EffectSet.ofInferred(effs, residualEffects.mutThis(), residualEffects.borrowThis(),
+                    residualEffects.uniqueResult(), terminating);
+            return new EffectChecker.CallableSummary(combined, mutParams, borrowParams, base.uniqueParams());
         }
     }
 

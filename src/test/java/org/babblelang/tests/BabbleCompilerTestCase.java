@@ -176,7 +176,7 @@ public class BabbleCompilerTestCase {
         Bindings bindings = engine.createBindings();
         bindings.put("capture", capture);
         bindings.put(ScriptEngine.FILENAME, "trace.ba");
-        engine.eval("def inner = fn () -> (\n  (capture as java.lang.Runnable).run()\n)\ndef outer = fn () -> (\n  1\n  inner()\n)\nouter()", bindings);
+        engine.eval("def inner = fn () -> (\n  (capture as java.lang.Runnable).run()\n)\ndef outer = fn () -> (\n  discard(1)\n  inner()\n)\nouter()", bindings);
 
         StackTraceElement inner = captured.stream().filter(e -> e.getMethodName().equals("fn$0$inner")).findFirst().orElseThrow();
         Assertions.assertEquals(2, inner.getLineNumber());

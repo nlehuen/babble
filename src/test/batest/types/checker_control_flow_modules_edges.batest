@@ -13,7 +13,7 @@ export def INested = interface (
 {{{{{
 ;; visitIfExpression & visitWhileExpression: unused incompatible branches, missing else, double widening, union join
 def pickIf = fn (flag : bool) : string -> (
-    if flag then ( 1 ) else ( "ok" )
+    discard(if flag then ( 1 ) else ( "ok" ))
     def d : double = if flag then ( 1 ) else ( 2.5 )
     def k = 0
     while k < 2 then ( k += 1; 99 )

@@ -490,7 +490,7 @@ public class TypeCheckerTestCase {
                 + "  def ok1 : bool = v == 1\n"
                 + "  def ok2 : bool = v != null\n"
                 + "  def ok3 : string = \"x = \" + v\n"
-                + "  println(v) ; same(v, 1) ; classof(v) ; java.lang.System.out.println(v)\n"
+                + "  println(v) ; discard(same(v, 1)) ; discard(classof(v)) ; java.lang.System.out.println(v)\n"
                 + "  def l : java.util.List of any? = java.util.ArrayList() ; l.add(v)\n"
                 + "  def cond = true\n"
                 + "  def ok4 : any = if cond then ( 1 ) else ( \"a\" )\n"

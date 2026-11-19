@@ -94,6 +94,10 @@ final class EffectChecker {
             this(effects, mutParams, borrowParams, new boolean[mutParams.length], frameReadOwners, frameWriteOwners);
         }
 
+        CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams) {
+            this(effects, mutParams, borrowParams, uniqueParams, Set.of(), Set.of());
+        }
+
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams) {
             this(effects, mutParams, borrowParams, new boolean[mutParams.length], Set.of(), Set.of());
         }
@@ -254,6 +258,8 @@ final class EffectChecker {
     private final Map<ParserRuleContext, CallableSummary> summaries = new IdentityHashMap<>();
     /** Caller-visible summaries (locked to declared contract for annotated callables per BIP007-D2). */
     private final Map<ParserRuleContext, CallableSummary> visibleSummaries = new IdentityHashMap<>();
+    /** Callables belonging to a cyclic SCC (self-recursive or mutually recursive) — cannot be @TERMINATING. */
+    private final Set<ParserRuleContext> cyclicCallables = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** Active call-site specialization stack to bound recursive higher-order specialization. */
     private final Deque<SpecKey> activeSpecializations = new ArrayDeque<>();
@@ -1170,17 +1176,17 @@ final class EffectChecker {
             boolean[] borrowParams = new boolean[pCount];
             Arrays.fill(borrowParams, true);
             boolean isStatic = exactMethod != null && Modifier.isStatic(exactMethod.getModifiers());
-            EffectSet set = EffectSet.ofInferred(effs, false, !isStatic);
+            EffectSet set = EffectSet.ofInferred(effs, false, !isStatic, false, true);
             return new JavaCallProfile(set, false, !isStatic, new boolean[pCount], borrowParams, isNothrow);
         }
         if (owner != null && java.util.Map.Entry.class.isAssignableFrom(owner)) {
             if (("getKey".equals(methodName) || "getValue".equals(methodName)) && (paramCount == -1 || paramCount == 0)) {
                 EffectSet set = EffectSet.ofInferred(
-                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
                 return new JavaCallProfile(set, false, true, new boolean[0], new boolean[0], true);
             }
             if ("setValue".equals(methodName) && (paramCount == -1 || paramCount == 1)) {
-                EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), true, false);
+                EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), true, false, false, true);
                 return new JavaCallProfile(set, true, false, new boolean[1], new boolean[1], false);
             }
         }
@@ -1194,7 +1200,7 @@ final class EffectChecker {
                 int pCount = Math.max(paramCount, 0);
                 boolean[] borrowParams = new boolean[pCount];
                 Arrays.fill(borrowParams, true);
-                EffectSet set = EffectSet.ofInferred(effs, false, true);
+                EffectSet set = EffectSet.ofInferred(effs, false, true, false, true);
                 return new JavaCallProfile(set, false, true, new boolean[pCount], borrowParams, isNothrow);
             }
             if (COLLECTION_MUT_METHODS.contains(methodName)) {
@@ -1204,17 +1210,17 @@ final class EffectChecker {
                 if (COLLECTION_MUT_BORROW_ARG_METHODS.contains(methodName)) {
                     Arrays.fill(borrowParams, true);
                 }
-                EffectSet set = EffectSet.ofInferred(effs, true, false);
+                EffectSet set = EffectSet.ofInferred(effs, true, false, false, true);
                 return new JavaCallProfile(set, true, false, new boolean[pCount], borrowParams, false);
             }
         }
         if ("equals".equals(methodName) && (paramCount == -1 || paramCount == 1)) {
-            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
+            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
             return new JavaCallProfile(set, false, true, new boolean[]{false}, new boolean[]{true}, false);
         }
         if ("compareTo".equals(methodName) && (paramCount == -1 || paramCount == 1)
                 && (owner != null && Comparable.class.isAssignableFrom(owner))) {
-            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
+            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
             return new JavaCallProfile(set, false, true, new boolean[]{false}, new boolean[]{true}, false);
         }
         if (("hashCode".equals(methodName) || "toString".equals(methodName)) && (paramCount == -1 || paramCount == 0)) {
@@ -1225,7 +1231,7 @@ final class EffectChecker {
             EnumSet<Effect> effs = deterministic
                     ? EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC)
                     : EnumSet.of(Effect.PURE, Effect.HERMETIC);
-            EffectSet set = EffectSet.ofInferred(effs, false, true);
+            EffectSet set = EffectSet.ofInferred(effs, false, true, false, true);
             return new JavaCallProfile(set, false, true, new boolean[0], new boolean[0], false);
         }
         return null;
@@ -1260,9 +1266,9 @@ final class EffectChecker {
             updated.add(new Type.Parameter(p.name(), p.type(), p.optional(), mut, borrow, borrow, unique));
         }
         EffectSet fnEffects = new EffectSet(profile.effects().effects(), profile.effects().effects(),
-                false, false, false, false, false,
+                false, false, false,
                 profile.effects().uniqueResult(), profile.effects().explicitUniqueResult(),
-                profile.effects().terminating());
+                profile.effects().terminating(), false, false);
         return new Type.Function(rawSam.typeParameters(), updated, rawSam.result(), fnEffects);
     }
 
@@ -1464,7 +1470,8 @@ final class EffectChecker {
             }
             EnumSet<Effect> opt = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW);
             boolean borrowThis = canReferenceThis(checker.scopeOf(fn));
-            EffectSet set = new EffectSet(opt, prefix.effects(), prefix.mutThis(), borrowThis, prefix.borrowThis(), false, false);
+            EffectSet set = new EffectSet(opt, prefix.effects(), prefix.mutThis(), borrowThis, prefix.borrowThis(),
+                    false, prefix.uniqueReturn(), true, false, false);
             return new CallableSummary(set, mutParams, borrowParams);
         }
         // ClassExpressionContext constructor:
@@ -1682,8 +1689,11 @@ final class EffectChecker {
                 analyzer.borrowThis,
                 prefix.borrowThis(),
                 false,
+                prefix.uniqueReturn(),
+                analyzer.terminating,
+                false,
                 false);
-        return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams,
+        return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams(),
                 Set.copyOf(analyzer.frameReadOwners), Set.copyOf(analyzer.frameWriteOwners));
     }
 
@@ -1739,8 +1749,8 @@ final class EffectChecker {
         if (analyzer.nothrow) {
             nextEffects.add(Effect.NOTHROW);
         }
-        EffectSet nextSet = EffectSet.ofInferred(nextEffects, false, false);
-        return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams);
+        EffectSet nextSet = EffectSet.ofInferred(nextEffects, false, false, false, analyzer.terminating);
+        return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams());
     }
 
     private CallableSummary finalizeSummary(ParserRuleContext callable, CallableSummary raw) {
@@ -1777,9 +1787,12 @@ final class EffectChecker {
                 mutThis,
                 raw.effects().borrowThis(),
                 raw.effects().explicitBorrowThis(),
+                raw.effects().uniqueResult(),
+                raw.effects().explicitUniqueResult(),
+                raw.effects().terminating(),
                 false,
                 false);
-        return new CallableSummary(finalized, raw.mutParams(), raw.borrowParams(),
+        return new CallableSummary(finalized, raw.mutParams(), raw.borrowParams(), raw.uniqueParams(),
                 raw.frameReadOwners(), raw.frameWriteOwners());
     }
 
@@ -1792,7 +1805,7 @@ final class EffectChecker {
         boolean hasAnyExplicit = prefix.hasAnyModifier();
         for (BabbleParser.FnParamContext p : params) {
             ParamMods pm = parseParamMods(p, false);
-            hasAnyExplicit |= pm.mut() || pm.borrow();
+            hasAnyExplicit |= pm.mut() || pm.borrow() || pm.unique();
         }
         if (!hasAnyExplicit) {
             // Unannotated function (including unannotated `export def` per BIP007-D2):
@@ -1802,16 +1815,25 @@ final class EffectChecker {
         if (prefix.axiom() || prefix.impure()) {
             return internal;
         }
-        // Annotated function: lock caller-visible contract to declared modifiers (BIP007-D2, §5.1.5)!
+        // Annotated function: lock caller-visible contract to declared modifiers (BIP007-D2, §5.1.5),
+        // while preserving compiler-internal @TERMINATING metadata (BIP007-D10).
         boolean[] declMut = new boolean[params.size()];
         boolean[] declBorrow = new boolean[params.size()];
+        boolean[] declUnique = new boolean[params.size()];
         for (int i = 0; i < params.size(); i++) {
             ParamMods pm = parseParamMods(params.get(i), false);
             declMut[i] = pm.mut();
             declBorrow[i] = pm.borrow();
+            declUnique[i] = pm.unique();
         }
-        EffectSet declSet = prefix.toEffectSet();
-        return new CallableSummary(declSet, declMut, declBorrow);
+        EffectSet rawDecl = prefix.toEffectSet();
+        EffectSet declSet = new EffectSet(
+                rawDecl.effects(), rawDecl.declared(),
+                rawDecl.mutThis(), rawDecl.borrowThis(), rawDecl.explicitBorrowThis(),
+                rawDecl.uniqueResult(), rawDecl.explicitUniqueResult(),
+                internal.effects().terminating(),
+                rawDecl.impure(), rawDecl.axiomatic());
+        return new CallableSummary(declSet, declMut, declBorrow, declUnique);
     }
 
     // ================================================================ 8. Verification Pass
@@ -2597,14 +2619,17 @@ final class EffectChecker {
 
     /** Profile of converting {@code type} to string in {@code string + x} (bip007_effects.md §4.3, §4.6). */
     private EffectSet toStringProfile(Type type) {
+        if (type instanceof Type.Frozen f) {
+            return toStringProfile(f.of());
+        }
         if (type == null || type == Type.ERROR) {
-            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
         if (Type.isCoreScalar(type) || type == Type.NULL) {
-            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
         if (type instanceof Type.Union u) {
-            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
             for (Type m : u.members()) {
                 acc = acc.intersect(toStringProfile(m));
             }
@@ -2625,7 +2650,7 @@ final class EffectChecker {
             }
             if (node.kind == ClassShape.Kind.VALUE_CLASS) {
                 // Structural toString formats every field!
-                EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+                EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
                 for (TypeNode.Member m : node.members.values()) {
                     if (!m.hasFunction) {
                         Type mt = checker.instanceMemberTypeForEffects(inst, m);
@@ -2638,13 +2663,13 @@ final class EffectChecker {
                 return acc;
             }
             // Non-value BabbleInstance default toString uses identity hash -> pure only (not deterministic)!
-            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true);
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true, false, true);
         }
         if (type instanceof Type.JavaInstance ji) {
             return resolveJavaMethodProfile(ji.type(), "toString", null).effects();
         }
         if (type instanceof Type.JavaArray) {
-            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true);
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true, false, true);
         }
         return EffectSet.EMPTY;
     }
@@ -2654,13 +2679,16 @@ final class EffectChecker {
     }
 
     private EffectSet singleEqualityProfile(Type type) {
+        if (type instanceof Type.Frozen f) {
+            return singleEqualityProfile(f.of());
+        }
         if (type == null || type == Type.ERROR || Type.isCoreScalar(type) || type == Type.NULL
                 || type instanceof Type.Function || type instanceof Type.ClassValue
                 || type instanceof Type.JavaClassValue) {
-            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
         if (type instanceof Type.Union u) {
-            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
             for (Type m : u.members()) {
                 acc = acc.intersect(singleEqualityProfile(m));
             }
@@ -2668,7 +2696,7 @@ final class EffectChecker {
         }
         if (type instanceof Type.Instance inst) {
             if (inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
-                EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+                EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
                 for (TypeNode.Member m : inst.node().members.values()) {
                     if (!m.hasFunction) {
                         Type mt = checker.instanceMemberTypeForEffects(inst, m);
@@ -2680,17 +2708,17 @@ final class EffectChecker {
                 return acc;
             }
             // Regular BabbleInstance uses `==` reference identity (pure deterministic nothrow)!
-            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
         if (type instanceof Type.JavaInstance ji) {
             return resolveJavaMethodProfile(ji.type(), "equals", null).effects();
         }
-        return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
+        return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
     }
 
     private EffectSet comparisonProfile(Type left, Type right) {
         if (isPrimitiveOrString(left) && isPrimitiveOrString(right)) {
-            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
         if (left instanceof Type.JavaInstance ji) {
             return resolveJavaMethodProfile(ji.type(), "compareTo", null).effects();
@@ -2723,6 +2751,9 @@ final class EffectChecker {
         boolean hermetic = true;
         boolean deterministic = true;
         boolean nothrow = true;
+        boolean terminating;
+        private boolean stmtHasSideEffect = false;
+        private boolean stmtHasError = false;
 
         final Set<BabbleParser.FunctionLiteralContext> frameReadOwners = Collections.newSetFromMap(new IdentityHashMap<>());
         final Set<BabbleParser.FunctionLiteralContext> frameWriteOwners = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -2754,6 +2785,7 @@ final class EffectChecker {
             this.frameChain = frameChain;
             this.specializedParams = specializedParams;
             this.emitDiagnostics = emitDiagnostics;
+            this.terminating = !cyclicCallables.contains(owner);
 
             for (int i = 0; i < params.size(); i++) {
                 ParserRuleContext p = params.get(i);
@@ -2779,14 +2811,64 @@ final class EffectChecker {
         }
 
         Origin evalBlock(BabbleParser.BlockContext block, boolean isFunctionBody) {
+            return evalBlock(block, isFunctionBody, false);
+        }
+
+        Origin evalBlock(BabbleParser.BlockContext block, boolean isFunctionBody, boolean discardLast) {
             if (block == null) {
                 return Origin.IMMUTABLE;
             }
+            List<BabbleParser.ExpressionContext> stmts = block.expression();
             Origin last = Origin.IMMUTABLE;
-            for (BabbleParser.ExpressionContext stmt : block.expression()) {
-                last = eval(stmt);
+            for (int i = 0; i < stmts.size(); i++) {
+                BabbleParser.ExpressionContext stmt = stmts.get(i);
+                if (i < stmts.size() - 1 || discardLast) {
+                    evalDiscarded(stmt);
+                    last = Origin.IMMUTABLE;
+                } else {
+                    last = eval(stmt);
+                }
             }
             return last;
+        }
+
+        void evalDiscarded(BabbleParser.ExpressionContext stmt) {
+            if (stmt == null) {
+                return;
+            }
+            if (stmt instanceof BabbleParser.DefExpressionContext
+                    || stmt instanceof BabbleParser.AssignExpressionContext
+                    || stmt instanceof BabbleParser.ReturnExpressionContext
+                    || stmt instanceof BabbleParser.WhileExpressionContext) {
+                eval(stmt);
+                return;
+            }
+            if (stmt instanceof BabbleParser.BlockExpressionContext be) {
+                evalBlock(be.block(), false, true);
+                return;
+            }
+            boolean prevHermetic = hermetic;
+            boolean prevNothrow = nothrow;
+            boolean prevSideEffect = stmtHasSideEffect;
+            boolean prevError = stmtHasError;
+            hermetic = true;
+            nothrow = true;
+            stmtHasSideEffect = false;
+            stmtHasError = false;
+            eval(stmt);
+            boolean stmtPure = hermetic && !stmtHasSideEffect;
+            boolean stmtNothrow = nothrow;
+            boolean hadError = stmtHasError;
+            hermetic = prevHermetic && hermetic;
+            nothrow = prevNothrow && nothrow;
+            stmtHasSideEffect = prevSideEffect || stmtHasSideEffect || !stmtPure;
+            stmtHasError = prevError || hadError;
+            if (stmtPure && stmtNothrow && !hadError) {
+                Type stmtType = checker.rawTypeOf(stmt);
+                if (stmtType != Type.ERROR) {
+                    reportOnce("Unused pure expression", stmt);
+                }
+            }
         }
 
         void evalClassBody(BabbleParser.BlockContext block) {
@@ -2798,13 +2880,16 @@ final class EffectChecker {
                     // Method declarations don't execute during construction.
                     continue;
                 }
-                eval(stmt);
+                evalDiscarded(stmt);
             }
         }
 
         Origin eval(ParserRuleContext ctx) {
             if (ctx == null) {
                 return Origin.IMMUTABLE;
+            }
+            if (ctx instanceof BabbleParser.ExpressionContext expr && checker.rawTypeOf(expr) == Type.ERROR) {
+                stmtHasError = true;
             }
             if (ctx instanceof BabbleParser.BlockContext b) {
                 return evalBlock(b, false);
@@ -2825,6 +2910,7 @@ final class EffectChecker {
                 return Origin.ofThis(THIS_KEY, isDeeplyImmutable(thisType));
             }
             if (ctx instanceof BabbleParser.RecurseContext) {
+                terminating = false;
                 return Origin.IMMUTABLE;
             }
             if (ctx instanceof BabbleParser.FunctionLiteralContext lit) {
@@ -2838,7 +2924,7 @@ final class EffectChecker {
                 // Inline `object (...)` executes its createBlock right here under enclosing constraints!
                 for (BabbleParser.ExpressionContext s : obj.createBlock.expression()) {
                     if (!(s instanceof BabbleParser.DefExpressionContext def && def.value instanceof BabbleParser.FunctionLiteralContext)) {
-                        eval(s);
+                        evalDiscarded(s);
                     }
                 }
                 return Origin.ofExternal(obj, isDeeplyImmutable(checker.rawTypeOf(obj)));
@@ -2906,6 +2992,7 @@ final class EffectChecker {
                 return isDeeplyImmutable(dst) ? Origin.IMMUTABLE : leftOrig;
             }
             if (ctx instanceof BabbleParser.ReturnExpressionContext ret) {
+                stmtHasSideEffect = true;
                 Origin val = ret.expression() != null ? eval(ret.expression()) : Origin.IMMUTABLE;
                 recordReturnOrigin(val, ret);
                 return Origin.IMMUTABLE;
@@ -2917,6 +3004,7 @@ final class EffectChecker {
         }
 
         private Origin evalDef(BabbleParser.DefExpressionContext def) {
+            stmtHasSideEffect = true;
             ScopeAnalysis.DefKind kind = pass.analysis.defTarget(def).kind();
             if (kind == ScopeAnalysis.DefKind.REQUIRED) {
                 return Origin.IMMUTABLE;
@@ -2965,6 +3053,7 @@ final class EffectChecker {
         }
 
         private Origin evalAssign(BabbleParser.AssignExpressionContext assign) {
+            stmtHasSideEffect = true;
             String compoundOp = Operators.compound(assign.op.getText());
             BabbleParser.ExpressionContext recv = ScopeAnalysis.assignReceiver(assign);
             String assignedName = ScopeAnalysis.assignName(assign);
@@ -3068,6 +3157,13 @@ final class EffectChecker {
                     }
                     return Origin.ofExternal(decl, imm);
                 }
+                if (resolved == null) {
+                    Type selType = checker.rawTypeOf(sel);
+                    if (selType == Type.ANY || selType == Type.NULLABLE_ANY || selType == Type.ERROR) {
+                        deterministic = false;
+                        nothrow = false;
+                    }
+                }
                 return Origin.IMMUTABLE;
             }
 
@@ -3164,6 +3260,16 @@ final class EffectChecker {
             for (int i = 0; i < args.size(); i++) {
                 argExprs[i] = args.get(i).expression();
                 argOrigins[i] = eval(argExprs[i]);
+                Type argType = effectiveType(argExprs[i]);
+                for (Type m : Type.membersOf(argType)) {
+                    if (m instanceof Type.Function fn) {
+                        BabbleParser.FunctionLiteralContext lit = checker.literalOf(fn);
+                        CallableSummary innerSum = lit != null ? summaries.get(lit) : null;
+                        if (innerSum != null && !innerSum.frameWriteOwners().isEmpty()) {
+                            stmtHasSideEffect = true;
+                        }
+                    }
+                }
             }
 
             Type resType = checker.rawTypeOf(call);
@@ -3177,13 +3283,19 @@ final class EffectChecker {
                 hermetic = false;
                 deterministic = false;
                 nothrow = false;
+                terminating = false;
                 return Origin.IMMUTABLE;
             }
             if (isImportCall(calleeExpr)) {
                 hermetic = false;
                 deterministic = false;
                 nothrow = false;
+                terminating = false;
                 return Origin.ofExternal(call, isDeeplyImmutable(resType));
+            }
+            if (calleeType == OperatorTypes.DISCARD_FUNCTION) {
+                stmtHasSideEffect = true;
+                return Origin.IMMUTABLE;
             }
 
             // 2. Java method call (fast-path or dynamic reflective overload set)
@@ -3292,14 +3404,14 @@ final class EffectChecker {
                 }
                 if (!immutableEntry) {
                     applyEffects(EffectSet.ofInferred(
-                            EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true));
+                            EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true));
                     return Origin.ofExternal(ccc, false);
                 }
                 return Origin.IMMUTABLE;
             }
 
             // list, set, sortedset, map, sortedmap: hermetic deterministic allocation
-            applyEffects(EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true));
+            applyEffects(EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true));
             boolean hasCapacity = false;
             boolean hasFrom = false;
             boolean hasComparator = false;
@@ -3774,6 +3886,7 @@ final class EffectChecker {
         }
 
         private void recordTargetMutation(Origin target, ParserRuleContext targetExpr, String reason, ParserRuleContext at) {
+            stmtHasSideEffect = true;
             if (targetExpr instanceof BabbleParser.ExpressionContext expr && effectiveType(expr) == Type.ERROR) {
                 return;
             }
@@ -4013,6 +4126,9 @@ final class EffectChecker {
             if (!callee.isNothrow()) {
                 nothrow = false;
             }
+            if (!callee.terminating()) {
+                terminating = false;
+            }
         }
 
         private void applyCallableSummaryEffects(CallableSummary summary) {
@@ -4027,6 +4143,7 @@ final class EffectChecker {
                 }
             }
             for (BabbleParser.FunctionLiteralContext writeOwner : summary.frameWriteOwners()) {
+                stmtHasSideEffect = true;
                 if (writeOwner != owner) {
                     if (frameChain.contains(writeOwner)) {
                         frameWriteOwners.add(writeOwner);

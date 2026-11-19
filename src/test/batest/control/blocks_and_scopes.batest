@@ -67,7 +67,7 @@ Name used before definition : a
 ;; Sequential empty and single-statement blocks
 def a : any? = ( ; ; )
 def b = ( 7 )
-def c = ( 1 ; 2 ; 3 )
+def c = ( discard(1) ; discard(2) ; 3 )
 println(a, ":", b, ":", c)
 }}}}}
 null:7:3
