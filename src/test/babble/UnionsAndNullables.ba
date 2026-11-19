@@ -47,10 +47,10 @@ assert(textOrCount(5) == "num=10")
 assert(textOrCount("hi") == "str=hi")
 
 ;; Shared members and operator methods across Babble class unions
-def VecA = value class (x: int, tag: string = "A") (
+def VecA = record (x: int, tag: string = "A") (
     def plus = fn (o: int): int -> (this.x + o)
 )
-def VecB = value class (x: int, tag: string = "B") (
+def VecB = record (x: int, tag: string = "B") (
     def plus = fn (o: int): int -> (this.x + o * 10)
 )
 def useUnion = fn (u: VecA | VecB): string -> (
@@ -108,11 +108,11 @@ infDbl = 2.5
 assert(infDbl == 2.5)
 
 ;; Safe-navigation operator (?.) on methods, fields, chains, unions, generics, and Java interop
-def B = value class (val: int) ()
+def B = record (val: int) ()
 def A = class (def val: int, def next: A? = null, def opt: B? = null) (
     def f = fn (delta: int = 1): B -> (B(this.val + delta))
     def getInt = fn (): int -> (this.val)
-    def id(T) = fn (x: T): T -> (x)
+    def id of T = fn (x: T): T -> (x)
 )
 
 def makeOptA = fn (present: bool): A? -> (
@@ -167,9 +167,9 @@ assert(maybeVec?.tag == "B")
 def nullVec: VecA | VecB | null = null
 assert(nullVec?.tag == null)
 
-def maybeList: java.util.List(B)? = java.util.List.of(B(42))
+def maybeList: (java.util.List of B)? = java.util.List.of(B(42))
 assert(maybeList?.get(0)?.val == 42)
-def nullList: java.util.List(B)? = null
+def nullList: (java.util.List of B)? = null
 assert(nullList?.get(0)?.val == null)
 
 def optId: (fn (x: int): int)? = a1?.id

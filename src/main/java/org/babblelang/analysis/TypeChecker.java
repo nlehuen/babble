@@ -1409,8 +1409,8 @@ final class TypeChecker {
                 case BabbleParser.SelectorContext c -> visitSelector(c, expected, role);
                 case BabbleParser.NonNullAssertionContext c -> visitNonNullAssertion(c, expected, role);
                 case BabbleParser.CoreScalarRefContext c -> visitCoreScalarRef(c, expected, role);
-                case BabbleParser.CoreCollectionCallContext c -> visitCoreCollectionCall(c, expected, role);
-                case BabbleParser.TypeApplyCallContext c -> visitTypeApplyCall(c, expected, role);
+                case BabbleParser.CoreCollectionContext c -> visitCoreCollection(c, expected, role);
+                case BabbleParser.TypeApplyContext c -> visitTypeApply(c, expected, role);
                 case BabbleParser.CallContext c -> visitCall(c, expected, role);
                 case BabbleParser.BlockExpressionContext c -> visitBlockExpression(c, expected, role);
                 case BabbleParser.BlockContext c -> visitBlock(c, expected, role);
@@ -1818,61 +1818,13 @@ final class TypeChecker {
             return operators.implicitType(ctx.coreScalarKeyword().getText());
         }
 
-        private Type visitCoreCollectionCall(BabbleParser.CoreCollectionCallContext ctx, Type expected, Role role) {
-            return callSolver.coreCollectionCall(ctx, expected);
+        private Type visitCoreCollection(BabbleParser.CoreCollectionContext ctx, Type expected, Role role) {
+            return new Type.CoreCollection(ctx.coreCollectionKeyword().getText());
         }
 
-        private Type visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx, Type expected, Role role) {
-            Type callee = synth(ctx.expression(), Role.CALLEE);
-            boolean genericCallee = (callee instanceof Type.Function f && !f.typeParameters().isEmpty())
-                    || (callee instanceof Type.ClassValue cv && !annotator.typeVarsOf(cv.node()).isEmpty())
-                    || (callee instanceof Type.JavaClassValue jcv && jcv.type().getTypeParameters().length > 0)
-                    || (callee instanceof Type.JavaMethod jm
-                            && org.babblelang.runtime.JavaTypes.methods(jm.owner(), jm.name()).stream().anyMatch(m -> m.getTypeParameters().length > 0));
-            boolean hasTypeOnlySyntax = false;
-            for (BabbleParser.TypeContext t : ctx.typeArguments().type()) {
-                BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(t);
-                if (simple == null || simple.coreTypeKeyword() != null || simple.typeArguments() != null) {
-                    hasTypeOnlySyntax = true;
-                    break;
-                }
-            }
-            if (genericCallee || hasTypeOnlySyntax) {
-                pass.analysis.markTypeApplyCall(ctx);
-                return callSolver.typeApplyCall(ctx, callee, expected);
-            }
-            // Curried value call: f(a)(b) where f is a non-generic callable returning a callable.
-            List<Type> firstArgTypes = new ArrayList<>();
-            for (BabbleParser.TypeContext t : ctx.typeArguments().type()) {
-                BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(t);
-                List<String> path = ScopeAnalysis.simpleTypePath(simple);
-                Object resolved = resolveName(simple, path.get(0), occurrenceScopes.get(simple));
-                Type argType;
-                if (resolved instanceof ParserRuleContext decl) {
-                    Type narrowed = narrowing.narrowedType(decl);
-                    argType = narrowed != null ? narrowed : typeOfDeclaration(decl);
-                } else {
-                    argType = operators.implicitType(path.get(0));
-                }
-                for (int i = 1; i < path.size(); i++) {
-                    argType = members.member(argType, path.get(i), false, simple, String.join(".", path.subList(0, i)));
-                }
-                firstArgTypes.add(argType);
-            }
-            Type intermediate = Type.ANY;
-            if (callee instanceof Type.Function fn) {
-                for (int i = 0; i < Math.min(fn.parameters().size(), firstArgTypes.size()); i++) {
-                    subsumes(ctx.typeArguments().type(i), null, firstArgTypes.get(i), fn.parameters().get(i).type());
-                }
-                intermediate = fn.result();
-            }
-            for (BabbleParser.CallParameterContext arg : ctx.callParameters().callParameter()) {
-                synth(arg.expression());
-            }
-            if (intermediate instanceof Type.Function fn2) {
-                return fn2.result();
-            }
-            return Type.ANY;
+        private Type visitTypeApply(BabbleParser.TypeApplyContext ctx, Type expected, Role role) {
+            Type target = synth(ctx.expression(), Role.CALLEE);
+            return callSolver.applyTypes(ctx, target);
         }
 
         private Type visitAsExpression(BabbleParser.AsExpressionContext ctx, Type expected, Role role) {

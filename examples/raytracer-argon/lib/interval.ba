@@ -3,7 +3,7 @@ def math = import("math.ba")
 ;; ------------------------------------------------------------------------
 ;; 2.4 Interval Value Class
 ;; ------------------------------------------------------------------------
-export def Interval = value class (min: double, max: double) (
+export def Interval = record (min: double, max: double) (
     def size = fn (): double -> (
         this.max - this.min
     )

@@ -117,7 +117,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testUnknownClassModifier() {
-        assertFails("def C = foo class () ()", "Unknown class modifier : foo");
+        assertStaticFails("def C = foo class () ()", "Syntax error : unexpected 'class'", 1, 13);
     }
 
     // ---------------------------------------------------------------- header members
@@ -138,7 +138,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         ScriptContext context = new SimpleScriptContext();
         StringWriter errors = new StringWriter();
         context.setErrorWriter(errors);
-        engine.eval("def P = value class (def x : int) ()", context);
+        engine.eval("def P = record (def x : int) ()", context);
         Assertions.assertEquals("Warning : def is redundant on a value class parameter : x in <input> at line number 1" + System.lineSeparator(), errors.toString());
     }
 
@@ -183,7 +183,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testPrivateFieldsOfValues() throws Exception {
-        String money = "def M = value class (cents : int, private note : string) () ; ";
+        String money = "def M = record (cents : int, private note : string) () ; ";
         Assertions.assertEquals(false, interpret(money + "M(1, \"a\") == M(1, \"b\")"));
         Assertions.assertEquals(true, interpret(money + "M(1, \"a\") == M(1, \"a\")"));
         Assertions.assertEquals("M(cents: 1)", interpret(money + "\"\" + M(1, \"a\")"));
@@ -191,7 +191,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     // ---------------------------------------------------------------- statics
 
-    private static final String STATIC_POINT = "def Point = value class (x : int, y : int) (\n"
+    private static final String STATIC_POINT = "def Point = record (x : int, y : int) (\n"
             + "    def plus = fn (o : Point) : Point -> ( Point(this.x + o.x, this.y + o.y) )\n"
             + ")\n"
             + "static (\n"
@@ -236,7 +236,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     @Test
     public void testClassof() throws Exception {
         Assertions.assertEquals(true, interpret(POINT + "classof(Point(1, 2)) == Point"));
-        Assertions.assertEquals(true, interpret("def l : java.util.List(int) = java.util.ArrayList() ; classof(l) == java.util.ArrayList"));
+        Assertions.assertEquals(true, interpret("def l : java.util.List of int = java.util.ArrayList() ; classof(l) == java.util.ArrayList"));
         Assertions.assertEquals(true, interpret("classof(\"s\") == java.lang.String and classof(1) == java.lang.Integer"));
         Assertions.assertEquals(null, interpret("classof(null)"));
         Assertions.assertEquals(false, interpret("def mk = fn () -> ( class () () ) ; def A = mk() ; classof(A()) == mk()"));
@@ -252,7 +252,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
                 + "def C = class () ()\n";
         Assertions.assertEquals(true, interpret(shapes + "Sq() is Sq and Sq() is T and Sq() is S"));
         Assertions.assertEquals(false, interpret(shapes + "C() is S or Sq() is C or null is C or 1 is S"));
-        Assertions.assertEquals(true, interpret("def l : java.util.List(int) = java.util.ArrayList() ; \"s\" is java.lang.String and 1 is java.lang.Number and l is java.util.List"));
+        Assertions.assertEquals(true, interpret("def l : java.util.List of int = java.util.ArrayList() ; \"s\" is java.lang.String and 1 is java.lang.Number and l is java.util.List"));
         Assertions.assertEquals(false, interpret("def mk = fn () -> ( class () () ) ; def A = mk() ; A() is mk()"));
         assertFails("1 is 2", "Not a type : 2");
     }
@@ -261,7 +261,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testSame() throws Exception {
         Assertions.assertEquals(true, interpret(POINT + "def p = Point(1, 2) ; same(p, p) and not same(p, Point(1, 2))"));
         Assertions.assertEquals(true, interpret("same(1000, 1000) and same(1, 1.0) and same(\"a\", \"a\") and same(null, null)"));
-        Assertions.assertEquals(false, interpret("def P = value class (x : int) () ; same(P(1), P(1))"));
+        Assertions.assertEquals(false, interpret("def P = record (x : int) () ; same(P(1), P(1))"));
     }
 
     // ---------------------------------------------------------------- toString
@@ -270,8 +270,8 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testToString() throws Exception {
         Assertions.assertEquals("<C!>", interpret("def C = class () ( def toString = fn () -> ( \"C!\" ) ) ; \"<\" + C() + \">\""));
         Assertions.assertEquals(true, interpret("def C = class () () ; def s = \"\" + C() ; java.lang.String(s).startsWith(\"C@\")"));
-        Assertions.assertEquals("Point(x: 1, y: 2.5)", interpret("def Point = value class (x : int, y : double) () ; \"\" + Point(1, 2.5)"));
-        Assertions.assertEquals("P!", interpret("def Point = value class (x : int) ( def toString = fn () -> ( \"P!\" ) ) ; \"\" + Point(1)"));
+        Assertions.assertEquals("Point(x: 1, y: 2.5)", interpret("def Point = record (x : int, y : double) () ; \"\" + Point(1, 2.5)"));
+        Assertions.assertEquals("P!", interpret("def Point = record (x : int) ( def toString = fn () -> ( \"P!\" ) ) ; \"\" + Point(1)"));
         StringWriter out = new StringWriter();
         ScriptContext context = new SimpleScriptContext();
         context.setWriter(out);
@@ -283,34 +283,34 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testValueEquality() throws Exception {
-        String point = "def Point = value class (x : double, y : double) ( def area = fn () -> ( this.x * this.y ) ) ; ";
+        String point = "def Point = record (x : double, y : double) ( def area = fn () -> ( this.x * this.y ) ) ; ";
         Assertions.assertEquals(true, interpret(point + "Point(1, 2) == Point(1, 2)"));
         Assertions.assertEquals(true, interpret(point + "Point(1, 2) == Point(1.0, 2.0)"));
         Assertions.assertEquals(false, interpret(point + "Point(1, 2) == Point(2, 1)"));
         // Equality needs the same class value.
-        Assertions.assertEquals(false, interpret("def mk = fn () -> ( value class (x : int) () ) ; mk()(1) == mk()(1)"));
-        Assertions.assertEquals(true, interpret(point + "def s : java.util.Set(Point) = java.util.HashSet() ; s.add(Point(1, 2)) ; s.contains(Point(1.0, 2))"));
-        Assertions.assertEquals("b", interpret(point + "def m : java.util.Map(Point, string) = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.get(Point(1, 2))"));
-        Assertions.assertEquals(1, interpret(point + "def m : java.util.Map(Point, string) = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.size()"));
+        Assertions.assertEquals(false, interpret("def mk = fn () -> ( record (x : int) () ) ; mk()(1) == mk()(1)"));
+        Assertions.assertEquals(true, interpret(point + "def s : java.util.Set of Point = java.util.HashSet() ; s.add(Point(1, 2)) ; s.contains(Point(1.0, 2))"));
+        Assertions.assertEquals("b", interpret(point + "def m : java.util.Map of (Point, string) = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.get(Point(1, 2))"));
+        Assertions.assertEquals(1, interpret(point + "def m : java.util.Map of (Point, string) = java.util.HashMap() ; m.put(Point(1, 2), \"a\") ; m.put(Point(1, 2), \"b\") ; m.size()"));
         // Regular classes compare by identity.
         Assertions.assertEquals(false, interpret("def C = class (def x : int) () ; C(1) == C(1)"));
     }
 
     @Test
     public void testValueMembersAreReadOnly() {
-        String point = "def Point = value class (x : int, y : int) ()\n";
+        String point = "def Point = record (x : int, y : int) ()\n";
         assertFails(point + "def p = Point(1, 2) ; p.x = 5", "Value members are read-only : x", 2);
         assertFails(point + "def f = fn (p : Point) -> ( p.x = 5 ) ; f(Point(1, 2))", "Value members are read-only : x", 2);
-        assertFails("def P = value class (x : int) ( def m = fn () -> ( this.x = 2 ) )", "Value members are read-only : x");
+        assertFails("def P = record (x : int) ( def m = fn () -> ( this.x = 2 ) )", "Value members are read-only : x");
     }
 
     @Test
     public void testValueClassRules() {
-        assertFails("def P = value class (x : int) ( def equals = fn (o : any) -> ( true ) )", "equals is generated for value classes");
-        assertFails("def P = value class (x : int) ( def hashCode = fn () -> ( 1 ) )", "hashCode is generated for value classes");
-        assertFails("def P = value class (x : int) ( println(this) )", "this cannot escape a value class under construction");
-        assertFails("def P = value class (x : int) ( def m = fn () -> ( 1 ) ; this.m() )", "this cannot escape a value class under construction");
-        Assertions.assertDoesNotThrow(() -> interpret("def P = value class (w : int, h : int) ( def area = this.w * this.h ) ; P(2, 3).area"));
+        assertFails("def P = record (x : int) ( def equals = fn (o : any) -> ( true ) )", "equals is generated for value classes");
+        assertFails("def P = record (x : int) ( def hashCode = fn () -> ( 1 ) )", "hashCode is generated for value classes");
+        assertFails("def P = record (x : int) ( println(this) )", "this cannot escape a value class under construction");
+        assertFails("def P = record (x : int) ( def m = fn () -> ( 1 ) ; this.m() )", "this cannot escape a value class under construction");
+        Assertions.assertDoesNotThrow(() -> interpret("def P = record (w : int, h : int) ( def area = this.w * this.h ) ; P(2, 3).area"));
     }
 
     @Test
@@ -408,7 +408,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testEqualityOfJavaCollectionsAndBoundMethods() throws Exception {
-        Assertions.assertEquals(true, interpret("def a : java.util.Map(int, int) = java.util.HashMap() ; def b : java.util.Map(int, int) = java.util.HashMap() ; a.put(1, 2) ; b.put(1, 2) ; a == b"));
+        Assertions.assertEquals(true, interpret("def a : java.util.Map of (int, int) = java.util.HashMap() ; def b : java.util.Map of (int, int) = java.util.HashMap() ; a.put(1, 2) ; b.put(1, 2) ; a == b"));
         Assertions.assertEquals(true, interpret("def o = object ( def m = fn () -> ( 1 ) ) ; o.m == o.m"));
     }
 }

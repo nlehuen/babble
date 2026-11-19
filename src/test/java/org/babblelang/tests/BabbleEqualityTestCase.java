@@ -9,9 +9,9 @@ import org.junit.jupiter.api.Test;
 public class BabbleEqualityTestCase extends BabbleTestBase {
     @Test
     public void testJavaObjectsCompareByEquals() throws Exception {
-        Assertions.assertEquals(true, interpret("def a : java.util.List(int) = java.util.ArrayList() ; def b : java.util.List(int) = java.util.ArrayList() ; a.add(1) ; b.add(1) ; a == b"));
-        Assertions.assertEquals(false, interpret("def a : java.util.List(int) = java.util.ArrayList() ; def b : java.util.List(int) = java.util.ArrayList() ; a.add(1) ; b.add(2) ; a == b"));
-        Assertions.assertEquals(true, interpret("def a : java.util.List(int) = java.util.ArrayList() ; a.add(1) ; a.subList(0, 1) == a.subList(0, 1)"));
+        Assertions.assertEquals(true, interpret("def a : java.util.List of int = java.util.ArrayList() ; def b : java.util.List of int = java.util.ArrayList() ; a.add(1) ; b.add(1) ; a == b"));
+        Assertions.assertEquals(false, interpret("def a : java.util.List of int = java.util.ArrayList() ; def b : java.util.List of int = java.util.ArrayList() ; a.add(1) ; b.add(2) ; a == b"));
+        Assertions.assertEquals(true, interpret("def a : java.util.List of int = java.util.ArrayList() ; a.add(1) ; a.subList(0, 1) == a.subList(0, 1)"));
     }
 
     @Test

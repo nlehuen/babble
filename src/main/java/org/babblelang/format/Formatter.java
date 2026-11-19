@@ -170,10 +170,11 @@ public final class Formatter {
             } else if (token.getType() == BabbleLexer.MINUS) {
                 unaryMinus[index] = parent instanceof BabbleParser.NegateContext;
             } else if (token.getType() == OPEN) {
-                callParentheses[index] = parent instanceof BabbleParser.CallParametersContext
+                boolean isTypeApplyCall = parent instanceof BabbleParser.CallParametersContext
+                        && parent.getParent() instanceof BabbleParser.CallContext call
+                        && call.expression() instanceof BabbleParser.TypeApplyContext;
+                callParentheses[index] = (parent instanceof BabbleParser.CallParametersContext && !isTypeApplyCall)
                         || parent instanceof BabbleParser.SuperExpressionContext
-                        || parent instanceof BabbleParser.TypeParametersContext
-                        || parent instanceof BabbleParser.TypeArgumentsContext
                         || parent instanceof BabbleParser.EffectDeclarationContext
                         || parent instanceof BabbleParser.EffectTargetContext;
                 // What a block of an "if", a function, a class... encloses is indented from
@@ -206,6 +207,7 @@ public final class Formatter {
         if (parent instanceof BabbleParser.ClassParametersContext || parent instanceof BabbleParser.FnParametersContext
                 || parent instanceof BabbleParser.FnTypeParametersContext || parent instanceof BabbleParser.CallParametersContext
                 || parent instanceof BabbleParser.SuperExpressionContext || parent instanceof BabbleParser.ParenTypeContext
+                || parent instanceof BabbleParser.SimpleTypeContext
                 || parent instanceof BabbleParser.TypeParametersContext || parent instanceof BabbleParser.TypeArgumentsContext) {
             return IN_LIST;
         }

@@ -16,7 +16,7 @@ println(m.exportedNum, ":", m.exportedPair.getValue(), ":", e.getKey(), ":", e.g
 
 {{{{{
 ;; BabbleInterface extending Java interface checked against super-interface via `is`
-def IList = interface extends java.util.Collection(java.lang.Object) ()
+def IList = interface extends java.util.Collection of java.lang.Object ()
 def Dummy = class () ()
 def d : any = Dummy()
 println(d is IList, ":", java.lang.String == java.lang.String)
@@ -38,7 +38,7 @@ Member used before definition : x
 
 {{{{{
 ;; JavaTypes.wrapInvocationException with NullPointerException
-def tm : java.util.TreeMap(java.lang.Object, int) = java.util.TreeMap()
+def tm : java.util.TreeMap of (java.lang.Object, int) = java.util.TreeMap()
 println(tm.get(null))
 }}}}}
 java.lang.NullPointerException
@@ -51,25 +51,25 @@ Missing type : rec (recursive)
 
 {{{{{
 ;; Wrong number of type arguments on Babble class and Java class
-def Box(T) = class (def v : T) ()
-def b : Box(int, string)? = null
+def Box of T = class (def v : T) ()
+def b : Box of (int, string)? = null
 }}}}}
 Wrong number of type arguments : expected 1, got 2
 
 {{{{{
-def badJava : java.util.ArrayList(int, string)? = null
+def badJava : java.util.ArrayList of (int, string)? = null
 }}}}}
 Wrong number of type arguments : expected 1, got 2
 
 {{{{{
 ;; TypeChecker.satisfiesJavaBound ParameterizedType invalid & EnumMap valid via Map constructor
-def em : java.util.EnumMap(java.nio.file.AccessMode, int) = java.util.EnumMap(java.util.Collections.singletonMap(java.nio.file.AccessMode.READ, 5))
+def em : java.util.EnumMap of (java.nio.file.AccessMode, int) = java.util.EnumMap(java.util.Collections.singletonMap(java.nio.file.AccessMode.READ, 5))
 println(em.get(java.nio.file.AccessMode.READ))
 }}}}}
 5
 
 {{{{{
-def badObjEnum : java.util.EnumSet(java.lang.Object)? = null
+def badObjEnum : (java.util.EnumSet of java.lang.Object)? = null
 }}}}}
 Type error : type argument any does not satisfy bound E of java.util.EnumSet
 
@@ -84,7 +84,7 @@ def Both = class () implements I1, I2, java.lang.Runnable (
 )
 def x : I1 = Both()
 def r : java.lang.Runnable = Both()
-def lst : java.util.List(int) = java.util.Collections.singletonList(3)
+def lst : java.util.List of int = java.util.Collections.singletonList(3)
 def cs : java.lang.CharSequence = "abc"
 println(x is I2, ":", x is java.lang.Runnable, ":", r is I1, ":", cs is string, ":", lst is java.util.ArrayList, ":", (null as int?) is int)
 }}}}}

@@ -12,7 +12,7 @@ export def ExportCls = class (def n : int) (
 export def IMod = interface (
     def id : fn () : int
 )
-export def ModWrap(T) = class (def v : T) ()
+export def ModWrap of T = class (def v : T) ()
 export def x = 10
 export def subMod = import("ce_mod_b.ba")
 
@@ -61,12 +61,12 @@ Function badRegDet declared deterministic violates deterministic guarantee
 axiom pure on java.util.Collections.singletonList
 axiom pure on java.lang.Iterable.forEach
 axiom pure on java.util.List.size
-def GoodCons = class () implements java.util.function.Consumer(java.lang.Object) (
+def GoodCons = class () implements java.util.function.Consumer of java.lang.Object (
     def accept = fn pure (x : java.lang.Object) -> ( () )
 )
 def okSam = fn pure () : int -> (
     def item : java.lang.Object = 1
-    def xs : java.util.List(java.lang.Object) = java.util.Collections.singletonList(item)
+    def xs : java.util.List of java.lang.Object = java.util.Collections.singletonList(item)
     xs.forEach(fn (x) -> ( def y = x ))
     xs.forEach(GoodCons())
     xs.size()
@@ -80,7 +80,7 @@ axiom pure deterministic on java.util.ArrayList()
 axiom hermetic mut on java.util.ArrayList.add
 axiom pure on java.util.ArrayList.forEach
 def badSamLambda = fn pure () -> (
-    def xs : java.util.ArrayList(java.lang.Object) = java.util.ArrayList()
+    def xs : java.util.ArrayList of java.lang.Object = java.util.ArrayList()
     xs.add(1)
     xs.forEach(fn (x) -> ( println(x) ))
 )
@@ -91,11 +91,11 @@ Function badSamLambda declared pure violates pure guarantee
 axiom pure deterministic on java.util.ArrayList()
 axiom hermetic mut on java.util.ArrayList.add
 axiom pure on java.util.ArrayList.forEach
-def BadCons = class () implements java.util.function.Consumer(java.lang.Object) (
+def BadCons = class () implements java.util.function.Consumer of java.lang.Object (
     def accept = fn (x : java.lang.Object) -> ( println(x) )
 )
 def badSamClass = fn pure () -> (
-    def xs : java.util.ArrayList(java.lang.Object) = java.util.ArrayList()
+    def xs : java.util.ArrayList of java.lang.Object = java.util.ArrayList()
     xs.add(1)
     xs.forEach(BadCons())
 )
@@ -211,7 +211,7 @@ Type error : expected pure (borrow a : Box, b : Box) : int, got hermetic (mut a 
 
 {{{{{
 ;; TypeChecks: nested Java interface, invalid Java parent, multi-arg checkJavaArity, super errors, module exports
-def EntryImpl = class (def k : java.lang.Object, def v : java.lang.Object) implements java.util.Map.Entry(java.lang.Object, java.lang.Object) (
+def EntryImpl = class (def k : java.lang.Object, def v : java.lang.Object) implements java.util.Map.Entry of (java.lang.Object, java.lang.Object) (
     def getKey = fn () -> ( this.k )
     def getValue = fn () -> ( this.v )
     def setValue = fn mut (nv : java.lang.Object) -> (
@@ -243,7 +243,7 @@ def BadExt = interface extends java.lang.Object ()
 Babble interfaces can only extend Java interfaces
 
 {{{{{
-def BadBiFn = class () implements java.util.function.BiFunction(java.lang.Object, java.lang.Object, java.lang.Object) (
+def BadBiFn = class () implements java.util.function.BiFunction of (java.lang.Object, java.lang.Object, java.lang.Object) (
     def apply = fn (a : java.lang.Object) -> ( a )
 )
 }}}}}
@@ -347,17 +347,17 @@ Type error : expected int, got double
 
 {{{{{
 ;; TypeChecker: satisfiesJavaBound, makeAccessible / accessibleType
-def ptList : java.util.List(java.awt.Point) = java.util.Collections.singletonList(java.awt.Point(1, 2))
+def ptList : java.util.List of java.awt.Point = java.util.Collections.singletonList(java.awt.Point(1, 2))
 println(java.util.Collections.max(ptList))
 }}}}}
 Type error : type argument java.awt.Point does not satisfy bound T of java.util.Collections.max
 
 {{{{{
-def intList : java.util.ArrayList(java.lang.Integer) = java.util.ArrayList()
+def intList : java.util.ArrayList of java.lang.Integer = java.util.ArrayList()
 intList.add(3)
 intList.add(7)
-def it : java.util.Iterator(int) = java.util.Collections.emptyIterator()
-def lst : java.util.List(int) = java.util.List.of(1, 2)
+def it : java.util.Iterator of int = java.util.Collections.emptyIterator()
+def lst : java.util.List of int = java.util.List.of(1, 2)
 println(java.util.Collections.max(intList), ":", it.hasNext(), ":", lst.size())
 }}}}}
 7:false:2
@@ -396,7 +396,7 @@ def nil : null = null as null
 def arr = java.util.regex.Pattern.compile(",").split("a,b")
 def arrCopy = java.util.Arrays.copyOf(arr, 3)
 def arrObj = arrCopy as java.lang.Object
-def genTest(T) = fn (x : T) : bool -> ( x is string )
+def genTest of T = fn (x : T) : bool -> ( x is string )
 println(i2.b(), ":", back.a(), ":", nil, ":", arrCopy.length, ":", arrObj != null, ":", genTest("hi"), ":", genTest(1))
 }}}}}
 Warning : Redundant cast : any
@@ -428,7 +428,7 @@ def badFnCast = f as (fn () : int)
 Cannot cast to a function type
 
 {{{{{
-def badTv(T) = fn (x : any) : T -> ( x as T )
+def badTv of T = fn (x : any) : T -> ( x as T )
 }}}}}
 Cannot cast to type parameter : T
 
@@ -481,7 +481,7 @@ n1 = 2.5
 def n2 = 1
 n2 = null
 n2 = 3.5
-def wrapGen(T) = fn (func : fn () : T) : T -> ( func() )
+def wrapGen of T = fn (func : fn () : T) : T -> ( func() )
 def dWid : double = wrapGen(fn () -> ( 1 ))
 def addParam = fn (p : int) : int -> ( p += 4 ; p )
 def bx = Box(5)
@@ -490,16 +490,16 @@ println(pickFn(false)(bx), ":", rf(bx), ":", n1, ":", n2, ":", dWid, ":", addPar
 5:2:2.5:3.5:1.0:10:5
 
 {{{{{
-def uninf(T) = fn () : T? -> ( null )
+def uninf of T = fn () : T? -> ( null )
 uninf()
 }}}}}
 Missing type : cannot infer type arguments for uninf
 
 {{{{{
 ;; Runtime shared: Types.decodeComponent (%2C), Values.isBabbleCallable BabbleClass
-def Pair(A, B) = class (def a : A, def b : B) ()
-def optPair : Pair(int, double)? = Pair(1, 2.5)
-def optNull : Pair(int, double)? = null
+def Pair of (A, B) = class (def a : A, def b : B) ()
+def optPair : Pair of (int, double)? = Pair(1, 2.5)
+def optNull : Pair of (int, double)? = null
 def Dup = class (def k : int = 9) ()
 def runIt = java.lang.Runnable(Dup)
 runIt.run()

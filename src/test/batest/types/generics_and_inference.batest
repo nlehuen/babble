@@ -2,7 +2,7 @@
 
 {{{{{
 ;; Generic Babble function value instantiation (to function type & Java SAM) and inference failure
-def id(T) = fn (x : T) : T -> ( x )
+def id of T = fn (x : T) : T -> ( x )
 def intId : fn (x : int) : int = id
 def strId : fn (x : string) : string = id
 def s = java.util.stream.IntStream.range(1, 4).map(id).sum()
@@ -12,23 +12,23 @@ println(intId(4), ":", strId("ok"), ":", s, ":", o)
 4:ok:6:5
 
 {{{{{
-def id(T) = fn (x : T) : T -> ( x )
+def id of T = fn (x : T) : T -> ( x )
 def bad = id
 }}}}}
 Missing type : cannot infer type arguments for id
 
 {{{{{
 ;; Deferred lambda arg + return-type hint fallback + widening hints across union/func/class/Java
-def id(T) = fn (x : T) : T -> ( x )
-def apply(A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
+def id of T = fn (x : T) : T -> ( x )
+def apply of (A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
 def d1 : double = id(1)
 def u1 : int | double = id(2)
 def r = apply(3, fn (x) -> ( x * 2.5 ))
-def Box(T) = class (def v : T) ()
-def opt : java.util.Optional(int) = java.util.Optional.of(5)
+def Box of T = class (def v : T) ()
+def opt : java.util.Optional of int = java.util.Optional.of(5)
 def opt2 = opt.map(fn (x) -> ( x + 1 ))
-def b1 : Box(double) = Box(3)
-def mkPair(A, B) = fn (a : A, b : B) : A -> ( a )
+def b1 : Box of double = Box(3)
+def mkPair of (A, B) = fn (a : A, b : B) : A -> ( a )
 def p : double = mkPair(2, "z")
 println(d1, ":", u1, ":", r, ":", opt2.get(), ":", b1.v, ":", p)
 }}}}}
@@ -37,8 +37,8 @@ println(d1, ":", u1, ":", r, ":", opt2.get(), ":", b1.v, ":", p)
 {{{{{
 ;; Generic Java SAM target typing (deferred lambda) + Collections.sort / List.replaceAll
 def lenOpt = java.util.Optional.of("abc").map(fn (s) -> ( java.lang.StringBuilder(s).length() )).get()
-def func : java.util.function.Function(string, int) = fn (s) -> ( java.lang.StringBuilder(s).length() )
-def xs : java.util.List(string) = java.util.ArrayList()
+def func : java.util.function.Function of (string, int) = fn (s) -> ( java.lang.StringBuilder(s).length() )
+def xs : java.util.List of string = java.util.ArrayList()
 xs.add("bb")
 xs.add("a")
 xs.add("ccc")
@@ -55,34 +55,34 @@ Missing type : cannot infer type arguments for java.util.function.Function
 
 {{{{{
 ;; Generic interface extending generic interface with default substitution
-def BaseI(A) = interface (
+def BaseI of A = interface (
     def get : fn () : A
-    def pair = fn () : java.util.List(A) -> (
-        def out : java.util.List(A) = java.util.ArrayList()
+    def pair = fn () : java.util.List of A -> (
+        def out : java.util.List of A = java.util.ArrayList()
         out.add(this.get())
         out
     )
 )
-def SubI(B) = interface extends BaseI(B) (
+def SubI of B = interface extends BaseI of B (
     def get2 = fn () : B -> ( this.get() )
 )
-def Impl(C) = class (def item : C) implements SubI(C) (
+def Impl of C = class (def item : C) implements SubI of C (
     def get = fn () : C -> ( this.item )
 )
-def i : SubI(string) = Impl("hi")
+def i : SubI of string = Impl("hi")
 println(i.get(), ":", i.get2(), ":", i.pair().get(0))
 }}}}}
 hi:hi:hi
 
 {{{{{
 ;; Parameterized & module/package/Java type path and bound errors
-def x : int(int) = 1
+def x : int of int = 1
 }}}}}
 Wrong number of type arguments : expected 0, got 1
 
 {{{{{
-def Box(T) = class (def v : T) ()
-def b : Box(int, string) = Box(1)
+def Box of T = class (def v : T) ()
+def b : Box of (int, string) = Box(1)
 }}}}}
 Wrong number of type arguments : expected 1, got 2
 
@@ -92,19 +92,19 @@ def l : java.util.List = java.util.ArrayList()
 Missing type arguments : java.util.List
 
 {{{{{
-def l : java.util.List(int, string) = java.util.ArrayList()
+def l : java.util.List of (int, string) = java.util.ArrayList()
 }}}}}
 Wrong number of type arguments : expected 1, got 2
 
 {{{{{
-def e : java.util.EnumSet(string)? = null
+def e : (java.util.EnumSet of string)? = null
 }}}}}
 Type error : type argument string does not satisfy bound E of java.util.EnumSet
 
 {{{{{
 ;; Imported Java package in type annotation
 def ju = import("java.util")
-def xs : ju.List(string) = ju.ArrayList()
+def xs : ju.List of string = ju.ArrayList()
 xs.add("ok")
 println(xs.get(0))
 }}}}}
@@ -193,7 +193,7 @@ Type error : expected int, got double (x is double because of the call)
 {{{{{
 ;; Java generic bound check rejects non-Comparable Babble class in Collections.max
 def Box = class (def x : int) ()
-def xs : java.util.List(Box) = java.util.ArrayList()
+def xs : java.util.List of Box = java.util.ArrayList()
 xs.add(Box(1))
 println(java.util.Collections.max(xs))
 }}}}}
@@ -201,11 +201,11 @@ Type error : type argument Box does not satisfy bound T of java.util.Collections
 
 {{{{{
 ;; Generic union rollback (ConstraintStore.reset) and class-to-SAM assignability
-def Box(T) = value class (v : T) ()
-def Pair = value class (v : int) ()
-def wrap(T) = fn (x : T) : Box(T) -> ( Box(x) )
-def u : string | Box(int) = wrap(42)
-def func : java.util.function.Function(int, Pair) = Pair
+def Box of T = record (v : T) ()
+def Pair = record (v : int) ()
+def wrap of T = fn (x : T) : Box of T -> ( Box(x) )
+def u : string | Box of int = wrap(42)
+def func : java.util.function.Function of (int, Pair) = Pair
 def a = 1
 a = 2.5
 def b = null

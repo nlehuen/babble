@@ -2835,11 +2835,11 @@ final class EffectChecker {
                 Type dst = checker.rawTypeOf(nna);
                 return isDeeplyImmutable(dst) ? Origin.IMMUTABLE : orig;
             }
-            if (ctx instanceof BabbleParser.TypeApplyCallContext tac) {
-                return evalCallLike(tac, tac.expression(), tac.callParameters().callParameter());
+            if (ctx instanceof BabbleParser.TypeApplyContext ta) {
+                return eval(ta.expression());
             }
-            if (ctx instanceof BabbleParser.CoreCollectionCallContext ccc) {
-                return evalCoreCollectionCall(ccc);
+            if (ctx instanceof BabbleParser.CoreCollectionContext) {
+                return Origin.IMMUTABLE;
             }
             if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
                 Origin leftOrig = eval(asCtx.left);
@@ -3086,10 +3086,15 @@ final class EffectChecker {
         private Origin evalCallLike(ParserRuleContext call,
                                     BabbleParser.ExpressionContext calleeExpr,
                                     List<BabbleParser.CallParameterContext> args) {
+            if (effectiveType(calleeExpr) instanceof Type.CoreCollection cc) {
+                return evalCoreCollectionCall(cc.kind(), call, args);
+            }
+            BabbleParser.ExpressionContext unwrappedCallee = calleeExpr instanceof BabbleParser.TypeApplyContext ta
+                    ? ta.expression() : calleeExpr;
             // Evaluate receiver / callee expression and arguments!
             Origin recvOrig = Origin.IMMUTABLE;
             BabbleParser.ExpressionContext receiverExpr = null;
-            if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
+            if (unwrappedCallee instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
                 receiverExpr = sel.expression();
                 Type recvType = effectiveType(receiverExpr);
                 if (!(recvType instanceof Type.JavaPackage || recvType instanceof Type.Module)) {
@@ -3213,9 +3218,8 @@ final class EffectChecker {
             return Origin.IMMUTABLE;
         }
 
-        private Origin evalCoreCollectionCall(BabbleParser.CoreCollectionCallContext ccc) {
-            String kind = ccc.callee.getText();
-            List<BabbleParser.CallParameterContext> paramsList = ccc.callParameters().callParameter();
+        private Origin evalCoreCollectionCall(String kind, ParserRuleContext ccc,
+                                              List<BabbleParser.CallParameterContext> paramsList) {
             BabbleParser.ExpressionContext[] argExprs = new BabbleParser.ExpressionContext[paramsList.size()];
             Origin[] argOrigins = new Origin[paramsList.size()];
             for (int i = 0; i < paramsList.size(); i++) {

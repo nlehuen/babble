@@ -12,7 +12,7 @@ hello world:7:2147483647
 ;; Assigning java package and class values to variables, and Java inner class via Map$Entry
 def Math = java.lang.Math
 def pair = java.util.Map.entry("k", 42)
-def asEntry : java.util.Map.Entry(string, int) = pair
+def asEntry : java.util.Map.Entry of (string, int) = pair
 println(Math.min(10, 4), ":", asEntry.getKey(), "=", asEntry.getValue())
 }}}}}
 4:k=42

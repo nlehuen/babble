@@ -4,15 +4,15 @@
 
 ;; ---------------------------------------------------------------- Generic Babble functions
 
-def id(T) = fn (x: T): T -> (x)
+def id of T = fn (x: T): T -> (x)
 assert(id(42) == 42)
 assert(id("hello") == "hello")
 
-def first(A, B) = fn (a: A, b: B): A -> (a)
+def first of (A, B) = fn (a: A, b: B): A -> (a)
 assert(first(10, "ignored") == 10)
 assert(first("kept", true) == "kept")
 
-def firstOrNull(T) = fn (cond: bool, x: T): T? -> (
+def firstOrNull of T = fn (cond: bool, x: T): T? -> (
     if cond then (x) else (null)
 )
 def present: int? = firstOrNull(true, 7)
@@ -21,14 +21,14 @@ assert(present == 7)
 assert(absent == null)
 
 ;; Higher-order generic functions and inferred lambda parameters
-def apply(A, B) = fn (x: A, f: fn (a: A): B): B -> (f(x))
+def apply of (A, B) = fn (x: A, f: fn (a: A): B): B -> (f(x))
 assert(apply(5, fn (n) -> (n * 2)) == 10)
 
-def compose(A, B, C) = fn (f: fn (b: B): C, g: fn (a: A): B, x: A): C -> (f(g(x)))
+def compose of (A, B, C) = fn (f: fn (b: B): C, g: fn (a: A): B, x: A): C -> (f(g(x)))
 assert(compose(fn (s) -> (s + "!"), fn (n: int) -> ("" + n), 9) == "9!")
 
 ;; Recursive generic function
-def repeatText(T) = fn (n: int, item: T): string -> (
+def repeatText of T = fn (n: int, item: T): string -> (
     if n <= 0 then ("") else if n == 1 then ("" + item) else ("" + item + "," + recurse(n - 1, item))
 )
 assert(repeatText(3, 1) == "1,1,1")
@@ -41,39 +41,39 @@ assert(apply("abc", id) == "abc")
 
 ;; ---------------------------------------------------------------- Generic Babble classes and value classes
 
-def Box(T) = class (def value: T) (
+def Box of T = class (def value: T) (
     def get = fn (): T -> (this.value)
-    def mapBox(U) = fn (f: fn (x: T): U): Box(U) -> (Box(f(this.value)))
+    def mapBox of U = fn (f: fn (x: T): U): Box of U -> (Box(f(this.value)))
 )
 
 def ib = Box(21)
 assert(ib.get() == 21)
-def sb: Box(string) = ib.mapBox(fn (n) -> ("v=" + n))
+def sb: Box of string = ib.mapBox(fn (n) -> ("v=" + n))
 assert(sb.get() == "v=21")
 
 ;; Construction inferred from expected type (including int -> double widening)
-def db: Box(double) = Box(3)
+def db: Box of double = Box(3)
 assert(db.get() == 3.0)
 assert(db.get() is double)
 
-def Pair(A, B) = value class (a: A, b: B) (
-    def swap = fn (): Pair(B, A) -> (Pair(this.b, this.a))
+def Pair of (A, B) = record (a: A, b: B) (
+    def swap = fn (): Pair of (B, A) -> (Pair(this.b, this.a))
 )
 def p1 = Pair(1, "two")
 def p2 = Pair(1, "two")
 assert(p1 == p2)
 assert(p1.swap() == Pair("two", 1))
-def pd: Pair(double, double) = Pair(1, 2)
+def pd: Pair of (double, double) = Pair(1, 2)
 assert(pd == Pair(1.0, 2.0))
 
 ;; Generic method on a non-generic class
 def Mapper = class () (
-    def mapPair(A, B) = fn (p: Pair(A, B), f: fn (a: A): B): Pair(B, B) -> (Pair(f(p.a), p.b))
+    def mapPair of (A, B) = fn (p: Pair of (A, B), f: fn (a: A): B): Pair of (B, B) -> (Pair(f(p.a), p.b))
 )
 assert(Mapper().mapPair(Pair(4, "4"), fn (n) -> ("" + n)) == Pair("4", "4"))
 
 ;; Static blocks on a generic class work without type parameters of the class
-def Tagged(T) = class (def value: T) () static (
+def Tagged of T = class (def value: T) () static (
     def label = "tagged"
 )
 assert(Tagged.label == "tagged")
@@ -81,16 +81,16 @@ assert(Tagged(true).value == true)
 
 ;; ---------------------------------------------------------------- Generic interfaces, inheritance and defaults
 
-def Container(T) = interface (
+def Container of T = interface (
     def get: fn (): T
     def describe = fn (): string -> ("box:" + this.get())
 )
 
-def Mappable(T) = interface extends Container(T) (
+def Mappable of T = interface extends Container of T (
     def applyTwice = fn (f: fn (x: T): T): T -> (f(f(this.get())))
 )
 
-def Holder(T) = class (def item: T) implements Mappable(T) (
+def Holder of T = class (def item: T) implements Mappable of T (
     def get = fn (): T -> (this.item)
     def describe = fn (): string -> ("[" + super.describe() + "]")
 )
@@ -102,7 +102,7 @@ assert(h.describe() == "[box:5]")
 assert(h.applyTwice(fn (x) -> (x + 3)) == 11)
 
 ;; Multi-level concrete instantiation of a generic interface
-def IntContainer = interface extends Container(int) (
+def IntContainer = interface extends Container of int (
     def doubled = fn (): int -> (this.get() * 2)
 )
 def FixedInt = class (def n: int) implements IntContainer (
@@ -113,16 +113,16 @@ assert(FixedInt(6).describe() == "box:6")
 
 ;; ---------------------------------------------------------------- Covariant immutable value class types and is/as
 
-def ValBox(T) = value class (value: T) (
+def ValBox of T = record (value: T) (
     def get = fn (): T -> (this.value)
 )
-def vib: ValBox(int) = ValBox(21)
-def covDoubleUnion: ValBox(int | double) = vib
-def covAny: ValBox(any) = vib
+def vib: ValBox of int = ValBox(21)
+def covDoubleUnion: ValBox of (int | double) = vib
+def covAny: ValBox of any = vib
 assert(covDoubleUnion.get() == 21)
 assert(covAny.get() == 21)
 
-def maybeBox: Box(int)? = Box(7)
+def maybeBox: (Box of int)? = Box(7)
 if maybeBox is Box then (
     def n: int = maybeBox.get()
     assert(n == 7)
@@ -133,7 +133,7 @@ assert((erased as Box).value == "erased")
 
 ;; ---------------------------------------------------------------- Java generics
 
-def xs: java.util.List(string) = java.util.ArrayList()
+def xs: java.util.List of string = java.util.ArrayList()
 xs.add("b")
 xs.add("a")
 def firstElem: string? = xs.get(0)
@@ -142,19 +142,19 @@ if firstElem != null then (
     assert(java.lang.String(firstElem).toUpperCase() == "B")
 )
 
-def entries: java.util.Map(string, int) = java.util.HashMap()
+def entries: java.util.Map of (string, int) = java.util.HashMap()
 entries.put("k", 10)
 def presentVal: int? = entries.get("k")
 def missingVal: int? = entries.get("missing")
 assert(presentVal == 10)
 assert(missingVal == null)
 
-def uniq: java.util.Set(string) = java.util.HashSet()
+def uniq: java.util.Set of string = java.util.HashSet()
 uniq.add("x")
 assert(uniq.contains("x"))
 
 ;; Contextual type arguments for Java emptyList / singletonList
-def empty: java.util.List(int) = java.util.Collections.emptyList()
+def empty: java.util.List of int = java.util.Collections.emptyList()
 assert(empty.size() == 0)
 def single = java.util.Collections.singletonList("only")
 assert(single.get(0) == "only")
@@ -166,10 +166,10 @@ def mapped = java.util.List.of(1, 2, 3).stream().map(fn (x) -> (x * 10)).toList(
 assert(mapped.toString() == "[10, 20, 30]")
 
 ;; Java generic bounds: Collections.sort on Comparable Babble value class
-def Score = value class (points: int) implements java.lang.Comparable(Score) (
+def Score = record (points: int) implements java.lang.Comparable of Score (
     def compareTo = fn (o: Score): int -> (this.points - o.points)
 )
-def scores: java.util.List(Score) = java.util.ArrayList()
+def scores: java.util.List of Score = java.util.ArrayList()
 scores.add(Score(30))
 scores.add(Score(10))
 scores.add(Score(20))
@@ -183,7 +183,7 @@ assert(callable.call() == 123)
 
 ;; Mutable Java collection invariance, copy via from:, & raw `is`/`as`
 def ints = java.util.List.of(4, 5)
-def anys: list(any) = list(any)(from: ints)
+def anys: list of any = list of any (from: ints)
 assert(anys.size() == 2)
 def dynList: any = ints
 if dynList is java.util.List then (

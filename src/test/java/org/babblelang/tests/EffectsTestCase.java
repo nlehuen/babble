@@ -316,7 +316,7 @@ public class EffectsTestCase {
                 def f = fn deterministic (b: Box): string -> ("v=" + b)
                 """, "deterministic");
         assertClean("""
-                def Pt = value class (x: int, y: int) ()
+                def Pt = record (x: int, y: int) ()
                 def f = fn pure deterministic nothrow (p: Pt): string -> ("p=" + p)
                 """);
 
@@ -398,7 +398,7 @@ public class EffectsTestCase {
 
         // Returning deeply immutable primitive or value-class field from `borrow` parameter IS allowed!
         assertClean("""
-                def Pt = value class (x: int, y: int) ()
+                def Pt = record (x: int, y: int) ()
                 def Holder = class (def pt: Pt) ()
                 def readPt = fn pure deterministic nothrow (borrow h: Holder): Pt -> (h.pt)
                 """);
@@ -438,7 +438,7 @@ public class EffectsTestCase {
                     a.x = b.x
                     b.x = t
                 )
-                def xs: java.util.List(Box) = java.util.ArrayList()
+                def xs: java.util.List of Box = java.util.ArrayList()
                 xs.add(Box(1))
                 xs.add(Box(2))
                 def a = xs.get(0)
@@ -598,7 +598,7 @@ public class EffectsTestCase {
         assertClean("""
                 def injOdd = fn pure deterministic nothrow injective (x: int): int -> (x * 3 + 1)
                 def injStr = fn pure deterministic nothrow injective (x: int): string -> ("k=" + x)
-                def Wrap = value class (x: int) ()
+                def Wrap = record (x: int) ()
                 def injWrap = fn pure deterministic nothrow injective (x: int): Wrap -> (Wrap(x))
                 """);
         assertHasError("""
@@ -631,7 +631,7 @@ public class EffectsTestCase {
 
         // `value class` constructor must be `pure deterministic`:
         assertHasError("""
-                def BadVal = value class (x: int) (
+                def BadVal = record (x: int) (
                     println(x)
                 )
                 """, "value class");

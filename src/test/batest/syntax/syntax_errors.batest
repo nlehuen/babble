@@ -26,8 +26,7 @@ Syntax error : unexpected '->'
 Syntax error : unexpected ')'
 
 {{{{{
-def C = class (x : int)
-(
-)
+;; Double trailing '?' on single-arg generic is a syntax error (BIP012-D2)
+def x : list of int?? = null
 }}}}}
-Syntax error : unexpected end of line
+Syntax error : unexpected '?'

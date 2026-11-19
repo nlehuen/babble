@@ -120,10 +120,10 @@ Not a number : bad
 {{{{{
 ;; Java arrays, Object[] assignability, cast/is on Java & Babble interfaces, TypeVar assignability, stream deferred lambda
 def parts = java.util.regex.Pattern.compile(",").split("a,b,c")
-def takeArr = fn (arr : list(string)) : int -> ( arr.size() )
+def takeArr = fn (arr : list of string) : int -> ( arr.size() )
 def asList = java.util.Arrays.asList(parts)
 
-def id(T) = fn (x : T) : any? -> (
+def id of T = fn (x : T) : any? -> (
     def y : any? = x
     def z : T | int = x
     z
@@ -133,7 +133,7 @@ def mapped = java.util.List.of(1, 2, 3).stream().map(fn (x) -> ( x * 10 )).toLis
 def listCtor = java.util.ArrayList(java.util.List.of(4, 5))
 def mapCtor = java.util.HashMap(java.util.Map.of("k", 9))
 
-def rev : java.util.Comparator(int) = java.util.Collections.reverseOrder()
+def rev : java.util.Comparator of int = java.util.Collections.reverseOrder()
 def cDyn : java.lang.CharSequence = java.lang.StringBuilder("hi")
 
 println(takeArr(asList), ":", parts.length, ":", id(7), ":", mapped.toString(), ":", listCtor.size(), ":", mapCtor.get("k"), ":", STDOUT != null, ":", cDyn is java.lang.Appendable, ":", rev is java.lang.Comparable)
@@ -142,7 +142,7 @@ println(takeArr(asList), ":", parts.length, ":", id(7), ":", mapped.toString(), 
 
 {{{{{
 ;; Generic List subtype mismatch error
-def badList : java.util.List(string) = java.util.ArrayList(java.util.List.of(1, 2))
+def badList : java.util.List of string = java.util.ArrayList(java.util.List.of(1, 2))
 }}}}}
 Type error : expected list(string), got java.util.ArrayList(int)
 
@@ -188,7 +188,7 @@ def Esc = class (x) (
 Missing type : x
 
 {{{{{
-def Box(T) = class (def v : T) (
+def Box of T = class (def v : T) (
     def inner = fn (x) -> (
         def keep : T = this.v
         x

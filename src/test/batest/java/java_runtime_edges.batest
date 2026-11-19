@@ -3,7 +3,7 @@
 {{{{{
 ;; JavaTypes widen (int->double), Faces convertResult check, and Map boxed get
 def dsum = java.util.List.of(1, 2, 3).stream().mapToDouble(fn (x : int) -> ( x + 1 )).sum()
-def box : java.util.Map(string, any?) = java.util.HashMap()
+def box : java.util.Map of (string, any?) = java.util.HashMap()
 box.put("k", 42)
 println(dsum, ":", box.get("k"))
 }}}}}
@@ -11,7 +11,7 @@ println(dsum, ":", box.get("k"))
 
 {{{{{
 ;; Faces convertResult type error when SAM implementation returns wrong type
-def xs : java.util.List(int) = java.util.ArrayList()
+def xs : java.util.List of int = java.util.ArrayList()
 xs.add(1)
 xs.add(2)
 def bad = fn (x : any?, y : any?) : any? -> ( "oops" )
@@ -76,7 +76,7 @@ true:true:true
 {{{{{
 def ip : java.util.function.IntPredicate = fn (x : int) -> ( x > 0 )
 def im = java.util.Arrays.stream(java.lang.Class.forName("java.util.function.IntPredicate").getDeclaredMethods()).filter(fn (m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
-def badArgs : java.util.List(any) = java.util.List.of(any)("bad")
+def badArgs : java.util.List of any = java.util.List.of of any ("bad")
 im.invoke(ip, badArgs.toArray())
 }}}}}
 java.lang.IllegalArgumentException : object is not an instance of declaring class
@@ -96,7 +96,7 @@ appDbl(2.5)
 def C = class (def n : int) (
     def toString = fn () : string -> ( "C" + this.n )
 )
-def objList : java.util.List(any?) = java.util.ArrayList()
+def objList : java.util.List of any? = java.util.ArrayList()
 objList.add(C(9))
 objList.add(C)
 objList.add(fn (x : int) -> ( x ))
@@ -233,7 +233,7 @@ Type error : expected string, got Foo
 
 {{{{{
 ;; Value class member assignment rejected
-def Pt = value class (def x : int) ()
+def Pt = record (def x : int) ()
 def pt = Pt(3)
 pt.x = 4
 }}}}}
@@ -257,7 +257,7 @@ false:true:true:x7
 
 {{{{{
 ;; Faces FaceHandler & JavaTypes checkParameter with BabbleInstance implementing Java interface
-def R = class implements java.lang.Runnable (
+def R = class () implements java.lang.Runnable (
     def run = fn () -> ( println("ran") )
 )
 def r : java.lang.Runnable = R()
@@ -282,7 +282,7 @@ println(ds.getAsDouble(), ":", bs.getAsBoolean())
 
 {{{{{
 ;; Values.fromJava Proxy unwrap + BabbleClass.implementsType(Java) + Operators runtime lt/le/gt
-def R = class implements java.lang.Runnable (
+def R = class () implements java.lang.Runnable (
     def run = fn () -> ( )
 )
 def xs = java.util.Collections.singletonList(R())

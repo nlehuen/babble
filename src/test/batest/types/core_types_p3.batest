@@ -21,15 +21,15 @@ Type error : expected int, got null
 
 {{{{{
 ;; JDK java.base overlay: List.get(i) is T, Map.get(k) is V?, Map.getOrDefault(k, d) is V, Optional.get() is T
-def xs : java.util.List(string) = java.util.ArrayList()
+def xs : java.util.List of string = java.util.ArrayList()
 xs.add("alpha")
 def first : string = xs.get(0)
-def m : java.util.Map(string, int) = java.util.HashMap()
+def m : java.util.Map of (string, int) = java.util.HashMap()
 m.put("a", 7)
 def hit : int? = m.get("a")
 def miss : int? = m.get("b")
 def defaulted : int = m.getOrDefault("b", 99)
-def opt : java.util.Optional(string) = java.util.Optional.of("ok")
+def opt : java.util.Optional of string = java.util.Optional.of("ok")
 def optVal : string = opt.get()
 println(first, ":", hit, ":", miss, ":", defaulted, ":", optVal, ":", first.startsWith("al"))
 }}}}}
@@ -51,7 +51,7 @@ Type error : expected string, got string?
 
 {{{{{
 ;; Defensive runtime check on raw-polluted List(int) catching null element
-def xs : java.util.List(int) = java.util.ArrayList()
+def xs : java.util.List of int = java.util.ArrayList()
 def raw = xs as java.util.List
 raw.add(null)
 xs.get(0)
@@ -60,7 +60,7 @@ Type error : expected int, got null
 
 {{{{{
 ;; Defensive runtime check on raw-polluted List(int) catching wrong element type
-def xs : java.util.List(int) = java.util.ArrayList()
+def xs : java.util.List of int = java.util.ArrayList()
 def raw = xs as java.util.List
 raw.add("oops")
 xs.get(0)

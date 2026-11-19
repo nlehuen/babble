@@ -64,7 +64,7 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         // Closures created in different iterations capture different variables.
         Assertions.assertEquals(3, interpret(
                 "def Box = class (def f : fn () : int) ()\n"
-                        + "def l : java.util.List(Box) = java.util.ArrayList() ; def i = 0\n"
+                        + "def l : java.util.List of Box = java.util.ArrayList() ; def i = 0\n"
                         + "while i < 3 then ( def x = i ; l.add(Box(fn () -> ( x ))) ; i = i + 1 )\n"
                         + "(l.get(0) as Box).f() + (l.get(1) as Box).f() + (l.get(2) as Box).f()"));
     }

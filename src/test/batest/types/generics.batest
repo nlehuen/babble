@@ -2,12 +2,12 @@
 
 {{{{{
 ;; Generic functions and generic classes with generic methods
-def id(T) = fn (x : T) : T -> ( x )
-def Box(T) = class (def value : T) (
-    def mapBox(U) = fn (func : fn (x : T) : U) : Box(U) -> ( Box(func(this.value)) )
+def id of T = fn (x : T) : T -> ( x )
+def Box of T = class (def value : T) (
+    def mapBox of U = fn (func : fn (x : T) : U) : Box of U -> ( Box(func(this.value)) )
 )
-def bi : Box(int) = Box(5)
-def bd : Box(double) = bi.mapBox(fn (x) -> ( x * 1.5 ))
+def bi : Box of int = Box(5)
+def bd : Box of double = bi.mapBox(fn (x) -> ( x * 1.5 ))
 def s : string = id("hello")
 println(bi.value, ":", bd.value, ":", s)
 }}}}}
@@ -15,11 +15,11 @@ println(bi.value, ":", bd.value, ":", s)
 
 {{{{{
 ;; Covariance on value class to Box(int | double) and Box(any), and raw 'is Box' narrowing on nullable generic
-def Box(T) = value class (value : T) ()
-def bi : Box(int) = Box(9)
-def bu : Box(int | double) = bi
-def ba : Box(any) = bi
-def mb : Box(int)? = bi
+def Box of T = record (value : T) ()
+def bi : Box of int = Box(9)
+def bu : Box of (int | double) = bi
+def ba : Box of any = bi
+def mb : (Box of int)? = bi
 def n = if mb is Box then ( mb.value ) else ( 0 )
 println(bu.value, ":", ba.value, ":", n)
 }}}}}
@@ -27,41 +27,72 @@ println(bu.value, ":", ba.value, ":", n)
 
 {{{{{
 ;; Generic interface implemented by generic class
-def Getter(T) = interface (
+def Getter of T = interface (
     def get : fn () : T
 )
-def Holder(T) = class (def v : T) implements Getter(T) (
+def Holder of T = class (def v : T) implements Getter of T (
     def get = fn () : T -> ( this.v )
 )
-def g : Getter(string) = Holder("babble")
+def g : Getter of string = Holder("babble")
 println(g.get())
 }}}}}
 babble
 
 {{{{{
 ;; Invariant/unrelated type argument assignment rejected (Box(int) != Box(double))
-def Box(T) = class (def value : T) ()
-def bi : Box(int) = Box(1)
-def bd : Box(double) = bi
+def Box of T = class (def value : T) ()
+def bi : Box of int = Box(1)
+def bd : Box of double = bi
 }}}}}
 Type error : expected Box(double), got Box(int)
 
 {{{{{
 ;; Cannot cast 'as' to parameterized type or bare type parameter
-def Box(T) = class (def value : T) ()
+def Box of T = class (def value : T) ()
 def anyVal : any = Box(1)
-def bad = anyVal as Box(int)
+def bad = anyVal as Box of int
 }}}}}
-Cannot cast to parameterized type : Box(int)
+Cannot cast to parameterized type : Box of int
 
 {{{{{
-def bad(T) = fn (x : any) -> ( x as T )
+def bad of T = fn (x : any) -> ( x as T )
 }}}}}
 Cannot cast to type parameter : T
 
 {{{{{
 ;; Missing type arguments on generic class annotation
-def Box(T) = class (def value : T) ()
+def Box of T = class (def value : T) ()
 def b : Box = Box(1)
 }}}}}
 Missing type arguments : Box
+
+{{{{{
+;; First-class standalone type application (BIP012-D4)
+def id of T = fn (x : T) : T -> ( x )
+def Box of T = record (value : T) ()
+def idInt = id of int
+def IntBox = Box of int
+def IntList = list of int
+println(idInt(42), ":", IntBox(7).value, ":", IntList(1, 2, 3).size())
+}}}}}
+42:7:3
+
+{{{{{
+;; Nullable binding: list of int? (non-null list of nullable ints) vs (list of int)? (nullable list)
+def xs : list of int? = list of int? (1, null, 3)
+def ys : (list of int)? = null
+println(xs.size(), ":", ys == null)
+}}}}}
+3:true
+
+{{{{{
+;; Newline before class body (BIP012-D5), curried calls, and .of member name
+def Box = class (def x : int)
+(
+    def get = fn () -> ( this.x )
+)
+def add = fn (a : int) -> ( fn (b : int) -> ( a + b ) )
+println(Box(5).get(), ":", add(2)(3), ":", java.util.List.of(10).size())
+}}}}}
+5:5:1
+

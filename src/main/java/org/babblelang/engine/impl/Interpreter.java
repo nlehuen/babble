@@ -640,63 +640,15 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
-    public Object visitCoreCollectionCall(BabbleParser.CoreCollectionCallContext ctx) {
+    public Object visitCoreCollection(BabbleParser.CoreCollectionContext ctx) {
         last = ctx;
-        List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
-        Object[] args = params.isEmpty() ? Arguments.NONE : new Object[params.size()];
-        String[] names = null;
-        for (int i = 0; i < params.size(); i++) {
-            BabbleParser.ExpressionContext expr = params.get(i).expression();
-            args[i] = widen(expr, visit(expr));
-            String name = ScopeAnalysis.callParamName(params.get(i));
-            if (name != null) {
-                if (names == null) {
-                    names = new String[params.size()];
-                }
-                names[i] = name;
-            }
-        }
-        last = ctx;
-        return org.babblelang.runtime.CoreCollections.construct(ctx.callee.getText(), args, names, runtime);
+        return org.babblelang.runtime.CoreCollections.constructor(ctx.coreCollectionKeyword().getText());
     }
 
     @Override
-    public Object visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
+    public Object visitTypeApply(BabbleParser.TypeApplyContext ctx) {
         last = ctx;
-        Object callee = visit(ctx.expression());
-        last = ctx;
-        if (!scopes.isTypeApplyCall(ctx)) {
-            // Curried value call: f(a)(b)
-            List<BabbleParser.TypeContext> firstArgs = ctx.typeArguments().type();
-            Object[] firstValues = new Object[firstArgs.size()];
-            for (int i = 0; i < firstArgs.size(); i++) {
-                firstValues[i] = type(firstArgs.get(i));
-            }
-            CallSite firstSite = new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), new String[firstArgs.size()]);
-            callee = Calls.callable(callee, firstSite).call(runtime, firstValues, null, firstSite);
-            last = ctx;
-        }
-        List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
-        Object[] args = params.isEmpty() ? Arguments.NONE : new Object[params.size()];
-        String[] names = null;
-        for (int i = 0; i < params.size(); i++) {
-            BabbleParser.ExpressionContext expr = params.get(i).expression();
-            args[i] = widen(expr, visit(expr));
-            String name = ScopeAnalysis.callParamName(params.get(i));
-            if (name != null) {
-                if (names == null) {
-                    names = new String[params.size()];
-                }
-                names[i] = name;
-            }
-        }
-        last = ctx;
-        String[] argTexts = new String[params.size()];
-        for (int i = 0; i < params.size(); i++) {
-            argTexts[i] = params.get(i).expression().getText();
-        }
-        CallSite site = new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), argTexts);
-        return Types.check(Calls.callable(callee, site).call(runtime, args, names, site), scopes.checkedType(ctx));
+        return visit(ctx.expression());
     }
 
     /**

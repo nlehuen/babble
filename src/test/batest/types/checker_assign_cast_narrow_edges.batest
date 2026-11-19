@@ -30,9 +30,9 @@ Type error : expected I1, got C
 
 {{{{{
 def cs : java.lang.CharSequence = java.lang.StringBuilder("hi")
-def arr : java.util.List(int) = cs as java.util.List(int)
+def arr : java.util.List of int = cs as java.util.List of int
 }}}}}
-Cannot cast to parameterized type : java.util.List(int)
+Cannot cast to parameterized type : java.util.List of int
 
 {{{{{
 def cs : java.lang.CharSequence = java.lang.StringBuilder("hi")

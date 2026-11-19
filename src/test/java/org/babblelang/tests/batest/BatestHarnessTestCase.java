@@ -113,7 +113,7 @@ public class BatestHarnessTestCase {
                 java.lang.ClassNotFoundException : no.such.Class
 
                 {{{{{
-                def l : java.util.List(int) = java.util.ArrayList(-1)
+                def l : java.util.List of int = java.util.ArrayList(-1)
                 }}}}}
                 java.lang.IllegalArgumentException : Illegal Capacity: -1
 
@@ -123,7 +123,7 @@ public class BatestHarnessTestCase {
                 java.lang.NullPointerException
 
                 {{{{{
-                def It = class () implements java.util.Iterator(int) (
+                def It = class () implements java.util.Iterator of int (
                     def hasNext = fn () : bool -> ( false )
                     def next = fn () : int -> ( 0 )
                 )
@@ -132,7 +132,7 @@ public class BatestHarnessTestCase {
                 java.lang.UnsupportedOperationException : remove
 
                 {{{{{
-                def l : java.util.List(int) = java.util.ArrayList()
+                def l : java.util.List of int = java.util.ArrayList()
                 l.add(2)
                 l.add(1)
                 l.sort(fn (a : int, b : int) : int -> ( assert(false, "boom") ; 0 ))

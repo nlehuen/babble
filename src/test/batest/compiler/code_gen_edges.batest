@@ -627,8 +627,8 @@ ev.arg = "ok"
 def strArg = ev.arg
 ev.arg = 42
 def listA = fn (flag : bool) : any -> (
-    def a : java.util.ArrayList(int) = java.util.ArrayList()
-    def b : java.util.LinkedList(int) = java.util.LinkedList()
+    def a : java.util.ArrayList of int = java.util.ArrayList()
+    def b : java.util.LinkedList of int = java.util.LinkedList()
     if flag then ( a ) else ( b )
 )
 def mixed = fn (flag : bool) : any -> (
@@ -650,7 +650,7 @@ def I2 = interface (
     def dmSpec2 = fn (x : int) : int -> ( x + 200 )
     def dmSpread2 = fn (x : int, y : int = 20) : int -> ( x + y + 200 )
 )
-def Impl1 = class (def bias : int) implements I1, java.util.Comparator(int) (
+def Impl1 = class (def bias : int) implements I1, java.util.Comparator of int (
     def mSpec = fn (x : int) : int -> ( x + this.bias )
     def mSpread = fn (x : int, y : int = 1) : int -> ( x + y + this.bias )
     def compare = fn (a : int, b : int) : int -> ( a - b )
@@ -927,9 +927,9 @@ println(c1.calc(4), ":", C1().calc(4), ":", pf.x)
 
 {{{{{
 ;; ScriptClassWriter interface-interface & class-interface joins + Java primitive bridge args (DoublePredicate, IntToDoubleFunction, LongUnaryOperator)
-def getList = fn () : java.util.List(string) -> ( java.util.Collections.singletonList("a") )
-def getSet = fn () : java.util.Set(string) -> ( java.util.Collections.singleton("b") )
-def joinCol = fn (c : bool) : java.util.Collection(string) -> (
+def getList = fn () : java.util.List of string -> ( java.util.Collections.singletonList("a") )
+def getSet = fn () : java.util.Set of string -> ( java.util.Collections.singleton("b") )
+def joinCol = fn (c : bool) : java.util.Collection of string -> (
     if c then ( getList() ) else ( getSet() )
 )
 def IBase = interface ( def tag : fn () : int )

@@ -41,17 +41,17 @@ public class FormatterTestCase {
     @Test
     public void testGenerics() throws Exception {
         assertFormats("""
-                def id(T): fn (x: T): T = fn (x: T): T -> (x)
-                def Stack(T) = class (def value: T, def next: Stack(T)?) ()
-                def l: java.util.List(string) = java.util.ArrayList()
-                def m: java.util.Map(string, Stack(int)?) = java.util.HashMap()
-                def f: (fn (x: int): Box(int | string))? = null
+                def id of T: fn (x: T): T = fn (x: T): T -> (x)
+                def Stack of T = class (def value: T, def next: (Stack of T)?) ()
+                def l: java.util.List of string = java.util.ArrayList()
+                def m: java.util.Map of (string, (Stack of int)?) = java.util.HashMap()
+                def f: (fn (x: int): Box of (int | string))? = null
                 """, """
-                def id ( T ) : fn ( x : T ) : T = fn ( x : T ) : T -> ( x )
-                def Stack ( T ) = class ( def value : T , def next : Stack ( T ) ? ) ( )
-                def l : java.util.List ( string ) = java.util.ArrayList ( )
-                def m : java.util.Map ( string , Stack ( int ) ? ) = java.util.HashMap ( )
-                def f : ( fn ( x : int ) : Box ( int | string ) ) ? = null
+                def id  of  T : fn ( x : T ) : T = fn ( x : T ) : T -> ( x )
+                def Stack  of  T = class ( def value : T , def next : ( Stack  of  T ) ? ) ( )
+                def l : java.util.List  of  string = java.util.ArrayList ( )
+                def m : java.util.Map  of  ( string , ( Stack  of  int ) ? ) = java.util.HashMap ( )
+                def f : ( fn ( x : int ) : Box  of  ( int | string ) ) ? = null
                 """);
     }
 
@@ -96,7 +96,7 @@ public class FormatterTestCase {
     @Test
     public void testClassesAndInterfaces() throws Exception {
         assertFormats("""
-                def Point = value class (def x: double, private def y = 0.0) implements Shape, java.lang.Runnable (
+                def Point = record (def x: double, private def y = 0.0) implements Shape, java.lang.Runnable (
                     def norm = fn () -> (super(Shape).norm() + super.size())
                 ) static (
                     def origin = this(0.0)
@@ -108,7 +108,7 @@ public class FormatterTestCase {
                     def area = 1
                 )
                 """, """
-                def Point = value class(def x:double,private def y=0.0)implements Shape,java.lang.Runnable(
+                def Point = record (def x:double,private def y=0.0)implements Shape,java.lang.Runnable(
                 def norm = fn ()->(super (Shape).norm()+super.size())
                 )
                 static
@@ -460,7 +460,7 @@ public class FormatterTestCase {
                 def add: fn pure deterministic nothrow (a: int, b: int): int = fn pure deterministic nothrow (a: int, b: int): int -> (
                     a + b
                 )
-                def id(T) = fn pure (x: T): T -> (x)
+                def id of T = fn pure (x: T): T -> (x)
                 def step = fn hermetic (mut p: Point, borrow q: Point): int -> (
                     p.x = q.x
                     p.x
@@ -478,7 +478,7 @@ public class FormatterTestCase {
                 def add : fn  pure  deterministic  nothrow ( a : int , b : int ) : int = fn  pure  deterministic  nothrow ( a : int , b : int ) : int -> (
                 a+b
                 )
-                def id ( T ) = fn  pure ( x : T ) : T -> ( x )
+                def id  of  T = fn  pure ( x : T ) : T -> ( x )
                 def step = fn  hermetic ( mut  p : Point , borrow  q : Point ) : int -> (
                 p.x = q.x
                 p.x

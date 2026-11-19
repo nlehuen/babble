@@ -288,13 +288,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitClassExpression(BabbleParser.ClassExpressionContext ctx) {
-        boolean value = false;
-        if (ctx.modifier != null) {
-            if (!ctx.modifier.getText().equals("value")) {
-                throw error("Unknown class modifier : " + ctx.modifier.getText(), ctx.modifier);
-            }
-            value = true;
-        }
+        boolean value = ctx.RECORD() != null;
         TypeNode type = newType(ctx, value ? ClassShape.Kind.VALUE_CLASS : ClassShape.Kind.CLASS, typeName(ctx, "class"), ctx.typeList());
         boolean isValue = value;
 
@@ -579,19 +573,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             imports.add(new PendingImport(ctx, name, current()));
         }
         return visitChildren(ctx);
-    }
-
-    @Override
-    public Void visitTypeApplyCall(BabbleParser.TypeApplyCallContext ctx) {
-        visit(ctx.expression());
-        for (BabbleParser.TypeContext t : ctx.typeArguments().type()) {
-            BabbleParser.SimpleTypeContext simple = ScopeAnalysis.simpleType(t);
-            if (simple != null && simple.coreTypeKeyword() == null && simple.typeArguments() == null) {
-                occurrences.add(new Occurrence(simple, simple.ID().getText(), current()));
-            }
-        }
-        visit(ctx.callParameters());
-        return null;
     }
 
     /** The file a call imports statically : {@code import("….ba")} with a string literal, or null. */

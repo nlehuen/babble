@@ -106,7 +106,7 @@ No applicable overload of java.lang.Runnable for (java.lang.Integer) : candidate
 {{{{{
 ;; Wrong number of type arguments on non-generic class
 def Box = class () ()
-def x : Box(int) = Box()
+def x : Box of int = Box()
 }}}}}
 Wrong number of type arguments : expected 0, got 1
 
@@ -125,7 +125,7 @@ def pick = fn (flag : bool, x : int) : double -> (
     x = 10
     if flag then ( return x ) else ( return 2.5 )
 )
-def apply(T) = fn (a : T, f : fn () : T) : T -> ( f() )
+def apply of T = fn (a : T, f : fn () : T) : T -> ( f() )
 println(pick(true, 1), ":", pick(false, 1), ":", apply(2.5, fn () -> ( 3 )))
 }}}}}
 10.0:2.5:3.0
@@ -149,7 +149,7 @@ Member used before definition : b
 
 {{{{{
 ;; assignedMemberType: static field assign, generic class param assign, missing/private member errors
-def Box(T) = class (def v : T) () static (
+def Box of T = class (def v : T) () static (
     def count = 0
 )
 def b = Box(10)
@@ -186,12 +186,12 @@ Not a scope : 42
 
 {{{{{
 ;; unify: union actual, nullable pattern, Babble generic class pattern, Java generic interface pattern, function pattern
-def Box(T) = class (def v : T) ()
-def unbox(T) = fn (b : Box(T)) : T -> ( b.v )
-def first(T) = fn (xs : java.util.List(T)) : T? -> ( xs.get(0) )
-def orDefault(T) = fn (x : T?, d : T) : any? -> ( if x != null then ( x ) else ( d ) )
-def id(T) = fn (x : T) : T -> ( x )
-def apply(A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
+def Box of T = class (def v : T) ()
+def unbox of T = fn (b : Box of T) : T -> ( b.v )
+def first of T = fn (xs : java.util.List of T) : T? -> ( xs.get(0) )
+def orDefault of T = fn (x : T?, d : T) : any? -> ( if x != null then ( x ) else ( d ) )
+def id of T = fn (x : T) : T -> ( x )
+def apply of (A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
 def u : int | string = 7
 def xs = java.util.Collections.singletonList("hi")
 println(unbox(Box(3)), ":", first(xs), ":", orDefault(null, 9), ":", orDefault(4, 9), ":", id(u), ":", apply(5, fn (n : int) : int -> ( n + 1 )))
@@ -203,7 +203,7 @@ println(unbox(Box(3)), ":", first(xs), ":", orDefault(null, 9), ":", orDefault(4
 def I1 = interface ( def m : fn () : int )
 def I2 = interface ( def n : fn () : int )
 def C1 = class () implements I1 ( def m = fn () : int -> ( 1 ) )
-def V1 = value class (x : int) implements I1 ( def m = fn () : int -> ( this.x ) )
+def V1 = record (x : int) implements I1 ( def m = fn () : int -> ( this.x ) )
 def a : any = C1()
 def v : any = V1(2)
 def u : int | string = 5
@@ -275,8 +275,8 @@ C does not implement I1.m
 
 {{{{{
 ;; genericBabbleCall with deferred unannotated lambda + unify JavaInstance SAM with Function + Java Optional.map deferred lambda
-def apply(A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
-def runSam(T) = fn (f : java.util.function.Function(T, int), x : T) : int? -> ( f.apply(x) )
+def apply of (A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
+def runSam of T = fn (f : java.util.function.Function of (T, int), x : T) : int? -> ( f.apply(x) )
 def opt = java.util.Optional.of(5).map(fn (x : int) -> ( x + 1 ))
 println(apply(10, fn (n) -> ( n + 1 )), ":", runSam(fn (s : string) : int -> ( java.lang.String(s).length() ), "hello"), ":", opt.orElse(0))
 }}}}}
@@ -284,7 +284,7 @@ println(apply(10, fn (n) -> ( n + 1 )), ":", runSam(fn (s : string) : int -> ( j
 
 {{{{{
 ;; isRuntimeSubtype JavaInstance projection (Collection(string) is List)
-def xs : java.util.Collection(string) = java.util.Collections.singletonList("a")
+def xs : java.util.Collection of string = java.util.Collections.singletonList("a")
 println((xs is java.util.List))
 }}}}}
 true
@@ -328,7 +328,7 @@ Not a number : u
 
 {{{{{
 ;; visitAsExpression: cast to type var, cast to function type, redundant cast warning
-def f(T) = fn (x : any) -> ( x as T )
+def f of T = fn (x : any) -> ( x as T )
 }}}}}
 Cannot cast to type parameter : T
 

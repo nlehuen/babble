@@ -5,7 +5,7 @@
 def mapped = java.util.Optional.of(6).map(fn (x : int) : int -> ( x * x )).get()
 println(mapped)
 
-def xs : java.util.List(int) = java.util.ArrayList()
+def xs : java.util.List of int = java.util.ArrayList()
 xs.add(3)
 xs.add(1)
 xs.add(4)
@@ -19,17 +19,17 @@ println(xs.toString())
 
 {{{{{
 ;; Babble class implementing a Java interface (Faces dynamic proxy bridge)
-def Greeter = class (def tag : string) implements java.util.function.Supplier(string) (
+def Greeter = class (def tag : string) implements java.util.function.Supplier of string (
     def get = fn () : string -> ( "sup:" + this.tag )
 )
-def sup : java.util.function.Supplier(string) = Greeter("ok")
+def sup : java.util.function.Supplier of string = Greeter("ok")
 println(sup.get())
 }}}}}
 sup:ok
 
 {{{{{
 ;; Direct Comparator with Java Collections.sort
-def names : java.util.List(string) = java.util.ArrayList()
+def names : java.util.List of string = java.util.ArrayList()
 names.add("pear")
 names.add("fig")
 names.add("apple")

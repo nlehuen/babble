@@ -130,7 +130,7 @@ public class ModuleSourcesTestCase {
     @Test
     public void anImportInAFunctionIsResolvedFromItsModule() throws Exception {
         MemorySource source = new MemorySource()
-                .put("/lib/registry.ba", "export def values : java.util.List(int) = java.util.ArrayList()")
+                .put("/lib/registry.ba", "export def values : java.util.List of int = java.util.ArrayList()")
                 .put("/lib/data.ba", "import(\"registry.ba\").values.add(7)")
                 .put("/lib/loader.ba", "def registry = import(\"registry.ba\")\nexport def load = fn (name : string) : int -> ( import(name) ; registry.values.get(0) as int )");
         // A dynamic import : resolved when it runs, from the module the function is in.

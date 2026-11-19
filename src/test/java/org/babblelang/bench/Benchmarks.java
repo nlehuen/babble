@@ -40,7 +40,7 @@ public final class Benchmarks {
                         + "while i < 20000 then ( l.push(i) ; i = i + 1 )\n"
                         + "while l.size > 0 then ( l.pop() )");
         scripts.put("ArrayList add/get : Java interop",
-                "def l : java.util.ArrayList(int) = java.util.ArrayList() ; def i = 0 ; while i < 20000 then ( l.add(i) ; i = i + 1 )\n"
+                "def l : java.util.ArrayList of int = java.util.ArrayList() ; def i = 0 ; while i < 20000 then ( l.add(i) ; i = i + 1 )\n"
                         + "def s = 0 ; i = 0 ; while i < 20000 then ( s = s + (l.get(i) as int) ; i = i + 1 ) ; s");
 
         System.out.println("| Benchmark | interpret (ms) | compile (ms) | speed-up |");

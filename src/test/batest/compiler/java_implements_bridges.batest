@@ -6,7 +6,7 @@ def Counter = class (private def n : int) implements java.util.function.IntSuppl
     def run = fn mut () : any? -> ( this.n += 10 ; null )
     def getAsInt = fn () : int -> ( this.n )
 )
-def Weight = value class (grams : int) implements java.lang.Comparable(Weight) (
+def Weight = record (grams : int) implements java.lang.Comparable of Weight (
     def compareTo = fn (other : Weight) : int -> ( this.grams - other.grams )
 )
 def mulObj = object implements java.util.function.DoubleBinaryOperator (
@@ -16,12 +16,12 @@ def c = Counter(5)
 def r : java.lang.Runnable = c
 r.run()
 def sup : java.util.function.IntSupplier = c
-def xs : java.util.List(Weight) = java.util.ArrayList()
+def xs : java.util.List of Weight = java.util.ArrayList()
 xs.add(Weight(30))
 xs.add(Weight(10))
 xs.add(Weight(20))
 java.util.Collections.sort(xs)
-def uniq : java.util.Set(Weight) = java.util.HashSet()
+def uniq : java.util.Set of Weight = java.util.HashSet()
 uniq.add(Weight(10))
 println(sup.getAsInt(), ":", xs.get(0).grams, ":", uniq.contains(Weight(10)), ":", mulObj.applyAsDouble(2.0, 3.0))
 }}}}}
@@ -29,7 +29,7 @@ println(sup.getAsInt(), ":", xs.get(0).grams, ":", uniq.contains(Weight(10)), ":
 
 {{{{{
 ;; Babble interface extending Java interface with default method, implemented by class & cross-called from Java
-def Ranked = interface extends java.lang.Comparable(Ranked) (
+def Ranked = interface extends java.lang.Comparable of Ranked (
     def rank : fn () : int
     def compareTo = fn (other : Ranked) : int -> ( this.rank() - other.rank() )
 )
@@ -37,7 +37,7 @@ def Item = class (def label : string, def r : int) implements Ranked (
     def rank = fn () : int -> ( this.r )
     def toString = fn () : string -> ( this.label + "#" + this.r )
 )
-def items : java.util.List(Item) = java.util.ArrayList()
+def items : java.util.List of Item = java.util.ArrayList()
 items.add(Item("b", 2))
 items.add(Item("a", 1))
 items.add(Item("c", 3))
@@ -71,8 +71,8 @@ println(cs.length(), ":", cs.subSequence(0, 4), ":", java.lang.String.valueOf(cs
 
 {{{{{
 ;; Java default method inheritance and super(JavaInterface).m(...) override in both Babble interface and class
-def WrappingIter = interface extends java.util.Iterator(int) (
-    def forEachRemaining = fn (action : java.util.function.Consumer(any?)) : any? -> (
+def WrappingIter = interface extends java.util.Iterator of int (
+    def forEachRemaining = fn (action : java.util.function.Consumer of any?) : any? -> (
         print("<")
         super(java.util.Iterator).forEachRemaining(action)
         print(">")
@@ -108,14 +108,14 @@ println(sum)
 
 {{{{{
 ;; Field with same name as Java default method does not shadow Java default method when invoked from Java
-def SingleIter = class () implements java.util.Iterator(int) (
+def SingleIter = class () implements java.util.Iterator of int (
     def remove = 123
     def hasNext = fn () : bool -> ( false )
     def next = fn () : int -> ( 0 )
 )
 def it = SingleIter()
 println(it.remove)
-def asJava : java.util.Iterator(int) = it
+def asJava : java.util.Iterator of int = it
 asJava.remove()
 }}}}}
 123
