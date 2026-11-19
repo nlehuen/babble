@@ -533,6 +533,9 @@ final class LoweringAnalyzer {
         if (type == Type.NULLABLE_ANY || type instanceof Type.TypeVar) {
             return null;
         }
+        if (type instanceof Type.Frozen frozen) {
+            return descriptor(frozen.of());
+        }
         if (type instanceof Type.Union union) {
             StringBuilder payload = new StringBuilder();
             for (Type member : union.members()) {

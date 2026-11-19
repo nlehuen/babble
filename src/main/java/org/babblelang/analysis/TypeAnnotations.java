@@ -180,6 +180,9 @@ final class TypeAnnotations {
         if (base == Type.ERROR) {
             return Type.ERROR;
         }
+        if (paren.frozen != null) {
+            base = Type.frozen(base);
+        }
         return paren.question != null ? Type.nullable(base) : base;
     }
 
@@ -204,7 +207,13 @@ final class TypeAnnotations {
         if (result == Type.ERROR) {
             return Type.ERROR;
         }
-        return simple.question != null ? Type.nullable(result) : result;
+        if (simple.question != null) {
+            result = Type.nullable(result);
+        }
+        if (simple.frozen != null) {
+            result = Type.frozen(result);
+        }
+        return result;
     }
 
     /** Resolves {@code typeArguments} ({@code T} or {@code (T1, T2)}) in {@code expr of typeArguments}. */
@@ -245,7 +254,7 @@ final class TypeAnnotations {
                     : EffectChecker.ParamMods.NONE;
             String name = parameter.ID() != null ? parameter.ID().getText() : "p" + index;
             result.add(new Type.Parameter(name, type, false,
-                    pm.mut(), pm.borrow(), pm.borrow()));
+                    pm.mut(), pm.borrow(), pm.borrow(), pm.unique()));
             index++;
         }
         return result;

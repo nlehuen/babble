@@ -51,16 +51,22 @@ public final class HostEffects {
     }
 
     /** Resolved override entry for a {@link JavaTarget}. */
-    public record OverrideEntry(Set<Effect> effects, boolean mutReceiver, boolean borrowReceiver, boolean impure) {
+    public record OverrideEntry(Set<Effect> effects, boolean mutReceiver, boolean borrowReceiver, boolean uniqueResult, boolean impure) {
+        public OverrideEntry(Set<Effect> effects, boolean mutReceiver, boolean borrowReceiver, boolean impure) {
+            this(effects, mutReceiver, borrowReceiver, false, impure);
+        }
+
         public OverrideEntry {
             EnumSet<Effect> copy = effects.isEmpty() ? EnumSet.noneOf(Effect.class) : EnumSet.copyOf(effects);
             copy.remove(Effect.MUT);
             copy.remove(Effect.BORROW);
+            copy.remove(Effect.UNIQUE);
             copy.remove(Effect.IMPURE);
             if (impure) {
                 copy.clear();
                 mutReceiver = false;
                 borrowReceiver = false;
+                uniqueResult = false;
             } else if (copy.contains(Effect.PURE)) {
                 copy.add(Effect.HERMETIC);
             }
@@ -68,7 +74,7 @@ public final class HostEffects {
         }
 
         public static OverrideEntry impureEntry() {
-            return new OverrideEntry(EnumSet.noneOf(Effect.class), false, false, true);
+            return new OverrideEntry(EnumSet.noneOf(Effect.class), false, false, false, true);
         }
 
         public static OverrideEntry fromEffects(TargetKind kind, Effect... rawEffects) {
@@ -98,17 +104,18 @@ public final class HostEffects {
             }
             boolean mutReceiver = set.remove(Effect.MUT);
             boolean borrowReceiver = set.remove(Effect.BORROW);
+            boolean uniqueResult = set.remove(Effect.UNIQUE);
             if (set.contains(Effect.PURE)) {
                 set.add(Effect.HERMETIC);
             }
-            return new OverrideEntry(set, mutReceiver, borrowReceiver, false);
+            return new OverrideEntry(set, mutReceiver, borrowReceiver, uniqueResult, false);
         }
 
         public EffectSet toEffectSet(boolean axiomatic) {
             if (impure) {
                 return EffectSet.IMPURE_DECLARED;
             }
-            return EffectSet.ofDeclared(effects, mutReceiver, borrowReceiver, axiomatic);
+            return EffectSet.ofDeclared(effects, mutReceiver, borrowReceiver, uniqueResult, axiomatic);
         }
     }
 

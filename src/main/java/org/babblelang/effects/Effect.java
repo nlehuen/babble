@@ -12,6 +12,8 @@ public enum Effect {
     MUT,
     /** Does not retain a reference past the call's return. */
     BORROW,
+    /** Deeply owned reference graph with no external mutable aliases (BIP007-P2). */
+    UNIQUE,
     /** Same inputs and initial {@code mut} states always produce equal outputs and final states. */
     DETERMINISTIC,
     /** Never throws a Babble or runtime exception on well-typed inputs. */

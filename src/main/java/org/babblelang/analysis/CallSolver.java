@@ -61,6 +61,19 @@ final class CallSolver {
 
     /** The type of a call of {@code callee} ; {@code recordTarget} records the Java executable it resolves to (not for a union member). */
     Type call(Type callee, BabbleParser.CallContext ctx, Type expected, boolean recordTarget) {
+        Type result = callInner(callee, ctx, expected, recordTarget);
+        if (result != Type.ERROR && result != Type.NOTHING
+                && ctx.expression() instanceof BabbleParser.SelectorContext sel
+                && sel.expression() != null) {
+            Type recv = checker.types().get(sel.expression());
+            if (recv != null && Type.withoutNull(recv) instanceof Type.Frozen) {
+                return Type.frozen(result);
+            }
+        }
+        return result;
+    }
+
+    private Type callInner(Type callee, BabbleParser.CallContext ctx, Type expected, boolean recordTarget) {
         List<BabbleParser.CallParameterContext> arguments = ctx.callParameters().callParameter();
         if (callee == Type.ERROR || callee == Type.NOTHING) {
             return Type.ERROR;

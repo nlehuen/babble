@@ -20,13 +20,13 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 effectModifier: PURE | HERMETIC | MUT | BORROW | DETERMINISTIC | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | IMPURE | RECORD | OF;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | IMPURE | RECORD | OF | UNIQUE | FROZEN;
 
 effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
 
 effectTarget: (ID '(' STRING ')' | memberName) ('.' memberName)*;
 
-effectClause: (AXIOM | IMPURE) effectWord*;
+effectClause: (AXIOM | IMPURE) (effectWord | UNIQUE)*;
 
 effectPrefix: effectWord+;
 
@@ -42,7 +42,7 @@ expression:
           | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block
                 (NL* STATIC NL* staticBlock=block)?           # interfaceExpression
           | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block   # objectExpression
-          | FN effectPrefix? fnParameters (':' type)? '->' NL* functionBlock=block  # functionLiteral
+          | FN effectPrefix? fnParameters (':' uniqueReturn=UNIQUE? type)? '->' NL* functionBlock=block  # functionLiteral
           | THIS                                              # thisExpression
           | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
           // A newline may come before the dot : a chain of calls can go on the next lines.
@@ -106,7 +106,7 @@ fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* NL* ')'
 
 fnTypeParam: paramModifier* (ID ':')? type;
 
-paramModifier: MUT | BORROW;
+paramModifier: MUT | BORROW | UNIQUE;
 
 typeParameters: ID
               | '(' NL* ID (NL* ',' NL* ID)* NL* ')';
@@ -124,13 +124,13 @@ typeList: type (NL* ',' NL* type)*;
 type: nullableType ('|' NL* nullableType)*;
 
 nullableType: nonParenNullableType                                                    # nonParenType
-            | '(' NL* type NL* ')' question='?'?                                      # parenType
+            | frozen=FROZEN? '(' NL* type NL* ')' question='?'?                       # parenType
             ;
 
-nonParenNullableType: typeName ( OF ( '(' NL* type (NL* ',' NL* type)* NL* ')' question='?'?
-                                    | nonParenNullableType )
-                               | question='?'? )                                      # simpleType
-                    | FN effectPrefix? fnTypeParameters (':' type)?                   # functionType
+nonParenNullableType: frozen=FROZEN? typeName ( OF ( '(' NL* type (NL* ',' NL* type)* NL* ')' question='?'?
+                                                   | nonParenNullableType )
+                                              | question='?'? )                       # simpleType
+                    | FN effectPrefix? fnTypeParameters (':' uniqueReturn=UNIQUE? type)? # functionType
                     | NULL                                                            # nullType
                     ;
 
@@ -208,6 +208,8 @@ PURE: 'pure';
 HERMETIC: 'hermetic';
 MUT: 'mut';
 BORROW: 'borrow';
+UNIQUE: 'unique';
+FROZEN: 'frozen';
 DETERMINISTIC: 'deterministic';
 NOTHROW: 'nothrow';
 IDEMPOTENT: 'idempotent';
