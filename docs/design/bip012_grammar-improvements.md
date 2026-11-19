@@ -12,19 +12,19 @@
 
 ## 1. Summary
 
-`src/main/antlr4/org/babblelang/parser/Babble.g4` has grown from a small, clean expression grammar into a **276-line, highly context-sensitive grammar** in which **102 lines (37%)** are custom Java lookahead code inside `@parser::members` backing **8 semantic predicates**. Meanwhile, `BIP011` §7.2 adds a **9th unbounded lookahead predicate** (`isTypeApplicationCall()`) plus a **semantic disambiguation fallback inside `TypeChecker`** to tell `Box(T)(x)` apart from curried calls `f(a)(b)`, and `BIP007-P2` would add 4 more contextual `ID` keywords (`unique`, `move`, `freeze`, `frozen`).
+Following the landing of `RM005` (`BIP011`), `src/main/antlr4/org/babblelang/parser/Babble.g4` has grown from a small, clean expression grammar into a **386-line, highly context-sensitive grammar** in which **172 lines (45% of the file)** are custom Java lookahead code inside `@parser::members` (lines 3–174) backing **10 semantic predicates**. In particular, `RM005` had to add **two more** predicates—`isTypeApplicationCall()` (58 lines of token-stream scanning) plus a `ScopeAnalysis.typeApplyCalls` / `CallSolver` / `Interpreter` / `CodeGenerator` disambiguation fallback to tell `Box(T)(x)` apart from curried calls `f(a)(b)`, and `isCoreTypeAfterIs()` to resolve the collision between `# coreScalarRef` (`int`) and `x is int`—while `BIP007-P2` would add 4 more contextual `ID` keywords (`unique`, `move`, `freeze`, `frozen`).
 
 This proposal presents:
 
-1. **A complete, line-by-line audit (§3)** of every ambiguity, context-sensitivity, unbounded lookahead, precedence trap, and lexer defect in `Babble.g4` today and in its `BIP011`/`BIP007-P2` extensions—including several active bugs (`(int)` in type position parsing as a function type instead of a parenthesized type, split precedence between annotated and unannotated function literals, `class (x: int)\n()` failing on newlines, asymmetric `as` and `is` precedence, and single-line `;;( ... ;;)` comments being swallowed by `COMMENT`).
+1. **A complete, line-by-line audit (§3)** of every ambiguity, context-sensitivity, unbounded lookahead, precedence trap, and lexer defect in post-`RM005` `Babble.g4` and its planned `BIP007-P2` extensions—including active bugs (`(Box)` in type position parsing as a function type instead of a parenthesized type, split precedence between annotated and unannotated function literals, `class (x: int)\n()` failing on newlines, asymmetric `as` and `is` precedence, and single-line `;;( ... ;;)` comments being swallowed by `COMMENT`).
 2. **A principled, predicate-free grammar redesign (§4–§5, `BIP012-D1`–`D9`)** under one **hard constraint**: **Babble keeps a single bracket type, `()`** (no `{}`, `[]`, or `<>`). Rather than introducing new brackets, Babble uses **explicit keywords** to disambiguate every overloaded construct:
-   * **`of` for generics (`BIP012-D2`–`D4`)** across types (`list of int`, `list of int?`, `map of (string, int)`), declarations (`def Box of T = ...`, `def Pair of (A, B) = ...`), and first-class type application expressions (`def IntBox = Box of int`, `list of int (1, 2, 3)`, `Box of int? (null)`), eliminating `BIP011`'s `isTypeApplicationCall()` predicate and curried-call ambiguity completely.
-   * **`fn` for function literals and function types (`BIP012-D1`)** (`fn (x: int): int -> (x + 1)`, `fn pure deterministic (x: int): int -> (...)`, `fn (x: int): int`), eliminating unbounded lookahead against blocks `(...)`, resolving the `(int)` type ambiguity, unifying function literal precedence, and removing `isFunctionLiteralStart()`, `isFunctionTypeStart()`, and `isDefEffectStart()`.
-   * **Reserved effect & ownership keywords** (`axiom`, `impure`, `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone`, `injective`, plus `BIP007-P2`'s `unique`, `move`, `freeze`, `frozen`) exempted after `.`/`?.` via `memberName` (matching `BIP011-D11`), paired with **`on`** (`BIP012-D7`) for external effect declarations (`axiom pure deterministic on java.lang.Math.sqrt`).
-   * **Mandatory `class` parameters (`BIP012-D5`) and `record` replacing `value class` (`BIP012-D6`)**, **factored `ifExpr`** (removing `{_input.LA(1) == IF}?`), **unified assignment**, **split parameter rules**, **consistent `is`/`as`/`not` precedence (`BIP012-D8`)**, and a **fixed `COMMENT`/`MULTILINECOMMENT` lexer rule**.
-   * **Sequencing (`BIP012-D9`)**: `BIP011` lands first with `C(T)(...)`, and `BIP012` then migrates the full grammar (including `BIP011` core collections and `isTypeApplicationCall()`) cleanly in one pass.
+   * **`of` for generics (`BIP012-D2`–`D4`)** across types (`list of int`, `list of int?`, `map of (string, int)`), declarations (`def Box of T = ...`, `def Pair of (A, B) = ...`), and first-class type application expressions (`def IntBox = Box of int`, `list of int (1, 2, 3)`, `Box of int? (null)`), eliminating `RM005`'s `isTypeApplicationCall()` predicate, `ScopeAnalysis.typeApplyCalls`, and the curried-call fallback completely.
+   * **`fn` for function literals and function types (`BIP012-D1`)** (`fn (x: int): int -> (x + 1)`, `fn pure deterministic (x: int): int -> (...)`, `fn (x: int): int`), eliminating unbounded lookahead against blocks `(...)`, resolving the `(Box)` type ambiguity, unifying function literal precedence, and removing `isFunctionLiteralStart()`, `isFunctionTypeStart()`, and `isDefEffectStart()`.
+   * **Reserved effect & ownership keywords** (`axiom`, `impure`, `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone`, `injective`, plus `BIP007-P2`'s `unique`, `move`, `freeze`, `frozen`) exempted after `.`/`?.` via `memberName` (extending `BIP011-D11`), paired with **`on`** (`BIP012-D7`) for external effect declarations (`axiom pure deterministic on java.lang.Math.sqrt`).
+   * **Mandatory `class` parameters (`BIP012-D5`) and `record` replacing `value class` (`BIP012-D6`)**, **factored `ifExpr`** (removing `{_input.LA(1) == IF}?`), **unified assignment**, **split parameter rules**, **consistent `is`/`as`/`not` precedence (`BIP012-D8`, also removing `RM005`'s `isCoreTypeAfterIs()`)**, and a **fixed `COMMENT`/`MULTILINECOMMENT` lexer rule**.
+   * **Sequencing (`BIP012-D9`)**: `RM005` (`BIP011`) has now landed with `C(T)(...)`, so `BIP012-P1`–`P4` executes directly on top of `RM005`, migrating the full grammar (including `RM005` core collections, deleting both `isTypeApplicationCall()` and `isCoreTypeAfterIs()`).
 
-The resulting grammar (§5) has **0 lines of `@parser::members`**, **0 semantic predicates**, and **0 active syntactic ambiguities**, while keeping Babble's signature single-bracket aesthetic and enabling ANTLR4's fast `PredictionMode.SLL` path.
+The resulting grammar (§5) has **0 lines of `@parser::members`**, **0 semantic predicates**, and **0 active syntactic ambiguities**, while keeping Babble's signature single-bracket aesthetic, preserving all `RM005` core types and literals, and enabling ANTLR4's fast `PredictionMode.SLL` path.
 
 ---
 
@@ -33,7 +33,7 @@ The resulting grammar (§5) has **0 lines of `@parser::members`**, **0 semantic 
 1. **Single bracket type: `()` only (hard constraint).**
    Babble intentionally avoids `{}`, `[]`, and `<>`. Keeping a single delimiter pair preserves Babble's uniform, expression-oriented visual identity and keeps `Formatter`'s single-stack indentation model simple. Whenever `(...)` becomes syntactically ambiguous between two constructs, Babble disambiguates with a **keyword**, never with a second bracket type.
 2. **Keywords are cheap; contextual predicates are expensive.**
-   Because Babble is currently self-contained with no external ecosystem frozen on identifier names, reserving keywords is dramatically cleaner than lexing them as `ID` and bolting Java lookahead onto the parser. Compatibility with Java method/field names (`.set`, `.map`, `.list`, `.pure`, `.move`, `.value`) is preserved cleanly at the grammar level via a `memberName` rule after `.` and `?.` (already established in `BIP011-D11`).
+   Because Babble is currently self-contained with no external ecosystem frozen on identifier names, reserving keywords is dramatically cleaner than lexing them as `ID` and bolting Java lookahead onto the parser. Compatibility with Java method/field names (`.set`, `.map`, `.list`, `.pure`, `.move`, `.record`) is preserved cleanly at the grammar level via `memberName` after `.` and `?.` (established in `BIP011-D11` / `RM005`).
 3. **Preserve significant newlines (`NL`) without brittle traps.**
    Babble's semicolon-optional line syntax (newlines separate expressions except after continuation tokens and before `.`/`?.`, and never between an expression and `(` or unary `-`) is a core ergonomic feature and stays intact. The redesign removes accidental newline traps (such as `class (x: int)\n(...)` failing) rather than abandoning significant newlines.
 4. **Enforce structural boundaries in the grammar, semantic boundaries in analysis.**
@@ -45,75 +45,76 @@ The resulting grammar (§5) has **0 lines of `@parser::members`**, **0 semantic 
 
 ### 3.1 The 12-Way Overload of `(...)`
 
-Because `()` is the only delimiter pair in Babble, `(` currently carries **10 distinct syntactic roles** in `Babble.g4`, with **2 more** planned in `BIP011` and `BIP005-D3`:
+Because `()` is the only delimiter pair in Babble, `(` currently carries **11 distinct syntactic roles** in post-`RM005` `Babble.g4`, with **1 more** planned in `BIP005-D3`:
 
 | # | Syntactic Role | Current Syntax | Collides With |
 |---|---|---|---|
 | 1 | Expression grouping / block | `(a + b)`, `(def x = 1; x)`, `()` | #3 (function literal), #2 (call across `NL` suppressed) |
 | 2 | Function call arguments | `f(a, b)`, `f(x: 1)` | #1 (suppressed across `NL`), #11 (`C(T)(...)` vs `f(a)(b)`) |
 | 3 | Function literal parameters | `(x: int): int -> (x + 1)` | #1 (`(...)` block / empty `()`) |
-| 4 | Function type parameters | `(x: int): int` | #5 (`(int)` parenthesized type — **active ambiguity**) |
+| 4 | Function type parameters | `(x: int): int` | #5 (`(Box)` parenthesized type — **active ambiguity**) |
 | 5 | Parenthesized type | `(int \| string)?`, `((x: int): int)?` | #4 (function type) |
 | 6 | Class constructor header | `class (def x: int) (...)` | #1 (`class (...)` body when header omitted) |
 | 7 | Generic type parameters on `def` | `def Box(T) = ...` | #12 (destructuring `def (a, b) = ...`) |
 | 8 | Generic type arguments in types | `Box(int)`, `Map(string, int)` | #2 / #11 in expression position |
 | 9 | `super` interface qualifier | `super(I).m()` | None (`super` is a keyword, never called) |
 | 10 | Constructor-only `axiom` target | `axiom pure java.util.HashMap()` | None (only at end of `effectDeclaration`) |
-| 11 | *(BIP011)* Explicit type application | `Box(int?)(null)`, `list(int)(1)` | #2 (curried value calls `f(a)(b)` — **unresolvable syntactically**) |
+| 11 | Explicit type application (`RM005`) | `Box(int?)(null)`, `list(int)(1)` | #2 (curried value calls `f(a)(b)` — **unresolvable syntactically**) |
 | 12 | *(BIP005-D3)* Destructuring `def` | `def (Circle, unit) = import(...)` | Visually adjacent to #7 (`def Box(T)`) |
 
 Every major parser hack in `Babble.g4` traces back to either **this `(...)` overload** or **contextual `ID` keywords**.
 
 ### 3.2 Inventory of Custom Lookahead & Semantic Predicates (`@parser::members`)
 
-Lines 3–104 of `Babble.g4` contain 102 lines of hand-written Java token-stream scanning implementing **8 semantic predicates** (with `BIP011` proposing a 9th):
+Lines 3–174 of post-`RM005` `Babble.g4` contain **172 lines** of hand-written Java token-stream scanning implementing **10 semantic predicates**:
 
 | # | Predicate / Helper | `Babble.g4` Lines | Lookahead Bound | Why It Exists |
 |---|---|---|---|---|
-| P1 | `{isEffectDeclarationStart()}?` | 91–99, 106–107, 184–185 | **Unbounded** (calls P3) | `axiom`/`impure` are `ID`s; must distinguish `axiom pure M.f` from `axiom pure (x) -> (...)` and from variable `axiom`. |
-| P2 | `{isDefEffectStart()}?` | 84–89, 136 | **Unbounded** (calls P3) | After `def x =`, must distinguish `axiom pure import("...")` (`targetEffectPrefix`) from `axiom pure (x) -> (...)` (`# functionLiteral`). |
-| P3 | `{isFunctionLiteralStart()}?` | 36–71, 148 | **Unbounded** (scans balanced `(...)`) | Effect words are `ID`s and functions have no leading keyword; scans arbitrarily deep `(...)`, skips `NL`, checks for `:` or `->` after `)`, and contains a fragile `Token.EOF` heuristic (lines 54–57) solely so REPL `BabbleSession.classify` detects incomplete inputs like `pure (mut `. |
-| P4 | `{isFunctionTypeStart()}?` | 73–82, 210 | **Unbounded** (scans `ID*`) | Effect words are `ID`s; scans `effectWord+` in `primaryType` to see if `(` follows, distinguishing `pure (x: int): int` from a type named `pure`. |
-| P5 | `{isEffectOrAxiomWord(_input.LT(1))}?` | 20–30, 121 | 1 token (contextual) | Lexes 13 effect words as `ID`, then filters by string comparison in the parser. |
-| P6 | `{isTargetEffectWord()}?` | 101–103, 125 | 2 tokens (contextual) | Prevents `targetEffectWord+` from consuming the final `ID` that is actually the `effectTarget` name (`axiom pure foo`). |
-| P7 | `{isParamModifier()}?` | 32–34, 191 | 2 tokens (contextual) | Distinguishes `(mut x: int)` (modifier + name) from `(mut: int)` (parameter literally named `mut`). |
-| P8 | `{_input.LA(1) == IF}?` | 134 | 1 token | Forces `elseIf=expression` in the second `# ifExpression` alternative to start with `IF` while remaining at `ifExpression`'s precedence. |
-| *P9* | *`{isTypeApplicationCall()}?` (`BIP011`)* | *`BIP011` §7.2* | ***Unbounded** (scans `(...)` + `(`)* | *Distinguishes `Box(int?)(null)` from `f(x)(y)`, and still cannot resolve `f(X)(y)` without a `TypeChecker` fallback!* |
+| P1 | `{isEffectDeclarationStart()}?` | 91–99, 176–177, 270–271 | **Unbounded** (calls P3) | `axiom`/`impure` are `ID`s; must distinguish `axiom pure M.f` from `axiom pure (x) -> (...)` and from variable `axiom`. |
+| P2 | `{isDefEffectStart()}?` | 84–89, 214 | **Unbounded** (calls P3) | After `def x =`, must distinguish `axiom pure import("...")` (`targetEffectPrefix`) from `axiom pure (x) -> (...)` (`# functionLiteral`). |
+| P3 | `{isFunctionLiteralStart()}?` | 36–71, 226 | **Unbounded** (scans balanced `(...)`) | Effect words are `ID`s and functions have no leading keyword; scans arbitrarily deep `(...)`, skips `NL`, checks for `:` or `->` after `)`, and contains a fragile `Token.EOF` heuristic (lines 54–57) solely so REPL `BabbleSession.classify` detects incomplete inputs like `pure (mut `. |
+| P4 | `{isFunctionTypeStart()}?` | 73–82, 296 | **Unbounded** (scans `ID*`) | Effect words are `ID`s; scans `effectWord+` in `primaryType` to see if `(` follows, distinguishing `pure (x: int): int` from a type named `pure`. |
+| P5 | `{isEffectOrAxiomWord(_input.LT(1))}?` | 20–30, 199 | 1 token (contextual) | Lexes 13 effect words as `ID`, then filters by string comparison in the parser. |
+| P6 | `{isTargetEffectWord()}?` | 101–103, 203 | 2 tokens (contextual) | Prevents `targetEffectWord+` from consuming the final `ID` that is actually the `effectTarget` name (`axiom pure foo`). |
+| P7 | `{isParamModifier()}?` | 32–34, 277 | 2 tokens (contextual) | Distinguishes `(mut x: int)` (modifier + name) from `(mut: int)` (parameter literally named `mut`). |
+| P8 | `{_input.LA(1) == IF}?` | 212 | 1 token | Forces `elseIf=expression` in the second `# ifExpression` alternative to start with `IF` while remaining at `ifExpression`'s precedence. |
+| P9 | `{isTypeApplicationCall()}?` (`RM005`) | 105–162, 233 | **Unbounded** (scans `(...)` + `(`) | Distinguishes `Box(int?)(null)` from `f(x)(y)` (with a `COLON && depth == 1` named-arg heuristic), and still cannot resolve `f(X)(y)` without `ScopeAnalysis.typeApplyCalls` + `CallSolver`/`Interpreter`/`CodeGenerator` fallbacks. |
+| P10 | `{!isCoreTypeAfterIs()}?` (`RM005`) | 164–173, 246 | **Unbounded** (skips `NL*`) | Because `RM005` made `coreScalarKeyword` an expression (`# coreScalarRef`) while keeping `isExpression`'s fallback RHS as `expression`, `x is int` collided between lines 245 and 246. |
 
 ### 3.3 Active Syntactic Ambiguities, Precedence Traps & Lexer Defects
 
 Beyond the predicates themselves, `Babble.g4` contains **10 concrete structural and lexical defects**:
 
-#### A1. `primaryType` Ambiguity: `(int)` Parses as a Function Type, Not a Parenthesized Type
-In `Babble.g4` lines 210–215:
+#### A1. `primaryType` Ambiguity: `(Box)` Parses as a Function Type, Not a Parenthesized Type
+In `Babble.g4` lines 296–301:
 ```antlr
 primaryType: {isFunctionTypeStart()}? effectPrefix parametersDeclaration ( ':' type | )   # functionType
-           | ID ('.' ID)* typeArguments?                                                  # simpleType
+           | (coreTypeKeyword | ID ('.' memberName)*) typeArguments?                      # simpleType
            | parametersDeclaration ( ':' type | )                                         # functionType
            | NULL                                                                         # nullType
            | '(' NL* type NL* ')'                                                         # parenType
            ;
 ```
-Because `parameterDeclaration` makes `: type` optional (`(x)` is valid) and `# functionType` makes `: type` optional, the input `(int)` matches **both** `# functionType` (a 1-parameter function whose untyped parameter is named `int` and whose return type is omitted) **and** `# parenType` (parenthesized `int`). Because `# functionType` appears first, `(int)` parses as `# functionType`, whereas `(int?)` and `(int | string)` fail `parametersDeclaration` and fall through to `# parenType`.
+Because `parameterDeclaration` makes `: type` optional (`(x)` is valid) and `# functionType` makes `: type` optional, any parenthesized user-defined type `(Box)` matches **both** `# functionType` (a 1-parameter function whose untyped parameter is named `Box` and whose return type is omitted) **and** `# parenType` (parenthesized `Box`). Because `# functionType` appears first, `(Box)` parses as `# functionType`, whereas `(int)` (since `RM005` reserved `int`), `(Box?)`, and `(Box | string)` fail `parametersDeclaration` and fall through to `# parenType`.
 
 #### A2. Function Literal vs Block Ambiguity & Split-Precedence Bug
-`# blockExpression` (line 153) and `# functionLiteral` (line 166) both start with `(`. ANTLR4 must perform unbounded ALL(*) lookahead past the entire parenthesized region to see `:` or `->`. Empty `()` is valid as both an empty block (`null`) and an empty parameter list (`() -> (...)`).
+`# blockExpression` (line 235) and `# functionLiteral` (line 249) both start with `(`. ANTLR4 must perform unbounded ALL(*) lookahead past the entire parenthesized region to see `:` or `->`. Empty `()` is valid as both an empty block (`null`) and an empty parameter list (`() -> (...)`).
 
 Worse, `# functionLiteral` is split across **two different precedence levels** in `expression`:
-* Line 148 (`{isFunctionLiteralStart()}? effectPrefix parametersDeclaration ... -> block`) sits **above** `# selector` (line 150) and `# call` (line 152).
-* Line 166 (`parametersDeclaration ... -> block`) sits **below** `# booleanOp` (`or`, line 165).
+* Line 226 (`{isFunctionLiteralStart()}? effectPrefix parametersDeclaration ... -> block`) sits **above** `# selector` (line 228) and `# call` (line 234).
+* Line 249 (`parametersDeclaration ... -> block`) sits **below** `# booleanOp` (`or`, line 248).
 
 Consequently, `pure (x: int) -> (x)(1)` and `(x: int) -> (x)(1)` parse at **different precedences**: an effect-annotated function literal can be immediately called or selected without outer parentheses, whereas an unannotated function literal cannot!
 
-#### A3. Generics `C(T)` & `BIP011` `C(T)(...)` Collide with Calls & Curried Calls
+#### A3. Generics `C(T)` & `RM005` `C(T)(...)` Collide with Calls & Curried Calls
 Because generics use `(...)`, `f(X)(y)` is **syntactically indistinguishable** between:
 * Explicit type application of generic `f` with type argument `X` and value argument `y`, and
 * Curried value call `f(X)` returning a callable invoked with `y`.
 
-`BIP011` §7.2 had to propose both an unbounded lookahead predicate `isTypeApplicationCall()` and a `TypeChecker` fallback that re-interprets a parsed `typeArguments` node as a value call when `f` is non-generic. This leaks syntax disambiguation into type checking and makes the parse tree lie about the program structure.
+`RM005` (`BIP011-P4`) had to implement an unbounded lookahead predicate `isTypeApplicationCall()` (58 lines in `@parser::members`), a `ScopeAnalysis.typeApplyCalls` side-table (`markTypeApplyCall` / `isTypeApplyCall`), special handling in `BlockScopes.visitTypeApplyCall`, and fallback evaluation in `CallSolver`, `Interpreter.visitTypeApplyCall`, and `CodeGenerator.visitTypeApplyCall` to re-interpret a parsed `TypeApplyCallContext` as a curried value call whenever `f` is non-generic. This leaks syntax disambiguation across the entire pipeline and makes the parse tree lie about program structure.
 
 #### A4. `class` Optional Header `(...)` vs Body `(...)` & the Newline Trap
-In `Babble.g4` lines 139–142:
+In `Babble.g4` lines 216–220:
 ```antlr
 | modifier=ID? CLASS parametersDeclaration? (IMPLEMENTS typeList)? classBlock=block
       (NL* STATIC NL* staticBlock=block)?           # classExpression
@@ -130,36 +131,36 @@ is a **syntax error** (`unexpected end of line`, tested in `src/test/batest/synt
 Any identifier before `class` (`foo class ()`) parses as a `# classExpression` with `modifier="foo"` and is only rejected later by `BlockScopes` checking `"value".equals(modifier)`.
 
 #### A6. `else if` Predicate Hack & Duplicated Prefix
-Lines 128–134 duplicate `IF test=expression THEN NL* thenBlock=block` across two `# ifExpression` alternatives and rely on `{_input.LA(1) == IF}?` solely because `if` is inlined into left-recursive `expression` rather than factored into a helper rule `ifExpr`.
+Lines 206–212 duplicate `IF test=expression THEN NL* thenBlock=block` across two `# ifExpression` alternatives and rely on `{_input.LA(1) == IF}?` solely because `if` is inlined into left-recursive `expression` rather than factored into a helper rule `ifExpr`.
 
 #### A7. `assignExpression` vs `selector` / `ID` Unbounded Lookahead
-Lines 150–151 (`expression NL* '.' ID` and `ID`) and lines 169–170 (`namespace=expression NL* '.' name=ID op=... value` and `name=ID op=... value`) share arbitrarily long prefixes (`a.b.c.d.e = 1` vs `a.b.c.d.e`). ANTLR4 must look ahead past the entire selector chain to see whether an assignment operator follows.
+Lines 228–229 (`expression NL* '.' memberName` and `ID`) and lines 252–253 (`namespace=expression NL* '.' member=memberName op=... value` and `name=ID op=... value`) share arbitrarily long prefixes (`a.b.c.d.e = 1` vs `a.b.c.d.e`). ANTLR4 must look ahead past the entire selector chain to see whether an assignment operator follows.
 
 #### A8. Flat Left-Recursive `expression` & Precedence Traps
-Jamming all 26 expression forms into one flat left-recursive rule introduces four subtle precedence traps:
-1. **`is` takes an arbitrary `expression` and binds looser than `==`:**
-   `left=expression IS NL* right=expression` (line 163) sits *below* `==` (line 161). Therefore:
+Jamming all expression forms into one flat left-recursive rule introduces four subtle precedence traps:
+1. **`is` splits across two predicate-guarded alternatives and binds looser than `==`:**
+   Lines 245–246 (`left=expression IS NL* coreType=coreTypeKeyword typeArguments?` and `left=expression {!isCoreTypeAfterIs()}? IS NL* right=expression`) sit *below* `==` (line 243). Therefore:
    * `x is Foo == true` parses as `x is (Foo == true)` instead of `(x is Foo) == true`.
    * `x is 1 + 2` parses without a syntax error and only fails later in `TypeChecker`.
-   * Under `BIP011-D11` (reserved core type keywords), `x is int` and `x is list` cannot parse unless `is` accepts types instead of arbitrary expressions.
+   * `RM005` had to introduce `isCoreTypeAfterIs()` (P10) solely to stop `x is int` from matching `# coreScalarRef` in the second alternative.
 2. **`as` binds looser than `+`/`-`, creating asymmetric parsing:**
-   `left=expression AS NL* right=type` (line 160) is a postfix alternative *below* `+`/`-` (line 159). Under ANTLR4 precedence climbing:
+   `left=expression AS NL* right=type` (line 242) is a postfix alternative *below* `+`/`-` (line 241). Under ANTLR4 precedence climbing:
    * `boxed as int + 5` parses as `(boxed as int) + 5` (see `src/test/babble/AnyAndCasts.ba` line 68),
    * `1 + 2 as double` parses as `(1 + 2) as double` (line 69), and
    * `a + b as int + c` parses as `((a + b) as int) + c` rather than `a + (b as int) + c`!
 3. **`not` binds tighter than comparisons and `is`:**
-   `NOT expression` (line 154) sits above `'-'`, `*`, `+`, `<`, `==`, `is`. Thus `not a == b` parses as `(not a) == b`, forcing parentheses (`not (a == b)`, `not (1 is C)`) across the test suite.
+   `NOT expression` (line 236) sits above `'-'`, `*`, `+`, `<`, `==`, `is`. Thus `not a == b` parses as `(not a) == b`, forcing parentheses (`not (a == b)`, `not (1 is C)`) across the test suite.
 4. **Accidental prefix precedence on `def` vs `return`:**
-   `RETURN expression` (line 180) must remain the very last alternative because ANTLR4 parses a prefix alternative's trailing `expression` at that alternative's precedence. `# defExpression` (line 135) avoids this trap *only* because `('=' ... value=expression)?` is wrapped in `(...)?`, making it non-prefix by accident.
+   `RETURN expression` (line 266) must remain the very last alternative because ANTLR4 parses a prefix alternative's trailing `expression` at that alternative's precedence. `# defExpression` (line 213) avoids this trap *only* because `('=' ... value=expression)?` is wrapped in `(...)?`, making it non-prefix by accident.
 
 #### A9. Over-Permissive Shared `parametersDeclaration`
-`parametersDeclaration` (lines 187–191) is shared verbatim by `classExpression`, `functionLiteral`, and `functionType`. Consequently, the grammar accepts `private def mut x: int = 1` inside function types and function literals, delegating rejection to `BlockScopes` and `TypeAnnotations`.
+`parametersDeclaration` (lines 273–277) is shared verbatim by `classExpression`, `functionLiteral`, and `functionType`. Consequently, the grammar accepts `private def mut x: int = 1` inside function types and function literals, delegating rejection to `BlockScopes` and `TypeAnnotations`.
 
 #### A10. Lexer Defects
 1. **Single-line `MULTILINECOMMENT` swallowed by `COMMENT`:**
-   Lines 272–273 define `MULTILINECOMMENT: ';;(' .*? ';;)'` and `COMMENT: ';;' ~[\r\n]*`. On `;;( note ;;) def x = 1`, `COMMENT` produces a longer match (22 chars vs 12 chars) and **silently comments out `def x = 1`** (noted as a known quirk in `CLAUDE.md`).
-2. **`FLOAT` leading dot & exponent:**
-   `FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;` (line 219) accepts leading-dot `.5` (preventing `.0` positional selectors if ever desired) and rejects lowercase/signed exponents (`1e-5`, already flagged in `BIP011` §7.2).
+   Lines 382–383 define `MULTILINECOMMENT: ';;(' .*? ';;)'` and `COMMENT: ';;' ~[\r\n]*`. On `;;( note ;;) def x = 1`, `COMMENT` produces a longer match (22 chars vs 12 chars) and **silently comments out `def x = 1`** (noted as a known quirk in `CLAUDE.md`).
+2. **Leading-dot floats (`FLOAT_LIT` / `DOUBLE_LIT`):**
+   `RM005` upgraded exponents (`[eE] [+-]? [0-9]+`) and `STRING`/`CHAR_LIT` escapes, but lines 305–309 still accept leading-dot `.5` (`[0-9]* '.' [0-9]+`), preventing `.0` positional selectors if ever desired.
 3. **17 contextual `ID` keywords across `BIP007-P1` and `BIP007-P2`:**
    Keeping 13 (`BIP007-P1`) + 4 (`BIP007-P2`) effect/ownership keywords as `ID` is the sole reason predicates P1–P7 exist.
 
@@ -408,13 +409,16 @@ primary
     | SUPER ('(' NL* qualifier=type NL* ')')?                                       # superExpression
     | block                                                                         # blockExpression
     | coreCollectionKeyword                                                         # coreCollection // BIP011 + BIP012-D4
-    | coreScalarKeyword callParameters                                              # coreConversionCall // BIP011
+    | coreScalarKeyword                                                             # coreScalarRef  // RM005
     | ID                                                                            # identifier
     | NULL                                                                          # null
     | BOOLEAN                                                                       # boolean
     | RECURSE                                                                       # recurse
+    | LONG_LIT                                                                      # longLiteral    // RM005
     | INT                                                                           # integer
-    | FLOAT                                                                         # double
+    | FLOAT_LIT                                                                     # floatLiteral   // RM005
+    | DOUBLE_LIT                                                                    # double         // RM005
+    | CHAR_LIT                                                                      # charLiteral    // RM005
     | STRING                                                                        # string
     ;
 
@@ -532,11 +536,17 @@ memberName
     | AXIOM | IMPURE | RECORD
     ;
 
-// ---- Lexer
+// ---- Lexer (preserving RM005 literals and escapes; fixing leading-dot floats and COMMENT)
 
-INT:    [0-9]+;
-FLOAT:  [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)?;
-STRING: '"' (~[\\"] | '\\\\' | '\\"')*? '"';
+LONG_LIT:   [0-9]+ [lL];
+FLOAT_LIT:  ([0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)? | [0-9]+ ([eE] [+-]? [0-9]+)) [fF]
+          | [0-9]+ [fF];
+DOUBLE_LIT: [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)? [dD]?
+          | [0-9]+ [eE] [+-]? [0-9]+ [dD]?
+          | [0-9]+ [dD];
+INT:        [0-9]+;
+CHAR_LIT:   '\'' ( ~['\\\r\n] | '\\' ( [btnfr"'\\0] | 'u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] ) ) '\'';
+STRING:     '"' ( ~[\\"] | '\\' ( [btnfr"'\\0] | 'u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] ) )* '"';
 
 PLUS: '+'; MINUS: '-'; MUL: '*'; DIV: '/';
 LT: '<'; LTE: '<='; EQ: '=='; NEQ: '<>' | '!='; GTE: '>='; GT: '>';
@@ -561,7 +571,7 @@ MUT: 'mut'; BORROW: 'borrow'; DETERMINISTIC: 'deterministic'; NOTHROW: 'nothrow'
 IDEMPOTENT: 'idempotent'; COMMUTATIVE: 'commutative'; ASSOCIATIVE: 'associative';
 MONOTONE: 'monotone'; INJECTIVE: 'injective';
 
-// Core type keywords (BIP011-D11)
+// Core type keywords (BIP011-D11 / RM005)
 BYTE: 'byte'; SHORT: 'short'; INT_KW: 'int'; LONG_KW: 'long';
 FLOAT_KW: 'float'; DOUBLE_KW: 'double'; BOOL_KW: 'bool'; CHAR_KW: 'char'; STRING_KW: 'string';
 LIST: 'list'; SET: 'set'; SORTEDSET: 'sortedset'; MAP: 'map'; SORTEDMAP: 'sortedmap'; ENTRY: 'entry';
@@ -579,7 +589,7 @@ WS:               [ \t]+ -> skip;
 
 ## 6. Side-by-Side Before & After Syntax Showcase
 
-| Construct | Current (`Babble.g4` / `BIP011`) | Proposed (`BIP012`) |
+| Construct | Current (post-`RM005` `Babble.g4`) | Proposed (`BIP012`) |
 |---|---|---|
 | Simple function | `def square = (x: int): int -> (x * x)` | `def square = fn (x: int): int -> (x * x)` |
 | Short lambda | `xs.map((n) -> ("v=" + n))` | `xs.map(fn (n) -> ("v=" + n))` |
@@ -606,16 +616,17 @@ WS:               [ \t]+ -> skip;
 ## 7. Impact on Pipeline, `Formatter`, `BabbleSession` & Codebase
 
 1. **Parser & `BabbleScriptEngine`:**
-   * Removing all 8 semantic predicates (plus `BIP011`'s `isTypeApplicationCall()`) and unbounded lookahead makes the ATN dramatically smaller and allows `BabbleScriptEngine.parse` to use ANTLR4's standard two-stage **`PredictionMode.SLL` → `PredictionMode.LL`** strategy for noticeably faster parsing of large files.
+   * Deleting all **172 lines of `@parser::members`** and all **10 semantic predicates** (including `RM005`'s `isTypeApplicationCall()` and `isCoreTypeAfterIs()`) shrinks `Babble.g4` and its ATN dramatically, enabling ANTLR4's two-stage **`PredictionMode.SLL` → `PredictionMode.LL`** fast path in `BabbleScriptEngine.parse`.
 2. **`BabbleSession.classify` (REPL multi-line detection):**
    * The `Token.EOF` workaround inside `isFunctionLiteralStart()` (lines 54–57) is deleted. Incomplete inputs like `def f = fn pure (` or `def xs: list of ` fail cleanly at `EOF` (`ParseFailure.atEnd() == true`) without any special-case code.
 3. **`Formatter` (`org.babblelang.format.Formatter`):**
    * `callParentheses` simplifies (type parameters and type arguments no longer have tight `(` after an identifier: `Box of (A, B)` has a space before `(` just like `if (cond)`).
    * Add canonical spacing rules: space after `fn`, `of`, `on`, `record`; no space before `!`; space between `typeArguments` and `callParameters` in `list of int (1, 2)` vs tight `list(1, 2)`.
-4. **Analysis & Backends (`BlockScopes`, `TypeAnnotations`, `TypeChecker`, `EffectChecker`, `Interpreter`, `CodeGenerator`):**
-   * Mechanical updates to match the renamed/split ANTLR contexts (`DefExprContext`, `IfExprContext`, `FnParamContext`, `ClassParamContext`, `FnTypeParamContext`, `TypeApplyContext`, unified `AssignExpressionContext`), plus compile-time specialization for standalone `expr of T` (`BIP012-D4`). Zero runtime (`org.babblelang.runtime`) changes.
+4. **Analysis & Backends (`BlockScopes`, `ScopeAnalysis`, `CallSolver`, `TypeAnnotations`, `TypeChecker`, `EffectChecker`, `Interpreter`, `CodeGenerator`):**
+   * **Net simplification over `RM005`:** deletes `ScopeAnalysis.typeApplyCalls` (`markTypeApplyCall` / `isTypeApplyCall`), `BlockScopes.visitTypeApplyCall`, and the curried-call fallback branches in `CallSolver.typeApplyCall`, `Interpreter.visitTypeApplyCall`, and `CodeGenerator.visitTypeApplyCall`, as well as the dual `# isExpression` handling (`coreType` vs `right`).
+   * Mechanical updates for renamed/split ANTLR contexts (`DefExprContext`, `IfExprContext`, `FnParamContext`, `ClassParamContext`, `FnTypeParamContext`, `TypeApplyContext`, `CoreCollectionContext`, unified `AssignExpressionContext`), plus compile-time specialization for standalone `expr of T` (`BIP012-D4`). Zero runtime (`org.babblelang.runtime`) changes.
 5. **Repository Migration:**
-   * Existing `.ba` scripts (`11` in `src/test/babble/`, `26` in `examples/`), `.batest` suites (`61`+ files, including `BIP011` suites), and JUnit inline snippets will be updated for `fn`, `of`, `on`, `record`, and `as`/`is`/`not` precedence. A small AST-guided migrator using the pre-`BIP012` parser can convert almost all existing `.ba` and `.batest` files automatically and verify byte-identical `examples/raytracer-argon/scene.ppm`.
+   * Existing `.ba` scripts (`11` in `src/test/babble/`, `26` in `examples/`), `.batest` suites (`67` files, including all `RM005` core-type suites), and JUnit inline snippets will be updated for `fn`, `of`, `on`, `record`, and `as`/`is`/`not` precedence. A small AST-guided migrator using the pre-`BIP012` parser can convert almost all existing `.ba` and `.batest` files automatically and verify byte-identical `examples/raytracer-argon/scene.ppm`.
 
 ---
 
@@ -630,20 +641,20 @@ WS:               [ \t]+ -> skip;
 | **BIP012-Q5** `class` header vs body disambiguation | **BIP012-D5** | **Mandatory `classParameters`:** `class () (...)`, `class (def x: int) implements I (...)`, `record (x: double, y: double) (...)`. Zero extra body keyword, 100% LL(1), allows `NL*` before `classBlock`. |
 | **BIP012-Q6** `value class` keyword | **BIP012-D6** | **Replace `value class` with `record`:** `record (x: double, y: double) (...)`. Eliminates contextual `modifier=ID? CLASS`, leaves `value` an ordinary `ID` everywhere, and exempts `record` in `memberName`. |
 | **BIP012-Q7** `effectDeclaration` separator keyword | **BIP012-D7** | **Use `on`:** `axiom pure deterministic on java.lang.Math.sqrt`, `axiom pure on java.util.HashMap()`, `impure on java.net.URL.equals`, `def m = axiom pure on import("math.ba")`. Unambiguously terminates effect modifiers even when targets start with core type keywords. |
-| **BIP012-Q8** Precedence fixes for `as`, `is`, `not` | **BIP012-D8** | **Fix all three:** `as` above `*`/`+`, `is` taking `type` above `==`/`<`, and `not` below `==`/`is` (above `and`), so `a + b as int`, `x is Foo == true`, and `not a == b` all parse naturally without extra parens. |
-| **BIP012-Q9** Sequencing relative to `BIP011` | **BIP012-D9** | **Land `BIP011` first, then `BIP012`:** `BIP011` ships first with `C(T)(...)`, and `BIP012` then migrates the entire language (including `BIP011` core collections, removing `isTypeApplicationCall()` and its `TypeChecker` fallback) cleanly in one pass. |
+| **BIP012-Q8** Precedence fixes for `as`, `is`, `not` | **BIP012-D8** | **Fix all three:** `as` above `*`/`+`, `is` taking `type` above `==`/`<` (eliminating `RM005`'s `isCoreTypeAfterIs()`), and `not` below `==`/`is` (above `and`), so `a + b as int`, `x is Foo == true`, and `not a == b` all parse naturally without extra parens. |
+| **BIP012-Q9** Sequencing relative to `BIP011` | **BIP012-D9** | **Land `BIP011` (`RM005`) first, then `BIP012`:** `RM005` has now landed with `C(T)(...)`, so `BIP012-P1`–`P4` executes directly on top of `RM005`, migrating core collections and deleting `isTypeApplicationCall()`, `isCoreTypeAfterIs()`, and `ScopeAnalysis.typeApplyCalls` cleanly in one pass. |
 
 ---
 
 ## 9. Phased Implementation Plan (`BIP012-P1`–`BIP012-P4`)
 
-Following `BIP011` (`BIP012-D9`), each phase keeps `mvn -B package` (both `interpret` and `compile` with `CheckClassAdapter`), `FormatterTestCase`, and byte-identical `examples/raytracer-argon/scene.ppm` green:
+Building directly on landed `RM005` (`BIP012-D9`), each phase keeps `mvn -B package` (both `interpret` and `compile` with `CheckClassAdapter`), `FormatterTestCase`, and byte-identical `examples/raytracer-argon/scene.ppm` green:
 
 1. **`BIP012-P1` — Zero-syntax-change grammar & lexer cleanups:**
-   Factor `ifExpr` (removing `{_input.LA(1) == IF}?`), unify `assignExpression`, split `classParameters`/`fnParameters`/`fnTypeParameters`, and fix `COMMENT` vs `MULTILINECOMMENT` and `FLOAT` leading-digit/exponent rules.
-2. **`BIP012-P2` — `fn`, reserved effect keywords & `on` (eliminates `@parser::members`):**
-   Introduce `FN` (`BIP012-D1`) and `ON` (`BIP012-D7`), reserve the 13 `BIP007-P1` effect keywords (exempted in `memberName`), delete all 102 lines of `@parser::members` and all effect/function semantic predicates, update `Formatter` and tests, and remove the `BabbleSession.classify` `EOF` workaround.
+   Factor `ifExpr` (removing `{_input.LA(1) == IF}?`), unify `assignExpression`, split `classParameters`/`fnParameters`/`fnTypeParameters`, and fix `COMMENT` vs `MULTILINECOMMENT` and leading-dot `FLOAT_LIT`/`DOUBLE_LIT` rules.
+2. **`BIP012-P2` — `fn`, reserved effect keywords & `on`:**
+   Introduce `FN` (`BIP012-D1`) and `ON` (`BIP012-D7`), reserve the 13 `BIP007-P1` effect keywords (exempted in `memberName`), delete all 7 effect/function predicates (P1–P7) and the `BabbleSession.classify` `EOF` workaround, and update `Formatter` and tests.
 3. **`BIP012-P3` — `of` generics, standalone `expr of T`, mandatory `class` parameters & `record`:**
-   Switch type arguments (`BIP012-D2`), `def` type parameters (`BIP012-D3`), and call-site/standalone type applications (`BIP012-D4`) to `of`—deleting `BIP011`'s `isTypeApplicationCall()` predicate and `TypeChecker` curried-call fallback; enforce mandatory `classParameters` with `NL*` before `classBlock` (`BIP012-D5`); replace `value class` with `record` (`BIP012-D6`); migrate `.ba`, `.batest`, and `examples/` scripts.
+   Switch type arguments (`BIP012-D2`), `def` type parameters (`BIP012-D3`), and call-site/standalone type applications (`BIP012-D4`) to `of`—deleting `RM005`'s `isTypeApplicationCall()` predicate (P9), `ScopeAnalysis.typeApplyCalls`, `BlockScopes.visitTypeApplyCall`, and the curried-call fallback in `CallSolver`, `Interpreter`, and `CodeGenerator`; enforce mandatory `classParameters` with `NL*` before `classBlock` (`BIP012-D5`); replace `value class` with `record` (`BIP012-D6`); migrate `.ba`, `.batest`, and `examples/` scripts.
 4. **`BIP012-P4` — Precedence alignment, `SLL` fast path & doc sync:**
-   Apply `BIP012-D8` (`is` with `type` RHS above `==`, `as` above `*`/`+`, `not` below `==`/`is`), enable `PredictionMode.SLL` → `LL` in `BabbleScriptEngine.parse`, and update `BIP002`, `BIP007` §4.1, `BIP011` §5.2/§7, `README.md`, and `CLAUDE.md`.
+   Apply `BIP012-D8` (`is` with `type` RHS above `==`—deleting `RM005`'s `isCoreTypeAfterIs()` (P10) and the last remaining `@parser::members` code—`as` above `*`/`+`, `not` below `==`/`is`), enable `PredictionMode.SLL` → `LL` in `BabbleScriptEngine.parse`, and update `BIP002`, `BIP007` §4.1, `BIP011` §5.2/§7, `README.md`, and `CLAUDE.md`.
