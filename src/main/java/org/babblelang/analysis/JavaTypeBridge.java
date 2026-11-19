@@ -34,16 +34,31 @@ final class JavaTypeBridge {
     private JavaTypeBridge() {
     }
 
-    /** The Babble type of a Java class: Babble's numbers, booleans and strings are Java's. */
+    /** The Babble type of a Java class: Babble's 9 core scalars are Java's primitives/wrappers/String. */
     static Type fromJava(Class<?> java) {
+        if (java == byte.class || java == Byte.class) {
+            return Type.BYTE;
+        }
+        if (java == short.class || java == Short.class) {
+            return Type.SHORT;
+        }
         if (java == int.class || java == Integer.class) {
             return Type.INT;
+        }
+        if (java == long.class || java == Long.class) {
+            return Type.LONG;
+        }
+        if (java == float.class || java == Float.class) {
+            return Type.FLOAT;
         }
         if (java == double.class || java == Double.class) {
             return Type.DOUBLE;
         }
         if (java == boolean.class || java == Boolean.class) {
             return Type.BOOL;
+        }
+        if (java == char.class || java == Character.class) {
+            return Type.CHAR;
         }
         if (java == String.class) {
             return Type.STRING;

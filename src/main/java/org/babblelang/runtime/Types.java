@@ -57,12 +57,13 @@ public final class Types {
 
         @Override
         boolean accepts(Object value) {
-            return value != null && (javaClass.isInstance(value) || javaClass == Double.class && value instanceof Integer);
+            return value != null && (javaClass.isInstance(value) || JavaTypes.isWidening(value.getClass(), javaClass));
         }
 
         @Override
         Object convert(Object value) {
-            return javaClass == Double.class && value instanceof Integer i ? (Object) i.doubleValue() : value;
+            return value != null && !javaClass.isInstance(value) && JavaTypes.isWidening(value.getClass(), javaClass)
+                    ? JavaTypes.widen(value, javaClass) : value;
         }
     }
 
@@ -210,9 +211,14 @@ public final class Types {
         String display = descriptor.substring(first + 1, last);
         String payload = descriptor.substring(last + 1);
         return switch (kind) {
+            case "byte" -> new Builtin(display, Byte.class);
+            case "short" -> new Builtin(display, Short.class);
             case "int" -> new Builtin(display, Integer.class);
+            case "long" -> new Builtin(display, Long.class);
+            case "float" -> new Builtin(display, Float.class);
             case "double" -> new Builtin(display, Double.class);
             case "bool" -> new Builtin(display, Boolean.class);
+            case "char" -> new Builtin(display, Character.class);
             case "string" -> new Builtin(display, String.class);
             case "null" -> new NullType(display);
             case "any" -> new AnyType(display);
@@ -265,14 +271,29 @@ public final class Types {
         if (value == null) {
             return "null";
         }
+        if (value instanceof Byte) {
+            return "byte";
+        }
+        if (value instanceof Short) {
+            return "short";
+        }
         if (value instanceof Integer) {
             return "int";
+        }
+        if (value instanceof Long) {
+            return "long";
+        }
+        if (value instanceof Float) {
+            return "float";
         }
         if (value instanceof Double) {
             return "double";
         }
         if (value instanceof Boolean) {
             return "bool";
+        }
+        if (value instanceof Character) {
+            return "char";
         }
         if (value instanceof String) {
             return "string";

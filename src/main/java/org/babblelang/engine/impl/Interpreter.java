@@ -222,9 +222,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                     }
                     value = evaluateDefault(scope, defaultValue);
                 }
-                if (scopes.widensToDouble(((BabbleParser.ClassExpressionContext) ctx).parametersDeclaration().parameterDeclaration(i))) {
-                    value = Values.toDouble(value);
-                }
+                value = widen(((BabbleParser.ClassExpressionContext) ctx).parametersDeclaration().parameterDeclaration(i), value);
                 int member = shape.parameterMember(i);
                 if (member >= 0) {
                     instance.initMember(member, value);
@@ -282,9 +280,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             value = visit(ctx.value);
         }
         last = ctx;
-        if (scopes.widensToDouble(ctx)) {
-            value = Values.toDouble(value);
-        }
+        value = widen(ctx, value);
         ScopeAnalysis.DefTarget target = scopes.defTarget(ctx);
         return switch (target.kind()) {
             case LEXICAL -> namespace.initialize(id, value);
@@ -300,9 +296,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         Object value = visit(ctx.expression());
         last = ctx;
-        if (scopes.widensToDouble(ctx)) {
-            value = Values.toDouble(value);
-        }
+        value = widen(ctx, value);
         throw new ReturnException(value);
     }
 
@@ -385,9 +379,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         String method = Operators.method(ctx.op.getText());
         if (method != null && a instanceof BabbleInstance) {
             // An operator method : a + b is a.plus(b).
-            if (scopes.widensToDouble(ctx.right)) {
-                b = Values.toDouble(b);
-            }
+            b = widen(ctx.right, b);
             return operatorCall(a, method, ctx.left.getText(), ctx.right.getText(), b, ctx);
         }
 
@@ -431,6 +423,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitNegate(BabbleParser.NegateContext ctx) {
+        Object resolved = scopes.resolvedLiteral(ctx);
+        if (resolved != null) {
+            last = ctx;
+            return resolved;
+        }
         if (ctx.operand instanceof BabbleParser.IntegerContext literal) {
             // A literal : "-2147483648" is an int, though "2147483648" isn't.
             last = ctx;
@@ -496,15 +493,15 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (Truth.test(visit(ctx.test))) {
             last = ctx;
             Object value = visit(ctx.thenBlock);
-            return scopes.widensToDouble(ctx.thenBlock) ? Values.toDouble(value) : value;
+            return widen(ctx.thenBlock, value);
         } else {
             last = ctx;
             if (ctx.elseBlock != null) {
                 Object value = visit(ctx.elseBlock);
-                return scopes.widensToDouble(ctx.elseBlock) ? Values.toDouble(value) : value;
+                return widen(ctx.elseBlock, value);
             } else if (ctx.elseIf != null) {
                 Object value = visit(ctx.elseIf);
-                return scopes.widensToDouble(ctx.elseIf) ? Values.toDouble(value) : value;
+                return widen(ctx.elseIf, value);
             } else {
                 return null;
             }
@@ -517,10 +514,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object result = null;
         // The body block opens a fresh scope on every iteration.
         while (Truth.test(visit(ctx.test))) {
-            result = visit(ctx.whileBlock);
-            if (scopes.widensToDouble(ctx.whileBlock)) {
-                result = Values.toDouble(result);
-            }
+            result = widen(ctx.whileBlock, visit(ctx.whileBlock));
         }
         return result;
     }
@@ -538,9 +532,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 value = compound(ctx, operator, current, value);
             }
             last = ctx;
-            if (scopes.widensToDouble(ctx)) {
-                value = Values.toDouble(value);
-            }
+            value = widen(ctx, value);
             return namespace.assign(name, value);
         }
         if (ctx.namespace instanceof BabbleParser.ThisExpressionContext) {
@@ -551,9 +543,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 value = compound(ctx, operator, current, value);
             }
             last = ctx;
-            if (scopes.widensToDouble(ctx)) {
-                value = Values.toDouble(value);
-            }
+            value = widen(ctx, value);
             return Members.assignOwn(thiz, value, name);
         }
         // The target is checked before the value is evaluated.
@@ -566,15 +556,17 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             value = compound(ctx, operator, current, value);
         }
         last = ctx;
-        if (scopes.widensToDouble(ctx)) {
-            value = Values.toDouble(value);
-        }
+        value = widen(ctx, value);
         return Members.assign(scope, value, name);
     }
 
     @Override
     public Object visitLongLiteral(BabbleParser.LongLiteralContext ctx) {
         last = ctx;
+        Object resolved = scopes.resolvedLiteral(ctx);
+        if (resolved != null) {
+            return resolved;
+        }
         String text = ctx.getText();
         return Long.parseLong(text.substring(0, text.length() - 1));
     }
@@ -582,12 +574,20 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitInteger(BabbleParser.IntegerContext ctx) {
         last = ctx;
+        Object resolved = scopes.resolvedLiteral(ctx);
+        if (resolved != null) {
+            return resolved;
+        }
         return Integer.parseInt(ctx.getText());
     }
 
     @Override
     public Object visitFloatLiteral(BabbleParser.FloatLiteralContext ctx) {
         last = ctx;
+        Object resolved = scopes.resolvedLiteral(ctx);
+        if (resolved != null) {
+            return resolved;
+        }
         String text = ctx.getText();
         return Float.parseFloat(text.substring(0, text.length() - 1));
     }
@@ -595,6 +595,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitDouble(BabbleParser.DoubleContext ctx) {
         last = ctx;
+        Object resolved = scopes.resolvedLiteral(ctx);
+        if (resolved != null) {
+            return resolved;
+        }
         return Double.parseDouble(ctx.getText());
     }
 
@@ -778,13 +782,18 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return Supers.call(thiz, type, ScopeAnalysis.selectorName(selector), runtime, args, callNames.get(ctx), site);
     }
 
+    private Object widen(ParserRuleContext ctx, Object value) {
+        int rank = scopes.numericWideningRank(ctx);
+        return rank >= 0 ? Values.widenNumeric(value, rank) : value;
+    }
+
     private Object[] arguments(BabbleParser.CallContext ctx) {
         List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
         Object[] args = parameters.isEmpty() ? Arguments.NONE : new Object[parameters.size()];
         for (int i = 0; i < args.length; i++) {
             BabbleParser.ExpressionContext expression = parameters.get(i).expression();
             Object value = visit(expression);
-            args[i] = scopes.widensToDouble(expression) ? Values.toDouble(value) : value;
+            args[i] = widen(expression, value);
         }
         return args;
     }

@@ -11,30 +11,61 @@ public final class Operators {
     private Operators() {
     }
 
+    private static boolean isSubInt(Number n) {
+        return n instanceof Byte || n instanceof Short || n instanceof Integer;
+    }
+
+    private static boolean isFloatDivOperand(Number n) {
+        return n instanceof Byte || n instanceof Short || n instanceof Integer || n instanceof Float;
+    }
+
     public static Object mul(Object a, Object b, OpSite site) {
-        if (a instanceof Integer ia && b instanceof Integer ib) {
-            return ia * ib;
+        Number na = number(a, site.leftText());
+        Number nb = number(b, site.rightText());
+        if (isSubInt(na) && isSubInt(nb)) {
+            return na.intValue() * nb.intValue();
         }
-        return number(a, site.leftText()).doubleValue() * number(b, site.rightText()).doubleValue();
+        if ((isSubInt(na) || na instanceof Long) && (isSubInt(nb) || nb instanceof Long)) {
+            return na.longValue() * nb.longValue();
+        }
+        if ((isSubInt(na) || na instanceof Long || na instanceof Float)
+                && (isSubInt(nb) || nb instanceof Long || nb instanceof Float)) {
+            return na.floatValue() * nb.floatValue();
+        }
+        return na.doubleValue() * nb.doubleValue();
     }
 
     /**
-     * {@code a / b} : always a double, even between two ints, unlike {@code +}, {@code -} and
-     * {@code *}. Dividing by zero gives an infinity or NaN (IEEE 754), not an error; only a
-     * non-number fails. On two numbers the type checker types it {@code double}.
+     * {@code a / b} : floating-point division. Yields {@code float} when at least one operand
+     * is {@code float} and neither is {@code double}, {@code long}, or another {@code Number};
+     * otherwise yields {@code double}.
      */
     public static Object div(Object a, Object b, OpSite site) {
-        return number(a, site.leftText()).doubleValue() / number(b, site.rightText()).doubleValue();
+        Number na = number(a, site.leftText());
+        Number nb = number(b, site.rightText());
+        if ((na instanceof Float || nb instanceof Float) && isFloatDivOperand(na) && isFloatDivOperand(nb)) {
+            return na.floatValue() / nb.floatValue();
+        }
+        return na.doubleValue() / nb.doubleValue();
     }
 
     public static Object add(Object a, Object b, OpSite site) {
         if (a instanceof String sa) {
             return sa + b;
         }
-        if (a instanceof Integer ia && b instanceof Integer ib) {
-            return ia + ib;
+        Number na = number(a, site.leftText());
+        Number nb = number(b, site.rightText());
+        if (isSubInt(na) && isSubInt(nb)) {
+            return na.intValue() + nb.intValue();
         }
-        return number(a, site.leftText()).doubleValue() + number(b, site.rightText()).doubleValue();
+        if ((isSubInt(na) || na instanceof Long) && (isSubInt(nb) || nb instanceof Long)) {
+            return na.longValue() + nb.longValue();
+        }
+        if ((isSubInt(na) || na instanceof Long || na instanceof Float)
+                && (isSubInt(nb) || nb instanceof Long || nb instanceof Float)) {
+            return na.floatValue() + nb.floatValue();
+        }
+        return na.doubleValue() + nb.doubleValue();
     }
 
     /** The method {@code -a} calls on a Babble instance : {@code a.neg()}. */
@@ -81,21 +112,36 @@ public final class Operators {
     }
 
     /**
-     * {@code -a} : an int stays an int (wrapping, as {@code +} and {@code -} do), any other
-     * number becomes a double.
+     * {@code -a} : byte/short/int yield int, long yields long, float yields float, double/other yield double.
      */
     public static Object negate(Object a, String text) {
-        if (a instanceof Integer i) {
-            return -i;
+        Number n = number(a, text);
+        if (isSubInt(n)) {
+            return -n.intValue();
         }
-        return -number(a, text).doubleValue();
+        if (n instanceof Long l) {
+            return -l;
+        }
+        if (n instanceof Float f) {
+            return -f;
+        }
+        return -n.doubleValue();
     }
 
     public static Object sub(Object a, Object b, OpSite site) {
-        if (a instanceof Integer ia && b instanceof Integer ib) {
-            return ia - ib;
+        Number na = number(a, site.leftText());
+        Number nb = number(b, site.rightText());
+        if (isSubInt(na) && isSubInt(nb)) {
+            return na.intValue() - nb.intValue();
         }
-        return number(a, site.leftText()).doubleValue() - number(b, site.rightText()).doubleValue();
+        if ((isSubInt(na) || na instanceof Long) && (isSubInt(nb) || nb instanceof Long)) {
+            return na.longValue() - nb.longValue();
+        }
+        if ((isSubInt(na) || na instanceof Long || na instanceof Float)
+                && (isSubInt(nb) || nb instanceof Long || nb instanceof Float)) {
+            return na.floatValue() - nb.floatValue();
+        }
+        return na.doubleValue() - nb.doubleValue();
     }
 
     public static Object lt(Object a, Object b, OpSite site) {

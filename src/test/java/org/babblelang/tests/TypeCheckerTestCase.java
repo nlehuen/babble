@@ -208,8 +208,8 @@ public class TypeCheckerTestCase {
                 "8:1 No such member : nope",
                 "9:7 Type error : expected int, got string",
                 "11:1 No such member : nope");
-        assertDiagnostics("def s = \"a\"\ns.length\ndef f = () -> ( 1 )\nf.x",
-                "2:1 Not a scope : s",
+        assertDiagnostics("def s = \"a\"\ns.nope\ndef f = () -> ( 1 )\nf.x",
+                "2:1 No such name in java.lang.String : nope",
                 "4:1 Not a scope : f");
         assertDiagnostics("def o = object ( def v : int = 1 ; private def w = 2 ; def get = () -> ( this.w ) )\ndef s : string = o.v",
                 "2:18 Type error : expected string, got int");
@@ -253,8 +253,8 @@ public class TypeCheckerTestCase {
                 "3:15 Type error : expected int, got double",
                 "4:10 Not a number : \"s\"",
                 "7:73 Type error : expected string, got int",
-                // Narrowed through "else if" : a string has no members.
-                "8:99 Not a scope : v");
+                // Narrowed through "else if" : string exposes java.lang.String members, not arbitrary names.
+                "8:99 No such name in java.lang.String : nope");
     }
 
     @Test

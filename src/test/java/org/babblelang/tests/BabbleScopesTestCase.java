@@ -102,7 +102,8 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testSelectingFromANonScope() {
         // A raw ClassCastException used to escape the interpreter here.
-        assertStaticFails("def s = \"hi\" ; s.length", "Not a scope : s", 16);
+        assertStaticFails("def s = \"hi\" ; s.nope", "No such name in java.lang.String : nope", 16);
+        assertStaticFails("def b = true ; b.value", "Not a scope : b", 16);
         assertStaticFails("def n = 1 ; n.value", "Not a scope : n", 13);
         // null is not a scope either, and used to surface as a NullPointerException.
         assertStaticFails("def n : any? = null ; n.value", "Not a scope : n", 23);
