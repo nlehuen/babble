@@ -4,9 +4,9 @@
 |---|---|
 | **BIP** | 016 |
 | **Date** | 2026-11-19 |
-| **Status** | Draft (Empirical Analysis & Design Proposal; Open Questions `BIP016-Q1`–`Q7`) |
+| **Status** | Draft — Partially Decided (`BIP016-D1`–`D3` settled; Open Questions `BIP016-Q1`–`Q7`) |
 | **Depends on** | Function effects and algebraic properties (`RM002` / `RM007`, [bip007_effects.md](bip007_effects.md)), core scalar & collection types (`RM005`, [bip011_core-types.md](bip011_core-types.md)), predicate-free LL(1)/LL(2) grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)), compiler optimization passes ([bip014_optimization-passes.md](bip014_optimization-passes.md)) |
-| **Scope** | Surface ergonomics of Babble's effect and borrowing annotations: empirical audit of `examples/raytracer-argon/`, separating **internal orthogonal compiler traits** (`@UPPERCASE`, e.g. `@NO_GLOBAL_IO`, `@MUTABLE`, `@DETERMINISTIC`, `@NOTHROW`, `@NON_ESCAPING`, `@TERMINATING`) from **surface annotations defined as collections (profiles) of traits** so `pure` sits at the top of the hierarchy (`pure` implying at least `@DETERMINISTIC` + `@NOTHROW`), evaluating `borrow` polarity, and aligning with `EffectSet`, `Babble.g4` (`SLL`), `org.babblelang.effects`, and `BIP014` |
+| **Scope** | Surface ergonomics of Babble's effect and borrowing annotations: empirical audit of `examples/raytracer-argon/`, separating **internal orthogonal compiler traits** (`@UPPERCASE`: 4 function traits + 3 slot traits) from **surface annotations defined as collections of traits** (`BIP016-D1`), consolidating `pure` = `{@NO_GLOBAL_IO, !@MUTABLE, @DETERMINISTIC}` and `hermetic` = `{@NO_GLOBAL_IO, @DETERMINISTIC}` with `@NOTHROW` & `@TERMINATING` inferred (`BIP016-D2`), using `volatile` for non-deterministic readers (`BIP016-D3`), evaluating `borrow` polarity (`BIP016-Q3`), and aligning with `EffectSet`, `Babble.g4` (`SLL`), `org.babblelang.effects`, and `BIP014` |
 
 ---
 
@@ -37,10 +37,10 @@ On a trivial 3D dot product, the effect and aliasing qualifiers (`pure determini
 
 Two structural causes account for nearly all of this noise:
 
-1. **1-to-1 coupling between internal compiler traits and surface keywords — with `pure` at the bottom instead of the top.** `BIP007` exposed almost every orthogonal internal bit as a separate opt-in keyword, and defined `pure` to mean *no writes only* (matching the Java Checker Framework's `@SideEffectFree`, not its `@Pure`). Consequently, `pure` alone was used **0 times** in Argon, while `pure deterministic nothrow` accounted for **70.5%** of all functions. Likewise, `hermetic` alone was used **0 times**, while `hermetic deterministic nothrow` accounted for **18.1%**.
+1. **1-to-1 coupling between internal compiler traits and surface keywords — with `pure` at the bottom instead of the top.** `BIP007` exposed almost every orthogonal internal bit as a separate opt-in keyword, and defined `pure` to mean *no writes only* (matching the Java Checker Framework's `@SideEffectFree`, not its `@Pure`). Consequently, `pure` alone was used **0 times** in Argon, while `pure deterministic [nothrow]` accounted for **73.3%** of all functions. Likewise, `hermetic` alone was used **0 times**, while `hermetic deterministic nothrow` accounted for **18.1%**.
 2. **`borrow` has inverted polarity on annotated signatures.** In Argon, **88.9%** of non-`impure` instance methods do not escape `this` and **89.6%** of non-`impure` reference parameters do not escape. Yet because `BIP007-D2` locks explicitly annotated exports and interfaces strictly to their declared modifiers, writing `fn pure ...` drops inferred `borrow` on `this` and every parameter unless the author manually repeats `borrow` everywhere — even on deeply immutable `record` parameters (`Vec3`, `Ray`, `Interval`, `AABB`) and `mut` RNG parameters (`mut borrow rng: Rng`).
 
-By cleanly decoupling **internal orthogonal compiler traits** (`@NO_GLOBAL_IO`, `@MUTABLE`, `@DETERMINISTIC`, `@NOTHROW`, `@NON_ESCAPING`, `@TERMINATING`, …) from **surface annotations defined as collections of traits** — with **`pure` topmost** and non-escaping **`@NON_ESCAPING` (`borrow`) as the default** inside effect-annotated contracts — the two functions above collapse to:
+By cleanly decoupling **internal orthogonal compiler traits** (`@NO_GLOBAL_IO`, `@MUTABLE`, `@DETERMINISTIC`, `@NOTHROW`, `@NON_ESCAPING`, `@TERMINATING`, …) from **surface annotations defined as collections of traits** (`BIP016-D1`) — with **`pure` and `hermetic` implying `@DETERMINISTIC` while inferring `@NOTHROW`** (`BIP016-D2`), and (pending `BIP016-Q3`) non-escaping **`@NON_ESCAPING` as the default** inside effect-annotated contracts — the two functions above collapse to:
 
 ```babble
 ;; Proposed under BIP016:
@@ -53,7 +53,7 @@ def scatter = fn hermetic (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResul
 )
 ```
 
-This proposal documents the complete Argon empirical data (§2), re-evaluates `BIP007` through the two-layer trait/annotation model (§3), surveys prior art across ten languages and academic effect systems (§4), compares four concrete consolidation designs (§5), details a recommended synthesis and trait-desugaring table (§6), and lists open decisions `BIP016-Q1`–`Q7` (§7) backed by a detailed bibliography (§8).
+This proposal documents the complete Argon empirical data (§2), re-evaluates `BIP007` through the two-layer trait/annotation model and `@NOTHROW` optimizer audit (§3), surveys prior art across ten languages and academic effect systems (§4), compares four concrete consolidation designs (§5), details the consolidated synthesis and trait-desugaring table (§6), and records settled decisions `BIP016-D1`–`D3` alongside open questions `BIP016-Q1`–`Q7` (§7) backed by a detailed bibliography (§8).
 
 ---
 
@@ -63,30 +63,30 @@ Every `fn` expression and function type across all 14 files of [`examples/raytra
 
 ### 2.1 Function-Level Annotation Frequencies & Consolidation Table
 
-The table below lists all **105 `fn` occurrences** in Argon, **sorted by decreasing frequency**, alongside their exact `BIP007` semantics and the proposed consolidated annotation under the recommended Option 1 design (§5.1, §6 — where `pure` and `hermetic` expand to trait collections including `@DETERMINISTIC` + `@NOTHROW`, and `@NON_ESCAPING` is the default on explicitly annotated signatures with `escape` clearing it):
+The table below lists all **105 `fn` occurrences** in Argon, **sorted by decreasing frequency**, alongside their exact `BIP007` semantics and the proposed consolidated annotation under settled `BIP016-D1`–`D3` (assuming default-`@NON_ESCAPING` with opt-out `escape` per `BIP016-Q3`, and noting `BIP016-Q1`/`Q2` variants):
 
-| Rank | Count (%) | Current `BIP007` Combination | Semantics & Argon Examples | Proposed New Annotation *(Option 1)* |
+| Rank | Count (%) | Current `BIP007` Combination | Semantics & Argon Examples | Proposed New Annotation *(`BIP016-D1`–`D3`)* |
 |---:|---:|---|---|---|
-| **1** | **49** *(46.7%)* | `pure deterministic nothrow borrow` | Strictly side-effect-free, deterministic, exception-free instance method whose `this` does not escape (`Vec3.*`, `Ray.at`, `Interval.*`, `AABB.*`, `Describable.*`, `Material.kind`, `Hittable.boundingBox`/`kind`, `emptyHittable.*`, `Sphere.boundingBox`/`kind`/`describe`, `HittableList.boundingBox`/`countWhere`/`kind`, `BVHNode.boundingBox`/`kind`, `Color.linearToGamma`, `Scenes.threeSpheres`) | **`pure`** *(1 keyword; was 4)* |
+| **1** | **49** *(46.7%)* | `pure deterministic nothrow borrow` | Strictly side-effect-free, deterministic, exception-free instance method whose `this` does not escape (`Vec3.*`, `Ray.at`, `Interval.*`, `AABB.*`, `Describable.*`, `Material.kind`, `Hittable.boundingBox`/`kind`, `emptyHittable.*`, `Sphere.boundingBox`/`kind`/`describe`, `HittableList.boundingBox`/`countWhere`/`kind`, `BVHNode.boundingBox`/`kind`, `Color.linearToGamma`, `Scenes.threeSpheres`) | **`pure`** *(1 keyword; was 4 — `@NOTHROW` inferred)* |
 | **2** | **25** *(23.8%)* | `pure deterministic nothrow` | **20** free/static functions & callbacks with no `this` (`lib/math.ba` ×13, `Interval.enclose`, `AABB.fromPoints`/`enclose`, `HitRecord.create`, `Dielectric.reflectance`, `countWhere` predicate type & lambda); **5** instance methods whose `this` (or sub-reference) escapes into the return value (`Hittable.hit`, `Sphere.hit`, `HittableList.hit`, `BVHNode.hit`, `HittableList.headNode`) | **`pure`** *(free/static, 20×)* · **`pure escape`** *(escaping `this`, 5×)* |
-| **3** | **10** *(9.5%)* | `hermetic deterministic nothrow borrow` | No globals/I/O, deterministic, exception-free method whose `this` is read-only & non-escaping while mutating a `mut` parameter (`Material.scatter`, `Lambertian`/`Metal`/`Dielectric.scatter`, `Camera.sampleSquare`/`defocusDiskSample`/`getRay`/`rayColor`/`renderPixel`, `Scenes.finalScene`) | **`hermetic`** *(1 keyword; was 4)* |
+| **3** | **10** *(9.5%)* | `hermetic deterministic nothrow borrow` | No globals/I/O, deterministic, exception-free method whose `this` is read-only & non-escaping while mutating a `mut` parameter (`Material.scatter`, `Lambertian`/`Metal`/`Dielectric.scatter`, `Camera.sampleSquare`/`defocusDiskSample`/`getRay`/`rayColor`/`renderPixel`, `Scenes.finalScene`) | **`hermetic`** *(1 keyword; was 4 — `@NOTHROW` inferred)* |
 | **4** | **5** *(4.8%)* | `hermetic deterministic nothrow` | Free/static functions (no `this`) with no globals/I/O, deterministic, exception-free, mutating a `mut` parameter (`Vec3.random`, `randomRange`, `randomUnitVector`, `randomOnHemisphere`, `randomInUnitDisk`) | **`hermetic`** *(1 keyword; was 3)* |
-| **5** | **3** *(2.9%)* | `hermetic mut borrow deterministic nothrow` | No globals/I/O, deterministic, exception-free method mutating `this` without escaping `this` (`Rng.nextDouble`, `Rng.nextRange`, `HittableList.clear`) | **`hermetic mut`** *(2 keywords; was 5 — or `mutating` profile: 1)* |
+| **5** | **3** *(2.9%)* | `hermetic mut borrow deterministic nothrow` | No globals/I/O, deterministic, exception-free method mutating `this` without escaping `this` (`Rng.nextDouble`, `Rng.nextRange`, `HittableList.clear`) | **`hermetic mut`** *(2 keywords; was 5 — or 1-word shorthand per `BIP016-Q2`)* |
 | **6** | **3** *(2.9%)* | `impure` | Unconstrained I/O or test harness entry points (`Camera.render`, `runTests`, `renderMain`) | **`impure`** *(unchanged)* |
-| **7** | **2** *(1.9%)* | `pure nothrow` | Side-effect-free and exception-free, but reads an outer non-`record` object singleton (`emptyHittable`), so not `deterministic` (`HittableList.first`, `HittableList.second`, both escaping `this`) | **`readonly escape`** *(or `pure volatile escape`)* |
-| **8** | **2** *(1.9%)* | `pure deterministic` | Side-effect-free and deterministic free function that may throw at runtime via narrowing `int(x)` (`math.toByte`, `math.toInt`) | **`pure throws`** *(2 keywords; was 2, clearer intent)* |
+| **7** | **2** *(1.9%)* | `pure nothrow` | Side-effect-free and exception-free, but reads an outer non-`record` object singleton (`emptyHittable`), so not `deterministic` (`HittableList.first`, `HittableList.second`, both escaping `this`) | **`pure volatile escape`** *(or `volatile escape`, per `BIP016-Q1`)* |
+| **8** | **2** *(1.9%)* | `pure deterministic` | Side-effect-free and deterministic free function that may throw at runtime via narrowing `int(x)` (`math.toByte`, `math.toInt`) | **`pure`** *(1 keyword; was 2 — `pure` allows exceptions per `BIP016-D2`)* |
 | **9** | **2** *(1.9%)* | `nothrow` | Exception-free but unconstrained on purity/determinism (`BVHNode.fromList` reading `emptyHittable` & mutating local partition lists; frame-local accumulator closure in `HittableList.countWhere`) | **`nothrow`** *(unchanged)* |
-| **10** | **1** *(1.0%)* | `pure deterministic borrow` | Side-effect-free, deterministic, non-escaping `this` method that may throw via `math.toByte` (`Color.formatPpm`) | **`pure throws`** *(2 keywords; was 3)* |
+| **10** | **1** *(1.0%)* | `pure deterministic borrow` | Side-effect-free, deterministic, non-escaping `this` method that may throw via `math.toByte` (`Color.formatPpm`) | **`pure`** *(1 keyword; was 3 — `pure` allows exceptions per `BIP016-D2`)* |
 | **11** | **1** *(1.0%)* | `hermetic mut deterministic nothrow` | No globals/I/O, deterministic, exception-free method mutating `this` where `this.head` escapes into a newly allocated `HittableNode` (`HittableList.add`) | **`hermetic mut escape`** *(3 keywords; was 4)* |
-| **12** | **1** *(1.0%)* | `borrow` | Higher-order method polymorphic in callback `f`'s effects whose `this` does not escape (`HittableList.forEach`) | **`borrow`** *(or omitted if default)* |
+| **12** | **1** *(1.0%)* | `borrow` | Higher-order method polymorphic in callback `f`'s effects whose `this` does not escape (`HittableList.forEach`) | **`borrow`** *(unchanged on unannotated HOF)* |
 | **13** | **1** *(1.0%)* | *(none)* | Unconstrained higher-order callback type `fn (borrow item: Hittable): any?` inside `HittableList.forEach` | *(none)* |
-| **Total** | **105** *(100%)* | **362 function-prefix tokens** *(3.45 / fn)* | **0** uses of standalone `pure`; **0** uses of standalone `hermetic` | **~120 function-prefix tokens** *(1.14 / fn, −67%)* |
+| **Total** | **105** *(100%)* | **362 function-prefix tokens** *(3.45 / fn)* | **0** uses of standalone `pure`; **0** uses of standalone `hermetic` | **~117 function-prefix tokens** *(1.11 / fn, −68%; **92/105 = 87.6%** single-keyword)* |
 
 ### 2.2 Parameter & Return Modifier Frequencies
 
 Sorted by decreasing frequency across all parameter lists and return clauses in `examples/raytracer-argon/`:
 
-| Scope | Count | Current `BIP007` Modifier | Breakdown in Argon | Proposed New Annotation *(Option 1)* |
+| Scope | Count | Current `BIP007` Modifier | Breakdown in Argon | Proposed New Annotation *(if `BIP016-Q3` adopts default-`borrow`)* |
 |---|---:|---|---|---|
 | Parameter | **44** | `borrow` | **34** deeply immutable `record`s (`Vec3` ×12, `Ray` ×12, `Interval` ×8, `AABB` ×2), **4** `HitRecord`, **4** `Hittable`, **2** `fn` callbacks | *(omitted — default in annotated fns)* |
 | Parameter | **16** | `mut borrow` | **16** `Rng` parameters (`Vec3.random*`, `Material.scatter`, `Camera.*`, `Scenes.finalScene`) | **`mut`** *(1 keyword; was 2)* |
@@ -106,8 +106,8 @@ Receiver `borrow` distribution across Argon's **72 non-`impure` instance methods
 
 ### 2.3 Four Empirical Takeaways
 
-1. **88.6% of all functions are just two contracts:** `pure deterministic nothrow` (**74/105 = 70.5%**) and `hermetic deterministic nothrow` (**19/105 = 18.1%**, including 4 with `mut` `this`). Every one of those 93 functions currently requires **3 to 5 keywords**.
-2. **Standalone `pure` and standalone `hermetic` are dead weight in normal code:** Neither appeared even **once** (`0/105`) in Argon. The only real-world cases for *non-deterministic, side-effect-free* code are environment/clock/file reads (`Instant.now()`, `Files.readString`, reading a mutable outer singleton) — an uncommon, explicit boundary (~2% in Argon), not the default meaning programmers expect from the word `pure`.
+1. **91.4% of all functions are just two contracts:** `pure deterministic [nothrow]` (**77/105 = 73.3%**) and `hermetic deterministic nothrow` (**19/105 = 18.1%**, including 4 with `mut` `this`). Under `BIP007`, nearly all of those 96 functions required **3 to 5 keywords**.
+2. **Standalone `pure` and standalone `hermetic` are dead weight in normal code:** Neither appeared even **once** (`0/105`) in Argon. The only real-world cases for *non-deterministic, side-effect-free* code are environment/clock/file reads (`Instant.now()`, `Files.readString`, reading a mutable outer singleton) — an uncommon boundary (~2% in Argon), not the default meaning programmers expect from the word `pure`.
 3. **Non-escaping (`borrow`) is the ~89% norm for both `this` and parameters:** Requiring explicit `borrow` produced **124 `borrow` tokens** across 105 functions to protect against only **8** escaping receivers and **7** escaping reference parameters. Worse, `100%` of `record` methods (`26/26`) and `100%` of `mut` `Rng` parameters (`16/16`) had to repeat `borrow`.
 4. **Algebraic properties (`associative`, `commutative`, `idempotent`, `monotone`, `injective`) are NOT the noise source:** They appeared **0 times** in Argon (they belong on math/reduction/collection library APIs and `axiom`s). Consolidating the core effect & borrowing axes fixes the everyday ergonomics problem without touching the algebraic vocabulary.
 
@@ -115,43 +115,43 @@ Receiver `borrow` distribution across Argon's **72 non-`impure` instance methods
 
 ## 3. Reconsidering `BIP007`: Internal Orthogonal `@TRAITS` vs. Surface Annotations
 
-### 3.1 Decoupling the Two Layers (`@TRAITS` vs. Surface Collections)
+### 3.1 The Minimal Orthogonal Basis (`BIP016-D1`)
 
 `BIP007` §3 already introduced a clean notational convention: **lowercase** for surface modifiers written by programmers (`pure`, `mut`, `borrow`, …) and **`@UPPERCASE`** for internal compiler states and inferred-only guarantees (`@PARAM(i)`, `@THIS`, `@FROZEN`, `@MOVED`, `@EXTERNAL`, `@TERMINATING`, `@TOTAL`, `@AXIOMATIC`).
 
-The core architectural insight of `BIP016` is to **complete that separation** into two distinct layers:
+Auditing [`Effect.java`](../../src/main/java/org/babblelang/effects/Effect.java), [`EffectSet.java`](../../src/main/java/org/babblelang/analysis/EffectSet.java), [`Type.java`](../../src/main/java/org/babblelang/analysis/Type.java), and [`EffectChecker.java`](../../src/main/java/org/babblelang/analysis/EffectChecker.java) reveals that once derived concepts are factored out (notably `Effect.PURE` $\equiv$ `@NO_GLOBAL_IO` $\land$ zero `@MUTABLE` slots), Babble's entire core effect and ownership system reduces to **7 orthogonal atomic internal traits** (4 function-level + 3 per-slot), plus 5 optional algebraic traits and 2 control/metadata flags:
 
-1. **Layer 1 — Internal Orthogonal Compiler Traits (`@UPPERCASE`):**
-   Every atomic semantic fact tracked by `EffectChecker`, stored in `EffectSet` / `Type.Parameter` / `TypedModuleSummary`, checked by subtyping (`TypeAlgebra`), and consumed by `BIP014` optimizers is an **orthogonal internal trait** — never tied 1-to-1 to a surface keyword:
+| Layer 1 Category | Internal Orthogonal Traits (`@UPPERCASE`) | Current Code Representation | Consumed By |
+|---|---|---|---|
+| **Function Effects (4)** | **`@NO_GLOBAL_IO`** *(no I/O or global/outer writes)*, **`@DETERMINISTIC`** *(depends only on visible inputs)*, **`@NOTHROW`** *(never throws on typed inputs)*, **`@TERMINATING`** *(finite execution; inferred-only)* | `Effect.HERMETIC`, `Effect.DETERMINISTIC`, `Effect.NOTHROW`, `EffectSet.terminating` | `EffectChecker` confinement, `BIP014` `O1`/`O4`/`O5`/`O6`/`O11`/`O12` |
+| **Per-Slot Aliasing & Ownership (3)** | **`@MUTABLE`** *(callee may mutate `this`/param `i`)*, **`@NON_ESCAPING`** *(never stored/returned past call)*, **`@UNIQUE`** *(deep single-owner graph on param/return)* | `EffectSet.mutThis`/`borrowThis`/`uniqueResult`, `Type.Parameter.mut`/`borrow`/`unique` | Exclusivity, `RM005` covariance, `BIP007-D7` `frozen` calls, `BIP014` `O7`/`O9`/`O10` |
+| **Algebraic Traits (5)** | **`@IDEMPOTENT`**, **`@COMMUTATIVE`**, **`@ASSOCIATIVE`**, **`@MONOTONE`**, **`@INJECTIVE`** | `Effect.IDEMPOTENT`..`INJECTIVE` | `BIP014` `O2`/`O3`/`O12`, `AxiomChecker` |
+| **Control / Provenance (2)** | **`@AXIOMATIC`** *(trusted `axiom` boundary)*, **`@IMPURE_LOCK`** *(suppresses inference)* | `EffectSet.axiomatic`, `EffectSet.impure` | `allowAxioms(false)`, `BIP007-D2` export rules |
 
-| Trait Axis | Internal Orthogonal Traits (`@UPPERCASE`) | Consumed By |
-|---|---|---|
-| **Memory & Mutation** | `@NO_GLOBAL_IO` *(hermetic: no I/O or global/outer writes)*, `@NO_MUT_SLOTS` *(no mutated `this` or params)*, per-slot `@MUTABLE` (`@MUT_THIS`, `@MUT(i)`) | `EffectChecker` confinement, `BIP014` `O5`/`O6`/`O7` |
-| **Evaluation & Safety** | `@DETERMINISTIC` *(depends only on visible inputs)*, `@NOTHROW` *(no runtime exceptions)*, `@TERMINATING` *(finite execution; `@NOTHROW + @TERMINATING` = `@TOTAL`)* | `BIP014` `O1` folding, `O4` DCE, `O5` CSE, `O6` LICM, `O11` reordering |
-| **Escape & Ownership** | Per-slot `@NON_ESCAPING` (`@BORROW_THIS`, `@BORROW(i)`), `@UNIQUE(i)`, `@UNIQUE_RESULT`, `@FROZEN`, `@MOVED` | `RM005` covariance, `BIP007-D7` `frozen` calls, `BIP014` `O7`/`O9`/`O10` |
-| **Algebraic Properties** | `@IDEMPOTENT`, `@COMMUTATIVE`, `@ASSOCIATIVE`, `@MONOTONE`, `@INJECTIVE` | `BIP014` `O2`/`O3`/`O12` algebraic & pipeline rewrites, `AxiomChecker` |
-| **Provenance & Lock** | `@AXIOMATIC` *(trusted `axiom` boundary)*, `@IMPURE_LOCK` *(suppresses inference)* | Sandbox policy (`allowAxioms(false)`), `BIP007-D2` export rules |
+*(Planned future function-level trait from `BIP007` §10: **`@THREADSAFE`**. Type-level **`frozen T`** / `Type.Frozen` and local flow states `@PARAM(i)`/`@THIS`/`@EXTERNAL`/`@MOVED` remain unchanged.)*
 
-2. **Layer 2 — Surface Annotations as Collections (Profiles) of Traits:**
-   Surface keywords written by Babble programmers are **named trait collections** (plus optional trait-clearing modifiers such as `throws` or `escape`) that desugar directly into Layer 1's `@TRAITS` during `EffectChecker.parsePrefix` / `parseParamMods`:
-   * Adding a new internal compiler trait (like `@TERMINATING` in `RM007`, or future `@THREADSAFE`) requires **zero** change to existing surface annotations unless we intentionally expose it.
-   * Consolidating or evolving surface annotations (making `pure` topmost, bundling `@DETERMINISTIC` + `@NOTHROW`, defaulting `@NON_ESCAPING`) requires **zero** change to the fixed-point inference engine, `TypeAlgebra` subtyping, `LoweringAnalyzer`, `BIP014` optimizer passes, or `babble-runtime` (`RuntimeBoundaryTestCase`).
-   * Compiler diagnostics can name the exact violated trait while recommending the concise surface annotation (e.g., `Function toInt declared pure violates @NOTHROW (int(x) may throw) : use pure throws`), and `EffectSet.toString()` / `:type` display can render the shortest canonical surface form covering the trait set.
+**Layer 2 — Surface Annotations as Trait Collections (`BIP016-D1`):** Surface keywords written by Babble programmers are **named collections (profiles) of Layer 1 traits** (desugared during `EffectChecker.parsePrefix` / `parseParamMods`):
+* Adding a new internal compiler trait (like `@TERMINATING` in `RM007`, or future `@THREADSAFE`) does **not** pollute surface signatures.
+* Evolving surface annotations requires **zero** change to the fixed-point inference engine, `TypeAlgebra` subtyping, `LoweringAnalyzer`, `BIP014` optimizer passes, or `babble-runtime` (`RuntimeBoundaryTestCase`).
+* Diagnostics can name the exact violated `@TRAIT` while suggesting the concise surface annotation, and `EffectSet.toString()` / `:type` display can render the shortest canonical surface form covering the trait set.
 
-### 3.2 What `BIP007` Got Right vs. Where Its Surface Syntax Overshot
+### 3.2 Why `pure` Allows Exceptions (`@NOTHROW` & `@TERMINATING` Inferred — `BIP016-D2`)
 
-`BIP007`'s Layer 1 model is sound and stays intact: separating write confinement, determinism, exception-freedom, escape-freedom, exclusivity, deep ownership, and termination is strictly necessary for `BIP014`, and rejecting D-style weak purity (`@NO_MUT_SLOTS` mutually exclusive with `@MUTABLE`) keeps `pure` unambiguous.
+A key reconsideration of `BIP007` is the role of **`@NOTHROW`** and **`@TERMINATING`** inside `pure`:
 
-Where `BIP007` overshot was coupling Layer 2 **1-to-1** to Layer 1:
+* **Why `@TERMINATING` stays inferred-only:** Because of the Halting Problem, `EffectChecker` conservatively drops `@TERMINATING` on any `while` loop or `recurse` call (`BIP007` §5.1). In Argon, that includes `math.sqrt`, `math.sin`, `math.cos`, `math.powInt`, `Vec3.length`, `Sphere.hit`, `HittableList.hit`, and `BVHNode.hit`. Requiring `@TERMINATING` in surface `pure` would make all of those textbook pure functions unverifiable without `axiom`. Keeping `@TERMINATING` inferred-only lets straight-line functions (`Vec3.dot`, `Interval.clamp`, `AABB.hit`) receive `@TERMINATING` automatically while loop/recursive pure functions stay `fn pure`.
+* **Why `@NOTHROW` also stays inferred-by-default (opt-in `nothrow`):** Conceptually, an exception can be viewed as an alternate return channel (`T | Exception`). Auditing [`bip014_optimization-passes.md`](bip014_optimization-passes.md) shows:
+  * **Does NOT need `@NOTHROW`:** CSE / GVN (`O5` — if the first `f(x)` threw, execution never reaches the second), constant folding on executed calls (`O1`), algebraic / `idempotent` collapse (`O2`), **guarded LICM** (`O6` — `if cond then (def tmp = f(inv); do-while ...)`), no-alias RLE (`O7`), inlining (`O8`), scalar replacement (`O9`), and FBIP reuse (`O10`).
+  * **DOES need `@NOTHROW`:** Deleting an unused call (`O4` DCE / `f(x) * 0 -> 0`), unguarded speculative hoisting into a 0-iteration loop (`O6`), and reordering two calls/predicates (`O11` short-circuit reordering, `O12` filter push-down, `O3` reassociation).
+  * Because `EffectChecker` already infers `@NOTHROW` automatically for every concrete Babble function (just like `@TERMINATING`), `BIP014` passes and `BIP007-D8` (`Unused pure expression`) retain **100% of their power** on concrete code **without** forcing `throws` or `nothrow` onto everyday signatures!
+  * Defining **`pure` = `{@NO_GLOBAL_IO, !@MUTABLE, @DETERMINISTIC}`** (and **`hermetic` = `{@NO_GLOBAL_IO, @DETERMINISTIC}`**) aligns Babble directly with the Java Checker Framework (`@Pure` = `@SideEffectFree` + `@Deterministic`), Haskell `pure`, and Koka `pure` (`<div, exn>`), eliminates any `throws` keyword, keeps exception-freedom **100% monotonic** (`pure` $\to$ `pure nothrow`), and lets `math.toInt`, `math.toByte`, `Color.formatPpm`, and `Path.of` all be written cleanly as `fn pure`!
 
-1. **Semantic mismatch on `pure`:** In functional languages (`Flix`, `Haskell`), static analyzers (`Checker Framework @Pure`), and query optimizers (`PostgreSQL IMMUTABLE`), **`pure` means a referentially transparent mathematical function** — `{@NO_GLOBAL_IO, @NO_MUT_SLOTS, @DETERMINISTIC, @NOTHROW}` (`[Tae25]`, `[CF-Pure]`). `BIP007` instead mapped `pure` to just `{@NO_GLOBAL_IO, @NO_MUT_SLOTS}` (Checker Framework's `@SideEffectFree`), forcing programmers to spell `pure deterministic nothrow` every time they meant mathematical purity.
-2. **Same under-bundling on `hermetic`:** `hermetic` is `pure`'s counterpart when a parameter or `this` has `@MUTABLE` (e.g., `Rng.nextDouble`, `Material.scatter`, `HittableList.add`). Mapping `hermetic` to `{@NO_GLOBAL_IO}` alone turned every locally-mutating pure-Babble function into `hermetic deterministic nothrow` (or `hermetic mut borrow deterministic nothrow` — **five** keywords!).
-3. **Contract-closure friction on `@NON_ESCAPING` (`borrow`, `BIP007-D2`):** For unannotated functions, `EffectChecker` optimistically infers `@NON_ESCAPING` on `this` and all parameters. Once an author writes *any* explicit effect annotation on an exported function or interface method, `BIP007-D2` exposes strictly the declared traits — silently dropping `@NON_ESCAPING` unless `borrow` is repeated on `this` and every single parameter. Even worse:
-   * Calling a method on a `frozen T` receiver requires `@BORROW_THIS` (`BIP007-D7`), so forgetting `borrow` on `Vec3.dot` breaks `frozen Vec3` callers.
-   * Scalar replacement (`BIP014` `O9`) requires `@BORROW(i)` on `record` parameters (`Vec3`, `Ray`, `Interval`), so omitting `borrow` silently degrades AOT optimization across module boundaries.
-   * Yet `@NON_ESCAPING` holds on **88.9%** of receivers and **89.6%** of reference parameters in Argon!
+### 3.3 Remaining `BIP007` Surface Friction (`@NON_ESCAPING` & Precision Cleanups)
 
-*(Side note on `BIP007-P2` precision surfaced by Argon:)* In `HittableList.first`/`second`, reading the stateless `object implements Hittable` singleton `emptyHittable` cleared `@DETERMINISTIC` because `EffectChecker` treats any non-`record` `object` singleton as potentially mutable outer state even when it defines zero fields. And in `BVHNode.fromList(items: HittableList)`, storing `cur.item` (derived from `items`) into a fresh local `leftList` demoted `leftList` with `@PARAM(items)` taint, forcing `@MUT(items)` (`mut items`) even though `items` itself is never mutated. Both are small `EffectChecker` precision improvements worth tracking independently of surface syntax (see `BIP016-Q7` / §6.4).
+* **Contract-closure friction on `@NON_ESCAPING` (`borrow`, `BIP007-D2`):** For unannotated functions, `EffectChecker` optimistically infers `@NON_ESCAPING` on `this` and all parameters. Once an author writes *any* explicit effect annotation on an exported function or interface method, `BIP007-D2` exposes strictly the declared traits — silently dropping `@NON_ESCAPING` unless `borrow` is repeated on `this` and every single parameter (breaking `frozen T` method calls per `BIP007-D7` and `BIP014` `O9` scalar replacement). Yet `@NON_ESCAPING` holds on **88.9%** of receivers and **89.6%** of reference parameters in Argon! Resolving this polarity is tracked in **`BIP016-Q3`**.
+* **Precision cleanups surfaced by Argon (`BIP016-Q7`):**
+  1. In `HittableList.first`/`second`, reading the stateless `object implements Hittable` singleton `emptyHittable` cleared `@DETERMINISTIC` because `EffectChecker` treats any non-`record` `object` singleton as potentially mutable outer state even when it defines zero fields.
+  2. In `BVHNode.fromList(items: HittableList)`, storing `cur.item` (derived from `items`) into a fresh local `leftList` demoted `leftList` with `@PARAM(items)` taint, forcing `@MUTABLE` (`mut items`) even though `items` itself is never mutated.
 
 ---
 
@@ -178,53 +178,36 @@ Other languages and static-analysis tools have all confronted the exact tension 
 
 All four options below **keep `BIP007`'s internal `EffectSet` bitmask (`PURE`, `HERMETIC`, `DETERMINISTIC`, `NOTHROW`, algebraic flags, `mutThis`/`borrowThis`, `uniqueResult`, `@TERMINATING`) 100% intact** — they differ strictly in the surface vocabulary and defaults that desugar into `EffectSet`.
 
-### Option 1 — Stratified Topmost `pure` / `hermetic` + Subtractive Relaxations + Default-`borrow` *(Recommended)*
+### Option 1 — Consolidated `pure` / `hermetic` (`@NO_GLOBAL_IO` + `@DETERMINISTIC`) + `volatile` + Opt-In `nothrow` + Default-`borrow` *(Selected Direction via `BIP016-D1`–`D3`)*
 
-Redefine `pure` and `hermetic` as **top-tier consolidated guarantees**, add small subtractive relaxations for the rare cases that drop one guarantee, and make `borrow` the default on explicitly effect-annotated signatures (with `escape` opting out):
+Redefine `pure` and `hermetic` as **consolidated trait collections** over Layer 1's 7 orthogonal `@TRAITS`, treat `@NOTHROW` and `@TERMINATING` as inferred-by-default (with explicit `nothrow` strictly opt-in — zero `throws` keyword!), use `volatile` for non-deterministic readers, and evaluate making `@NON_ESCAPING` (`borrow`) the default on explicitly effect-annotated signatures (`BIP016-Q3`):
 
-* **Consolidated core tiers:**
-  * **`pure`** $\equiv$ `{PURE, HERMETIC, DETERMINISTIC, NOTHROW}` + `borrow` on `this` and all parameters (unless opted out). Strictly forbidden with `mut`.
-  * **`hermetic`** $\equiv$ `{HERMETIC, DETERMINISTIC, NOTHROW}` + `borrow` on `this` and all parameters (unless opted out). Compatible with `mut` on `this` (`fn hermetic mut`) and `mut` parameters (`mut rng: Rng`).
-  * *(Optional 1-word shorthand under `BIP016-Q2`:)* **`mutating`** or **`local`** for `hermetic mut` — or keep `hermetic mut` (2 words, crystal clear, zero new synonym).
-* **Relaxing individual guarantees (rare ~5% cases):**
-  * **`throws`** clears `NOTHROW` from `pure` or `hermetic` (`fn pure throws (x: double): int` for `math.toInt`; `axiom pure throws on java.nio.file.Path.of`).
-  * **`volatile`** (or **`readonly`** as a standalone base tier — see Option 2 & `BIP016-Q1`) clears `DETERMINISTIC` (`fn pure volatile` or `fn readonly` for `Instant.now()`, `HittableList.first`; `axiom readonly throws on java.nio.file.Files.readString`).
-  * **`escape`** (on `fn` prefix for `this`, or on a parameter `escape p: T`) clears `borrow` on that slot (`fn pure escape (r: Ray, rayT: Interval): HitRecord?` for `Hittable.hit`; `fn hermetic mut escape (escape item: Hittable)` for `HittableList.add`).
-* **Unannotated functions remain 100% backward compatible:** An unannotated `fn (x: int): int -> (...)` still runs full fixed-point inference (`BIP007` §3.1) and accepts arbitrary side effects / escaping without requiring `impure` or `escape`. Only **explicitly effect-annotated** signatures (`pure`, `hermetic`, `readonly`) activate the `borrow`-by-default rule (or optionally `borrow` remains explicit — see `BIP016-Q3`).
-* **Low-level primitives (`nothrow`, `deterministic`, `borrow`):** `nothrow` remains useful standalone (e.g., `BVHNode.fromList`, `countWhere`'s frame-local closure); `borrow` remains valid on unannotated higher-order functions (`HittableList.forEach`); `deterministic` can either stay available for standalone use or be deprecated (`BIP016-Q4`).
+* **Consolidated core tiers (`BIP016-D2`):**
+  * **`pure`** $\equiv$ `{@NO_GLOBAL_IO, !@MUTABLE, @DETERMINISTIC}` (+ `@NON_ESCAPING` on `this` and params unless opted out, pending `BIP016-Q3`). Strictly forbidden with `mut`. Allows exceptions (`T | Exception`) and loops/recursion.
+  * **`hermetic`** $\equiv$ `{@NO_GLOBAL_IO, @DETERMINISTIC}` (+ `@NON_ESCAPING` default pending `BIP016-Q3`). Compatible with `mut` on `this` (`fn hermetic mut`) and `mut` parameters (`mut rng: Rng`).
+  * **`nothrow`** $\equiv$ `{@NOTHROW}` — purely additive and opt-in for APIs/interfaces wanting a contractual no-exception guarantee (while `EffectChecker` still infers `@NOTHROW` automatically for `BIP014` and `Unused pure expression`).
+* **Non-deterministic readers (`BIP016-D3` / `BIP016-Q1`):**
+  * **`volatile`** marks side-effect-free non-deterministic readers (`Instant.now()`, `Files.readString`, reading a mutable outer singleton) — either combined subtractively (`pure volatile`, `hermetic volatile`) or standalone (`fn volatile`), to be settled in `BIP016-Q1`.
+* **Escape opt-out (`BIP016-Q3`):**
+  * **`escape`** (on `fn` prefix for `this`, or on a parameter `escape p: T`) clears `@NON_ESCAPING` on that slot (`fn pure escape (r: Ray, rayT: Interval): HitRecord?`; `fn hermetic mut escape (escape item: Hittable)`).
+* **Unannotated functions remain 100% backward compatible:** An unannotated `fn (x: int): int -> (...)` still runs full fixed-point `@TRAITS` inference (`BIP007` §3.1).
 
 * **Pros:**
-  * Cuts Argon's total effect/aliasing tokens from **439 → ~147 (−67%)** and collapses **84.8%** of all `fn`s (89/105) to a **single keyword**.
-  * Aligns `pure` with universal developer intuition (Checker Framework `@Pure`, Flix `Pure`, Koka `total`, mathematical purity).
-  * Preserves 100% expressiveness of `BIP007`'s lattice (every combination remains expressible, including `pure throws`, `readonly`, `readonly throws`, `hermetic mut throws`, `nothrow`).
-  * Preserves `Babble.g4`'s zero-predicate LL(1)/LL(2) pure-`SLL` grammar (`throws`, `escape`, `readonly`/`volatile` are simple `memberName`-exempted tokens).
+  * Cuts Argon's total effect/aliasing tokens from **439 → ~144 (−67%)** and collapses **87.6%** of all `fn`s (**92/105**) to a **single keyword**!
+  * Aligns `pure` with Java Checker Framework `@Pure` (`@SideEffectFree` + `@Deterministic`), Haskell `pure`, and Koka `pure` (`<div, exn>`).
+  * **Zero `throws` keyword** — `math.toInt`, `math.toByte`, `Color.formatPpm`, and `Path.of` are all simply `fn pure`, and exception-freedom stays 100% monotonic (`pure` $\to$ `pure nothrow`).
+  * Preserves 100% expressiveness of `BIP007`'s internal lattice and `Babble.g4`'s zero-predicate LL(1)/LL(2) pure-`SLL` grammar (`VOLATILE` + optional `ESCAPE`, exempted in `memberName`).
 * **Cons:**
-  * **Breaking change** to existing `BIP007` semantics of `pure` and `hermetic` (existing tests/scripts writing `fn pure` on throwing or non-deterministic functions must change to `fn pure throws` or `fn readonly`, though Babble is pre-1.0 and already did a clean grammar break in `RM006` / `BIP012`).
-  * Subtractive combinations like `pure throws` or `pure volatile` are **non-monotonic** (`pure throws` is *weaker* than `pure`), which may surprise readers expecting every added keyword to strengthen the contract (see Option 2 for a monotonic variant!).
+  * **Breaking change** to `BIP007`'s surface meaning of `pure` and `hermetic` (existing tests/scripts writing `fn pure` on non-deterministic functions migrate to `volatile`, while Babble is pre-1.0 as in `RM006` / `BIP012`).
 
 ---
 
-### Option 2 — Strictly Monotonic Stratified Hierarchy (No Subtractive Modifiers)
+### Option 2 — Strictly Monotonic Stratified Hierarchy (Including `@NOTHROW` in `pure`)
 
-Avoid subtractive modifiers (`pure throws`, `pure volatile`) entirely by naming each tier monotonically (PostgreSQL `IMMUTABLE`/`STABLE`/`VOLATILE` + C23 `[[unsequenced]]`/`[[reproducible]]` style):
+Bundle `@NOTHROW` into `pure` and avoid subtractive modifiers entirely by naming every tier monotonically (`pure` = `{@NO_GLOBAL_IO, !@MUTABLE, @DETERMINISTIC, @NOTHROW}`, `calc` = `{@NO_GLOBAL_IO, !@MUTABLE, @DETERMINISTIC}`, `readonly` = `{@NO_GLOBAL_IO, !@MUTABLE}`, `hermetic` = `{@NO_GLOBAL_IO, @DETERMINISTIC, @NOTHROW}`, `local` = `{@NO_GLOBAL_IO}`).
 
-| Tier Keyword | Internal `EffectSet` Bits | Example |
-|---|---|---|
-| **`pure`** | `{PURE, HERMETIC, DETERMINISTIC, NOTHROW}` | `math.sqrt`, `Vec3.dot`, `java.lang.Math.sin` |
-| **`calc`** *(or **`fallible`** / **`total`** inverted)* | `{PURE, HERMETIC, DETERMINISTIC}` *(may throw)* | `math.toInt`, `Color.formatPpm`, `Path.of`, `assert` helpers |
-| **`readonly`** *(or **`stable`**)* | `{PURE, HERMETIC}` *(may read mutable state / throw; add `nothrow` if needed)* | `Instant.now()`, `Files.readString`, `HittableList.first` |
-| **`hermetic`** | `{HERMETIC, DETERMINISTIC, NOTHROW}` *(allows `mut`)* | `Rng.nextDouble`, `Material.scatter`, `Camera.rayColor` |
-| **`local`** *(or **`confined`**)* | `{HERMETIC}` *(allows `mut`, may throw / read mutable state)* | `ArrayList.get` (throws on OOB), `HashMap.put` |
-
-*(Or a minimalist monotonic variant: keep `pure` = `{PURE, HERMETIC, DETERMINISTIC, NOTHROW}`, **`readonly`** = `{PURE, HERMETIC}` (composable with `deterministic` and `nothrow`), and **`hermetic`** = `{HERMETIC, DETERMINISTIC, NOTHROW}` with **`local`** = `{HERMETIC}`!)*
-
-* **Pros:**
-  * **100% monotonic:** Adding a keyword *always* strengthens the guarantee (never subtracts from an earlier keyword).
-  * `pure` and `hermetic` still cover 88.6% of Argon in **1 keyword**!
-  * Clear distinction between `pure` (topmost) and `readonly` (non-mutating reader, matching Checker Framework's `@Pure` vs. `@SideEffectFree`).
-* **Cons:**
-  * Introduces extra tier names (`readonly` / `calc` / `local`) that programmers must memorize to express simple single-axis relaxations like "pure except it can throw" (where `pure throws` is self-explanatory to any Java/Swift developer!).
-  * Doesn't solve `borrow` noise by itself — still needs a decision on `borrow` polarity (`BIP016-Q3`).
+* **Pros:** 100% monotonic; makes every `fn pure` interface automatically `@NOTHROW`.
+* **Cons:** Forces programmers to memorize extra tier names (`calc`, `local`) for throwing pure functions like `math.toInt` / `Path.of`, even though `BIP014` already infers `@NOTHROW` automatically for concrete functions (superseded by **`BIP016-D2`**).
 
 ---
 
@@ -242,11 +225,11 @@ def dot = fn total (borrow v: Vec3): double -> ( ... )
 
 * **Pros:**
   * **Zero breaking changes** to `BIP007` (`pure` keeps its exact `RM002` meaning).
-  * User-defined aliases let domain libraries name recurring algebraic bundles (e.g., `effect monoid = pure deterministic nothrow associative`).
+  * User-defined aliases let domain libraries name recurring algebraic bundles (e.g., `effect monoid = pure nothrow associative`).
 * **Cons:**
-  * **Leaves the best keyword (`pure`) wasted on the 0%-used meaning!** Every newcomer will still write `fn pure` expecting mathematical purity and hit confusing errors or miss `deterministic`/`nothrow` optimizations (`BIP014`).
-  * **Does not fix parameter `borrow` noise:** A function-level profile cannot eliminate the 60 per-parameter `borrow` annotations (`borrow v: Vec3`, `mut borrow rng: Rng`) unless it also flips parameter-borrow polarity.
-  * **Dialect fragmentation & indirection:** User-defined `effect` aliases require readers to jump to alias definitions to understand a signature, complicate `Type.Function` error printing and `Formatter` canonicalization, and add a new namespace/declaration kind to `Babble.g4`, `BlockScopes`, `TypedModuleSummary`, and `AnalysisSession`.
+  * **Leaves the best keyword (`pure`) wasted on the 0%-used meaning!** Every newcomer will still write `fn pure` expecting deterministic purity. *(Superseded for built-ins by `BIP016-D2`; whether to also support user-defined aliases on top remains open in **`BIP016-Q5`**.)*
+  * **Does not fix parameter `borrow` noise** unless parameter-borrow polarity also changes.
+  * **Dialect fragmentation & indirection:** User-defined `effect` aliases require readers to jump to alias definitions and add a new declaration/namespace kind across `Babble.g4`, `BlockScopes`, `TypedModuleSummary`, and `AnalysisSession`.
 
 ---
 
@@ -254,54 +237,46 @@ def dot = fn total (borrow v: Vec3): double -> ( ... )
 
 Keep `BIP007`'s exact syntax, but change `BIP007-D2` so that writing `fn pure` on an exported function **still exports inferred `deterministic`, `nothrow`, and `borrow`** (only `impure` suppresses inference).
 
-* **Pros:**
-  * Zero syntax or grammar changes; Argon implementations could write `fn pure` and still get inferred `deterministic`, `nothrow`, and `borrow`.
-* **Cons:**
-  * **Fails completely on `interface` declarations and function types!** Abstract interface methods (`Describable.kind`, `Material.scatter`, `Hittable.hit`) and callback parameter types (`countWhere`'s `pred`) have **no body to infer from** — they would still need `fn pure deterministic nothrow borrow (borrow ...)`!
-  * **Violates API stability (`BIP007` §3.1, `BIP007-D2`):** Callers across modules would silently depend on accidental `nothrow` or `borrow` properties that the author never promised; adding an `assert` or refactoring a helper could silently break downstream modules.
-  * **Fails on `axiom` declarations:** Java `axiom`s have no Babble body, so `axiom pure deterministic nothrow on java.lang.Math.sqrt` stays verbose.
+* **Pros:** Zero syntax changes; bodies could write `fn pure` and still get inferred properties.
+* **Cons:** **Fails completely on `interface` declarations, function types, and `axiom` declarations** (none have Babble bodies to infer from!), and violates `BIP007-D2`'s API stability guarantee (callers silently depend on uncontracted properties).
 
 ---
 
 ### 5.5 Comparative Summary Matrix
 
-| Criterion | Current `BIP007` | Option 1 *(Topmost `pure`/`hermetic` + `throws`/`escape`)* | Option 2 *(Monotonic Tiers)* | Option 3 *(Profiles / Aliases)* | Option 4 *(Relax `BIP007-D2`)* |
+| Criterion | Current `BIP007` | Option 1 *(`BIP016-D1`–`D3` + `escape`)* | Option 2 *(Monotonic Tiers w/ `@NOTHROW`)* | Option 3 *(Profiles / Aliases)* | Option 4 *(Relax `BIP007-D2`)* |
 |---|---|---|---|---|---|
-| **Argon total tokens** *(fn + param)* | 439 *(4.18 / fn)* | **~147** *(−67%)* | **~150** *(−66%)* | ~240 *(−45%, param `borrow` remains)* | ~210 *(interfaces unchanged)* |
-| **Argon 1-keyword `fn`s** | 8 / 105 *(7.6%)* | **89 / 105** *(84.8%)* | **89 / 105** *(84.8%)* | 84 / 105 *(80.0%)* | 74 / 105 *(bodies only)* |
-| **Works on `interface` & `axiom`?** | Verbose | **Yes (1 keyword)** | **Yes (1 keyword)** | Partially | **No** |
-| **Matches intuitive meaning of `pure`?** | No *(0% standalone)* | **Yes** | **Yes** | No *(needs new word like `total`)* | No |
-| **Monotonic keyword composition?** | Yes | Subtractive `throws`/`escape` | **Yes** | Yes | Yes |
-| **Fixes `borrow` explosion (124 tokens)?** | No | **Yes** *(124 → 15 `escape`)* | Needs `BIP016-Q3` | No | Only on bodies |
-| **Grammar (`Babble.g4` pure `SLL`)** | 0 predicates | **0 predicates** | **0 predicates** | New `effect` decl | 0 predicates |
-| **Breaking change to `BIP007` tests?** | None | Yes *(small, pre-1.0)* | Yes *(small, pre-1.0)* | None | Semantic change |
+| **Argon total tokens** *(fn + param)* | 439 *(4.18 / fn)* | **~144** *(−67%)* | ~150 *(−66%)* | ~240 *(−45%, param `borrow` remains)* | ~210 *(interfaces unchanged)* |
+| **Argon 1-keyword `fn`s** | 8 / 105 *(7.6%)* | **92 / 105** *(87.6%)* | 89 / 105 *(84.8%)* | 84 / 105 *(80.0%)* | 74 / 105 *(bodies only)* |
+| **Works on `interface` & `axiom`?** | Verbose | **Yes (1 keyword)** | Yes (1 keyword) | Partially | **No** |
+| **Matches intuitive meaning of `pure`?** | No *(0% standalone)* | **Yes** *(Checker Framework / Haskell / Koka)* | Yes | No *(needs new word)* | No |
+| **Needs `throws` keyword?** | No | **No** *(opt-in `nothrow`)* | No *(needs `calc`)* | No | No |
+| **Fixes `borrow` explosion (124 tokens)?** | No | **Yes** *(if `BIP016-Q3` adopts `escape`)* | Needs `BIP016-Q3` | No | Only on bodies |
+| **Grammar (`Babble.g4` pure `SLL`)** | 0 predicates | **0 predicates** | 0 predicates | New `effect` decl | 0 predicates |
 
 ---
 
-## 6. Recommended Synthesis & Concrete Semantics
+## 6. Consolidated Semantics (`BIP016-D1`–`D3`)
 
-We recommend **Option 1 with Option 2's `readonly` naming for non-deterministic readers** — combining the best ergonomics of Checker Framework (`@Pure` vs. `@SideEffectFree`), Swift (`throws`, `borrowing` default), and PostgreSQL (`IMMUTABLE` vs. `STABLE`) while keeping `BIP007`'s internal `EffectSet` untouched.
+### 6.1 Surface Annotations as Collections of Layer 1 `@TRAITS`
 
-### 6.1 Consolidated Effect Vocabulary & Desugaring into Internal `@TRAITS`
+Every surface annotation expands deterministically into Layer 1 orthogonal `@TRAITS` stored in `EffectSet` and `Type.Parameter`:
 
-Every surface annotation expands deterministically into a collection of Layer 1 orthogonal `@TRAITS` (stored in `EffectSet` and `Type.Parameter`):
-
-| Surface Annotation | Internal `@TRAITS` Collection | Per-Slot `@NON_ESCAPING` Default *(if `BIP016-Q3` adopts default-`borrow`)* | Typical Use Case |
+| Surface Annotation | Internal `@TRAITS` Collection | Per-Slot `@NON_ESCAPING` Default *(pending `BIP016-Q3`)* | Typical Use Case |
 |---|---|---|---|
-| `fn pure (...)` | `{@NO_GLOBAL_IO, @NO_MUT_SLOTS, @DETERMINISTIC, @NOTHROW}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | Mathematical functions, `record` methods, pure queries (70.5% of Argon) |
-| `fn pure throws (...)` | `{@NO_GLOBAL_IO, @NO_MUT_SLOTS, @DETERMINISTIC}` *(clears `@NOTHROW`)* | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | Pure deterministic functions that may throw (`math.toInt`, `Color.formatPpm`, `Path.of`, `assert` helpers) |
-| `fn readonly (...)` | `{@NO_GLOBAL_IO, @NO_MUT_SLOTS, @NOTHROW}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | Side-effect-free, non-throwing readers of clocks/mutable singletons (`Instant.now()`, `HittableList.first`) |
-| `fn readonly throws (...)` | `{@NO_GLOBAL_IO, @NO_MUT_SLOTS}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | Side-effect-free, non-deterministic I/O readers (`Files.readString`) |
-| `fn hermetic (...)` | `{@NO_GLOBAL_IO, @DETERMINISTIC, @NOTHROW}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | No globals/I/O, mutates `@MUTABLE` (`mut`) parameter(s) (`Material.scatter`, `Camera.rayColor`, `Vec3.random*`) |
-| `fn hermetic mut (...)` | `{@NO_GLOBAL_IO, @MUT_THIS, @DETERMINISTIC, @NOTHROW}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | No globals/I/O, mutates `this` (`Rng.nextDouble`, `HittableList.clear`, `list.add`) |
-| `fn hermetic [mut] throws (...)` | `{@NO_GLOBAL_IO, @DETERMINISTIC}` *(+ `@MUT_THIS`)* | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | Bounded local mutation that may throw (e.g., `list.set(i, v)`) |
+| `fn pure (...)` | `{@NO_GLOBAL_IO, !@MUTABLE, @DETERMINISTIC}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | Mathematical functions, `record` methods, pure queries, throwing pure conversions (`math.sqrt`, `Vec3.dot`, `math.toInt`, `Path.of` — **73.3%** of Argon) |
+| `fn pure nothrow (...)` | `{@NO_GLOBAL_IO, !@MUTABLE, @DETERMINISTIC, @NOTHROW}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | Strict no-exception API/interface contracts (e.g., guard-safe filter combinators; concrete `fn pure` bodies infer `@NOTHROW` automatically!) |
+| `fn pure volatile (...)` *(or `fn volatile`, `BIP016-Q1`)* | `{@NO_GLOBAL_IO, !@MUTABLE}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | Side-effect-free, non-deterministic readers (`Instant.now()`, `Files.readString`, `HittableList.first`) |
+| `fn hermetic (...)` | `{@NO_GLOBAL_IO, @DETERMINISTIC}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | No globals/I/O, mutates `@MUTABLE` (`mut`) parameter(s) (`Material.scatter`, `Camera.rayColor`, `Vec3.random*`) |
+| `fn hermetic mut (...)` | `{@NO_GLOBAL_IO, @MUT_THIS, @DETERMINISTIC}` | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | No globals/I/O, mutates `this` (`Rng.nextDouble`, `HittableList.clear`, `list.add`) |
+| `fn hermetic [mut] nothrow (...)` | `{@NO_GLOBAL_IO, @DETERMINISTIC, @NOTHROW}` *(+ `@MUT_THIS`)* | `@BORROW_THIS`, `@BORROW(*)` *(unless `escape`)* | Strict no-exception locally-mutating API/interface contracts |
 | `fn nothrow (...)` | `{@NOTHROW}` | Unchanged (opt-in `borrow`) | Exception-free but unconstrained on global/mutable state (`BVHNode.fromList`, frame-local closures) |
 | `fn impure (...)` | `{@IMPURE_LOCK}` *(clears all inferred traits)* | None | Explicit unconstrained opt-out (`Camera.render`, `URL.equals`) |
 | `fn (...)` *(unannotated)* | Full `BIP007` fixed-point `@TRAITS` inference | Inferred per `BIP007` | Ordinary Babble scripts and private helpers (zero migration cost!) |
 
-Per-slot modifiers (`mut`, `borrow`, `escape`, `unique`) simply add or clear the corresponding slot-level traits (`@MUTABLE`, `@NON_ESCAPING`, `@UNIQUE`). Notice that **`@NO_MUT_SLOTS` and `@MUTABLE` remain mutually exclusive**, preserving `BIP007`'s zero weak-purity guarantee, while **`@TERMINATING`** stays an inferred-only compiler trait (optionally exposable later via a `total` profile = `pure` + `@TERMINATING` without touching the lattice).
+Per-slot modifiers (`mut`, `borrow`, `escape`, `unique`) simply add or clear the corresponding slot-level traits (`@MUTABLE`, `@NON_ESCAPING`, `@UNIQUE`). **`!@MUTABLE` (`pure`) and `@MUTABLE` (`mut`) remain mutually exclusive**, preserving `BIP007`'s zero weak-purity guarantee, while **`@NOTHROW`** and **`@TERMINATING`** are inferred automatically on every concrete body for `BIP014`.
 
-**Algebraic properties** (`idempotent`, `commutative`, `associative`, `monotone`, `injective`) and **ownership modifiers** (`unique`, `frozen`, `move`, `freeze`, `discard`) compose identically as in `BIP007` — except they become dramatically cleaner:
+**Algebraic properties** (`idempotent`, `commutative`, `associative`, `monotone`, `injective`) and **ownership modifiers** (`unique`, `frozen`, `move`, `freeze`, `discard`) compose identically as in `BIP007` — with far less boilerplate:
 
 ```babble
 ;; Before (BIP007):
@@ -311,27 +286,24 @@ axiom pure on java.nio.file.Files.readString
 axiom hermetic mut deterministic idempotent commutative on java.util.HashSet.add
 def addComm = fn pure deterministic nothrow commutative associative (a: int, b: int): int -> (a + b)
 
-;; After (BIP016):
-axiom pure on java.lang.Math.sqrt
-axiom pure throws on java.nio.file.Path.of
-axiom readonly throws on java.nio.file.Files.readString
+;; After (BIP016 — showing `pure volatile` form; `volatile` standalone if BIP016-Q1 picks it):
+axiom pure nothrow on java.lang.Math.sqrt
+axiom pure on java.nio.file.Path.of
+axiom pure volatile on java.nio.file.Files.readString
 axiom hermetic mut idempotent commutative on java.util.HashSet.add
 def addComm = fn pure commutative associative (a: int, b: int): int -> (a + b)
 ```
 
-Notice how **only `throws` is subtractive** (and `throws` is universally understood from Java, Swift, and Kotlin/C++), while `readonly` replaces `pure volatile` so the reader never sees contradictory words like `pure volatile`!
+### 6.2 Escape Polarity Candidate (`BIP016-Q3`): Default-`@NON_ESCAPING` with Opt-Out `escape`
 
-### 6.2 Escape Polarity: Default-`borrow` with Opt-Out `escape`
+If `BIP016-Q3` adopts default-`@NON_ESCAPING` on explicitly effect-annotated signatures (`pure`, `hermetic`, `volatile`), authors write **`escape`** only on the ~10% of slots that intentionally store or return the reference:
 
-Under the recommended synthesis, **any function carrying a consolidated effect contract (`pure`, `readonly`, `hermetic`) defaults `this` and all non-`unique` parameters to `borrow`**, and authors write **`escape`** only on the ~10% of slots that intentionally store or return the reference:
-
-* **Why `escape` on `this` and parameters works cleanly:**
-  * On a method: `def hit = fn pure escape (r: Ray, rayT: Interval): HitRecord? -> (...)` makes it immediately visible to callers that `hit` may return references reachable from `this` (specifically `this.mat` inside `HitRecord`), while `r` and `rayT` are guaranteed borrowed (enabling `BIP014` `O9` scalar replacement of temporary `Ray` and `Interval` values!).
-  * On a parameter: `def add = fn hermetic mut escape (escape item: Hittable) -> (...)` documents both that `this.head` escapes into a newly allocated node and that `item` is stored inside `this`.
-  * On `mut` parameters: `mut rng: Rng` defaults to `mut borrow` (matching 16/16 occurrences in Argon), whereas `mut escape items: HittableList` marks a mutated parameter whose contents may also escape.
-  * On `unique` parameters: plain `unique x: T` already means *consuming* (taking ownership, not borrowing), while `unique borrow x: T` remains an exclusive borrow (`BIP007` §3.2) — so `unique` semantics do **not** change!
-  * On **unannotated functions** (`fn (x: T): R -> (...)`): nothing changes; `EffectChecker` infers `borrow` on unannotated bodies and leaves unannotated interface/function types unconstrained on escape so existing code never breaks.
-* **Subtyping check:** Subtyping in `TypeAlgebra` is completely unaffected because `escape` simply sets `borrow = false` in `Type.Parameter` / `EffectSet` (`actual` with `borrow = true` still satisfies a target with `escape` / `borrow = false`, never the reverse).
+* **On a method:** `def hit = fn pure escape (r: Ray, rayT: Interval): HitRecord? -> (...)` signals that `hit` may return references reachable from `this` (`this.mat` inside `HitRecord`), while `r` and `rayT` remain `@NON_ESCAPING` (enabling `BIP014` `O9` scalar replacement of temporary `Ray` and `Interval` values).
+* **On a parameter:** `def add = fn hermetic mut escape (escape item: Hittable) -> (...)` documents that `this.head` escapes into a new node and `item` is stored inside `this`.
+* **On `mut` parameters:** `mut rng: Rng` defaults to `@MUTABLE + @NON_ESCAPING` (matching 16/16 occurrences in Argon), whereas `mut escape items: HittableList` marks a mutated parameter whose contents may also escape.
+* **On `unique` parameters:** Plain `unique x: T` remains consuming (not borrowed), and `unique borrow x: T` remains an exclusive borrow (`BIP007` §3.2).
+* **On unannotated functions (`fn (x: T): R -> (...)`):** Unchanged; `EffectChecker` infers `@NON_ESCAPING` on unannotated bodies and leaves unannotated interface/function types unconstrained on escape.
+* **Subtyping check:** Unchanged in `TypeAlgebra` because `escape` simply clears `@NON_ESCAPING` (`borrow = false`) in `Type.Parameter` / `EffectSet`.
 
 ### 6.3 Side-by-Side Impact on Argon (`examples/raytracer-argon/`)
 
@@ -353,7 +325,7 @@ export def Hittable = interface extends Describable (
     def kind = fn pure deterministic nothrow borrow (): string -> ("hittable")
 )
 
-;; lib/interfaces.ba — AFTER (BIP016):
+;; lib/interfaces.ba — AFTER (BIP016, assuming BIP016-Q3 default-@NON_ESCAPING):
 export def Describable = interface (
     def kind: fn pure (): string
     def describe = fn pure (): string -> (
@@ -371,40 +343,51 @@ export def Hittable = interface extends Describable (
 )
 ```
 
-Across the entire Argon codebase:
-* **Function-level tokens:** `362` → `~120` (**−67%**)
+Across the entire Argon codebase (under `BIP016-D1`–`D3` + `BIP016-Q3` default-`@NON_ESCAPING`):
+* **Function-level tokens:** `362` → `~117` (**−68%**)
 * **Parameter/return modifier tokens:** `79` → `~27` (**−66%**, `60 borrow` → `7 escape` + `17 mut` + `2 unique`)
-* **Total effect/ownership tokens:** `439` → `~147` (**−67%**)
-* **Single-keyword functions:** `8/105` (7.6%) → **`89/105` (84.8%)**
+* **Total effect/ownership tokens:** `439` → `~144` (**−67%**)
+* **Single-keyword functions:** `8/105` (7.6%) → **`92/105` (87.6%)**
 
 ### 6.4 Zero Backend, Optimizer, or Runtime Boundary Churn
 
-Because consolidation is purely a **front-end surface mapping** into `BIP007`'s existing `EffectSet` and `Type.Parameter`:
+Because consolidation is strictly a **Layer 2 front-end mapping** into Layer 1's existing `EffectSet` and `Type.Parameter`:
 
 * **`org.babblelang.runtime` (`babble-runtime.jar`):** 0 lines changed (`RuntimeBoundaryTestCase` untouched).
 * **`Interpreter` & `CodeGenerator`:** 0 lines changed.
-* **`EffectChecker` fixed-point engine & `BIP014` optimizer passes:** 0 semantic changes (`EffectSet` still exposes `isPure()`, `isHermetic()`, `isDeterministic()`, `isNothrow()`, `borrowThis()`, `uniqueResult()`, `terminating()`).
-* **Grammar (`Babble.g4`):** Stays 100% predicate-free LL(1)/LL(2) pure-`SLL` (`ParserGrammarTestCase`): add `READONLY`, `THROWS`, `ESCAPE` (exact spelling settled by `BIP016-Q1`/`Q3`), all exempted in `memberName` so `.readonly`, `.throws`, `.escape` remain valid member names.
-* **Bonus precision cleanups surfaced by Argon (optional small companion fixes in `EffectChecker`):**
-  1. Treat stateless `object` singletons (zero mutable fields, like `emptyHittable`) as deeply immutable for `deterministic` checks — upgrading `HittableList.first`/`second` from `readonly escape` to `pure escape`!
+* **`EffectChecker` fixed-point engine & `BIP014` optimizer passes:** 0 semantic changes (`EffectSet` still exposes the full Layer 1 orthogonal `@TRAITS`).
+* **Grammar (`Babble.g4`):** Stays 100% predicate-free LL(1)/LL(2) pure-`SLL` (`ParserGrammarTestCase`): add `VOLATILE` (and `ESCAPE` if `BIP016-Q3` selects it), exempted in `memberName` so `.volatile` / `.escape` remain valid member names.
+* **Companion `EffectChecker` precision cleanups surfaced by Argon (`BIP016-Q7`):**
+  1. Treat stateless `object` singletons (zero mutable fields, like `emptyHittable`) as deeply immutable for `@DETERMINISTIC` checks — upgrading `HittableList.first`/`second` to `pure escape`!
   2. Avoid tainting a fresh local container (`leftList` in `BVHNode.fromList`) as mutating `@PARAM(items)` when it only *stores* non-mutated elements read from `items` — allowing `BVHNode.fromList` to drop `mut` on `items` and become `fn pure escape (escape items: HittableList): Hittable`!
 
 ---
 
-## 7. Open Questions (`BIP016-Q1`–`Q7`)
+## 7. Settled Decisions & Open Questions
 
-Before committing to implementation, the following design questions should be settled:
+### 7.1 Settled Decisions (`BIP016-D1`–`D3`)
 
-* **`BIP016-Q1` — Subtractive `throws` vs. strictly monotonic keywords:** Should a pure deterministic function that may throw be written `fn pure throws` (intuitive, 1 extra keyword, slightly non-monotonic) or a distinct monotonic tier keyword like `fn calc` / `fn fallible`? Similarly, should non-deterministic read-only functions use monotonic `fn readonly` (+ `fn readonly throws`) or subtractive `fn pure volatile`?
-* **`BIP016-Q2` — `hermetic` bundling & `mut` shorthand:** Should `hermetic` imply `deterministic nothrow` symmetrically with `pure` (recommended — turns 15 Argon functions into `fn hermetic` and 3 into `fn hermetic mut`), and should `hermetic mut` stay two words or gain a 1-word shorthand (e.g., `mutating` / `local`)?
-* **`BIP016-Q3` — `borrow` polarity scope:** Which of these three `borrow` rules should Babble adopt?
-  1. **Default-`borrow` on effect-annotated signatures (`pure`, `readonly`, `hermetic`), opt-out with `escape`** *(recommended — cuts 124 `borrow`s to ~15 `escape`s while keeping unannotated scripts untouched)*.
-  2. **Default-`borrow` only for deeply immutable types (`record`s, `frozen T`, scalars)**, keeping `borrow` explicit on mutable classes/interfaces (eliminates 34/44 param `borrow`s and 26/64 receiver `borrow`s = ~48% of `borrow`s, without introducing `escape`).
-  3. **Keep `borrow` explicit everywhere** (accepting ~124 `borrow`s in Argon, relying purely on `pure`/`hermetic` consolidation for the ~55% function-prefix reduction).
-* **`BIP016-Q4` — Fate of `deterministic` and `nothrow` keywords:** Once `pure` and `hermetic` imply `deterministic nothrow`, should `deterministic` and `nothrow` remain valid low-level modifiers (e.g., standalone `fn nothrow` or `fn readonly deterministic` rejected as redundant with `pure`), or should `deterministic` be retired from the surface grammar while keeping `nothrow`?
-* **`BIP016-Q5` — User-defined effect aliases / profiles:** Should Babble stay with a small, fixed built-in vocabulary (preventing codebase-specific effect dialects), or also add Koka-style `effect Name = ...` aliases?
-* **`BIP016-Q6` — Java host API alignment (`org.babblelang.effects`):** Should Java `@Pure` (`Effect.PURE`) and `engine.assumeEffects(..., Effect.PURE)` be updated to match surface `pure` (`PURE + DETERMINISTIC + NOTHROW`, with `@ReadOnly` / `@SideEffectFree` and `@Throws` for weaker Java methods), or should the Java enum remain atomic (`Effect.PURE`, `Effect.DETERMINISTIC`, `Effect.NOTHROW`) while `@Pure` is documented as the consolidated shorthand?
-* **`BIP016-Q7` — Companion `EffectChecker` precision improvements & migration:** Should the two Argon-discovered `EffectChecker` refinements (stateless `object` singletons preserving `deterministic`, and distinguishing *storing* a parameter's element into a fresh local from *mutating* the parameter itself) land alongside `BIP016`, and should existing `.ba`/`.batest`/`examples/` files be migrated in a single clean pass (as in `RM006` / `BIP012`)?
+* **`BIP016-D1` — Two-layer architecture (Internal Orthogonal `@TRAITS` vs. Surface Annotation Collections):** Complete `BIP007`'s `@UPPERCASE` vs. lowercase separation by modeling all 7 core atomic compiler facts (`@NO_GLOBAL_IO`, `@DETERMINISTIC`, `@NOTHROW`, `@TERMINATING`, per-slot `@MUTABLE`, `@NON_ESCAPING`, `@UNIQUE`), 5 algebraic traits, and 2 metadata flags as Layer 1 internal orthogonal traits (`EffectSet` / `Type.Parameter`), and defining Layer 2 surface annotations declaratively as collections (profiles) of traits.
+* **`BIP016-D2` — Consolidated `pure` and `hermetic` allowing exceptions (`@NOTHROW` & `@TERMINATING` inferred):**
+  * **`pure`** $\equiv$ `{@NO_GLOBAL_IO, !@MUTABLE, @DETERMINISTIC}` (allows exceptions and loops/recursion — matching Checker Framework `@Pure`, Haskell, and Koka's `pure = <div, exn>`).
+  * **`hermetic`** $\equiv$ `{@NO_GLOBAL_IO, @DETERMINISTIC}` (allows `@MUTABLE` slots, exceptions, and loops/recursion; mutually exclusive with `pure`).
+  * Both **`@NOTHROW`** and **`@TERMINATING`** remain inferred automatically by `EffectChecker` for `BIP014` optimization passes and `BIP007-D8` unused-pure diagnostics; explicit **`nothrow`** stays purely additive/opt-in for APIs or interfaces requiring a strict no-exception contract. **No `throws` keyword** is added.
+* **`BIP016-D3` — `volatile` keyword for non-deterministic side-effect-free readers:** Use the **`volatile`** keyword (rather than `readonly` or `stable`) for side-effect-free functions lacking `@DETERMINISTIC` (`Instant.now()`, `Files.readString`, mutable outer reads). Exact composability (`pure volatile` / `hermetic volatile` vs. standalone `volatile`) is tracked in `BIP016-Q1`.
+
+### 7.2 Unsettled Questions (`BIP016-Q1`–`Q7`)
+
+Before committing to implementation, the following design questions remain open:
+
+* **`BIP016-Q1` — `volatile` syntax & composability:** Should `volatile` combine subtractively with `pure`/`hermetic` to clear `@DETERMINISTIC` (**recommended:** `pure volatile` = `{@NO_GLOBAL_IO, !@MUTABLE}` and `hermetic volatile` = `{@NO_GLOBAL_IO}`, avoiding confusion with PostgreSQL's `VOLATILE` meaning side-effectful), or stand alone as a 1-word read-only tier (`fn volatile` = `{@NO_GLOBAL_IO, !@MUTABLE}`, mutually exclusive with `pure`)?
+* **`BIP016-Q2` — `hermetic mut` vs. 1-word mutating shorthand:** Should locally-mutating methods keep two words (`fn hermetic mut` — **recommended**, keeping `mut` orthogonal on `this` and parameters), or gain a 1-word profile shorthand (e.g., `mutating` / `local`)?
+* **`BIP016-Q3` — `@NON_ESCAPING` (`borrow`) polarity scope:** Which of these three `borrow` rules should Babble adopt?
+  1. **Default-`@NON_ESCAPING` on explicitly effect-annotated signatures (`pure`, `hermetic`, `volatile`), with opt-out `escape`** *(recommended — cuts Argon's 124 `borrow`s to ~15 `escape`s while keeping unannotated scripts untouched)*.
+  2. **Default-`@NON_ESCAPING` only for deeply immutable types (`record`s, `frozen T`, scalars)**, keeping `borrow` explicit on mutable classes/interfaces (eliminates ~48% of `borrow`s in Argon without introducing `escape`).
+  3. **Keep `borrow` explicit everywhere** (accepting ~124 `borrow`s in Argon, relying purely on `BIP016-D2` for the function-prefix reduction).
+* **`BIP016-Q4` — Fate of `deterministic` (and redundant combinations):** Once `pure` and `hermetic` imply `@DETERMINISTIC`, should `deterministic` be retired from the surface grammar (since standalone `fn deterministic` without `@NO_GLOBAL_IO` is rarely meaningful), or kept as a low-level modifier while diagnosing redundant `pure deterministic` / `hermetic deterministic`?
+* **`BIP016-Q5` — Closed built-in vocabulary vs. user-defined effect profiles/aliases:** Should Babble keep a small, closed built-in vocabulary of trait collections (*recommended* to avoid codebase-specific effect dialects), or also support user-defined `effect Name = ...` aliases (Koka-style)?
+* **`BIP016-Q6` — Java host API alignment (`org.babblelang.effects`):** Should `org.babblelang.effects.Effect` stay aligned 1-to-1 with Layer 1 atomic `@TRAITS` (`HERMETIC`/`NO_GLOBAL_IO`, `DETERMINISTIC`, `NOTHROW`, …) while Java `@Pure` is updated to expand to `{@NO_GLOBAL_IO, !@MUTABLE, @DETERMINISTIC}` (matching Checker Framework `@Pure`, plus adding `@Volatile`), or should `Effect.PURE` itself become the consolidated bundle?
+* **`BIP016-Q7` — Companion `EffectChecker` precision improvements & migration strategy:** Should the two Argon-discovered `EffectChecker` refinements (§6.4: stateless `object` singletons preserving `@DETERMINISTIC`; storing parameter elements into a fresh local not tainting the parameter as `@MUTABLE`) land alongside `BIP016`, and should existing `.ba`/`examples/`/`.batest` files be migrated in a single clean pass (as in `RM006` / `BIP012`)?
 
 ---
 
@@ -418,7 +401,7 @@ Before committing to implementation, the following design questions should be se
 
 - **`[CF-Pure]`** / **`[CF-SEF]`** / **`[CF-Man]`** The Checker Framework (University of Washington). *[`@Pure` API](https://checkerframework.org/api/org/checkerframework/dataflow/qual/Pure.html)*, *[`@SideEffectFree` API](https://checkerframework.org/api/org/checkerframework/dataflow/qual/SideEffectFree.html)*, and *[The Checker Framework Manual](https://checkerframework.org/manual/)*.
   - **Summary:** Separates side-effect-freedom (`@SideEffectFree`) from determinism (`@Deterministic`), and defines **`@Pure`** explicitly as their conjunction (`@SideEffectFree` + `@Deterministic`).
-  - **Contribution to `BIP016`:** Directly motivates placing `pure` at the top of Babble's purity hierarchy while naming the weaker non-deterministic read-only property separately (`readonly`) (§1, §3.2, §4, §6.1).
+  - **Contribution to `BIP016`:** Directly motivates `BIP016-D2` (`pure` = `@NO_GLOBAL_IO` + `!@MUTABLE` + `@DETERMINISTIC`, allowing exceptions) and `BIP016-D3` (`volatile` for non-deterministic side-effect-free readers) (§1, §3.2, §4, §6.1).
 
 - **`[PG-Vol]`** PostgreSQL Global Development Group. *[PostgreSQL Documentation: Function Volatility Categories (`IMMUTABLE`, `STABLE`, `VOLATILE`)](https://www.postgresql.org/docs/current/xfunc-volatility.html)* and *[`CREATE FUNCTION`](https://www.postgresql.org/docs/current/sql-createfunction.html)*.
   - **Summary:** Classifies every SQL function into one of three stratified volatility tiers (`IMMUTABLE`, `STABLE`, `VOLATILE`) driving query-planner constant folding, index scans, and caching.
@@ -430,7 +413,7 @@ Before committing to implementation, the following design questions should be se
 
 - **`[Koka-Book]`** / **`[Lei14]`** Daan Leijen (Microsoft Research). *[The Koka Programming Language — Effect Types](https://koka-lang.github.io/koka/doc/book.html)*, *[`std/core/types` Effect Aliases](https://koka-lang.github.io/koka/doc/std_core_types.html)*, and *"[Koka: Programming with Row Polymorphic Effect Types](https://arxiv.org/abs/1406.2061)"* (MSFP 2014 / EPTCS, [PDF](https://arxiv.org/pdf/1406.2061)).
   - **Summary:** Tracks effects (`exn`, `div`, `ndet`, `read`, `write`, `alloc`, `io`) via row polymorphism while giving programmers concise named aliases (`total` = empty row, `pure` = `<div, exn>`, `io` = all I/O effects) and defaulting unmarked functions to `total`.
-  - **Contribution to `BIP016`:** Reference model for named effect profiles/aliases over a fine-grained internal effect algebra (§4, §5 Option 3).
+  - **Contribution to `BIP016`:** Reference model for named effect profiles/aliases over a fine-grained internal effect algebra, and precedent for `pure` allowing exceptions and divergence (`BIP016-D2`) (§3.2, §4, §5 Option 3).
 
 - **`[Flix-Doc]`** / **`[MP20]`** Magnus Madsen and Jaco van de Pol (Aarhus University). *[Programming Flix — Effect System](https://doc.flix.dev/effect-system.html)* and *"[Polymorphic Types and Effects with Boolean Unification](https://cs.au.dk/~magnusm/papers/oopsla20/paper_b.pdf)"*, **OOPSLA 2020** (PACMPL 4).
   - **Summary:** Separates `Pure` (default, unmarked) from `IO` and user effects using Hindley-Milner extended with Boolean unification (`~1.1x` compilation overhead), allowing purity-driven compiler optimizations without per-function boilerplate.
@@ -442,7 +425,7 @@ Before committing to implementation, the following design questions should be se
 
 - **`[SE-0377]`** / **`[Swift-Mut]`** Swift Evolution. *[SE-0377: `borrowing` and `consuming` parameter ownership modifiers](https://github.com/swiftlang/swift-evolution/blob/main/proposals/0377-parameter-ownership-modifiers.md)* and *[Swift Forums: Borrowing `self` by default in Swift 6](https://forums.swift.org/t/pitch-dont-copy-self-when-calling-non-mutating-methods/61707)*.
   - **Summary:** Documents Swift's ownership polarity (`borrowing` as the default for non-mutating parameters and `self`, with `consuming` / `mutating` / `throws` written only when opting out of the safe baseline).
-  - **Contribution to `BIP016`:** Directly informs `BIP016`'s polarity design (`throws` opt-out and default-`borrow` with opt-out `escape`) (§4, §5 Option 1, §6.2).
+  - **Contribution to `BIP016`:** Directly informs `BIP016-Q3`'s ownership polarity candidate (default-`@NON_ESCAPING` with opt-out `escape`) (§4, §5 Option 1, §6.2).
 
 - **`[SPARK-Sub]`** AdaCore. *[SPARK 2014 Reference Manual — Subprograms & Global Aspects](https://docs.adacore.com/spark2014-docs/html/lrm/subprograms.html)* and *[SPARK User's Guide](https://docs.adacore.com/spark2014-docs/html/ug/)*.
   - **Summary:** Enforces side-effect freedom on SPARK functions by default (forbidding `Output`/`In_Out` global state unless explicitly annotated with `Side_Effects`), scaling static verification to safety-critical codebases.
