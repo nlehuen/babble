@@ -781,8 +781,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     ScopeAnalysis.PrimitiveKind toK = scopes.declarationKind(decls.get(i));
                     loadKindOn(m, fromK, paramSlots[i]);
                     emitAdaptKind(m, fromK, toK);
-                    if (toK == ScopeAnalysis.PrimitiveKind.NONE && scopes.widensToDouble(decls.get(i))) {
-                        m.visitMethodInsn(INVOKESTATIC, VALUES, "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    if (toK == ScopeAnalysis.PrimitiveKind.NONE && scopes.widening(decls.get(i)) != 0) {
+                        pushInt(m, scopes.widening(decls.get(i)));
+                        m.visitMethodInsn(INVOKESTATIC, VALUES, "widen", "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
                     }
                 }
                 m.visitMethodInsn(INVOKESTATIC, className, fnMethod + "$spec", functionSpecDescriptor(lit), false);
@@ -1079,8 +1080,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                             ScopeAnalysis.PrimitiveKind toK = scopes.declarationKind(decls.get(i));
                             loadKindOn(m, fromK, paramSlots[i]);
                             emitAdaptKind(m, fromK, toK);
-                            if (toK == ScopeAnalysis.PrimitiveKind.NONE && scopes.widensToDouble(decls.get(i))) {
-                                m.visitMethodInsn(INVOKESTATIC, VALUES, "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                            if (toK == ScopeAnalysis.PrimitiveKind.NONE && scopes.widening(decls.get(i)) != 0) {
+                                pushInt(m, scopes.widening(decls.get(i)));
+                                m.visitMethodInsn(INVOKESTATIC, VALUES, "widen", "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
                             }
                         }
                         m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName) + "$spec", methodSpecDescriptor(lit), false);
@@ -1865,6 +1867,19 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
     }
 
+    /** Converts the value on the stack as the analysis recorded for {@code ctx} : int to double, byte to int... */
+    private void widenStack(ParserRuleContext ctx) {
+        int mask = scopes.widening(ctx);
+        if (mask == ScopeAnalysis.DOUBLE_MASK) {
+            widenStackToDouble();
+        } else if (mask != 0) {
+            convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
+            pushInt(mv, mask);
+            mv.visitMethodInsn(INVOKESTATIC, VALUES, "widen", "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        }
+    }
+
     private void emitExpr(ParserRuleContext ctx) {
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         visit(ctx);
@@ -1872,16 +1887,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     private void emitAndWidenIfMarked(ParserRuleContext ctx) {
         emitExpr(ctx);
-        if (scopes.widensToDouble(ctx)) {
-            widenStackToDouble();
-        }
+        widenStack(ctx);
     }
 
     private void emitAs(ParserRuleContext ctx, ScopeAnalysis.PrimitiveKind desired) {
         emitAndWidenIfMarked(ctx);
         if (stackKind == ScopeAnalysis.PrimitiveKind.NONE && desired == ScopeAnalysis.PrimitiveKind.DOUBLE
                 && scopes.expressionKind(ctx) == ScopeAnalysis.PrimitiveKind.INT
-                && !scopes.widensToDouble(ctx)) {
+                && scopes.widening(ctx) == 0) {
             unbox(ScopeAnalysis.PrimitiveKind.INT);
             mv.visitInsn(I2D);
             stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
@@ -2193,9 +2206,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
         List<BabbleParser.ExpressionContext> body = literal.functionBlock.expression();
         statements(body);
-        if (scopes.widensToDouble(literal.functionBlock)) {
-            widenStackToDouble();
-        }
+        widenStack(literal.functionBlock);
         convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
         mv.visitInsn(ARETURN);
         endMethod();
@@ -2226,9 +2237,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         List<BabbleParser.ExpressionContext> body = literal.functionBlock.expression();
         statements(body);
-        if (scopes.widensToDouble(literal.functionBlock)) {
-            widenStackToDouble();
-        }
+        widenStack(literal.functionBlock);
         convertStack(stackKind, methodReturnKind);
         mv.visitInsn(returnInsn(methodReturnKind));
         endMethod();
@@ -2331,9 +2340,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitInsn(ATHROW);
             }
             mv.visitLabel(bind);
-            if (scopes.widensToDouble(declarations.get(i))) {
+            if (scopes.widening(declarations.get(i)) != 0) {
                 mv.visitVarInsn(ALOAD, value);
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                pushInt(mv, scopes.widening(declarations.get(i)));
+                mv.visitMethodInsn(INVOKESTATIC, VALUES, "widen", "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
                 mv.visitVarInsn(ASTORE, value);
             }
             int member = shape != null ? shape.parameterMember(i) : -1;
@@ -3303,9 +3313,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitInsn(ACONST_NULL);
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         }
-        if (scopes.widensToDouble(ctx)) {
-            widenStackToDouble();
-        }
+        widenStack(ctx);
         convertStack(stackKind, desired);
     }
 
@@ -3331,8 +3339,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      */
     @Override
     public Void visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
-        ScopeAnalysis.PrimitiveKind bodyKind = scopes.widensToDouble(ctx.whileBlock)
-                ? ScopeAnalysis.PrimitiveKind.DOUBLE : scopes.expressionKind(ctx.whileBlock);
+        ScopeAnalysis.PrimitiveKind bodyKind = scopes.widensToDouble(ctx.whileBlock) ? ScopeAnalysis.PrimitiveKind.DOUBLE
+                : scopes.widensOther(ctx.whileBlock) ? ScopeAnalysis.PrimitiveKind.NONE : scopes.expressionKind(ctx.whileBlock);
         Label head = new Label();
         Label end = new Label();
         if (!bodyKind.isPrimitive()) {
@@ -3380,9 +3388,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
         emitAndWidenIfMarked(ctx.expression());
-        if (scopes.widensToDouble(ctx)) {
-            widenStackToDouble();
-        }
+        widenStack(ctx);
         convertStack(stackKind, methodReturnKind);
         mv.visitInsn(returnInsn(methodReturnKind));
         // Dead code, so that the code around a return in the middle of an expression can
@@ -3395,9 +3401,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitBlockExpression(BabbleParser.BlockExpressionContext ctx) {
         emitExpr(ctx.block());
-        if (scopes.widensToDouble(ctx.block())) {
-            widenStackToDouble();
-        }
+        widenStack(ctx.block());
         return null;
     }
 
@@ -3964,6 +3968,19 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     private int emitJavaArgToLocal(BabbleParser.ExpressionContext argExpr, Class<?> paramType, ParserRuleContext lineAt) {
+        if (paramType.isPrimitive() && (scopes.widensOther(argExpr)
+                || !scopes.expressionKind(argExpr).isPrimitive() && !scopes.widensToDouble(argExpr))) {
+            // A boxed number (a byte, a long...) : converted as Java widens it.
+            emitBoxed(argExpr);
+            Class<?> box = JavaTypes.box(paramType);
+            String owner = box == Boolean.class || box == Character.class ? Type.getInternalName(box) : "java/lang/Number";
+            mv.visitTypeInsn(CHECKCAST, owner);
+            mv.visitMethodInsn(INVOKEVIRTUAL, owner, paramType.getName() + "Value", "()" + Type.getDescriptor(paramType), false);
+            int slot = nextLocal;
+            nextLocal += paramType == long.class || paramType == double.class ? 2 : 1;
+            mv.visitVarInsn(Type.getType(paramType).getOpcode(ISTORE), slot);
+            return slot;
+        }
         if (paramType == int.class) {
             emitAs(argExpr, ScopeAnalysis.PrimitiveKind.INT);
             int slot = newLocal(ScopeAnalysis.PrimitiveKind.INT);
@@ -4000,7 +4017,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         ScopeAnalysis.PrimitiveKind argKind = scopes.expressionKind(argExpr);
         emitBoxed(argExpr);
         if (!argKind.isPrimitive()) {
-            mv.visitLdcInsn(Type.getType(paramType));
+            emitPushClassConstant(mv, paramType);
             mv.visitVarInsn(ALOAD, rtLocal);
             line(lineAt);
             mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava", "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
@@ -4014,7 +4031,9 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     }
 
     private void loadJavaLocal(Class<?> paramType, int slot) {
-        if (paramType == int.class || paramType == boolean.class) {
+        if (paramType.isPrimitive()) {
+            mv.visitVarInsn(Type.getType(paramType).getOpcode(ILOAD), slot);
+        } else if (paramType == int.class || paramType == boolean.class) {
             mv.visitVarInsn(ILOAD, slot);
         } else if (paramType == double.class) {
             mv.visitVarInsn(DLOAD, slot);
@@ -4645,9 +4664,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             if (variable != null) {
                 ScopeAnalysis.PrimitiveKind vk = variableKind(variable);
                 emitAndWidenIfMarked(ctx.value);
-                if (scopes.widensToDouble(ctx)) {
-                    widenStackToDouble();
-                }
+                widenStack(ctx);
                 convertStack(stackKind, vk);
                 storeVariable(variable, false, vk, ctx);
                 return null;
@@ -4655,9 +4672,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitVarInsn(ALOAD, nsLocal);
             mv.visitLdcInsn(name);
             emitExpr(ctx.value);
-            if (scopes.widensToDouble(ctx.value) || scopes.widensToDouble(ctx)) {
-                widenStackToDouble();
-            }
+            widenStack(ctx.value);
+            widenStack(ctx);
             convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
             line(ctx);
             mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "assign", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
@@ -4674,12 +4690,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     loadThisAs(ctx.namespace, gen);
                     mv.visitVarInsn(ASTORE, recv);
                     emitAndWidenIfMarked(ctx.value);
-                    if (scopes.widensToDouble(ctx)) {
-                        widenStackToDouble();
-                    }
+                    widenStack(ctx);
                     if (stackKind == ScopeAnalysis.PrimitiveKind.NONE && mk == ScopeAnalysis.PrimitiveKind.DOUBLE
                             && scopes.expressionKind(ctx.value) == ScopeAnalysis.PrimitiveKind.INT
-                            && !scopes.widensToDouble(ctx.value) && !scopes.widensToDouble(ctx)) {
+                            && scopes.widening(ctx.value) == 0 && scopes.widening(ctx) == 0) {
                         unbox(ScopeAnalysis.PrimitiveKind.INT);
                         mv.visitInsn(I2D);
                         stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
@@ -4707,9 +4721,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
                 mv.visitInsn(POP);
                 mv.visitInsn(SWAP);
-                if (scopes.widensToDouble(ctx)) {
-                    widenStackToDouble();
-                }
+                widenStack(ctx);
                 mv.visitInsn(DUP_X1);
                 mv.visitFieldInsn(PUTFIELD, gen.name, name, "Ljava/lang/Object;");
                 stackKind = ScopeAnalysis.PrimitiveKind.NONE;
@@ -4717,9 +4729,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             }
             emitBoxed(ctx.namespace);
             emitExpr(ctx.value);
-            if (scopes.widensToDouble(ctx.value) || scopes.widensToDouble(ctx)) {
-                widenStackToDouble();
-            }
+            widenStack(ctx.value);
+            widenStack(ctx);
             convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
             mv.visitLdcInsn(name);
             line(ctx);
@@ -4738,9 +4749,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         pushString(mv, ctx.namespace.getText());
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignable", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
         emitExpr(ctx.value);
-        if (scopes.widensToDouble(ctx.value) || scopes.widensToDouble(ctx)) {
-            widenStackToDouble();
-        }
+        widenStack(ctx.value);
+        widenStack(ctx);
         convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
         mv.visitLdcInsn(name);
         line(ctx);
@@ -4805,9 +4815,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
             mv.visitVarInsn(ASTORE, current);
             compound(ctx, operator, current);
-            if (scopes.widensToDouble(ctx)) {
-                widenStackToDouble();
-            }
+            widenStack(ctx);
             if (variable != null) {
                 ScopeAnalysis.PrimitiveKind vk = variableKind(variable);
                 convertStack(stackKind, vk);
@@ -4900,9 +4908,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                     box(mk);
                     mv.visitVarInsn(ASTORE, current);
                     compound(ctx, operator, current);
-                    if (scopes.widensToDouble(ctx)) {
-                        widenStackToDouble();
-                    }
+                    widenStack(ctx);
                     convertStack(stackKind, mk);
                     int res = newLocal(mk);
                     storeLocal(mk, res);
@@ -4921,9 +4927,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
                 mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
                 mv.visitVarInsn(ASTORE, current);
                 compound(ctx, operator, current);
-                if (scopes.widensToDouble(ctx)) {
-                    widenStackToDouble();
-                }
+                widenStack(ctx);
                 loadThisAs(ctx.namespace, gen);
                 mv.visitInsn(SWAP);
                 mv.visitInsn(DUP_X1);
@@ -4940,9 +4944,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "selectOwn", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             mv.visitVarInsn(ASTORE, current);
             compound(ctx, operator, current);
-            if (scopes.widensToDouble(ctx)) {
-                widenStackToDouble();
-            }
+            widenStack(ctx);
             mv.visitVarInsn(ALOAD, thiz);
             mv.visitInsn(SWAP);
             mv.visitLdcInsn(name);
@@ -4970,9 +4972,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
         mv.visitVarInsn(ASTORE, current);
         compound(ctx, operator, current);
-        if (scopes.widensToDouble(ctx)) {
-            widenStackToDouble();
-        }
+        widenStack(ctx);
         mv.visitVarInsn(ALOAD, scope);
         mv.visitInsn(SWAP);
         mv.visitLdcInsn(name);
@@ -5027,7 +5027,8 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
             stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
             return;
         }
-        if (fieldType == long.class || fieldType == float.class) {
+        if ((fieldType == long.class || fieldType == float.class)
+                && scopes.expressionKind(ctx.value) == ScopeAnalysis.PrimitiveKind.INT && scopes.widening(ctx.value) == 0) {
             emitAs(ctx.value, ScopeAnalysis.PrimitiveKind.INT);
             int val = newLocal(ScopeAnalysis.PrimitiveKind.INT);
             mv.visitVarInsn(ISTORE, val);
@@ -5044,9 +5045,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         ScopeAnalysis.PrimitiveKind valKind = scopes.expressionKind(ctx.value);
         emitBoxed(ctx.value);
-        if (scopes.widensToDouble(ctx)) {
-            widenStackToDouble();
-        }
+        widenStack(ctx);
         int babbleVal = newLocal();
         mv.visitVarInsn(ASTORE, babbleVal);
         line(ctx);
@@ -5055,11 +5054,17 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         }
         mv.visitVarInsn(ALOAD, babbleVal);
         if (!valKind.isPrimitive()) {
-            mv.visitLdcInsn(Type.getType(fieldType));
+            emitPushClassConstant(mv, fieldType);
             mv.visitVarInsn(ALOAD, rtLocal);
             mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava", "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
         }
-        if (fieldType != Object.class) {
+        if (fieldType.isPrimitive()) {
+            // A boxed number (a long, a float...) : converted as Java widens it.
+            Class<?> box = JavaTypes.box(fieldType);
+            String boxOwner = box == Boolean.class || box == Character.class ? Type.getInternalName(box) : "java/lang/Number";
+            mv.visitTypeInsn(CHECKCAST, boxOwner);
+            mv.visitMethodInsn(INVOKEVIRTUAL, boxOwner, fieldType.getName() + "Value", "()" + desc, false);
+        } else if (fieldType != Object.class) {
             mv.visitTypeInsn(CHECKCAST, Type.getInternalName(fieldType));
         }
         mv.visitFieldInsn(target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
@@ -5157,9 +5162,7 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         int current = newLocal();
         mv.visitVarInsn(ASTORE, current);
         compound(ctx, operator, current);
-        if (scopes.widensToDouble(ctx)) {
-            widenStackToDouble();
-        }
+        widenStack(ctx);
         int resObj = newLocal();
         mv.visitVarInsn(ASTORE, resObj);
         if (!target.isStatic()) {
@@ -5173,14 +5176,14 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         } else if (fieldType == double.class) {
             mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
             mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
-        } else if (fieldType == long.class) {
-            unbox(ScopeAnalysis.PrimitiveKind.INT);
-            mv.visitInsn(I2L);
-        } else if (fieldType == float.class) {
-            unbox(ScopeAnalysis.PrimitiveKind.INT);
-            mv.visitInsn(I2F);
+        } else if (fieldType.isPrimitive()) {
+            // long, float, short, byte, char : from the boxed result.
+            Class<?> box = JavaTypes.box(fieldType);
+            String boxOwner = box == Character.class ? Type.getInternalName(box) : "java/lang/Number";
+            mv.visitTypeInsn(CHECKCAST, boxOwner);
+            mv.visitMethodInsn(INVOKEVIRTUAL, boxOwner, fieldType.getName() + "Value", "()" + desc, false);
         } else {
-            mv.visitLdcInsn(Type.getType(fieldType));
+            emitPushClassConstant(mv, fieldType);
             mv.visitVarInsn(ALOAD, rtLocal);
             mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava", "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
             if (fieldType != Object.class) {
@@ -5216,7 +5219,15 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     public Void visitNegate(BabbleParser.NegateContext ctx) {
         if (ctx.operand instanceof BabbleParser.IntegerContext literal) {
             // A literal : "-2147483648" is an int, though "2147483648" isn't.
-            integer(ctx, "-" + literal.getText());
+            if (scopes.literalValue(ctx) != null) {
+                constant(ctx, scopes.literalValue(ctx));
+            } else {
+                integer(ctx, "-" + literal.getText());
+            }
+            return null;
+        }
+        if (ctx.operand instanceof BabbleParser.LongLiteralContext) {
+            constant(ctx, scopes.literalValue(ctx));
             return null;
         }
         ScopeAnalysis.PrimitiveKind ok = scopes.expressionKind(ctx.operand);
@@ -5290,8 +5301,56 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitInteger(BabbleParser.IntegerContext ctx) {
-        integer(ctx, ctx.getText());
+        if (scopes.literalValue(ctx) != null) {
+            constant(ctx, scopes.literalValue(ctx));
+        } else {
+            integer(ctx, ctx.getText());
+        }
         return null;
+    }
+
+    @Override
+    public Void visitLongLiteral(BabbleParser.LongLiteralContext ctx) {
+        String text = ctx.getText();
+        constant(ctx, Long.parseLong(text.substring(0, text.length() - 1)));
+        return null;
+    }
+
+    @Override
+    public Void visitFloatLiteral(BabbleParser.FloatLiteralContext ctx) {
+        constant(ctx, Float.parseFloat(ctx.getText()));
+        return null;
+    }
+
+    @Override
+    public Void visitCharLiteral(BabbleParser.CharLiteralContext ctx) {
+        constant(ctx, Interpreter.charLiteral(ctx.getText()));
+        return null;
+    }
+
+    /**
+     * A literal's value, of the type the analysis gave it : unboxed where its expression is
+     * ({@code int}, {@code double}), else boxed ({@code Byte.valueOf}, {@code Long.valueOf}...).
+     */
+    private void constant(ParserRuleContext ctx, Object value) {
+        ScopeAnalysis.PrimitiveKind kind = scopes.expressionKind(ctx);
+        if (kind == ScopeAnalysis.PrimitiveKind.DOUBLE) {
+            mv.visitLdcInsn(((Number) value).doubleValue());
+        } else if (kind == ScopeAnalysis.PrimitiveKind.INT) {
+            pushInt(mv, ((Number) value).intValue());
+        } else {
+            String box = Type.getInternalName(value.getClass());
+            String primitive = Type.getDescriptor(JavaTypes.unbox(value.getClass()));
+            if (value instanceof Long || value instanceof Float) {
+                mv.visitLdcInsn(value);
+            } else if (value instanceof Character c) {
+                pushInt(mv, c);
+            } else {
+                pushInt(mv, ((Number) value).intValue());
+            }
+            mv.visitMethodInsn(INVOKESTATIC, box, "valueOf", "(" + primitive + ")L" + box + ";", false);
+        }
+        stackKind = kind;
     }
 
     private void integer(ParserRuleContext ctx, String text) {
@@ -5308,6 +5367,10 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitDouble(BabbleParser.DoubleContext ctx) {
+        if (scopes.literalValue(ctx) != null) {
+            constant(ctx, scopes.literalValue(ctx));
+            return null;
+        }
         mv.visitLdcInsn(Double.parseDouble(ctx.getText()));
         stackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
         return null;

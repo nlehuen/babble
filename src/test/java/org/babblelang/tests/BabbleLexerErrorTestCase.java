@@ -17,14 +17,14 @@ public class BabbleLexerErrorTestCase extends BabbleTestBase {
     }
 
     @Test
-    public void testSingleQuotesAreRejected() {
-        // Used to yield the Integer 1 : both quotes were dropped.
-        ScriptException e = assertRejected("def a = '1' ; a");
+    public void testSingleQuotesHoldOneCharacter() throws Exception {
+        // Used to yield the Integer 1 : both quotes were dropped. Now a char literal.
+        Assertions.assertEquals('1', interpret("def a = '1' ; a"));
+        ScriptException e = assertRejected("def a = '12' ; a");
         Assertions.assertTrue(e.getMessage().contains("Lexical error at line 1:8"), e.getMessage());
         Assertions.assertTrue(e.getMessage().contains("token recognition error"), e.getMessage());
-
-        assertRejected("def a = '12' ; a");
         assertRejected("def a = 'ab' ; a");
+        assertRejected("def a = '' ; a");
     }
 
     @Test
@@ -40,7 +40,7 @@ public class BabbleLexerErrorTestCase extends BabbleTestBase {
 
     @Test
     public void testLexicalErrorReportsItsPosition() {
-        ScriptException e = assertRejected("def a = 1\ndef b = '2'");
+        ScriptException e = assertRejected("def a = 1\ndef b = '23'");
         Assertions.assertTrue(e.getMessage().contains("Lexical error at line 2:8"), e.getMessage());
     }
 

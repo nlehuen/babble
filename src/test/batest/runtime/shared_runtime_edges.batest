@@ -602,20 +602,26 @@ true:true:true:true
 true:true:true
 
 {{{{{
-;; JavaTypes widen Byte/Short/Character/Float/Long/Integer in convertResult via SAM returning any?
+;; JavaTypes widen Byte/Short/Float/Long/Integer in convertResult via SAM returning any?
 def is1 = java.util.function.IntSupplier(() : any? -> ( java.lang.Byte.valueOf("2") ))
 def is2 = java.util.function.IntSupplier(() : any? -> ( java.lang.Short.valueOf("3") ))
-def is3 = java.util.function.IntSupplier(() : any? -> ( java.lang.Character.valueOf(java.lang.StringBuilder("A").charAt(0)) ))
 def ls1 = java.util.function.LongSupplier(() : any? -> ( java.lang.Integer.valueOf(5) ))
 def ds1 = java.util.function.DoubleSupplier(() : any? -> ( java.lang.Float.valueOf("4.5") ))
 def ds2 = java.util.function.DoubleSupplier(() : any? -> ( java.lang.Long.valueOf("6") ))
-println(is1.getAsInt(), ":", is2.getAsInt(), ":", is3.getAsInt(), ":", ls1.getAsLong(), ":", ds1.getAsDouble(), ":", ds2.getAsDouble())
+println(is1.getAsInt(), ":", is2.getAsInt(), ":", ls1.getAsLong(), ":", ds1.getAsDouble(), ":", ds2.getAsDouble())
 
 def badNull = java.util.function.IntSupplier(() : any? -> ( null ))
 badNull.getAsInt()
 }}}}}
-2:3:65:5:4.5:6.0
+2:3:5:4.5:6.0
 Type error : IntSupplier.getAsInt must return int, got null
+
+{{{{{
+;; A char is not a number (BIP011-D4) : it doesn't widen to the int a Java SAM returns
+def is3 = java.util.function.IntSupplier(() : any? -> ( java.lang.StringBuilder("A").charAt(0) ))
+is3.getAsInt()
+}}}}}
+Type error : IntSupplier.getAsInt must return int, got Character
 
 {{{{{
 ;; BabbleInterface 2-level extendsType

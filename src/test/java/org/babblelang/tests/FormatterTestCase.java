@@ -334,6 +334,11 @@ public class FormatterTestCase {
     }
 
     @Test
+    public void testScalarLiterals() throws Exception {
+        assertFormats("def a = -42L + 1.5f * 2e-3d - 'x'\n", "def a=-42L+1.5f*2e-3d-'x'");
+    }
+
+    @Test
     public void testCoreTypesAndNonNullAssertion() throws Exception {
         assertFormats("def xs: list = m.get(k)!.set(0, int(x)!)\nv is int\n",
                 "def xs:list=m.get(k) !.set(0,int (x) !)\nv is int");

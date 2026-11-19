@@ -39,9 +39,7 @@ public class Function implements BabbleFunction {
                 // A default value belongs to the function's scope, not to the call site.
                 value = interpreter.evaluateDefault(namespace, defaultValue);
             }
-            if (interpreter.scopes().widensToDouble(definition.parametersDeclaration().parameterDeclaration(i))) {
-                value = Values.toDouble(value);
-            }
+            value = Values.widen(value, interpreter.scopes().widening(definition.parametersDeclaration().parameterDeclaration(i)));
             namespace.defineParameter(parameters[i], value);
         }
         binder.rejectLeftovers();
@@ -51,9 +49,7 @@ public class Function implements BabbleFunction {
         } catch (ReturnException re) {
             return re.getValue();
         }
-        if (interpreter.scopes().widensToDouble(definition.functionBlock)) {
-            result = Values.toDouble(result);
-        }
+        result = Values.widen(result, interpreter.scopes().widening(definition.functionBlock));
         return result;
     }
 

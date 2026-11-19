@@ -699,9 +699,9 @@ final class CallSolver {
             Type.TypeVar tv = entry.getKey();
             Type hint = entry.getValue();
             Type current = inferred.get(tv);
-            if (current != null && isIntOrDouble(current) && TypeAlgebra.needsDoubleWidening(current, hint)
+            if (current != null && isNumber(current) && TypeAlgebra.needsDoubleWidening(current, hint)
                     && canWidenTypeVarToDouble(tv, paramPatterns, argExprs)) {
-                inferred.put(tv, Type.containsNull(current) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE);
+                inferred.put(tv, TypeAlgebra.widenTo(current, hint));
             }
         }
         return inferred;
@@ -734,9 +734,8 @@ final class CallSolver {
         return true;
     }
 
-    private static boolean isIntOrDouble(Type type) {
-        Type base = Type.withoutNull(type);
-        return base == Type.INT || base == Type.DOUBLE;
+    private static boolean isNumber(Type type) {
+        return Type.isNumber(Type.withoutNull(type));
     }
 
     private static String[] argumentNames(List<BabbleParser.CallParameterContext> arguments) {

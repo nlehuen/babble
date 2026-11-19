@@ -22,11 +22,14 @@ public final class JavaTypes {
             double.class, Double.class,
             void.class, Void.class);
 
-    /** Widening primitive conversions (JLS 5.1.2), expressed over the wrapper types. */
+    /**
+     * Widening primitive conversions (JLS 5.1.2), expressed over the wrapper types, but for
+     * {@code char}, which isn't a number in Babble (BIP011-D4) : {@code 'a'} never passes for
+     * an {@code int}.
+     */
     private static final Map<Class<?>, List<Class<?>>> WIDENINGS = Map.of(
             Byte.class, List.of(Short.class, Integer.class, Long.class, Float.class, Double.class),
             Short.class, List.of(Integer.class, Long.class, Float.class, Double.class),
-            Character.class, List.of(Integer.class, Long.class, Float.class, Double.class),
             Integer.class, List.of(Long.class, Float.class, Double.class),
             Long.class, List.of(Float.class, Double.class),
             Float.class, List.of(Double.class));
@@ -116,6 +119,16 @@ public final class JavaTypes {
 
     public static Class<?> box(Class<?> type) {
         return type.isPrimitive() ? BOXES.get(type) : type;
+    }
+
+    /** The primitive type a wrapper boxes ({@code Integer} to {@code int}), or the type itself. */
+    public static Class<?> unbox(Class<?> type) {
+        for (Map.Entry<Class<?>, Class<?>> entry : BOXES.entrySet()) {
+            if (entry.getValue() == type) {
+                return entry.getKey();
+            }
+        }
+        return type;
     }
 
     public static boolean isWidening(Class<?> from, Class<?> to) {

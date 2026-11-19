@@ -34,16 +34,34 @@ final class JavaTypeBridge {
     private JavaTypeBridge() {
     }
 
-    /** The Babble type of a Java class: Babble's numbers, booleans and strings are Java's. */
+    /** The Babble type of a Java class: Babble's numbers, booleans, characters and strings are Java's. */
     static Type fromJava(Class<?> java) {
-        if (java == int.class || java == Integer.class) {
+        if (java.isPrimitive() && java != void.class) {
+            java = JavaTypes.box(java);
+        }
+        if (java == Integer.class) {
             return Type.INT;
         }
-        if (java == double.class || java == Double.class) {
+        if (java == Double.class) {
             return Type.DOUBLE;
         }
-        if (java == boolean.class || java == Boolean.class) {
+        if (java == Boolean.class) {
             return Type.BOOL;
+        }
+        if (java == Long.class) {
+            return Type.LONG;
+        }
+        if (java == Float.class) {
+            return Type.FLOAT;
+        }
+        if (java == Byte.class) {
+            return Type.BYTE;
+        }
+        if (java == Short.class) {
+            return Type.SHORT;
+        }
+        if (java == Character.class) {
+            return Type.CHAR;
         }
         if (java == String.class) {
             return Type.STRING;
@@ -355,19 +373,12 @@ final class JavaTypeBridge {
 
     static boolean supportedStaticJavaArg(Class<?> paramType, Type argType) {
         if (paramType.isPrimitive()) {
-            if (paramType == int.class) {
-                return argType == Type.INT;
+            Type param = fromJava(paramType);
+            if (Type.isNumber(param)) {
+                // byte -> short -> int -> long -> float -> double, as Java widens.
+                return Type.isNumber(argType) && Type.numericRank(argType) <= Type.numericRank(param);
             }
-            if (paramType == boolean.class) {
-                return argType == Type.BOOL;
-            }
-            if (paramType == double.class) {
-                return argType == Type.INT || argType == Type.DOUBLE;
-            }
-            if (paramType == long.class || paramType == float.class) {
-                return argType == Type.INT;
-            }
-            return false;
+            return argType == param;
         }
         return isBytecodeAccessible(paramType);
     }

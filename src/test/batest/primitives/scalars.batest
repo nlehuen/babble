@@ -1,0 +1,151 @@
+;; The nine scalars (BIP011-P2a) : literals, contextual literal types, promotion, widening,
+;; conversions, non-numeric char, type tests and Java interop
+
+{{{{{
+;; Literals and their default types
+println(classof(42), ":", classof(42L), ":", classof(1.5f), ":", classof(1.5), ":", classof(1.5d), ":", classof('a'))
+println(42L, ":", 1.5f, ":", 1e2, ":", 2e-1f, ":", .5f, ":", 3d, ":", 7F, ":", 'z')
+}}}}}
+java.lang.Integer:java.lang.Long:java.lang.Float:java.lang.Double:java.lang.Double:java.lang.Character
+42:1.5:100.0:0.2:0.5:3.0:7.0:z
+
+{{{{{
+;; Contextual integer literals : byte, short, long, float, double where one is expected
+def b : byte = -128
+def s : short = 32767
+def l : long = 2147483648
+def f : float = 3
+def d : double = 3
+def nb : byte? = 5
+println(b, ":", s, ":", l, ":", f, ":", d, ":", nb, ":", classof(b), ":", classof(s), ":", classof(l), ":", classof(f), ":", classof(d), ":", classof(nb))
+}}}}}
+-128:32767:2147483648:3.0:3.0:5:java.lang.Byte:java.lang.Short:java.lang.Long:java.lang.Float:java.lang.Double:java.lang.Byte
+
+{{{{{
+;; Out of range literals
+def b : byte = 128
+}}}}}
+Out of the byte range : 128
+
+{{{{{
+;; A decimal literal is a float where only a float is expected
+def f : float = 0.1
+def g : float? = 2.5
+println(f, ":", classof(f), ":", g, ":", f == 0.1f)
+}}}}}
+0.1:java.lang.Float:2.5:true
+
+{{{{{
+;; Binary numeric promotion and division
+def b : byte = 10
+def s : short = 20
+def l = 3L
+def f = 1.5f
+println(b + b, ":", classof(b + s), ":", classof(b * l), ":", classof(l - f), ":", classof(f + 1.0), ":", classof(b / s), ":", classof(f / 2), ":", classof(l / f), ":", 7L / 2)
+println(-b, ":", classof(-s), ":", -l, ":", -f, ":", 2147483647L + 1, ":", 2147483647 + 1)
+}}}}}
+20:java.lang.Integer:java.lang.Long:java.lang.Float:java.lang.Double:java.lang.Double:java.lang.Float:java.lang.Double:3.5
+-10:java.lang.Integer:-3:-1.5:2147483648:-2147483648
+
+{{{{{
+;; Long arithmetic keeps 64-bit precision, also on Java Longs
+def big = java.lang.Long.valueOf(9007199254740993L)
+println(big + java.lang.Long.valueOf(0), ":", 9007199254740993L * 1, ":", classof(big + 1))
+}}}}}
+9007199254740993:9007199254740993:java.lang.Long
+
+{{{{{
+;; Widening assignments, parameters, returns, joins and reassignment
+def b : byte = 7
+def i : int = b
+def l : long = i
+def f : float = l
+def d : double = f
+def toLong = (x : long) : long -> ( x )
+def asFloat = (x : int) : float -> ( x )
+def j = if b > 0 then ( b ) else ( 1L )
+def r = 1
+r = 2L
+println(classof(i), ":", classof(l), ":", classof(f), ":", classof(d), ":", classof(toLong(b)), ":", classof(asFloat(3)), ":", classof(j), ":", classof(r))
+}}}}}
+java.lang.Integer:java.lang.Long:java.lang.Float:java.lang.Double:java.lang.Long:java.lang.Float:java.lang.Long:java.lang.Long
+
+{{{{{
+;; No implicit narrowing, not even in compound assignment
+def b : byte = 1
+b += 1
+}}}}}
+Type error : expected byte, got int
+
+{{{{{
+;; Conversions
+println(byte(-1.9), ":", short("300"), ":", int('A'), ":", long(2.5e10), ":", float("2.5"), ":", double(1L), ":", bool("false"), ":", char(98), ":", char("c"), ":", string('d'), ":", string(null))
+println(classof(byte(1)), ":", classof(short(1)), ":", classof(long(1)), ":", classof(float(1)), ":", classof(char(65)), ":", classof(string(1)))
+}}}}}
+-1:300:65:25000000000:2.5:1.0:false:b:c:d:null
+java.lang.Byte:java.lang.Short:java.lang.Long:java.lang.Float:java.lang.Character:java.lang.String
+
+{{{{{
+;; Conversion failures
+long(1.0 / 0.0)
+}}}}}
+Out of the long range : 1.0/0.0 = Infinity
+
+{{{{{
+char("ab")
+}}}}}
+Not a char : "ab"
+
+{{{{{
+short(40000)
+}}}}}
+Out of the short range : 40000
+
+{{{{{
+;; char is not a number
+def c = 'a'
+c - 1
+}}}}}
+Not a number : c
+
+{{{{{
+;; chars compare and test
+println('a' < 'b', ":", 'b' >= 'b', ":", 'a' == 'a', ":", 'a' == "a", ":", char(int('a') + 2))
+def v : any = 'x'
+println(v is char, ":", v is int, ":", v is string)
+}}}}}
+true:true:true:false:c
+true:false:false
+
+{{{{{
+;; Type tests on numbers of each kind
+def kind = (v : any?) : string -> (
+    if v is byte then ( "byte" ) else if v is short then ( "short" ) else if v is int then ( "int" )
+    else if v is long then ( "long" ) else if v is float then ( "float" ) else if v is double then ( "double" )
+    else ( "other" )
+)
+def b : byte = 1
+def s : short = 1
+println(kind(b), ":", kind(s), ":", kind(1), ":", kind(1L), ":", kind(1f), ":", kind(1.0), ":", kind(null))
+}}}}}
+byte:short:int:long:float:double:other
+
+{{{{{
+;; Casts to numbers check, and widen
+def v : any = 3
+println(classof(v as long), ":", classof(v as double), ":", v as int)
+v as byte
+}}}}}
+java.lang.Long:java.lang.Double:3
+Type error : expected byte, got int
+
+{{{{{
+;; Java long, float, char, byte and short across calls and fields
+def p = java.awt.geom.Point2D.Float(1.5f, 2)
+p.x = 4
+p.y += 0.5f
+println(p.x, ":", p.y, ":", classof(p.x))
+println(java.lang.Math.max(3L, 4), ":", java.lang.Math.round(2.5f), ":", java.lang.Character.toUpperCase('q'), ":", java.lang.Byte.parseByte("12") + 1)
+}}}}}
+4.0:2.5:java.lang.Float
+4:3:Q:13

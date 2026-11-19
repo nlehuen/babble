@@ -141,14 +141,7 @@ final class Narrowing {
     /** The type {@code x is T} tests when T is a core type name ({@code x is int}), else null. */
     Type.Simple isBuiltinTarget(BabbleParser.IsExpressionContext ctx) {
         if (ctx.right instanceof BabbleParser.CoreTypeNameContext core) {
-            return switch (core.getText()) {
-                case "int" -> Type.INT;
-                case "double" -> Type.DOUBLE;
-                case "bool" -> Type.BOOL;
-                case "string" -> Type.STRING;
-                case "any" -> Type.ANY;
-                default -> null;
-            };
+            return core.getText().equals("any") ? Type.ANY : Type.scalar(core.getText());
         }
         return null;
     }

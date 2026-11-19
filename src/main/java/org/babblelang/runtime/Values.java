@@ -78,24 +78,90 @@ public final class Values {
         throw new BabbleException("Not a type : " + typeText);
     }
 
-    /** {@code value is type} for a built-in type name : {@code int}, {@code double}, {@code bool}, {@code string}, {@code any}. */
+    /** {@code value is type} for a core type name : {@code byte}..{@code string}, {@code any}. */
     public static Object isBuiltin(Object value, String type) {
         if (value instanceof JavaValue wrapper) {
             value = wrapper.javaValue();
         }
         return switch (type) {
+            case "byte" -> value instanceof Byte;
+            case "short" -> value instanceof Short;
             case "int" -> value instanceof Integer;
+            case "long" -> value instanceof Long;
+            case "float" -> value instanceof Float;
             case "double" -> value instanceof Double;
             case "bool" -> value instanceof Boolean;
+            case "char" -> value instanceof Character;
             case "string" -> value instanceof String;
             case "any" -> value != null;
             default -> throw new BabbleException("Not a type : " + type);
         };
     }
 
-    /** Converts a joined {@code int} value to {@code double} when static inference widened it. */
+    /** Converts a number to {@code double} where static typing widened it ({@code int}, {@code long}...). */
     public static Object toDouble(Object value) {
-        return value instanceof Integer i ? (double) i : value;
+        return value instanceof Integer i ? (Object) (double) i : widen(value, 1 << DOUBLE_RANK);
+    }
+
+    private static final int DOUBLE_RANK = 5;
+
+    /**
+     * The place of a boxed number in the widening order : {@code Byte} 0, {@code Short} 1,
+     * {@code Integer} 2, {@code Long} 3, {@code Float} 4, {@code Double} 5 ; -1 for anything else.
+     */
+    public static int numericRank(Object value) {
+        if (value instanceof Integer) {
+            return 2;
+        }
+        if (value instanceof Double) {
+            return 5;
+        }
+        if (value instanceof Long) {
+            return 3;
+        }
+        if (value instanceof Float) {
+            return 4;
+        }
+        if (value instanceof Short) {
+            return 1;
+        }
+        if (value instanceof Byte) {
+            return 0;
+        }
+        return -1;
+    }
+
+    /**
+     * Widens a number to the narrowest of the numbers of {@code mask} (bits {@code 1 << rank})
+     * at least as wide as it, unless its own is one of them : {@code byte} to {@code int},
+     * {@code int} to {@code long} or {@code double}... Anything else is returned as it is.
+     */
+    public static Object widen(Object value, int mask) {
+        if (mask == 0) {
+            return value;
+        }
+        int rank = numericRank(value);
+        if (rank < 0 || (mask & (1 << rank)) != 0) {
+            return value;
+        }
+        for (int wider = rank + 1; wider <= DOUBLE_RANK; wider++) {
+            if ((mask & (1 << wider)) != 0) {
+                return convertNumber((Number) value, wider);
+            }
+        }
+        return value;
+    }
+
+    /** A number as the number of a rank ({@link #numericRank}), converted as Java does. */
+    public static Object convertNumber(Number value, int rank) {
+        return switch (rank) {
+            case 0 -> value.byteValue();
+            case 1 -> value.shortValue();
+            case 2 -> value.intValue();
+            case 3 -> value.longValue();
+            case 4 -> value.floatValue();
+            default -> value.doubleValue();
+        };
     }
 
     /** A function, a bound method or a class value : what converts to a Java functional interface. */

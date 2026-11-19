@@ -118,7 +118,8 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
     private final ParseTreeProperty<String> isBuiltins = new ParseTreeProperty<>();
     private final ParseTreeProperty<String> nonNullTypes = new ParseTreeProperty<>();
-    private final java.util.Set<ParserRuleContext> widensToDouble = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private final java.util.Map<ParserRuleContext, Integer> widenings = new java.util.IdentityHashMap<>();
+    private final java.util.Map<ParserRuleContext, Object> literalValues = new java.util.IdentityHashMap<>();
     private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
     private final ParseTreeProperty<PrimitiveKind> expressionKinds = new ParseTreeProperty<>();
     private final ParseTreeProperty<PrimitiveKind> declarationKinds = new ParseTreeProperty<>();
@@ -299,8 +300,12 @@ public final class ScopeAnalysis {
         nonNullTypes.put(ctx, type);
     }
 
-    void widenToDouble(ParserRuleContext ctx) {
-        widensToDouble.add(ctx);
+    void widen(ParserRuleContext ctx, int mask) {
+        widenings.put(ctx, mask);
+    }
+
+    void setLiteralValue(ParserRuleContext ctx, Object value) {
+        literalValues.put(ctx, value);
     }
 
     void setExpressionKind(ParserRuleContext ctx, PrimitiveKind kind) {
@@ -379,9 +384,35 @@ public final class ScopeAnalysis {
         return type != null ? type : "any";
     }
 
-    /** Whether the value produced by this construct must be converted from int to double. */
+    /** The mask of {@code double} alone, among numeric widening masks ({@link #widening}). */
+    public static final int DOUBLE_MASK = 1 << 5;
+
+    /**
+     * The numbers the value this construct produces converts to (a mask of numeric ranks,
+     * {@code byte} 0 to {@code double} 5, for {@code Values.widen}), or 0 when it isn't converted.
+     */
+    public int widening(ParserRuleContext ctx) {
+        Integer mask = widenings.get(ctx);
+        return mask != null ? mask : 0;
+    }
+
+    /** Whether the value produced by this construct must be converted to double (from int, long...). */
     public boolean widensToDouble(ParserRuleContext ctx) {
-        return widensToDouble.contains(ctx);
+        return widening(ctx) == DOUBLE_MASK;
+    }
+
+    /** Whether the value produced by this construct converts to a number other than double alone. */
+    public boolean widensOther(ParserRuleContext ctx) {
+        int mask = widening(ctx);
+        return mask != 0 && mask != DOUBLE_MASK;
+    }
+
+    /**
+     * The value of a number literal when its type isn't its default one ({@code def b: byte = 1}
+     * makes a Byte, {@code def f: float = 1.5} a Float), or null.
+     */
+    public Object literalValue(ParserRuleContext ctx) {
+        return literalValues.get(ctx);
     }
 
     /** The primitive kind of an expression, or {@link PrimitiveKind#NONE} for references/boxed values. */

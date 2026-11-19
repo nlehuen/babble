@@ -229,13 +229,9 @@ final class TypeAnnotations {
     private Type coreType(BabbleParser.CoreTypeContext core) {
         String name = core.coreTypeKeyword().getText();
         Type builtin = switch (name) {
-            case "int" -> Type.INT;
-            case "double" -> Type.DOUBLE;
-            case "bool" -> Type.BOOL;
-            case "string" -> Type.STRING;
             case "any" -> Type.ANY;
             case "void" -> Type.NULL;
-            default -> null;
+            default -> Type.scalar(name);
         };
         if (builtin == null) {
             checker.warn("Unknown type : " + core.getText(), core);

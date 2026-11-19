@@ -4,8 +4,9 @@ package org.babblelang.runtime;
 /**
  * The binary operators, shared by the interpreter and compiled code.
  * <p>
- * Results are boxed. Arithmetic on two Integers stays an Integer, with Java's
- * wrap-around ; any other pair of numbers gives a double.
+ * Results are boxed. Arithmetic promotes as Java does (JLS 5.6.2, BIP011-D4) : a double
+ * operand makes a double, else a float a float, else a long a long, else bytes, shorts and
+ * ints make an int, with Java's wrap-around. Other numbers (BigDecimal...) make a double.
  */
 public final class Operators {
     private Operators() {
@@ -15,16 +16,45 @@ public final class Operators {
         if (a instanceof Integer ia && b instanceof Integer ib) {
             return ia * ib;
         }
-        return number(a, site.leftText()).doubleValue() * number(b, site.rightText()).doubleValue();
+        Number na = number(a, site.leftText());
+        Number nb = number(b, site.rightText());
+        return switch (promoted(na, nb)) {
+            case INT -> (Object) (na.intValue() * nb.intValue());
+            case LONG -> (Object) (na.longValue() * nb.longValue());
+            case FLOAT -> (Object) (na.floatValue() * nb.floatValue());
+            default -> (Object) (na.doubleValue() * nb.doubleValue());
+        };
+    }
+
+    private static final int INT = 2;
+    private static final int LONG = 3;
+    private static final int FLOAT = 4;
+
+    /** The rank of the type two numbers promote to (JLS 5.6.2) : int, long, float or double ({@link Values#numericRank}). */
+    private static int promoted(Number a, Number b) {
+        int ra = Values.numericRank(a);
+        int rb = Values.numericRank(b);
+        if (ra < 0 || rb < 0) {
+            return 5;
+        }
+        return Math.max(INT, Math.max(ra, rb));
     }
 
     /**
-     * {@code a / b} : always a double, even between two ints, unlike {@code +}, {@code -} and
-     * {@code *}. Dividing by zero gives an infinity or NaN (IEEE 754), not an error; only a
-     * non-number fails. On two numbers the type checker types it {@code double}.
+     * {@code a / b} : always floating point, even between two ints, unlike {@code +}, {@code -}
+     * and {@code *} : a float when one operand is a float and neither is a long or a double,
+     * else a double. Dividing by zero gives an infinity or NaN (IEEE 754), not an error; only a
+     * non-number fails.
      */
     public static Object div(Object a, Object b, OpSite site) {
-        return number(a, site.leftText()).doubleValue() / number(b, site.rightText()).doubleValue();
+        Number na = number(a, site.leftText());
+        Number nb = number(b, site.rightText());
+        int ra = Values.numericRank(na);
+        int rb = Values.numericRank(nb);
+        if (ra >= 0 && rb >= 0 && Math.max(ra, rb) == FLOAT && ra != LONG && rb != LONG) {
+            return na.floatValue() / nb.floatValue();
+        }
+        return na.doubleValue() / nb.doubleValue();
     }
 
     public static Object add(Object a, Object b, OpSite site) {
@@ -34,7 +64,14 @@ public final class Operators {
         if (a instanceof Integer ia && b instanceof Integer ib) {
             return ia + ib;
         }
-        return number(a, site.leftText()).doubleValue() + number(b, site.rightText()).doubleValue();
+        Number na = number(a, site.leftText());
+        Number nb = number(b, site.rightText());
+        return switch (promoted(na, nb)) {
+            case INT -> (Object) (na.intValue() + nb.intValue());
+            case LONG -> (Object) (na.longValue() + nb.longValue());
+            case FLOAT -> (Object) (na.floatValue() + nb.floatValue());
+            default -> (Object) (na.doubleValue() + nb.doubleValue());
+        };
     }
 
     /** The method {@code -a} calls on a Babble instance : {@code a.neg()}. */
@@ -81,21 +118,34 @@ public final class Operators {
     }
 
     /**
-     * {@code -a} : an int stays an int (wrapping, as {@code +} and {@code -} do), any other
-     * number becomes a double.
+     * {@code -a} : a byte, short or int gives an int (wrapping, as {@code +} and {@code -} do),
+     * a long a long, a float a float, and any other number a double.
      */
     public static Object negate(Object a, String text) {
         if (a instanceof Integer i) {
             return -i;
         }
-        return -number(a, text).doubleValue();
+        Number n = number(a, text);
+        return switch (Values.numericRank(n)) {
+            case 0, 1 -> (Object) (-n.intValue());
+            case LONG -> (Object) (-n.longValue());
+            case FLOAT -> (Object) (-n.floatValue());
+            default -> (Object) (-n.doubleValue());
+        };
     }
 
     public static Object sub(Object a, Object b, OpSite site) {
         if (a instanceof Integer ia && b instanceof Integer ib) {
             return ia - ib;
         }
-        return number(a, site.leftText()).doubleValue() - number(b, site.rightText()).doubleValue();
+        Number na = number(a, site.leftText());
+        Number nb = number(b, site.rightText());
+        return switch (promoted(na, nb)) {
+            case INT -> (Object) (na.intValue() - nb.intValue());
+            case LONG -> (Object) (na.longValue() - nb.longValue());
+            case FLOAT -> (Object) (na.floatValue() - nb.floatValue());
+            default -> (Object) (na.doubleValue() - nb.doubleValue());
+        };
     }
 
     public static Object lt(Object a, Object b, OpSite site) {

@@ -72,7 +72,7 @@ final class OperatorTypes {
                 }
                 boolean numbers = number(left, leftText, leftAt) & number(right, rightText, rightAt);
                 if (op == BabbleLexer.DIV) {
-                    return Type.DOUBLE;
+                    return divisionResult(left, right);
                 }
                 if (seeding && numbers) {
                     if (left == Type.NOTHING && isNumber(right)) {
@@ -94,11 +94,32 @@ final class OperatorTypes {
         }
     }
 
+    /**
+     * {@code +}, {@code -}, {@code *} on numbers, as Java promotes them (JLS 5.6.2,
+     * BIP011-D4) : double, else float, else long, else int (bytes and shorts included).
+     * Another number (a Java {@code BigDecimal}...) makes a double, as {@code Operators} does.
+     */
     static Type arithmeticResult(Type left, Type right) {
         List<Type> results = new ArrayList<>();
         for (Type l : Type.membersOf(left)) {
             for (Type r : Type.membersOf(right)) {
-                results.add(l == Type.INT && r == Type.INT ? Type.INT : Type.DOUBLE);
+                int rl = Type.numericRank(l);
+                int rr = Type.numericRank(r);
+                results.add(rl < 0 || rr < 0 ? Type.DOUBLE : Type.NUMBERS.get(Math.max(2, Math.max(rl, rr))));
+            }
+        }
+        return Type.union(results);
+    }
+
+    /** {@code /} : a float when one operand is a float and neither a long or a double, else a double. */
+    static Type divisionResult(Type left, Type right) {
+        List<Type> results = new ArrayList<>();
+        for (Type l : Type.membersOf(left)) {
+            for (Type r : Type.membersOf(right)) {
+                int rl = Type.numericRank(l);
+                int rr = Type.numericRank(r);
+                boolean single = rl >= 0 && rr >= 0 && Math.max(rl, rr) == 4 && rl != 3 && rr != 3;
+                results.add(single ? Type.FLOAT : Type.DOUBLE);
             }
         }
         return Type.union(results);
@@ -151,11 +172,30 @@ final class OperatorTypes {
 
     /** The conversion function a core type name denotes as a value ({@code int(x)}), or null. */
     static Type.Function conversion(String coreType) {
-        return switch (coreType) {
-            case "int" -> INT_CONVERSION;
-            case "double" -> DOUBLE_CONVERSION;
-            default -> null;
-        };
+        return CONVERSIONS.get(coreType);
+    }
+
+    /**
+     * {@code byte(x)}..{@code string(x)} (BIP011-D3) : each scalar's conversion, taking any
+     * non-null value ({@code string(x)} also null) and failing at run time on what it can't
+     * convert.
+     */
+    private static final java.util.Map<String, Type.Function> CONVERSIONS = conversions();
+
+    private static java.util.Map<String, Type.Function> conversions() {
+        java.util.Map<String, Type.Function> result = new java.util.LinkedHashMap<>();
+        for (String name : List.of("byte", "short", "int", "long", "float", "double", "bool", "char", "string")) {
+            Type.Function fn = switch (name) {
+                case "int" -> INT_CONVERSION;
+                case "double" -> DOUBLE_CONVERSION;
+                case "string" -> new Type.Function(
+                        List.of(new Type.Parameter("value", Type.NULLABLE_ANY, false, false, true, false)), Type.STRING, PURE_DET);
+                default -> new Type.Function(
+                        List.of(new Type.Parameter("value", Type.ANY, false, false, true, false)), Type.scalar(name), PURE_DET);
+            };
+            result.put(name, fn);
+        }
+        return java.util.Map.copyOf(result);
     }
 
     /** The lexer's token for an arithmetic operator. */
@@ -173,7 +213,7 @@ final class OperatorTypes {
         if (type instanceof Type.Union union) {
             return union.members().stream().allMatch(OperatorTypes::isNumber);
         }
-        return type == Type.INT || type == Type.DOUBLE;
+        return Type.isNumber(type);
     }
 
     /** Whether an operand can be a number, reporting it when it can't. */
@@ -185,7 +225,7 @@ final class OperatorTypes {
         if (type instanceof Type.Union union) {
             return union.members().stream().allMatch(OperatorTypes::isNumeric);
         }
-        return type == Type.INT || type == Type.DOUBLE
+        return Type.isNumber(type)
                 || type instanceof Type.JavaInstance instance && Number.class.isAssignableFrom(instance.type());
     }
 
@@ -229,8 +269,7 @@ final class OperatorTypes {
 
     /** Whether a function type is one of the built-in functions'. */
     static boolean isBuiltinFunction(Type.Function fn) {
-        return fn == INT_CONVERSION
-                || fn == DOUBLE_CONVERSION
+        return CONVERSIONS.values().stream().anyMatch(conversion -> conversion == fn)
                 || fn == ASSERT_FUNCTION
                 || fn == SAME_FUNCTION
                 || fn == CLASSOF_FUNCTION

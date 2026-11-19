@@ -61,7 +61,8 @@ final class SlotInference {
                         continue;
                     }
                     if (!joined.equals(folded)) {
-                        if ((containsType(joined, Type.DOUBLE) && !containsType(folded, Type.DOUBLE))
+                        int foldedRank = Type.numericRank(Type.withoutNull(folded));
+                        if ((foldedRank >= 0 && Type.numericRank(Type.withoutNull(joined)) > foldedRank)
                                 || (Type.containsNull(joined) && !Type.containsNull(folded))) {
                             if (e.getKey().line() >= 0) {
                                 newWidenedLine = e.getKey().line();

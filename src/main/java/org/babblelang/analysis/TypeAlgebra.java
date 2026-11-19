@@ -253,7 +253,8 @@ final class TypeAlgebra {
             if (sup == Type.ANY) {
                 return true;
             }
-            if (mode == RelateMode.ASSIGNABLE && sub == Type.INT && sup == Type.DOUBLE) {
+            if (mode == RelateMode.ASSIGNABLE && Type.isNumber(sub) && Type.numericRank(sub) < Type.numericRank(sup)) {
+                // byte -> short -> int -> long -> float -> double (BIP011-D4).
                 return true;
             }
             RelateMode argMode = mode == RelateMode.INVARIANT_ARG ? RelateMode.INVARIANT_ARG : RelateMode.SUBTYPE;
@@ -470,11 +471,8 @@ final class TypeAlgebra {
         if (from instanceof Type.TypeVar || to instanceof Type.TypeVar || from == Type.ANY || to == Type.ANY) {
             return true;
         }
-        if (from == Type.INT && to == Type.DOUBLE) {
-            return true;
-        }
-        if (from == Type.DOUBLE && to == Type.INT) {
-            return false;
+        if (Type.isNumber(from) && Type.isNumber(to)) {
+            return Type.numericRank(from) <= Type.numericRank(to);
         }
         return assignable(from, to) || assignable(to, from) || overlapsErased(from, to);
     }
@@ -528,17 +526,17 @@ final class TypeAlgebra {
                 && sameParameters(fa, fb)) {
             return mergeFunctions(fa, fb);
         }
-        if (isIntOrDouble(a) && isIntOrDouble(b) && (containsType(a, Type.DOUBLE) || containsType(b, Type.DOUBLE))
-                && !mixesIntAndDouble(a) && !mixesIntAndDouble(b)) {
-            return (Type.containsNull(a) || Type.containsNull(b)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
+        Type widest = widestNumber(a, b);
+        if (widest != null) {
+            return widest;
         }
         return Type.union(a, b);
     }
 
     /**
      * Widening allowed across the reassignments of an unannotated def or member : only
-     * {@code int -> double}, {@code T <-> null}, and compatible functions (intersecting their
-     * effects) ; null for heterogeneous types.
+     * numeric widening ({@code int -> long -> double}...), {@code T <-> null}, and compatible
+     * functions (intersecting their effects) ; null for heterogeneous types.
      */
     Type reassignmentJoin(Type current, Type value) {
         if (current == Type.ERROR || value == Type.ERROR) {
@@ -566,13 +564,7 @@ final class TypeAlgebra {
         if (Type.withoutNull(current).equals(Type.withoutNull(value))) {
             return Type.union(current, value);
         }
-        if (isIntOrDouble(current) && isIntOrDouble(value)
-                && (containsType(current, Type.INT) || containsType(value, Type.INT))
-                && (containsType(current, Type.DOUBLE) || containsType(value, Type.DOUBLE))
-                && !mixesIntAndDouble(current) && !mixesIntAndDouble(value)) {
-            return (Type.containsNull(current) || Type.containsNull(value)) ? Type.nullable(Type.DOUBLE) : Type.DOUBLE;
-        }
-        return null;
+        return widestNumber(current, value);
     }
 
     private static boolean sameParameters(Type.Function fa, Type.Function fb) {
@@ -734,12 +726,73 @@ final class TypeAlgebra {
                 || type == Type.PRINT;
     }
 
-    /** Whether a value of type {@code from} is converted to {@code double} where {@code to} is expected. */
+    /** Whether a value of type {@code from} is converted to a wider number where {@code to} is expected. */
     static boolean needsDoubleWidening(Type from, Type to) {
-        return from != Type.ERROR && to != Type.ERROR
-                && containsType(from, Type.INT)
-                && containsType(to, Type.DOUBLE)
-                && !containsType(to, Type.INT);
+        return wideningMask(from, to) != 0;
+    }
+
+    /**
+     * The numbers a value of type {@code from} converts to where {@code to} is expected, as a
+     * mask of numeric ranks ({@code 1 << Type.numericRank}, what {@code Values.widen} takes) : the
+     * numbers of {@code to}, when one of {@code from}'s isn't among them but a wider one is ; else 0.
+     */
+    static int wideningMask(Type from, Type to) {
+        if (from == Type.ERROR || to == Type.ERROR) {
+            return 0;
+        }
+        int targets = 0;
+        for (Type member : Type.membersOf(to)) {
+            int rank = Type.numericRank(member);
+            if (rank >= 0) {
+                targets |= 1 << rank;
+            }
+        }
+        if (targets == 0) {
+            return 0;
+        }
+        for (Type member : Type.membersOf(from)) {
+            int rank = Type.numericRank(member);
+            if (rank >= 0 && (targets & (1 << rank)) == 0 && (targets >> (rank + 1)) != 0) {
+                return targets;
+            }
+        }
+        return 0;
+    }
+
+    /** {@code type} with its numbers widened as they are where {@code target} is expected ({@link #wideningMask}). */
+    static Type widenTo(Type type, Type target) {
+        int mask = wideningMask(type, target);
+        if (mask == 0) {
+            return type;
+        }
+        List<Type> members = new ArrayList<>();
+        for (Type member : Type.membersOf(type)) {
+            int rank = Type.numericRank(member);
+            if (rank >= 0 && (mask & (1 << rank)) == 0 && (mask >> (rank + 1)) != 0) {
+                int wider = rank + 1;
+                while ((mask & (1 << wider)) == 0) {
+                    wider++;
+                }
+                members.add(Type.NUMBERS.get(wider));
+            } else {
+                members.add(member);
+            }
+        }
+        return Type.union(members);
+    }
+
+    /**
+     * The join of two different numbers, each possibly nullable : the wider one ({@code int} and
+     * {@code long?} give {@code long?}) ; null when they aren't both single numbers.
+     */
+    static Type widestNumber(Type a, Type b) {
+        Type na = Type.withoutNull(a);
+        Type nb = Type.withoutNull(b);
+        if (!Type.isNumber(na) || !Type.isNumber(nb) || na == nb) {
+            return null;
+        }
+        Type widest = Type.numericRank(na) > Type.numericRank(nb) ? na : nb;
+        return Type.containsNull(a) || Type.containsNull(b) ? Type.nullable(widest) : widest;
     }
 
     static boolean containsType(Type type, Type target) {
@@ -759,20 +812,6 @@ final class TypeAlgebra {
             return true;
         }
         return type instanceof Type.Union union && union.members().stream().anyMatch(TypeAlgebra::containsFunction);
-    }
-
-    /** Whether a type is {@code int}, {@code double}, or a union of them, possibly nullable. */
-    static boolean isIntOrDouble(Type type) {
-        Type base = Type.withoutNull(type);
-        if (base == Type.INT || base == Type.DOUBLE) {
-            return true;
-        }
-        return base instanceof Type.Union u
-                && u.members().stream().allMatch(m -> m == Type.INT || m == Type.DOUBLE);
-    }
-
-    private static boolean mixesIntAndDouble(Type type) {
-        return containsType(type, Type.INT) && containsType(type, Type.DOUBLE);
     }
 
     /** Whether a class or interface is {@code target} or has it among its ancestors. */

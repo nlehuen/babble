@@ -9,7 +9,6 @@ import org.babblelang.runtime.Operators;
 
 import static org.babblelang.analysis.TypeAlgebra.canBeNull;
 import static org.babblelang.analysis.TypeAlgebra.containsFunction;
-import static org.babblelang.analysis.TypeAlgebra.needsDoubleWidening;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -84,7 +83,8 @@ final class TypeChecker {
     private final Set<Diagnostic> diagnostics = new TreeSet<>(ORDER);
     private final Set<Diagnostic> effectDiagnostics = new TreeSet<>(ORDER);
     private final Set<Diagnostic> warnings = new TreeSet<>(ORDER);
-    private final Set<ParserRuleContext> widened = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<ParserRuleContext, Integer> widened = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, Object> literalValues = new IdentityHashMap<>();
     private final Map<ParserRuleContext, String> callChecks = new IdentityHashMap<>();
     private final Typer typer = new Typer();
     private final Map<BabbleParser.FunctionLiteralContext, Type> contextualReturnTypes = new IdentityHashMap<>();
@@ -180,8 +180,14 @@ final class TypeChecker {
         return inferredParams;
     }
 
-    Set<ParserRuleContext> widened() {
+    /** The numeric conversions {@code coerce} recorded : site to mask of numeric ranks ({@link TypeAlgebra#wideningMask}). */
+    Map<ParserRuleContext, Integer> widened() {
         return widened;
+    }
+
+    /** The value of each number literal, of its contextual type ({@code def b: byte = 1} makes a Byte). */
+    Map<ParserRuleContext, Object> literalValues() {
+        return literalValues;
     }
 
     Map<ParserRuleContext, String> callChecks() {
@@ -362,6 +368,7 @@ final class TypeChecker {
         diagnostics.clear();
         warnings.clear();
         widened.clear();
+        literalValues.clear();
         callChecks.clear();
         contextualReturnTypes.clear();
         inferenceStack.clear();
@@ -1149,25 +1156,11 @@ final class TypeChecker {
                     coerce(ret, returnTypes.get(i), target);
                 }
             }
-            if (expectedReturn != null && expectedReturn != Type.ERROR && needsDoubleWidening(result, expectedReturn)) {
-                result = replaceIntWithDouble(result);
+            if (expectedReturn != null && expectedReturn != Type.ERROR && TypeAlgebra.needsDoubleWidening(result, expectedReturn)) {
+                result = TypeAlgebra.widenTo(result, expectedReturn);
             }
         }
         return result;
-    }
-
-    private static Type replaceIntWithDouble(Type type) {
-        if (type == Type.INT) {
-            return Type.DOUBLE;
-        }
-        if (type instanceof Type.Union union) {
-            List<Type> updated = new ArrayList<>(union.members().size());
-            for (Type member : union.members()) {
-                updated.add(member == Type.INT ? Type.DOUBLE : member);
-            }
-            return Type.union(updated);
-        }
-        return type;
     }
 
     void clearSubtreeTypes(ParseTree tree) {
@@ -1175,6 +1168,7 @@ final class TypeChecker {
             types.remove(ctx);
             contextualReturnTypes.remove(ctx);
             widened.remove(ctx);
+            literalValues.remove(ctx);
             if (ctx instanceof BabbleParser.DefExpressionContext || ctx instanceof BabbleParser.ParameterDeclarationContext) {
                 declarationTypes.remove(ctx);
             }
@@ -1230,12 +1224,16 @@ final class TypeChecker {
     }
 
     /**
-     * The one coercion point : records that the value {@code site} produces is converted from
-     * {@code int} to {@code double} where {@code target} is expected, for both backends.
+     * The one coercion point : records that the value {@code site} produces is converted to a
+     * wider number ({@code int} to {@code double}, {@code byte} to {@code int}...) where
+     * {@code target} is expected, for both backends.
      */
     void coerce(ParserRuleContext site, Type actual, Type target) {
-        if (site != null && needsDoubleWidening(actual, target)) {
-            widened.add(site);
+        if (site != null) {
+            int mask = TypeAlgebra.wideningMask(actual, target);
+            if (mask != 0) {
+                widened.put(site, mask);
+            }
         }
     }
 
@@ -1410,7 +1408,10 @@ final class TypeChecker {
                 case BabbleParser.BooleanContext c -> visitBoolean(c, expected, role);
                 case BabbleParser.RecurseContext c -> visitRecurse(c, expected, role);
                 case BabbleParser.IntegerContext c -> visitInteger(c, expected, role);
+                case BabbleParser.LongLiteralContext c -> longLiteral(c, c.getText(), false);
+                case BabbleParser.FloatLiteralContext c -> floatLiteral(c, c.getText(), Type.FLOAT);
                 case BabbleParser.DoubleContext c -> visitDouble(c, expected, role);
+                case BabbleParser.CharLiteralContext c -> Type.CHAR;
                 case BabbleParser.StringContext c -> visitString(c, expected, role);
                 case BabbleParser.ReturnExpressionContext c -> visitReturnExpression(c, expected, role);
                 default -> {
@@ -1699,18 +1700,24 @@ final class TypeChecker {
             }
         }
 
-        /** As {@code Operators.negate} : an int stays an int, another number is a double. */
+        /**
+         * As {@code Operators.negate} : a byte, short or int gives an int, a long a long, a
+         * float a float, another number a double. A negated literal is a literal
+         * ({@code -2147483648} is an int, though {@code 2147483648} isn't).
+         */
         private Type visitNegate(BabbleParser.NegateContext ctx, Type expected, Role role) {
             if (ctx.operand instanceof BabbleParser.IntegerContext literal) {
-                try {
-                    Integer.parseInt("-" + literal.getText());
-                } catch (NumberFormatException e) {
-                    warn("Integer out of range : -" + literal.getText(), ctx);
-                }
-                types.put(literal, Type.INT);
-                return Type.INT;
+                Type type = integerLiteral(ctx, "-" + literal.getText(), expected);
+                types.put(literal, type);
+                return type;
             }
-            Type operand = synth(ctx.operand);
+            if (ctx.operand instanceof BabbleParser.LongLiteralContext literal) {
+                Type type = longLiteral(ctx, "-" + literal.getText(), true);
+                types.put(literal, type);
+                return type;
+            }
+            Type operand = ctx.operand instanceof BabbleParser.DoubleContext literal
+                    ? check(literal, expected) : synth(ctx.operand);
             if (operand == Type.NOTHING) {
                 return Type.NOTHING;
             }
@@ -1737,7 +1744,7 @@ final class TypeChecker {
                         }
                         results.add(r);
                     } else {
-                        results.add(m == Type.INT ? Type.INT : Type.DOUBLE);
+                        results.add(negated(m));
                     }
                 }
                 return Type.union(results);
@@ -1745,7 +1752,12 @@ final class TypeChecker {
             if (!operators.number(operand, ctx.operand) || isUnresolved(operand)) {
                 return Type.ERROR;
             }
-            return operand == Type.INT ? Type.INT : Type.DOUBLE;
+            return negated(operand);
+        }
+
+        private static Type negated(Type operand) {
+            int rank = Type.numericRank(operand);
+            return rank < 0 || rank == 5 ? Type.DOUBLE : Type.NUMBERS.get(Math.max(rank, 2));
         }
 
         private Type visitBooleanNot(BabbleParser.BooleanNotContext ctx, Type expected, Role role) {
@@ -2006,16 +2018,91 @@ final class TypeChecker {
         }
 
         private Type visitInteger(BabbleParser.IntegerContext ctx, Type expected, Role role) {
-            try {
-                Integer.parseInt(ctx.getText());
-            } catch (NumberFormatException e) {
-                warn("Integer out of range : " + ctx.getText(), ctx);
-            }
-            return Type.INT;
+            return integerLiteral(ctx, ctx.getText(), expected);
         }
 
+        /**
+         * An integer literal (possibly negated, {@code ctx} then being the negation) : an
+         * {@code int}, unless its context expects another number and no {@code int} (BIP011-D3)
+         * : {@code def b: byte = 1} makes a byte, {@code def l: long = 3000000000} a long. A value
+         * of another type than int is recorded for the backends.
+         */
+        private Type integerLiteral(ParserRuleContext ctx, String text, Type expected) {
+            java.math.BigInteger value = new java.math.BigInteger(text);
+            List<Type> numbers = expectedNumbers(expected);
+            boolean fitsInt = value.bitLength() < 32;
+            if (numbers.isEmpty() || numbers.contains(Type.INT)) {
+                if (fitsInt) {
+                    return Type.INT;
+                }
+                numbers = numbers.stream().filter(n -> Type.numericRank(n) > 2).toList();
+                if (numbers.isEmpty()) {
+                    warn("Integer out of range : " + text, ctx);
+                    return Type.INT;
+                }
+            }
+            for (Type number : numbers) {
+                Object converted = switch (number.toString()) {
+                    case "byte" -> value.bitLength() < 8 ? (Object) value.byteValue() : null;
+                    case "short" -> value.bitLength() < 16 ? (Object) value.shortValue() : null;
+                    case "long" -> value.bitLength() < 64 ? (Object) value.longValue() : null;
+                    case "float" -> (Object) value.floatValue();
+                    default -> fitsInt ? null : (Object) value.doubleValue();
+                };
+                if (converted != null) {
+                    literalValues.put(ctx, converted);
+                    return number;
+                }
+                if (number == Type.DOUBLE) {
+                    // An int widened to double, as everywhere else.
+                    return Type.INT;
+                }
+            }
+            warn("Out of the " + numbers.get(0) + " range : " + text, ctx);
+            return numbers.get(0);
+        }
+
+        /** {@code 42L} : a long, failing outside its range. */
+        private Type longLiteral(ParserRuleContext ctx, String text, boolean negative) {
+            String digits = text.substring(0, text.length() - 1);
+            if (new java.math.BigInteger(digits).bitLength() >= 64) {
+                warn("Out of the long range : " + text, ctx);
+            } else if (negative) {
+                literalValues.put(ctx, Long.parseLong(digits));
+            }
+            return Type.LONG;
+        }
+
+        /** {@code 1.5f}, or {@code 1.5} where a float is expected : a float, failing when infinite. */
+        private Type floatLiteral(ParserRuleContext ctx, String text, Type type) {
+            if (Float.isInfinite(Float.parseFloat(text))) {
+                warn("Out of the float range : " + text, ctx);
+            }
+            return type;
+        }
+
+        /** {@code 1.5} : a double, or a float where only a float is expected and it has no {@code d} suffix. */
         private Type visitDouble(BabbleParser.DoubleContext ctx, Type expected, Role role) {
+            String text = ctx.getText();
+            List<Type> numbers = expectedNumbers(expected);
+            boolean suffixed = text.endsWith("d") || text.endsWith("D");
+            if (!suffixed && numbers.contains(Type.FLOAT) && !numbers.contains(Type.DOUBLE)) {
+                literalValues.put(ctx, Float.parseFloat(text));
+                return floatLiteral(ctx, text, Type.FLOAT);
+            }
+            if (Double.isInfinite(Double.parseDouble(text))) {
+                warn("Out of the double range : " + text, ctx);
+            }
             return Type.DOUBLE;
+        }
+
+        /** The numbers an expected type admits, narrowest first. */
+        private static List<Type> expectedNumbers(Type expected) {
+            if (expected == null) {
+                return List.of();
+            }
+            List<Type> members = Type.membersOf(expected);
+            return Type.NUMBERS.stream().filter(n -> members.contains(n)).map(n -> (Type) n).toList();
         }
 
         private Type visitString(BabbleParser.StringContext ctx, Type expected, Role role) {

@@ -30,10 +30,43 @@ sealed interface Type {
     /** The type of an expression that never yields a value : {@code return}. */
     Simple NOTHING = new Simple("nothing", null);
     Simple NULL = new Simple("null", null);
+    Simple BYTE = new Simple("byte", Byte.class);
+    Simple SHORT = new Simple("short", Short.class);
     Simple INT = new Simple("int", Integer.class);
+    Simple LONG = new Simple("long", Long.class);
+    Simple FLOAT = new Simple("float", Float.class);
     Simple DOUBLE = new Simple("double", Double.class);
     Simple BOOL = new Simple("bool", Boolean.class);
+    Simple CHAR = new Simple("char", Character.class);
     Simple STRING = new Simple("string", String.class);
+
+    /** The numbers, in the order they widen : {@code byte -> short -> int -> long -> float -> double}. */
+    List<Simple> NUMBERS = List.of(BYTE, SHORT, INT, LONG, FLOAT, DOUBLE);
+
+    /** The scalars : the numbers, {@code bool}, {@code char} and {@code string}, by name. */
+    static Simple scalar(String name) {
+        return switch (name) {
+            case "byte" -> BYTE;
+            case "short" -> SHORT;
+            case "int" -> INT;
+            case "long" -> LONG;
+            case "float" -> FLOAT;
+            case "double" -> DOUBLE;
+            case "bool" -> BOOL;
+            case "char" -> CHAR;
+            case "string" -> STRING;
+            default -> null;
+        };
+    }
+
+    /** A number's place in the widening order ({@code byte} 0 ... {@code double} 5), or -1. */
+    static int numericRank(Type type) {
+        return type instanceof Simple ? NUMBERS.indexOf(type) : -1;
+    }
+
+    static boolean isNumber(Type type) {
+        return numericRank(type) >= 0;
+    }
 
     /** A union of distinct non-union, non-nothing, non-error types (with {@code null}, if present, last). */
     record Union(List<Type> members) implements Type {

@@ -994,6 +994,26 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testScalars() {
+        assertDiagnostics("def b : byte = 128\n"
+                + "def s : short = 1\n"
+                + "s += 1\n"
+                + "def l : long = s + 1\n"
+                + "def i : int = l\n"
+                + "def f : float = 1.5\n"
+                + "def g : float = 1.5 * 2\n"
+                + "def c = 'a' * 2\n"
+                + "def n : long = 1.0",
+                "1:16 Out of the byte range : 128",
+                "3:1 Type error : expected short, got int",
+                "5:15 Type error : expected int, got long",
+                "7:17 Type error : expected float, got double",
+                "8:9 Not a number : 'a'",
+                "9:16 Type error : expected long, got double");
+        assertDiagnostics("def a : double = 1L + 2.5f\ndef b : float = 2.5f / 3\ndef c : long = -9223372036854775808L\ndef d = 'x' < 'y'");
+    }
+
+    @Test
     public void testCoreTypeKeywords() {
         assertDiagnostics("def a : void = null\ndef b : int(string) = 1\ndef c = (v : any) -> ( v is list )\ndef d = any",
                 "2:9 Wrong number of type arguments : expected 0, got 1",

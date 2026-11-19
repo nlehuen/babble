@@ -207,7 +207,10 @@ expression:
           | BOOLEAN                                           # boolean
           | RECURSE                                           # recurse
           | INT                                               # integer
-          | FLOAT                                             # double
+          | LONG_LIT                                          # longLiteral
+          | FLOAT_LIT                                         # floatLiteral
+          | DOUBLE_LIT                                        # double
+          | CHAR_LIT                                          # charLiteral
           | STRING                                            # string
           // "return" is a prefix alternative, so its operand is parsed at this
           // alternative's precedence. It must therefore come last, or "return a + b"
@@ -258,9 +261,18 @@ coreCollectionKeyword: LIST_KW | SET_KW | SORTEDSET_KW | MAP_KW | SORTEDMAP_KW |
 coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY_KW | VOID_KW;
 
 // Tokens
+// Numbers : 42 (int, or byte, short, long, float, double where one is expected), 42L (long),
+// 1.5f (float), 1.5 or 1.5d (double).
 INT: [0-9]+;
-FLOAT: [0-9]* '.' [0-9]+ ('E' [0-9]+)?;
-STRING: '"' (~[\\"]|'\\\\'|'\\"')*? '"';
+LONG_LIT: [0-9]+ [lL];
+FLOAT_LIT: ([0-9]* '.' [0-9]+ EXPONENT? | [0-9]+ EXPONENT?) [fF];
+DOUBLE_LIT: [0-9]* '.' [0-9]+ EXPONENT? [dD]? | [0-9]+ EXPONENT [dD]? | [0-9]+ [dD];
+fragment EXPONENT: [eE] [+-]? [0-9]+;
+// Escapes : \\ \" \' \n \t \r \b \f \0 and \uXXXX.
+fragment ESCAPE: '\\' ([btnfr"'\\0] | 'u' HEX HEX HEX HEX);
+fragment HEX: [0-9a-fA-F];
+CHAR_LIT: '\'' (~['\\\r\n] | ESCAPE) '\'';
+STRING: '"' (~[\\"] | ESCAPE)* '"';
 PLUS: '+';
 MINUS: '-';
 MUL: '*';

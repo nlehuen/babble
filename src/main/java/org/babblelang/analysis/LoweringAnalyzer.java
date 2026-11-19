@@ -50,10 +50,15 @@ final class LoweringAnalyzer {
         Map<ParserRuleContext, Type> inferredDefs = checker.inferredDefs();
         Map<ParserRuleContext, Type> inferredMembers = checker.inferredMembers();
         Map<ParserRuleContext, Type> inferredParams = checker.inferredParams();
-        Set<ParserRuleContext> widened = checker.widened();
+        Map<ParserRuleContext, Integer> widened = checker.widened();
         recordChecksTree(file, pass, checker, declarationTypes, inferredDefs, inferredMembers, widened);
-        for (ParserRuleContext ctx : widened) {
-            pass.analysis.widenToDouble(ctx);
+        for (Map.Entry<ParserRuleContext, Integer> entry : widened.entrySet()) {
+            pass.analysis.widen(entry.getKey(), entry.getValue());
+        }
+        for (Map.Entry<ParserRuleContext, Object> entry : checker.literalValues().entrySet()) {
+            if (checker.inFile(entry.getKey())) {
+                pass.analysis.setLiteralValue(entry.getKey(), entry.getValue());
+            }
         }
         for (Map.Entry<ParserRuleContext, String> entry : checker.callChecks().entrySet()) {
             pass.analysis.setCheckedType(entry.getKey(), entry.getValue());
@@ -424,7 +429,7 @@ final class LoweringAnalyzer {
             Map<ParserRuleContext, Type> declarationTypes,
             Map<ParserRuleContext, Type> inferredDefs,
             Map<ParserRuleContext, Type> inferredMembers,
-            Set<ParserRuleContext> widened) {
+            Map<ParserRuleContext, Integer> widened) {
         if (tree instanceof BabbleParser.TypeContext || tree instanceof BabbleParser.TypeListContext
                 || tree instanceof BabbleParser.SuperExpressionContext) {
             return;
@@ -448,13 +453,13 @@ final class LoweringAnalyzer {
             Map<ParserRuleContext, Type> declarationTypes,
             Map<ParserRuleContext, Type> inferredDefs,
             Map<ParserRuleContext, Type> inferredMembers,
-            Set<ParserRuleContext> widened) {
+            Map<ParserRuleContext, Integer> widened) {
         if (tree instanceof BabbleParser.ParameterDeclarationContext parameter) {
             Type type = parameter.type() != null
                     ? checker.annotator().annotation(parameter.type(), checker.scopeOf(parameter))
                     : declarationTypes.get(parameter);
             if (type != null && TypeAlgebra.containsType(type, Type.DOUBLE) && !TypeAlgebra.containsType(type, Type.INT)) {
-                widened.add(parameter);
+                widened.put(parameter, ScopeAnalysis.DOUBLE_MASK);
             }
             if (parameter.type() != null || (type != null && TypeAlgebra.containsType(type, Type.DOUBLE) && !TypeAlgebra.containsType(type, Type.INT))) {
                 String descriptor = descriptor(type);
@@ -511,7 +516,7 @@ final class LoweringAnalyzer {
 
     /** How the runtime checks a type ({@code Types}), or null when it needs no check. */
     static String descriptor(Type type) {
-        if (type == Type.INT || type == Type.DOUBLE || type == Type.BOOL || type == Type.STRING
+        if (Type.isNumber(type) || type == Type.BOOL || type == Type.CHAR || type == Type.STRING
                 || type == Type.NULL || type == Type.ANY) {
             return type + "|" + type + "|";
         }

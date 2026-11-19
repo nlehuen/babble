@@ -126,7 +126,7 @@ java.lang.UnsupportedOperationException : remove
 {{{{{
 ;; LongUnaryOperator, DoublePredicate, BooleanSupplier, and CharSequence.charAt bridges (long, double, boolean, char)
 def LongInc = class (delta : int) implements java.util.function.LongUnaryOperator (
-    def applyAsLong = (x : any?) : int -> ( (x as java.lang.Long).intValue() + delta )
+    def applyAsLong = (x : long) : long -> ( x + delta )
 )
 def IsPos = class () implements java.util.function.DoublePredicate (
     def test = (d : double) : bool -> ( d > 0.0 )

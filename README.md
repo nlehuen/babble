@@ -144,11 +144,19 @@ assert(last == 30)
 
 ### Numbers
 
-Numbers are `int`s (32 bits) or `double`s. `+`, `-` and `*` on two `int`s give an `int`, wrapping
-on overflow; any other mix gives a `double`. `/` always gives a `double`, even between two `int`s,
-and dividing by zero gives an infinity or `NaN` rather than an error. Comparisons and `==`
-compare an `int` and a `double` by value. (On instances, these operators call methods : see
+Numbers are the JVM's : `byte`, `short`, `int` (32 bits, the default), `long` (`42L`), `float`
+(`1.5f`) and `double` (`1.5`, `1e3`). An integer or decimal literal takes the number its context
+expects when it fits (`def b: byte = 100`, `def f: float = 0.1`), and a number widens where a
+wider one is expected, `byte` to `short` to `int` to `long` to `float` to `double`, but never
+narrows. `+`, `-` and `*` promote as Java does : bytes, shorts and `int`s give an `int`, wrapping
+on overflow, a `long` a `long`, a `float` a `float`, a `double` a `double`. `/` is never an integer
+division : it gives a `float` when one operand is a `float` and neither a `long` or a `double`,
+else a `double`, and dividing by zero gives an infinity or `NaN` rather than an error.
+Comparisons and `==` compare numbers by value. (On instances, these operators call methods : see
 *Value classes* below.)
+
+`char` (`'a'`, `'\n'`, `'\u03bb'`) is a character, not a number : it compares with `<`, but
+`'a' + 1` is an error, and `int(c)` / `char(n)` convert. Strings take the same escapes.
 
 ```
 assert(7 / 2 == 3.5)
@@ -157,8 +165,10 @@ assert(1 / 0 == 1.0 / 0)        ;; Infinity
 assert(2147483647 + 1 == -2147483648)
 ```
 
-`int(x)` and `double(x)` convert : `int` truncates a `double` towards zero, and fails on one
-out of the `int` range, an infinity or `NaN` ; `double` widens an `int`. Both parse a string.
+Each scalar's name converts : `byte(x)`, `short(x)`, `int(x)` and `long(x)` truncate a
+floating-point number towards zero, take a character's code, and fail on a value out of their
+range, an infinity or `NaN` ; `float(x)` and `double(x)` convert any number ; `bool(x)` and
+`char(x)` take what is one already or a string ; `string(x)` formats anything. All parse a string.
 There is no integer division operator : `int(a / b)` truncates the quotient, and
 `java.lang.Math.floorDiv(a, b)` and `floorMod` round it down.
 
@@ -166,6 +176,7 @@ There is no integer division operator : `int(a / b)` truncates the quotient, and
 assert(int(2.7) == 2 and int(-2.7) == -2)
 assert(int(7 / 2) == 3)
 assert(int("42") + double("0.5") == 42.5)
+assert(long("9000000000") * 2 == 18000000000L and char(int('a') + 1) == 'b')
 ```
 
 Compound assignment applies an operator to a variable or a member : `x += v` is `x = x + v`,
@@ -671,14 +682,14 @@ Language features :
 - [x] functions, supporting recursion (`recurse`) and closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional & named parameters in function calls, and default values for parameters.
-- [x] basic types : boolean, int, double, string, `null`, functions, union types (`A | B`), nullable types (`T?`), `any` / `any?`, and generic/parameterized types (`Box(T)`, `java.util.List(string)`).
+- [x] basic types : the nine scalars (`byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, with Java's promotion and widening, and `42L`, `1.5f`, `'a'` literals), `null`, functions, union types (`A | B`), nullable types (`T?`), `any` / `any?`, and generic/parameterized types (`Box(T)`, `java.util.List(string)`).
 - [x] packages as namespaces, which change only through their own code : `p.x = 1` from outside is an error.
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, value classes, private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, and Babble classes implementing Java (including generic) interfaces.
 - [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), covariant parameterized types (`Box(T)`, `java.util.List(T)`), flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md) and [BIP008](docs/design/bip008_static-typing.md)).
 - [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts, and `org.babblelang.effects` host annotations (see [BIP007](docs/design/bip007_effects.md)).
-- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, and the conversions `int(x)` and `double(x)`.
+- [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, and the conversions `byte(x)`..`string(x)`.
 - [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` (see [BIP011](docs/design/bip011_core-types.md)).
 
 Implementation features :
@@ -740,7 +751,7 @@ order of how much each would improve that code :
 - [ ] `break` and `continue` in loops.
 - [x] compound assignment : `+=`, `-=`, `*=`, `/=`, on variables and members, calling operator
   methods on instances. The ray tracers' counters and accumulators use them.
-- [x] number conversions : `int(x)` and `double(x)`, instead of
+- [x] number conversions : `int(x)` and `double(x)` (and since, `byte(x)`..`string(x)`), instead of
   `Math.toIntExact(Math.round(Math.floor(x)))` or a binary decomposition in Babble.
 - [x] line continuation before `.` and `?.`, to break long method chains across lines : a line may start
   with `.` or `?.`, continuing the expression above it.

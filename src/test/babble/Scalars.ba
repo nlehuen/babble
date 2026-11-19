@@ -1,0 +1,65 @@
+;; The nine scalars (BIP011-D2 to D4) : byte, short, int, long, float, double, bool, char, string.
+
+;; Literals : 42L is a long, 1.5f a float, 'a' a char ; an integer or decimal literal takes the
+;; number its context expects, when it fits.
+def b: byte = 100
+def s: short = -30000
+def l: long = 3000000000
+def big = 9000000000L
+def f: float = 1.5
+def g = 2.5f
+def d = 1e3
+def c = 'a'
+assert(classof(b) == java.lang.Byte and classof(s) == java.lang.Short)
+assert(classof(l) == java.lang.Long and classof(big) == java.lang.Long)
+assert(classof(f) == java.lang.Float and classof(g) == java.lang.Float)
+assert(classof(d) == java.lang.Double and classof(c) == java.lang.Character)
+assert(-9223372036854775808L < 0L)
+assert(d == 1000.0 and 1.5d == 1.5 and 2e-1 == 0.2)
+
+;; Escapes, in strings and characters
+assert(java.lang.StringBuilder("a\tb").length() == 3 and "\u0041" == "A" and '\n' == '\u000a' and '\'' == '\u0027')
+
+;; Promotion (JLS 5.6.2) : bytes and shorts make ints, a long a long, a float a float
+def byteSum = b + b
+assert(classof(byteSum) == java.lang.Integer and byteSum == 200)
+def precise = 9007199254740993L + 0L
+assert(precise == 9007199254740993L)
+assert(classof(java.lang.Long.valueOf(1) + java.lang.Long.valueOf(2)) == java.lang.Long)
+assert(classof(g * 2) == java.lang.Float and classof(g / 2) == java.lang.Float)
+assert(classof(big / 2) == java.lang.Double and classof(1 / 2) == java.lang.Double)
+assert(classof(-b) == java.lang.Integer and classof(-big) == java.lang.Long and classof(-g) == java.lang.Float)
+
+;; Widening : byte -> short -> int -> long -> float -> double, where a wider number is expected
+def widened: long = b
+assert(classof(widened) == java.lang.Long and widened == 100)
+def asDouble: double = l
+assert(asDouble == 3000000000.0)
+def accumulate = (total: long, n: int): long -> (total + n)
+assert(accumulate(1, 2) == 3L)
+def joined = if b > 0 then (1) else (2L)
+assert(classof(joined) == java.lang.Long)
+def counter: long = 0
+counter += 5
+assert(counter == 5L)
+
+;; Conversions : each scalar's name as a function
+assert(byte(300 - 200) == 100 and short("12") == 12 and int(2.9) == 2 and long("9000000000") == big)
+assert(float(1) == 1.0 and double(g) == 2.5 and bool("true") and char(65) == 'A' and char("z") == 'z')
+assert(int('A') == 65 and long('A') == 65L and string(null) == "null" and string(1.5f) == "1.5")
+
+;; char is not a number : it compares, converts explicitly
+assert('a' < 'z' and char(int('a') + 1) == 'b')
+
+;; Type tests
+def kind = (v: any): string -> (
+    if v is byte then ("byte") else if v is short then ("short") else if v is long then ("long")
+    else if v is float then ("float") else if v is char then ("char") else ("other")
+)
+assert(kind(b) + kind(s) + kind(l) + kind(f) + kind(c) == "byteshortlongfloatchar")
+
+;; Java : long, float and char arguments and results
+assert(java.lang.Math.max(l, 1) == l and java.lang.Math.abs(-g) == g)
+assert(java.lang.Character.isLetter(c) and java.lang.StringBuilder("abc").charAt(1) == 'b')
+def millis: long = java.lang.System.currentTimeMillis()
+assert(millis > 0)

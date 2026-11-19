@@ -1870,7 +1870,7 @@ final class EffectChecker {
         if (t == Type.ERROR) {
             return true;
         }
-        if (t == Type.INT || t == Type.DOUBLE || t == Type.BOOL || t == Type.STRING) {
+        if (isScalar(t)) {
             return true;
         }
         if (t instanceof Type.JavaInstance ji) {
@@ -2112,7 +2112,8 @@ final class EffectChecker {
     }
 
     private static boolean isLosslessToStringType(Type type) {
-        return type == Type.STRING || type == Type.INT || type == Type.BOOL;
+        return type == Type.STRING || type == Type.INT || type == Type.BOOL || type == Type.LONG || type == Type.SHORT
+                || type == Type.BYTE || type == Type.CHAR;
     }
 
     private static boolean isOddIntConstant(BabbleParser.ExpressionContext raw) {
@@ -2392,7 +2393,7 @@ final class EffectChecker {
         if (type == null || type == Type.ERROR || type == Type.NOTHING) {
             return true;
         }
-        if (type == Type.INT || type == Type.DOUBLE || type == Type.BOOL || type == Type.STRING || type == Type.NULL) {
+        if (isScalar(type) || type == Type.NULL) {
             return true;
         }
         if (type instanceof Type.Union u) {
@@ -2432,7 +2433,7 @@ final class EffectChecker {
         if (type == null || type == Type.ERROR) {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
         }
-        if (type == Type.INT || type == Type.DOUBLE || type == Type.BOOL || type == Type.STRING || type == Type.NULL) {
+        if (isScalar(type) || type == Type.NULL) {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
         }
         if (type instanceof Type.Union u) {
@@ -2486,8 +2487,7 @@ final class EffectChecker {
     }
 
     private EffectSet singleEqualityProfile(Type type) {
-        if (type == null || type == Type.ERROR || type == Type.INT || type == Type.DOUBLE
-                || type == Type.BOOL || type == Type.STRING || type == Type.NULL
+        if (type == null || type == Type.ERROR || isScalar(type) || type == Type.NULL
                 || type instanceof Type.Function || type instanceof Type.ClassValue
                 || type instanceof Type.JavaClassValue) {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
@@ -2532,7 +2532,12 @@ final class EffectChecker {
     }
 
     private static boolean isPrimitiveOrString(Type t) {
-        return t == Type.INT || t == Type.DOUBLE || t == Type.BOOL || t == Type.STRING;
+        return isScalar(t);
+    }
+
+    /** The scalars : the numbers, {@code bool}, {@code char} and {@code string}, immutable values. */
+    static boolean isScalar(Type t) {
+        return Type.isNumber(t) || t == Type.BOOL || t == Type.CHAR || t == Type.STRING;
     }
 
     // ================================================================ 11. Intra-Procedural Flow & Alias Analyzer

@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * The analysis describes each declared type with a string, {@code kind|display|payload} :
  * <ul>
- * <li>{@code int}, {@code double}, {@code bool}, {@code string} : the built-in types ;</li>
+ * <li>{@code byte}..{@code double}, {@code bool}, {@code char}, {@code string} : the scalar types ;</li>
  * <li>{@code fn} : a function type, which any callable value satisfies ;</li>
  * <li>{@code java}, with the Java class's name ;</li>
  * <li>{@code babble}, with the id of the class or interface expression (nominal).</li>
@@ -57,12 +57,23 @@ public final class Types {
 
         @Override
         boolean accepts(Object value) {
-            return value != null && (javaClass.isInstance(value) || javaClass == Double.class && value instanceof Integer);
+            return value != null && (javaClass.isInstance(value) || widens(value));
+        }
+
+        /** A narrower number, which converts : an int where a double is expected, a byte for an int... */
+        private boolean widens(Object value) {
+            int rank = Values.numericRank(value);
+            return rank >= 0 && rank < rank();
+        }
+
+        private int rank() {
+            return javaClass == Byte.class ? 0 : javaClass == Short.class ? 1 : javaClass == Integer.class ? 2
+                    : javaClass == Long.class ? 3 : javaClass == Float.class ? 4 : javaClass == Double.class ? 5 : -1;
         }
 
         @Override
         Object convert(Object value) {
-            return javaClass == Double.class && value instanceof Integer i ? (Object) i.doubleValue() : value;
+            return widens(value) ? Values.widen(value, 1 << rank()) : value;
         }
     }
 
@@ -210,9 +221,14 @@ public final class Types {
         String display = descriptor.substring(first + 1, last);
         String payload = descriptor.substring(last + 1);
         return switch (kind) {
+            case "byte" -> new Builtin(display, Byte.class);
+            case "short" -> new Builtin(display, Short.class);
             case "int" -> new Builtin(display, Integer.class);
+            case "long" -> new Builtin(display, Long.class);
+            case "float" -> new Builtin(display, Float.class);
             case "double" -> new Builtin(display, Double.class);
             case "bool" -> new Builtin(display, Boolean.class);
+            case "char" -> new Builtin(display, Character.class);
             case "string" -> new Builtin(display, String.class);
             case "null" -> new NullType(display);
             case "any" -> new AnyType(display);
@@ -276,6 +292,21 @@ public final class Types {
         }
         if (value instanceof String) {
             return "string";
+        }
+        if (value instanceof Long) {
+            return "long";
+        }
+        if (value instanceof Float) {
+            return "float";
+        }
+        if (value instanceof Character) {
+            return "char";
+        }
+        if (value instanceof Byte) {
+            return "byte";
+        }
+        if (value instanceof Short) {
+            return "short";
         }
         if (value instanceof BabbleInstance instance) {
             return instance.babbleClass().name();
