@@ -166,7 +166,7 @@ true
 
 {{{{{
 ;; Null boxed Integer return into typed non-nullable int (checkBoxed)
-def x : int = java.lang.Integer.getInteger("babble.nonexistent.prop")
+def x : int = java.lang.Integer.getInteger("babble.nonexistent.prop")!
 }}}}}
 Type error : expected int, got null
 
@@ -247,10 +247,10 @@ println(fn1.andThen(fn2).applyAsInt(3))
 def pf = java.awt.geom.Point2D.Float(3, 4)
 pf.x = java.lang.Float.parseFloat("5")
 def ev = java.awt.Event("s", java.lang.Long.numberOfLeadingZeros(8), 1, 2, 3, 4, 5, "a")
-def st = java.io.StreamTokenizer(java.io.StringReader("a"))
-st.sval = "go"
-st.sval += "!"
-println(pf.x, ":", ev.when > 0, ":", st.sval)
+def demo = import("org.babblelang.tests").JavaClassDemo()
+demo.nonNullLabel = "go"
+demo.nonNullLabel += "!"
+println(pf.x, ":", ev.when > 0, ":", demo.nonNullLabel)
 }}}}}
 true:false:true:false
 8

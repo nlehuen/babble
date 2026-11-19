@@ -140,9 +140,7 @@ public final class JavaLinker {
 
         Class<?> result = resolved.getReturnType();
         h = h.asType(h.type().changeReturnType(Object.class));
-        if (result == Integer.class || result == Double.class || result == Boolean.class) {
-            h = MethodHandles.filterReturnValue(h, CHECK_BOXED.bindTo(result));
-        } else if (!result.isPrimitive() && result != String.class) {
+        if (!result.isPrimitive() && result != String.class) {
             h = MethodHandles.filterReturnValue(h, FROM_JAVA);
         }
         h = isStatic ? MethodHandles.dropArguments(h, 0, Callable.class) : MethodHandles.filterArguments(h, 0, RECEIVER);

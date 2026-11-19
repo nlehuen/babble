@@ -117,6 +117,27 @@ public final class JavaTypes {
         return type.isPrimitive() ? BOXES.get(type) : type;
     }
 
+    public static int unboxInt(Object value) {
+        if (value == null) {
+            throw new BabbleException("Type error : expected int, got null");
+        }
+        return ((Integer) value).intValue();
+    }
+
+    public static double unboxDouble(Object value) {
+        if (value == null) {
+            throw new BabbleException("Type error : expected double, got null");
+        }
+        return ((Double) value).doubleValue();
+    }
+
+    public static boolean unboxBool(Object value) {
+        if (value == null) {
+            throw new BabbleException("Type error : expected bool, got null");
+        }
+        return ((Boolean) value).booleanValue();
+    }
+
     public static boolean isWidening(Class<?> from, Class<?> to) {
         return WIDENINGS.getOrDefault(from, List.of()).contains(to);
     }
@@ -294,12 +315,18 @@ public final class JavaTypes {
             return value;
         }
         if (type == int.class || type == Integer.class) {
+            if (value == null && type == Integer.class) {
+                return null;
+            }
             if (!(value instanceof Integer)) {
                 throw new BabbleException("Type error : expected int, got " + Types.describe(value));
             }
             return value;
         }
         if (type == double.class || type == Double.class) {
+            if (value == null && type == Double.class) {
+                return null;
+            }
             if (value instanceof Double) {
                 return value;
             }
@@ -309,6 +336,9 @@ public final class JavaTypes {
             throw new BabbleException("Type error : expected double, got " + Types.describe(value));
         }
         if (type == boolean.class || type == Boolean.class) {
+            if (value == null && type == Boolean.class) {
+                return null;
+            }
             if (!(value instanceof Boolean)) {
                 throw new BabbleException("Type error : expected bool, got " + Types.describe(value));
             }

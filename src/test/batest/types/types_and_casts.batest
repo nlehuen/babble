@@ -178,7 +178,7 @@ Not a static field : java.awt.Point.x
 def st = java.io.StreamTokenizer(java.io.StringReader("a"))
 st.sval = (x : int) -> ( x )
 }}}}}
-Type error : expected string, got (x : int) : int
+Type error : expected string?, got (x : int) : int
 
 {{{{{
 def r : () = () -> ( )

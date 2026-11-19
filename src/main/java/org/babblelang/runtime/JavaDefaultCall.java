@@ -59,6 +59,6 @@ final class JavaDefaultCall implements Callable {
         } catch (Throwable t) {
             throw JavaTypes.wrapInvocationException(t);
         }
-        return JavaTypes.checkBoxed(method.getReturnType(), Values.fromJava(result));
+        return Values.fromJava(result);
     }
 }

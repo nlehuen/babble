@@ -211,6 +211,6 @@ a = 2.5
 def b = null
 b = "ok"
 def uv = if u is Box then ( u.v ) else ( 0 )
-println(uv, ":", (fn.apply(7) as Pair).v, ":", a, ":", b)
+println(uv, ":", fn.apply(7).v, ":", a, ":", b)
 }}}}}
 42:7:2.5:ok

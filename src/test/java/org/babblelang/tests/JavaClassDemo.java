@@ -24,6 +24,9 @@ public class JavaClassDemo {
         }
     }
 
+    @org.babblelang.effects.NotNull
+    public String nonNullLabel = "";
+
     private final String name;
 
     public JavaClassDemo() {

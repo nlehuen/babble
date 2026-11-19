@@ -193,7 +193,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         String base = "def tests = import(\"org.babblelang.tests\")\n"
                 + "def C = class () implements tests.JavaClassDemo.BoxedDefault ()\n";
         Assertions.assertEquals(7, interpret(base + "C().getBoxedDefault(true)"));
-        assertFails(base + "C().getBoxedDefault(false)", "Type error : expected int, got null", 3);
+        assertFails(base + "C().getBoxedDefault(false)!", "Type error : expected int, got null", 3);
     }
 
     @Test
@@ -205,7 +205,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
                 + "    def acceptInt = (v : int) : int -> ( v + 1 )\n"
                 + "    def acceptDouble = (v : double) : double -> ( v + 0.5 )\n"
                 + "    def acceptBool = (v : bool) : bool -> ( not v )\n"
-                + "    def acceptString = (v : string) : string -> ( v )\n"
+                + "    def acceptString = (v : string?) : string? -> ( v )\n"
                 + "    def acceptRunnable = (v : java.lang.Runnable) : int -> ( 1 )\n"
                 + ")\n"
                 + "def c = Cb()\n";

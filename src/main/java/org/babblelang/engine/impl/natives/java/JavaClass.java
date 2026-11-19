@@ -239,7 +239,7 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
 
     private static Object read(Field field, Object receiver) {
         try {
-            return JavaTypes.checkBoxed(field.getType(), Values.fromJava(field.get(receiver)));
+            return Values.fromJava(field.get(receiver));
         } catch (IllegalAccessException e) {
             throw new BabbleException(e);
         }

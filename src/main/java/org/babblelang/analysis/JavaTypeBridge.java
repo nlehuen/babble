@@ -2,6 +2,9 @@ package org.babblelang.analysis;
 
 import org.babblelang.runtime.JavaTypes;
 
+import java.lang.reflect.AnnotatedArrayType;
+import java.lang.reflect.AnnotatedParameterizedType;
+import java.lang.reflect.AnnotatedType;
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
@@ -81,6 +84,24 @@ final class JavaTypeBridge {
         return new Type.JavaInstance(java);
     }
 
+    /** Translates a reflected Java class according to its nullability (unannotated references become {@code T?}). */
+    static Type fromJavaReflected(Class<?> java, JavaNullability.Nullness nullness) {
+        if (java == void.class) {
+            return Type.NULL;
+        }
+        if (java.isArray()) {
+            Type comp = fromJavaReflected(java.getComponentType(),
+                    java.getComponentType().isPrimitive() ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.UNSPECIFIED);
+            Type arr = new Type.JavaArray(java, comp);
+            return nullness == JavaNullability.Nullness.NON_NULL ? arr : Type.nullable(arr);
+        }
+        Type base = fromJava(java);
+        if (java.isPrimitive() || nullness == JavaNullability.Nullness.NON_NULL) {
+            return base;
+        }
+        return Type.nullable(base);
+    }
+
     static Type rawJavaInstance(Class<?> java) {
         TypeVariable<?>[] params = java.getTypeParameters();
         if (params.length == 0) {
@@ -145,7 +166,8 @@ final class JavaTypeBridge {
                     TypeVariable<?>[] rawParams = raw.getTypeParameters();
                     java.lang.reflect.Type[] rawArgs = pt.getActualTypeArguments();
                     for (int i = 0; i < Math.min(rawParams.length, rawArgs.length); i++) {
-                        env.putIfAbsent(rawParams[i], fromJavaType(rawArgs[i], env, false, false, activeWildcards));
+                        env.putIfAbsent(rawParams[i], fromJavaType(rawArgs[i], null, env, false, false,
+                                JavaNullability.Nullness.UNSPECIFIED, true, activeWildcards));
                     }
                     if (visited.add(raw)) {
                         queue.add(raw);
@@ -159,19 +181,67 @@ final class JavaTypeBridge {
 
     static Type fromJavaType(java.lang.reflect.Type type, Map<TypeVariable<?>, Type> env,
                              boolean widenTopTypeVar, boolean forParam) {
-        return fromJavaType(type, env, widenTopTypeVar, forParam,
+        return fromJavaType(type, null, env, widenTopTypeVar, forParam,
+                JavaNullability.Nullness.UNSPECIFIED, false,
                 Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    static Type fromJavaType(java.lang.reflect.Type type, AnnotatedType annType, Map<TypeVariable<?>, Type> env,
+                             boolean widenTopTypeVar, boolean forParam,
+                             JavaNullability.Nullness topNullness, boolean nullMarked) {
+        return fromJavaType(type, annType, env, widenTopTypeVar, forParam, topNullness, nullMarked,
+                Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private static JavaNullability.Nullness effectiveNullness(JavaNullability.Nullness explicit,
+                                                              AnnotatedType annType, boolean nullMarked) {
+        if (explicit != null && explicit != JavaNullability.Nullness.UNSPECIFIED) {
+            return explicit;
+        }
+        JavaNullability.Nullness scanned = JavaNullability.scanAnnotatedType(annType);
+        if (scanned != JavaNullability.Nullness.UNSPECIFIED) {
+            return scanned;
+        }
+        return nullMarked ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.UNSPECIFIED;
     }
 
     private static Type fromJavaType(java.lang.reflect.Type type, Map<TypeVariable<?>, Type> env,
                                      boolean widenTopTypeVar, boolean forParam,
                                      Set<WildcardType> activeWildcards) {
+        return fromJavaType(type, null, env, widenTopTypeVar, forParam,
+                JavaNullability.Nullness.UNSPECIFIED, false, activeWildcards);
+    }
+
+    private static Type fromJavaType(java.lang.reflect.Type type, AnnotatedType annType, Map<TypeVariable<?>, Type> env,
+                                     boolean widenTopTypeVar, boolean forParam,
+                                     JavaNullability.Nullness topNullness, boolean nullMarked,
+                                     Set<WildcardType> activeWildcards) {
+        JavaNullability.Nullness eff = effectiveNullness(topNullness, annType, nullMarked);
         if (type instanceof TypeVariable<?> tv) {
             Type resolved = env.get(tv);
             if (resolved == null) {
                 resolved = Type.NULLABLE_ANY;
             }
-            return widenTopTypeVar ? Type.nullable(resolved) : resolved;
+            if (topNullness == JavaNullability.Nullness.PARAMETRIC) {
+                return resolved;
+            }
+            if (topNullness == JavaNullability.Nullness.NON_NULL) {
+                return Type.withoutNull(resolved);
+            }
+            if (topNullness == JavaNullability.Nullness.NULLABLE) {
+                return Type.nullable(resolved);
+            }
+            JavaNullability.Nullness scanned = JavaNullability.scanAnnotatedType(annType);
+            if (scanned == JavaNullability.Nullness.NON_NULL) {
+                return Type.withoutNull(resolved);
+            }
+            if (scanned == JavaNullability.Nullness.NULLABLE) {
+                return Type.nullable(resolved);
+            }
+            if (nullMarked || !widenTopTypeVar) {
+                return resolved;
+            }
+            return Type.nullable(resolved);
         }
         if (type instanceof WildcardType wt) {
             if (!activeWildcards.add(wt)) {
@@ -180,35 +250,59 @@ final class JavaTypeBridge {
             try {
                 Type resolved;
                 if (forParam && wt.getLowerBounds().length > 0) {
-                    resolved = fromJavaType(wt.getLowerBounds()[0], env, false, false, activeWildcards);
+                    resolved = fromJavaType(wt.getLowerBounds()[0], null, env, false, false,
+                            JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards);
                 } else if (wt.getUpperBounds().length > 0 && wt.getUpperBounds()[0] != Object.class) {
-                    resolved = fromJavaType(wt.getUpperBounds()[0], env, false, false, activeWildcards);
+                    resolved = fromJavaType(wt.getUpperBounds()[0], null, env, false, false,
+                            JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards);
                 } else {
                     resolved = Type.NULLABLE_ANY;
                 }
-                return widenTopTypeVar ? Type.nullable(resolved) : resolved;
+                if (eff == JavaNullability.Nullness.NON_NULL) {
+                    return resolved;
+                }
+                if (eff == JavaNullability.Nullness.NULLABLE || widenTopTypeVar) {
+                    return Type.nullable(resolved);
+                }
+                return resolved;
             } finally {
                 activeWildcards.remove(wt);
             }
         }
         if (type instanceof ParameterizedType pt && pt.getRawType() instanceof Class<?> raw) {
             java.lang.reflect.Type[] rawArgs = pt.getActualTypeArguments();
+            AnnotatedType[] annArgs = annType instanceof AnnotatedParameterizedType apt
+                    ? apt.getAnnotatedActualTypeArguments() : null;
             List<Type> args = new ArrayList<>(rawArgs.length);
-            for (java.lang.reflect.Type arg : rawArgs) {
-                args.add(fromJavaType(arg, env, false, forParam, activeWildcards));
+            for (int i = 0; i < rawArgs.length; i++) {
+                AnnotatedType argAnn = annArgs != null && i < annArgs.length ? annArgs[i] : null;
+                args.add(fromJavaType(rawArgs[i], argAnn, env, false, forParam,
+                        JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards));
             }
-            if (raw.getTypeParameters().length == args.size()) {
-                return new Type.JavaInstance(raw, args);
-            }
-            return fromJava(raw);
+            Type base = raw.getTypeParameters().length == args.size()
+                    ? new Type.JavaInstance(raw, args)
+                    : fromJava(raw);
+            return eff == JavaNullability.Nullness.NON_NULL ? base : Type.nullable(base);
         }
         if (type instanceof GenericArrayType gat) {
-            Type component = fromJavaType(gat.getGenericComponentType(), env, false, false, activeWildcards);
+            AnnotatedType compAnn = annType instanceof AnnotatedArrayType aat ? aat.getAnnotatedGenericComponentType() : null;
+            Type component = fromJavaType(gat.getGenericComponentType(), compAnn, env, false, false,
+                    JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards);
             Class<?> arrayClass = Array.newInstance(erasedClass(gat.getGenericComponentType()), 0).getClass();
-            return new Type.JavaArray(arrayClass, component);
+            Type arr = new Type.JavaArray(arrayClass, component);
+            return eff == JavaNullability.Nullness.NON_NULL ? arr : Type.nullable(arr);
         }
         if (type instanceof Class<?> cls) {
-            return fromJava(cls);
+            if (cls.isArray()) {
+                AnnotatedType compAnn = annType instanceof AnnotatedArrayType aat ? aat.getAnnotatedGenericComponentType() : null;
+                Class<?> compCls = cls.getComponentType();
+                Type comp = compCls.isPrimitive()
+                        ? fromJava(compCls)
+                        : fromJavaReflected(compCls, effectiveNullness(JavaNullability.Nullness.UNSPECIFIED, compAnn, nullMarked));
+                Type arr = new Type.JavaArray(cls, comp);
+                return eff == JavaNullability.Nullness.NON_NULL ? arr : Type.nullable(arr);
+            }
+            return fromJavaReflected(cls, eff);
         }
         return Type.NULLABLE_ANY;
     }
@@ -265,18 +359,21 @@ final class JavaTypeBridge {
                 Type a = actualArgs.get(i);
                 if (ptArg instanceof WildcardType wt) {
                     if (wt.getLowerBounds().length > 0) {
-                        Type lower = fromJavaType(wt.getLowerBounds()[0], env, false, false);
+                        Type lower = fromJavaType(wt.getLowerBounds()[0], null, env, false, false,
+                                JavaNullability.Nullness.UNSPECIFIED, true);
                         if (!algebra.relate(lower, a, TypeAlgebra.RelateMode.ASSIGNABLE, null)) {
                             return false;
                         }
                     } else if (wt.getUpperBounds().length > 0 && wt.getUpperBounds()[0] != Object.class) {
-                        Type upper = fromJavaType(wt.getUpperBounds()[0], env, false, false);
+                        Type upper = fromJavaType(wt.getUpperBounds()[0], null, env, false, false,
+                                JavaNullability.Nullness.UNSPECIFIED, true);
                         if (!algebra.relate(a, upper, TypeAlgebra.RelateMode.SUBTYPE, null)) {
                             return false;
                         }
                     }
                 } else {
-                    Type expectedArg = fromJavaType(ptArg, env, false, false);
+                    Type expectedArg = fromJavaType(ptArg, null, env, false, false,
+                            JavaNullability.Nullness.UNSPECIFIED, true);
                     if (!algebra.relate(a, expectedArg, TypeAlgebra.RelateMode.SUBTYPE, null)) {
                         return false;
                     }
@@ -284,7 +381,8 @@ final class JavaTypeBridge {
             }
             return true;
         }
-        Type expectedBound = fromJavaType(bound, env, false, false);
+        Type expectedBound = fromJavaType(bound, null, env, false, false,
+                JavaNullability.Nullness.UNSPECIFIED, true);
         return algebra.relate(actual, expectedBound, TypeAlgebra.RelateMode.ASSIGNABLE, null);
     }
 
@@ -295,6 +393,20 @@ final class JavaTypeBridge {
      */
     static Type javaResult(java.lang.reflect.Type genericType, Map<TypeVariable<?>, Type> env, TypeAlgebra algebra) {
         return makeAccessible(fromJavaType(genericType, env, true, false), algebra);
+    }
+
+    static Type javaMethodResult(Method method, Map<TypeVariable<?>, Type> env, TypeAlgebra algebra) {
+        Type raw = fromJavaType(method.getGenericReturnType(), method.getAnnotatedReturnType(), env,
+                true, false, JavaNullability.returnNullness(method), JavaNullability.isNullMarked(method));
+        return makeAccessible(raw, algebra);
+    }
+
+    static Type javaExecutableParamType(Executable exec, int index, Map<TypeVariable<?>, Type> env) {
+        java.lang.reflect.Type[] genericParams = exec.getGenericParameterTypes();
+        AnnotatedType[] annParams = exec.getAnnotatedParameterTypes();
+        AnnotatedType ann = index < annParams.length ? annParams[index] : null;
+        return fromJavaType(genericParams[index], ann, env, false, true,
+                JavaNullability.parameterNullness(exec, index), JavaNullability.isNullMarked(exec));
     }
 
     static Type makeAccessible(Type type, TypeAlgebra algebra) {
@@ -341,9 +453,10 @@ final class JavaTypeBridge {
         java.lang.reflect.Type[] genericParams = sam.getGenericParameterTypes();
         List<Type.Parameter> params = new ArrayList<>(genericParams.length);
         for (int i = 0; i < genericParams.length; i++) {
-            params.add(new Type.Parameter("p" + i, fromJavaType(genericParams[i], env, false, true), false));
+            params.add(new Type.Parameter("p" + i, javaExecutableParamType(sam, i, env), false));
         }
-        Type returnType = fromJavaType(sam.getGenericReturnType(), env, false, false);
+        Type returnType = fromJavaType(sam.getGenericReturnType(), sam.getAnnotatedReturnType(), env,
+                false, false, JavaNullability.returnNullness(sam), JavaNullability.isNullMarked(sam));
         Type.Function raw = new Type.Function(params, returnType);
         return effectChecker != null ? effectChecker.applySamJavaEffects(sam, raw) : raw;
     }
@@ -379,8 +492,11 @@ final class JavaTypeBridge {
             if (paramType == double.class) {
                 return argType == Type.INT || argType == Type.DOUBLE;
             }
-            if (paramType == long.class || paramType == float.class) {
-                return argType == Type.INT;
+            if (paramType == long.class) {
+                return argType == Type.INT || argType == Type.LONG;
+            }
+            if (paramType == float.class) {
+                return argType == Type.INT || argType == Type.FLOAT;
             }
             return false;
         }
@@ -469,10 +585,12 @@ final class JavaTypeBridge {
         }
         Map<TypeVariable<?>, Type> env = onClass ? Map.of() : javaTypeEnv(java, typeArgs);
         java.lang.reflect.Type genericType = field.getGenericType();
-        boolean checked = genericType instanceof TypeVariable<?> || genericType instanceof WildcardType;
+        Type fieldType = makeAccessible(fromJavaType(genericType, field.getAnnotatedType(), env,
+                true, false, JavaNullability.fieldNullness(field), false), algebra);
+        boolean checked = !field.getType().isPrimitive() && !Type.containsNull(fieldType);
         ScopeAnalysis.JavaFieldTarget target = Modifier.isPublic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())
                 ? new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic) : null;
-        return new JavaMember(javaResult(genericType, env, algebra), null, checked, target);
+        return new JavaMember(fieldType, null, checked, target);
     }
 
     /** A Java field an assignment writes. */
@@ -538,7 +656,8 @@ final class JavaTypeBridge {
         Map<TypeVariable<?>, Type> env = receiver instanceof Type.JavaInstance ji
                 ? javaTypeEnv(ji.type(), ji.typeArguments())
                 : Map.of();
-        return makeAccessible(fromJavaType(field.getGenericType(), env, widenTopTypeVar, false), algebra);
+        return makeAccessible(fromJavaType(field.getGenericType(), field.getAnnotatedType(), env,
+                widenTopTypeVar, false, JavaNullability.fieldNullness(field), false), algebra);
     }
 
     static Class<?> javaClassOf(Type type) {
@@ -572,14 +691,9 @@ final class JavaTypeBridge {
         }
         Set<Type> paramTypes = new LinkedHashSet<>();
         for (E candidate : candidates) {
-            java.lang.reflect.Type genericParam = candidate.getGenericParameterTypes()[index];
             Map<TypeVariable<?>, Type> env = new HashMap<>(receiverEnv);
             candidateSolvingVars(candidate).forEach(env::putIfAbsent);
-            Type resolved = fromJavaType(genericParam, env, false, true);
-            if (genericParam instanceof Class<?> raw && !raw.isPrimitive()) {
-                resolved = Type.nullable(resolved);
-            }
-            paramTypes.add(resolved);
+            paramTypes.add(javaExecutableParamType(candidate, index, env));
         }
         if (paramTypes.size() == 1) {
             return paramTypes.iterator().next();
@@ -615,11 +729,12 @@ final class JavaTypeBridge {
         Map<TypeVariable<?>, Type.TypeVar> tvToSyn = candidateSolvingVars(candidate);
         Map<TypeVariable<?>, Type> env = new HashMap<>(receiverEnv);
         env.putAll(tvToSyn);
-        Type paramPattern = fromJavaType(genericParam, env, false, true);
+        Type paramPattern = javaExecutableParamType(candidate, index, env);
         if (!paramPattern.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null)) {
             return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null);
         }
-        if (argument instanceof Type.Function aFn && paramPattern instanceof Type.JavaInstance pJava
+        Type unwrappedPattern = Type.withoutNull(paramPattern);
+        if (argument instanceof Type.Function aFn && unwrappedPattern instanceof Type.JavaInstance pJava
                 && JavaTypes.isFunctionalInterface(pJava.type())) {
             Type.Function sam = samFunctionType(pJava, null);
             if (sam != null) {

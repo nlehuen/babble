@@ -210,18 +210,18 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
         Assertions.assertEquals(true, interpret(DEMO + "Demo.boxedBool(true)"));
 
         String[][] failures = {
-                {"Demo.boxedInt(false)", "Type error : expected int, got null"},
-                {"Demo.boxedDouble(false)", "Type error : expected double, got null"},
-                {"Demo.boxedBool(false)", "Type error : expected bool, got null"},
-                {"def i = 0 ; while i < 5 then ( Demo.boxedInt(i < 4) ; i = i + 1 )", "Type error : expected int, got null"},
-                {"Demo.setStaticBoxedInt(null) ; Demo.staticBoxedInt", "Type error : expected int, got null"},
-                {"Demo.STATIC_FINAL_NULL_INT", "Type error : expected int, got null"},
-                {"Demo().instanceBoxedInt", "Type error : expected int, got null"},
+                {"Demo.boxedInt(false)!", "Type error : expected int, got null"},
+                {"Demo.boxedDouble(false)!", "Type error : expected double, got null"},
+                {"Demo.boxedBool(false)!", "Type error : expected bool, got null"},
+                {"def i = 0 ; while i < 5 then ( Demo.boxedInt(i < 4)! ; i = i + 1 )", "Type error : expected int, got null"},
+                {"Demo.setStaticBoxedInt(null) ; Demo.staticBoxedInt!", "Type error : expected int, got null"},
+                {"Demo.STATIC_FINAL_NULL_INT!", "Type error : expected int, got null"},
+                {"Demo().instanceBoxedInt!", "Type error : expected int, got null"},
         };
         for (String[] c : failures) {
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(DEMO + c[0]), c[0]);
             Assertions.assertTrue(e.getMessage().contains(c[1]), c[0] + " : " + e.getMessage());
         }
-        Assertions.assertEquals(9, interpret(DEMO + "Demo.setStaticBoxedInt(9) ; def v = Demo.staticBoxedInt ; Demo.setStaticBoxedInt(null) ; v"));
+        Assertions.assertEquals(9, interpret(DEMO + "Demo.setStaticBoxedInt(9) ; def v = Demo.staticBoxedInt! ; Demo.setStaticBoxedInt(null) ; v"));
     }
 }

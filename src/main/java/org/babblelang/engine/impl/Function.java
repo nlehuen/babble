@@ -39,10 +39,12 @@ public class Function implements BabbleFunction {
                 // A default value belongs to the function's scope, not to the call site.
                 value = interpreter.evaluateDefault(namespace, defaultValue);
             }
-            int paramRank = interpreter.scopes().numericWideningRank(definition.parametersDeclaration().parameterDeclaration(i));
+            BabbleParser.ParameterDeclarationContext paramDecl = definition.parametersDeclaration().parameterDeclaration(i);
+            int paramRank = interpreter.scopes().numericWideningRank(paramDecl);
             if (paramRank >= 0) {
                 value = Values.widenNumeric(value, paramRank);
             }
+            value = org.babblelang.runtime.Types.check(value, interpreter.scopes().checkedType(paramDecl));
             namespace.defineParameter(parameters[i], value);
         }
         binder.rejectLeftovers();

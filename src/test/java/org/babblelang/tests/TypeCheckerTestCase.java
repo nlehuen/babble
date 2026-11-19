@@ -1119,8 +1119,7 @@ public class TypeCheckerTestCase {
                 "14:37 Cannot cast to type parameter : T",
                 "15:37 Type error : expected any, got T",
                 "17:1 No applicable overload of java.util.List.add for (int)",
-                "19:21 Type error : expected int, got int?",
-                "20:19 Type error : expected string, got int?",
+                "20:19 Type error : expected string, got int",
                 "22:1 Type error : type argument object does not satisfy bound T of java.util.Collections.sort");
 
         org.babblelang.analysis.AnalysisException dup = Assertions.assertThrows(
