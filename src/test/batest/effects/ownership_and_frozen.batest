@@ -1,0 +1,64 @@
+;; RM007 (BIP007-P2): unique, move, freeze, frozen, discard, and BIP007-D5-D9 parity tests
+
+{{{{{
+;; Mandatory BIP007-D7 narrowing test (negative): narrowing frozen any via `is MyRecord` must NOT lose frozen
+def MyRecord = record (a: int) ()
+def a: frozen any = MyRecord(5)
+def b: MyRecord? = if a is MyRecord then ( a ) else ( null )
+}}}}}
+Type error : expected MyRecord?, got frozen MyRecord
+
+{{{{{
+;; Mandatory BIP007-D7 narrowing test (positive): narrowing frozen any via `is MyRecord` preserves frozen
+def MyRecord = record (a: int) ()
+def a: frozen any = MyRecord(5)
+def c: frozen MyRecord? = if a is MyRecord then ( a ) else ( null )
+println(if c != null then ( c.a ) else ( 0 ))
+}}}}}
+5
+
+{{{{{
+;; Unique local builder mutated inside pure function and frozen for read-only sharing
+def Counter = class (def n: int = 0) (
+    def inc = fn hermetic mut deterministic nothrow () -> ( this.n = this.n + 1 )
+    def value = fn pure deterministic nothrow borrow (): int -> ( this.n )
+)
+def build = fn pure (): frozen Counter -> (
+    def c = Counter(0)
+    c.inc()
+    c.inc()
+    freeze(c)
+)
+def fc = build()
+println(fc.value())
+}}}}}
+2
+
+{{{{{
+;; Use after move rejected statically
+def Box = class (def x: int) ()
+def f = fn (): int -> (
+    def b = Box(1)
+    def c = move(b)
+    b.x + c.x
+)
+}}}}}
+Use of moved variable b
+
+{{{{{
+;; Unused pure nothrow expression rejected; discard() opts out cleanly
+def f = fn (x: int): int -> (
+    x + 1
+    x
+)
+}}}}}
+Unused pure expression
+
+{{{{{
+def f = fn pure deterministic nothrow (x: int): int -> (
+    discard(x + 1)
+    x * 2
+)
+println(f(21))
+}}}}}
+42

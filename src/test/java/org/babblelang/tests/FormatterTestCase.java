@@ -508,4 +508,23 @@ public class FormatterTestCase {
                 def ys = xs . set ( 0 , 3 )
                 """);
     }
+
+    @Test
+    public void testBip007OwnershipSyntax() throws Exception {
+        assertFormats("""
+                axiom pure unique on java.util.ArrayList()
+                def f = fn pure (unique b: Box, unique borrow c: Box): unique Box -> (
+                    def x: frozen list of int = freeze(list(1, 2))
+                    discard(x)
+                    move(b)
+                )
+                """, """
+                axiom pure unique on java . util . ArrayList ( )
+                def f = fn pure ( unique b : Box , unique borrow c : Box ) : unique Box -> (
+                  def x : frozen list of int = freeze ( list ( 1 , 2 ) )
+                  discard ( x )
+                  move ( b )
+                )
+                """);
+    }
 }

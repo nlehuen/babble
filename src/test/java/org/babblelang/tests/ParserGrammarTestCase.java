@@ -130,6 +130,24 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         assertTypeCheckFails("def x : any = list(1) ; x is list of int", "Cannot test erased type arguments with 'is' : use 'is list'");
         assertTypeCheckFails("def f of T = fn (x : any) -> ( x is T )", "Cannot test type parameter with 'is' : T");
         assertTypeCheckFails("def x : any = 1 ; x is fn () : int", "Cannot test a function type with 'is'");
+        assertTypeCheckFails("def Box = class (def x: int) () ; def f = fn (x: any) -> ( x is frozen Box )", "frozen");
+    }
+
+    @Test
+    public void testBip007OwnershipSllGrammar() {
+        parsePureSll("""
+                axiom pure unique on java.util.ArrayList()
+                def f = fn pure (unique a: Box, unique borrow b: Box): unique Box -> (
+                    def x: frozen list of int = freeze(list(1, 2))
+                    def y: frozen (Box | int)? = null
+                    def z = a.unique + a.frozen
+                    discard(x)
+                    discard(y)
+                    discard(z)
+                    move(a)
+                )
+                def ft: fn pure (unique Box): unique Box = f
+                """);
     }
 
     private void assertTypeCheckFails(String source, String expectedMessage) {
