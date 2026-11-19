@@ -638,6 +638,7 @@ final class EffectChecker {
             CallableSummary visible = buildVisibleSummary(callable, internal);
             visibleSummaries.put(callable, visible);
             pass.analysis.setCallableEffects(callable, visible.effects());
+            pass.analysis.setCallableType(callable, checker.rawTypeOf(callable));
         }
     }
 

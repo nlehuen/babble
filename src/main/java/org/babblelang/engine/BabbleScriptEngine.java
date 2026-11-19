@@ -595,12 +595,60 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
     }
 
+    public static final String CHECK_AXIOMS = org.babblelang.analysis.AxiomChecker.PROPERTY;
+
+    public boolean isCheckAxiomsEnabled(ScriptContext context) {
+        Object attr = context != null ? context.getAttribute(CHECK_AXIOMS) : get(CHECK_AXIOMS);
+        if (attr instanceof Boolean b) {
+            return b;
+        }
+        if (attr != null) {
+            return Boolean.parseBoolean(attr.toString());
+        }
+        return Boolean.parseBoolean(System.getProperty(CHECK_AXIOMS, "false"));
+    }
+
+    /** Evaluates {@code script} and runs property-based axiom fuzzing on all top-level {@code axiom} functions. */
+    public org.babblelang.analysis.AxiomChecker.Report checkAxioms(String script) throws ScriptException {
+        return checkAxioms(script, new org.babblelang.analysis.AxiomChecker());
+    }
+
+    /** Evaluates {@code script} and runs property-based axiom fuzzing using a custom {@link org.babblelang.analysis.AxiomChecker}. */
+    public org.babblelang.analysis.AxiomChecker.Report checkAxioms(String script, org.babblelang.analysis.AxiomChecker checker) throws ScriptException {
+        ScriptContext context = getContext();
+        String sourceName = sourceName(context);
+        BabbleParser.FileContext file = parseSource(script, sourceName);
+        ScopeAnalysis scopes = analyze(file, sourceName, context, null);
+        BabbleScript compiled = script(file, scopes, sourceName);
+        ScriptRuntime runtime = createRuntime(context);
+        compiled.eval(runtime);
+        return checker.check(scopes, file, runtime);
+    }
+
     public Object eval(String script, ScriptContext context) throws ScriptException {
         return eval(new StringReader(script), context);
     }
 
     public Object eval(Reader reader, ScriptContext context) throws ScriptException {
-        return compile(reader, sourceName(context), context).eval(context);
+        if (!isCheckAxiomsEnabled(context)) {
+            return compile(reader, sourceName(context), context).eval(context);
+        }
+        String sourceName = sourceName(context);
+        BabbleParser.FileContext file;
+        try {
+            file = parse(CharStreams.fromReader(reader, sourceName));
+        } catch (IOException e) {
+            throw new ScriptException(e);
+        }
+        ScopeAnalysis scopes = analyze(file, sourceName, context, null);
+        BabbleScript compiled = script(file, scopes, sourceName);
+        ScriptRuntime runtime = createRuntime(context);
+        Object result = compiled.eval(runtime);
+        org.babblelang.analysis.AxiomChecker.Report report = new org.babblelang.analysis.AxiomChecker().check(scopes, file, runtime);
+        if (!report.ok()) {
+            throw new ScriptException(report.failures().get(0).toString());
+        }
+        return result;
     }
 
     public CompiledScript compile(String script) throws ScriptException {
