@@ -72,6 +72,13 @@ public class DifferentialTestCase {
                 "def m : map(string, int) = map(entry(\"a\", \"b\"))",
                 "def n : list(int) = list(1, 2) ; n.add(null)",
                 "map(string)()",
+                // Built-in effect profiles of core types.
+                "def bad = (borrow xs : list(int)) -> ( xs.add(1) )",
+                "def bad = (borrow xs : list(int)) -> ( xs.subList(0, 1).clear() )",
+                "def bad = hermetic nothrow (borrow xs : list(int)) : int -> ( xs.get(0) )",
+                "def ok = hermetic deterministic nothrow (borrow xs : list(int)) : int -> ( xs.size() ) ; ok(list(1, 2))",
+                "def bad = pure nothrow (s : string) : string -> ( s.substring(1) )",
+                "def ok = pure nothrow (s : string) : int -> ( s.trim().length() ) ; ok(\" ab \")",
                 // Variance : invariant mutable generics, covariant immutable ones and borrow parameters.
                 "def xs = list(1) ; def ys : list(int?) = xs",
                 "def Box(T) = class (def v : T) () ; def b : Box(any) = Box(int)(1)",

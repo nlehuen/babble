@@ -68,12 +68,24 @@ public final class JavaTypes {
      * interface, which dispatches to it. Null when there is none.
      */
     public static Method accessible(Method method) {
+        return accessible(method, method.getDeclaringClass());
+    }
+
+    /**
+     * The same, searching from the class of the receiver : a public method an inaccessible
+     * superclass declares ({@code LinkedHashMap}'s iterators' {@code hasNext}) is reached through
+     * an interface of the receiver's own class ({@code Iterator}).
+     */
+    public static Method accessible(Method method, Class<?> receiverClass) {
         if (isAccessible(method.getDeclaringClass())) {
             return method;
         }
         java.util.ArrayDeque<Class<?>> types = new java.util.ArrayDeque<>();
         java.util.Set<Class<?>> seen = new java.util.HashSet<>();
         types.add(method.getDeclaringClass());
+        if (receiverClass != method.getDeclaringClass() && method.getDeclaringClass().isAssignableFrom(receiverClass)) {
+            types.add(receiverClass);
+        }
         while (!types.isEmpty()) {
             Class<?> type = types.poll();
             if (!seen.add(type)) {

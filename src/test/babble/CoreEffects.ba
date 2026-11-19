@@ -1,0 +1,37 @@
+;; Built-in effect profiles of core types (BIP011-D12) : string methods are pure, collections'
+;; readers and views borrow their receiver, their mutators mut it, and the factories are hermetic.
+
+;; A borrow parameter reads a collection : and takes narrower type arguments
+def countNonNull = hermetic deterministic (borrow xs: list(any?)): int -> (
+    def n = 0
+    def i = 0
+    while i < xs.size() then (
+        if xs.get(i) != null then (n += 1)
+        i += 1
+    )
+    n
+)
+assert(countNonNull(list(10, 20, 30)) == 3)
+
+;; Factories are hermetic and deterministic : no axiom needed
+def around = hermetic deterministic (n: int): list(int) -> (list(n - 1, n, n + 1))
+assert(around(4).get(2) == 5)
+
+;; String methods are pure ; the total ones nothrow
+def shout = pure deterministic nothrow (s: string): string -> (s.trim().toUpperCase())
+assert(shout(" hi ") == "HI")
+
+;; Views borrow their receiver too
+def total = hermetic (borrow m: map(string, int)): int -> (
+    def sum = 0
+    def it = m.values().iterator()
+    while it.hasNext() then (sum += it.next())
+    sum
+)
+assert(total(map(entry("a", 1), entry("b", 2))) == 3)
+
+;; Mutators need a mut receiver
+def append = (mut xs: list(int), x: int) -> (xs.add(x))
+def numbers = list(1)
+append(numbers, 2)
+assert(numbers.size() == 2)

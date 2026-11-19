@@ -832,6 +832,11 @@ final class EffectChecker {
         if (declOwner != owner && hasClassEffectAnnotation(declOwner)) {
             return profileFromAnnotations(exactMethod, declOwner, true);
         }
+        // Tier 6a: Built-in core type profiles (BIP011-D12) : string methods, collections, entries.
+        JavaCallProfile core = coreTypeProfile(owner, methodName, exactMethod);
+        if (core != null) {
+            return core;
+        }
         // Tier 6: Standard value protocol defaults (equals, compareTo, hashCode, toString) + String methods.
         JavaCallProfile protocol = standardProtocolDefault(owner, methodName, exactMethod);
         if (protocol != null) {
@@ -1044,6 +1049,91 @@ final class EffectChecker {
     }
 
     /** Tier 6 : Standard value protocol defaults (bip007_effects.md §4.3, §6.2). */
+    /** {@code String} methods that never throw (§8.2) ; the others (charAt, substring, split...) can. */
+    private static final Set<String> TOTAL_STRING_METHODS = Set.of(
+            "length", "isEmpty", "isBlank", "trim", "strip", "stripLeading", "stripTrailing", "toLowerCase",
+            "toUpperCase", "startsWith", "endsWith", "equals", "hashCode", "toString", "contains", "concat",
+            "equalsIgnoreCase", "compareTo", "compareToIgnoreCase", "indexOf", "lastIndexOf", "intern");
+
+    /** Collection methods that read : {@code hermetic deterministic}, borrowing their receiver (§8.2). */
+    private static final Set<String> COLLECTION_READERS = Set.of(
+            "size", "isEmpty", "get", "getOrDefault", "contains", "containsKey", "containsValue", "containsAll",
+            "indexOf", "lastIndexOf", "first", "last", "firstKey", "lastKey", "getFirst", "getLast", "equals",
+            "hashCode", "toString", "toArray", "peek", "peekFirst", "peekLast", "element", "floor", "ceiling",
+            "lower", "higher", "floorKey", "ceilingKey", "lowerKey", "higherKey", "floorEntry", "ceilingEntry",
+            "lowerEntry", "higherEntry", "firstEntry", "lastEntry", "comparator", "hasNext", "next", "hasPrevious",
+            "previous", "nextIndex", "previousIndex", "forEach", "stream");
+
+    /** Collection methods that return a view sharing the receiver's state : it borrows it, as a sub-reference. */
+    private static final Set<String> COLLECTION_VIEWS = Set.of(
+            "iterator", "listIterator", "subList", "keySet", "values", "entrySet", "headSet", "tailSet", "subSet",
+            "headMap", "tailMap", "subMap", "reversed", "descendingSet", "descendingMap", "navigableKeySet",
+            "descendingKeySet", "descendingIterator", "spliterator");
+
+    /** Collection methods that change the receiver : {@code hermetic deterministic}, {@code mut} receiver. */
+    private static final Set<String> COLLECTION_MUTATORS = Set.of(
+            "add", "addAll", "addFirst", "addLast", "set", "put", "putIfAbsent", "putAll", "remove", "removeAll",
+            "removeIf", "retainAll", "replace", "replaceAll", "clear", "removeFirst", "removeLast", "pollFirst",
+            "pollLast", "poll", "pop", "push", "offer", "offerFirst", "offerLast", "sort", "compute",
+            "computeIfAbsent", "computeIfPresent", "merge", "pollFirstEntry", "pollLastEntry");
+
+    /**
+     * The built-in effect profiles of core types (BIP011-D12, §8.2) : {@code string} methods are
+     * {@code pure deterministic} (and {@code nothrow} when total), an entry's {@code getKey} and
+     * {@code getValue} {@code pure deterministic nothrow}, and the methods of {@code java.util}
+     * collections, maps, iterators and entries {@code hermetic deterministic}, borrowing their
+     * receiver when they read it or return a view of it, {@code mut} on it when they change it.
+     * Null for anything else.
+     */
+    private static JavaCallProfile coreTypeProfile(Class<?> owner, String methodName, Method exactMethod) {
+        int paramCount = exactMethod != null ? exactMethod.getParameterCount() : 0;
+        boolean[] none = new boolean[paramCount];
+        boolean[] borrowed = new boolean[paramCount];
+        java.util.Arrays.fill(borrowed, true);
+        Class<?> decl = exactMethod != null ? exactMethod.getDeclaringClass() : owner;
+        if (owner == String.class || decl == String.class) {
+            EnumSet<Effect> effs = EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC);
+            if (TOTAL_STRING_METHODS.contains(methodName)) {
+                effs.add(Effect.NOTHROW);
+            }
+            // nothrow covers the result's non-null check : String's results are never null.
+            return new JavaCallProfile(EffectSet.ofInferred(effs, false, true), false, true, none, borrowed,
+                    effs.contains(Effect.NOTHROW));
+        }
+        if (!isCoreCollection(owner) && !isCoreCollection(decl)) {
+            return null;
+        }
+        boolean isStatic = exactMethod != null && java.lang.reflect.Modifier.isStatic(exactMethod.getModifiers());
+        if (isStatic) {
+            // List.of, Map.entry... : fresh collections of what they are given.
+            return new JavaCallProfile(EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), false, false),
+                    false, false, none, none, false);
+        }
+        if (java.util.Map.Entry.class.isAssignableFrom(owner) && ("getKey".equals(methodName) || "getValue".equals(methodName))) {
+            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+            return new JavaCallProfile(set, false, true, none, none, true);
+        }
+        EnumSet<Effect> effs = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC);
+        if (COLLECTION_MUTATORS.contains(methodName) && !(java.util.Map.class.isAssignableFrom(owner) && "remove".equals(methodName) && paramCount == 0)) {
+            // mut on the call's receiver only : the method as a value stays a plain function.
+            return new JavaCallProfile(EffectSet.ofInferred(effs, false, false), true, false, none, borrowed, false);
+        }
+        if (COLLECTION_READERS.contains(methodName) || COLLECTION_VIEWS.contains(methodName)) {
+            if ("size".equals(methodName) || "isEmpty".equals(methodName)) {
+                effs.add(Effect.NOTHROW);
+            }
+            return new JavaCallProfile(EffectSet.ofInferred(effs, false, true), false, true, none, borrowed,
+                    effs.contains(Effect.NOTHROW));
+        }
+        return null;
+    }
+
+    private static boolean isCoreCollection(Class<?> type) {
+        return type != null && type.getName().startsWith("java.util.")
+                && (java.util.Collection.class.isAssignableFrom(type) || java.util.Map.class.isAssignableFrom(type)
+                || java.util.Iterator.class.isAssignableFrom(type) || java.util.Map.Entry.class.isAssignableFrom(type));
+    }
+
     private static JavaCallProfile standardProtocolDefault(Class<?> owner, String methodName, Method exactMethod) {
         int paramCount = exactMethod != null ? exactMethod.getParameterCount() : -1;
         if ("equals".equals(methodName) && (paramCount == -1 || paramCount == 1)) {
@@ -3008,6 +3098,31 @@ final class EffectChecker {
             Type resType = checker.rawTypeOf(call);
             Type calleeType = resolveCalleeType(calleeExpr);
 
+            // Core collection factories (BIP011-D12) : hermetic deterministic, making a fresh collection.
+            BabbleParser.ExpressionContext factoryExpr = calleeExpr;
+            if (calleeExpr instanceof BabbleParser.TypeApplicationContext app) {
+                factoryExpr = app.expression();
+            } else if (calleeExpr instanceof BabbleParser.CallContext inner && pass.analysis.isTypeApplication(inner)) {
+                factoryExpr = inner.expression();
+            }
+            if (CoreCollections.factoryName(factoryExpr) != null) {
+                EnumSet<Effect> effs = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC);
+                boolean options = args.stream().anyMatch(a -> a.ID() != null && !"from".equals(a.ID().getText()));
+                if (!options) {
+                    effs.add(Effect.NOTHROW);
+                }
+                applyEffects(EffectSet.ofInferred(effs, false, false));
+                for (int i = 0; i < args.size(); i++) {
+                    if (args.get(i).ID() == null) {
+                        // An element is kept : what it aliases escapes into the collection.
+                        markStoredOrigin(argOrigins[i], "collection element", argExprs[i]);
+                    } else if ("comparator".equals(args.get(i).ID().getText())) {
+                        propagateSamCallbackEffects(effectiveType(argExprs[i]), java.util.Comparator.class);
+                    }
+                }
+                return Origin.ofExternal(call, false);
+            }
+
             // 1. Built-in `print` / `println` / `import`
             if (calleeType == Type.PRINT) {
                 hermetic = false;
@@ -3176,6 +3291,14 @@ final class EffectChecker {
             if (isDeeplyImmutable(resType)) {
                 return Origin.IMMUTABLE;
             }
+            if (receiverExpr == null && makesFreshCollection(call)) {
+                // new ArrayList(xs), List.of(a, b) : a fresh collection, which holds its arguments
+                // (they escape into it) without being them.
+                for (int i = 0; i < argOrigins.length; i++) {
+                    markStoredOrigin(argOrigins[i], "collection element", argExprs[i]);
+                }
+                return Origin.ofExternal(call, false);
+            }
             Origin out = Origin.ofExternal(call, false);
             if (receiverExpr != null) {
                 out = out.join(recvOrig.stripDirectIdentity(false));
@@ -3187,6 +3310,17 @@ final class EffectChecker {
                 }
             }
             return out;
+        }
+
+        /** A constructor or static factory of a {@code java.util} collection : what it returns is new. */
+        private boolean makesFreshCollection(BabbleParser.CallContext call) {
+            Constructor<?> ctor = checker.resolvedJavaConstructorOf(call);
+            if (ctor != null) {
+                return isCoreCollection(ctor.getDeclaringClass());
+            }
+            Method method = checker.resolvedJavaMethodOf(call);
+            return method != null && java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                    && isCoreCollection(method.getDeclaringClass());
         }
 
         private void propagateSamCallbackEffects(Type argType, Class<?> samClass) {

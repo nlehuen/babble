@@ -504,6 +504,22 @@ a.addFrom(b)
 `@Deterministic`, `@Nothrow`, and `@Impure` from `org.babblelang.effects` (or configure an engine
 with `assumeEffects` / `allowAxioms(false)`). See [BIP007](docs/design/bip007_effects.md).
 
+The core types come with their contracts, so effect-checked code uses them without `axiom`s :
+`string` methods are `pure deterministic` (and `nothrow` when they can't fail, as `trim` or
+`length`), collection factories are `hermetic deterministic`, a collection's readers and views
+(`get`, `size`, `iterator`, `keySet`...) borrow it, and its mutators (`add`, `put`, `clear`...)
+need it `mut` — through a view too : `xs.subList(0, 1).clear()` mutates `xs`.
+
+```
+def countNonNull = hermetic deterministic (borrow xs: list(any?)): int -> (
+    def n = 0
+    def i = 0
+    while i < xs.size() then ( if xs.get(i) != null then ( n += 1 ) ; i += 1 )
+    n
+)
+countNonNull(list(1, 2, 3))       ;; a list(int) passes for the borrowed list(any?)
+```
+
 ### Interactive mode
 
 `java -jar target/babble-1.0-SNAPSHOT.jar` reads an input, evaluates it, prints its value, and
@@ -731,7 +747,7 @@ Language features :
 - [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference, strict non-nullability with `T?`, union types (`A | B`), safe navigation (`?.`), parameterized types (`Box(T)`, `list(T)`), invariant when mutable and covariant when immutable (value classes, `entry`) or read through a `borrow` parameter, flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md) and [BIP008](docs/design/bip008_static-typing.md)).
 - [x] static function effects and algebraic contracts (`RM002`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, higher-order call-site specialization, `axiom`/`impure` Java contracts, and `org.babblelang.effects` host annotations (see [BIP007](docs/design/bip007_effects.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, and the conversions `byte(x)`..`string(x)`.
-- [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` ; `string` methods are `java.lang.String`'s ; Java results nullable unless annotated or known non-null ; explicit type arguments `Box(int?)(null)` ; core collections `list`..`sortedmap` and `entry`, Java's interfaces with deterministic factories (see [BIP011](docs/design/bip011_core-types.md)).
+- [x] core type names (`byte`..`string`, `list`..`entry`, `any`, `void`) are keywords that can't be redefined, but remain member names (`xs.set`, `stream.map`) ; the non-null assertion `e!` ; `string` methods are `java.lang.String`'s ; Java results nullable unless annotated or known non-null ; explicit type arguments `Box(int?)(null)` ; core collections `list`..`sortedmap` and `entry`, Java's interfaces with deterministic factories and built-in effect contracts (see [BIP011](docs/design/bip011_core-types.md)).
 
 Implementation features :
 

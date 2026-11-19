@@ -30,7 +30,7 @@ public final class Overloads {
         for (Method method : JavaTypes.methods(clazz, name)) {
             // An object of a class Babble can't reach, as Java returns some, is called
             // through the public type the method comes from.
-            Method accessible = JavaTypes.accessible(method);
+            Method accessible = JavaTypes.accessible(method, clazz);
             if (accessible != null && !candidates.contains(accessible)) {
                 candidates.add(accessible);
             }
