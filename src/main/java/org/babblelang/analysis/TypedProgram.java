@@ -185,6 +185,10 @@ final class TypedProgram {
         return checker.imported().callableTemplate(fn);
     }
 
+    boolean hasTypeDiagnosticIn(ParserRuleContext ctx) {
+        return checker.hasDiagnosticIn(ctx);
+    }
+
     void effectDiagnostic(String message, ParserRuleContext at) {
         checker.effectDiagnostic(message, at);
     }

@@ -10,11 +10,11 @@ export def Scatter = class (def attenuation: Vec3, def scattered: Ray) ()
 
 export def Material = interface (
     ;; a Scatter, or null when the ray is absorbed
-    def scatter: fn (rIn: Ray, rec: HitRecord, rng: java.util.Random): Scatter?
+    def scatter: fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter?
 )
 
 export def Lambertian = class (def albedo: Vec3) implements Material (
-    def scatter = fn (rIn: Ray, rec: HitRecord, rng: java.util.Random): Scatter? -> (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
         def direction: Vec3 = rec.normal + Vec3.randomUnit(rng)
         ;; catch degenerate scatter direction
         if direction.nearZero() then (direction = rec.normal)
@@ -25,7 +25,7 @@ export def Lambertian = class (def albedo: Vec3) implements Material (
 export def Metal = class (def albedo: Vec3, fuzz: double) implements Material (
     def fuzz: double = Math.min(fuzz, 1.0)
 
-    def scatter = fn (rIn: Ray, rec: HitRecord, rng: java.util.Random): Scatter? -> (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
         def reflected: Vec3 = rIn.direction.reflect(rec.normal)
         reflected = reflected.unit() + Vec3.randomUnit(rng) * this.fuzz
         if reflected.dot(rec.normal) > 0 then (
@@ -44,7 +44,7 @@ export def Dielectric = class (def refractionIndex: double) implements Material 
         r0 + (1 - r0) * Math.pow(1 - cosine, 5)
     )
 
-    def scatter = fn (rIn: Ray, rec: HitRecord, rng: java.util.Random): Scatter? -> (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
         def ri: double = if rec.frontFace then (1.0 / this.refractionIndex) else (this.refractionIndex)
 
         def unitDirection: Vec3 = rIn.direction.unit()

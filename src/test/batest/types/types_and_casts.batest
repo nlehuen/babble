@@ -121,31 +121,31 @@ println(apply(5, Box), ":", mk(7).v)
 
 {{{{{
 def Box = class (def v : int) ( def log = ( println(this.v) ; 1 ) )
-def bad : fn pure (v : int) : Box = Box
+def bad : fn (v : int) : Box = Box
 }}}}}
-Type error : expected pure (v : int) : Box, got class Box
+Type error : expected (v : int) : Box, got class Box
 
 {{{{{
-def p = fn () : int -> ( println(1) ; 1 )
-def f : fn pure () : int = p
+def p = fn io () : int -> ( println(1) ; 1 )
+def f : fn () : int = p
 }}}}}
-Type error : expected pure () : int, got () : int
+Type error : expected () : int, got io () : int
 
 {{{{{
-def imp = fn () : int -> ( println(1) ; 1 )
-def bad : fn pure deterministic nothrow () : int = imp
+def imp = fn io () : int -> ( println(1) ; 1 )
+def bad : fn nothrow () : int = imp
 }}}}}
-Type error : expected pure deterministic nothrow () : int, got () : int
+Type error : expected nothrow () : int, got io () : int
 
 {{{{{
-def bad : fn pure () = java.lang.System.gc
+def bad : fn () = java.lang.System.gc
 }}}}}
-Type error : expected pure () : any?, got java.lang.System.gc
+Type error : expected () : any?, got java.lang.System.gc
 
 {{{{{
-def bad : fn pure (x : int) = print
+def bad : fn (x : int) = print
 }}}}}
-Type error : expected pure (x : int) : any?, got print
+Type error : expected (x : int) : any?, got print
 
 {{{{{
 def C = class () (

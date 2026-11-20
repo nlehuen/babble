@@ -11,7 +11,7 @@ def C = class (def d : double, def label : string) (
     def recOpt = fn (n : int, step : int = 1) : int -> (
         if n <= 0 then ( 0 ) else ( step + recurse(n - 1) )
     )
-    def runAll = fn mut () : string -> (
+    def runAll = fn io mut () : string -> (
         this.label = "abc"
         this.label += "!"
         this.d = this.optM(1)
@@ -29,7 +29,7 @@ def C = class () (
     def getV = fn () : int -> ( 7 )
 ) static (
     def x = 1
-    def bump = fn () : string -> (
+    def bump = fn io () : string -> (
         this.x = 2
         this.x += 3
         "" + this.x
@@ -182,10 +182,10 @@ no
 ;; static field on non-pure Java receiver, and ScriptClassWriter.getCommonSuperClass merges
 println(java.lang.Long.sum(3, 4), ":", java.lang.Float.sum(3, 4), ":", (java.lang.Math).abs(-5))
 
-def mkSt = fn () : java.io.StreamTokenizer -> ( java.io.StreamTokenizer(java.io.StringReader("hi")) )
+def mkSt = fn io () : java.io.StreamTokenizer -> ( java.io.StreamTokenizer(java.io.StringReader("hi")) )
 println(mkSt().TT_EOF)
 
-def pickBuf = fn (flag : bool) : any -> (
+def pickBuf = fn io (flag : bool) : any -> (
     if flag then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuffer("b") )
 )
 def A = class () ()
@@ -317,7 +317,7 @@ def IfaceDef = interface (
 def CDef = class () implements IfaceDef ()
 def callAny : fn (x : int) : any = CDef().defm
 def sb = java.lang.StringBuilder("abc")
-def sbLen : fn () : int = sb.length
+def sbLen : fn io () : int = sb.length
 
 def tk = java.io.StreamTokenizer(java.io.StringReader("1"))
 tk.nval = 1.5
@@ -411,7 +411,7 @@ println(C(9, 6.0, true).run())
 
 def StaticBox = class () () static (
     def sx : int | double = 9
-    def go = fn () : int | double -> (
+    def go = fn io () : int | double -> (
         this.sx /= 2
         this.sx
     )
@@ -452,7 +452,7 @@ println(checkConds(2, 2, 1.0, 2.0), ":", checkConds(2, 3, 2.0, 1.0))
 def make = fn (start : double) -> (
     def outer = start
     def C = class (p : double) (
-        def bump = fn mut () : double -> (
+        def bump = fn io mut () : double -> (
             outer += 1.0
             p += 0.5
             outer + p
@@ -522,7 +522,7 @@ pt.x -= 2
 pt.y *= 3
 println(r.x, ":", r.y, ":", r.width, ":", r.height, ":", pt.x, ":", pt.y)
 
-def pickColl = fn (flag : bool) : any -> (
+def pickColl = fn io (flag : bool) : any -> (
     if flag then ( java.util.List.of(1) ) else ( java.util.Set.of(2) )
 )
 def pickFn = fn (flag : bool) : fn () : int -> (
@@ -850,7 +850,7 @@ def joinIface = fn (flag : bool, a : I1, b : I2) -> (
     def r = if flag then ( a ) else ( b )
     r.tag()
 )
-def joinJava = fn (flag : bool) : int -> (
+def joinJava = fn io (flag : bool) : int -> (
     def xs = if flag then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuffer("bc") )
     xs.length()
 )
@@ -927,9 +927,9 @@ println(c1.calc(4), ":", C1().calc(4), ":", pf.x)
 
 {{{{{
 ;; ScriptClassWriter interface-interface & class-interface joins + Java primitive bridge args (DoublePredicate, IntToDoubleFunction, LongUnaryOperator)
-def getList = fn () : java.util.List of string -> ( java.util.Collections.singletonList("a") )
-def getSet = fn () : java.util.Set of string -> ( java.util.Collections.singleton("b") )
-def joinCol = fn (c : bool) : java.util.Collection of string -> (
+def getList = fn io () : java.util.List of string -> ( java.util.Collections.singletonList("a") )
+def getSet = fn io () : java.util.Set of string -> ( java.util.Collections.singleton("b") )
+def joinCol = fn io (c : bool) : java.util.Collection of string -> (
     if c then ( getList() ) else ( getSet() )
 )
 def IBase = interface ( def tag : fn () : int )

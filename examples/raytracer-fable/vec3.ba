@@ -37,12 +37,12 @@ export def Vec3 = record (x: double, y: double, z: double) (
         perp + parallel
     )
 ) static (
-    def random = fn (rng: java.util.Random, min: double = 0.0, max: double = 1.0): Vec3 -> (
+    def random = fn (mut rng: java.util.Random, min: double = 0.0, max: double = 1.0): Vec3 -> (
         Vec3(randomDouble(rng, min, max), randomDouble(rng, min, max), randomDouble(rng, min, max))
     )
 
     ;; a random direction, by rejection of the points outside the unit sphere
-    def randomUnit = fn (rng: java.util.Random): Vec3 -> (
+    def randomUnit = fn (mut rng: java.util.Random): Vec3 -> (
         def p: Vec3 = Vec3.random(rng, -1.0, 1.0)
         def lensq: double = p.lengthSquared()
         if 0.0 < lensq and lensq <= 1.0 then (
@@ -52,7 +52,7 @@ export def Vec3 = record (x: double, y: double, z: double) (
         )
     )
 
-    def randomInUnitDisk = fn (rng: java.util.Random): Vec3 -> (
+    def randomInUnitDisk = fn (mut rng: java.util.Random): Vec3 -> (
         def p: Vec3 = Vec3(randomDouble(rng, -1.0, 1.0), randomDouble(rng, -1.0, 1.0), 0.0)
         if p.lengthSquared() < 1.0 then (p) else (recurse(rng))
     )

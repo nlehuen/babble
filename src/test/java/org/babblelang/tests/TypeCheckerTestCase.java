@@ -177,8 +177,8 @@ public class TypeCheckerTestCase {
                 "3:1 Type error : expected int, got double",
                 "4:1 Type error : expected int, got double",
                 "7:1 Not a number : s");
-        assertDiagnostics("def C = class () ( def n : int = 0 ; def m = fn () -> ( this.n /= 2 ) )\ndef c = C()\nc.n += 1\nc.n += \"x\"\nc.q += 1",
-                "1:57 Type error : expected int, got double",
+        assertDiagnostics("def C = class () ( def n : int = 0 ; def m = fn mut () -> ( this.n /= 2 ) )\ndef c = C()\nc.n += 1\nc.n += \"x\"\nc.q += 1",
+                "1:61 Type error : expected int, got double",
                 "4:8 Not a number : \"x\"",
                 "5:1 No such member : q");
         assertDiagnostics("def V = record (x : int) ( def plus = fn (o : V) : V -> ( V(this.x + o.x) ) )\ndef v : V = V(1)\nv += V(2)\nv += 1\nv -= V(1)",
@@ -486,7 +486,7 @@ public class TypeCheckerTestCase {
     @Test
     public void testAny() {
         assertDiagnostics("def a : any = 1\ndef b : any = \"s\"\ndef c : any = true\ndef d : any? = null\n"
-                + "def f = fn (v : any?) : any? -> (\n"
+                + "def f = fn io (shared v : any?) : any? -> (\n"
                 + "  def ok1 : bool = v == 1\n"
                 + "  def ok2 : bool = v != null\n"
                 + "  def ok3 : string = \"x = \" + v\n"
@@ -727,7 +727,7 @@ public class TypeCheckerTestCase {
                 + "def C = class () (\n"
                 + "  def x = 1\n"
                 + "  def f = fn () : int -> ( this.x )\n"
-                + "  def g = fn () -> ( this.x = 1.5 )\n"
+                + "  def g = fn mut () -> ( this.x = 1.5 )\n"
                 + ")",
                 "2:17 Type error : expected int, got double (i is double because of the assignment at line 3)",
                 "5:15 Type error : expected int, got double (j is double because of the assignment at line 6)",
@@ -1058,7 +1058,7 @@ public class TypeCheckerTestCase {
                         + "  def opt = fn () : string -> ( \"s\" )\n"
                         + "  def accept = fn (x : any, extra = 0) : int -> ( extra )\n"
                         + "  def val = 1\n"
-                        + "  def widen = fn () -> ( this.val = 1.5 )\n"
+                        + "  def widen = fn mut () -> ( this.val = 1.5 )\n"
                         + ")");
     }
 

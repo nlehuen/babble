@@ -4,19 +4,18 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.babblelang.effects.Associative;
-import org.babblelang.effects.Borrow;
 import org.babblelang.effects.Commutative;
-import org.babblelang.effects.Deterministic;
 import org.babblelang.effects.Effect;
-import org.babblelang.effects.Hermetic;
+import org.babblelang.effects.IO;
 import org.babblelang.effects.Idempotent;
-import org.babblelang.effects.Impure;
 import org.babblelang.effects.Injective;
 import org.babblelang.effects.Monotone;
 import org.babblelang.effects.Mut;
 import org.babblelang.effects.Nothrow;
 import org.babblelang.effects.Pure;
+import org.babblelang.effects.Shared;
 import org.babblelang.effects.Unique;
+import org.babblelang.effects.Volatile;
 import org.babblelang.engine.impl.Interpreter;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
@@ -54,52 +53,105 @@ final class EffectChecker {
 
     private static final int MAX_SPECIALIZATION_DEPTH = 4;
 
+    private enum ParseContext {
+        FUNCTION_LITERAL,
+        FUNCTION_TYPE,
+        INTERFACE_METHOD,
+        JAVA_TARGET
+    }
+
     record ParsedPrefix(EnumSet<Effect> effects,
                         boolean mutThis,
                         boolean borrowThis,
+                        boolean explicitSharedThis,
                         boolean uniqueReturn,
                         boolean axiom,
-                        boolean impure,
+                        boolean io,
+                        boolean explicitVolatile,
                         boolean hasAnyModifier) {
         static final ParsedPrefix EMPTY = new ParsedPrefix(
-                EnumSet.noneOf(Effect.class), false, false, false, false, false, false);
-
-        ParsedPrefix(EnumSet<Effect> effects, boolean mutThis, boolean borrowThis,
-                     boolean axiom, boolean impure, boolean hasAnyModifier) {
-            this(effects, mutThis, borrowThis, false, axiom, impure, hasAnyModifier);
-        }
+                EnumSet.noneOf(Effect.class), false, false, false, false, false, false, false, false);
 
         EffectSet toEffectSet() {
-            if (impure) {
-                return EffectSet.IMPURE_DECLARED;
-            }
-            return EffectSet.ofDeclared(effects, mutThis, borrowThis, uniqueReturn, axiom);
+            return EffectSet.ofDeclared(effects, mutThis, borrowThis, explicitSharedThis,
+                    uniqueReturn, io, explicitVolatile, axiom);
         }
     }
 
-    record ParamMods(boolean mut, boolean borrow, boolean unique) {
+    record ParamMods(boolean mut, boolean shared, boolean unique) {
         static final ParamMods NONE = new ParamMods(false, false, false);
-
-        ParamMods(boolean mut, boolean borrow) {
-            this(mut, borrow, false);
-        }
     }
+
+    private static final BitSet EMPTY_SUMMARY_BITS = new BitSet(0);
 
     record CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
                            Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
-                           Set<BabbleParser.FunctionLiteralContext> frameWriteOwners) {
+                           Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
+                           boolean deepMutThis,
+                           BitSet returnParams, boolean returnThis, boolean returnExternal, boolean returnKnown,
+                           BitSet ctorStoredParams) {
+        CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
+                        Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
+                        Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
+                        boolean deepMutThis) {
+            this(effects, mutParams, borrowParams, uniqueParams, frameReadOwners, frameWriteOwners, deepMutThis,
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
+        }
+
+        CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
+                        Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
+                        Set<BabbleParser.FunctionLiteralContext> frameWriteOwners) {
+            this(effects, mutParams, borrowParams, uniqueParams, frameReadOwners, frameWriteOwners, false,
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
+        }
+
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams,
                         Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
                         Set<BabbleParser.FunctionLiteralContext> frameWriteOwners) {
-            this(effects, mutParams, borrowParams, new boolean[mutParams.length], frameReadOwners, frameWriteOwners);
+            this(effects, mutParams, borrowParams, new boolean[mutParams.length], frameReadOwners, frameWriteOwners, false,
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams) {
-            this(effects, mutParams, borrowParams, uniqueParams, Set.of(), Set.of());
+            this(effects, mutParams, borrowParams, uniqueParams, Set.of(), Set.of(), false,
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams) {
-            this(effects, mutParams, borrowParams, new boolean[mutParams.length], Set.of(), Set.of());
+            this(effects, mutParams, borrowParams, new boolean[mutParams.length], Set.of(), Set.of(), false,
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof CallableSummary that)) {
+                return false;
+            }
+            return deepMutThis == that.deepMutThis
+                    && returnThis == that.returnThis
+                    && returnExternal == that.returnExternal
+                    && returnKnown == that.returnKnown
+                    && Objects.equals(effects, that.effects)
+                    && Arrays.equals(mutParams, that.mutParams)
+                    && Arrays.equals(borrowParams, that.borrowParams)
+                    && Arrays.equals(uniqueParams, that.uniqueParams)
+                    && Objects.equals(frameReadOwners, that.frameReadOwners)
+                    && Objects.equals(frameWriteOwners, that.frameWriteOwners)
+                    && Objects.equals(returnParams, that.returnParams)
+                    && Objects.equals(ctorStoredParams, that.ctorStoredParams);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = Objects.hash(effects, frameReadOwners, frameWriteOwners, deepMutThis,
+                    returnParams, returnThis, returnExternal, returnKnown, ctorStoredParams);
+            result = 31 * result + Arrays.hashCode(mutParams);
+            result = 31 * result + Arrays.hashCode(borrowParams);
+            result = 31 * result + Arrays.hashCode(uniqueParams);
+            return result;
         }
     }
 
@@ -114,35 +166,55 @@ final class EffectChecker {
 
     /** Tracks alias provenance and direct binding identity for static mut/borrow/exclusivity checks. */
     private static final class Origin {
-        static final Origin IMMUTABLE = new Origin(new BitSet(0), false, false, false, false, null, Set.of(), null);
-        static final Origin MOVED = new Origin(new BitSet(0), false, false, false, true, null, Set.of(), null);
+        private static final BitSet EMPTY_BITS = new BitSet(0);
+        static final Origin IMMUTABLE = new Origin(EMPTY_BITS, false, false, false, false, false, null,
+                EMPTY_BITS, false, false, Set.of(), null);
+        static final Origin MOVED = new Origin(EMPTY_BITS, false, false, false, false, true, null,
+                EMPTY_BITS, false, false, Set.of(), null);
 
         final BitSet params;
         final boolean aliasesThis;
         final boolean external;
         final boolean unique;
+        /** True for fresh local allocations (even after storing non-unique elements) whose own shell has not escaped (BIP016-D9). */
+        final boolean localFresh;
         final boolean moved;
-        /** Owning local/param declaration when {@code unique} is bound to a live variable, or {@code null} for a fresh rvalue. */
+        /** Owning local/param declaration when {@code unique} or {@code localFresh} is bound to a live variable, or {@code null} for a fresh rvalue. */
         final Object uniqueOwner;
+        /** Element provenance stored inside a {@code localFresh} container (propagated on reads, deep mutations, or escapes). */
+        final BitSet elementParams;
+        final boolean elementThis;
+        final boolean elementExternal;
         /** Direct local/param/this identity keys when an expression is a direct alias (e.g. {@code def y = x}). */
         final Set<Object> directKeys;
         /** Pure member path key when an expression is {@code base.f1.f2} without calls. */
         final PathKey pathKey;
 
-        Origin(BitSet params, boolean aliasesThis, boolean external, boolean unique, boolean moved,
-               Object uniqueOwner, Set<Object> directKeys, PathKey pathKey) {
+        Origin(BitSet params, boolean aliasesThis, boolean external, boolean unique, boolean localFresh, boolean moved,
+               Object uniqueOwner, BitSet elementParams, boolean elementThis, boolean elementExternal,
+               Set<Object> directKeys, PathKey pathKey) {
             this.params = params;
             this.aliasesThis = aliasesThis;
             this.external = external;
             this.unique = unique;
+            this.localFresh = localFresh;
             this.moved = moved;
             this.uniqueOwner = uniqueOwner;
+            this.elementParams = elementParams;
+            this.elementThis = elementThis;
+            this.elementExternal = elementExternal;
             this.directKeys = directKeys;
             this.pathKey = pathKey;
         }
 
+        Origin(BitSet params, boolean aliasesThis, boolean external, boolean unique, boolean moved,
+               Object uniqueOwner, Set<Object> directKeys, PathKey pathKey) {
+            this(params, aliasesThis, external, unique, unique && params.isEmpty() && !aliasesThis && !external, moved,
+                    uniqueOwner, EMPTY_BITS, false, false, directKeys, pathKey);
+        }
+
         Origin(BitSet params, boolean aliasesThis, boolean external, Set<Object> directKeys, PathKey pathKey) {
-            this(params, aliasesThis, external, false, false, null, directKeys, pathKey);
+            this(params, aliasesThis, external, false, false, false, null, EMPTY_BITS, false, false, directKeys, pathKey);
         }
 
         static Origin ofParam(int index, Object key, boolean immutable) {
@@ -151,7 +223,8 @@ final class EffectChecker {
             }
             BitSet bits = new BitSet();
             bits.set(index);
-            return new Origin(bits, false, false, false, false, null, Set.of(key), new PathKey(key, List.of()));
+            return new Origin(bits, false, false, false, false, false, null,
+                    EMPTY_BITS, false, false, Set.of(key), new PathKey(key, List.of()));
         }
 
         static Origin ofUniqueParam(int index, Object key, boolean immutable, boolean borrowed) {
@@ -162,7 +235,8 @@ final class EffectChecker {
             if (borrowed) {
                 bits.set(index);
             }
-            return new Origin(bits, false, false, true, false, key, Set.of(key), new PathKey(key, List.of()));
+            return new Origin(bits, false, false, true, !borrowed, false, key,
+                    EMPTY_BITS, false, false, Set.of(key), new PathKey(key, List.of()));
         }
 
         static Origin ofUnique(Object key, Object uniqueOwner, boolean immutable) {
@@ -171,14 +245,16 @@ final class EffectChecker {
             }
             Set<Object> keys = key != null ? Set.of(key) : Set.of();
             PathKey pk = key != null ? new PathKey(key, List.of()) : null;
-            return new Origin(new BitSet(0), false, false, true, false, uniqueOwner, keys, pk);
+            return new Origin(new BitSet(0), false, false, true, true, false, uniqueOwner,
+                    EMPTY_BITS, false, false, keys, pk);
         }
 
         static Origin ofThis(Object key, boolean immutable) {
             if (immutable) {
                 return IMMUTABLE;
             }
-            return new Origin(new BitSet(0), true, false, false, false, null, Set.of(key), new PathKey(key, List.of()));
+            return new Origin(new BitSet(0), true, false, false, false, false, null,
+                    EMPTY_BITS, false, false, Set.of(key), new PathKey(key, List.of()));
         }
 
         static Origin ofExternal(Object key, boolean immutable) {
@@ -187,11 +263,28 @@ final class EffectChecker {
             }
             Set<Object> keys = key != null ? Set.of(key) : Set.of();
             PathKey pk = key != null ? new PathKey(key, List.of()) : null;
-            return new Origin(new BitSet(0), false, true, false, false, null, keys, pk);
+            return new Origin(new BitSet(0), false, true, false, false, false, null,
+                    EMPTY_BITS, false, false, keys, pk);
         }
 
         boolean isEmpty() {
-            return params.isEmpty() && !aliasesThis && !external && !unique && !moved;
+            return params.isEmpty() && !aliasesThis && !external && !unique && !localFresh && !moved
+                    && elementParams.isEmpty() && !elementThis && !elementExternal;
+        }
+
+        boolean hasElementTaint() {
+            return !elementParams.isEmpty() || elementThis || elementExternal;
+        }
+
+        /** Flattens element provenance into direct provenance (for reads, deep mutations, or escapes). */
+        Origin flattenElements() {
+            if (!hasElementTaint()) {
+                return this;
+            }
+            BitSet merged = (BitSet) params.clone();
+            merged.or(elementParams);
+            return new Origin(merged, aliasesThis || elementThis, external || elementExternal,
+                    false, false, moved, null, EMPTY_BITS, false, false, directKeys, pathKey);
         }
 
         Origin deriveMember(String field, boolean immutable) {
@@ -199,24 +292,56 @@ final class EffectChecker {
                 return IMMUTABLE;
             }
             PathKey nextPath = pathKey != null ? pathKey.append(field) : null;
-            return new Origin((BitSet) params.clone(), aliasesThis, external, unique, false, uniqueOwner, Set.of(), nextPath);
+            if (hasElementTaint()) {
+                BitSet merged = (BitSet) params.clone();
+                merged.or(elementParams);
+                return new Origin(merged, aliasesThis || elementThis, external || elementExternal,
+                        false, false, false, null, EMPTY_BITS, false, false, Set.of(), nextPath);
+            }
+            return new Origin((BitSet) params.clone(), aliasesThis, external, unique, false, false,
+                    unique ? uniqueOwner : null, EMPTY_BITS, false, false, Set.of(), nextPath);
         }
 
         Origin stripDirectIdentity(boolean immutable) {
             if (immutable) {
                 return IMMUTABLE;
             }
-            return new Origin((BitSet) params.clone(), aliasesThis, external, unique, false, uniqueOwner, Set.of(), null);
+            if (hasElementTaint()) {
+                BitSet merged = (BitSet) params.clone();
+                merged.or(elementParams);
+                return new Origin(merged, aliasesThis || elementThis, external || elementExternal,
+                        false, false, false, null, EMPTY_BITS, false, false, Set.of(), null);
+            }
+            return new Origin((BitSet) params.clone(), aliasesThis, external, unique, false, false,
+                    unique ? uniqueOwner : null, EMPTY_BITS, false, false, Set.of(), null);
+        }
+
+        /** Stores a non-unique element into a fresh local container: drops {@code unique} while keeping {@code localFresh} (BIP016-D9). */
+        Origin absorbElement(Origin taint) {
+            BitSet nextElemParams = (BitSet) elementParams.clone();
+            boolean nextElemThis = elementThis;
+            boolean nextElemExt = elementExternal;
+            if (taint != null && taint != IMMUTABLE) {
+                nextElemParams.or(taint.params);
+                nextElemParams.or(taint.elementParams);
+                nextElemThis |= taint.aliasesThis || taint.elementThis;
+                nextElemExt |= taint.external || taint.elementExternal;
+            }
+            return new Origin((BitSet) params.clone(), aliasesThis, external, false, true, false, uniqueOwner,
+                    nextElemParams, nextElemThis, nextElemExt, directKeys, pathKey);
         }
 
         Origin demoteToExternal(Origin taint) {
             BitSet merged = (BitSet) params.clone();
-            boolean mergedThis = aliasesThis;
+            merged.or(elementParams);
+            boolean mergedThis = aliasesThis || elementThis;
             if (taint != null && taint != IMMUTABLE) {
                 merged.or(taint.params);
-                mergedThis |= taint.aliasesThis;
+                merged.or(taint.elementParams);
+                mergedThis |= taint.aliasesThis || taint.elementThis;
             }
-            return new Origin(merged, mergedThis, true, false, false, null, directKeys, pathKey);
+            return new Origin(merged, mergedThis, true, false, false, false, null,
+                    EMPTY_BITS, false, false, directKeys, pathKey);
         }
 
         Origin join(Origin other) {
@@ -231,6 +356,10 @@ final class EffectChecker {
             }
             BitSet merged = (BitSet) params.clone();
             merged.or(other.params);
+            BitSet mergedElem = (BitSet) elementParams.clone();
+            mergedElem.or(other.elementParams);
+            boolean mergedElemThis = elementThis || other.elementThis;
+            boolean mergedElemExt = elementExternal || other.elementExternal;
             Set<Object> keys;
             if (directKeys.isEmpty() && other.directKeys.isEmpty()) {
                 keys = Set.of();
@@ -243,14 +372,27 @@ final class EffectChecker {
             boolean mergedThis = aliasesThis || other.aliasesThis;
             boolean mergedUnique = this.unique && other.unique && !this.external && !other.external
                     && !mergedThis && merged.isEmpty();
-            Object mergedOwner = mergedUnique && Objects.equals(this.uniqueOwner, other.uniqueOwner) ? this.uniqueOwner : null;
+            boolean mergedLocalFresh = this.localFresh && other.localFresh && !this.external && !other.external
+                    && !mergedThis && merged.isEmpty();
+            Object mergedOwner = (mergedUnique || mergedLocalFresh) && Objects.equals(this.uniqueOwner, other.uniqueOwner)
+                    ? this.uniqueOwner : null;
             boolean mergedExternal = this.external || other.external
-                    || (!mergedUnique && (this.unique || other.unique) && !mergedThis && merged.isEmpty());
-            return new Origin(merged, mergedThis, mergedExternal, mergedUnique, false, mergedOwner, keys, pk);
+                    || (!mergedUnique && !mergedLocalFresh && (this.unique || other.unique || this.localFresh || other.localFresh)
+                        && !mergedThis && merged.isEmpty());
+            if (!mergedLocalFresh && (!mergedElem.isEmpty() || mergedElemThis || mergedElemExt)) {
+                merged.or(mergedElem);
+                mergedThis |= mergedElemThis;
+                mergedExternal |= mergedElemExt;
+                return new Origin(merged, mergedThis, mergedExternal, false, false, false, null,
+                        EMPTY_BITS, false, false, keys, pk);
+            }
+            return new Origin(merged, mergedThis, mergedExternal, mergedUnique, mergedLocalFresh, false, mergedOwner,
+                    mergedElem, mergedElemThis, mergedElemExt, keys, pk);
         }
 
         private Origin withoutExactSingleKey() {
-            return new Origin((BitSet) params.clone(), aliasesThis, external, unique, moved, uniqueOwner, directKeys, pathKey);
+            return new Origin((BitSet) params.clone(), aliasesThis, external, unique, localFresh, moved, uniqueOwner,
+                    (BitSet) elementParams.clone(), elementThis, elementExternal, directKeys, pathKey);
         }
 
         @Override
@@ -264,16 +406,21 @@ final class EffectChecker {
             return aliasesThis == that.aliasesThis
                     && external == that.external
                     && unique == that.unique
+                    && localFresh == that.localFresh
                     && moved == that.moved
+                    && elementThis == that.elementThis
+                    && elementExternal == that.elementExternal
                     && Objects.equals(uniqueOwner, that.uniqueOwner)
                     && params.equals(that.params)
+                    && elementParams.equals(that.elementParams)
                     && directKeys.equals(that.directKeys)
                     && Objects.equals(pathKey, that.pathKey);
         }
 
         @Override
         public int hashCode() {
-            return Objects.hash(params, aliasesThis, external, unique, moved, uniqueOwner, directKeys, pathKey);
+            return Objects.hash(params, aliasesThis, external, unique, localFresh, moved, uniqueOwner,
+                    elementParams, elementThis, elementExternal, directKeys, pathKey);
         }
     }
 
@@ -350,6 +497,55 @@ final class EffectChecker {
 
     // ================================================================ 1. Parsing Modifiers
 
+    boolean isCompletelyUntyped(BabbleParser.FunctionLiteralContext fn) {
+        if (fn.effectPrefix() != null || fn.type() != null || fn.uniqueReturn != null) {
+            return false;
+        }
+        if (isExportOrInterfaceMethod(fn)) {
+            return false;
+        }
+        List<BabbleParser.FnParamContext> params = fn.fnParameters().fnParam();
+        for (BabbleParser.FnParamContext param : params) {
+            if (param.type() != null || !ScopeAnalysis.paramModifiers(param).isEmpty()) {
+                return false;
+            }
+        }
+        // A named `def f = fn () -> (...)` has zero untyped parameters (it simply omits the void/null return type);
+        // treat it as a normal typed function (pure by default per BIP016-D3), while anonymous inline lambdas and
+        // functions with untyped parameters infer effects.
+        if (params.isEmpty() && isNamedDefRhs(fn)) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean isNamedDefRhs(BabbleParser.FunctionLiteralContext fn) {
+        ParserRuleContext cur = fn;
+        while (cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
+                && blk.block().expression().size() == 1) {
+            cur = blk;
+        }
+        return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur;
+    }
+
+    private boolean isExportOrInterfaceMethod(BabbleParser.FunctionLiteralContext fn) {
+        ParserRuleContext cur = fn;
+        while (cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
+                && blk.block().expression().size() == 1) {
+            cur = blk;
+        }
+        if (cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur) {
+            if (checker.isExportedDef(def)) {
+                return true;
+            }
+            ScopeNode defScope = pass.definitionScopes.get(def);
+            if (defScope != null && defScope.kind == ScopeNode.Kind.INTERFACE_BODY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     ParsedPrefix parseFunctionPrefix(BabbleParser.FunctionLiteralContext ctx, boolean reportErrors) {
         if (!reportErrors) {
             ParsedPrefix cached = fnPrefixes.get(ctx);
@@ -357,42 +553,29 @@ final class EffectChecker {
                 return cached;
             }
         }
-        ParsedPrefix parsed = parseWords(
-                ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of(),
-                false, canReferenceThis(checker.scopeOf(ctx)), ctx, reportErrors);
-        boolean uniqueReturn = ctx.uniqueReturn != null || parsed.uniqueReturn();
-        // Check pure + mut parameter conflict.
+        boolean untyped = isCompletelyUntyped(ctx);
+        boolean hasThis = canReferenceThis(checker.scopeOf(ctx));
         boolean hasMutParam = false;
         boolean hasAnyParamMod = false;
         for (BabbleParser.FnParamContext param : ctx.fnParameters().fnParam()) {
             ParamMods pm = parseParamMods(param, reportErrors);
             hasMutParam |= pm.mut();
-            hasAnyParamMod |= pm.mut() || pm.borrow() || pm.unique();
+            hasAnyParamMod |= pm.mut() || pm.shared() || pm.unique();
         }
+        if (untyped) {
+            if (checker.inFile(ctx)) {
+                fnPrefixes.put(ctx, ParsedPrefix.EMPTY);
+            }
+            return ParsedPrefix.EMPTY;
+        }
+        ParsedPrefix parsed = parseWords(
+                ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of(),
+                ParseContext.FUNCTION_LITERAL, hasThis, hasMutParam, hasAnyParamMod,
+                ctx.uniqueReturn != null, ctx, reportErrors);
         if (reportErrors) {
-            if (parsed.effects().contains(Effect.PURE) && hasMutParam) {
-                checker.effectDiagnostic("pure and mut are mutually exclusive : use hermetic with mut parameters", ctx);
-            }
-            if (parsed.axiom() && parsed.effects().isEmpty() && !parsed.mutThis() && !parsed.borrowThis()
-                    && !uniqueReturn && !hasAnyParamMod) {
-                checker.effectDiagnostic("axiom requires at least one effect modifier", ctx);
-            }
             if (parsed.axiom() && !pass.hostEffects.allowAxioms()) {
                 checker.effectDiagnostic("axiom declarations are disabled on this engine", ctx);
             }
-            if (parsed.impure() && !pass.hostEffects.allowAxioms()) {
-                checker.effectDiagnostic("impure declarations are disabled on this engine", ctx);
-            }
-        }
-        if (parsed.effects().contains(Effect.PURE) && hasMutParam) {
-            EnumSet<Effect> fixed = EffectSet.copySet(parsed.effects());
-            fixed.remove(Effect.PURE);
-            fixed.add(Effect.HERMETIC);
-            parsed = new ParsedPrefix(fixed, parsed.mutThis(), parsed.borrowThis(), uniqueReturn,
-                    parsed.axiom(), parsed.impure(), true);
-        } else if (uniqueReturn != parsed.uniqueReturn()) {
-            parsed = new ParsedPrefix(parsed.effects(), parsed.mutThis(), parsed.borrowThis(), uniqueReturn,
-                    parsed.axiom(), parsed.impure(), true);
         }
         if (checker.inFile(ctx)) {
             fnPrefixes.put(ctx, parsed);
@@ -418,28 +601,22 @@ final class EffectChecker {
     }
 
     ParsedPrefix parseFunctionTypePrefix(BabbleParser.FunctionTypeContext ctx, boolean reportErrors) {
+        return parseFunctionTypePrefix(ctx, false, reportErrors);
+    }
+
+    ParsedPrefix parseFunctionTypePrefix(BabbleParser.FunctionTypeContext ctx, boolean interfaceMethod, boolean reportErrors) {
         boolean report = reportErrors && validatedTypeTrees.add(ctx);
         List<Token> words = ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of();
-        ParsedPrefix parsed = parseWords(words, true, true, ctx, report);
-        boolean uniqueReturn = ctx.uniqueReturn != null || parsed.uniqueReturn();
         boolean hasMutParam = false;
+        boolean hasAnyParamMod = false;
         for (BabbleParser.FnTypeParamContext param : ctx.fnTypeParameters().fnTypeParam()) {
             ParamMods pm = parseParamMods(param, report);
             hasMutParam |= pm.mut();
+            hasAnyParamMod |= pm.mut() || pm.shared() || pm.unique();
         }
-        if (report && parsed.effects().contains(Effect.PURE) && hasMutParam) {
-            checker.effectDiagnostic("pure and mut are mutually exclusive : use hermetic with mut parameters", ctx);
-        }
-        if (parsed.effects().contains(Effect.PURE) && hasMutParam) {
-            EnumSet<Effect> fixed = EffectSet.copySet(parsed.effects());
-            fixed.remove(Effect.PURE);
-            fixed.add(Effect.HERMETIC);
-            return new ParsedPrefix(fixed, parsed.mutThis(), parsed.borrowThis(), uniqueReturn, false, false, true);
-        }
-        if (uniqueReturn != parsed.uniqueReturn()) {
-            return new ParsedPrefix(parsed.effects(), parsed.mutThis(), parsed.borrowThis(), uniqueReturn, false, false, true);
-        }
-        return parsed;
+        return parseWords(words,
+                interfaceMethod ? ParseContext.INTERFACE_METHOD : ParseContext.FUNCTION_TYPE,
+                interfaceMethod, hasMutParam, hasAnyParamMod, ctx.uniqueReturn != null, ctx, report);
     }
 
     ParamMods parseParamMods(ParserRuleContext param, boolean reportErrors) {
@@ -450,7 +627,7 @@ final class EffectChecker {
             }
         }
         boolean mut = false;
-        boolean borrow = false;
+        boolean shared = false;
         boolean unique = false;
         for (BabbleParser.ParamModifierContext modCtx : ScopeAnalysis.paramModifiers(param)) {
             Token tok = modCtx.getStart();
@@ -461,11 +638,11 @@ final class EffectChecker {
                     }
                     mut = true;
                 }
-                case "borrow" -> {
-                    if (borrow && reportErrors) {
-                        checker.effectDiagnostic("Duplicate parameter modifier : borrow", modCtx);
+                case "shared" -> {
+                    if (shared && reportErrors) {
+                        checker.effectDiagnostic("Duplicate parameter modifier : shared", modCtx);
                     }
-                    borrow = true;
+                    shared = true;
                 }
                 case "unique" -> {
                     if (unique && reportErrors) {
@@ -480,24 +657,43 @@ final class EffectChecker {
                 }
             }
         }
-        ParamMods mods = (mut || borrow || unique) ? new ParamMods(mut, borrow, unique) : ParamMods.NONE;
+        if (reportErrors) {
+            if (unique && shared) {
+                checker.effectDiagnostic("unique and shared are mutually exclusive", param);
+            }
+            if (unique && mut) {
+                checker.effectDiagnostic("unique and mut are mutually exclusive : consuming unique parameters already allow private mutation", param);
+            }
+        }
+        if (unique) {
+            shared = false;
+            mut = false;
+        }
+        ParamMods mods = (mut || shared || unique) ? new ParamMods(mut, shared, unique) : ParamMods.NONE;
         if (checker.inFile(param)) {
             paramModsMap.put(param, mods);
         }
         return mods;
     }
 
-    private ParsedPrefix parseWords(List<Token> tokens, boolean inFunctionType, boolean hasThis,
-                                    ParserRuleContext owner, boolean reportErrors) {
-        if (tokens.isEmpty()) {
-            return ParsedPrefix.EMPTY;
-        }
-        EnumSet<Effect> effects = EnumSet.noneOf(Effect.class);
+    private ParsedPrefix parseWords(List<Token> tokens,
+                                    ParseContext kind,
+                                    boolean hasThis,
+                                    boolean hasMutParam,
+                                    boolean hasAnyParamMod,
+                                    boolean hasUniqueReturnType,
+                                    ParserRuleContext owner,
+                                    boolean reportErrors) {
+        boolean inFunctionType = kind == ParseContext.FUNCTION_TYPE || kind == ParseContext.INTERFACE_METHOD;
+        boolean isJavaTarget = kind == ParseContext.JAVA_TARGET;
+        EnumSet<Effect> explicitEffects = EnumSet.noneOf(Effect.class);
+        boolean explicitPure = false;
+        boolean explicitVolatile = false;
+        boolean io = false;
         boolean mutThis = false;
-        boolean borrowThis = false;
-        boolean uniqueReturn = false;
+        boolean explicitSharedThis = false;
+        boolean uniqueReturn = hasUniqueReturnType;
         boolean axiom = false;
-        boolean impure = false;
         Set<String> seen = new HashSet<>();
         for (int i = 0; i < tokens.size(); i++) {
             Token tok = tokens.get(i);
@@ -516,33 +712,27 @@ final class EffectChecker {
                     }
                     axiom = true;
                 }
-                case "impure" -> {
-                    if (inFunctionType && reportErrors) {
-                        checker.effectDiagnostic("impure is not allowed in a function type", owner);
-                    }
-                    impure = true;
-                }
-                case "pure" -> effects.add(Effect.PURE);
-                case "hermetic" -> effects.add(Effect.HERMETIC);
-                case "deterministic" -> effects.add(Effect.DETERMINISTIC);
-                case "nothrow" -> effects.add(Effect.NOTHROW);
-                case "idempotent" -> effects.add(Effect.IDEMPOTENT);
-                case "commutative" -> effects.add(Effect.COMMUTATIVE);
-                case "associative" -> effects.add(Effect.ASSOCIATIVE);
-                case "monotone" -> effects.add(Effect.MONOTONE);
-                case "injective" -> effects.add(Effect.INJECTIVE);
+                case "pure" -> explicitPure = true;
+                case "volatile" -> explicitVolatile = true;
+                case "io" -> io = true;
+                case "nothrow" -> explicitEffects.add(Effect.NOTHROW);
+                case "idempotent" -> explicitEffects.add(Effect.IDEMPOTENT);
+                case "commutative" -> explicitEffects.add(Effect.COMMUTATIVE);
+                case "associative" -> explicitEffects.add(Effect.ASSOCIATIVE);
+                case "monotone" -> explicitEffects.add(Effect.MONOTONE);
+                case "injective" -> explicitEffects.add(Effect.INJECTIVE);
                 case "unique" -> uniqueReturn = true;
                 case "mut" -> {
-                    if (!hasThis && reportErrors) {
+                    if (!hasThis && kind == ParseContext.FUNCTION_LITERAL && reportErrors) {
                         checker.effectDiagnostic("mut on a function requires a receiver (this) : mark mutated parameters with mut", owner);
                     }
                     mutThis = true;
                 }
-                case "borrow" -> {
-                    if (!hasThis && reportErrors) {
-                        checker.effectDiagnostic("borrow on a function requires a receiver (this) : mark borrowed parameters with borrow", owner);
+                case "shared" -> {
+                    if (!hasThis && kind == ParseContext.FUNCTION_LITERAL && reportErrors) {
+                        checker.effectDiagnostic("shared on a function requires a receiver (this) : mark escaping parameters with shared", owner);
                     }
-                    borrowThis = true;
+                    explicitSharedThis = true;
                 }
                 default -> {
                     if (reportErrors) {
@@ -552,22 +742,95 @@ final class EffectChecker {
             }
         }
         if (reportErrors) {
-            if (axiom && impure) {
-                checker.effectDiagnostic("axiom and impure cannot be combined", owner);
-            } else if (impure && (!effects.isEmpty() || mutThis || borrowThis || uniqueReturn)) {
-                checker.effectDiagnostic("impure cannot be combined with effect modifiers", owner);
+            if (explicitPure && !axiom) {
+                checker.effectDiagnostic("pure is the default on functions : only use pure with axiom", owner);
             }
-            if (effects.contains(Effect.PURE) && mutThis) {
-                checker.effectDiagnostic("pure and mut are mutually exclusive : use hermetic mut", owner);
+            if (axiom && io) {
+                checker.effectDiagnostic("axiom and io cannot be combined", owner);
+            } else if (isJavaTarget && io && (explicitPure || explicitVolatile || !explicitEffects.isEmpty() || mutThis || explicitSharedThis || uniqueReturn)) {
+                checker.effectDiagnostic("io cannot be combined with effect modifiers on a Java target", owner);
+            }
+            if (io && explicitVolatile) {
+                checker.effectDiagnostic("io already implies volatile : use io alone", owner);
+            }
+            if (io && explicitPure) {
+                checker.effectDiagnostic("io and pure cannot be combined", owner);
+            }
+            if (explicitPure && explicitVolatile) {
+                checker.effectDiagnostic("pure and volatile cannot be combined", owner);
+            }
+            if (explicitPure && (mutThis || hasMutParam)) {
+                checker.effectDiagnostic("pure and mut are mutually exclusive : use mut (or volatile mut)", owner);
+            }
+            if (axiom && !explicitPure && !explicitVolatile && explicitEffects.isEmpty()
+                    && !mutThis && !explicitSharedThis && !uniqueReturn && !hasAnyParamMod) {
+                checker.effectDiagnostic("axiom requires at least one effect modifier", owner);
             }
         }
-        if (effects.contains(Effect.PURE) && mutThis) {
+
+        EnumSet<Effect> effects = EnumSet.copyOf(explicitEffects);
+        boolean anyMut = mutThis || hasMutParam;
+        boolean hasExplicitWords = !tokens.isEmpty() || hasUniqueReturnType;
+        if (isJavaTarget) {
+            if (io) {
+                return new ParsedPrefix(EnumSet.noneOf(Effect.class), false, false, false, false, false, true, false, true);
+            }
+            if (explicitPure && !anyMut) {
+                effects.add(Effect.PURE);
+                effects.add(Effect.HERMETIC);
+                effects.add(Effect.DETERMINISTIC);
+            } else if (explicitVolatile) {
+                effects.add(Effect.HERMETIC);
+                if (!anyMut) {
+                    effects.add(Effect.PURE);
+                }
+            } else if (mutThis) {
+                effects.add(Effect.HERMETIC);
+                effects.add(Effect.DETERMINISTIC);
+            }
+            boolean borrowThis = hasThis && !explicitSharedThis;
+            return new ParsedPrefix(effects, mutThis, borrowThis, explicitSharedThis, uniqueReturn, axiom, false, explicitVolatile, true);
+        }
+
+        if (axiom) {
+            if (explicitPure && !anyMut) {
+                effects.add(Effect.PURE);
+                effects.add(Effect.HERMETIC);
+                effects.add(Effect.DETERMINISTIC);
+            } else if (explicitVolatile) {
+                effects.add(Effect.HERMETIC);
+                if (!anyMut) {
+                    effects.add(Effect.PURE);
+                }
+            } else if (anyMut) {
+                effects.add(Effect.HERMETIC);
+                effects.add(Effect.DETERMINISTIC);
+            }
+            boolean borrowThis = !explicitSharedThis;
+            return new ParsedPrefix(effects, mutThis, borrowThis, explicitSharedThis, uniqueReturn, true, false, explicitVolatile, true);
+        }
+
+        // Typed function literal, function type, or interface method: pure & deterministic & @BORROWED by default (BIP016-D3, D4)!
+        if (io) {
             effects.remove(Effect.PURE);
+            effects.remove(Effect.HERMETIC);
+            effects.remove(Effect.DETERMINISTIC);
+        } else if (explicitVolatile) {
             effects.add(Effect.HERMETIC);
-        } else if (effects.contains(Effect.PURE)) {
+            effects.remove(Effect.DETERMINISTIC);
+            if (!anyMut) {
+                effects.add(Effect.PURE);
+            }
+        } else {
             effects.add(Effect.HERMETIC);
+            effects.add(Effect.DETERMINISTIC);
+            if (!anyMut) {
+                effects.add(Effect.PURE);
+            }
         }
-        return new ParsedPrefix(effects, mutThis, borrowThis, uniqueReturn, axiom, impure, true);
+        boolean borrowThis = !explicitSharedThis;
+        return new ParsedPrefix(effects, mutThis, borrowThis, explicitSharedThis, uniqueReturn,
+                false, io, !io && explicitVolatile, hasExplicitWords);
     }
 
     private static boolean canReferenceThis(ScopeNode scope) {
@@ -657,10 +920,11 @@ final class EffectChecker {
         boolean[] borrowParams;
         boolean borrowRest;
         if (from == Type.PRINT) {
-            effects = EffectSet.EMPTY;
+            effects = new EffectSet(EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
+                    false, true, false, false, false, false, true, false, false);
             mutParams = new boolean[0];
             borrowParams = new boolean[0];
-            borrowRest = false;
+            borrowRest = true;
         } else if (from instanceof Type.JavaMethod jm) {
             Method exact = JavaTypeBridge.uniqueArityMethod(jm.owner(), jm.name(), target.parameters().size());
             JavaCallProfile profile = resolveJavaMethodProfile(jm.owner(), jm.name(), exact);
@@ -668,8 +932,14 @@ final class EffectChecker {
             mutParams = profile.mutParams();
             borrowParams = profile.borrowParams();
             borrowRest = profile.borrowReceiver();
-            if (!target.effects().hasExplicitAnnotations() && effects.mutThis()) {
-                effects = EffectSet.ofInferred(effects.effects(), false, effects.borrowThis());
+            // A Java method value (`Math.abs`, `sb.length`, `xs.add`) is static or already bound to its receiver:
+            // it has no `this` parameter at the call site, so it trivially satisfies `borrowThis`, and when assigned
+            // to an `io` (or unconstrained) target its bound receiver mutation is covered by `io`.
+            boolean keepMutThis = effects.mutThis() && target.effects().hasExplicitAnnotations() && !target.effects().isIO();
+            if (!effects.borrowThis() || (effects.mutThis() && !keepMutThis)) {
+                effects = new EffectSet(effects.effects(), effects.declared(), keepMutThis, true, false,
+                        effects.uniqueResult(), effects.explicitUniqueResult(), effects.terminating(),
+                        effects.isIO(), effects.explicitVolatile(), effects.axiomatic());
             }
         } else if (from instanceof Type.ClassValue cv && !cv.node().isInterface()) {
             CallableSummary summary = constructorSummary(cv.node());
@@ -687,7 +957,7 @@ final class EffectChecker {
             Type.Parameter tp = target.parameters().get(i);
             boolean mut = i < mutParams.length && mutParams[i];
             boolean borrow = i < borrowParams.length ? borrowParams[i] : borrowRest;
-            if (mut && !tp.mut() || tp.borrow() && !borrow) {
+            if (mut && !tp.mut() || (tp.borrow() && !borrow && !isDeeplyImmutable(tp.type()))) {
                 return false;
             }
         }
@@ -713,7 +983,7 @@ final class EffectChecker {
         return prefix != null ? prefix.toEffectSet() : null;
     }
 
-    // ================================================================ 3. Pre-pass : Axiom & Impure Collection
+    // ================================================================ 3. Pre-pass : Axiom & IO Collection
 
     private void collectDeclarations(BabbleParser.FileContext file) {
         // 1. Standalone effectDeclarations recorded by BlockScopes.
@@ -724,10 +994,10 @@ final class EffectChecker {
             boolean isCtor = ctx.ctorOpen != null;
             ParsedPrefix prefix = parseTargetPrefix(words, isCtor, ctx);
             if (!pass.hostEffects.allowAxioms()) {
-                checker.effectDiagnostic((prefix.impure() ? "impure" : "axiom") + " declarations are disabled on this engine", ctx);
+                checker.effectDiagnostic((prefix.io() ? "io" : "axiom") + " declarations are disabled on this engine", ctx);
                 continue;
             }
-            checkDeclarationPlacement(scope, prefix.impure() ? "impure" : "axiom", ctx);
+            checkDeclarationPlacement(scope, prefix.io() ? "io" : "axiom", ctx);
             HostEffects.JavaTarget target = resolveEffectTarget(ctx.effectTarget(), isCtor, scope, ctx);
             if (target == null) {
                 continue;
@@ -754,10 +1024,10 @@ final class EffectChecker {
             defPrefixes.put(def, prefix);
             ScopeNode scope = pass.definitionScopes.get(def);
             if (!pass.hostEffects.allowAxioms()) {
-                checker.effectDiagnostic((prefix.impure() ? "impure" : "axiom") + " declarations are disabled on this engine", def);
+                checker.effectDiagnostic((prefix.io() ? "io" : "axiom") + " declarations are disabled on this engine", def);
             } else {
                 if (scope != null) {
-                    checkDeclarationPlacement(scope, prefix.impure() ? "impure" : "axiom", def);
+                    checkDeclarationPlacement(scope, prefix.io() ? "io" : "axiom", def);
                 }
                 Type valType = def.value != null ? checker.rawTypeOf(def.value) : null;
                 HostEffects.JavaTarget target = null;
@@ -766,7 +1036,7 @@ final class EffectChecker {
                 } else if (valType instanceof Type.JavaClassValue jcv) {
                     target = HostEffects.JavaTarget.ofClass(jcv.type());
                 } else if (valType != null && !(valType instanceof Type.Function) && valType != Type.ERROR) {
-                    checker.effectDiagnostic("Invalid " + (prefix.impure() ? "impure" : "axiom")
+                    checker.effectDiagnostic("Invalid " + (prefix.io() ? "io" : "axiom")
                             + " target : expected a Java class, Java method, or function", def);
                 }
                 if (target != null) {
@@ -788,18 +1058,14 @@ final class EffectChecker {
     }
 
     private ParsedPrefix parseTargetPrefix(List<Token> words, boolean isCtor, ParserRuleContext ctx) {
-        ParsedPrefix parsed = parseWords(words, false, !isCtor, ctx, true);
-        if (parsed.axiom() && parsed.effects().isEmpty() && !parsed.mutThis() && !parsed.borrowThis()) {
-            checker.effectDiagnostic("axiom requires at least one effect modifier", ctx);
-        }
-        return parsed;
+        return parseWords(words, ParseContext.JAVA_TARGET, !isCtor, false, false, false, ctx, true);
     }
 
     private void checkDeclarationPlacement(ScopeNode scope, String keyword, ParserRuleContext ctx) {
         for (ScopeNode s = scope; s != null; s = s.parent) {
             if (s.kind == ScopeNode.Kind.FUNCTION && s.owner instanceof BabbleParser.FunctionLiteralContext fn) {
                 ParsedPrefix p = parseFunctionPrefix(fn, false);
-                if (!p.axiom() && (p.effects().contains(Effect.PURE)
+                if (!p.axiom() && !p.io() && (p.effects().contains(Effect.PURE)
                         || p.effects().contains(Effect.HERMETIC)
                         || p.effects().contains(Effect.DETERMINISTIC))) {
                     checker.effectDiagnostic(keyword + " declaration is not allowed inside a verified constrained function", ctx);
@@ -894,7 +1160,7 @@ final class EffectChecker {
     }
 
     private void validateJavaTargetPrefix(HostEffects.JavaTarget target, ParsedPrefix prefix, ParserRuleContext at) {
-        if (prefix.impure()) {
+        if (prefix.io()) {
             return;
         }
         if (target.kind() == HostEffects.TargetKind.CLASS && prefix.mutThis()) {
@@ -906,10 +1172,11 @@ final class EffectChecker {
     }
 
     private static HostEffects.OverrideEntry toOverrideEntry(ParsedPrefix prefix) {
-        if (prefix.impure()) {
-            return HostEffects.OverrideEntry.impureEntry();
+        if (prefix.io()) {
+            return HostEffects.OverrideEntry.ioEntry();
         }
-        return new HostEffects.OverrideEntry(prefix.effects(), prefix.mutThis(), prefix.borrowThis(), prefix.uniqueReturn(), false);
+        return new HostEffects.OverrideEntry(prefix.effects(), prefix.mutThis(), !prefix.explicitSharedThis(),
+                prefix.uniqueReturn(), false, prefix.explicitVolatile());
     }
 
     // ================================================================ 4. 7-Tier Java Effect Resolution
@@ -1009,13 +1276,13 @@ final class EffectChecker {
         if (owner == String.class) {
             boolean[] borrowParams = new boolean[paramCount];
             Arrays.fill(borrowParams, true);
-            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false);
+            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
             return new JavaCallProfile(set, false, false, new boolean[paramCount], borrowParams, false);
         }
         if (isCoreCollectionClass(owner)
                 || owner == java.util.AbstractMap.SimpleImmutableEntry.class
                 || owner == java.util.AbstractMap.SimpleEntry.class) {
-            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), false, false);
+            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
             return new JavaCallProfile(set, false, false, new boolean[paramCount], new boolean[paramCount], false);
         }
         // Tier 7: Unconstrained default.
@@ -1059,8 +1326,8 @@ final class EffectChecker {
         int paramCount = exec != null ? exec.getParameterCount() : 0;
         boolean[] mutParams = new boolean[paramCount];
         boolean[] borrowParams = new boolean[paramCount];
-        if (entry.impure()) {
-            return new JavaCallProfile(EffectSet.IMPURE_DECLARED, false, false, mutParams, borrowParams, false);
+        if (entry.io()) {
+            return new JavaCallProfile(EffectSet.IO_DECLARED, false, false, mutParams, borrowParams, false);
         }
         boolean isStaticOrCtor = exec instanceof Constructor<?> || (exec != null && Modifier.isStatic(exec.getModifiers()));
         boolean mutReceiver = !isStaticOrCtor && entry.mutReceiver() && exec.getDeclaringClass() != String.class;
@@ -1081,16 +1348,27 @@ final class EffectChecker {
                 if (params[i].isAnnotationPresent(Mut.class) && params[i].getType() != String.class) {
                     mutParams[i] = true;
                 }
-                if (params[i].isAnnotationPresent(Borrow.class)) {
-                    borrowParams[i] = true;
+                if (params[i].isAnnotationPresent(Shared.class)) {
+                    borrowParams[i] = false;
                 }
                 if (params[i].isAnnotationPresent(Unique.class)) {
                     uniqueParams[i] = true;
+                    borrowParams[i] = false;
                 }
             }
         }
-        EffectSet set = EffectSet.ofDeclared(entry.effects(), mutReceiver, !isStaticOrCtor && borrowAll, entry.uniqueResult(), true);
+        EffectSet set = EffectSet.ofDeclared(entry.effects(), mutReceiver, isStaticOrCtor || borrowAll,
+                !isStaticOrCtor && !borrowAll, entry.uniqueResult(), false, entry.volatileEffect(), true);
         return new JavaCallProfile(set, mutReceiver, !isStaticOrCtor && borrowAll, mutParams, borrowParams, uniqueParams, explicitNothrow);
+    }
+
+    private static boolean allParamsPrimitiveOrString(Executable exec) {
+        for (Class<?> pt : exec.getParameterTypes()) {
+            if (!pt.isPrimitive() && pt != String.class) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean hasAnyEffectAnnotation(Executable exec) {
@@ -1098,7 +1376,7 @@ final class EffectChecker {
             return true;
         }
         for (Parameter p : exec.getParameters()) {
-            if (p.isAnnotationPresent(Mut.class) || p.isAnnotationPresent(Borrow.class) || p.isAnnotationPresent(Unique.class)) {
+            if (p.isAnnotationPresent(Mut.class) || p.isAnnotationPresent(Shared.class) || p.isAnnotationPresent(Unique.class)) {
                 return true;
             }
         }
@@ -1111,18 +1389,17 @@ final class EffectChecker {
 
     private static boolean hasElementEffectAnnotation(AnnotatedElement el) {
         return el.isAnnotationPresent(Pure.class)
-                || el.isAnnotationPresent(Hermetic.class)
+                || el.isAnnotationPresent(Volatile.class)
                 || el.isAnnotationPresent(Mut.class)
-                || el.isAnnotationPresent(Borrow.class)
+                || el.isAnnotationPresent(Shared.class)
                 || el.isAnnotationPresent(Unique.class)
-                || el.isAnnotationPresent(Deterministic.class)
                 || el.isAnnotationPresent(Nothrow.class)
                 || el.isAnnotationPresent(Idempotent.class)
                 || el.isAnnotationPresent(Commutative.class)
                 || el.isAnnotationPresent(Associative.class)
                 || el.isAnnotationPresent(Monotone.class)
                 || el.isAnnotationPresent(Injective.class)
-                || el.isAnnotationPresent(Impure.class);
+                || el.isAnnotationPresent(IO.class);
     }
 
     private static JavaCallProfile profileFromAnnotations(Executable exec, Class<?> classSource, boolean classLevelOnly) {
@@ -1131,8 +1408,8 @@ final class EffectChecker {
         boolean[] borrowParams = new boolean[paramCount];
         boolean[] uniqueParams = new boolean[paramCount];
         AnnotatedElement primary = (!classLevelOnly && exec != null) ? exec : classSource;
-        if (primary.isAnnotationPresent(Impure.class)) {
-            return new JavaCallProfile(EffectSet.IMPURE_DECLARED, false, false, mutParams, borrowParams, uniqueParams, false);
+        if (primary.isAnnotationPresent(IO.class)) {
+            return new JavaCallProfile(EffectSet.IO_DECLARED, false, false, mutParams, borrowParams, uniqueParams, false);
         }
         EnumSet<Effect> effects = EnumSet.noneOf(Effect.class);
         collectAnnotationsInto(classSource, effects);
@@ -1142,43 +1419,60 @@ final class EffectChecker {
         boolean isStaticOrCtor = exec instanceof Constructor<?> || (exec != null && Modifier.isStatic(exec.getModifiers()));
         boolean mutReceiver = !classLevelOnly && exec instanceof Method && !isStaticOrCtor
                 && exec.isAnnotationPresent(Mut.class) && exec.getDeclaringClass() != String.class;
-        boolean borrowReceiver = !classLevelOnly && exec != null && exec.isAnnotationPresent(Borrow.class);
-        boolean uniqueResult = !classLevelOnly && exec != null && exec.isAnnotationPresent(Unique.class);
+        boolean explicitVolatile = (!classLevelOnly && exec != null && exec.isAnnotationPresent(Volatile.class))
+                || (classSource != null && classSource.isAnnotationPresent(Volatile.class)
+                    && (classLevelOnly || exec == null || !exec.isAnnotationPresent(Pure.class)));
+        boolean explicitShared = (!classLevelOnly && exec != null && exec.isAnnotationPresent(Shared.class))
+                || (classSource != null && classSource.isAnnotationPresent(Shared.class));
+        boolean uniqueResult = !classLevelOnly && exec != null && (exec.isAnnotationPresent(Unique.class)
+                || (exec instanceof Constructor<?> && effects.contains(Effect.HERMETIC) && allParamsPrimitiveOrString(exec)));
         if (exec != null) {
             Parameter[] params = exec.getParameters();
             for (int i = 0; i < params.length; i++) {
                 if (params[i].isAnnotationPresent(Mut.class) && params[i].getType() != String.class) {
                     mutParams[i] = true;
                 }
-                if (params[i].isAnnotationPresent(Borrow.class) || (exec instanceof Constructor<?> && borrowReceiver)) {
-                    borrowParams[i] = true;
-                }
                 if (params[i].isAnnotationPresent(Unique.class)) {
                     uniqueParams[i] = true;
+                    borrowParams[i] = false;
+                } else {
+                    // Annotated Java methods default parameters to @BORROWED unless @Shared is written (BIP016-D8).
+                    borrowParams[i] = !params[i].isAnnotationPresent(Shared.class) && !explicitShared;
                 }
             }
+        }
+        if (explicitVolatile) {
+            effects.add(Effect.HERMETIC);
+            effects.remove(Effect.DETERMINISTIC);
+            if (!mutReceiver && !anyTrue(mutParams)) {
+                effects.add(Effect.PURE);
+            }
+        } else if ((mutReceiver || anyTrue(mutParams)) && !effects.contains(Effect.HERMETIC)) {
+            effects.add(Effect.HERMETIC);
+            effects.add(Effect.DETERMINISTIC);
         }
         if (mutReceiver || anyTrue(mutParams)) {
             effects.remove(Effect.PURE);
         }
+        boolean borrowReceiver = !isStaticOrCtor && !explicitShared;
         boolean explicitNothrow = effects.contains(Effect.NOTHROW);
-        EffectSet set = EffectSet.ofDeclared(effects, mutReceiver, !isStaticOrCtor && borrowReceiver, uniqueResult, true);
-        return new JavaCallProfile(set, mutReceiver, !isStaticOrCtor && borrowReceiver, mutParams, borrowParams, uniqueParams, explicitNothrow);
+        EffectSet set = EffectSet.ofDeclared(effects, mutReceiver, isStaticOrCtor || !explicitShared, !isStaticOrCtor && explicitShared,
+                uniqueResult, false, explicitVolatile, true);
+        return new JavaCallProfile(set, mutReceiver, borrowReceiver, mutParams, borrowParams, uniqueParams, explicitNothrow);
     }
 
     private static void collectAnnotationsInto(AnnotatedElement el, EnumSet<Effect> out) {
-        if (el == null || el.isAnnotationPresent(Impure.class)) {
+        if (el == null || el.isAnnotationPresent(IO.class)) {
             return;
         }
         if (el.isAnnotationPresent(Pure.class)) {
             out.add(Effect.PURE);
             out.add(Effect.HERMETIC);
-        }
-        if (el.isAnnotationPresent(Hermetic.class)) {
-            out.add(Effect.HERMETIC);
-        }
-        if (el.isAnnotationPresent(Deterministic.class)) {
             out.add(Effect.DETERMINISTIC);
+        }
+        if (el.isAnnotationPresent(Volatile.class)) {
+            out.add(Effect.HERMETIC);
+            out.remove(Effect.DETERMINISTIC);
         }
         if (el.isAnnotationPresent(Nothrow.class)) {
             out.add(Effect.NOTHROW);
@@ -1255,7 +1549,7 @@ final class EffectChecker {
             boolean[] borrowParams = new boolean[pCount];
             Arrays.fill(borrowParams, true);
             boolean isStatic = exactMethod != null && Modifier.isStatic(exactMethod.getModifiers());
-            EffectSet set = EffectSet.ofInferred(effs, false, !isStatic, false, true);
+            EffectSet set = EffectSet.ofInferred(effs, false, true, false, true);
             return new JavaCallProfile(set, false, !isStatic, new boolean[pCount], borrowParams, isNothrow);
         }
         if (owner != null && java.util.Map.Entry.class.isAssignableFrom(owner)) {
@@ -1342,12 +1636,12 @@ final class EffectChecker {
             boolean mut = i < profile.mutParams().length && profile.mutParams()[i];
             boolean borrow = i < profile.borrowParams().length && profile.borrowParams()[i];
             boolean unique = i < profile.uniqueParams().length && profile.uniqueParams()[i];
-            updated.add(new Type.Parameter(p.name(), p.type(), p.optional(), mut, borrow, borrow, unique));
+            updated.add(new Type.Parameter(p.name(), p.type(), p.optional(), mut, borrow, !borrow && !unique, unique));
         }
-        EffectSet fnEffects = new EffectSet(profile.effects().effects(), profile.effects().effects(),
+        EffectSet fnEffects = new EffectSet(profile.effects().effects(), profile.effects().declared(),
                 false, false, false,
                 profile.effects().uniqueResult(), profile.effects().explicitUniqueResult(),
-                profile.effects().terminating(), false, false);
+                profile.effects().terminating(), profile.effects().isIO(), profile.effects().explicitVolatile(), false);
         return new Type.Function(rawSam.typeParameters(), updated, rawSam.result(), fnEffects);
     }
 
@@ -1502,24 +1796,10 @@ final class EffectChecker {
         }
     }
 
-    private boolean isCompletelyUntyped(BabbleParser.FunctionLiteralContext fn) {
-        ParsedPrefix prefix = parseFunctionPrefix(fn, false);
-        if (prefix.hasAnyModifier() || fn.type() != null) {
-            return false;
-        }
-        for (BabbleParser.FnParamContext param : fn.fnParameters().fnParam()) {
-            ParamMods pm = parseParamMods(param, false);
-            if (param.type() != null || pm.mut() || pm.borrow()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
     private boolean isFixedSummary(ParserRuleContext callable) {
         if (callable instanceof BabbleParser.FunctionLiteralContext fn) {
             ParsedPrefix prefix = parseFunctionPrefix(fn, false);
-            return prefix.axiom() || prefix.impure();
+            return prefix.axiom();
         }
         return false;
     }
@@ -1535,24 +1815,18 @@ final class EffectChecker {
             for (int i = 0; i < n; i++) {
                 ParamMods pm = parseParamMods(params.get(i), true);
                 mutParams[i] = pm.mut();
-                borrowParams[i] = pm.borrow();
                 uniqueParams[i] = pm.unique();
-            }
-            if (prefix.impure()) {
-                return new CallableSummary(EffectSet.IMPURE_DECLARED, mutParams, new boolean[n], uniqueParams);
+                borrowParams[i] = !pm.shared() && !pm.unique();
             }
             if (prefix.axiom()) {
                 EffectSet set = prefix.toEffectSet();
                 return new CallableSummary(set, mutParams, borrowParams, uniqueParams);
             }
-            // Optimistic start for inference/verification: {HERMETIC, DETERMINISTIC, NOTHROW}, borrow all, uniqueResult, @TERMINATING!
-            for (int i = 0; i < n; i++) {
-                borrowParams[i] = !uniqueParams[i] || parseParamMods(params.get(i), false).borrow();
-            }
+            // Optimistic start for inference/verification: {HERMETIC, DETERMINISTIC, NOTHROW}, borrow all non-shared/non-unique, uniqueResult, @TERMINATING!
             EnumSet<Effect> opt = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW);
-            boolean borrowThis = canReferenceThis(checker.scopeOf(fn));
-            EffectSet set = new EffectSet(opt, prefix.effects(), prefix.mutThis(), borrowThis, prefix.borrowThis(),
-                    true, prefix.uniqueReturn(), true, false, false);
+            boolean borrowThis = !prefix.explicitSharedThis();
+            EffectSet set = new EffectSet(opt, prefix.effects(), prefix.mutThis(), borrowThis, prefix.explicitSharedThis(),
+                    true, prefix.uniqueReturn(), true, false, false, false);
             return new CallableSummary(set, mutParams, borrowParams, uniqueParams);
         }
         // ClassExpressionContext constructor:
@@ -1565,6 +1839,7 @@ final class EffectChecker {
         boolean[] uniqueParams = new boolean[n];
         TypeNode node = pass.typeNodes.get(cls);
         boolean isValue = node != null && node.kind == ClassShape.Kind.VALUE_CLASS;
+        BitSet ctorStored = new BitSet();
         for (int i = 0; i < n; i++) {
             ParamMods pm = parseParamMods(params.get(i), true);
             if (isValue && pm.mut()) {
@@ -1572,13 +1847,16 @@ final class EffectChecker {
             }
             mutParams[i] = !isValue && pm.mut();
             uniqueParams[i] = pm.unique();
-            // Field parameters (`def` or `value class`) are stored in `this`, so non-immutable ones escape into the new instance!
             boolean storedAsField = isValue || params.get(i).DEF() != null;
             Type pType = checker.typeOfDeclarationForEffects(params.get(i));
-            borrowParams[i] = (!uniqueParams[i] || pm.borrow()) && (!storedAsField || isDeeplyImmutable(pType));
+            if (storedAsField && !uniqueParams[i] && !isDeeplyImmutable(pType)) {
+                ctorStored.set(i);
+            }
+            borrowParams[i] = !pm.shared() && !uniqueParams[i];
         }
         EnumSet<Effect> opt = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW);
-        return new CallableSummary(EffectSet.ofInferred(opt, false, false, true, true), mutParams, borrowParams, uniqueParams);
+        return new CallableSummary(EffectSet.ofInferred(opt, false, true, ctorStored.isEmpty(), true), mutParams, borrowParams, uniqueParams,
+                Set.of(), Set.of(), false, EMPTY_SUMMARY_BITS, false, false, false, ctorStored);
     }
 
     private Map<ParserRuleContext, Set<ParserRuleContext>> buildCallGraph(List<ParserRuleContext> callables) {
@@ -1732,7 +2010,6 @@ final class EffectChecker {
                                                 boolean emitDiagnostics) {
         ParsedPrefix prefix = parseFunctionPrefix(fn, false);
         List<BabbleParser.FnParamContext> params = fn.fnParameters().fnParam();
-        int n = params.size();
         boolean untyped = isCompletelyUntyped(fn) && specializedParams == null;
 
         boolean[] mutParams = current.mutParams().clone();
@@ -1779,14 +2056,16 @@ final class EffectChecker {
                 prefix.effects(),
                 analyzer.mutThis,
                 analyzer.borrowThis,
-                prefix.borrowThis(),
+                prefix.explicitSharedThis(),
                 analyzer.uniqueResult,
                 prefix.uniqueReturn(),
                 analyzer.terminating,
                 false,
+                false,
                 false);
         return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams(),
-                Set.copyOf(analyzer.frameReadOwners), Set.copyOf(analyzer.frameWriteOwners));
+                Set.copyOf(analyzer.frameReadOwners), Set.copyOf(analyzer.frameWriteOwners), analyzer.deepMutThis,
+                (BitSet) analyzer.returnParams.clone(), analyzer.returnThis, analyzer.returnExternal, true, EMPTY_SUMMARY_BITS);
     }
 
     private CallableSummary analyzeConstructorBody(BabbleParser.ClassExpressionContext cls,
@@ -1799,7 +2078,8 @@ final class EffectChecker {
         boolean[] mutParams = current.mutParams().clone();
         boolean[] borrowParams = current.borrowParams().clone();
         ParsedPrefix pseudoPrefix = isValue
-                ? new ParsedPrefix(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false, false, false, true)
+                ? new ParsedPrefix(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC),
+                        false, false, false, false, false, false, false, true)
                 : ParsedPrefix.EMPTY;
 
         BodyAnalyzer analyzer = new BodyAnalyzer(
@@ -1823,8 +2103,8 @@ final class EffectChecker {
             if (p.defaultValue != null) {
                 analyzer.eval(p.defaultValue);
             }
-            if ((isValue || p.DEF() != null) && !isDeeplyImmutable(checker.typeOfDeclarationForEffects(p))) {
-                analyzer.markParamEscaped(i, "class field " + p.ID().getText(), p);
+            if ((isValue || p.DEF() != null) && !current.uniqueParams()[i] && !isDeeplyImmutable(checker.typeOfDeclarationForEffects(p))) {
+                analyzer.ctorStoredParams.set(i);
             }
         }
         analyzer.evalClassBody(cls.classBlock);
@@ -1842,8 +2122,10 @@ final class EffectChecker {
         if (analyzer.nothrow) {
             nextEffects.add(Effect.NOTHROW);
         }
-        EffectSet nextSet = EffectSet.ofInferred(nextEffects, false, false, analyzer.hermetic, analyzer.terminating);
-        return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams());
+        boolean ctorUnique = analyzer.hermetic && analyzer.ctorStoredParams.isEmpty();
+        EffectSet nextSet = EffectSet.ofInferred(nextEffects, false, true, ctorUnique, analyzer.terminating);
+        return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams(),
+                Set.of(), Set.of(), false, EMPTY_SUMMARY_BITS, false, false, false, (BitSet) analyzer.ctorStoredParams.clone());
     }
 
     private CallableSummary finalizeSummary(ParserRuleContext callable, CallableSummary raw) {
@@ -1879,54 +2161,75 @@ final class EffectChecker {
                 raw.effects().declared(),
                 mutThis,
                 raw.effects().borrowThis(),
-                raw.effects().explicitBorrowThis(),
+                raw.effects().explicitSharedThis(),
                 raw.effects().uniqueResult(),
                 raw.effects().explicitUniqueResult(),
                 raw.effects().terminating(),
                 false,
+                false,
                 false);
         return new CallableSummary(finalized, raw.mutParams(), raw.borrowParams(), raw.uniqueParams(),
-                raw.frameReadOwners(), raw.frameWriteOwners());
+                raw.frameReadOwners(), raw.frameWriteOwners(), raw.deepMutThis(),
+                raw.returnParams(), raw.returnThis(), raw.returnExternal(), raw.returnKnown(), raw.ctorStoredParams());
     }
 
     private CallableSummary buildVisibleSummary(ParserRuleContext callable, CallableSummary internal) {
         if (!(callable instanceof BabbleParser.FunctionLiteralContext fn)) {
             return internal;
         }
+        if (isCompletelyUntyped(fn)) {
+            return internal;
+        }
         ParsedPrefix prefix = parseFunctionPrefix(fn, false);
+        if (prefix.axiom()) {
+            return internal;
+        }
+        // Typed function (BIP016-D2/D3/D4): lock explicit opt-outs (io, volatile, mut, shared, unique),
+        // while preserving inferred @NOTHROW, @TERMINATING, algebraic traits, and frame-closure provenance.
         List<BabbleParser.FnParamContext> params = fn.fnParameters().fnParam();
-        boolean hasAnyExplicit = prefix.hasAnyModifier();
-        for (BabbleParser.FnParamContext p : params) {
-            ParamMods pm = parseParamMods(p, false);
-            hasAnyExplicit |= pm.mut() || pm.borrow() || pm.unique();
-        }
-        if (!hasAnyExplicit) {
-            // Unannotated function (including unannotated `export def` per BIP007-D2):
-            // expose full inferred EffectSet, inferred borrow, and (for untyped fns) inferred mut!
-            return internal;
-        }
-        if (prefix.axiom() || prefix.impure()) {
-            return internal;
-        }
-        // Annotated function: lock caller-visible contract to declared modifiers (BIP007-D2, §5.1.5),
-        // while preserving compiler-internal @TERMINATING metadata (BIP007-D10).
-        boolean[] declMut = new boolean[params.size()];
-        boolean[] declBorrow = new boolean[params.size()];
-        boolean[] declUnique = new boolean[params.size()];
+        boolean[] visMut = new boolean[params.size()];
+        boolean[] visBorrow = new boolean[params.size()];
+        boolean[] visUnique = new boolean[params.size()];
         for (int i = 0; i < params.size(); i++) {
             ParamMods pm = parseParamMods(params.get(i), false);
-            declMut[i] = pm.mut();
-            declBorrow[i] = pm.borrow();
-            declUnique[i] = pm.unique();
+            visMut[i] = pm.mut();
+            visUnique[i] = pm.unique();
+            visBorrow[i] = !pm.shared() && !pm.unique() && internal.borrowParams()[i];
         }
-        EffectSet rawDecl = prefix.toEffectSet();
-        EffectSet declSet = new EffectSet(
-                rawDecl.effects(), rawDecl.declared(),
-                rawDecl.mutThis(), rawDecl.borrowThis(), rawDecl.explicitBorrowThis(),
-                rawDecl.uniqueResult(), rawDecl.explicitUniqueResult(),
-                internal.effects().terminating(),
-                rawDecl.impure(), rawDecl.axiomatic());
-        return new CallableSummary(declSet, declMut, declBorrow, declUnique);
+        EnumSet<Effect> effs = EffectSet.copySet(internal.effects().effects());
+        EnumSet<Effect> decl = EffectSet.copySet(prefix.effects());
+        boolean mutThis = prefix.mutThis();
+        boolean borrowThis = !prefix.explicitSharedThis() && internal.effects().borrowThis();
+        boolean uniqueResult = prefix.uniqueReturn() || (!prefix.io() && internal.effects().uniqueResult());
+        boolean terminating = !prefix.io() && internal.effects().terminating();
+        if (prefix.io()) {
+            effs.remove(Effect.PURE);
+            effs.remove(Effect.HERMETIC);
+            effs.remove(Effect.DETERMINISTIC);
+            if (!prefix.effects().contains(Effect.NOTHROW)) {
+                effs.remove(Effect.NOTHROW);
+            }
+            effs.retainAll(prefix.effects());
+        } else if (prefix.explicitVolatile()) {
+            effs.remove(Effect.DETERMINISTIC);
+            if (mutThis || anyTrue(visMut)) {
+                effs.remove(Effect.PURE);
+            }
+        } else {
+            if (mutThis || anyTrue(visMut)) {
+                effs.remove(Effect.PURE);
+            }
+        }
+        EffectSet visSet = new EffectSet(
+                effs, decl,
+                mutThis, borrowThis, prefix.explicitSharedThis(),
+                uniqueResult, prefix.uniqueReturn(),
+                terminating,
+                prefix.io(), prefix.explicitVolatile(), false);
+        return new CallableSummary(visSet, visMut, visBorrow, visUnique,
+                internal.frameReadOwners(), internal.frameWriteOwners(), internal.deepMutThis(),
+                internal.returnParams(), internal.returnThis(), internal.returnExternal(), internal.returnKnown(),
+                internal.ctorStoredParams());
     }
 
     // ================================================================ 8. Verification Pass
@@ -1953,7 +2256,7 @@ final class EffectChecker {
         if (tree instanceof BabbleParser.FunctionTypeContext ft) {
             Type t = checker.annotationTypeOf(ft);
             if (t instanceof Type.Function fn) {
-                ParsedPrefix prefix = parseFunctionTypePrefix(ft, false);
+                ParsedPrefix prefix = parseFunctionTypePrefix(ft, fn.effects().borrowThis() || fn.effects().explicitSharedThis(), false);
                 validateAlgebraicSignature(prefix.effects(), fn.parameters(), fn.result(),
                         prefix.mutThis(), false, ft);
             }
@@ -1967,7 +2270,7 @@ final class EffectChecker {
         if (callable instanceof BabbleParser.FunctionLiteralContext fn) {
             ParsedPrefix prefix = parseFunctionPrefix(fn, false);
             Type rawType = checker.rawTypeOf(fn);
-            if (rawType instanceof Type.Function tf && !prefix.impure()) {
+            if (rawType instanceof Type.Function tf && !prefix.io()) {
                 validateAlgebraicSignature(prefix.effects(), tf.parameters(), tf.result(),
                         prefix.mutThis(), prefix.axiom(), fn);
             }
@@ -1978,27 +2281,36 @@ final class EffectChecker {
             }
             // Re-run body analysis with emitDiagnostics = true to report undeclared mut, borrow escape, exclusivity, etc.
             CallableSummary converged = summaries.get(fn);
-            recomputeSummary(fn, converged, null, true);
+            CallableSummary verified = finalizeSummary(fn, recomputeSummary(fn, converged, null, true));
 
-            if (!prefix.impure() && prefix.hasAnyModifier()) {
-                // Check each declared positive effect!
-                EffectSet actual = converged.effects();
+            if (!isCompletelyUntyped(fn)) {
+                EffectSet actual = verified.effects();
+                String fnLabel = ScopeAnalysis.functionName(fn);
+                String prefixMsg = fnLabel != null ? "Function " + fnLabel : "Function";
+                if (!prefix.io()) {
+                    if (!actual.isHermetic()) {
+                        if (prefix.explicitVolatile()) {
+                            checker.effectDiagnostic(prefixMsg + " declared volatile violates hermetic guarantee : mark function as io", fn);
+                        } else {
+                            checker.effectDiagnostic(prefixMsg + " violates pure guarantee (performs I/O or external mutation) : mark function as io", fn);
+                        }
+                    } else if (!prefix.explicitVolatile() && !actual.isDeterministic()) {
+                        checker.effectDiagnostic(prefixMsg + " violates deterministic guarantee : mark function as volatile (or io)", fn);
+                    }
+                }
+                // Check explicit additive guarantees (nothrow, algebraic traits):
                 for (Effect req : prefix.effects()) {
-                    if (req == Effect.HERMETIC && prefix.effects().contains(Effect.PURE)) {
+                    if (req == Effect.PURE || req == Effect.HERMETIC || req == Effect.DETERMINISTIC) {
                         continue;
                     }
                     if (!actual.has(req)) {
-                        String fnLabel = ScopeAnalysis.functionName(fn);
-                        String prefixMsg = fnLabel != null ? "Function " + fnLabel : "Function";
                         checker.effectDiagnostic(prefixMsg + " declared " + EffectSet.keywordOf(req)
                                 + " violates " + EffectSet.keywordOf(req) + " guarantee", fn);
                     }
                 }
-            }
-            if (!prefix.impure() && prefix.uniqueReturn() && !converged.effects().uniqueResult()) {
-                String fnLabel = ScopeAnalysis.functionName(fn);
-                String prefixMsg = fnLabel != null ? "Function " + fnLabel : "Function";
-                checker.effectDiagnostic(prefixMsg + " declared unique return violates unique guarantee", fn);
+                if (prefix.uniqueReturn() && !actual.uniqueResult()) {
+                    checker.effectDiagnostic(prefixMsg + " declared unique return violates unique guarantee", fn);
+                }
             }
             return;
         }
@@ -2051,7 +2363,7 @@ final class EffectChecker {
     private void checkConstrainedBlock(BabbleParser.BlockContext block, ScopeNode scope, Set<Effect> constraints) {
         ParsedPrefix req = new ParsedPrefix(
                 constraints.isEmpty() ? EnumSet.noneOf(Effect.class) : EnumSet.copyOf(constraints),
-                false, false, false, false, !constraints.isEmpty());
+                false, false, false, false, false, false, false, !constraints.isEmpty());
         BodyAnalyzer ba = new BodyAnalyzer(
                 block, scope, List.of(), false,
                 new boolean[0], new boolean[0], new boolean[0], false, false,
@@ -2061,8 +2373,7 @@ final class EffectChecker {
             checker.effectDiagnostic("static block inside pure function violates pure guarantee", block);
         } else if (constraints.contains(Effect.HERMETIC) && !ba.hermetic) {
             checker.effectDiagnostic("static block inside hermetic function violates hermetic guarantee", block);
-        }
-        if (constraints.contains(Effect.DETERMINISTIC) && !ba.deterministic) {
+        } else if (constraints.contains(Effect.DETERMINISTIC) && !ba.deterministic) {
             checker.effectDiagnostic("static block inside deterministic function violates deterministic guarantee", block);
         }
     }
@@ -2683,8 +2994,19 @@ final class EffectChecker {
         if (Type.isCoreScalar(type) || type == Type.NULL) {
             return true;
         }
+        if (type instanceof Type.Frozen) {
+            return true;
+        }
         if (type instanceof Type.Union u) {
             return u.members().stream().allMatch(m -> isDeeplyImmutable(m, visiting));
+        }
+        if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.OBJECT) {
+            for (TypeNode.Member m : inst.node().members.values()) {
+                if (!m.hasFunction) {
+                    return false;
+                }
+            }
+            return true;
         }
         if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
             if (!visiting.add(inst.node())) {
@@ -2815,6 +3137,20 @@ final class EffectChecker {
     }
 
     private EffectSet comparisonProfile(Type left, Type right) {
+        if (left instanceof Type.Union lu) {
+            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+            for (Type m : lu.members()) {
+                acc = acc.intersect(comparisonProfile(m, right));
+            }
+            return acc;
+        }
+        if (right instanceof Type.Union ru) {
+            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+            for (Type m : ru.members()) {
+                acc = acc.intersect(comparisonProfile(left, m));
+            }
+            return acc;
+        }
         if (isPrimitiveOrString(left) && isPrimitiveOrString(right)) {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
@@ -2852,8 +3188,14 @@ final class EffectChecker {
         boolean nothrow = true;
         boolean uniqueResult = true;
         boolean terminating;
+        boolean deepMutThis = false;
+        final BitSet returnParams = new BitSet();
+        boolean returnThis = false;
+        boolean returnExternal = false;
+        final BitSet ctorStoredParams = new BitSet();
         private boolean stmtHasSideEffect = false;
         private boolean stmtHasError = false;
+        private ParserRuleContext discardedExpr = null;
 
         final Set<BabbleParser.FunctionLiteralContext> frameReadOwners = Collections.newSetFromMap(new IdentityHashMap<>());
         final Set<BabbleParser.FunctionLiteralContext> frameWriteOwners = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -2906,8 +3248,18 @@ final class EffectChecker {
         private void demoteUniqueOwner(Object ownerKey, Origin taint) {
             if (ownerKey instanceof ParserRuleContext decl) {
                 Origin cur = env.get(decl);
-                if (cur != null && cur.unique) {
+                if (cur != null && (cur.unique || cur.localFresh)) {
                     env.put(decl, cur.demoteToExternal(taint));
+                }
+            }
+        }
+
+        private void absorbElementIntoLocalContainer(Object ownerKey, Origin taint) {
+            if (ownerKey instanceof ParserRuleContext decl) {
+                Origin cur = env.get(decl);
+                if (cur != null && (cur.unique || cur.localFresh)
+                        && !cur.external && !cur.aliasesThis && cur.params.isEmpty()) {
+                    env.put(decl, cur.absorbElement(taint));
                 }
             }
         }
@@ -2945,8 +3297,14 @@ final class EffectChecker {
             if (rhs.unique && rhs.uniqueOwner == null) {
                 return Origin.ofUnique(decl, decl, false);
             }
-            if (rhs.unique && rhs.uniqueOwner != null) {
-                // Aliasing a live unique local without move(...) demotes both to @EXTERNAL!
+            if (rhs.localFresh && rhs.uniqueOwner == null) {
+                return new Origin((BitSet) rhs.params.clone(), rhs.aliasesThis, rhs.external,
+                        false, true, false, decl,
+                        (BitSet) rhs.elementParams.clone(), rhs.elementThis, rhs.elementExternal,
+                        Set.of(decl), new PathKey(decl, List.of()));
+            }
+            if ((rhs.unique || rhs.localFresh) && rhs.uniqueOwner != null) {
+                // Aliasing a live unique/localFresh local without move(...) demotes both to @EXTERNAL!
                 demoteUniqueOwner(rhs.uniqueOwner, Origin.IMMUTABLE);
                 return withLocalAliasKey(rhs.demoteToExternal(Origin.IMMUTABLE), decl, localType);
             }
@@ -3030,7 +3388,13 @@ final class EffectChecker {
             nothrow = true;
             stmtHasSideEffect = false;
             stmtHasError = false;
-            eval(stmt);
+            ParserRuleContext prevDiscarded = discardedExpr;
+            discardedExpr = unwrapParens(stmt);
+            try {
+                eval(stmt);
+            } finally {
+                discardedExpr = prevDiscarded;
+            }
             boolean stmtPure = hermetic && !stmtHasSideEffect;
             boolean stmtNothrow = nothrow;
             boolean hadError = stmtHasError;
@@ -3049,6 +3413,9 @@ final class EffectChecker {
         private boolean hasPriorDiagnostic(ParserRuleContext stmt) {
             if (stmt == null || stmt.getStart() == null || stmt.getStop() == null) {
                 return false;
+            }
+            if (checker.hasTypeDiagnosticIn(stmt)) {
+                return true;
             }
             int startLine = stmt.getStart().getLine();
             int startCol = stmt.getStart().getCharPositionInLine() + 1;
@@ -3354,7 +3721,7 @@ final class EffectChecker {
                 markStoredOrigin(rhs, "static member " + assignedName, assign);
                 return rhs;
             }
-            recordTargetMutation(recvOrig, recv, "field assignment ." + assignedName, assign);
+            recordTargetMutation(recvOrig, recv, "field assignment ." + assignedName, assign, true);
             markStoredIntoTarget(recvOrig, rhs, effectiveType(assign.value), assignedName, assign);
             return rhs;
         }
@@ -3372,12 +3739,13 @@ final class EffectChecker {
                 if (resolved instanceof ParserRuleContext decl) {
                     Type declType = checker.rawTypeOf(sel);
                     boolean imm = isDeeplyImmutable(declType);
+                    boolean narrowedImm = declType != null && declType != Type.ERROR && declType != Type.NOTHING && imm;
                     if (paramIndex.containsKey(decl)) {
                         Origin orig = env.getOrDefault(decl, Origin.ofParam(paramIndex.get(decl), decl, imm));
                         if (orig.moved) {
                             reportOnce("Use of moved variable " + sel.ID().getText(), sel);
                         }
-                        return orig;
+                        return (!orig.moved && narrowedImm) ? Origin.IMMUTABLE : orig;
                     }
                     BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
                     ScopeNode declScope = pass.definitionScopes.get(decl);
@@ -3391,7 +3759,7 @@ final class EffectChecker {
                         if (orig.moved) {
                             reportOnce("Use of moved variable " + sel.ID().getText(), sel);
                         }
-                        return orig;
+                        return (!orig.moved && narrowedImm) ? Origin.IMMUTABLE : orig;
                     }
                     if (declFn != null && frameChain.contains(declFn) && !escapedCapturedLocals.contains(decl)) {
                         // Frame-local helper closure reading F's unescaped local `def`!
@@ -3626,23 +3994,30 @@ final class EffectChecker {
             // 4. Babble class constructor call `Point(1, 2)`
             if (calleeType instanceof Type.ClassValue cv && !cv.node().isInterface()) {
                 CallableSummary cs = constructorSummary(cv.node());
-                boolean ctorUnique = cs != null && cs.effects().isHermetic();
+                boolean imm = isDeeplyImmutable(resType);
+                boolean ctorHermetic = cs != null && cs.effects().isHermetic();
+                Origin ctorOrigin = ctorHermetic ? Origin.ofUnique(call, null, imm) : Origin.ofExternal(call, imm);
                 if (cs != null) {
                     applyEffects(cs.effects());
                     List<Type.Parameter> cParams = checker.constructorParamsForEffects(cv.node());
                     for (int i = 0; i < args.size(); i++) {
                         int pIdx = checker.parameterIndexForArg(cParams, args, args.get(i));
+                        boolean storedInSelf = pIdx >= 0 && cs.ctorStoredParams().get(pIdx);
                         boolean borrowed = pIdx >= 0 && pIdx < cs.borrowParams().length && cs.borrowParams()[pIdx];
                         boolean uniqueP = pIdx >= 0 && pIdx < cs.uniqueParams().length && cs.uniqueParams()[pIdx];
-                        if (!borrowed && !uniqueP && !isUnattachedUniqueOrImmutable(argOrigins[i], effectiveType(argExprs[i]))) {
-                            ctorUnique = false;
+                        if ((storedInSelf || !borrowed) && !uniqueP && !isUnattachedUniqueOrImmutable(argOrigins[i], effectiveType(argExprs[i]))) {
+                            if ((argOrigins[i].unique || argOrigins[i].localFresh) && argOrigins[i].uniqueOwner != null) {
+                                demoteUniqueOwner(argOrigins[i].uniqueOwner, Origin.IMMUTABLE);
+                            }
+                            if (ctorHermetic && !imm) {
+                                ctorOrigin = ctorOrigin.absorbElement(argOrigins[i]);
+                            }
                         }
                     }
                     applyBabbleArgEffects(call, calleeExpr, cParams, cs.mutParams(), cs.borrowParams(), cs.uniqueParams(),
-                            null, Origin.IMMUTABLE, false, true, args, argExprs, argOrigins);
+                            null, Origin.IMMUTABLE, false, false, true, ctorHermetic, args, argExprs, argOrigins);
                 }
-                boolean imm = isDeeplyImmutable(resType);
-                return ctorUnique ? Origin.ofUnique(call, null, imm) : Origin.ofExternal(call, imm);
+                return ctorOrigin;
             }
 
             // 5. Babble `recurse(...)`
@@ -3654,12 +4029,12 @@ final class EffectChecker {
                 boolean hasRecv = canReferenceThis(ownerScope);
                 Origin selfRecv = hasRecv ? Origin.ofThis(THIS_KEY, false) : Origin.IMMUTABLE;
                 applyBabbleArgEffects(call, calleeExpr, fParams, selfSum.mutParams(), selfSum.borrowParams(), selfSum.uniqueParams(),
-                        null, selfRecv, selfSum.effects().mutThis(), selfSum.effects().borrowThis(),
-                        args, argExprs, argOrigins);
+                        null, selfRecv, selfSum.effects().mutThis(), selfSum.deepMutThis(), selfSum.effects().borrowThis(),
+                        selfSum.effects().isHermetic(), args, argExprs, argOrigins);
                 if (selfSum.effects().uniqueResult()) {
                     return Origin.ofUnique(call, null, isDeeplyImmutable(resType));
                 }
-                return deriveCallReturnOrigin(resType, selfRecv, selfSum.effects().borrowThis(), argOrigins, selfSum.borrowParams(), fParams, args);
+                return deriveCallReturnOrigin(call, resType, selfSum, hasRecv, selfRecv, argOrigins, fParams, args);
             }
 
             // 6. Babble function / method / union of functions
@@ -3849,6 +4224,9 @@ final class EffectChecker {
                                      BabbleParser.ExpressionContext[] argExprs,
                                      Origin[] argOrigins,
                                      Type resType) {
+            if (resType == Type.ERROR) {
+                return Origin.IMMUTABLE;
+            }
             applyEffects(profile.effects());
             if (checker.hasCallCheck(call) && !profile.explicitNothrow()) {
                 nothrow = false;
@@ -3865,12 +4243,13 @@ final class EffectChecker {
                 }
             }
             if (effectiveMutRecv) {
-                recordTargetMutation(recvOrig, receiverExpr, "mut Java method " + calleeExpr.getText(), call);
+                boolean shallowJavaMut = isCoreCollectionClass(owner) && COLLECTION_MUT_METHODS.contains(methodName);
+                recordTargetMutation(recvOrig, receiverExpr, "mut Java method " + calleeExpr.getText(), call, shallowJavaMut);
             }
             boolean recvCanEscape = !profile.borrowReceiver() && !profile.effects().isPure()
                     && !(profile.effects().isHermetic() && !anyTrue(profile.mutParams()) && isDeeplyImmutable(resType));
             if (receiverExpr != null && recvCanEscape) {
-                if (recvOrig.unique && recvOrig.uniqueOwner != null) {
+                if ((recvOrig.unique || recvOrig.localFresh) && recvOrig.uniqueOwner != null) {
                     demoteUniqueOwner(recvOrig.uniqueOwner, Origin.IMMUTABLE);
                 }
                 markStoredOrigin(recvOrig, "Java method call", call);
@@ -3881,18 +4260,22 @@ final class EffectChecker {
             for (int i = 0; i < argExprs.length; i++) {
                 Type argType = effectiveType(argExprs[i]);
                 boolean mutP = i < profile.mutParams().length && profile.mutParams()[i] && argType != Type.STRING;
-                boolean borrowP = (i < profile.borrowParams().length && profile.borrowParams()[i]) || profile.effects().isPure();
+                boolean borrowP = i < profile.borrowParams().length && profile.borrowParams()[i];
                 boolean uniqueP = i < profile.uniqueParams().length && profile.uniqueParams()[i];
                 argIsMut[i] = mutP;
                 if (containsFrozen(argType)) {
                     if (mutP) {
                         reportOnce("Cannot pass frozen value to mut parameter", argExprs[i]);
+                    } else if (uniqueP) {
+                        reportOnce("Argument for unique parameter cannot be frozen", argExprs[i]);
                     } else if (!borrowP) {
                         reportOnce("Cannot pass frozen value to non-borrow Java parameter", argExprs[i]);
                     }
                 }
                 if (uniqueP && !argOrigins[i].moved) {
-                    if (!argOrigins[i].unique && argOrigins[i] != Origin.IMMUTABLE && !isDeeplyImmutable(argType) && argType != Type.ERROR) {
+                    if (containsFrozen(argType)) {
+                        // Already reported above.
+                    } else if (!argOrigins[i].unique && argOrigins[i] != Origin.IMMUTABLE && !isDeeplyImmutable(argType) && argType != Type.ERROR) {
                         reportOnce("Argument for unique parameter must be unique", argExprs[i]);
                     } else if (!borrowP && argOrigins[i].unique && argOrigins[i].uniqueOwner instanceof ParserRuleContext decl) {
                         if (paramIndex.containsKey(decl) && borrowParams[paramIndex.get(decl)]) {
@@ -3903,14 +4286,14 @@ final class EffectChecker {
                     }
                 }
                 if (mutP) {
-                    recordTargetMutation(argOrigins[i], argExprs[i], "mut Java parameter", argExprs[i]);
+                    recordTargetMutation(argOrigins[i], argExprs[i], "mut Java parameter", argExprs[i], false);
                 }
                 if (!borrowP) {
-                    // Storing a non-unique, non-immutable arg into a unique receiver (e.g. xs.add(shared)) demotes receiver!
-                    if (recvOrig.unique && effectiveMutRecv && !isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
-                        demoteUniqueOwner(recvOrig.uniqueOwner, argOrigins[i]);
+                    // Storing a non-unique, non-immutable arg into a unique/localFresh receiver keeps container localFresh while dropping unique (BIP016-D9)!
+                    if ((recvOrig.unique || recvOrig.localFresh) && effectiveMutRecv && !isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
+                        absorbElementIntoLocalContainer(recvOrig.uniqueOwner, argOrigins[i]);
                     }
-                    if (!uniqueP && argOrigins[i].unique && argOrigins[i].uniqueOwner != null) {
+                    if (!uniqueP && (argOrigins[i].unique || argOrigins[i].localFresh) && argOrigins[i].uniqueOwner != null) {
                         demoteUniqueOwner(argOrigins[i].uniqueOwner, Origin.IMMUTABLE);
                     }
                     markStoredOrigin(argOrigins[i], "Java call argument", argExprs[i]);
@@ -4027,15 +4410,16 @@ final class EffectChecker {
                 applyBabbleArgEffects(call, calleeExpr, fn.parameters(), summary.mutParams(), summary.borrowParams(), summary.uniqueParams(),
                         isMethodCall ? receiverExpr : null, effectiveRecvOrig,
                         isMethodCall && summary.effects().mutThis(),
+                        summary.deepMutThis(),
                         effectiveBorrowRecv,
+                        summary.effects().isHermetic(),
                         args, argExprs, argOrigins);
                 Origin memberOut;
                 if (summary.effects().uniqueResult()) {
                     memberOut = Origin.ofUnique(call, null, isDeeplyImmutable(resType));
                 } else {
-                    memberOut = deriveCallReturnOrigin(resType, effectiveRecvOrig,
-                            !isMethodCall || summary.effects().borrowThis(),
-                            argOrigins, summary.borrowParams(), fn.parameters(), args);
+                    memberOut = deriveCallReturnOrigin(call, resType, summary, isMethodCall, effectiveRecvOrig,
+                            argOrigins, fn.parameters(), args);
                 }
                 combinedOut = combinedOut == Origin.IMMUTABLE ? memberOut : combinedOut.join(memberOut);
             }
@@ -4065,18 +4449,20 @@ final class EffectChecker {
             BabbleParser.FunctionLiteralContext targetLit = resolveConcreteBabbleTarget(fn, calleeExpr, receiverExpr);
             if (targetLit != null) {
                 ParsedPrefix targetPrefix = parseFunctionPrefix(targetLit, false);
-                if (!targetPrefix.impure() && !targetPrefix.axiom()) {
-                    // Bounded call-site specialization when caller passes concrete callback arguments (§4.5)!
+                if (!targetPrefix.axiom() && !targetPrefix.explicitVolatile()) {
+                    // Bounded call-site specialization for concrete HOFs (including `fn io` HOFs per BIP016-D6)!
                     CallableSummary specialized = trySpecializeCall(targetLit, fn.parameters(), args, argExprs, EffectChecker.this);
                     if (specialized != null) {
-                        return lockToDeclaredIfAnnotated(targetLit, EffectChecker.this, specialized);
+                        return specialized;
                     }
                 }
                 CallableSummary base = summaries.get(targetLit);
                 if (base != null) {
-                    return !inSameSccOrUnannotated(targetLit, targetPrefix)
-                            ? visibleSummaries.getOrDefault(targetLit, base)
-                            : base;
+                    if (targetLit != owner && (targetPrefix.io() || targetPrefix.explicitVolatile())) {
+                        CallableSummary vis = visibleSummaries.get(targetLit);
+                        return vis != null ? vis : buildVisibleSummary(targetLit, base);
+                    }
+                    return visibleSummaries.getOrDefault(targetLit, base);
                 }
             } else if (!(receiverExpr != null && effectiveType(receiverExpr) instanceof Type.Instance inst && inst.node().isInterface())) {
                 TypedModuleSummary.CallableEffectTemplate template = checker.remoteCallableTemplate(fn);
@@ -4096,7 +4482,7 @@ final class EffectChecker {
                 bp[i] = fn.parameters().get(i).borrow();
                 up[i] = fn.parameters().get(i).unique();
             }
-            return new CallableSummary(fn.effects(), mp, bp, up);
+            return new CallableSummary(fn.effects(), mp, bp, up, Set.of(), Set.of(), fn.effects().mutThis());
         }
 
         private Type.Function[] collectBoundCallbacks(List<Type.Parameter> calleeParams,
@@ -4123,20 +4509,6 @@ final class EffectChecker {
             return result;
         }
 
-        private boolean inSameSccOrUnannotated(BabbleParser.FunctionLiteralContext lit, ParsedPrefix prefix) {
-            return !prefix.hasAnyModifier() || prefix.axiom() || prefix.impure();
-        }
-
-        private CallableSummary lockToDeclaredIfAnnotated(BabbleParser.FunctionLiteralContext lit,
-                                                          EffectChecker targetEC,
-                                                          CallableSummary specialized) {
-            CallableSummary vis = targetEC.visibleSummaries.get(lit);
-            if (vis != null && vis.effects().hasExplicitAnnotations()) {
-                return vis;
-            }
-            return specialized;
-        }
-
         private BabbleParser.FunctionLiteralContext resolveConcreteBabbleTarget(Type.Function fn,
                                                                                 BabbleParser.ExpressionContext calleeExpr,
                                                                                 BabbleParser.ExpressionContext receiverExpr) {
@@ -4159,7 +4531,9 @@ final class EffectChecker {
                                            BabbleParser.ExpressionContext receiverExpr,
                                            Origin recvOrig,
                                            boolean mutRecv,
+                                           boolean deepMutRecv,
                                            boolean borrowRecv,
+                                           boolean calleeHermetic,
                                            List<BabbleParser.CallParameterContext> args,
                                            BabbleParser.ExpressionContext[] argExprs,
                                            Origin[] argOrigins) {
@@ -4167,22 +4541,26 @@ final class EffectChecker {
                 if (mutRecv) {
                     reportOnce("Cannot call mut method on frozen value", call);
                 } else if (!borrowRecv) {
-                    reportOnce("Cannot call non-borrow method on frozen value", call);
+                    reportOnce("Cannot call shared method on frozen value", call);
                 }
             }
             boolean effectiveMutRecv = mutRecv && (receiverExpr != null || !recvOrig.isEmpty())
                     && (receiverExpr == null || effectiveType(receiverExpr) != Type.STRING);
             if (effectiveMutRecv) {
                 recordTargetMutation(recvOrig, receiverExpr != null ? receiverExpr : call,
-                        "mut method " + calleeExpr.getText(), call);
+                        "mut method " + calleeExpr.getText(), call, !deepMutRecv);
             }
             if (!borrowRecv) {
-                if (recvOrig.unique && recvOrig.uniqueOwner != null) {
+                if ((recvOrig.unique || recvOrig.localFresh) && recvOrig.uniqueOwner != null) {
                     demoteUniqueOwner(recvOrig.uniqueOwner, Origin.IMMUTABLE);
                 }
                 markStoredOrigin(recvOrig, "method call " + calleeExpr.getText(), call);
             }
 
+            boolean localFreshRecvOnly = calleeHermetic && effectiveMutRecv
+                    && (recvOrig.unique || recvOrig.localFresh)
+                    && !recvOrig.external && recvOrig.params.isEmpty() && !recvOrig.aliasesThis
+                    && !anyTrue(calleeMut);
             boolean[] argIsExclusive = new boolean[args.size()];
             for (int i = 0; i < args.size(); i++) {
                 int pIdx = checker.parameterIndexForArg(calleeParams, args, args.get(i));
@@ -4190,10 +4568,12 @@ final class EffectChecker {
                 boolean mutP = pIdx >= 0 && pIdx < calleeMut.length && calleeMut[pIdx] && argType != Type.STRING;
                 boolean borrowP = pIdx >= 0 && pIdx < calleeBorrow.length && calleeBorrow[pIdx];
                 boolean uniqueP = pIdx >= 0 && pIdx < calleeUnique.length && calleeUnique[pIdx];
-                argIsExclusive[i] = mutP || (uniqueP && borrowP);
+                argIsExclusive[i] = mutP;
                 if (uniqueP && !argOrigins[i].moved) {
                     String pName = pIdx >= 0 && pIdx < calleeParams.size() ? calleeParams.get(pIdx).name() : ("#" + i);
-                    if (!argOrigins[i].unique && argOrigins[i] != Origin.IMMUTABLE && !isDeeplyImmutable(argType) && argType != Type.ERROR) {
+                    if (containsFrozen(argType)) {
+                        reportOnce("Argument for unique parameter " + pName + " cannot be frozen", argExprs[i]);
+                    } else if (!argOrigins[i].unique && argOrigins[i] != Origin.IMMUTABLE && !isDeeplyImmutable(argType) && argType != Type.ERROR) {
                         reportOnce("Argument for unique parameter " + pName + " must be unique", argExprs[i]);
                     } else if (!borrowP && argOrigins[i].unique && argOrigins[i].uniqueOwner instanceof ParserRuleContext decl) {
                         if (paramIndex.containsKey(decl) && borrowParams[paramIndex.get(decl)]) {
@@ -4205,42 +4585,62 @@ final class EffectChecker {
                 }
                 if (mutP) {
                     recordTargetMutation(argOrigins[i], argExprs[i],
-                            "mut parameter " + calleeParams.get(pIdx).name(), argExprs[i]);
+                            "mut parameter " + calleeParams.get(pIdx).name(), argExprs[i], false);
                 }
                 if (!borrowP) {
-                    if (recvOrig.unique && effectiveMutRecv && !isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
-                        demoteUniqueOwner(recvOrig.uniqueOwner, argOrigins[i]);
+                    if ((recvOrig.unique || recvOrig.localFresh) && effectiveMutRecv && !isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
+                        absorbElementIntoLocalContainer(recvOrig.uniqueOwner, argOrigins[i]);
                     }
-                    if (!uniqueP && argOrigins[i].unique && argOrigins[i].uniqueOwner != null) {
+                    if (!uniqueP && (argOrigins[i].unique || argOrigins[i].localFresh) && argOrigins[i].uniqueOwner != null) {
                         demoteUniqueOwner(argOrigins[i].uniqueOwner, Origin.IMMUTABLE);
                     }
-                    markStoredOrigin(argOrigins[i], "call to " + calleeExpr.getText(), argExprs[i]);
+                    if (!localFreshRecvOnly) {
+                        markStoredOrigin(argOrigins[i], "call to " + calleeExpr.getText(), argExprs[i]);
+                    }
                 }
             }
 
             checkCallExclusivity(receiverExpr, recvOrig, effectiveMutRecv, argExprs, argOrigins, argIsExclusive, call);
         }
 
-        private Origin deriveCallReturnOrigin(Type resType,
+        private Origin deriveCallReturnOrigin(ParserRuleContext call,
+                                              Type resType,
+                                              CallableSummary summary,
+                                              boolean isMethodCall,
                                               Origin recvOrig,
-                                              boolean borrowRecv,
                                               Origin[] argOrigins,
-                                              boolean[] calleeBorrow,
                                               List<Type.Parameter> calleeParams,
                                               List<BabbleParser.CallParameterContext> args) {
             if (isDeeplyImmutable(resType)) {
                 return Origin.IMMUTABLE;
             }
-            Origin out = Origin.ofExternal(null, false);
-            if (!borrowRecv) {
-                out = out.join(recvOrig.stripDirectIdentity(false));
+            boolean resultDiscarded = call != null && call == discardedExpr;
+            boolean known = summary.returnKnown();
+            boolean includeExternal = !known || summary.returnExternal();
+            Origin out = includeExternal ? Origin.ofExternal(null, false) : Origin.IMMUTABLE;
+            boolean includeRecv = isMethodCall && (!known || summary.returnThis() || !summary.effects().borrowThis());
+            if (includeRecv && recvOrig != Origin.IMMUTABLE) {
+                if (!resultDiscarded && (recvOrig.unique || recvOrig.localFresh) && recvOrig.uniqueOwner != null) {
+                    demoteUniqueOwner(recvOrig.uniqueOwner, Origin.IMMUTABLE);
+                }
+                Origin flatRecv = recvOrig.hasElementTaint() ? recvOrig.flattenElements() : recvOrig;
+                out = out == Origin.IMMUTABLE ? flatRecv : out.join(flatRecv);
             }
+            boolean[] calleeBorrow = summary.borrowParams();
             for (int i = 0; i < args.size(); i++) {
                 int pIdx = checker.parameterIndexForArg(calleeParams, args, args.get(i));
                 boolean borrowP = pIdx >= 0 && pIdx < calleeBorrow.length && calleeBorrow[pIdx];
-                if (!borrowP) {
-                    out = out.join(argOrigins[i].stripDirectIdentity(false));
+                boolean returnedP = !known || (pIdx >= 0 && summary.returnParams().get(pIdx)) || !borrowP;
+                if (returnedP && argOrigins[i] != Origin.IMMUTABLE) {
+                    if (!resultDiscarded && (argOrigins[i].unique || argOrigins[i].localFresh) && argOrigins[i].uniqueOwner != null) {
+                        demoteUniqueOwner(argOrigins[i].uniqueOwner, Origin.IMMUTABLE);
+                    }
+                    Origin flatArg = argOrigins[i].hasElementTaint() ? argOrigins[i].flattenElements() : argOrigins[i];
+                    out = out == Origin.IMMUTABLE ? flatArg : out.join(flatArg);
                 }
+            }
+            if (out != Origin.IMMUTABLE && (out.unique || out.localFresh)) {
+                out = out.demoteToExternal(Origin.IMMUTABLE);
             }
             return out;
         }
@@ -4304,14 +4704,25 @@ final class EffectChecker {
             return a.pathKey != null && a.pathKey.equals(b.pathKey);
         }
 
-        private void recordTargetMutation(Origin target, ParserRuleContext targetExpr, String reason, ParserRuleContext at) {
+        private void recordTargetMutation(Origin target, ParserRuleContext targetExpr, String reason,
+                                          ParserRuleContext at, boolean shallow) {
             stmtHasSideEffect = true;
             if (targetExpr instanceof BabbleParser.ExpressionContext expr && effectiveType(expr) == Type.ERROR) {
                 return;
             }
+            // In BIP007-P2 & BIP016-D9, shallow mutation of a fresh local container (or any mutation of a unique local/param)
+            // stays confined (hermetic/pure) without tainting stored elements!
+            if ((target.unique || (target.localFresh && shallow))
+                    && !target.external && target.params.isEmpty() && !target.aliasesThis) {
+                return;
+            }
+            Origin effectiveTarget = (!shallow && target.hasElementTaint()) ? target.flattenElements() : target;
             boolean hitParamOrThis = false;
-            if (target.aliasesThis) {
+            if (effectiveTarget.aliasesThis) {
                 hitParamOrThis = true;
+                if (!shallow || !effectiveTarget.directKeys.contains(THIS_KEY)) {
+                    deepMutThis = true;
+                }
                 if (constructingSelf) {
                     // Allowed: initializing `this` inside constructor.
                 } else if (mutThis) {
@@ -4322,7 +4733,7 @@ final class EffectChecker {
                     reportOnce("Cannot mutate this (" + reason + ") : function is not declared mut", at);
                 }
             }
-            for (int p = target.params.nextSetBit(0); p >= 0; p = target.params.nextSetBit(p + 1)) {
+            for (int p = effectiveTarget.params.nextSetBit(0); p >= 0; p = effectiveTarget.params.nextSetBit(p + 1)) {
                 hitParamOrThis = true;
                 if (mutParams[p]) {
                     // Explicitly declared or already inferred mut parameter.
@@ -4333,15 +4744,12 @@ final class EffectChecker {
                     reportOnce("Cannot mutate parameter " + pName + " (" + reason + ") : mark parameter as mut " + pName, at);
                 }
             }
-            // In BIP007-P2, mutating an owned `unique` local or consuming `unique` param stays confined (hermetic/pure)!
-            if (target.unique && !target.external && !hitParamOrThis) {
-                return;
-            }
-            if (target.external || !hitParamOrThis) {
+            if (effectiveTarget.external || !hitParamOrThis) {
                 hermetic = false;
                 if (isConstrainedPureOrHermetic()) {
-                    reportOnce("Cannot mutate object in " + (declaredPrefix.effects().contains(Effect.PURE) ? "pure" : "hermetic")
-                            + " function (" + reason + ")", at);
+                    reportOnce("Cannot mutate external object in "
+                            + (declaredPrefix.explicitVolatile() ? "volatile" : "pure")
+                            + " function (" + reason + ") : mark function as io", at);
                 }
             }
         }
@@ -4350,27 +4758,51 @@ final class EffectChecker {
             if (value == Origin.IMMUTABLE) {
                 return;
             }
-            if (target.unique && !isUnattachedUniqueOrImmutable(value, valueType)) {
-                demoteUniqueOwner(target.uniqueOwner, value);
+            if ((target.unique || target.localFresh) && !target.external && target.params.isEmpty() && !target.aliasesThis) {
+                // Storing into a fresh local container: absorb element provenance without escaping yet!
+                if (!isUnattachedUniqueOrImmutable(value, valueType)) {
+                    absorbElementIntoLocalContainer(target.uniqueOwner, value);
+                    if ((value.unique || value.localFresh) && value.uniqueOwner != null) {
+                        demoteUniqueOwner(value.uniqueOwner, Origin.IMMUTABLE);
+                    }
+                }
+                return;
             }
-            if (value.unique && value.uniqueOwner != null) {
+            if (constructingSelf && target.aliasesThis && target.params.isEmpty() && !target.external) {
+                // Storing into `this`'s own fields during construction stays confined inside the new object!
+                Origin flat = value.hasElementTaint() ? value.flattenElements() : value;
+                ctorStoredParams.or(flat.params);
+                if ((value.unique || value.localFresh) && value.uniqueOwner != null) {
+                    demoteUniqueOwner(value.uniqueOwner, Origin.IMMUTABLE);
+                }
+                return;
+            }
+            if ((value.unique || value.localFresh) && value.uniqueOwner != null) {
                 demoteUniqueOwner(value.uniqueOwner, Origin.IMMUTABLE);
             }
-            // Even storing into a `mut` parameter or `this` escapes a `borrow` value!
-            markStoredOrigin(value, "field ." + fieldName, at);
+            // Storing `this` (or a sub-reference of `this`) back into `this`'s own field does not escape `this`!
+            boolean storingIntoSelfThis = target.aliasesThis && target.params.isEmpty() && !target.external;
+            markStoredOrigin(value, "field ." + fieldName, at, storingIntoSelfThis);
         }
 
         private void markStoredOrigin(Origin value, String destination, ParserRuleContext at) {
+            markStoredOrigin(value, destination, at, false);
+        }
+
+        private void markStoredOrigin(Origin value, String destination, ParserRuleContext at, boolean ignoreThis) {
             if (value == Origin.IMMUTABLE) {
                 return;
             }
-            if (value.aliasesThis && borrowThis) {
-                borrowThis = false;
-                if (declaredPrefix.borrowThis()) {
-                    reportOnce("borrow receiver this escapes via " + destination, at);
+            Origin flat = value.hasElementTaint() ? value.flattenElements() : value;
+            if (flat.aliasesThis && !ignoreThis) {
+                if (borrowThis) {
+                    borrowThis = false;
+                }
+                if (!inferMut && owner instanceof BabbleParser.FunctionLiteralContext && !declaredPrefix.explicitSharedThis()) {
+                    reportOnce("Borrowed this escapes via " + destination + " : mark function as shared", at);
                 }
             }
-            for (int p = value.params.nextSetBit(0); p >= 0; p = value.params.nextSetBit(p + 1)) {
+            for (int p = flat.params.nextSetBit(0); p >= 0; p = flat.params.nextSetBit(p + 1)) {
                 markParamEscaped(p, destination, at);
             }
         }
@@ -4379,9 +4811,13 @@ final class EffectChecker {
             if (borrowParams[p]) {
                 borrowParams[p] = false;
             }
-            ParamMods declared = parseParamMods(params.get(p), false);
-            if (declared.borrow()) {
-                reportOnce("borrow parameter " + ScopeAnalysis.paramId(params.get(p)).getText() + " escapes via " + destination, at);
+            if (!inferMut && owner instanceof BabbleParser.FunctionLiteralContext) {
+                ParamMods declared = parseParamMods(params.get(p), false);
+                if (!declared.shared() && !declared.unique()) {
+                    String pName = ScopeAnalysis.paramId(params.get(p)).getText();
+                    reportOnce("Borrowed parameter " + pName + " escapes via " + destination
+                            + " : mark parameter as shared " + pName, at);
+                }
             }
         }
 
@@ -4389,13 +4825,21 @@ final class EffectChecker {
             if (retOrigin == Origin.IMMUTABLE) {
                 return;
             }
-            if (!retOrigin.unique || !retOrigin.params.isEmpty() || retOrigin.aliasesThis || retOrigin.external) {
+            Origin flat = retOrigin.hasElementTaint() ? retOrigin.flattenElements() : retOrigin;
+            if (!retOrigin.unique || !flat.params.isEmpty() || flat.aliasesThis || flat.external) {
                 uniqueResult = false;
             } else if (at instanceof BabbleParser.ReturnExpressionContext
                     && retOrigin.uniqueOwner instanceof ParserRuleContext decl) {
                 env.put(decl, Origin.MOVED);
             }
-            markStoredOrigin(retOrigin, "return value", at);
+            // BIP016-D10: returning a @BORROWED parameter or `this` does not store it; record return provenance for callers!
+            returnParams.or(flat.params);
+            if (flat.aliasesThis) {
+                returnThis = true;
+            }
+            if (flat.external) {
+                returnExternal = true;
+            }
         }
 
         private void checkClosureCaptureEscape(BabbleParser.FunctionLiteralContext inner) {
@@ -4500,6 +4944,9 @@ final class EffectChecker {
             Type lt = effectiveType(bin.left);
             Type rt = effectiveType(bin.right);
             Type res = checker.rawTypeOf(bin);
+            if (res == Type.ERROR || lt == Type.ERROR || rt == Type.ERROR || hasPriorDiagnostic(bin)) {
+                return Origin.IMMUTABLE;
+            }
             switch (op) {
                 case "+" -> {
                     if (res == Type.STRING) {
@@ -4655,17 +5102,21 @@ final class EffectChecker {
         activeSpecializations.push(key);
         try {
             CallableSummary base = summaries.getOrDefault(targetLit, initialSummary(targetLit));
-            // Start optimistic for effects when specializing, keeping declared/inferred mut/borrow base.
+            ParsedPrefix targetPrefix = parseFunctionPrefix(targetLit, false);
+            // Start optimistic for effects when specializing, respecting declared mut/shared slot contracts.
             int n = paramDecls.size();
             boolean[] mp = base.mutParams().clone();
             boolean[] bp = new boolean[n];
             for (int i = 0; i < n; i++) {
-                bp[i] = true;
+                ParamMods pm = parseParamMods(paramDecls.get(i), false);
+                bp[i] = !pm.shared() && !pm.unique();
             }
             EnumSet<Effect> opt = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW);
-            CallableSummary start = new CallableSummary(
-                    EffectSet.ofInferred(opt, base.effects().mutThis(), canReferenceThis(checker.scopeOf(targetLit))),
-                    mp, bp);
+            boolean borrowThis = !targetPrefix.explicitSharedThis();
+            EffectSet startSet = new EffectSet(opt, EnumSet.noneOf(Effect.class),
+                    base.effects().mutThis(), borrowThis, targetPrefix.explicitSharedThis(),
+                    true, targetPrefix.uniqueReturn(), true, false, false, false);
+            CallableSummary start = new CallableSummary(startSet, mp, bp, base.uniqueParams());
             CallableSummary specialized = finalizeSummary(targetLit, recomputeSummary(targetLit, start, boundCallbacks, false));
             specializationCache.put(key, specialized);
             return specialized;
@@ -4691,10 +5142,10 @@ final class EffectChecker {
             return null;
         }
         ParsedPrefix prefix = parseFunctionPrefix(lit, false);
-        boolean hasExplicit = prefix.hasAnyModifier() || prefix.axiom() || prefix.impure();
         List<BabbleParser.FnParamContext> paramDecls = lit.fnParameters().fnParam();
         int n = paramDecls.size();
-        if (hasExplicit || n == 0) {
+        boolean lockedNoSpec = prefix.axiom() || prefix.explicitVolatile();
+        if (lockedNoSpec || n == 0) {
             return new TypedModuleSummary.CallableEffectTemplate(
                     base, true, base.effects(), base.mutParams(), base.borrowParams(),
                     new boolean[0], new EffectSet[0], new long[0][]);
@@ -4708,16 +5159,22 @@ final class EffectChecker {
         }
         if (!anyFnParam) {
             return new TypedModuleSummary.CallableEffectTemplate(
-                    base, false, base.effects(), base.mutParams(), base.borrowParams(),
+                    base, prefix.io(), base.effects(), base.mutParams(), base.borrowParams(),
                     new boolean[0], new EffectSet[0], new long[0][]);
         }
 
         EnumSet<Effect> opt = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW);
-        EffectSet pureEff = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false);
-        CallableSummary start = new CallableSummary(
-                EffectSet.ofInferred(opt, base.effects().mutThis(), canReferenceThis(checker.scopeOf(lit))),
-                base.mutParams().clone(),
-                allTrue(n));
+        EffectSet pureEff = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
+        boolean[] startBorrow = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            ParamMods pm = parseParamMods(paramDecls.get(i), false);
+            startBorrow[i] = !pm.shared() && !pm.unique();
+        }
+        boolean startBorrowThis = !prefix.explicitSharedThis();
+        EffectSet startSet = new EffectSet(opt, EnumSet.noneOf(Effect.class),
+                base.effects().mutThis(), startBorrowThis, prefix.explicitSharedThis(),
+                true, prefix.uniqueReturn(), true, false, false, false);
+        CallableSummary start = new CallableSummary(startSet, base.mutParams().clone(), startBorrow, base.uniqueParams());
 
         Map<ParserRuleContext, Type.Function> allPure = new IdentityHashMap<>();
         EffectSet[] defaultCallbackEffects = new EffectSet[n];

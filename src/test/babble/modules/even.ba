@@ -3,7 +3,7 @@
 def parity = import("parity.ba")
 def odd = import("odd.ba")
 
-export def isEven = fn (n: int): bool -> (
+export def isEven = fn volatile (n: int): bool -> (
     if n == 0 then (true) else (
         def f = parity.state.odd
         if f != null then (f(n - 1)) else (false)

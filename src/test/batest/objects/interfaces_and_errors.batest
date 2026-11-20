@@ -3,7 +3,7 @@
 ========== iface_mod.ba ==========
 export def MI = interface (
     def tag : fn () : string
-    def shared = fn () : string -> ( "mod:" + this.tag() )
+    def sharedTag = fn () : string -> ( "mod:" + this.tag() )
 )
 export def PI = interface (
     def code : fn () : int
@@ -22,13 +22,13 @@ def Entry = java.util.Map.Entry
 def Multi = class (def n : int) implements AliasMI, m.PI, LocalI, java.lang.Runnable (
     def tag = fn () : string -> ( "m" + this.n )
     def code = fn () : int -> ( this.n * 10 )
-    def run = fn () -> ( println("run:" + this.tag()) )
+    def run = fn io () -> ( println("run:" + this.tag()) )
 )
 def multi = Multi(3)
 def mi : m.MI = multi
 def pi : m.PI = multi
 def li : LocalI = multi
-println(mi.shared(), ":", pi.code(), ":", li.ping())
+println(mi.sharedTag(), ":", pi.code(), ":", li.ping())
 println(multi is m.MI, ":", multi is AliasMI, ":", multi is LocalI, ":", multi is java.lang.Runnable)
 def r : java.lang.Runnable = multi
 r.run()
@@ -36,7 +36,7 @@ r.run()
 ;; Babble interface extending a Java interface and calling super Java default via Supers
 def SubI = interface extends java.util.function.IntPredicate (
     def test = fn (x : int) : bool -> ( x > 0 )
-    def alt = fn (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )
+    def alt = fn io shared (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )
 )
 def SubC = class () implements SubI ()
 def sub = SubC()

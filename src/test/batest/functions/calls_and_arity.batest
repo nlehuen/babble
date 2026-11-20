@@ -11,7 +11,7 @@ println(applyTwice(inc, 10), ":", immediate)
 
 {{{{{
 ;; Zero-arg and void/null-returning functions
-def ping = fn () : any? -> ( println("pong") )
+def ping = fn io () : any? -> ( println("pong") )
 def r = ping()
 println(r)
 }}}}}

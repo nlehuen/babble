@@ -6,9 +6,12 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Declares {@link Effect#HERMETIC} on a Java type, method, or constructor. */
+/**
+ * Declares {@link Effect#VOLATILE} ({@code {@HERMETIC, !@DETERMINISTIC}}) on a Java type, method,
+ * or constructor (BIP016-D3, D8).
+ */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD, ElementType.CONSTRUCTOR})
-public @interface Hermetic {
+public @interface Volatile {
 }

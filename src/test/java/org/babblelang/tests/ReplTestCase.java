@@ -54,7 +54,7 @@ public class ReplTestCase {
     @Test
     public void aModuleIsLoadedOncePerSession(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
         java.nio.file.Path counter = directory.resolve("counter.ba");
-        java.nio.file.Files.writeString(counter, "println(\"loading\")\ndef n = 0\nexport def next = fn () -> ( n = n + 1 )");
+        java.nio.file.Files.writeString(counter, "println(\"loading\")\ndef n = 0\nexport def next = fn io () -> ( n = n + 1 )");
         String path = counter.toString().replace("\\", "\\\\");
         StringWriter output = new StringWriter();
         BabbleSession session = session(output);
@@ -108,7 +108,7 @@ public class ReplTestCase {
     @Test
     public void testAFunctionDoesNotSeeLaterDefinitions() throws Exception {
         BabbleSession session = session();
-        assertFails(session, "def even = fn (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )", "odd is not callable");
+        assertFails(session, "def even = fn io (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )", "odd is not callable");
         // Functions that call each other go in one input.
         session.eval("def even = fn (n : int) : bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
                 + "def odd = fn (n : int) : bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )");
@@ -146,7 +146,7 @@ public class ReplTestCase {
                 "Type error : expected () : double, got () : int");
         session.eval("def sq = Sq(3)");
         assertFails(session, "sq.nope", "No such member : nope");
-        session.eval("def C = class (private def n = 0) ( def next = fn () -> ( this.n = this.n + 1 ) )");
+        session.eval("def C = class (private def n = 0) ( def next = fn mut () -> ( this.n = this.n + 1 ) )");
         session.eval("def c = C()");
         assertFails(session, "c.n", "n is private");
         Assertions.assertEquals(2, session.eval("c.next() ; c.next()"));
@@ -316,7 +316,7 @@ public class ReplTestCase {
         BabbleSession session = session(new StringWriter());
         // Inferred pure deterministic nothrow function persists across inputs:
         session.eval("def sq = fn (x: int): int -> (x * x)");
-        session.eval("def quad = fn pure deterministic nothrow (x: int): int -> (sq(sq(x)))");
+        session.eval("def quad = fn nothrow (x: int): int -> (sq(sq(x)))");
         Assertions.assertEquals(81, session.eval("quad(3)"));
 
         // `mut` method and static call-site exclusivity persist across inputs:
@@ -325,16 +325,16 @@ public class ReplTestCase {
         session.eval("a.addFrom(b)");
         Assertions.assertEquals(15, session.eval("a.v"));
         assertFails(session, "a.addFrom(a)", "Exclusivity error");
-        assertFails(session, "def bad = fn (x: Box): int -> ( x.addFrom(b) ; x.v )", "Cannot mutate parameter x");
+        assertFails(session, "def bad = fn volatile (x: Box): int -> ( x.addFrom(b) ; x.v )", "Cannot mutate parameter x");
 
         // Top-level `axiom` persists across REPL turns:
-        assertFails(session, "def badSep = fn pure (): string -> (java.lang.System.lineSeparator())", "pure");
-        session.eval("axiom pure deterministic nothrow on java.lang.System.lineSeparator");
-        session.eval("def okSep = fn pure deterministic nothrow (): string -> (java.lang.System.lineSeparator())");
+        assertFails(session, "def badSep = fn (): string -> (java.lang.System.lineSeparator())", "violates pure guarantee");
+        session.eval("axiom pure nothrow on java.lang.System.lineSeparator");
+        session.eval("def okSep = fn nothrow (): string -> (java.lang.System.lineSeparator())");
         Assertions.assertEquals(System.lineSeparator(), session.eval("okSep()"));
 
         // Multi-line incomplete classification with effect headers:
-        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("def f = fn pure (x: int): int -> ("));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("def f = fn io (x: int): int -> ("));
         Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("axiom pure on java.lang.Math"));
     }
 }

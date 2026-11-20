@@ -1,14 +1,14 @@
 ;;(
-    End-to-end differential tests for RM002 (BIP007-P1) :
-    effect inference and verification, mut / borrow parameters,
+    End-to-end differential tests for RM002 / BIP016 :
+    pure-by-default effect inference and verification, mut / shared & default @BORROWED,
     frame-local closures, bounded higher-order specialization,
     narrowing in nothrow, algebraic properties, and host axioms.
 ;;)
 
-axiom pure deterministic nothrow on java.lang.Math
+axiom pure nothrow on java.lang.Math
 
 def Vec2 = record (x: double, y: double) (
-    def dot = fn pure deterministic nothrow (other: Vec2): double -> (
+    def dot = fn (other: Vec2): double -> (
         this.x * other.x + this.y * other.y
     )
 )
@@ -19,19 +19,19 @@ def Counter = class (def value: int = 0) (
         this.value
     )
 
-    def readPlus = fn (borrow other: Counter): int -> (
+    def readPlus = fn (other: Counter): int -> (
         this.value + other.value
     )
 )
 
-;; Unannotated helper automatically inferred pure deterministic nothrow
+;; Pure by default (infers @NOTHROW and @TERMINATING)
 def square = fn (x: int): int -> (x * x)
 
-;; Concrete higher-order helper specialized per call site
-def mapInt = fn (f: fn (x: int): int, v: int): int -> (f(v))
+;; Concrete higher-order helper specialized per call site (BIP016-D6)
+def mapInt = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
 
-;; Verified pure deterministic nothrow caller using specialization + frame-local helper
-def forEachUpTo = fn (n: int, borrow f: fn (i: int): int): int -> (
+;; Verified pure nothrow caller using specialization + frame-local helper
+def forEachUpTo = fn io (n: int, f: fn io (i: int): int): int -> (
     def i: int = 1
     while i <= n then (
         f(i)
@@ -40,7 +40,7 @@ def forEachUpTo = fn (n: int, borrow f: fn (i: int): int): int -> (
     n
 )
 
-def sumSquares = fn pure deterministic nothrow (n: int): int -> (
+def sumSquares = fn nothrow (n: int): int -> (
     def total: int = 0
     forEachUpTo(n, fn (i: int): int -> (
         total += mapInt(square, i)
@@ -52,7 +52,7 @@ def sumSquares = fn pure deterministic nothrow (n: int): int -> (
 assert(sumSquares(4) == 30)
 
 ;; BIP007-D1 flow-sensitive narrowing preserves nothrow on guarded branches
-def unwrapOrZero = fn pure deterministic nothrow (x: int?, borrow fallback: Counter?): int -> (
+def unwrapOrZero = fn nothrow (x: int?, fallback: Counter?): int -> (
     if x != null then (
         x
     ) else if fallback != null then (
@@ -62,7 +62,7 @@ def unwrapOrZero = fn pure deterministic nothrow (x: int?, borrow fallback: Coun
     )
 )
 
-def parsePositive = fn pure deterministic nothrow (x: int | string): int -> (
+def parsePositive = fn nothrow (x: int | string): int -> (
     if x is int then (
         x
     ) else (
@@ -74,19 +74,19 @@ assert(unwrapOrZero(42, null) == 42 and unwrapOrZero(null, Counter(9)) == 9 and 
 assert(parsePositive(7) == 7 and parsePositive("nope") == -1)
 
 ;; Compositional algebraic properties
-def scaleShift = fn pure deterministic nothrow monotone (x: double): double -> (
+def scaleShift = fn nothrow monotone (x: double): double -> (
     x * 2.5 + 1.0
 )
 
-def affineHash = fn pure deterministic nothrow injective (x: int): int -> (
+def affineHash = fn nothrow injective (x: int): int -> (
     x * 3 + 7
 )
 
-def tagId = fn pure deterministic nothrow injective (x: int): string -> (
+def tagId = fn nothrow injective (x: int): string -> (
     "id:" + x
 )
 
-def addComm = fn pure deterministic nothrow commutative associative (a: int, b: int): int -> (
+def addComm = fn nothrow commutative associative (a: int, b: int): int -> (
     a + b
 )
 
@@ -95,7 +95,7 @@ assert(affineHash(10) == 37)
 assert(tagId(9) == "id:9")
 assert(addComm(3, 4) == 7)
 
-;; Mutating methods and borrow reads
+;; Mutating methods and default @BORROWED reads
 def c1 = Counter(10)
 def c2 = Counter(5)
 assert(c1.add(3) == 13)

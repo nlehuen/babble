@@ -347,9 +347,62 @@ Complete ownership transition & compile-error matrix:
 
 **Why `shared --> borrowed` and `frozen --> borrowed` are call-scoped loans (and must be allowed):** Neither `shared` nor `frozen T` permanently changes ownership state — the caller's binding stays `shared` or `frozen T`. However, lending either to a `@BORROWED` slot (`this.world.boundingBox()`, `item.boundingBox()`, or passing a `frozen list of int` to `fn (xs: list of int): int`) is 100% sound because `@BORROWED` constrains the *callee* (cannot retain the reference past termination — and for `frozen T`, `@CONST` ensures it cannot be mutated). This yields a clean capability order:
 
-* **Value / argument capability order:** **`@UNIQUE`** $<:$ **`@SHARED`** $<:$ **`@BORROWED`** (and **`frozen T`** $<:$ **`@CONST @BORROWED T`**)
-* **Function parameter subtyping (contravariant):** **`fn (x: T)`** $<:$ **`fn (shared x: T)`** $<:$ **`fn (unique x: T)`** *(matching `BIP007` §3.4: a callee promising not to keep `x` satisfies one that may keep `x`, which satisfies one demanding ownership of `x`)*.
+* **Value / argument capability order:** **`@UNIQUE`** $<:$ **`@SHARED`** $<:$ **`@BORROWED`** (and **`frozen T`** $<:$ **`@CONST @BORROWED T`** when the return type cannot leak a non-frozen alias; see below)
+* **Function parameter subtyping (contravariant):** **`fn (x: T)`** $<:$ **`fn (shared x: T)`** $<:$ **`fn (unique x: T)`** *(matching `BIP007` §3.4: a callee promising not to retain `x` satisfies one that may retain `x`, which satisfies one demanding ownership of `x`)*.
 * **Impact on `BIP007-P2`:** Making `{unique, shared, @BORROWED}` strictly mutually exclusive eliminates `unique shared` completely and collapses Layer 1's 3 per-slot booleans into **2 per-slot axes** (mutability + 3-state ownership), retiring explicit `unique borrow` (`@UNIQUE + @BORROWED`, 0 uses in Argon; single-target read-only and `hermetic mut` calls already preserve `unique` across `@BORROWED`).
+
+#### Return-Through Borrow: Making `id` and `min` Work Without `shared` (`BIP016-D10`)
+
+A naive definition of `@BORROWED` that treats **returning** a parameter the same as **storing** it creates a severe ergonomics bug — **viral `shared` propagation**:
+
+```babble
+;; If returning a parameter required `shared`:
+def id of T = fn (shared x: T): T -> ( x )
+def min of T = fn (shared a: T, shared b: T, cmp: fn (x: T, y: T): int): T -> (
+    if cmp(a, b) < 0 then ( a ) else ( b )
+)
+
+;; Now ANY caller that merely inspects the result CANNOT borrow its own parameters!
+def smallestX = fn (a: Box, b: Box): int -> (
+    min(a, b, cmpBox).x   ;; ERROR if min took `shared`! Forces `shared a, shared b` up the entire call stack!
+)
+```
+
+The exact same viral chain occurred in Argon: marking `Hittable.hit` as `fn shared` (solely because `HitRecord` returns `this.mat`) forced `Camera.rayColor`, `Camera.renderPixel`, and `Camera.render` to mark `world: Hittable` as `shared`, even though `rayColor` only reads `HitRecord` locally and returns a deeply immutable `Vec3`.
+
+However, simply allowing `@BORROWED` parameters to be returned without extra rules opens **two soundness holes** in a language without Rust-style return lifetime annotations (`&'a T`):
+
+1. **Hole 1 — Breaking `unique` / `freeze` & `mut` exclusivity (affects `id` directly):**
+   ```babble
+   def u = Box(1)          ;; u is @UNIQUE
+   def alias = id(u)       ;; if caller ignores return-aliasing, u stays @UNIQUE
+   def fu = freeze(u)      ;; succeeds because u is still thought to be @UNIQUE
+   alias.x = 99            ;; UNSOUND: mutates frozen fu! (and swap(u, alias) bypasses exclusivity)
+   ```
+2. **Hole 2 — Breaking `frozen T <: @CONST @BORROWED T` (unfreezing via a monomorphic return):**
+   ```babble
+   def unwrap = fn (b: Box): Box -> ( b )
+   def fb: frozen Box = freeze(Box(1))
+   def m: Box = unwrap(fb) ;; UNSOUND if frozen Box <: @CONST @BORROWED Box applies unconditionally!
+   m.x = 99                ;; mutates frozen fb!
+   ```
+
+Three sound designs were evaluated:
+1. **Treat return as escape (`shared` required):** simplest, but breaks zero-keyword `id`/`min` and causes viral `shared` propagation on getters and `Hittable.hit`.
+2. **Explicit return-provenance annotation (`: T from x`) or first-class `const T` view type:** signature-local, but adds a 4th ownership state / new type qualifier and still requires annotating `id` and `min`.
+3. **Selected (`BIP016-D10`) — Separate *storing* (`shared`) from *returning* (`@BORROWED` may return) with return-origin tracking and a frozen-safe return gate:**
+   * **Callee rule:** `@BORROWED` strictly forbids **retaining/storing** a reference past the call (outer/global variables, fields of other objects, escaping closures, `shared` parameters). **Returning** a `@BORROWED` parameter or `this` — directly (`id`, `min`, `HittableList.first`) or wrapped in a freshly constructed returned object (`HitRecord.create`, `BVHNode.fromList`) — is permitted with **0 `shared` keywords**. Storing `this` (or a sub-reference of `this`) back into `this`'s own fields (e.g. `this.head = HittableNode(item, this.head)`) also remains confined to `this` while still requiring `shared item`.
+   * **Closing Hole 1 (`unique` / `freeze` / `mut` exclusivity):** `EffectChecker` records each concrete function's return provenance (`returnParams`, `returnThis`, `returnExternal`) on `CallableSummary` (and conservatively treats mutable non-`unique` returns of abstract interfaces/function types as potentially aliasing borrowed arguments and `this`). At any call returning a non-immutable, non-`unique` value:
+     * The returned expression inherits the `Origin` (parameter bits, `this`, and direct alias keys) of the returned arguments, and demotes any `@UNIQUE` local variable that flows into it.
+     * Consequently, `def alias = id(u); freeze(u)` is **rejected** (`Cannot freeze expression`), `swap(u, alias)` is **rejected** (`Exclusivity error`), `id(b).x = 99` on `@CONST b` is **rejected** (`Cannot mutate parameter b`), and `sink = id(b)` is **rejected** (`Borrowed parameter b escapes`) — while `min(a, b, cmpBox).x` (reading immutable `int`) compiles with **0 `shared`**, and `min(mut a, mut b, cmpBox).x = 99` succeeds when both caller slots are `mut`.
+     * Functions returning fresh objects (`: unique R` on interfaces, or inferred `uniqueResult` on concrete bodies) guarantee no aliasing, so caller `@UNIQUE` bindings stay `@UNIQUE`.
+   * **Closing Hole 2 (`frozen T <: @CONST @BORROWED T`):** Widening `frozen T` to a non-frozen `@CONST @BORROWED T` parameter (in `CallSolver` and `TypeAlgebra.functionRelates`) is enabled **only when the callee's return type cannot smuggle a non-frozen mutable alias** — i.e., when the return type is deeply immutable (`int`, `string`, `record`, `frozen ...`, stateless `object`) or `unique` (`uniqueResult`). Thus:
+     * `id(fb)` and `min(fb1, fb2, cmpBox)` infer `T = frozen Box` directly (no widening needed; `cmpBox` returns `int` so `cmpBox <: fn (frozen Box, frozen Box): int` holds) and return **`frozen Box`**.
+     * `unwrap(fb)`, explicit `id of Box (fb)`, and `Mapper.transform(fb)` (returning mutable non-`unique` `Box`) are all **rejected** (`Type error : expected Box, got frozen Box`).
+     * `clone(fb)` (inferred `uniqueResult`) and `Cloner.clone(fb)` (`: unique Box`) **succeed**.
+     * Method calls on a `frozen` receiver (`fb.self()`, `frozenWorld.hit(...)`) remain sound because `CallSolver.call` wraps their return type in `Type.frozen(result)`.
+
+With `BIP016-D10`, `def id of T = fn (x: T): T -> ( x )` and `def min of T = fn (a: T, b: T, cmp: fn (x: T, y: T): int): T -> ( ... )` need **0 keywords**, and `shared` takes on its cleanest possible meaning: **"the callee may store/retain this reference in heap or closure state."**
 
 ### 6.3 Side-by-Side Impact on Argon (`examples/raytracer-argon/`)
 

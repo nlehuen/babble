@@ -28,9 +28,9 @@ false:true:false:true:false:false:bridged:bridged
 ;; Primitive return conversions/widenings, BoundMethod SAM, BabbleClass constructor SAM, and nested SAM return
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def nineChar = java.lang.Character.forDigit(9, 10)
-def ch = Demo.CharSupplier(fn () : any? -> ( nineChar ))
+def ch = Demo.CharSupplier(fn volatile () : any? -> ( nineChar ))
 def by = Demo.ByteUnary(fn (b : any?) : any? -> ( b ))
-def sh = Demo.ShortUnary(fn (s : any?) : any? -> ( java.lang.Byte.valueOf("7") ))
+def sh = Demo.ShortUnary(fn io (s : any?) : any? -> ( java.lang.Byte.valueOf("7") ))
 def fl = Demo.FloatUnary(fn (f : any?) : any? -> ( 5 ))
 def lg = java.util.function.IntToLongFunction(fn (n : int) : any? -> ( n + 10 ))
 

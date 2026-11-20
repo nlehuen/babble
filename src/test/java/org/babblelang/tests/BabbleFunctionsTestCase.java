@@ -146,7 +146,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
 
         // An error inside a default value is reported where it is.
         ScriptException inDefault = Assertions.assertThrows(ScriptException.class,
-                () -> interpret("def f = fn (a:int,\n b:int = a + (nosuchname as int)) -> (\n  a\n)\n\nf(1)"));
+                () -> interpret("def f = fn volatile (a:int,\n b:int = a + (nosuchname as int)) -> (\n  a\n)\n\nf(1)"));
         Assertions.assertEquals("org.babblelang.runtime.BabbleException: No such name : nosuchname in <input> at line number 2", inDefault.getMessage());
     }
 

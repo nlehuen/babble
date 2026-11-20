@@ -7,9 +7,9 @@ def f1 = fn (mut mut x : int) : int -> ( x )
 Duplicate parameter modifier : mut
 
 {{{{{
-def f2 = fn pure pure () : int -> ( 1 )
+def f2 = fn nothrow nothrow () : int -> ( 1 )
 }}}}}
-Duplicate effect modifier : pure
+Duplicate effect modifier : nothrow
 
 {{{{{
 def f3 : fn (x : fn axiom pure (y : int) : int) : int = fn (x : fn axiom pure (y : int) : int) -> ( 1 )
@@ -17,24 +17,24 @@ def f3 : fn (x : fn axiom pure (y : int) : int) : int = fn (x : fn axiom pure (y
 axiom is not allowed in a function type
 
 {{{{{
-def f4 = fn pure axiom () : int -> ( 1 )
+def f4 = fn nothrow axiom () : int -> ( 1 )
 }}}}}
 axiom must appear first before effect modifiers
 
 {{{{{
-def f5 : fn (x : fn impure () : int) : int = fn (x : fn impure () : int) -> ( 1 )
+def f5 = fn pure () : int -> ( 1 )
 }}}}}
-impure is not allowed in a function type
+pure is the default on functions : only use pure with axiom
 
 {{{{{
-def f6 = fn axiom impure () : int -> ( 1 )
+def f6 = fn axiom io () : int -> ( 1 )
 }}}}}
-axiom and impure cannot be combined
+axiom and io cannot be combined
 
 {{{{{
-def f7 = fn impure pure () : int -> ( 1 )
+def f7 = fn io volatile () : int -> ( 1 )
 }}}}}
-impure cannot be combined with effect modifiers
+io already implies volatile : use io alone
 
 {{{{{
 def f8 = fn mut () : int -> ( 1 )
@@ -42,18 +42,18 @@ def f8 = fn mut () : int -> ( 1 )
 mut on a function requires a receiver (this) : mark mutated parameters with mut
 
 {{{{{
-def f9 = fn borrow () : int -> ( 1 )
+def f9 = fn shared () : int -> ( 1 )
 }}}}}
-borrow on a function requires a receiver (this) : mark borrowed parameters with borrow
+shared on a function requires a receiver (this) : mark escaping parameters with shared
 
 {{{{{
-def f10 : fn pure (mut x : int) : int = fn (mut x : int) -> ( 1 )
+def f10 = fn axiom pure (mut x : int) : int -> ( 1 )
 }}}}}
-pure and mut are mutually exclusive : use hermetic with mut parameters
+pure and mut are mutually exclusive : use mut (or volatile mut)
 
 {{{{{
 ;; Effect declaration inside constrained static block and non-file scopes
-def makeBadStatic1 = fn pure () -> (
+def makeBadStatic1 = fn () -> (
     def C = class () () static ( println("bad") )
     ()
 )
@@ -61,15 +61,19 @@ def makeBadStatic1 = fn pure () -> (
 static block inside pure function violates pure guarantee
 
 {{{{{
-def makeBadStatic2 = fn hermetic () -> (
-    def I = interface () static ( println("bad") )
-    ()
+def Box = class (def v : int) (
+    def makeBadStatic2 = fn volatile mut () -> (
+        def I = interface () static ( println("bad") )
+        this.v += 1
+        ()
+    )
 )
 }}}}}
 static block inside hermetic function violates hermetic guarantee
 
 {{{{{
-def makeBadStatic3 = fn deterministic () -> (
+axiom volatile on java.lang.Math.random
+def makeBadStatic3 = fn () -> (
     def C = class () () static ( def y = java.lang.Math.random() )
     ()
 )
@@ -110,7 +114,7 @@ def badAxiom = axiom pure on java.lang.String.CASE_INSENSITIVE_ORDER
 Invalid axiom target : expected a Java class, Java method, or function
 
 {{{{{
-axiom pure deterministic on java.lang.StringBuilder()
+axiom pure on java.lang.StringBuilder()
 axiom pure on java.util.Map.Entry
 def sb = java.lang.StringBuilder()
 println(sb.toString())
@@ -119,50 +123,51 @@ println(sb.toString())
 
 {{{{{
 ;; Invalid algebraic signatures in validateAlgebraicSignature (function types and definitions)
-def badAssocType = fn (f : fn pure associative (x : int) : int) : int -> ( 1 )
+def badAssocType = fn (f : fn associative (x : int) : int) : int -> ( 1 )
 }}}}}
 associative requires a pure binary (T, T) : T signature
 
 {{{{{
-def badAssoc2 = fn hermetic associative (a : int, b : int) : int -> ( a + b )
+def Box = class (def v : int) ()
+def badAssoc2 = fn (f : fn associative (mut a : Box, b : Box) : Box) : int -> ( 1 )
 }}}}}
 associative requires a pure binary (T, T) : T signature
 
 {{{{{
-def badCommType = fn (f : fn pure commutative (a : int) : int) : int -> ( 1 )
+def badCommType = fn (f : fn commutative (a : int) : int) : int -> ( 1 )
 }}}}}
 commutative without mut requires a pure binary (T, T) : R signature
 
 {{{{{
-def badCommMutType = fn (f : fn hermetic mut commutative () : int) : int -> ( 1 )
+def badCommMutType = fn (f : fn mut commutative () : int) : int -> ( 1 )
 }}}}}
 mut commutative requires a value parameter on the mutated target
 
 {{{{{
-def badIdempType = fn (f : fn pure idempotent (a : int, b : int) : int) : int -> ( 1 )
+def badIdempType = fn (f : fn idempotent (a : int, b : int) : int) : int -> ( 1 )
 }}}}}
 idempotent without mut requires a pure unary (T) : T signature or an effectful axiom
 
 {{{{{
-def badMonoType = fn (f : fn pure monotone () : int) : int -> ( 1 )
+def badMonoType = fn (f : fn monotone () : int) : int -> ( 1 )
 }}}}}
 monotone requires ordered parameter and return types without mut
 
 {{{{{
 def Box = class (def x : int) ()
-def badMono2 = fn (f : fn pure monotone (b : Box) : Box) : int -> ( 1 )
+def badMono2 = fn (f : fn monotone (b : Box) : Box) : int -> ( 1 )
 }}}}}
 monotone requires ordered parameter and return types without mut
 
 {{{{{
-def badInjType = fn (f : fn pure injective (x : int) : null) : int -> ( 1 )
+def badInjType = fn (f : fn injective (x : int) : null) : int -> ( 1 )
 }}}}}
 injective requires at least one parameter, no mut, and a non-null return type
 
 {{{{{
 ;; Compositional algebraic inference: relationalProps, binaryWrapperProps, isUnaryIdempotentWrapper, mut idempotent/commutative
 def V = record (x : int) (
-    def get = fn pure () : int -> ( this.x )
+    def get = fn () : int -> ( this.x )
 )
 def addInt = fn (a : int, b : int) : int -> ( a + b )
 def addRev = fn (a : int, b : int) : int -> ( b + a )
@@ -171,11 +176,11 @@ def catS = fn (a : string, b : string) : string -> ( a + b )
 def catRev = fn (a : string, b : string) : string -> ( b + a )
 def eqD = fn (a : double, b : double) : bool -> ( a == b )
 def wrapAddRev = fn (a : int, b : int) : int -> ( addInt(b, a) )
-def c1 : fn pure commutative associative (a : int, b : int) : int = addRev
-def c2 : fn pure commutative (a : double, b : double) : double = mulD
-def c3 : fn pure associative (a : string, b : string) : string = catS
-def c4 : fn pure commutative (a : double, b : double) : bool = eqD
-def c5 : fn pure commutative (a : int, b : int) : int = wrapAddRev
+def c1 : fn commutative associative (a : int, b : int) : int = addRev
+def c2 : fn commutative (a : double, b : double) : double = mulD
+def c3 : fn associative (a : string, b : string) : string = catS
+def c4 : fn commutative (a : double, b : double) : bool = eqD
+def c5 : fn commutative (a : int, b : int) : int = wrapAddRev
 
 def d1 = fn (x : double) : double -> ( return -(-x) + 1.0 - (-2.0 * x) )
 def d2 = fn (x : double, y : double) : double -> ( x + (y * 0.0 + 1.0) )
@@ -186,36 +191,36 @@ def i2 = fn (x : int) : int -> ( 7 - (3 * x) )
 def i3 = fn (x : int) : string -> ( "k:" + x )
 def i4 = fn (x : int) : string -> ( "" + (x + 1) + ":k" )
 def vc = fn (x : int) : V -> ( V(x) )
-def m1 : fn pure monotone (x : double) : double = d1
-def m2 : fn pure monotone (x : double, y : double) : double = d2
-def m3 : fn pure monotone (x : int) : double = d3
-def m4 : fn pure monotone (x : double) : double = d4
-def j1 : fn pure injective (x : int) : int = i1
-def j2 : fn pure injective (x : int) : int = i2
-def j3 : fn pure injective (x : int) : string = i3
-def j4 : fn pure injective (x : int) : string = i4
-def j5 : fn pure injective (x : int) : V = vc
+def m1 : fn monotone (x : double) : double = d1
+def m2 : fn monotone (x : double, y : double) : double = d2
+def m3 : fn monotone (x : int) : double = d3
+def m4 : fn monotone (x : double) : double = d4
+def j1 : fn injective (x : int) : int = i1
+def j2 : fn injective (x : int) : int = i2
+def j3 : fn injective (x : int) : string = i3
+def j4 : fn injective (x : int) : string = i4
+def j5 : fn injective (x : int) : V = vc
 
-def idemSelf = fn pure idempotent (x : int) : int -> ( x )
+def idemSelf = fn idempotent (x : int) : int -> ( x )
 def wrapIdem = fn (x : int) : int -> ( idemSelf(x) )
-def idCheck : fn pure idempotent (x : int) : int = wrapIdem
+def idCheck : fn idempotent (x : int) : int = wrapIdem
 
 def Box = class (def v : int) (
-    def setV = fn hermetic mut idempotent (x : int) -> ( this.v = x )
-    def addAssign = fn hermetic mut commutative (d : int) -> ( this.v += d )
-    def addLeft = fn hermetic mut commutative (d : int) -> ( this.v = this.v + d )
-    def addRight = fn hermetic mut commutative (d : int) -> ( this.v = d + this.v )
-    def fwdSet = fn hermetic mut idempotent (x : int) -> ( this.setV(x) )
-    def fwdAdd = fn hermetic mut commutative (d : int) -> ( this.addAssign(d) )
+    def setV = fn mut idempotent (x : int) -> ( this.v = x )
+    def addAssign = fn mut commutative (d : int) -> ( this.v += d )
+    def addLeft = fn mut commutative (d : int) -> ( this.v = this.v + d )
+    def addRight = fn mut commutative (d : int) -> ( this.v = d + this.v )
+    def fwdSet = fn mut idempotent (x : int) -> ( this.setV(x) )
+    def fwdAdd = fn mut commutative (d : int) -> ( this.addAssign(d) )
 )
-def setParam = fn hermetic idempotent (mut b : Box, x : int) -> ( b.v = x )
-def ms1 : fn hermetic mut idempotent (x : int) = Box(0).setV
-def ms2 : fn hermetic mut commutative (d : int) = Box(0).addAssign
-def ms3 : fn hermetic mut commutative (d : int) = Box(0).addLeft
-def ms4 : fn hermetic mut commutative (d : int) = Box(0).addRight
-def ms5 : fn hermetic mut idempotent (x : int) = Box(0).fwdSet
-def ms6 : fn hermetic mut commutative (d : int) = Box(0).fwdAdd
-def ms7 : fn hermetic idempotent (mut b : Box, x : int) = setParam
+def setParam = fn idempotent (mut b : Box, x : int) -> ( b.v = x )
+def ms1 : fn mut idempotent (x : int) = Box(0).setV
+def ms2 : fn mut commutative (d : int) = Box(0).addAssign
+def ms3 : fn mut commutative (d : int) = Box(0).addLeft
+def ms4 : fn mut commutative (d : int) = Box(0).addRight
+def ms5 : fn mut idempotent (x : int) = Box(0).fwdSet
+def ms6 : fn mut commutative (d : int) = Box(0).fwdAdd
+def ms7 : fn idempotent (mut b : Box, x : int) = setParam
 
 println(m1(2.0), ":", m2(1.0, 99.0), ":", m3(4), ":", i3(7), ":", catRev("a", "b"), ":", c5(2, 3))
 }}}}}
@@ -248,10 +253,10 @@ value class BadV3 constructor must be deterministic
 def V = record (x : int) ()
 def R = class (def x : int) ()
 def Custom = class (def x : int) (
-    def toString = fn pure deterministic () : string -> ( "C" )
+    def toString = fn () : string -> ( "C" )
 )
 def arr = java.lang.String("ab").toCharArray()
-def pOps = fn pure (x : int, ia : java.lang.Integer, ib : java.lang.Integer) : bool -> (
+def pOps = fn (x : int, ia : java.lang.Integer, ib : java.lang.Integer) : bool -> (
     def s = "v=" + V(x) + ":" + Custom(x) + ":" + (if x > 0 then ( x ) else ( "z" ))
     s += V(x)
     def ok1 = V(x) == V(x)
@@ -269,20 +274,20 @@ false:true
 {{{{{
 ;; Inline object in pure function mutating outer binding & frame-local vs escaping closure captures
 def outer = 0
-def badObj = fn pure () -> (
+def badObj = fn () -> (
     def o = object (
         outer = 1
     )
     ()
 )
 }}}}}
-Function badObj declared pure violates pure guarantee
+Function badObj violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
 ;; Frame-local borrow closures reading/writing enclosing unescaped locals vs bounded call-site specialization
 def Box = class (def v : int) ()
-def applyZero = fn (borrow f : fn () : int) : int -> ( f() )
-def pureWithFrame = fn pure (n : int) : int -> (
+def applyZero = fn io (f : fn io () : int) : int -> ( f() )
+def pureWithFrame = fn (n : int) : int -> (
     def acc = n
     def step = fn (k : int) : int -> (
         acc += k
@@ -292,8 +297,8 @@ def pureWithFrame = fn pure (n : int) : int -> (
     def r2 = applyZero(fn () : int -> ( acc += 3 ; acc ))
     r2
 )
-def specCaller = fn pure (n : int) : int -> (
-    def invoke = fn (cb : fn (x : int) : int, v : int) : int -> ( cb(v) )
+def specCaller = fn (n : int) : int -> (
+    def invoke = fn io (cb : fn io (x : int) : int, v : int) : int -> ( cb(v) )
     invoke(fn (x : int) : int -> ( x + 1 ), n)
 )
 println(pureWithFrame(10), ":", specCaller(5))
@@ -301,18 +306,18 @@ println(pureWithFrame(10), ":", specCaller(5))
 15:6
 
 {{{{{
-;; Closures: escaping closure capturing mut param vs inner closure mutating this without mut on outer
+;; Closures: escaping closure capturing this requires shared on enclosing method
 def Box = class (def v : int) (
-    def okMut = fn hermetic mut () : fn mut () : int -> (
-        def inner = fn () -> ( this.v += 1 )
+    def okMut = fn mut shared () : fn mut () : int -> (
+        def inner = fn mut () -> ( this.v += 1 )
         inner
     )
-    def badBorrow = fn borrow () : fn () : int -> (
+    def badBorrow = fn () : fn () : int -> (
         fn () -> ( this.v )
     )
 )
 }}}}}
-borrow receiver this escapes via captured closure
+Borrowed this escapes via captured closure : mark function as shared
 
 {{{{{
 def Box = class (def v : int) (
@@ -327,7 +332,7 @@ Cannot mutate this (field assignment .v) : function is not declared mut
 {{{{{
 ;; While & if narrowing inside EffectChecker
 def Node = class (def next : Node?) ()
-def walk = fn pure (borrow start : Node?) : int -> (
+def walk = fn (start : Node?) : int -> (
     def cur : Node? = start
     def c = 0
     while cur != null then (
@@ -354,7 +359,7 @@ Function badComm declared commutative violates commutative guarantee
 
 {{{{{
 def C = class (def v : int) (
-    def bad = fn hermetic mut commutative () : int -> ( this.v )
+    def bad = fn mut commutative () : int -> ( this.v )
 )
 }}}}}
 Function bad declared commutative violates commutative guarantee
@@ -366,53 +371,53 @@ Function badIdemp declared idempotent violates idempotent guarantee
 
 {{{{{
 def Box = class () ()
-def badMono = fn pure monotone (x : Box) : Box -> ( x )
+def badMono = fn monotone (x : Box) : Box -> ( x )
 }}}}}
 Function badMono declared monotone violates monotone guarantee
 
 {{{{{
-def badInj = fn pure injective (x : int) : null -> ( null )
+def badInj = fn injective (x : int) : null -> ( null )
 }}}}}
 Function badInj declared injective violates injective guarantee
 
 {{{{{
 ;; relationalProps for int (injective) and double (monotone) arithmetic
-def iNeg = fn pure injective (x : int) : int -> ( -x )
-def iAdd = fn pure injective (x : int) : int -> ( 1 + (x - 2) )
-def iSub = fn pure injective (x : int) : int -> ( 10 - x )
-def iMulOdd = fn pure injective (x : int) : int -> ( 3 * (x * 5) )
-def dMono1 = fn pure monotone (x : double) : double -> ( -(-x) + 1.0 - 2.0 )
-def dMono2 = fn pure monotone (x : double) : double -> ( -(10.0 - x) )
+def iNeg = fn injective (x : int) : int -> ( -x )
+def iAdd = fn injective (x : int) : int -> ( 1 + (x - 2) )
+def iSub = fn injective (x : int) : int -> ( 10 - x )
+def iMulOdd = fn injective (x : int) : int -> ( 3 * (x * 5) )
+def dMono1 = fn monotone (x : double) : double -> ( -(-x) + 1.0 - 2.0 )
+def dMono2 = fn monotone (x : double) : double -> ( -(10.0 - x) )
 println(iNeg(5), ":", iAdd(3), ":", iSub(4), ":", iMulOdd(2), ":", dMono1(3.0), ":", dMono2(4.0))
 }}}}}
 -5:2:6:30:2.0:-6.0
 
 {{{{{
-;; SAM Java callback effect propagation inside pure/hermetic functions
-def countPure = fn hermetic () : int -> (
-    def xs = java.util.Arrays.asList("a", "bb")
+;; SAM Java callback effect propagation inside pure-by-default functions
+def countPure = fn () : int -> (
+    def xs = list("a", "bb")
     def total = 0
     xs.forEach(fn (s : string) -> ( total += 1 ))
     total
 )
 println(countPure())
 }}}}}
-Function countPure declared hermetic violates hermetic guarantee
+Function countPure violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
-;; Java effect annotations (@Pure, @Hermetic, @Mut, @Borrow, @Deterministic, @Nothrow, @Idempotent, @Commutative, @Associative, @Monotone, @Injective)
+;; Java effect annotations (@Pure, @Volatile, @Mut, @Shared, @Nothrow, @Idempotent, @Commutative, @Associative, @Monotone, @Injective)
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
 def APC = tests.EffectsTestCase.AnnotatedPureClass
 def MH = tests.EffectsTestCase.MutableHolder
-def fPure = fn pure deterministic (x : int) : int -> (
+def fPure = fn (x : int) : int -> (
     HF.pureCalc(x) + APC.helper(x)
 )
-def fNothrow = fn pure deterministic nothrow (x : int) : int -> ( HF.pureCalc(x) )
-def fIdemp = fn pure idempotent (x : double) : double -> ( HF.clampUnit(x) )
-def fAssocComm = fn pure associative commutative (a : int, b : int) : int -> ( HF.bitXor(a, b) )
-def fMono = fn pure monotone (x : double) : double -> ( HF.expStep(x) )
-def fInj = fn pure injective (x : int) : string -> ( HF.hexKey(x) )
+def fNothrow = fn nothrow (x : int) : int -> ( HF.pureCalc(x) )
+def fIdemp = fn idempotent (x : double) : double -> ( HF.clampUnit(x) )
+def fAssocComm = fn associative commutative (a : int, b : int) : int -> ( HF.bitXor(a, b) )
+def fMono = fn monotone (x : double) : double -> ( HF.expStep(x) )
+def fInj = fn injective (x : int) : string -> ( HF.hexKey(x) )
 def fHerm = fn (d : int) : int -> (
     def h1 = MH(10)
     def h2 = MH(5)
@@ -420,41 +425,41 @@ def fHerm = fn (d : int) : int -> (
     HF.mutateParam(h2, h1)
     h2.value
 )
-def fSam = fn pure (x : int) : int -> ( HF.applyOp(x, fn (v : int) : int -> ( v + 1 )) )
+def fSam = fn (x : int) : int -> ( HF.applyOp(x, fn (v : int) : int -> ( v + 1 )) )
 println(fPure(2), ":", fIdemp(1.5), ":", fAssocComm(3, 5), ":", fInj(255), ":", fHerm(3), ":", fSam(9))
 }}}}}
 17:1.0:6:ff:13:10
 
 {{{{{
-;; @Impure method overrides class-level @Pure
+;; @IO method overrides class-level @Pure
 def tests = import("org.babblelang.tests")
-def bad = fn pure (x : int) : int -> ( tests.EffectsTestCase.AnnotatedPureClass.escapeHatch(x) )
+def bad = fn (x : int) : int -> ( tests.EffectsTestCase.AnnotatedPureClass.escapeHatch(x) )
 }}}}}
-Function bad declared pure violates pure guarantee
+Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
-;; @Impure method on HostFixtures violates pure
+;; @IO method on HostFixtures violates pure
 def tests = import("org.babblelang.tests")
-def bad = fn pure (x : int) : int -> ( tests.EffectsTestCase.HostFixtures.annotatedImpure(x) )
+def bad = fn (x : int) : int -> ( tests.EffectsTestCase.HostFixtures.annotatedIO(x) )
 }}}}}
-Function bad declared pure violates pure guarantee
+Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
 ;; relationalProps: const, negate const, double mul negative, string concat, monotone/injective call, int->double, x+x
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
-def cInt = fn pure (x : int) : int -> ( 42 )
-def cNeg = fn pure (x : int) : double -> ( -(42.0) )
-def dMulPos = fn pure monotone (x : double) : double -> ( 2.0 * x )
-def dMulNeg = fn pure (x : double) : double -> ( -2.0 * x )
-def dMulNegR = fn pure (x : double) : double -> ( x * -3.0 )
-def sLeft = fn pure injective (x : int) : string -> ( "k=" + x )
-def sRight = fn pure injective (s : string) : string -> ( s + "!" )
-def sSelf = fn pure (s : string) : string -> ( s + s )
-def callMono = fn pure monotone (x : double) : double -> ( HF.expStep(x) )
-def callInj = fn pure injective (x : int) : string -> ( HF.hexKey(x) )
-def widen = fn pure monotone injective (x : int) : double -> ( x as double )
-def addSame = fn pure monotone (x : double) : double -> ( x + x )
+def cInt = fn (x : int) : int -> ( 42 )
+def cNeg = fn (x : int) : double -> ( -(42.0) )
+def dMulPos = fn monotone (x : double) : double -> ( 2.0 * x )
+def dMulNeg = fn (x : double) : double -> ( -2.0 * x )
+def dMulNegR = fn (x : double) : double -> ( x * -3.0 )
+def sLeft = fn injective (x : int) : string -> ( "k=" + x )
+def sRight = fn injective (s : string) : string -> ( s + "!" )
+def sSelf = fn (s : string) : string -> ( s + s )
+def callMono = fn monotone (x : double) : double -> ( HF.expStep(x) )
+def callInj = fn injective (x : int) : string -> ( HF.hexKey(x) )
+def widen = fn monotone injective (x : int) : double -> ( x as double )
+def addSame = fn monotone (x : double) : double -> ( x + x )
 println(cInt(1), ":", cNeg(1), ":", dMulPos(2.0), ":", dMulNeg(2.0), ":", dMulNegR(2.0), ":", sLeft(3), ":", sRight("ok"), ":", sSelf("a"), ":", widen(4), ":", addSame(5.0))
 }}}}}
 42:-42.0:4.0:-4.0:-6.0:k=3:ok!:aa:4.0:10.0
@@ -463,29 +468,26 @@ println(cInt(1), ":", cNeg(1), ":", dMulPos(2.0), ":", dMulNeg(2.0), ":", dMulNe
 ;; binaryWrapperProps: string +, double +, ==, <>, swapped params
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
-def sJoin = fn pure associative (a : string, b : string) : string -> ( a + b )
-def dAdd = fn pure commutative (a : double, b : double) : double -> ( a + b )
-def eq = fn pure commutative (a : int, b : int) : bool -> ( a == b )
-def neq = fn pure commutative (a : int, b : int) : bool -> ( a <> b )
-def swapXor = fn pure commutative (a : int, b : int) : int -> ( HF.bitXor(b, a) )
-def namedXor = fn pure (a : int, b : int) : int -> ( HF.bitXor(a, b) )
+def sJoin = fn associative (a : string, b : string) : string -> ( a + b )
+def dAdd = fn commutative (a : double, b : double) : double -> ( a + b )
+def eq = fn commutative (a : int, b : int) : bool -> ( a == b )
+def neq = fn commutative (a : int, b : int) : bool -> ( a <> b )
+def swapXor = fn commutative (a : int, b : int) : int -> ( HF.bitXor(b, a) )
+def namedXor = fn (a : int, b : int) : int -> ( HF.bitXor(a, b) )
 println(sJoin("a", "b"), ":", dAdd(1.0, 2.0), ":", eq(3, 3), ":", neq(3, 4), ":", swapXor(3, 5), ":", namedXor(3, 5))
 }}}}}
 ab:3.0:true:true:6:6
 
 {{{{{
-;; Axiom targets: constructor, class, nested class, static mut, borrow, override on @Pure/@Mut
+;; Axiom targets: constructor, class, nested class, static mut, shared, override on @Pure/@Mut
 def tests = import("org.babblelang.tests")
 axiom pure on java.lang.StringBuilder()
 axiom pure on java.lang.Math
 axiom pure on java.lang.Thread.State
 axiom mut on java.lang.Math.abs
-axiom borrow on java.lang.StringBuilder.append
+axiom shared on java.lang.StringBuilder.append
 axiom pure on tests.EffectsTestCase.HostFixtures.pureCalc
 axiom pure on tests.EffectsTestCase.MutableHolder.bump
 println(tests.EffectsTestCase.HostFixtures.pureCalc(3))
 }}}}}
 7
-
-
-

@@ -95,8 +95,8 @@ public class BabblecTestCase {
         file("lib/square.ba", "def shapes = import(\"shapes.ba\")\n"
                 + "def made = 0\n"
                 + "export def Square = class (def side : int) implements shapes.Shape ( def area = fn () : double -> ( 1.0 * this.side * this.side ) )\n"
-                + "export def make = fn (side : int) -> ( made = made + 1 ; Square(side) )\n"
-                + "export def count = fn () -> ( made )\n");
+                + "export def make = fn io (side : int) -> ( made = made + 1 ; Square(side) )\n"
+                + "export def count = fn volatile () -> ( made )\n");
         file("main.ba", "def square = import(\"lib/square.ba\")\n"
                 + "println(square.make(3).describe(), \" \", args.get(0), \" \", args.size())\n"
                 + "import(\"lib/square.ba\").make(2)\n"
@@ -151,7 +151,7 @@ public class BabblecTestCase {
         file("lib/a.ba", "export def loaded : java.util.Map of (string, string) = java.util.HashMap()\nloaded.put(\"a\", \"a\")");
         file("lib/b.ba", "import(\"a.ba\").loaded.put(\"b\", \"b\")");
         file("main.ba", "def a = import(\"lib/a.ba\")\n"
-                + "def load = fn (n : string) : string -> ( import(\"lib/\" + n + \".ba\") ; a.loaded.get(n) as string )\n"
+                + "def load = fn io (n : string) : string -> ( import(\"lib/\" + n + \".ba\") ; a.loaded.get(n) as string )\n"
                 + "println(load(\"a\"))\n"
                 + "println(load(\"b\"))\n");
         compile("main.ba", "app.jar");
@@ -189,12 +189,12 @@ public class BabblecTestCase {
 
     /** A program whose main script imports b, c or what it is told, dynamically. */
     private void dynamicProgram() throws IOException {
-        file("lib/a.ba", "println(\"loading a\")\ndef n = 0\nexport def next = fn () : int -> ( n = n + 1 )\nexport def names : java.util.Map of (string, string) = java.util.HashMap()\nexport def actions : java.util.Map of (string, java.lang.Runnable) = java.util.HashMap()");
+        file("lib/a.ba", "println(\"loading a\")\ndef n = 0\nexport def next = fn io () : int -> ( n = n + 1 )\nexport def names : java.util.Map of (string, string) = java.util.HashMap()\nexport def actions : java.util.Map of (string, java.lang.Runnable) = java.util.HashMap()");
         file("lib/b.ba", "def a = import(\"a.ba\")\nimport(\"c.ba\")\nexport def name = \"b, \" + (a.names.get(\"c\") as string) + \", a at \" + a.next()\na.names.put(\"b\", name)");
         file("lib/c.ba", "def a = import(\"a.ba\")\nexport def name = \"c\"\na.names.put(\"c\", name)\ndef id = fn (v : any?) : any? -> ( v )\nexport def fail = fn () : int -> ( 1 + (id(null) as int) )\na.actions.put(\"c\", java.lang.Runnable(fn () -> ( fail() )))");
         file("main.ba", "def a = import(\"lib/a.ba\")\n"
                 + "a.next()\n"
-                + "def load = fn (n : string) : string -> ( import(\"lib/\" + n + \".ba\") ; a.names.get(n) as string )\n"
+                + "def load = fn io (n : string) : string -> ( import(\"lib/\" + n + \".ba\") ; a.names.get(n) as string )\n"
                 + "def i = 0\n"
                 + "while i < args.size() then ( println(load(args.get(i) as string)) ; i = i + 1 )\n");
     }

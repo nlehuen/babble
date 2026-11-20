@@ -7,7 +7,7 @@ def makeCounter = fn () -> (
     def d = 0.5
     def b = false
     def s = "x"
-    def step = fn () : string -> (
+    def step = fn io () : string -> (
         i += 1
         d += 1.25
         b = not b
@@ -28,7 +28,7 @@ println(c2())
 
 {{{{{
 ;; Shared mutable capture between two sibling closures and enclosing block
-def shared = fn () : string -> (
+def sharedCapture = fn () : string -> (
     def count = 10
     def inc = fn (k : int) : int -> ( count += k ; count )
     def read = fn () : int -> ( count )
@@ -38,7 +38,7 @@ def shared = fn () : string -> (
     def c = read()
     "" + a + ":" + b + ":" + c
 )
-println(shared())
+println(sharedCapture())
 }}}}}
 15:15:16
 
@@ -57,7 +57,7 @@ println(func())
 
 {{{{{
 ;; Widening a captured int variable to double (uses DoubleCell instead of IntCell)
-def widenCapture = fn () : string -> (
+def widenCapture = fn io () : string -> (
     def v = 1
     def read = fn () -> ( v )
     v = 2.5
@@ -66,4 +66,3 @@ def widenCapture = fn () : string -> (
 println(widenCapture())
 }}}}}
 2.5:java.lang.Double
-

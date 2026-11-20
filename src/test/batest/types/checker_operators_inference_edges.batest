@@ -78,7 +78,7 @@ d = null
 d = 2.5
 
 def pureFn = fn (x : int) : int -> ( x + 1 )
-def impFn = fn impure (x : int) : int -> ( x + 2 )
+def impFn = fn io (x : int) : int -> ( x + 2 )
 def pick = fn (flag : bool) -> (
     if flag then ( pureFn ) else ( impFn )
 )
@@ -216,8 +216,8 @@ def withEarlyRet = fn (n : int) -> (
 def nullDef = fn (x = null) -> ( x )
 println(fact(5), ":", withEarlyRet(-1), ":", withEarlyRet(3), ":", nullDef(), ":", nullDef(9))
 
-def fnPrint : fn (s : string) : fn () = println
-def fnAppend : fn (c : java.lang.CharSequence) : java.lang.StringBuilder = java.lang.StringBuilder().append
+def fnPrint : fn io (s : string) : fn () = println
+def fnAppend : fn io (shared c : java.lang.CharSequence) : java.lang.StringBuilder = java.lang.StringBuilder().append
 def samFn : java.util.function.Function of (int, double) = java.util.function.Function(fn (x) -> ( x + 1 ))
 println(samFn.apply(4))
 }}}}}
@@ -232,9 +232,9 @@ sb.append(null)
 Ambiguous call to java.lang.StringBuilder.append for (null)
 
 {{{{{
-def f : fn pure (s : string) : null = println
+def f : fn (s : string) : null = println
 }}}}}
-Type error : expected pure (s : string) : null, got print
+Type error : expected (s : string) : null, got print
 
 {{{{{
 ;; Mutual recursion missing type error

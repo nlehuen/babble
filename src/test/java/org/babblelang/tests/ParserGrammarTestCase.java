@@ -137,16 +137,20 @@ public class ParserGrammarTestCase extends BabbleTestBase {
     public void testBip007OwnershipSllGrammar() {
         parsePureSll("""
                 axiom pure unique on java.util.ArrayList()
-                def f = fn pure (unique a: Box, unique borrow b: Box): unique Box -> (
+                axiom volatile on java.nio.file.Files.readString
+                io on java.net.URL.equals
+                def f = fn (unique a: Box, shared b: Box, mut c: Box): unique Box -> (
                     def x: frozen list of int = freeze(list(1, 2))
                     def y: frozen (Box | int)? = null
-                    def z = a.unique + a.frozen
+                    def z = a.unique + a.frozen + a.io + a.volatile + a.shared + java.io.File
                     discard(x)
                     discard(y)
                     discard(z)
                     move(a)
                 )
-                def ft: fn pure (unique Box): unique Box = f
+                def g = fn volatile mut (mut shared b: Box): Box -> ( b )
+                def h = fn io (cb: fn io (x: int): int): int -> ( cb(1) )
+                def ft: fn (unique Box): unique Box = f
                 """);
     }
 

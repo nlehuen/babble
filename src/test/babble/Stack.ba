@@ -7,7 +7,7 @@ def Stack of T = class () (
     def size = 0
     def head: (Node of T)? = null
 
-    def push = fn mut (a: T) -> (
+    def push = fn mut (shared a: T) -> (
         this.size = this.size + 1
         this.head = Node(a, this.head)
     )
@@ -37,7 +37,7 @@ def Stack of T = class () (
         A recursive method : "recurse" evaluates to the method bound to the
         receiver, so that "this" still designates it in the recursive call.
     ;;)
-    def clear = fn () -> (
+    def clear = fn mut () -> (
         if this.head == null then (
             this.size
         ) else (
@@ -66,9 +66,9 @@ def Stack of T = class () (
     )
 )
 
-def create of T = fn (): Stack of T -> (Stack())
+def create of T = fn (): unique Stack of T -> (Stack())
 
-def test = fn () -> (
+def test = fn io () -> (
     def l: Stack of string = create()
     assert(l.size == 0)
     l.push("world")

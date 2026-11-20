@@ -1,4 +1,4 @@
-;; RM007 (BIP007-P2): unique, move, freeze, frozen, discard, and BIP007-D5-D9 parity tests
+;; RM007 (BIP007-P2 / BIP016): unique, move, freeze, frozen, discard, and BIP016-D10 return-through-borrow parity tests
 
 {{{{{
 ;; Mandatory BIP007-D7 narrowing test (negative): narrowing frozen any via `is MyRecord` must NOT lose frozen
@@ -20,10 +20,10 @@ println(if c != null then ( c.a ) else ( 0 ))
 {{{{{
 ;; Unique local builder mutated inside pure function and frozen for read-only sharing
 def Counter = class (def n: int = 0) (
-    def inc = fn hermetic mut deterministic nothrow () -> ( this.n = this.n + 1 )
-    def value = fn pure deterministic nothrow borrow (): int -> ( this.n )
+    def inc = fn mut nothrow () -> ( this.n = this.n + 1 )
+    def value = fn nothrow (): int -> ( this.n )
 )
-def build = fn pure (): frozen Counter -> (
+def build = fn (): frozen Counter -> (
     def c = Counter(0)
     c.inc()
     c.inc()
@@ -55,10 +55,37 @@ def f = fn (x: int): int -> (
 Unused pure expression
 
 {{{{{
-def f = fn pure deterministic nothrow (x: int): int -> (
+def f = fn nothrow (x: int): int -> (
     discard(x + 1)
     x * 2
 )
 println(f(21))
 }}}}}
 42
+
+{{{{{
+;; BIP016-D10: id and min return borrowed parameters without requiring shared
+def Box = class (def n: int) ()
+def id of T = fn (x: T): T -> ( x )
+def minBy of T = fn (a: T, b: T, cmp: fn (x: T, y: T): int): T -> (
+    if cmp(a, b) <= 0 then ( a ) else ( b )
+)
+def smallest = fn (a: Box, b: Box): Box -> (
+    minBy(a, b, fn (x: Box, y: Box): int -> ( x.n - y.n ))
+)
+println(id(Box(9)).n, ":", smallest(Box(7), Box(3)).n)
+}}}}}
+9:3
+
+{{{{{
+;; BIP016-D10 soundness: returning a unique local through id demotes uniqueness so freeze fails
+def Box = class (def n: int) ()
+def id of T = fn (x: T): T -> ( x )
+def bad = fn (): frozen Box -> (
+    def u = Box(1)
+    def alias = id(u)
+    discard(alias.n)
+    freeze(u)
+)
+}}}}}
+Cannot freeze expression : value is not unique or deeply immutable

@@ -130,12 +130,12 @@ public class OwnershipTestCase {
     public void testFrozenCovarianceAndTransitiveImmutability() throws Exception {
         // Covariance on frozen generic Babble classes and core collections (BIP007-D7)
         String cov = """
-                def Animal = interface ( def sound: fn borrow (): string )
+                def Animal = interface ( def sound: fn (): string )
                 def Dog = class (def name: string) implements Animal (
-                    def sound = fn pure borrow (): string -> ( "woof:" + this.name )
+                    def sound = fn (): string -> ( "woof:" + this.name )
                 )
                 def Holder of T = class (def item: T) ()
-                def makeFrozenDogs = fn pure (): frozen list of Dog -> (
+                def makeFrozenDogs = fn (): frozen list of Dog -> (
                     def xs = list(Dog("rex"))
                     freeze(xs)
                 )
@@ -164,7 +164,7 @@ public class OwnershipTestCase {
                 )
                 """, "frozen");
 
-        // Calling mut or non-borrow method on frozen value is rejected
+        // Calling mut method on frozen value is rejected
         assertHasError("""
                 def Box = class (def x: int) (
                     def update = fn mut (v: int) -> ( this.x = v )
@@ -179,7 +179,7 @@ public class OwnershipTestCase {
         // Built-ins `same`, `classof`, `discard` accept `frozen` (BIP007-D9)
         String builtins = """
                 def Box = class (def x: int) ()
-                def f = fn pure (): bool -> (
+                def f = fn (): bool -> (
                     def b = freeze(Box(1))
                     discard(classof(b))
                     discard(b)
@@ -196,7 +196,7 @@ public class OwnershipTestCase {
         // Fresh local mutation inside pure function + inferred unique return + @TERMINATING (bip007 §5.2)
         String stats = """
                 def Stats = class (def count: int = 0, def total: int = 0) (
-                    def add = fn hermetic mut deterministic nothrow (v: int) -> (
+                    def add = fn mut nothrow (v: int) -> (
                         this.count = this.count + 1
                         this.total = this.total + v
                     )
@@ -257,7 +257,7 @@ public class OwnershipTestCase {
         // Reassigning after move restores usability!
         String reassign = """
                 def Box = class (def x: int) ()
-                def f = fn pure (flag: bool): int -> (
+                def f = fn (flag: bool): int -> (
                     def b = Box(1)
                     def sum = 0
                     if flag then (
@@ -276,13 +276,13 @@ public class OwnershipTestCase {
         // Aliasing `def alias = b` without `move` demotes both to @EXTERNAL
         assertHasError("""
                 def Box = class (def x: int) ()
-                def f = fn pure (): int -> (
+                def f = fn (): int -> (
                     def b = Box(1)
                     def alias = b
                     b.x = 2
                     alias.x
                 )
-                """, "Cannot mutate object in pure function");
+                """, "Cannot mutate external object in pure function");
 
         // Freezing a non-unique parameter is rejected
         assertHasError("""
@@ -293,15 +293,15 @@ public class OwnershipTestCase {
 
     @Test
     public void testUniqueParamsReturnsCoreCollectionsAndJavaAnnotation() throws Exception {
-        // Consuming `unique` param vs `unique borrow` param
+        // Consuming `unique` param vs default `@BORROWED` param
         String uniqueParams = """
                 def Box = class (def x: int) ()
-                def consume = fn pure (unique b: Box): unique Box -> (
+                def consume = fn (unique b: Box): unique Box -> (
                     b.x = b.x + 1
                     b
                 )
-                def peek = fn pure (unique borrow b: Box): int -> ( b.x )
-                def run = fn pure (): int -> (
+                def peek = fn (b: Box): int -> ( b.x )
+                def run = fn (): int -> (
                     def b = Box(10)
                     def v = peek(b)
                     def b2 = consume(b)
@@ -315,19 +315,19 @@ public class OwnershipTestCase {
         // Consuming `unique` param moves caller's variable -> use after call rejected!
         assertHasError("""
                 def Box = class (def x: int) ()
-                def consume = fn pure (unique b: Box): int -> ( b.x )
-                def run = fn pure (): int -> (
+                def consume = fn (unique b: Box): int -> ( b.x )
+                def run = fn (): int -> (
                     def b = Box(10)
                     def v = consume(b)
                     v + b.x
                 )
                 """, "Use of moved variable b");
 
-        // `unique borrow` enforces exclusivity (aliasing two args rejected)
+        // `mut` param enforces exclusivity (aliasing two args rejected)
         assertHasError("""
                 def Box = class (def x: int) ()
-                def both = fn pure (unique borrow a: Box, borrow b: Box): int -> ( a.x + b.x )
-                def run = fn pure (): int -> (
+                def both = fn (mut a: Box, b: Box): int -> ( a.x = a.x + b.x; a.x )
+                def run = fn (): int -> (
                     def b = Box(10)
                     both(b, b)
                 )
@@ -342,13 +342,13 @@ public class OwnershipTestCase {
         // RM005 core collection `unique` constructors & mutators (BIP007-D6)
         String collections = """
                 def Box = class (def x: int) ()
-                def build = fn pure (): frozen list of Box -> (
+                def build = fn (): frozen list of Box -> (
                     def xs = list(Box(1))
                     def b = Box(2)
                     xs.add(move(b))
                     freeze(xs)
                 )
-                def copyInts = fn pure (borrow src: list of int): frozen list of int -> (
+                def copyInts = fn (src: list of int): frozen list of int -> (
                     def cp = list(from: src)
                     cp.add(99)
                     freeze(cp)
@@ -363,7 +363,7 @@ public class OwnershipTestCase {
         // `list(from: boxes)` where elements are mutable `Box` is NOT `unique` -> cannot freeze!
         assertHasError("""
                 def Box = class (def x: int) ()
-                def bad = fn (borrow src: list of Box): frozen list of Box -> (
+                def bad = fn (src: list of Box): frozen list of Box -> (
                     def cp = list(from: src)
                     freeze(cp)
                 )
@@ -372,17 +372,17 @@ public class OwnershipTestCase {
         // Storing a shared param into a unique list demotes the list -> cannot freeze!
         assertHasError("""
                 def Box = class (def x: int) ()
-                def bad = fn (shared: Box): frozen list of Box -> (
+                def bad = fn (shared s: Box): frozen list of Box -> (
                     def xs = list(Box(1))
-                    xs.add(shared)
+                    xs.add(s)
                     freeze(xs)
                 )
                 """, "Cannot freeze expression");
 
-        // `@Unique` Java method annotation produces a `unique` list usable in `pure` & `freeze`!
+        // `@Unique` Java method annotation produces a `unique` list usable in pure `fn` & `freeze`!
         String javaUnique = """
                 def UF = import("org.babblelang.tests").OwnershipTestCase.UniqueFactory
-                def make = fn pure (): frozen java.util.List of int? -> (
+                def make = fn (): frozen java.util.List of int? -> (
                     def xs = UF.freshList()!
                     xs.add(42)
                     freeze(xs)
@@ -392,11 +392,11 @@ public class OwnershipTestCase {
         assertClean(javaUnique);
         Assertions.assertEquals(42, evalBothModes(javaUnique));
 
-        // `axiom unique on ...` also produces a `unique` list!
+        // `axiom pure unique on ...` also produces a `unique` list!
         String axiomUnique = """
                 def UF = import("org.babblelang.tests").OwnershipTestCase.UniqueFactory
-                axiom pure deterministic unique on UF.unannotatedList
-                def make = fn pure (): frozen java.util.List of int? -> (
+                axiom pure unique on UF.unannotatedList
+                def make = fn (): frozen java.util.List of int? -> (
                     def xs = UF.unannotatedList()!
                     xs.add(7)
                     freeze(xs)
@@ -405,6 +405,272 @@ public class OwnershipTestCase {
                 """;
         assertClean(axiomUnique);
         Assertions.assertEquals(7, evalBothModes(axiomUnique));
+    }
+
+    @Test
+    public void testBip016FrozenSubtypingAndIoOrthogonality() throws Exception {
+        // BIP016-D5 / §4.1: `frozen T <: @CONST @BORROWED T` — frozen values pass directly to default read-only borrowed params
+        String frozenBorrow = """
+                def Box = class (def x: int) ()
+                def read = fn (b: Box): int -> ( b.x * 2 )
+                def run = fn (): int -> (
+                    def fb = freeze(Box(21))
+                    read(fb)
+                )
+                run()
+                """;
+        assertClean(frozenBorrow);
+        Assertions.assertEquals(42, evalBothModes(frozenBorrow));
+
+        // `frozen T` CANNOT be passed to `shared`, `mut`, or `unique` parameters!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def keep = fn (shared b: Box): Box -> ( b )
+                def run = fn (): Box -> ( keep(freeze(Box(1))) )
+                """, "Type error : expected Box, got frozen Box");
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def inc = fn (mut b: Box) -> ( b.x = b.x + 1 )
+                def run = fn () -> ( inc(freeze(Box(1))) )
+                """, "Type error : expected Box, got frozen Box");
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def take = fn (unique b: Box): int -> ( b.x )
+                def run = fn (): int -> ( take(freeze(Box(1))) )
+                """, "Type error : expected Box, got frozen Box");
+
+        // BIP016-D5: `io` is orthogonal to `unique`, `@BORROWED`, and `frozen`
+        String ioOrtho = """
+                def Box = class (def x: int) ()
+                def logAndFreeze = fn io (): frozen Box -> (
+                    def b = Box(7)
+                    println(b.x)
+                    b.x = 8
+                    def fb = freeze(b)
+                    println(fb.x)
+                    fb
+                )
+                logAndFreeze().x
+                """;
+        assertClean(ioOrtho);
+        Assertions.assertEquals(8, evalBothModes(ioOrtho));
+
+        // `io` still enforces `@BORROWED` store-escape on default parameters!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def sink: Box? = null
+                def bad = fn io (b: Box) -> ( println(b.x); sink = b )
+                """, "Borrowed parameter b escapes");
+
+        // `unique` is mutually exclusive with `shared` and `mut`
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def bad = fn (unique shared b: Box): int -> ( b.x )
+                """, "mutually exclusive");
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def bad = fn (unique mut b: Box): int -> ( b.x )
+                """, "mutually exclusive");
+    }
+
+    @Test
+    public void testBip016D10ReturnThroughBorrowIdMinAndSoundness() throws Exception {
+        // BIP016-D10: `id` and `min` require ZERO `shared` keywords and do NOT virally infect callers!
+        String idAndMin = """
+                def Box = class (def x: int) ()
+                def id of T = fn (x: T): T -> ( x )
+                def min of T = fn (a: T, b: T, cmp: fn (x: T, y: T): int): T -> (
+                    if cmp(a, b) < 0 then ( a ) else ( b )
+                )
+                def cmpBox = fn (a: Box, b: Box): int -> ( a.x - b.x )
+                def smallestX = fn (a: Box, b: Box): int -> (
+                    min(id(a), id(b), cmpBox).x
+                )
+                def bumpSmallest = fn (mut a: Box, mut b: Box): int -> (
+                    def m = min(a, b, cmpBox)
+                    m.x = m.x + 10
+                    m.x
+                )
+                def runFrozen = fn (): int -> (
+                    def f1 = freeze(Box(7))
+                    def f2 = freeze(Box(3))
+                    def fm: frozen Box = min(id(f1), id(f2), cmpBox)
+                    fm.x
+                )
+                def a = Box(5)
+                def b = Box(2)
+                smallestX(a, b) * 100 + bumpSmallest(a, b) * 10 + runFrozen()
+                """;
+        assertClean(idAndMin);
+        Assertions.assertEquals(2 * 100 + 12 * 10 + 3, evalBothModes(idAndMin));
+
+        // Soundness #1: mutating returned reference from borrowed params is rejected!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def id of T = fn (x: T): T -> ( x )
+                def bad = fn (b: Box) -> ( id(b).x = 99 )
+                """, "Cannot mutate parameter b");
+
+        // Soundness #2: storing returned reference from borrowed params into global/field is rejected!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def id of T = fn (x: T): T -> ( x )
+                def sink: Box? = null
+                def bad = fn io (b: Box) -> ( sink = id(b) )
+                """, "Borrowed parameter b escapes");
+
+        // Soundness #3 (Hole 1): `def alias = id(u)` demotes `u` from @UNIQUE so `freeze(u)` is rejected!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def id of T = fn (x: T): T -> ( x )
+                def exploit = fn (): frozen Box -> (
+                    def u = Box(1)
+                    def alias = id(u)
+                    def fu = freeze(u)
+                    alias.x = 99
+                    fu
+                )
+                """, "Cannot freeze expression");
+
+        // Soundness #4 (Hole 1): `def alias = id(u); swap(u, alias)` is rejected by exclusivity!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def id of T = fn (x: T): T -> ( x )
+                def swap = fn (mut a: Box, mut b: Box) -> (
+                    def t = a.x
+                    a.x = b.x
+                    b.x = t
+                )
+                def bad = fn () -> (
+                    def u = Box(1)
+                    def alias = id(u)
+                    swap(u, alias)
+                )
+                """, "Exclusivity error");
+
+        // Soundness #5 (Hole 2): `unwrap(fb)` and `id<Box>(fb)` CANNOT unfreeze `frozen Box` into mutable `Box`!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def unwrap = fn (b: Box): Box -> ( b )
+                def exploit = fn (): int -> (
+                    def fb: frozen Box = freeze(Box(1))
+                    def m: Box = unwrap(fb)
+                    m.x = 99
+                    fb.x
+                )
+                """, "Type error : expected Box, got frozen Box");
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def id of T = fn (x: T): T -> ( x )
+                def exploit = fn (): Box -> (
+                    def fb: frozen Box = freeze(Box(1))
+                    id of Box (fb)
+                )
+                """, "Type error : expected Box, got frozen Box");
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def Mapper = interface ( def transform: fn (b: Box): Box )
+                def bad = fn (m: Mapper, fb: frozen Box): Box -> ( m.transform(fb) )
+                """, "Type error : expected Box, got frozen Box");
+
+        // Positive counterpart: `clone` (inferred `uniqueResult`) and `: unique Box` interface ACCEPT `frozen Box`!
+        String cloneFrozen = """
+                def Box = class (def x: int) ()
+                def clone = fn (b: Box): Box -> ( Box(b.x + 1) )
+                def Cloner = interface ( def clone: fn (b: Box): unique Box )
+                def BoxCloner = class () implements Cloner (
+                    def clone = fn (b: Box): unique Box -> ( Box(b.x + 2) )
+                )
+                def useCloner = fn (c: Cloner, fb: frozen Box): Box -> ( c.clone(fb) )
+                def fb = freeze(Box(10))
+                clone(fb).x + useCloner(BoxCloner(), fb).x
+                """;
+        assertClean(cloneFrozen);
+        Assertions.assertEquals(23, evalBothModes(cloneFrozen));
+    }
+
+    @Test
+    public void testBip016D9StatelessObjectsAndLocalContainerPrecision() throws Exception {
+        // BIP016-D9 Fix #1: Stateless object singletons are deeply immutable (no `volatile` needed)
+        String stateless = """
+                def Hit = interface ( def score: fn (): int )
+                def EmptyHit = object implements Hit (
+                    def score = fn (): int -> ( 0 )
+                )
+                def pick = fn (flag: bool): Hit -> (
+                    if flag then ( EmptyHit ) else ( EmptyHit )
+                )
+                pick(true).score()
+                """;
+        assertClean(stateless);
+        Assertions.assertEquals(0, evalBothModes(stateless));
+
+        // Stateful object singleton (has a non-function field) still requires `volatile`!
+        assertHasError("""
+                def Stateful = object (
+                    def count: int = 1
+                )
+                def bad = fn (): int -> ( Stateful.count )
+                """, "volatile");
+
+        // BIP016-D9 Fix #2 + D10: Pure local container holding borrowed elements stays pure & deterministic with 0 `mut`/`shared`!
+        String localContainer = """
+                def Box = class (def x: int) ()
+                def Bag = class (
+                    def first: Box? = null,
+                    def count: int = 0
+                ) (
+                    def add = fn mut (shared b: Box) -> (
+                        if this.first == null then ( this.first = b )
+                        this.count = this.count + 1
+                    )
+                )
+                def pickFirst = fn (a: Box, b: Box): Box -> (
+                    def bag = Bag()
+                    bag.add(a)
+                    bag.add(b)
+                    bag.first!
+                )
+                pickFirst(Box(9), Box(10)).x
+                """;
+        assertClean(localContainer);
+        Assertions.assertEquals(9, evalBothModes(localContainer));
+
+        // Soundness check #1: Local container that absorbed shared elements is NOT unique -> cannot freeze!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def bad = fn (shared a: Box): frozen list of Box -> (
+                    def xs = list(a)
+                    freeze(xs)
+                )
+                """, "Cannot freeze expression");
+
+        // Soundness check #2: Mutating an element read back from a local container is rejected in pure fn!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def Bag = class (def first: Box? = null) (
+                    def add = fn mut (shared b: Box) -> ( this.first = b )
+                )
+                def bad = fn (a: Box): int -> (
+                    def bag = Bag()
+                    bag.add(a)
+                    bag.first!.x = 99
+                    bag.first!.x
+                )
+                """, "Cannot mutate parameter a");
+
+        // Soundness check #3: Calling a deep-mutating method (`deepMutThis`) on a local container holding `a` is rejected!
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def Holder = class (def inner: Box) (
+                    def poke = fn mut () -> ( this.inner.x = 99 )
+                )
+                def bad = fn (a: Box): int -> (
+                    def h = Holder(a)
+                    h.poke()
+                    a.x
+                )
+                """, "Cannot mutate parameter a");
     }
 
     @Test
@@ -441,7 +707,7 @@ public class OwnershipTestCase {
                 )
                 """, "Unused pure expression");
         String withDiscard = """
-                def f = fn pure deterministic nothrow (s: string): string -> (
+                def f = fn nothrow (s: string): string -> (
                     discard(s.trim())
                     s
                 )

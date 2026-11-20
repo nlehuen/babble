@@ -4,7 +4,7 @@
 def x = 10
 def acc = 0
 ----------
-def inc = fn (k : int) : int -> ( acc += k ; acc )
+def inc = fn io (k : int) : int -> ( acc += k ; acc )
 println(x, ":", inc(5))
 ----------
 def x = "shadowed"

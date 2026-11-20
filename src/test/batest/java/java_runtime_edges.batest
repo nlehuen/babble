@@ -28,13 +28,13 @@ Type error : expected int, got null
 
 {{{{{
 ;; JavaTypes.wrapInvocationException with NullPointerException (null message) and exception message
-def bad = fn () -> ( java.util.Objects.requireNonNull(null) )
+def bad = fn io () -> ( java.util.Objects.requireNonNull(null) )
 bad()
 }}}}}
 java.lang.NullPointerException
 
 {{{{{
-def bad = fn () -> ( java.lang.Integer.parseInt("notanumber") )
+def bad = fn io () -> ( java.lang.Integer.parseInt("notanumber") )
 bad()
 }}}}}
 java.lang.NumberFormatException : For input string: "notanumber"
@@ -84,11 +84,11 @@ java.lang.IllegalArgumentException : object is not an instance of declaring clas
 {{{{{
 ;; JavaLinker selectCache + BoundJavaMethod calls + BabbleInstance/callable Object args
 def sb = java.lang.StringBuilder("hello")
-def getLen : fn () : int = sb.length
-def appStr : fn (s : string) : java.lang.StringBuilder = sb.append
-def appInt : fn (n : int) : java.lang.StringBuilder = sb.append
-def appBool : fn (b : bool) : java.lang.StringBuilder = sb.append
-def appDbl : fn (d : double) : java.lang.StringBuilder = sb.append
+def getLen : fn io () : int = sb.length
+def appStr : fn io (s : string) : java.lang.StringBuilder = sb.append
+def appInt : fn io (n : int) : java.lang.StringBuilder = sb.append
+def appBool : fn io (b : bool) : java.lang.StringBuilder = sb.append
+def appDbl : fn io (d : double) : java.lang.StringBuilder = sb.append
 appStr("!")
 appInt(7)
 appBool(true)
@@ -107,7 +107,7 @@ println(getLen(), ":", sb.toString(), ":", objList.get(0), ":", objList.size())
 {{{{{
 ;; Dynamic JavaLinker wrong arg types through dynamic BoundJavaMethod calls
 def dyn = fn (v : any) : any -> ( v )
-def parse : fn (s : string) : int = java.lang.Integer.parseInt
+def parse : fn io (s : string) : int = java.lang.Integer.parseInt
 def s = dyn(123)
 println(java.lang.Integer.parseInt(s as string))
 }}}}}
@@ -258,7 +258,7 @@ false:true:true:x7
 {{{{{
 ;; Faces FaceHandler & JavaTypes checkParameter with BabbleInstance implementing Java interface
 def R = class () implements java.lang.Runnable (
-    def run = fn () -> ( println("ran") )
+    def run = fn io () -> ( println("ran") )
 )
 def r : java.lang.Runnable = R()
 r.run()

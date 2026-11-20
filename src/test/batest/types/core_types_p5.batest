@@ -1,18 +1,18 @@
-;; BIP011-P5: Built-In BIP007 Core Effect Profiles (zero axiom boilerplate)
+;; BIP011-P5 / BIP016: Built-In Core Effect Profiles (zero axiom boilerplate)
 
 {{{{{
 ;; Pure deterministic nothrow scalars, total widening conversions, string total methods, and immutable entry
-def fScalar = fn pure deterministic nothrow (b : byte, c : char) : double -> (
+def fScalar = fn nothrow (b : byte, c : char) : double -> (
     def i : int = int(b) + int(c)
     double(i) + 1.5
 )
-def fStr = fn pure deterministic nothrow (s : string) : int -> (
+def fStr = fn nothrow (s : string) : int -> (
     def t = s.trim().toUpperCase()
     if t.isEmpty() or t.isBlank() then ( 0 )
     else if t.startsWith("A") then ( t.length() + string(42).length() )
     else ( t.length() )
 )
-def fEntry = fn pure deterministic nothrow (k : string, v : int) : int -> (
+def fEntry = fn nothrow (k : string, v : int) : int -> (
     def e = entry(k, v)
     e.getKey().length() + e.getValue()
 )
@@ -22,37 +22,37 @@ println(fScalar(byte(2), 'A'), ":", fStr("  abc "), ":", fEntry("hi", 5))
 
 {{{{{
 ;; Non-nothrow scalar conversions, string index/regex methods, and e! cannot claim nothrow
-def badParse = fn pure deterministic nothrow (s : string) : int -> ( int(s) )
+def badParse = fn nothrow (s : string) : int -> ( int(s) )
 }}}}}
 Function badParse declared nothrow violates nothrow guarantee
 
 {{{{{
-def badCharAt = fn pure deterministic nothrow (s : string) : char -> ( s.charAt(0) )
+def badCharAt = fn nothrow (s : string) : char -> ( s.charAt(0) )
 }}}}}
 Function badCharAt declared nothrow violates nothrow guarantee
 
 {{{{{
-def badBang = fn pure deterministic nothrow (x : int?) : int -> ( x! )
+def badBang = fn nothrow (x : int?) : int -> ( x! )
 }}}}}
 Function badBang declared nothrow violates nothrow guarantee
 
 {{{{{
-def okParse = fn pure deterministic (s : string) : int -> ( int(s) )
-def okCharAt = fn pure deterministic (s : string) : char -> ( s.charAt(0) )
-def okBang = fn pure deterministic (x : int?) : int -> ( x! )
+def okParse = fn (s : string) : int -> ( int(s) )
+def okCharAt = fn (s : string) : char -> ( s.charAt(0) )
+def okBang = fn (x : int?) : int -> ( x! )
 println(okParse("42"), ":", okCharAt("xy"), ":", okBang(7))
 }}}}}
 42:x:7
 
 {{{{{
-;; Core collections: hermetic deterministic with zero axioms
-def buildAndRead = fn hermetic deterministic () : int -> (
+;; Core collections: pure deterministic with zero axioms
+def buildAndRead = fn () : int -> (
     def xs = list(10, 20, 30)
     def s = set("a", "b")
     def m = map(entry("k", 7))
     xs.size() + xs.get(1) + s.size() + (m.get("k")!)
 )
-def emptyNothrow = fn hermetic deterministic nothrow () : int -> (
+def emptyNothrow = fn nothrow () : int -> (
     def xs = list of int ()
     def s = set of string ()
     def m = map of (string, int) ()
@@ -63,14 +63,14 @@ println(buildAndRead(), ":", emptyNothrow())
 32:0
 
 {{{{{
-;; Borrow collection readers + covariance + list(from: xs) borrowing
-def sumSize = fn hermetic deterministic (borrow xs : list of any) : int -> (
+;; Default-borrowed collection readers + covariance + list(from: xs) borrowing
+def sumSize = fn (xs : list of any) : int -> (
     xs.size()
 )
-def cloneList = fn hermetic deterministic (borrow xs : list of int) : list of int -> (
+def cloneList = fn (xs : list of int) : list of int -> (
     list of int (from: xs)
 )
-def readMap = fn hermetic deterministic (borrow m : map of (string, int), k : string) : int -> (
+def readMap = fn (m : map of (string, int), k : string) : int -> (
     if m.containsKey(k) then ( m.getOrDefault(k, 0) ) else ( 0 )
 )
 def nums = list(1, 2, 3)
@@ -82,12 +82,12 @@ println(sumSize(nums), ":", cloned, ":", readMap(m, "a"), ":", readMap(m, "b"))
 
 {{{{{
 ;; Mutators on mut collection parameters
-def appendAndSet = fn hermetic deterministic (mut xs : list of int, v : int) : int -> (
+def appendAndSet = fn (mut xs : list of int, v : int) : int -> (
     xs.add(v)
     xs.set(0, 99)
     xs.size()
 )
-def putEntry = fn hermetic deterministic (mut m : map of (string, int), k : string, v : int) : int? -> (
+def putEntry = fn (mut m : map of (string, int), k : string, v : int) : int? -> (
     m.put(k, v)
 )
 def xs = list(1, 2)
@@ -97,28 +97,28 @@ println(appendAndSet(xs, 3), ":", xs, ":", putEntry(m, "x", 42), ":", m)
 3:[99, 2, 3]:null:{x=42}
 
 {{{{{
-;; Pure rejects external collection mutation (fresh local list is unique under BIP007-P2)
+;; Pure-by-default rejects external collection mutation (fresh local list is unique under BIP007-P2)
 def g = list(1, 2)
-def badPureList = fn pure () : list of int -> (
+def badPureList = fn () : list of int -> (
     g.add(3)
     g
 )
 }}}}}
-Function badPureList declared pure violates pure guarantee
+Function badPureList violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
 ;; Non-mut parameter cannot be mutated via collection mutator
-def badMut = fn hermetic (xs : list of int) -> ( xs.add(1) )
+def badMut = fn (xs : list of int) -> ( xs.add(1) )
 }}}}}
 Cannot mutate parameter xs (mut Java method xs.add) : mark parameter as mut xs
 
 {{{{{
 ;; Collection view/iterator sub-reference tracking (subList, keySet)
-def mutSub = fn hermetic deterministic (mut xs : list of int) -> (
+def mutSub = fn (mut xs : list of int) -> (
     def sub = xs.subList(0, 1)
     sub.add(99)
 )
-def mutKeySet = fn hermetic deterministic (mut m : map of (string, int)) -> (
+def mutKeySet = fn (mut m : map of (string, int)) -> (
     def ks = m.keySet()
     ks.remove("a")
 )
@@ -131,8 +131,8 @@ println(xs, ":", m)
 [1, 99, 2]:{b=2}
 
 {{{{{
-;; Mutating a view of a borrow/non-mut parameter is rejected
-def badSubMut = fn hermetic (borrow xs : list of int) -> (
+;; Mutating a view of a default-borrowed/non-mut parameter is rejected
+def badSubMut = fn (xs : list of int) -> (
     def sub = xs.subList(0, 1)
     sub.add(99)
 )
@@ -140,16 +140,17 @@ def badSubMut = fn hermetic (borrow xs : list of int) -> (
 Cannot mutate parameter xs (mut Java method sub.add) : mark parameter as mut xs
 
 {{{{{
-;; Returning a view of a borrow parameter is rejected as borrow escape
-def badSubEscape = fn hermetic (borrow xs : list of int) : list of int -> (
-    return xs.subList(0, 1)
+;; Storing a view of a borrowed parameter into an outer binding is rejected as borrow escape
+def sink : (list of int)? = null
+def badSubEscape = fn io (xs : list of int) -> (
+    sink = xs.subList(0, 1)
 )
 }}}}}
-borrow parameter xs escapes via return value
+Borrowed parameter xs escapes via outer variable sink : mark parameter as shared xs
 
 {{{{{
-;; Mutating a keySet view of a borrow map parameter is rejected
-def badKeySetMut = fn hermetic (borrow m : map of (string, int)) -> (
+;; Mutating a keySet view of a default-borrowed map parameter is rejected
+def badKeySetMut = fn (m : map of (string, int)) -> (
     def ks = m.keySet()
     ks.remove("a")
 )
@@ -158,11 +159,11 @@ Cannot mutate parameter m (mut Java method ks.remove) : mark parameter as mut m
 
 {{{{{
 ;; list.get(i) is not nothrow; list.size() is nothrow
-def badGet = fn hermetic deterministic nothrow (borrow xs : list of int) : int -> ( xs.get(0) )
+def badGet = fn nothrow (xs : list of int) : int -> ( xs.get(0) )
 }}}}}
 Function badGet declared nothrow violates nothrow guarantee
 
 {{{{{
-def badCap = fn hermetic deterministic nothrow () : list of int -> ( list of int (capacity: 4) )
+def badCap = fn nothrow () : list of int -> ( list of int (capacity: 4) )
 }}}}}
 Function badCap declared nothrow violates nothrow guarantee

@@ -57,7 +57,7 @@ Missing type : cannot infer type arguments for java.util.function.Function
 ;; Generic interface extending generic interface with default substitution
 def BaseI of A = interface (
     def get : fn () : A
-    def pair = fn () : java.util.List of A -> (
+    def pair = fn io shared () : java.util.List of A -> (
         def out : java.util.List of A = java.util.ArrayList()
         out.add(this.get())
         out

@@ -6,9 +6,12 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Explicitly marks a Java type, method, or constructor as {@link Effect#IMPURE}. */
+/**
+ * Declares {@link Effect#SHARED} ({@code !@BORROWED}) on a Java type, method receiver, constructor,
+ * or parameter (BIP016-D4, D8).
+ */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
-@Target({ElementType.TYPE, ElementType.METHOD, ElementType.CONSTRUCTOR})
-public @interface Impure {
+@Target({ElementType.TYPE, ElementType.METHOD, ElementType.CONSTRUCTOR, ElementType.PARAMETER})
+public @interface Shared {
 }

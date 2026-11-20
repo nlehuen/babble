@@ -1,5 +1,9 @@
 ;; Constants and utility functions : rtweekend.h in the book.
 
+export axiom pure nothrow on java.lang.Math
+export axiom mut nothrow on java.util.Random.nextDouble
+export axiom pure unique on java.util.ArrayList()
+
 export def Math = java.lang.Math
 export def infinity = java.lang.Double.POSITIVE_INFINITY
 export def pi = Math.PI
@@ -7,4 +11,4 @@ export def pi = Math.PI
 export def degreesToRadians = fn (degrees: double): double -> (degrees * pi / 180.0)
 
 ;; A random real in [min, max)
-export def randomDouble = fn (rng: java.util.Random, min: double = 0.0, max: double = 1.0): double -> (min + (max - min) * rng.nextDouble())
+export def randomDouble = fn (mut rng: java.util.Random, min: double = 0.0, max: double = 1.0): double -> (min + (max - min) * rng.nextDouble())

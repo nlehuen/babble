@@ -10,7 +10,7 @@ def ScatterResult = import("interfaces.ba").ScatterResult
 ;; 2.7 Materials: Lambertian (diffuse), Metal (reflective), Dielectric (glass)
 ;; ------------------------------------------------------------------------
 export def Lambertian = class (def albedo: Vec3) implements Material (
-    def scatter = fn hermetic deterministic nothrow borrow (borrow rIn: Ray, borrow rec: HitRecord, mut borrow rng: Rng): ScatterResult? -> (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult? -> (
         def scatterDirection: Vec3 = rec.normal + Vec3.randomUnitVector(rng)
         if scatterDirection.nearZero() then (
             scatterDirection = rec.normal
@@ -18,9 +18,9 @@ export def Lambertian = class (def albedo: Vec3) implements Material (
         ScatterResult(this.albedo, Ray(rec.p, scatterDirection))
     )
 
-    def kind = fn pure deterministic nothrow borrow (): string -> ("lambertian")
+    def kind = fn (): string -> ("lambertian")
 
-    def describe = fn pure deterministic nothrow borrow (): string -> (
+    def describe = fn (): string -> (
         super.describe() + "(" + this.albedo + ")"
     )
 )
@@ -28,7 +28,7 @@ export def Lambertian = class (def albedo: Vec3) implements Material (
 export def Metal = class (def albedo: Vec3, fuzzIn: double = 0.0) implements Material (
     def fuzz: double = if fuzzIn < 1.0 then (math.max(0.0, fuzzIn)) else (1.0)
 
-    def scatter = fn hermetic deterministic nothrow borrow (borrow rIn: Ray, borrow rec: HitRecord, mut borrow rng: Rng): ScatterResult? -> (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult? -> (
         def reflected: Vec3 = rIn.dir.reflect(rec.normal)
         reflected = reflected.unit() + Vec3.randomUnitVector(rng) * this.fuzz
         if reflected.dot(rec.normal) > 0.0 then (
@@ -38,15 +38,15 @@ export def Metal = class (def albedo: Vec3, fuzzIn: double = 0.0) implements Mat
         )
     )
 
-    def kind = fn pure deterministic nothrow borrow (): string -> ("metal")
+    def kind = fn (): string -> ("metal")
 
-    def describe = fn pure deterministic nothrow borrow (): string -> (
+    def describe = fn (): string -> (
         super.describe() + "(fuzz=" + this.fuzz + ")"
     )
 )
 
 export def Dielectric = class (def refractionIndex: double) implements Material (
-    def scatter = fn hermetic deterministic nothrow borrow (borrow rIn: Ray, borrow rec: HitRecord, mut borrow rng: Rng): ScatterResult? -> (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult? -> (
         def ri: double = if rec.frontFace then (
             1.0 / this.refractionIndex
         ) else (
@@ -64,10 +64,10 @@ export def Dielectric = class (def refractionIndex: double) implements Material 
         ScatterResult(Vec3.one, Ray(rec.p, direction))
     )
 
-    def kind = fn pure deterministic nothrow borrow (): string -> ("dielectric")
+    def kind = fn (): string -> ("dielectric")
 ) static (
     ;; Schlick's approximation for reflectance
-    def reflectance = fn pure deterministic nothrow (cosine: double, refractionIndex: double): double -> (
+    def reflectance = fn (cosine: double, refractionIndex: double): double -> (
         def r0: double = (1.0 - refractionIndex) / (1.0 + refractionIndex)
         r0 *= r0
         r0 + (1.0 - r0) * math.powInt(1.0 - cosine, 5)

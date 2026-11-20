@@ -17,20 +17,20 @@ coreScalarKeyword: BYTE | SHORT | INT_KW | LONG_KW | FLOAT_KW | DOUBLE_KW | BOOL
 
 coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 
-effectModifier: PURE | HERMETIC | MUT | BORROW | DETERMINISTIC | NOTHROW
+effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | IMPURE | RECORD | OF | UNIQUE | FROZEN;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN;
 
 effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
 
 effectTarget: (ID '(' STRING ')' | memberName) ('.' memberName)*;
 
-effectClause: (AXIOM | IMPURE) (effectWord | UNIQUE)*;
+effectClause: (AXIOM | IO) (effectWord | UNIQUE)*;
 
 effectPrefix: effectWord+;
 
-effectWord: AXIOM | IMPURE | effectModifier;
+effectWord: AXIOM | effectModifier;
 
 expression:
           ifExpr                                              # ifExpression
@@ -106,7 +106,7 @@ fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* NL* ')'
 
 fnTypeParam: paramModifier* (ID ':')? type;
 
-paramModifier: MUT | BORROW | UNIQUE;
+paramModifier: MUT | SHARED | UNIQUE;
 
 typeParameters: ID
               | '(' NL* ID (NL* ',' NL* ID)* NL* ')';
@@ -203,14 +203,13 @@ FN: 'fn';
 OF: 'of';
 ON: 'on';
 AXIOM: 'axiom';
-IMPURE: 'impure';
 PURE: 'pure';
-HERMETIC: 'hermetic';
+VOLATILE: 'volatile';
+IO: 'io';
 MUT: 'mut';
-BORROW: 'borrow';
+SHARED: 'shared';
 UNIQUE: 'unique';
 FROZEN: 'frozen';
-DETERMINISTIC: 'deterministic';
 NOTHROW: 'nothrow';
 IDEMPOTENT: 'idempotent';
 COMMUTATIVE: 'commutative';

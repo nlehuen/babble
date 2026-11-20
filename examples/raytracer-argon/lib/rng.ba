@@ -3,7 +3,7 @@
 ;; Exploits Babble's 32-bit signed integer wrap-around on int * int + int.
 ;; ------------------------------------------------------------------------
 export def Rng = class (private def seed: int = 1337) (
-    def nextDouble = fn hermetic mut borrow deterministic nothrow (): double -> (
+    def nextDouble = fn mut (): double -> (
         this.seed = this.seed * 1664525 + 1013904223
         def u: double = if this.seed < 0 then (
             this.seed + 2147483648.0
@@ -13,7 +13,7 @@ export def Rng = class (private def seed: int = 1337) (
         u / 2147483648.0
     )
 
-    def nextRange = fn hermetic mut borrow deterministic nothrow (minVal: double, maxVal: double): double -> (
+    def nextRange = fn mut (minVal: double, maxVal: double): double -> (
         minVal + (maxVal - minVal) * this.nextDouble()
     )
 )

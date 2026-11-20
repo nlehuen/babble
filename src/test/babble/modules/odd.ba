@@ -1,7 +1,7 @@
 def parity = import("parity.ba")
 def even = import("even.ba")
 
-export def isOdd = fn (n: int): bool -> (
+export def isOdd = fn volatile (n: int): bool -> (
     if n == 0 then (false) else (
         def f = parity.state.even
         if f != null then (f(n - 1)) else (false)

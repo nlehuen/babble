@@ -286,8 +286,9 @@ final class TypeAlgebra {
                 }
                 return false;
             }
-            if (sub instanceof Type.Frozen) {
-                return false;
+            if (sub instanceof Type.Frozen subf) {
+                return mode != RelateMode.RUNTIME_EXACT && borrowCovariant
+                        && relate(subf.of(), sup, mode, store, active, true);
             }
             if (sup == Type.ANY) {
                 return true;
@@ -417,10 +418,12 @@ final class TypeAlgebra {
                 || from.parameters().size() < to.parameters().size()) {
             return false;
         }
+        boolean frozenBorrowSafe = from.effects().uniqueResult() || env.isDeeplyImmutable(from.result());
         for (int i = 0; i < from.parameters().size(); i++) {
             Type.Parameter fp = from.parameters().get(i);
+            boolean borrowReadOnly = frozenBorrowSafe && fp.borrow() && !fp.mut();
             if (i < to.parameters().size()
-                    ? !relate(to.parameters().get(i).type(), fp.type(), RelateMode.ASSIGNABLE, store, active, false)
+                    ? !relate(to.parameters().get(i).type(), fp.type(), RelateMode.ASSIGNABLE, store, active, borrowReadOnly)
                     : !fp.optional()) {
                 return false;
             }
@@ -685,7 +688,7 @@ final class TypeAlgebra {
             boolean mut = a.mut() || b.mut();
             anyMutParam |= mut;
             params.add(new Type.Parameter(a.name(), a.type(), a.optional(), mut,
-                    a.borrow() && b.borrow(), a.explicitBorrow() && b.explicitBorrow(),
+                    a.borrow() && b.borrow(), a.explicitShared() || b.explicitShared(),
                     a.unique() || b.unique()));
         }
         EffectSet common = first.effects().intersect(second.effects());
@@ -695,8 +698,8 @@ final class TypeAlgebra {
             EnumSet<Effect> decl = EffectSet.copySet(common.declared());
             decl.remove(Effect.PURE);
             common = new EffectSet(effs, decl, common.mutThis(), common.borrowThis(),
-                    common.explicitBorrowThis(), common.uniqueResult(), common.explicitUniqueResult(),
-                    common.terminating(), false, common.axiomatic());
+                    common.explicitSharedThis(), common.uniqueResult(), common.explicitUniqueResult(),
+                    common.terminating(), common.isIO(), common.explicitVolatile(), common.axiomatic());
         }
         return new Type.Function(first.typeParameters(), params, first.result(), common);
     }

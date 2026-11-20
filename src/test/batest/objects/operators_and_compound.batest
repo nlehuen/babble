@@ -26,7 +26,7 @@ Vec(x: 1.0, y: 1.0)
 ;; Compound assignment on member field evaluates receiver only once
 def Box = class (def x : int) ()
 def calls = 0
-def getBox = fn (b : Box) : Box -> ( calls += 1 ; b )
+def getBox = fn io (b : Box) : Box -> ( calls += 1 ; b )
 def b = Box(10)
 getBox(b).x += 5
 getBox(b).x -= 3
@@ -40,7 +40,7 @@ Type error : expected int, got double
 ;; Single evaluation of receiver for +=, -=, *= on mutable object field
 def Box = class (def x : double) ()
 def calls = 0
-def getBox = fn (b : Box) : Box -> ( calls += 1 ; b )
+def getBox = fn io (b : Box) : Box -> ( calls += 1 ; b )
 def b = Box(10.0)
 getBox(b).x += 5
 getBox(b).x -= 3

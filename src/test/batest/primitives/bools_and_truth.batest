@@ -2,7 +2,7 @@
 
 {{{{{
 def calls = 0
-def bump = fn (r : bool) : bool -> ( calls += 1 ; r )
+def bump = fn io (r : bool) : bool -> ( calls += 1 ; r )
 println(false and bump(true), ":", calls)
 println(true or bump(true), ":", calls)
 println(true and bump(true), ":", calls)

@@ -188,8 +188,9 @@ final class TypeAnnotations {
 
     Type nonParenAnnotation(BabbleParser.NonParenNullableTypeContext primary, ScopeNode scope, boolean allowRaw) {
         if (primary instanceof BabbleParser.FunctionTypeContext function) {
+            boolean interfaceMethod = isDirectInterfaceMethodType(function, scope);
             EffectSet effs = checker.effectChecker != null
-                    ? checker.effectChecker.parseFunctionTypePrefix(function, checker.checkingEffects()).toEffectSet()
+                    ? checker.effectChecker.parseFunctionTypePrefix(function, interfaceMethod, checker.checkingEffects()).toEffectSet()
                     : EffectSet.EMPTY;
             return new Type.Function(functionTypeParameters(function.fnTypeParameters(), scope),
                     function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY,
@@ -244,6 +245,20 @@ final class TypeAnnotations {
         return simple.nonParenNullableType() != null ? simple.nonParenNullableType() : simple.type(index);
     }
 
+    private static boolean isDirectInterfaceMethodType(BabbleParser.FunctionTypeContext fn, ScopeNode scope) {
+        if (scope == null || scope.kind != ScopeNode.Kind.INTERFACE_BODY) {
+            return false;
+        }
+        ParserRuleContext p = fn.getParent();
+        if (p instanceof BabbleParser.NonParenTypeContext) {
+            p = p.getParent();
+        }
+        if (p instanceof BabbleParser.TypeContext) {
+            p = p.getParent();
+        }
+        return p instanceof BabbleParser.DefExpressionContext def && def.value == null;
+    }
+
     private List<Type.Parameter> functionTypeParameters(BabbleParser.FnTypeParametersContext declaration, ScopeNode scope) {
         List<Type.Parameter> result = new ArrayList<>();
         int index = 0;
@@ -253,8 +268,9 @@ final class TypeAnnotations {
                     ? checker.effectChecker.parseParamMods(parameter, checker.checkingEffects())
                     : EffectChecker.ParamMods.NONE;
             String name = parameter.ID() != null ? parameter.ID().getText() : "p" + index;
+            boolean borrow = checker.effectChecker != null && !pm.shared() && !pm.unique();
             result.add(new Type.Parameter(name, type, false,
-                    pm.mut(), pm.borrow(), pm.borrow(), pm.unique()));
+                    pm.mut(), borrow, pm.shared(), pm.unique()));
             index++;
         }
         return result;

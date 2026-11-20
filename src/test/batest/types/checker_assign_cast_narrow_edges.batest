@@ -107,8 +107,8 @@ false
 def Box = class (def n : int) ()
 def count = 0
 def func = fn (x : int) : int -> ( x + 1 )
-func = fn impure (x : int) : int -> ( count += 1 ; x + 2 )
-def fnMut : fn (mut b : Box) : int = fn (borrow b : Box) : int -> ( b.n )
+func = fn io (x : int) : int -> ( count += 1 ; x + 2 )
+def fnMut : fn (mut b : Box) : int = fn (b : Box) : int -> ( b.n )
 fnMut = fn (mut b : Box) : int -> ( b.n += 1 ; b.n )
 def v : int? = null
 v = 42
@@ -117,7 +117,7 @@ w = null
 w = 2.5
 def pick = fn (flag : bool) -> (
     if flag then ( fn (x : int) : int -> ( x ) )
-    else ( fn impure (x : int) : int -> ( count += 1 ; x ) )
+    else ( fn io (x : int) : int -> ( count += 1 ; x ) )
 )
 def bx = Box(10)
 println(func(1), ":", count, ":", fnMut(bx), ":", v, ":", w, ":", pick(true)(5), ":", pick(false)(5), ":", count)
@@ -145,7 +145,7 @@ def v2 = Vec(2)
 def Box2 = class (def x : int) (
     def plus = fn (o : Vec) : Vec -> ( Vec(this.x + o.x + 10) )
 )
-def pick = fn (flag : bool) : Vec | Box2 -> ( if flag then ( v1 ) else ( Box2(1) ) )
+def pick = fn volatile (flag : bool) : Vec | Box2 -> ( if flag then ( v1 ) else ( Box2(1) ) )
 println((v1 + v2).x, ":", (v1 - v2).x, ":", (v1 * 3).x, ":", (v1 / 1).x, ":", (-v1).x, ":", (pick(false) + v2).x)
 }}}}}
 5:1:9:4:-3:13

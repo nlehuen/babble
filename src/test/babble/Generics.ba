@@ -28,7 +28,7 @@ def compose of (A, B, C) = fn (f: fn (b: B): C, g: fn (a: A): B, x: A): C -> (f(
 assert(compose(fn (s) -> (s + "!"), fn (n: int) -> ("" + n), 9) == "9!")
 
 ;; Recursive generic function
-def repeatText of T = fn (n: int, item: T): string -> (
+def repeatText of T = fn io (n: int, item: T): string -> (
     if n <= 0 then ("") else if n == 1 then ("" + item) else ("" + item + "," + recurse(n - 1, item))
 )
 assert(repeatText(3, 1) == "1,1,1")
@@ -83,7 +83,7 @@ assert(Tagged(true).value == true)
 
 def Container of T = interface (
     def get: fn (): T
-    def describe = fn (): string -> ("box:" + this.get())
+    def describe = fn io (): string -> ("box:" + this.get())
 )
 
 def Mappable of T = interface extends Container of T (
@@ -92,7 +92,7 @@ def Mappable of T = interface extends Container of T (
 
 def Holder of T = class (def item: T) implements Mappable of T (
     def get = fn (): T -> (this.item)
-    def describe = fn (): string -> ("[" + super.describe() + "]")
+    def describe = fn io (): string -> ("[" + super.describe() + "]")
 )
 
 def h = Holder(5)

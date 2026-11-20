@@ -12,7 +12,7 @@ def S4 = class (def x : int) implements Shape ( def val = fn () : int -> ( this.
 def S5 = class (def x : int) implements Shape ( def val = fn () : int -> ( this.x + 5 ) )
 def S6 = object implements Shape ( def x = 10 ; def val = fn () : int -> ( this.x + 6 ) )
 
-def pick = fn (i : int) : Shape -> (
+def pick = fn volatile (i : int) : Shape -> (
     def k = i - int(i / 6) * 6
     if k == 0 then ( S1(i) )
     else if k == 1 then ( S2(i) )

@@ -11,7 +11,7 @@ def Sphere = import("hittables.ba").Sphere
 ;; ------------------------------------------------------------------------
 export def Scenes = object (
     ;; Chapter 13: Hollow glass sphere + Lambertian center + Metal right
-    def threeSpheres = fn pure deterministic nothrow borrow (): unique HittableList -> (
+    def threeSpheres = fn (): unique HittableList -> (
         def world: HittableList = HittableList()
         world.add(Sphere(Vec3(0.0, -100.5, -1.0), 100.0, Lambertian(Vec3(0.8, 0.8, 0.0))))
         world.add(Sphere(Vec3(0.0, 0.0, -1.2), 0.5, Lambertian(Vec3(0.1, 0.2, 0.5))))
@@ -22,7 +22,7 @@ export def Scenes = object (
     )
 
     ;; Chapter 14: "Where Next?" Final Cover Scene
-    def finalScene = fn hermetic deterministic nothrow borrow (mut borrow rng: Rng = Rng(42), gridRadius: int = 11): unique HittableList -> (
+    def finalScene = fn (mut rng: Rng = Rng(42), gridRadius: int = 11): unique HittableList -> (
         def world: HittableList = HittableList()
 
         world.add(Sphere(Vec3(0.0, -1000.0, 0.0), 1000.0, Lambertian(Vec3(0.5, 0.5, 0.5))))
