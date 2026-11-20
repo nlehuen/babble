@@ -17,7 +17,13 @@ import java.lang.annotation.Target;
 @Target(ElementType.TYPE)
 public @interface Axioms {
     /** The class the axioms are about. */
-    Class<?> value();
+    Class<?> value() default void.class;
+
+    /**
+     * The class the axioms are about, by name, when it is usually not on the class path : the
+     * annotations of other libraries, whose meaning ({@link AnnotationMeaning}) the stub states.
+     */
+    String targetName() default "";
 
     /** Whether the axioms also hold for the subtypes of {@link #value()}. */
     boolean inherited() default true;

@@ -13,6 +13,7 @@ Everything the interpreter, the compiler, the analysis and the optimizer assume 
   * `@DeeplyImmutable`, on a stub : the target's instances are deeply immutable (when their type arguments are) ;
   * `@Constructor` : the stub method mirrors a constructor ; `@MethodName("getClass")` : it mirrors a method a stub cannot declare under its own name ;
   * `@Axioms(allMethods = @Profile(…))` and `@Axioms(allConstructors = @Profile(…))` state the profile of every method, or constructor, of the target.
+* **Annotations of other libraries** get a stub too, named after them, with `@Axioms(targetName = "lombok.NonNull")` since they are usually not on the class path, and `@AnnotationMeaning` stating what the analysis takes them to mean : non-null, nullable, null-marked or null-unmarked.
 * **Matching :** the most specific stub that lists a method (or states `allMethods`) gives everything the axioms say about it — so a stub method carries all its annotations, effects and nullness together. An axiom given in a program (`axiom … on …`), an engine override or an annotation on the Java class itself wins over the effect axioms.
 * **Generated once :** these stubs were generated from JDK 21's public `java.base` classes by encoding every rule the analysis used before BIP019, and checking, class by class, that the stubs give exactly the same answers. They are maintained by hand from then on. For classes outside `java.base`, the former rules only reach them through the stubs that are `inherited` (`Object`, `Comparable`, `Collection`, `Map`, `Map.Entry`, `Iterator`, `Comparator`, `BaseStream`).
 
@@ -28,6 +29,11 @@ Axioms known to be doubtful, kept as they were so that BIP019's migration change
 
 ## The files
 
+* `android/annotation/` : `NonNullAxioms.java`, `NullableAxioms.java`
+* `androidx/annotation/` : `NonNullAxioms.java`, `NullableAxioms.java`
+* `edu/umd/cs/findbugs/annotations/` : `NonNullAxioms.java`, `NullableAxioms.java`
+* `io/micronaut/core/annotation/` : `NonNullAxioms.java`, `NullableAxioms.java`
+* `jakarta/annotation/` : `NonnullAxioms.java`, `NullableAxioms.java`
 * `java/io/` : `StringWriterAxioms.java`
 * `java/lang/` : `BooleanAxioms.java`, `ByteAxioms.java`, `CharSequenceAxioms.java`, `CharacterAxioms.java`, `ClassAxioms.java`, `ComparableAxioms.java`, `DoubleAxioms.java`, `FloatAxioms.java`, `IntegerAxioms.java`, `IterableAxioms.java`, `LongAxioms.java`, `MathAxioms.java`, `ObjectAxioms.java`, `ProcessBuilderAxioms.java`, `RuntimeAxioms.java`, `ShortAxioms.java`, `StrictMathAxioms.java`, `StringAxioms.java`, `StringBufferAxioms.java`, `StringBuilderAxioms.java`, `SystemAxioms.java`, `ThreadAxioms.java`
 * `java/lang/reflect/` : `ProxyAxioms.java`
@@ -40,3 +46,9 @@ Axioms known to be doubtful, kept as they were so that BIP019's migration change
 * `java/util/function/` : `BiConsumerAxioms.java`, `BiFunctionAxioms.java`, `BiPredicateAxioms.java`, `BinaryOperatorAxioms.java`, `BooleanSupplierAxioms.java`, `ConsumerAxioms.java`, `DoubleBinaryOperatorAxioms.java`, `DoubleConsumerAxioms.java`, `DoubleFunctionAxioms.java`, `DoublePredicateAxioms.java`, `DoubleSupplierAxioms.java`, `DoubleToIntFunctionAxioms.java`, `DoubleToLongFunctionAxioms.java`, `DoubleUnaryOperatorAxioms.java`, `FunctionAxioms.java`, `IntBinaryOperatorAxioms.java`, `IntConsumerAxioms.java`, `IntFunctionAxioms.java`, `IntPredicateAxioms.java`, `IntSupplierAxioms.java`, `IntToDoubleFunctionAxioms.java`, `IntToLongFunctionAxioms.java`, `IntUnaryOperatorAxioms.java`, `LongBinaryOperatorAxioms.java`, `LongConsumerAxioms.java`, `LongFunctionAxioms.java`, `LongPredicateAxioms.java`, `LongSupplierAxioms.java`, `LongToDoubleFunctionAxioms.java`, `LongToIntFunctionAxioms.java`, `LongUnaryOperatorAxioms.java`, `ObjDoubleConsumerAxioms.java`, `ObjIntConsumerAxioms.java`, `ObjLongConsumerAxioms.java`, `PredicateAxioms.java`, `SupplierAxioms.java`, `ToDoubleBiFunctionAxioms.java`, `ToDoubleFunctionAxioms.java`, `ToIntBiFunctionAxioms.java`, `ToIntFunctionAxioms.java`, `ToLongBiFunctionAxioms.java`, `ToLongFunctionAxioms.java`, `UnaryOperatorAxioms.java`
 * `java/util/regex/` : `PatternAxioms.java`
 * `java/util/stream/` : `BaseStreamAxioms.java`, `DoubleStreamAxioms.java`, `IntStreamAxioms.java`, `LongStreamAxioms.java`, `StreamAxioms.java`, `StreamSupportAxioms.java`
+* `javax/annotation/` : `CheckForNullAxioms.java`, `NonnullAxioms.java`, `NullableAxioms.java`
+* `lombok/` : `NonNullAxioms.java`
+* `org/babblelang/effects/` : `NotNullAxioms.java`
+* `org/jetbrains/annotations/` : `NotNullAxioms.java`, `NullableAxioms.java`
+* `org/jspecify/annotations/` : `NonNullAxioms.java`, `NullMarkedAxioms.java`, `NullUnmarkedAxioms.java`, `NullableAxioms.java`
+* `reactor/util/annotation/` : `NonNullAxioms.java`, `NullableAxioms.java`

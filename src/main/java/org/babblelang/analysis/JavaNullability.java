@@ -40,35 +40,6 @@ final class JavaNullability {
         UNSPECIFIED
     }
 
-    private static final Set<String> NON_NULL_ANNOTATIONS = Set.of(
-            "org.babblelang.effects.NotNull",
-            "org.jspecify.annotations.NonNull",
-            "org.jetbrains.annotations.NotNull",
-            "jakarta.annotation.Nonnull",
-            "javax.annotation.Nonnull",
-            "lombok.NonNull",
-            "android.annotation.NonNull",
-            "androidx.annotation.NonNull",
-            "edu.umd.cs.findbugs.annotations.NonNull",
-            "io.micronaut.core.annotation.NonNull",
-            "reactor.util.annotation.NonNull"
-    );
-
-    private static final Set<String> NULLABLE_ANNOTATIONS = Set.of(
-            "org.jspecify.annotations.Nullable",
-            "org.jetbrains.annotations.Nullable",
-            "jakarta.annotation.Nullable",
-            "javax.annotation.Nullable",
-            "javax.annotation.CheckForNull",
-            "android.annotation.Nullable",
-            "androidx.annotation.Nullable",
-            "edu.umd.cs.findbugs.annotations.Nullable",
-            "io.micronaut.core.annotation.Nullable",
-            "reactor.util.annotation.Nullable"
-    );
-
-    private static final String JSPECIFY_NULL_MARKED = "org.jspecify.annotations.NullMarked";
-    private static final String JSPECIFY_NULL_UNMARKED = "org.jspecify.annotations.NullUnmarked";
 
     private JavaNullability() {
     }
@@ -164,13 +135,17 @@ final class JavaNullability {
     }
 
     private static Nullness scanAnnotations(Annotation[] annotations) {
+        // What each annotation means is an axiom (BIP019-D10).
         for (Annotation ann : annotations) {
-            String name = ann.annotationType().getName();
-            if (NULLABLE_ANNOTATIONS.contains(name)) {
+            org.babblelang.axioms.AnnotationMeaning meaning = BuiltinAxioms.get().annotationMeaning(ann.annotationType().getName());
+            if (meaning == null) {
+                continue;
+            }
+            if (meaning.value() == org.babblelang.axioms.AnnotationMeaning.Meaning.NULLABLE) {
                 return Nullness.NULLABLE;
             }
-            if (NON_NULL_ANNOTATIONS.contains(name)) {
-                if ("javax.annotation.Nonnull".equals(name) && !isJavaxNonnullAlways(ann)) {
+            if (meaning.value() == org.babblelang.axioms.AnnotationMeaning.Meaning.NON_NULL) {
+                if (meaning.onlyWhenAlways() && !isWhenAlways(ann)) {
                     continue;
                 }
                 return Nullness.NON_NULL;
@@ -179,7 +154,7 @@ final class JavaNullability {
         return Nullness.UNSPECIFIED;
     }
 
-    private static boolean isJavaxNonnullAlways(Annotation ann) {
+    private static boolean isWhenAlways(Annotation ann) {
         try {
             Method when = ann.annotationType().getMethod("when");
             Object val = when.invoke(ann);
@@ -208,11 +183,11 @@ final class JavaNullability {
 
     private static Nullness scanNullMarkedScope(AnnotatedElement element) {
         for (Annotation ann : element.getAnnotations()) {
-            String name = ann.annotationType().getName();
-            if (JSPECIFY_NULL_UNMARKED.equals(name)) {
+            org.babblelang.axioms.AnnotationMeaning meaning = BuiltinAxioms.get().annotationMeaning(ann.annotationType().getName());
+            if (meaning != null && meaning.value() == org.babblelang.axioms.AnnotationMeaning.Meaning.NULL_UNMARKED) {
                 return Nullness.NULLABLE;
             }
-            if (JSPECIFY_NULL_MARKED.equals(name)) {
+            if (meaning != null && meaning.value() == org.babblelang.axioms.AnnotationMeaning.Meaning.NULL_MARKED) {
                 return Nullness.NON_NULL;
             }
         }

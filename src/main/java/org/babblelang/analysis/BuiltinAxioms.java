@@ -47,7 +47,7 @@ public final class BuiltinAxioms {
     private record Stub(Class<?> target, boolean inherited, Class<?> type, Profile allMethods, Profile allConstructors,
                         Axioms.NullMarked nullMarked, Map<String, List<Method>> methods, List<Method> constructors) {
         boolean appliesTo(Class<?> owner) {
-            return target == owner || inherited && target.isAssignableFrom(owner);
+            return target != null && (target == owner || inherited && target.isAssignableFrom(owner));
         }
     }
 
@@ -71,9 +71,18 @@ public final class BuiltinAxioms {
 
     private final List<Stub> stubs;
     private final Map<Class<?>, List<Stub>> candidates = new ConcurrentHashMap<>();
+    /** The meaning of annotations, by their class's name. */
+    private final Map<String, org.babblelang.axioms.AnnotationMeaning> meanings = new HashMap<>();
 
     private BuiltinAxioms(List<Stub> stubs) {
         this.stubs = stubs;
+        for (Stub stub : stubs) {
+            Axioms axioms = stub.type().getAnnotation(Axioms.class);
+            org.babblelang.axioms.AnnotationMeaning meaning = stub.type().getAnnotation(org.babblelang.axioms.AnnotationMeaning.class);
+            if (!axioms.targetName().isEmpty() && meaning != null) {
+                meanings.put(axioms.targetName(), meaning);
+            }
+        }
     }
 
     /** The axioms of the class path, loaded once. */
@@ -178,16 +187,27 @@ public final class BuiltinAxioms {
      */
     org.babblelang.axioms.DeeplyImmutable deeplyImmutable(Class<?> type) {
         for (Stub stub : stubs) {
-            if (stub.target() == type) {
+            if (stub.target() != null && stub.target() == type) {
                 return stub.type().getAnnotation(org.babblelang.axioms.DeeplyImmutable.class);
             }
         }
         return null;
     }
 
+    /**
+     * What the annotation named {@code annotationClassName} means, by an axiom about it
+     * (BIP019-D10), or null when no axiom gives it a meaning.
+     */
+    org.babblelang.axioms.AnnotationMeaning annotationMeaning(String annotationClassName) {
+        return meanings.get(annotationClassName);
+    }
+
     /** Whether the signatures of {@code owner} are null-marked by an axiom (BIP019-P3). */
     boolean nullMarked(Class<?> owner) {
         for (Stub stub : stubs) {
+            if (stub.target() == null) {
+                continue;
+            }
             if (stub.nullMarked() == Axioms.NullMarked.TARGET && stub.target() == owner
                     || stub.nullMarked() == Axioms.NullMarked.SUBTYPES && stub.target().isAssignableFrom(owner)) {
                 return true;
@@ -328,7 +348,8 @@ public final class BuiltinAxioms {
                 }
             }
             methods.replaceAll((n, l) -> List.copyOf(l));
-            stubs.add(new Stub(axioms.value(), axioms.inherited(), type,
+            Class<?> target = axioms.value() == void.class ? null : axioms.value();
+            stubs.add(new Stub(target, axioms.inherited(), type,
                     axioms.allMethods().length > 0 ? axioms.allMethods()[0] : null,
                     axioms.allConstructors().length > 0 ? axioms.allConstructors()[0] : null,
                     axioms.nullMarked(), Collections.unmodifiableMap(methods), List.copyOf(constructors)));

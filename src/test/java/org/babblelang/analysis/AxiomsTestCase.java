@@ -51,11 +51,14 @@ class AxiomsTestCase {
     @Test
     void stubsAreNamedAfterTheirTarget() {
         for (Class<?> stub : BuiltinAxioms.get().stubTypes()) {
-            Class<?> target = stub.getAnnotation(Axioms.class).value();
-            String expectedPackage = "org.babblelang.axioms." + target.getPackageName();
-            String expectedName = target.getName().substring(target.getPackageName().length() + 1).replace("$", "") + "Axioms";
-            assertEquals(expectedPackage, stub.getPackageName(), stub.getName() + " : package of " + target.getName());
-            assertEquals(expectedName, stub.getSimpleName(), stub.getName() + " : name for " + target.getName());
+            Axioms axioms = stub.getAnnotation(Axioms.class);
+            Class<?> target = axioms.value();
+            String targetName = target != void.class ? target.getName() : axioms.targetName();
+            String targetPackage = targetName.substring(0, targetName.lastIndexOf('.'));
+            String expectedPackage = "org.babblelang.axioms." + targetPackage;
+            String expectedName = targetName.substring(targetPackage.length() + 1).replace("$", "") + "Axioms";
+            assertEquals(expectedPackage, stub.getPackageName(), stub.getName() + " : package of " + targetName);
+            assertEquals(expectedName, stub.getSimpleName(), stub.getName() + " : name for " + targetName);
         }
     }
 
@@ -64,6 +67,9 @@ class AxiomsTestCase {
         List<String> stale = new ArrayList<>();
         for (Class<?> stub : BuiltinAxioms.get().stubTypes()) {
             Class<?> target = stub.getAnnotation(Axioms.class).value();
+            if (target == void.class) {
+                continue; // an axiom about a class named, not on the class path
+            }
             for (Method m : stub.getDeclaredMethods()) {
                 if (m.isAnnotationPresent(org.babblelang.axioms.Constructor.class)) {
                     if (Arrays.stream(target.getConstructors()).noneMatch(k -> Arrays.equals(k.getParameterTypes(), m.getParameterTypes()))) {
