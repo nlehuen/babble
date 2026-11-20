@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 019 |
 | **Date** | 2026-11-20 |
-| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D17` decided; `BIP019-P1`–`P5` implemented, `P6` not started) |
+| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D17` decided; `BIP019-P1`–`P5` implemented, `P6` not started ; `BIP019-P7`, Java axioms written in Babble, proposed with `BIP019-Q8`–`Q14` open) |
 | **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
 | **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as `.java` and `.ba` files ; one bytecode analyzer derives axioms from seeds, either while compiling or offline into the same directory |
 
@@ -203,7 +203,79 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 * **`BIP019-D17` — Special forms :** `print`, `move`, `freeze`, `discard`, `import`, `STDOUT` and `args` are rules of the language, whose typing stays in the type checker ; the prelude declares the built-ins with an ordinary signature : the conversions, `assert` / `suppose`, `same` and `classof`.
 * **`BIP019-D16` — Nearest surface form :** the built-ins are written with ordinary effect words (pure-by-default, `nothrow`, `commutative`, `io`) even where the former internal profiles differed in details the language cannot state (the conversions not borrowing `this`, `import`'s fully unconstrained effects) ; any difference a test, a golden or a diagnostic can see is reported, not hidden.
 
-## 6. Phases (`BIP019-P1`–`P6`)
+## 5. Java axioms written in Babble (`BIP019-P7`, proposed)
+
+### 5.1 Motivation
+
+The Java stubs are explicit, but verbose : a profile is a long annotation, nullness another set of annotations, and every method repeats it all. Babble's own function types already carry most of what they state — effects, what a function does to its receiver and parameters, nullness, optional parameters — so the same axioms can be written in Babble. Part of `CollectionAxioms`, today and as proposed :
+
+```java
+@ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
+        receiver = Receiver.SHARED)
+@Parametric java.lang.Object add(@Parametric java.lang.Object p0);
+
+@View @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true) @NonNull
+java.lang.Object iterator();
+```
+
+```babble
+;; java/util/CollectionAxioms.ba
+axiom java.util.Collection of E (
+    size: fn nothrow (): int
+    contains: fn (o: any?): bool
+    add: fn mut shallow (shared e: E): bool
+    iterator: fn nothrow view (): java.util.Iterator of E
+)
+```
+
+### 5.2 Syntax
+
+A new form, `axiom` followed by a Java class (and its type parameters), and a block of members, each a name and a Babble function type :
+
+```antlr
+axiomClass: AXIOM target=qualifiedName (OF typeParameters)? classWord* NL* '(' sep? (axiomMember sep?)* ')' ;
+axiomMember: (memberName | NEW) ':' type ;
+```
+
+* **Telling it apart :** after `axiom`, a qualified name followed by `of`, a class word or `(` is a class ; a name followed by `:` is an `axiom` declaration (§2.3) ; an effect word is an effect declaration (`axiom pure on …`). The grammar stays predicate-free.
+* **Members :** a method by its name (any name : `getClass` is no longer a problem, as it was for Java stubs), a constructor as `new`. Overloads are separate members of the same name, told apart by their parameter types (§5.3).
+* **Class words :** `exact` (the axioms don't hold for subtypes, the opposite of `inherited`), `nullmarked` (unannotated type arguments in the class's signatures are non-null) and `immutable` (instances are deeply immutable when their type arguments are).
+
+### 5.3 Mapping to what the analysis assumes
+
+| Babble | Assumption | Java stub today |
+|---|---|---|
+| `fn (…)` (pure by default) | pure, hermetic, deterministic | `@Profile({PURE, HERMETIC, DETERMINISTIC})` |
+| `fn volatile`, `fn io` | non-deterministic ; performs I/O | effects without `DETERMINISTIC` ; unconstrained |
+| `fn nothrow` | never throws, and needs no call check | `NOTHROW` and `nothrow = true` |
+| `fn mut` | mutates its receiver | `mutThis`, `mutReceiver` |
+| `fn shared` | keeps its receiver | `receiver = SHARED` |
+| unmarked, `shared`, `unique`, `mut` parameter | borrowed, kept, consumed, mutated | `borrowedParameters`, `@Shared`… |
+| `T`, `T?`, a type variable `E` | non-null, nullable, as nullable as its argument | `@NonNull`, `@Nullable`, `@Parametric` |
+| `p?: T` | optional parameter (`BIP019-D15`) | — |
+| `idempotent`, `commutative`… | algebraic properties | `@Idempotent`… |
+| **new :** `view`, `shallow`, `fresh`, `foldable` | the result aliases the receiver ; a mutator touching no element ; a fresh result ; may be called at compile time | `@View`, `@ShallowMut`, `@FreshResult`, `@Foldable` |
+
+* **Overloads :** a member's parameter types map to Java's erasures — `int` to `int`, `string` to `String`, a type variable to its bound (`Object`), `list of T` to `List`, a Java class to itself — and the member describes the overload with those parameter types. Where Babble's types don't pin one down (`int` against `Integer`, `char` against `int`, arrays), an explicit Java signature disambiguates (`BIP019-Q10`).
+* **Exactness :** some of today's profile details have no surface form — the collections' reads, hermetic and deterministic but not pure (BIP016's vocabulary has no word for that, `BIP019-Q14`), a receiver borrowed unless the method is static, the bytecode analyzer's seeds that disagree with the effect checker (`String.valueOf`), `Object`'s "deterministic where overridden". As for the built-ins (`BIP019-D16`), the nearest surface form is used and every difference a test, a golden or a diagnostic can see is reported ; the QUESTIONABLE ones are resolved rather than reproduced (`BIP019-Q12`).
+
+### 5.4 Coexistence, migration and loading
+
+* **One source per class :** a class's axioms are written either as a `.ba` file (`java/util/CollectionAxioms.ba`, named like the Java stub) or as a Java stub, not both ; `AxiomsTestCase` checks it.
+* **Migration :** the generator (§3) learns to write `.ba` instead of `.java`, and checks its output by the same simulation, class by class, against the former rules. The Java stubs remain only for what Babble cannot state yet, and disappear as the language learns it — the pruning `BIP019-D1` anticipates.
+* **Loading :** a `.ba` axiom file must be parsed and type-checked before use, as `builtins.ba` is. Since files are named after their target, a class's axioms can be loaded on first use (its own file, then its supertypes'), rather than all at start-up ; the results are cached per class.
+
+### 5.5 Open questions (`BIP019-Q8`–`Q14`)
+
+* **`BIP019-Q8` — Where :** only in the axioms directory, or also in programs, which could then state axioms about the Java classes they use, overload by overload, where today they write `axiom pure on X.m` for every overload of a name ?
+* **`BIP019-Q9` — Unspecified nullness :** a Babble type is always non-null or nullable ; how does an axiom leave a position unspecified, as an unannotated Java signature is (`T!`, a class word, or never) ?
+* **`BIP019-Q10` — Overloads Babble types can't tell apart :** an explicit Java signature after the type (`add: fn mut (shared e: E): bool as (java.lang.Object)`), or Java types written in the member's parameters ?
+* **`BIP019-Q11` — Class-wide statements :** how to state the profile of all the methods or all the constructors of a class (`String`'s, the collections' constructors) : `*: fn …` and `new *: fn …`, or class words ?
+* **`BIP019-Q12` — Disagreements :** the analyzer's seeds and the effect checker's profiles differ in places (`String.valueOf`) ; does a member state one profile for both (fixing the QUESTIONABLE disagreement), or can it state a seed apart ?
+* **`BIP019-Q13` — Effect declarations :** does the class form subsume `axiom pure on X.m`, which then becomes shorthand for a member covering every overload, or are both kept ?
+* **`BIP019-Q14` — Reads :** today's collection reads are hermetic and deterministic but not pure (they read the receiver's mutable state) ; is `fn` (pure) close enough, or does the surface vocabulary need a word for it ?
+
+## 6. Phases (`BIP019-P1`–`P7`)
 
 | Phase | Deliverables |
 |---|---|
@@ -213,6 +285,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 | **`BIP019-P4` — Built-ins** | optional parameters in function types (`BIP019-D15`) ; `axiom name: type`, its name a core scalar keyword too (`BIP019-D14`) (grammar, `BlockScopes`, `TypeChecker`, `Interpreter`, `HirBuilder`/`HirEmitter`, formatter, with `.ba`, `DifferentialTestCase`, `TypeCheckerTestCase` and `FormatterTestCase` tests) ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
 | **`BIP019-P5` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 | **`BIP019-P6` — The analyzer and the generator** | §3 : the value lattice, calls through axioms, the fixed point ; `AxiomGenerator` and the first derived stubs, generated on JDK 21 ; the compile-time tier and the generator share the analyzer. ; CI re-derives the axioms on every build and fails on any difference (`BIP019-D13`). |
+| **`BIP019-P7` — Java axioms in Babble (proposed)** | §5 : the `axiom Class (…)` form (grammar, analysis, formatter), the new words `view`, `shallow`, `fresh`, `foldable` and the class words, loading `.ba` axioms per class with a cache ; the generator writes `.ba`, checked by the same simulation ; the Java stubs kept only for what Babble cannot state. After `BIP019-Q8`–`Q14` are decided. |
 
 ## 7. Verification
 
