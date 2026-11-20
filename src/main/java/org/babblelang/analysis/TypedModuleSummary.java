@@ -98,7 +98,7 @@ final class TypedModuleSummary {
             return new EffectChecker.CallableSummary(combined, mutParams, borrowParams, base.uniqueParams(),
                     base.frameReadOwners(), base.frameWriteOwners(), base.deepMutThis(),
                     base.returnParams(), base.returnThis(), base.returnExternal(), base.returnKnown(),
-                    base.ctorStoredParams());
+                    base.ctorStoredParams(), base.readParams(), base.readsThis(), base.readsKnown());
         }
     }
 

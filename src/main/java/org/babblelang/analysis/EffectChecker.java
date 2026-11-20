@@ -89,7 +89,19 @@ final class EffectChecker {
                            Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
                            boolean deepMutThis,
                            BitSet returnParams, boolean returnThis, boolean returnExternal, boolean returnKnown,
-                           BitSet ctorStoredParams) {
+                           BitSet ctorStoredParams,
+                           BitSet readParams, boolean readsThis, boolean readsKnown) {
+        /** Without reads : unknown, so the callable is assumed to read every argument and its receiver (BIP019-D28). */
+        CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
+                        Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
+                        Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
+                        boolean deepMutThis,
+                        BitSet returnParams, boolean returnThis, boolean returnExternal, boolean returnKnown,
+                        BitSet ctorStoredParams) {
+            this(effects, mutParams, borrowParams, uniqueParams, frameReadOwners, frameWriteOwners, deepMutThis,
+                    returnParams, returnThis, returnExternal, returnKnown, ctorStoredParams, EMPTY_SUMMARY_BITS, false, false);
+        }
+
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
                         Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
                         Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
@@ -141,13 +153,16 @@ final class EffectChecker {
                     && Objects.equals(frameReadOwners, that.frameReadOwners)
                     && Objects.equals(frameWriteOwners, that.frameWriteOwners)
                     && Objects.equals(returnParams, that.returnParams)
-                    && Objects.equals(ctorStoredParams, that.ctorStoredParams);
+                    && Objects.equals(ctorStoredParams, that.ctorStoredParams)
+                    && Objects.equals(readParams, that.readParams)
+                    && readsThis == that.readsThis
+                    && readsKnown == that.readsKnown;
         }
 
         @Override
         public int hashCode() {
             int result = Objects.hash(effects, frameReadOwners, frameWriteOwners, deepMutThis,
-                    returnParams, returnThis, returnExternal, returnKnown, ctorStoredParams);
+                    returnParams, returnThis, returnExternal, returnKnown, ctorStoredParams, readParams, readsThis, readsKnown);
             result = 31 * result + Arrays.hashCode(mutParams);
             result = 31 * result + Arrays.hashCode(borrowParams);
             result = 31 * result + Arrays.hashCode(uniqueParams);
@@ -1971,7 +1986,8 @@ final class EffectChecker {
                 false);
         return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams(),
                 Set.copyOf(analyzer.frameReadOwners), Set.copyOf(analyzer.frameWriteOwners), analyzer.deepMutThis,
-                (BitSet) analyzer.returnParams.clone(), analyzer.returnThis, analyzer.returnExternal, true, EMPTY_SUMMARY_BITS);
+                (BitSet) analyzer.returnParams.clone(), analyzer.returnThis, analyzer.returnExternal, true, EMPTY_SUMMARY_BITS,
+                (BitSet) analyzer.readParams.clone(), analyzer.readsThis, true);
     }
 
     private CallableSummary analyzeConstructorBody(BabbleParser.ClassExpressionContext cls,
@@ -2031,7 +2047,8 @@ final class EffectChecker {
         boolean ctorUnique = analyzer.hermetic && analyzer.ctorStoredParams.isEmpty();
         EffectSet nextSet = EffectSet.ofInferred(nextEffects, false, true, ctorUnique, analyzer.terminating);
         return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams(),
-                Set.of(), Set.of(), false, EMPTY_SUMMARY_BITS, false, false, false, (BitSet) analyzer.ctorStoredParams.clone());
+                Set.of(), Set.of(), false, EMPTY_SUMMARY_BITS, false, false, false, (BitSet) analyzer.ctorStoredParams.clone(),
+                (BitSet) analyzer.readParams.clone(), analyzer.readsThis, true);
     }
 
     private CallableSummary finalizeSummary(ParserRuleContext callable, CallableSummary raw) {
@@ -2076,7 +2093,8 @@ final class EffectChecker {
                 false);
         return new CallableSummary(finalized, raw.mutParams(), raw.borrowParams(), raw.uniqueParams(),
                 raw.frameReadOwners(), raw.frameWriteOwners(), raw.deepMutThis(),
-                raw.returnParams(), raw.returnThis(), raw.returnExternal(), raw.returnKnown(), raw.ctorStoredParams());
+                raw.returnParams(), raw.returnThis(), raw.returnExternal(), raw.returnKnown(), raw.ctorStoredParams(),
+                raw.readParams(), raw.readsThis(), raw.readsKnown());
     }
 
     private CallableSummary buildVisibleSummary(ParserRuleContext callable, CallableSummary internal) {
@@ -2135,7 +2153,7 @@ final class EffectChecker {
         return new CallableSummary(visSet, visMut, visBorrow, visUnique,
                 internal.frameReadOwners(), internal.frameWriteOwners(), internal.deepMutThis(),
                 internal.returnParams(), internal.returnThis(), internal.returnExternal(), internal.returnKnown(),
-                internal.ctorStoredParams());
+                internal.ctorStoredParams(), internal.readParams(), internal.readsThis(), internal.readsKnown());
     }
 
     // ================================================================ 8. Verification Pass
@@ -3236,6 +3254,9 @@ final class EffectChecker {
         boolean deepMutThis = false;
         final BitSet returnParams = new BitSet();
         boolean returnThis = false;
+        /** The parameters, and whether the receiver, whose mutable state this function reads (BIP019-D27). */
+        final BitSet readParams = new BitSet();
+        boolean readsThis = false;
         boolean returnExternal = false;
         final BitSet ctorStoredParams = new BitSet();
         private boolean stmtHasSideEffect = false;
@@ -3886,6 +3907,9 @@ final class EffectChecker {
                 if (Modifier.isStatic(jf.getModifiers()) && !Modifier.isFinal(jf.getModifiers())) {
                     deterministic = false;
                 }
+                if (!Modifier.isStatic(jf.getModifiers()) && !Modifier.isFinal(jf.getModifiers())) {
+                    recordRead(recvOrig); // a mutable field (BIP019-D27)
+                }
                 if (checker.hasCallCheck(sel)) {
                     nothrow = false;
                 }
@@ -3920,7 +3944,20 @@ final class EffectChecker {
             if (resType instanceof Type.Function) {
                 boundMethodReceivers.put(sel, recvOrig);
             }
+            if (isMutableMember(recvType, fieldName)) {
+                recordRead(recvOrig); // a member that may be reassigned (BIP019-D27)
+            }
             return recvOrig.deriveMember(fieldName, immRes);
+        }
+
+        /** Whether {@code receiverType}'s {@code name} is a field a class or object may reassign (not a record's, nor a method). */
+        private boolean isMutableMember(Type receiverType, String name) {
+            Type t = receiverType instanceof Type.Frozen f ? null : receiverType;
+            if (!(t instanceof Type.Instance inst) || inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+                return false;
+            }
+            TypeNode.Member member = checker.findMemberOnNode(inst.node(), name);
+            return member != null && !member.isMethod() && !member.hasFunction;
         }
 
         private boolean isImmutableOuterBinding(ParserRuleContext decl, Type type) {
@@ -4263,7 +4300,24 @@ final class EffectChecker {
             if (hasCapacity || ((hasFrom || hasElements) && ("sortedset".equals(kind) || "sortedmap".equals(kind)))) {
                 nothrow = false;
             }
-            return staysUnique ? Origin.ofUnique(ccc, null, false) : Origin.ofExternal(ccc, false);
+            if (staysUnique) {
+                return Origin.ofUnique(ccc, null, false);
+            }
+            // A fresh collection whose elements come from the arguments (BIP019-D29) ; copying
+            // `from:` a collection reads it (BIP019-D27).
+            Origin fresh = Origin.ofUnique(ccc, null, false);
+            for (int i = 0; i < paramsList.size(); i++) {
+                BabbleParser.CallParameterContext p = paramsList.get(i);
+                String name = p.memberName() != null ? p.memberName().getText() : null;
+                if ("capacity".equals(name) || isDeeplyImmutable(effectiveType(argExprs[i]))) {
+                    continue;
+                }
+                if ("from".equals(name)) {
+                    recordRead(argOrigins[i]);
+                }
+                fresh = fresh.absorbElement(argOrigins[i]);
+            }
+            return fresh;
         }
 
         private Type resolveCalleeType(BabbleParser.ExpressionContext calleeExpr) {
@@ -4325,6 +4379,13 @@ final class EffectChecker {
             BuiltinAxioms.Match axiom = "<init>".equals(methodName) ? null
                     : BuiltinAxioms.get().method(owner, methodName, exactParamTypes);
             applyEffects(profile.effects());
+            // A Java method's body isn't seen : it is assumed to read its receiver and arguments (BIP019-D28).
+            if (receiverExpr != null) {
+                recordRead(recvOrig);
+            }
+            for (Origin argOrigin : argOrigins) {
+                recordRead(argOrigin);
+            }
             if (checker.hasCallCheck(call) && !profile.explicitNothrow()) {
                 nothrow = false;
             }
@@ -4415,9 +4476,15 @@ final class EffectChecker {
             if (receiverExpr != null && axiom != null && axiom.view()) {
                 return recvOrig.deriveMember("$" + methodName, false);
             }
-            Origin out = Origin.ofExternal(call, false);
+            // A deterministic Java method returns something fresh or derived from its receiver and
+            // arguments, a deterministic constructor a fresh object (BIP019-D29).
+            boolean deterministicCall = profile.effects().isDeterministic();
+            if ("<init>".equals(methodName) && deterministicCall && profile.effects().isHermetic()) {
+                return Origin.ofUnique(call, null, false);
+            }
+            Origin out = deterministicCall ? Origin.IMMUTABLE : Origin.ofExternal(call, false);
             if ("<init>".equals(methodName) || axiom != null && axiom.freshResult()) {
-                return out;
+                return deterministicCall ? Origin.ofUnique(call, null, false) : out;
             }
             if (receiverExpr != null) {
                 out = out.join(recvOrig.stripDirectIdentity(false));
@@ -4480,6 +4547,11 @@ final class EffectChecker {
                 }
                 CallableSummary summary = resolveBabbleCallSummary(fn, calleeExpr, receiverExpr, args, argExprs);
                 applyCallableSummaryEffects(summary);
+                recordCallReads(summary, fn.parameters(), args, argOrigins,
+                        receiverExpr != null || calleeExpr instanceof BabbleParser.SuperExpressionContext
+                                || (calleeExpr instanceof BabbleParser.SelectorContext s0 && s0.expression() instanceof BabbleParser.SuperExpressionContext),
+                        (calleeExpr instanceof BabbleParser.SelectorContext s1 && s1.expression() instanceof BabbleParser.SuperExpressionContext)
+                                ? Origin.ofThis(THIS_KEY, false) : recvOrig);
                 boolean isMethodCall = receiverExpr != null || calleeExpr instanceof BabbleParser.SuperExpressionContext
                         || (calleeExpr instanceof BabbleParser.SelectorContext s && s.expression() instanceof BabbleParser.SuperExpressionContext);
                 Origin effectiveRecvOrig = (calleeExpr instanceof BabbleParser.SelectorContext s && s.expression() instanceof BabbleParser.SuperExpressionContext)
@@ -4864,7 +4936,9 @@ final class EffectChecker {
             }
             boolean resultDiscarded = call != null && call == discardedExpr;
             boolean known = summary.returnKnown();
-            boolean includeExternal = !known || summary.returnExternal();
+            // A deterministic callee cannot reach shared mutable state : what it returns is fresh or
+            // derived from its arguments and receiver (BIP019-D29).
+            boolean includeExternal = known ? summary.returnExternal() : !summary.effects().isDeterministic();
             Origin out = includeExternal ? Origin.ofExternal(null, false) : Origin.IMMUTABLE;
             boolean includeRecv = isMethodCall && (!known || summary.returnThis() || !summary.effects().borrowThis());
             if (includeRecv && recvOrig != Origin.IMMUTABLE) {
@@ -5068,6 +5142,61 @@ final class EffectChecker {
             }
         }
 
+        /**
+         * A read of the mutable state of what {@code read} reaches (BIP019-D27) : deterministic on
+         * frozen, deeply immutable or exclusively owned objects ; recorded when they are this
+         * function's parameters or receiver, for its callers to decide ; volatile otherwise — unless
+         * a frame-local closure reads what its enclosing frame holds, which that frame reads.
+         */
+        void recordRead(Origin read) {
+            if (read == null || read == Origin.IMMUTABLE || read.moved) {
+                return;
+            }
+            Origin flat = read.hasElementTaint() ? read.flattenElements() : read;
+            if ((flat.unique || flat.localFresh) && flat.params.isEmpty() && !flat.aliasesThis && !flat.external) {
+                return;
+            }
+            for (int p = flat.params.nextSetBit(0); p >= 0; p = flat.params.nextSetBit(p + 1)) {
+                if (p < params.size()) {
+                    readParams.set(p);
+                }
+            }
+            if (flat.aliasesThis) {
+                readsThis = true;
+            }
+            if (flat.external && !readsEnclosingFrame(flat)) {
+                deterministic = false;
+            }
+        }
+
+        /**
+         * The reads of a call (BIP019-D27, D28) : what the callee reads of its arguments and
+         * receiver, as its summary records, or all of them when its body isn't known.
+         */
+        private void recordCallReads(CallableSummary summary, List<Type.Parameter> calleeParams,
+                                     List<BabbleParser.CallParameterContext> args, Origin[] argOrigins,
+                                     boolean isMethodCall, Origin recvOrig) {
+            boolean known = summary.readsKnown();
+            for (int i = 0; i < args.size(); i++) {
+                int pIdx = checker.parameterIndexForArg(calleeParams, args, args.get(i));
+                if (!known || pIdx >= 0 && summary.readParams().get(pIdx)) {
+                    recordRead(argOrigins[i]);
+                }
+            }
+            if (isMethodCall && (!known || summary.readsThis())) {
+                recordRead(recvOrig);
+            }
+        }
+
+        /** Whether {@code external} is rooted in a binding of a function on this closure's frame chain. */
+        private boolean readsEnclosingFrame(Origin external) {
+            if (external.pathKey == null || !(external.pathKey.root() instanceof ParserRuleContext decl)) {
+                return false;
+            }
+            BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
+            return declFn != null && (declFn == owner || frameChain.contains(declFn));
+        }
+
         /** The name of a pseudo-parameter (a captured callback the owner forwards), or null. */
         private String pseudoForwardedName(int bit) {
             for (Map.Entry<ParserRuleContext, Integer> e : pseudoForwarded.entrySet()) {
@@ -5257,6 +5386,7 @@ final class EffectChecker {
         private Origin evalFor(BabbleParser.ForExpressionContext ctx) {
             stmtHasSideEffect = true;
             Origin iterOrig = eval(ctx.iterable);
+            recordRead(iterOrig); // iterating reads the iterable (BIP019-D27)
             Type iterType = effectiveType(ctx.iterable);
             TypeChecker.ForIterableInfo info = checker.forIterableInfo(ctx);
             boolean trackConcurrentMut = false;

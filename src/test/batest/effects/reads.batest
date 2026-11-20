@@ -1,0 +1,55 @@
+;; BIP019-D27-D29 : reads of mutable state, recorded in summaries and decided where provenance ends
+
+{{{{{
+;; Reading a parameter's mutable state is recorded for the callers, who pass it on
+def Counter = class () (
+    def n: int = 0
+    def get = fn (): int -> (this.n)
+)
+def peek = fn (c: Counter): int -> (c.get() + c.n)
+def twice = fn (c: Counter): int -> (peek(c) * 2)
+println(twice(Counter()))
+}}}}}
+0
+
+{{{{{
+;; An object the function builds itself is owned : reading it is deterministic
+def Counter = class () (
+    def n: int = 0
+)
+def owned = fn (): int -> (
+    def c = Counter()
+    def xs: list of int = list(1, 2, 3)
+    c.n + xs.size()
+)
+println(owned())
+}}}}}
+3
+
+{{{{{
+;; A deterministic callee's result is fresh or derived from its arguments
+def Box = class (def v: int) ()
+def through = fn (f: fn (x: int): Box, g: fn (b: Box): int, x: int): int -> (g(f(x)))
+println(through(fn (x: int): Box -> (Box(x)), fn (b: Box): int -> (b.v + 1), 41))
+}}}}}
+42
+
+{{{{{
+;; Negative: a copy of a borrowed list carries its elements' provenance, so keeping it lets them escape
+def Box = class (def v: int) ()
+def Holder = class () (
+    def ref: list of Box = list()
+    def keep = fn mut (shared xs: list of Box) -> (this.ref = xs)
+)
+def stash = fn (mut h: Holder, xs: list of Box) -> (h.keep(list(from: xs)))
+}}}}}
+Borrowed parameter xs escapes via call to h.keep : mark parameter as shared xs
+
+{{{{{
+;; Negative: a closure that escapes reads its captured object later, when another thread may mutate it
+def Counter = class () (
+    def n: int = 0
+)
+def later = fn (c: Counter): fn (): int -> (fn (): int -> (c.n))
+}}}}}
+Function violates deterministic guarantee : mark function as volatile (or io)

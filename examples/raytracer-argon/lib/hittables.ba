@@ -135,7 +135,7 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
 
     def kind = fn (): string -> ("bvh_node")
 ) static (
-    def fromList = fn (items: HittableList): Hittable -> (
+    def fromList = fn (shared items: HittableList): Hittable -> (
         this.build(items.toList())
     )
 
