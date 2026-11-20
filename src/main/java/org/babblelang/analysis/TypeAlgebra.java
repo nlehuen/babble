@@ -423,6 +423,10 @@ final class TypeAlgebra {
             Type.Parameter fp = from.parameters().get(i);
             boolean borrowReadOnly = frozenBorrowSafe && fp.borrow() && !fp.mut();
             if (i < to.parameters().size()) {
+                // A caller may omit an optional parameter : the function must not need it (BIP019-D15).
+                if (to.parameters().get(i).optional() && !fp.optional()) {
+                    return false;
+                }
                 Type toParamType = to.parameters().get(i).type();
                 Type fromParamType = fp.type();
                 if (withEffects) {

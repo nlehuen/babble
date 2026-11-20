@@ -1,0 +1,21 @@
+;; BIP019-D15 : optional parameters in function types
+
+{{{{{
+;; A function type's optional parameter may be omitted
+def check: fn (c: bool, message?: any?): bool = fn (c: bool, message: any? = null): bool -> (c)
+println(check(true), " ", check(false, "why"))
+}}}}}
+true false
+
+{{{{{
+;; Negative: a function whose parameter has no default can't stand for a type where it is optional
+def f: fn (c: bool, message?: any?): bool = fn (c: bool, message: any?): bool -> (c)
+}}}}}
+Type error : expected (c : bool, message : any? = …) : bool, got (c : bool, message : any?) : bool
+
+{{{{{
+;; Negative: a required parameter is still required
+def f: fn (c: bool, message?: any?): bool = fn (c: bool, message: any? = null): bool -> (c)
+f()
+}}}}}
+Missing parameter : c

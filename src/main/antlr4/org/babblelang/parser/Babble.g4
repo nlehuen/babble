@@ -110,7 +110,7 @@ fnParam: paramModifier* ID (':' type)? ('=' NL* defaultValue=expression)?;
 fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* NL* ')'
                 | '(' NL* ')';
 
-fnTypeParam: paramModifier* (ID ':')? type;
+fnTypeParam: paramModifier* (ID optional='?'? ':')? type;
 
 paramModifier: MUT | SHARED | UNIQUE;
 

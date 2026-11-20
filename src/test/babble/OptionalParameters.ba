@@ -1,0 +1,14 @@
+;; Optional parameters in function types (BIP019-D15) : `message?: any?` may be omitted by the
+;; caller, so a function standing for that type must give its parameter a default.
+
+def check: fn (c: bool, message?: any?): bool = fn (c: bool, message: any? = null): bool -> (c)
+assert(check(true))
+assert(not check(false, "why"))
+
+def logger: fn (text: string, level?: int): string = fn (text: string, level: int = 1): string -> (text + level)
+assert(logger("a") == "a1")
+assert(logger("b", 2) == "b2")
+
+;; A higher-order function may call its argument with or without the optional parameter.
+def apply = fn (f: fn (x: int, y?: int): int): int -> (f(1) + f(1, 2))
+assert(apply(fn (x: int, y: int = 10): int -> (x + y)) == 14)

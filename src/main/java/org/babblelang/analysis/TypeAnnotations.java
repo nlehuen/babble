@@ -351,7 +351,8 @@ final class TypeAnnotations {
                     : EffectChecker.ParamMods.NONE;
             String name = parameter.ID() != null ? parameter.ID().getText() : "p" + index;
             boolean borrow = checker.effectChecker != null && !pm.shared() && !pm.unique();
-            result.add(new Type.Parameter(name, type, false,
+            // `message?: any?` : an optional parameter (BIP019-D15).
+            result.add(new Type.Parameter(name, type, parameter.optional != null,
                     pm.mut(), borrow, pm.shared(), pm.unique()));
             index++;
         }

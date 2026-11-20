@@ -682,7 +682,7 @@ Language features :
 - [x] first-class iterators, `for ... in ... then (...)` loops, and uniform `break [expr]` / `continue` across `while` and `for` loops, plus parameterized static factories `(list of int).of(...)` / `list.of(...)` (`RM009`, see [BIP013](docs/design/bip013_iterators.md)).
 - [x] functions (`fn (...) -> (...)`), supporting recursion (`recurse`) and closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
-- [x] positional & named parameters in function calls, and default values for parameters.
+- [x] positional & named parameters in function calls, and default values for parameters ; a function type may mark a parameter optional (`fn (c: bool, message?: any?): bool`), which a function whose parameter has a default satisfies ([BIP019](docs/design/bip019_refactoring-axioms.md)).
 - [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions (`fn (...) : R`), union types (`A | B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types (`Box of T`, `list of int`, `java.util.List of string`).
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, records (`record`), private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md) and [BIP012](docs/design/bip012_grammar-improvements.md)).
