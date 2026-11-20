@@ -66,7 +66,7 @@ src/main/java/org/babblelang/axioms/
 
 What the analysis assumes about a Java method or constructor comes from one of two sources, the first winning :
 
-* **Curated axioms**, written by hand in each package's `curated.ba`, in the form of §3 (`axiom java.util.Collection of E = class ( … )`). They state what bytecode cannot tell — natives (`StrictMath.sin`, `System.nanoTime`), interface contracts (`List.add` has no body), the protocol methods of elements (`equals`, `hashCode`, `compareTo`, `Comparator.compare`), what the optimizer may fold (`foldable`) — and **override** the inference wherever it is wrong, too weak, or must not be relied on.
+* **Curated axioms**, written by hand in each package's `curated.ba`, in the form of §3 (`axiom java.util.Collection of E: class ( … )`). They state what bytecode cannot tell — natives (`StrictMath.sin`, `System.nanoTime`), interface contracts (`List.add` has no body), the protocol methods of elements (`equals`, `hashCode`, `compareTo`, `Comparator.compare`), what the optimizer may fold (`foldable`) — and **override** the inference wherever it is wrong, too weak, or must not be relied on.
 * **Inference**, by the bytecode analyzer **in the compiler** (§5), for everything else, from the bytecode of the classes the compiling JVM loads, applying the curated axioms to the calls it meets. Nothing it infers is written to a file : no generated code enters the codebase ; the compiler spends the time instead, and caches the results in memory.
 
 The former rules of §1 are not copied into axioms. A **simulation** — the former rules on one side, the curated axioms and the inference on the other, compared on every public method and constructor of `java.base` — reports each difference ; a difference is either accepted, as a review of the change it makes, or removed by a curated axiom. The rules of §1 are deleted once their simulation is clean. A curated axiom states each overload with its exact signature : nothing matches methods by name.
@@ -75,15 +75,15 @@ The **Java stubs** remain only for what Babble cannot state : what a third-party
 
 ### 2.3 Babble axioms : the prelude
 
-`builtins.ba` declares Babble's built-ins in Babble, with the same form as every other axiom (§3), that of a `def` without a body : `axiom <name> = fn …`, the built-in's function type, effects and signature. The analysis trusts it instead of checking it :
+`builtins.ba` declares Babble's built-ins in Babble, with the same form as every other axiom (§3), that of a `def` with a type and no value (`def foo: <type>`) : `axiom <name>: fn …`, the built-in's function type, effects and signature. The analysis trusts it instead of checking it :
 
 ```babble
-axiom int = fn (value: any): int
-axiom assert = fn (c: bool, message?: any?): bool
-axiom same = fn nothrow commutative (a: any?, b: any?): bool
+axiom int: fn (value: any): int
+axiom assert: fn (c: bool, message?: any?): bool
+axiom same: fn nothrow commutative (a: any?, b: any?): bool
 ```
 
-* **An axiom about a Babble name** states that the name exists with this signature and these effects, and that its value comes from outside the program — the runtime's implicits for the built-ins, a host's bindings elsewhere. It is valid anywhere, applies to its scope and the scopes it encloses, declares nothing at runtime (its value as an expression is `null`), and has no `export` ; reading a name that nothing provides fails as `No such name`. Nothing can be inferred about such a name, so its signature is required. Its name may be a core scalar keyword, so that the conversions are declared like any built-in (`axiom int = fn …`).
+* **An axiom about a Babble name** states that the name exists with this signature and these effects, and that its value comes from outside the program — the runtime's implicits for the built-ins, a host's bindings elsewhere. It is valid anywhere, applies to its scope and the scopes it encloses, declares nothing at runtime (its value as an expression is `null`), and has no `export` ; reading a name that nothing provides fails as `No such name`. Nothing can be inferred about such a name, so its signature is required. Its name may be a core scalar keyword, so that the conversions are declared like any built-in (`axiom int: fn …`).
 * **Optional parameters :** a function type may mark a named parameter optional, `fn (c: bool, message?: any?): bool`, which a function whose parameter has a default satisfies ; `assert` is declared with it, and so may any function type, in an axiom or not.
 * **Special forms stay rules of the language :** `print` (any number of arguments, and `to:`), `move`, `freeze` and `discard` (ownership rules), `import` (modules), `STDOUT` and `args` keep their typing in the type checker. The prelude declares the built-ins with an ordinary signature : the conversions, `assert` / `suppose`, `same` and `classof`.
 * **Nearest surface form :** the built-ins are written with ordinary effect words (pure-by-default, `nothrow`, `commutative`, `io`) even where the former internal profiles differed in details the language cannot state (the conversions not borrowing `this`, `import`'s fully unconstrained effects) ; any difference a test, a golden or a diagnostic can see is reported, not hidden.
@@ -116,7 +116,7 @@ The *meaning* of third-party nullness annotations (`lombok.NonNull`, `jakarta.an
 
 Some former rules are known to be doubtful. The simulation (§2.2) shows where dropping one changes behavior ; where a doubtful rule is kept, it is a curated axiom tagged `QUESTIONABLE` and listed in the README, so that fixing it later is a reviewable edit of one axiom. The protocol methods come first, since they close §1's hole :
 
-* **`equals`, `hashCode`, `compareTo`, `Comparator.compare` pure on every class** (`java/lang/curated.ba`, `java/util/curated.ba`) — false for user classes (§1) ; the fix is the axioms of §3.1 (`axiom java.lang.Object.hashCode = fn pure`…) applying to descendants as contracts (§3.2), so that a Babble implementation must be pure ;
+* **`equals`, `hashCode`, `compareTo`, `Comparator.compare` pure on every class** (`java/lang/curated.ba`, `java/util/curated.ba`) — false for user classes (§1) ; the fix is the axioms of §3.1 (`axiom java.lang.Object.hashCode: fn pure`…) applying to descendants as contracts (§3.2), so that a Babble implementation must be pure ;
 * **collection methods on every implementation** (curated axioms for `Collection`, `Map`, `Iterator` and `Iterable`) — any `java.util.List` written by anyone is trusted ; the fix is to keep the shallow and hermetic axioms for Babble's core collections' classes only ;
 * **`Map.Entry` deeply immutable** (`java/util/curated.ba`) — the entries of `entrySet()` support `setValue`.
 
@@ -124,56 +124,56 @@ Some former rules are known to be doubtful. The simulation (§2.2) shows where d
 
 ## 3. The form of axioms
 
-### 3.1 An axiom is a `def` without a body
+### 3.1 An axiom is a `def` with a type and no value
 
-An axiom has the syntax of a `def`, `axiom` in place of `def`, and what follows `=` has no body : a function without its `-> ( … )`, a class whose members have no values. Its target is a function — a Babble name, or a member of a Java class — or a Java class, and the kind on the right of `=` tells which, as in a `def` : `axiom int = fn …` and `axiom int = class …` are two different axioms.
+An axiom has the syntax of a `def` with a type and no value — `axiom foo: <type>`, as one writes `def foo: <type> = <value>` —, its type saying what is assumed. Its target is a function — a Babble name, or a member of a Java class — or a Java class, and its type tells which : a function type, or a class type, `class ( … ) static ( … )`, whose members are typed as an interface's abstract members are (`def area: fn (): double`). `axiom int: fn …` and `axiom int: class …` are two different axioms.
 
 ```babble
 ;; a function : `fn`, its effects, then its signature, which may be left to inference
-axiom foobar = fn pure (a: int): int
-axiom java.lang.Object.hashCode = fn pure
-axiom java.lang.Comparable.compareTo = fn pure
-axiom java.lang.Math.sqrt = fn nothrow foldable (a: double): double
+axiom foobar: fn pure (a: int): int
+axiom java.lang.Object.hashCode: fn pure
+axiom java.lang.Comparable.compareTo: fn pure
+axiom java.lang.Math.sqrt: fn nothrow foldable (a: double): double
 
-;; a class : its instance members, then its static members, each a `def` without a body
-axiom java.util.Collection of E = class (
-    def size = fn nothrow (): int
-    def contains = fn (o: any?): bool
-    def add = fn mut shared shallow (shared e: E): bool
-    def iterator = fn nothrow view (): java.util.Iterator of E
+;; a class : its instance members, then its static members, each a `def` with a type and no value
+axiom java.util.Collection of E: class (
+    def size: fn nothrow (): int
+    def contains: fn (o: any?): bool
+    def add: fn mut shared shallow (shared e: E): bool
+    def iterator: fn nothrow view (): java.util.Iterator of E
 )
-axiom java.util.ArrayList of E = class (
+axiom java.util.ArrayList of E: class (
 ) static (
-    def new = fn shared
+    def new: fn shared
 )
 ```
 
-* **A function :** `fn <effects>? <signature>?`, with effect words, a signature, or both :
-  * **effects only** (`= fn pure`) : the function's effects, for every overload of it ; its signature — its parameters' modes and its nullness — is inferred. Only a Java member can omit its signature, since only bytecode can tell it ;
+* **A function's type :** `fn <effects>? <signature>?`, with effect words, a signature, or both — in an axiom, a function type may leave its signature out :
+  * **effects only** (`: fn pure`) : the function's effects, for every overload of it ; its signature — its parameters' modes and its nullness — is inferred. Only a Java member can omit its signature, since only bytecode can tell it ;
   * **a signature** (`fn (o: any?): bool`, with its parameter modes, optional parameters and nullness) : that overload (§3.3), fully ; without effect words it is pure by default, as any function type is (`pure`, which a function type otherwise never spells, may be written in an axiom).
-* **A class :** `class [class words] ( <members> ) [static ( <static members> )]` — for a Java interface too —, like a class expression without its parameters. Each member is a `def` without a body, `def <name> = fn …` as above : instance methods in the first part, static methods and constructors (`new`) in `static ( … )`. The class's type parameters (`of E`) are in scope in its members' signatures.
-* **What is not stated is inferred :** a member a class's axiom doesn't mention, or a class nothing mentions, is left to the bytecode analysis (§5) ; leaving a member out is never an error. A member named `*` states what holds for every member the class's axiom doesn't list instead (`def * = fn pure` : all of `String`'s methods), and `def new = fn …` without a signature covers every constructor.
+* **A class's type :** `class [class words] ( <members> ) [static ( <static members> )]` — for a Java interface too. Each member is a `def` with a type and no value, `def <name>: fn …` as above, like an interface's abstract members : instance methods in the first part, static methods and constructors (`new`) in `static ( … )`. The class's type parameters (`of E`) are in scope in its members' signatures.
+* **What is not stated is inferred :** a member a class's axiom doesn't mention, or a class nothing mentions, is left to the bytecode analysis (§5) ; leaving a member out is never an error. A member named `*` states what holds for every member the class's axiom doesn't list instead (`def *: fn pure` : all of `String`'s methods), and `def new: fn …` without a signature covers every constructor.
 
 The same contents as Java annotations would take a `@Profile` of seven fields, two nullness annotations and a marker per method.
 
 ### 3.2 Syntax and rules
 
 ```antlr
-axiomExpression: AXIOM target=axiomTarget (OF typeParameters)? '=' NL* axiomDefinition ;
+axiomExpression: AXIOM target=axiomTarget (OF typeParameters)? ':' axiomType ;
 axiomTarget: (ID | coreScalarKeyword) ('.' memberName)* ;
-axiomDefinition: FN effectPrefix? (fnTypeParameters (':' uniqueReturn=UNIQUE? type)?)?   // a function without a body
-               | CLASS classWord=ID* NL* '(' axiomMembers ')' (NL* STATIC NL* '(' axiomMembers ')')? ;
+axiomType: FN effectPrefix? (fnTypeParameters (':' uniqueReturn=UNIQUE? type)?)?   // a function type, its signature optional
+         | CLASS classWord=ID* NL* '(' axiomMembers ')' (NL* STATIC NL* '(' axiomMembers ')')? ;
 axiomMembers: sep? (axiomMember (sep axiomMember)* sep?)? ;
-axiomMember: DEF (memberName | '*') '=' NL* axiomDefinition ;      // a class's members are functions
+axiomMember: DEF (memberName | '*') ':' axiomType ;      // a class's members are functions
 ```
 
-* **Parsing :** after `=`, `fn` starts a function's definition, `class` a class's ; after `fn`, effect words and a signature are each optional, but not both missing (the analysis reports `Empty axiom : …`). One token decides each choice, and the grammar stays predicate-free. BIP007's `axiom pure on X.m` starts with an effect keyword, never a name, so it stays parseable while deprecated.
+* **Parsing :** after `:`, `fn` starts a function's type, `class` a class's ; after `fn`, effect words and a signature are each optional, but not both missing (the analysis reports `Empty axiom : …`). One token decides each choice, and the grammar stays predicate-free. BIP007's `axiom pure on X.m` starts with an effect keyword, never a name, so it stays parseable while deprecated.
 * **Effect words :** the usual ones, plus `view`, `shallow`, `fresh` and `foldable` (§3.3), which are identifiers, not keywords : the effect checker accepts them only in an axiom, so the language reserves no new word.
 * **Class words :** after `class` — `exact` (the axioms hold for the class itself, not for its descendants), `nullmarked` (unannotated types in the signatures of the classes the axiom applies to are non-null) and `immutable` (instances are deeply immutable when their type arguments are). The former overlay null-marks `Object`'s own signatures without its subtypes', and the subtypes of `Iterable` without `Iterable`'s members applying to them : in this form, `Object`'s members state their nullness one by one, and the `Iterable` case is a simulation difference to review.
-* **Descendants :** an axiom about a class or an interface, or one of its members, applies by default to all its descendants, including their overrides of the member : `axiom java.lang.Object.hashCode = fn pure` speaks of every `hashCode`. The most specific axiom wins — an axiom about `java.lang.String.hashCode` overrides `Object`'s for `String` and its subclasses —, and any axiom wins over what is inferred for a descendant's override. For a Babble class that overrides the member (directly, or through a Java interface it implements), the inherited axiom is a **contract** : the effect checker checks its implementation against it, as it checks an interface method's declared effects, and reports, in the style of the other effect diagnostics, `Function compareTo violates pure guarantee of axiom java.lang.Comparable.compareTo`. That is how §1's hole closes : `Evil.compareTo`, mutating its parameter, no longer satisfies `java.lang.Comparable.compareTo`'s axiom.
-* **One target, one place :** a member is stated once, either by an axiom about it (`axiom java.util.List.add = fn …`) or as a member of its class's axiom, not both.
+* **Descendants :** an axiom about a class or an interface, or one of its members, applies by default to all its descendants, including their overrides of the member : `axiom java.lang.Object.hashCode: fn pure` speaks of every `hashCode`. The most specific axiom wins — an axiom about `java.lang.String.hashCode` overrides `Object`'s for `String` and its subclasses —, and any axiom wins over what is inferred for a descendant's override. For a Babble class that overrides the member (directly, or through a Java interface it implements), the inherited axiom is a **contract** : the effect checker checks its implementation against it, as it checks an interface method's declared effects, and reports, in the style of the other effect diagnostics, `Function compareTo violates pure guarantee of axiom java.lang.Comparable.compareTo`. That is how §1's hole closes : `Evil.compareTo`, mutating its parameter, no longer satisfies `java.lang.Comparable.compareTo`'s axiom.
+* **One target, one place :** a member is stated once, either by an axiom about it (`axiom java.util.List.add: fn …`) or as a member of its class's axiom, not both.
 * **Where :** an axiom may be written anywhere — in the axioms directory and in programs, whose axioms take precedence over the built-in ones. It declares nothing at runtime : both backends evaluate it to `null`.
-* **`axiom … on` :** BIP007's `axiom pure on X.m` is the former spelling of `axiom X.m = fn pure`, and is deprecated in favor of it, with a warning.
+* **`axiom … on` :** BIP007's `axiom pure on X.m` is the former spelling of `axiom X.m: fn pure`, and is deprecated in favor of it, with a warning.
 
 ### 3.3 Mapping to what the analysis assumes
 
@@ -218,7 +218,7 @@ axiomMember: DEF (memberName | '*') '=' NL* axiomDefinition ;      // a class's 
 * **Composition :** a read through the caller's own parameter or receiver is not decided at that call : it becomes a read by the caller, recorded in the caller's summary, and is decided at the caller's call sites. A call is volatile only where the provenance runs out — an object reached from an outer mutable binding, a global, or anything else neither frozen, deeply immutable, exclusively owned, nor the caller's own parameter or receiver.
 * **Reads are inferred :** what a function reads is inferred and recorded in module summaries for importers, with no surface syntax. A function type whose body the analysis doesn't see — an interface method, a function value, a Java method — is assumed to read every parameter and its receiver that are not frozen or deeply immutable.
 * **Results are tracked :** a deterministic callee cannot reach shared mutable state, so what it returns is fresh or derived from its arguments and receiver — for a Babble function whose body isn't known, a Java method or constructor, or a core collection constructor (a fresh collection whose elements come from its arguments) ; only a `volatile` or `io` callee returns something untracked.
-* **In axioms :** a Java read is written as a plain `fn` (`def size = fn nothrow (): int`) ; the call site then decides, as for a Babble function. The former collection reads, hermetic and deterministic but not pure, need no word of their own.
+* **In axioms :** a Java read is written as a plain `fn` (`def size: fn nothrow (): int`) ; the call site then decides, as for a Babble function. The former collection reads, hermetic and deterministic but not pure, need no word of their own.
 
 ### 4.2 Consequences
 
@@ -280,14 +280,14 @@ Until the phase that migrates a former rule, the rule stays in the code, consult
 
 | Phase | Deliverables |
 |---|---|
-| **`BIP019-P1` — Mechanism and the form of axioms** | the axioms directory and `README.md`, the `pom.xml` resource entry ; `BuiltinAxioms` loading each package's `curated.ba` on first use, with a cache (§3.4), and `BuiltinAxioms.EMPTY` ; axioms about Java classes and their members (`axiom X = class ( … )`, `axiom X.m = fn …`), with signatures, effect, member and class words (§3 : grammar, analysis passes, both backends, formatter) ; axioms applying to descendants, the most specific winning, and checked as contracts on Babble overrides ; the canonical order ; tier 6 of both resolvers, nullness, deep immutability and the optimizer ask `BuiltinAxioms` first. |
+| **`BIP019-P1` — Mechanism and the form of axioms** | the axioms directory and `README.md`, the `pom.xml` resource entry ; `BuiltinAxioms` loading each package's `curated.ba` on first use, with a cache (§3.4), and `BuiltinAxioms.EMPTY` ; axioms about Java classes and their members (`axiom X: class ( … )`, `axiom X.m: fn …`), with signatures, effect, member and class words (§3 : grammar, analysis passes, both backends, formatter) ; axioms applying to descendants, the most specific winning, and checked as contracts on Babble overrides ; the canonical order ; tier 6 of both resolvers, nullness, deep immutability and the optimizer ask `BuiltinAxioms` first. |
 | **`BIP019-P2` — Reads of mutable state** | §4 : summaries record the receiver and parameters a function reads mutable state from ; a call is deterministic only on frozen, deeply immutable or exclusively owned arguments ; results of deterministic callees are tracked ; tests, examples (argon's `fromList`) and goldens updated. The analyzer infers in this model. |
 | **`BIP019-P3` — The analyzer in the compiler** | §5 : the value lattice, reads, calls through axioms, the fixed point, the budget and the in-memory cache ; tier 7 on by default, under the curated axioms ; `babble.axioms.report` ; dumping what is inferred for a class or a package (`-axioms`, `babble.dumpAxioms`), with `MainTestCase` and golden tests ; the simulation against the former rules (§2.2). |
 | **`BIP019-P4` — Effects** | curated axioms in `java/lang/curated.ba` and `java/util/curated.ba` (protocol methods, interface contracts, `QUESTIONABLE` where a doubtful rule is kept), the rest inferred ; the simulation of the effect rules reviewed ; `standardProtocolDefault`, the `COLLECTION_*` and `STRING_*` sets, the constructor rules, the shallow and view rules and `evalFor`'s case deleted. |
 | **`BIP019-P5` — Optimizer** | `SEEDED_INTRINSICS` becomes curated axioms for the natives (`StrictMath`…), the rest inferred ; `HirPurity`'s four lists become `foldable` and `idempotent` curated axioms ; `ConstFoldPass` asks `BuiltinAxioms`. |
 | **`BIP019-P6` — Nullness and immutability** | `JavaNullability`'s overlay becomes `nullmarked` classes and the nullness of members' types, inferred where the analyzer can tell (a result always `new` or constant), curated elsewhere ; `Map.Entry`'s deep immutability becomes `immutable` ; the meaning of third-party nullness annotations becomes one Java stub per annotation, and `JavaNullability` loses its name lists. |
-| **`BIP019-P7` — Built-ins** | optional parameters in function types ; axioms about Babble names (`axiom int = fn (value: any): int`), a core scalar keyword included ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
-| **`BIP019-P8` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; `axiom … on` deprecated in favor of `axiom X.m = fn …` ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
+| **`BIP019-P7` — Built-ins** | optional parameters in function types ; axioms about Babble names (`axiom int: fn (value: any): int`), a core scalar keyword included ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
+| **`BIP019-P8` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; `axiom … on` deprecated in favor of `axiom X.m: fn …` ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 
 ## 7. Verification
 
