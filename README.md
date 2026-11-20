@@ -652,8 +652,9 @@ Language features :
 - [x] no C-style brackets ! Those are nasty to type on most keyboards, especially on Apple keyboards.
 - [x] in fact, there is only one type of brackets in Babble : parentheses `( )`. The grammar is predicate-free LL(1)/LL(2) (`BIP012`, `RM006`) and parses in ANTLR4's fast `PredictionMode.SLL`.
 - [x] no semicolons at end of line : newlines are significant and end the current statement, except after tokens that call for a continuation (operators, `,`, `=`, `->`, `then`, ...). Semicolons are only needed to separate multiple statements on the same line.
-- [x] everything is an expression, including blocks, `if` and `while`.
-- [x] block scope : blocks, `if` branches and `while` bodies are scopes, and names are hoisted to the start of their scope.
+- [x] everything is an expression, including blocks, `if`, `while`, and `for`.
+- [x] block scope : blocks, `if` branches, `while` bodies, and `for` bodies are scopes, and names are hoisted to the start of their scope.
+- [x] first-class iterators, `for ... in ... then (...)` loops, and uniform `break [expr]` / `continue` across `while` and `for` loops, plus parameterized static factories `(list of int).of(...)` / `list.of(...)` (`RM009`, see [BIP013](docs/design/bip013_iterators.md)).
 - [x] functions (`fn (...) -> (...)`), supporting recursion (`recurse`) and closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional & named parameters in function calls, and default values for parameters.
@@ -662,7 +663,7 @@ Language features :
 - [x] object model : classes, object literals, interfaces with default methods, records (`record`), private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md) and [BIP012](docs/design/bip012_grammar-improvements.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, Babble classes implementing Java (including generic) interfaces, and Java nullability alignment (`@NotNull`/`@Nullable`/JSpecify, mapped `java.base` parametric nullness, and defensive boundary checks, see [BIP011](docs/design/bip011_core-types.md)).
 - [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference (`C of T (...)` and inferred `C(...)`), strict non-nullability with `T?` and `e!`, union types (`A | B`), safe navigation (`?.`), invariant mutable generics with covariant `record`/`entry`/`borrow` parameters, flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md), [BIP008](docs/design/bip008_static-typing.md), and [BIP011](docs/design/bip011_core-types.md)).
-- [x] static function effects, ownership, and algebraic contracts (`RM002`, `RM007`) : fixed-point inference and verification of `pure`, `hermetic`, `mut`, `borrow`, `unique`, `frozen`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone` and `injective`, static `mut` alias/exclusivity checking, `unique` ownership with `move`/`freeze`/`discard`, `@TERMINATING` inference, unused pure expression checks, higher-order call-site specialization, `axiom`/`impure` Java contracts (`axiom ... on Target`), `org.babblelang.effects` host annotations (`@Pure`..`@Unique`), opt-in ASM bytecode effect analysis, property-based `babble.checkAxioms` fuzzing, and built-in core type effect profiles (see [BIP007](docs/design/bip007_effects.md) and [BIP011](docs/design/bip011_core-types.md)).
+- [x] static function effects, ownership, algebraic contracts, and HOF forwarding (`RM002`, `RM007`, `RM008`, `RM009`) : pure-by-default opt-out surface syntax (`io`, `volatile`, `mut`, `shared`, `unique`, opt-in `nothrow`, `axiom pure`, `fn with f`), return-through-borrow provenance, fixed-point inference and verification of internal orthogonal traits and algebraic properties (`idempotent`, `commutative`, `associative`, `monotone`, `injective`), static `mut` alias/exclusivity checking, `unique`/`frozen` ownership with `move`/`freeze`/`discard`, `@TERMINATING` inference, unused pure expression checks, cross-module/interface/first-class callback-effect forwarding (`fn with f`), `axiom`/`io` Java contracts (`axiom pure on Target`), `org.babblelang.effects` host annotations (`@Pure`, `@Volatile`, `@Shared`, `@IO`, `@Mut`, `@Unique`, `@Nothrow`), opt-in ASM bytecode effect analysis, property-based `babble.checkAxioms` fuzzing, and built-in core type effect profiles (see [BIP007](docs/design/bip007_effects.md), [BIP011](docs/design/bip011_core-types.md), [BIP016](docs/design/bip016_consolidating-effect-annotations.md), and [BIP017](docs/design/bip017_higher-order-function-effects.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `move`, `freeze`, `discard`, all 9 scalar conversions (`byte`..`string`), and core collection factories (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`).
 
 Implementation features :
@@ -689,9 +690,8 @@ Language features :
 - [ ] structural object types.
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module or an object, instead of one `def` per name.
-- [ ] first-class iterator support (`for` loop).
 - [ ] `yield` keyword : transform functions/method into iterators.
-- [ ] functional-style programming : `map`.
+- [ ] functional-style programming : `map` (standard library).
 
 Implementation features :
 
@@ -717,10 +717,9 @@ order of how much each would improve that code :
   are now, with their types, as are the public fields of Java objects.
 - [ ] bare names for a class's own members in its body, or at least for `def` header parameters :
   a plain header parameter can be read as `x` in the body, a `def` one only as `this.x`.
-- [ ] `for` loops over ranges and collections (also in the planned features above) : every loop
-  is a `while` with a counter and an increment that is easy to forget.
+- [x] `for` loops over collections, iterators, arrays, and custom Babble iterables (`RM009`, [BIP013](docs/design/bip013_iterators.md)).
 - [x] `else if`, without nesting a block : `else ( if … then ( … ) else ( … ) )`.
-- [ ] `break` and `continue` in loops.
+- [x] `break` (`break expr`) and `continue` in `while` and `for` loops (`RM009`, [BIP013](docs/design/bip013_iterators.md)).
 - [x] compound assignment : `+=`, `-=`, `*=`, `/=`, on variables and members, calling operator
   methods on instances. The ray tracers' counters and accumulators use them.
 - [x] number conversions : `int(x)` and `double(x)`, instead of
