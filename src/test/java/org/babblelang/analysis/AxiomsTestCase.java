@@ -99,6 +99,43 @@ class AxiomsTestCase {
         assertTrue(missing.isEmpty(), "stubs missing from the axioms' README : " + missing);
     }
 
+    /**
+     * Without axioms the analysis knows nothing about any Java method : no assumption survives
+     * outside org.babblelang.axioms (BIP019-P5).
+     */
+    @Test
+    void withoutAxiomsNothingIsAssumed() throws Exception {
+        java.lang.reflect.Method listGet = java.util.List.class.getMethod("get", int.class);
+        java.lang.reflect.Method arraySize = java.util.ArrayList.class.getMethod("size");
+        java.lang.reflect.Method sqrt = Math.class.getMethod("sqrt", double.class);
+        String pure = "def f = fn (s: string): int -> (s.length())";
+
+        // With the axioms of the class path.
+        assertEquals(JavaNullability.Nullness.PARAMETRIC, JavaNullability.returnNullness(listGet));
+        assertTrue(JavaNullability.isNullMarked(arraySize));
+        assertTrue(org.babblelang.opt.HirPurity.isWhitelistedPureMath(sqrt));
+        assertTrue(BytecodeEffectAnalyzer.analyze(sqrt).effects().isPure());
+        assertTrue(BuiltinAxioms.get().annotationMeaning("org.jspecify.annotations.Nullable") != null);
+        compile(pure);
+
+        BuiltinAxioms.runWith(BuiltinAxioms.EMPTY, () -> {
+            assertEquals(JavaNullability.Nullness.UNSPECIFIED, JavaNullability.returnNullness(listGet));
+            assertTrue(!JavaNullability.isNullMarked(arraySize));
+            assertTrue(!org.babblelang.opt.HirPurity.isWhitelistedPureMath(sqrt));
+            assertTrue(!BytecodeEffectAnalyzer.analyze(sqrt).effects().isPure());
+            assertTrue(BuiltinAxioms.get().annotationMeaning("org.jspecify.annotations.Nullable") == null);
+            javax.script.ScriptException e = org.junit.jupiter.api.Assertions.assertThrows(javax.script.ScriptException.class,
+                    () -> compile(pure));
+            assertTrue(e.getMessage().contains("violates pure guarantee"), e.getMessage());
+        });
+    }
+
+    private static void compile(String source) throws javax.script.ScriptException {
+        javax.script.ScriptEngine engine = org.babblelang.engine.BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.getContext().setErrorWriter(new java.io.StringWriter());
+        ((javax.script.Compilable) engine).compile(source);
+    }
+
     private static boolean hasPublicMethod(Class<?> type, String name, Class<?>[] parameterTypes) {
         for (Method m : type.getMethods()) {
             if (m.getName().equals(name) && Arrays.equals(m.getParameterTypes(), parameterTypes)) {

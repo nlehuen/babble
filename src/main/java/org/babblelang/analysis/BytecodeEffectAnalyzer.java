@@ -83,6 +83,11 @@ public final class BytecodeEffectAnalyzer {
         };
     }
 
+    /** Forgets the results analysed so far : they depend on the axioms' seeds (BuiltinAxioms.runWith). */
+    static void clearCache() {
+        CACHE.clear();
+    }
+
     /** Analyzes a single Java {@link Method} and returns its conservative inferred {@link EffectSet} and reasons. */
     public static Result analyze(Method method) {
         if (method == null) {

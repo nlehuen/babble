@@ -39,6 +39,8 @@ public final class BuiltinAxioms {
     private static final String PACKAGE = "org/babblelang/axioms";
 
     private static volatile BuiltinAxioms loaded;
+    /** Axioms that replace the class path's, while a test runs them (see {@link #runWith}). */
+    private static volatile BuiltinAxioms override;
 
     /** No axioms at all : the analysis then knows nothing about any Java class. */
     static final BuiltinAxioms EMPTY = new BuiltinAxioms(List.of());
@@ -87,6 +89,10 @@ public final class BuiltinAxioms {
 
     /** The axioms of the class path, loaded once. */
     static BuiltinAxioms get() {
+        BuiltinAxioms replaced = override;
+        if (replaced != null) {
+            return replaced;
+        }
         BuiltinAxioms axioms = loaded;
         if (axioms == null) {
             synchronized (BuiltinAxioms.class) {
@@ -98,6 +104,21 @@ public final class BuiltinAxioms {
             }
         }
         return axioms;
+    }
+
+    /**
+     * For tests : runs {@code action} with {@code axioms} instead of the class path's, such as
+     * {@link #EMPTY} to check that the analysis then assumes nothing (BIP019-P5).
+     */
+    static void runWith(BuiltinAxioms axioms, Runnable action) {
+        override = axioms;
+        BytecodeEffectAnalyzer.clearCache();
+        try {
+            action.run();
+        } finally {
+            override = null;
+            BytecodeEffectAnalyzer.clearCache();
+        }
     }
 
     /** The stub types found, for tests and documentation. */
