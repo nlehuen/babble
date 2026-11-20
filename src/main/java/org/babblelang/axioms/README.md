@@ -10,6 +10,7 @@ Everything the interpreter, the compiler, the analysis and the optimizer assume 
   * `@BytecodeSeed` : what the bytecode analyzer assumes about a method it reaches, instead of analysing it (natives notably) ;
   * `@Foldable` : the optimizer may treat a call as pure, `nothrow` and terminating, and call it at compile time ; `org.babblelang.effects.Idempotent` : it is idempotent ;
   * `@NonNull`, `@Nullable`, `@Parametric` : the nullness of a method's result (on the method) or of a parameter (on the parameter) ; `@Axioms(nullMarked = TARGET | SUBTYPES)` : unannotated type arguments in the target's signatures (or its subtypes') are non-null ;
+  * `@DeeplyImmutable`, on a stub : the target's instances are deeply immutable (when their type arguments are) ;
   * `@Constructor` : the stub method mirrors a constructor ; `@MethodName("getClass")` : it mirrors a method a stub cannot declare under its own name ;
   * `@Axioms(allMethods = @Profile(…))` and `@Axioms(allConstructors = @Profile(…))` state the profile of every method, or constructor, of the target.
 * **Matching :** the most specific stub that lists a method (or states `allMethods`) gives everything the axioms say about it — so a stub method carries all its annotations, effects and nullness together. An axiom given in a program (`axiom … on …`), an engine override or an annotation on the Java class itself wins over the effect axioms.
@@ -22,6 +23,7 @@ Axioms known to be doubtful, kept as they were so that BIP019's migration change
 * **`equals`, `hashCode`, `compareTo` pure on every class** (`ObjectAxioms`, `ComparableAxioms`) : a Babble class may implement them with effects — to be fixed first (BIP019-D11) ;
 * **collection methods by name on every implementation** (the collection stubs) : any `java.util.List` written by anyone is trusted, the mutators are assumed shallow although hashed and sorted collections call their elements' methods, and building any collection or `Iterator` (a `Scanner` reading a file included) counts as only allocating ;
 * **`Arrays.asList` fresh** (`ArraysAxioms`) : it is a view of its array ;
+* **`Map.Entry` deeply immutable** (`MapEntryAxioms`) : the entries of a map's `entrySet()` support `setValue` ;
 * **the analyzer and the effect checker disagree** (`StringAxioms`) : the analyzer's seeds count `String.valueOf` as `nothrow`, the checker's profile does not.
 
 ## The files

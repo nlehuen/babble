@@ -209,8 +209,13 @@ final class TypeChecker {
         if (type instanceof Type.Union u) {
             return u.members().stream().allMatch(m -> isDeeplyImmutable(m, visiting));
         }
-        if (type instanceof Type.JavaInstance ji && ji.type() == java.util.Map.Entry.class) {
-            return !ji.typeArguments().isEmpty() && ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
+        if (type instanceof Type.JavaInstance ji) {
+            // An axiom (BIP019-P3) : Map.Entry's, for one.
+            org.babblelang.axioms.DeeplyImmutable axiom = BuiltinAxioms.get().deeplyImmutable(ji.type());
+            if (axiom != null) {
+                return !axiom.ifTypeArgumentsAre()
+                        || !ji.typeArguments().isEmpty() && ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
+            }
         }
         if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.OBJECT) {
             for (TypeNode.Member member : inst.node().members.values()) {

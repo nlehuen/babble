@@ -172,6 +172,19 @@ public final class BuiltinAxioms {
         return null;
     }
 
+    /**
+     * What an axiom says of the deep immutability of {@code type}'s instances (its own stub's
+     * {@code @DeeplyImmutable}, never a supertype's), or null (BIP019-P3).
+     */
+    org.babblelang.axioms.DeeplyImmutable deeplyImmutable(Class<?> type) {
+        for (Stub stub : stubs) {
+            if (stub.target() == type) {
+                return stub.type().getAnnotation(org.babblelang.axioms.DeeplyImmutable.class);
+            }
+        }
+        return null;
+    }
+
     /** Whether the signatures of {@code owner} are null-marked by an axiom (BIP019-P3). */
     boolean nullMarked(Class<?> owner) {
         for (Stub stub : stubs) {
