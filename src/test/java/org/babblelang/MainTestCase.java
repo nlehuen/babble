@@ -68,6 +68,15 @@ public class MainTestCase {
         Assertions.assertEquals(List.of("loaded", "4"), run("twice(2)\n", "--keep-alive", definitions).out());
     }
 
+    /** After a script, the interactive mode's :type and :load see what it defined (docs/design/bip004_repl.md §9). */
+    @Test
+    public void testKeepAliveWithTypeAndLoad() throws Exception {
+        String definitions = script("definitions.ba", "def twice = fn (n : int) : int -> ( n * 2 )");
+        String more = script("more.ba", "def quad = fn (n : int) : int -> ( twice(twice(n)) )\nprintln(\"more\")");
+        Run run = run(":type twice\n:load " + more + "\n:type quad(1)\nquad(3)\n", "-keep-alive", definitions);
+        Assertions.assertEquals(new Run(0, List.of("fn (n : int) : int", "more", "int", "12"), List.of()), run);
+    }
+
     @Test
     public void testAFailingScript() throws Exception {
         String failing = script("failing.ba", "def a = 1\nprintln(\"before\")\nnosuch\nprintln(\"after\")");

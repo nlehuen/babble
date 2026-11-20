@@ -337,4 +337,63 @@ public class ReplTestCase {
         Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("def f = fn io (x: int): int -> ("));
         Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("axiom pure on java.lang.Math"));
     }
+
+    // ---------------------------------------------------------------- :type and :load (§9)
+
+    /** {@code :type} shows the static type of an expression as source writes it, and runs nothing. */
+    @Test
+    public void testTypeCommand() throws Exception {
+        Assertions.assertEquals(List.of("class P", "function twice", "function hello", "class Box",
+                        "int", "string", "double", "bool", "list of int", "map of (string, int)", "list of string",
+                        "class P", "P", "P?", "fn (n : int) : int", "fn (f : fn (n : int) : int, v : int) : int", "fn io () : null",
+                        "int | string", "(list of int)?", "Box of int", "list of (int | string)"),
+                transcript("def P = record (x : int, y : int) ()",
+                        "def twice = fn (f : fn (n : int) : int, v : int) : int -> ( f(f(v)) )",
+                        "def hello = fn io () -> ( println(\"hi\") )",
+                        "def m : P? = null",
+                        "def Box of T = class (def v : T) ()",
+                        ":type 1 + 2", ":type \"a\"", ":t 1.5", ":type 1 < 2", ":type list.of(1, 2)", ":type map.of(\"a\", 1)", ":type args",
+                        ":type P", ":type P(1, 2)", ":type m", ":type fn (n : int) : int -> ( n )", ":type twice", ":type hello",
+                        ":type def u : int | string = 1 ; u", ":type def nl : (list of int)? = null ; nl", ":type Box(1)",
+                        ":type def lu : list of (int | string) = list.of() ; lu"));
+    }
+
+    /** {@code :type} neither runs its input nor keeps what it defines ; its errors are reported as an input's. */
+    @Test
+    public void testTypeCommandLeavesTheSessionAlone() throws Exception {
+        Assertions.assertEquals(List.of("int", "Error : No such name : y"),
+                transcript(":type println(\"ran\") ; def y = 3", "y"));
+        List<String> errors = transcript(":type 1 + true", ":type nosuch", ":type def = 3", ":type", ":type (1 +", "1");
+        Assertions.assertEquals(6, errors.size(), errors.toString());
+        Assertions.assertEquals("Error : Not a number : true in <input> at line number 1, column 5", errors.get(0));
+        // An unknown name is looked up at runtime, as eval would : statically, it is any.
+        Assertions.assertEquals("any", errors.get(1));
+        Assertions.assertEquals("Error : Syntax error : unexpected '='", errors.get(2));
+        Assertions.assertEquals(":type needs a complete expression : :type 1 + 2", errors.get(3));
+        Assertions.assertEquals(":type needs a complete expression : :type 1 + 2", errors.get(4));
+        Assertions.assertEquals("1", errors.get(5));
+    }
+
+    /** {@code :load} runs a file as an input of the session : quietly, with its errors naming it, and its imports relative to it. */
+    @Test
+    public void testLoadCommand(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
+        java.nio.file.Files.writeString(directory.resolve("lib.ba"), "export def three = 3");
+        java.nio.file.Path shapes = directory.resolve("shapes.ba");
+        java.nio.file.Files.writeString(shapes, "def lib = import(\"lib.ba\")\ndef square = fn (n : int) : int -> ( n * n )\nprintln(\"loaded\")\nsquare(lib.three)");
+        java.nio.file.Path failing = directory.resolve("failing.ba");
+        java.nio.file.Files.writeString(failing, "def before = 1\n\ndef bad = java.lang.Integer.parseInt(\"x\")\ndef after = 2");
+        java.nio.file.Path empty = directory.resolve("empty.ba");
+        java.nio.file.Files.writeString(empty, ";; nothing\n");
+        List<String> lines = transcript(":load " + shapes, "square(lib.three)", ":load \"" + failing + "\"", "before", "after",
+                ":load " + empty, ":load " + directory.resolve("nosuch.ba"), ":load", "1");
+        Assertions.assertEquals("loaded", lines.get(0));
+        Assertions.assertEquals("9", lines.get(1));
+        Assertions.assertTrue(lines.get(2).startsWith("Error : ") && lines.get(2).contains("in " + failing + " at line number 3"), lines.get(2));
+        Assertions.assertEquals("1", lines.get(3));
+        Assertions.assertTrue(lines.get(4).startsWith("Error : Name used before definition : after"), lines.get(4));
+        Assertions.assertEquals("Cannot read " + directory.resolve("nosuch.ba") + " : no such file", lines.get(5));
+        Assertions.assertEquals(":load needs a file : :load script.ba", lines.get(6));
+        Assertions.assertEquals("1", lines.get(7));
+        Assertions.assertEquals(8, lines.size(), lines.toString());
+    }
 }

@@ -437,6 +437,7 @@ final class TypeChecker {
         this.checkingEffects = true;
         resetPass(true);
         walk(file);
+        publishResultType(file);
         for (BabbleParser.FunctionLiteralContext function : functions) {
             checkResult(function);
         }
@@ -452,6 +453,17 @@ final class TypeChecker {
         }
         LoweringAnalyzer.publish(pass, file, this);
         this.builtSummary = TypedModuleSummary.build(pass, this, new StaticRefs(pass, this));
+    }
+
+    /** The type of the file's last statement, for {@code :type} in the interactive mode (docs/design/bip004_repl.md §9). */
+    private void publishResultType(BabbleParser.FileContext file) {
+        List<BabbleParser.ExpressionContext> statements = file.expression();
+        if (!statements.isEmpty()) {
+            Type last = types.get(statements.getLast());
+            if (last != null && last != Type.ERROR) {
+                pass.analysis.setResultType(TypeDisplay.display(last));
+            }
+        }
     }
 
     private void resetPass(boolean clearAnnotations) {
