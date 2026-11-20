@@ -16,16 +16,33 @@ Babble is a toy language running on top of the Java Virtual Machine. Its objecti
 * to build a simple programming language that in turn can be used to teach programming to beginners.
 
 Scripts run either in a tree-walking interpreter, or compiled to JVM bytecode. Both modes
-give the same results, and the whole test suite runs in both. There is an interactive mode
-to try things out :
+give the same results, and the whole test suite runs in both.
+
+Get started
+-----------
+
+Babble needs Java 21 or later, and Maven. Build the jar (`-DskipTests` skips the test suite),
+then start the interactive mode to try things out :
 
 ```
-$ mvn package
+$ mvn package -DskipTests
 $ java -jar target/babble-1.0-SNAPSHOT.jar
 Babble. :help for help, :quit to leave.
 >> "Hello, " + "world"
 "Hello, world"
 ```
+
+`:help` lists the commands : `:type expr` shows the type of an expression, `:load file.ba` runs a
+file as if it was typed, `:quit` (or Ctrl-D) leaves. The same jar runs scripts too :
+
+```
+java -jar target/babble-1.0-SNAPSHOT.jar -O2                          # the interactive mode at -O0, -O1 (the default) or -O2
+java -Dbabble.mode=interpret -jar target/babble-1.0-SNAPSHOT.jar      # in the interpreter instead of the compiler
+java -jar target/babble-1.0-SNAPSHOT.jar script.ba [arguments...]     # runs a script
+java -jar target/babble-1.0-SNAPSHOT.jar -keep-alive script.ba        # runs it, then the interactive mode
+```
+
+*Interactive mode* and *Building and running* below have the details.
 
 What does it look like ?
 -------------------------
