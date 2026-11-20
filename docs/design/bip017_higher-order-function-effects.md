@@ -2,7 +2,7 @@
 
 **BIP:** 017  
 **Date:** 2026-11-19  
-**Status:** Decided / Draft (`BIP017-Q1`–`Q4` → `BIP017-D1`–`D4` decided; `BIP017-P1`–`P3` ready for implementation)  
+**Status:** Implemented in `RM009` (`BIP017-Q1`–`Q4` → `BIP017-D1`–`D4` decided; `BIP017-P1`–`P3` implemented across `Babble.g4`, `Formatter`, `EffectSet`, `Type.Function`, `TypeAnnotations`, `TypeChecker`, `TypeAlgebra`, `CallSolver`, `EffectChecker`, `TypedModuleSummary`, Argon `lib/hittables.ba`, `EffectsTestCase`, and `hof_with_effects.batest`)  
 **Depends on:** [bip007_effects.md](bip007_effects.md) (`RM002`, `RM007`), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md) (`RM004`: `TypedModuleSummary`, `CallSolver`, `TypeAlgebra`), [bip012_grammar-improvements.md](bip012_grammar-improvements.md) (`RM006`: predicate-free `SLL` grammar), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md) (`RM008`: pure-by-default opt-out surface syntax & return-through-borrow)  
 **Scope:** Effect-polymorphic callback-effect forwarding (`fn with f` / `fn with (f, g)`) across concrete functions, cross-module `TypedModuleSummary`, `interface` methods, and first-class function values; retirement of `BIP016-D6`'s implicit intra-file `fn io` HOF specialization.
 
