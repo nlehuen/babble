@@ -1,9 +1,10 @@
 package org.babblelang.compiler;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.babblelang.analysis.Resolution;
 import org.babblelang.analysis.ScopeAnalysis;
-import org.babblelang.parser.BabbleParser;
+import org.babblelang.ir.hir.HirClass;
+import org.babblelang.ir.hir.HirFunction;
+import org.babblelang.ir.hir.HirParam;
+import org.babblelang.ir.hir.HirVar;
 import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.JavaTypes;
 import org.objectweb.asm.ClassWriter;
@@ -14,7 +15,6 @@ import org.objectweb.asm.Type;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -24,124 +24,88 @@ import java.util.TreeMap;
 import static org.objectweb.asm.Opcodes.*;
 
 /**
- * The JVM class generated for a class or object expression (compiler phase 2, extracted in BIP014-P0) :
- * it extends {@code BabbleInstance} with one field per member, plus a hidden field per variable
- * of the constructor that a nested function captures, holding its cell. Its methods are JVM
- * instance methods.
+ * ANTLR-free JVM class generator for a compiled {@link HirClass} (compiler phase 2, detached in BIP014-P1).
  */
 final class ClassGen {
-    private final CodeGenerator cg;
-    final ParserRuleContext ctx;
+    private final HirEmitter emitter;
+    final HirClass cls;
     final String name;
     final ClassShape shape;
     final boolean arrayBacked;
     final String[] implementedInterfaces;
     final List<Class<?>> javaInterfaces;
     final ClassWriter writer;
-    final List<Resolution.Variable> hiddenCells = new ArrayList<>();
+    final List<HirVar> hiddenCells = new ArrayList<>();
     final ScopeAnalysis.PrimitiveKind[] memberKinds;
     final int[] primDefBits;
     final int primDefCount;
     final Map<String, String> superHelpers = new HashMap<>();
 
-    ClassGen(CodeGenerator cg, ParserRuleContext ctx, String name, ClassShape shape, boolean arrayBacked,
-             String[] implementedInterfaces, List<Class<?>> javaInterfaces) {
-        this.cg = cg;
-        this.ctx = ctx;
-        this.name = name;
-        this.shape = shape;
-        this.arrayBacked = arrayBacked;
-        this.implementedInterfaces = implementedInterfaces;
-        this.javaInterfaces = javaInterfaces;
-        this.writer = new ScriptClassWriter(cg.runtimeLoader, cg.className, cg.generatedClassParents, cg.generatedInterfaceParents);
+    ClassGen(HirEmitter emitter, HirClass cls) {
+        this.emitter = emitter;
+        this.cls = cls;
+        this.name = cls.jvmName();
+        this.shape = cls.shape();
+        this.arrayBacked = cls.arrayBacked();
+        this.implementedInterfaces = cls.implementedJvmInterfaces().toArray(new String[0]);
+        this.javaInterfaces = cls.javaInterfaces();
+        this.writer = new ScriptClassWriter(emitter.runtimeLoader, emitter.className,
+                emitter.generatedClassParents, emitter.generatedInterfaceParents);
         if (arrayBacked) {
             this.memberKinds = new ScopeAnalysis.PrimitiveKind[0];
             this.primDefBits = new int[0];
             this.primDefCount = 0;
             return;
         }
-        for (Resolution.Variable variable : cg.resolution.declared(ctx)) {
-            if (variable.isCell()) {
+        for (HirVar variable : cls.declaredVars()) {
+            if (variable.cell()) {
                 hiddenCells.add(variable);
             }
         }
-        int count = shape.memberCount();
-        this.memberKinds = new ScopeAnalysis.PrimitiveKind[count];
-        this.primDefBits = new int[count];
-        Arrays.fill(this.memberKinds, ScopeAnalysis.PrimitiveKind.NONE);
-        Arrays.fill(this.primDefBits, -1);
-        if (ctx instanceof BabbleParser.ClassExpressionContext c && c.classParameters() != null) {
-            for (int p = 0; p < shape.parameters().length; p++) {
-                int idx = shape.parameterMember(p);
-                if (idx >= 0 && !shape.isMethod(idx)) {
-                    this.memberKinds[idx] = cg.scopes.declarationKind(c.classParameters().classParam(p));
-                }
-            }
-        }
-        BabbleParser.BlockContext body = ctx instanceof BabbleParser.ClassExpressionContext c
-                ? c.classBlock : ((BabbleParser.ObjectExpressionContext) ctx).createBlock;
-        int bits = 0;
-        for (BabbleParser.ExpressionContext expr : body.expression()) {
-            if (expr instanceof BabbleParser.DefExpressionContext def) {
-                ScopeAnalysis.DefTarget dt = cg.scopes.defTarget(def);
-                if (dt.kind() == ScopeAnalysis.DefKind.MEMBER) {
-                    int idx = dt.index();
-                    if (!shape.isMethod(idx)) {
-                        ScopeAnalysis.PrimitiveKind pk = cg.scopes.declarationKind(def);
-                        this.memberKinds[idx] = pk;
-                        if (pk.isPrimitive()) {
-                            this.primDefBits[idx] = bits++;
-                        }
-                    }
-                }
-            }
-        }
-        this.primDefCount = bits;
+        this.memberKinds = cls.memberKinds();
+        this.primDefBits = cls.primDefBits();
+        this.primDefCount = cls.primDefCount();
     }
 
     String methodName(String member) {
-        return "m$" + member;
+        return cls.methodName(member);
     }
 
-    /** The literal of a method member of the class. */
-    BabbleParser.FunctionLiteralContext methodLiteral(String member) {
-        BabbleParser.BlockContext body = ctx instanceof BabbleParser.ClassExpressionContext c
-                ? c.classBlock : ((BabbleParser.ObjectExpressionContext) ctx).createBlock;
-        for (BabbleParser.ExpressionContext expression : body.expression()) {
-            if (expression instanceof BabbleParser.DefExpressionContext def && def.name.getText().equals(member)
-                    && def.value instanceof BabbleParser.FunctionLiteralContext literal) {
-                return literal;
-            }
+    private HirFunction methodFunction(String member) {
+        Integer fnId = cls.methodFunctionIds().get(member);
+        if (fnId == null) {
+            throw new IllegalStateException("No method " + member + " in " + name);
         }
-        throw new IllegalStateException("No method " + member + " in " + name);
+        HirFunction fn = emitter.module.function(fnId);
+        emitter.ensureFunctionScheduled(fn);
+        return fn;
     }
 
     String superHelper(String directParentJvm, String memberName, ScopeAnalysis.FunctionSignature sig) {
-        String desc = CodeGenerator.bridgeDescriptor(sig);
+        String desc = HirEmitter.bridgeDescriptor(sig);
         String key = directParentJvm + "." + memberName + desc;
         return superHelpers.computeIfAbsent(key, k -> {
-            String helperName = "$super$" + cg.nextSuperHelper();
+            String helperName = "$super$" + emitter.nextSuperHelper();
             MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, helperName, desc, null, null);
             m.visitCode();
-            int[] paramSlots = CodeGenerator.bridgeParamSlots(sig);
+            int[] paramSlots = HirEmitter.bridgeParamSlots(sig);
             m.visitVarInsn(ALOAD, 0);
             m.visitVarInsn(ALOAD, 1);
             for (int i = 0; i < sig.parameterKinds().length; i++) {
-                CodeGenerator.loadKindOn(m, sig.parameterKinds()[i], paramSlots[i]);
+                HirEmitter.loadKindOn(m, sig.parameterKinds()[i], paramSlots[i]);
             }
-            m.visitMethodInsn(INVOKESPECIAL, directParentJvm, CodeGenerator.bridgeMethodName(memberName), desc, true);
-            m.visitInsn(CodeGenerator.returnInsn(sig.returnKind()));
+            m.visitMethodInsn(INVOKESPECIAL, directParentJvm, HirEmitter.bridgeMethodName(memberName), desc, true);
+            m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
             m.visitMaxs(0, 0);
             m.visitEnd();
             return helperName;
         });
     }
 
-    /** Fields, the constructor, and the member table ; the methods are generated as they come. */
     void begin() {
-        writer.visit(V21, ACC_PUBLIC | ACC_FINAL | ACC_SUPER | ACC_SYNTHETIC, name, null, CodeGenerator.BABBLE_INSTANCE,
+        writer.visit(V21, ACC_PUBLIC | ACC_FINAL | ACC_SUPER | ACC_SYNTHETIC, name, null, HirEmitter.BABBLE_INSTANCE,
                 implementedInterfaces.length == 0 ? null : implementedInterfaces);
-        writer.visitSource(cg.sourceName, null);
+        writer.visitSource(emitter.sourceName, null);
         if (!javaInterfaces.isEmpty()) {
             MethodVisitor lookupMv = writer.visitMethod(ACC_PROTECTED | ACC_SYNTHETIC, "javaDefaultLookup",
                     "()Ljava/lang/invoke/MethodHandles$Lookup;", null, null);
@@ -153,40 +117,40 @@ final class ClassGen {
             lookupMv.visitEnd();
         }
         if (arrayBacked) {
-            MethodVisitor init = writer.visitMethod(ACC_PUBLIC, "<init>", "(L" + CodeGenerator.BABBLE_CLASS + ";L" + CodeGenerator.SCRIPT_RUNTIME + ";)V", null, null);
+            MethodVisitor init = writer.visitMethod(ACC_PUBLIC, "<init>", "(L" + HirEmitter.BABBLE_CLASS + ";L" + HirEmitter.SCRIPT_RUNTIME + ";)V", null, null);
             init.visitCode();
             init.visitVarInsn(ALOAD, 0);
             init.visitVarInsn(ALOAD, 1);
             init.visitVarInsn(ALOAD, 2);
             init.visitInsn(ICONST_1);
-            init.visitMethodInsn(INVOKESPECIAL, CodeGenerator.BABBLE_INSTANCE, "<init>", "(L" + CodeGenerator.BABBLE_CLASS + ";L" + CodeGenerator.SCRIPT_RUNTIME + ";Z)V", false);
+            init.visitMethodInsn(INVOKESPECIAL, HirEmitter.BABBLE_INSTANCE, "<init>", "(L" + HirEmitter.BABBLE_CLASS + ";L" + HirEmitter.SCRIPT_RUNTIME + ";Z)V", false);
             init.visitInsn(RETURN);
             init.visitMaxs(0, 0);
             init.visitEnd();
             return;
         }
         for (int i = 0; i < shape.memberCount(); i++) {
-            writer.visitField(0, shape.member(i), CodeGenerator.jvmDescriptor(memberKinds[i]), null, null).visitEnd();
+            writer.visitField(0, shape.member(i), HirEmitter.jvmDescriptor(memberKinds[i]), null, null).visitEnd();
         }
-        for (Resolution.Variable variable : hiddenCells) {
-            writer.visitField(0, CodeGenerator.hiddenField(variable), "Ljava/lang/Object;", null, null).visitEnd();
+        for (HirVar variable : hiddenCells) {
+            writer.visitField(0, variable.hiddenFieldName(), "Ljava/lang/Object;", null, null).visitEnd();
         }
         int definedWords = (primDefCount + 31) / 32;
         for (int w = 0; w < definedWords; w++) {
             writer.visitField(0, "$defined$" + w, "I", null, null).visitEnd();
         }
 
-        MethodVisitor init = writer.visitMethod(ACC_PUBLIC, "<init>", "(L" + CodeGenerator.BABBLE_CLASS + ";L" + CodeGenerator.SCRIPT_RUNTIME + ";)V", null, null);
+        MethodVisitor init = writer.visitMethod(ACC_PUBLIC, "<init>", "(L" + HirEmitter.BABBLE_CLASS + ";L" + HirEmitter.SCRIPT_RUNTIME + ";)V", null, null);
         init.visitCode();
         init.visitVarInsn(ALOAD, 0);
         init.visitVarInsn(ALOAD, 1);
         init.visitVarInsn(ALOAD, 2);
         init.visitInsn(ICONST_0);
-        init.visitMethodInsn(INVOKESPECIAL, CodeGenerator.BABBLE_INSTANCE, "<init>", "(L" + CodeGenerator.BABBLE_CLASS + ";L" + CodeGenerator.SCRIPT_RUNTIME + ";Z)V", false);
+        init.visitMethodInsn(INVOKESPECIAL, HirEmitter.BABBLE_INSTANCE, "<init>", "(L" + HirEmitter.BABBLE_CLASS + ";L" + HirEmitter.SCRIPT_RUNTIME + ";Z)V", false);
         for (int i = 0; i < shape.memberCount(); i++) {
             if (!memberKinds[i].isPrimitive()) {
                 init.visitVarInsn(ALOAD, 0);
-                init.visitFieldInsn(GETSTATIC, CodeGenerator.RUNTIME + "Undefined", "UNDEFINED", "L" + CodeGenerator.RUNTIME + "Undefined;");
+                init.visitFieldInsn(GETSTATIC, HirEmitter.RUNTIME + "Undefined", "UNDEFINED", "L" + HirEmitter.RUNTIME + "Undefined;");
                 init.visitFieldInsn(PUTFIELD, name, shape.member(i), "Ljava/lang/Object;");
             }
         }
@@ -202,85 +166,86 @@ final class ClassGen {
     }
 
     void emitInterfaceBridges() {
-        ScopeAnalysis.TypeHierarchyInfo hierarchy = cg.scopes.typeHierarchy(shape.id());
+        ScopeAnalysis.TypeHierarchyInfo hierarchy = emitter.module.typeHierarchy(shape.id());
         if (hierarchy == null) {
             return;
         }
-        Map<String, CodeGenerator.AncestorMethod> ancestors = cg.collectAncestorMethods(hierarchy);
-        for (CodeGenerator.AncestorMethod anc : ancestors.values()) {
+        Map<String, HirEmitter.AncestorMethod> ancestors = emitter.collectAncestorMethods(hierarchy);
+        for (HirEmitter.AncestorMethod anc : ancestors.values()) {
             String memberName = anc.memberName();
             ScopeAnalysis.FunctionSignature sig = anc.signature();
-            int[] paramSlots = CodeGenerator.bridgeParamSlots(sig);
+            int[] paramSlots = HirEmitter.bridgeParamSlots(sig);
             int ifaceCount = sig.parameterKinds().length;
-            MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, CodeGenerator.bridgeMethodName(memberName), anc.descriptor(), null, null);
+            MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, HirEmitter.bridgeMethodName(memberName), anc.descriptor(), null, null);
             m.visitCode();
             int ownIdx = shape.memberIndex(memberName);
             if (ownIdx >= 0 && !arrayBacked && shape.isMethod(ownIdx)) {
-                BabbleParser.FunctionLiteralContext lit = methodLiteral(memberName);
-                int litCount = cg.scopes.parameters(lit).length;
+                HirFunction fn = methodFunction(memberName);
+                int fnCount = fn.params().size();
                 m.visitVarInsn(ALOAD, 0);
                 m.visitInsn(DUP);
                 m.visitFieldInsn(GETFIELD, name, memberName, "Ljava/lang/Object;");
                 m.visitLdcInsn(memberName);
-                m.visitMethodInsn(INVOKESTATIC, CodeGenerator.CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
-                m.visitTypeInsn(CHECKCAST, CodeGenerator.COMPILED_METHOD);
+                m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_METHOD);
                 m.visitVarInsn(ALOAD, 1);
-                if (cg.hasSpec(lit) && ifaceCount == litCount) {
-                    List<BabbleParser.FnParamContext> decls = lit.fnParameters().fnParam();
+                if (fn.hasSpec() && ifaceCount == fnCount) {
+                    List<HirParam> params = fn.params();
                     for (int i = 0; i < ifaceCount; i++) {
                         ScopeAnalysis.PrimitiveKind fromK = sig.parameterKinds()[i];
-                        ScopeAnalysis.PrimitiveKind toK = cg.scopes.declarationKind(decls.get(i));
-                        CodeGenerator.loadKindOn(m, fromK, paramSlots[i]);
-                        CodeGenerator.emitAdaptKind(m, fromK, toK);
+                        HirParam param = params.get(i);
+                        ScopeAnalysis.PrimitiveKind toK = param.kind();
+                        HirEmitter.loadKindOn(m, fromK, paramSlots[i]);
+                        HirEmitter.emitAdaptKind(m, fromK, toK);
                         if (toK == ScopeAnalysis.PrimitiveKind.NONE) {
-                            CodeGenerator.emitWidenBoxed(m, cg.scopes.numericWideningRank(decls.get(i)));
+                            HirEmitter.emitWidenBoxed(m, param.wideningRank());
                         }
                     }
-                    m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName) + "$spec", cg.methodSpecDescriptor(lit), false);
-                    CodeGenerator.emitAdaptKind(m, cg.scopes.functionReturnKind(lit), sig.returnKind());
-                    m.visitInsn(CodeGenerator.returnInsn(sig.returnKind()));
-                } else if (cg.isSpread(lit) && ifaceCount <= litCount) {
+                    m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName) + "$spec", HirEmitter.methodSpecDescriptor(fn), false);
+                    HirEmitter.emitAdaptKind(m, fn.returnKind(), sig.returnKind());
+                    m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
+                } else if (fn.isSpread() && ifaceCount <= fnCount) {
                     m.visitInsn(ACONST_NULL);
                     for (int i = 0; i < ifaceCount; i++) {
                         ScopeAnalysis.PrimitiveKind pk = sig.parameterKinds()[i];
-                        CodeGenerator.loadKindOn(m, pk, paramSlots[i]);
-                        CodeGenerator.boxOn(m, pk);
+                        HirEmitter.loadKindOn(m, pk, paramSlots[i]);
+                        HirEmitter.boxOn(m, pk);
                     }
-                    for (int i = ifaceCount; i < litCount; i++) {
-                        m.visitFieldInsn(GETSTATIC, CodeGenerator.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
+                    for (int i = ifaceCount; i < fnCount; i++) {
+                        m.visitFieldInsn(GETSTATIC, HirEmitter.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
                     }
-                    m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName), cg.methodDirectDescriptor(lit), false);
-                    CodeGenerator.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
-                    m.visitInsn(CodeGenerator.returnInsn(sig.returnKind()));
+                    m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName), HirEmitter.methodDirectDescriptor(fn), false);
+                    HirEmitter.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
+                    m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
                 } else {
-                    String siteField = cg.constantPool.syntheticCallSiteField(shape.name() + "." + memberName, ifaceCount);
-                    CodeGenerator.packBridgeArgsArray(m, sig, paramSlots);
+                    String siteField = emitter.constantPool.syntheticCallSiteField(shape.name() + "." + memberName, ifaceCount);
+                    HirEmitter.packBridgeArgsArray(m, sig, paramSlots);
                     m.visitInsn(ACONST_NULL);
-                    m.visitFieldInsn(GETSTATIC, cg.className, siteField, "L" + CodeGenerator.CALL_SITE + ";");
-                    m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName) + (cg.isSpread(lit) ? "$call" : ""), CodeGenerator.METHOD_DESCRIPTOR, false);
-                    CodeGenerator.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
-                    m.visitInsn(CodeGenerator.returnInsn(sig.returnKind()));
+                    m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
+                    m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName) + (fn.isSpread() ? "$call" : ""), HirEmitter.METHOD_DESCRIPTOR, false);
+                    HirEmitter.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
+                    m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
                 }
             } else if (ownIdx >= 0) {
-                String siteField = cg.constantPool.syntheticCallSiteField(shape.name() + "." + memberName, ifaceCount);
+                String siteField = emitter.constantPool.syntheticCallSiteField(shape.name() + "." + memberName, ifaceCount);
                 m.visitVarInsn(ALOAD, 0);
                 m.visitLdcInsn(memberName);
                 m.visitInsn(ICONST_0);
-                m.visitMethodInsn(INVOKEVIRTUAL, CodeGenerator.BABBLE_INSTANCE, "getMember", "(Ljava/lang/String;Z)Ljava/lang/Object;", false);
-                m.visitFieldInsn(GETSTATIC, cg.className, siteField, "L" + CodeGenerator.CALL_SITE + ";");
-                m.visitMethodInsn(INVOKESTATIC, CodeGenerator.RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CodeGenerator.CALL_SITE + ";)L" + CodeGenerator.CALLABLE + ";", false);
+                m.visitMethodInsn(INVOKEVIRTUAL, HirEmitter.BABBLE_INSTANCE, "getMember", "(Ljava/lang/String;Z)Ljava/lang/Object;", false);
+                m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
+                m.visitMethodInsn(INVOKESTATIC, HirEmitter.RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + HirEmitter.CALL_SITE + ";)L" + HirEmitter.CALLABLE + ";", false);
                 m.visitVarInsn(ALOAD, 1);
-                CodeGenerator.packBridgeArgsArray(m, sig, paramSlots);
+                HirEmitter.packBridgeArgsArray(m, sig, paramSlots);
                 m.visitInsn(ACONST_NULL);
-                m.visitFieldInsn(GETSTATIC, cg.className, siteField, "L" + CodeGenerator.CALL_SITE + ";");
-                m.visitMethodInsn(INVOKEINTERFACE, CodeGenerator.CALLABLE, "call",
-                        "(L" + CodeGenerator.SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CodeGenerator.CALL_SITE + ";)Ljava/lang/Object;", true);
-                CodeGenerator.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
-                m.visitInsn(CodeGenerator.returnInsn(sig.returnKind()));
+                m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
+                m.visitMethodInsn(INVOKEINTERFACE, HirEmitter.CALLABLE, "call",
+                        "(L" + HirEmitter.SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + HirEmitter.CALL_SITE + ";)Ljava/lang/Object;", true);
+                HirEmitter.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
+                m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
             } else {
-                CodeGenerator.InheritedDefault def = cg.findInheritedDefault(hierarchy, memberName);
-                String directParentJvm = def != null ? cg.allInterfaceJvmNames.get(def.directParentId()) : null;
-                cg.emitInheritedDefaultInvoke(m, def, directParentJvm, memberName, anc.descriptor(), sig);
+                HirEmitter.InheritedDefault def = emitter.findInheritedDefault(hierarchy, memberName);
+                String directParentJvm = def != null ? emitter.allInterfaceJvmNames.get(def.directParentId()) : null;
+                emitter.emitInheritedDefaultInvoke(m, def, directParentJvm, memberName, anc.descriptor(), sig);
             }
             m.visitMaxs(0, 0);
             m.visitEnd();
@@ -291,7 +256,7 @@ final class ClassGen {
     }
 
     private void emitJavaInterfaceBridges(ScopeAnalysis.TypeHierarchyInfo hierarchy,
-                                          Map<String, CodeGenerator.AncestorMethod> babbleAncestors) {
+                                          Map<String, HirEmitter.AncestorMethod> babbleAncestors) {
         TreeMap<String, List<Method>> grouped = new TreeMap<>();
         for (Class<?> jc : javaInterfaces) {
             for (Method jm : jc.getMethods()) {
@@ -310,7 +275,7 @@ final class ClassGen {
             String mName = jm.getName();
             int ownIdx = shape.memberIndex(mName);
             boolean ownMethod = ownIdx >= 0 && shape.isMethod(ownIdx);
-            CodeGenerator.InheritedDefault inheritedBabbleDefault = ownIdx < 0 ? cg.findInheritedDefault(hierarchy, mName) : null;
+            HirEmitter.InheritedDefault inheritedBabbleDefault = ownIdx < 0 ? emitter.findInheritedDefault(hierarchy, mName) : null;
             boolean hasBabbleImpl = ownMethod || inheritedBabbleDefault != null;
             if (!hasBabbleImpl) {
                 boolean hasActiveJavaDefault = false;
@@ -340,8 +305,8 @@ final class ClassGen {
     }
 
     private void emitJavaMethodBridge(Method jm, boolean ownMethod,
-                                      CodeGenerator.InheritedDefault inheritedBabbleDefault,
-                                      CodeGenerator.AncestorMethod babbleAnc) {
+                                      HirEmitter.InheritedDefault inheritedBabbleDefault,
+                                      HirEmitter.AncestorMethod babbleAnc) {
         String mName = jm.getName();
         String jvmDesc = Type.getMethodDescriptor(jm);
         Class<?>[] paramTypes = jm.getParameterTypes();
@@ -351,10 +316,10 @@ final class ClassGen {
         m.visitCode();
 
         if (!ownMethod && inheritedBabbleDefault == null) {
-            m.visitTypeInsn(NEW, CodeGenerator.RUNTIME + "BabbleException");
+            m.visitTypeInsn(NEW, HirEmitter.RUNTIME + "BabbleException");
             m.visitInsn(DUP);
             ConstantPool.pushString(m, "No implementation of " + JavaTypes.signature(jm));
-            m.visitMethodInsn(INVOKESPECIAL, CodeGenerator.RUNTIME + "BabbleException", "<init>", "(Ljava/lang/String;)V", false);
+            m.visitMethodInsn(INVOKESPECIAL, HirEmitter.RUNTIME + "BabbleException", "<init>", "(Ljava/lang/String;)V", false);
             m.visitInsn(ATHROW);
             m.visitMaxs(0, 0);
             m.visitEnd();
@@ -369,46 +334,45 @@ final class ClassGen {
         }
         int rtSlot = nextSlot;
         m.visitVarInsn(ALOAD, 0);
-        m.visitMethodInsn(INVOKEVIRTUAL, CodeGenerator.BABBLE_INSTANCE, "runtime", "()L" + CodeGenerator.SCRIPT_RUNTIME + ";", false);
+        m.visitMethodInsn(INVOKEVIRTUAL, HirEmitter.BABBLE_INSTANCE, "runtime", "()L" + HirEmitter.SCRIPT_RUNTIME + ";", false);
         m.visitVarInsn(ASTORE, rtSlot);
         String descText = shape.name() + "." + mName;
 
         if (ownMethod && !arrayBacked) {
-            BabbleParser.FunctionLiteralContext lit = methodLiteral(mName);
-            int litCount = cg.scopes.parameters(lit).length;
+            HirFunction fn = methodFunction(mName);
+            int fnCount = fn.params().size();
             m.visitVarInsn(ALOAD, 0);
             m.visitInsn(DUP);
             m.visitFieldInsn(GETFIELD, name, mName, "Ljava/lang/Object;");
             m.visitLdcInsn(mName);
-            m.visitMethodInsn(INVOKESTATIC, CodeGenerator.CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
-            m.visitTypeInsn(CHECKCAST, CodeGenerator.COMPILED_METHOD);
+            m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_METHOD);
             m.visitVarInsn(ALOAD, rtSlot);
-            if (cg.hasSpec(lit) && paramTypes.length == litCount) {
-                List<BabbleParser.FnParamContext> decls = lit.fnParameters().fnParam();
+            if (fn.hasSpec() && paramTypes.length == fnCount) {
+                List<HirParam> params = fn.params();
                 for (int i = 0; i < paramTypes.length; i++) {
-                    BabbleParser.FnParamContext decl = decls.get(i);
-                    ScopeAnalysis.PrimitiveKind toK = cg.scopes.declarationKind(decl);
-                    cg.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], toK, cg.scopes.numericWideningRank(decl), cg.scopes.checkedType(decl));
+                    HirParam param = params.get(i);
+                    HirEmitter.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], param.kind(), param.wideningRank(), param.checkedType());
                 }
-                m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + "$spec", cg.methodSpecDescriptor(lit), false);
-                cg.emitReturnToJava(m, cg.scopes.functionReturnKind(lit), retType, descText, rtSlot);
-            } else if (cg.isSpread(lit) && paramTypes.length <= litCount) {
+                m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + "$spec", HirEmitter.methodSpecDescriptor(fn), false);
+                HirEmitter.emitReturnToJava(m, fn.returnKind(), retType, descText, rtSlot);
+            } else if (fn.isSpread() && paramTypes.length <= fnCount) {
                 m.visitInsn(ACONST_NULL);
                 for (int i = 0; i < paramTypes.length; i++) {
-                    cg.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ScopeAnalysis.PrimitiveKind.NONE, -1, null);
+                    HirEmitter.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ScopeAnalysis.PrimitiveKind.NONE, -1, null);
                 }
-                for (int i = paramTypes.length; i < litCount; i++) {
-                    m.visitFieldInsn(GETSTATIC, CodeGenerator.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
+                for (int i = paramTypes.length; i < fnCount; i++) {
+                    m.visitFieldInsn(GETSTATIC, HirEmitter.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
                 }
-                m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName), cg.methodDirectDescriptor(lit), false);
-                cg.emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
+                m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName), HirEmitter.methodDirectDescriptor(fn), false);
+                HirEmitter.emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
             } else {
-                String siteField = cg.constantPool.javaCallSiteField(mName, paramTypes.length);
-                CodeGenerator.emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
+                String siteField = emitter.constantPool.javaCallSiteField(mName, paramTypes.length);
+                HirEmitter.emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
                 m.visitInsn(ACONST_NULL);
-                m.visitFieldInsn(GETSTATIC, cg.className, siteField, "L" + CodeGenerator.CALL_SITE + ";");
-                m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + (cg.isSpread(lit) ? "$call" : ""), CodeGenerator.METHOD_DESCRIPTOR, false);
-                cg.emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
+                m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
+                m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + (fn.isSpread() ? "$call" : ""), HirEmitter.METHOD_DESCRIPTOR, false);
+                HirEmitter.emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
             }
             m.visitMaxs(0, 0);
             m.visitEnd();
@@ -421,29 +385,29 @@ final class ClassGen {
             m.visitVarInsn(ALOAD, 0);
             m.visitVarInsn(ALOAD, rtSlot);
             for (int i = 0; i < paramTypes.length; i++) {
-                cg.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ancSig.parameterKinds()[i], -1, null);
+                HirEmitter.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ancSig.parameterKinds()[i], -1, null);
             }
-            m.visitMethodInsn(INVOKEVIRTUAL, name, CodeGenerator.bridgeMethodName(mName), babbleAnc.descriptor(), false);
-            cg.emitReturnToJava(m, ancSig.returnKind(), retType, descText, rtSlot);
+            m.visitMethodInsn(INVOKEVIRTUAL, name, HirEmitter.bridgeMethodName(mName), babbleAnc.descriptor(), false);
+            HirEmitter.emitReturnToJava(m, ancSig.returnKind(), retType, descText, rtSlot);
             m.visitMaxs(0, 0);
             m.visitEnd();
             return;
         }
 
-        String siteField = cg.constantPool.javaCallSiteField(mName, paramTypes.length);
+        String siteField = emitter.constantPool.javaCallSiteField(mName, paramTypes.length);
         m.visitVarInsn(ALOAD, 0);
         m.visitLdcInsn(mName);
         m.visitInsn(ICONST_0);
-        m.visitMethodInsn(INVOKEVIRTUAL, CodeGenerator.BABBLE_INSTANCE, "getMember", "(Ljava/lang/String;Z)Ljava/lang/Object;", false);
-        m.visitFieldInsn(GETSTATIC, cg.className, siteField, "L" + CodeGenerator.CALL_SITE + ";");
-        m.visitMethodInsn(INVOKESTATIC, CodeGenerator.RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CodeGenerator.CALL_SITE + ";)L" + CodeGenerator.CALLABLE + ";", false);
+        m.visitMethodInsn(INVOKEVIRTUAL, HirEmitter.BABBLE_INSTANCE, "getMember", "(Ljava/lang/String;Z)Ljava/lang/Object;", false);
+        m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
+        m.visitMethodInsn(INVOKESTATIC, HirEmitter.RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + HirEmitter.CALL_SITE + ";)L" + HirEmitter.CALLABLE + ";", false);
         m.visitVarInsn(ALOAD, rtSlot);
-        CodeGenerator.emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
+        HirEmitter.emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
         m.visitInsn(ACONST_NULL);
-        m.visitFieldInsn(GETSTATIC, cg.className, siteField, "L" + CodeGenerator.CALL_SITE + ";");
-        m.visitMethodInsn(INVOKEINTERFACE, CodeGenerator.CALLABLE, "call",
-                "(L" + CodeGenerator.SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CodeGenerator.CALL_SITE + ";)Ljava/lang/Object;", true);
-        cg.emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
+        m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
+        m.visitMethodInsn(INVOKEINTERFACE, HirEmitter.CALLABLE, "call",
+                "(L" + HirEmitter.SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + HirEmitter.CALL_SITE + ";)Ljava/lang/Object;", true);
+        HirEmitter.emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
         m.visitMaxs(0, 0);
         m.visitEnd();
     }
@@ -463,7 +427,7 @@ final class ClassGen {
         m.visitFieldInsn(PUTFIELD, name, definedField, "I");
     }
 
-    void emitCheckDefined(MethodVisitor m, int instanceLocal, int memberIndex, String memberName, ParserRuleContext at) {
+    void emitCheckDefined(MethodVisitor m, int instanceLocal, int memberIndex, String memberName, int lineNumber) {
         int bit = primDefBits[memberIndex];
         if (bit < 0) {
             return;
@@ -476,9 +440,9 @@ final class ClassGen {
         ConstantPool.pushInt(m, mask);
         m.visitInsn(IAND);
         m.visitJumpInsn(IFNE, ok);
-        cg.line(at);
+        emitter.line(lineNumber);
         m.visitLdcInsn(memberName);
-        m.visitMethodInsn(INVOKESTATIC, CodeGenerator.RUNTIME + "Members", "usedBeforeDefinition", "(Ljava/lang/String;)L" + CodeGenerator.RUNTIME + "BabbleException;", false);
+        m.visitMethodInsn(INVOKESTATIC, HirEmitter.RUNTIME + "Members", "usedBeforeDefinition", "(Ljava/lang/String;)L" + HirEmitter.RUNTIME + "BabbleException;", false);
         m.visitInsn(ATHROW);
         m.visitLabel(ok);
     }
@@ -522,7 +486,6 @@ final class ClassGen {
         m.visitEnd();
     }
 
-    /** {@code field(int)} or {@code setField(int, Object)} : a switch over the member fields. */
     private void memberTable(String method, String descriptor, boolean set) {
         MethodVisitor m = writer.visitMethod(ACC_PROTECTED, method, descriptor, null, null);
         m.visitCode();
@@ -537,7 +500,7 @@ final class ClassGen {
             for (int i = 0; i < cases.length; i++) {
                 m.visitLabel(cases[i]);
                 ScopeAnalysis.PrimitiveKind mk = memberKinds[i];
-                String desc = CodeGenerator.jvmDescriptor(mk);
+                String desc = HirEmitter.jvmDescriptor(mk);
                 if (set) {
                     m.visitVarInsn(ALOAD, 0);
                     m.visitVarInsn(ALOAD, 2);
@@ -590,25 +553,27 @@ final class ClassGen {
                         m.visitJumpInsn(IFEQ, undef);
                         m.visitVarInsn(ALOAD, 0);
                         m.visitFieldInsn(GETFIELD, name, shape.member(i), desc);
-                        CodeGenerator.boxOn(m, mk);
+                        HirEmitter.boxOn(m, mk);
                         m.visitInsn(ARETURN);
                         m.visitLabel(undef);
-                        m.visitFieldInsn(GETSTATIC, CodeGenerator.RUNTIME + "Undefined", "UNDEFINED", "L" + CodeGenerator.RUNTIME + "Undefined;");
+                        m.visitFieldInsn(GETSTATIC, HirEmitter.RUNTIME + "Undefined", "UNDEFINED", "L" + HirEmitter.RUNTIME + "Undefined;");
                         m.visitInsn(ARETURN);
                     } else {
                         m.visitVarInsn(ALOAD, 0);
                         m.visitFieldInsn(GETFIELD, name, shape.member(i), desc);
-                        CodeGenerator.boxOn(m, mk);
+                        HirEmitter.boxOn(m, mk);
                         m.visitInsn(ARETURN);
                     }
                 }
             }
         }
         m.visitLabel(fallback);
-        m.visitTypeInsn(NEW, "java/lang/IndexOutOfBoundsException");
-        m.visitInsn(DUP);
-        m.visitMethodInsn(INVOKESPECIAL, "java/lang/IndexOutOfBoundsException", "<init>", "()V", false);
-        m.visitInsn(ATHROW);
+        if (set) {
+            m.visitInsn(RETURN);
+        } else {
+            m.visitInsn(ACONST_NULL);
+            m.visitInsn(ARETURN);
+        }
         m.visitMaxs(0, 0);
         m.visitEnd();
     }

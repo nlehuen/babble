@@ -171,6 +171,8 @@ public final class ScopeAnalysis {
     private final java.util.Map<ParserRuleContext, Object> resolvedLiterals = new java.util.IdentityHashMap<>();
     private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
     private final ParseTreeProperty<PrimitiveKind> expressionKinds = new ParseTreeProperty<>();
+    private final java.util.Set<ParserRuleContext> expressionDeeplyImmutable = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private final java.util.Set<ParserRuleContext> expressionStrings = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private final ParseTreeProperty<PrimitiveKind> declarationKinds = new ParseTreeProperty<>();
     private final ParseTreeProperty<PrimitiveKind> functionReturnKinds = new ParseTreeProperty<>();
     private final java.util.Set<ParserRuleContext> definitelyDefined = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
@@ -377,6 +379,14 @@ public final class ScopeAnalysis {
         }
     }
 
+    void markExpressionDeeplyImmutable(ParserRuleContext ctx) {
+        expressionDeeplyImmutable.add(ctx);
+    }
+
+    void markExpressionString(ParserRuleContext ctx) {
+        expressionStrings.add(ctx);
+    }
+
     void setDeclarationKind(ParserRuleContext decl, PrimitiveKind kind) {
         if (kind != PrimitiveKind.NONE) {
             declarationKinds.put(decl, kind);
@@ -461,6 +471,16 @@ public final class ScopeAnalysis {
     public PrimitiveKind expressionKind(ParserRuleContext ctx) {
         PrimitiveKind kind = expressionKinds.get(ctx);
         return kind != null ? kind : PrimitiveKind.NONE;
+    }
+
+    /** Whether the converged static type of {@code ctx} is deeply immutable (scalars, null, frozen, deep record/entry). */
+    public boolean isExpressionDeeplyImmutable(ParserRuleContext ctx) {
+        return expressionDeeplyImmutable.contains(ctx);
+    }
+
+    /** Whether the converged static type of {@code ctx} is {@code string}. */
+    public boolean isExpressionString(ParserRuleContext ctx) {
+        return expressionStrings.contains(ctx);
     }
 
     /** The storage primitive kind of a declaration, or {@link PrimitiveKind#NONE}. */
