@@ -109,10 +109,14 @@ assert(adder(20, 22) == 42)
 
 ;; A combinator forwarding the effects of the callbacks it captures: compose of pure callbacks
 ;; is pure, compose of an io callback is io
-def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn calling (f, g) (A): C -> (
+def compose of (A, B, C) = fn (f: fn (A): B, g: fn (B): C): fn calling (f, g) (A): C -> (
     fn calling (f, g) (a: A) -> (g(f(a)))
 )
 def incThenShow = fn (x: int): string -> (compose(fn (y: int): int -> (y + 1), fn (y: int): string -> ("v" + y))(x))
 assert(incThenShow(41) == "v42")
 def logged: fn io (x: int): int = compose(fn io (y: int): int -> (y + 1), fn (y: int): int -> (y * 2))
 assert(logged(3) == 8)
+
+;; The returned closure aliases f and g (it is not a store), so a calling callback can be composed
+def twice = fn calling f (f: fn (x: int): int, x: int): int -> (compose(f, f)(x))
+assert(twice(fn (y: int): int -> (y * 3), 2) == 18)

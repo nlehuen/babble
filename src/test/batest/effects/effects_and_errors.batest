@@ -181,12 +181,13 @@ def p = fn (xs : java.util.List of int) -> (
 Function p violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
-;; borrowed this/param escape via storage and inner closure mutating this
+;; returning a closure capturing this is return-through-borrow of this, like returning this (BIP017-D6)
 def Box = class (def v : int) (
     def escape = fn () : fn () : int -> ( fn () -> ( this.v ) )
 )
+println(Box(4).escape()())
 }}}}}
-Borrowed this escapes via captured closure : mark function as shared
+4
 
 {{{{{
 def Box = class (def v : int) ()
