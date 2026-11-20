@@ -1009,15 +1009,17 @@ final class TypeChecker {
             result = inferFunctionResult(literal);
         }
         return recordFunctionLiteral(
-                new Type.Function(annotator.typeVarsOf(owningDef(literal)), params, result, literalEffectSet(literal)), literal);
+                new Type.Function(annotator.typeVarsOf(owningDef(literal)), params, result, literalEffectSet(literal),
+                        TypeAnnotations.resolveForwardedParams(literal.effectPrefix(), params)), literal);
     }
 
     private Type.Function recursiveSignature(BabbleParser.FunctionLiteralContext literal) {
         List<Type.TypeVar> tparams = annotator.typeVarsOf(owningDef(literal));
         List<Type.Parameter> params = functionParameters(literal);
         EffectSet effs = literalEffectSet(literal);
+        Set<Integer> forwarded = TypeAnnotations.resolveForwardedParams(literal.effectPrefix(), params);
         if (provisionalResults.containsKey(literal)) {
-            return recordFunctionLiteral(new Type.Function(tparams, params, provisionalResults.get(literal), effs), literal);
+            return recordFunctionLiteral(new Type.Function(tparams, params, provisionalResults.get(literal), effs, forwarded), literal);
         }
         if (!inferenceStack.isEmpty() && inferenceStack.peek() == literal) {
             recursiveFunctions.add(literal);
@@ -1025,7 +1027,7 @@ final class TypeChecker {
             if (result == null) {
                 result = Type.NOTHING;
             }
-            return recordFunctionLiteral(new Type.Function(tparams, params, result, effs), literal);
+            return recordFunctionLiteral(new Type.Function(tparams, params, result, effs, forwarded), literal);
         }
         for (BabbleParser.FunctionLiteralContext fn : inferenceStack) {
             BabbleParser.DefExpressionContext def = owningDef(fn);
@@ -1039,7 +1041,7 @@ final class TypeChecker {
                 break;
             }
         }
-        return recordFunctionLiteral(new Type.Function(tparams, params, Type.ERROR, effs), literal);
+        return recordFunctionLiteral(new Type.Function(tparams, params, Type.ERROR, effs, forwarded), literal);
     }
 
     private EffectSet literalEffectSet(BabbleParser.FunctionLiteralContext literal) {

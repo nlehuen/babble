@@ -1,0 +1,273 @@
+;; BIP017: Higher-Order Function Callback-Effect Forwarding (`fn with f`)
+
+{{{{{
+;; Basic fn with f accepts pure, volatile, and io callbacks
+def apply = fn with f (f: fn (x: int): int, v: int): int -> (f(v))
+def pureUse = fn (x: int): int -> (apply(fn (n: int): int -> (n * 2), x))
+def g: int = 10
+g = 20
+def volUse = fn volatile (x: int): int -> (apply(fn volatile (n: int): int -> (n + g), x))
+def ioUse = fn io (x: int): int -> (apply(fn io (n: int): int -> (println("io:", n); n + 1), x))
+println(pureUse(5) + volUse(5))
+println(ioUse(1))
+}}}}}
+35
+io:1
+2
+
+{{{{{
+;; fn with f rejects io callback in pure caller
+def apply = fn with f (f: fn (x: int): int, v: int): int -> (f(v))
+def bad = fn (x: int): int -> (apply(fn io (n: int): int -> (println(n); n), x))
+println(bad(1))
+}}}}}
+Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+;; fn with f rejects volatile callback in pure caller
+def apply = fn with f (f: fn (x: int): int, v: int): int -> (f(v))
+def g: int = 1
+g = 2
+def bad = fn (x: int): int -> (apply(fn volatile (n: int): int -> (n + g), x))
+println(bad(1))
+}}}}}
+Function bad violates deterministic guarantee : mark function as volatile (or io)
+
+{{{{{
+;; fn with (f, g) forwards multiple callbacks
+def pipe2 = fn with (f, g) (v: int, f: fn (x: int): int, g: fn (x: int): int): int -> (g(f(v)))
+def purePipe = fn (x: int): int -> (pipe2(x, fn (a: int): int -> (a + 1), fn (b: int): int -> (b * 3)))
+println(purePipe(4))
+}}}}}
+15
+
+{{{{{
+;; fn with (f, g) catches io in second callback
+def pipe2 = fn with (f, g) (v: int, f: fn (x: int): int, g: fn (x: int): int): int -> (g(f(v)))
+def bad = fn (x: int): int -> (pipe2(x, fn (a: int): int -> (a + 1), fn io (b: int): int -> (println(b); b)))
+println(bad(4))
+}}}}}
+Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+;; Generic def mapList of (T, R) = fn with f
+def mapList of (T, R) = fn with f (shared xs: list of T, f: fn (x: T): R): list of R -> (
+    def out = list of R ()
+    for x in xs then (
+        out.add(f(x))
+    )
+    out
+)
+def doubled = fn (shared xs: list of int): list of int -> (
+    mapList(xs, fn (x: int): int -> (x * 2))
+)
+def res = doubled((list of int).of(1, 2, 3))
+println(res.get(0) + res.get(1) + res.get(2))
+}}}}}
+12
+
+{{{{{
+;; Generic def mapList of (T, R) = fn with f catches io callback in pure caller
+def mapList of (T, R) = fn with f (shared xs: list of T, f: fn (x: T): R): list of R -> (
+    def out = list of R ()
+    for x in xs then (
+        out.add(f(x))
+    )
+    out
+)
+def bad = fn (shared xs: list of int): list of int -> (
+    mapList(xs, fn io (x: int): int -> (println(x); x))
+)
+println(bad((list of int).of(1)).size())
+}}}}}
+Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+;; Frame-local mutating closure through concrete and interface fn with f
+def IntSeq = interface (
+    def forEach: fn with f (f: fn (x: int): any?)
+)
+def RangeSeq = class (def n: int) implements IntSeq (
+    def forEach = fn with f (f: fn (x: int): any?) -> (
+        def i: int = 0
+        while i < this.n then (
+            f(i)
+            i += 1
+        )
+    )
+)
+def sumSeq = fn (seq: IntSeq): int -> (
+    def total: int = 0
+    seq.forEach(fn (x: int) -> (
+        total += x
+    ))
+    total
+)
+println(sumSeq(RangeSeq(5)))
+}}}}}
+10
+
+{{{{{
+;; Bound mutating method buf.append forwarded through fn with f in pure caller
+def IntBuf = class () (
+    def total: int = 0
+    def append = fn mut (x: int) -> (
+        this.total += x
+    )
+)
+def IntSeq = interface (
+    def forEach: fn with f (f: fn (x: int): any?)
+)
+def RangeSeq = class (def n: int) implements IntSeq (
+    def forEach = fn with f (f: fn (x: int): any?) -> (
+        def i: int = 0
+        while i < this.n then (
+            f(i)
+            i += 1
+        )
+    )
+)
+def collect = fn (seq: IntSeq): int -> (
+    def buf = IntBuf()
+    seq.forEach(buf.append)
+    buf.total
+)
+def collectInto = fn (seq: IntSeq, mut out: IntBuf) -> (
+    seq.forEach(out.append)
+)
+def b = IntBuf()
+collectInto(RangeSeq(4), b)
+println(collect(RangeSeq(5)) + b.total)
+}}}}}
+16
+
+{{{{{
+;; Bound mutating method rejects non-mut parameter in pure caller
+def IntBuf = class () (
+    def total: int = 0
+    def append = fn mut (x: int) -> (
+        this.total += x
+    )
+)
+def applyToOne = fn with f (f: fn (x: int): any?) -> (f(1))
+def bad = fn (out: IntBuf) -> (
+    applyToOne(out.append)
+)
+bad(IntBuf())
+}}}}}
+Cannot mutate parameter out (forwarded mut callback out.append) : mark parameter as mut out
+
+{{{{{
+;; Bound mutating method enforces static exclusivity with receiver
+def SelfSeq = class () (
+    def total: int = 0
+    def append = fn mut (x: int) -> (
+        this.total += x
+    )
+    def forEach = fn with f (f: fn (x: int): any?) -> (
+        f(1)
+    )
+)
+def bad = fn (mut s: SelfSeq) -> (
+    s.forEach(s.append)
+)
+bad(SelfSeq())
+}}}}}
+Exclusivity error : mut target s aliases argument s
+
+{{{{{
+;; Nested forwarding through closure and direct pass-through
+def apply = fn with f (f: fn (x: int): int, v: int): int -> (f(v))
+def wrapDirect = fn with g (g: fn (x: int): int, v: int): int -> (apply(g, v))
+def wrapClosure = fn with g (g: fn (x: int): int, v: int): int -> (
+    def acc: int = 0
+    acc = apply(fn (x: int): int -> (g(x) + 1), v)
+    acc
+)
+def pureCaller = fn (v: int): int -> (
+    wrapDirect(fn (x: int): int -> (x * 2), v) + wrapClosure(fn (x: int): int -> (x * 3), v)
+)
+println(pureCaller(4))
+}}}}}
+21
+
+{{{{{
+;; First-class fn with f subtyping
+def apply = fn with f (f: fn (x: int): int, v: int): int -> (f(v))
+def asPure: fn (f: fn (x: int): int, v: int): int = apply
+def asVol: fn volatile (f: fn volatile (x: int): int, v: int): int = apply
+def asIo: fn io (f: fn io (x: int): int, v: int): int = apply
+def asPoly: fn with f (f: fn (x: int): int, v: int): int = apply
+def run = fn (h: fn with f (f: fn (x: int): int, v: int): int): int -> (
+    def sum: int = 0
+    h(fn (x: int): int -> (sum += x; sum), 7)
+)
+println(asPure(fn (x: int): int -> (x + 1), 10) + run(asPoly))
+}}}}}
+18
+
+{{{{{
+;; Monomorphic fn is not a subtype of fn with f
+def mono = fn (f: fn (x: int): int, v: int): int -> (f(v))
+def bad: fn with f (f: fn (x: int): int, v: int): int = mono
+println(bad(fn (x: int): int -> (x), 1))
+}}}}}
+Type error : expected with f (f : (x : int) : int, v : int) : int, got (f : (x : int) : int, v : int) : int
+
+{{{{{
+;; fn with f is not a subtype of pure HOF taking io callback
+def apply = fn with f (f: fn (x: int): int, v: int): int -> (f(v))
+def bad: fn (f: fn io (x: int): int, v: int): int = apply
+println(bad(fn io (x: int): int -> (println(x); x), 1))
+}}}}}
+Type error : expected (f : io (x : int) : int, v : int) : int, got with f (f : (x : int) : int, v : int) : int
+
+{{{{{
+;; with allowed as memberName (Java LocalDate.with)
+def d = java.time.LocalDate.of(2026, 1, 15).with(java.time.DayOfWeek.MONDAY)
+println(d.getDayOfMonth())
+}}}}}
+12
+
+{{{{{
+;; Negative: unknown parameter in with clause
+def bad = fn with g (f: fn (x: int): int): int -> (f(1))
+println(bad(fn (x: int): int -> (x)))
+}}}}}
+Unknown parameter in with clause : g
+
+{{{{{
+;; Negative: duplicate parameter in with clause
+def bad = fn with (f, f) (f: fn (x: int): int): int -> (f(1))
+println(bad(fn (x: int): int -> (x)))
+}}}}}
+Duplicate parameter in with clause : f
+
+{{{{{
+;; Negative: non-function parameter in with clause
+def bad = fn with n (n: int): int -> (n)
+println(bad(1))
+}}}}}
+Parameter in with clause must be a function : n
+
+{{{{{
+;; Negative: shared parameter in with clause
+def bad = fn with f (shared f: fn (x: int): int): int -> (f(1))
+println(bad(fn (x: int): int -> (x)))
+}}}}}
+Parameter in with clause must be borrowed : f
+
+{{{{{
+;; Negative: unique parameter in with clause
+def bad = fn with f (unique f: fn (x: int): int): int -> (f(1))
+println(bad(fn (x: int): int -> (x)))
+}}}}}
+Parameter in with clause must be borrowed : f
+
+{{{{{
+;; Negative: BIP017-D4 fn io HOF no longer implicitly specialized intra-file
+def applyIo = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
+def bad = fn (x: int): int -> (applyIo(fn (n: int): int -> (n + 1), x))
+println(bad(1))
+}}}}}
+Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io

@@ -195,25 +195,56 @@ sealed interface Type {
         }
     }
 
-    record Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result, EffectSet effects) implements Type {
+    record Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result,
+                    EffectSet effects, Set<Integer> forwardedEffectParams) implements Type {
         public Function {
             effects = effects != null ? effects : EffectSet.EMPTY;
+            forwardedEffectParams = forwardedEffectParams == null || forwardedEffectParams.isEmpty()
+                    ? Set.of() : Set.copyOf(forwardedEffectParams);
         }
 
         Function(List<Parameter> parameters, Type result) {
-            this(List.of(), parameters, result, EffectSet.EMPTY);
+            this(List.of(), parameters, result, EffectSet.EMPTY, Set.of());
         }
 
         Function(List<Parameter> parameters, Type result, EffectSet effects) {
-            this(List.of(), parameters, result, effects);
+            this(List.of(), parameters, result, effects, Set.of());
+        }
+
+        Function(List<Parameter> parameters, Type result, EffectSet effects, Set<Integer> forwardedEffectParams) {
+            this(List.of(), parameters, result, effects, forwardedEffectParams);
         }
 
         Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result) {
-            this(typeParameters, parameters, result, EffectSet.EMPTY);
+            this(typeParameters, parameters, result, EffectSet.EMPTY, Set.of());
+        }
+
+        Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result, EffectSet effects) {
+            this(typeParameters, parameters, result, effects, Set.of());
+        }
+
+        Function withEffects(EffectSet newEffects) {
+            return new Function(typeParameters, parameters, result, newEffects, forwardedEffectParams);
         }
 
         Function withEffects(EffectSet newEffects, List<Parameter> newParameters) {
-            return new Function(typeParameters, newParameters, result, newEffects);
+            return new Function(typeParameters, newParameters, result, newEffects, forwardedEffectParams);
+        }
+
+        private String formatWithClause() {
+            if (forwardedEffectParams.isEmpty()) {
+                return "";
+            }
+            List<String> names = forwardedEffectParams.stream()
+                    .sorted()
+                    .filter(i -> i >= 0 && i < parameters.size())
+                    .map(i -> parameters.get(i).name())
+                    .toList();
+            if (names.isEmpty()) {
+                return "";
+            }
+            return names.size() == 1 ? "with " + names.get(0) + " "
+                    : "with (" + String.join(", ", names) + ") ";
         }
 
         /** Formats this function type highlighting guarantees relevant to {@code expected}. */
@@ -231,7 +262,8 @@ sealed interface Type {
                     || (expected.effects().borrowThis() && !effects.borrowThis());
             boolean showUniqueReturn = effects.explicitUniqueResult()
                     || (expected.effects().uniqueResult() && effects.uniqueResult());
-            String prefix = EffectSet.formatSurface(shown, showIO, showVolatile, effects.mutThis(), showSharedThis);
+            String prefix = EffectSet.formatSurface(shown, showIO, showVolatile, effects.mutThis(), showSharedThis)
+                    + formatWithClause();
             String tp = typeParameters.isEmpty() ? ""
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
             StringBuilder params = new StringBuilder("(");
@@ -251,7 +283,7 @@ sealed interface Type {
         public String toString() {
             String tp = typeParameters.isEmpty() ? ""
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
-            return effects.formatDeclaredPrefix() + tp
+            return effects.formatDeclaredPrefix() + formatWithClause() + tp
                     + parameters.stream().map(Parameter::toString).collect(Collectors.joining(", ", "(", ")"))
                     + (result == ERROR ? "" : " : " + (effects.explicitUniqueResult() ? "unique " : "") + result);
         }

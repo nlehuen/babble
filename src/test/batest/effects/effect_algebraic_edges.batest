@@ -284,9 +284,9 @@ def badObj = fn () -> (
 Function badObj violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
-;; Frame-local borrow closures reading/writing enclosing unescaped locals vs bounded call-site specialization
+;; Frame-local borrow closures reading/writing enclosing unescaped locals with fn with f
 def Box = class (def v : int) ()
-def applyZero = fn io (f : fn io () : int) : int -> ( f() )
+def applyZero = fn with f (f : fn () : int) : int -> ( f() )
 def pureWithFrame = fn (n : int) : int -> (
     def acc = n
     def step = fn (k : int) : int -> (
@@ -298,7 +298,7 @@ def pureWithFrame = fn (n : int) : int -> (
     r2
 )
 def specCaller = fn (n : int) : int -> (
-    def invoke = fn io (cb : fn io (x : int) : int, v : int) : int -> ( cb(v) )
+    def invoke = fn with cb (cb : fn (x : int) : int, v : int) : int -> ( cb(v) )
     invoke(fn (x : int) : int -> ( x + 1 ), n)
 )
 println(pureWithFrame(10), ":", specCaller(5))

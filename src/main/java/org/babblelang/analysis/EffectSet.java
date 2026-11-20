@@ -266,6 +266,54 @@ public final class EffectSet {
                 axiomatic && other.axiomatic);
     }
 
+    /**
+     * Relaxes function-level and receiver-mutation requirements for a callback parameter
+     * listed in {@code fn with f} (BIP017-D1), while preserving any explicit {@code unique}
+     * return requirement.
+     */
+    public EffectSet relaxedForForwardedCallback() {
+        return new EffectSet(
+                EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
+                true, false, false, uniqueResult, explicitUniqueResult,
+                false, true, false, false);
+    }
+
+    /**
+     * Combines a higher-order function's base effects ({@code this}) with the forwarded
+     * function-level effects of a callback argument ({@code cb}) per BIP017-D2/D3.
+     */
+    public EffectSet combineForwarded(EffectSet cb) {
+        if (cb == null) {
+            return this;
+        }
+        EnumSet<Effect> combined = copySet(effects);
+        if (!cb.isHermetic()) {
+            combined.remove(Effect.HERMETIC);
+            combined.remove(Effect.PURE);
+            combined.remove(Effect.DETERMINISTIC);
+        }
+        if (!cb.isDeterministic()) {
+            combined.remove(Effect.DETERMINISTIC);
+        }
+        if (!cb.isNothrow()) {
+            combined.remove(Effect.NOTHROW);
+        }
+        if (!cb.isPure()) {
+            combined.remove(Effect.PURE);
+        }
+        EnumSet<Effect> combinedDecl = copySet(declared);
+        combinedDecl.retainAll(combined);
+        boolean combinedIO = io || cb.isIO() || !combined.contains(Effect.HERMETIC);
+        boolean combinedVolatile = !combinedIO && (explicitVolatile || cb.isVolatile()
+                || (combined.contains(Effect.HERMETIC) && !combined.contains(Effect.DETERMINISTIC)));
+        return new EffectSet(combined, combinedDecl,
+                mutThis, borrowThis, explicitSharedThis,
+                uniqueResult, explicitUniqueResult,
+                terminating && cb.terminating(),
+                combinedIO, combinedVolatile,
+                axiomatic && cb.axiomatic());
+    }
+
     public static String keywordOf(Effect effect) {
         return switch (effect) {
             case PURE -> "pure";
