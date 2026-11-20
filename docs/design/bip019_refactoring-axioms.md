@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 019 |
 | **Date** | 2026-11-20 |
-| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D17` decided; `BIP019-P1`–`P5` implemented, `P6` not started ; `BIP019-P7`, Java axioms written in Babble, proposed with `BIP019-Q8`–`Q14` open) |
+| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D18` decided; `BIP019-P1`–`P5` implemented, `P6` not started ; `BIP019-P7`, Java axioms written in Babble, proposed with `BIP019-Q8`–`Q14` open) |
 | **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
 | **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as `.java` and `.ba` files ; one bytecode analyzer derives axioms from seeds, either while compiling or offline into the same directory |
 
@@ -183,7 +183,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 
 ---
 
-## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`; `BIP019-D14`–`D17`)
+## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`; `BIP019-D14`–`D18`)
 
 * **`BIP019-D1` — One directory :** every assumption about a Java or Babble function or method lives in `src/main/java/org/babblelang/axioms/`, and nowhere else.
 * **`BIP019-D2` — Layout :** Java axioms are stubs that mirror their target's package and name (`java.util.List` → `org.babblelang.axioms.java.util.ListAxioms`) ; Babble-level axioms are `.ba` files.
@@ -200,6 +200,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 * **`BIP019-Q7` → `BIP019-D13` — Re-derivation :** every CI build re-derives the axioms and fails on any difference.
 * **`BIP019-D14` — Keyword names :** `axiom name: type` accepts a core scalar keyword as its name, so that the conversions are declared like any built-in : `axiom int: fn (value: any): int`.
 * **`BIP019-D15` — Optional parameters in function types :** a function type may mark a named parameter optional, `fn (c: bool, message?: any?): bool`, which a function whose parameter has a default satisfies ; `assert` is declared with it, and so may any function type.
+* **`BIP019-D18` — One `.ba` file per package :** Java axioms written in Babble (`BIP019-P7`, §5) live in a single `axioms.ba` per Java package, in that package's directory of the axioms, one `axiom Class ( … )` block per class.
 * **`BIP019-D17` — Special forms :** `print`, `move`, `freeze`, `discard`, `import`, `STDOUT` and `args` are rules of the language, whose typing stays in the type checker ; the prelude declares the built-ins with an ordinary signature : the conversions, `assert` / `suppose`, `same` and `classof`.
 * **`BIP019-D16` — Nearest surface form :** the built-ins are written with ordinary effect words (pure-by-default, `nothrow`, `commutative`, `io`) even where the former internal profiles differed in details the language cannot state (the conversions not borrowing `this`, `import`'s fully unconstrained effects) ; any difference a test, a golden or a diagnostic can see is reported, not hidden.
 
@@ -219,7 +220,7 @@ java.lang.Object iterator();
 ```
 
 ```babble
-;; java/util/CollectionAxioms.ba
+;; java/util/axioms.ba : every axiom about the classes of java.util, Collection's among them
 axiom java.util.Collection of E (
     size: fn nothrow (): int
     contains: fn (o: any?): bool
@@ -261,9 +262,10 @@ axiomMember: (memberName | NEW) ':' type ;
 
 ### 5.4 Coexistence, migration and loading
 
-* **One source per class :** a class's axioms are written either as a `.ba` file (`java/util/CollectionAxioms.ba`, named like the Java stub) or as a Java stub, not both ; `AxiomsTestCase` checks it.
+* **One file per package (`BIP019-D18`) :** the axioms about the classes of a Java package are written in a single `.ba` file, `axioms.ba`, in that package's directory of the axioms (`java/util/axioms.ba` holds `Collection`, `List`, `Map`… ; `java/lang/axioms.ba` holds `Object`, `String`, `Math`…), one `axiom Class ( … )` block per class. `AxiomsTestCase` checks that a block in `java/util/axioms.ba` is about a class of `java.util`.
+* **One source per class :** a class's axioms are written either in its package's `axioms.ba` or as a Java stub, not both ; `AxiomsTestCase` checks it.
 * **Migration :** the generator (§3) learns to write `.ba` instead of `.java`, and checks its output by the same simulation, class by class, against the former rules. The Java stubs remain only for what Babble cannot state yet, and disappear as the language learns it — the pruning `BIP019-D1` anticipates.
-* **Loading :** a `.ba` axiom file must be parsed and type-checked before use, as `builtins.ba` is. Since files are named after their target, a class's axioms can be loaded on first use (its own file, then its supertypes'), rather than all at start-up ; the results are cached per class.
+* **Loading :** a `.ba` axiom file must be parsed and type-checked before use, as `builtins.ba` is. Since each package has one file, named by the package, a class's axioms can be loaded on first use — its package's file, then those of its supertypes' packages — rather than all at start-up ; the results are cached per package.
 
 ### 5.5 Open questions (`BIP019-Q8`–`Q14`)
 
@@ -285,7 +287,7 @@ axiomMember: (memberName | NEW) ':' type ;
 | **`BIP019-P4` — Built-ins** | optional parameters in function types (`BIP019-D15`) ; `axiom name: type`, its name a core scalar keyword too (`BIP019-D14`) (grammar, `BlockScopes`, `TypeChecker`, `Interpreter`, `HirBuilder`/`HirEmitter`, formatter, with `.ba`, `DifferentialTestCase`, `TypeCheckerTestCase` and `FormatterTestCase` tests) ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
 | **`BIP019-P5` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 | **`BIP019-P6` — The analyzer and the generator** | §3 : the value lattice, calls through axioms, the fixed point ; `AxiomGenerator` and the first derived stubs, generated on JDK 21 ; the compile-time tier and the generator share the analyzer. ; CI re-derives the axioms on every build and fails on any difference (`BIP019-D13`). |
-| **`BIP019-P7` — Java axioms in Babble (proposed)** | §5 : the `axiom Class (…)` form (grammar, analysis, formatter), the new words `view`, `shallow`, `fresh`, `foldable` and the class words, loading `.ba` axioms per class with a cache ; the generator writes `.ba`, checked by the same simulation ; the Java stubs kept only for what Babble cannot state. After `BIP019-Q8`–`Q14` are decided. |
+| **`BIP019-P7` — Java axioms in Babble (proposed)** | §5 : the `axiom Class (…)` form (grammar, analysis, formatter), the new words `view`, `shallow`, `fresh`, `foldable` and the class words, one `axioms.ba` per Java package (`BIP019-D18`) loaded per package with a cache ; the generator writes `.ba`, checked by the same simulation ; the Java stubs kept only for what Babble cannot state. After `BIP019-Q8`–`Q14` are decided. |
 
 ## 7. Verification
 
