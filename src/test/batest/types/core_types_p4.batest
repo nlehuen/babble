@@ -133,7 +133,7 @@ def e1 : entry of (string, int) = entry("k", 7)
 def e2 : entry of (any, int?) = e1
 def o1 : java.util.Optional of string = java.util.Optional.of("hi")
 def o2 : java.util.Optional of any = o1
-def checkBorrow = fn (borrow xs : list of any?) : bool -> ( xs == xs )
+def checkBorrow = fn (xs : list of any?) : bool -> ( xs == xs )
 def nums = list(1, 2, 3)
 println(p2.first, ":", e2.getValue(), ":", o2.get(), ":", checkBorrow(nums))
 }}}}}

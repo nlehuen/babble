@@ -57,7 +57,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testPlainParametersAreLexicalVariables() throws Exception {
         // A plain parameter is visible in the whole body, methods included, and is not a member.
         String counter = "def Counter = class (start : int, step = 1) (\n"
-                + "    def next = fn () -> ( start = start + step )\n"
+                + "    def next = fn io () -> ( start = start + step )\n"
                 + ")\n";
         Assertions.assertEquals(14, interpret(counter + "def c = Counter(10, 2) ; c.next() ; c.next()"));
         assertStaticFails(counter + "Counter(1).start", "No such member : start", 4, 1);
@@ -75,7 +75,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testMembersAreReachedThroughThisOnly() {
-        assertFails("def C = class () ( def size = 0 ; def get = fn () -> ( size ) ) ; C().get()", "No such name : size");
+        assertFails("def C = class () ( def size = 0 ; def get = fn volatile () -> ( size ) ) ; C().get()", "No such name : size");
         // obj.x sees the object's members, and nothing of the scope that created it.
         assertStaticFails("def hidden = 1 ; def o = object ( def v = 1 ) ; o.hidden", "No such member : hidden", 1, 49);
         assertStaticFails("def o = object ( def v = 1 ) ; o.println", "No such member : println", 1, 32);
@@ -112,7 +112,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testThisIsCapturedByNestedFunctions() throws Exception {
-        Assertions.assertEquals(5, interpret("def C = class (def n : int) ( def later = fn () -> ( fn () -> ( this.n ) ) ) ; C(5).later()()"));
+        Assertions.assertEquals(5, interpret("def C = class (def n : int) ( def later = fn shared () -> ( fn () -> ( this.n ) ) ) ; C(5).later()()"));
     }
 
     @Test
@@ -129,7 +129,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
         assertStaticFails("def f = fn (def a) -> ( a )", "Syntax error : unexpected 'def'", 1, 13);
         assertStaticFails("def f = fn (a) : fn (def b) : int -> ( a )", "Syntax error : unexpected 'def'", 1, 22);
         // A header member binds no name.
-        assertFails("def C = class (def a : int) ( def get = fn () -> ( a ) ) ; C(1).get()", "No such name : a");
+        assertFails("def C = class (def a : int) ( def get = fn volatile () -> ( a ) ) ; C(1).get()", "No such name : a");
     }
 
     @Test
@@ -146,10 +146,10 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     private static final String COUNTER = "def Counter = class (private def step = 1) (\n"
             + "    private def n = 0\n"
-            + "    private def bump = fn () -> ( this.n = this.n + this.step )\n"
-            + "    def next = fn () -> ( this.bump() ; this.n )\n"
-            + "    def bumper = fn () -> ( this.bump )\n"
-            + "    def nested = fn () -> ( (fn () -> ( this.n ))() )\n"
+            + "    private def bump = fn mut () -> ( this.n = this.n + this.step )\n"
+            + "    def next = fn mut () -> ( this.bump() ; this.n )\n"
+            + "    def bumper = fn shared () -> ( this.bump )\n"
+            + "    def nested = fn shared () -> ( (fn () -> ( this.n ))() )\n"
             + ")\n";
 
     @Test
@@ -197,11 +197,11 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
             + "static (\n"
             + "    def origin = this(0, 0)\n"
             + "    private def created = 0\n"
-            + "    def make = fn (x : int, y : int) : Point -> (\n"
+            + "    def make = fn io (x : int, y : int) : Point -> (\n"
             + "        this.created = this.created + 1\n"
             + "        this(x, y)\n"
             + "    )\n"
-            + "    def count = fn () -> ( this.created )\n"
+            + "    def count = fn volatile () -> ( this.created )\n"
             + ")\n";
 
     @Test
@@ -300,7 +300,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testValueMembersAreReadOnly() {
         String point = "def Point = record (x : int, y : int) ()\n";
         assertFails(point + "def p = Point(1, 2) ; p.x = 5", "Value members are read-only : x", 2);
-        assertFails(point + "def f = fn (p : Point) -> ( p.x = 5 ) ; f(Point(1, 2))", "Value members are read-only : x", 2);
+        assertFails(point + "def f = fn io (p : Point) -> ( p.x = 5 ) ; f(Point(1, 2))", "Value members are read-only : x", 2);
         assertFails("def P = record (x : int) ( def m = fn () -> ( this.x = 2 ) )", "Value members are read-only : x");
     }
 

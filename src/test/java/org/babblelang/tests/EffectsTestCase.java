@@ -6,18 +6,17 @@ import org.antlr.v4.runtime.CommonTokenStream;
 import org.babblelang.analysis.BlockScopes;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.effects.Associative;
-import org.babblelang.effects.Borrow;
 import org.babblelang.effects.Commutative;
-import org.babblelang.effects.Deterministic;
 import org.babblelang.effects.Effect;
-import org.babblelang.effects.Hermetic;
+import org.babblelang.effects.IO;
 import org.babblelang.effects.Idempotent;
-import org.babblelang.effects.Impure;
 import org.babblelang.effects.Injective;
 import org.babblelang.effects.Monotone;
 import org.babblelang.effects.Mut;
 import org.babblelang.effects.Nothrow;
 import org.babblelang.effects.Pure;
+import org.babblelang.effects.Shared;
+import org.babblelang.effects.Volatile;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.parser.BabbleLexer;
@@ -33,10 +32,10 @@ import java.util.List;
 import java.util.function.IntUnaryOperator;
 
 /**
- * Tests for RM002 (BIP007-P1) : static effect inference & verification, mut / borrow & alias
- * tracking, static call-site exclusivity, BIP007-D1 flow-sensitive narrowing, frame-local
- * closures, bounded call-site specialization, compositional algebraic properties, and the
- * 7-tier Java host effect & axiom contract layer.
+ * Tests for RM002 / BIP016 : static effect inference & verification, pure-by-default & volatile/io,
+ * mut / shared & default @BORROWED escape tracking, static call-site exclusivity, BIP007-D1
+ * flow-sensitive narrowing, frame-local closures, bounded call-site specialization, compositional
+ * algebraic properties, and the 7-tier Java host effect & axiom contract layer.
  */
 public class EffectsTestCase {
 
@@ -47,14 +46,18 @@ public class EffectsTestCase {
         public static final int FINAL_STATIC = 42;
 
         @Pure
-        @Deterministic
         @Nothrow
         public static int pureCalc(int x) {
             return x * 2 + 1;
         }
 
+        @Volatile
+        @Nothrow
+        public static int volatileRead(int x) {
+            return x + mutableStatic;
+        }
+
         @Pure
-        @Deterministic
         @Nothrow
         @Idempotent
         public static double clampUnit(double x) {
@@ -62,7 +65,6 @@ public class EffectsTestCase {
         }
 
         @Pure
-        @Deterministic
         @Nothrow
         @Commutative
         @Associative
@@ -71,7 +73,6 @@ public class EffectsTestCase {
         }
 
         @Pure
-        @Deterministic
         @Nothrow
         @Monotone
         public static double expStep(double x) {
@@ -80,41 +81,43 @@ public class EffectsTestCase {
 
         @org.babblelang.effects.NotNull
         @Pure
-        @Deterministic
         @Nothrow
         @Injective
         public static String hexKey(int x) {
             return Integer.toHexString(x);
         }
 
-        @Impure
-        public static int annotatedImpure(int x) {
+        @IO
+        public static int annotatedIO(int x) {
             return x;
         }
 
-        @Hermetic
-        @Deterministic
         @Nothrow
-        public static void mutateParam(@Mut MutableHolder h, @Borrow MutableHolder src) {
+        public static void mutateParam(@Mut MutableHolder h, MutableHolder src) {
             h.value = src.value;
         }
 
+        @org.babblelang.effects.NotNull
         @Pure
-        @Deterministic
         @Nothrow
-        public static int applyOp(int x, @Borrow IntUnaryOperator op) {
+        public static MutableHolder echoShared(@Shared MutableHolder h) {
+            return h;
+        }
+
+        @Pure
+        @Nothrow
+        public static int applyOp(int x, IntUnaryOperator op) {
             return op.applyAsInt(x);
         }
     }
 
     @Pure
-    @Deterministic
     public static class AnnotatedPureClass {
         public static int helper(int x) {
             return x + 10;
         }
 
-        @Impure
+        @IO
         public static int escapeHatch(int x) {
             return x;
         }
@@ -124,15 +127,12 @@ public class EffectsTestCase {
         public int value;
 
         @Pure
-        @Deterministic
         @Nothrow
         public MutableHolder(int value) {
             this.value = value;
         }
 
         @Mut
-        @Hermetic
-        @Deterministic
         @Nothrow
         public void bump(int delta) {
             this.value += delta;
@@ -201,32 +201,46 @@ public class EffectsTestCase {
 
     @Test
     public void testAutomaticInferenceAndSccFixedPoint() {
-        // Unannotated arithmetic function infers pure deterministic nothrow:
+        // Pure-by-default arithmetic function infers nothrow:
         assertClean("""
                 def inc = fn (x: int): int -> (x + 1)
-                def f: fn pure deterministic nothrow (x: int): int = inc
+                def f: fn nothrow (x: int): int = inc
                 """);
 
-        // Mutually recursive pure functions converge to pure deterministic nothrow:
+        // Mutually recursive pure functions converge to nothrow:
         assertClean("""
                 def even = fn (n: int): bool -> (if n == 0 then (true) else (odd(n - 1)))
                 def odd = fn (n: int): bool -> (if n == 0 then (false) else (even(n - 1)))
-                def check: fn pure deterministic nothrow (n: int): bool = even
+                def check: fn nothrow (n: int): bool = even
                 """);
 
-        // Mutual recursion where one branch prints taints the entire SCC:
+        // Mutual recursion where one branch prints fails pure-by-default check, and `fn io` cannot assign to pure `fn`:
         assertHasError("""
                 def a = fn (n: int): int -> (if n <= 0 then (0) else (b(n - 1)))
                 def b = fn (n: int): int -> (println(n); a(n - 1))
-                def bad: fn pure (n: int): int = a
-                """, "Type error : expected pure");
+                """, "violates pure guarantee");
+        assertHasError("""
+                def a = fn io (n: int): int -> (if n <= 0 then (0) else (b(n - 1)))
+                def b = fn io (n: int): int -> (println(n); a(n - 1))
+                def bad: fn (n: int): int = a
+                """, "Type error");
 
-        // Untyped function automatically infers `mut` on mutated parameters; typed function requires explicit `mut`!
+        // Untyped inline lambda infers `mut`, `io`, `volatile`, and `shared`; typed function requires explicit modifiers!
         assertClean("""
                 def Box = class (def x: int) ()
                 def untypedSet = fn (b) -> (b.x = 1)
                 def caller = fn (mut b: Box) -> (untypedSet(b))
                 caller(Box(0))
+                """);
+        assertClean("""
+                def logIt = fn (x) -> (println(x); x)
+                def run = fn io (): int -> (logIt(42))
+                """);
+        assertClean("""
+                def g: int = 1
+                g = 2
+                def readG = fn (x) -> (g + x)
+                def run = fn volatile (): int -> (readG(0))
                 """);
         assertHasError("""
                 def Box = class (def x: int) ()
@@ -249,24 +263,17 @@ public class EffectsTestCase {
 
     @Test
     public void testVerifiedConstraintsAndMutExclusivity() {
-        // pure + mut mutual exclusion on function literals and function types:
-        assertHasError("""
-                def Box = class (def x: int) ()
-                def f = fn pure (mut b: Box): int -> (b.x = 1; 1)
-                """, "pure and mut are mutually exclusive");
-        assertHasError("""
-                def Box = class (def x: int) ()
-                def f: fn pure (mut b: Box): int
-                """, "pure and mut are mutually exclusive");
-        assertHasError("""
-                def C = class (def x: int) (
-                    def f = fn pure mut (): int -> (this.x = 1; 1)
-                )
-                """, "pure and mut are mutually exclusive");
-
-        // `pure` allows local `def` reassignments, while rejecting I/O, outer writes, and (in RM002) fresh-local object mutation:
+        // BIP016: pure-by-default allows `mut` params & `fn mut` methods (hermetic + deterministic + explicit mutation)!
         assertClean("""
-                def sumTo = fn pure deterministic nothrow (n: int): int -> (
+                def Box = class (def x: int) (
+                    def bump = fn mut (): int -> (this.x = this.x + 1; this.x)
+                )
+                def setBox = fn (mut b: Box): int -> (b.x = 1; b.bump())
+                """);
+
+        // Pure-by-default allows local `def` reassignments and fresh-local object mutation, while rejecting I/O & outer writes:
+        assertClean("""
+                def sumTo = fn nothrow (n: int): int -> (
                     def acc: int = 0
                     def i: int = 1
                     while i <= n then (
@@ -277,15 +284,23 @@ public class EffectsTestCase {
                 )
                 """);
         assertHasError("""
-                def f = fn pure (x: int): int -> (println(x); x)
-                """, "pure");
+                def f = fn (x: int): int -> (println(x); x)
+                """, "violates pure guarantee");
         assertHasError("""
                 def g: int = 0
-                def f = fn hermetic (x: int): int -> (g = x; x)
-                """, "hermetic");
+                def f = fn (x: int): int -> (g = x; x)
+                """, "violates pure guarantee");
+        assertHasError("""
+                def g: int = 0
+                def f = fn volatile (x: int): int -> (g = x; x)
+                """, "volatile");
+        assertClean("""
+                def g: int = 0
+                def f = fn io (x: int): int -> (g = x; println(g); x)
+                """);
         assertClean("""
                 def Box = class (def x: int) ()
-                def f = fn pure (): int -> (
+                def f = fn (): int -> (
                     def b = Box(1)
                     b.x = 2
                     b.x
@@ -294,38 +309,56 @@ public class EffectsTestCase {
         assertHasError("""
                 def Box = class (def x: int) ()
                 def g = Box(1)
-                def f = fn pure (): int -> (
+                def f = fn (): int -> (
                     g.x = 2
                     g.x
                 )
-                """, "Cannot mutate object in pure function");
+                """, "Cannot mutate external object in pure function");
 
-        // `deterministic` checks: reassigned outer def, mutable outer object, non-final Java static field, identity toString:
+        // Determinism checks (pure-by-default rejects volatile reads; `fn volatile` allows them):
         assertHasError("""
                 def g: int = 1
                 g = 2
-                def f = fn deterministic (x: int): int -> (x + g)
-                """, "deterministic");
-        assertHasError("""
-                def Box = class (def x: int) ()
-                def g = Box(1)
-                def f = fn deterministic (): int -> (g.x)
-                """, "deterministic");
-        assertHasError("""
-                def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
-                def f = fn deterministic (): int -> (HF.mutableStatic)
-                """, "deterministic");
+                def f = fn (x: int): int -> (x + g)
+                """, "volatile");
         assertClean("""
-                def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
-                def f = fn deterministic (): int -> (HF.FINAL_STATIC)
+                def g: int = 1
+                g = 2
+                def f = fn volatile (x: int): int -> (x + g)
                 """);
         assertHasError("""
                 def Box = class (def x: int) ()
-                def f = fn deterministic (b: Box): string -> ("v=" + b)
-                """, "deterministic");
+                def g = Box(1)
+                def f = fn (): int -> (g.x)
+                """, "volatile");
+        assertClean("""
+                def Box = class (def x: int) ()
+                def g = Box(1)
+                def f = fn volatile (): int -> (g.x)
+                """);
+        assertHasError("""
+                def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
+                def f = fn (): int -> (HF.mutableStatic)
+                """, "volatile");
+        assertClean("""
+                def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
+                def f = fn volatile (): int -> (HF.mutableStatic)
+                """);
+        assertClean("""
+                def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
+                def f = fn (): int -> (HF.FINAL_STATIC)
+                """);
+        assertHasError("""
+                def Box = class (def x: int) ()
+                def f = fn (b: Box): string -> ("v=" + b)
+                """, "volatile");
+        assertClean("""
+                def Box = class (def x: int) ()
+                def f = fn volatile (b: Box): string -> ("v=" + b)
+                """);
         assertClean("""
                 def Pt = record (x: int, y: int) ()
-                def f = fn pure deterministic nothrow (p: Pt): string -> ("p=" + p)
+                def f = fn nothrow (p: Pt): string -> ("p=" + p)
                 """);
 
         // `nothrow` rejects `assert` and non-redundant `as` casts:
@@ -336,9 +369,9 @@ public class EffectsTestCase {
                 def f = fn nothrow (x: any): int -> (x as int)
                 """, "nothrow");
 
-        // Constrained verified functions reject nested `axiom` / `impure` declarations:
+        // Verified pure functions reject nested `axiom` / `io on` declarations:
         assertHasError("""
-                def f = fn pure (): int -> (
+                def f = fn (): int -> (
                     axiom pure on java.lang.System.nanoTime
                     1
                 )
@@ -384,37 +417,58 @@ public class EffectsTestCase {
                 )
                 """, "Cannot mutate parameter b");
 
-        // `borrow` escape checks (return, field store, outer store, escaping closure, non-borrow callee):
-        assertHasError("""
-                def Box = class (def x: int) ()
-                def escReturn = fn (borrow b: Box): Box -> (b)
-                """, "borrow parameter b escapes via return value");
+        // BIP016-D10: returning a @BORROWED parameter or `this` without storing is allowed (e.g. `id`, `min`, getters),
+        // while storing into globals, other objects' fields, or escaping closures requires `shared`!
+        assertClean("""
+                def Box = class (def x: int) (
+                    def self = fn (): Box -> (this)
+                )
+                def id of T = fn (x: T): T -> (x)
+                def readViaId = fn (b: Box): int -> (id(b).x + b.self().x)
+                """);
         assertHasError("""
                 def Box = class (def x: int) ()
                 def sink: Box? = null
-                def escGlobal = fn (borrow b: Box): int -> (sink = b; 1)
-                """, "borrow parameter b escapes");
+                def escGlobal = fn io (b: Box): int -> (sink = b; 1)
+                """, "Borrowed parameter b escapes");
         assertHasError("""
                 def Box = class (def x: int) ()
                 def Holder = class (def ref: Box?) ()
-                def escField = fn (mut h: Holder, borrow b: Box): int -> (h.ref = b; 1)
-                """, "borrow parameter b escapes via field .ref");
+                def escField = fn (mut h: Holder, b: Box): int -> (h.ref = b; 1)
+                """, "Borrowed parameter b escapes via field .ref");
+        assertClean("""
+                def Box = class (def x: int) ()
+                def Holder = class (def ref: Box?) ()
+                def storeField = fn (mut h: Holder, shared b: Box): int -> (h.ref = b; 1)
+                """);
         assertHasError("""
                 def Box = class (def x: int) ()
-                def escClosure = fn (borrow b: Box): fn (): Box -> (fn () -> (b))
-                """, "borrow parameter b escapes via captured closure");
+                def escClosure = fn (b: Box): fn (): Box -> (fn () -> (b))
+                """, "Borrowed parameter b escapes via captured closure");
+        assertHasError("""
+                def Holder = class (def ref: any?) ()
+                def Box = class (def x: int) (
+                    def leakThis = fn (mut h: Holder) -> (h.ref = this)
+                )
+                """, "Borrowed this escapes via field .ref");
+        assertClean("""
+                def Holder = class (def ref: any?) ()
+                def Box = class (def x: int) (
+                    def storeThis = fn shared (mut h: Holder) -> (h.ref = this)
+                )
+                """);
 
-        // Returning deeply immutable primitive or value-class field from `borrow` parameter IS allowed!
+        // Returning deeply immutable primitive or value-class field from default `@BORROWED` parameter IS allowed!
         assertClean("""
                 def Pt = record (x: int, y: int) ()
                 def Holder = class (def pt: Pt) ()
-                def readPt = fn pure deterministic nothrow (borrow h: Holder): Pt -> (h.pt)
+                def readPt = fn nothrow (h: Holder): Pt -> (h.pt)
                 """);
 
         // Static call-site `mut` exclusivity:
         assertHasError("""
                 def Box = class (def x: int) ()
-                def swap = fn hermetic (mut a: Box, mut b: Box) -> (
+                def swap = fn (mut a: Box, mut b: Box) -> (
                     def t = a.x
                     a.x = b.x
                     b.x = t
@@ -424,7 +478,7 @@ public class EffectsTestCase {
                 """, "Exclusivity error");
         assertHasError("""
                 def Box = class (def x: int) ()
-                def rw = fn hermetic (mut a: Box, b: Box): int -> (a.x = b.x + 1; a.x)
+                def rw = fn (mut a: Box, b: Box): int -> (a.x = b.x + 1; a.x)
                 def x = Box(1)
                 def y = x
                 rw(x, y)
@@ -438,10 +492,10 @@ public class EffectsTestCase {
                 w.b.addFrom(w.b)
                 """, "Exclusivity error");
 
-        // Dynamic indexed expressions (`list.get(i)`, `list.get(j)`) and `string` arguments are permitted in RM002:
+        // Dynamic indexed expressions (`list.get(i)`, `list.get(j)`) and `string` arguments are permitted:
         assertClean("""
                 def Box = class (def x: int) ()
-                def swap = fn hermetic (mut a: Box, mut b: Box) -> (
+                def swap = fn (mut a: Box, mut b: Box) -> (
                     def t = a.x
                     a.x = b.x
                     b.x = t
@@ -463,19 +517,19 @@ public class EffectsTestCase {
     public void testFlowSensitiveNarrowingAndFrameLocalClosures() {
         // BIP007-D1 : `!= null`, `== null`, `is T`, and short-circuit `and` / `or` preserve `nothrow`!
         assertClean("""
-                def f1 = fn pure deterministic nothrow (x: int?): int -> (
+                def f1 = fn nothrow (x: int?): int -> (
                     if x != null then (x as int) else (0)
                 )
-                def f2 = fn pure deterministic nothrow (x: int?): int -> (
+                def f2 = fn nothrow (x: int?): int -> (
                     if x == null then (0) else (x as int)
                 )
-                def f3 = fn pure deterministic nothrow (x: int | string): int -> (
+                def f3 = fn nothrow (x: int | string): int -> (
                     if x is int then (x as int) else (0)
                 )
-                def f4 = fn pure deterministic nothrow (x: int?): bool -> (
+                def f4 = fn nothrow (x: int?): bool -> (
                     x != null and (x as int) > 0
                 )
-                def f5 = fn pure deterministic nothrow (x: int?): bool -> (
+                def f5 = fn nothrow (x: int?): bool -> (
                     x == null or (x as int) > 0
                 )
                 """);
@@ -485,9 +539,9 @@ public class EffectsTestCase {
                 def bad = fn nothrow (x: int?): int -> (x as int)
                 """, "nothrow");
 
-        // Frame-local (`borrow`) helper closure updating enclosing function's local `def` preserves `pure deterministic nothrow`:
+        // Frame-local (default `@BORROWED`) helper closure updating enclosing function's local `def` preserves pure `nothrow`:
         assertClean("""
-                def repeat = fn (n: int, borrow step: fn (i: int): int): int -> (
+                def repeat = fn io (n: int, step: fn io (i: int): int): int -> (
                     def i: int = 0
                     while i < n then (
                         step(i)
@@ -495,7 +549,7 @@ public class EffectsTestCase {
                     )
                     n
                 )
-                def triangle = fn pure deterministic nothrow (n: int): int -> (
+                def triangle = fn nothrow (n: int): int -> (
                     def total: int = 0
                     repeat(n, fn (k: int): int -> (
                         total += k
@@ -510,64 +564,74 @@ public class EffectsTestCase {
 
     @Test
     public void testHigherOrderSpecializationSubtypingAndInterfaces() {
-        // Concrete unannotated higher-order function specializes for pure vs impure callbacks:
+        // BIP016-D6: Concrete `fn io` HOF specializes cleanly for pure vs `io` callbacks!
         assertClean("""
-                def apply = fn (f: fn (x: int): int, v: int): int -> (f(v))
-                def caller = fn pure deterministic nothrow (x: int): int -> (
+                def apply = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
+                def caller = fn nothrow (x: int): int -> (
                     apply(fn (n: int): int -> (n * 2), x)
                 )
                 """);
         assertHasError("""
-                def apply = fn (f: fn (x: int): int, v: int): int -> (f(v))
-                def badCaller = fn pure (x: int): int -> (
-                    apply(fn (n: int): int -> (println(n); n), x)
+                def apply = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
+                def badCaller = fn (x: int): int -> (
+                    apply(fn io (n: int): int -> (println(n); n), x)
                 )
-                """, "pure");
+                """, "violates pure guarantee");
 
-        // `impure` functions and abstract interface methods do NOT specialize across call sites:
+        // Concrete `fn io` HOF that performs its own I/O does NOT specialize to pure!
         assertHasError("""
-                def apply = fn impure (f: fn (x: int): int, v: int): int -> (f(v))
-                def badCaller = fn pure (x: int): int -> (
-                    apply(fn (n: int): int -> (n + 1), x)
+                def noisyApply = fn io (f: fn io (x: int): int, v: int): int -> (println(v); f(v))
+                def badCaller = fn (x: int): int -> (
+                    noisyApply(fn (n: int): int -> (n + 1), x)
                 )
-                """, "pure");
+                """, "violates pure guarantee");
+
+        // Abstract interface `fn io` methods do NOT specialize across call sites:
         assertHasError("""
                 def Runner = interface (
-                    def apply: fn (f: fn (x: int): int, v: int): int
+                    def apply: fn io (f: fn io (x: int): int, v: int): int
                 )
-                def badCaller = fn pure (r: Runner, x: int): int -> (
+                def badCaller = fn (r: Runner, x: int): int -> (
                     r.apply(fn (n: int): int -> (n + 1), x)
                 )
-                """, "pure");
+                """, "violates pure guarantee");
 
-        // Function subtyping (effects, `mut`, `borrow`) and interface conformance:
+        // Function subtyping hierarchy: `fn nothrow <: fn <: fn volatile <: fn io`, `@CONST <: mut`, `@BORROWED <: shared`:
         assertClean("""
                 def Box = class (def x: int) ()
-                def pFn = fn pure deterministic nothrow (borrow b: Box): int -> (b.x)
-                def asHermetic: fn hermetic (b: Box): int = pFn
-                def asMutPermitted: fn hermetic (mut b: Box): int = pFn
-                def asBorrow: fn pure (borrow b: Box): int = pFn
+                def pFn = fn nothrow (b: Box): int -> (b.x)
+                def asPure: fn (b: Box): int = pFn
+                def asVolatile: fn volatile (b: Box): int = pFn
+                def asIo: fn io (b: Box): int = pFn
+                def asMutPermitted: fn (mut b: Box): int = pFn
+                def asSharedPermitted: fn (shared b: Box): int = pFn
                 """);
         assertHasError("""
-                def noisy = fn (x: int): int -> (println(x); x)
-                def needPure: fn pure (x: int): int = noisy
-                """, "Type error : expected pure");
+                def noisy = fn io (x: int): int -> (println(x); x)
+                def needPure: fn (x: int): int = noisy
+                """, "Type error");
+        assertHasError("""
+                def g: int = 1
+                g = 2
+                def vol = fn volatile (x: int): int -> (x + g)
+                def needPure: fn (x: int): int = vol
+                """, "Type error");
         assertHasError("""
                 def Box = class (def x: int) ()
-                def mutFn = fn hermetic (mut b: Box): int -> (b.x = 1; 1)
-                def noMutAllowed: fn hermetic (b: Box): int = mutFn
+                def mutFn = fn (mut b: Box): int -> (b.x = 1; 1)
+                def noMutAllowed: fn (b: Box): int = mutFn
                 """, "Type error");
         assertHasError("""
                 def Box = class (def x: int) ()
                 def sink: Box? = null
-                def escaping = fn (b: Box): int -> (sink = b; 1)
-                def needBorrow: fn (borrow b: Box): int = escaping
+                def escaping = fn io (shared b: Box): int -> (sink = b; 1)
+                def needBorrow: fn io (b: Box): int = escaping
                 """, "Type error");
 
-        // Interface conformance checks effects and `mut`:
+        // Interface conformance checks pure/volatile/io and `mut`:
         assertClean("""
                 def Calc = interface (
-                    def eval: fn pure deterministic (x: int): int
+                    def eval: fn (x: int): int
                 )
                 def DoubleCalc = class () implements Calc (
                     def eval = fn (x: int): int -> (x * 2)
@@ -575,12 +639,12 @@ public class EffectsTestCase {
                 """);
         assertHasError("""
                 def Calc = interface (
-                    def eval: fn pure (x: int): int
+                    def eval: fn (x: int): int
                 )
                 def NoisyCalc = class () implements Calc (
-                    def eval = fn (x: int): int -> (println(x); x)
+                    def eval = fn io (x: int): int -> (println(x); x)
                 )
-                """, "Type error : expected pure");
+                """, "Type error");
     }
 
     // ---------------------------------------------------------------- 6. Algebraic Properties, Value Classes & Inline Objects
@@ -589,39 +653,39 @@ public class EffectsTestCase {
     public void testAlgebraicPropertiesValueClassesAndInlineObjects() {
         // Wrapping 32-bit `int` addition is NOT `monotone`; `double` addition and non-negative scaling ARE `monotone`!
         assertHasError("""
-                def badMono = fn pure deterministic monotone (x: int): int -> (x + 1)
+                def badMono = fn monotone (x: int): int -> (x + 1)
                 """, "monotone");
         assertClean("""
-                def step1 = fn pure deterministic nothrow monotone (x: double): double -> (x * 2.0 + 3.0)
-                def step2 = fn pure deterministic nothrow monotone (x: double): double -> (step1(x) + 1.0)
+                def step1 = fn nothrow monotone (x: double): double -> (x * 2.0 + 3.0)
+                def step2 = fn nothrow monotone (x: double): double -> (step1(x) + 1.0)
                 """);
         assertHasError("""
-                def antiMono = fn pure deterministic monotone (x: double): double -> (x * -2.0)
+                def antiMono = fn monotone (x: double): double -> (x * -2.0)
                 """, "monotone");
         assertHasError("""
-                def negMono = fn pure deterministic monotone (x: double): double -> (-x)
+                def negMono = fn monotone (x: double): double -> (-x)
                 """, "monotone");
 
         // `int * k` is `injective` for odd `k` (mod 2^32 bijection) and rejected for even `k`:
         assertClean("""
-                def injOdd = fn pure deterministic nothrow injective (x: int): int -> (x * 3 + 1)
-                def injStr = fn pure deterministic nothrow injective (x: int): string -> ("k=" + x)
+                def injOdd = fn nothrow injective (x: int): int -> (x * 3 + 1)
+                def injStr = fn nothrow injective (x: int): string -> ("k=" + x)
                 def Wrap = record (x: int) ()
-                def injWrap = fn pure deterministic nothrow injective (x: int): Wrap -> (Wrap(x))
+                def injWrap = fn nothrow injective (x: int): Wrap -> (Wrap(x))
                 """);
         assertHasError("""
-                def badEven = fn pure deterministic injective (x: int): int -> (x * 2)
+                def badEven = fn injective (x: int): int -> (x * 2)
                 """, "injective");
 
         // Single-op wrappers for `commutative`, `associative`, `idempotent` & signature applicability:
         assertClean("""
                 def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
-                def add = fn pure deterministic nothrow commutative associative (a: int, b: int): int -> (a + b)
-                def xor = fn pure deterministic nothrow commutative associative (a: int, b: int): int -> (HF.bitXor(a, b))
-                def clamp = fn pure deterministic nothrow idempotent (x: double): double -> (HF.clampUnit(x))
+                def add = fn nothrow commutative associative (a: int, b: int): int -> (a + b)
+                def xor = fn nothrow commutative associative (a: int, b: int): int -> (HF.bitXor(a, b))
+                def clamp = fn nothrow idempotent (x: double): double -> (HF.clampUnit(x))
                 """);
         assertHasError("""
-                def sub = fn pure deterministic commutative (a: int, b: int): int -> (a - b)
+                def sub = fn commutative (a: int, b: int): int -> (a - b)
                 """, "commutative");
         assertHasError("""
                 def I = interface (def badSig: fn commutative (x: int): int)
@@ -637,21 +701,21 @@ public class EffectsTestCase {
                 def I = interface (def badOrder: fn monotone (b: Box): Box)
                 """, "monotone requires ordered parameter and return types");
 
-        // `value class` constructor must be `pure deterministic`:
+        // `record` (value class) constructor must be pure & deterministic:
         assertHasError("""
                 def BadVal = record (x: int) (
                     println(x)
                 )
                 """, "value class");
 
-        // Inline `object (...)` inside a `pure` function executes its body under `pure` constraints:
+        // Inline `object (...)` inside a pure function executes its body under pure constraints:
         assertHasError("""
-                def f = fn pure (): any -> (
+                def f = fn (): any -> (
                     object (
                         println("side effect")
                     )
                 )
-                """, "pure");
+                """, "violates pure guarantee");
     }
 
     // ---------------------------------------------------------------- 7. Host Annotations, Engine Config & Priority Order
@@ -661,59 +725,79 @@ public class EffectsTestCase {
         // BIP007-D4 : `axiom` is order-independent within a file (usable above its declaration)!
         assertClean("""
                 def UH = import("org.babblelang.tests").EffectsTestCase.UnassumedHelper
-                def f = fn pure deterministic (): int -> (UH.compute(10))
-                axiom pure deterministic on import("org.babblelang.tests").EffectsTestCase.UnassumedHelper.compute
+                def f = fn (): int -> (UH.compute(10))
+                axiom pure on import("org.babblelang.tests").EffectsTestCase.UnassumedHelper.compute
                 """);
 
-        // Runtime @Pure, @Mut, @Borrow, @Impure, class-level @Pure/@Deterministic, and Java SAM callback propagation:
+        // Runtime @Pure, @Volatile, @Mut, @Shared, @IO, class-level @Pure, and Java SAM callback propagation:
         assertClean("""
                 def tests = import("org.babblelang.tests")
                 def HF = tests.EffectsTestCase.HostFixtures
                 def APC = tests.EffectsTestCase.AnnotatedPureClass
-                def f = fn pure deterministic nothrow (x: int): int -> (
+                def f = fn nothrow (x: int): int -> (
                     HF.pureCalc(x) + HF.applyOp(x, fn (v: int): int -> (v + 1))
                 )
-                def g = fn pure deterministic (x: int): int -> (APC.helper(x))
-                def m = fn hermetic deterministic nothrow (mut dst: tests.EffectsTestCase.MutableHolder, borrow src: tests.EffectsTestCase.MutableHolder) -> (
+                def v = fn volatile nothrow (x: int): int -> (HF.volatileRead(x))
+                def g = fn (x: int): int -> (APC.helper(x))
+                def m = fn nothrow (mut dst: tests.EffectsTestCase.MutableHolder, src: tests.EffectsTestCase.MutableHolder) -> (
                     HF.mutateParam(dst, src)
                     dst.bump(1)
                 )
+                def e = fn nothrow (shared h: tests.EffectsTestCase.MutableHolder): tests.EffectsTestCase.MutableHolder -> (
+                    HF.echoShared(h)
+                )
                 """);
-        // Class-level @Pure @Deterministic (without @Nothrow) does NOT imply nothrow!
+        // @Volatile method rejected in pure `fn`!
+        assertHasError("""
+                def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
+                def badVol = fn (x: int): int -> (HF.volatileRead(x))
+                """, "volatile");
+        // @Shared Java parameter rejects borrowed Babble parameter!
+        assertHasError("""
+                def tests = import("org.babblelang.tests")
+                def HF = tests.EffectsTestCase.HostFixtures
+                def badBorrow = fn (h: tests.EffectsTestCase.MutableHolder): tests.EffectsTestCase.MutableHolder -> (
+                    HF.echoShared(h)
+                )
+                """, "Borrowed parameter h escapes");
+        // Class-level @Pure (without @Nothrow) does NOT imply nothrow!
         assertHasError("""
                 def APC = import("org.babblelang.tests").EffectsTestCase.AnnotatedPureClass
                 def badNothrow = fn nothrow (x: int): int -> (APC.helper(x))
                 """, "nothrow");
 
-        // Method-level @Impure overrides class-level @Pure, and impure Java SAM callback taints caller:
+        // Method-level @IO overrides class-level @Pure, and `io` Java SAM callback taints caller:
         assertHasError("""
                 def APC = import("org.babblelang.tests").EffectsTestCase.AnnotatedPureClass
-                def bad = fn pure (x: int): int -> (APC.escapeHatch(x))
-                """, "pure");
+                def bad = fn (x: int): int -> (APC.escapeHatch(x))
+                """, "violates pure guarantee");
         assertHasError("""
                 def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
-                def badSam = fn pure (x: int): int -> (
-                    HF.applyOp(x, fn (v: int): int -> (println(v); v))
+                def badSam = fn (x: int): int -> (
+                    HF.applyOp(x, fn io (v: int): int -> (println(v); v))
                 )
-                """, "pure");
+                """, "violates pure guarantee");
 
-        // Value protocol defaults: `Object.hashCode()` is `pure` only (NOT `deterministic`),
-        // whereas overridden `MutableHolder.hashCode()` is `pure deterministic`!
+        // Value protocol defaults: `Object.hashCode()` is `volatile` (NOT deterministic),
+        // whereas overridden `MutableHolder.hashCode()` is pure!
         assertHasError("""
-                def bad = fn deterministic (o: java.lang.StringBuilder): int -> (o.hashCode())
-                """, "deterministic");
+                def bad = fn (o: java.lang.StringBuilder): int -> (o.hashCode())
+                """, "volatile");
+        assertClean("""
+                def okVol = fn volatile (o: java.lang.StringBuilder): int -> (o.hashCode())
+                """);
         assertClean("""
                 def tests = import("org.babblelang.tests")
-                def ok = fn pure deterministic (h: tests.EffectsTestCase.MutableHolder): int -> (h.hashCode())
+                def ok = fn (h: tests.EffectsTestCase.MutableHolder): int -> (h.hashCode())
                 """);
 
-        // Engine-level configuration: `assumeEffects`, `assumeConstructorEffects`, `markImpure`, and `allowAxioms(false)`:
+        // Engine-level configuration: `assumeEffects`, `assumeConstructorEffects`, `markIO`, and `allowAxioms(false)`:
         BabbleScriptEngine engine = newEngine();
-        engine.assumeEffects(UnassumedHelper.class, "compute", Effect.PURE, Effect.DETERMINISTIC, Effect.NOTHROW);
-        engine.assumeConstructorEffects(UnassumedHelper.class, Effect.PURE, Effect.DETERMINISTIC, Effect.NOTHROW);
+        engine.assumeEffects(UnassumedHelper.class, "compute", Effect.PURE, Effect.NOTHROW);
+        engine.assumeConstructorEffects(UnassumedHelper.class, Effect.PURE, Effect.NOTHROW);
         Assertions.assertEquals(15, eval(engine, """
                 def UH = import("org.babblelang.tests").EffectsTestCase.UnassumedHelper
-                def f = fn pure deterministic nothrow (x: int): int -> (
+                def f = fn nothrow (x: int): int -> (
                     discard(UH())
                     UH.compute(x)
                 )
@@ -721,38 +805,38 @@ public class EffectsTestCase {
                 """));
 
         // §6.1 Priority order:
-        // - Tier 1 (file method `impure`) > Tier 3 (`@Pure` method annotation)
-        // - Tier 2 (`engine.markImpure` method) > Tier 3 (`@Pure` method) & Tier 4 (bare-class `axiom pure`)
-        // - Tier 1 (file method `axiom pure`) > Tier 2 (`engine.markImpure` method) when `allowAxioms(true)`
+        // - Tier 1 (file method `io on`) > Tier 3 (`@Pure` method annotation)
+        // - Tier 2 (`engine.markIO` method) > Tier 3 (`@Pure` method) & Tier 4 (bare-class `axiom pure`)
+        // - Tier 1 (file method `axiom pure`) > Tier 2 (`engine.markIO` method) when `allowAxioms(true)`
         assertEngineFails(engine, """
                 def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
-                impure on import("org.babblelang.tests").EffectsTestCase.HostFixtures.pureCalc
-                def f = fn pure (x: int): int -> (HF.pureCalc(x))
+                io on import("org.babblelang.tests").EffectsTestCase.HostFixtures.pureCalc
+                def f = fn (x: int): int -> (HF.pureCalc(x))
                 f(1)
-                """, "pure");
+                """, "violates pure guarantee");
 
-        engine.markImpure(HostFixtures.class, "pureCalc");
+        engine.markIO(HostFixtures.class, "pureCalc");
         assertEngineFails(engine, """
                 def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
                 axiom pure on import("org.babblelang.tests").EffectsTestCase.HostFixtures
-                def f = fn pure (x: int): int -> (HF.pureCalc(x))
+                def f = fn (x: int): int -> (HF.pureCalc(x))
                 f(1)
-                """, "pure");
+                """, "violates pure guarantee");
         Assertions.assertEquals(3, eval(engine, """
                 def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
                 axiom pure on import("org.babblelang.tests").EffectsTestCase.HostFixtures.pureCalc
-                def f = fn pure (x: int): int -> (HF.pureCalc(x))
+                def f = fn (x: int): int -> (HF.pureCalc(x))
                 f(1)
                 """));
 
-        // `allowAxioms(false)` disables Babble `axiom` and `impure` while keeping engine assumptions & @Pure annotations active!
+        // `allowAxioms(false)` disables Babble `axiom` and `io on` while keeping engine assumptions & @Pure annotations active!
         BabbleScriptEngine locked = newEngine();
         locked.allowAxioms(false);
         Assertions.assertFalse(locked.allowsAxioms());
-        locked.assumeEffects(UnassumedHelper.class, "compute", Effect.PURE, Effect.DETERMINISTIC, Effect.NOTHROW);
+        locked.assumeEffects(UnassumedHelper.class, "compute", Effect.PURE, Effect.NOTHROW);
         Assertions.assertEquals(25, eval(locked, """
                 def UH = import("org.babblelang.tests").EffectsTestCase.UnassumedHelper
-                def f = fn pure deterministic nothrow (x: int): int -> (UH.compute(x))
+                def f = fn nothrow (x: int): int -> (UH.compute(x))
                 f(20)
                 """));
         assertEngineFails(locked, """
@@ -760,8 +844,8 @@ public class EffectsTestCase {
                 1
                 """, "axiom declarations are disabled on this engine");
         assertEngineFails(locked, """
-                impure on java.lang.System.nanoTime
+                io on java.lang.System.nanoTime
                 1
-                """, "impure declarations are disabled on this engine");
+                """, "io declarations are disabled on this engine");
     }
 }

@@ -132,7 +132,7 @@ public class ModuleSourcesTestCase {
         MemorySource source = new MemorySource()
                 .put("/lib/registry.ba", "export def values : java.util.List of int = java.util.ArrayList()")
                 .put("/lib/data.ba", "import(\"registry.ba\").values.add(7)")
-                .put("/lib/loader.ba", "def registry = import(\"registry.ba\")\nexport def load = fn (name : string) : int -> ( import(name) ; registry.values.get(0) as int )");
+                .put("/lib/loader.ba", "def registry = import(\"registry.ba\")\nexport def load = fn io (name : string) : int -> ( import(name) ; registry.values.get(0) as int )");
         // A dynamic import : resolved when it runs, from the module the function is in.
         Assertions.assertEquals(7, run(engine(source), "import(\"lib/loader.ba\").load(\"data.ba\")", "/main.ba"));
         Assertions.assertTrue(source.resolved.contains("data.ba from /lib/loader.ba -> /lib/data.ba"), source.resolved.toString());
@@ -197,7 +197,7 @@ public class ModuleSourcesTestCase {
 
     @Test
     public void twoNamesForOneKeyAreOneModule() throws Exception {
-        MemorySource source = new MemorySource().put("/lib/counter.ba", "println(\"loading\")\ndef n = 0\nexport def next = fn () -> ( n = n + 1 )");
+        MemorySource source = new MemorySource().put("/lib/counter.ba", "println(\"loading\")\ndef n = 0\nexport def next = fn io () -> ( n = n + 1 )");
         Object result = run(engine(source), "import(\"lib/counter.ba\").next()\nimport(\"lib/../lib/./counter.ba\").next()", "/main.ba");
         Assertions.assertEquals(2, result);
         Assertions.assertEquals("loading" + System.lineSeparator(), output.toString());

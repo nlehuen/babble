@@ -82,9 +82,23 @@ final class TypedModuleSummary {
                     }
                 }
             }
-            EffectSet combined = EffectSet.ofInferred(effs, residualEffects.mutThis(), residualEffects.borrowThis(),
-                    residualEffects.uniqueResult(), terminating);
-            return new EffectChecker.CallableSummary(combined, mutParams, borrowParams, base.uniqueParams());
+            boolean anyMut = residualEffects.mutThis();
+            for (boolean m : mutParams) {
+                anyMut |= m;
+            }
+            if (anyMut) {
+                effs.remove(Effect.PURE);
+            }
+            boolean isIO = !effs.contains(Effect.HERMETIC);
+            boolean isVol = !isIO && !effs.contains(Effect.DETERMINISTIC);
+            EffectSet combined = new EffectSet(effs, EnumSet.noneOf(Effect.class),
+                    residualEffects.mutThis(), residualEffects.borrowThis(), residualEffects.explicitSharedThis(),
+                    residualEffects.uniqueResult(), residualEffects.explicitUniqueResult(),
+                    terminating, isIO, isVol, false);
+            return new EffectChecker.CallableSummary(combined, mutParams, borrowParams, base.uniqueParams(),
+                    base.frameReadOwners(), base.frameWriteOwners(), base.deepMutThis(),
+                    base.returnParams(), base.returnThis(), base.returnExternal(), base.returnKnown(),
+                    base.ctorStoredParams());
         }
     }
 

@@ -153,35 +153,37 @@ sealed interface Type {
     Type NULLABLE_FROZEN_ANY = new Union(List.of(FROZEN_ANY, NULL));
 
     /** A parameter of a function type : its name is part of the type, since calls bind by name. */
-    record Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitBorrow, boolean unique) {
+    record Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
         Parameter(String name, Type type, boolean optional) {
             this(name, type, optional, false, false, false, false);
         }
 
         Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow) {
-            this(name, type, optional, mut, borrow, borrow, false);
+            this(name, type, optional, mut, borrow, false, false);
         }
 
-        Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitBorrow) {
-            this(name, type, optional, mut, borrow, explicitBorrow, false);
+        Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitShared) {
+            this(name, type, optional, mut, borrow, explicitShared, false);
         }
 
         Parameter withType(Type newType) {
-            return new Parameter(name, newType, optional, mut, borrow, explicitBorrow, unique);
+            return new Parameter(name, newType, optional, mut, borrow, explicitShared, unique);
         }
 
         Parameter withModifiers(boolean newMut, boolean newBorrow) {
-            return new Parameter(name, type, optional, newMut, newBorrow || explicitBorrow, explicitBorrow, unique);
+            return new Parameter(name, type, optional, newMut, newBorrow && !explicitShared && !unique, explicitShared, unique);
         }
 
         Parameter withModifiers(boolean newMut, boolean newBorrow, boolean newUnique) {
-            return new Parameter(name, type, optional, newMut, newBorrow || explicitBorrow, explicitBorrow, newUnique);
+            return new Parameter(name, type, optional, newMut, newBorrow && !explicitShared && !newUnique,
+                    explicitShared && !newUnique, newUnique);
         }
 
-        String format(boolean showBorrow) {
+        String format(boolean showInferredShared) {
+            boolean showShared = !unique && (explicitShared || (showInferredShared && !borrow));
             return (unique ? "unique " : "")
                     + (mut ? "mut " : "")
-                    + ((showBorrow ? borrow : explicitBorrow) ? "borrow " : "")
+                    + (showShared ? "shared " : "")
                     + name
                     + (type == ERROR ? "" : " : " + type)
                     + (optional ? " = …" : "");
@@ -222,16 +224,14 @@ sealed interface Type {
                     shown.add(req);
                 }
             }
+            boolean showIO = effects.isIO() || (expected.effects().isHermetic() && !effects.isHermetic());
+            boolean showVolatile = !showIO && (effects.explicitVolatile()
+                    || (expected.effects().isDeterministic() && effects.isHermetic() && !effects.isDeterministic()));
+            boolean showSharedThis = effects.explicitSharedThis()
+                    || (expected.effects().borrowThis() && !effects.borrowThis());
             boolean showUniqueReturn = effects.explicitUniqueResult()
                     || (expected.effects().uniqueResult() && effects.uniqueResult());
-            EffectSet displaySet = new EffectSet(
-                    shown, shown,
-                    effects.mutThis(),
-                    effects.explicitBorrowThis() || (expected.effects().borrowThis() && effects.borrowThis()),
-                    effects.explicitBorrowThis() || (expected.effects().borrowThis() && effects.borrowThis()),
-                    showUniqueReturn, showUniqueReturn,
-                    effects.terminating(),
-                    false, false);
+            String prefix = EffectSet.formatSurface(shown, showIO, showVolatile, effects.mutThis(), showSharedThis);
             String tp = typeParameters.isEmpty() ? ""
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
             StringBuilder params = new StringBuilder("(");
@@ -239,11 +239,11 @@ sealed interface Type {
                 if (i > 0) {
                     params.append(", ");
                 }
-                boolean showBorrow = i < expected.parameters().size() && expected.parameters().get(i).borrow();
-                params.append(parameters.get(i).format(showBorrow));
+                boolean showShared = i < expected.parameters().size() && expected.parameters().get(i).borrow();
+                params.append(parameters.get(i).format(showShared));
             }
             params.append(")");
-            return displaySet.formatDeclaredPrefix() + tp + params
+            return prefix + tp + params
                     + (result == ERROR ? "" : " : " + (showUniqueReturn ? "unique " : "") + result);
         }
 

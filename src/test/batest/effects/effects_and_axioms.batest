@@ -1,33 +1,33 @@
-;; RM002 effect system: pure, hermetic, mut, borrow, algebraic markers, axioms, impure, and violations
+;; RM002 / BIP016 effect system: pure-by-default, io, volatile, mut, shared, algebraic markers, axioms, and violations
 
 {{{{{
-;; Explicit pure / deterministic / nothrow / idempotent / commutative / associative / monotone / injective
-def inc = fn pure deterministic nothrow monotone (x : double) : double -> ( x + 1.0 )
-def add = fn pure deterministic nothrow commutative associative (a : int, b : int) : int -> ( a + b )
-def oddScale = fn pure deterministic nothrow injective (x : int) : int -> ( x * 3 )
-def keep = fn pure idempotent (x : int) : int -> ( x )
-def herm = fn hermetic (x : int) : int -> ( x * 2 )
-def sum3 = fn pure (a : int, b : int, c : int) : int -> ( add(oddScale(a), b) + keep(c) )
+;; Explicit nothrow / idempotent / commutative / associative / monotone / injective (pure + deterministic by default)
+def inc = fn nothrow monotone (x : double) : double -> ( x + 1.0 )
+def add = fn nothrow commutative associative (a : int, b : int) : int -> ( a + b )
+def oddScale = fn nothrow injective (x : int) : int -> ( x * 3 )
+def keep = fn idempotent (x : int) : int -> ( x )
+def herm = fn (x : int) : int -> ( x * 2 )
+def sum3 = fn (a : int, b : int, c : int) : int -> ( add(oddScale(a), b) + keep(c) )
 println(inc(1.5), ":", sum3(1, 2, 3), ":", herm(5))
 }}}}}
 2.5:8:10
 
 {{{{{
 ;; Wrapping 32-bit int addition cannot satisfy monotone guarantee
-def badMono = fn pure deterministic monotone (x : int) : int -> ( x + 1 )
+def badMono = fn monotone (x : int) : int -> ( x + 1 )
 }}}}}
 Function badMono declared monotone violates monotone guarantee
 
 {{{{{
-;; Parameter mut and borrow modifiers on functions and methods
+;; Parameter mut and default-borrowed modifiers on functions and methods
 def Box = class (def value : int) (
     def addTo = fn mut (k : int) : int -> ( this.value += k ; this.value )
-    def read = fn borrow () : int -> ( this.value )
+    def read = fn () : int -> ( this.value )
 )
 def bumpBox = fn (mut b : Box, delta : int) : int -> (
     b.addTo(delta)
 )
-def inspectBox = fn pure (borrow b : Box) : int -> (
+def inspectBox = fn (b : Box) : int -> (
     b.read()
 )
 def box = Box(10)
@@ -36,11 +36,11 @@ println(bumpBox(box, 5), ":", inspectBox(box))
 15:15
 
 {{{{{
-;; Axiom and impure declarations for Java methods
-axiom pure deterministic nothrow on java.lang.Math.abs
+;; Axiom declarations for Java methods
+axiom pure nothrow on java.lang.Math.abs
 axiom mut on java.util.List.add
 axiom pure on java.util.List.size
-def compute = fn pure (x : int) : int -> ( java.lang.Math.abs(x) )
+def compute = fn (x : int) : int -> ( java.lang.Math.abs(x) )
 def l : java.util.List of int = java.util.ArrayList()
 l.add(-7)
 println(compute(-7), ":", l.size())
@@ -68,8 +68,8 @@ swapAdd(x, x)
 Exclusivity error : mut target x aliases argument x
 
 {{{{{
-;; Violation: mut inside pure function rejected
+;; Violation: external mutation inside pure-by-default function rejected
 def g = 0
-def badPure = fn pure () : int -> ( g += 1 ; g )
+def badPure = fn () : int -> ( g += 1 ; g )
 }}}}}
-Function badPure declared pure violates pure guarantee
+Function badPure violates pure guarantee (performs I/O or external mutation) : mark function as io

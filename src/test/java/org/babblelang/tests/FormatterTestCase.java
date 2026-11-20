@@ -450,36 +450,38 @@ public class FormatterTestCase {
     @Test
     public void testRm002EffectsAndAxioms() throws Exception {
         assertFormats("""
-                axiom pure deterministic on java.lang.Math
+                axiom pure nothrow on java.lang.Math
                 axiom mut on java.util.List.add
                 axiom pure on java.awt.Point()
+                axiom volatile on java.nio.file.Files.readString
                 export axiom pure on import("java.time")
-                impure on java.lang.System.nanoTime
+                io on java.lang.System.nanoTime
                 def m = axiom pure on java.lang.Math
-                def r = impure on java.lang.Math.random
-                def add: fn pure deterministic nothrow (a: int, b: int): int = fn pure deterministic nothrow (a: int, b: int): int -> (
+                def r = io on java.lang.Math.random
+                def add: fn nothrow (a: int, b: int): int = fn nothrow (a: int, b: int): int -> (
                     a + b
                 )
-                def id of T = fn pure (x: T): T -> (x)
-                def step = fn hermetic (mut p: Point, borrow q: Point): int -> (
+                def id of T = fn (shared x: T): T -> (x)
+                def step = fn (mut p: Point, q: Point): int -> (
                     p.x = q.x
                     p.x
                 )
                 def unnamed: fn (int, int): int = fn (a: int, b: int): int -> (a + b)
                 unnamed(1, 2)
                 """, """
-                axiom   pure   deterministic  on  java . lang . Math
+                axiom   pure   nothrow  on  java . lang . Math
                 axiom mut on java.util.List.add
                 axiom pure on java.awt.Point ( )
+                axiom   volatile  on  java.nio.file.Files.readString
                 export   axiom  pure  on  import ( "java.time" )
-                impure   on  java.lang.System.nanoTime
+                io   on  java.lang.System.nanoTime
                 def m = axiom   pure  on  java.lang.Math
-                def r = impure   on  java.lang.Math.random
-                def add : fn  pure  deterministic  nothrow ( a : int , b : int ) : int = fn  pure  deterministic  nothrow ( a : int , b : int ) : int -> (
+                def r = io   on  java.lang.Math.random
+                def add : fn  nothrow ( a : int , b : int ) : int = fn  nothrow ( a : int , b : int ) : int -> (
                 a+b
                 )
-                def id  of  T = fn  pure ( x : T ) : T -> ( x )
-                def step = fn  hermetic ( mut  p : Point , borrow  q : Point ) : int -> (
+                def id  of  T = fn ( shared  x : T ) : T -> ( x )
+                def step = fn ( mut  p : Point , q : Point ) : int -> (
                 p.x = q.x
                 p.x
                 )
@@ -513,14 +515,14 @@ public class FormatterTestCase {
     public void testBip007OwnershipSyntax() throws Exception {
         assertFormats("""
                 axiom pure unique on java.util.ArrayList()
-                def f = fn pure (unique b: Box, unique borrow c: Box): unique Box -> (
+                def f = fn (unique b: Box, shared c: Box): unique Box -> (
                     def x: frozen list of int = freeze(list(1, 2))
                     discard(x)
                     move(b)
                 )
                 """, """
                 axiom pure unique on java . util . ArrayList ( )
-                def f = fn pure ( unique b : Box , unique borrow c : Box ) : unique Box -> (
+                def f = fn ( unique b : Box , shared c : Box ) : unique Box -> (
                   def x : frozen list of int = freeze ( list ( 1 , 2 ) )
                   discard ( x )
                   move ( b )

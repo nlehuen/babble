@@ -73,7 +73,7 @@ assert(box.v == 2)
 
 ;; The receiver is evaluated once.
 def calls = 0
-def get = fn () -> (
+def get = fn io () -> (
     calls += 1
     box
 )

@@ -5,25 +5,25 @@
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
 def Box = class (def x : int) ()
-def mkBox : fn pure (x : int) : Box = Box
-def fnPure : fn pure (x : int) : int = HF.pureCalc
-def pr : fn (x : int) : any? = println
+def mkBox : fn (x : int) : Box = Box
+def fnPure : fn (x : int) : int = HF.pureCalc
+def pr : fn io (x : int) : any? = println
 println(mkBox(3).x, ":", fnPure(4))
 }}}}}
 3:9
 
 {{{{{
-;; nonFunctionCallableAssignable rejects impure Java method ref for pure target
+;; nonFunctionCallableAssignable rejects io Java method ref for pure target
 def tests = import("org.babblelang.tests")
-def fnBad : fn pure (x : int) : int = tests.EffectsTestCase.HostFixtures.annotatedImpure
+def fnBad : fn (x : int) : int = tests.EffectsTestCase.HostFixtures.annotatedIO
 }}}}}
-Type error : expected pure (x : int) : int, got org.babblelang.tests.EffectsTestCase$HostFixtures.annotatedImpure
+Type error : expected (x : int) : int, got org.babblelang.tests.EffectsTestCase$HostFixtures.annotatedIO
 
 {{{{{
 ;; nonFunctionCallableAssignable rejects println for pure target
-def pr : fn pure (x : int) : any? = println
+def pr : fn (x : int) : any? = println
 }}}}}
-Type error : expected pure (x : int) : any?, got print
+Type error : expected (x : int) : any?, got print
 
 {{{{{
 ;; canWidenTypeVarToDouble with Java generic method (Objects.requireNonNullElse)
@@ -244,7 +244,7 @@ def x : int | double = 1
 x = 2.5
 def opt : string? = "a"
 opt = null
-def f = fn pure (n : int) : int -> ( n )
+def f = fn (n : int) : int -> ( n )
 f = fn (n : int) : int -> ( n + 1 )
 println(x, ":", opt, ":", f(3))
 }}}}}
@@ -276,7 +276,7 @@ C does not implement I1.m
 {{{{{
 ;; genericBabbleCall with deferred unannotated lambda + unify JavaInstance SAM with Function + Java Optional.map deferred lambda
 def apply of (A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
-def runSam of T = fn (f : java.util.function.Function of (T, int), x : T) : int? -> ( f.apply(x) )
+def runSam of T = fn io (shared f : java.util.function.Function of (T, int), shared x : T) : int? -> ( f.apply(x) )
 def opt = java.util.Optional.of(5).map(fn (x : int) -> ( x + 1 ))
 println(apply(10, fn (n) -> ( n + 1 )), ":", runSam(fn (s : string) : int -> ( java.lang.String(s).length() ), "hello"), ":", opt.orElse(0))
 }}}}}

@@ -11,14 +11,14 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Per-engine host effect policy and Java target overrides (BIP007 §3.1, §6.2).
+ * Per-engine host effect policy and Java target overrides (BIP007 §3.1, §6.2 ; BIP016-D8).
  *
  * <p>Also captures target keys shared by file-level, module-exported, and REPL-session
- * {@code axiom} / {@code impure} tables.
+ * {@code axiom} / {@code io} tables.
  */
 public final class HostEffects {
 
-    /** Kind of Java target addressed by an {@code axiom}, {@code impure}, or host registration. */
+    /** Kind of Java target addressed by an {@code axiom}, {@code io}, or host registration. */
     public enum TargetKind {
         METHOD,
         CONSTRUCTOR,
@@ -51,30 +51,51 @@ public final class HostEffects {
     }
 
     /** Resolved override entry for a {@link JavaTarget}. */
-    public record OverrideEntry(Set<Effect> effects, boolean mutReceiver, boolean borrowReceiver, boolean uniqueResult, boolean impure) {
-        public OverrideEntry(Set<Effect> effects, boolean mutReceiver, boolean borrowReceiver, boolean impure) {
-            this(effects, mutReceiver, borrowReceiver, false, impure);
+    public record OverrideEntry(Set<Effect> effects,
+                                boolean mutReceiver,
+                                boolean borrowReceiver,
+                                boolean uniqueResult,
+                                boolean io,
+                                boolean volatileEffect) {
+        public OverrideEntry(Set<Effect> effects, boolean mutReceiver, boolean borrowReceiver, boolean io) {
+            this(effects, mutReceiver, borrowReceiver, false, io, false);
+        }
+
+        public OverrideEntry(Set<Effect> effects, boolean mutReceiver, boolean borrowReceiver, boolean uniqueResult, boolean io) {
+            this(effects, mutReceiver, borrowReceiver, uniqueResult, io, false);
         }
 
         public OverrideEntry {
             EnumSet<Effect> copy = effects.isEmpty() ? EnumSet.noneOf(Effect.class) : EnumSet.copyOf(effects);
             copy.remove(Effect.MUT);
             copy.remove(Effect.BORROW);
+            copy.remove(Effect.SHARED);
             copy.remove(Effect.UNIQUE);
-            copy.remove(Effect.IMPURE);
-            if (impure) {
+            copy.remove(Effect.VOLATILE);
+            copy.remove(Effect.IO);
+            if (io) {
                 copy.clear();
                 mutReceiver = false;
                 borrowReceiver = false;
                 uniqueResult = false;
-            } else if (copy.contains(Effect.PURE)) {
-                copy.add(Effect.HERMETIC);
+                volatileEffect = false;
+            } else {
+                if (copy.contains(Effect.PURE)) {
+                    copy.add(Effect.HERMETIC);
+                }
+                if (volatileEffect) {
+                    copy.add(Effect.HERMETIC);
+                    copy.remove(Effect.DETERMINISTIC);
+                }
+                if (mutReceiver) {
+                    copy.remove(Effect.PURE);
+                }
             }
             effects = Collections.unmodifiableSet(copy);
         }
 
-        public static OverrideEntry impureEntry() {
-            return new OverrideEntry(EnumSet.noneOf(Effect.class), false, false, false, true);
+        public static OverrideEntry ioEntry() {
+            return new OverrideEntry(EnumSet.noneOf(Effect.class), false, false, false, true, false);
         }
 
         public static OverrideEntry fromEffects(TargetKind kind, Effect... rawEffects) {
@@ -87,14 +108,20 @@ public final class HostEffects {
                 Objects.requireNonNull(e, "effect");
                 set.add(e);
             }
-            if (set.contains(Effect.IMPURE)) {
+            if (set.contains(Effect.IO)) {
                 if (set.size() > 1) {
-                    throw new IllegalArgumentException("Effect.IMPURE cannot be combined with positive effects");
+                    throw new IllegalArgumentException("Effect.IO cannot be combined with positive effects");
                 }
-                return impureEntry();
+                return ioEntry();
             }
             if (set.contains(Effect.PURE) && set.contains(Effect.MUT)) {
-                throw new IllegalArgumentException("Effect.PURE and Effect.MUT are mutually exclusive : use Effect.HERMETIC with Effect.MUT");
+                throw new IllegalArgumentException("Effect.PURE and Effect.MUT are mutually exclusive : use Effect.MUT (or Effect.VOLATILE, Effect.MUT)");
+            }
+            if (set.contains(Effect.PURE) && set.contains(Effect.VOLATILE)) {
+                throw new IllegalArgumentException("Effect.PURE and Effect.VOLATILE are mutually exclusive");
+            }
+            if (set.contains(Effect.BORROW) && set.contains(Effect.SHARED)) {
+                throw new IllegalArgumentException("Effect.BORROW and Effect.SHARED are mutually exclusive");
             }
             if (kind == TargetKind.CONSTRUCTOR && set.contains(Effect.MUT)) {
                 throw new IllegalArgumentException("Constructors cannot declare Effect.MUT");
@@ -103,19 +130,33 @@ public final class HostEffects {
                 throw new IllegalArgumentException("Bare class overrides cannot declare Effect.MUT : register per method instead");
             }
             boolean mutReceiver = set.remove(Effect.MUT);
-            boolean borrowReceiver = set.remove(Effect.BORROW);
+            boolean explicitShared = set.remove(Effect.SHARED);
+            set.remove(Effect.BORROW);
             boolean uniqueResult = set.remove(Effect.UNIQUE);
+            boolean volatileEffect = set.remove(Effect.VOLATILE);
             if (set.contains(Effect.PURE)) {
                 set.add(Effect.HERMETIC);
+                set.add(Effect.DETERMINISTIC);
+            } else if (volatileEffect) {
+                set.add(Effect.HERMETIC);
+                set.remove(Effect.DETERMINISTIC);
+                if (!mutReceiver) {
+                    set.add(Effect.PURE);
+                }
+            } else if (mutReceiver && !set.contains(Effect.HERMETIC)) {
+                set.add(Effect.HERMETIC);
+                set.add(Effect.DETERMINISTIC);
             }
-            return new OverrideEntry(set, mutReceiver, borrowReceiver, uniqueResult, false);
+            boolean borrowReceiver = !explicitShared;
+            return new OverrideEntry(set, mutReceiver, borrowReceiver, uniqueResult, false, volatileEffect);
         }
 
         public EffectSet toEffectSet(boolean axiomatic) {
-            if (impure) {
-                return EffectSet.IMPURE_DECLARED;
+            if (io) {
+                return EffectSet.IO_DECLARED;
             }
-            return EffectSet.ofDeclared(effects, mutReceiver, borrowReceiver, uniqueResult, axiomatic);
+            return EffectSet.ofDeclared(effects, mutReceiver, borrowReceiver, !borrowReceiver, uniqueResult,
+                    false, volatileEffect, axiomatic);
         }
     }
 

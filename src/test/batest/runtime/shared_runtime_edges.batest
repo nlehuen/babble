@@ -16,8 +16,8 @@ export def Dup = class (def x : int) ()
 ;; JavaLinker fast-path caches via loop calls (BoundJavaMethod, JavaMethod, isWrappedOf, bindWrapped,
 ;; bindRaw, isNull, isKind, isWrappedKind, toJava, fail)
 def xs : java.util.ArrayList of any? = java.util.ArrayList()
-def addLoop = fn (target : java.util.ArrayList of any?) : string -> (
-    def addFn : fn (v : any?) : bool = target.add
+def addLoop = fn io (shared target : java.util.ArrayList of any?) : string -> (
+    def addFn : fn io (shared v : any?) : bool = target.add
     def i = 0
     while i < 2 then (
         addFn("x")
@@ -38,14 +38,14 @@ println(addLoop(xs), ":", staticLoop())
 {{{{{
 ;; Overloads ambiguous null call
 def sb = java.lang.StringBuilder()
-def addFn : fn (v : any?) : java.lang.StringBuilder = sb.append
+def addFn : fn io (shared v : any?) : java.lang.StringBuilder = sb.append
 addFn(null)
 }}}}}
 Ambiguous call to java.lang.StringBuilder.append for (null) : candidates are (java.lang.StringBuffer), (java.lang.CharSequence), (char[]), (java.lang.String), (java.lang.Object)
 
 {{{{{
 ;; JavaLinker.fail on fast-path exception (parseInt fails on 3rd call)
-def parse : fn (s : string) : int = java.lang.Integer.parseInt
+def parse : fn io (s : string) : int = java.lang.Integer.parseInt
 def i = 0
 while i < 3 then (
     if i == 2 then ( parse("bad") ) else ( parse("12") )
@@ -56,7 +56,7 @@ java.lang.NumberFormatException : For input string: "bad"
 
 {{{{{
 ;; JavaLinker.select fast path via polymorphic JavaObject select in loop (different instances, same JavaClass)
-def pickSb = fn (i : int) : java.lang.StringBuilder -> (
+def pickSb = fn io (i : int) : java.lang.StringBuilder -> (
     if i == 0 then ( java.lang.StringBuilder("a") )
     else if i == 1 then ( java.lang.StringBuilder("bb") )
     else ( java.lang.StringBuilder("ccc") )
@@ -134,7 +134,7 @@ println(sumL, ":", c.apply(3), ":", pred.test(java.lang.Boolean.TRUE), ":", comp
 {{{{{
 ;; Standard SAMs are LambdaMetafactory-backed (not Proxy); FunctionHandler & JavaTypes.checkParameter covered via >16-arg Proxy fallback SAM
 def Demo = import("org.babblelang.tests").JavaClassDemo
-def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
+def findM = fn io (shared cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < xs.size() then (
@@ -144,7 +144,7 @@ def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflec
     )
     xs.get(0) as java.lang.reflect.Method
 )
-def args17 = fn (a0 : any, a1 : any, a2 : any, a3 : any) -> (
+def args17 = fn io (shared a0 : any, shared a1 : any, shared a2 : any, shared a3 : any) -> (
     def l : java.util.List of any = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
@@ -163,7 +163,7 @@ Type error : expected int, got string
 
 {{{{{
 def Demo = import("org.babblelang.tests").JavaClassDemo
-def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
+def findM = fn io (shared cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < xs.size() then (
@@ -173,7 +173,7 @@ def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflec
     )
     xs.get(0) as java.lang.reflect.Method
 )
-def args17 = fn (a0 : any, a1 : any, a2 : any, a3 : any) -> (
+def args17 = fn io (shared a0 : any, shared a1 : any, shared a2 : any, shared a3 : any) -> (
     def l : java.util.List of any = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
@@ -190,7 +190,7 @@ Type error : expected double, got string
 
 {{{{{
 def Demo = import("org.babblelang.tests").JavaClassDemo
-def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
+def findM = fn io (shared cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < xs.size() then (
@@ -200,7 +200,7 @@ def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflec
     )
     xs.get(0) as java.lang.reflect.Method
 )
-def args17 = fn (a0 : any, a1 : any, a2 : any, a3 : any) -> (
+def args17 = fn io (shared a0 : any, shared a1 : any, shared a2 : any, shared a3 : any) -> (
     def l : java.util.List of any = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
@@ -218,7 +218,7 @@ Type error : expected string, got int
 {{{{{
 ;; checkParameter double widened from int, and File non-File check via >16-arg Proxy fallback SAM
 def Demo = import("org.babblelang.tests").JavaClassDemo
-def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
+def findM = fn io (shared cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
     def i = 0
     while i < xs.size() then (
@@ -228,7 +228,7 @@ def findM = fn (cls : java.lang.Class of any?, name : string) : java.lang.reflec
     )
     xs.get(0) as java.lang.reflect.Method
 )
-def args17 = fn (a0 : any, a1 : any, a2 : any, a3 : any) -> (
+def args17 = fn io (shared a0 : any, shared a1 : any, shared a2 : any, shared a3 : any) -> (
     def l : java.util.List of any = java.util.ArrayList(java.util.List.of(a0, a1, a2, a3))
     l.addAll(java.util.Collections.nCopies(13, 0))
     l.toArray()
@@ -263,8 +263,8 @@ Cannot import ../../missing.ba : no such module
 {{{{{
 ;; JavaLinker.call (Bootstrap.call with all non-primitive param/return types) & JavaLinker.select (wrapped & raw in loop)
 def tbl : java.util.Map of (any?, any?) = java.util.HashMap()
-def putFn : fn (k : any?, v : any?) : any? = tbl.put
-def toStrFn : fn (o : any?) : string = java.util.Objects.toString
+def putFn : fn io (shared k : any?, shared v : any?) : any? = tbl.put
+def toStrFn : fn io (shared o : any?) : string = java.util.Objects.toString
 def s = ""
 def i = 0
 while i < 3 then (
@@ -275,10 +275,10 @@ while i < 3 then (
 putFn(null, java.lang.StringBuilder("sb"))
 s += toStrFn(null) + ":" + toStrFn(java.lang.StringBuilder("y"))
 
-def pickSb = fn (k : int) : java.lang.StringBuilder -> (
+def pickSb = fn io (k : int) : java.lang.StringBuilder -> (
     if k == 0 then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuilder("bb") )
 )
-def pickBig = fn (k : int) : java.math.BigInteger -> (
+def pickBig = fn io (k : int) : java.math.BigInteger -> (
     if k == 0 then ( java.math.BigInteger.valueOf(1) ) else ( java.math.BigInteger.valueOf(2) )
 )
 def total = 0
@@ -297,7 +297,7 @@ v1:sb:xxxnull:y:5:3
 
 {{{{{
 ;; JavaLinker.fail via non-primitive static JavaMethod in loop
-def decFn : fn (s : string) : java.lang.Integer = java.lang.Integer.decode
+def decFn : fn io (s : string) : java.lang.Integer = java.lang.Integer.decode
 def i = 0
 while i < 3 then (
     if i == 2 then ( decFn("bad") ) else ( decFn("10") )
@@ -310,7 +310,7 @@ java.lang.NumberFormatException : For input string: "bad"
 ;; Supers default Java interface call, BabbleInstance value equals/toString, Namespace reopen, same(), is/as edges
 def Cmp = class () implements java.util.Comparator of int (
     def compare = fn (a : int, b : int) : int -> ( a - b )
-    def rev = fn () -> ( super(java.util.Comparator).reversed() )
+    def rev = fn io shared () -> ( super(java.util.Comparator).reversed() )
 )
 def rcmp = Cmp().rev()
 println(rcmp.compare(1, 5) > 0)
@@ -344,7 +344,7 @@ Type error : expected int, got null
 def out = java.lang.StringBuilder()
 print("ok", to: out)
 println(out.toString())
-def pr : fn (s : string, to : any?) : fn () = print
+def pr : fn io (s : string, shared to : any?) : fn () = print
 pr("hi", to: 123)
 }}}}}
 ok
@@ -430,7 +430,7 @@ jlist.add(im)
 def back : java.lang.Runnable? = jlist.get(0)
 println(same(back, im))
 
-def vh = fn (a : any?) : int -> ( java.util.Objects.hashCode(a) )
+def vh = fn io (shared a : any?) : int -> ( java.util.Objects.hashCode(a) )
 def VBox = record (x : any?) ()
 println(VBox(java.lang.Long.valueOf(5)) == VBox(java.lang.Integer.valueOf(5)), ":", VBox(1.0) == VBox(1), ":", VBox(1.5) == VBox(1.5), ":", VBox(1.0 * 1000000000 * 1000000000 * 100) == VBox(1.0 * 1000000000 * 1000000000 * 100))
 println(java.util.List.of(VBox(java.lang.Long.valueOf(5)), VBox(java.lang.Short.valueOf("1")), VBox(java.lang.Byte.valueOf("2")), VBox(1.5), VBox(1.0 * 1000000000 * 1000000000 * 100)).hashCode() != 0)
@@ -465,7 +465,7 @@ items.add(java.lang.StringBuilder("z"))
 items.add(RImpl())
 def acc = ""
 def i = 0
-def toStrFn : fn (o : any?, d : string) : string = java.util.Objects.toString
+def toStrFn : fn io (shared o : any?, d : string) : string = java.util.Objects.toString
 while i < 4 then (
     acc = acc + toStrFn(items.get(i), "nil") + ";"
     i += 1
@@ -484,7 +484,7 @@ def cmp : java.util.Comparator of any? = fn (a, b) -> ( 0 )
 def func = dyn(fn (a : int) : int -> ( a + 1 )) as java.util.function.IntUnaryOperator
 println(func.applyAsInt(4))
 def sb = java.lang.StringBuilder()
-def appFn : fn (a : any?, b : any?, c : any?) : any? = sb.append
+def appFn : fn io (shared a : any?, shared b : any?, shared c : any?) : any? = sb.append
 appFn(null, "bad", 1)
 }}}}}
 5
@@ -597,11 +597,11 @@ true:true:true
 
 {{{{{
 ;; JavaTypes widen Byte/Short/Float/Long/Integer in convertResult via SAM returning any?, while Character does not widen to int
-def is1 = java.util.function.IntSupplier(fn () : any? -> ( java.lang.Byte.valueOf("2") ))
-def is2 = java.util.function.IntSupplier(fn () : any? -> ( java.lang.Short.valueOf("3") ))
-def ls1 = java.util.function.LongSupplier(fn () : any? -> ( java.lang.Integer.valueOf(5) ))
-def ds1 = java.util.function.DoubleSupplier(fn () : any? -> ( java.lang.Float.valueOf("4.5") ))
-def ds2 = java.util.function.DoubleSupplier(fn () : any? -> ( java.lang.Long.valueOf("6") ))
+def is1 = java.util.function.IntSupplier(fn io () : any? -> ( java.lang.Byte.valueOf("2") ))
+def is2 = java.util.function.IntSupplier(fn io () : any? -> ( java.lang.Short.valueOf("3") ))
+def ls1 = java.util.function.LongSupplier(fn io () : any? -> ( java.lang.Integer.valueOf(5) ))
+def ds1 = java.util.function.DoubleSupplier(fn io () : any? -> ( java.lang.Float.valueOf("4.5") ))
+def ds2 = java.util.function.DoubleSupplier(fn io () : any? -> ( java.lang.Long.valueOf("6") ))
 println(is1.getAsInt(), ":", is2.getAsInt(), ":", ls1.getAsLong(), ":", ds1.getAsDouble(), ":", ds2.getAsDouble())
 
 def badChar = java.util.function.IntSupplier(fn () : any? -> ( 'A' ))
@@ -649,8 +649,8 @@ def K = class (def v : int) (
     def toString = fn () : string -> ( "K" )
 )
 def xs : java.util.List of any? = java.util.ArrayList()
-def addFn : fn (v : any?) : bool = xs.add
-def pickItem = fn (idx : int) : any? -> (
+def addFn : fn io (shared v : any?) : bool = xs.add
+def pickItem = fn io (idx : int) : any? -> (
     if idx == 0 then ( "s" )
     else if idx == 1 then ( null )
     else if idx == 2 then ( java.lang.StringBuilder("sb") )
@@ -666,7 +666,7 @@ while p < 2 then (
     )
     p += 1
 )
-def toStr : fn (o : any?) : string = java.util.Objects.toString
+def toStr : fn io (shared o : any?) : string = java.util.Objects.toString
 def out = ""
 def j = 0
 while j < 5 then (
@@ -720,7 +720,7 @@ Type error : expected java.lang.Runnable, got object
 ;; Faces default method invocation (FaceHandler & FunctionHandler) via Spliterator + StreamSupport, Object methods, Values.fromJava(FunctionHandler)
 def MySplit = class () implements java.util.Spliterator of int (
     def done : bool = false
-    def tryAdvance = fn mut (action : java.util.function.Consumer of any?) : bool -> (
+    def tryAdvance = fn io mut (shared action : java.util.function.Consumer of any?) : bool -> (
         if this.done then ( false )
         else ( this.done = true ; action.accept(42) ; true )
     )
@@ -869,7 +869,7 @@ def Runner = class () implements IRun (
 )
 def MyComp = class () implements java.util.Comparator of int (
     def compare = fn (a : int, b : int) : int -> ( a - b )
-    def rev = fn () : java.util.Comparator of any? -> ( super(java.util.Comparator).reversed() )
+    def rev = fn io shared () : java.util.Comparator of any? -> ( super(java.util.Comparator).reversed() )
 )
 def runner = Runner()
 def obj = object ( def x = 42 )

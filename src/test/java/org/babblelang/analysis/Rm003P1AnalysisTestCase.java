@@ -243,7 +243,7 @@ public class Rm003P1AnalysisTestCase {
                 + ")\n"
                 + "def Comp = class () implements java.util.Comparator of any? (\n"
                 + "  def compare = fn (a : any?, b : any?) : int -> ( 0 )\n"
-                + "  def rev = fn () -> ( super.reversed() )\n"
+                + "  def rev = fn io shared () -> ( super.reversed() )\n"
                 + ")\n";
 
         BabbleParser.FileContext file = BabbleScriptEngine.parseSource(source, "super.ba");
@@ -349,7 +349,7 @@ public class Rm003P1AnalysisTestCase {
                 + "  def baseFn = fn (x : int) : int -> ( x )\n"
                 + "  def get = fn () : int -> ( 1 )\n"
                 + ")\n"
-                + "def caller = fn (b : Box of int, mb : (Box of int)?, u : Base | Alt, c : Impl, r : java.lang.Runnable) -> (\n"
+                + "def caller = fn io (b : Box of int, mb : (Box of int)?, u : Base | Alt, c : Impl, shared r : java.lang.Runnable) -> (\n"
                 + "  def r1 = b.baseFn(1)\n"
                 + "  def r2 = b.get()\n"
                 + "  def r3 = b.id(42)\n"

@@ -72,7 +72,7 @@ public class BytecodeEffectAnalyzerTestCase {
         Assertions.assertNotNull(suggestion);
         Assertions.assertTrue(suggestion.startsWith("axiom "), suggestion);
         Assertions.assertTrue(suggestion.contains("pure"), suggestion);
-        Assertions.assertTrue(suggestion.contains("deterministic"), suggestion);
+        Assertions.assertFalse(suggestion.contains("deterministic"), suggestion);
         Assertions.assertTrue(suggestion.contains("nothrow"), suggestion);
 
         // Seeded Math.sqrt intrinsic + transitive pure helper call
@@ -125,7 +125,7 @@ public class BytecodeEffectAnalyzerTestCase {
     public void testOptInEngineIntegration() throws Exception {
         String script = """
                 def H = import("org.babblelang.tests").BytecodeEffectAnalyzerTestCase.SampleHelpers
-                def f = fn pure deterministic nothrow (a: int, b: int): int -> ( H.pureAdd(a, b) )
+                def f = fn nothrow (a: int, b: int): int -> ( H.pureAdd(a, b) )
                 f(3, 4)
                 """;
         BabbleScriptEngineFactory factory = new BabbleScriptEngineFactory();

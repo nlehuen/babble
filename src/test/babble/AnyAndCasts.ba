@@ -14,7 +14,7 @@ assert(branchAny(true) == 1)
 assert(branchAny(false) == "alt")
 
 ;; ---- `is` on built-in types and flow-sensitive narrowing
-def describe = fn (v: any?): string -> (
+def describe = fn io (v: any?): string -> (
     if v is int then (
         "int:" + (v + 1)
     ) else if v is double then (

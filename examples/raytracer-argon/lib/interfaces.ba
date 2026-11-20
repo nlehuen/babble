@@ -9,8 +9,8 @@ def AABB = import("aabb.ba").AABB
 ;; Showcases Babble interfaces, extends, default methods, and super calls.
 ;; ------------------------------------------------------------------------
 export def Describable = interface (
-    def kind: fn pure deterministic nothrow borrow (): string
-    def describe = fn pure deterministic nothrow borrow (): string -> (
+    def kind: fn (): string
+    def describe = fn (): string -> (
         "<" + this.kind() + ">"
     )
 )
@@ -18,8 +18,8 @@ export def Describable = interface (
 export def ScatterResult = record (attenuation: Vec3, scattered: Ray) ()
 
 export def Material = interface extends Describable (
-    def scatter: fn hermetic deterministic nothrow borrow (borrow rIn: Ray, borrow rec: HitRecord, mut borrow rng: Rng): ScatterResult?
-    def kind = fn pure deterministic nothrow borrow (): string -> ("material")
+    def scatter: fn (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult?
+    def kind = fn (): string -> ("material")
 )
 
 export def HitRecord = record (
@@ -29,7 +29,7 @@ export def HitRecord = record (
     t: double,
     frontFace: bool
 ) () static (
-    def create = fn pure deterministic nothrow (borrow r: Ray, p: Vec3, outwardNormal: Vec3, t: double, mat: Material): HitRecord -> (
+    def create = fn (r: Ray, p: Vec3, outwardNormal: Vec3, t: double, mat: Material): HitRecord -> (
         def frontFace: bool = r.dir.dot(outwardNormal) < 0.0
         def normal: Vec3 = if frontFace then (outwardNormal) else (-outwardNormal)
         this(p, normal, mat, t, frontFace)
@@ -37,14 +37,14 @@ export def HitRecord = record (
 )
 
 export def Hittable = interface extends Describable (
-    def hit: fn pure deterministic nothrow (borrow r: Ray, borrow rayT: Interval): HitRecord?
-    def boundingBox = fn pure deterministic nothrow borrow (): AABB -> (AABB.empty)
-    def kind = fn pure deterministic nothrow borrow (): string -> ("hittable")
+    def hit: fn (r: Ray, rayT: Interval): HitRecord?
+    def boundingBox = fn (): AABB -> (AABB.empty)
+    def kind = fn (): string -> ("hittable")
 )
 
 ;; Object literal implementing a Babble interface
 export def emptyHittable = object implements Hittable (
-    def hit = fn pure deterministic nothrow borrow (borrow r: Ray, borrow rayT: Interval): HitRecord? -> (null)
-    def boundingBox = fn pure deterministic nothrow borrow (): AABB -> (AABB.empty)
-    def kind = fn pure deterministic nothrow borrow (): string -> ("empty")
+    def hit = fn (r: Ray, rayT: Interval): HitRecord? -> (null)
+    def boundingBox = fn (): AABB -> (AABB.empty)
+    def kind = fn (): string -> ("empty")
 )

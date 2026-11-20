@@ -182,6 +182,14 @@ final class TypeChecker {
         if (type instanceof Type.JavaInstance ji && ji.type() == java.util.Map.Entry.class) {
             return !ji.typeArguments().isEmpty() && ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
         }
+        if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.OBJECT) {
+            for (TypeNode.Member member : inst.node().members.values()) {
+                if (!member.isMethod() && !member.hasFunction) {
+                    return false;
+                }
+            }
+            return true;
+        }
         if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
             if (!visiting.add(inst.node())) {
                 return true;
@@ -219,6 +227,23 @@ final class TypeChecker {
 
     EffectChecker effectChecker() {
         return effectChecker;
+    }
+
+    boolean hasDiagnosticIn(ParserRuleContext stmt) {
+        if (stmt == null || stmt.getStart() == null || stmt.getStop() == null) {
+            return false;
+        }
+        int startLine = stmt.getStart().getLine();
+        int startCol = stmt.getStart().getCharPositionInLine() + 1;
+        int endLine = stmt.getStop().getLine();
+        int endCol = stmt.getStop().getCharPositionInLine() + Math.max(1, stmt.getStop().getText().length());
+        for (Diagnostic d : diagnostics) {
+            if ((d.line() > startLine || (d.line() == startLine && d.column() >= startCol))
+                    && (d.line() < endLine || (d.line() == endLine && d.column() <= endCol))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     Set<ParserRuleContext> p7Params() {
@@ -1094,6 +1119,7 @@ final class TypeChecker {
         if (effectChecker != null && checkingEffects && inFile(literal)) {
             effectChecker.parseFunctionPrefix(literal, true);
         }
+        boolean untyped = effectChecker != null && effectChecker.isCompletelyUntyped(literal);
         List<BabbleParser.FnParamContext> decls = literal.fnParameters().fnParam();
         List<Type.Parameter> result = new ArrayList<>(decls.size());
         for (int i = 0; i < decls.size(); i++) {
@@ -1103,8 +1129,12 @@ final class TypeChecker {
                     ? effectChecker.parseParamMods(parameter, checkingEffects && inFile(literal))
                     : EffectChecker.ParamMods.NONE;
             boolean mut = summary != null && i < summary.mutParams().length ? summary.mutParams()[i] : pm.mut();
-            boolean borrow = summary != null && i < summary.borrowParams().length ? summary.borrowParams()[i] : pm.borrow();
-            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null, mut, borrow, pm.borrow()));
+            boolean borrow = summary != null && i < summary.borrowParams().length
+                    ? summary.borrowParams()[i]
+                    : (effectChecker != null && !untyped && !pm.shared() && !pm.unique());
+            boolean unique = summary != null && i < summary.uniqueParams().length ? summary.uniqueParams()[i] : pm.unique();
+            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null,
+                    mut, borrow, pm.shared(), unique));
         }
         return result;
     }
@@ -2343,9 +2373,10 @@ final class TypeChecker {
             EffectChecker.ParamMods pm = effectChecker != null
                     ? effectChecker.parseParamMods(parameter, checkingEffects) : EffectChecker.ParamMods.NONE;
             boolean mut = cs != null && i < cs.mutParams().length ? cs.mutParams()[i] : pm.mut();
-            boolean borrow = cs != null && i < cs.borrowParams().length ? cs.borrowParams()[i] : pm.borrow();
+            boolean borrow = cs != null && i < cs.borrowParams().length ? cs.borrowParams()[i] : false;
             boolean unique = cs != null && i < cs.uniqueParams().length ? cs.uniqueParams()[i] : pm.unique();
-            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null, mut, borrow, pm.borrow(), unique));
+            result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null,
+                    mut, borrow, pm.shared(), unique));
         }
         return result;
     }

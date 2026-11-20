@@ -108,7 +108,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testMethodsAreNamedAfterTheirDefinitions() throws Exception {
-        CompiledBabbleScript script = compile("def add = fn (a : int, b : int) -> ( a + b ) ; def twice = fn (f : fn () : int) -> ( fn () -> ( f() + f() ) ) ; add(1, 2)");
+        CompiledBabbleScript script = compile("def add = fn (a : int, b : int) -> ( a + b ) ; def twice = fn (shared f : fn () : int) -> ( fn () -> ( f() + f() ) ) ; add(1, 2)");
         List<String> names = methodNames(script);
         Assertions.assertTrue(names.containsAll(List.of("run", "fn$0$add", "fn$1$twice", "fn$2", "<clinit>")), names.toString());
         Assertions.assertEquals(3, script.eval(new SimpleBindings()));
@@ -161,7 +161,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testConstructorVariablesCapturedByMethodsAreHiddenFields() throws Exception {
-        CompiledBabbleScript script = compile("def C = class (start : int) ( def next = fn () -> ( start = start + 1 ) ) ; def c = C(10) ; c.next() ; c.next()");
+        CompiledBabbleScript script = compile("def C = class (start : int) ( def next = fn io () -> ( start = start + 1 ) ) ; def c = C(10) ; c.next() ; c.next()");
         Assertions.assertEquals(12, script.eval(new SimpleBindings()));
         byte[] c = script.getClasses().entrySet().stream().filter(e -> e.getKey().endsWith("$C")).findFirst().orElseThrow().getValue();
         Assertions.assertEquals(List.of("next", "$v$start"), fieldNames(c));
@@ -176,7 +176,7 @@ public class BabbleCompilerTestCase {
         Bindings bindings = engine.createBindings();
         bindings.put("capture", capture);
         bindings.put(ScriptEngine.FILENAME, "trace.ba");
-        engine.eval("def inner = fn () -> (\n  (capture as java.lang.Runnable).run()\n)\ndef outer = fn () -> (\n  discard(1)\n  inner()\n)\nouter()", bindings);
+        engine.eval("def inner = fn io () -> (\n  (capture as java.lang.Runnable).run()\n)\ndef outer = fn io () -> (\n  discard(1)\n  inner()\n)\nouter()", bindings);
 
         StackTraceElement inner = captured.stream().filter(e -> e.getMethodName().equals("fn$0$inner")).findFirst().orElseThrow();
         Assertions.assertEquals(2, inner.getLineNumber());
@@ -579,7 +579,7 @@ public class BabbleCompilerTestCase {
                         + ")\n"
                         + "def fib = fn (n : int) : int -> ( if n < 2 then ( n ) else ( recurse(n - 1) + recurse(n - 2) ) )\n"
                         + "def loop = fn (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s += i ; i += 1 ) ; s )\n"
-                        + "def counter = fn () -> ( def c = 0 ; fn () : int -> ( c = c + 1 ) )\n"
+                        + "def counter = fn () -> ( def c = 0 ; fn io () : int -> ( c = c + 1 ) )\n"
                         + "def widenJoin = fn (c : bool) : double -> ( if c then ( 1 ) else ( 2.5 ) )\n"
                         + "def foldCheck = fn (n : int) : int -> (\n"
                         + "  def touched = 0\n"
@@ -636,7 +636,7 @@ public class BabbleCompilerTestCase {
     @Test
     public void testRm001StaticJavaDispatchAndIndexedModuleExports() throws Exception {
         CompiledBabbleScript typedJava = compile(
-                "def work = fn (sb : java.lang.StringBuilder, items : java.util.List of int, xs) : double -> (\n"
+                "def work = fn io (shared sb : java.lang.StringBuilder, items : java.util.List of int, xs) : double -> (\n"
                         + "  sb.append(\"a\")\n"
                         + "  sb.length() + items.size() + xs.length + java.lang.Math.sqrt(9)\n"
                         + ")\n"

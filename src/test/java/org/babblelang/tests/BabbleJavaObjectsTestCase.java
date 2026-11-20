@@ -69,7 +69,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     @Test
     public void testIteratorWithAJavaDefault() throws Exception {
-        Assertions.assertEquals("321", output(COUNTDOWN + "Countdown(3).forEachRemaining(fn (v : any) -> ( print(v) ))"));
+        Assertions.assertEquals("321", output(COUNTDOWN + "Countdown(3).forEachRemaining(fn io (v : any) -> ( print(v) ))"));
         Assertions.assertEquals(true, interpret(COUNTDOWN + "Countdown(1) is java.util.Iterator"));
     }
 
@@ -92,12 +92,12 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
     @Test
     public void testCallsFromJavaPrintAndFail() throws Exception {
         String noisy = "def Noisy = class (def v : int) implements java.lang.Comparable of Noisy (\n"
-                + "    def compareTo = fn (o : Noisy) : int -> ( print(\"<\") ; this.v - o.v )\n"
+                + "    def compareTo = fn io (o : Noisy) : int -> ( print(\"<\") ; this.v - o.v )\n"
                 + ")\n"
                 + "def l : java.util.List of Noisy = java.util.ArrayList() ; l.add(Noisy(2)) ; l.add(Noisy(1)) ; java.util.Collections.sort(l)";
         Assertions.assertTrue(output(noisy).startsWith("<"));
         String broken = "def Broken = class () implements java.lang.Comparable of Broken (\n"
-                + "    def compareTo = fn (o : Broken) : int -> ( nosuchname ; 0 )\n"
+                + "    def compareTo = fn io (o : Broken) : int -> ( nosuchname ; 0 )\n"
                 + ")\n"
                 + "def l : java.util.List of Broken = java.util.ArrayList() ; l.add(Broken()) ; l.add(Broken()) ; java.util.Collections.sort(l)";
         ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(broken));
@@ -106,7 +106,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     private static final String LOG = "def Log = class () implements java.lang.Appendable (\n"
             + "    private def sb = java.lang.StringBuilder()\n"
-            + "    def append = fn (s : any?, start : any? = null, end : any? = null) : java.lang.Appendable -> (\n"
+            + "    def append = fn io mut shared (shared s : any?, start : any? = null, end : any? = null) : java.lang.Appendable -> (\n"
             + "        if s is java.lang.Character then ( this.sb.append(\"'\" + s + \"'\") )\n"
             + "        else ( if start == null then ( this.sb.append(s as java.lang.CharSequence) ) else ( this.sb.append(s as java.lang.CharSequence, start as int, end as int) ) )\n"
             + "        this\n"
@@ -144,9 +144,9 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         Assertions.assertEquals("[321]", output("def Countdown = class (private def n : int) implements java.util.Iterator of int (\n"
                 + "    def hasNext = fn () : bool -> ( this.n > 0 )\n"
                 + "    def next = fn mut () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
-                + "    def forEachRemaining = fn (f : java.util.function.Consumer of any?) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
+                + "    def forEachRemaining = fn io shared (shared f : java.util.function.Consumer of any?) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
                 + ")\n"
-                + "Countdown(3).forEachRemaining(java.util.function.Consumer(fn (v : any?) -> ( print(v) )))"));
+                + "Countdown(3).forEachRemaining(java.util.function.Consumer(fn io (v : any?) -> ( print(v) )))"));
     }
 
     // ---------------------------------------------------------------- Babble interfaces extending Java ones
@@ -182,10 +182,10 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
     @Test
     public void testAnInterfaceDefaultOverridingAJavaDefault() throws Exception {
         Assertions.assertEquals("[1]", output("def Loud = interface extends java.util.Iterator of int (\n"
-                + "    def forEachRemaining = fn (f : java.util.function.Consumer of any?) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
+                + "    def forEachRemaining = fn io shared (shared f : java.util.function.Consumer of any?) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
                 + ")\n"
                 + "def One = class () implements Loud ( def done = false ; def hasNext = fn () : bool -> ( not this.done ) ; def next = fn mut () : int -> ( this.done = true ; 1 ) )\n"
-                + "One().forEachRemaining(java.util.function.Consumer(fn (v : any?) -> ( print(v) )))"));
+                + "One().forEachRemaining(java.util.function.Consumer(fn io (v : any?) -> ( print(v) )))"));
     }
 
     @Test

@@ -115,12 +115,13 @@ final class CallSolver {
         }
         if (callee instanceof Type.Function function) {
             List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
+            boolean frozenBorrowSafe = function.effects().uniqueResult() || checker.isDeeplyImmutable(function.result());
             if (function.typeParameters().isEmpty()) {
-                bind(function.parameters(), decls, arguments, ctx);
+                bind(function.parameters(), decls, arguments, ctx, frozenBorrowSafe);
                 return function.result();
             }
             Type result = genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
-                    arguments, ctx, ctx.expression().getText(), expected);
+                    function.effects().uniqueResult(), arguments, ctx, ctx.expression().getText(), expected);
             return result;
         }
         if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
@@ -138,7 +139,7 @@ final class CallSolver {
                     for (Type.Parameter p : parameters) {
                         substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), env)));
                     }
-                    bind(substitutedParams, decls, arguments, ctx);
+                    bind(substitutedParams, decls, arguments, ctx, false);
                 } else if (!arguments.isEmpty()) {
                     checker.warn("Too many parameters : 0 declared, " + arguments.size() + " given", ctx);
                     synthAll(arguments);
@@ -147,7 +148,7 @@ final class CallSolver {
             }
             if (classVars.isEmpty()) {
                 if (parameters != null) {
-                    bind(parameters, decls, arguments, ctx);
+                    bind(parameters, decls, arguments, ctx, false);
                 }
                 return new Type.Instance(node);
             }
@@ -155,7 +156,7 @@ final class CallSolver {
                 parameters = List.of();
             }
             Type patternReturn = new Type.Instance(node, List.copyOf(classVars));
-            return genericBabbleCall(classVars, parameters, decls, patternReturn, arguments, ctx, node.name, expected);
+            return genericBabbleCall(classVars, parameters, decls, patternReturn, false, arguments, ctx, node.name, expected);
         }
         if (callee instanceof Type.JavaClassValue value) {
             Class<?> java = value.type();
@@ -280,7 +281,7 @@ final class CallSolver {
      * The argument binding rules of {@code Arguments}, applied to a known signature.
      */
     void bind(List<Type.Parameter> parameters, List<? extends ParserRuleContext> declarations,
-              List<BabbleParser.CallParameterContext> arguments, ParserRuleContext ctx) {
+              List<BabbleParser.CallParameterContext> arguments, ParserRuleContext ctx, boolean frozenBorrowSafe) {
         int count = arguments.size();
         String[] names = argumentNames(arguments);
         boolean named = Arrays.stream(names).anyMatch(java.util.Objects::nonNull);
@@ -299,7 +300,7 @@ final class CallSolver {
             ParserRuleContext decl = declarations != null && index < declarations.size()
                     ? declarations.get(index) : null;
             Type actual = checker.check(argument, parameter.type());
-            bindArgument(decl, actual, parameter.type(), parameter.borrow() && !parameter.mut(), argument);
+            bindArgument(decl, actual, parameter.type(), frozenBorrowSafe && parameter.borrow() && !parameter.mut(), argument);
         }
         if (!named) {
             if (count > parameters.size()) {
@@ -377,20 +378,22 @@ final class CallSolver {
             Type expectedParam = parameters.get(0).type();
             List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
             ParserRuleContext decl = decls != null && !decls.isEmpty() ? decls.get(0) : null;
+            boolean frozenBorrowSafe = function.effects().uniqueResult() || checker.isDeeplyImmutable(function.result());
             bindArgument(decl, argumentType, expectedParam,
-                    parameters.get(0).borrow() && !parameters.get(0).mut(), argument);
+                    frozenBorrowSafe && parameters.get(0).borrow() && !parameters.get(0).mut(), argument);
         }
         return function.result();
     }
 
     Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
                            List<? extends ParserRuleContext> declarations,
-                           Type resultPattern, List<BabbleParser.CallParameterContext> arguments,
+                           Type resultPattern, boolean uniqueResult, List<BabbleParser.CallParameterContext> arguments,
                            BabbleParser.CallContext ctx, String description, Type expected) {
         Type.Parameter[] argParams = mapArgumentsToParameters(parameters, arguments);
         Set<Type.TypeVar> solving = Set.copyOf(solvingList);
         TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
         Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern, expected, solving);
+        boolean frozenBorrowSafePattern = uniqueResult || checker.isDeeplyImmutable(resultPattern);
 
         List<Type> paramPatterns = new ArrayList<>(arguments.size());
         List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
@@ -413,7 +416,9 @@ final class CallSolver {
                     Type actual = checker.check(argExprs.get(i), expectedArg);
                     argTypes[i] = actual;
                     if (paramPattern != null) {
-                        checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store);
+                        boolean borrowReadOnly = frozenBorrowSafePattern
+                                && argParams[i] != null && argParams[i].borrow() && !argParams[i].mut();
+                        checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly);
                     }
                     progress = true;
                 }
@@ -428,7 +433,9 @@ final class CallSolver {
                 Type actual = checker.check(argExprs.get(i), expectedArg);
                 argTypes[i] = actual;
                 if (paramPattern != null) {
-                    checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store);
+                    boolean borrowReadOnly = frozenBorrowSafePattern
+                            && argParams[i] != null && argParams[i].borrow() && !argParams[i].mut();
+                    checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly);
                 }
             }
         }
@@ -439,12 +446,14 @@ final class CallSolver {
             }
             return Type.ERROR;
         }
+        Type substitutedResult = checker.algebra().substitute(resultPattern, inferred);
+        boolean frozenBorrowSafe = uniqueResult || checker.isDeeplyImmutable(substitutedResult);
         List<Type.Parameter> substitutedParams = new ArrayList<>(parameters.size());
         for (Type.Parameter p : parameters) {
             substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), inferred)));
         }
-        bind(substitutedParams, declarations, arguments, ctx);
-        return checker.algebra().substitute(resultPattern, inferred);
+        bind(substitutedParams, declarations, arguments, ctx, frozenBorrowSafe);
+        return substitutedResult;
     }
 
     Type javaGenericSamCall(Class<?> java, BabbleParser.ExpressionContext argExpr, BabbleParser.CallContext ctx, Type expected) {

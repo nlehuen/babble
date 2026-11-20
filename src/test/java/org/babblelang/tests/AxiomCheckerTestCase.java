@@ -25,14 +25,14 @@ public class AxiomCheckerTestCase {
     public void testValidAxiomsPassAcrossScalarsCollectionsAndRecords() throws Exception {
         String valid = """
                 def Pt = record (x: int, y: int) ()
-                def add = fn axiom pure deterministic nothrow commutative associative (a: int, b: int): int -> ( a + b )
-                def norm = fn axiom pure deterministic nothrow idempotent (s: string): string -> ( s.trim() )
-                def mono = fn axiom pure deterministic nothrow monotone injective (x: int): int -> ( x * 2 + 1 )
-                def sumPt = fn axiom pure deterministic nothrow (p: Pt): int -> ( p.x + p.y )
-                def listSize = fn axiom pure deterministic nothrow (xs: list of int): int -> ( xs.size() )
-                def mapSize = fn axiom pure deterministic nothrow (m: map of (string, int)): int -> ( m.size() )
-                def entryKey = fn axiom pure deterministic nothrow (e: entry of (string, int)): string -> ( e.getKey() )
-                def allScalars = fn axiom pure deterministic nothrow (
+                def add = fn axiom pure nothrow commutative associative (a: int, b: int): int -> ( a + b )
+                def norm = fn axiom pure nothrow idempotent (s: string): string -> ( s.trim() )
+                def mono = fn axiom pure nothrow monotone injective (x: int): int -> ( x * 2 + 1 )
+                def sumPt = fn axiom pure nothrow (p: Pt): int -> ( p.x + p.y )
+                def listSize = fn axiom pure nothrow (xs: list of int): int -> ( xs.size() )
+                def mapSize = fn axiom pure nothrow (m: map of (string, int)): int -> ( m.size() )
+                def entryKey = fn axiom pure nothrow (e: entry of (string, int)): string -> ( e.getKey() )
+                def allScalars = fn axiom pure nothrow (
                     b: byte, s: short, i: int, l: long, f: float, d: double, ok: bool, c: char, str: string
                 ): int -> ( i )
                 """;
@@ -55,35 +55,35 @@ public class AxiomCheckerTestCase {
         // Non-commutative subtraction declared `axiom commutative`
         BabbleScriptEngine engine = newEngine("compile");
         AxiomChecker.Report rComm = engine.checkAxioms("""
-                def badSub = fn axiom pure deterministic nothrow commutative (a: int, b: int): int -> ( a - b )
+                def badSub = fn axiom pure nothrow commutative (a: int, b: int): int -> ( a - b )
                 """);
         Assertions.assertFalse(rComm.ok());
         Assertions.assertEquals(Effect.COMMUTATIVE, rComm.failures().get(0).axiom());
 
         // Non-associative subtraction declared `axiom associative`
         AxiomChecker.Report rAssoc = engine.checkAxioms("""
-                def badAssoc = fn axiom pure deterministic nothrow associative (a: int, b: int): int -> ( a - b )
+                def badAssoc = fn axiom pure nothrow associative (a: int, b: int): int -> ( a - b )
                 """);
         Assertions.assertFalse(rAssoc.ok());
         Assertions.assertEquals(Effect.ASSOCIATIVE, rAssoc.failures().get(0).axiom());
 
         // Non-idempotent increment declared `axiom idempotent`
         AxiomChecker.Report rIdem = engine.checkAxioms("""
-                def badIdem = fn axiom pure deterministic nothrow idempotent (x: int): int -> ( x + 1 )
+                def badIdem = fn axiom pure nothrow idempotent (x: int): int -> ( x + 1 )
                 """);
         Assertions.assertFalse(rIdem.ok());
         Assertions.assertEquals(Effect.IDEMPOTENT, rIdem.failures().get(0).axiom());
 
         // Non-monotone negation declared `axiom monotone`
         AxiomChecker.Report rMono = engine.checkAxioms("""
-                def badMono = fn axiom pure deterministic nothrow monotone (x: int): int -> ( -x )
+                def badMono = fn axiom pure nothrow monotone (x: int): int -> ( -x )
                 """);
         Assertions.assertFalse(rMono.ok());
         Assertions.assertEquals(Effect.MONOTONE, rMono.failures().get(0).axiom());
 
         // Non-injective square declared `axiom injective`
         AxiomChecker.Report rInj = engine.checkAxioms("""
-                def badInj = fn axiom pure deterministic nothrow injective (x: int): int -> ( x * x )
+                def badInj = fn axiom pure nothrow injective (x: int): int -> ( x * x )
                 """);
         Assertions.assertFalse(rInj.ok());
         Assertions.assertEquals(Effect.INJECTIVE, rInj.failures().get(0).axiom());
@@ -91,7 +91,7 @@ public class AxiomCheckerTestCase {
         // Non-deterministic counter declared `axiom deterministic`
         AxiomChecker.Report rDet = engine.checkAxioms("""
                 def counter = 0
-                def badDet = fn axiom pure deterministic (x: int): int -> (
+                def badDet = fn axiom pure (x: int): int -> (
                     counter += 1
                     x + counter
                 )
@@ -101,7 +101,7 @@ public class AxiomCheckerTestCase {
 
         // Throwing function declared `axiom nothrow`
         AxiomChecker.Report rNothrow = engine.checkAxioms("""
-                def badNothrow = fn axiom pure deterministic nothrow (x: int): int -> (
+                def badNothrow = fn axiom pure nothrow (x: int): int -> (
                     assert(x > 1000)
                     x
                 )
@@ -112,7 +112,7 @@ public class AxiomCheckerTestCase {
         // `babble.checkAxioms=true` engine attribute fails `eval(...)` on axiom violation!
         engine.put(BabbleScriptEngine.CHECK_AXIOMS, true);
         ScriptException ex = Assertions.assertThrows(ScriptException.class, () -> engine.eval("""
-                def bad = fn axiom pure deterministic nothrow commutative (a: int, b: int): int -> ( a - b )
+                def bad = fn axiom pure nothrow commutative (a: int, b: int): int -> ( a - b )
                 """));
         Assertions.assertTrue(ex.getMessage().contains("Axiom violation in bad (commutative)"), ex.getMessage());
     }
@@ -122,7 +122,7 @@ public class AxiomCheckerTestCase {
         BabbleScriptEngine engine = newEngine("interpret");
         String script = """
                 def Box = class (def x: int) ()
-                def f = fn axiom pure deterministic nothrow (b: Box): int -> ( b.x )
+                def f = fn axiom pure nothrow (b: Box): int -> ( b.x )
                 """;
         AxiomChecker.Report skippedReport = engine.checkAxioms(script);
         Assertions.assertTrue(skippedReport.ok());
@@ -134,7 +134,7 @@ public class AxiomCheckerTestCase {
         AxiomChecker custom = new AxiomChecker().registerGenerator("java.lang.StringBuilder",
                 rng -> new StringBuilder("s" + rng.nextInt(10)));
         AxiomChecker.Report customReport = engine.checkAxioms("""
-                def sbLen = fn axiom pure deterministic nothrow (sb: java.lang.StringBuilder): int -> ( sb.length() )
+                def sbLen = fn axiom pure nothrow (sb: java.lang.StringBuilder): int -> ( sb.length() )
                 """, custom);
         Assertions.assertTrue(customReport.ok());
         Assertions.assertEquals(1, customReport.checkedFunctions());

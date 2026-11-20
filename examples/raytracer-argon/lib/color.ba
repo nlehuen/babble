@@ -8,7 +8,7 @@ def Interval = import("interval.ba").Interval
 export def Color = object (
     def intensity: Interval = Interval(0.000, 0.999)
 
-    def linearToGamma = fn pure deterministic nothrow borrow (linearComponent: double): double -> (
+    def linearToGamma = fn (linearComponent: double): double -> (
         if linearComponent > 0.0 then (
             math.sqrt(linearComponent)
         ) else (
@@ -16,7 +16,7 @@ export def Color = object (
         )
     )
 
-    def formatPpm = fn pure deterministic borrow (borrow pixelColor: Vec3): string -> (
+    def formatPpm = fn (pixelColor: Vec3): string -> (
         def r: double = this.linearToGamma(pixelColor.x)
         def g: double = this.linearToGamma(pixelColor.y)
         def b: double = this.linearToGamma(pixelColor.z)

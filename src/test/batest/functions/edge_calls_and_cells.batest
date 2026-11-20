@@ -26,7 +26,7 @@ Name used before definition : s
 
 {{{{{
 ;; BoolCell assign before definition
-def f = fn () -> ( b = false )
+def f = fn io () -> ( b = false )
 f()
 def b = true
 }}}}}
@@ -34,7 +34,7 @@ Name used before definition : b
 
 {{{{{
 ;; DoubleCell assign before definition
-def f = fn () -> ( d = 2.5 )
+def f = fn io () -> ( d = 2.5 )
 f()
 def d = 1.5
 }}}}}
@@ -42,7 +42,7 @@ Name used before definition : d
 
 {{{{{
 ;; IntCell assign before definition
-def f = fn () -> ( x = 2 )
+def f = fn io () -> ( x = 2 )
 f()
 def x = 1
 }}}}}
@@ -62,7 +62,7 @@ def y = 3.5
 ;; Non-primitive ($direct-only, hasSpec == false) function, recursion, optional params, and Bootstrap TypedCallCache paths
 def join = fn (a : string, b : string = "!") : string -> ( a + b )
 def repeat = fn (s : string, n : int = 2) : string -> ( if n <= 0 then ( "" ) else ( s + recurse(s, n - 1) ) )
-def noPrimRec = fn (s : string) : string -> ( if java.lang.StringBuilder(s).length() >= 3 then ( s ) else ( recurse(s + "x") ) )
+def noPrimRec = fn io (s : string) : string -> ( if java.lang.StringBuilder(s).length() >= 3 then ( s ) else ( recurse(s + "x") ) )
 println(join("hi"), ":", join("yo", "?"), ":", repeat("a"), ":", noPrimRec("z"))
 
 ;; TypedCallCache compatibleSpec return/param mismatch (int vs int?) + megamorphic TypedCallCache (>4 callees)

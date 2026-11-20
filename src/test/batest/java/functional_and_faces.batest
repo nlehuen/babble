@@ -33,7 +33,7 @@ def names : java.util.List of string = java.util.ArrayList()
 names.add("pear")
 names.add("fig")
 names.add("apple")
-java.util.Collections.sort(names, fn (a : string, b : string) : int -> (
+java.util.Collections.sort(names, fn io (a : string, b : string) : int -> (
     def la = java.lang.StringBuilder(a).length()
     def lb = java.lang.StringBuilder(b).length()
     la - lb

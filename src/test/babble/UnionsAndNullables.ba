@@ -142,11 +142,11 @@ assert(chainedMultiline == 25)
 ;; Short-circuiting: LHS evaluated once, call arguments not evaluated when LHS is null
 def rhsRuns = 0
 def lhsRuns = 0
-def getReceiver = fn (present: bool): A? -> (
+def getReceiver = fn io (present: bool): A? -> (
     lhsRuns += 1
     if present then (A(4)) else (null)
 )
-def bumpArg = fn (n: int): int -> (
+def bumpArg = fn io (n: int): int -> (
     rhsRuns += 1
     n
 )

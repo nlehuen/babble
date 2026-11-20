@@ -67,7 +67,7 @@ true:true:true:false:true:false:42:Val(x: 3)
 ;; Supers with Java default method (Comparator.reversed)
 def MyCmp = class (def sign : int) implements java.util.Comparator of java.awt.Point (
     def compare = fn (a : java.awt.Point, b : java.awt.Point) : int -> ( (a.x - b.x) * this.sign )
-    def makeRev = fn () -> ( super.reversed() )
+    def makeRev = fn io shared () -> ( super.reversed() )
 )
 def mc = MyCmp(1)
 def p1 = java.awt.Point(1, 0)
@@ -81,7 +81,7 @@ true:true
 def dPred = java.util.function.DoublePredicate(fn (d : double) : bool -> ( d > 0.0 ))
 def bPred = java.util.function.Predicate(fn (b : bool) : bool -> ( b ))
 def sPred = java.util.function.Predicate(fn (s : string) : bool -> ( s == "ok" ))
-def pCons = java.util.function.Consumer(fn (p : java.awt.Point) -> ( println(p.x) ))
+def pCons = java.util.function.Consumer(fn io (p : java.awt.Point) -> ( println(p.x) ))
 def Holder = class (def x : int) ()
 pCons.accept(java.awt.Point(9, 1))
 println(dPred.test(1.5), ":", bPred.test(true), ":", sPred.test("ok"), ":", java.lang.String.valueOf(Holder) != null)
@@ -103,11 +103,11 @@ println(p is java.awt.Point, ":", arr.length, ":", it.hasNext(), ":", i is int, 
 true:2:true:true:false:true:true:true
 
 {{{{{
-;; EffectSet.intersect eitherMut, EffectSet.satisfies borrow/mut, Type.Function.describeAgainst
+;; EffectSet.intersect eitherMut, EffectSet.satisfies shared/mut, Type.Function.describeAgainst
 def C = class (def v : int) (
-    def mMut = fn hermetic mut () : int -> ( this.v = 1 ; this.v )
-    def mPure = fn pure () : int -> ( this.v )
-    def pick = fn (flag : bool) -> (
+    def mMut = fn mut () : int -> ( this.v = 1 ; this.v )
+    def mPure = fn () : int -> ( this.v )
+    def pick = fn shared (flag : bool) -> (
         if flag then ( this.mMut ) else ( this.mPure )
     )
 )
@@ -117,14 +117,14 @@ println(obj.pick(false)(), ":", obj.pick(true)())
 5:1
 
 {{{{{
-;; EffectSet.satisfies borrowThis error message & Type.Function.describeAgainst
+;; EffectSet.satisfies shared error message & Type.Function.describeAgainst
 def C = class (def v : int) (
-    def make = fn pure () : C -> ( this )
+    def make = fn shared () : fn () : int -> ( fn () -> ( this.v ) )
 )
 def obj = C(4)
-def func : fn pure borrow () : C = obj.make
+def func : fn () : fn () : int = obj.make
 }}}}}
-Type error : expected pure borrow () : C, got pure () : C
+Type error : expected () : () : int, got shared () : () : int
 
 {{{{{
 ;; TypeChecks.exportedModule and LogicalPaths leading slash
@@ -160,16 +160,19 @@ Type error : type argument string does not satisfy bound E of java.util.EnumSet
 
 {{{{{
 ;; EffectChecker static block inside hermetic function
-def fHerm = fn hermetic () -> (
-    def C = class () () static ( println("side") )
-    ()
+def Box = class (def v : int) (
+    def fHerm = fn volatile mut () -> (
+        def C = class () () static ( println("side") )
+        this.v += 1
+        ()
+    )
 )
 }}}}}
 static block inside hermetic function violates hermetic guarantee
 
 {{{{{
 ;; EffectChecker static block inside pure function
-def fPure = fn pure () -> (
+def fPure = fn () -> (
     def C = class () () static ( println("side") )
     ()
 )
@@ -178,7 +181,8 @@ static block inside pure function violates pure guarantee
 
 {{{{{
 ;; EffectChecker static block inside deterministic function
-def fDet = fn deterministic () -> (
+axiom volatile on java.lang.System.nanoTime
+def fDet = fn () -> (
     def C = class () () static ( java.lang.System.nanoTime() )
     ()
 )
@@ -187,11 +191,11 @@ static block inside deterministic function violates deterministic guarantee
 
 {{{{{
 ;; EffectChecker relationalProps negate, double +, int odd *, string concat left/right, compound assign on local var
-def negF : fn pure monotone (x : double) : double = fn (x : double) : double -> ( -(-x) )
-def dblSum : fn pure monotone (x : double) : double = fn (x : double) : double -> ( x + x )
-def oddMul : fn pure injective (x : int) : int = fn (x : int) : int -> ( x * 3 )
-def sLeft : fn pure injective (x : string) : string = fn (x : string) : string -> ( x + "!" )
-def sRight : fn pure injective (x : int) : string = fn (x : int) : string -> ( "!" + x )
+def negF : fn monotone (x : double) : double = fn (x : double) : double -> ( -(-x) )
+def dblSum : fn monotone (x : double) : double = fn (x : double) : double -> ( x + x )
+def oddMul : fn injective (x : int) : int = fn (x : int) : int -> ( x * 3 )
+def sLeft : fn injective (x : string) : string = fn (x : string) : string -> ( x + "!" )
+def sRight : fn injective (x : int) : string = fn (x : int) : string -> ( "!" + x )
 def loc = 1
 loc += 2
 println(negF(2.5), ":", dblSum(1.5), ":", oddMul(4), ":", sLeft("ok"), ":", sRight(4), ":", loc)

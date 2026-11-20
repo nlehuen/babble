@@ -179,8 +179,8 @@ def y = 1
 y = null
 def z = null
 z = "ok"
-def f = fn hermetic (borrow a : int) : int -> ( a + 1 )
-f = fn pure (a : int) : int -> ( a + 2 )
+def f = fn (a : int) : int -> ( a + 1 )
+f = fn (a : int) : int -> ( a + 2 )
 def c = Counter()
 println(c.inc(4), ":", obj.n, ":", x, ":", y, ":", z, ":", f(10))
 }}}}}

@@ -31,7 +31,7 @@ Name already defined : x
 
 {{{{{
 ;; Variable read before definition in same block (hoisted slot throws Runtime error)
-def f = fn () -> ( a )
+def f = fn volatile () -> ( a )
 def g = fn () -> (
     def x = a
     def a = 5

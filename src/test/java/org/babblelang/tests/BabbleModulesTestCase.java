@@ -69,13 +69,13 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         Assertions.assertTrue(message.contains("at line number 2"), message);
         // The names of a module are not names of the script importing it, and conversely.
         Assertions.assertTrue(failure("import(\"lib.ba\") ; open()").contains("open is not callable"));
-        file("needy.ba", "export def get = fn () -> ( mine )");
+        file("needy.ba", "export def get = fn volatile () -> ( mine )");
         Assertions.assertTrue(failure("def mine = 1 ; import(\"needy.ba\").get()").contains("No such name : mine"));
     }
 
     @Test
     public void exportsAreReadOnlyFromOutside() throws Exception {
-        file("lib.ba", "export def n = 1\nexport def bump = fn () -> ( n = n + 1 )");
+        file("lib.ba", "export def n = 1\nexport def bump = fn io () -> ( n = n + 1 )");
         Assertions.assertTrue(failure("def lib = import(\"lib.ba\") ; lib.n = 5").contains("Cannot assign to an export : n"));
         // The module itself can reassign them, and importers see the current value.
         Assertions.assertEquals(3, run("def lib = import(\"lib.ba\") ; lib.bump() ; lib.bump() ; lib.n"));
@@ -84,7 +84,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     @Test
     public void aModuleRunsOncePerEval() throws Exception {
         file("lib.ba", "println(\"loading\")\nexport def counter : java.util.List of int = java.util.ArrayList()");
-        file("user.ba", "def lib = import(\"lib.ba\")\nexport def add = fn (v : int) -> ( lib.counter.add(v) )");
+        file("user.ba", "def lib = import(\"lib.ba\")\nexport def add = fn io (v : int) -> ( lib.counter.add(v) )");
         Object size = run("def lib = import(\"lib.ba\") ; def user = import(\"user.ba\") ; user.add(1) ; import(\"./lib.ba\").counter.size()");
         Assertions.assertEquals(1, size);
         Assertions.assertEquals("loading" + System.lineSeparator(), output.toString());
@@ -105,7 +105,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     @Test
     public void anImportInAFunctionIsRelativeToItsFile() throws Exception {
         file("lib/data.ba", "export def value = 7");
-        file("lib/loader.ba", "export def load = fn () -> ( import(\"data.ba\").value )");
+        file("lib/loader.ba", "export def load = fn io () -> ( import(\"data.ba\").value )");
         Assertions.assertEquals(7, run("import(\"lib/loader.ba\").load()"));
     }
 
@@ -162,7 +162,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     @Test
     public void exportedClasses() throws Exception {
         file("lib.ba", "export def Point = record (x : int, y : int) () ; export def zero = Point(0, 0)\n"
-                + "export def Counter = class () ( def n = 0 ; def next = fn () -> ( this.n = this.n + 1 ) ) static ( def start = fn () -> ( this() ) )");
+                + "export def Counter = class () ( def n = 0 ; def next = fn mut () -> ( this.n = this.n + 1 ) ) static ( def start = fn () -> ( this() ) )");
         Assertions.assertEquals(true, run("def lib = import(\"lib.ba\") ; lib.zero == lib.Point(0, 0)"));
         Assertions.assertEquals(2, run("def Counter = import(\"lib.ba\").Counter ; def c = Counter.start() ; c.next() ; c.next()"));
     }
@@ -594,8 +594,8 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         // BIP007-D2 : unannotated export exposes full inferred summary; annotated export locks its contract!
         file("lib.ba", """
                 export def inferredAdd = fn (x: int, y: int): int -> (x + y)
-                export def lockedPure = fn pure (x: int): int -> (x + 1)
-                export def applyOnce = fn (f: fn (x: int): int, v: int): int -> (f(v))
+                export def lockedVolatile = fn volatile (x: int): int -> (x + 1)
+                export def applyOnce = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
                 export def Counter = class (def n: int = 0) (
                     def bump = fn mut (d: int): int -> (
                         this.n += d
@@ -604,27 +604,27 @@ public class BabbleModulesTestCase extends BabbleTestBase {
                 )
                 """);
 
-        // Inferred export satisfies `pure deterministic nothrow`, and `applyOnce` specializes across modules!
+        // Inferred export satisfies `nothrow`, and `fn io` HOF `applyOnce` specializes across modules (BIP016-D6)!
         Assertions.assertEquals(13, run("""
                 def lib = import("lib.ba")
-                def useInferred: fn pure deterministic nothrow (x: int): int = fn (x: int): int -> (
+                def useInferred: fn nothrow (x: int): int = fn (x: int): int -> (
                     lib.applyOnce(fn (v: int): int -> (lib.inferredAdd(v, 3)), x)
                 )
                 useInferred(10)
                 """));
 
-        // Locked `pure` export satisfies `pure`, NOT `deterministic` or `nothrow`!
+        // Locked `volatile` export satisfies `volatile`, NOT pure (deterministic)!
         Assertions.assertEquals(6, run("""
                 def lib = import("lib.ba")
-                def okPure = fn pure (x: int): int -> (lib.lockedPure(x))
-                okPure(5)
+                def okVol = fn volatile (x: int): int -> (lib.lockedVolatile(x))
+                okVol(5)
                 """));
         java.util.List<String> lockedErrs = typeErrors("""
                 def lib = import("lib.ba")
-                def badDet = fn deterministic (x: int): int -> (lib.lockedPure(x))
+                def badDet = fn (x: int): int -> (lib.lockedVolatile(x))
                 """);
         Assertions.assertEquals(1, lockedErrs.size(), lockedErrs.toString());
-        Assertions.assertTrue(lockedErrs.get(0).contains("deterministic"), lockedErrs.toString());
+        Assertions.assertTrue(lockedErrs.get(0).contains("volatile"), lockedErrs.toString());
 
         // Cross-module `mut` method requires `mut` parameter on typed caller!
         java.util.List<String> mutErrs = typeErrors("""
@@ -639,17 +639,17 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     public void rm002ExportAxiomAndImpurePropagation() throws Exception {
         // `export axiom` propagates Java effect assumptions to importers; non-exported `axiom` stays module-private!
         file("pub_axioms.ba", """
-                export axiom pure deterministic nothrow on java.lang.System.lineSeparator
+                export axiom pure nothrow on java.lang.System.lineSeparator
                 export def sep = fn (): string -> (java.lang.System.lineSeparator())
                 """);
         file("priv_axioms.ba", """
-                axiom pure deterministic nothrow on java.lang.System.lineSeparator
+                axiom pure nothrow on java.lang.System.lineSeparator
                 export def sep = fn (): string -> (java.lang.System.lineSeparator())
                 """);
 
         Assertions.assertEquals(true, run("""
                 def pub = import("pub_axioms.ba")
-                def f = fn pure deterministic nothrow (): bool -> (
+                def f = fn nothrow (): bool -> (
                     java.lang.System.lineSeparator() == pub.sep()
                 )
                 f()
@@ -658,8 +658,8 @@ public class BabbleModulesTestCase extends BabbleTestBase {
         // Importing `priv_axioms.ba` lets `priv.sep()` be pure, while direct `System.lineSeparator()` in importer stays unassumed!
         java.util.List<String> privErrs = typeErrors("""
                 def priv = import("priv_axioms.ba")
-                def okViaWrapper = fn pure deterministic (): string -> (priv.sep())
-                def directCall = fn pure (): string -> (java.lang.System.lineSeparator())
+                def okViaWrapper = fn (): string -> (priv.sep())
+                def directCall = fn (): string -> (java.lang.System.lineSeparator())
                 """);
         Assertions.assertEquals(1, privErrs.size(), privErrs.toString());
         Assertions.assertTrue(privErrs.get(0).startsWith("main.ba:3:"), privErrs.toString());

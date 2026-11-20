@@ -23,7 +23,7 @@ xs.add("a")
 xs.add("b")
 def m = java.util.Collections.max(xs)
 def ro = java.util.List.copyOf(xs)
-java.util.Collections.sort(xs, fn (a : java.lang.CharSequence, b : java.lang.CharSequence) : int -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
+java.util.Collections.sort(xs, fn io (shared a : java.lang.CharSequence, shared b : java.lang.CharSequence) : int -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
 println(m, ":", ro.size())
 }}}}}
 c:3
@@ -85,21 +85,21 @@ def Bad = class () implements GetInt, DefStr ()
 Type error : expected () : int, got () : string
 
 {{{{{
-;; nonFunctionCallableAssignable: ClassValue, JavaMethod, PRINT (matching & mismatching borrow/mut/effects)
+;; nonFunctionCallableAssignable: ClassValue, JavaMethod, PRINT (matching & mismatching shared/mut/effects)
 def C = class (def x : int) ()
 def ctor : fn (x : int) : C = C
-def parse : fn (s : string) : int = java.lang.Integer.parseInt
-def pr : fn (v : string) : fn () = print
+def parse : fn io (s : string) : int = java.lang.Integer.parseInt
+def pr : fn io (v : string) : fn () = print
 println(ctor(3).x, ":", parse("4"))
 pr("")
 }}}}}
 3:4
 
 {{{{{
-;; nonFunctionCallableAssignable error: PRINT with borrow parameter target rejected
-def bad : fn (borrow v : string) : fn () = print
+;; nonFunctionCallableAssignable error: PRINT assigned to pure target rejected
+def bad : fn (v : string) : fn () = print
 }}}}}
-Type error : expected (borrow v : string) : () : any?, got print
+Type error : expected (v : string) : () : any?, got print
 
 {{{{{
 ;; nonFunctionCallableAssignable error: pure target assigned impure constructor or method

@@ -217,18 +217,18 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return this;
     }
 
-    /** Marks {@code target} (all constructors and methods) as impure on this engine. */
-    public BabbleScriptEngine markImpure(Class<?> target) {
+    /** Marks {@code target} (all constructors and methods) as {@code io} on this engine. */
+    public BabbleScriptEngine markIO(Class<?> target) {
         Objects.requireNonNull(target, "target");
         synchronized (moduleLock) {
-            hostEffectOverrides.put(HostEffects.JavaTarget.ofClass(target), HostEffects.OverrideEntry.impureEntry());
+            hostEffectOverrides.put(HostEffects.JavaTarget.ofClass(target), HostEffects.OverrideEntry.ioEntry());
             moduleCache.clear();
         }
         return this;
     }
 
-    /** Marks one or more named methods on {@code owner} as impure on this engine. */
-    public BabbleScriptEngine markImpure(Class<?> owner, String... methodNames) {
+    /** Marks one or more named methods on {@code owner} as {@code io} on this engine. */
+    public BabbleScriptEngine markIO(Class<?> owner, String... methodNames) {
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(methodNames, "methodNames");
         if (methodNames.length == 0) {
@@ -242,7 +242,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
         synchronized (moduleLock) {
             for (String name : methodNames) {
-                hostEffectOverrides.put(HostEffects.JavaTarget.ofMethod(owner, name), HostEffects.OverrideEntry.impureEntry());
+                hostEffectOverrides.put(HostEffects.JavaTarget.ofMethod(owner, name), HostEffects.OverrideEntry.ioEntry());
             }
             moduleCache.clear();
         }

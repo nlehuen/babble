@@ -4,7 +4,7 @@
 {{{{{
 ;; Class constructor-local variables & non-def constructor params captured by methods (hiddenCells)
 def Account = class (initial : int, rate : double = 1.5, tag : string = "acct") (
-    def add = fn (amount : int) : string -> (
+    def add = fn io (amount : int) : string -> (
         initial += amount
         rate += amount * 0.5
         tag += "!"
@@ -23,7 +23,7 @@ def Rec = class (def base : int, extra : int = 100) (
     def sumDirect = fn (s : string, n : int = 2) : string -> (
         if n <= 0 then ( s ) else ( recurse(s + ".", n - 1) )
     )
-    def makeAdder = fn (k : int) -> ( fn () : int -> ( this.base + extra + k ) )
+    def makeAdder = fn shared (k : int) -> ( fn () : int -> ( this.base + extra + k ) )
 )
 def r = Rec(7)
 def adder = r.makeAdder(3)

@@ -77,13 +77,13 @@ def counter = fn () -> (
 def counter2 = fn () -> (
     return object (
         def v = 0
-        def inc = fn () -> (
+        def inc = fn mut () -> (
             this.v = this.v + 1
         )
     )
 )
 
-def main = fn () -> (
+def main = fn io () -> (
     def local = "world !"
 
     ;; println is a native function

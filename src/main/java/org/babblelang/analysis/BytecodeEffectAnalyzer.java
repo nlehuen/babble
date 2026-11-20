@@ -129,7 +129,28 @@ public final class BytecodeEffectAnalyzer {
         if (eff.isUnconstrained()) {
             return null;
         }
-        String prefix = eff.formatFullPrefix(false).trim();
+        StringBuilder sb = new StringBuilder();
+        if (eff.isPure() && eff.isDeterministic()) {
+            sb.append("pure ");
+        } else if (eff.isHermetic() && !eff.isDeterministic()) {
+            sb.append("volatile ");
+        }
+        if (eff.isNothrow()) {
+            sb.append("nothrow ");
+        }
+        if (eff.mutThis()) {
+            sb.append("mut ");
+        }
+        for (Effect e : eff.effects()) {
+            if (e == Effect.IDEMPOTENT || e == Effect.COMMUTATIVE || e == Effect.ASSOCIATIVE
+                    || e == Effect.MONOTONE || e == Effect.INJECTIVE) {
+                sb.append(e.name().toLowerCase()).append(' ');
+            }
+        }
+        if (eff.uniqueResult()) {
+            sb.append("unique ");
+        }
+        String prefix = sb.toString().trim();
         if (prefix.isEmpty()) {
             return null;
         }

@@ -91,7 +91,7 @@ No applicable overload of java.lang.StringBuilder.append for ()
 ;; Java default methods (JavaDefaultCall), super(JavaInterface), and Faces Object methods
 def EvenPred = class () implements java.util.function.IntPredicate (
     def test = fn (x : int) : bool -> ( int(x / 2) * 2 == x )
-    def testInverted = fn (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )
+    def testInverted = fn io shared (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )
 )
 def p = EvenPred()
 def neg = p.negate()

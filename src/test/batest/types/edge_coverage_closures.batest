@@ -98,7 +98,7 @@ Type error : expected string, got java.lang.Runnable
 
 {{{{{
 ;; EffectChecker checkDeclarationPlacement: axiom inside verified constrained function & Invalid axiom on non-function
-def f = fn pure () : int -> (
+def f = fn () : int -> (
     axiom pure on java.lang.Math.abs
     1
 )
@@ -112,65 +112,65 @@ def x = axiom on y
 Invalid axiom target : expected a Java class, Java method, or function
 
 {{{{{
-;; EffectChecker impure declaration and impure function literal
-impure on java.lang.System.nanoTime
-def f = fn impure () : int -> ( 1 )
+;; EffectChecker io declaration and io function literal
+io on java.lang.System.nanoTime
+def f = fn io () : int -> ( 1 )
 println(f(), ":", java.lang.System.nanoTime() != 0)
 }}}}}
 1:true
 
 {{{{{
 ;; validateAlgebraicSignature errors: monotone on non-ordered type (any)
-def f : fn pure monotone (x : any) : any = fn (x : any) : any -> ( x )
+def f : fn monotone (x : any) : any = fn (x : any) : any -> ( x )
 }}}}}
 monotone requires ordered parameter and return types without mut
 
 {{{{{
 ;; validateAlgebraicSignature errors: injective returning null
-def f : fn pure injective (x : int) : null = fn (x : int) : null -> ( null )
+def f : fn injective (x : int) : null = fn (x : int) : null -> ( null )
 }}}}}
 injective requires at least one parameter, no mut, and a non-null return type
 
 {{{{{
 ;; validateAlgebraicSignature errors: commutative with mismatched parameter types
-def f : fn pure commutative (a : int, b : string) : int = fn (a : int, b : string) : int -> ( a )
+def f : fn commutative (a : int, b : string) : int = fn (a : int, b : string) : int -> ( a )
 }}}}}
 commutative without mut requires a pure binary (T, T) : R signature
 
 {{{{{
 ;; validateAlgebraicSignature errors: associative with return type mismatch
-def f : fn pure associative (a : int, b : int) : double = fn (a : int, b : int) : double -> ( a + b )
+def f : fn associative (a : int, b : int) : double = fn (a : int, b : int) : double -> ( a + b )
 }}}}}
 associative requires a pure binary (T, T) : T signature
 
 {{{{{
 ;; validateAlgebraicSignature errors: idempotent on 2-arg pure function
-def f : fn pure idempotent (a : int, b : int) : int = fn (a : int, b : int) : int -> ( a + b )
+def f : fn idempotent (a : int, b : int) : int = fn (a : int, b : int) : int -> ( a + b )
 }}}}}
 idempotent without mut requires a pure unary (T) : T signature or an effectful axiom
 
 {{{{{
 ;; binaryWrapperProps: associative string +, commutative double +, non-commutative int -
-def sCat : fn pure associative (a : string, b : string) : string = fn (a : string, b : string) : string -> ( a + b )
-def dAdd : fn pure commutative (a : double, b : double) : double = fn (a : double, b : double) : double -> ( a + b )
+def sCat : fn associative (a : string, b : string) : string = fn (a : string, b : string) : string -> ( a + b )
+def dAdd : fn commutative (a : double, b : double) : double = fn (a : double, b : double) : double -> ( a + b )
 println(sCat("a", "b"), ":", dAdd(1.5, 2.5))
 }}}}}
 ab:4.0
 
 {{{{{
-def badSub : fn pure commutative (a : int, b : int) : int = fn (a : int, b : int) : int -> ( a - b )
+def badSub : fn commutative (a : int, b : int) : int = fn (a : int, b : int) : int -> ( a - b )
 }}}}}
-Type error : expected pure commutative (a : int, b : int) : int, got pure (a : int, b : int) : int
+Type error : expected commutative (a : int, b : int) : int, got (a : int, b : int) : int
 
 {{{{{
 ;; toStringProfile on Union and non-value BabbleInstance inside deterministic
-def uStr = fn deterministic (v : int | string) : string -> ( "" + v )
+def uStr = fn (v : int | string) : string -> ( "" + v )
 println(uStr(5), ":", uStr("ok"))
 }}}}}
 5:ok
 
 {{{{{
 def Plain = class (def x : int) ()
-def badDet = fn deterministic (p : Plain) : string -> ( "" + p )
+def badDet = fn (p : Plain) : string -> ( "" + p )
 }}}}}
-Function badDet declared deterministic violates deterministic guarantee
+Function badDet violates deterministic guarantee : mark function as volatile (or io)

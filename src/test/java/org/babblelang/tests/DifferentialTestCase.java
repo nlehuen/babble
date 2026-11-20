@@ -295,7 +295,7 @@ public class DifferentialTestCase {
         return List.of(
                 "def x = 1 ; def c1 = classof(x) ; x = 2 ; def c2 = classof(x) ; x = 2.5 ; \"\" + c1 + \":\" + c2 + \":\" + (x + 1)",
                 "def x = 1 ; def c1 = classof(x) ; x /= 2 ; \"\" + c1 + \":\" + x",
-                "def C = class () ( def x = 1 ; def widen = fn () -> ( this.x = 1.5 ) ) ; def c = C() ; def c1 = classof(c.x) ; c.x = 2 ; def c2 = classof(c.x) ; c.widen() ; \"\" + c1 + \":\" + c2 + \":\" + c.x",
+                "def C = class () ( def x = 1 ; def widen = fn mut () -> ( this.x = 1.5 ) ) ; def c = C() ; def c1 = classof(c.x) ; c.x = 2 ; def c2 = classof(c.x) ; c.widen() ; \"\" + c1 + \":\" + c2 + \":\" + c.x",
                 "def C = class (def k : double = 1) () static ( def s = 1 ) ; C.s = 2.5 ; \"\" + classof(C().k) + \":\" + C.s",
                 "def d : double = 1 ; d = 2 ; \"\" + classof(d) + \":\" + d",
                 "def m = null ; m = \"ok\" ; m",
@@ -315,12 +315,12 @@ public class DifferentialTestCase {
                 "def take = fn (f : fn () : double) : double -> ( f() ) ; def r = take(fn () -> ( 1 )) ; \"\" + classof(r) + \":\" + r",
                 "def mk : fn () : fn () : double = fn () -> ( fn () -> ( 1 ) ) ; def v = mk()() ; \"\" + classof(v) + \":\" + v",
                 "def f : fn () : double? = fn () -> ( 1 ) ; def v = f() ; \"\" + classof(v) + \":\" + v",
-                "def I = interface ( def x : double ) ; def C = class () implements I ( def x = 1 ; def widen = fn () -> ( this.x = 1.5 ) ) ; def i : I = C() ; \"\" + classof(i.x) + \":\" + i.x",
+                "def I = interface ( def x : double ) ; def C = class () implements I ( def x = 1 ; def widen = fn mut () -> ( this.x = 1.5 ) ) ; def i : I = C() ; \"\" + classof(i.x) + \":\" + i.x",
                 // P6b : generic double widening, covariant narrowing with is, generic methods and Java collections.
                 "def Box of T = class (def v : T) ()\ndef b : Box of double = Box(1)\ndef l : java.util.List of double = java.util.ArrayList() ; l.add(2)\n\"\" + classof(b.v) + \":\" + classof(l.get(0))",
                 // Safe navigation (?.) : calls, field reads, chains, single LHS eval, short-circuit args, int -> double? widening.
                 "def B = class (def v : int) () ; def A = class (def n : A? = null) ( def f = fn () : B -> ( B(9) ) ) ; def mk = fn (b : bool) : A? -> ( if b then ( A(A()) ) else ( null ) ) ; \"\" + mk(true)?.f()?.v + \":\" + mk(false)?.f()?.v + \":\" + mk(true)?.n?.f()?.v",
-                "def n = 0 ; def m = 0 ; def A = class () ( def f = fn (x : int) -> ( x + 1 ) ) ; def recv = fn (b : bool) : A? -> ( n += 1 ; if b then ( A() ) else ( null ) ) ; def arg = fn () : int -> ( m += 1 ; 5 ) ; def r1 = recv(false)?.f(arg()) ; def r2 = recv(true)?.f(arg()) ; \"\" + r1 + \":\" + r2 + \":\" + n + \":\" + m",
+                "def n = 0 ; def m = 0 ; def A = class () ( def f = fn (x : int) -> ( x + 1 ) ) ; def recv = fn io (b : bool) : A? -> ( n += 1 ; if b then ( A() ) else ( null ) ) ; def arg = fn io () : int -> ( m += 1 ; 5 ) ; def r1 = recv(false)?.f(arg()) ; def r2 = recv(true)?.f(arg()) ; \"\" + r1 + \":\" + r2 + \":\" + n + \":\" + m",
                 "def A = class () ( def g = fn () : int -> ( 3 ) ) ; def mk = fn (b : bool) : A? -> ( if b then ( A() ) else ( null ) ) ; def d1 : double? = mk(true)?.g() ; def d0 : double? = mk(false)?.g() ; \"\" + classof(d1) + \":\" + d1 + \":\" + d0",
                 // P7 : call-site parameter inference, int -> double conversion, methods, operators, constructors, recursion, nullables.
                 "def f = fn (w) -> ( \"\" + classof(w) + \":\" + w ) ; f(2) + \"|\" + f(1.5)",
@@ -332,7 +332,7 @@ public class DifferentialTestCase {
                 "def minV = -2147483648 ; def maxV = 2147483647 ; \"\" + (maxV + 1) + \":\" + (minV - 1) + \":\" + (-minV) + \":\" + (minV * -1)",
                 "def f = fn (a : int?, b : double?, c : bool?) : double -> ( (if a != null then ( a + 1 ) else ( 0 )) + (if b != null then ( b * 2 ) else ( 0.5 )) + (if c != null and c then ( 10 ) else ( 20 )) ) ; \"\" + f(3, 1.5, true) + \":\" + f(null, null, false) + \":\" + f(null, 2, null)",
                 "def d = import(\"org\").babblelang.tests.JavaClassDemo(\"n\") ; d.count = 4 ; d.count += 5 ; def a = java.lang.String(\"xyz\").getBytes() ; \"\" + d.count + \":\" + a.length + \":\" + d.label",
-                "def g = fn () : int -> ( java.lang.Math.max(1, return 7) ) ; g()",
+                "def g = fn io () : int -> ( java.lang.Math.max(1, return 7) ) ; g()",
                 "def sb = java.lang.StringBuilder() ; import(\"org\").babblelang.tests.JavaClassDemo.appendChar(sb, java.lang.String(\"x\").charAt(0)) ; sb.toString()"
         );
     }
