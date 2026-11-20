@@ -393,12 +393,15 @@ public class OptimizerTestCase {
 
     private static String runJar(Path jar) throws Exception {
         String javaBin = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-        Process p = new ProcessBuilder(javaBin, "-jar", jar.toString())
-                .redirectErrorStream(true)
-                .start();
+        // Standard error stays apart from the output: a JVM reports JAVA_TOOL_OPTIONS / _JAVA_OPTIONS
+        // there ("Picked up ..."), which must not end up in the program's output.
+        ProcessBuilder builder = new ProcessBuilder(javaBin, "-jar", jar.toString());
+        builder.environment().remove("JAVA_TOOL_OPTIONS");
+        Process p = builder.start();
         String output = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+        String error = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         int exit = p.waitFor();
-        Assertions.assertEquals(0, exit, "Jar exited with " + exit + ":\n" + output);
+        Assertions.assertEquals(0, exit, "Jar exited with " + exit + ":\n" + output + "\n" + error);
         return output;
     }
 
