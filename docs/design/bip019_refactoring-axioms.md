@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 019 |
 | **Date** | 2026-11-20 |
-| **Status** | Decided (`BIP019-D1`–`D6` and `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13` decided; `BIP019-P1`–`P3` implemented, `P4`–`P6` not started) |
+| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D16` decided; `BIP019-P1`–`P3` implemented, `P4`–`P6` not started) |
 | **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
 | **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as `.java` and `.ba` files ; one bytecode analyzer derives axioms from seeds, either while compiling or offline into the same directory |
 
@@ -183,7 +183,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 
 ---
 
-## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`)
+## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`; `BIP019-D14`–`D16`)
 
 * **`BIP019-D1` — One directory :** every assumption about a Java or Babble function or method lives in `src/main/java/org/babblelang/axioms/`, and nowhere else.
 * **`BIP019-D2` — Layout :** Java axioms are stubs that mirror their target's package and name (`java.util.List` → `org.babblelang.axioms.java.util.ListAxioms`) ; Babble-level axioms are `.ba` files.
@@ -198,6 +198,9 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 * **`BIP019-Q5` → `BIP019-D11` — First fix :** after the migration, the protocol methods (`equals`, `hashCode`, `compareTo`, `Comparator.compare`) are fixed first : Babble implementations must be pure.
 * **`BIP019-Q6` → `BIP019-D12` — Stronger derivations :** reported only ; hand-written axioms never change without a person deciding.
 * **`BIP019-Q7` → `BIP019-D13` — Re-derivation :** every CI build re-derives the axioms and fails on any difference.
+* **`BIP019-D14` — Keyword names :** `axiom def` accepts a core scalar keyword as its name, so that the conversions are declared like any built-in : `export axiom def int: fn (value: any): int`.
+* **`BIP019-D15` — Optional parameters in function types :** a function type may mark a named parameter optional, `fn (c: bool, message?: any?): bool`, which a function whose parameter has a default satisfies ; `assert` is declared with it, and so may any function type.
+* **`BIP019-D16` — Nearest surface form :** the built-ins are written with ordinary effect words (pure-by-default, `nothrow`, `commutative`, `io`) even where the former internal profiles differed in details the language cannot state (the conversions not borrowing `this`, `import`'s fully unconstrained effects) ; any difference a test, a golden or a diagnostic can see is reported, not hidden.
 
 ## 6. Phases (`BIP019-P1`–`P6`)
 
@@ -206,7 +209,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 | **`BIP019-P1` — Mechanism and effects** | `Axioms`, the new annotations, the `pom.xml` resource entry, the package's `package-info.java` and `README.md` ; stubs for `Object`, `Comparable`, `String`, `Map.Entry`, `Collection`, `Map`, `Iterable`, `Iterator` and the concrete collections' constructors ; tier 6 of both resolvers, the shallow and view rules and `evalFor` read `Axioms` ; `standardProtocolDefault` and the `COLLECTION_*` and `STRING_*` sets are deleted. |
 | **`BIP019-P2` — Optimizer and bytecode seeds** | `SEEDED_INTRINSICS` and `HirPurity`'s four lists become stubs for `Math`, `StrictMath`, `Double`, `Float`, `Integer`, `Long` and `String` (`@Foldable` marks exactly today's narrower folding subset) ; `ConstFoldPass` asks `Axioms`. |
 | **`BIP019-P3` — Nullness and immutability** | `JavaNullability`'s overlay becomes `@NullMarked` stubs with `@Nullable` where it said nullable ; `Map.Entry`'s deep immutability becomes `@DeeplyImmutable`. ; the meaning of third-party nullness annotations becomes one stub per annotation (`@MeansNonNull`…), and `JavaNullability` loses its name lists. |
-| **`BIP019-P4` — Built-ins** | `axiom def` (grammar, `BlockScopes`, `TypeChecker`, `Interpreter`, `HirBuilder`/`HirEmitter`, formatter, with `.ba`, `DifferentialTestCase`, `TypeCheckerTestCase` and `FormatterTestCase` tests) ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
+| **`BIP019-P4` — Built-ins** | optional parameters in function types (`BIP019-D15`) ; `axiom def`, its name a core scalar keyword too (`BIP019-D14`) (grammar, `BlockScopes`, `TypeChecker`, `Interpreter`, `HirBuilder`/`HirEmitter`, formatter, with `.ba`, `DifferentialTestCase`, `TypeCheckerTestCase` and `FormatterTestCase` tests) ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
 | **`BIP019-P5` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 | **`BIP019-P6` — The analyzer and the generator** | §3 : the value lattice, calls through axioms, the fixed point ; `AxiomGenerator` and the first derived stubs, generated on JDK 21 ; the compile-time tier and the generator share the analyzer. ; CI re-derives the axioms on every build and fails on any difference (`BIP019-D13`). |
 
