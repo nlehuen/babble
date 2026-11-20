@@ -60,7 +60,7 @@ What Babble doesn't provide is implemented directly in Babble:
 - **Named arguments & default parameters**: `Camera(...)`, `Scenes.finalScene(...)`, `println(..., to: out)`.
 - **Runtime type introspection & equality**: `is`, `classof`, `same`, `==`, `assert`.
 - **Type annotations**: Every parameter, return type, and member is annotated and checked statically and at runtime.
-- **Pure-by-default effects, ownership & HOF forwarding ([BIP016](../../docs/design/bip016_consolidating-effect-annotations.md), [BIP017](../../docs/design/bip017_higher-order-function-effects.md))**: Typed functions, methods, interface signatures, and callbacks are statically verified pure, deterministic, const, and borrowed by default — `100 / 110` functions carry zero function-level effect keywords, with only `30` explicit effect tokens (`mut`, `shared`, `unique`, `calling`, and just `3` `io` entrypoints — zero `io` in `lib/hittables.ba`) across all 15 modules (`0` `axiom`s).
+- **Pure-by-default effects, ownership & HOF forwarding ([BIP016](../../docs/design/bip016_consolidating-effect-annotations.md), [BIP017](../../docs/design/bip017_higher-order-function-effects.md))**: Typed functions, methods, interface signatures, and callbacks are statically verified pure, deterministic, const, and borrowed by default — `100 / 109` functions carry zero function-level effect keywords, with only `29` explicit effect tokens (`mut`, `shared`, `unique`, `calling`, and just `3` `io` entrypoints — zero `io` in `lib/hittables.ba`) across all 15 modules (`0` `axiom`s).
 
 ## Running
 

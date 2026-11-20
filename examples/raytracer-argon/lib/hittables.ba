@@ -65,11 +65,6 @@ export def HittableList = class () implements Hittable (
         this.bbox = AABB.enclose(this.bbox, item.boundingBox())
     )
 
-    def clear = fn mut () -> (
-        this.items.clear()
-        this.bbox = AABB.empty
-    )
-
     def get = fn (index: int): Hittable -> (
         this.items.get(index)
     )
