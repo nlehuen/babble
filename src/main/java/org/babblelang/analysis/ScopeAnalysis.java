@@ -128,6 +128,32 @@ public final class ScopeAnalysis {
     public record InterfaceCallTarget(String interfaceTypeId, String memberName, FunctionSignature signature, boolean guaranteedCallable) {
     }
 
+    public enum ForKind {
+        ARRAY,
+        JAVA_ITERABLE,
+        JAVA_ITERATOR,
+        BABBLE_TO_JAVA_ITERABLE,
+        BABBLE_ITERABLE,
+        BABBLE_ITERATOR,
+        DYNAMIC_UNION
+    }
+
+    public record ForLoopTarget(
+            ForKind kind,
+            Class<?> arrayClass,
+            PrimitiveKind elemKind,
+            String elemCheck,
+            int elemWidenRank,
+            InterfaceCallTarget iteratorInterfaceTarget,
+            FunctionSignature hasNextSig,
+            InterfaceCallTarget hasNextInterfaceTarget,
+            FunctionSignature nextSig,
+            InterfaceCallTarget nextInterfaceTarget
+    ) {
+    }
+
+    private final ParseTreeProperty<ForLoopTarget> forLoopTargets = new ParseTreeProperty<>();
+
     private final ParseTreeProperty<String[]> declared = new ParseTreeProperty<>();
     private final ParseTreeProperty<String[]> parameters = new ParseTreeProperty<>();
     private final ParseTreeProperty<Integer> requiredParameters = new ParseTreeProperty<>();
@@ -313,6 +339,14 @@ public final class ScopeAnalysis {
 
     void setCheckedType(ParserRuleContext ctx, String descriptor) {
         checkedTypes.put(ctx, descriptor);
+    }
+
+    void setForLoopTarget(BabbleParser.ForExpressionContext ctx, ForLoopTarget target) {
+        forLoopTargets.put(ctx, target);
+    }
+
+    public ForLoopTarget forLoopTarget(BabbleParser.ForExpressionContext ctx) {
+        return forLoopTargets.get(ctx);
     }
 
     void setIsBuiltin(BabbleParser.IsExpressionContext ctx, String type) {

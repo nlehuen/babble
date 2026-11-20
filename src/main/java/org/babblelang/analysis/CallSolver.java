@@ -205,11 +205,12 @@ final class CallSolver {
                     synthAll(arguments);
                     return Type.ERROR;
                 }
-                Method sample = candidates.get(0);
                 Map<TypeVariable<?>, Type> callEnv = new HashMap<>(receiverEnv);
-                TypeVariable<?>[] sampleParams = sample.getTypeParameters();
-                for (int i = 0; i < sampleParams.length; i++) {
-                    callEnv.put(sampleParams[i], explicitTypeArgs.get(i));
+                for (Method candidate : candidates) {
+                    TypeVariable<?>[] mParams = candidate.getTypeParameters();
+                    for (int i = 0; i < mParams.length; i++) {
+                        callEnv.put(mParams[i], explicitTypeArgs.get(i));
+                    }
                 }
                 List<Type> argumentTypes = new ArrayList<>();
                 List<Method> applicable = javaCall(candidates, method.owner().getCanonicalName() + "." + method.name(),

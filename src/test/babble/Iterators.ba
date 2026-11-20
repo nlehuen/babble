@@ -1,0 +1,147 @@
+;;(
+    End-to-end differential tests for BIP013 :
+    for loops, parameterized static factory selection, multi-tier iteration
+    (Java Iterable, bare Iterator, JavaArray, Babble custom iterable/iterator),
+    break [expr], continue, closure capture, and BIP016 effects.
+;;)
+
+;; 1. Motivating example & parameterized static factory calls
+def foo = (list of int).of(1, 2, 3)
+def sum = 0
+for value in foo then (
+    sum += value
+)
+assert(sum == 6)
+
+def inferred = list.of(10, 20, 30)
+def sum2 = 0
+for value in inferred then (
+    sum2 += value
+)
+assert(sum2 == 60)
+
+def empty = (list of int).of()
+def emptyRes = for v in empty then (
+    v
+)
+assert(emptyRes == null)
+
+;; 2. Set, Map views, and JavaArray (primitive & reference)
+def s = (set of string).of("a", "b", "c")
+def count = 0
+for item in s then (
+    count += item.length()
+)
+assert(count == 3)
+
+def m = (map of (string, int)).of("x", 1, "y", 2)
+def mapSum = 0
+for e in m.entrySet() then (
+    mapSum += e.getValue()
+)
+assert(mapSum == 3)
+
+def chars = "abc".toCharArray()
+def charCount = 0
+for c in chars then (
+    if c == 'a' or c == 'b' or c == 'c' then (
+        charCount += 1
+    )
+)
+assert(charCount == 3)
+
+def parts = "one,two,three".split(",")
+def joined = ""
+for p in parts then (
+    joined = joined + p
+)
+assert(joined == "onetwothree")
+
+;; 3. Bare java.util.Iterator
+def it = list(4, 5, 6).iterator()
+def itSum = 0
+for v in it then (
+    itSum += v
+)
+assert(itSum == 15)
+
+;; 4. Custom Babble iterable & iterator (unboxed primitive next/hasNext)
+def RangeIter = class (start: int, stop: int) (
+    def cur: int = start
+    def hasNext = fn (): bool -> (
+        this.cur < stop
+    )
+    def next = fn mut (): int -> (
+        def v = this.cur
+        this.cur += 1
+        v
+    )
+)
+
+def Range = record (start: int, stop: int) (
+    def iterator = fn (): RangeIter -> (
+        RangeIter(this.start, this.stop)
+    )
+)
+
+def rangeSum = 0
+for i in Range(1, 5) then (
+    rangeSum += i
+)
+assert(rangeSum == 10)
+
+;; 5. Closure-safe per-iteration binding
+def fns = list of (fn (): int) ()
+for v in (list of int).of(1, 2, 3) then (
+    fns.add(fn (): int -> (v))
+)
+assert(fns.get(0)() == 1 and fns.get(1)() == 2 and fns.get(2)() == 3)
+
+;; 6. Explicit loop variable type annotation with numeric widening
+def dSum = 0.0
+for x: double in (list of int).of(1, 2, 3) then (
+    dSum += x
+)
+assert(dSum == 6.0)
+
+;; 7. break, break expr, and continue in both for and while loops
+def found = for v in (list of int).of(1, 3, 7, 8, 9) then (
+    if v == 3 then (
+        continue
+    )
+    if v > 6 then (
+        break v * 10
+    )
+)
+assert(found == 70)
+
+def oddSum = 0
+for v in (list of int).of(1, 2, 3, 4, 5) then (
+    if v == 2 or v == 4 then (
+        continue
+    )
+    oddSum += v
+)
+assert(oddSum == 9)
+
+def w = 0
+def wRes = while w < 10 then (
+    w += 1
+    if w == 5 then (
+        break w * 2
+    )
+)
+assert(wRes == 10)
+
+;; 8. Pure function iterating over core collection and array
+def sumList = fn (xs: list of int): int -> (
+    def total = 0
+    for x in xs then (
+        total += x
+    )
+    total
+)
+assert(sumList((list of int).of(2, 4, 6)) == 12)
+
+;; 9. memberName compatibility (java.lang.System.in)
+assert(java.lang.System.in != null)

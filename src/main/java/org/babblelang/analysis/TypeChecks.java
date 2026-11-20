@@ -64,6 +64,10 @@ final class TypeChecks {
     void run() {
         for (BlockScopes.PendingAssignment assignment : pass.assignments) {
             ParserRuleContext definition = resolveName(assignment.name(), assignment.scope());
+            if (definition instanceof BabbleParser.ForExpressionContext) {
+                throw new AnalysisException("Cannot assign to loop variable : " + assignment.name(),
+                        assignment.ctx().lhs.getStart().getLine());
+            }
             if (definition != null) {
                 reassigned.add(definition);
             }

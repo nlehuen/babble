@@ -290,6 +290,23 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         };
     }
 
+    private static final class BreakException extends RuntimeException {
+        final Object value;
+
+        BreakException(Object value) {
+            super(null, null, false, false);
+            this.value = value;
+        }
+    }
+
+    private static final class ContinueException extends RuntimeException {
+        static final ContinueException INSTANCE = new ContinueException();
+
+        private ContinueException() {
+            super(null, null, false, false);
+        }
+    }
+
     @Override
     public Object visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
         last = ctx;
@@ -297,6 +314,19 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         value = widen(ctx, value);
         throw new ReturnException(value);
+    }
+
+    @Override
+    public Object visitBreakExpression(BabbleParser.BreakExpressionContext ctx) {
+        last = ctx;
+        Object value = ctx.expression() != null ? widen(ctx.expression(), visit(ctx.expression())) : null;
+        throw new BreakException(value);
+    }
+
+    @Override
+    public Object visitContinueExpression(BabbleParser.ContinueExpressionContext ctx) {
+        last = ctx;
+        throw ContinueException.INSTANCE;
     }
 
     /**
@@ -519,9 +549,109 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object result = null;
         // The body block opens a fresh scope on every iteration.
         while (Truth.test(visit(ctx.test))) {
-            result = widen(ctx.whileBlock, visit(ctx.whileBlock));
+            try {
+                result = widen(ctx.whileBlock, visit(ctx.whileBlock));
+            } catch (ContinueException ignored) {
+                // next iteration
+            } catch (BreakException brk) {
+                return brk.value;
+            }
         }
         return result;
+    }
+
+    @Override
+    public Object visitForExpression(BabbleParser.ForExpressionContext ctx) {
+        last = ctx;
+        Object iterable = visit(ctx.iterable);
+        Object rawIter = Values.unwrap(iterable);
+        ScopeAnalysis.ForLoopTarget target = scopes.forLoopTarget(ctx);
+        String loopVar = ctx.name.getText();
+        String[] blockDeclared = scopes.declared(ctx.forBlock);
+
+        Object result = null;
+        if (rawIter != null && rawIter.getClass().isArray()) {
+            int len = java.lang.reflect.Array.getLength(rawIter);
+            for (int i = 0; i < len; i++) {
+                Object elem = Values.fromJava(java.lang.reflect.Array.get(rawIter, i));
+                try {
+                    result = runForIteration(ctx, target, loopVar, blockDeclared, elem);
+                } catch (ContinueException ignored) {
+                    // next iteration
+                } catch (BreakException brk) {
+                    return brk.value;
+                }
+            }
+            return result;
+        }
+        if (rawIter instanceof java.lang.Iterable<?> || rawIter instanceof java.util.Iterator<?>) {
+            java.util.Iterator<?> it = rawIter instanceof java.util.Iterator<?> i
+                    ? i : ((java.lang.Iterable<?>) rawIter).iterator();
+            while (it.hasNext()) {
+                Object elem = Values.fromJava(it.next());
+                try {
+                    result = runForIteration(ctx, target, loopVar, blockDeclared, elem);
+                } catch (ContinueException ignored) {
+                    // next iteration
+                } catch (BreakException brk) {
+                    return brk.value;
+                }
+            }
+            return result;
+        }
+        // Babble custom iterable or iterator (Tier 3)
+        boolean isIterable = target != null && (target.kind() == ScopeAnalysis.ForKind.BABBLE_ITERABLE
+                || target.kind() == ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE);
+        Object iterObj = iterable;
+        if (isIterable) {
+            Callable iterFn = (Callable) Members.select(iterable, "iterator", "iterator");
+            iterObj = iterFn.call(runtime, new Object[0], null, new CallSite(sourceName, ctx.getStart().getLine(), "iterator", new String[0]));
+        }
+        Object unwrappedIter = Values.unwrap(iterObj);
+        if (unwrappedIter instanceof java.util.Iterator<?> it) {
+            while (it.hasNext()) {
+                Object elem = Values.fromJava(it.next());
+                try {
+                    result = runForIteration(ctx, target, loopVar, blockDeclared, elem);
+                } catch (ContinueException ignored) {
+                    // next iteration
+                } catch (BreakException brk) {
+                    return brk.value;
+                }
+            }
+            return result;
+        }
+        Callable hasNextFn = (Callable) Members.select(iterObj, "hasNext", "hasNext");
+        Callable nextFn = (Callable) Members.select(iterObj, "next", "next");
+        CallSite hasNextSite = new CallSite(sourceName, ctx.getStart().getLine(), "hasNext", new String[0]);
+        CallSite nextSite = new CallSite(sourceName, ctx.getStart().getLine(), "next", new String[0]);
+        while (Truth.test(hasNextFn.call(runtime, new Object[0], null, hasNextSite))) {
+            Object elem = nextFn.call(runtime, new Object[0], null, nextSite);
+            try {
+                result = runForIteration(ctx, target, loopVar, blockDeclared, elem);
+            } catch (ContinueException ignored) {
+                // next iteration
+            } catch (BreakException brk) {
+                return brk.value;
+            }
+        }
+        return result;
+    }
+
+    private Object runForIteration(BabbleParser.ForExpressionContext ctx, ScopeAnalysis.ForLoopTarget target,
+                                   String loopVar, String[] blockDeclared, Object elem) {
+        if (target != null && target.elemCheck() != null) {
+            Types.check(elem, target.elemCheck());
+        }
+        elem = widen(ctx, elem);
+        Namespace before = namespace;
+        namespace = namespace.child(blockDeclared);
+        namespace.define(loopVar, false).set(elem);
+        try {
+            return widen(ctx.forBlock, visitStatements(ctx.forBlock.expression()));
+        } finally {
+            namespace = before;
+        }
     }
 
     @Override

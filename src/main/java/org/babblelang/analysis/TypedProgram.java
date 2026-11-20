@@ -104,6 +104,10 @@ final class TypedProgram {
         return params != null ? params : List.of();
     }
 
+    TypeChecker.ForIterableInfo forIterableInfo(BabbleParser.ForExpressionContext ctx) {
+        return checker.forIterableInfo(ctx);
+    }
+
     boolean isModuleExportImmutable(ModuleInterface mod, String name, Type resType) {
         return checker.effectChecker != null && checker.effectChecker.isImmutableConstantValue(resType);
     }

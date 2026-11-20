@@ -90,6 +90,36 @@ final class TypeChecker {
     private final Map<ParserRuleContext, String> callChecks = new IdentityHashMap<>();
     private final Typer typer = new Typer();
     private final Map<BabbleParser.FunctionLiteralContext, Type> contextualReturnTypes = new IdentityHashMap<>();
+    record ForIterableInfo(
+            ScopeAnalysis.ForKind kind,
+            Class<?> arrayClass,
+            Type elemType,
+            Type.Instance babbleIterable,
+            Type.Instance babbleIterator,
+            Type.Function iteratorFn,
+            Type.Function hasNextFn,
+            Type.Function nextFn
+    ) {
+    }
+
+    private static final class LoopContext {
+        final Type expected;
+        final List<BabbleParser.BreakExpressionContext> breaks = new ArrayList<>();
+        final List<Type> breakTypes = new ArrayList<>();
+        boolean hasBareBreak;
+
+        LoopContext(Type expected) {
+            this.expected = expected;
+        }
+    }
+
+    private final Map<BabbleParser.ForExpressionContext, ForIterableInfo> forInfos = new IdentityHashMap<>();
+    private final Deque<LoopContext> loopStack = new ArrayDeque<>();
+
+    ForIterableInfo forIterableInfo(BabbleParser.ForExpressionContext ctx) {
+        return forInfos.get(ctx);
+    }
+
     private final Map<BabbleParser.FunctionLiteralContext, List<BabbleParser.ReturnExpressionContext>> functionReturns = new IdentityHashMap<>();
     private final Deque<BabbleParser.FunctionLiteralContext> inferenceStack = new ArrayDeque<>();
     private final Set<BabbleParser.FunctionLiteralContext> inferringResult = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -434,6 +464,8 @@ final class TypeChecker {
         functions.clear();
         diagnostics.clear();
         isTargetTypes.clear();
+        forInfos.clear();
+        loopStack.clear();
         warnings.clear();
         widened.clear();
         resolvedLiterals.clear();
@@ -1538,6 +1570,7 @@ final class TypeChecker {
                 case BabbleParser.IfExprContext c -> visitIfExpr(c, expected, role);
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
+                case BabbleParser.ForExpressionContext c -> visitForExpression(c, expected, role);
                 case BabbleParser.ClassExpressionContext c -> visitClassExpression(c, expected, role);
                 case BabbleParser.InterfaceExpressionContext c -> visitInterfaceExpression(c, expected, role);
                 case BabbleParser.ObjectExpressionContext c -> visitObjectExpression(c, expected, role);
@@ -1569,6 +1602,8 @@ final class TypeChecker {
                 case BabbleParser.CharLiteralContext c -> visitCharLiteral(c, expected, role);
                 case BabbleParser.StringContext c -> visitString(c, expected, role);
                 case BabbleParser.ReturnExpressionContext c -> visitReturnExpression(c, expected, role);
+                case BabbleParser.BreakExpressionContext c -> visitBreakExpression(c, expected, role);
+                case BabbleParser.ContinueExpressionContext c -> visitContinueExpression(c, expected, role);
                 default -> {
                     Type last = null;
                     for (int i = 0; i < ctx.getChildCount(); i++) {
@@ -1655,28 +1690,234 @@ final class TypeChecker {
             TypeEnv.Refinement refinement = narrowing.extractRefinement(ctx.test);
             Type blockExpected = (expected == Type.ANY || expected == Type.NULLABLE_ANY) ? expected : null;
             env = afterTest.apply(refinement.whenTrue());
-            Type bodyType = type(ctx.whileBlock, blockExpected, role);
+            LoopContext loop = new LoopContext(expected != null && expected != Type.ERROR && role.isUsed() ? expected : null);
+            loopStack.push(loop);
+            Type bodyType;
+            try {
+                bodyType = type(ctx.whileBlock, blockExpected, role);
+            } finally {
+                loopStack.pop();
+            }
             env = TypeEnv.joinBranches(afterTest, env, afterTest);
+            return finishLoop(ctx, ctx.whileBlock, "while", bodyType, loop, expected, role);
+        }
+
+        private Type visitForExpression(BabbleParser.ForExpressionContext ctx, Type expected, Role role) {
+            Type iterType = synth(ctx.iterable);
+            ForIterableInfo info = resolveIterableInfo(iterType, ctx);
+            if (info != null) {
+                forInfos.put(ctx, info);
+            }
+            Type elemType = info != null ? info.elemType() : Type.ERROR;
+            Type loopVarType = elemType;
+            if (ctx.type() != null) {
+                Type declared = annotator.annotation(ctx.type(), scopeOf(ctx));
+                if (declared != Type.ERROR) {
+                    subsumes(ctx.type(), ctx, elemType, declared);
+                    loopVarType = declared;
+                } else {
+                    loopVarType = Type.ERROR;
+                }
+            }
+            declarationTypes.put(ctx, loopVarType);
+            env = env.evictAll(narrowing.assignedLocals(ctx));
+            TypeEnv beforeLoop = env;
+            Type blockExpected = (expected == Type.ANY || expected == Type.NULLABLE_ANY) ? expected : null;
+            LoopContext loop = new LoopContext(expected != null && expected != Type.ERROR && role.isUsed() ? expected : null);
+            loopStack.push(loop);
+            Type bodyType;
+            try {
+                bodyType = type(ctx.forBlock, blockExpected, role);
+            } finally {
+                loopStack.pop();
+            }
+            env = TypeEnv.joinBranches(beforeLoop, env, beforeLoop);
+            return finishLoop(ctx, ctx.forBlock, "for", bodyType, loop, expected, role);
+        }
+
+        private Type finishLoop(ParserRuleContext loopCtx, BabbleParser.BlockContext loopBlock, String loopName,
+                                Type bodyType, LoopContext loop, Type expected, Role role) {
             boolean used = role.isUsed();
             if (expected != null && expected != Type.ERROR && used) {
-                subsumes(ctx.whileBlock, bodyType, expected);
+                if (bodyType != Type.NOTHING) {
+                    subsumes(loopBlock, bodyType, expected);
+                }
+                for (int i = 0; i < loop.breaks.size(); i++) {
+                    subsumes(loop.breaks.get(i).expression(), loop.breakTypes.get(i), expected);
+                }
                 if (!algebra.assignable(Type.NULL, expected)) {
-                    warn("Type error : expected " + expected + ", got null", ctx);
+                    warn("Type error : expected " + expected + ", got null", loopCtx);
                 }
                 return expected;
             }
-            Type joined = algebra.join(bodyType, Type.NULL);
+            Type joined = Type.NULL;
+            if (bodyType != Type.NOTHING) {
+                joined = algebra.join(bodyType, joined);
+            }
+            if (joined != null) {
+                for (Type bt : loop.breakTypes) {
+                    joined = algebra.join(bt, joined);
+                    if (joined == null) {
+                        break;
+                    }
+                }
+            }
             if (joined == null) {
                 if (!used) {
                     return Type.NULL;
                 }
                 if (!isUnresolved(bodyType)) {
-                    warn("Type error : the branches of while have different types : " + bodyType + " and null", ctx);
+                    warn("Type error : the branches of " + loopName + " have different types : " + bodyType + " and null", loopCtx);
                 }
                 return Type.ERROR;
             }
-            coerce(ctx.whileBlock, bodyType, joined);
+            if (bodyType != Type.NOTHING) {
+                coerce(loopBlock, bodyType, joined);
+            }
+            for (int i = 0; i < loop.breaks.size(); i++) {
+                coerce(loop.breaks.get(i).expression(), loop.breakTypes.get(i), joined);
+            }
             return joined;
+        }
+
+        private ForIterableInfo resolveIterableInfo(Type iterType, BabbleParser.ForExpressionContext ctx) {
+            if (iterType == null || iterType == Type.ERROR || iterType == Type.NOTHING) {
+                return null;
+            }
+            if (Type.containsNull(iterType)) {
+                warn("Type error : cannot iterate over nullable type " + iterType, ctx.iterable);
+                return null;
+            }
+            ForIterableInfo resolved = resolveNonNullIterable(iterType, ctx);
+            if (resolved == null) {
+                warn("Not iterable : " + iterType, ctx.iterable);
+            }
+            return resolved;
+        }
+
+        private ForIterableInfo resolveNonNullIterable(Type iterType, BabbleParser.ForExpressionContext ctx) {
+            boolean frozenIterable = iterType instanceof Type.Frozen;
+            Type unwrapped = frozenIterable ? ((Type.Frozen) iterType).of() : iterType;
+            if (unwrapped instanceof Type.Union union) {
+                Type joinedElem = null;
+                ScopeAnalysis.ForKind commonKind = null;
+                boolean sameKind = true;
+                for (Type member : union.members()) {
+                    Type effMember = frozenIterable ? Type.frozen(member) : member;
+                    ForIterableInfo sub = resolveNonNullIterable(effMember, ctx);
+                    if (sub == null) {
+                        return null;
+                    }
+                    joinedElem = joinedElem == null ? sub.elemType() : algebra.join(joinedElem, sub.elemType());
+                    if (joinedElem == null) {
+                        joinedElem = Type.NULLABLE_ANY;
+                    }
+                    if (commonKind == null) {
+                        commonKind = sub.kind();
+                    } else if (commonKind != sub.kind()) {
+                        sameKind = false;
+                    }
+                }
+                ScopeAnalysis.ForKind kind = (sameKind && (commonKind == ScopeAnalysis.ForKind.JAVA_ITERABLE
+                        || commonKind == ScopeAnalysis.ForKind.JAVA_ITERATOR))
+                        ? commonKind : ScopeAnalysis.ForKind.DYNAMIC_UNION;
+                return new ForIterableInfo(kind, null, joinedElem != null ? joinedElem : Type.NULLABLE_ANY,
+                        null, null, null, null, null);
+            }
+            if (unwrapped instanceof Type.JavaArray arr) {
+                Type elem = frozenIterable ? Type.frozen(arr.element()) : arr.element();
+                return new ForIterableInfo(ScopeAnalysis.ForKind.ARRAY, arr.javaClass(), elem,
+                        null, null, null, null, null);
+            }
+            if (unwrapped instanceof Type.JavaInstance ji) {
+                if (java.lang.Iterable.class.isAssignableFrom(ji.type())) {
+                    Map<java.lang.reflect.TypeVariable<?>, Type> envMap = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
+                    Type elem = envMap.get(java.lang.Iterable.class.getTypeParameters()[0]);
+                    if (elem == null) {
+                        elem = Type.NULLABLE_ANY;
+                    }
+                    if (frozenIterable) {
+                        elem = Type.frozen(elem);
+                    }
+                    return new ForIterableInfo(ScopeAnalysis.ForKind.JAVA_ITERABLE, null, elem,
+                            null, null, null, null, null);
+                }
+                if (java.util.Iterator.class.isAssignableFrom(ji.type())) {
+                    Map<java.lang.reflect.TypeVariable<?>, Type> envMap = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
+                    Type elem = envMap.get(java.util.Iterator.class.getTypeParameters()[0]);
+                    if (elem == null) {
+                        elem = Type.NULLABLE_ANY;
+                    }
+                    if (frozenIterable) {
+                        elem = Type.frozen(elem);
+                    }
+                    return new ForIterableInfo(ScopeAnalysis.ForKind.JAVA_ITERATOR, null, elem,
+                            null, null, null, null, null);
+                }
+                return null;
+            }
+            if (unwrapped instanceof Type.Instance inst) {
+                Type.Function iterFn = resolveBabbleZeroArgMethod(inst, "iterator");
+                if (iterFn != null) {
+                    Type iterRes = iterFn.result();
+                    if (iterRes != null && !Type.containsNull(iterRes)) {
+                        Type unwrappedIter = iterRes instanceof Type.Frozen f ? f.of() : iterRes;
+                        if (unwrappedIter instanceof Type.JavaInstance ji && java.util.Iterator.class.isAssignableFrom(ji.type())) {
+                            Map<java.lang.reflect.TypeVariable<?>, Type> envMap = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
+                            Type elem = envMap.get(java.util.Iterator.class.getTypeParameters()[0]);
+                            if (elem == null) {
+                                elem = Type.NULLABLE_ANY;
+                            }
+                            if (frozenIterable) {
+                                elem = Type.frozen(elem);
+                            }
+                            return new ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE, null, elem,
+                                    inst, null, iterFn, null, null);
+                        }
+                        if (unwrappedIter instanceof Type.Instance iterInst) {
+                            Type.Function hasNextFn = resolveBabbleZeroArgMethod(iterInst, "hasNext");
+                            Type.Function nextFn = resolveBabbleZeroArgMethod(iterInst, "next");
+                            if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
+                                Type elem = nextFn.result();
+                                if (frozenIterable) {
+                                    elem = Type.frozen(elem);
+                                }
+                                return new ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_ITERABLE, null, elem,
+                                        inst, iterInst, iterFn, hasNextFn, nextFn);
+                            }
+                        }
+                    }
+                }
+                Type.Function hasNextFn = resolveBabbleZeroArgMethod(inst, "hasNext");
+                Type.Function nextFn = resolveBabbleZeroArgMethod(inst, "next");
+                if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
+                    Type elem = nextFn.result();
+                    if (frozenIterable) {
+                        elem = Type.frozen(elem);
+                    }
+                    return new ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_ITERATOR, null, elem,
+                            null, inst, null, hasNextFn, nextFn);
+                }
+                return null;
+            }
+            return null;
+        }
+
+        private Type.Function resolveBabbleZeroArgMethod(Type.Instance inst, String name) {
+            MemberTypes.ResolvedMember resolved = members.findMember(inst, name);
+            if (resolved == null || resolved.member().isPrivate()) {
+                return null;
+            }
+            Type raw = memberType(resolved.owner(), resolved.member());
+            if (raw == null || raw == Type.ERROR) {
+                return null;
+            }
+            Type substituted = algebra.substitute(raw, resolved.env());
+            if (substituted instanceof Type.Function fn && fn.typeParameters().isEmpty()
+                    && fn.parameters().stream().allMatch(Type.Parameter::optional)) {
+                return fn;
+            }
+            return null;
         }
 
         private Type visitClassExpression(BabbleParser.ClassExpressionContext ctx, Type expected, Role role) {
@@ -2281,6 +2522,24 @@ final class TypeChecker {
                 Type declared = annotator.annotation(function.type(), scopeOf(function));
                 subsumes(ctx.expression() != null ? ctx.expression() : ctx, ctx, value, declared);
             }
+            return Type.NOTHING;
+        }
+
+        private Type visitBreakExpression(BabbleParser.BreakExpressionContext ctx, Type expected, Role role) {
+            LoopContext loop = loopStack.peek();
+            if (ctx.expression() != null) {
+                Type value = check(ctx.expression(), loop != null ? loop.expected : null);
+                if (loop != null) {
+                    loop.breaks.add(ctx);
+                    loop.breakTypes.add(value);
+                }
+            } else if (loop != null) {
+                loop.hasBareBreak = true;
+            }
+            return Type.NOTHING;
+        }
+
+        private Type visitContinueExpression(BabbleParser.ContinueExpressionContext ctx, Type expected, Role role) {
             return Type.NOTHING;
         }
     }

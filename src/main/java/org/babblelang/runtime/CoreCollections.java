@@ -15,18 +15,45 @@ import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
+import org.babblelang.engine.impl.natives.java.JavaClass;
+
 /**
  * Runtime factories for Babble's core collection constructors ({@code list}, {@code set},
  * {@code sortedset}, {@code map}, {@code sortedmap}, {@code entry}) ({@code BIP011-D10}).
  */
 public final class CoreCollections {
+    private static final class CoreConstructor implements Callable, HasMembers {
+        private final String kind;
+        private final JavaClass javaClass;
+
+        private CoreConstructor(String kind, Class<?> javaInterface) {
+            this.kind = kind;
+            this.javaClass = JavaClass.of(javaInterface);
+        }
+
+        @Override
+        public Object call(ScriptRuntime runtime, Object[] arguments, String[] names, CallSite site) {
+            return construct(kind, arguments, names, runtime);
+        }
+
+        @Override
+        public Object getMember(String name, boolean own) {
+            return Members.select(javaClass, name, kind);
+        }
+
+        @Override
+        public void setMember(String name, Object value, boolean own) {
+            Members.assign(javaClass, value, name);
+        }
+    }
+
     private static final Map<String, Callable> CONSTRUCTORS = Map.of(
-            "list", (rt, args, names, site) -> construct("list", args, names, rt),
-            "set", (rt, args, names, site) -> construct("set", args, names, rt),
-            "sortedset", (rt, args, names, site) -> construct("sortedset", args, names, rt),
-            "map", (rt, args, names, site) -> construct("map", args, names, rt),
-            "sortedmap", (rt, args, names, site) -> construct("sortedmap", args, names, rt),
-            "entry", (rt, args, names, site) -> construct("entry", args, names, rt)
+            "list", new CoreConstructor("list", List.class),
+            "set", new CoreConstructor("set", Set.class),
+            "sortedset", new CoreConstructor("sortedset", SortedSet.class),
+            "map", new CoreConstructor("map", Map.class),
+            "sortedmap", new CoreConstructor("sortedmap", SortedMap.class),
+            "entry", new CoreConstructor("entry", Map.Entry.class)
     );
 
     private CoreCollections() {

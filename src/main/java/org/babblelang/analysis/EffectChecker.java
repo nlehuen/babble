@@ -3202,6 +3202,8 @@ final class EffectChecker {
 
         private Map<ParserRuleContext, Origin> env = new IdentityHashMap<>();
         private final Set<String> reportedMessages = new HashSet<>();
+        private final List<Origin> activeForIterables = new ArrayList<>();
+        private final Deque<Origin[]> loopBreakOrigins = new ArrayDeque<>();
 
         BodyAnalyzer(ParserRuleContext owner,
                      ScopeNode ownerScope,
@@ -3372,7 +3374,10 @@ final class EffectChecker {
             if (stmt instanceof BabbleParser.DefExpressionContext
                     || stmt instanceof BabbleParser.AssignExpressionContext
                     || stmt instanceof BabbleParser.ReturnExpressionContext
-                    || stmt instanceof BabbleParser.WhileExpressionContext) {
+                    || stmt instanceof BabbleParser.WhileExpressionContext
+                    || stmt instanceof BabbleParser.ForExpressionContext
+                    || stmt instanceof BabbleParser.BreakExpressionContext
+                    || stmt instanceof BabbleParser.ContinueExpressionContext) {
                 eval(stmt);
                 return;
             }
@@ -3530,6 +3535,9 @@ final class EffectChecker {
             if (ctx instanceof BabbleParser.WhileExpressionContext whileCtx) {
                 return evalWhile(whileCtx);
             }
+            if (ctx instanceof BabbleParser.ForExpressionContext forCtx) {
+                return evalFor(forCtx);
+            }
             if (ctx instanceof BabbleParser.BooleanOpContext boolOp) {
                 return evalBooleanOp(boolOp);
             }
@@ -3575,6 +3583,19 @@ final class EffectChecker {
                 stmtHasSideEffect = true;
                 Origin val = ret.expression() != null ? eval(ret.expression()) : Origin.IMMUTABLE;
                 recordReturnOrigin(val, ret);
+                return Origin.IMMUTABLE;
+            }
+            if (ctx instanceof BabbleParser.BreakExpressionContext brk) {
+                stmtHasSideEffect = true;
+                Origin val = brk.expression() != null ? eval(brk.expression()) : Origin.IMMUTABLE;
+                Origin[] acc = loopBreakOrigins.peek();
+                if (acc != null) {
+                    acc[0] = acc[0] == null ? val : acc[0].join(val);
+                }
+                return Origin.IMMUTABLE;
+            }
+            if (ctx instanceof BabbleParser.ContinueExpressionContext) {
+                stmtHasSideEffect = true;
                 return Origin.IMMUTABLE;
             }
             if (ctx instanceof BabbleParser.SuperExpressionContext) {
@@ -4710,6 +4731,16 @@ final class EffectChecker {
             if (targetExpr instanceof BabbleParser.ExpressionContext expr && effectiveType(expr) == Type.ERROR) {
                 return;
             }
+            if (!activeForIterables.isEmpty() && isConstrainedPureOrHermetic() && !target.directKeys.isEmpty()) {
+                for (Origin iterOrig : activeForIterables) {
+                    for (Object k : target.directKeys) {
+                        if (iterOrig.directKeys.contains(k)) {
+                            reportOnce("Cannot mutate collection while iterating over it", at);
+                            break;
+                        }
+                    }
+                }
+            }
             // In BIP007-P2 & BIP016-D9, shallow mutation of a fresh local container (or any mutation of a unique local/param)
             // stays confined (hermetic/pure) without tainting stored elements!
             if ((target.unique || (target.localFresh && shallow))
@@ -4914,19 +4945,140 @@ final class EffectChecker {
         private Origin evalWhile(BabbleParser.WhileExpressionContext ctx) {
             terminating = false;
             stmtHasSideEffect = true;
-            int iter = 0;
-            while (iter++ < 8) {
-                Map<ParserRuleContext, Origin> before = new IdentityHashMap<>(env);
-                eval(ctx.test);
-                eval(ctx.whileBlock);
-                Map<ParserRuleContext, Origin> merged = mergeEnvs(before, env);
-                if (merged.equals(before)) {
+            Origin[] breakAcc = new Origin[1];
+            loopBreakOrigins.push(breakAcc);
+            Origin bodyOrig = Origin.IMMUTABLE;
+            try {
+                int iter = 0;
+                while (iter++ < 8) {
+                    Map<ParserRuleContext, Origin> before = new IdentityHashMap<>(env);
+                    eval(ctx.test);
+                    bodyOrig = eval(ctx.whileBlock);
+                    Map<ParserRuleContext, Origin> merged = mergeEnvs(before, env);
+                    if (merged.equals(before)) {
+                        env = merged;
+                        break;
+                    }
                     env = merged;
-                    break;
                 }
-                env = merged;
+            } finally {
+                loopBreakOrigins.pop();
             }
-            return Origin.IMMUTABLE;
+            return breakAcc[0] != null ? bodyOrig.join(breakAcc[0]) : bodyOrig;
+        }
+
+        private Origin evalFor(BabbleParser.ForExpressionContext ctx) {
+            stmtHasSideEffect = true;
+            Origin iterOrig = eval(ctx.iterable);
+            Type iterType = effectiveType(ctx.iterable);
+            TypeChecker.ForIterableInfo info = checker.forIterableInfo(ctx);
+            boolean trackConcurrentMut = false;
+            if (info != null) {
+                switch (info.kind()) {
+                    case ARRAY -> {
+                        // Indexed array loop : @HERMETIC @DETERMINISTIC @NOTHROW, terminates.
+                    }
+                    case JAVA_ITERABLE -> {
+                        terminating = false;
+                        nothrow = false;
+                        Type unwrapped = iterType instanceof Type.Frozen f ? f.of() : iterType;
+                        if (unwrapped instanceof Type.JavaInstance ji && isCoreCollectionClass(ji.type())) {
+                            trackConcurrentMut = true;
+                        } else if (unwrapped instanceof Type.JavaInstance ji) {
+                            JavaCallProfile iterProf = resolveJavaMethodProfile(ji.type(), "iterator", null);
+                            applyEffects(iterProf.effects());
+                            if (iterProf.mutReceiver()) {
+                                recordTargetMutation(iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
+                            }
+                        }
+                    }
+                    case JAVA_ITERATOR -> {
+                        terminating = false;
+                        nothrow = false;
+                        recordTargetMutation(iterOrig, ctx.iterable, "iterator.next", ctx.iterable, true);
+                    }
+                    case BABBLE_TO_JAVA_ITERABLE -> {
+                        terminating = false;
+                        nothrow = false;
+                        if (info.iteratorFn() != null) {
+                            applyEffects(info.iteratorFn().effects());
+                            if (info.iteratorFn().effects().mutThis()) {
+                                recordTargetMutation(iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
+                            }
+                        }
+                    }
+                    case BABBLE_ITERABLE -> {
+                        terminating = false;
+                        if (info.iteratorFn() != null) {
+                            applyEffects(info.iteratorFn().effects());
+                            if (info.iteratorFn().effects().mutThis()) {
+                                recordTargetMutation(iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
+                            }
+                        }
+                        if (info.hasNextFn() != null) {
+                            applyEffects(info.hasNextFn().effects());
+                        }
+                        if (info.nextFn() != null) {
+                            applyEffects(info.nextFn().effects());
+                        }
+                    }
+                    case BABBLE_ITERATOR -> {
+                        terminating = false;
+                        if (info.hasNextFn() != null) {
+                            applyEffects(info.hasNextFn().effects());
+                            if (info.hasNextFn().effects().mutThis()) {
+                                recordTargetMutation(iterOrig, ctx.iterable, "hasNext", ctx.iterable, false);
+                            }
+                        }
+                        if (info.nextFn() != null) {
+                            applyEffects(info.nextFn().effects());
+                            if (info.nextFn().effects().mutThis()) {
+                                recordTargetMutation(iterOrig, ctx.iterable, "next", ctx.iterable, false);
+                            }
+                        }
+                    }
+                    case DYNAMIC_UNION -> {
+                        terminating = false;
+                        nothrow = false;
+                    }
+                }
+            }
+            Type loopVarType = checker.typeOfDeclarationForEffects(ctx);
+            Origin elemOrig;
+            if (loopVarType == null || isDeeplyImmutable(loopVarType)) {
+                elemOrig = Origin.IMMUTABLE;
+            } else {
+                Origin flat = iterOrig.hasElementTaint() ? iterOrig.flattenElements() : iterOrig;
+                elemOrig = new Origin(flat.params, flat.aliasesThis, flat.external, false, false, false, null,
+                        Origin.EMPTY_BITS, false, false, Set.of(ctx), new PathKey(ctx, List.of()));
+            }
+            Origin[] breakAcc = new Origin[1];
+            loopBreakOrigins.push(breakAcc);
+            if (trackConcurrentMut && !iterOrig.directKeys.isEmpty()) {
+                activeForIterables.add(iterOrig);
+            }
+            Origin bodyOrig = Origin.IMMUTABLE;
+            try {
+                int iter = 0;
+                while (iter++ < 8) {
+                    Map<ParserRuleContext, Origin> before = new IdentityHashMap<>(env);
+                    env.put(ctx, elemOrig);
+                    bodyOrig = eval(ctx.forBlock);
+                    env.remove(ctx);
+                    Map<ParserRuleContext, Origin> merged = mergeEnvs(before, env);
+                    if (merged.equals(before)) {
+                        env = merged;
+                        break;
+                    }
+                    env = merged;
+                }
+            } finally {
+                if (trackConcurrentMut && !iterOrig.directKeys.isEmpty()) {
+                    activeForIterables.remove(activeForIterables.size() - 1);
+                }
+                loopBreakOrigins.pop();
+            }
+            return breakAcc[0] != null ? bodyOrig.join(breakAcc[0]) : bodyOrig;
         }
 
         private Origin evalBooleanOp(BabbleParser.BooleanOpContext ctx) {

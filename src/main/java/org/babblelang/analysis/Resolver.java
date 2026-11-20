@@ -45,7 +45,10 @@ final class Resolver {
             Map<String, Resolution.Variable> declaredHere = variables.get(definition.getValue());
             if (declaredHere != null) {
                 String name = definition.getKey() instanceof BabbleParser.DefExpressionContext def
-                        ? def.name.getText() : ScopeAnalysis.paramId(definition.getKey()).getText();
+                        ? def.name.getText()
+                        : definition.getKey() instanceof BabbleParser.ForExpressionContext forExpr
+                        ? forExpr.name.getText()
+                        : ScopeAnalysis.paramId(definition.getKey()).getText();
                 resolution.bindings.put(definition.getKey(), declaredHere.get(name));
             }
         }

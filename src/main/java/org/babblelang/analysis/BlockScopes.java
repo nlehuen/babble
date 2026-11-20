@@ -45,7 +45,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     record PendingAccess(ParserRuleContext ctx, BabbleParser.ExpressionContext receiver, String member, boolean assignment, ScopeNode scope) {
     }
 
-    record PendingAssignment(String name, ScopeNode scope) {
+    record PendingAssignment(BabbleParser.AssignExpressionContext ctx, String name, ScopeNode scope) {
     }
 
     /** {@code import("file.ba")} : a static import (docs/design/bip005_modules.md §4.2). */
@@ -83,6 +83,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     private final Deque<ScopeNode> scopes = new ArrayDeque<>();
     private ReturnTarget returnTarget = ReturnTarget.NONE;
+    private int loopDepth = 0;
 
     /** The key of the module analysed, its types' ids derive from, or null : see {@link ModuleLoader#moduleKey}. */
     private String moduleKey;
@@ -184,11 +185,23 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     private void inReturnTarget(ReturnTarget target, Runnable body) {
         ReturnTarget outer = returnTarget;
+        int outerLoopDepth = loopDepth;
         returnTarget = target;
+        loopDepth = 0;
         try {
             body.run();
         } finally {
             returnTarget = outer;
+            loopDepth = outerLoopDepth;
+        }
+    }
+
+    private void inLoop(Runnable body) {
+        loopDepth++;
+        try {
+            body.run();
+        } finally {
+            loopDepth--;
         }
     }
 
@@ -475,7 +488,17 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         } finally {
             scope.whileTests--;
         }
-        visit(ctx.whileBlock);
+        inLoop(() -> visit(ctx.whileBlock));
+        return null;
+    }
+
+    @Override
+    public Void visitForExpression(BabbleParser.ForExpressionContext ctx) {
+        visit(ctx.iterable);
+        inLoop(() -> inScope(ScopeNode.Kind.BLOCK, ctx.forBlock, null, () -> {
+            declare(ctx.name, ctx, false);
+            visitChildren(ctx.forBlock);
+        }));
         return null;
     }
 
@@ -486,6 +509,25 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             case DEFAULT -> throw error("return in a parameter default", ctx);
             case CLASS_BODY -> throw error("return in a class body", ctx);
             case FUNCTION -> visit(ctx.expression());
+        }
+        return null;
+    }
+
+    @Override
+    public Void visitBreakExpression(BabbleParser.BreakExpressionContext ctx) {
+        if (loopDepth == 0) {
+            throw error("break outside of a loop", ctx);
+        }
+        if (ctx.expression() != null) {
+            visit(ctx.expression());
+        }
+        return null;
+    }
+
+    @Override
+    public Void visitContinueExpression(BabbleParser.ContinueExpressionContext ctx) {
+        if (loopDepth == 0) {
+            throw error("continue outside of a loop", ctx);
         }
         return null;
     }
@@ -608,7 +650,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         BabbleParser.ExpressionContext receiver = ScopeAnalysis.assignReceiver(ctx);
         String name = ScopeAnalysis.assignName(ctx);
         if (receiver == null) {
-            assignments.add(new PendingAssignment(name, current()));
+            assignments.add(new PendingAssignment(ctx, name, current()));
             occurrences.add(new Occurrence(ctx, name, current()));
         } else {
             accesses.add(new PendingAccess(ctx, receiver, name, true, current()));
