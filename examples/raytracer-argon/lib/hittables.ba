@@ -55,6 +55,20 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
 ;; Linked-list node for HittableList (replaces java.util.ArrayList)
 export def HittableNode = class (def item: Hittable, def next: HittableNode? = null) ()
 
+;; Cursor over the nodes of a HittableList : a Babble iterator (hasNext / next), so that
+;; `for item in list then (...)` walks the list without java.util.Iterator (BIP013)
+export def HittableCursor = class (private def node: HittableNode?) (
+    def hasNext = fn (): bool -> (
+        this.node != null
+    )
+
+    def next = fn mut (): Hittable -> (
+        def cur: HittableNode = this.node!
+        this.node = cur.next
+        cur.item
+    )
+)
+
 export def HittableList = class () implements Hittable (
     def size: int = 0
     private def head: HittableNode? = null
@@ -72,8 +86,9 @@ export def HittableList = class () implements Hittable (
         this.bbox = AABB.empty
     )
 
-    def headNode = fn (): HittableNode? -> (
-        this.head
+    ;; A Babble iterable : `for item in list then (...)`
+    def iterator = fn (): HittableCursor -> (
+        HittableCursor(this.head)
     )
 
     def first = fn (): Hittable -> (
@@ -92,10 +107,8 @@ export def HittableList = class () implements Hittable (
 
     ;; Higher-order iteration over all hittables in the list
     def forEach = fn calling f (f: fn (item: Hittable): any?) -> (
-        def cur: HittableNode? = this.head
-        while cur != null then (
-            f(cur.item)
-            cur = cur.next
+        for item in this then (
+            f(item)
         )
     )
 
@@ -113,14 +126,12 @@ export def HittableList = class () implements Hittable (
     def hit = fn (r: Ray, rayT: Interval): HitRecord? -> (
         def closestRecord: HitRecord? = null
         def closestSoFar: double = rayT.max
-        def cur: HittableNode? = this.head
-        while cur != null then (
-            def tempRec: HitRecord? = cur.item.hit(r, Interval(rayT.min, closestSoFar))
+        for item in this then (
+            def tempRec: HitRecord? = item.hit(r, Interval(rayT.min, closestSoFar))
             if tempRec != null then (
                 closestSoFar = tempRec.t
                 closestRecord = tempRec
             )
-            cur = cur.next
         )
         closestRecord
     )
@@ -159,25 +170,20 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
         )
         def box: AABB = items.boundingBox()
         def cbox: AABB = AABB.empty
-        def cur: HittableNode? = items.headNode()
-        while cur != null then (
-            cbox = cbox.expandPoint(cur.item.boundingBox().center())
-            cur = cur.next
+        for item in items then (
+            cbox = cbox.expandPoint(item.boundingBox().center())
         )
         def axis: int = cbox.longestAxis()
         def splitVal: double = cbox.centroid(axis)
 
         def leftList: HittableList = HittableList()
         def rightList: HittableList = HittableList()
-        cur = items.headNode()
-        while cur != null then (
-            def item: Hittable = cur.item
+        for item in items then (
             if item.boundingBox().centroid(axis) < splitVal then (
                 leftList.add(item)
             ) else (
                 rightList.add(item)
             )
-            cur = cur.next
         )
 
         ;; Fallback even/odd partition when all centroids coincide
@@ -185,15 +191,13 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
             leftList.clear()
             rightList.clear()
             def goLeft: bool = true
-            cur = items.headNode()
-            while cur != null then (
+            for item in items then (
                 if goLeft then (
-                    leftList.add(cur.item)
+                    leftList.add(item)
                 ) else (
-                    rightList.add(cur.item)
+                    rightList.add(item)
                 )
                 goLeft = not goLeft
-                cur = cur.next
             )
         )
 

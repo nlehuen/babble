@@ -532,7 +532,7 @@ java -jar target/babble-1.0-SNAPSHOT.jar -compile examples/raytracer-argon/raytr
 java -jar argon.jar > scene.ppm
 ```
 
-`argon.jar` is 273 KB for its 14 modules and the runtime, and renders the same image, byte for
+`argon.jar` is 300 KB for its 15 modules and the runtime, and renders the same image, byte for
 byte, in about the same minute as through the engine : a jar saves the start-up, not the work.
 
 Building and running
