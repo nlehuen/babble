@@ -3344,6 +3344,12 @@ final class EffectChecker {
         private final List<Origin> activeForIterables = new ArrayList<>();
         private final Deque<Origin[]> loopBreakOrigins = new ArrayDeque<>();
         private final Set<Integer> forwardedParams;
+        /**
+         * Callbacks of an enclosing function the owner names in its calling clause (BIP017-D5),
+         * tracked as pseudo-parameters with the bits after the owner's own parameters, so that
+         * returning or storing one is an escape (BIP017-D6). Never published in summaries.
+         */
+        private final Map<ParserRuleContext, Integer> pseudoForwarded = new IdentityHashMap<>();
         private final Map<ParserRuleContext, Origin> boundMethodReceivers = new IdentityHashMap<>();
 
         BodyAnalyzer(ParserRuleContext owner,
@@ -3375,6 +3381,15 @@ final class EffectChecker {
             this.terminating = !cyclicCallables.contains(owner);
             this.forwardedParams = owner instanceof BabbleParser.FunctionLiteralContext fn
                     ? resolveForwardedParamIndices(fn) : Set.of();
+            if (owner instanceof BabbleParser.FunctionLiteralContext fn && capturesCallbacks(fn)) {
+                for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().callingClause().ID()) {
+                    ParserRuleContext captured = TypeAnnotations.enclosingParameter(fn.effectPrefix(), id.getText());
+                    if (captured instanceof BabbleParser.FnParamContext param && capturesCallback(fn, param)
+                            && !pseudoForwarded.containsKey(param)) {
+                        pseudoForwarded.put(param, params.size() + pseudoForwarded.size());
+                    }
+                }
+            }
 
             for (int i = 0; i < params.size(); i++) {
                 ParserRuleContext p = params.get(i);
@@ -3621,8 +3636,7 @@ final class EffectChecker {
                 return Origin.IMMUTABLE;
             }
             if (ctx instanceof BabbleParser.FunctionLiteralContext lit) {
-                checkClosureCaptureEscape(lit);
-                return Origin.IMMUTABLE;
+                return checkClosureCaptureEscape(lit);
             }
             if (ctx instanceof BabbleParser.ClassExpressionContext || ctx instanceof BabbleParser.InterfaceExpressionContext) {
                 return Origin.IMMUTABLE;
@@ -3910,6 +3924,9 @@ final class EffectChecker {
                             reportOnce("Use of moved variable " + sel.ID().getText(), sel);
                         }
                         return (!orig.moved && narrowedImm) ? Origin.IMMUTABLE : orig;
+                    }
+                    if (pseudoForwarded.containsKey(decl)) {
+                        return Origin.ofParam(pseudoForwarded.get(decl), decl, false);
                     }
                     BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
                     ScopeNode declScope = pass.definitionScopes.get(decl);
@@ -5080,6 +5097,9 @@ final class EffectChecker {
                 }
             }
             for (int p = effectiveTarget.params.nextSetBit(0); p >= 0; p = effectiveTarget.params.nextSetBit(p + 1)) {
+                if (p >= params.size()) {
+                    continue; // a captured callback (pseudo-parameter) : outer state
+                }
                 hitParamOrThis = true;
                 if (mutParams[p]) {
                     // Explicitly declared or already inferred mut parameter.
@@ -5153,7 +5173,25 @@ final class EffectChecker {
             }
         }
 
+        /** The name of a pseudo-parameter (a captured callback the owner forwards), or null. */
+        private String pseudoForwardedName(int bit) {
+            for (Map.Entry<ParserRuleContext, Integer> e : pseudoForwarded.entrySet()) {
+                if (e.getValue() == bit && e.getKey() instanceof BabbleParser.FnParamContext param) {
+                    return param.ID().getText();
+                }
+            }
+            return null;
+        }
+
         void markParamEscaped(int p, String destination, ParserRuleContext at) {
+            if (p >= params.size()) {
+                String name = pseudoForwardedName(p);
+                if (name != null && !inferMut) {
+                    reportOnce("Parameter in calling clause escapes via " + destination
+                            + " : remove " + name + " from calling and mark it as shared", at);
+                }
+                return;
+            }
             if (borrowParams[p]) {
                 borrowParams[p] = false;
             }
@@ -5185,8 +5223,24 @@ final class EffectChecker {
                     && retOrigin.uniqueOwner instanceof ParserRuleContext decl) {
                 env.put(decl, Origin.MOVED);
             }
+            // A forwarded callback is only accounted for while the call runs : returning it (or a
+            // value aliasing it, such as a closure capturing it) would let it run unaccounted (BIP017-D6).
+            if (!inferMut) {
+                for (int p = flat.params.nextSetBit(0); p >= 0; p = flat.params.nextSetBit(p + 1)) {
+                    String name = p >= params.size() ? pseudoForwardedName(p)
+                            : forwardedParams.contains(p) ? ScopeAnalysis.paramId(params.get(p)).getText() : null;
+                    if (name != null) {
+                        reportOnce("Parameter in calling clause escapes via return : remove " + name + " from calling", at);
+                    }
+                }
+            }
             // BIP016-D10: returning a @BORROWED parameter or `this` does not store it; record return provenance for callers!
-            returnParams.or(flat.params);
+            BitSet returned = flat.params;
+            if (returned.length() > params.size()) {
+                returned = (BitSet) returned.clone();
+                returned.clear(params.size(), returned.length());
+            }
+            returnParams.or(returned);
             if (flat.aliasesThis) {
                 returnThis = true;
             }
@@ -5195,22 +5249,24 @@ final class EffectChecker {
             }
         }
 
-        private void checkClosureCaptureEscape(BabbleParser.FunctionLiteralContext inner) {
+        /**
+         * The origin of a closure value (BIP017-D6) : capturing a parameter or {@code this} aliases
+         * it, like returning it does (BIP016-D10), so the closure carries their provenance and
+         * escapes only where the closure itself is stored. Captured locals are still stored on
+         * capture, their later assignments being outer-variable stores.
+         */
+        private Origin checkClosureCaptureEscape(BabbleParser.FunctionLiteralContext inner) {
             boolean frameLocal = frameLocalOwner.get(inner) == owner;
             CallableSummary innerSum = summaries.get(inner);
-            if (frameLocal && innerSum != null) {
-                // Propagate frame-local helper closure's frame effects if it is invoked!
-                // (Construction alone has no side effects.)
-            }
             Resolution res = pass.analysis.resolution();
             if (res == null) {
-                return;
+                return Origin.IMMUTABLE;
             }
-            // Check if inner closure captures `this` or any parameter of `owner`!
+            Origin closure = Origin.IMMUTABLE;
             boolean capturesThis = innerContainsThis(inner);
             if (capturesThis) {
                 if (!frameLocal) {
-                    markStoredOrigin(Origin.ofThis(THIS_KEY, false), "captured closure", inner);
+                    closure = Origin.ofThis(THIS_KEY, false).stripDirectIdentity(false);
                 }
                 if (innerSum != null && innerSum.effects().mutThis() && !mutThis) {
                     if (inferMut) {
@@ -5226,10 +5282,24 @@ final class EffectChecker {
                     continue;
                 }
                 Origin orig = env.get(decl);
-                if (orig != null && !frameLocal) {
+                if (orig == null && paramIndex.containsKey(decl)) {
+                    orig = Origin.ofParam(paramIndex.get(decl), decl,
+                            isDeeplyImmutable(checker.typeOfDeclarationForEffects(decl)));
+                } else if (orig == null && pseudoForwarded.containsKey(decl)) {
+                    orig = Origin.ofParam(pseudoForwarded.get(decl), decl, false);
+                }
+                if (orig == null || frameLocal) {
+                    continue;
+                }
+                if (paramIndex.containsKey(decl) || pseudoForwarded.containsKey(decl)) {
+                    Origin flat = orig.hasElementTaint() ? orig.flattenElements() : orig;
+                    Origin alias = flat.stripDirectIdentity(false);
+                    closure = closure == Origin.IMMUTABLE ? alias : closure.join(alias);
+                } else {
                     markStoredOrigin(orig, "captured closure", inner);
                 }
             }
+            return closure;
         }
 
         private boolean innerContainsThis(ParseTree tree) {

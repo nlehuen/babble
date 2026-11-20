@@ -306,18 +306,23 @@ println(pureWithFrame(10), ":", specCaller(5))
 15:6
 
 {{{{{
-;; Closures: escaping closure capturing this requires shared on enclosing method
+;; Closures: a returned closure capturing this aliases the receiver (BIP017-D6), so the caller storing it escapes
 def Box = class (def v : int) (
     def okMut = fn mut shared () : fn mut () : int -> (
         def inner = fn mut () -> ( this.v += 1 )
         inner
     )
-    def badBorrow = fn () : fn () : int -> (
+    def reader = fn () : fn () : int -> (
         fn () -> ( this.v )
     )
 )
+def Holder = class () (
+    def ref : any? = null
+)
+def peek = fn (b : Box) : int -> ( b.reader()() )
+def stash = fn (mut h : Holder, b : Box) -> ( h.ref = b.reader() )
 }}}}}
-Borrowed this escapes via captured closure : mark function as shared
+Borrowed parameter b escapes via field .ref : mark parameter as shared b
 
 {{{{{
 def Box = class (def v : int) (

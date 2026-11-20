@@ -441,10 +441,16 @@ public class EffectsTestCase {
                 def Holder = class (def ref: Box?) ()
                 def storeField = fn (mut h: Holder, shared b: Box): int -> (h.ref = b; 1)
                 """);
+        // A closure capturing b aliases it : returning it is return-through-borrow, storing it escapes (BIP017-D6).
+        assertClean("""
+                def Box = class (def x: int) ()
+                def escClosure = fn (b: Box): fn volatile (): Box -> (fn () -> (b))
+                """);
         assertHasError("""
                 def Box = class (def x: int) ()
-                def escClosure = fn (b: Box): fn (): Box -> (fn () -> (b))
-                """, "Borrowed parameter b escapes via captured closure");
+                def Holder = class (def ref: any?) ()
+                def stashClosure = fn (mut h: Holder, b: Box): int -> (h.ref = fn () -> (b); 1)
+                """, "Borrowed parameter b escapes via field .ref");
         assertHasError("""
                 def Holder = class (def ref: any?) ()
                 def Box = class (def x: int) (

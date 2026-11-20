@@ -273,11 +273,19 @@ println(bad(fn (x: int): int -> (x)))
 Parameter in calling clause must be borrowed : f
 
 {{{{{
-;; Negative: a callback of the calling clause captured by the returned closure escapes
+;; Negative: a callback of the calling clause captured by the returned closure escapes by return
 def compose of (A, B, C) = fn calling (f, g) (f: fn (A): B, g: fn (B): C): fn (A): C -> (fn (a: A) -> (g(f(a))))
 println(compose(fn (x: int): int -> (x + 1), fn (x: int): int -> (x * 2))(3))
 }}}}}
-Parameter in calling clause escapes via captured closure : remove f from calling and mark it as shared
+Parameter in calling clause escapes via return : remove f from calling
+
+{{{{{
+;; Negative: returning a calling callback would let it run unaccounted
+def leak = fn calling f (f: fn (x: int): int): fn (x: int): int -> (f)
+def h = leak(fn io (x: int): int -> (println(x); x))
+def p = fn (x: int): int -> (h(x))
+}}}}}
+Parameter in calling clause escapes via return : remove f from calling
 
 {{{{{
 ;; compose captures its callbacks : shared, not calling

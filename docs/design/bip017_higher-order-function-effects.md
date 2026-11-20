@@ -2,7 +2,7 @@
 
 **BIP:** 017  
 **Date:** 2026-11-19  
-**Status:** Implemented in `RM009` (`BIP017-Q1`–`Q4` → `BIP017-D1`–`D4` decided; `BIP017-P1`–`P3` implemented across `Babble.g4`, `Formatter`, `EffectSet`, `Type.Function`, `TypeAnnotations`, `TypeChecker`, `TypeAlgebra`, `CallSolver`, `EffectChecker`, `TypedModuleSummary`, Argon `lib/hittables.ba`, `EffectsTestCase`, and `hof_calling_effects.batest`); `BIP017-D5` (captured callbacks, §2.5) implemented as `BIP017-P4`  
+**Status:** Implemented in `RM009` (`BIP017-Q1`–`Q4` → `BIP017-D1`–`D4` decided; `BIP017-P1`–`P3` implemented across `Babble.g4`, `Formatter`, `EffectSet`, `Type.Function`, `TypeAnnotations`, `TypeChecker`, `TypeAlgebra`, `CallSolver`, `EffectChecker`, `TypedModuleSummary`, Argon `lib/hittables.ba`, `EffectsTestCase`, and `hof_calling_effects.batest`); `BIP017-D5` (captured callbacks, §2.5) and `BIP017-D6` (closure provenance, §2.6) implemented as `BIP017-P4`–`P5`  
 **Depends on:** [bip007_effects.md](bip007_effects.md) (`RM002`, `RM007`), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md) (`RM004`: `TypedModuleSummary`, `CallSolver`, `TypeAlgebra`), [bip012_grammar-improvements.md](bip012_grammar-improvements.md) (`RM006`: predicate-free `SLL` grammar), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md) (`RM008`: pure-by-default opt-out surface syntax & return-through-borrow)  
 **Scope:** Effect-polymorphic callback-effect forwarding (`fn calling f` / `fn calling (f, g)` / `fn io calling (f, g)`) across concrete functions, cross-module `TypedModuleSummary`, `interface` methods, and first-class function values; forwarding of callbacks a returned closure captures (`compose`); retirement of `BIP016-D6`'s implicit intra-file `fn io` HOF specialization.
 
@@ -87,7 +87,7 @@ export def logAndApply = fn io calling (f, g) (v: int, f: fn (x: int): int, g: f
 * **Validation:**
   * Every identifier named in `calling ...` must match a parameter of the function whose type is a `Type.Function` (not a non-function type, not a duplicate name), or a callback parameter of an enclosing function it captures (§2.5).
   * Every parameter named in `calling ...` must be **`@BORROWED`** (the unmarked default — rejecting `shared f` or `unique f` in `calling f`, because a stored/escaping callback could be invoked *after* the call returns, breaking synchronous call-site effect forwarding).
-  * The same holds for a callback the body lets escape (stored, returned, or captured by a returned closure, as in `compose`): it is reported once as `Parameter in calling clause escapes via … : remove f from calling and mark it as shared`, not as a borrowed parameter to mark `shared`. Such a combinator takes `shared` callbacks, and the closure that captures them names them in its own `calling` clause (§2.5).
+  * The same holds for a callback the body lets escape: stored, it is reported once as `Parameter in calling clause escapes via … : remove f from calling and mark it as shared`, not as a borrowed parameter to mark `shared`; returned, or anything aliasing it returned (a closure capturing it, `compose(f, f)`), as `Parameter in calling clause escapes via return : remove f from calling` (§2.6). A combinator whose callbacks outlive the call takes them as ordinary parameters, and the closure that captures them names them in its own `calling` clause (§2.5).
 
 ### 2.2 Forwarded Traits (`BIP017-D2`)
 
@@ -126,10 +126,10 @@ Once `fn calling f` lands:
 
 ### 2.5 Captured Callbacks : `compose` (`BIP017-D5`)
 
-`calling f` forwards `f`'s effects only while the call runs, so `f` must be borrowed (§2.1). A combinator whose callbacks outlive the call, such as `compose`, takes them `shared` instead, and the closure it returns, which is what calls them, names them in its own `calling` clause:
+`calling f` forwards `f`'s effects only while the call runs, so `f` may not escape (§2.1). A combinator whose callbacks outlive the call, such as `compose`, takes them as ordinary parameters instead, and the closure it returns, which is what calls them, names them in its own `calling` clause:
 
 ```babble
-def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn calling (f, g) (A): C -> (
+def compose of (A, B, C) = fn (f: fn (A): B, g: fn (B): C): fn calling (f, g) (A): C -> (
     fn calling (f, g) (a: A) -> (g(f(a)))
 )
 def show = compose(fn (x: int): int -> (x + 1), fn (x: int): string -> ("v" + x))     ;; fn (int) : string
@@ -142,21 +142,36 @@ def loud: fn io (x: int): int = compose(fn io (x: int): int -> (println(x); x), 
 * **At the call site** (`CallSolver.instantiateCapturedCallings`): the callback parameters the result captures accept a callback of any effects (as `calling` parameters do), and every function type of the result (through nested results, so currying instantiates one call at a time) has the effects of the callbacks given folded in with `EffectSet.combineForwarded`, and loses their names; a callback of unknown effects (a Java functional object) counts as `io`. `compose(h, k)` of an `io h` is thus an `fn io (A) : C`, and calling it reaches its caller with `io`.
 * **Subtyping:** a function forwarding a captured callback is a subtype only of a type forwarding it too, so the closure can't be returned as a plain `fn (A): C`.
 * **Soundness:** the closure's own summary takes its captured callbacks as pure, so a call never resolves to it statically: it uses the call's type, where the callbacks' effects are (`EffectChecker.resolveBabbleCallSummary`). Calling the closure inside the function that captures the callbacks, before a call instantiates them, has their declared effects (or none, if that function forwards them in turn).
-* **Limits:** passing a `calling` (borrowed) callback to `compose` makes it escape (`Parameter in calling clause escapes via call to compose`), although the composition may not outlive the call: telling that apart needs an escape analysis of the result.
+* **Borrowed or `shared`:** `f` and `g` stay borrowed: the closure capturing them aliases them, and returning it is return-through-borrow (§2.6). `shared` still works, but then `compose` can't take a `calling` callback.
+
+### 2.6 Closure Provenance (`BIP017-D6`)
+
+Escape analysis tracks where a value comes from (`Origin`: the parameters, `this`, or outer state it aliases), and since `BIP016-D10` a borrowed parameter or `this` may be *returned*: the caller then sees the result as an alias of the argument, and storing it is reported there. A closure used to be the exception: capturing a parameter or `this` in a closure that is not frame-local counted as storing it, even when the closure was only returned.
+
+* **A closure aliases what it captures:** its value takes the provenance of the parameters and `this` it captures (`BodyAnalyzer.checkClosureCaptureEscape`), and the existing analysis decides the rest. Returning it records return provenance (`returnParams` / `returnThis`), the result of the call aliases the arguments (`deriveCallReturnOrigin`), and storing it, there or in any caller, reports the escape where it happens (`Borrowed parameter b escapes via call to h.put`). Captured locals are still stored on capture (their later assignments are outer-variable stores).
+* **So** `fn (b: Box) -> (fn () -> (b))` and a method returning `fn () -> (this.v)` no longer need `shared`, exactly as returning `b` or `this` doesn't; and `compose(f, f)` inside `fn calling f` is accepted, since `compose`'s borrowed slots take `f` and the composition is only called:
+
+  ```babble
+  def twice = fn calling f (f: fn (x: int): int, x: int): int -> (compose(f, f)(x))
+  ```
+
+* **Forwarded callbacks may not escape by return:** `calling f` accounts for `f`'s effects only while the call runs, so returning `f`, or any value aliasing it (`compose(f, f)`, a closure capturing it), is reported as `Parameter in calling clause escapes via return : remove f from calling`. This closes a hole of `BIP016-D10`, through which `fn calling f (f: …) -> (f)` let an `io` callback run in a pure function.
+* **Captured forwarded callbacks:** inside a closure that names captured callbacks in its `calling` clause (§2.5), those callbacks are tracked as pseudo-parameters (bits after the closure's own parameters, never published in summaries), so that returning or storing one from the closure is reported the same way.
 
 ---
 
-## 3. Settled Decisions (`BIP017-Q1`–`Q4` → `BIP017-D1`–`D4`; `BIP017-D5`)
+## 3. Settled Decisions (`BIP017-Q1`–`Q4` → `BIP017-D1`–`D4`; `BIP017-D5`–`D6`)
 
 * **`BIP017-Q1` → `BIP017-D1` (Surface syntax):** `fn calling f (f: fn (...))` and `fn calling (f, g) (...)` (combinable with effect words, e.g., `fn io calling (f, g)`), with `CALLING` reserved and exempted in `memberName`, making listed callback parameters effect-polymorphic with zero `io` noise; skip heavy named effect variables (`effect E`).
 * **`BIP017-Q2` → `BIP017-D3` (Cross-module & interface contracts):** Encode `forwardedEffectParams` directly in `Type.Function` and `TypedModuleSummary` so cross-module, `interface`, and first-class HOF calls forward effects identically without AST access; require forwarded parameters to be `@BORROWED`.
 * **`BIP017-Q3` → `BIP017-D2` (Forwarded traits):** Forward function-level effects (`io`, `volatile`, `nothrow`, `@TERMINATING`) plus frame-local closures (`frameReadOwners`/`frameWriteOwners`) and captured/bound-method `mut` (`buf.append`), while preserving `f`'s declared parameter slot modifiers.
 * **`BIP017-Q4` → `BIP017-D4` (Interaction with `BIP016-D6` & future `std/`):** Retire `BIP016-D6`'s implicit intra-file `fn io` HOF specialization so `fn io` is always honest, migrate Argon's `forEach` to `fn calling f`, and use `fn calling f` across future `std/` combinators (`map`, `filter`, `flatMap`, `fold`, `forEach`).
 * **`BIP017-D5` (Captured callbacks):** a `calling` clause may name callback parameters of an enclosing function that the function captures (`compose`'s returned closure), recorded as `Type.Function.capturedCallings` and replaced at each call of the enclosing function by the effects of the callbacks given (§2.5).
+* **`BIP017-D6` (Closure provenance):** a closure aliases the parameters and `this` it captures instead of storing them, reusing `BIP016-D10` return-through-borrow, so it escapes only where it is stored; a forwarded callback may escape neither by store nor by return (§2.6).
 
 ---
 
-## 4. Phased Implementation Plan (`BIP017-P1`–`P4`)
+## 4. Phased Implementation Plan (`BIP017-P1`–`P5`)
 
 | Phase | Deliverables |
 |---|---|
@@ -164,3 +179,4 @@ def loud: fn io (x: int): int = compose(fn io (x: int): int -> (println(x); x), 
 | **`BIP017-P2`: `EffectChecker` Forwarding & Retirement of `BIP016-D6` Specialization** | Validate `calling` parameter names (must exist, be `Type.Function`, and be `@BORROWED`); inside a `fn calling f` body, treat calls to `f` as pure-modulo-forwarding; at call sites (concrete, cross-module, `interface`, first-class), combine HOF base effects with passed callback effects + frame-local `frameReadOwners`/`frameWriteOwners` + bound-method `mut` origin tracking; retire `BIP016-D6`'s implicit `fn io` specialization in `trySpecializeCall`. |
 | **`BIP017-P3`: Migration, Tests & Verification** | Migrate `examples/raytracer-argon/lib/hittables.ba` (`forEach` / `countWhere` to `fn calling f` / `fn calling pred`); add comprehensive intra-file, cross-module, `interface`, first-class, bound-method (`buf.append`), and negative (`shared f`, unknown param, `fn io` no longer secretly specialized) tests in `EffectsTestCase` and `src/test/batest/effects/hof_calling_effects.batest`; verify full dual-mode `mvn -B test`, `ParserGrammarTestCase` (pure `SLL`), `RuntimeBoundaryTestCase` (0 runtime changes), `-format -check`, and byte-identical `examples/raytracer-argon/scene.ppm`. |
 | **`BIP017-P4`: Captured Callbacks (`BIP017-D5`)** | `Type.Function.capturedCallings` (display, substitution, joins, subtyping); name resolution in `TypeAnnotations.resolveCapturedCallings` for function types and literals; `EffectChecker` validation, pure-modulo-forwarding calls in the closure and the summary guard; `CallSolver` relaxation and instantiation at call sites; tests in `src/test/batest/effects/hof_calling_captured.batest` (intra-file, inferred result, currying, cross-module, session, negatives) and `src/test/babble/Effects.ba`. |
+| **`BIP017-P5`: Closure Provenance (`BIP017-D6`)** | `checkClosureCaptureEscape` returns the join of the captured parameters' and `this`'s origins; `recordReturnOrigin` rejects forwarded callbacks and masks pseudo-parameters out of `returnParams`; pseudo-parameters for captured forwarded callbacks; `compose` with borrowed callbacks; tests in `hof_calling_captured.batest`, `hof_calling_effects.batest`, `effect_algebraic_edges.batest`, `effects_and_errors.batest`, `EffectsTestCase` and `src/test/babble/Effects.ba`. |
