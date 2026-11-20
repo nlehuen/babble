@@ -4,9 +4,9 @@
 |---|---|
 | **BIP** | 016 |
 | **Date** | 2026-11-19 |
-| **Status** | Decided / Draft (`BIP016-Q1`–`Q7` → `BIP016-D1`–`D9` decided; ready for implementation `BIP016-P1`–`P4`) |
+| **Status** | **Implemented** (`BIP016-Q1`–`Q7` → `BIP016-D1`–`D10` decided and implemented across `BIP016-P1`–`P4`; verified across 1,658 dual-mode tests, pure `SLL`, `-format -check`, and byte-for-byte Argon `scene.ppm` parity) |
 | **Depends on** | Function effects and algebraic properties (`RM002` / `RM007`, [bip007_effects.md](bip007_effects.md)), core scalar & collection types (`RM005`, [bip011_core-types.md](bip011_core-types.md)), predicate-free LL(1)/LL(2) grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)), compiler optimization passes ([bip014_optimization-passes.md](bip014_optimization-passes.md)) |
-| **Scope** | Surface ergonomics of Babble's effect and ownership annotations: empirical audit of `examples/raytracer-argon/`, separating **internal orthogonal compiler traits** (`@UPPERCASE`) from a **closed opt-out surface vocabulary** (`BIP016-D1`, `D7`), making **`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}` the unmarked default on typed `fn`s, `export`s, `interface`s, and function types** (`BIP016-D3`, `D4`), inferring `@NOTHROW` & `@TERMINATING` with opt-in `nothrow` (`BIP016-D2`), unifying `{@UNIQUE, @SHARED, @BORROWED}` + `frozen T` onto one ownership axis orthogonal to effects (`volatile` / `io`) and mutability (`@CONST` / `mut`) (`BIP016-D5`), higher-order specialization (`BIP016-D6`), `axiom pure` & `org.babblelang.effects` alignment (`BIP016-D8`), and companion `EffectChecker` precision fixes + single-pass migration (`BIP016-D9`) |
+| **Scope** | Surface ergonomics of Babble's effect and ownership annotations: empirical audit of `examples/raytracer-argon/`, separating **internal orthogonal compiler traits** (`@UPPERCASE`) from a **closed opt-out surface vocabulary** (`BIP016-D1`, `D7`), making **`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}` the unmarked default on typed `fn`s, `export`s, `interface`s, and function types** (`BIP016-D3`, `D4`), inferring `@NOTHROW` & `@TERMINATING` with opt-in `nothrow` (`BIP016-D2`), unifying `{@UNIQUE, @SHARED, @BORROWED}` + `frozen T` onto one ownership axis orthogonal to effects (`volatile` / `io`) and mutability (`@CONST` / `mut`) (`BIP016-D5`), higher-order specialization (`BIP016-D6`), `axiom pure` & `org.babblelang.effects` alignment (`BIP016-D8`), companion `EffectChecker` precision fixes + single-pass migration (`BIP016-D9`), and **return-through borrow** so `id`, `min`, and getters never require `shared` while closing both `unique`/`freeze` and `frozen` soundness holes (`BIP016-D10`) |
 
 ---
 
@@ -40,7 +40,7 @@ Two structural causes account for nearly all of this noise:
 1. **Inverted polarity across every axis.** In Argon, **95%+** of functions are `@HERMETIC` and `@DETERMINISTIC`, **88.9%** of instance methods do not escape `this`, and **89.6%** of reference parameters do not escape. Yet `BIP007` required authors to opt *into* every safe guarantee (`pure`, `hermetic`, `deterministic`, `nothrow`, `borrow`) one keyword at a time instead of making the safe, common case the unmarked default and annotating only the rare deviations.
 2. **1-to-1 coupling between internal compiler traits and surface keywords — with `pure` at the bottom instead of the top.** `BIP007` defined `pure` to mean *no writes only* (matching the Java Checker Framework's `@SideEffectFree`, not its `@Pure`). Consequently, `pure` alone was used **0 times** in Argon, while `pure deterministic [nothrow]` accounted for **73.3%** of all functions. Likewise, `hermetic` alone was used **0 times**, while `hermetic deterministic nothrow` accounted for **18.1%**.
 
-By cleanly decoupling **internal orthogonal compiler traits** (`@HERMETIC`, `@DETERMINISTIC`, `@NOTHROW`, `@TERMINATING`, per-slot `@CONST`/`@MUTABLE` and `@BORROWED`/`@SHARED`/`@UNIQUE`) from the surface vocabulary (`BIP016-D1`), making **`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}` the unmarked default** while inferring `@NOTHROW` & `@TERMINATING` (`BIP016-D2`–`D5`), and writing only the explicit opt-outs (**`io`**, **`volatile`**, **`mut`**, **`shared`**, **`unique`**, and optional **`nothrow`**), the two functions above collapse to:
+By cleanly decoupling **internal orthogonal compiler traits** (`@HERMETIC`, `@DETERMINISTIC`, `@NOTHROW`, `@TERMINATING`, per-slot `@CONST`/`@MUTABLE` and `@BORROWED`/`@SHARED`/`@UNIQUE`) from the surface vocabulary (`BIP016-D1`), making **`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}` the unmarked default** while inferring `@NOTHROW` & `@TERMINATING` (`BIP016-D2`–`D5`), separating **storing** (`shared`) from **returning** (`BIP016-D10`), and writing only the explicit opt-outs (**`io`**, **`volatile`**, **`mut`**, **`shared`**, **`unique`**, and optional **`nothrow`**), the two functions above collapse to:
 
 ```babble
 ;; Under BIP016 (pure, deterministic, const, borrowed by default!):
@@ -53,7 +53,7 @@ def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult? -> (
 )
 ```
 
-This proposal documents the complete Argon empirical data (§2), re-evaluates `BIP007` through the two-layer trait/annotation model and `@NOTHROW` optimizer audit (§3), surveys prior art across ten languages and academic effect systems (§4), compares four concrete consolidation designs (§5), specifies the final consolidated semantics, ownership state machine, and Argon impact (§6), records all settled decisions `BIP016-D1`–`D9` (resolving `BIP016-Q1`–`Q7`) plus the implementation phases `BIP016-P1`–`P4` (§7), and provides a verified bibliography (§8).
+This proposal documents the complete Argon empirical data (§2), re-evaluates `BIP007` through the two-layer trait/annotation model and `@NOTHROW` optimizer audit (§3), surveys prior art across ten languages and academic effect systems (§4), compares four concrete consolidation designs (§5), specifies the final consolidated semantics, ownership state machine, return-through-borrow design (`BIP016-D10`), and Argon impact (§6), records all settled decisions `BIP016-D1`–`D10` (resolving `BIP016-Q1`–`Q7`) plus the completed implementation phases `BIP016-P1`–`P4` (§7), and provides a verified bibliography (§8).
 
 ---
 
@@ -63,34 +63,34 @@ Every `fn` expression and function type across all 14 files of [`examples/raytra
 
 ### 2.1 Function-Level Annotation Frequencies & Consolidation Table
 
-The table below lists all **105 `fn` occurrences** in Argon, **sorted by decreasing frequency**, alongside their exact `BIP007` semantics and their final `BIP016` annotation under decided `BIP016-D1`–`D9`:
+The table below lists all **105 `fn` occurrences** in Argon, **sorted by decreasing frequency**, alongside their exact `BIP007` semantics and their final implemented `BIP016` annotation under `BIP016-D1`–`D10`:
 
-| Rank | Count (%) | Current `BIP007` Combination | Semantics & Argon Examples | Final `BIP016` Annotation *(`BIP016-D1`–`D9`)* |
+| Rank | Count (%) | Prior `BIP007` Combination | Semantics & Argon Examples | Final `BIP016` Annotation *(`BIP016-D1`–`D10`)* |
 |---:|---:|---|---|---|
 | **1** | **49** *(46.7%)* | `pure deterministic nothrow borrow` | Strictly side-effect-free, deterministic, exception-free instance method whose `this` does not escape (`Vec3.*`, `Ray.at`, `Interval.*`, `AABB.*`, `Describable.*`, `Material.kind`, `Hittable.boundingBox`/`kind`, `emptyHittable.*`, `Sphere.boundingBox`/`kind`/`describe`, `HittableList.boundingBox`/`countWhere`/`kind`, `BVHNode.boundingBox`/`kind`, `Color.linearToGamma`, `Scenes.threeSpheres`) | *(none)* *(0 keywords; was 4 — all defaults, `@NOTHROW` inferred)* |
-| **2** | **25** *(23.8%)* | `pure deterministic nothrow` | **20** free/static functions & callbacks with no `this` (`lib/math.ba` ×13, `Interval.enclose`, `AABB.fromPoints`/`enclose`, `HitRecord.create`, `Dielectric.reflectance`, `countWhere` predicate type & lambda); **5** instance methods whose `this` (or sub-reference) escapes into the return value (`Hittable.hit`, `Sphere.hit`, `HittableList.hit`, `BVHNode.hit`, `HittableList.headNode`) | *(none)* *(free/static, 20×)* · **`shared`** *(escaping `this`, 5×)* |
+| **2** | **25** *(23.8%)* | `pure deterministic nothrow` | **20** free/static functions & callbacks with no `this` (`lib/math.ba` ×13, `Interval.enclose`, `AABB.fromPoints`/`enclose`, `HitRecord.create`, `Dielectric.reflectance`, `countWhere` predicate type & lambda); **5** instance methods returning references reachable from `this` without storing `this` (`Hittable.hit`, `Sphere.hit`, `HittableList.hit`, `BVHNode.hit`, `HittableList.headNode`) | *(none)* *(0 keywords; `D10` return-through-borrow eliminates `shared` on getters & `hit`!)* |
 | **3** | **10** *(9.5%)* | `hermetic deterministic nothrow borrow` | No globals/I/O, deterministic, exception-free method whose `this` is `@CONST @BORROWED` while mutating a `mut` parameter (`Material.scatter`, `Lambertian`/`Metal`/`Dielectric.scatter`, `Camera.sampleSquare`/`defocusDiskSample`/`getRay`/`rayColor`/`renderPixel`, `Scenes.finalScene`) | *(none)* *(0 fn keywords; was 4 — `mut` lives on param `mut rng: Rng`)* |
 | **4** | **5** *(4.8%)* | `hermetic deterministic nothrow` | Free/static functions (no `this`) with no globals/I/O, deterministic, exception-free, mutating a `mut` parameter (`Vec3.random`, `randomRange`, `randomUnitVector`, `randomOnHemisphere`, `randomInUnitDisk`) | *(none)* *(0 fn keywords; was 3)* |
 | **5** | **3** *(2.9%)* | `hermetic mut borrow deterministic nothrow` | No globals/I/O, deterministic, exception-free method mutating `this` without escaping `this` (`Rng.nextDouble`, `Rng.nextRange`, `HittableList.clear`) | **`mut`** *(1 keyword; was 5)* |
 | **6** | **3** *(2.9%)* | `impure` | Unconstrained I/O or test harness entry points (`Camera.render`, `runTests`, `renderMain`) | **`io`** *(1 keyword; replaces `impure`)* |
-| **7** | **2** *(1.9%)* | `pure nothrow` | Side-effect-free and exception-free, previously non-deterministic only due to stateless `emptyHittable` (`HittableList.first`, `HittableList.second`, both escaping `this`) | **`shared`** *(1 keyword; `D9` stateless-object fix restores `@DETERMINISTIC`)* |
+| **7** | **2** *(1.9%)* | `pure nothrow` | Side-effect-free and exception-free, previously non-deterministic only due to stateless `emptyHittable` (`HittableList.first`, `HittableList.second`, returning elements without storing `this`) | *(none)* *(0 keywords; `D9` restores `@DETERMINISTIC` and `D10` allows return-through-borrow!)* |
 | **8** | **2** *(1.9%)* | `pure deterministic` | Side-effect-free and deterministic free function that may throw at runtime via narrowing `int(x)` (`math.toByte`, `math.toInt`) | *(none)* *(0 keywords; was 2 — default allows exceptions per `BIP016-D2`)* |
-| **9** | **2** *(1.9%)* | `nothrow` | `BVHNode.fromList` (static; with `D9` fixes, pure & deterministic!) and frame-local accumulator closure in `HittableList.countWhere` | *(none)* *(0 keywords; `@NOTHROW` inferred)* |
+| **9** | **2** *(1.9%)* | `nothrow` | `BVHNode.fromList` (static; with `D9`/`D10`, pure & deterministic with 0 keywords!) and frame-local accumulator closure in `HittableList.countWhere` | *(none)* *(0 keywords; `@NOTHROW` inferred)* |
 | **10** | **1** *(1.0%)* | `pure deterministic borrow` | Side-effect-free, deterministic, `@BORROWED` `this` method that may throw via `math.toByte` (`Color.formatPpm`) | *(none)* *(0 keywords; was 3)* |
-| **11** | **1** *(1.0%)* | `hermetic mut deterministic nothrow` | No globals/I/O, deterministic, exception-free method mutating `this` where `this.head` escapes into a newly allocated `HittableNode` (`HittableList.add`) | **`mut shared`** *(2 keywords; was 4)* |
+| **11** | **1** *(1.0%)* | `hermetic mut deterministic nothrow` | No globals/I/O, deterministic, exception-free method mutating `this` where `this.head` is stored back into `this.head` via a fresh `HittableNode` (`HittableList.add`) | **`mut`** *(1 keyword; was 4 — `D10` recognizes `this.head = Node(item, this.head)` stays confined to `this` while requiring `shared item`)* |
 | **12** | **1** *(1.0%)* | `borrow` | Higher-order method polymorphic in callback `f`'s effects whose `this` does not escape (`HittableList.forEach`) | **`io`** *(HOF with `f: fn io (...)`; call-site specialized per `BIP016-D6`)* |
 | **13** | **1** *(1.0%)* | *(none)* | Unconstrained higher-order callback type inside `HittableList.forEach` | **`io`** *(`fn io (item: Hittable): any?`)* |
-| **Total** | **105** *(100%)* | **362 function-prefix tokens** *(3.45 / fn)* | **0** uses of standalone `pure`; **0** uses of standalone `hermetic` | **17 function-prefix tokens** *(0.16 / fn, **−95.3%**; **89/105 = 84.8%** have **0** fn keywords!)* |
+| **Total** | **105** *(100%)* | **362 function-prefix tokens** *(3.45 / fn)* | **0** uses of standalone `pure`; **0** uses of standalone `hermetic` | **9 function-prefix tokens** *(`5 io`, `4 mut`, `0 shared` — **0.09 / fn, −97.5%**; **96/105 = 91.4%** have **0** fn keywords and **105/105 = 100%** have 0–1!)* |
 
 ### 2.2 Parameter & Return Modifier Frequencies
 
 Sorted by decreasing frequency across all parameter lists and return clauses in `examples/raytracer-argon/`:
 
-| Scope | Count | Current `BIP007` Modifier | Breakdown in Argon | Final `BIP016` Annotation *(`BIP016-D4`/`D5`/`D9`)* |
+| Scope | Count | Prior `BIP007` Modifier | Breakdown in Argon | Final `BIP016` Annotation *(`BIP016-D4`/`D5`/`D9`/`D10`)* |
 |---|---:|---|---|---|
 | Parameter | **44** | `borrow` | **34** deeply immutable `record`s (`Vec3` ×12, `Ray` ×12, `Interval` ×8, `AABB` ×2), **4** `HitRecord`, **4** `Hittable`, **2** `fn` callbacks | *(omitted — `@BORROWED` is the default)* |
 | Parameter | **16** | `mut borrow` | **16** `Rng` parameters (`Vec3.random*`, `Material.scatter`, `Camera.*`, `Scenes.finalScene`) | **`mut`** *(1 keyword; was 2)* |
-| Parameter | **6** *(+2 deep `record`s)* | *(none, ref param escaping)* | `mat` in `HitRecord.create` (`p`/`outwardNormal` are deeply immutable `Vec3`s!), `item` in `HittableList.add`, `world` in `Camera.rayColor`/`renderPixel`/`render`, `items` in `BVHNode.fromList` (drops `mut` via `D9`) | **`shared`** *(explicit `@SHARED` on the 6 escaping mutable-type params)* |
+| Parameter | **1** *(was 6 pre-`D10`)* | *(none, ref param stored in heap)* | `item` in `HittableList.add` (`mat` in `HitRecord.create`, `world` in `Camera.*`, and `items` in `BVHNode.fromList` only return or read locally — **0 `shared`** via `BIP016-D10`!) | **`shared`** *(only **1** `shared` parameter in the entire 14-file ray tracer!)* |
 | Return | **2** | `unique` | `Scenes.threeSpheres`, `Scenes.finalScene` (`: unique HittableList`) | **`unique`** *(unchanged)* |
 
 Receiver `borrow` distribution across Argon's **72 non-`impure` instance methods**:
@@ -250,32 +250,32 @@ Keep `BIP007`'s exact syntax, but change `BIP007-D2` so that writing `fn pure` o
 
 ### 5.5 Comparative Summary Matrix
 
-| Criterion | Current `BIP007` | Option 1 *(Selected: Pure-by-Default `D1`–`D9`)* | Option 2 *(Explicit `pure` / `hermetic`)* | Option 3 *(Profiles / Aliases)* | Option 4 *(Relax `BIP007-D2`)* |
+| Criterion | Prior `BIP007` | Option 1 *(Implemented: Pure-by-Default `D1`–`D10`)* | Option 2 *(Explicit `pure` / `hermetic`)* | Option 3 *(Profiles / Aliases)* | Option 4 *(Relax `BIP007-D2`)* |
 |---|---|---|---|---|---|
-| **Argon total tokens** *(fn + param)* | 439 *(4.18 / fn)* | **41** *(0.39 / fn, **−90.7%**)* | ~143 *(−67%)* | ~240 *(−45%, param `borrow` remains)* | ~210 *(interfaces unchanged)* |
-| **Argon `fn`s with 0–1 fn keywords** | 8 / 105 *(7.6%)* | **104 / 105 *(99.0%)* — 89 have 0!** | 92 / 105 *(87.6%)* | 84 / 105 *(80.0%)* | 74 / 105 *(bodies only)* |
+| **Argon total tokens** *(fn + param + ret)* | 439 *(4.18 / fn)* | **28** *(0.27 / fn, **−93.6%** — 1 `shared` total!)* | ~143 *(−67%)* | ~240 *(−45%, param `borrow` remains)* | ~210 *(interfaces unchanged)* |
+| **Argon `fn`s with 0–1 fn keywords** | 8 / 105 *(7.6%)* | **105 / 105 *(100.0%)* — 96 (91.4%) have 0!** | 92 / 105 *(87.6%)* | 84 / 105 *(80.0%)* | 74 / 105 *(bodies only)* |
 | **Works on `interface` & `axiom`?** | Verbose | **Yes (0 keywords for pure!)** | Yes (1 keyword) | Partially | **No** |
 | **Needs `throws` keyword?** | No | **No** *(opt-in `nothrow`)* | No | No | No |
-| **Fixes `borrow` explosion (124 tokens)?** | No | **Yes** *(`@BORROWED` default + `shared`, `D4`)* | Yes | No | Only on bodies |
+| **Fixes `borrow` explosion (124 tokens)?** | No | **Yes** *(`@BORROWED` default + `shared` + `D10`)* | Yes | No | Only on bodies |
 | **Grammar (`Babble.g4` pure `SLL`)** | 0 predicates | **0 predicates** *(net −1 keyword!)* | 0 predicates | New `effect` decl | 0 predicates |
 
 ---
 
-## 6. Consolidated Semantics (`BIP016-D1`–`D9`)
+## 6. Consolidated Semantics (`BIP016-D1`–`D10`)
 
 ### 6.1 Surface Annotations as Layer 2 Mappings onto Layer 1 `@TRAITS`
 
 Every typed Babble function, `export`, `interface` method, and function type defaults to **`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`**, and every surface keyword cleanly flips or adds traits in Layer 1 (`EffectSet` / `Type.Parameter`):
 
-| Surface Annotation | Internal `@TRAITS` Mapping | Per-Slot Defaults *(`BIP016-D4`/`D5`)* | Typical Use Case |
+| Surface Annotation | Internal `@TRAITS` Mapping | Per-Slot Defaults *(`BIP016-D4`/`D5`/`D10`)* | Typical Use Case |
 |---|---|---|---|
-| `fn (...)` *(typed / export / interface / type)* | `{@HERMETIC, @DETERMINISTIC}` *(+ `@NOTHROW`/`@TERMINATING` inferred on bodies)* | `@CONST @BORROWED` *(unless `mut`/`shared`/`unique`)* | Pure math, `record` methods, queries, throwing conversions (`Vec3.dot`, `math.sqrt`, `math.toInt`), AND `mut`-param helpers (`Material.scatter`, `Vec3.random*` — **84.8%** of Argon!) |
+| `fn (...)` *(typed / export / interface / type)* | `{@HERMETIC, @DETERMINISTIC}` *(+ `@NOTHROW`/`@TERMINATING` inferred on bodies)* | `@CONST @BORROWED` *(unless `mut`/`shared`/`unique`)* | Pure math, `record` methods, getters & return-through-borrow (`id`, `min`, `Hittable.hit`), throwing conversions (`math.toInt`), AND `mut`-param helpers (`Material.scatter`, `Vec3.random*` — **91.4%** of Argon!) |
 | `fn nothrow (...)` | `{@HERMETIC, @DETERMINISTIC, @NOTHROW}` | `@CONST @BORROWED` | Strict no-exception API/interface contracts (concrete `fn (...)` bodies infer `@NOTHROW` automatically!) |
-| `fn mut (...)` | `{@HERMETIC, @MUT_THIS, @DETERMINISTIC}` | `@BORROWED_THIS`, `@CONST @BORROWED(*)` | Locally mutating `this` with no globals/I/O (`Rng.nextDouble`, `HittableList.clear`) |
-| `fn shared (...)` | `{@HERMETIC, @DETERMINISTIC}` | `@CONST @SHARED_THIS`, `@CONST @BORROWED(*)` | Pure method returning/sharing references reachable from `this` (`Hittable.hit`, `HittableList.headNode`) |
-| `fn mut shared (...)` | `{@HERMETIC, @MUT_THIS, @DETERMINISTIC}` | `@SHARED_THIS`, `@CONST @BORROWED(*)` | Locally mutating `this` where `this` escapes (`HittableList.add`) |
+| `fn mut (...)` | `{@HERMETIC, @MUT_THIS, @DETERMINISTIC}` | `@BORROWED_THIS`, `@CONST @BORROWED(*)` | Locally mutating `this` with no globals/I/O (`Rng.nextDouble`, `HittableList.add`, `HittableList.clear`) |
+| `fn shared (...)` | `{@HERMETIC, @DETERMINISTIC}` | `@CONST @SHARED_THIS`, `@CONST @BORROWED(*)` | Pure method storing `this` or capturing `this` in an escaping closure (`makeAdder`, bound-method return) |
+| `fn mut shared (...)` | `{@HERMETIC, @MUT_THIS, @DETERMINISTIC}` | `@SHARED_THIS`, `@CONST @BORROWED(*)` | Locally mutating `this` that also stores/captures `this` past the call |
 | `fn volatile [mut] (...)` | `{@HERMETIC}` *(clears `@DETERMINISTIC`; + `@MUT_THIS` if `mut`)* | `@CONST @BORROWED` *(unless `mut`/`shared`/`unique`)* | Side-effect-free non-deterministic readers (`Instant.now()`, `Files.readString`) or non-deterministic local mutators (`rng.seedFromClock()`) |
-| `fn io [mut] (...)` | `{}` *(clears `@HERMETIC` and `@DETERMINISTIC`; + `@MUT_THIS` if `mut`)* | `@CONST @BORROWED` *(unless `mut`/`shared`/`unique`)* | I/O, global writes, API stubs (`println`, `Camera.render`), and HOFs accepting arbitrary callbacks (`forEach(f: fn io (...))`, call-site specialized per `BIP016-D6`) |
+| `fn io [mut] [shared] (...)` | `{}` *(clears `@HERMETIC` and `@DETERMINISTIC`; + `@MUT_THIS` if `mut`)* | `@CONST @BORROWED` *(unless `mut`/`shared`/`unique`)* | I/O, global writes, API stubs (`println`, `Camera.render`), thread-spawning methods (`fn io shared` in Fable `Camera.render`), and HOFs accepting arbitrary callbacks (`forEach(f: fn io (...))`, call-site specialized per `BIP016-D6`) |
 | `fn (x) -> (...)` *(completely untyped inline lambda)* | Infers `io`, `volatile`, `mut`, `shared` from body (`BIP016-D3`) | Inferred from body | Zero-boilerplate inline callbacks (`xs.forEach(fn (x) -> (println(x)))`, `count = count + 1`) |
 
 **Function-effect subtyping (covariant):** **`fn nothrow ()`** $<:$ **`fn ()`** $<:$ **`fn volatile ()`** $<:$ **`fn io ()`**.
@@ -292,7 +292,7 @@ axiom hermetic mut deterministic idempotent commutative on java.util.HashSet.add
 impure on java.net.URL.equals
 def addComm = fn pure deterministic nothrow commutative associative (a: int, b: int): int -> (a + b)
 
-;; After (BIP016-D1–D9):
+;; After (BIP016-D1–D10):
 axiom pure nothrow on java.lang.Math.sqrt
 axiom pure on java.nio.file.Path.of
 axiom volatile on java.nio.file.Files.readString
@@ -301,15 +301,15 @@ io on java.net.URL.equals
 def addComm = fn commutative associative (a: int, b: int): int -> (a + b)
 ```
 
-### 6.2 Escape Polarity (`BIP016-D4`) & Unified Ownership Axis (`BIP016-D5`)
+### 6.2 Escape Polarity (`BIP016-D4`), Unified Ownership Axis (`BIP016-D5`) & Return-Through Borrow (`BIP016-D10`)
 
-Under `BIP016-D4`, `@BORROWED` is the unmarked default (with no user-facing `borrow` keyword): the callee may manipulate the reference during the call, **and the compiler statically guarantees that the reference is no longer held when the callee terminates**. Allowing a `@BORROWED` reference (or any mutable sub-reference reachable from it) to escape — storing it in a field, collection, or outer/global variable, capturing it in an escaping closure, returning it, or passing it to a `shared` or `unique` parameter — is a **compile-time error** enforced by `EffectChecker`. Authors write **`shared`** (`@SHARED`) only on the ~10% of slots whose reference may legitimately outlive the call:
+Under `BIP016-D4` and `BIP016-D10`, `@BORROWED` is the unmarked default (with no user-facing `borrow` keyword): the callee may manipulate the reference during the call (and return it directly or inside a freshly returned value — see §6.2.1 below), **and the compiler statically guarantees that the callee does not store or retain the reference past the call**. Storing a `@BORROWED` reference (or any mutable sub-reference reachable from it) in a field of another object, a collection, an outer/global variable, an escaping closure, or passing it to a `shared` or `unique` parameter is a **compile-time error** enforced by `EffectChecker`. Authors write **`shared`** (`@SHARED`) only on the rare slots whose reference is genuinely retained in heap or closure state:
 
-* **On a method:** `def hit = fn shared (r: Ray, rayT: Interval): HitRecord? -> (...)` signals that `hit` may share/return references reachable from `this` (`this.mat` inside `HitRecord`), while `r` and `rayT` remain `@BORROWED` (enabling `BIP014` `O9` scalar replacement of temporary `Ray` and `Interval` values).
-* **On a parameter:** `def add = fn mut shared (shared item: Hittable) -> (...)` documents that `this.head` may outlive the call inside a new node and `item` is stored inside `this`.
-* **On `mut` parameters:** `mut rng: Rng` defaults to `@MUTABLE + @BORROWED` (matching 16/16 occurrences in Argon), whereas `mut shared items: HittableList` marks a mutated parameter whose contents may also remain held after the call.
-* **On `io` functions (`BIP016-D5`):** `io` lives strictly on the **function-effect axis** (clearing `@HERMETIC` and `@DETERMINISTIC`, and overriding built-in/axiom defaults via `io on ...`). Slot ownership (`@BORROWED` default, `shared`, `unique`) and mutability (`@CONST` default, `mut`) remain orthogonal, so `fn io (x: any?)` (like `println`) accepts `unique` locals and `frozen T` cleanly while `fn io (shared x: T)` explicitly marks escaping parameters.
-* **On completely untyped inline lambdas (`BIP016-D3`):** Inline lambdas with no effect modifiers, no parameter `: Type`, and no `: R` return type (e.g., `xs.forEach(fn (x) -> (println(x)))` or `def id = fn (x) -> (x)`) infer `io`, `volatile`, `mut`, and `shared` from their body, matching `BIP007`'s untyped-lambda rule. All typed `fn`s, `export`s, `interface` methods, and function types enforce pure-by-default `{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`.
+* **On a method:** `def makeAdder = fn shared (k: int): fn (): int -> ( fn (): int -> (this.base + k) )` or Fable's `Camera.render` (`fn io shared`, spawning worker threads capturing `this`) signals that `this` is captured/stored past the call. Pure getters and hit queries (`Hittable.hit`, `HittableList.first`) return borrowed sub-references without storing `this` and need **0 `shared` keywords** (`BIP016-D10`).
+* **On a parameter:** `def add = fn mut (shared item: Hittable) -> (...)` documents that `item` is stored inside `this`'s linked list (`this.head = HittableNode(item, this.head)` stays confined to `this`, so `this` itself remains `@BORROWED`!).
+* **On `mut` parameters:** `mut rng: Rng` defaults to `@MUTABLE + @BORROWED` (matching 16/16 occurrences in Argon), whereas `mut shared items: HittableList` marks a mutated parameter whose contents may also be stored elsewhere.
+* **On `io` functions (`BIP016-D5`):** `io` lives strictly on the **function-effect axis** (clearing `@HERMETIC` and `@DETERMINISTIC`, and overriding built-in/axiom defaults via `io on ...`). Slot ownership (`@BORROWED` default, `shared`, `unique`) and mutability (`@CONST` default, `mut`) remain orthogonal, so `fn io (x: any?)` (like `println`) accepts `unique` locals and `frozen T` cleanly while `fn io (shared x: T)` explicitly marks retained parameters.
+* **On completely untyped inline lambdas (`BIP016-D3`):** Inline lambdas with no effect modifiers, no parameter `: Type`, and no `: R` return type (e.g., `xs.forEach(fn (x) -> (println(x)))`) and functions with untyped parameters infer `io`, `volatile`, `mut`, and `shared` from their body, matching `BIP007`'s untyped-lambda rule. All named zero-parameter `def f = fn () -> (...)`, typed `fn`s, `export`s, `interface` methods, and function types enforce pure-by-default `{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`.
 
 #### Unified Ownership Axis (`@UNIQUE` / `@SHARED` / `@BORROWED`, plus `frozen` — `BIP016-D5`)
 
@@ -424,7 +424,7 @@ export def Hittable = interface extends Describable (
     def kind = fn pure deterministic nothrow borrow (): string -> ("hittable")
 )
 
-;; lib/interfaces.ba — AFTER (BIP016-D1–D9):
+;; lib/interfaces.ba — AFTER (BIP016-D1–D10):
 export def Describable = interface (
     def kind: fn (): string
     def describe = fn (): string -> (
@@ -436,17 +436,17 @@ export def Material = interface extends Describable (
     def kind = fn (): string -> ("material")
 )
 export def Hittable = interface extends Describable (
-    def hit: fn shared (r: Ray, rayT: Interval): HitRecord?
+    def hit: fn (r: Ray, rayT: Interval): HitRecord?
     def boundingBox = fn (): AABB -> (AABB.empty)
     def kind = fn (): string -> ("hittable")
 )
 ```
 
-Across the entire Argon codebase (under `BIP016-D1`–`D9`):
-* **Function-level tokens:** `362` → **`17`** (**−95.3%**)
-* **Parameter/return modifier tokens:** `79` → **`24`** (**−69.6%**, `60 borrow` → `6 shared` + `16 mut` + `2 unique`)
-* **Total effect/ownership tokens:** `439` → **`41`** (**−90.7%**, `4.18` → `0.39` tokens/`fn` — **10.7× reduction!**)
-* **Zero-keyword functions (function-level):** `1/105` (1.0%) → **`89/105` (84.8%)**, and **`104/105` (99.0%)** have 0 or 1 function-level keyword!
+Across the entire Argon codebase (verified under implemented `BIP016-D1`–`D10`):
+* **Function-level tokens:** `362` → **`9`** (**−97.5%**: `5 io`, `4 mut`, **`0 shared`**!)
+* **Parameter/return modifier tokens:** `77` → **`19`** (**−75.3%**: `16 mut`, **`1 shared`** on `HittableList.add(shared item: Hittable)`, `2 unique` returns)
+* **Total effect/ownership tokens:** `439` → **`28`** (**−93.6%**, `4.18` → `0.27` tokens/`fn` — **15.7× reduction!**)
+* **Zero-keyword functions (function-level):** `1/105` (1.0%) → **`96/105` (91.4%)**, and **`105/105` (100.0%)** have 0 or 1 function-level keyword!
 
 ### 6.4 Zero Backend, Optimizer, or Runtime Boundary Churn
 
@@ -454,33 +454,33 @@ Because consolidation is strictly a **Layer 2 front-end mapping** into Layer 1's
 
 * **`org.babblelang.runtime` (`babble-runtime.jar`):** 0 lines changed (`RuntimeBoundaryTestCase` untouched).
 * **`Interpreter` & `CodeGenerator`:** 0 lines changed.
-* **`EffectChecker` fixed-point engine & `BIP014` optimizer passes:** 0 semantic changes (`EffectSet` still exposes the full Layer 1 orthogonal `@TRAITS`).
+* **`EffectChecker` fixed-point engine & `BIP014` optimizer passes:** Layer 1 orthogonal `@TRAITS` preserved intact (`EffectSet` still exposes all atomic traits plus `BIP016-D10` return-origin summaries).
 * **Grammar (`Babble.g4`):** Stays 100% predicate-free LL(1)/LL(2) pure-`SLL` (`ParserGrammarTestCase`): add `IO`, `VOLATILE`, and `SHARED`, retire `HERMETIC`, `DETERMINISTIC`, `BORROW`, and `IMPURE` (keeping `PURE` solely for `axiom pure`), all exempted in `memberName` so `.io` / `.volatile` / `.shared` / `.pure` remain valid member names (net **−1** reserved keyword!).
 * **Companion `EffectChecker` precision cleanups surfaced by Argon (`BIP016-D9`):**
-  1. Treat stateless `object` singletons (zero mutable fields, like `emptyHittable`) as deeply immutable for `@DETERMINISTIC` checks — upgrading `HittableList.first`/`second` to `fn shared`!
-  2. Avoid tainting a fresh local container (`leftList` in `BVHNode.fromList`) as mutating `@PARAM(items)` when it only *stores* non-mutated elements read from `items` — allowing `BVHNode.fromList` to drop `mut` on `items` and become `fn (shared items: HittableList): Hittable`!
+  1. Treat stateless `object` singletons (zero mutable fields, like `emptyHittable`) as deeply immutable for `@DETERMINISTIC` checks — upgrading `HittableList.first`/`second` to pure default `fn ()` (with `D10`)!
+  2. Avoid tainting a fresh local container (`leftList` in `BVHNode.fromList`) as mutating `@PARAM(items)` when it only *stores* non-mutated elements read from `items` — allowing `BVHNode.fromList` to drop `mut` on `items` and (with `D10`) become `fn (items: HittableList): Hittable` with 0 effect keywords!
 
 ---
 
-## 7. Settled Decisions (`BIP016-D1`–`D9`) & Implementation Plan (`BIP016-P1`–`P4`)
+## 7. Settled Decisions (`BIP016-D1`–`D10`) & Implementation Summary (`BIP016-P1`–`P4`)
 
-### 7.1 Settled Decisions (`BIP016-Q1`–`Q7` → `BIP016-D1`–`D9`)
+### 7.1 Settled Decisions (`BIP016-Q1`–`Q7` → `BIP016-D1`–`D10`)
 
-All open questions have been resolved into nine binding design decisions:
+All design questions have been resolved into ten binding design decisions:
 
 * **`BIP016-D1` — Two-layer architecture (Internal Orthogonal `@TRAITS` vs. Surface Opt-Out Vocabulary):** Complete `BIP007`'s `@UPPERCASE` vs. lowercase separation by modeling Babble's atomic compiler facts (4 function-level traits `@HERMETIC`, `@DETERMINISTIC`, `@NOTHROW`, `@TERMINATING`; 2 per-slot axes: mutability `@CONST` [default] / `@MUTABLE` and 3-state ownership `@BORROWED` [default] / `@SHARED` / `@UNIQUE`; plus 5 algebraic traits and `@AXIOMATIC`) as Layer 1 internal traits (`EffectSet` / `Type.Parameter`), decoupled from Layer 2's concise opt-out surface syntax.
 * **`BIP016-D2` — Pure default allows exceptions & recursion (`@NOTHROW` & `@TERMINATING` inferred; opt-in `nothrow`):**
   * Default functions allow exceptions (`T | Exception`) and loops/recursion — matching Checker Framework `@Pure`, Haskell, and Koka's `pure = <div, exn>`.
   * Both **`@NOTHROW`** and **`@TERMINATING`** remain inferred automatically by `EffectChecker` for `BIP014` optimization passes and `BIP007-D8` unused-pure diagnostics; explicit **`nothrow`** stays purely additive/opt-in for APIs or interfaces requiring a strict no-exception contract. **No `throws` keyword** is added.
 * **`BIP016-D3` — Effect-free by default (`@HERMETIC` & `@DETERMINISTIC` unmarked); `volatile` and `io` opt out (`Q1`, `Q2`, `Q4` resolved):**
-  * All typed `fn`s, `export`s, `interface` methods, and function types default to **`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`** (Flix-style), retiring `pure` (on `fn`), `hermetic`, `deterministic`, `borrow`, and `impure`.
+  * All typed `fn`s, named zero-parameter `def f = fn () -> (...)`, `export`s, `interface` methods, and function types default to **`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`** (Flix-style), retiring `pure` (on `fn`), `hermetic`, `deterministic`, `borrow`, and `impure`.
   * **`volatile`** clears `@DETERMINISTIC` only (`{@HERMETIC, !@DETERMINISTIC}` — side-effect-free non-deterministic readers like `Instant.now()` / `Files.readString`; composes with `mut` as `fn volatile mut`).
   * **`io`** clears BOTH `@HERMETIC` and `@DETERMINISTIC` (`{!@HERMETIC, !@DETERMINISTIC}` — `io` implies `volatile`, so authors write `fn io`, never `fn io volatile`, and `io` replaces `impure`).
   * **Clean 3-tier function-effect hierarchy:** `fn nothrow ()` $<:$ `fn ()` $<:$ `fn volatile ()` $<:$ `fn io ()`.
-  * **Scripting ergonomics:** Top-level script statements and REPL inputs allow `io` implicitly; **completely untyped inline lambdas** (no effect modifiers, no parameter `: Type`, no `: R` return type — e.g., `xs.forEach(fn (x) -> (println(x)))`) continue inferring `io`, `volatile`, `mut`, and `shared` automatically (extending `BIP007`'s untyped-lambda `mut` rule).
-* **`BIP016-D4` — `@BORROWED` is the unmarked default (no `borrow` keyword); `shared` denotes `@SHARED` (`!@BORROWED`):** Retire the user-facing `borrow` keyword. Receiver (`this`) and parameter slots default to `@BORROWED` (the callee may manipulate the reference during the call, and **the compiler statically guarantees it is no longer held when the callee terminates — allowing a `@BORROWED` reference to escape is a compile-time error**); the inverse `@SHARED` is denominated explicitly with the **`shared`** slot qualifier (`fn shared (...)`, `(shared item: Hittable)`).
+  * **Scripting ergonomics:** Top-level script statements and REPL inputs allow `io` implicitly; **completely untyped inline lambdas** and functions with untyped parameters (no effect modifiers, no parameter `: Type`, no `: R` return type — e.g., `xs.forEach(fn (x) -> (println(x)))`) continue inferring `io`, `volatile`, `mut`, and `shared` automatically (extending `BIP007`'s untyped-lambda `mut` rule).
+* **`BIP016-D4` — `@BORROWED` is the unmarked default (no `borrow` keyword); `shared` denotes `@SHARED` (`!@BORROWED`):** Retire the user-facing `borrow` keyword. Receiver (`this`) and parameter slots default to `@BORROWED` (the callee may read/manipulate — and return per `BIP016-D10` — the reference during the call, and **the compiler statically guarantees the callee does not store/retain it in heap or closure state past the call — storing a `@BORROWED` reference is a compile-time error**); the inverse `@SHARED` is written explicitly with **`shared`** (`fn shared (...)`, `(shared item: Hittable)`).
 * **`BIP016-D5` — Three orthogonal axes (Function Effects incl. `io`, Unified Ownership Axis, and Mutability `@CONST` / `@MUTABLE`):**
-  * **Unified 3-state ownership axis (`@UNIQUE` $<:$ `@SHARED` $<:$ `@BORROWED`, plus `frozen T`):** `@UNIQUE` (`unique`, consuming `move`, invalidating source with compile-time use-after-move check), `@SHARED` (`shared`, may escape), and `@BORROWED` (default, no escape) are mutually exclusive on one ownership axis (retiring `unique borrow` and eliminating `unique shared`). `frozen T` is reached irreversibly from `@UNIQUE` via `freeze(x)` and safely lends to any `@CONST @BORROWED T` slot (while rejecting `mut` and unfrozen `shared T`).
+  * **Unified 3-state ownership axis (`@UNIQUE` $<:$ `@SHARED` $<:$ `@BORROWED`, plus `frozen T`):** `@UNIQUE` (`unique`, consuming `move`, invalidating source with compile-time use-after-move check), `@SHARED` (`shared`, may be stored/retained), and `@BORROWED` (default, never stored/retained) are mutually exclusive on one ownership axis (retiring `unique borrow` and eliminating `unique shared`). `frozen T` is reached irreversibly from `@UNIQUE` via `freeze(x)` and safely lends to any `@CONST @BORROWED T` slot whose return type cannot smuggle a non-frozen mutable alias (`BIP016-D10`), while rejecting `mut` and unfrozen `shared T`.
   * **Mutability axis (`@CONST` default vs. `@MUTABLE` / `mut`):** `@CONST` (read-only view through this slot, `!@MUTABLE`, distinct from deeply immutable `frozen T`) is the unmarked default, symmetric with `@BORROWED`. `@CONST` vs. `mut` is fully orthogonal on `@BORROWED` and `@SHARED`; consuming `@UNIQUE` already permits private mutation even inside default pure functions (making `mut` redundant on `unique`); `frozen T` forbids `mut`.
   * **`io` stays strictly on the function-effect axis:** `fn io (x: any?)` keeps `@CONST @BORROWED` defaults on `this` and parameters (so `println(uniqueBuf)` / `println(frozenMap)` work cleanly, while `globalCache.put` writes `fn io (shared x: T)`).
 * **`BIP016-D6` — Higher-order functions via `fn io` + bounded call-site specialization (`Q3` resolved):** Higher-order functions accepting arbitrary callbacks declare `fn io (f: fn io (...))` (accepting pure, `volatile`, and `io` callbacks via subtyping), and concrete Babble HOF calls rely on `BIP007` §4.5 bounded call-site specialization to prove effect-freedom when given a pure callback — specializing only the effect contributed by `f` (never direct `io` or non-HOF `fn io` API stubs), with zero new effect-polymorphism syntax.
@@ -489,22 +489,16 @@ All open questions have been resolved into nine binding design decisions:
   * Keep explicit **`pure`** solely on `axiom` declarations (`axiom pure on Path.of`, `axiom pure nothrow on Math.sqrt`, `fn axiom pure (...)`) so `axiom` is never bare, alongside `axiom volatile on ...`, `axiom mut ... on ...`, and `io on URL.equals` (replacing `impure on ...`). Unannotated Java methods remain conservatively unconstrained (`io`, `@SHARED`) until blessed.
   * In `org.babblelang.effects`, keep `Effect` aligned with Layer 1 atomic traits and update Java annotations so `@Pure` expands to `{@HERMETIC, @CONST, @DETERMINISTIC}` (with `@BORROWED` default unless `@Shared`), adding `@Volatile`, `@Shared`, and `@IO`.
 * **`BIP016-D9` — Companion `EffectChecker` precision fixes & single-pass migration (`Q7` resolved):** Land both Argon-discovered `EffectChecker` precision fixes (§6.4: stateless `object` singletons preserving `@DETERMINISTIC`; storing parameter elements into a fresh local not tainting the parameter as `@MUTABLE`) alongside `BIP016`, and migrate all existing `.ba`, `examples/`, and `.batest` files in a single clean pass (as in `RM006` / `BIP012`) with no deprecated alias layer.
+* **`BIP016-D10` — Return-through borrow (`id`, `min`, and getters without `shared`, §6.2.1):** Separate *storing/retaining* (`shared`) from *returning* (`@BORROWED` parameters and `this` may be returned directly or inside a freshly constructed returned object, and storing `this` back into `this`'s own fields stays confined to `this`). Close both soundness holes without adding any new keyword or lifetime syntax:
+  1. `CallableSummary` tracks exact return provenance (`returnParams`, `returnThis`, `returnExternal`, `ctorStoredParams`) across concrete functions/constructors (and conservatively treats mutable non-`unique` returns of abstract interfaces/function types as potentially aliasing borrowed arguments and `this`), propagating alias origins to the caller and demoting `@UNIQUE` locals flowing into non-discarded mutable non-`unique` returns (preserving `freeze`, `unique`, and `mut` exclusivity soundness).
+  2. `CallSolver` and `TypeAlgebra.functionRelates` gate `frozen T <: @CONST @BORROWED T` widening on `uniqueResult || isDeeplyImmutable(result)` so monomorphic return-through-borrow functions cannot silently unfreeze a `frozen` argument (while generic `id(fb)` / `min(fb1, fb2, cmp)` infer `T = frozen Box` directly and return `frozen Box`).
 
-### 7.2 Implementation Plan (`BIP016-P1`–`P4`)
+### 7.2 Implementation Status (`BIP016-P1`–`P4` — Completed)
 
-* **`BIP016-P1` — Grammar, Formatter & Java Host API (`Babble.g4`, `Formatter`, `org.babblelang.effects`):**
-  * Update `Babble.g4` (add `IO`, `VOLATILE`, `SHARED`; retire `HERMETIC`, `DETERMINISTIC`, `BORROW`, `IMPURE`; restrict `PURE` to `axiom` declarations; keep all tokens in `memberName`, 0 semantic predicates, pure `PredictionMode.SLL`).
-  * Update `Formatter` canonical modifier ordering (`axiom` → `pure` | `volatile` | `io` → `nothrow` → `mut` → `shared` → algebraic; params: `unique` | (`mut`? `shared`?)).
-  * Update `org.babblelang.effects` (`Effect`, `@Pure`, `@Volatile`, `@Shared`, `@IO`, `BabbleScriptEngine` registry helpers).
-* **`BIP016-P2` — `EffectChecker`, `Type.Parameter` & `EffectSet` Front-End Semantics:**
-  * Implement pure-by-default (`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`) on typed `fn`s, `export`s, `interface`s, and function types, while preserving inference on completely untyped inline lambdas (`BIP016-D3`).
-  * Enforce the unified 3-state ownership axis (`@UNIQUE` $<:$ `@SHARED` $<:$ `@BORROWED` + `frozen T` $<:$ `@CONST @BORROWED T`), `@BORROWED` escape compile errors, `unique` move invalidation, and `io` orthogonality (`BIP016-D4`, `D5`).
-  * Enable `BIP007` §4.5 bounded call-site specialization on concrete `fn io` HOFs (`BIP016-D6`) and land both Argon `EffectChecker` precision fixes (`BIP016-D9`).
-  * Update `:type` / `EffectSet.toString()` and diagnostics to speak the new surface vocabulary cleanly.
-* **`BIP016-P3` — Single-Pass Codebase & Test Migration:**
-  * Migrate `examples/raytracer-argon/`, `examples/`, `src/test/babble/`, and `src/test/batest/` in one clean pass (`BIP016-D9`), updating `Effects.ba` and effect `.batest` suites to cover all `BIP016-D1`–`D9` rules (including `@BORROWED` escape errors, `unique`/`shared`/`frozen` transitions, `io`/`volatile` subtyping, untyped lambdas, HOF specialization, and `axiom pure` / `io on`).
-* **`BIP016-P4` — Dual-Mode Verification & Docs Alignment:**
-  * Pass full dual-mode `mvn -B test` (`interpret` + `compile` with `babble.verify=true`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase` (0 runtime changes), `-format -check`, and byte-for-byte Argon `scene.ppm` rendering parity; update `docs/design/bip007_effects.md` and `docs/design/README.md`.
+* **`BIP016-P1` — Grammar, Formatter & Java Host API (`Babble.g4`, `Formatter`, `org.babblelang.effects`):** **Implemented.** Updated `Babble.g4` (`IO`, `VOLATILE`, `SHARED` added; `HERMETIC`, `DETERMINISTIC`, `BORROW`, `IMPURE` retired; `PURE` restricted to `axiom`; all tokens in `memberName`, 0 predicates, pure `PredictionMode.SLL`), `org.babblelang.effects` (`Effect`, `@Pure`, `@Volatile`, `@Shared`, `@IO`), `BabbleScriptEngine.markIO`, and `BytecodeEffectAnalyzer.suggestAxiom`.
+* **`BIP016-P2` — `EffectChecker`, `Type.Parameter`, `EffectSet`, `CallSolver` & `TypeAlgebra`:** **Implemented.** Pure-by-default (`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`), completely untyped inline-lambda inference (`BIP016-D3`), unified 3-state ownership axis (`BIP016-D4`/`D5`), bounded `fn io` HOF specialization (`BIP016-D6`), both Argon precision fixes (`BIP016-D9`), and return-through-borrow provenance + frozen-safe return gate (`BIP016-D10`).
+* **`BIP016-P3` — Single-Pass Codebase & Test Migration:** **Implemented.** Migrated `examples/raytracer-argon/` (`439 → 28` tokens, **−93.6%**, only **1** `shared` token), `examples/raytracer-fable/`, `src/test/babble/`, all Java JUnit suites, and all 68 `.batest` suites (`940` cases), including comprehensive tests for `BIP016-D1`–`D10` (`EffectsTestCase`, `OwnershipTestCase`, `effects/*.batest`).
+* **`BIP016-P4` — Dual-Mode Verification & Docs Alignment:** **Verified.** Full dual-mode `mvn -B test` (`1,658` tests, 0 failures, 0 errors across `interpret` + `compile` with `babble.verify=true`), `ParserGrammarTestCase` (pure `SLL`), `RuntimeBoundaryTestCase` (0 lines changed in `org.babblelang.runtime`), `-format -check` clean across `src/test/babble` and `examples/`, and byte-for-byte identical `examples/raytracer-argon/scene.ppm` (`1,021,340` bytes via `babblec` AOT jar); aligned `docs/design/bip007_effects.md`, `examples/raytracer-argon/README.md`, and `docs/design/README.md`.
 
 ---
 

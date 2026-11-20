@@ -45,7 +45,7 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
 
 ### Babble Language Features Exercised
 - **Modules**: one file per part of the ray tracer in [lib/](lib) (`math`, `rng`, `vec3`, `ray`, `interval`, `aabb`, `interfaces`, `materials`, `hittables`, `color`, `camera`, `scenes`), with `export def` and `import("….ba")`. `lib/raytracer.ba` re-exports them all, so [raytracer.ba](raytracer.ba) reaches them as `raytracer.Vec3`, `raytracer.Camera`… The classes of `lib/materials.ba` and `lib/hittables.ba` implement the interfaces of `lib/interfaces.ba`, which the analysis checks across files (the [modules BIP](../../docs/design/bip005_modules.md), M2).
-- **Value classes (`value class`)**: `Vec3`, `Ray`, `Interval`, `AABB`, `HitRecord`, `ScatterResult` (using generated structural `==`, `hashCode`, `toString`, and read-only members).
+- **Records (`record`)**: `Vec3`, `Ray`, `Interval`, `AABB`, `HitRecord`, `ScatterResult` (using generated structural `==`, `hashCode`, `toString`, and read-only members).
 - **Classes (`class`)**: `Rng`, `Lambertian`, `Metal`, `Dielectric`, `Sphere`, `HittableNode`, `HittableList`, `BVHNode`, `Camera` (using header `def` and `private def` members, constructor-local parameters, and `private` body fields).
 - **Static blocks (`static ( ... )`)**: `Vec3.zero`, `Vec3.one`, `Vec3.random*`, `Interval.empty`, `Interval.universe`, `Interval.enclose`, `AABB.empty`, `AABB.fromPoints`, `AABB.enclose`, `HitRecord.create`, `Dielectric.reflectance`, `BVHNode.fromList` (using `this(...)` inside `static` blocks to invoke the class constructor).
 - **Interfaces (`interface`, `extends`, `implements`, default methods, `super`, `super(Type)`)**:
@@ -57,7 +57,7 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
 - **Named arguments & default parameters**: `Camera(...)`, `Scenes.finalScene(...)`, `println(..., to: out)`.
 - **Runtime type introspection & equality**: `is`, `classof`, `same`, `==`, `assert`.
 - **Type annotations**: Every parameter, return type, and member is annotated and checked statically and at runtime.
-- **Explicit effects & ownership**: Every function, method, interface signature, and callback carries explicit verified effect annotations (`pure`, `hermetic`, `mut`, `borrow`, `unique`, `deterministic`, `nothrow`, `impure`).
+- **Pure-by-default effects & ownership ([BIP016](../../docs/design/bip016_consolidating-effect-annotations.md))**: Typed functions, methods, interface signatures, and callbacks are statically verified pure, deterministic, const, and borrowed by default — `96 / 105` functions carry zero function-level effect keywords, with only `28` explicit effect tokens (`mut`, `shared`, `unique`, and `io`) across all 14 modules (`0` `axiom`s).
 
 ## Running
 
