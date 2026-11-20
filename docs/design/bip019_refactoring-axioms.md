@@ -6,7 +6,7 @@
 | **Date** | 2026-11-20 |
 | **Status** | Decided ; no phase implemented. A prototype of the former ordering was reverted ; what it taught is recorded where it applies (§3.2, §3.3, §4.3). |
 | **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
-| **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as `.ba` files (and `.java` stubs only for what Babble cannot state) ; one bytecode analyzer derives every axiom it can from hand-written seeds, either while compiling or offline into the same directory ; reads of mutable state become part of the effect model |
+| **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as a small set of curated `.ba` axioms (and `.java` stubs only for what Babble cannot state) ; everything else about Java classes is inferred from their bytecode by the compiler, the curated axioms overriding what it infers ; reads of mutable state become part of the effect model |
 
 ---
 
@@ -52,25 +52,24 @@ println(victim.v, " ", pureLooking(victim), " ", victim.v)    ;; 1 201 201
 src/main/java/org/babblelang/axioms/
   package-info.java, README.md     the format, the index of the files, the QUESTIONABLE list
   builtins.ba                      Babble's built-ins (the prelude)
-  java/lang/curated.ba             axioms about the classes of java.lang, written by hand : the seeds
-  java/lang/inferred.ba            axioms about the classes of java.lang, written by the analyzer only
-  java/util/curated.ba, java/util/inferred.ba
+  java/lang/curated.ba             axioms about the classes of java.lang, written by hand
+  java/util/curated.ba             axioms about the classes of java.util
   java/util/function/ …            and so on, for every package the axioms cover
   lombok/NonNullAxioms.java …      what third-party annotations mean : the only Java stubs (§2.5)
 ```
 
-* **Nowhere else.** Every assumption about a Java or Babble function or method — effects, nullness, deep immutability, the optimizer's whitelists, the built-ins' signatures and effects — lives in this directory. No list of assumptions remains in the interpreter, the compiler, the analysis or the optimizer. Quantity and elegance don't matter ; being explicit and discoverable does. Later work prunes the axioms, through more expressive forms or smarter inference (§5).
-* **One rule to find an axiom :** the axioms about `java.util.List` are its block in `java/util/curated.ba` or `java/util/inferred.ba` (§3.4), never both for one member.
+* **Nowhere else.** Every assumption about a Java or Babble function or method — effects, nullness, deep immutability, the optimizer's whitelists, the built-ins' signatures and effects — lives in this directory. No list of assumptions remains in the interpreter, the compiler, the analysis or the optimizer. Quantity and elegance don't matter ; being explicit and discoverable does. The set is meant to stay small : an axiom earns its place only where the bytecode analysis (§5) cannot tell, or tells something the language must not rely on ; later work prunes it further, through more expressive forms or smarter inference.
+* **One rule to find an axiom :** the axioms about `java.util.List` are its block in `java/util/curated.ba` (§3.4) ; what has no axiom is inferred.
 * **The build :** the directory is a source root, so its few `.java` stubs compile with the front end ; the package is in the full jar, not in the runtime jar (the runtime boundary is unchanged). A resource entry in `pom.xml` copies the `.ba` files of `src/main/java` next to the classes. The loader lists the package on the class path, in a directory or in a jar : no hand-written index, and no build step.
 
-### 2.2 Java axioms : seeds and derivations
+### 2.2 Java axioms : curated, over inferred
 
-Axioms about Java classes are written in Babble, in the class form of §3 (`axiom java.util.Collection of E ( … )`), from the start. They come from two places, never both for one member :
+What the analysis assumes about a Java method or constructor comes from one of two sources, the first winning :
 
-* **Seeds, written by hand** in each package's `curated.ba` : what bytecode cannot tell — natives (`StrictMath.sin`, `System.nanoTime`), interface contracts (`List.add` has no body), the protocol methods of elements (`equals`, `hashCode`, `compareTo`, `Comparator.compare`), what the optimizer may fold (`foldable`), and corrections of a derivation ;
-* **Derivations, written by the analyzer** (§5) into each package's `inferred.ba` : everything else, from the bytecode of the JDK and the seeds.
+* **Curated axioms**, written by hand in each package's `curated.ba`, in the class form of §3 (`axiom java.util.Collection of E ( … )`). They state what bytecode cannot tell — natives (`StrictMath.sin`, `System.nanoTime`), interface contracts (`List.add` has no body), the protocol methods of elements (`equals`, `hashCode`, `compareTo`, `Comparator.compare`), what the optimizer may fold (`foldable`) — and **override** the inference wherever it is wrong, too weak, or must not be relied on.
+* **Inference**, by the bytecode analyzer **in the compiler** (§5), for everything else, from the bytecode of the classes the compiling JVM loads, applying the curated axioms to the calls it meets. Nothing it infers is written to a file : no generated code enters the codebase ; the compiler spends the time instead, and caches the results in memory.
 
-**Nothing that can be inferred is written by hand or by any other tool.** In particular, the former rules of §1 are not copied into axioms, neither by hand nor by a one-off generator. Instead, a **simulation** — the former rules on one side, the seeds and derivations on the other, compared on every public method and constructor of `java.base` — reports each difference ; a difference is either accepted, as a review of the change it makes, or removed by a seed. The rules of §1 are deleted once their simulation is clean. Every overload is stated with its exact signature : nothing matches methods by name.
+The former rules of §1 are not copied into axioms. A **simulation** — the former rules on one side, the curated axioms and the inference on the other, compared on every public method and constructor of `java.base` — reports each difference ; a difference is either accepted, as a review of the change it makes, or removed by a curated axiom. The rules of §1 are deleted once their simulation is clean. A curated axiom states each overload with its exact signature : nothing matches methods by name.
 
 The **Java stubs** remain only for what Babble cannot state : what a third-party annotation means (§2.5).
 
@@ -93,15 +92,15 @@ The prelude is analysed once, like a module, through `BuiltinAxioms`, and `Opera
 
 ### 2.4 The loader and the tiers
 
-`org.babblelang.analysis.BuiltinAxioms` loads the axioms and is immutable afterwards (per-package files are loaded on first use and cached, §3.4). It answers `methodProfile`, `constructorProfile`, `returnNullness`, `parameterNullness`, `nullMarked`, `isDeeplyImmutable`, `isFoldable`, `isIdempotent` and `builtins` ; `BuiltinAxioms.EMPTY` knows nothing, for tests. The resolvers of `EffectChecker` keep their order : what a program, an engine or a host class states keeps precedence over the built-in axioms, and the bytecode analysis comes after them.
+`org.babblelang.analysis.BuiltinAxioms` loads the curated axioms and is immutable afterwards (per-package files are loaded on first use and cached, §3.4). It answers `methodProfile`, `constructorProfile`, `returnNullness`, `parameterNullness`, `nullMarked`, `isDeeplyImmutable`, `isFoldable`, `isIdempotent` and `builtins` ; `BuiltinAxioms.EMPTY` knows nothing, for tests. The resolvers of `EffectChecker` keep their order : what a program, an engine or a host class states keeps precedence over the curated axioms, which keep precedence over the bytecode analysis.
 
 1. file, module or session `axiom` declarations on a method (including a program's own class-form axioms, §3.2) ;
 2. engine overrides on a method (`assumeEffects`) ;
 3. effect annotations on the Java method itself ;
 4. file, session or engine declarations on a whole class ;
 5. effect annotations on the Java class ;
-6. **built-in axioms** — the seeds of `curated.ba`, then the derivations of `inferred.ba` ;
-7. bytecode analysis, when enabled (§5) ;
+6. **curated axioms** (`curated.ba`) ;
+7. **bytecode analysis** (§5), now on by default ;
 8. unconstrained.
 
 ### 2.5 What stays in code
@@ -115,10 +114,10 @@ The *meaning* of third-party nullness annotations (`lombok.NonNull`, `jakarta.an
 
 ### 2.6 QUESTIONABLE axioms
 
-Some former rules are known to be doubtful. The simulation (§2.2) shows where dropping one changes behavior ; where a doubtful rule is kept, it is a seed tagged `QUESTIONABLE` in `curated.ba` and listed in the README, so that fixing it later is a reviewable edit of one axiom. The protocol methods come first, since they close §1's hole :
+Some former rules are known to be doubtful. The simulation (§2.2) shows where dropping one changes behavior ; where a doubtful rule is kept, it is a curated axiom tagged `QUESTIONABLE` and listed in the README, so that fixing it later is a reviewable edit of one axiom. The protocol methods come first, since they close §1's hole :
 
-* **`equals`, `hashCode`, `compareTo`, `Comparator.compare` pure on every class** (seeds of `java/lang/curated.ba` and `java/util/curated.ba`) — false for user classes (§1) ; the fix is to require Babble implementations of these protocol methods to be pure ;
-* **collection methods on every implementation** (seeds for `Collection`, `Map`, `Iterator` and `Iterable`) — any `java.util.List` written by anyone is trusted ; the fix is to keep the shallow and hermetic axioms for Babble's core collections' classes only ;
+* **`equals`, `hashCode`, `compareTo`, `Comparator.compare` pure on every class** (`java/lang/curated.ba`, `java/util/curated.ba`) — false for user classes (§1) ; the fix is to require Babble implementations of these protocol methods to be pure ;
+* **collection methods on every implementation** (curated axioms for `Collection`, `Map`, `Iterator` and `Iterable`) — any `java.util.List` written by anyone is trusted ; the fix is to keep the shallow and hermetic axioms for Babble's core collections' classes only ;
 * **`Map.Entry` deeply immutable** (`java/util/curated.ba`) — the entries of `entrySet()` support `setValue`.
 
 ---
@@ -130,7 +129,7 @@ Some former rules are known to be doubtful. The simulation (§2.2) shows where d
 Babble's own function types already carry most of what an axiom states — effects, what a function does to its receiver and parameters, nullness, optional parameters — so axioms about Java classes are written in Babble, one block per class :
 
 ```babble
-;; java/util/curated.ba : the seeds about the classes of java.util, Collection's among them
+;; java/util/curated.ba : the curated axioms about the classes of java.util, Collection's among them
 axiom java.util.Collection of E (
     size: fn nothrow (): int
     contains: fn (o: any?): bool
@@ -176,19 +175,19 @@ axiomMember: (memberName | '*') '*'? ':' type ;     // m, *, new, new *
 
 * **Overloads :** a member's parameter types map to Java's erasures — `int` to `int`, `string` to `String`, a type variable to its bound (`Object`), `list of T` to `List`, a Java class to itself — and the member describes the overload with those parameter types. Where Babble's types don't pin one down (`int` against `Integer`, `char` against `int`), the parameter is written with the Java type itself (`e: java.lang.Integer`) ; methods taking arrays, which Babble types cannot name, are left to the analyzer or to a future form.
 * **Nullness is always stated :** an axiom never leaves a position's nullness unspecified ; where nothing more is known, it writes what the analysis would assume anyway — nullable for an unannotated Java type (`T?`), non-null under `nullmarked`.
-* **One profile :** a member states one profile, which the effect checker uses and the bytecode analyzer takes as its seed ; where the former rules disagreed (`String.valueOf`), the simulation reports it.
+* **One profile :** a member states one profile, which the effect checker uses and the bytecode analyzer applies to the calls it meets ; where the former rules disagreed (`String.valueOf`), the simulation reports it.
 * **Exactness :** some of the former rules' details have no surface form — a receiver borrowed unless the method is static, `Object`'s "deterministic where overridden", constructors that may not terminate. The nearest surface form is used, and every difference a test, a golden or a diagnostic can see is reported. Reads are plain `fn`s, their determinism decided at the call site (§4).
 
 ### 3.4 Files and loading
 
-* **One file per package, of each kind :** the seeds about the classes of a Java package are in a single file, `curated.ba`, in that package's directory of the axioms (`java/util/curated.ba` holds `Collection`, `List`, `Map`… ; `java/lang/curated.ba` holds `Object`, `String`, `Math`…), one `axiom Class ( … )` block per class. Next to it, the package's **`inferred.ba`** holds the axioms the analyzer derives (§5), and only those ; nobody edits it by hand. A class may have a block in each, but a member is stated in one file only : the analyzer skips every member name the package's `curated.ba` states (all its overloads), so correcting an inferred axiom means writing it in `curated.ba`, after which the next derivation drops it from `inferred.ba`. `AxiomsTestCase` checks that a block in `java/util/curated.ba` is about a class of `java.util`, and that no member is in both files.
-* **Sorted and deterministic :** both files have one canonical form, so that a file reads the same whoever wrote it and diffs only where an axiom changed :
+* **One file per package :** the curated axioms about the classes of a Java package are in a single file, `curated.ba`, in that package's directory of the axioms (`java/util/curated.ba` holds `Collection`, `List`, `Map`… ; `java/lang/curated.ba` holds `Object`, `String`, `Math`…), one `axiom Class ( … )` block per class. `AxiomsTestCase` checks that a block in `java/util/curated.ba` is about a class of `java.util`.
+* **Sorted :** a `curated.ba` has one canonical form, so that it reads the same whoever wrote it and diffs only where an axiom changed :
   * its blocks are sorted by the class's binary name (`java.util.AbstractMap$SimpleEntry` after `java.util.AbstractMap`) ;
   * in a block, the class words come in a fixed order (`exact`, `nullmarked`, `immutable`), and the members are sorted by name (`*` and `new *`, then `new`, first), then by their parameters' Java erasures, compared as type descriptors ;
   * within a function type, the effect words come in the order the formatter writes them ;
   * the file is formatter-clean, and comments are only allowed above a block or a member, which keeps them attached when sorting ;
-  * `AxiomsTestCase` fails on a file out of order ; the analyzer writes the canonical form, and the same `curated.ba` and seeds on the same JDK produce the same `inferred.ba` byte for byte.
-* **Loading :** a `.ba` axiom file is parsed and type-checked before use, as `builtins.ba` is. Since each package has its two files, named by the package, a class's axioms are loaded on first use — its package's `curated.ba` and `inferred.ba`, then those of its supertypes' packages — rather than all at start-up ; the results are cached per package.
+  * `AxiomsTestCase` fails on a file out of order.
+* **Loading :** a `.ba` axiom file is parsed and type-checked before use, as `builtins.ba` is. Since each package has its file, named by the package, a class's axioms are loaded on first use — its package's `curated.ba`, then those of its supertypes' packages — rather than all at start-up ; the results are cached per package.
 
 ---
 
@@ -218,24 +217,23 @@ Summaries carry the parameters and whether the receiver a function reads (`readP
 
 ---
 
-## 5. The bytecode analyzer : deriving axioms from seeds
+## 5. The bytecode analyzer : inferring in the compiler
 
-Most axioms about JDK methods follow from their bytecode once the few things bytecode cannot tell are given : natives, interface contracts, the methods of elements. The hand-written axioms are **seeds**, and one analyzer derives the rest.
+Most of what the analysis needs about JDK methods follows from their bytecode once the few things bytecode cannot tell are given : natives, interface contracts, the methods of elements. Those are the curated axioms ; the compiler infers the rest.
 
-### 5.1 One analyzer, two uses, early
+### 5.1 In the compiler, on by default
 
-The same analyzer — `BytecodeEffectAnalyzer`, grown as below — runs in two places, with the same results :
+The analyzer — `BytecodeEffectAnalyzer`, grown as below — is tier 7 of the resolvers, and becomes **on by default** for every Java class, the JDK's and the host's alike. It runs lazily, on the methods a program actually calls and those they reach, within a budget, and caches its results in memory for the life of the JVM (one cache per class loader). There is no offline generator and no generated file : the cost is compile time, paid once per method per JVM, rather than generated code in the repository.
 
-* **while compiling**, as tier 7 (opt-in, as today), for host classes that have no axioms ;
-* **offline**, as a generator that caches its results as derived axioms : `org.babblelang.axioms.tools.AxiomGenerator`, a development tool run on demand (like `bench.Benchmarks`), not part of the build. It reads the seeds and a file of the classes to cover, and writes each package's **`inferred.ba`** (§3.4) in the class form, each member under a comment saying what it was derived from and why (the seeds used, the reasons). It skips every member name that the package's `curated.ba` already states, whatever the overloads : hand-written axioms are never overridden nor duplicated. Where it would derive something stronger than a seed, or contradicting one, it only reports it ; a seed never changes without a person deciding.
+It comes **early** in the phases : right after the mechanism, the class form and the reads model it infers into, and before any former rule is migrated, so that the curated axioms only cover what it cannot tell (§2.2).
 
-It comes **early** : right after the mechanism, the class form and the reads model it derives into, and before any axiom about a Java class is migrated, so that no axiom it could infer is ever written another way (§2.2).
-
-Derived axioms depend on the JDK's bytecode, so the generator runs on the baseline JDK (21, in the container AGENTS.md describes) and the file records the exact version it was derived on. **Every CI build re-derives them** on its JDK and fails on any difference from the checked-in `inferred.ba` files, compared as text, so drift — a JDK update, a changed seed, a change to the analyzer — shows at once ; locally, the same check runs in the JDK 21 container, and is skipped with a warning on any other JDK. A new baseline (BIP018's editions) means regenerating and reviewing the diff.
+* **Curated axioms override it :** a member stated in `curated.ba` is never inferred ; the analyzer applies it to the calls it meets. A switch (`babble.axioms.report=true`) prints, for the classes a compilation touched, every curated axiom the analyzer would infer as is or stronger — candidates for removal, to keep the set small.
+* **Results depend on the JDK :** the analyzer reads the bytecode of the compiling JVM's classes, so a JDK update may change what is inferred. The suite runs on the baseline JDK (21, CI) and on the maintainer's JDK ; an expectation that differs between them is pinned by a curated axiom, which also documents the dependency. What the compiler infers only shapes its checks and optimizations, so a program compiled with `babblec` does not change when run on another JDK.
+* **Determinism :** for a given JDK and set of curated axioms, the inference is the same whatever the order in which methods are reached (a fixed point, §5.2), so diagnostics do not depend on the order of compilation.
 
 ### 5.2 What the analyzer must learn
 
-Today it is a conservative suggester : any field write clears `hermetic`, any open call gives up, almost nothing is `nothrow`. Deriving useful axioms needs :
+Today it is a conservative suggester : any field write clears `hermetic`, any open call gives up, almost nothing is `nothrow`. Inferring useful results needs :
 
 * **a value lattice** on an ASM `Analyzer` : where a value comes from (`this`, parameter *i*, fresh, external, constant) and whether it may be null ;
 * **mutation targets :** a write to `this` or to what it reaches makes the receiver `mut` ; to a parameter, that parameter ; to a fresh object, nothing ; to a static, not `hermetic` ;
@@ -243,14 +241,14 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 * **escape :** a parameter stored in a field or a static is `shared`, one that is returned is returned through a borrow, any other is borrowed ;
 * **return nullness :** always a `new` or a constant is non-null ;
 * **shallowness :** no call reaches a stored element ;
-* **calls through axioms :** a call applies the callee's axiom, seed or derived. An open (virtual or interface) call is resolved only through the axiom of the method it names, whose contract then binds every implementation — the old hidden assumption, now a named seed. Natives come only from seeds (`StrictMath.*`, `System.identityHashCode`, `System.nanoTime`…) ;
+* **calls through axioms :** a call applies the callee's curated axiom, or what was inferred for it. An open (virtual or interface) call is resolved only through the axiom of the method it names, whose contract then binds every implementation — the old hidden assumption, now a named curated axiom. Natives come only from curated axioms (`StrictMath.*`, `System.identityHashCode`, `System.nanoTime`…) ;
 * **a fixed point** over the call graph, by strongly connected components, within a budget ; past the budget a method stays unconstrained, with the reason recorded.
 
 ### 5.3 What to expect
 
-* **Good :** `Math` over `StrictMath`'s seeded natives, the bit operations of `Integer`, `Long` and `Double`, much of `String` (pure and deterministic, but not `nothrow` : bounds checks), and the concrete core collections — `ArrayList.add` comes out hermetic, mutating its receiver, with `shared e`.
-* **Through seeds :** `HashMap.put` and `HashSet.add` rely on `Object.hashCode` and `equals`, `TreeMap.put` on `Comparable.compareTo` or `Comparator.compare` ; their derived axioms name these seeds, which is where §1's hole becomes a named, reviewable assumption.
-* **Poor or impossible :** interfaces (`List.add` has no body : a seed, or the join over a closed set of implementations), `nothrow` (almost anything can throw), the termination of loops, `invokedynamic` beyond string concatenation and lambdas, reflection, method handles and `Unsafe`.
+* **Good :** `Math` over `StrictMath`'s curated natives, the bit operations of `Integer`, `Long` and `Double`, much of `String` (pure and deterministic, but not `nothrow` : bounds checks), and the concrete core collections — `ArrayList.add` comes out hermetic, mutating its receiver, with `shared e`.
+* **Through curated axioms :** `HashMap.put` and `HashSet.add` rely on `Object.hashCode` and `equals`, `TreeMap.put` on `Comparable.compareTo` or `Comparator.compare` ; what is inferred for them rests on these curated axioms, which is where §1's hole becomes a named, reviewable assumption.
+* **Poor or impossible :** interfaces (`List.add` has no body : a curated axiom, or the join over a closed set of implementations), `nothrow` (almost anything can throw), the termination of loops, `invokedynamic` beyond string concatenation and lambdas, reflection, method handles and `Unsafe`.
 
 ---
 
@@ -260,22 +258,22 @@ Until the phase that migrates a former rule, the rule stays in the code, consult
 
 | Phase | Deliverables |
 |---|---|
-| **`BIP019-P1` — Mechanism and the class form** | the axioms directory and `README.md`, the `pom.xml` resource entry ; `BuiltinAxioms` loading each package's `curated.ba` and `inferred.ba` on first use, with a cache (§3.4), and `BuiltinAxioms.EMPTY` ; the class form `axiom Class ( … )` with its member and class words (§3.2, §3.3 : grammar, analysis passes, both backends, formatter) ; the canonical order ; tier 6 of both resolvers, nullness, deep immutability and the optimizer ask `BuiltinAxioms` first. |
-| **`BIP019-P2` — Reads of mutable state** | §4 : summaries record the receiver and parameters a function reads mutable state from ; a call is deterministic only on frozen, deeply immutable or exclusively owned arguments ; results of deterministic callees are tracked ; tests, examples (argon's `fromList`) and goldens updated. The analyzer derives axioms in this model. |
-| **`BIP019-P3` — The analyzer and the generator** | §5 : the value lattice, reads, calls through axioms, the fixed point ; one analyzer for the compile-time tier and for `AxiomGenerator`, which writes each package's `inferred.ba` on JDK 21, skipping the member names of its `curated.ba` ; CI re-derives the `inferred.ba` files and fails on any difference ; the simulation against the former rules (§2.2). |
-| **`BIP019-P4` — Effects** | seeds in `java/lang/curated.ba` and `java/util/curated.ba` (protocol methods, interface contracts, `QUESTIONABLE` where a doubtful rule is kept) and their derivations ; the simulation of the effect rules reviewed ; `standardProtocolDefault`, the `COLLECTION_*` and `STRING_*` sets, the constructor rules, the shallow and view rules and `evalFor`'s case deleted. |
-| **`BIP019-P5` — Optimizer and bytecode seeds** | `SEEDED_INTRINSICS` becomes seeds for the natives (`StrictMath`…) and derivations for the rest ; `HirPurity`'s four lists become `foldable` and `idempotent` seeds ; `ConstFoldPass` asks `BuiltinAxioms`. |
-| **`BIP019-P6` — Nullness and immutability** | `JavaNullability`'s overlay becomes `nullmarked` classes and the nullness of members' types, derived where the analyzer can tell (a result always `new` or constant), seeds elsewhere ; `Map.Entry`'s deep immutability becomes `immutable` ; the meaning of third-party nullness annotations becomes one Java stub per annotation, and `JavaNullability` loses its name lists. |
+| **`BIP019-P1` — Mechanism and the class form** | the axioms directory and `README.md`, the `pom.xml` resource entry ; `BuiltinAxioms` loading each package's `curated.ba` on first use, with a cache (§3.4), and `BuiltinAxioms.EMPTY` ; the class form `axiom Class ( … )` with its member and class words (§3.2, §3.3 : grammar, analysis passes, both backends, formatter) ; the canonical order ; tier 6 of both resolvers, nullness, deep immutability and the optimizer ask `BuiltinAxioms` first. |
+| **`BIP019-P2` — Reads of mutable state** | §4 : summaries record the receiver and parameters a function reads mutable state from ; a call is deterministic only on frozen, deeply immutable or exclusively owned arguments ; results of deterministic callees are tracked ; tests, examples (argon's `fromList`) and goldens updated. The analyzer infers in this model. |
+| **`BIP019-P3` — The analyzer in the compiler** | §5 : the value lattice, reads, calls through axioms, the fixed point, the budget and the in-memory cache ; tier 7 on by default, under the curated axioms ; `babble.axioms.report` ; the simulation against the former rules (§2.2). |
+| **`BIP019-P4` — Effects** | curated axioms in `java/lang/curated.ba` and `java/util/curated.ba` (protocol methods, interface contracts, `QUESTIONABLE` where a doubtful rule is kept), the rest inferred ; the simulation of the effect rules reviewed ; `standardProtocolDefault`, the `COLLECTION_*` and `STRING_*` sets, the constructor rules, the shallow and view rules and `evalFor`'s case deleted. |
+| **`BIP019-P5` — Optimizer** | `SEEDED_INTRINSICS` becomes curated axioms for the natives (`StrictMath`…), the rest inferred ; `HirPurity`'s four lists become `foldable` and `idempotent` curated axioms ; `ConstFoldPass` asks `BuiltinAxioms`. |
+| **`BIP019-P6` — Nullness and immutability** | `JavaNullability`'s overlay becomes `nullmarked` classes and the nullness of members' types, inferred where the analyzer can tell (a result always `new` or constant), curated elsewhere ; `Map.Entry`'s deep immutability becomes `immutable` ; the meaning of third-party nullness annotations becomes one Java stub per annotation, and `JavaNullability` loses its name lists. |
 | **`BIP019-P7` — Built-ins** | optional parameters in function types ; `axiom name: type`, its name a core scalar keyword too ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
 | **`BIP019-P8` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; `axiom … on` deprecated in favor of the class form ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 
 ## 7. Verification
 
-* After each phase : the full suite in its three runs (interpreter, compiled `-O1`, compiled `-O0`), plus `-Pbatest` where effects or nullness are covered, and argon compiled with `babblec` rendering `scene.ppm` byte for byte. Expectations change only where a phase says so (`BIP019-P2`'s reads model) or where a simulation difference was accepted, and the commit says which.
+* After each phase : the full suite in its three runs (interpreter, compiled `-O1`, compiled `-O0`), on JDK 21 and on the maintainer's JDK, plus `-Pbatest` where effects or nullness are covered, and argon compiled with `babblec` rendering `scene.ppm` byte for byte. Expectations change only where a phase says so (`BIP019-P2`'s reads model) or where a simulation difference was accepted, and the commit says which.
 * The simulation (§2.2) : for each migrated rule, no difference with the former rules on `java.base` that was not reviewed and accepted.
 * `AxiomsTestCase` :
-  1. every member of an axiom matches a real executable (by name and erased parameters), a member is stated in `curated.ba` or in `inferred.ba` but not both, the blocks of a package's files are about that package's classes, and the files are in canonical order — stale or mistyped axioms fail ;
-  2. **with `BuiltinAxioms.EMPTY` the analysis knows nothing** : `String.length`, `List.add`, `Math.sqrt` and `Map.get` are unconstrained and of unspecified nullness, nothing is foldable, the built-ins are unknown — which proves that no assumption survives anywhere else ;
-  3. the axioms' README lists every file and every `QUESTIONABLE` seed.
-* CI re-derives every `inferred.ba` and finds no difference.
-* §1's example behaves as today until its `QUESTIONABLE` seed is fixed, as its own change.
+  1. every member of a curated axiom matches a real executable (by name and erased parameters), the blocks of a package's `curated.ba` are about that package's classes, and the files are in canonical order — stale or mistyped axioms fail ;
+  2. **with `BuiltinAxioms.EMPTY` and the bytecode analysis off, the analysis knows nothing** : `String.length`, `List.add`, `Math.sqrt` and `Map.get` are unconstrained and of unspecified nullness, nothing is foldable, the built-ins are unknown — which proves that no assumption survives anywhere else ; with the analysis on, what it infers rests on the curated axioms alone ;
+  3. the axioms' README lists every file and every `QUESTIONABLE` axiom.
+* Compile time : the benchmarks (`org.babblelang.bench.Benchmarks`) and the suite's duration, before and after `BIP019-P3`, show what the inference costs.
+* §1's example behaves as today until its `QUESTIONABLE` axiom is fixed, as its own change.
