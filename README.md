@@ -669,14 +669,14 @@ Language features :
 Implementation features :
 
 - [x] interpreted mode running on the parse tree, like 1.8.x Ruby, A.K.A. SLOW MODE : no longer the default, it is the reference implementation the compiler is tested against, and runs scripts on one thread only.
-- [x] compiled mode, the default : scripts compiled to JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals, classes are JVM classes, and interfaces are real JVM interfaces with direct `INVOKEINTERFACE` dispatch and exact-signature Java `implements` bridges (`RM003`, §20), calls and member accesses are `invokedynamic` sites with inline caches (phases 1 to 3 of the [bytecode compiler design](docs/design/bip001_bytecode-compiler.md)), Java functional-interface callbacks use cached `LambdaMetafactory` adapters (`RM003`), and static types from `BIP008`/`BIP011` lower all 8 non-nullable JVM primitives (`byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`) across locals, closure cells, class fields, arithmetic, comparisons, `$spec` calls, module exports, and resolved Java calls/fields directly to unboxed JVM instructions (`RM001`/`RM005`, §19) : 13x to 769x faster than the interpreter in the benchmarks, and about 22% faster end-to-end on `raytracer-argon`.
+- [x] compiled mode, the default : scripts lower from the parse tree into an ANTLR-free typed `HIR` (`org.babblelang.ir.hir`), pass through a `BIP007`/`BIP016`-gated Nanopass optimizer (`-O1` default, `-O0` to disable : constant folding, strict IEEE-754 algebraic & `idempotent` simplification, intra-module and `babblec` AOT cross-module small-function inlining, DCE, and structured LICM; `RM010`, [BIP014](docs/design/bip014_optimization-passes.md)), and emit JVM bytecode with [ASM](https://asm.ow2.io/), behind the same API. Names are resolved at compile time, so variables are JVM locals, classes are JVM classes, and interfaces are real JVM interfaces with direct `INVOKEINTERFACE` dispatch and exact-signature Java `implements` bridges (`RM003`, §20), calls and member accesses are `invokedynamic` sites with inline caches (phases 1 to 3 of the [bytecode compiler design](docs/design/bip001_bytecode-compiler.md)), Java functional-interface callbacks use cached `LambdaMetafactory` adapters (`RM003`), and static types from `BIP008`/`BIP011` lower all 8 non-nullable JVM primitives (`byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`) across locals, closure cells, class fields, arithmetic, comparisons, `$spec` calls, module exports, and resolved Java calls/fields directly to unboxed JVM instructions (`RM001`/`RM005`, §19) : 14x to 897x faster than the interpreter in the benchmarks.
 - [x] errors found before running : redefined names, misplaced `return`, `this` or `super`, incomplete or conflicting interface implementations, private members reached from outside.
 - [x] clean, predicate-free ANTLR4 grammar with zero embedded target-language code and `PredictionMode.SLL` fast-path parsing (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4) and [BIP012](docs/design/bip012_grammar-improvements.md)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's parse tree & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
 - [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker (see [BIP004](docs/design/bip004_repl.md)).
-- [x] command line : `java -jar babble.jar script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
-- [x] ahead-of-time compilation : `-compile script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)).
+- [x] command line : `java -jar babble.jar [-O0|-O1] script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
+- [x] ahead-of-time compilation : `-compile [-O0|-O1] script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)).
 - [x] syntax errors that say what was unexpected, and where.
 - [x] a code formatter : `java -jar babble.jar -format`.
 
@@ -695,7 +695,7 @@ Language features :
 
 Implementation features :
 
-- [ ] effect-driven bytecode optimizations (leveraging `BIP007` effect and algebraic annotations).
+- [ ] deeper effect- and ownership-driven optimizations (`BIP014-P3`–`P5` : `record` scalar replacement / FBIP in-place reuse, SSA CFG `MIR` dataflow passes, and `aegraph` pipeline rewrites).
 - [ ] a Maven goal for ahead-of-time compilation.
 
 TODO : lessons from the ray tracer
