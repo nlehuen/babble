@@ -4,8 +4,8 @@
 
     Implemented in 100% pure Babble with ZERO Java builtins (no java.* or javax.*).
     Every mathematical function (sqrt, sin, cos, tan, pow),
-    random number generator (LCG), data structure (linked HittableList and Bounding
-    Volume Hierarchy BVHNode), vector/ray/AABB geometry, material model (Lambertian,
+    random number generator (LCG), Bounding Volume Hierarchy (BVHNode over Babble
+    lists), vector/ray/AABB geometry, material model (Lambertian,
     Metal, Dielectric with Schlick approximation), positionable defocus-blur Camera,
     and PPM renderer is built using native Babble constructs.
 
@@ -80,7 +80,7 @@ def runTests = fn io () -> (
     assert(scatterGlass.attenuation == Vec3.one, "Dielectric scatter failed")
 
     def sceneList: raytracer.HittableList = raytracer.Scenes.threeSpheres()
-    assert(sceneList.size == 5, "threeSpheres size failed")
+    assert(sceneList.size() == 5, "threeSpheres size failed")
     assert(sceneList.countWhere(fn (h: raytracer.Hittable): bool -> (h is raytracer.Sphere)) == 5, "countWhere failed")
 
     ;; Babble iterables in for loops: Range, HittableList, continue and break with a value
@@ -98,7 +98,7 @@ def runTests = fn io () -> (
     def glass: raytracer.Hittable? = for h in sceneList then (
         if h is raytracer.Sphere and h.mat is raytracer.Dielectric then (break h)
     )
-    assert(glass != null and glass.describe() == "<sphere>(r=0.4)", "break with a value failed")
+    assert(glass != null and glass.describe() == "<sphere>(r=0.5)", "break with a value failed")
     def bvh: raytracer.Hittable = raytracer.BVHNode.fromList(sceneList)
     def hitList: raytracer.HitRecord? = sceneList.hit(r, raytracer.Interval(0.001, math.infinity))
     def hitBvh: raytracer.HitRecord? = bvh.hit(r, raytracer.Interval(0.001, math.infinity))

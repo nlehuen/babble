@@ -1,5 +1,5 @@
 ;; ------------------------------------------------------------------------
-;; 2.0 Integer Ranges for `for` Loops (no java.util, no java.util.stream.IntStream)
+;; 2.0 Integer Ranges for `for` Loops (Babble has no built-in range)
 ;; A Babble iterable : Range has iterator(), its RangeCursor has hasNext() and next(),
 ;; which `for i in Range(0, n) then (...)` calls unboxed (BIP013).
 ;; ------------------------------------------------------------------------
