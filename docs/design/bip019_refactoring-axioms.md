@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 019 |
 | **Date** | 2026-11-20 |
-| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D20` decided; `BIP019-P1`–`P5` implemented, `P6` not started ; `BIP019-P7`, Java axioms written in Babble, proposed with `BIP019-Q8`–`Q14` open) |
+| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D20`, `BIP019-Q8`–`Q14` → `BIP019-D21`–`D27` decided; `BIP019-P1`–`P5` implemented ; next `BIP019-P8` (reads of mutable state are volatile, `BIP019-Q15` open), then `P7` (Java axioms written in Babble) and `P6` (the inference tool)) |
 | **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
 | **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as `.java` and `.ba` files ; one bytecode analyzer derives axioms from seeds, either while compiling or offline into the same directory |
 
@@ -182,7 +182,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 
 ---
 
-## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`; `BIP019-D14`–`D20`)
+## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`; `BIP019-D14`–`D20`, `BIP019-Q8`–`Q14` → `BIP019-D21`–`D27`)
 
 * **`BIP019-D1` — One directory :** every assumption about a Java or Babble function or method lives in `src/main/java/org/babblelang/axioms/`, and nowhere else.
 * **`BIP019-D2` — Layout :** Java axioms are stubs that mirror their target's package and name (`java.util.List` → `org.babblelang.axioms.java.util.ListAxioms`) ; Babble-level axioms are `.ba` files.
@@ -202,10 +202,17 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 * **`BIP019-D18` — One `.ba` file per package :** Java axioms written in Babble (`BIP019-P7`, §5) live in a single `curated.ba` per Java package, in that package's directory of the axioms, one `axiom Class ( … )` block per class.
 * **`BIP019-D19` — Sorted and deterministic :** `curated.ba` and `inferred.ba` have one canonical form — blocks sorted by class, members by name then by their parameters' erasures, class and effect words in a fixed order, formatter-clean — which `AxiomsTestCase` checks and the generator produces byte for byte from the same seeds and JDK.
 * **`BIP019-D20` — Written by hand, or inferred :** each package has a `curated.ba`, written by hand, and an `inferred.ba`, written only by the inference tool, which skips every member name `curated.ba` states ; a member is stated in one file only, and correcting an inferred axiom means writing it in `curated.ba`.
+* **`BIP019-Q8` → `BIP019-D21` — Where :** the class form may be written anywhere : in the axioms directory and in programs, whose axioms take precedence over the built-in ones, as their `axiom … on` declarations do today.
+* **`BIP019-Q9` → `BIP019-D22` — Nullness always stated :** an axiom never leaves a position's nullness unspecified ; where the former rules said nothing, the generator writes what the analysis would assume anyway (nullable for an unannotated Java type, non-null under `nullmarked`).
+* **`BIP019-Q10` → `BIP019-D23` — Java types in parameters :** where Babble types can't tell overloads apart, the member's parameter is written with the Java type (`e: java.lang.Integer`) ; elsewhere Babble types, mapped to their erasures, name the overload.
+* **`BIP019-Q11` → `BIP019-D24` — `*` members :** `*: fn …` states the profile of every method the block doesn't list, `new *: fn …` that of every constructor ; they come first in a block (`BIP019-D19`).
+* **`BIP019-Q12` → `BIP019-D25` — One profile :** a member states one profile, which the effect checker uses and the bytecode analyzer takes as its seed ; the former disagreements (`String.valueOf`) are resolved when migrating, each reported.
+* **`BIP019-Q13` → `BIP019-D26` — The class form subsumes `axiom … on` :** `axiom pure on X.m` becomes shorthand for a member covering every overload of `m`, and is deprecated in favor of the class form, with a warning.
+* **`BIP019-Q14` → `BIP019-D27` — Reads of mutable state are volatile :** a read is deterministic only when the object read is frozen or deeply immutable, or owned exclusively by the reader (a `unique` value, an object the function created itself) ; reading a mutable object through a borrowed or shared reference is volatile, since another thread may mutate it between two reads. This changes the effect model of BIP007 and BIP016 for Babble's own functions too, not only the axioms (§5.6, `BIP019-P8`).
 * **`BIP019-D17` — Special forms :** `print`, `move`, `freeze`, `discard`, `import`, `STDOUT` and `args` are rules of the language, whose typing stays in the type checker ; the prelude declares the built-ins with an ordinary signature : the conversions, `assert` / `suppose`, `same` and `classof`.
 * **`BIP019-D16` — Nearest surface form :** the built-ins are written with ordinary effect words (pure-by-default, `nothrow`, `commutative`, `io`) even where the former internal profiles differed in details the language cannot state (the conversions not borrowing `this`, `import`'s fully unconstrained effects) ; any difference a test, a golden or a diagnostic can see is reported, not hidden.
 
-## 5. Java axioms written in Babble (`BIP019-P7`, proposed)
+## 5. Java axioms written in Babble (`BIP019-P7`)
 
 ### 5.1 Motivation
 
@@ -258,8 +265,8 @@ axiomMember: (memberName | NEW) ':' type ;
 | `idempotent`, `commutative`… | algebraic properties | `@Idempotent`… |
 | **new :** `view`, `shallow`, `fresh`, `foldable` | the result aliases the receiver ; a mutator touching no element ; a fresh result ; may be called at compile time | `@View`, `@ShallowMut`, `@FreshResult`, `@Foldable` |
 
-* **Overloads :** a member's parameter types map to Java's erasures — `int` to `int`, `string` to `String`, a type variable to its bound (`Object`), `list of T` to `List`, a Java class to itself — and the member describes the overload with those parameter types. Where Babble's types don't pin one down (`int` against `Integer`, `char` against `int`, arrays), an explicit Java signature disambiguates (`BIP019-Q10`).
-* **Exactness :** some of today's profile details have no surface form — the collections' reads, hermetic and deterministic but not pure (BIP016's vocabulary has no word for that, `BIP019-Q14`), a receiver borrowed unless the method is static, the bytecode analyzer's seeds that disagree with the effect checker (`String.valueOf`), `Object`'s "deterministic where overridden". As for the built-ins (`BIP019-D16`), the nearest surface form is used and every difference a test, a golden or a diagnostic can see is reported ; the QUESTIONABLE ones are resolved rather than reproduced (`BIP019-Q12`).
+* **Overloads :** a member's parameter types map to Java's erasures — `int` to `int`, `string` to `String`, a type variable to its bound (`Object`), `list of T` to `List`, a Java class to itself — and the member describes the overload with those parameter types. Where Babble's types don't pin one down (`int` against `Integer`, `char` against `int`, arrays), the parameter is written with the Java type itself (`e: java.lang.Integer`, `BIP019-D23`).
+* **Exactness :** some of today's profile details have no surface form — a receiver borrowed unless the method is static, `Object`'s "deterministic where overridden". As for the built-ins (`BIP019-D16`), the nearest surface form is used and every difference a test, a golden or a diagnostic can see is reported. Reads are plain `fn`s, their determinism decided at the call site (`BIP019-D27`, §5.6) ; a member states one profile for the checker and the analyzer (`BIP019-D25`), and the QUESTIONABLE disagreements are resolved, not reproduced.
 
 ### 5.4 Coexistence, migration and loading
 
@@ -275,17 +282,20 @@ axiomMember: (memberName | NEW) ':' type ;
 * **Migration :** today's Java stubs reproduce rules that were written by hand, so they become `curated.ba` files : the one-off generator of `BIP019-P3` learns to write `.ba` instead of `.java`, checked by the same simulation, class by class, against the former rules. The Java stubs remain only for what Babble cannot state yet, and disappear as the language learns it — the pruning `BIP019-D1` anticipates. `inferred.ba` files appear with the inference tool (`BIP019-P6`).
 * **Loading :** a `.ba` axiom file must be parsed and type-checked before use, as `builtins.ba` is. Since each package has its two files, named by the package, a class's axioms can be loaded on first use — its package's `curated.ba` and `inferred.ba`, then those of its supertypes' packages — rather than all at start-up ; the results are cached per package.
 
-### 5.5 Open questions (`BIP019-Q8`–`Q14`)
+### 5.5 Decisions (`BIP019-Q8`–`Q14` → `BIP019-D21`–`D27`)
 
-* **`BIP019-Q8` — Where :** only in the axioms directory, or also in programs, which could then state axioms about the Java classes they use, overload by overload, where today they write `axiom pure on X.m` for every overload of a name ?
-* **`BIP019-Q9` — Unspecified nullness :** a Babble type is always non-null or nullable ; how does an axiom leave a position unspecified, as an unannotated Java signature is (`T!`, a class word, or never) ?
-* **`BIP019-Q10` — Overloads Babble types can't tell apart :** an explicit Java signature after the type (`add: fn mut (shared e: E): bool as (java.lang.Object)`), or Java types written in the member's parameters ?
-* **`BIP019-Q11` — Class-wide statements :** how to state the profile of all the methods or all the constructors of a class (`String`'s, the collections' constructors) : `*: fn …` and `new *: fn …`, or class words ?
-* **`BIP019-Q12` — Disagreements :** the analyzer's seeds and the effect checker's profiles differ in places (`String.valueOf`) ; does a member state one profile for both (fixing the QUESTIONABLE disagreement), or can it state a seed apart ?
-* **`BIP019-Q13` — Effect declarations :** does the class form subsume `axiom pure on X.m`, which then becomes shorthand for a member covering every overload, or are both kept ?
-* **`BIP019-Q14` — Reads :** today's collection reads are hermetic and deterministic but not pure (they read the receiver's mutable state) ; is `fn` (pure) close enough, or does the surface vocabulary need a word for it ?
+The questions §5 raised are settled (§4) : the class form is allowed anywhere (`BIP019-D21`) ; nullness is always stated (`BIP019-D22`) ; ambiguous overloads use Java types in their parameters (`BIP019-D23`) ; `*: fn …` and `new *: fn …` state class-wide profiles (`BIP019-D24`) ; a member states one profile for the effect checker and the analyzer alike (`BIP019-D25`) ; `axiom … on X.m` becomes shorthand for a class-form member and is deprecated (`BIP019-D26`) ; and reads of mutable state are volatile (`BIP019-D27`, §5.6).
 
-## 6. Phases (`BIP019-P1`–`P7`)
+### 5.6 Reads of mutable state (`BIP019-D27`, `BIP019-P8`)
+
+Today, "deterministic" means deterministic given the state of what a function can reach, assuming nothing mutates it concurrently : `fn (c: Counter): int -> (c.n)` and `fn (xs: list of int): int -> (xs.size())` are plain pure functions. With threads, another thread may mutate `c` or `xs` between two calls, so `BIP019-D27` makes such reads volatile, unless the object read cannot be mutated by anyone else.
+
+* **Where determinism is decided :** at the call site, where the caller knows what it passes. A function's summary records which of its receiver and parameters it reads mutable state from (as it records which it mutates, `mut`, or keeps, `shared`) ; a call is deterministic only if each object so read is frozen or deeply immutable, or owned exclusively by the caller (a `unique` value, a fresh local) ; otherwise the call is volatile. Reading a mutable field of an outer binding is volatile already.
+* **In axioms :** a Java read is written as a plain `fn` (`size: fn nothrow (): int`) ; the call site then decides, as for a Babble function. Today's collection reads, hermetic and deterministic but not pure, need no word of their own.
+* **Consequences :** functions reading a mutable object they are given become volatile unless their callers pass frozen, deeply immutable or exclusively owned values. Argon's rendering reads its world and materials, which are built once and then only read ; freezing them after construction keeps it deterministic. Tests, examples and goldens that assume such reads deterministic change.
+* **Open (`BIP019-Q15`) :** how declared function types — exports, interfaces, function values whose body the analysis doesn't see — state which parameters they read : inferred and recorded in module summaries only, with declared types assuming every non-frozen parameter is read ; or a surface word (`reads c`) ; or the reverse default.
+
+## 6. Phases (`BIP019-P1`–`P8` ; order : `P1`–`P5`, `P8`, `P7`, `P6`)
 
 | Phase | Deliverables |
 |---|---|
@@ -295,7 +305,8 @@ axiomMember: (memberName | NEW) ':' type ;
 | **`BIP019-P4` — Built-ins** | optional parameters in function types (`BIP019-D15`) ; `axiom name: type`, its name a core scalar keyword too (`BIP019-D14`) (grammar, `BlockScopes`, `TypeChecker`, `Interpreter`, `HirBuilder`/`HirEmitter`, formatter, with `.ba`, `DifferentialTestCase`, `TypeCheckerTestCase` and `FormatterTestCase` tests) ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
 | **`BIP019-P5` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 | **`BIP019-P6` — The analyzer and the generator** | §3 : the value lattice, calls through axioms, the fixed point ; `AxiomGenerator`, which writes each package's `inferred.ba` (`BIP019-D20`, after `BIP019-P7`'s form), skipping the member names of its `curated.ba`, on JDK 21 ; the compile-time tier and the generator share the analyzer ; CI re-derives the `inferred.ba` files on every build and fails on any difference (`BIP019-D13`). |
-| **`BIP019-P7` — Java axioms in Babble (proposed)** | §5 : the `axiom Class (…)` form (grammar, analysis, formatter), the new words `view`, `shallow`, `fresh`, `foldable` and the class words, one `curated.ba` per Java package (`BIP019-D18`) loaded per package with a cache ; the generator writes `.ba`, checked by the same simulation ; the Java stubs kept only for what Babble cannot state. After `BIP019-Q8`–`Q14` are decided. |
+| **`BIP019-P7` — Java axioms in Babble** | §5 : the `axiom Class (…)` form (grammar, analysis, formatter), the new words `view`, `shallow`, `fresh`, `foldable` and the class words, one `curated.ba` per Java package (`BIP019-D18`) loaded per package with a cache ; the generator writes `.ba`, checked by the same simulation ; the Java stubs kept only for what Babble cannot state. After `BIP019-P8` ; then `BIP019-P6` writes `inferred.ba` in this form. |
+| **`BIP019-P8` — Reads of mutable state are volatile** | §5.6 (`BIP019-D27`) : summaries record the receiver and parameters a function reads mutable state from ; a call is deterministic only on frozen, deeply immutable or exclusively owned arguments ; tests, examples (argon freezing its world) and goldens updated. Comes before `BIP019-P7`, whose axioms rely on it, after `BIP019-Q15`. |
 
 ## 7. Verification
 
