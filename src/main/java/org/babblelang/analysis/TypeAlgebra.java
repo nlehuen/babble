@@ -422,9 +422,21 @@ final class TypeAlgebra {
         for (int i = 0; i < from.parameters().size(); i++) {
             Type.Parameter fp = from.parameters().get(i);
             boolean borrowReadOnly = frozenBorrowSafe && fp.borrow() && !fp.mut();
-            if (i < to.parameters().size()
-                    ? !relate(to.parameters().get(i).type(), fp.type(), RelateMode.ASSIGNABLE, store, active, borrowReadOnly)
-                    : !fp.optional()) {
+            if (i < to.parameters().size()) {
+                Type toParamType = to.parameters().get(i).type();
+                Type fromParamType = fp.type();
+                if (withEffects) {
+                    if (to.forwardedEffectParams().contains(i) && toParamType instanceof Type.Function tf) {
+                        toParamType = tf.withEffects(tf.effects().relaxedForForwardedCallback());
+                    }
+                    if (from.forwardedEffectParams().contains(i) && fromParamType instanceof Type.Function ff) {
+                        fromParamType = ff.withEffects(ff.effects().relaxedForForwardedCallback());
+                    }
+                }
+                if (!relate(toParamType, fromParamType, RelateMode.ASSIGNABLE, store, active, borrowReadOnly)) {
+                    return false;
+                }
+            } else if (!fp.optional()) {
                 return false;
             }
         }
@@ -434,7 +446,14 @@ final class TypeAlgebra {
         if (!withEffects) {
             return true;
         }
-        if (!from.effects().satisfies(to.effects())) {
+        EffectSet effectiveFromEffects = from.effects();
+        for (int idx : from.forwardedEffectParams()) {
+            if (!to.forwardedEffectParams().contains(idx) && idx < to.parameters().size()
+                    && to.parameters().get(idx).type() instanceof Type.Function toCb) {
+                effectiveFromEffects = effectiveFromEffects.combineForwarded(toCb.effects());
+            }
+        }
+        if (!effectiveFromEffects.satisfies(to.effects())) {
             return false;
         }
         for (int i = 0; i < to.parameters().size(); i++) {
@@ -701,7 +720,13 @@ final class TypeAlgebra {
                     common.explicitSharedThis(), common.uniqueResult(), common.explicitUniqueResult(),
                     common.terminating(), common.isIO(), common.explicitVolatile(), common.axiomatic());
         }
-        return new Type.Function(first.typeParameters(), params, first.result(), common);
+        Set<Integer> commonForwarded = Set.of();
+        if (!first.forwardedEffectParams().isEmpty() && !second.forwardedEffectParams().isEmpty()) {
+            Set<Integer> inter = new java.util.LinkedHashSet<>(first.forwardedEffectParams());
+            inter.retainAll(second.forwardedEffectParams());
+            commonForwarded = inter;
+        }
+        return new Type.Function(first.typeParameters(), params, first.result(), common, commonForwarded);
     }
 
     // ---------------------------------------------------------------- generics and projections
@@ -742,7 +767,8 @@ final class TypeAlgebra {
                 for (Type.Parameter p : fn.parameters()) {
                     params.add(p.withType(substitute(p.type(), active)));
                 }
-                Type.Function substituted = new Type.Function(fn.typeParameters(), params, substitute(fn.result(), active), fn.effects());
+                Type.Function substituted = new Type.Function(fn.typeParameters(), params, substitute(fn.result(), active),
+                        fn.effects(), fn.forwardedEffectParams());
                 env.derived(fn, substituted);
                 return substituted;
             }

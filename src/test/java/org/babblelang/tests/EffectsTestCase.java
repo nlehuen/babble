@@ -541,7 +541,7 @@ public class EffectsTestCase {
 
         // Frame-local (default `@BORROWED`) helper closure updating enclosing function's local `def` preserves pure `nothrow`:
         assertClean("""
-                def repeat = fn io (n: int, step: fn io (i: int): int): int -> (
+                def repeat = fn nothrow with step (n: int, step: fn (i: int): int): int -> (
                     def i: int = 0
                     while i < n then (
                         step(i)
@@ -551,7 +551,7 @@ public class EffectsTestCase {
                 )
                 def triangle = fn nothrow (n: int): int -> (
                     def total: int = 0
-                    repeat(n, fn (k: int): int -> (
+                    repeat(n, fn nothrow (k: int): int -> (
                         total += k
                         total
                     ))
@@ -560,21 +560,29 @@ public class EffectsTestCase {
                 """);
     }
 
-    // ---------------------------------------------------------------- 5. Higher-Order Specialization & Subtyping
+    // ---------------------------------------------------------------- 5. Higher-Order Forwarding (`fn with f`) & Subtyping
 
     @Test
     public void testHigherOrderSpecializationSubtypingAndInterfaces() {
-        // BIP016-D6: Concrete `fn io` HOF specializes cleanly for pure vs `io` callbacks!
+        // BIP017-D1/D2: `fn with f` forwards callback effects cleanly for pure, `nothrow`, `volatile`, and `io` callbacks!
         assertClean("""
-                def apply = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
+                def apply = fn nothrow with f (f: fn (x: int): int, v: int): int -> (f(v))
                 def caller = fn nothrow (x: int): int -> (
-                    apply(fn (n: int): int -> (n * 2), x)
+                    apply(fn nothrow (n: int): int -> (n * 2), x)
                 )
                 """);
         assertHasError("""
-                def apply = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
+                def apply = fn with f (f: fn (x: int): int, v: int): int -> (f(v))
                 def badCaller = fn (x: int): int -> (
                     apply(fn io (n: int): int -> (println(n); n), x)
+                )
+                """, "violates pure guarantee");
+
+        // BIP017-D4: `fn io` HOFs are no longer secretly specialized intra-file!
+        assertHasError("""
+                def apply = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
+                def badCaller = fn (x: int): int -> (
+                    apply(fn (n: int): int -> (n * 2), x)
                 )
                 """, "violates pure guarantee");
 
@@ -593,6 +601,27 @@ public class EffectsTestCase {
                 )
                 def badCaller = fn (r: Runner, x: int): int -> (
                     r.apply(fn (n: int): int -> (n + 1), x)
+                )
+                """, "violates pure guarantee");
+
+        // BIP017-D3: Abstract interface `fn with f` methods DO forward effects across call sites!
+        assertClean("""
+                def Runner = interface (
+                    def apply: fn with f (f: fn (x: int): int, v: int): int
+                )
+                def pureCaller = fn (r: Runner, x: int): int -> (
+                    r.apply(fn (n: int): int -> (n + 1), x)
+                )
+                def ioCaller = fn io (r: Runner, x: int): int -> (
+                    r.apply(fn io (n: int): int -> (println(n); n + 1), x)
+                )
+                """);
+        assertHasError("""
+                def Runner = interface (
+                    def apply: fn with f (f: fn (x: int): int, v: int): int
+                )
+                def badCaller = fn (r: Runner, x: int): int -> (
+                    r.apply(fn io (n: int): int -> (println(n); n + 1), x)
                 )
                 """, "violates pure guarantee");
 
@@ -847,5 +876,62 @@ public class EffectsTestCase {
                 io on java.lang.System.nanoTime
                 1
                 """, "io declarations are disabled on this engine");
+    }
+
+    @Test
+    public void testCrossModuleHigherOrderWithEffects(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
+        java.nio.file.Files.writeString(tempDir.resolve("hof_lib.ba"), """
+                export def forEachInt = fn with f (xs: list of int, f: fn (x: int): any?) -> (
+                    for x in xs then (
+                        f(x)
+                    )
+                )
+                export def mapList of (T, R) = fn with f (shared xs: list of T, f: fn (x: T): R): list of R -> (
+                    def out = list of R ()
+                    for x in xs then (
+                        out.add(f(x))
+                    )
+                    out
+                )
+                export def Acc = class () (
+                    def total: int = 0
+                    def append = fn mut (x: int) -> (
+                        this.total += x
+                    )
+                )
+                """);
+
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODULE_SOURCE, org.babblelang.engine.FileModuleSource.rooted(tempDir));
+
+        // Cross-module pure caller with frame-local closure, bound mutating method, and generic HOF:
+        Object result = eval(engine, """
+                def lib = import("hof_lib.ba")
+                def runPure = fn (shared xs: list of int): int -> (
+                    def sum: int = 0
+                    lib.forEachInt(xs, fn (x: int) -> (
+                        sum += x
+                    ))
+                    def acc = lib.Acc()
+                    lib.forEachInt(xs, acc.append)
+                    def doubled = lib.mapList(xs, fn (x: int): int -> (x * 2))
+                    def dsum: int = 0
+                    for d in doubled then (
+                        dsum += d
+                    )
+                    sum + acc.total + dsum
+                )
+                runPure((list of int).of(1, 2, 3))
+                """);
+        Assertions.assertEquals(24, result);
+
+        // Cross-module `io` callback inside a pure caller must still fail:
+        assertEngineFails(engine, """
+                def lib = import("hof_lib.ba")
+                def badPure = fn (xs: list of int) -> (
+                    lib.forEachInt(xs, fn io (x: int) -> (println(x)))
+                )
+                badPure((list of int).of(1))
+                """, "violates pure guarantee");
     }
 }

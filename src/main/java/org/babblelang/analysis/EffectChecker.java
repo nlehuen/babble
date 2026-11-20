@@ -2259,6 +2259,7 @@ final class EffectChecker {
                 ParsedPrefix prefix = parseFunctionTypePrefix(ft, fn.effects().borrowThis() || fn.effects().explicitSharedThis(), false);
                 validateAlgebraicSignature(prefix.effects(), fn.parameters(), fn.result(),
                         prefix.mutThis(), false, ft);
+                validateWithClause(ft.effectPrefix(), fn.parameters());
             }
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
@@ -2266,13 +2267,67 @@ final class EffectChecker {
         }
     }
 
+    private void validateWithClause(BabbleParser.EffectPrefixContext effectPrefix,
+                                    List<Type.Parameter> params) {
+        if (effectPrefix == null || effectPrefix.withClause() == null) {
+            return;
+        }
+        Set<String> seen = new HashSet<>();
+        for (org.antlr.v4.runtime.tree.TerminalNode id : effectPrefix.withClause().ID()) {
+            String name = id.getText();
+            if (!seen.add(name)) {
+                checker.effectDiagnostic("Duplicate parameter in with clause : " + name, effectPrefix.withClause());
+                continue;
+            }
+            Type.Parameter matched = null;
+            for (Type.Parameter p : params) {
+                if (name.equals(p.name())) {
+                    matched = p;
+                    break;
+                }
+            }
+            if (matched == null) {
+                checker.effectDiagnostic("Unknown parameter in with clause : " + name, effectPrefix.withClause());
+                continue;
+            }
+            if (matched.type() != Type.ERROR && !(matched.type() instanceof Type.Function)) {
+                checker.effectDiagnostic("Parameter in with clause must be a function : " + name, effectPrefix.withClause());
+                continue;
+            }
+            if (!matched.borrow()) {
+                checker.effectDiagnostic("Parameter in with clause must be borrowed : " + name, effectPrefix.withClause());
+            }
+        }
+    }
+
+    private static Set<Integer> resolveForwardedParamIndices(BabbleParser.FunctionLiteralContext fn) {
+        if (fn.effectPrefix() == null || fn.effectPrefix().withClause() == null) {
+            return Set.of();
+        }
+        List<BabbleParser.FnParamContext> fnParams = fn.fnParameters().fnParam();
+        Set<Integer> indices = new java.util.LinkedHashSet<>();
+        for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().withClause().ID()) {
+            String name = id.getText();
+            for (int i = 0; i < fnParams.size(); i++) {
+                if (name.equals(fnParams.get(i).ID().getText())) {
+                    indices.add(i);
+                    break;
+                }
+            }
+        }
+        return indices.isEmpty() ? Set.of() : Set.copyOf(indices);
+    }
+
     private void verifyCallable(ParserRuleContext callable) {
         if (callable instanceof BabbleParser.FunctionLiteralContext fn) {
             ParsedPrefix prefix = parseFunctionPrefix(fn, false);
             Type rawType = checker.rawTypeOf(fn);
-            if (rawType instanceof Type.Function tf && !prefix.io()) {
-                validateAlgebraicSignature(prefix.effects(), tf.parameters(), tf.result(),
-                        prefix.mutThis(), prefix.axiom(), fn);
+            if (rawType instanceof Type.Function tf) {
+                validateWithClause(fn.effectPrefix(), tf.parameters());
+                if (!prefix.io()) {
+                    validateAlgebraicSignature(prefix.effects(), tf.parameters(), tf.result(),
+                            prefix.mutThis(), prefix.axiom(), fn);
+                }
             }
             if (prefix.axiom()) {
                 // Axiom body is trusted for effect guarantees, but still check static mut exclusivity inside it!
@@ -3204,6 +3259,8 @@ final class EffectChecker {
         private final Set<String> reportedMessages = new HashSet<>();
         private final List<Origin> activeForIterables = new ArrayList<>();
         private final Deque<Origin[]> loopBreakOrigins = new ArrayDeque<>();
+        private final Set<Integer> forwardedParams;
+        private final Map<ParserRuleContext, Origin> boundMethodReceivers = new IdentityHashMap<>();
 
         BodyAnalyzer(ParserRuleContext owner,
                      ScopeNode ownerScope,
@@ -3232,6 +3289,8 @@ final class EffectChecker {
             this.specializedParams = specializedParams;
             this.emitDiagnostics = emitDiagnostics;
             this.terminating = !cyclicCallables.contains(owner);
+            this.forwardedParams = owner instanceof BabbleParser.FunctionLiteralContext fn
+                    ? resolveForwardedParamIndices(fn) : Set.of();
 
             for (int i = 0; i < params.size(); i++) {
                 ParserRuleContext p = params.get(i);
@@ -3848,6 +3907,9 @@ final class EffectChecker {
             if (checker.hasCallCheck(sel)) {
                 nothrow = false;
             }
+            if (resType instanceof Type.Function) {
+                boundMethodReceivers.put(sel, recvOrig);
+            }
             return recvOrig.deriveMember(fieldName, immRes);
         }
 
@@ -4435,6 +4497,10 @@ final class EffectChecker {
                         effectiveBorrowRecv,
                         summary.effects().isHermetic(),
                         args, argExprs, argOrigins);
+                if (!fn.forwardedEffectParams().isEmpty()) {
+                    applyForwardedCallbackEffects(call, fn, isMethodCall ? receiverExpr : null, effectiveRecvOrig,
+                            args, argExprs, argOrigins);
+                }
                 Origin memberOut;
                 if (summary.effects().uniqueResult()) {
                     memberOut = Origin.ofUnique(call, null, isDeeplyImmutable(resType));
@@ -4447,11 +4513,125 @@ final class EffectChecker {
             return combinedOut;
         }
 
+        private boolean isForwardedParamExpr(BabbleParser.ExpressionContext expr) {
+            BabbleParser.ExpressionContext unwrapped = unwrapParens(expr);
+            if (!(unwrapped instanceof BabbleParser.SelectorContext s) || s.expression() != null) {
+                return false;
+            }
+            Object resolved = checker.resolveNameForEffects(s.ID().getText(), checker.occurrenceScopeOf(s));
+            if (!(resolved instanceof ParserRuleContext decl)) {
+                return false;
+            }
+            Integer idx = paramIndex.get(decl);
+            if (idx != null && forwardedParams.contains(idx)) {
+                return true;
+            }
+            if (decl instanceof BabbleParser.FnParamContext) {
+                for (BabbleParser.FunctionLiteralContext encFn : frameChain) {
+                    List<BabbleParser.FnParamContext> encParams = encFn.fnParameters().fnParam();
+                    int encIdx = encParams.indexOf(decl);
+                    if (encIdx >= 0 && resolveForwardedParamIndices(encFn).contains(encIdx)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private void applyForwardedCallbackEffects(ParserRuleContext call,
+                                                   Type.Function hof,
+                                                   BabbleParser.ExpressionContext receiverExpr,
+                                                   Origin recvOrig,
+                                                   List<BabbleParser.CallParameterContext> args,
+                                                   BabbleParser.ExpressionContext[] argExprs,
+                                                   Origin[] argOrigins) {
+            for (int i = 0; i < args.size(); i++) {
+                int pIdx = checker.parameterIndexForArg(hof.parameters(), args, args.get(i));
+                if (!hof.forwardedEffectParams().contains(pIdx)) {
+                    continue;
+                }
+                BabbleParser.ExpressionContext argExpr = argExprs[i];
+                if (isForwardedParamExpr(argExpr)) {
+                    stmtHasSideEffect = true;
+                    continue;
+                }
+                Type argType = effectiveType(argExpr);
+                for (Type m : Type.membersOf(argType)) {
+                    if (!(m instanceof Type.Function cbFn)) {
+                        continue;
+                    }
+                    EffectSet cbEffects;
+                    BabbleParser.FunctionLiteralContext cbLit = checker.literalOf(cbFn);
+                    if (cbLit != null && summaries.containsKey(cbLit)) {
+                        CallableSummary cbSum = summaries.get(cbLit);
+                        applyCallableSummaryEffects(cbSum);
+                        cbEffects = cbSum.effects();
+                    } else {
+                        applyEffects(cbFn.effects());
+                        cbEffects = cbFn.effects();
+                    }
+                    if (!cbEffects.isHermetic() || !cbEffects.isDeterministic()) {
+                        stmtHasSideEffect = true;
+                    }
+                    if (cbEffects.mutThis()) {
+                        BabbleParser.ExpressionContext unwrapped = unwrapParens(argExpr);
+                        if (unwrapped instanceof BabbleParser.SelectorContext s && s.expression() != null) {
+                            Origin boundRecvOrig = boundMethodReceivers.get(s);
+                            if (boundRecvOrig != null) {
+                                if (containsFrozen(effectiveType(s.expression()))) {
+                                    reportOnce("Cannot call mut method on frozen value", call);
+                                } else {
+                                    recordTargetMutation(boundRecvOrig, s.expression(),
+                                            "forwarded mut callback " + s.getText(), call, false);
+                                }
+                                if (receiverExpr != null && staticallySameObject(boundRecvOrig, recvOrig)) {
+                                    reportOnce("Exclusivity error : mut target " + s.expression().getText()
+                                            + " aliases argument " + receiverExpr.getText(), call);
+                                }
+                                for (int j = 0; j < argExprs.length; j++) {
+                                    if (j != i && staticallySameObject(boundRecvOrig, argOrigins[j])) {
+                                        reportOnce("Exclusivity error : mut target " + s.expression().getText()
+                                                + " aliases argument " + argExprs[j].getText(), argExprs[j]);
+                                    }
+                                }
+                            } else {
+                                hermetic = false;
+                                deterministic = false;
+                                stmtHasSideEffect = true;
+                            }
+                        } else {
+                            hermetic = false;
+                            deterministic = false;
+                            stmtHasSideEffect = true;
+                        }
+                    }
+                }
+            }
+        }
+
         private CallableSummary resolveBabbleCallSummary(Type.Function fn,
                                                          BabbleParser.ExpressionContext calleeExpr,
                                                          BabbleParser.ExpressionContext receiverExpr,
                                                          List<BabbleParser.CallParameterContext> args,
                                                          BabbleParser.ExpressionContext[] argExprs) {
+            // Forwarded callback parameter inside a `fn with f` body: pure-modulo-forwarding (BIP017-D1).
+            if (isForwardedParamExpr(calleeExpr)) {
+                stmtHasSideEffect = true;
+                int n = fn.parameters().size();
+                boolean[] mp = new boolean[n];
+                boolean[] bp = new boolean[n];
+                boolean[] up = new boolean[n];
+                for (int i = 0; i < n; i++) {
+                    mp[i] = fn.parameters().get(i).mut();
+                    bp[i] = fn.parameters().get(i).borrow();
+                    up[i] = fn.parameters().get(i).unique();
+                }
+                EffectSet pureModForward = EffectSet.ofInferred(
+                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
+                        false, true, fn.effects().uniqueResult(), true);
+                return new CallableSummary(pureModForward, mp, bp, up);
+            }
+
             // Built-ins (assert, same, classof, int, double):
             if (checker.isBuiltinFunction(fn)) {
                 int n = fn.parameters().size();
@@ -4470,8 +4650,10 @@ final class EffectChecker {
             BabbleParser.FunctionLiteralContext targetLit = resolveConcreteBabbleTarget(fn, calleeExpr, receiverExpr);
             if (targetLit != null) {
                 ParsedPrefix targetPrefix = parseFunctionPrefix(targetLit, false);
-                if (!targetPrefix.axiom() && !targetPrefix.explicitVolatile()) {
-                    // Bounded call-site specialization for concrete HOFs (including `fn io` HOFs per BIP016-D6)!
+                // BIP017-D4: retire BIP016-D6 implicit intra-file `fn io` HOF specialization;
+                // `fn with f` uses uniform call-site forwarding across concrete, cross-module, and interface HOFs.
+                if (!targetPrefix.axiom() && !targetPrefix.explicitVolatile() && !targetPrefix.io()
+                        && fn.forwardedEffectParams().isEmpty()) {
                     CallableSummary specialized = trySpecializeCall(targetLit, fn.parameters(), args, argExprs, EffectChecker.this);
                     if (specialized != null) {
                         return specialized;

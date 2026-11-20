@@ -117,11 +117,11 @@ final class CallSolver {
             List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
             boolean frozenBorrowSafe = function.effects().uniqueResult() || checker.isDeeplyImmutable(function.result());
             if (function.typeParameters().isEmpty()) {
-                bind(function.parameters(), decls, arguments, ctx, frozenBorrowSafe);
+                bind(function.parameters(), decls, arguments, ctx, frozenBorrowSafe, function.forwardedEffectParams());
                 return function.result();
             }
             Type result = genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
-                    function.effects().uniqueResult(), arguments, ctx, ctx.expression().getText(), expected);
+                    function.effects().uniqueResult(), function.forwardedEffectParams(), arguments, ctx, ctx.expression().getText(), expected);
             return result;
         }
         if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
@@ -261,7 +261,7 @@ final class CallSolver {
             return Type.ERROR;
         }
         Set<Type.TypeVar> solving = Set.copyOf(fn.typeParameters());
-        Type.Function unparameterized = new Type.Function(fn.parameters(), fn.result(), fn.effects());
+        Type.Function unparameterized = new Type.Function(fn.parameters(), fn.result(), fn.effects(), fn.forwardedEffectParams());
         BabbleParser.FunctionLiteralContext lit = checker.functionLiterals().get(fn);
         if (lit != null) {
             checker.functionLiterals().put(unparameterized, lit);
@@ -283,6 +283,12 @@ final class CallSolver {
      */
     void bind(List<Type.Parameter> parameters, List<? extends ParserRuleContext> declarations,
               List<BabbleParser.CallParameterContext> arguments, ParserRuleContext ctx, boolean frozenBorrowSafe) {
+        bind(parameters, declarations, arguments, ctx, frozenBorrowSafe, Set.of());
+    }
+
+    void bind(List<Type.Parameter> parameters, List<? extends ParserRuleContext> declarations,
+              List<BabbleParser.CallParameterContext> arguments, ParserRuleContext ctx,
+              boolean frozenBorrowSafe, Set<Integer> forwardedEffectParams) {
         int count = arguments.size();
         String[] names = argumentNames(arguments);
         boolean named = Arrays.stream(names).anyMatch(java.util.Objects::nonNull);
@@ -300,8 +306,12 @@ final class CallSolver {
             BabbleParser.ExpressionContext argument = arguments.get(found).expression();
             ParserRuleContext decl = declarations != null && index < declarations.size()
                     ? declarations.get(index) : null;
-            Type actual = checker.check(argument, parameter.type());
-            bindArgument(decl, actual, parameter.type(), frozenBorrowSafe && parameter.borrow() && !parameter.mut(), argument);
+            Type expectedParam = parameter.type();
+            if (forwardedEffectParams.contains(index) && expectedParam instanceof Type.Function cbType) {
+                expectedParam = cbType.withEffects(cbType.effects().relaxedForForwardedCallback());
+            }
+            Type actual = checker.check(argument, expectedParam);
+            bindArgument(decl, actual, expectedParam, frozenBorrowSafe && parameter.borrow() && !parameter.mut(), argument);
         }
         if (!named) {
             if (count > parameters.size()) {
@@ -390,6 +400,15 @@ final class CallSolver {
                            List<? extends ParserRuleContext> declarations,
                            Type resultPattern, boolean uniqueResult, List<BabbleParser.CallParameterContext> arguments,
                            BabbleParser.CallContext ctx, String description, Type expected) {
+        return genericBabbleCall(solvingList, parameters, declarations, resultPattern, uniqueResult,
+                Set.of(), arguments, ctx, description, expected);
+    }
+
+    Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
+                           List<? extends ParserRuleContext> declarations,
+                           Type resultPattern, boolean uniqueResult, Set<Integer> forwardedEffectParams,
+                           List<BabbleParser.CallParameterContext> arguments,
+                           BabbleParser.CallContext ctx, String description, Type expected) {
         Type.Parameter[] argParams = mapArgumentsToParameters(parameters, arguments);
         Set<Type.TypeVar> solving = Set.copyOf(solvingList);
         TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
@@ -399,7 +418,14 @@ final class CallSolver {
         List<Type> paramPatterns = new ArrayList<>(arguments.size());
         List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
         for (int i = 0; i < arguments.size(); i++) {
-            paramPatterns.add(argParams[i] != null ? argParams[i].type() : null);
+            Type pattern = argParams[i] != null ? argParams[i].type() : null;
+            if (pattern instanceof Type.Function cbPattern && !forwardedEffectParams.isEmpty()) {
+                int pIdx = parameters.indexOf(argParams[i]);
+                if (forwardedEffectParams.contains(pIdx)) {
+                    pattern = cbPattern.withEffects(cbPattern.effects().relaxedForForwardedCallback());
+                }
+            }
+            paramPatterns.add(pattern);
             argExprs.add(arguments.get(i).expression());
         }
         Type[] argTypes = new Type[arguments.size()];
@@ -453,7 +479,7 @@ final class CallSolver {
         for (Type.Parameter p : parameters) {
             substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), inferred)));
         }
-        bind(substitutedParams, declarations, arguments, ctx, frozenBorrowSafe);
+        bind(substitutedParams, declarations, arguments, ctx, frozenBorrowSafe, forwardedEffectParams);
         return substitutedResult;
     }
 
@@ -1423,7 +1449,7 @@ final class CallSolver {
                 substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), env)));
             }
             Type substitutedResult = checker.algebra().substitute(fn.result(), env);
-            Type.Function specialized = new Type.Function(substitutedParams, substitutedResult, fn.effects());
+            Type.Function specialized = new Type.Function(substitutedParams, substitutedResult, fn.effects(), fn.forwardedEffectParams());
             BabbleParser.FunctionLiteralContext lit = checker.functionLiterals().get(fn);
             if (lit != null) {
                 checker.functionLiterals().put(specialized, lit);

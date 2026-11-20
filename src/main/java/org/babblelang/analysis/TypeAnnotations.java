@@ -54,7 +54,7 @@ final class TypeAnnotations {
         if (declaration instanceof BabbleParser.DefExpressionContext def && def.type() != null) {
             Type declared = annotation(def.type(), checker.scopeOf(def));
             if (def.typeParameters() != null && declared instanceof Type.Function fn) {
-                return new Type.Function(typeVarsOf(def), fn.parameters(), fn.result(), fn.effects());
+                return new Type.Function(typeVarsOf(def), fn.parameters(), fn.result(), fn.effects(), fn.forwardedEffectParams());
             }
             return declared;
         }
@@ -192,9 +192,11 @@ final class TypeAnnotations {
             EffectSet effs = checker.effectChecker != null
                     ? checker.effectChecker.parseFunctionTypePrefix(function, interfaceMethod, checker.checkingEffects()).toEffectSet()
                     : EffectSet.EMPTY;
-            return new Type.Function(functionTypeParameters(function.fnTypeParameters(), scope),
+            List<Type.Parameter> fnParams = functionTypeParameters(function.fnTypeParameters(), scope);
+            java.util.Set<Integer> forwarded = resolveForwardedParams(function.effectPrefix(), fnParams);
+            return new Type.Function(fnParams,
                     function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY,
-                    effs);
+                    effs, forwarded);
         }
         if (primary instanceof BabbleParser.NullTypeContext) {
             return Type.NULL;
@@ -215,6 +217,25 @@ final class TypeAnnotations {
             result = Type.frozen(result);
         }
         return result;
+    }
+
+    /** Resolves {@code with f} / {@code with (f, g)} parameter names to 0-based parameter indices (BIP017). */
+    static java.util.Set<Integer> resolveForwardedParams(BabbleParser.EffectPrefixContext prefix,
+                                                         List<Type.Parameter> params) {
+        if (prefix == null || prefix.withClause() == null) {
+            return java.util.Set.of();
+        }
+        java.util.Set<Integer> indices = new java.util.LinkedHashSet<>();
+        for (org.antlr.v4.runtime.tree.TerminalNode id : prefix.withClause().ID()) {
+            String name = id.getText();
+            for (int i = 0; i < params.size(); i++) {
+                if (name.equals(params.get(i).name())) {
+                    indices.add(i);
+                    break;
+                }
+            }
+        }
+        return indices.isEmpty() ? java.util.Set.of() : java.util.Set.copyOf(indices);
     }
 
     /** Resolves {@code typeArguments} ({@code T} or {@code (T1, T2)}) in {@code expr of typeArguments}. */
