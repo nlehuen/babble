@@ -1,0 +1,212 @@
+# BIP019: Refactoring Babble axioms
+
+| | |
+|---|---|
+| **BIP** | 019 |
+| **Date** | 2026-11-20 |
+| **Status** | Draft (`BIP019-D1`–`D6` decided, `BIP019-Q1`–`Q7` open; `BIP019-P1`–`P6` not started) |
+| **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
+| **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as `.java` and `.ba` files ; one bytecode analyzer derives axioms from seeds, either while compiling or offline into the same directory |
+
+---
+
+## 1. Problem Statement
+
+The analysis trusts facts about functions it cannot see into : that `String.length()` is pure, that `list.add(x)` only changes the list, that `Map.get` may return `null`, that `print` performs I/O. Trusting them is unavoidable ; what is wrong today is that they are **invisible**. They are private constants and special cases spread over six files, mixed with the mechanisms that use them :
+
+| Where | What it assumes |
+|---|---|
+| `EffectChecker.standardProtocolDefault` (tier 6 of `resolveJavaMethodProfile`), `STRING_NOTHROW_METHODS`, `COLLECTION_READ_METHODS`, `COLLECTION_VIEW_METHODS`, `COLLECTION_MUT_METHODS`, `COLLECTION_MUT_BORROW_ARG_METHODS`, `isCoreCollectionClass` | `String` methods pure (a subset `nothrow`) ; `Map.Entry.getKey`/`getValue` pure, `setValue` mutating ; collection read, view and mutating methods, matched **by name** on any implementation of `Collection`, `Map`, `Iterable` or `Iterator` ; `equals`, `compareTo`, `hashCode` and `toString` pure on **any** class |
+| `EffectChecker.resolveJavaConstructorProfile` (tier 6), the shallow-mutator rule in `applyJavaCall`, `evalFor` | `String` constructors pure, collection and entry constructors hermetic ; which mutators leave the elements alone ("shallow") ; iterating a core collection has no effect of its own |
+| `BytecodeEffectAnalyzer.SEEDED_INTRINSICS` | about 160 methods of `Math`, `StrictMath`, `Double`, `Float`, `Integer`, `Long` and `String` pure |
+| `JavaNullability` (`isOverlayNullMarked`, `overlayReturnNullness`, `overlayParameterNullness`, ~300 lines) | the nullness of `java.base` : what is null-marked, `Map.get` nullable, iterators non-null… |
+| `TypeChecker.isDeeplyImmutable` | `Map.Entry` is deeply immutable |
+| `opt/HirPurity` (`PURE_NOTHROW_TERMINATING_MATH`, `IDEMPOTENT_MATH`, `PURE_NOTHROW_TERMINATING_STRING`, `IDEMPOTENT_STRING`) | `Math` and `String` methods pure, `nothrow`, terminating, idempotent — and `ConstFoldPass` **invokes** them at compile time |
+| `OperatorTypes` (`PURE_DET`, `*_CONVERSION`, `ASSERT_FUNCTION`, `SAME_FUNCTION`, … `implicitType`) | the types and effects of Babble's built-ins : `int(x)` and the other conversions, `assert`, `same`, `classof`, `print`… |
+
+None of them is wrong for being an assumption. Some are wrong as stated, and nobody could tell. For instance, `equals` and `compareTo` are assumed pure on every class, so a sorted set's `add` counts as "shallow" — yet the set calls the elements' `compareTo`, which a Babble class may write with a `mut` parameter :
+
+```babble
+def Evil = class (def v: int) implements java.lang.Comparable of Evil (
+    def compareTo = fn (mut other: Evil): int -> (other.v += 100; this.v - other.v)
+)
+def pureLooking = fn (shared e: Evil): int -> (
+    def local: sortedset of Evil = sortedset()
+    local.add(e)          ;; "shallow", so pure... but the set calls e.compareTo(…)
+    local.add(Evil(5))
+    e.v
+)
+def victim = Evil(1)
+println(victim.v, " ", pureLooking(victim), " ", victim.v)    ;; 1 201 201
+```
+
+`pureLooking` carries no effect keyword and borrows `e`, yet mutates it. The hole is not in the effect checker's logic but in an assumption buried in it. This BIP makes every such assumption a line in a file one can read, review and change.
+
+---
+
+## 2. Design
+
+### 2.1 One directory (`BIP019-D1`, `D2`)
+
+```
+src/main/java/org/babblelang/axioms/
+  package-info.java, README.md     the format, the index of the files, the QUESTIONABLE list
+  builtins.ba                      Babble's built-ins (the prelude)
+  java/lang/                       axioms about the classes of java.lang : one stub per target class
+    ObjectAxioms.java  ComparableAxioms.java  StringAxioms.java  MathAxioms.java  StrictMathAxioms.java
+    DoubleAxioms.java  FloatAxioms.java  IntegerAxioms.java  LongAxioms.java  IterableAxioms.java
+  java/util/                       axioms about the classes of java.util
+    CollectionAxioms.java  ListAxioms.java  SetAxioms.java  SortedSetAxioms.java  MapAxioms.java
+    SortedMapAxioms.java  MapEntryAxioms.java  IteratorAxioms.java  ArrayListAxioms.java  …
+  java/util/function/ …            and so on, for whatever the nullness overlay covers
+```
+
+* **Nowhere else.** No list of assumptions about a Java or Babble function or method remains in the interpreter, the compiler, the analysis or the optimizer. Quantity and elegance don't matter ; being explicit and discoverable does. Later work prunes the axioms, through more expressive forms or smarter inference (§3).
+* **One rule to find an axiom :** the stub for `java.util.List` is `org.babblelang.axioms.java.util.ListAxioms` ; a nested class takes its outer class's name (`Map.Entry` → `MapEntryAxioms`). Derived axioms (§3) sit next to it, as `ListDerivedAxioms`.
+* **The build :** the `.java` stubs compile with the front end, since the directory is a source root ; the package is in the full jar, not in the runtime jar (the runtime boundary is unchanged). A resource entry in `pom.xml` copies the `.ba` files of `src/main/java` next to the classes. The loader lists the package on the class path, in a directory or in a jar : no hand-written index.
+
+### 2.2 Java axioms : stubs
+
+A stub mirrors the signatures of its target and annotates them with the effect vocabulary host classes already use (`org.babblelang.effects` : `@Pure`, `@Mut`, `@Shared`, `@Unique`, `@Nothrow`, `@IO`, `@Volatile`, `@NotNull` and the algebraic properties), so the effect checker reads a stub exactly as it reads an annotated host class (`profileFromAnnotations`) :
+
+```java
+package org.babblelang.axioms.java.util;
+
+/** QUESTIONABLE : by name, on every implementation of Collection (BIP019 §2.6). */
+@Axioms(target = java.util.Collection.class, inherited = true)
+interface CollectionAxioms<E> {
+    @AnyOverload @Hermetic @Nothrow int size();
+    @AnyOverload @Mut @ShallowMut boolean add(@Shared E e);
+    @AnyOverload @View java.util.Iterator<E> iterator();
+    …
+}
+```
+
+New annotations, in `org.babblelang.effects`, only where a rule of today cannot be stated otherwise :
+
+| Annotation | Meaning |
+|---|---|
+| `@Axioms(target, inherited)` | this type states axioms about `target` (and, if `inherited`, its subtypes) |
+| `@AnyOverload` | the axiom holds for every overload of that name — today's rules match by name |
+| `@ShallowMut` | the mutator changes the receiver but not the objects it holds |
+| `@View` | the result aliases the receiver |
+| `@DeeplyImmutable` | on a stub type : instances are deeply immutable |
+| `@Nullable`, `@NullMarked` | nullness, with JSpecify's semantics so that parametric nullness keeps working |
+| `@Foldable` | the optimizer may call it at compile time |
+| `@Terminating` | always terminates (what `HirPurity` assumes) |
+| `@Derived(jdk, from, reasons)` | written by the analyzer (§3), never by hand |
+
+Constructors are mirrored as constructors on the stubs of concrete classes (`ArrayListAxioms`), or as methods tagged `@Constructor` where the stub is an interface.
+
+### 2.3 Babble axioms : the prelude
+
+`builtins.ba` declares Babble's built-ins in Babble. Those with an ordinary signature are declaration-only `export def`s, whose effects then follow pure-by-default :
+
+```babble
+export def int: fn (value: byte | short | int | long | float | double | char | string): int
+export def same: fn (a: any?, b: any?): bool
+```
+
+The special forms, whose typing is a rule of the language — `print`, `move`, `freeze`, `discard`, `import`, `STDOUT`, `args` — keep their typing rules in code, and get their effects from effect declarations in the same file (`io on print`). The prelude is analysed once, like a module ; `OperatorTypes` reads its `TypedModuleSummary` instead of its constants.
+
+### 2.4 The loader and the tiers
+
+`org.babblelang.analysis.Axioms` loads the directory once and is immutable afterwards. It answers `methodProfile`, `constructorProfile`, `returnNullness`, `parameterNullness`, `nullMarked`, `isDeeplyImmutable`, `isFoldable`, `isIdempotent` and `builtins` ; `Axioms.EMPTY` knows nothing, for tests. The resolvers of `EffectChecker` keep their order, with tier 6 replaced (`BIP019-D5`) :
+
+1. file, module or session `axiom` / `io` declarations on a method ;
+2. engine overrides on a method (`assumeEffects`) ;
+3. effect annotations on the Java method itself ;
+4. file, session or engine declarations on a whole class ;
+5. effect annotations on the Java class ;
+6. **built-in axioms** — hand-written, then derived (`Axioms`) ;
+7. bytecode analysis, when enabled (§3) ;
+8. unconstrained.
+
+### 2.5 What stays in code
+
+Not every rule is an assumption about a function :
+
+* **Language semantics :** operators on scalars, the `equals`, `hashCode` and `toString` that records generate, the iteration protocol itself, what `list()` and the other core collection constructors build ;
+* **Mechanisms :** the tier order, how a stub is matched, how the bytecode analyzer works, and the recognition of third-party nullness annotations by name (`BIP019-Q4`).
+
+### 2.6 QUESTIONABLE axioms
+
+The migration reproduces today's assumptions exactly (`BIP019-D4`), including those that are known to be doubtful. Each of them is tagged `QUESTIONABLE` in its file and listed in the README, so that fixing one is a reviewable edit of one axiom file :
+
+* **`equals`, `hashCode`, `compareTo` pure on every class** (`ObjectAxioms`, `ComparableAxioms`) — false for user classes (§1) ; the fix is to require Babble implementations of these protocol methods to be pure ;
+* **collection methods by name on every implementation** (`CollectionAxioms`, `MapAxioms`, `IteratorAxioms`, `IterableAxioms`) — any `java.util.List` written by anyone is trusted ; the fix is to keep the shallow and hermetic axioms for Babble's core collections' classes only ;
+* **`Map.Entry` deeply immutable** (`MapEntryAxioms`) — the entries of `entrySet()` support `setValue`.
+
+---
+
+## 3. The bytecode analyzer : deriving axioms from seeds
+
+Most axioms about JDK methods follow from their bytecode once the few things bytecode cannot tell are given : natives, interface contracts, the methods of elements. The hand-written axioms become **seeds**, and one analyzer derives the rest.
+
+### 3.1 One analyzer, two uses (`BIP019-D6`)
+
+The same analyzer — `BytecodeEffectAnalyzer`, grown as below — runs in two places, with the same results :
+
+* **while compiling**, as tier 7 (opt-in, as today), for host classes that have no axioms ;
+* **offline**, as a generator that caches its results as derived axioms : `org.babblelang.axioms.tools.AxiomGenerator`, a development tool run on demand (like `bench.Benchmarks`), not part of the build. It reads the seeds and a file of the classes to cover, and writes `<Class>DerivedAxioms.java` stubs whose methods carry `@Derived(jdk = "21.0.x", from = {…}, reasons = {…})`. It never touches hand-written stubs ; on a conflict the seed wins and the tool says so. The results are checked in and reviewed like any other change.
+
+Derived axioms depend on the JDK's bytecode, so the generator runs on the baseline JDK (21, in the container AGENTS.md describes) and records the exact version. A new baseline (BIP018's editions) means regenerating and reviewing the diff.
+
+### 3.2 What the analyzer must learn
+
+Today it is a conservative suggester : any field write clears `hermetic`, any open call gives up, almost nothing is `nothrow`. Deriving useful axioms needs :
+
+* **a value lattice** on an ASM `Analyzer` : where a value comes from (`this`, parameter *i*, fresh, external, constant) and whether it may be null ;
+* **mutation targets :** a write to `this` or to what it reaches makes the receiver `mut` ; to a parameter, that parameter ; to a fresh object, nothing ; to a static, not `hermetic` ;
+* **escape :** a parameter stored in a field or a static is `shared`, one that is returned is returned through a borrow, any other is borrowed ;
+* **return nullness :** always a `new` or a constant is `@NotNull` ;
+* **shallowness :** no call reaches a stored element ;
+* **calls through axioms :** a call applies the callee's axiom, seed or derived. An open (virtual or interface) call is resolved only through the axiom of the method it names, whose contract then binds every implementation — the old hidden assumption, now a named seed. Natives come only from seeds (`StrictMath.*`, `System.identityHashCode`, `System.nanoTime`…) ;
+* **a fixed point** over the call graph, by strongly connected components, within a budget ; past the budget a method stays unconstrained, with the reason recorded.
+
+### 3.3 What to expect
+
+* **Good :** `Math` over `StrictMath`'s seeded natives, the bit operations of `Integer`, `Long` and `Double`, much of `String` (pure and deterministic, but not `nothrow` : bounds checks), and the concrete core collections — `ArrayList.add` comes out hermetic, mutating its receiver, with `shared e`.
+* **Through seeds :** `HashMap.put` and `HashSet.add` rely on `Object.hashCode` and `equals`, `TreeMap.put` on `Comparable.compareTo` or `Comparator.compare` ; their derived axioms name these seeds, which is where §1's hole becomes a named, reviewable assumption.
+* **Poor or impossible :** interfaces (`List.add` has no body : a seed, or the join over a closed set of implementations), `nothrow` (almost anything can throw), the termination of loops, `invokedynamic` beyond string concatenation and lambdas, reflection, method handles and `Unsafe`.
+
+---
+
+## 4. Settled Decisions (`BIP019-D1`–`D6`)
+
+* **`BIP019-D1` — One directory :** every assumption about a Java or Babble function or method lives in `src/main/java/org/babblelang/axioms/`, and nowhere else.
+* **`BIP019-D2` — Layout :** Java axioms are stubs that mirror their target's package and name (`java.util.List` → `org.babblelang.axioms.java.util.ListAxioms`) ; Babble-level axioms are `.ba` files.
+* **`BIP019-D3` — Everything moves :** effects, nullness, deep immutability, the optimizer's whitelists, and the built-ins' signatures and effects.
+* **`BIP019-D4` — As-is first :** the migration reproduces today's assumptions exactly (same test results, same `scene.ppm`) ; doubtful ones are tagged `QUESTIONABLE` (§2.6) and fixed afterwards, each as an edit of its axiom file.
+* **`BIP019-D5` — Precedence :** user `axiom` declarations, engine overrides and annotations on host classes keep precedence over the built-in axioms ; the bytecode analysis comes after them.
+* **`BIP019-D6` — One analyzer :** the same bytecode analyzer derives axioms while compiling (opt-in) and offline (a generator caching them as `@Derived` stubs).
+
+## 5. Open Questions (`BIP019-Q1`–`Q7`)
+
+* **`BIP019-Q1` — Discovery :** listing the package on the class path (directory or jar), or an index generated at build time ?
+* **`BIP019-Q2` — Declaration-only definitions :** what syntax and rules for `export def int: fn (…): int` without a value, allowed in axiom files only ?
+* **`BIP019-Q3` — Overloads :** keep `@AnyOverload`, or list every overload explicitly ?
+* **`BIP019-Q4` — Annotation names :** should the recognition of third-party nullness annotations (`lombok.NonNull`, `jakarta.annotation.Nullable`…) move to the axioms too ?
+* **`BIP019-Q5` — Order of the fixes :** which `QUESTIONABLE` axiom first (proposed : the protocol methods, which close §1's hole) ?
+* **`BIP019-Q6` — Stronger derivations :** when a derived axiom is stronger than a hand-written one, replace the seed after review, or only report it ?
+* **`BIP019-Q7` — Re-derivation in CI :** check on every build that the derived axioms still follow from the JDK, or only when the baseline JDK changes ?
+
+## 6. Phases (`BIP019-P1`–`P6`)
+
+| Phase | Deliverables |
+|---|---|
+| **`BIP019-P1` — Mechanism and effects** | `Axioms`, the new annotations, the `pom.xml` resource entry, the package's `package-info.java` and `README.md` ; stubs for `Object`, `Comparable`, `String`, `Map.Entry`, `Collection`, `Map`, `Iterable`, `Iterator` and the concrete collections' constructors ; tier 6 of both resolvers, the shallow and view rules and `evalFor` read `Axioms` ; `standardProtocolDefault` and the `COLLECTION_*` and `STRING_*` sets are deleted. |
+| **`BIP019-P2` — Optimizer and bytecode seeds** | `SEEDED_INTRINSICS` and `HirPurity`'s four lists become stubs for `Math`, `StrictMath`, `Double`, `Float`, `Integer`, `Long` and `String` (`@Foldable` marks exactly today's narrower folding subset) ; `ConstFoldPass` asks `Axioms`. |
+| **`BIP019-P3` — Nullness and immutability** | `JavaNullability`'s overlay becomes `@NullMarked` stubs with `@Nullable` where it said nullable ; `Map.Entry`'s deep immutability becomes `@DeeplyImmutable`. |
+| **`BIP019-P4` — Built-ins** | `builtins.ba` and declaration-only definitions in axiom files ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
+| **`BIP019-P5` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
+| **`BIP019-P6` — The analyzer and the generator** | §3 : the value lattice, calls through axioms, the fixed point ; `AxiomGenerator` and the first derived stubs, generated on JDK 21 ; the compile-time tier and the generator share the analyzer. |
+
+## 7. Verification
+
+* After each phase : the full suite in its three runs (interpreter, compiled `-O1`, compiled `-O0`) with **unchanged** expectations — the migration preserves behavior — plus `-Pbatest` where effects or nullness are covered, and argon compiled with `babblec` rendering `scene.ppm` byte for byte.
+* `AxiomsTestCase` :
+  1. every stub method matches a real executable (by name and erased parameters, or `@AnyOverload` with at least one), and every stub's package and name agree with its target — stale or mistyped axioms fail ;
+  2. **with `Axioms.EMPTY` the analysis knows nothing** : `String.length`, `List.add`, `Math.sqrt` and `Map.get` are unconstrained and of unspecified nullness, nothing is foldable, the built-ins are unknown — which proves that no assumption survives anywhere else ;
+  3. the axioms' README lists every file.
+* §1's example behaves as today until its `QUESTIONABLE` axiom is fixed, as its own change.
