@@ -38,13 +38,15 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
 - **`raytracer.Rng` (no `java.util.Random`)**:
   - 32-bit Linear Congruential Generator (`seed * 1664525 + 1013904223`) leveraging Babble's 32-bit signed integer wrap-around on `int` arithmetic.
 - **`raytracer.HittableList` & `raytracer.BVHNode` (no `java.util.ArrayList`)**:
-  - Linked-list scene container (`HittableNode` / `HittableList`) with higher-order `forEach` and closure-based `countWhere`.
+  - Linked-list scene container (`HittableNode` / `HittableList`) with higher-order `forEach` and closure-based `countWhere`, iterable with `for item in list` through its own `HittableCursor` (no `java.util.Iterator`).
+- **`raytracer.Range` (no `java.util.stream.IntStream`, no `list`)**:
+  - `Range(start, stop)` and its `RangeCursor`: the ints of `[start, stop)` for `for i in Range(0, n)` loops, iterated unboxed through Babble's own iteration protocol.
   - Pure-Babble Bounding Volume Hierarchy (`AABB` + `BVHNode.fromList`) that recursively partitions `HittableList` along the longest bounding-box axis using `recurse`.
 - **Native Babble I/O (`println` / `print`)**:
   - Outputs standard ASCII `P3` PPM image data via Babble's built-in `println(..., to: out)` (defaulting to `STDOUT`).
 
 ### Babble Language Features Exercised
-- **Modules**: one file per part of the ray tracer in [lib/](lib) (`math`, `rng`, `vec3`, `ray`, `interval`, `aabb`, `interfaces`, `materials`, `hittables`, `color`, `camera`, `scenes`), with `export def` and `import("….ba")`. `lib/raytracer.ba` re-exports them all, so [raytracer.ba](raytracer.ba) reaches them as `raytracer.Vec3`, `raytracer.Camera`… The classes of `lib/materials.ba` and `lib/hittables.ba` implement the interfaces of `lib/interfaces.ba`, which the analysis checks across files (the [modules BIP](../../docs/design/bip005_modules.md), M2).
+- **Modules**: one file per part of the ray tracer in [lib/](lib) (`math`, `range`, `rng`, `vec3`, `ray`, `interval`, `aabb`, `interfaces`, `materials`, `hittables`, `color`, `camera`, `scenes`), with `export def` and `import("….ba")`. `lib/raytracer.ba` re-exports them all, so [raytracer.ba](raytracer.ba) reaches them as `raytracer.Vec3`, `raytracer.Camera`… The classes of `lib/materials.ba` and `lib/hittables.ba` implement the interfaces of `lib/interfaces.ba`, which the analysis checks across files (the [modules BIP](../../docs/design/bip005_modules.md), M2).
 - **Records (`record`)**: `Vec3`, `Ray`, `Interval`, `AABB`, `HitRecord`, `ScatterResult` (using generated structural `==`, `hashCode`, `toString`, and read-only members).
 - **Classes (`class`)**: `Rng`, `Lambertian`, `Metal`, `Dielectric`, `Sphere`, `HittableNode`, `HittableList`, `BVHNode`, `Camera` (using header `def` and `private def` members, constructor-local parameters, and `private` body fields).
 - **Static blocks (`static ( ... )`)**: `Vec3.zero`, `Vec3.one`, `Vec3.random*`, `Interval.empty`, `Interval.universe`, `Interval.enclose`, `AABB.empty`, `AABB.fromPoints`, `AABB.enclose`, `HitRecord.create`, `Dielectric.reflectance`, `BVHNode.fromList` (using `this(...)` inside `static` blocks to invoke the class constructor).
@@ -54,10 +56,11 @@ Every primitive that would ordinarily rely on the JDK is implemented directly in
   - `Lambertian` and `Metal` calling `super.describe()`, and `Sphere implements Hittable, Describable` calling qualified `super(Hittable).describe()`.
 - **Object literals (`object`)**: `emptyHittable` (`object implements Hittable`), `Color`, and `Scenes`.
 - **First-class functions & closures**: `HittableList.forEach` and `HittableList.countWhere`, plus `recurse` in functions, methods, and static methods.
+- **`for` loops over Babble iterables, `break` and `continue` ([BIP013](../../docs/design/bip013_iterators.md))**: `Range` and `HittableList` implement the iteration protocol (`iterator()` returning a cursor with `hasNext()` and `mut next()`), so the camera's pixel and sample loops, the scene's marble grid (skipping spheres too close to the big one with `continue`), `HittableList.hit`/`forEach` and `BVHNode.fromList` are `for` loops; the self-tests also `break` out of one with a value. The hot numeric kernels of `lib/math.ba` (`sqrt`, `sin`, `cos`) keep their `while` loops.
 - **Named arguments & default parameters**: `Camera(...)`, `Scenes.finalScene(...)`, `println(..., to: out)`.
 - **Runtime type introspection & equality**: `is`, `classof`, `same`, `==`, `assert`.
 - **Type annotations**: Every parameter, return type, and member is annotated and checked statically and at runtime.
-- **Pure-by-default effects, ownership & HOF forwarding ([BIP016](../../docs/design/bip016_consolidating-effect-annotations.md), [BIP017](../../docs/design/bip017_higher-order-function-effects.md))**: Typed functions, methods, interface signatures, and callbacks are statically verified pure, deterministic, const, and borrowed by default — `96 / 105` functions carry zero function-level effect keywords, with only `28` explicit effect tokens (`mut`, `shared`, `unique`, `calling`, and just `3` `io` entrypoints — zero `io` in `lib/hittables.ba`) across all 14 modules (`0` `axiom`s).
+- **Pure-by-default effects, ownership & HOF forwarding ([BIP016](../../docs/design/bip016_consolidating-effect-annotations.md), [BIP017](../../docs/design/bip017_higher-order-function-effects.md))**: Typed functions, methods, interface signatures, and callbacks are statically verified pure, deterministic, const, and borrowed by default — `99 / 110` functions carry zero function-level effect keywords, with only `30` explicit effect tokens (`mut`, `shared`, `unique`, `calling`, and just `3` `io` entrypoints — zero `io` in `lib/hittables.ba`) across all 15 modules (`0` `axiom`s).
 
 ## Running
 

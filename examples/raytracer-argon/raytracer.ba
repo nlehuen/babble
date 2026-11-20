@@ -9,7 +9,7 @@
     Metal, Dielectric with Schlick approximation), positionable defocus-blur Camera,
     and PPM renderer is built using native Babble constructs.
 
-    The program is split into modules in lib/ : math, rng, vec3, ray, interval, aabb,
+    The program is split into modules in lib/ : math, range, rng, vec3, ray, interval, aabb,
     hittable (interfaces, materials, spheres, lists and the BVH), color, camera and
     scenes. lib/raytracer.ba re-exports them all from one facade module, so this file
     uses them as raytracer.Vec3, raytracer.Camera...
@@ -82,6 +82,23 @@ def runTests = fn io () -> (
     def sceneList: raytracer.HittableList = raytracer.Scenes.threeSpheres()
     assert(sceneList.size == 5, "threeSpheres size failed")
     assert(sceneList.countWhere(fn (h: raytracer.Hittable): bool -> (h is raytracer.Sphere)) == 5, "countWhere failed")
+
+    ;; Babble iterables in for loops: Range, HittableList, continue and break with a value
+    def upperSum: int = 0
+    for k in raytracer.Range(0, 6) then (
+        if k < 3 then (continue)
+        upperSum += k
+    )
+    assert(upperSum == 12, "Range / continue failed")
+    def spheres: int = 0
+    for h in sceneList then (
+        if h is raytracer.Sphere then (spheres += 1)
+    )
+    assert(spheres == 5, "for over HittableList failed")
+    def glass: raytracer.Hittable? = for h in sceneList then (
+        if h is raytracer.Sphere and h.mat is raytracer.Dielectric then (break h)
+    )
+    assert(glass != null and glass.describe() == "<sphere>(r=0.4)", "break with a value failed")
     def bvh: raytracer.Hittable = raytracer.BVHNode.fromList(sceneList)
     def hitList: raytracer.HitRecord? = sceneList.hit(r, raytracer.Interval(0.001, math.infinity))
     def hitBvh: raytracer.HitRecord? = bvh.hit(r, raytracer.Interval(0.001, math.infinity))

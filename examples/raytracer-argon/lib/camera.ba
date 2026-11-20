@@ -1,4 +1,5 @@
 def math = import("math.ba")
+def Range = import("range.ba").Range
 def Rng = import("rng.ba").Rng
 def Vec3 = import("vec3.ba").Vec3
 def Ray = import("ray.ba").Ray
@@ -97,11 +98,9 @@ export def Camera = class (
 
     def renderPixel = fn (i: int, j: int, world: Hittable, mut rng: Rng): Vec3 -> (
         def pixelColor: Vec3 = Vec3.zero
-        def sample: int = 0
-        while sample < this.samplesPerPixel then (
+        for sample in Range(0, this.samplesPerPixel) then (
             def r: Ray = this.getRay(i, j, rng)
             pixelColor += this.rayColor(r, this.maxDepth, world, rng)
-            sample += 1
         )
         pixelColor * this.pixelSamplesScale
     )
@@ -110,15 +109,11 @@ export def Camera = class (
         println("P3", to: out)
         println(this.imageWidth, " ", this.imageHeight, to: out)
         println(255, to: out)
-        def j: int = 0
-        while j < this.imageHeight then (
-            def i: int = 0
-            while i < this.imageWidth then (
+        for j in Range(0, this.imageHeight) then (
+            for i in Range(0, this.imageWidth) then (
                 def pixelColor: Vec3 = this.renderPixel(i, j, world, rng)
                 println(Color.formatPpm(pixelColor), to: out)
-                i += 1
             )
-            j += 1
         )
         null
     )
