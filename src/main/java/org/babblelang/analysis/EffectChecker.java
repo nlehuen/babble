@@ -598,6 +598,16 @@ final class EffectChecker {
         return parsed;
     }
 
+    /** Whether {@code ctx} is (in) the type of a member of an axiom about a Java class (BIP019-P7). */
+    private static boolean inAxiomMember(ParserRuleContext ctx) {
+        for (org.antlr.v4.runtime.tree.ParseTree t = ctx; t != null; t = t.getParent()) {
+            if (t instanceof BabbleParser.AxiomMemberContext) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static List<Token> effectPrefixTokens(BabbleParser.EffectPrefixContext prefix) {
         return prefix.effectWord().stream().map(ParserRuleContext::getStart).toList();
     }
@@ -748,6 +758,12 @@ final class EffectChecker {
                         checker.effectDiagnostic("shared on a function requires a receiver (this) : mark escaping parameters with shared", owner);
                     }
                     explicitSharedThis = true;
+                }
+                case "view", "shallow", "fresh", "foldable" -> {
+                    // Only in a Java axiom written in Babble (BIP019-P7), which reads them itself.
+                    if (reportErrors && !inAxiomMember(owner)) {
+                        checker.effectDiagnostic("Unknown effect modifier : " + word, owner);
+                    }
                 }
                 default -> {
                     if (reportErrors) {
@@ -3456,8 +3472,8 @@ final class EffectChecker {
             if (stmt == null) {
                 return;
             }
-            if (stmt instanceof BabbleParser.AxiomExpressionContext) {
-                return; // a declaration, with no runtime effect (BIP019-D8)
+            if (stmt instanceof BabbleParser.AxiomExpressionContext || stmt instanceof BabbleParser.AxiomClassExpressionContext) {
+                return; // a declaration, with no runtime effect (BIP019-D8, P7)
             }
             if (stmt instanceof BabbleParser.DefExpressionContext
                     || stmt instanceof BabbleParser.AssignExpressionContext

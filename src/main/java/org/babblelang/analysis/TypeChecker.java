@@ -1605,6 +1605,7 @@ final class TypeChecker {
                 case BabbleParser.IfExprContext c -> visitIfExpr(c, expected, role);
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
                 case BabbleParser.AxiomExpressionContext c -> visitAxiomExpression(c);
+                case BabbleParser.AxiomClassExpressionContext c -> Type.NULL; // read by BuiltinAxioms (BIP019-P7)
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
                 case BabbleParser.ForExpressionContext c -> visitForExpression(c, expected, role);
                 case BabbleParser.ClassExpressionContext c -> visitClassExpression(c, expected, role);

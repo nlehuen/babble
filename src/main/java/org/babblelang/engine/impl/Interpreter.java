@@ -399,6 +399,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return null;
     }
 
+    /** {@code axiom java.util.Collection ( … )} states axioms about a Java class : nothing at runtime (BIP019-P7). */
+    @Override
+    public Object visitAxiomClassExpression(BabbleParser.AxiomClassExpressionContext ctx) {
+        last = ctx;
+        return null;
+    }
+
     @Override
     public Object visitBoolean(BabbleParser.BooleanContext ctx) {
         last = ctx;

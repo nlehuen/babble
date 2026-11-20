@@ -33,13 +33,16 @@ effectPrefix: effectWord+ callingClause?
 
 callingClause: CALLING (ID | '(' NL* ID (NL* ',' NL* ID)* NL* ')');
 
-effectWord: AXIOM | effectModifier;
+// An identifier is an effect word only in an axiom member (view, shallow, fresh, foldable : BIP019-P7).
+effectWord: AXIOM | effectModifier | ID;
 
 expression:
           ifExpr                                              # ifExpression
           | (EXPORT | PRIVATE)? DEF name=ID (OF typeParameters)? (':' type)?
                      ('=' NL* (effectClause ON)? value=expression)?   # defExpression
           | AXIOM (name=ID | scalarName=coreScalarKeyword) ':' type   # axiomExpression
+          | AXIOM target=axiomTarget (OF typeParameters)? classWords+=ID* NL* '(' sep?
+                (axiomMember (sep axiomMember)* sep?)? ')'           # axiomClassExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           | FOR name=ID (':' type)? IN NL* iterable=expression THEN NL* forBlock=block # forExpression
           | (CLASS | RECORD) classParameters (IMPLEMENTS typeList)? NL* classBlock=block
@@ -114,6 +117,10 @@ fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* NL* ')'
 fnTypeParam: paramModifier* (ID optional='?'? ':')? type;
 
 paramModifier: MUT | SHARED | UNIQUE;
+
+// Java axioms written in Babble (BIP019-P7) : `axiom java.util.Collection of E ( size: fn nothrow (): int )`.
+axiomTarget: ID ('.' memberName)*;
+axiomMember: (name=memberName | all='*') allNew='*'? ':' type;
 
 typeParameters: ID
               | '(' NL* ID (NL* ',' NL* ID)* NL* ')';

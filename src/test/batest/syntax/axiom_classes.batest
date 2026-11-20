@@ -1,0 +1,22 @@
+;; BIP019-P7 : axioms about Java classes written in Babble (syntax)
+
+{{{{{
+;; The class form : members with function types, the words view, shallow, fresh and foldable, class words
+axiom java.util.Collection of E (
+    new *: fn (): any
+    size: fn nothrow (): int
+    contains: fn (o: any?): bool
+    add: fn mut shallow (shared e: E): bool
+    iterator: fn nothrow view (): java.util.Iterator of E
+)
+axiom java.lang.Object nullmarked (
+)
+println("ok")
+}}}}}
+ok
+
+{{{{{
+;; Negative: the axiom words are only words in an axiom member
+def f = fn view (x: int): int -> (x)
+}}}}}
+Unknown effect modifier : view

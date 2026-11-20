@@ -21,6 +21,24 @@ final class TypeAnnotations {
     private final Map<BabbleParser.TypeContext, Type> annotations = new HashMap<>();
     private final Map<BabbleParser.DefExpressionContext, List<Type.TypeVar>> defTypeVars = new IdentityHashMap<>();
     private final Map<BabbleParser.DefExpressionContext, Type.SymbolId> defSymbolIds = new IdentityHashMap<>();
+    /** The type parameters of each axiom about a Java class (BIP019-P7). */
+    private final Map<BabbleParser.AxiomClassExpressionContext, List<Type.TypeVar>> axiomTypeVars = new IdentityHashMap<>();
+
+    /** The type variables of {@code axiom java.util.Collection of E ( … )} (BIP019-P7). */
+    List<Type.TypeVar> typeVarsOf(BabbleParser.AxiomClassExpressionContext axiom) {
+        if (axiom == null || axiom.typeParameters() == null) {
+            return List.of();
+        }
+        return axiomTypeVars.computeIfAbsent(axiom, a -> {
+            Type.SymbolId id = new Type.SymbolId(a.target.getText());
+            List<org.antlr.v4.runtime.tree.TerminalNode> ids = a.typeParameters().ID();
+            List<Type.TypeVar> vars = new ArrayList<>(ids.size());
+            for (int i = 0; i < ids.size(); i++) {
+                vars.add(new Type.TypeVar(id, ids.get(i).getText(), i));
+            }
+            return List.copyOf(vars);
+        });
+    }
 
     TypeAnnotations(TypeChecker checker) {
         this.checker = checker;
@@ -97,6 +115,14 @@ final class TypeAnnotations {
     Type.TypeVar resolveTypeVar(String name, ParserRuleContext at, ScopeNode scope) {
         if (at != null) {
             for (ParserRuleContext p = at; p != null; p = p.getParent()) {
+                if (p instanceof BabbleParser.AxiomClassExpressionContext axiom) {
+                    for (Type.TypeVar tv : typeVarsOf(axiom)) {
+                        if (tv.name().equals(name)) {
+                            return tv;
+                        }
+                    }
+                    break;
+                }
                 if (p.getParent() instanceof BabbleParser.DefExpressionContext def && def.type() == p && def.typeParameters() != null) {
                     for (Type.TypeVar tv : typeVarsOf(def)) {
                         if (tv.name().equals(name)) {

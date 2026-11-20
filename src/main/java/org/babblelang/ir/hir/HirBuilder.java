@@ -631,7 +631,8 @@ public final class HirBuilder {
     }
 
     private HirExpr lowerExpr(BabbleParser.ExpressionContext ctx) {
-        if (ctx instanceof BabbleParser.NullContext || ctx instanceof BabbleParser.AxiomExpressionContext) {
+        if (ctx instanceof BabbleParser.NullContext || ctx instanceof BabbleParser.AxiomExpressionContext
+                || ctx instanceof BabbleParser.AxiomClassExpressionContext) {
             // `axiom x: T` declares nothing at runtime (BIP019-D8).
             return new HirExpr.Const(null, metaOf(ctx).withKind(ScopeAnalysis.PrimitiveKind.NONE));
         }
