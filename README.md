@@ -461,6 +461,10 @@ class Point
 Point(x: 1, y: 2)
 >> name + nosuch
 Error : No such name : nosuch
+>> :type twice
+fn (f : fn (n : int) : int, v : int) : int
+>> :type Point(1, 2)
+Point
 ```
 
 Each input sees what the previous ones defined, classes and interfaces included, and goes
@@ -468,10 +472,14 @@ through the same checks as a script. Defining a name again replaces it for what 
 next ; functions defined before keep the definition they were written against, so functions
 that call each other go in one input. To change a variable they see, assign it : `name = …`.
 
-`:help` lists the few commands (`:cancel` drops an unfinished input, `:quit` leaves). The
-switches below work here too : `java -Dbabble.mode=interpret -jar …`.
-`java -jar … -keep-alive script.ba` runs a script first, and starts with what it defined.
-There is no line editing or history ; `rlwrap java -jar …` adds both. The
+`:help` lists the few commands : `:type expr` shows the type of an expression without running
+it, `:load file.ba` runs a file as if it was typed, `:cancel` (or Ctrl-C) drops an unfinished
+input, `:quit` (or Ctrl-D) leaves. On a terminal, lines are edited : Up and Down recall earlier
+inputs, multi-line ones whole, kept in `~/.babble_history` ; Tab completes names, keywords,
+commands, file names after `:load`, and members after a dot (`p.`, `java.lang.Math.`), without
+running anything. `-Dbabble.lineEditing=false` reads plain lines instead. The switches below
+work here too : `java -Dbabble.mode=interpret -jar …`.
+`java -jar … -keep-alive script.ba` runs a script first, and starts with what it defined. The
 [design note](docs/design/bip004_repl.md) has the details.
 
 Ray tracing demo
@@ -674,7 +682,7 @@ Implementation features :
 - [x] clean, predicate-free ANTLR4 grammar with zero embedded target-language code and `PredictionMode.SLL` fast-path parsing (see [Babble.g4](src/main/antlr4/org/babblelang/parser/Babble.g4) and [BIP012](docs/design/bip012_grammar-improvements.md)).
 - [x] clean separation between grammar and implementation thanks to ANTLR4's parse tree & Visitor support. This allows the grammar to be reused in other contexts (IDEs ?) or by other languages (C# implementation ?).
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
-- [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker (see [BIP004](docs/design/bip004_repl.md)).
+- [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker, with line editing, history and completion on a terminal, `:type` and `:load` (see [BIP004](docs/design/bip004_repl.md)).
 - [x] command line : `java -jar babble.jar [-O0|-O1] script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
 - [x] ahead-of-time compilation : `-compile [-O0|-O1] script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)).
 - [x] syntax errors that say what was unexpected, and where.
@@ -685,7 +693,6 @@ Planned features
 
 Language features :
 
-- [ ] line editing, history and completion in the interactive mode.
 - [ ] better, more user-friendly error reports.
 - [ ] structural object types.
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of

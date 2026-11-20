@@ -12,6 +12,7 @@
         <antlr.version>4.13.2</antlr.version>
         <junit.version>6.1.2</junit.version>
         <asm.version>9.11</asm.version>
+        <jline.version>4.7.0</jline.version>
         <batest.filter></batest.filter>
         <batest.inspect></batest.inspect>
         <batest.includes>**/BatestTestCase.java</batest.includes>
@@ -34,6 +35,18 @@
             <artifactId>asm-util</artifactId>
             <version>${asm.version}</version>
             <optional>true</optional>
+        </dependency>
+        <!-- Line editing, history and completion in the interactive mode (docs/design/bip004_repl.md §9). The front end's
+             only : neither in the runtime jar nor in what babblec writes. jline-terminal-jni reaches the terminal natively. -->
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline-reader</artifactId>
+            <version>${jline.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jline</groupId>
+            <artifactId>jline-terminal-jni</artifactId>
+            <version>${jline.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -113,6 +126,10 @@
                                     <addClasspath>true</addClasspath>
                                     <classpathPrefix>lib/</classpathPrefix>
                                 </manifest>
+                                <!-- JLine reaches the terminal natively : no restricted-method warning on JDK 22+. -->
+                                <manifestEntries>
+                                    <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                                </manifestEntries>
                             </archive>
                         </configuration>
                     </execution>

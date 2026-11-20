@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 004 |
 | **Date** | 2026-11-10 |
-| **Status** | Implemented : `org.babblelang.Main` (the command line), `org.babblelang.Repl`, `org.babblelang.engine.BabbleSession`, `org.babblelang.analysis.AnalysisSession`. |
+| **Status** | Implemented : `org.babblelang.Main` (the command line), `org.babblelang.Repl`, `org.babblelang.repl` (line editing, history, completion : §9), `org.babblelang.engine.BabbleSession`, `org.babblelang.analysis.AnalysisSession`. |
 | **Depends on** | Block scope and the analysis ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §8.1), the type checker ([bip003_type-system.md](bip003_type-system.md)) |
 | **Tracks** | README, *Planned features → interactive mode* |
 
@@ -121,13 +121,14 @@ then `.. ` for a continuation.
   has its value, like any expression, so `def x = 5` prints `5`.
 * **Errors** are printed as `Error : message`, with the line when the input has several, and the
   loop goes on. A stack overflow is one of them.
-* **Commands** start with `:`, which starts no expression: `:help`, `:cancel` to drop an
-  unfinished input, `:quit`. The end of the input (Ctrl-D) also leaves.
+* **Commands** start with `:`, which starts no expression: `:help`, `:type` to show the type
+  of an expression, `:load` to run a file, `:cancel` to drop an unfinished input, `:quit`. The
+  end of the input (Ctrl-D) also leaves. §9 has the details.
 * **Output.** `print` and the engine's warnings go where the loop prints.
 * **Piped input.** Without a console there is no banner and no prompt, so
   `java -jar … < script` prints only values and output.
-* **No line editing.** The loop reads plain lines, with no history or completion. `rlwrap`
-  provides both.
+* **Line editing.** On a terminal, lines are edited with history and completion (§9). Piped
+  input, and `-Dbabble.lineEditing=false`, read plain lines.
 
 ## 6. The command line
 
@@ -170,11 +171,69 @@ its arguments, failing and empty scripts, the type checker's settings, and comma
 * classes and interfaces across inputs, with the static checks;
 * the type checker across inputs: diagnostics only for the input being typed, classes of
   earlier inputs as types, runtime boundary enforcement, inference following assignments;
-* `classify`, and the loop: values, multi-line inputs, errors, commands, prompts.
+* `classify`, and the loop: values, multi-line inputs, errors, commands, prompts;
+* `:type` (types as source writes them, nothing run, nothing kept, errors) and `:load` (what a
+  file defines stays, its errors name it, its imports are relative to it).
+
+`TerminalInputTestCase`, in both modes: completion (commands, names and keywords, members of
+instances, classes, modules and Java classes and objects, files after `:load`, and nothing
+after a call, which never runs), Enter on unfinished inputs, and the line editor end to end on
+a JLine dumb terminal: multi-line inputs come whole, and are kept whole in the history.
 
 ## 8. Not done
 
-* Line editing, history and completion in the loop itself.
-* Loading a file from inside the loop (`:load`), and showing the type of a value.
+* *(Done in §9):* Line editing, history and completion in the loop itself.
+* *(Done in §9):* Loading a file from inside the loop (`:load`), and showing the type of a value (`:type`).
 * A script can't import another Babble file: a program is one file. *(Done with modules in `BIP005`, keeping one `Modules` cache per `BabbleSession`.)*
 * *(Done via `Bootstrap` and `RM001`):* Across inputs (whose classes live in separate `ScriptClassLoader`s), `Bootstrap.SelectCache` reads both reference and primitive (`int`/`double`/`bool`) fields directly via `MethodHandles.privateLookupIn` (honouring `BabbleInstance.isMemberDefined`), and typed `$spec` function/method calls across inputs dispatch directly via `Bootstrap.call`.
+
+## 9. Line editing, history, completion, `:load` and `:type`
+
+```
+>> def twice = fn (f : fn (n : int) : int, v : int) : int -> (
+..   f(f(v))
+.. )
+function twice
+>> tw<Tab>                           completes twice
+>> :type twice
+fn (f : fn (n : int) : int, v : int) : int
+>> :load shapes.ba                   runs a file into the session
+>> java.lang.Math.sq<Tab>            completes java.lang.Math.sqrt
+```
+
+* **`BIP004-D2` — Lines come from a `LineSource`.** `Repl` reads through
+  `org.babblelang.repl.LineSource`: `PlainInput` reads plain lines, as from a pipe or a test, and
+  shows the prompts only when asked; `TerminalInput` is a line editor, on
+  [JLine](https://github.com/jline/jline3). `Main` uses the editor when a person is typing at a
+  terminal, unless `-Dbabble.lineEditing=false`, and falls back to plain lines when the terminal
+  can't be used. Since JDK 22, `System.console()` also returns a console when the input is
+  piped in: `Console.isTerminal()` tells them apart, where it exists. JLine is a dependency of
+  the front end only: it is not in the runtime jar, nor in what `babblec` writes.
+* **`BIP004-D3` — A multi-line input is edited as one buffer.** The editor asks
+  `BabbleLineParser` whether Enter accepts the buffer; it does when `BabbleSession.classify`
+  says the input is not incomplete, and always for a command. Otherwise Enter inserts a new
+  line, after the `.. ` prompt. So the loop receives whole inputs, and Up recalls an input whole,
+  to be edited anywhere before it runs again.
+* **`BIP004-D4` — Ctrl-C drops the input, Ctrl-D leaves.** As `:cancel` and `:quit`. Inputs are
+  kept in `~/.babble_history` (`-Dbabble.history=file` names another), the last 1000 of them,
+  multi-line ones whole. `!` is not a history expansion: Babble has its own `!`.
+* **`BIP004-D5` — Completion never runs code.** Tab offers the commands, file names after
+  `:load`, and otherwise the names an input could use (what earlier inputs defined, the
+  bindings, the implicits) and the keywords. After a chain of plain names, `p.` or
+  `java.lang.Math.`, it offers the members of the value the chain names, found by looking names
+  and members up: the members of an instance, the statics of a class or an interface, the
+  exports of a module, the public methods and fields of a Java class (static ones) or object,
+  never private members. A chain that would need a call, `f().`, gets nothing: completing it
+  would mean running it. `org.babblelang.repl.Completions` is that logic, apart from JLine.
+* **`BIP004-D6` — `:type` analyses an input without running it, nor keeping it.**
+  `BabbleSession.typeOf(source)` parses and analyses the input against the session exactly as
+  `eval` would, and returns the static type of its last statement, as source writes it
+  (`list of int`, `map of (string, int)`, `fn io () : null`, `(list of int)?`, `Box of int`):
+  `ScopeAnalysis.resultType()`, which the type checker sets after its verification walk. The
+  session is left as it was: nothing is committed, no namespace is entered, nothing runs. A
+  syntax or type error is reported as an input's. A name the analysis can't resolve is looked
+  up at runtime, so it is `any`, as it would be for `eval`.
+* **`:load file.ba`** runs a file as an input of the session, as `-keep-alive file.ba` would:
+  what it defines stays for what follows, its output is printed but not its value, and its
+  errors name it, `Error : … in file.ba at line number 3`. Its imports are relative to it. The
+  path may be quoted.

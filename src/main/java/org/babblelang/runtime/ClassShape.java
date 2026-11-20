@@ -130,6 +130,10 @@ public final class ClassShape {
         return statics.length;
     }
 
+    public String staticMember(int index) {
+        return statics[index];
+    }
+
     public int staticIndex(String member) {
         return staticIndex.getOrDefault(member, -1);
     }
