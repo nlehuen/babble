@@ -208,12 +208,14 @@ public final class Formatter {
                 || parent instanceof BabbleParser.FnTypeParametersContext || parent instanceof BabbleParser.CallParametersContext
                 || parent instanceof BabbleParser.SuperExpressionContext || parent instanceof BabbleParser.ParenTypeContext
                 || parent instanceof BabbleParser.SimpleTypeContext
-                || parent instanceof BabbleParser.TypeParametersContext || parent instanceof BabbleParser.TypeArgumentsContext) {
+                || parent instanceof BabbleParser.TypeParametersContext || parent instanceof BabbleParser.TypeArgumentsContext
+                || parent instanceof BabbleParser.WithClauseContext) {
             return IN_LIST;
         }
         // In these, a newline can only come before a block, "else" or "static".
         if (parent instanceof BabbleParser.IfExprContext
-                || parent instanceof BabbleParser.WhileExpressionContext || parent instanceof BabbleParser.ClassExpressionContext
+                || parent instanceof BabbleParser.WhileExpressionContext || parent instanceof BabbleParser.ForExpressionContext
+                || parent instanceof BabbleParser.ClassExpressionContext
                 || parent instanceof BabbleParser.InterfaceExpressionContext || parent instanceof BabbleParser.ObjectExpressionContext
                 || parent instanceof BabbleParser.FunctionLiteralContext) {
             return JOINS;

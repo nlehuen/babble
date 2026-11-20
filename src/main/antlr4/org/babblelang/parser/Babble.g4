@@ -20,7 +20,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | WITH;
 
 effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
 
@@ -28,7 +28,10 @@ effectTarget: (ID '(' STRING ')' | memberName) ('.' memberName)*;
 
 effectClause: (AXIOM | IO) (effectWord | UNIQUE)*;
 
-effectPrefix: effectWord+;
+effectPrefix: effectWord+ withClause?
+            | withClause;
+
+withClause: WITH (ID | '(' NL* ID (NL* ',' NL* ID)* NL* ')');
 
 effectWord: AXIOM | effectModifier;
 
@@ -37,6 +40,7 @@ expression:
           | (EXPORT | PRIVATE)? DEF name=ID (OF typeParameters)? (':' type)?
                      ('=' NL* (effectClause ON)? value=expression)?   # defExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
+          | FOR name=ID (':' type)? IN NL* iterable=expression THEN NL* forBlock=block # forExpression
           | (CLASS | RECORD) classParameters (IMPLEMENTS typeList)? NL* classBlock=block
                 (NL* STATIC NL* staticBlock=block)?           # classExpression
           | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block
@@ -78,10 +82,12 @@ expression:
           | DOUBLE_LIT                                        # double
           | CHAR_LIT                                          # charLiteral
           | STRING                                            # string
-          // "return" is a prefix alternative, so its operand is parsed at this
-          // alternative's precedence. It must therefore come last, or "return a + b"
+          // "return" and "break" are prefix alternatives, so their operands are parsed at this
+          // alternative's precedence. They must therefore come last, or "return a + b" / "break a + b"
           // would parse as "(return a) + b".
           | RETURN expression                                 # returnExpression
+          | BREAK expression?                                 # breakExpression
+          | CONTINUE                                          # continueExpression
           ;
 
 ifExpr: IF test=expression THEN NL* thenBlock=block
@@ -179,7 +185,11 @@ THEN: 'then';
 ELSE: 'else';
 DEF: 'def';
 RETURN: 'return';
+BREAK: 'break';
+CONTINUE: 'continue';
 WHILE: 'while';
+FOR: 'for';
+IN: 'in';
 AND: 'and';
 OR: 'or';
 NULL: 'null';
@@ -202,6 +212,7 @@ EXPORT: 'export';
 FN: 'fn';
 OF: 'of';
 ON: 'on';
+WITH: 'with';
 AXIOM: 'axiom';
 PURE: 'pure';
 VOLATILE: 'volatile';

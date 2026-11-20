@@ -97,6 +97,16 @@ final class LoweringAnalyzer {
                 if (t != null) {
                     pass.analysis.setDeclarationKind(decl, ScopeAnalysis.PrimitiveKind.of(t));
                 }
+            } else if (decl instanceof BabbleParser.ForExpressionContext forExpr) {
+                Type t = declarationTypes.get(forExpr);
+                if (t != null) {
+                    pass.analysis.setDeclarationKind(forExpr, ScopeAnalysis.PrimitiveKind.of(t));
+                }
+            }
+        }
+        for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
+            if (entry.getKey() instanceof BabbleParser.ForExpressionContext forExpr && checker.inFile(forExpr)) {
+                publishForLoopTarget(forExpr, declarationTypes, widened);
             }
         }
         for (TypeNode typeNode : pass.types) {
@@ -363,6 +373,61 @@ final class LoweringAnalyzer {
         }
         pass.analysis.setInterfaceCallTarget(ctx,
                 new ScopeAnalysis.InterfaceCallTarget(found.iface().id, found.member().name, sig, true));
+    }
+
+    private void publishForLoopTarget(BabbleParser.ForExpressionContext forExpr,
+                                      Map<ParserRuleContext, Type> declarationTypes,
+                                      Map<ParserRuleContext, Integer> widened) {
+        TypeChecker.ForIterableInfo info = checker.forIterableInfo(forExpr);
+        if (info == null) {
+            return;
+        }
+        Type loopVarType = declarationTypes.get(forExpr);
+        ScopeAnalysis.PrimitiveKind elemKind = loopVarType != null
+                ? ScopeAnalysis.PrimitiveKind.of(loopVarType) : ScopeAnalysis.PrimitiveKind.NONE;
+        int elemWidenRank = widened.getOrDefault(forExpr, 0);
+        String elemCheck = null;
+        if (info.kind() == ScopeAnalysis.ForKind.JAVA_ITERABLE
+                || info.kind() == ScopeAnalysis.ForKind.JAVA_ITERATOR
+                || info.kind() == ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE
+                || info.kind() == ScopeAnalysis.ForKind.DYNAMIC_UNION
+                || (info.kind() == ScopeAnalysis.ForKind.ARRAY && info.arrayClass() != null
+                        && !info.arrayClass().getComponentType().isPrimitive())) {
+            Type rawElem = info.elemType();
+            if (rawElem != null && rawElem != Type.NULLABLE_ANY && rawElem != Type.ERROR) {
+                elemCheck = descriptor(rawElem);
+            }
+        }
+        ScopeAnalysis.InterfaceCallTarget iterIface = deriveZeroArgInterfaceTarget(info.babbleIterable(), "iterator");
+        ScopeAnalysis.InterfaceCallTarget hasNextIface = deriveZeroArgInterfaceTarget(info.babbleIterator(), "hasNext");
+        ScopeAnalysis.InterfaceCallTarget nextIface = deriveZeroArgInterfaceTarget(info.babbleIterator(), "next");
+        ScopeAnalysis.FunctionSignature hasNextSig = info.hasNextFn() != null
+                ? new ScopeAnalysis.FunctionSignature(new ScopeAnalysis.PrimitiveKind[0], ScopeAnalysis.PrimitiveKind.BOOL) : null;
+        ScopeAnalysis.FunctionSignature nextSig = info.nextFn() != null
+                ? new ScopeAnalysis.FunctionSignature(new ScopeAnalysis.PrimitiveKind[0],
+                        ScopeAnalysis.PrimitiveKind.of(info.nextFn().result())) : null;
+        pass.analysis.setForLoopTarget(forExpr, new ScopeAnalysis.ForLoopTarget(
+                info.kind(), info.arrayClass(), elemKind, elemCheck, elemWidenRank,
+                iterIface, hasNextSig, hasNextIface, nextSig, nextIface));
+    }
+
+    private ScopeAnalysis.InterfaceCallTarget deriveZeroArgInterfaceTarget(Type.Instance inst, String memberName) {
+        if (inst == null || !inst.node().isInterface()) {
+            return null;
+        }
+        FoundInterfaceMember found = findDeclaringInterfaceMember(inst.node(), memberName);
+        if (found == null) {
+            return null;
+        }
+        Type mt = checker.memberType(found.iface(), found.member());
+        if (!(mt instanceof Type.Function uninstFn) || !uninstFn.parameters().isEmpty()) {
+            return null;
+        }
+        ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(uninstFn);
+        if (sig == null) {
+            return null;
+        }
+        return new ScopeAnalysis.InterfaceCallTarget(found.iface().id, found.member().name, sig, true);
     }
 
     private record FoundInterfaceMember(TypeNode iface, TypeNode.Member member) {

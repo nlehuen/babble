@@ -19,14 +19,14 @@ import java.util.Set;
  */
 final class Narrowing {
     private final TypeChecker checker;
-    private final Map<BabbleParser.WhileExpressionContext, Set<ParserRuleContext>> assignedWhileLocals = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, Set<ParserRuleContext>> assignedLoopLocals = new IdentityHashMap<>();
 
     Narrowing(TypeChecker checker) {
         this.checker = checker;
     }
 
-    Set<ParserRuleContext> assignedLocals(BabbleParser.WhileExpressionContext ctx) {
-        return assignedWhileLocals.computeIfAbsent(ctx, node -> {
+    Set<ParserRuleContext> assignedLocals(ParserRuleContext ctx) {
+        return assignedLoopLocals.computeIfAbsent(ctx, node -> {
             Set<ParserRuleContext> assigned = Collections.newSetFromMap(new IdentityHashMap<>());
             collectAssignedLocals(node, assigned);
             return Collections.unmodifiableSet(assigned);

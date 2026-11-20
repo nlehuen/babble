@@ -188,6 +188,11 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
     private Map<Resolution.Variable, Integer> definedSlots;
     // Representation of the value currently at the top of the operand stack.
     private ScopeAnalysis.PrimitiveKind stackKind;
+    private record LoopTarget(Label breakLabel, Label continueLabel, int resultSlot) {
+    }
+
+    // Active enclosing loops (while / for) in the current method for break/continue.
+    private final Deque<LoopTarget> loopTargets = new ArrayDeque<>();
     // Return representation of the method currently being compiled.
     private ScopeAnalysis.PrimitiveKind methodReturnKind;
     // The captured cells of the method, and the local holding their array.
@@ -3440,52 +3445,295 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
      */
     @Override
     public Void visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
-        int whileWiden = scopes.numericWideningRank(ctx.whileBlock);
-        ScopeAnalysis.PrimitiveKind bodyKind = whileWiden == 5
-                ? ScopeAnalysis.PrimitiveKind.DOUBLE
-                : (whileWiden >= 0 ? ScopeAnalysis.PrimitiveKind.NONE : scopes.expressionKind(ctx.whileBlock));
         Label head = new Label();
         Label end = new Label();
-        if (!bodyKind.isPrimitive()) {
-            int result = newLocal();
-            mv.visitInsn(ACONST_NULL);
-            mv.visitVarInsn(ASTORE, result);
-            mv.visitLabel(head);
-            emitCondition(ctx.test, false, end);
+        int result = newLocal();
+        mv.visitInsn(ACONST_NULL);
+        mv.visitVarInsn(ASTORE, result);
+        mv.visitLabel(head);
+        emitCondition(ctx.test, false, end);
+        loopTargets.push(new LoopTarget(end, head, result));
+        try {
             emitBoxed(ctx.whileBlock);
-            mv.visitVarInsn(ASTORE, result);
+        } finally {
+            loopTargets.pop();
+        }
+        mv.visitVarInsn(ASTORE, result);
+        mv.visitJumpInsn(GOTO, head);
+        mv.visitLabel(end);
+        mv.visitVarInsn(ALOAD, result);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    @Override
+    public Void visitForExpression(BabbleParser.ForExpressionContext ctx) {
+        ScopeAnalysis.ForLoopTarget target = scopes.forLoopTarget(ctx);
+        ScopeAnalysis.ForKind kind = target != null ? target.kind() : ScopeAnalysis.ForKind.DYNAMIC_UNION;
+        Label head = new Label();
+        Label end = new Label();
+        int result = newLocal();
+        mv.visitInsn(ACONST_NULL);
+        mv.visitVarInsn(ASTORE, result);
+
+        if (kind == ScopeAnalysis.ForKind.ARRAY && target.arrayClass() != null) {
+            Class<?> arrClass = target.arrayClass();
+            Class<?> comp = arrClass.getComponentType();
+            String arrDesc = org.objectweb.asm.Type.getDescriptor(arrClass);
+            int arrLocal = newLocal();
+            int lenLocal = newLocal(ScopeAnalysis.PrimitiveKind.INT);
+            int idxLocal = newLocal(ScopeAnalysis.PrimitiveKind.INT);
+            Label step = new Label();
+
+            emitBoxed(ctx.iterable);
+            mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            mv.visitTypeInsn(CHECKCAST, arrDesc);
+            mv.visitInsn(DUP);
+            mv.visitVarInsn(ASTORE, arrLocal);
+            mv.visitInsn(ARRAYLENGTH);
+            mv.visitVarInsn(ISTORE, lenLocal);
+            mv.visitInsn(ICONST_0);
+            mv.visitVarInsn(ISTORE, idxLocal);
+
+            mv.visitLabel(head);
+            mv.visitVarInsn(ILOAD, idxLocal);
+            mv.visitVarInsn(ILOAD, lenLocal);
+            mv.visitJumpInsn(IF_ICMPGE, end);
+
+            mv.visitVarInsn(ALOAD, arrLocal);
+            mv.visitVarInsn(ILOAD, idxLocal);
+            ScopeAnalysis.PrimitiveKind elemStackKind;
+            if (comp == int.class) {
+                mv.visitInsn(IALOAD);
+                elemStackKind = ScopeAnalysis.PrimitiveKind.INT;
+            } else if (comp == long.class) {
+                mv.visitInsn(LALOAD);
+                elemStackKind = ScopeAnalysis.PrimitiveKind.LONG;
+            } else if (comp == double.class) {
+                mv.visitInsn(DALOAD);
+                elemStackKind = ScopeAnalysis.PrimitiveKind.DOUBLE;
+            } else if (comp == float.class) {
+                mv.visitInsn(FALOAD);
+                elemStackKind = ScopeAnalysis.PrimitiveKind.FLOAT;
+            } else if (comp == byte.class) {
+                mv.visitInsn(BALOAD);
+                elemStackKind = ScopeAnalysis.PrimitiveKind.BYTE;
+            } else if (comp == short.class) {
+                mv.visitInsn(SALOAD);
+                elemStackKind = ScopeAnalysis.PrimitiveKind.SHORT;
+            } else if (comp == char.class) {
+                mv.visitInsn(CALOAD);
+                elemStackKind = ScopeAnalysis.PrimitiveKind.CHAR;
+            } else if (comp == boolean.class) {
+                mv.visitInsn(BALOAD);
+                elemStackKind = ScopeAnalysis.PrimitiveKind.BOOL;
+            } else {
+                mv.visitInsn(AALOAD);
+                mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                elemStackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            }
+            emitForIterationBody(ctx, target, result, end, step, elemStackKind);
+            mv.visitLabel(step);
+            mv.visitIincInsn(idxLocal, 1);
             mv.visitJumpInsn(GOTO, head);
             mv.visitLabel(end);
             mv.visitVarInsn(ALOAD, result);
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
             return null;
         }
-        int ran = newLocal(ScopeAnalysis.PrimitiveKind.BOOL);
-        int result = newLocal(bodyKind);
+
+        if (kind == ScopeAnalysis.ForKind.JAVA_ITERABLE || kind == ScopeAnalysis.ForKind.JAVA_ITERATOR
+                || kind == ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE) {
+            int itLocal = newLocal();
+            if (kind == ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE) {
+                int recvLocal = newLocal();
+                emitBoxed(ctx.iterable);
+                mv.visitVarInsn(ASTORE, recvLocal);
+                emitZeroArgBabbleCall(recvLocal, "iterator", null, ctx);
+                mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitTypeInsn(CHECKCAST, "java/util/Iterator");
+            } else {
+                emitBoxed(ctx.iterable);
+                mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                if (kind == ScopeAnalysis.ForKind.JAVA_ITERABLE) {
+                    mv.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
+                    line(ctx);
+                    mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Iterable", "iterator", "()Ljava/util/Iterator;", true);
+                } else {
+                    mv.visitTypeInsn(CHECKCAST, "java/util/Iterator");
+                }
+            }
+            mv.visitVarInsn(ASTORE, itLocal);
+
+            mv.visitLabel(head);
+            mv.visitVarInsn(ALOAD, itLocal);
+            line(ctx);
+            mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "hasNext", "()Z", true);
+            mv.visitJumpInsn(IFEQ, end);
+            mv.visitVarInsn(ALOAD, itLocal);
+            line(ctx);
+            mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true);
+            mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            emitForIterationBody(ctx, target, result, end, head, ScopeAnalysis.PrimitiveKind.NONE);
+            mv.visitJumpInsn(GOTO, head);
+            mv.visitLabel(end);
+            mv.visitVarInsn(ALOAD, result);
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return null;
+        }
+
+        if (kind == ScopeAnalysis.ForKind.BABBLE_ITERABLE || kind == ScopeAnalysis.ForKind.BABBLE_ITERATOR) {
+            int iterLocal = newLocal();
+            emitBoxed(ctx.iterable);
+            mv.visitVarInsn(ASTORE, iterLocal);
+            if (kind == ScopeAnalysis.ForKind.BABBLE_ITERABLE) {
+                emitZeroArgBabbleCall(iterLocal, "iterator", null, ctx);
+                convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
+                mv.visitVarInsn(ASTORE, iterLocal);
+            }
+            mv.visitLabel(head);
+            emitZeroArgBabbleCall(iterLocal, "hasNext", target != null ? target.hasNextSig() : null, ctx);
+            if (stackKind == ScopeAnalysis.PrimitiveKind.BOOL) {
+                mv.visitJumpInsn(IFEQ, end);
+            } else {
+                convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
+                mv.visitJumpInsn(IFEQ, end);
+            }
+            emitZeroArgBabbleCall(iterLocal, "next", target != null ? target.nextSig() : null, ctx);
+            emitForIterationBody(ctx, target, result, end, head, stackKind);
+            mv.visitJumpInsn(GOTO, head);
+            mv.visitLabel(end);
+            mv.visitVarInsn(ALOAD, result);
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return null;
+        }
+
+        // DYNAMIC_UNION: runtime dispatch across Java array, Iterable, Iterator, or Babble iterable/iterator.
+        int rawLocal = newLocal();
+        int idxLocal = newLocal(ScopeAnalysis.PrimitiveKind.INT);
+        int lenLocal = newLocal(ScopeAnalysis.PrimitiveKind.INT);
+        int itLocal = newLocal();
+        Label arrLoop = new Label();
+        Label arrStep = new Label();
+        Label notArr = new Label();
+        Label notIter = new Label();
+        Label iterLoop = new Label();
+
+        emitBoxed(ctx.iterable);
+        mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitInsn(DUP);
+        mv.visitVarInsn(ASTORE, rawLocal);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Object", "getClass", "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "isArray", "()Z", false);
+        mv.visitJumpInsn(IFEQ, notArr);
+
+        mv.visitVarInsn(ALOAD, rawLocal);
+        mv.visitMethodInsn(INVOKESTATIC, "java/lang/reflect/Array", "getLength", "(Ljava/lang/Object;)I", false);
+        mv.visitVarInsn(ISTORE, lenLocal);
         mv.visitInsn(ICONST_0);
-        mv.visitVarInsn(ISTORE, ran);
-        pushDefaultZero(bodyKind);
-        storeLocal(bodyKind, result);
-        mv.visitLabel(head);
-        emitCondition(ctx.test, false, end);
-        emitAs(ctx.whileBlock, bodyKind);
-        storeLocal(bodyKind, result);
-        mv.visitInsn(ICONST_1);
-        mv.visitVarInsn(ISTORE, ran);
-        mv.visitJumpInsn(GOTO, head);
+        mv.visitVarInsn(ISTORE, idxLocal);
+        mv.visitLabel(arrLoop);
+        mv.visitVarInsn(ILOAD, idxLocal);
+        mv.visitVarInsn(ILOAD, lenLocal);
+        mv.visitJumpInsn(IF_ICMPGE, end);
+        mv.visitVarInsn(ALOAD, rawLocal);
+        mv.visitVarInsn(ILOAD, idxLocal);
+        mv.visitMethodInsn(INVOKESTATIC, "java/lang/reflect/Array", "get", "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        emitForIterationBody(ctx, target, result, end, arrStep, ScopeAnalysis.PrimitiveKind.NONE);
+        mv.visitLabel(arrStep);
+        mv.visitIincInsn(idxLocal, 1);
+        mv.visitJumpInsn(GOTO, arrLoop);
+
+        mv.visitLabel(notArr);
+        mv.visitVarInsn(ALOAD, rawLocal);
+        mv.visitTypeInsn(INSTANCEOF, "java/util/Iterator");
+        mv.visitJumpInsn(IFEQ, notIter);
+        mv.visitVarInsn(ALOAD, rawLocal);
+        mv.visitTypeInsn(CHECKCAST, "java/util/Iterator");
+        mv.visitVarInsn(ASTORE, itLocal);
+        mv.visitJumpInsn(GOTO, iterLoop);
+
+        mv.visitLabel(notIter);
+        mv.visitVarInsn(ALOAD, rawLocal);
+        mv.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
+        mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Iterable", "iterator", "()Ljava/util/Iterator;", true);
+        mv.visitVarInsn(ASTORE, itLocal);
+
+        mv.visitLabel(iterLoop);
+        mv.visitVarInsn(ALOAD, itLocal);
+        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "hasNext", "()Z", true);
+        mv.visitJumpInsn(IFEQ, end);
+        mv.visitVarInsn(ALOAD, itLocal);
+        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true);
+        mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        emitForIterationBody(ctx, target, result, end, iterLoop, ScopeAnalysis.PrimitiveKind.NONE);
+        mv.visitJumpInsn(GOTO, iterLoop);
+
         mv.visitLabel(end);
-        Label pushNull = new Label();
-        Label done = new Label();
-        mv.visitVarInsn(ILOAD, ran);
-        mv.visitJumpInsn(IFEQ, pushNull);
-        loadLocal(bodyKind, result);
-        box(bodyKind);
-        mv.visitJumpInsn(GOTO, done);
-        mv.visitLabel(pushNull);
-        mv.visitInsn(ACONST_NULL);
-        mv.visitLabel(done);
+        mv.visitVarInsn(ALOAD, result);
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         return null;
+    }
+
+    private void emitForIterationBody(BabbleParser.ForExpressionContext ctx, ScopeAnalysis.ForLoopTarget target,
+                                      int resultSlot, Label breakLabel, Label continueLabel,
+                                      ScopeAnalysis.PrimitiveKind elemStackKind) {
+        stackKind = elemStackKind;
+        if (target != null && target.elemCheck() != null) {
+            convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
+            line(ctx);
+            checkType(target.elemCheck());
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        }
+        widenStackFor(ctx);
+        ScopeAnalysis.PrimitiveKind varKind = target != null ? target.elemKind() : ScopeAnalysis.PrimitiveKind.NONE;
+        convertStack(stackKind, varKind);
+        int elemTmp = newLocal(varKind);
+        storeLocal(varKind, elemTmp);
+
+        Resolution.Variable forVar = resolution.variable(ctx);
+        loopTargets.push(new LoopTarget(breakLabel, continueLabel, resultSlot));
+        try {
+            inFrameScope(() -> {
+                declareVariables(ctx.forBlock);
+                if (forVar != null) {
+                    loadLocal(varKind, elemTmp);
+                    initVariable(forVar, varKind);
+                }
+                statements(ctx.forBlock.expression());
+                widenStackFor(ctx.forBlock);
+                convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
+                mv.visitVarInsn(ASTORE, resultSlot);
+            });
+        } finally {
+            loopTargets.pop();
+        }
+    }
+
+    private void emitZeroArgBabbleCall(int receiverLocal, String memberName,
+                                       ScopeAnalysis.FunctionSignature sig, ParserRuleContext ctx) {
+        String site = callSiteField(new CallSite(sourceName, ctx.getStart().getLine(), memberName, new String[0]));
+        mv.visitVarInsn(ALOAD, receiverLocal);
+        line(ctx);
+        mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, memberName, memberName);
+        mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
+        mv.visitVarInsn(ALOAD, rtLocal);
+        if (sig != null && sig.returnKind().isPrimitive()) {
+            mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
+            String desc = "(L" + CALLABLE + ";L" + SCRIPT_RUNTIME + ";L" + CALL_SITE + ";)" + jvmDescriptor(sig.returnKind());
+            line(ctx);
+            mv.visitInvokeDynamicInsn("typedCall", desc, TYPED_CALL_BOOTSTRAP);
+            stackKind = sig.returnKind();
+        } else {
+            mv.visitInsn(ACONST_NULL);
+            mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
+            line(ctx);
+            mv.visitInvokeDynamicInsn("call", "(L" + CALLABLE + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", CALL_BOOTSTRAP);
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        }
     }
 
     @Override
@@ -3496,6 +3744,31 @@ final class CodeGenerator extends BabbleBaseVisitor<Void> {
         mv.visitInsn(returnInsn(methodReturnKind));
         // Dead code, so that the code around a return in the middle of an expression can
         // be generated as if it were any other expression. ASM replaces it.
+        mv.visitInsn(ACONST_NULL);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    @Override
+    public Void visitBreakExpression(BabbleParser.BreakExpressionContext ctx) {
+        LoopTarget loop = loopTargets.peek();
+        if (ctx.expression() != null) {
+            emitAndWidenIfMarked(ctx.expression());
+            convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
+        } else {
+            mv.visitInsn(ACONST_NULL);
+        }
+        mv.visitVarInsn(ASTORE, loop.resultSlot());
+        mv.visitJumpInsn(GOTO, loop.breakLabel());
+        mv.visitInsn(ACONST_NULL);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        return null;
+    }
+
+    @Override
+    public Void visitContinueExpression(BabbleParser.ContinueExpressionContext ctx) {
+        LoopTarget loop = loopTargets.peek();
+        mv.visitJumpInsn(GOTO, loop.continueLabel());
         mv.visitInsn(ACONST_NULL);
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         return null;

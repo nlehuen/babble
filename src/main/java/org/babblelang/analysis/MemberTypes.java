@@ -101,12 +101,34 @@ final class MemberTypes {
             Class<?> java = JavaTypeBridge.loadTopLevel(qualified);
             return java != null ? new Type.JavaClassValue(java) : new Type.JavaPackage(qualified);
         }
+        if (receiver instanceof Type.CoreCollection cc) {
+            Class<?> javaClass = switch (cc.kind()) {
+                case "list" -> java.util.List.class;
+                case "set" -> java.util.Set.class;
+                case "sortedset" -> java.util.SortedSet.class;
+                case "map" -> java.util.Map.class;
+                case "sortedmap" -> java.util.SortedMap.class;
+                case "entry" -> java.util.Map.Entry.class;
+                default -> null;
+            };
+            if (javaClass != null) {
+                Type member = javaMember(javaClass, List.of(), name, true, at);
+                if (member instanceof Type.JavaMethod jm && !cc.typeArguments().isEmpty()) {
+                    return new Type.JavaMethod(jm.owner(), jm.typeArguments(), jm.name(), cc.typeArguments());
+                }
+                return member;
+            }
+        }
         if (receiver instanceof Type.JavaClassValue value) {
             Class<?> memberClass = JavaTypeBridge.publicMemberClass(value.type(), name);
             if (memberClass != null) {
                 return new Type.JavaClassValue(memberClass);
             }
-            return javaMember(value.type(), List.of(), name, true, at);
+            Type member = javaMember(value.type(), List.of(), name, true, at);
+            if (member instanceof Type.JavaMethod jm && !value.typeArguments().isEmpty()) {
+                return new Type.JavaMethod(jm.owner(), jm.typeArguments(), jm.name(), value.typeArguments());
+            }
+            return member;
         }
         if (receiver instanceof Type.JavaInstance instance) {
             return javaMember(instance.type(), instance.typeArguments(), name, false, at);
