@@ -2,23 +2,116 @@ package org.babblelang.axioms.java.util;
 
 import org.babblelang.axioms.Axioms;
 import org.babblelang.axioms.FreshResult;
+import org.babblelang.axioms.NonNull;
 
 /**
- * Static factories assumed to return a fresh collection.
+ * What the analysis assumes about {@code java.util.Collections}.
  */
-@Axioms(value = java.util.Collections.class, inherited = false)
+@Axioms(value = java.util.Collections.class,
+        inherited = false)
 interface CollectionsAxioms {
-    @FreshResult java.util.List emptyList();
+    @NonNull
+    java.lang.Object emptyEnumeration();
 
-    @FreshResult java.util.Map emptyMap();
+    @NonNull
+    java.lang.Object emptyIterator();
 
-    @FreshResult java.util.Set emptySet();
+    @FreshResult @NonNull
+    java.lang.Object emptyList();
 
-    @FreshResult java.util.List nCopies(int p0, java.lang.Object p1);
+    @NonNull
+    java.lang.Object emptyListIterator();
 
-    @FreshResult java.util.Set singleton(java.lang.Object p0);
+    @FreshResult @NonNull
+    java.lang.Object emptyMap();
 
-    @FreshResult java.util.List singletonList(java.lang.Object p0);
+    @NonNull
+    java.lang.Object emptyNavigableMap();
 
-    @FreshResult java.util.Map singletonMap(java.lang.Object p0, java.lang.Object p1);
+    @NonNull
+    java.lang.Object emptyNavigableSet();
+
+    @FreshResult @NonNull
+    java.lang.Object emptySet();
+
+    @NonNull
+    java.lang.Object emptySortedMap();
+
+    @NonNull
+    java.lang.Object emptySortedSet();
+
+    @FreshResult @NonNull
+    java.lang.Object nCopies(int p0, java.lang.Object p1);
+
+    @NonNull
+    java.lang.Object reverseOrder();
+
+    @NonNull
+    java.lang.Object reverseOrder(java.util.Comparator p0);
+
+    @FreshResult @NonNull
+    java.lang.Object singleton(java.lang.Object p0);
+
+    @FreshResult @NonNull
+    java.lang.Object singletonList(java.lang.Object p0);
+
+    @FreshResult @NonNull
+    java.lang.Object singletonMap(java.lang.Object p0, java.lang.Object p1);
+
+    @NonNull
+    java.lang.Object synchronizedCollection(java.util.Collection p0);
+
+    @NonNull
+    java.lang.Object synchronizedList(java.util.List p0);
+
+    @NonNull
+    java.lang.Object synchronizedMap(java.util.Map p0);
+
+    @NonNull
+    java.lang.Object synchronizedNavigableMap(java.util.NavigableMap p0);
+
+    @NonNull
+    java.lang.Object synchronizedNavigableSet(java.util.NavigableSet p0);
+
+    @NonNull
+    java.lang.Object synchronizedSet(java.util.Set p0);
+
+    @NonNull
+    java.lang.Object synchronizedSortedMap(java.util.SortedMap p0);
+
+    @NonNull
+    java.lang.Object synchronizedSortedSet(java.util.SortedSet p0);
+
+    @NonNull
+    java.lang.Object unmodifiableCollection(java.util.Collection p0);
+
+    @NonNull
+    java.lang.Object unmodifiableList(java.util.List p0);
+
+    @NonNull
+    java.lang.Object unmodifiableMap(java.util.Map p0);
+
+    @NonNull
+    java.lang.Object unmodifiableNavigableMap(java.util.NavigableMap p0);
+
+    @NonNull
+    java.lang.Object unmodifiableNavigableSet(java.util.NavigableSet p0);
+
+    @NonNull
+    java.lang.Object unmodifiableSequencedCollection(java.util.SequencedCollection p0);
+
+    @NonNull
+    java.lang.Object unmodifiableSequencedMap(java.util.SequencedMap p0);
+
+    @NonNull
+    java.lang.Object unmodifiableSequencedSet(java.util.SequencedSet p0);
+
+    @NonNull
+    java.lang.Object unmodifiableSet(java.util.Set p0);
+
+    @NonNull
+    java.lang.Object unmodifiableSortedMap(java.util.SortedMap p0);
+
+    @NonNull
+    java.lang.Object unmodifiableSortedSet(java.util.SortedSet p0);
 }

@@ -65,8 +65,15 @@ class AxiomsTestCase {
         for (Class<?> stub : BuiltinAxioms.get().stubTypes()) {
             Class<?> target = stub.getAnnotation(Axioms.class).value();
             for (Method m : stub.getDeclaredMethods()) {
-                if (!hasPublicMethod(target, m.getName(), m.getParameterTypes())
-                        && !hasPublicMethod(Object.class, m.getName(), m.getParameterTypes())) {
+                if (m.isAnnotationPresent(org.babblelang.axioms.Constructor.class)) {
+                    if (Arrays.stream(target.getConstructors()).noneMatch(k -> Arrays.equals(k.getParameterTypes(), m.getParameterTypes()))) {
+                        stale.add(stub.getSimpleName() + ".<init>" + Arrays.toString(m.getParameterTypes()));
+                    }
+                    continue;
+                }
+                String name = BuiltinAxioms.mirroredName(m);
+                if (!hasPublicMethod(target, name, m.getParameterTypes())
+                        && !hasPublicMethod(Object.class, name, m.getParameterTypes())) {
                     stale.add(stub.getSimpleName() + "." + m.getName() + Arrays.toString(m.getParameterTypes()));
                 }
             }

@@ -8,15 +8,16 @@ import org.babblelang.axioms.ShallowMut;
 import static org.babblelang.effects.Effect.*;
 
 /**
- * Collection methods of {@code java.util.concurrent.BlockingQueue}, as the effect checker assumed them by name.
+ * What the analysis assumes about {@code java.util.concurrent.BlockingQueue}.
  *
- * <p>QUESTIONABLE : they hold for every implementation, not only Babble's core collections ; and
- * the mutators are assumed {@link ShallowMut shallow}, although hashed and sorted collections
- * call the elements' {@code hashCode}, {@code equals} or {@code compareTo}.
+ * <p>QUESTIONABLE : the collection rules hold by name for every implementation, not only Babble's
+ * core collections ; the mutators are assumed {@link ShallowMut shallow}, although hashed and
+ * sorted collections call their elements' {@code hashCode}, {@code equals} or {@code compareTo} ; and
+ * building any collection or iterator counts as only allocating.
  */
-@Axioms(value = java.util.concurrent.BlockingQueue.class)
+@Axioms(value = java.util.concurrent.BlockingQueue.class,
+        inherited = false)
 interface BlockingQueueAxioms {
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED)
-    void put(java.lang.Object p0);
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED) @ShallowMut
+    java.lang.Object put(java.lang.Object p0);
 }

@@ -2,6 +2,9 @@ package org.babblelang.axioms.java.util;
 
 import org.babblelang.axioms.Axioms;
 import org.babblelang.axioms.FreshResult;
+import org.babblelang.axioms.NonNull;
+import org.babblelang.axioms.Nullable;
+import org.babblelang.axioms.Parametric;
 import org.babblelang.axioms.Profile;
 import org.babblelang.axioms.Profile.Receiver;
 import org.babblelang.axioms.ShallowMut;
@@ -10,103 +13,125 @@ import org.babblelang.axioms.View;
 import static org.babblelang.effects.Effect.*;
 
 /**
- * Collection methods of {@code java.util.Map}, as the effect checker assumed them by name.
+ * What the analysis assumes about {@code java.util.Map}.
  *
- * <p>QUESTIONABLE : they hold for every implementation, not only Babble's core collections ; and
- * the mutators are assumed {@link ShallowMut shallow}, although hashed and sorted collections
- * call the elements' {@code hashCode}, {@code equals} or {@code compareTo}.
+ * <p>QUESTIONABLE : the collection rules hold by name for every implementation, not only Babble's
+ * core collections ; the mutators are assumed {@link ShallowMut shallow}, although hashed and
+ * sorted collections call their elements' {@code hashCode}, {@code equals} or {@code compareTo} ; and
+ * building any collection or iterator counts as only allocating.
  */
 @Axioms(value = java.util.Map.class,
-        allConstructors = @Profile(value = {HERMETIC, DETERMINISTIC}, receiver = Receiver.SHARED, terminating = false))
+        nullMarked = Axioms.NullMarked.SUBTYPES,
+        allConstructors = @Profile(value = {HERMETIC, DETERMINISTIC}, terminating = false, receiver = Receiver.SHARED))
 interface MapAxioms {
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED)
-    void clear();
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED) @ShallowMut
+    java.lang.Object clear();
+
+    @Nullable
+    java.lang.Object compute(java.lang.Object p0, java.util.function.BiFunction p1);
+
+    @Nullable
+    java.lang.Object computeIfAbsent(java.lang.Object p0, java.util.function.Function p1);
+
+    @Nullable
+    java.lang.Object computeIfPresent(java.lang.Object p0, java.util.function.BiFunction p1);
 
     @Profile(value = {HERMETIC, DETERMINISTIC}, borrowedParameters = true)
-    boolean containsKey(java.lang.Object p0);
+    java.lang.Object containsKey(@Nullable java.lang.Object p0);
 
     @Profile(value = {HERMETIC, DETERMINISTIC}, borrowedParameters = true)
-    boolean containsValue(java.lang.Object p0);
+    java.lang.Object containsValue(@Nullable java.lang.Object p0);
 
-    @View @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true)
-    java.util.Set entrySet();
+    @FreshResult @NonNull
+    java.lang.Object copyOf(@NonNull java.util.Map p0);
 
-    @Profile(value = {HERMETIC, DETERMINISTIC}, borrowedParameters = true)
-    java.lang.Object get(java.lang.Object p0);
+    @NonNull
+    java.lang.Object entry(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1);
 
-    @Profile(value = {HERMETIC, DETERMINISTIC}, borrowedParameters = true)
-    java.lang.Object getOrDefault(java.lang.Object p0, java.lang.Object p1);
+    @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true) @View @NonNull
+    java.lang.Object entrySet();
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, borrowedParameters = true) @Nullable
+    java.lang.Object get(@Nullable java.lang.Object p0);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, borrowedParameters = true) @Parametric
+    java.lang.Object getOrDefault(@Nullable java.lang.Object p0, @Parametric java.lang.Object p1);
+
+    @Profile({PURE, HERMETIC, DETERMINISTIC})
+    int hashCode();
 
     @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true)
-    boolean isEmpty();
+    java.lang.Object isEmpty();
 
-    @View @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true)
-    java.util.Set keySet();
+    @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true) @View @NonNull
+    java.lang.Object keySet();
 
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED)
-    java.lang.Object put(java.lang.Object p0, java.lang.Object p1);
+    @Nullable
+    java.lang.Object merge(java.lang.Object p0, java.lang.Object p1, java.util.function.BiFunction p2);
 
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED, borrowedParameters = true)
-    void putAll(java.util.Map p0);
+    @FreshResult @NonNull
+    java.lang.Object of();
 
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED)
-    java.lang.Object putIfAbsent(java.lang.Object p0, java.lang.Object p1);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7, @NonNull java.lang.Object p8, @NonNull java.lang.Object p9, @NonNull java.lang.Object p10, @NonNull java.lang.Object p11, @NonNull java.lang.Object p12, @NonNull java.lang.Object p13, @NonNull java.lang.Object p14, @NonNull java.lang.Object p15, @NonNull java.lang.Object p16, @NonNull java.lang.Object p17, @NonNull java.lang.Object p18, @NonNull java.lang.Object p19);
 
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED)
-    boolean remove(java.lang.Object p0, java.lang.Object p1);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7, @NonNull java.lang.Object p8, @NonNull java.lang.Object p9, @NonNull java.lang.Object p10, @NonNull java.lang.Object p11, @NonNull java.lang.Object p12, @NonNull java.lang.Object p13, @NonNull java.lang.Object p14, @NonNull java.lang.Object p15, @NonNull java.lang.Object p16, @NonNull java.lang.Object p17);
 
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED)
-    java.lang.Object remove(java.lang.Object p0);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7, @NonNull java.lang.Object p8, @NonNull java.lang.Object p9, @NonNull java.lang.Object p10, @NonNull java.lang.Object p11, @NonNull java.lang.Object p12, @NonNull java.lang.Object p13, @NonNull java.lang.Object p14, @NonNull java.lang.Object p15);
 
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED)
-    boolean replace(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7, @NonNull java.lang.Object p8, @NonNull java.lang.Object p9, @NonNull java.lang.Object p10, @NonNull java.lang.Object p11, @NonNull java.lang.Object p12, @NonNull java.lang.Object p13);
 
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED)
-    java.lang.Object replace(java.lang.Object p0, java.lang.Object p1);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7, @NonNull java.lang.Object p8, @NonNull java.lang.Object p9, @NonNull java.lang.Object p10, @NonNull java.lang.Object p11);
 
-    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
-            receiver = Receiver.SHARED)
-    void replaceAll(java.util.function.BiFunction p0);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7, @NonNull java.lang.Object p8, @NonNull java.lang.Object p9);
+
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7);
+
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5);
+
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3);
+
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1);
+
+    @NonNull
+    java.lang.Object ofEntries(@NonNull java.util.Map.Entry[] p0);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED) @ShallowMut @Nullable
+    java.lang.Object put(@Parametric java.lang.Object p0, @Parametric java.lang.Object p1);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED, borrowedParameters = true) @ShallowMut
+    java.lang.Object putAll(@NonNull java.util.Map p0);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED) @ShallowMut @Nullable
+    java.lang.Object putIfAbsent(@Parametric java.lang.Object p0, @Parametric java.lang.Object p1);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED) @ShallowMut
+    java.lang.Object remove(@Nullable java.lang.Object p0, @Nullable java.lang.Object p1);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED) @ShallowMut @Nullable
+    java.lang.Object remove(@Nullable java.lang.Object p0);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED) @ShallowMut
+    java.lang.Object replace(@Parametric java.lang.Object p0, @Parametric java.lang.Object p1, @Parametric java.lang.Object p2);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED) @ShallowMut @Nullable
+    java.lang.Object replace(@Parametric java.lang.Object p0, @Parametric java.lang.Object p1);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true, receiver = Receiver.SHARED) @ShallowMut
+    java.lang.Object replaceAll(java.util.function.BiFunction p0);
 
     @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true)
-    int size();
+    java.lang.Object size();
 
-    @View @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true)
-    java.util.Collection values();
-
-    @Profile({PURE, HERMETIC, DETERMINISTIC}) int hashCode();
-
-    @Profile({PURE, HERMETIC, DETERMINISTIC}) java.lang.String toString();
-
-    @FreshResult java.util.Map copyOf(java.util.Map p0);
-
-    @FreshResult java.util.Map of();
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7, java.lang.Object p8, java.lang.Object p9, java.lang.Object p10, java.lang.Object p11, java.lang.Object p12, java.lang.Object p13, java.lang.Object p14, java.lang.Object p15, java.lang.Object p16, java.lang.Object p17, java.lang.Object p18, java.lang.Object p19);
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7, java.lang.Object p8, java.lang.Object p9, java.lang.Object p10, java.lang.Object p11, java.lang.Object p12, java.lang.Object p13, java.lang.Object p14, java.lang.Object p15, java.lang.Object p16, java.lang.Object p17);
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7, java.lang.Object p8, java.lang.Object p9, java.lang.Object p10, java.lang.Object p11, java.lang.Object p12, java.lang.Object p13, java.lang.Object p14, java.lang.Object p15);
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7, java.lang.Object p8, java.lang.Object p9, java.lang.Object p10, java.lang.Object p11, java.lang.Object p12, java.lang.Object p13);
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7, java.lang.Object p8, java.lang.Object p9, java.lang.Object p10, java.lang.Object p11);
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7, java.lang.Object p8, java.lang.Object p9);
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7);
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5);
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3);
-
-    @FreshResult java.util.Map of(java.lang.Object p0, java.lang.Object p1);
+    @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true) @View @NonNull
+    java.lang.Object values();
 }

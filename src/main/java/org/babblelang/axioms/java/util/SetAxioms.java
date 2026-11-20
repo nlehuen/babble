@@ -2,40 +2,56 @@ package org.babblelang.axioms.java.util;
 
 import org.babblelang.axioms.Axioms;
 import org.babblelang.axioms.FreshResult;
+import org.babblelang.axioms.NonNull;
 import org.babblelang.axioms.ShallowMut;
 
 /**
- * Collection methods of {@code java.util.Set}, as the effect checker assumed them by name.
+ * What the analysis assumes about {@code java.util.Set}.
  *
- * <p>QUESTIONABLE : they hold for every implementation, not only Babble's core collections ; and
- * the mutators are assumed {@link ShallowMut shallow}, although hashed and sorted collections
- * call the elements' {@code hashCode}, {@code equals} or {@code compareTo}.
+ * <p>QUESTIONABLE : the collection rules hold by name for every implementation, not only Babble's
+ * core collections ; the mutators are assumed {@link ShallowMut shallow}, although hashed and
+ * sorted collections call their elements' {@code hashCode}, {@code equals} or {@code compareTo} ; and
+ * building any collection or iterator counts as only allocating.
  */
-@Axioms(value = java.util.Set.class)
+@Axioms(value = java.util.Set.class,
+        inherited = false)
 interface SetAxioms {
-    @FreshResult java.util.Set copyOf(java.util.Collection p0);
+    @FreshResult @NonNull
+    java.lang.Object copyOf(@NonNull java.util.Collection p0);
 
-    @FreshResult java.util.Set of();
+    @FreshResult @NonNull
+    java.lang.Object of();
 
-    @FreshResult java.util.Set of(java.lang.Object[] p0);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object[] p0);
 
-    @FreshResult java.util.Set of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7, java.lang.Object p8, java.lang.Object p9);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7, @NonNull java.lang.Object p8, @NonNull java.lang.Object p9);
 
-    @FreshResult java.util.Set of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7, java.lang.Object p8);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7, @NonNull java.lang.Object p8);
 
-    @FreshResult java.util.Set of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6, java.lang.Object p7);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6, @NonNull java.lang.Object p7);
 
-    @FreshResult java.util.Set of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5, java.lang.Object p6);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5, @NonNull java.lang.Object p6);
 
-    @FreshResult java.util.Set of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4, java.lang.Object p5);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4, @NonNull java.lang.Object p5);
 
-    @FreshResult java.util.Set of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3, java.lang.Object p4);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3, @NonNull java.lang.Object p4);
 
-    @FreshResult java.util.Set of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2, java.lang.Object p3);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2, @NonNull java.lang.Object p3);
 
-    @FreshResult java.util.Set of(java.lang.Object p0, java.lang.Object p1, java.lang.Object p2);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1, @NonNull java.lang.Object p2);
 
-    @FreshResult java.util.Set of(java.lang.Object p0, java.lang.Object p1);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0, @NonNull java.lang.Object p1);
 
-    @FreshResult java.util.Set of(java.lang.Object p0);
+    @FreshResult @NonNull
+    java.lang.Object of(@NonNull java.lang.Object p0);
 }

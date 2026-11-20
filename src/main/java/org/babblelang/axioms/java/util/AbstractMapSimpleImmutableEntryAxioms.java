@@ -6,8 +6,11 @@ import org.babblelang.axioms.Profile.Receiver;
 
 import static org.babblelang.effects.Effect.*;
 
-/** Building a {@code java.util.AbstractMap.SimpleImmutableEntry} has no effect but allocation. */
-@Axioms(value = java.util.AbstractMap.SimpleImmutableEntry.class, inherited = false,
-        allConstructors = @Profile(value = {HERMETIC, DETERMINISTIC}, receiver = Receiver.SHARED, terminating = false))
+/**
+ * What the analysis assumes about {@code java.util.AbstractMap.SimpleImmutableEntry}.
+ */
+@Axioms(value = java.util.AbstractMap.SimpleImmutableEntry.class,
+        inherited = false,
+        allConstructors = @Profile(value = {HERMETIC, DETERMINISTIC}, terminating = false, receiver = Receiver.SHARED))
 interface AbstractMapSimpleImmutableEntryAxioms {
 }

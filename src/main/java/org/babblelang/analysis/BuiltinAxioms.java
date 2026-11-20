@@ -45,7 +45,7 @@ public final class BuiltinAxioms {
 
     /** A stub : its target, and its methods by name. */
     private record Stub(Class<?> target, boolean inherited, Class<?> type, Profile allMethods, Profile allConstructors,
-                        Map<String, List<Method>> methods) {
+                        Axioms.NullMarked nullMarked, Map<String, List<Method>> methods, List<Method> constructors) {
         boolean appliesTo(Class<?> owner) {
             return target == owner || inherited && target.isAssignableFrom(owner);
         }
@@ -156,6 +156,69 @@ public final class BuiltinAxioms {
         return match != null && match.stubMethod() != null ? match.stubMethod().getAnnotation(annotation) : null;
     }
 
+    /** The stub method mirroring {@code owner}'s constructor with these parameter types, or null. */
+    Method constructorMirror(Class<?> owner, Class<?>[] parameterTypes) {
+        if (owner == null) {
+            return null;
+        }
+        for (Stub stub : candidates(owner)) {
+            if (!stub.constructors().isEmpty()) {
+                Method found = find(stub.constructors(), parameterTypes);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Whether the signatures of {@code owner} are null-marked by an axiom (BIP019-P3). */
+    boolean nullMarked(Class<?> owner) {
+        for (Stub stub : stubs) {
+            if (stub.nullMarked() == Axioms.NullMarked.TARGET && stub.target() == owner
+                    || stub.nullMarked() == Axioms.NullMarked.SUBTYPES && stub.target().isAssignableFrom(owner)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The nullness an axiom states for {@code method}'s result, or null. */
+    JavaNullability.Nullness returnNullness(Method method) {
+        Match match = method(method.getDeclaringClass(), method.getName(), method.getParameterTypes());
+        return match != null && match.stubMethod() != null ? nullness(match.stubMethod().getAnnotations()) : null;
+    }
+
+    /** The nullness an axiom states for parameter {@code index} of {@code executable}, or null. */
+    JavaNullability.Nullness parameterNullness(java.lang.reflect.Executable executable, int index) {
+        Method mirror;
+        if (executable instanceof Method m) {
+            Match match = method(m.getDeclaringClass(), m.getName(), m.getParameterTypes());
+            mirror = match != null ? match.stubMethod() : null;
+        } else {
+            mirror = constructorMirror(executable.getDeclaringClass(), executable.getParameterTypes());
+        }
+        if (mirror == null || index < 0 || index >= mirror.getParameterCount()) {
+            return null;
+        }
+        return nullness(mirror.getParameterAnnotations()[index]);
+    }
+
+    private static JavaNullability.Nullness nullness(java.lang.annotation.Annotation[] annotations) {
+        for (java.lang.annotation.Annotation a : annotations) {
+            if (a instanceof org.babblelang.axioms.NonNull) {
+                return JavaNullability.Nullness.NON_NULL;
+            }
+            if (a instanceof org.babblelang.axioms.Nullable) {
+                return JavaNullability.Nullness.NULLABLE;
+            }
+            if (a instanceof org.babblelang.axioms.Parametric) {
+                return JavaNullability.Nullness.PARAMETRIC;
+            }
+        }
+        return null;
+    }
+
     /** The profile of {@code owner}'s constructors, or null when no stub states one. */
     Profile constructor(Class<?> owner) {
         if (owner == null) {
@@ -240,19 +303,31 @@ public final class BuiltinAxioms {
                 continue;
             }
             Map<String, List<Method>> methods = new LinkedHashMap<>();
+            List<Method> constructors = new ArrayList<>();
             for (Method m : type.getDeclaredMethods()) {
-                if (!m.isSynthetic()) {
-                    methods.computeIfAbsent(m.getName(), n -> new ArrayList<>()).add(m);
+                if (m.isSynthetic()) {
+                    continue;
+                }
+                if (m.isAnnotationPresent(org.babblelang.axioms.Constructor.class)) {
+                    constructors.add(m);
+                } else {
+                    methods.computeIfAbsent(mirroredName(m), n -> new ArrayList<>()).add(m);
                 }
             }
             methods.replaceAll((n, l) -> List.copyOf(l));
             stubs.add(new Stub(axioms.value(), axioms.inherited(), type,
                     axioms.allMethods().length > 0 ? axioms.allMethods()[0] : null,
                     axioms.allConstructors().length > 0 ? axioms.allConstructors()[0] : null,
-                    Collections.unmodifiableMap(methods)));
+                    axioms.nullMarked(), Collections.unmodifiableMap(methods), List.copyOf(constructors)));
         }
         stubs.sort(Comparator.comparing(s -> s.type().getName()));
         return List.copyOf(stubs);
+    }
+
+    /** The name of the target's method a stub method mirrors. */
+    static String mirroredName(Method stubMethod) {
+        org.babblelang.axioms.MethodName name = stubMethod.getAnnotation(org.babblelang.axioms.MethodName.class);
+        return name != null ? name.value() : stubMethod.getName();
     }
 
     /** The names of the classes under {@link #PACKAGE}, in a directory or a jar of the class path. */

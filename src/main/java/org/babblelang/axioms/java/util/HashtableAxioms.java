@@ -7,14 +7,16 @@ import org.babblelang.axioms.ShallowMut;
 import static org.babblelang.effects.Effect.*;
 
 /**
- * Collection methods of {@code java.util.Hashtable}, as the effect checker assumed them by name.
+ * What the analysis assumes about {@code java.util.Hashtable}.
  *
- * <p>QUESTIONABLE : they hold for every implementation, not only Babble's core collections ; and
- * the mutators are assumed {@link ShallowMut shallow}, although hashed and sorted collections
- * call the elements' {@code hashCode}, {@code equals} or {@code compareTo}.
+ * <p>QUESTIONABLE : the collection rules hold by name for every implementation, not only Babble's
+ * core collections ; the mutators are assumed {@link ShallowMut shallow}, although hashed and
+ * sorted collections call their elements' {@code hashCode}, {@code equals} or {@code compareTo} ; and
+ * building any collection or iterator counts as only allocating.
  */
-@Axioms(value = java.util.Hashtable.class)
+@Axioms(value = java.util.Hashtable.class,
+        inherited = false)
 interface HashtableAxioms {
     @Profile(value = {HERMETIC, DETERMINISTIC}, borrowedParameters = true)
-    boolean contains(java.lang.Object p0);
+    java.lang.Object contains(java.lang.Object p0);
 }

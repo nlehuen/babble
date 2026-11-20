@@ -2,74 +2,111 @@ package org.babblelang.axioms.java.lang;
 
 import org.babblelang.axioms.Axioms;
 import org.babblelang.axioms.BytecodeSeed;
+import org.babblelang.axioms.NonNull;
+import org.babblelang.axioms.Nullable;
 
 import static org.babblelang.effects.Effect.*;
 
 /**
- * What the bytecode analyzer assumes about {@code java.lang.Long} methods it reaches (BIP019-P2).
+ * What the analysis assumes about {@code java.lang.Long}.
  */
-@Axioms(value = java.lang.Long.class, inherited = false)
+@Axioms(value = java.lang.Long.class,
+        inherited = false,
+        nullMarked = Axioms.NullMarked.TARGET)
 interface LongAxioms {
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int bitCount(long p0);
+    java.lang.Object bitCount(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int compare(long p0, long p1);
+    java.lang.Object compare(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int compareUnsigned(long p0, long p1);
+    java.lang.Object compareUnsigned(long p0, long p1);
+
+    @NonNull
+    java.lang.Object decode(java.lang.String p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double doubleValue();
+    java.lang.Object doubleValue();
+
+    @NonNull
+    java.lang.Object getLong(java.lang.String p0, java.lang.Long p1);
+
+    @NonNull
+    java.lang.Object getLong(java.lang.String p0, long p1);
+
+    @Nullable
+    java.lang.Object getLong(java.lang.String p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long highestOneBit(long p0);
+    java.lang.Object highestOneBit(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int intValue();
+    java.lang.Object intValue();
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long longValue();
+    java.lang.Object longValue();
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long lowestOneBit(long p0);
+    java.lang.Object lowestOneBit(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long max(long p0, long p1);
+    java.lang.Object max(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long min(long p0, long p1);
+    java.lang.Object min(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int numberOfLeadingZeros(long p0);
+    java.lang.Object numberOfLeadingZeros(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int numberOfTrailingZeros(long p0);
+    java.lang.Object numberOfTrailingZeros(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long reverse(long p0);
+    java.lang.Object reverse(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long reverseBytes(long p0);
+    java.lang.Object reverseBytes(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long rotateLeft(long p0, int p1);
+    java.lang.Object rotateLeft(long p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long rotateRight(long p0, int p1);
+    java.lang.Object rotateRight(long p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int signum(long p0);
+    java.lang.Object signum(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long sum(long p0, long p1);
+    java.lang.Object sum(long p0, long p1);
 
-    @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    java.lang.Long valueOf(java.lang.String p0, int p1);
+    @NonNull
+    java.lang.Object toBinaryString(long p0);
 
-    @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    java.lang.Long valueOf(java.lang.String p0);
+    @NonNull
+    java.lang.Object toHexString(long p0);
 
-    @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    java.lang.Long valueOf(long p0);
+    @NonNull
+    java.lang.Object toOctalString(long p0);
+
+    @NonNull
+    java.lang.Object toString(long p0, int p1);
+
+    @NonNull
+    java.lang.Object toString(long p0);
+
+    @NonNull
+    java.lang.Object toUnsignedString(long p0, int p1);
+
+    @NonNull
+    java.lang.Object toUnsignedString(long p0);
+
+    @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW}) @NonNull
+    java.lang.Object valueOf(java.lang.String p0, int p1);
+
+    @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW}) @NonNull
+    java.lang.Object valueOf(java.lang.String p0);
+
+    @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW}) @NonNull
+    java.lang.Object valueOf(long p0);
 }

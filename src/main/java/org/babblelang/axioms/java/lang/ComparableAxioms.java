@@ -10,8 +10,8 @@ import static org.babblelang.effects.Effect.*;
  * implement it with a {@code mut} parameter ; the sorted collections, which call it, then mutate
  * their elements (BIP019 §1).
  */
-@Axioms(Comparable.class)
+@Axioms(value = java.lang.Comparable.class)
 interface ComparableAxioms {
     @Profile(value = {PURE, HERMETIC, DETERMINISTIC}, borrowedParameters = true)
-    int compareTo(Object other);
+    java.lang.Object compareTo(java.lang.Object p0);
 }

@@ -27,4 +27,17 @@ public @interface Axioms {
 
     /** At most one profile, of every constructor of the target (and of its subtypes when inherited). */
     Profile[] allConstructors() default {};
+
+    /** Where, in the target's signatures, unannotated type arguments are non-null (JSpecify's {@code @NullMarked}). */
+    enum NullMarked {
+        /** Nowhere. */
+        NO,
+        /** In the target's own methods and constructors. */
+        TARGET,
+        /** In those of the target and of all its subtypes. */
+        SUBTYPES
+    }
+
+    /** Whether the target's signatures are null-marked. */
+    NullMarked nullMarked() default NullMarked.NO;
 }

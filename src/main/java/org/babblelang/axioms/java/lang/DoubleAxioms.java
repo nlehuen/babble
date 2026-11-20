@@ -2,38 +2,53 @@ package org.babblelang.axioms.java.lang;
 
 import org.babblelang.axioms.Axioms;
 import org.babblelang.axioms.BytecodeSeed;
+import org.babblelang.axioms.NonNull;
 
 import static org.babblelang.effects.Effect.*;
 
 /**
- * What the bytecode analyzer assumes about {@code java.lang.Double} methods it reaches (BIP019-P2).
+ * What the analysis assumes about {@code java.lang.Double}.
  */
-@Axioms(value = java.lang.Double.class, inherited = false)
+@Axioms(value = java.lang.Double.class,
+        inherited = false,
+        nullMarked = Axioms.NullMarked.TARGET)
 interface DoubleAxioms {
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int compare(double p0, double p1);
+    java.lang.Object compare(double p0, double p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long doubleToLongBits(double p0);
+    java.lang.Object doubleToLongBits(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long doubleToRawLongBits(double p0);
+    java.lang.Object doubleToRawLongBits(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    boolean isFinite(double p0);
+    java.lang.Object isFinite(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    boolean isInfinite();
+    java.lang.Object isInfinite();
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    boolean isInfinite(double p0);
+    java.lang.Object isInfinite(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    boolean isNaN();
+    java.lang.Object isNaN();
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    boolean isNaN(double p0);
+    java.lang.Object isNaN(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double longBitsToDouble(long p0);
+    java.lang.Object longBitsToDouble(long p0);
+
+    @NonNull
+    java.lang.Object toHexString(double p0);
+
+    @NonNull
+    java.lang.Object toString(double p0);
+
+    @NonNull
+    java.lang.Object valueOf(java.lang.String p0);
+
+    @NonNull
+    java.lang.Object valueOf(double p0);
 }

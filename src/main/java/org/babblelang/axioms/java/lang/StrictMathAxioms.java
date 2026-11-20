@@ -6,214 +6,215 @@ import org.babblelang.axioms.BytecodeSeed;
 import static org.babblelang.effects.Effect.*;
 
 /**
- * What the bytecode analyzer assumes about {@code java.lang.StrictMath} methods it reaches (BIP019-P2).
+ * What the analysis assumes about {@code java.lang.StrictMath}.
  */
-@Axioms(value = java.lang.StrictMath.class, inherited = false)
+@Axioms(value = java.lang.StrictMath.class,
+        inherited = false)
 interface StrictMathAxioms {
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double IEEEremainder(double p0, double p1);
+    java.lang.Object IEEEremainder(double p0, double p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double abs(double p0);
+    java.lang.Object abs(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float abs(float p0);
+    java.lang.Object abs(float p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int abs(int p0);
+    java.lang.Object abs(int p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long abs(long p0);
+    java.lang.Object abs(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double acos(double p0);
+    java.lang.Object acos(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    int addExact(int p0, int p1);
+    java.lang.Object addExact(int p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    long addExact(long p0, long p1);
+    java.lang.Object addExact(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double asin(double p0);
+    java.lang.Object asin(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double atan(double p0);
+    java.lang.Object atan(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double atan2(double p0, double p1);
+    java.lang.Object atan2(double p0, double p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double cbrt(double p0);
+    java.lang.Object cbrt(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double ceil(double p0);
+    java.lang.Object ceil(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double copySign(double p0, double p1);
+    java.lang.Object copySign(double p0, double p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float copySign(float p0, float p1);
+    java.lang.Object copySign(float p0, float p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double cos(double p0);
+    java.lang.Object cos(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double cosh(double p0);
+    java.lang.Object cosh(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double exp(double p0);
+    java.lang.Object exp(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double expm1(double p0);
+    java.lang.Object expm1(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double floor(double p0);
+    java.lang.Object floor(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    int floorDiv(int p0, int p1);
+    java.lang.Object floorDiv(int p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    long floorDiv(long p0, int p1);
+    java.lang.Object floorDiv(long p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    long floorDiv(long p0, long p1);
+    java.lang.Object floorDiv(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    int floorMod(int p0, int p1);
+    java.lang.Object floorMod(int p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    int floorMod(long p0, int p1);
+    java.lang.Object floorMod(long p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    long floorMod(long p0, long p1);
+    java.lang.Object floorMod(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double fma(double p0, double p1, double p2);
+    java.lang.Object fma(double p0, double p1, double p2);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float fma(float p0, float p1, float p2);
+    java.lang.Object fma(float p0, float p1, float p2);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double hypot(double p0, double p1);
+    java.lang.Object hypot(double p0, double p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double log(double p0);
+    java.lang.Object log(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double log10(double p0);
+    java.lang.Object log10(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double log1p(double p0);
+    java.lang.Object log1p(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double max(double p0, double p1);
+    java.lang.Object max(double p0, double p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float max(float p0, float p1);
+    java.lang.Object max(float p0, float p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int max(int p0, int p1);
+    java.lang.Object max(int p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long max(long p0, long p1);
+    java.lang.Object max(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double min(double p0, double p1);
+    java.lang.Object min(double p0, double p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float min(float p0, float p1);
+    java.lang.Object min(float p0, float p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int min(int p0, int p1);
+    java.lang.Object min(int p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long min(long p0, long p1);
+    java.lang.Object min(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    int multiplyExact(int p0, int p1);
+    java.lang.Object multiplyExact(int p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    long multiplyExact(long p0, int p1);
+    java.lang.Object multiplyExact(long p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    long multiplyExact(long p0, long p1);
+    java.lang.Object multiplyExact(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    int negateExact(int p0);
+    java.lang.Object negateExact(int p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    long negateExact(long p0);
+    java.lang.Object negateExact(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double nextDown(double p0);
+    java.lang.Object nextDown(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float nextDown(float p0);
+    java.lang.Object nextDown(float p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double nextUp(double p0);
+    java.lang.Object nextUp(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float nextUp(float p0);
+    java.lang.Object nextUp(float p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double pow(double p0, double p1);
+    java.lang.Object pow(double p0, double p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double rint(double p0);
+    java.lang.Object rint(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    long round(double p0);
+    java.lang.Object round(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    int round(float p0);
+    java.lang.Object round(float p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double scalb(double p0, int p1);
+    java.lang.Object scalb(double p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float scalb(float p0, int p1);
+    java.lang.Object scalb(float p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double signum(double p0);
+    java.lang.Object signum(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float signum(float p0);
+    java.lang.Object signum(float p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double sin(double p0);
+    java.lang.Object sin(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double sinh(double p0);
+    java.lang.Object sinh(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double sqrt(double p0);
+    java.lang.Object sqrt(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    int subtractExact(int p0, int p1);
+    java.lang.Object subtractExact(int p0, int p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    long subtractExact(long p0, long p1);
+    java.lang.Object subtractExact(long p0, long p1);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double tan(double p0);
+    java.lang.Object tan(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double tanh(double p0);
+    java.lang.Object tanh(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double toDegrees(double p0);
+    java.lang.Object toDegrees(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC})
-    int toIntExact(long p0);
+    java.lang.Object toIntExact(long p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double toRadians(double p0);
+    java.lang.Object toRadians(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    double ulp(double p0);
+    java.lang.Object ulp(double p0);
 
     @BytecodeSeed({PURE, HERMETIC, DETERMINISTIC, NOTHROW})
-    float ulp(float p0);
+    java.lang.Object ulp(float p0);
 }
