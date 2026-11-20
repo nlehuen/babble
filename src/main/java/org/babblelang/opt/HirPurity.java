@@ -1,5 +1,6 @@
 package org.babblelang.opt;
 
+import org.babblelang.analysis.BuiltinAxioms;
 import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.effects.Effect;
@@ -24,24 +25,6 @@ import java.util.Set;
  * reference {@code Interpreter}.
  */
 public final class HirPurity {
-    private static final Set<String> PURE_NOTHROW_TERMINATING_MATH = Set.of(
-            "abs", "sqrt", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-            "exp", "log", "log10", "pow", "min", "max", "floor", "ceil", "rint",
-            "round", "cbrt", "hypot", "signum", "toRadians", "toDegrees", "sinh", "cosh", "tanh"
-    );
-
-    private static final Set<String> IDEMPOTENT_MATH = Set.of(
-            "abs", "floor", "ceil", "rint"
-    );
-
-    private static final Set<String> PURE_NOTHROW_TERMINATING_STRING = Set.of(
-            "length", "isEmpty", "trim"
-    );
-
-    private static final Set<String> IDEMPOTENT_STRING = Set.of(
-            "trim"
-    );
-
     private HirPurity() {
     }
 
@@ -68,25 +51,22 @@ public final class HirPurity {
         return isNumericKind(lk) && isNumericKind(rk);
     }
 
+    /**
+     * A static call the optimizer may fold : its axiom says so ({@code @Foldable}, in
+     * {@code org.babblelang.axioms}, BIP019-P2).
+     */
     public static boolean isWhitelistedPureMath(Method m) {
-        return m.getDeclaringClass() == Math.class
-                && Modifier.isStatic(m.getModifiers())
-                && PURE_NOTHROW_TERMINATING_MATH.contains(m.getName());
+        return Modifier.isStatic(m.getModifiers()) && BuiltinAxioms.isFoldable(m);
     }
 
+    /** An idempotent Java call, as its axiom says ({@code @Idempotent}, BIP019-P2). */
     public static boolean isWhitelistedIdempotentJava(Method m) {
-        if (m.getDeclaringClass() == Math.class && Modifier.isStatic(m.getModifiers())
-                && m.getParameterCount() == 1 && IDEMPOTENT_MATH.contains(m.getName())) {
-            return true;
-        }
-        return m.getDeclaringClass() == String.class && !Modifier.isStatic(m.getModifiers())
-                && m.getParameterCount() == 0 && IDEMPOTENT_STRING.contains(m.getName());
+        return BuiltinAxioms.isIdempotent(m);
     }
 
+    /** An instance call the optimizer may fold : its axiom says so ({@code @Foldable}, BIP019-P2). */
     public static boolean isWhitelistedPureString(Method m) {
-        return m.getDeclaringClass() == String.class
-                && !Modifier.isStatic(m.getModifiers())
-                && PURE_NOTHROW_TERMINATING_STRING.contains(m.getName());
+        return !Modifier.isStatic(m.getModifiers()) && BuiltinAxioms.isFoldable(m);
     }
 
     public static boolean isStringCheckedType(String checkedType) {

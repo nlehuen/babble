@@ -1,6 +1,8 @@
 package org.babblelang.analysis;
 
 import org.babblelang.axioms.Axioms;
+import org.babblelang.axioms.BytecodeSeed;
+import org.babblelang.axioms.Foldable;
 import org.babblelang.axioms.FreshResult;
 import org.babblelang.axioms.Profile;
 import org.babblelang.axioms.ShallowMut;
@@ -32,7 +34,7 @@ import java.util.stream.Stream;
  * read from the stubs of {@code org.babblelang.axioms}. This class only finds and matches them ;
  * every assumption is in a stub.
  */
-final class BuiltinAxioms {
+public final class BuiltinAxioms {
     /** The package of the stubs, listed on the class path (BIP019-D7). */
     private static final String PACKAGE = "org/babblelang/axioms";
 
@@ -49,8 +51,22 @@ final class BuiltinAxioms {
         }
     }
 
-    /** What a stub says about a method : its profile, and whether its result is a view or fresh. */
-    record Match(Profile profile, boolean shallowMut, boolean view, boolean freshResult) {
+    /**
+     * What a stub says about a method : the stub's method, when it lists it, and its profile (its
+     * own, or the stub's profile of all its target's methods).
+     */
+    record Match(Method stubMethod, Profile profile) {
+        boolean shallowMut() {
+            return stubMethod != null && stubMethod.isAnnotationPresent(ShallowMut.class);
+        }
+
+        boolean view() {
+            return stubMethod != null && stubMethod.isAnnotationPresent(View.class);
+        }
+
+        boolean freshResult() {
+            return stubMethod != null && stubMethod.isAnnotationPresent(FreshResult.class);
+        }
     }
 
     private final List<Stub> stubs;
@@ -95,15 +111,49 @@ final class BuiltinAxioms {
             if (named != null) {
                 Method found = parameterTypes == null ? named.get(0) : find(named, parameterTypes);
                 if (found != null) {
-                    return new Match(found.getAnnotation(Profile.class), found.isAnnotationPresent(ShallowMut.class),
-                            found.isAnnotationPresent(View.class), found.isAnnotationPresent(FreshResult.class));
+                    Profile own = found.getAnnotation(Profile.class);
+                    return new Match(found, own != null ? own : stub.allMethods());
                 }
             }
             if (stub.allMethods() != null) {
-                return new Match(stub.allMethods(), false, false, false);
+                return new Match(null, stub.allMethods());
             }
         }
         return null;
+    }
+
+    /**
+     * The seed of the bytecode analyzer for a method it reaches (BIP019-P2) : what it assumes
+     * instead of analysing it, or null.
+     */
+    public static EffectSet bytecodeSeed(Class<?> owner, String name, Class<?>[] parameterTypes) {
+        Match match = get().method(owner, name, parameterTypes);
+        BytecodeSeed seed = match != null && match.stubMethod() != null
+                ? match.stubMethod().getAnnotation(BytecodeSeed.class) : null;
+        if (seed == null) {
+            return null;
+        }
+        java.util.EnumSet<org.babblelang.effects.Effect> effects = java.util.EnumSet.noneOf(org.babblelang.effects.Effect.class);
+        Collections.addAll(effects, seed.value());
+        return EffectSet.ofInferred(effects, false, true, false, true);
+    }
+
+    /** Whether the optimizer may treat a call of {@code method} as pure, nothrow and terminating, and fold it (BIP019-P2). */
+    public static boolean isFoldable(Method method) {
+        return stubAnnotation(method, Foldable.class) != null;
+    }
+
+    /** Whether {@code method} is idempotent, as the optimizer assumes (BIP019-P2). */
+    public static boolean isIdempotent(Method method) {
+        return stubAnnotation(method, org.babblelang.effects.Idempotent.class) != null;
+    }
+
+    private static <A extends java.lang.annotation.Annotation> A stubAnnotation(Method method, Class<A> annotation) {
+        if (method == null) {
+            return null;
+        }
+        Match match = get().method(method.getDeclaringClass(), method.getName(), method.getParameterTypes());
+        return match != null && match.stubMethod() != null ? match.stubMethod().getAnnotation(annotation) : null;
     }
 
     /** The profile of {@code owner}'s constructors, or null when no stub states one. */
@@ -191,8 +241,7 @@ final class BuiltinAxioms {
             }
             Map<String, List<Method>> methods = new LinkedHashMap<>();
             for (Method m : type.getDeclaredMethods()) {
-                if (m.isAnnotationPresent(Profile.class) || m.isAnnotationPresent(FreshResult.class)
-                        || m.isAnnotationPresent(View.class) || m.isAnnotationPresent(ShallowMut.class)) {
+                if (!m.isSynthetic()) {
                     methods.computeIfAbsent(m.getName(), n -> new ArrayList<>()).add(m);
                 }
             }

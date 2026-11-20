@@ -43,53 +43,44 @@ public final class BytecodeEffectAnalyzer {
     }
 
     /** Seeded JVM native / JDK intrinsics known to be pure deterministic. */
-    private static final Map<String, EffectSet> SEEDED_INTRINSICS = buildSeededIntrinsics();
 
     private static final Map<MethodKey, Result> CACHE = new ConcurrentHashMap<>();
 
     private BytecodeEffectAnalyzer() {
     }
 
-    private static Map<String, EffectSet> buildSeededIntrinsics() {
-        Map<String, EffectSet> map = new HashMap<>();
-        EffectSet pureDetNothrow = EffectSet.ofInferred(
-                EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
-        EffectSet pureDet = EffectSet.ofInferred(
-                EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
+    /**
+     * The seed of a method the analysis reaches : what the axioms of {@code org.babblelang.axioms}
+     * say it assumes ({@code @BytecodeSeed}, BIP019-P2), or null.
+     */
+    private static EffectSet seed(String ownerInternal, String name, String desc, ClassLoader loader) {
+        ClassLoader l = loader != null ? loader : ClassLoader.getSystemClassLoader();
+        try {
+            Class<?> owner = Class.forName(ownerInternal.replace('/', '.'), false, l);
+            Type[] args = Type.getArgumentTypes(desc);
+            Class<?>[] params = new Class<?>[args.length];
+            for (int i = 0; i < args.length; i++) {
+                params[i] = classOf(args[i], l);
+            }
+            return BuiltinAxioms.bytecodeSeed(owner, name, params);
+        } catch (ClassNotFoundException | LinkageError e) {
+            return null;
+        }
+    }
 
-        for (String m : List.of("abs", "min", "max", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-                "exp", "log", "log10", "log1p", "expm1", "sqrt", "cbrt", "pow", "hypot", "ceil", "floor",
-                "rint", "round", "signum", "copySign", "ulp", "sinh", "cosh", "tanh", "toRadians", "toDegrees",
-                "fma", "scalb", "nextUp", "nextDown", "IEEEremainder")) {
-            map.put("java/lang/Math#" + m, pureDetNothrow);
-            map.put("java/lang/StrictMath#" + m, pureDetNothrow);
-        }
-        for (String m : List.of("addExact", "subtractExact", "multiplyExact", "negateExact",
-                "floorDiv", "floorMod", "toIntExact")) {
-            map.put("java/lang/Math#" + m, pureDet);
-            map.put("java/lang/StrictMath#" + m, pureDet);
-        }
-        for (String m : List.of("doubleToRawLongBits", "doubleToLongBits", "longBitsToDouble", "isNaN", "isInfinite", "isFinite", "compare")) {
-            map.put("java/lang/Double#" + m, pureDetNothrow);
-        }
-        for (String m : List.of("floatToRawIntBits", "floatToIntBits", "intBitsToFloat", "isNaN", "isInfinite", "isFinite", "compare")) {
-            map.put("java/lang/Float#" + m, pureDetNothrow);
-        }
-        for (String m : List.of("valueOf", "compare", "compareUnsigned", "bitCount", "highestOneBit",
-                "lowestOneBit", "numberOfLeadingZeros", "numberOfTrailingZeros", "rotateLeft", "rotateRight",
-                "reverse", "reverseBytes", "signum", "sum", "max", "min", "intValue", "longValue", "doubleValue")) {
-            map.put("java/lang/Integer#" + m, pureDetNothrow);
-            map.put("java/lang/Long#" + m, pureDetNothrow);
-        }
-        for (String m : List.of("length", "isEmpty", "isBlank", "trim", "strip", "toLowerCase", "toUpperCase",
-                "startsWith", "endsWith", "contains", "indexOf", "lastIndexOf", "equals", "equalsIgnoreCase",
-                "compareTo", "hashCode", "toString", "concat", "valueOf")) {
-            map.put("java/lang/String#" + m, pureDetNothrow);
-        }
-        for (String m : List.of("charAt", "substring", "codePointAt")) {
-            map.put("java/lang/String#" + m, pureDet);
-        }
-        return Collections.unmodifiableMap(map);
+    private static Class<?> classOf(Type type, ClassLoader loader) throws ClassNotFoundException {
+        return switch (type.getSort()) {
+            case Type.BOOLEAN -> boolean.class;
+            case Type.CHAR -> char.class;
+            case Type.BYTE -> byte.class;
+            case Type.SHORT -> short.class;
+            case Type.INT -> int.class;
+            case Type.FLOAT -> float.class;
+            case Type.LONG -> long.class;
+            case Type.DOUBLE -> double.class;
+            case Type.ARRAY -> Class.forName(type.getDescriptor().replace('/', '.'), false, loader);
+            default -> Class.forName(type.getClassName(), false, loader);
+        };
     }
 
     /** Analyzes a single Java {@link Method} and returns its conservative inferred {@link EffectSet} and reasons. */
@@ -159,7 +150,7 @@ public final class BytecodeEffectAnalyzer {
 
     private static Result analyzeInternal(String ownerInternal, String name, String desc,
                                           ClassLoader loader, Set<MethodKey> visiting, int depth) {
-        EffectSet seeded = SEEDED_INTRINSICS.get(ownerInternal + "#" + name);
+        EffectSet seeded = seed(ownerInternal, name, desc, loader);
         if (seeded != null) {
             return new Result(seeded, List.of());
         }
@@ -346,7 +337,7 @@ public final class BytecodeEffectAnalyzer {
 
                     @Override
                     public void visitMethodInsn(int opcode, String owner, String mName, String mDesc, boolean isInterface) {
-                        EffectSet seeded = SEEDED_INTRINSICS.get(owner + "#" + mName);
+                        EffectSet seeded = seed(owner, mName, mDesc, loader);
                         if (seeded != null) {
                             mergeCallee(scan, seeded);
                             return;

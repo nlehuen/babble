@@ -7,6 +7,8 @@ Everything the interpreter, the compiler, the analysis and the optimizer assume 
 * **Java axioms** are stubs : a type annotated `@Axioms(Target.class)`, in `org.babblelang.axioms.<the target's package>`, named `<Target>Axioms` (a nested class takes its outer class's name : `Map.Entry` → `MapEntryAxioms`). Its methods mirror the target's, with exactly the same parameter types, and an override of a stub method in a subtype matches it too (unless `inherited = false`).
   * `@Profile` states a method's effect profile literally : its effects (`PURE`, `HERMETIC`, `DETERMINISTIC`, `NOTHROW`), whether it mutates or keeps its receiver, whether it borrows its parameters, whether it needs a call check ;
   * `@ShallowMut` : the mutator doesn't touch the objects its receiver holds ; `@View` : the result aliases the receiver ; `@FreshResult` : the result is a new object aliasing no argument ;
+  * `@BytecodeSeed` : what the bytecode analyzer assumes about a method it reaches, instead of analysing it (natives notably) ;
+  * `@Foldable` : the optimizer may treat a call as pure, `nothrow` and terminating, and call it at compile time ; `org.babblelang.effects.Idempotent` : it is idempotent ;
   * `@Axioms(allMethods = @Profile(…))` and `@Axioms(allConstructors = @Profile(…))` state the profile of every method, or constructor, of the target.
 * The most specific stub that says something about a method wins ; an axiom given in a program (`axiom … on …`), an engine override or an annotation on the Java class itself wins over them all.
 
@@ -16,7 +18,9 @@ Everything the interpreter, the compiler, the analysis and the optimizer assume 
 |---|---|
 | `java/lang/ObjectAxioms.java` | `equals`, `hashCode` and `toString` pure on every class — QUESTIONABLE |
 | `java/lang/ComparableAxioms.java` | `compareTo` pure on every class — QUESTIONABLE |
-| `java/lang/StringAxioms.java` | every method and constructor of `String` pure, some `nothrow` |
+| `java/lang/StringAxioms.java` | every method and constructor of `String` pure, some `nothrow` ; the analyzer's seeds ; `length`, `isEmpty` and `trim` foldable, `trim` idempotent |
+| `java/lang/MathAxioms.java` | the analyzer's seeds (most methods pure and `nothrow`, the `…Exact` ones and `floorDiv`/`floorMod` not `nothrow`) ; the methods the optimizer may fold, and `abs`, `floor`, `ceil`, `rint` idempotent |
+| `java/lang/StrictMathAxioms.java`, `DoubleAxioms.java`, `FloatAxioms.java`, `IntegerAxioms.java`, `LongAxioms.java` | the analyzer's seeds : arithmetic, bit and comparison methods pure, most `nothrow` |
 | `java/lang/IterableAxioms.java` | `Iterable` itself (not its subtypes) : `iterator()` a view — QUESTIONABLE |
 | `java/util/MapEntryAxioms.java` | the accessors of a map entry |
 | `java/util/AbstractMapSimpleEntryAxioms.java`, `java/util/AbstractMapSimpleImmutableEntryAxioms.java` | building an entry only allocates |
@@ -33,4 +37,5 @@ Axioms known to be doubtful, kept as they were so that BIP019's migration change
 
 * **`equals`, `hashCode`, `compareTo` pure on every class** (`ObjectAxioms`, `ComparableAxioms`) : a Babble class may implement them with effects — to be fixed first (BIP019-D11) ;
 * **collection methods by name on every implementation** (the collection stubs) : any `java.util.List` written by anyone is trusted, and building any collection or `Iterator` (a `Scanner` reading a file included) counts as only allocating ;
-* **`Arrays.asList` fresh** (`ArraysAxioms`) : it is a view of its array.
+* **`Arrays.asList` fresh** (`ArraysAxioms`) : it is a view of its array ;
+* **the analyzer and the effect checker disagree** (`StringAxioms`) : the analyzer's seeds count `String.valueOf` as `nothrow`, the checker's profile does not.
