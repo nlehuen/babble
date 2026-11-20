@@ -36,11 +36,60 @@ public final class BabbleCompiler {
     public static final String DUMP_CLASSES = "babble.dumpClasses";
     public static final String TRACE = "babble.trace";
     public static final String VERIFY = "babble.verify";
+    public static final String OPT_LEVEL = "babble.opt";
+    public static final String DUMP_IR = "babble.dumpIr";
+    /** Default optimization level (flipped to 1 once BIP014-P2 lands). */
+    public static final int DEFAULT_OPT_LEVEL = 0;
 
     private static final String PACKAGE = "org/babblelang/generated/";
     private static final AtomicInteger COUNTER = new AtomicInteger();
 
     private BabbleCompiler() {
+    }
+
+    /** Resolves the active optimization level ({@code 0}, {@code 1}, or {@code 2}). */
+    public static int resolveOptLevel(BabbleScriptEngine engine) {
+        Object value = engine != null ? engine.get(OPT_LEVEL) : null;
+        if (value == null) {
+            value = System.getProperty(OPT_LEVEL);
+        }
+        if (value == null) {
+            return DEFAULT_OPT_LEVEL;
+        }
+        int parsed;
+        if (value instanceof Number n) {
+            parsed = n.intValue();
+        } else {
+            String text = value.toString().trim();
+            if (text.isEmpty()) {
+                return DEFAULT_OPT_LEVEL;
+            }
+            if (text.startsWith("-O") || text.startsWith("O")) {
+                text = text.substring(text.indexOf('O') + 1);
+            }
+            try {
+                parsed = Integer.parseInt(text);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Invalid optimization level : " + value);
+            }
+        }
+        if (parsed < 0 || parsed > 2) {
+            throw new IllegalArgumentException("Invalid optimization level : " + value);
+        }
+        return parsed;
+    }
+
+    /** Resolves the IR dump target ({@code "hir"}, {@code "all"}, {@code "true"}, or null). */
+    public static String resolveDumpIr(BabbleScriptEngine engine) {
+        Object value = engine != null ? engine.get(DUMP_IR) : null;
+        if (value == null) {
+            value = System.getProperty(DUMP_IR);
+        }
+        if (value == null) {
+            return null;
+        }
+        String text = value.toString().trim();
+        return text.isEmpty() || "false".equalsIgnoreCase(text) ? null : text;
     }
 
     public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName) {

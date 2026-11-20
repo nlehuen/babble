@@ -38,12 +38,13 @@ import java.util.List;
  */
 public final class Main {
     static final String USAGE = """
-            Usage : java -jar babble.jar [-keep-alive] [script.ba [arguments...]]
+            Usage : java -jar babble.jar [-keep-alive] [-O0|-O1|-O2] [script.ba [arguments...]]
               Without a script, starts the interactive mode.
               With one, runs it. Its arguments are in the list "args" : args.size(), args.get(0).
               -keep-alive   after the script, continue in the interactive mode, with what it defined
+              -O0|-O1|-O2   compiler optimization level
               -help         this text
-            Or : java -jar babble.jar -compile main.ba [-o app.jar] [-root dir]
+            Or : java -jar babble.jar -compile main.ba [-o app.jar] [-root dir] [-O0|-O1|-O2]
               Compiles a program, main.ba and the modules it imports, into a jar that runs on a plain JRE :
               java -jar app.jar [arguments...]. Modules are under -root, by default main.ba's directory ;
               the jar is main.jar there unless -o names it.
@@ -78,11 +79,15 @@ public final class Main {
             return Babblefmt.run(Arrays.copyOfRange(args, 1, args.length), in, out, err);
         }
         boolean keepAlive = false;
+        Integer optLevel = null;
         int first = 0;
         // Options come before the script : what follows it is the script's.
         for (; first < args.length && args[first].startsWith("-"); first++) {
             switch (args[first]) {
                 case "-keep-alive", "--keep-alive" -> keepAlive = true;
+                case "-O0" -> optLevel = 0;
+                case "-O1" -> optLevel = 1;
+                case "-O2" -> optLevel = 2;
                 case "-help", "--help", "-h" -> {
                     out.println(USAGE);
                     out.flush();
@@ -101,6 +106,9 @@ public final class Main {
         boolean interactive = script == null || keepAlive;
 
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        if (optLevel != null) {
+            engine.put(org.babblelang.compiler.BabbleCompiler.OPT_LEVEL, optLevel);
+        }
         ScriptContext context = new SimpleScriptContext();
         Bindings bindings = engine.createBindings();
         bindings.put("args", JavaObject.of(new ArrayList<>(scriptArguments)));
@@ -133,11 +141,12 @@ public final class Main {
         return status;
     }
 
-    /** {@code -compile main.ba [-o app.jar] [-root dir]} : babblec. */
+    /** {@code -compile main.ba [-o app.jar] [-root dir] [-O0|-O1|-O2]} : babblec. */
     private static int compile(String[] args, PrintWriter out, PrintWriter err) throws IOException {
         Path main = null;
         Path jar = null;
         Path root = null;
+        Integer optLevel = null;
         for (int i = 1; i < args.length; i++) {
             String option = args[i];
             if ((option.equals("-o") || option.equals("-root")) && i + 1 < args.length) {
@@ -147,6 +156,12 @@ public final class Main {
                 } else {
                     root = value;
                 }
+            } else if (option.equals("-O0")) {
+                optLevel = 0;
+            } else if (option.equals("-O1")) {
+                optLevel = 1;
+            } else if (option.equals("-O2")) {
+                optLevel = 2;
             } else if (!option.startsWith("-") && main == null) {
                 main = Path.of(option);
             } else {
@@ -179,7 +194,7 @@ public final class Main {
         context.setWriter(out);
         context.setErrorWriter(err);
         try {
-            org.babblelang.runtime.ProgramIndex index = org.babblelang.compiler.Babblec.compile(main, root, jar, context);
+            org.babblelang.runtime.ProgramIndex index = org.babblelang.compiler.Babblec.compile(main, root, jar, context, optLevel);
             out.println("Wrote " + jar + " : " + index.modules().size() + (index.modules().size() == 1 ? " module" : " modules"));
             out.flush();
             return 0;

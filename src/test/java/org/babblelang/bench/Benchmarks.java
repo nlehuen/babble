@@ -1,5 +1,6 @@
 package org.babblelang.bench;
 
+import org.babblelang.compiler.BabbleCompiler;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
 
@@ -12,7 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * A plain warm-up and timing harness comparing the two modes (design doc, section 11).
+ * A plain warm-up and timing harness comparing interpret, compile -O0, and compile -O1
+ * (docs/design/bip001_bytecode-compiler.md §11, docs/design/bip014_optimization-passes.md).
  * Not a test : run its main method from the repository root, with the test class path
  * (it reads {@code src/test/babble/Stack.ba}).
  */
@@ -36,26 +38,88 @@ public final class Benchmarks {
                 "def counter = fn () -> ( def c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; def i = 0\n"
                         + "while i < 200000 then ( c() ; i = i + 1 ) ; c()");
         scripts.put("Stack.ba push/pop : objects and methods",
-                stack + "def l : stack.Stack(int) = stack.create() ; def i = 0\n"
+                stack + "def l : Stack of int = create() ; def i = 0\n"
                         + "while i < 20000 then ( l.push(i) ; i = i + 1 )\n"
                         + "while l.size > 0 then ( l.pop() )");
         scripts.put("ArrayList add/get : Java interop",
                 "def l : java.util.ArrayList of int = java.util.ArrayList() ; def i = 0 ; while i < 20000 then ( l.add(i) ; i = i + 1 )\n"
-                        + "def s = 0 ; i = 0 ; while i < 20000 then ( s = s + (l.get(i) as int) ; i = i + 1 ) ; s");
+                        + "def s = 0 ; i = 0 ; while i < 20000 then ( s = s + l.get(i) ; i = i + 1 ) ; s");
+        // BIP014 optimizer microbenchmarks
+        scripts.put("opt : const fold + dead branch + algebraic",
+                "def f = fn (n : int) : int -> (\n"
+                        + "    def k = (2 + 3) * (10 - 4)\n"
+                        + "    def i = 0\n"
+                        + "    def s = 0\n"
+                        + "    while i < n then (\n"
+                        + "        def d = if true then ( (i * 1 + 0) + k ) else ( i * 999 )\n"
+                        + "        s = s + d\n"
+                        + "        i = i + 1\n"
+                        + "    )\n"
+                        + "    s\n"
+                        + ")\n"
+                        + "f(300000)");
+        scripts.put("opt : small helper inlining",
+                "def sq = fn (x : int) : int -> ( x * x )\n"
+                        + "def inc = fn (x : int) : int -> ( x + 1 )\n"
+                        + "def run = fn (n : int) : int -> (\n"
+                        + "    def i = 0\n"
+                        + "    def s = 0\n"
+                        + "    while i < n then (\n"
+                        + "        s = s + sq(inc(i))\n"
+                        + "        i = i + 1\n"
+                        + "    )\n"
+                        + "    s\n"
+                        + ")\n"
+                        + "run(300000)");
+        scripts.put("opt : loop-invariant pure call (LICM)",
+                "axiom pure nothrow on java.lang.Math.sqrt\n"
+                        + "axiom pure nothrow on java.lang.Math.sin\n"
+                        + "def heavy = fn (x : double) : double -> ( java.lang.Math.sqrt(x * x + 1.0) + java.lang.Math.sin(x) )\n"
+                        + "def run = fn (n : int, a : double) : double -> (\n"
+                        + "    def i = 0\n"
+                        + "    def s = 0.0\n"
+                        + "    while i < n then (\n"
+                        + "        s = s + heavy(a) + double(i)\n"
+                        + "        i = i + 1\n"
+                        + "    )\n"
+                        + "    s\n"
+                        + ")\n"
+                        + "run(200000, 1.5)");
+        scripts.put("opt : record Vec3 dot loop",
+                "def Vec3 = record (x : double, y : double, z : double) (\n"
+                        + "    def plus = fn (o : Vec3) : Vec3 -> ( Vec3(this.x + o.x, this.y + o.y, this.z + o.z) )\n"
+                        + "    def dot = fn (o : Vec3) : double -> ( this.x * o.x + this.y * o.y + this.z * o.z )\n"
+                        + ")\n"
+                        + "def run = fn (n : int) : double -> (\n"
+                        + "    def a = Vec3(1.0, 2.0, 3.0)\n"
+                        + "    def b = Vec3(0.5, -0.25, 0.125)\n"
+                        + "    def i = 0\n"
+                        + "    def s = 0.0\n"
+                        + "    while i < n then (\n"
+                        + "        def c = a + b\n"
+                        + "        s = s + c.dot(a)\n"
+                        + "        i = i + 1\n"
+                        + "    )\n"
+                        + "    s\n"
+                        + ")\n"
+                        + "run(200000)");
 
-        System.out.println("| Benchmark | interpret (ms) | compile (ms) | speed-up |");
-        System.out.println("|---|---:|---:|---:|");
+        System.out.println("| Benchmark | interpret (ms) | -O0 (ms) | -O1 (ms) | -O1/-O0 |");
+        System.out.println("|---|---:|---:|---:|---:|");
         for (Map.Entry<String, String> script : scripts.entrySet()) {
-            double interpreted = time("interpret", script.getValue());
-            double compiled = time("compile", script.getValue());
-            System.out.printf("| %s | %.1f | %.1f | %.1fx |%n", script.getKey(), interpreted, compiled, interpreted / compiled);
+            double interpreted = time("interpret", 0, script.getValue());
+            double opt0 = time("compile", 0, script.getValue());
+            double opt1 = time("compile", 1, script.getValue());
+            System.out.printf("| %s | %.2f | %.2f | %.2f | %.2fx |%n",
+                    script.getKey(), interpreted, opt0, opt1, opt0 / Math.max(opt1, 1e-6));
         }
     }
 
     /** The median time of an eval, in milliseconds, after warming up. */
-    private static double time(String mode, String script) throws Exception {
+    private static double time(String mode, int optLevel, String script) throws Exception {
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
+        engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
         CompiledScript compiled = engine.compile(script);
         for (int i = 0; i < WARMUP; i++) {
             compiled.eval(new SimpleBindings());

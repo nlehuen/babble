@@ -52,9 +52,21 @@ public final class Babblec {
      * @return the index written
      */
     public static ProgramIndex compile(Path main, Path root, Path jar, ScriptContext context) throws ScriptException, IOException {
+        return compile(main, root, jar, context, null);
+    }
+
+    /**
+     * @param context  where the analysis's warnings and the type checker's diagnostics go
+     * @param optLevel explicit optimization level ({@code 0}, {@code 1}, or {@code 2}), or null to use the engine/system default
+     * @return the index written
+     */
+    public static ProgramIndex compile(Path main, Path root, Path jar, ScriptContext context, Integer optLevel) throws ScriptException, IOException {
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.setContext(context);
         engine.put(BabbleScriptEngine.MODE, "compile");
+        if (optLevel != null) {
+            engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
+        }
         FileModuleSource source = FileModuleSource.rooted(root);
         List<BabbleScriptEngine.ProgramModule> modules = engine.compileProgram(source, main.toAbsolutePath().normalize().toString());
 

@@ -142,4 +142,19 @@ public class MainTestCase {
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile", directory.resolve("missing.ba").toString()).status());
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile", failing, "-x").status());
     }
+
+    @Test
+    public void testOptimizationLevelFlags() throws Exception {
+        String s = script("opt.ba", "println(1 + 2 * 3)");
+        Assertions.assertEquals(new Run(0, List.of("7"), List.of()), run("", "-O0", s));
+        Assertions.assertEquals(new Run(0, List.of("7"), List.of()), run("", "-O1", s));
+        Assertions.assertEquals(new Run(0, List.of("7"), List.of()), run("", "-O2", s));
+        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-O3", s).status());
+
+        Path jar0 = directory.resolve("opt0.jar");
+        Path jar1 = directory.resolve("opt1.jar");
+        Assertions.assertEquals(0, run("", "-compile", s, "-O0", "-o", jar0.toString()).status());
+        Assertions.assertEquals(0, run("", "-compile", s, "-O1", "-o", jar1.toString()).status());
+        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile", s, "-O3", "-o", jar0.toString()).status());
+    }
 }
