@@ -475,7 +475,7 @@ Because `Interpreter` uses only `java.lang.Iterable`, `java.util.Iterator`, `jav
 
 1. **Destructuring loop variables (`BIP005-D3`):** Once `def (k, v) = e` lands for `HasMembers` and `entry of (K, V)`, the `for` header generalizes naturally from `name=ID` to `for (k, v) in m.entrySet() then ( ... )`.
 2. **`yield` generator functions:** A future `yield` BIP can compile generator functions into lightweight `BabbleInstance`s implementing `java.lang.Iterable of T` / `java.util.Iterator of T` (or Tier-3 `$spec` iterators for primitive generators), plugging directly into `for ... in ... then (...)` with zero changes to `BIP013`.
-3. **Standard library (`std/`) combinators:** Lazy `map`, `filter`, `flatMap`, `zip`, `enumerate`, `take`, and `range` combinators in `std/` will accept and return `Iterable of T` / `Iterator of T` directly (paired with `BIP017` `fn with f` for effect-polymorphic HOF combinators).
+3. **Standard library (`std/`) combinators:** Lazy `map`, `filter`, `flatMap`, `zip`, `enumerate`, `take`, and `range` combinators in `std/` will accept and return `Iterable of T` / `Iterator of T` directly (paired with `BIP017` `fn calling f` for effect-polymorphic HOF combinators).
 
 ---
 

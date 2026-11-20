@@ -231,7 +231,7 @@ sealed interface Type {
             return new Function(typeParameters, newParameters, result, newEffects, forwardedEffectParams);
         }
 
-        private String formatWithClause() {
+        private String formatCallingClause() {
             if (forwardedEffectParams.isEmpty()) {
                 return "";
             }
@@ -243,8 +243,8 @@ sealed interface Type {
             if (names.isEmpty()) {
                 return "";
             }
-            return names.size() == 1 ? "with " + names.get(0) + " "
-                    : "with (" + String.join(", ", names) + ") ";
+            return names.size() == 1 ? "calling " + names.get(0) + " "
+                    : "calling (" + String.join(", ", names) + ") ";
         }
 
         /** Formats this function type highlighting guarantees relevant to {@code expected}. */
@@ -263,7 +263,7 @@ sealed interface Type {
             boolean showUniqueReturn = effects.explicitUniqueResult()
                     || (expected.effects().uniqueResult() && effects.uniqueResult());
             String prefix = EffectSet.formatSurface(shown, showIO, showVolatile, effects.mutThis(), showSharedThis)
-                    + formatWithClause();
+                    + formatCallingClause();
             String tp = typeParameters.isEmpty() ? ""
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
             StringBuilder params = new StringBuilder("(");
@@ -283,7 +283,7 @@ sealed interface Type {
         public String toString() {
             String tp = typeParameters.isEmpty() ? ""
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
-            return effects.formatDeclaredPrefix() + formatWithClause() + tp
+            return effects.formatDeclaredPrefix() + formatCallingClause() + tp
                     + parameters.stream().map(Parameter::toString).collect(Collectors.joining(", ", "(", ")"))
                     + (result == ERROR ? "" : " : " + (effects.explicitUniqueResult() ? "unique " : "") + result);
         }

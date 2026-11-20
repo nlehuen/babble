@@ -91,7 +91,7 @@ export def HittableList = class () implements Hittable (
     )
 
     ;; Higher-order iteration over all hittables in the list
-    def forEach = fn with f (f: fn (item: Hittable): any?) -> (
+    def forEach = fn calling f (f: fn (item: Hittable): any?) -> (
         def cur: HittableNode? = this.head
         while cur != null then (
             f(cur.item)
@@ -100,7 +100,7 @@ export def HittableList = class () implements Hittable (
     )
 
     ;; Higher-order predicate counter using a closure over a mutable local
-    def countWhere = fn with pred (pred: fn (item: Hittable): bool): int -> (
+    def countWhere = fn calling pred (pred: fn (item: Hittable): bool): int -> (
         def matched: int = 0
         this.forEach(fn (item: Hittable) -> (
             if pred(item) then (

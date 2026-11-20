@@ -268,7 +268,7 @@ public final class EffectSet {
 
     /**
      * Relaxes function-level and receiver-mutation requirements for a callback parameter
-     * listed in {@code fn with f} (BIP017-D1), while preserving any explicit {@code unique}
+     * listed in {@code fn calling f} (BIP017-D1), while preserving any explicit {@code unique}
      * return requirement.
      */
     public EffectSet relaxedForForwardedCallback() {

@@ -2259,7 +2259,7 @@ final class EffectChecker {
                 ParsedPrefix prefix = parseFunctionTypePrefix(ft, fn.effects().borrowThis() || fn.effects().explicitSharedThis(), false);
                 validateAlgebraicSignature(prefix.effects(), fn.parameters(), fn.result(),
                         prefix.mutThis(), false, ft);
-                validateWithClause(ft.effectPrefix(), fn.parameters());
+                validateCallingClause(ft.effectPrefix(), fn.parameters());
             }
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
@@ -2267,16 +2267,16 @@ final class EffectChecker {
         }
     }
 
-    private void validateWithClause(BabbleParser.EffectPrefixContext effectPrefix,
-                                    List<Type.Parameter> params) {
-        if (effectPrefix == null || effectPrefix.withClause() == null) {
+    private void validateCallingClause(BabbleParser.EffectPrefixContext effectPrefix,
+                                       List<Type.Parameter> params) {
+        if (effectPrefix == null || effectPrefix.callingClause() == null) {
             return;
         }
         Set<String> seen = new HashSet<>();
-        for (org.antlr.v4.runtime.tree.TerminalNode id : effectPrefix.withClause().ID()) {
+        for (org.antlr.v4.runtime.tree.TerminalNode id : effectPrefix.callingClause().ID()) {
             String name = id.getText();
             if (!seen.add(name)) {
-                checker.effectDiagnostic("Duplicate parameter in with clause : " + name, effectPrefix.withClause());
+                checker.effectDiagnostic("Duplicate parameter in calling clause : " + name, effectPrefix.callingClause());
                 continue;
             }
             Type.Parameter matched = null;
@@ -2287,26 +2287,26 @@ final class EffectChecker {
                 }
             }
             if (matched == null) {
-                checker.effectDiagnostic("Unknown parameter in with clause : " + name, effectPrefix.withClause());
+                checker.effectDiagnostic("Unknown parameter in calling clause : " + name, effectPrefix.callingClause());
                 continue;
             }
             if (matched.type() != Type.ERROR && !(matched.type() instanceof Type.Function)) {
-                checker.effectDiagnostic("Parameter in with clause must be a function : " + name, effectPrefix.withClause());
+                checker.effectDiagnostic("Parameter in calling clause must be a function : " + name, effectPrefix.callingClause());
                 continue;
             }
             if (!matched.borrow()) {
-                checker.effectDiagnostic("Parameter in with clause must be borrowed : " + name, effectPrefix.withClause());
+                checker.effectDiagnostic("Parameter in calling clause must be borrowed : " + name, effectPrefix.callingClause());
             }
         }
     }
 
     private static Set<Integer> resolveForwardedParamIndices(BabbleParser.FunctionLiteralContext fn) {
-        if (fn.effectPrefix() == null || fn.effectPrefix().withClause() == null) {
+        if (fn.effectPrefix() == null || fn.effectPrefix().callingClause() == null) {
             return Set.of();
         }
         List<BabbleParser.FnParamContext> fnParams = fn.fnParameters().fnParam();
         Set<Integer> indices = new java.util.LinkedHashSet<>();
-        for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().withClause().ID()) {
+        for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().callingClause().ID()) {
             String name = id.getText();
             for (int i = 0; i < fnParams.size(); i++) {
                 if (name.equals(fnParams.get(i).ID().getText())) {
@@ -2323,7 +2323,7 @@ final class EffectChecker {
             ParsedPrefix prefix = parseFunctionPrefix(fn, false);
             Type rawType = checker.rawTypeOf(fn);
             if (rawType instanceof Type.Function tf) {
-                validateWithClause(fn.effectPrefix(), tf.parameters());
+                validateCallingClause(fn.effectPrefix(), tf.parameters());
                 if (!prefix.io()) {
                     validateAlgebraicSignature(prefix.effects(), tf.parameters(), tf.result(),
                             prefix.mutThis(), prefix.axiom(), fn);
@@ -4614,7 +4614,7 @@ final class EffectChecker {
                                                          BabbleParser.ExpressionContext receiverExpr,
                                                          List<BabbleParser.CallParameterContext> args,
                                                          BabbleParser.ExpressionContext[] argExprs) {
-            // Forwarded callback parameter inside a `fn with f` body: pure-modulo-forwarding (BIP017-D1).
+            // Forwarded callback parameter inside a `fn calling f` body: pure-modulo-forwarding (BIP017-D1).
             if (isForwardedParamExpr(calleeExpr)) {
                 stmtHasSideEffect = true;
                 int n = fn.parameters().size();
@@ -4651,7 +4651,7 @@ final class EffectChecker {
             if (targetLit != null) {
                 ParsedPrefix targetPrefix = parseFunctionPrefix(targetLit, false);
                 // BIP017-D4: retire BIP016-D6 implicit intra-file `fn io` HOF specialization;
-                // `fn with f` uses uniform call-site forwarding across concrete, cross-module, and interface HOFs.
+                // `fn calling f` uses uniform call-site forwarding across concrete, cross-module, and interface HOFs.
                 if (!targetPrefix.axiom() && !targetPrefix.explicitVolatile() && !targetPrefix.io()
                         && fn.forwardedEffectParams().isEmpty()) {
                     CallableSummary specialized = trySpecializeCall(targetLit, fn.parameters(), args, argExprs, EffectChecker.this);

@@ -219,14 +219,14 @@ final class TypeAnnotations {
         return result;
     }
 
-    /** Resolves {@code with f} / {@code with (f, g)} parameter names to 0-based parameter indices (BIP017). */
+    /** Resolves {@code calling f} / {@code calling (f, g)} parameter names to 0-based parameter indices (BIP017). */
     static java.util.Set<Integer> resolveForwardedParams(BabbleParser.EffectPrefixContext prefix,
                                                          List<Type.Parameter> params) {
-        if (prefix == null || prefix.withClause() == null) {
+        if (prefix == null || prefix.callingClause() == null) {
             return java.util.Set.of();
         }
         java.util.Set<Integer> indices = new java.util.LinkedHashSet<>();
-        for (org.antlr.v4.runtime.tree.TerminalNode id : prefix.withClause().ID()) {
+        for (org.antlr.v4.runtime.tree.TerminalNode id : prefix.callingClause().ID()) {
             String name = id.getText();
             for (int i = 0; i < params.size(); i++) {
                 if (name.equals(params.get(i).name())) {
