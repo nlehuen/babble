@@ -20,7 +20,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | WITH;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING;
 
 effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
 
@@ -28,10 +28,10 @@ effectTarget: (ID '(' STRING ')' | memberName) ('.' memberName)*;
 
 effectClause: (AXIOM | IO) (effectWord | UNIQUE)*;
 
-effectPrefix: effectWord+ withClause?
-            | withClause;
+effectPrefix: effectWord+ callingClause?
+            | callingClause;
 
-withClause: WITH (ID | '(' NL* ID (NL* ',' NL* ID)* NL* ')');
+callingClause: CALLING (ID | '(' NL* ID (NL* ',' NL* ID)* NL* ')');
 
 effectWord: AXIOM | effectModifier;
 
@@ -212,7 +212,7 @@ EXPORT: 'export';
 FN: 'fn';
 OF: 'of';
 ON: 'on';
-WITH: 'with';
+CALLING: 'calling';
 AXIOM: 'axiom';
 PURE: 'pure';
 VOLATILE: 'volatile';

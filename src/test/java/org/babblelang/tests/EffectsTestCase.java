@@ -541,7 +541,7 @@ public class EffectsTestCase {
 
         // Frame-local (default `@BORROWED`) helper closure updating enclosing function's local `def` preserves pure `nothrow`:
         assertClean("""
-                def repeat = fn nothrow with step (n: int, step: fn (i: int): int): int -> (
+                def repeat = fn nothrow calling step (n: int, step: fn (i: int): int): int -> (
                     def i: int = 0
                     while i < n then (
                         step(i)
@@ -560,19 +560,19 @@ public class EffectsTestCase {
                 """);
     }
 
-    // ---------------------------------------------------------------- 5. Higher-Order Forwarding (`fn with f`) & Subtyping
+    // ---------------------------------------------------------------- 5. Higher-Order Forwarding (`fn calling f`) & Subtyping
 
     @Test
     public void testHigherOrderSpecializationSubtypingAndInterfaces() {
-        // BIP017-D1/D2: `fn with f` forwards callback effects cleanly for pure, `nothrow`, `volatile`, and `io` callbacks!
+        // BIP017-D1/D2: `fn calling f` forwards callback effects cleanly for pure, `nothrow`, `volatile`, and `io` callbacks!
         assertClean("""
-                def apply = fn nothrow with f (f: fn (x: int): int, v: int): int -> (f(v))
+                def apply = fn nothrow calling f (f: fn (x: int): int, v: int): int -> (f(v))
                 def caller = fn nothrow (x: int): int -> (
                     apply(fn nothrow (n: int): int -> (n * 2), x)
                 )
                 """);
         assertHasError("""
-                def apply = fn with f (f: fn (x: int): int, v: int): int -> (f(v))
+                def apply = fn calling f (f: fn (x: int): int, v: int): int -> (f(v))
                 def badCaller = fn (x: int): int -> (
                     apply(fn io (n: int): int -> (println(n); n), x)
                 )
@@ -604,10 +604,10 @@ public class EffectsTestCase {
                 )
                 """, "violates pure guarantee");
 
-        // BIP017-D3: Abstract interface `fn with f` methods DO forward effects across call sites!
+        // BIP017-D3: Abstract interface `fn calling f` methods DO forward effects across call sites!
         assertClean("""
                 def Runner = interface (
-                    def apply: fn with f (f: fn (x: int): int, v: int): int
+                    def apply: fn calling f (f: fn (x: int): int, v: int): int
                 )
                 def pureCaller = fn (r: Runner, x: int): int -> (
                     r.apply(fn (n: int): int -> (n + 1), x)
@@ -618,7 +618,7 @@ public class EffectsTestCase {
                 """);
         assertHasError("""
                 def Runner = interface (
-                    def apply: fn with f (f: fn (x: int): int, v: int): int
+                    def apply: fn calling f (f: fn (x: int): int, v: int): int
                 )
                 def badCaller = fn (r: Runner, x: int): int -> (
                     r.apply(fn io (n: int): int -> (println(n); n + 1), x)
@@ -881,12 +881,12 @@ public class EffectsTestCase {
     @Test
     public void testCrossModuleHigherOrderWithEffects(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) throws Exception {
         java.nio.file.Files.writeString(tempDir.resolve("hof_lib.ba"), """
-                export def forEachInt = fn with f (xs: list of int, f: fn (x: int): any?) -> (
+                export def forEachInt = fn calling f (xs: list of int, f: fn (x: int): any?) -> (
                     for x in xs then (
                         f(x)
                     )
                 )
-                export def mapList of (T, R) = fn with f (shared xs: list of T, f: fn (x: T): R): list of R -> (
+                export def mapList of (T, R) = fn calling f (shared xs: list of T, f: fn (x: T): R): list of R -> (
                     def out = list of R ()
                     for x in xs then (
                         out.add(f(x))
