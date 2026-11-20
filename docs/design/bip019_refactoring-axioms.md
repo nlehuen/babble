@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 019 |
 | **Date** | 2026-11-20 |
-| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D20`, `BIP019-Q8`–`Q14` → `BIP019-D21`–`D27` decided; `BIP019-P1`–`P5` implemented ; next `BIP019-P8` (reads of mutable state are volatile, `BIP019-Q15` open), then `P7` (Java axioms written in Babble) and `P6` (the inference tool)) |
+| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D20`, `BIP019-Q8`–`Q14` → `BIP019-D21`–`D27` decided; `BIP019-P1`–`P5` implemented ; next `BIP019-P8` (reads of mutable state are volatile), then `P7` (Java axioms written in Babble) and `P6` (the inference tool)) |
 | **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
 | **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as `.java` and `.ba` files ; one bytecode analyzer derives axioms from seeds, either while compiling or offline into the same directory |
 
@@ -182,7 +182,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 
 ---
 
-## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`; `BIP019-D14`–`D20`, `BIP019-Q8`–`Q14` → `BIP019-D21`–`D27`)
+## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`; `BIP019-D14`–`D20`, `BIP019-Q8`–`Q15` → `BIP019-D21`–`D28`)
 
 * **`BIP019-D1` — One directory :** every assumption about a Java or Babble function or method lives in `src/main/java/org/babblelang/axioms/`, and nowhere else.
 * **`BIP019-D2` — Layout :** Java axioms are stubs that mirror their target's package and name (`java.util.List` → `org.babblelang.axioms.java.util.ListAxioms`) ; Babble-level axioms are `.ba` files.
@@ -209,6 +209,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 * **`BIP019-Q12` → `BIP019-D25` — One profile :** a member states one profile, which the effect checker uses and the bytecode analyzer takes as its seed ; the former disagreements (`String.valueOf`) are resolved when migrating, each reported.
 * **`BIP019-Q13` → `BIP019-D26` — The class form subsumes `axiom … on` :** `axiom pure on X.m` becomes shorthand for a member covering every overload of `m`, and is deprecated in favor of the class form, with a warning.
 * **`BIP019-Q14` → `BIP019-D27` — Reads of mutable state are volatile :** a read is deterministic only when the object read is frozen or deeply immutable, or owned exclusively by the reader (a `unique` value, an object the function created itself) ; reading a mutable object through a borrowed or shared reference is volatile, since another thread may mutate it between two reads. This changes the effect model of BIP007 and BIP016 for Babble's own functions too, not only the axioms (§5.6, `BIP019-P8`).
+* **`BIP019-Q15` → `BIP019-D28` — Reads are inferred :** what a function reads is inferred and recorded in module summaries, with no surface syntax ; a declared function type whose body the analysis doesn't see is assumed to read every parameter and its receiver that are not frozen or deeply immutable.
 * **`BIP019-D17` — Special forms :** `print`, `move`, `freeze`, `discard`, `import`, `STDOUT` and `args` are rules of the language, whose typing stays in the type checker ; the prelude declares the built-ins with an ordinary signature : the conversions, `assert` / `suppose`, `same` and `classof`.
 * **`BIP019-D16` — Nearest surface form :** the built-ins are written with ordinary effect words (pure-by-default, `nothrow`, `commutative`, `io`) even where the former internal profiles differed in details the language cannot state (the conversions not borrowing `this`, `import`'s fully unconstrained effects) ; any difference a test, a golden or a diagnostic can see is reported, not hidden.
 
@@ -293,7 +294,8 @@ Today, "deterministic" means deterministic given the state of what a function ca
 * **Where determinism is decided :** at the call site, where the caller knows what it passes. A function's summary records which of its receiver and parameters it reads mutable state from (as it records which it mutates, `mut`, or keeps, `shared`) ; a call is deterministic only if each object so read is frozen or deeply immutable, or owned exclusively by the caller (a `unique` value, a fresh local) ; otherwise the call is volatile. Reading a mutable field of an outer binding is volatile already.
 * **In axioms :** a Java read is written as a plain `fn` (`size: fn nothrow (): int`) ; the call site then decides, as for a Babble function. Today's collection reads, hermetic and deterministic but not pure, need no word of their own.
 * **Consequences :** functions reading a mutable object they are given become volatile unless their callers pass frozen, deeply immutable or exclusively owned values. Argon's rendering reads its world and materials, which are built once and then only read ; freezing them after construction keeps it deterministic. Tests, examples and goldens that assume such reads deterministic change.
-* **Open (`BIP019-Q15`) :** how declared function types — exports, interfaces, function values whose body the analysis doesn't see — state which parameters they read : inferred and recorded in module summaries only, with declared types assuming every non-frozen parameter is read ; or a surface word (`reads c`) ; or the reverse default.
+* **Composition :** a read through the caller's own parameter or receiver is not decided at that call : it becomes a read by the caller, recorded in the caller's summary, and is decided at the caller's call sites. A call is volatile only where the provenance runs out — an object reached from an outer mutable binding, a global, or anything else neither frozen, deeply immutable, exclusively owned, nor the caller's own parameter or receiver.
+* **Declared types (`BIP019-Q15` → `BIP019-D28`) :** what a function reads is inferred, and recorded in module summaries for importers ; there is no surface syntax for it. A function type whose body the analysis doesn't see — an interface method, a function value, a Java method — is assumed to read every parameter and its receiver that are not frozen or deeply immutable.
 
 ## 6. Phases (`BIP019-P1`–`P8` ; order : `P1`–`P5`, `P8`, `P7`, `P6`)
 
@@ -306,7 +308,7 @@ Today, "deterministic" means deterministic given the state of what a function ca
 | **`BIP019-P5` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 | **`BIP019-P6` — The analyzer and the generator** | §3 : the value lattice, calls through axioms, the fixed point ; `AxiomGenerator`, which writes each package's `inferred.ba` (`BIP019-D20`, after `BIP019-P7`'s form), skipping the member names of its `curated.ba`, on JDK 21 ; the compile-time tier and the generator share the analyzer ; CI re-derives the `inferred.ba` files on every build and fails on any difference (`BIP019-D13`). |
 | **`BIP019-P7` — Java axioms in Babble** | §5 : the `axiom Class (…)` form (grammar, analysis, formatter), the new words `view`, `shallow`, `fresh`, `foldable` and the class words, one `curated.ba` per Java package (`BIP019-D18`) loaded per package with a cache ; the generator writes `.ba`, checked by the same simulation ; the Java stubs kept only for what Babble cannot state. After `BIP019-P8` ; then `BIP019-P6` writes `inferred.ba` in this form. |
-| **`BIP019-P8` — Reads of mutable state are volatile** | §5.6 (`BIP019-D27`) : summaries record the receiver and parameters a function reads mutable state from ; a call is deterministic only on frozen, deeply immutable or exclusively owned arguments ; tests, examples (argon freezing its world) and goldens updated. Comes before `BIP019-P7`, whose axioms rely on it, after `BIP019-Q15`. |
+| **`BIP019-P8` — Reads of mutable state are volatile** | §5.6 (`BIP019-D27`) : summaries record the receiver and parameters a function reads mutable state from ; a call is deterministic only on frozen, deeply immutable or exclusively owned arguments ; tests, examples (argon freezing its world) and goldens updated. Comes before `BIP019-P7`, whose axioms rely on it. |
 
 ## 7. Verification
 
