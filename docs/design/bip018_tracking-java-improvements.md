@@ -4,9 +4,9 @@
 |---|---|
 | **BIP** | 018 |
 | **Date** | 2026-11-20 |
-| **Status** | Draft (Strategic & Architectural Proposal; Open Questions `BIP018-Q1`–`Q8`) |
-| **Depends on** | Bytecode compiler (`RM001`/`RM003`, [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), object model & `record`s ([bip002_object-model.md](bip002_object-model.md)), module sources, `java.base`-only runtime boundary & `babblec` ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)), static effects, ownership & algebraic properties (`RM002`/`RM007`/`RM008`/`RM009`, [bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), static typing & core types (`RM005`, [bip008_static-typing.md](bip008_static-typing.md), [bip011_core-types.md](bip011_core-types.md)), `.batest` differential parity harness ([bip009_test-coverage.md](bip009_test-coverage.md)), compiler IR & `CodeGenerator` decomposition ([bip014_optimization-passes.md](bip014_optimization-passes.md) `BIP014-P0`–`P1`), and parser dependency evaluation ([bip015_down-with-the-ants.md](bip015_down-with-the-ants.md)) |
-| **Scope** | Release-by-release audit of JDK 22 through JDK 28 (plus the JDK 29 LTS+ horizon) classified into **Change** (mandatory migration), **Adopt** (optional leverage), and **Exceed** (Babble capabilities beyond Java unlocked by new JVM/JDK features); explicit portability vs. modernity trade-offs; a **`Babble N` ↔ `JDK N` release scheme**; and a **branchless monorepo architecture** supporting multi-JDK compilation, testing, and `babblec` cross-targeting |
+| **Status** | Decided / Draft (`BIP018-Q1`–`Q8` → `BIP018-D1`–`D8` decided; sequenced strictly after `BIP014` completes) |
+| **Depends on** | Bytecode compiler (`RM001`/`RM003`, [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), object model & `record`s ([bip002_object-model.md](bip002_object-model.md)), module sources, `java.base`-only runtime boundary & `babblec` ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)), static effects, ownership & algebraic properties (`RM002`/`RM007`/`RM008`/`RM009`, [bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), static typing & core types (`RM005`, [bip008_static-typing.md](bip008_static-typing.md), [bip011_core-types.md](bip011_core-types.md)), `.batest` differential parity harness ([bip009_test-coverage.md](bip009_test-coverage.md)), compiler IR & `CodeGenerator` decomposition ([bip014_optimization-passes.md](bip014_optimization-passes.md) `BIP014-P0`–`P5`), and parser dependency evaluation ([bip015_down-with-the-ants.md](bip015_down-with-the-ants.md)) |
+| **Scope** | Release-by-release audit of JDK 22 through JDK 28 (plus the JDK 29 LTS+ horizon) classified into **Change** (mandatory migration), **Adopt** (optional leverage), and **Exceed** (Babble capabilities beyond Java unlocked by new JVM/JDK features); explicit portability vs. modernity trade-offs; a **`Babble N` ↔ `JDK N` release scheme**; a **branchless multi-module SPI monorepo** with `babblec -target N` cross-targeting; and concrete surface-language specifications for `lazy def`, `scoped def` + `with ... then (...)`, and target-gated `std/foreign` |
 
 ---
 
@@ -22,15 +22,13 @@ Since JDK 21 reached General Availability in September 2023, six major JDK relea
 
 Yet blindly bumping Babble's minimum JDK to 28 (or requiring `--enable-preview`) would break Babble's portability across the vast JDK 21 and JDK 25 LTS install base, while staying frozen on JDK 21 forever leaves transformative capabilities — zero-ASM bytecode emission, zero-identity flattened `record`s, JVM-verified strict finals, Leyden AOT code caches, and compile-time race-free structured concurrency — on the table.
 
-This proposal addresses both sides of that tension:
+This proposal settles `BIP018-D1`–`D8` across five pillars:
 
-1. **A three-way JEP audit (§3–§4)** across **JDK 22 → JDK 28** and the **JDK 29+ horizon**, classifying every significant feature as:
-   * **Change (Mandatory Migration)** — removals, warnings-becoming-errors, or JVM behavioral shifts Babble *must* adapt to;
-   * **Adopt (Optional)** — Java/JVM improvements Babble can leverage internally or expose via interop;
-   * **Exceed (Babble Beyond Java)** — language guarantees or JVM lowering wins Babble can offer *that Java itself cannot express*, because Babble already proves non-nullability, `record` identity-freedom, `frozen`/`unique` ownership, and pure-by-default effects statically.
-2. **An explicit trade-off analysis (§5)** weighing older LTS reach (JDK 21), modern LTS ergonomics (JDK 25), and bleeding-edge/preview risk (JDK 28+), establishing the guiding rule: **One Core Language, Progressive Lowering, Additive Capability Tiers**.
-3. **A `Babble N` release scheme (§6)** — `Babble 21`, `Babble 22`, …, `Babble 25`, …, `Babble 28` — using **sparse floor inheritance** (layers are only written for JDKs that add real capabilities) and three clear support tiers (Baseline LTS, Modern LTS, Frontier/Preview).
-4. **A branchless monorepo architecture (§7)** comparing four concrete Maven/JVM patterns (Single-Module Multi-Release JAR, Multi-Module SPI Monorepo, Hybrid Multi-Module + Optional MRJAR + Isolated Preview Module, and Runtime Reflection Probing), detailing exact SPI boundaries, `babblec` cross-targeting (`-target 21|25|28`), `RuntimeBoundaryTestCase`, and CI matrix verification.
+1. **A three-way JEP audit (§3–§4)** across **JDK 22 → JDK 28** and the **JDK 29+ horizon**, classifying every significant feature as **Change** (mandatory migration), **Adopt** (optional leverage), or **Exceed** (Babble beyond Java).
+2. **An explicit trade-off analysis (§5)** establishing the guiding rule: **One Core Language, Progressive Lowering, Additive Capability Tiers**.
+3. **A `Babble N` release scheme (§6, `BIP018-D2`, `D3`, `D5`)** — active tiers (`Babble 21` Baseline LTS, `Babble 25` Modern LTS, `Babble 27`/`28` + `28-preview` Frontier/EA) with sparse floor inheritance, edition-qualified SemVer artifacts (`babble-21`, `babble-25`, `babble-28`, `babble-28-preview`), and upstream-JDK LTS EOL tracking.
+4. **A branchless multi-module SPI monorepo (§7, `BIP018-D1`, `D4`, `D6`, `D8`)** — sequenced strictly after `BIP014` completes, with zero-ASM `babble-25`/`babble-28`, `babblec -target N` cross-targeting, and a field-free `abstract class BabbleInstance` across all editions that becomes `abstract value class BabbleInstance` under Valhalla.
+5. **Surface-language & stdlib "Exceed" specifications (§8, `BIP018-D7`)** — predicate-free pure-`SLL` `lazy def` and `scoped def` + `with ... then (...)` polyfilled on `Babble 21` via `PlatformRuntime` (upgrading transparently to `ScopedValue` on 25+ and `LazyConstant` once final), plus target-gated `std/foreign` FFM wrappers (`-target 22+`).
 
 ---
 
@@ -207,7 +205,7 @@ JDK 28 is the **second major architectural inflection point** — arguably the m
 * **Exceed (Babble Beyond Java) — THREE LANDMARK OPPORTUNITIES:**
   1. **Zero-source-change Valhalla `value class` lowering for Babble `record`s (`[JEP401]` + `[JEP539]`):**
      * Unlike Java — where millions of existing `record` classes default to identity classes for backward compatibility and must explicitly opt into `value record` — **Babble's `record` (`BIP002` + `RM006`) is *already* defined as an immutable, identity-free value type** (`setMember` throws `readOnly`, equality/hashing are purely structural, and `BIP002` already forbade identity assumptions).
-     * *Required runtime refactoring (clean and localized):* Today, compiled Babble `record`s extend concrete [`BabbleInstance`](../../src/main/java/org/babblelang/runtime/BabbleInstance.java) (which holds a mutable `private Object face` field and an unused `Object[] values` array). Under `JEP 401`, a value class can only extend `Object` or an `abstract value class` with strict final fields. By splitting a tiny `abstract value class BabbleValue implements HasMembers` (holding only `final BabbleClass babbleClass` and `final ScriptRuntime runtime`, or even storing `babbleClass` in a static field on the generated concrete `record` class so instances carry **zero** metadata pointers — only their payload fields!), every Babble `record` (`Vec3(double x, double y, double z)`, `Ray`, `Color` in `examples/raytracer-argon`) compiles directly to a **real JVM `value class`** (omitting `ACC_IDENTITY`, marking all fields `ACC_FINAL | ACC_STRICT_INIT`).
+     * *Required runtime refactoring (`BIP018-D8`, clean and universal):* Today, compiled Babble `record`s extend concrete [`BabbleInstance`](../../src/main/java/org/babblelang/runtime/BabbleInstance.java) (which holds a mutable `private Object face` field and an unused `Object[] values` array), and ~22 sites across `runtime/` and `Interpreter` test `instanceof BabbleInstance`. Under `JEP 401`, an `abstract value class` with zero mutable fields (like `java.lang.Number`) can be extended by **both** identity classes and value classes! By refactoring `BabbleInstance` across **all editions** (`BIP018-P1`/`P2`) into a **field-free `abstract class BabbleInstance implements HasMembers`** (moving `values[]` and `face` into subclasses for interpreted/identity instances, and storing `BabbleClass` in a `static final` field on compiled `record` classes), every compiled `record` shrinks immediately even on `Babble 21`/`25`, every existing `instanceof BabbleInstance` check remains intact, and `Babble 28-preview` (`BIP018-P4`) simply marks `BabbleInstance` as `abstract value class BabbleInstance` and compiles every Babble `record` (`Vec3(double x, double y, double z)`, `Ray`, `Color` in `examples/raytracer-argon`) directly to a **real JVM `value class`** (omitting `ACC_IDENTITY`, marking all fields `ACC_FINAL | ACC_STRICT_INIT`).
      * *Payoff:* HotSpot automatically performs **reference scalarization** across non-inlined method calls (passing/returning `Vec3` in CPU registers without heap allocation, complementing `BIP014` `O9`) and **reference flattening** inside arrays and enclosing value objects — with **zero changes to existing Babble source code**!
   2. **JVM-verified Strict Field Initialization (`[JEP539]`) on non-value Babble `class`es:**
      * Notice `JEP 539`'s explicit **Non-Goal**: *"It is not a goal to introduce new Java language features, such as a strictly-initialized modifier for fields"* — and its explicit **Goal**: *"Offer designers of JVM-based programming languages a model for field initialization which has stronger integrity guarantees."*
@@ -284,95 +282,87 @@ Choosing a single JDK version for Babble involves a fundamental three-way tensio
 
 ### 5.4 Guiding Design Principle: *One Core Language, Progressive Lowering, Additive Capability Tiers*
 
-To capture the benefits of **all three worlds without their downsides**, `BIP018` proposes three strict invariants:
+To capture the benefits of **all three worlds without their downsides**, `BIP018` enforces three strict invariants:
 
-1. **Invariant 1 — One Core Language Across All Editions:** Every valid core Babble program (everything in `src/test/babble/`, `examples/`, and `BIP001`–`BIP017`) MUST compile and produce **identical observable results** on `Babble 21`, `Babble 25`, and `Babble 28` (verified differentially by `BIP009`'s `.batest` suite).
-2. **Invariant 2 — Progressive Lowering (Invisible Upgrades):** Newer Babble editions transparently improve *how* core Babble features compile and run — e.g., `Babble 25` compiles via `java.lang.classfile` without ASM and runs with Compact Object Headers / Leyden profiling; `Babble 28-preview` (and future `Babble 29`) lowers `record` to a JVM `value class` and emits `ACC_STRICT_INIT` on immutable header fields — **without requiring a single syntax change in user code**.
-3. **Invariant 3 — Strictly Additive, Capability-Gated Libraries:** Features that genuinely require a newer JDK API (e.g., `std/foreign` FFM wrappers on `22+`, `std/scoped` on `25+`, `std/concurrent` `StructuredTaskScope` combinators on `28+`) live in **explicitly version-gated capability modules** (or optional standard-library modules) whose minimum target is checked statically at compile time (`Error : std/concurrent requires target JDK 28 or higher (current target : 21)`).
+1. **Invariant 1 — One Core Language Across All Editions:** Every core Babble feature — including `BIP001`–`BIP017` and `BIP018`'s new `lazy def` and `scoped def` + `with ... then (...)` (§8) — MUST compile and produce **identical observable results** on `Babble 21`, `Babble 25`, and `Babble 28` (verified differentially by `BIP009`'s `.batest` suite). Where a core construct uses a newer JVM primitive (`ScopedValue` on 25+, `LazyConstant` when final, `StructuredTaskScope` on 28+), `PlatformRuntime` supplies a semantically equivalent polyfill on `Babble 21` (`BIP018-D7`).
+2. **Invariant 2 — Progressive Lowering (Invisible Upgrades):** Newer Babble editions transparently improve *how* core Babble features compile and run — e.g., `Babble 25` compiles via `java.lang.classfile` without ASM and runs with `ScopedValue`, Compact Object Headers, and Leyden profiling; `Babble 28-preview` (and future `Babble 29`) lowers `record` to a JVM `value class` and emits `ACC_STRICT_INIT` on immutable header fields — **without requiring a single syntax change in user code**.
+3. **Invariant 3 — Strictly Additive, Target-Gated Native Libraries:** Only capabilities that genuinely cannot be polyfilled on JDK 21 (such as `std/foreign` FFM wrappers requiring `java.lang.foreign` on JDK 22+) live in **explicitly target-gated modules** whose minimum target is enforced statically at compile time (`Error : std/foreign requires target JDK 22 or higher (current target : 21)`).
 
 ---
 
-## 6. Proposed Release Scheme: `Babble 21`, `Babble 22`, …, `Babble 25`, …, `Babble 28`
+## 6. Release Scheme: `Babble 21`, `Babble 25`, `Babble 28` (`BIP018-D2`, `D3`, `D5`)
 
-### 6.1 Edition Naming & Version Mapping
+### 6.1 Edition Naming & Sparse Floor Inheritance
 
-Under this scheme, Babble's **major edition number tracks the target JDK feature release**:
+Under this scheme, Babble's **edition number tracks the target JDK feature release**:
 
-* **`Babble 21`** — Targets **JDK 21** (runs on JDK 21+). Uses the JDK 21 runtime + ASM bytecode backend.
-* **`Babble 22`** — Targets **JDK 22** (runs on JDK 22+). Inherits `Babble 21` + optional FFM interop layer.
-* **`Babble 23`** — Targets **JDK 23** (runs on JDK 23+). Pure floor inheritance (zero custom code over 22).
-* **`Babble 24`** — Targets **JDK 24** (runs on JDK 24+). Switches bytecode backend from ASM to `java.lang.classfile` (`JEP 484`).
-* **`Babble 25`** — Targets **JDK 25 (LTS)** (runs on JDK 25+). Zero ASM + `ScopedValue` runtime + Leyden AOT ergonomics + `java.lang.IO` host profile.
-* **`Babble 26` / `Babble 27`** — Targets **JDK 26 / 27**. Pure floor inheritance over `Babble 25` + `JEP 500` strict-final CI verification + default Compact Object Headers.
-* **`Babble 28`** — Targets **JDK 28** (runs on JDK 28+). Inherits `Babble 25` + `JEP 543` `StructuredTaskScope` runtime + `JEP 544` Leyden AOT Code Compilation support; plus an opt-in **`Babble 28-preview`** backend unlocking `JEP 401` Valhalla `value class` `record` lowering and `JEP 539` `ACC_STRICT_INIT`.
+* **`Babble 21`** — Targets **JDK 21 (LTS)** (runs on JDK 21+). Uses the JDK 21 runtime + ASM bytecode backend.
+* **`Babble 25`** — Targets **JDK 25 (LTS)** (runs on JDK 25+). Switches bytecode backend from ASM to `java.lang.classfile` (`JEP 484`, zero ASM!) + native `ScopedValue` runtime + Leyden AOT ergonomics + `java.lang.IO` host profile + `std/foreign` FFM support.
+* **`Babble 27` / `Babble 28`** — Frontier track targeting **JDK 27 (GA)** / **JDK 28 (EA → GA)**. Inherits `Babble 25` + `JEP 543` `StructuredTaskScope` runtime + `JEP 544` Leyden AOT Code Compilation support; plus an opt-in **`Babble 28-preview`** edition unlocking `JEP 401` Valhalla `value class` `record` lowering and `JEP 539` `ACC_STRICT_INIT`.
 
 #### Sparse Floor Inheritance (Avoiding Busywork)
 
-Crucially, **naming the scheme `Babble 21`, `Babble 22`, …, `Babble N` does NOT mean writing or maintaining $N - 20$ separate codebases.** Just like `JEP 238` Multi-Release JARs, edition resolution uses **floor inheritance**:
+Edition resolution uses **sparse floor inheritance**:
 
 $$\text{Babble}(N) = \text{Core}_{21} \;\oplus\; \bigoplus_{\substack{k \le N \\ k \in \text{Overlays}}} \text{Overlay}_k$$
 
-Where $\text{Overlays}$ is **sparse** — currently only `{21, 24, 25, 28}` (plus optional `22` if `std/foreign` is added, and isolated `28-preview`). An edition like `Babble 23` or `Babble 27` adds **zero files**; it is simply the floor stack (`21` or `21+24+25`) compiled/tested against JDK 23 or JDK 27!
+Where $\text{Overlays}$ contains **only** JDKs that introduce real capability steps — currently `{21, 22 (std/foreign), 24 (Class-File API), 25 (ScopedValue), 28 (StructuredTaskScope), 28-preview (Valhalla)}`. Intermediate releases without Babble-specific API overlays (such as JDK 23, 26, and 27) require **zero** overlay code.
 
-### 6.2 Three-Tier Support & Publishing Policy
+### 6.2 Three-Tier Active Support & Upstream-JDK EOL Sunsetting (`BIP018-D3`, `D5`)
 
-Rather than publishing and endlessly testing EOL non-LTS editions (like JDK 22, 23, 24, 26), the release pipeline defines **three active support tiers**:
+Per `BIP018-D3` and `BIP018-D5`, Babble actively builds, tests, and publishes **three tiers** rather than maintaining EOL non-LTS editions (`22`, `23`, `24`, `26`), and retires each Baseline LTS strictly **by tracking upstream OpenJDK LTS End-of-Life**:
 
-| Tier | Current Editions (Nov 2026) | CI Coverage | Published Artifacts | Lifecycle Rule |
+| Tier | Current Editions (Nov 2026) | CI Coverage *(Post-`BIP014`, `D4`)* | Published Artifacts (`D2`) | Lifecycle Rule (`D5`) |
 |---|---|---|---|---|
-| **Tier 1 — Baseline LTS** | **`Babble 21`** | Every PR: full dual-mode (`interpret` + `compile`) + `-Pbatest` | `babble-21` + `babble-runtime-21` | Maintained as the universal floor until a deliberate deprecation window (e.g., 12 months after JDK 29 LTS ships). |
-| **Tier 2 — Modern LTS (Recommended)** | **`Babble 25`** | Every PR: full dual-mode (`interpret` + `compile`, zero ASM) + `-Pbatest` | `babble-25` + `babble-runtime-25` (or MRJAR) | Primary recommended release for new users; advances on the 2-year LTS cadence (`25` → `29` → `33`). |
-| **Tier 3 — Frontier / EA Track** | **`Babble 27`** *(current GA)* & **`Babble 28`** *(EA + preview)* | Scheduled nightly + opt-in PR label / workflow dispatch (JDK 27 GA & JDK 28 EA + `--enable-preview`) | Snapshot / milestone artifacts (`babble-28`, `babble-28-preview`) | Continuously validates Babble against upcoming JEPs (`JEP 500`, `543`, `544`, `401`, `539`) so LTS promotions are smooth and surprise-free. |
+| **Tier 1 — Baseline LTS** | **`Babble 21`** | Every PR: full dual-mode (`interpret` + `compile`) + `-Pbatest` | `org.babblelang:babble-21:<ver>` + `babble-runtime-21` | Maintained for as long as upstream OpenJDK/Temurin actively supports `jdk21u` LTS updates; retired (along with `babble-backend-asm`) when JDK 21 reaches upstream EOL. |
+| **Tier 2 — Modern LTS (Recommended)** | **`Babble 25`** | Every PR: full dual-mode (`interpret` + `compile`, zero ASM) + `-Pbatest` | `org.babblelang:babble-25:<ver>` + `babble-runtime-25` | Primary recommended release for new deployments; advances on the 2-year JDK LTS cadence (`25` → `29` → `33`), tracking each LTS's upstream lifecycle. |
+| **Tier 3 — Frontier / EA Track** | **`Babble 27`** *(current GA)* & **`Babble 28`** *(EA + preview)* | Scheduled nightly + opt-in PR label / workflow dispatch (JDK 27 GA & JDK 28 EA + `--enable-preview`) | `org.babblelang:babble-28:<ver>` & `babble-28-preview:<ver>` *(snapshots/milestones)* | Continuously validates Babble against upcoming JEPs (`JEP 500`, `543`, `544`, `401`, `539`) so LTS promotions are smooth and surprise-free. |
 
-### 6.3 Artifact & Version Numbering Options (`BIP018-Q2`)
+### 6.3 Artifact & Version Coordinates (`BIP018-D2`)
 
-Two concrete ways to express `Babble N` in Maven coordinates and CLI releases:
+Per `BIP018-D2`, editions use **edition-qualified Maven artifact IDs with shared SemVer**:
 
-1. **JDK-Major Versioning (`<jdk>.<babble-minor>.<patch>`):**
-   * Example: `org.babblelang:babble:21.1.0`, `org.babblelang:babble:25.1.0`, `org.babblelang:babble:28.1.0` (where `.1.0` is the synchronized Babble language/feature version built from the exact same Git tag `v1.0`!).
-   * *Trade-off:* Clean single artifactId (`babble`), immediately legible (`babble-25.1.0.jar`), matches the user's `Babble 21` / `Babble 25` intuition. Slightly unusual for Maven version-range resolvers (`25.1.0 > 21.2.0`), so dependency tools treat `25.x` as "newer" than `21.x`.
-2. **Edition-Qualified Artifact IDs (`babble-jdk21`, `babble-jdk25`, `babble-jdk28`) with Shared SemVer (`1.2.0`):**
-   * Example: `org.babblelang:babble-jdk21:1.2.0`, `org.babblelang:babble-jdk25:1.2.0`, `org.babblelang:babble-jdk28:1.2.0` (plus an optional universal Multi-Release `org.babblelang:babble:1.2.0` for stable non-preview JDKs 21–28).
-   * *Trade-off:* Standard Maven/Dependabot SemVer behavior, crystal-clear dependency graph (no accidental upgrade from JDK 21 to JDK 25 via version ranges), and preserves distinct transitive dependency POMs (`babble-jdk21` depends on `asm`, while `babble-jdk25` has **zero** `asm` dependency!).
+* `org.babblelang:babble-21:<version>` (depends on `babble-core`, `babble-runtime`, `babble-backend-asm` + `asm`)
+* `org.babblelang:babble-25:<version>` (depends on `babble-core`, `babble-runtime`, `babble-runtime-jdk25`, `babble-backend-classfile` — **zero ASM!**)
+* `org.babblelang:babble-28:<version>` (adds `babble-runtime-jdk28` — **zero ASM!**)
+* `org.babblelang:babble-28-preview:<version>` (adds `babble-runtime-valhalla` + `babble-backend-valhalla`)
+
+This builds all active editions cleanly inside a **single Maven reactor**, keeps SemVer / Dependabot resolution unambiguous (preventing accidental `21.x → 25.x` jumps), and gives each edition its exact minimal dependency graph.
 
 ---
 
-## 7. Branchless Monorepo Architecture
+## 7. Branchless Monorepo Architecture (`BIP018-D1`, `D6`, `D8`)
 
-Maintaining separate Git branches (`jdk21`, `jdk25`, `jdk28`) would be disastrous for Babble: every parser edit, type-checker fix, effect rule, optimizer pass (`BIP014`), or `.batest` case would need cherry-picking across branches, causing chronic merge conflicts and semantic drift.
+Maintaining separate Git branches (`jdk21`, `jdk25`, `jdk28`) would duplicate bugfixes and fracture tests. All Babble editions live on **`master` in a single branchless multi-module Maven monorepo**, sharing **100% of the language front end** (`parser`, `analysis`, `format`, `interpreter`, `BIP014` `ir`/`opt`, and all `.ba`/`.batest` tests).
 
-**Hard requirement:** All Babble editions MUST live on **`master` in a single branchless monorepo**, sharing **100% of the language front end** (`parser`, `analysis`, `format`, `interpreter`, `ir`, `opt`, and all `.ba`/`.batest` tests).
-
-### 7.1 Architectural Comparison: Four Monorepo Patterns
+### 7.1 Architectural Comparison & Selected Pattern (`BIP018-D1`)
 
 | Pattern | How It Works | Pros | Cons / Blockers |
 |---|---|---|---|
-| **Option A: Single-Module Multi-Release JAR (`JEP 238`)** | Keep one `pom.xml`. Compile `src/main/java` with `--release 21`, and `src/main/java24`, `src/main/java25`, `src/main/java28` into `META-INF/versions/N/` via multiple `maven-compiler-plugin` executions (`[MavenMRJAR]`). | Preserves `BIP006-D1` single Maven module; ships one universal JAR that auto-adapts on JDK 21/25/28. | **(1) Dependency asymmetry:** Cannot omit `org.ow2.asm:asm` from the POM for JDK 25 users. **(2) Preview crash:** Putting JDK 28 `--enable-preview` classes (`72.65535`) in `META-INF/versions/28/` crashes `java -jar babble.jar` on JDK 28 *without* `--enable-preview` (`UnsupportedClassVersionError`)! **(3) Build JDK:** Requires JDK 28 locally for every build. **(4) IDE friction:** IntelliJ/VS Code handle multi-release source roots in one Maven module poorly. |
-| **Option B: Multi-Module Maven Monorepo with Capability SPIs** | Split into `babble-runtime`, `babble-core` (JDK 21), sparse overlay modules (`babble-backend-asm`, `babble-backend-classfile`, `babble-runtime-jdk25`, `babble-runtime-jdk28`, `babble-backend-valhalla`), and thin distribution assemblies (`babble-dist-21`, `babble-dist-25`, `babble-dist-28`). | **Zero ASM** in `babble-dist-25`/`28`; **clean `--enable-preview` isolation**; native IDE & Maven Toolchains support; developers with only JDK 21 build `Babble 21` cleanly via default profile; clean `RuntimeBoundaryTestCase` per runtime module. | Introduces a multi-module parent/reactor POM (revising `BIP006-D1`'s single-module choice); users pick an editioned JAR unless Option C also assembles an MRJAR. |
-| **Option C: Hybrid — Multi-Module Monorepo + Optional MRJAR for Stable Tracks + Profile-Gated Preview *(Recommended)*** | Use Option B's clean multi-module structure for compilation, dependencies, IDEs, and preview isolation, **and** optionally package a combined Multi-Release `babble.jar` / `babble-runtime.jar` covering *stable non-preview* tracks (`21` + `25` + `28-ga`), alongside edition-specific zero-ASM (`babble-25`, `babble-28`) and preview (`babble-28-preview`) artifacts! | Best of both worlds: clean per-module `--release` & IDE support, zero-ASM `Babble 25`/`28` distributions, safe preview isolation, optional single universal JAR for casual users, and `babblec -target 21\|25\|28` cross-compilation. | Slightly more packaging POM wiring than pure Option B (though isolated in `babble-dist-*` modules). |
-| **Option D: Runtime Reflection / `MethodHandle` Probing** | Keep one JDK 21 module; reflectively probe `Class.forName("java.lang.ScopedValue")` or `Objects.hasIdentity` at runtime. | Zero build changes for tiny 1-method probes. | **Completely unworkable** for large compile-time APIs (`java.lang.classfile` has ~100+ sealed types/builders), `StructuredTaskScope`, or Valhalla `abstract value class` hierarchies (`BabbleValue`). Use only for trivial 1-line runtime probes, never as the primary architecture. |
-
-**Recommendation:** **Option C (Hybrid Multi-Module Monorepo)** — or **Option B** first, adding the MRJAR assembly only if a single universal JAR is desired.
+| **Option A: Single-Module Multi-Release JAR (`JEP 238`)** | Keep one `pom.xml`; compile `src/main/java24`, `java25`, `java28` into `META-INF/versions/N/` (`[MavenMRJAR]`). | Preserves `BIP006-D1` single Maven module; one universal JAR. | **(1) Dependency asymmetry:** Must keep `asm` in the POM for JDK 25 users. **(2) Preview crash:** Putting `72.65535` preview classes in `META-INF/versions/28/` crashes non-preview JDK 28 runs (`UnsupportedClassVersionError`). **(3) Build JDK & IDE friction.** |
+| **Option B: Multi-Module Maven Monorepo with Capability SPIs *(Selected — `BIP018-D1`)*** | Split into `babble-runtime`, `babble-core` (JDK 21), sparse overlay modules (`babble-backend-asm`, `babble-backend-classfile`, `babble-runtime-jdk25`, `babble-runtime-jdk28`, `babble-backend-valhalla`), and thin edition distributions (`babble-21`, `babble-25`, `babble-28`, `babble-28-preview`). | **Zero ASM** in `babble-25`/`28`; **clean `--enable-preview` isolation**; native IDE, Maven reactor & Toolchains support; JDK 21 developers build `babble-21` cleanly via default profile; per-module `RuntimeBoundaryTestCase`. | Introduces a parent/reactor POM (revising `BIP006-D1`'s single-module choice). |
+| **Option C: Option B + Universal MRJAR Assembly** | Option B plus an extra packaging module assembling a JEP 238 MRJAR for stable non-preview tracks (`21` + `25` + `28-ga`). | Adds a single universal JAR option. | Extra packaging complexity and still bundles ASM inside the universal JAR for JDK 21 fallback; kept as a **purely additive future option** if users ever request it. |
+| **Option D: Runtime Reflection / `MethodHandle` Probing** | Keep one JDK 21 module and probe newer APIs reflectively. | Zero build changes for 1-method probes. | Unworkable for `java.lang.classfile` (~100+ sealed types), `StructuredTaskScope`, or Valhalla `abstract value class` hierarchies. |
 
 ### 7.2 Concrete Monorepo Directory Layout
 
 ```text
 babble/                                      (parent/aggregator pom.xml)
 ├── pom.xml                                  (dependencyManagement, profiles: default=jdk21, -Pjdk25, -Pjdk28, -Pjdk28-preview)
-├── babble-runtime/                          (--release 21, java.base ONLY — zero external deps)
+├── babble-runtime/                          (--release 21, java.base ONLY — field-free abstract BabbleInstance + PlatformRuntime SPI)
 │   └── src/main/java/
-│       ├── org/babblelang/runtime/          (existing runtime + PlatformRuntime SPI)
-│       ├── org/babblelang/runtime/jdk/      (PlatformRuntime interface + Jdk21PlatformRuntime fallback)
+│       ├── org/babblelang/runtime/          (abstract BabbleInstance, IdentityBabbleInstance, CompiledRecordBase, etc.)
+│       ├── org/babblelang/runtime/jdk/      (PlatformRuntime SPI + Jdk21PlatformRuntime: ThreadLocal scoped, DCL lazy, VT executor)
 │       └── org/babblelang/engine/impl/natives/
 ├── babble-runtime-jdk25/                    (--release 25, java.base ONLY — activated by -Pjdk25+)
 │   └── src/main/java/
-│       └── org/babblelang/runtime/jdk25/    (Jdk25PlatformRuntime: ScopedValue context propagation, etc.)
+│       └── org/babblelang/runtime/jdk25/    (Jdk25PlatformRuntime: ScopedValue + std/foreign FFM support)
 ├── babble-runtime-jdk28/                    (--release 28, java.base ONLY — activated by -Pjdk28+)
 │   └── src/main/java/
 │       └── org/babblelang/runtime/jdk28/    (Jdk28PlatformRuntime: StructuredTaskScope parallel runtime)
 ├── babble-runtime-valhalla/                 (--release 28 --enable-preview, java.base ONLY — -Pjdk28-preview)
 │   └── src/main/java/
-│       └── org/babblelang/runtime/valhalla/ (abstract value class BabbleValue implements HasMembers)
+│       └── org/babblelang/runtime/          (abstract value class BabbleInstance — binary-compatible drop-in for Valhalla!)
 ├── babble-core/                             (--release 21 — ~90% of the codebase!)
 │   ├── src/main/antlr4/                     (Babble.g4 — or hand-written parser post-BIP015)
 │   └── src/main/java/
@@ -392,26 +382,27 @@ babble/                                      (parent/aggregator pom.xml)
 ├── babble-backend-valhalla/                 (--release 28 --enable-preview — extends ClassFileBytecodeBackend)
 │   └── src/main/java/
 │       └── org/babblelang/compiler/valhalla/ (ValhallaRecordEmitter: JEP 401 value class + JEP 539 ACC_STRICT_INIT)
-├── babble-dist-21/                          (assembles babble-21.jar + babble-21-runtime.jar; includes asm)
-├── babble-dist-25/                          (assembles babble-25.jar + babble-25-runtime.jar; ZERO asm!)
-├── babble-dist-28/                          (assembles babble-28.jar + babble-28-runtime.jar; ZERO asm!)
-├── babble-dist-28-preview/                  (assembles babble-28-preview.jar with Valhalla backend)
+├── babble-21/                               (edition artifact: core + runtime + backend-asm; includes asm)
+├── babble-25/                               (edition artifact: core + runtime + runtime-jdk25 + backend-classfile; ZERO asm!)
+├── babble-28/                               (edition artifact: core + runtime + runtime-jdk25/28 + backend-classfile; ZERO asm!)
+├── babble-28-preview/                       (edition artifact: babble-28 + runtime-valhalla + backend-valhalla)
 └── babble-tests/                            (shared src/test/babble/, src/test/batest/, examples/, JUnit suite)
 ```
 
-Notice how cleanly every single Babble architectural constraint snaps into place:
+Notice how cleanly every architectural constraint snaps into place:
 
 1. **Zero front-end duplication:** `babble-core` stays at `--release 21` and holds the grammar/parser, all of `org.babblelang.analysis`, `Formatter`, `Interpreter`, `BabbleSession`/`Repl`, `BIP014` HIR/MIR and optimizer passes, and `Babblec`.
-2. **Exact alignment with `BIP014-P0`/`P1`:** `BIP014-P1` already detaches bytecode emission from ANTLR4 by introducing an immutable `HirModule` (`org.babblelang.ir.hir`). Making `BytecodeBackend` consume `HirModule` (rather than raw ANTLR `ParserRuleContext`) means **`AsmBytecodeBackend` (JDK 21)** and **`ClassFileBytecodeBackend` (JDK 24+)** are clean, parallel backends over the exact same verified IR — instead of duplicating 6,000 lines of parse-tree traversal!
-3. **Clean dependency pruning:** `org.ow2.asm:asm` and `asm-util` exist **only** in `babble-backend-asm`. `babble-dist-25` and `babble-dist-28` do not even have ASM on their classpath!
-4. **Strict preview isolation:** `babble-runtime-valhalla` and `babble-backend-valhalla` are compiled only when `-Pjdk28-preview` is enabled, so preview classfiles (`72.65535`) can **never** leak into `Babble 21`, `Babble 25`, or non-preview `Babble 28`.
-5. **Zero friction for JDK 21 contributors:** Running plain `mvn package` on a JDK 21 machine activates only the JDK 21 modules (`babble-runtime`, `babble-core`, `babble-backend-asm`, `babble-dist-21`, `babble-tests`) — identical developer experience to today!
+2. **Exact alignment with `BIP014` (`BIP018-D4`):** Because `BIP018` starts strictly after `BIP014` completes, `BytecodeBackend` consumes `BIP014`'s ANTLR-free `HirModule`/`MirModule` directly — both `AsmBytecodeBackend` (JDK 21) and `ClassFileBytecodeBackend` (JDK 24+) lower the exact same verified IR!
+3. **Clean dependency pruning:** `org.ow2.asm:asm` and `asm-util` exist **only** in `babble-backend-asm`. `babble-25` and `babble-28` do not even have ASM on their classpath.
+4. **Universal `BabbleInstance` refactoring (`BIP018-D8`):** Refactoring `BabbleInstance` in `babble-runtime` into a **field-free `abstract class BabbleInstance implements HasMembers`** (moving `Object[] values` and mutable `Object face` into subclasses, while compiled `record`s hold only their payload fields + `static final BabbleClass`) saves 8–16 bytes per compiled `record` immediately on `Babble 21`/`25` and keeps all ~22 `instanceof BabbleInstance` checks across `runtime/` and `Interpreter` untouched when `babble-runtime-valhalla` promotes `BabbleInstance` to `abstract value class BabbleInstance`.
+5. **Strict preview isolation:** `babble-runtime-valhalla` and `babble-backend-valhalla` compile only under `-Pjdk28-preview`, so `72.65535` preview classfiles can never leak into `babble-21`, `babble-25`, or non-preview `babble-28`.
+6. **Zero friction for JDK 21 contributors:** Running plain `mvn package` on JDK 21 builds and tests `babble-21` identically to today.
 
 ### 7.3 Narrow SPI Boundaries
 
-Keeping the versioned surface area tiny is critical so maintaining multiple editions stays effortless. Four narrow SPI interfaces (discovered via `java.util.ServiceLoader`, which `Launcher` already uses for `ModuleCompiler` in `BIP006`!) cover everything:
+Four narrow SPI interfaces (discovered via `java.util.ServiceLoader`, already used by `Launcher` for `ModuleCompiler` in `BIP006`) isolate all JDK-specific code:
 
-1. **`org.babblelang.compiler.TargetProfile` (enum / record in `babble-core`):**
+1. **`org.babblelang.compiler.TargetProfile` (record in `babble-core`):**
    ```java
    public record TargetProfile(
        int jdkVersion,          // 21, 22, ..., 25, ..., 28
@@ -424,48 +415,43 @@ Keeping the versioned surface area tiny is critical so maintaining multiple edit
        public boolean supportsStructuredConcurrency(){ return jdkVersion >= 28; }
        public boolean supportsValueObjects()         { return jdkVersion >= 28 && previewEnabled; }
        public boolean supportsStrictFieldInit()      { return jdkVersion >= 28 && previewEnabled; }
+       public boolean supportsLazyConstants()        { return jdkVersion >= 29; } // updated upon JEP 547 finalization
    }
    ```
-   *Note:* Capability queries always check **feature flags** (`supportsScopedValues()`), never scattered magic version numbers.
+   Capability queries always check feature methods, never scattered magic version numbers.
 2. **`org.babblelang.compiler.BytecodeBackend` (in `babble-core`):**
    * `int minHostJdk()` / `boolean supportsTarget(TargetProfile target)`
    * `CompiledClasses emit(HirModule module, TargetProfile target)`
    * `List<String> verify(byte[] bytecode, ClassLoader loader)` (`CheckClassAdapter` in ASM backend; `ClassFile.of(...).verify(bytes)` in Class-File backend)
    * `String disassemble(byte[] bytecode)` (`TraceClassVisitor` vs `ClassModel` printer)
-   * *Bonus:* `ClassFileBytecodeBackend` (on host JDK 24+) can emit classfile version `V21` (`ClassFile.JAVA_21_VERSION = 65`) just as easily as `V25` (`69`) or `V28` (`72`), enabling **zero-ASM cross-compilation down to JDK 21**!
+   * `ClassFileBytecodeBackend` (on host JDK 24+) emits any target classfile version down to `ClassFile.JAVA_21_VERSION` (`65`), enabling zero-ASM cross-compilation to JDK 21 (`BIP018-D6`).
 3. **`org.babblelang.analysis.BytecodeInspector` (in `babble-core`):**
-   * Abstracts the bytecode reader inside [`BytecodeEffectAnalyzer.java`](../../src/main/java/org/babblelang/analysis/BytecodeEffectAnalyzer.java) (`AsmBytecodeInspector` on JDK 21 vs. `ClassFileInspector` on JDK 24+).
+   * Abstracts bytecode reading inside [`BytecodeEffectAnalyzer.java`](../../src/main/java/org/babblelang/analysis/BytecodeEffectAnalyzer.java) (`AsmBytecodeInspector` on JDK 21 vs. `ClassFileInspector` on JDK 24+).
 4. **`org.babblelang.runtime.jdk.PlatformRuntime` (in `babble-runtime`, `java.base`-only):**
-   * Selected once at startup by `Runtime.version().feature()` (or `ServiceLoader` / MRJAR class override).
-   * Exposes minimal runtime hooks: ambient context binding (`ThreadLocal` fallback on 21 → `ScopedValue` on 25+), structured fork/join executor (`ForkJoinPool` / virtual threads fallback on 21 → `StructuredTaskScope` on 28+), and value-object identity helper (`a == b` vs `Objects.hasIdentity` on 28-preview).
+   * Resolved once at startup via `ServiceLoader` (selecting the highest-JDK provider supported by `Runtime.version().feature()`, falling back to `Jdk21PlatformRuntime`).
+   * Provides minimal runtime primitives:
+     * `LazySlot<T> newLazy(Supplier<T> init)` (double-checked lock holder on 21 → `LazyConstant` once final);
+     * `ScopedKey<T> newScoped(T defaultValue)` + `withScoped(...)` (`ThreadLocal` immutable stack on 21 → `ScopedValue` on 25+);
+     * `StructuredExecutor` (virtual-thread `ExecutorService` on 21 → `StructuredTaskScope` on 28+);
+     * `boolean hasIdentity(Object o)` (`true` on 21–27 → `Objects.hasIdentity(o)` on 28-preview+).
 
-### 7.4 `babblec` Cross-Targeting (`BIP006`) & `RuntimeBoundaryTestCase`
+### 7.4 `babblec` Cross-Targeting (`BIP018-D6`, `BIP006`) & `RuntimeBoundaryTestCase`
 
-Two existing Babble mechanisms need explicit, clean handling under the multi-JDK layout:
-
-1. **`babblec` target flag (`-target 21|25|28|28-preview`) and runtime bundling:**
-   * Today, [`Babblec.runtimeClasses()`](../../src/main/java/org/babblelang/compiler/Babblec.java#L134-L166) copies `.class` files from `Launcher.class`'s own code source directly into `app.jar`.
-   * Under `BIP018`, `babblec` defaults `-target` to the edition's target (e.g., `25` in `Babble 25`), and supports explicit cross-targeting (`java -jar babble-25.jar -compile main.ba -target 21 -o app.jar`):
-     * Emits classfiles at `target.classfileMajor()` (e.g., `V21`) via `BytecodeBackend`.
-     * Rejects at compile time any call to a capability-gated stdlib module requiring a JDK newer than `-target`.
-     * Copies **only** the runtime classes for `target` (i.e., `babble-runtime` for `-target 21`; `babble-runtime` + `babble-runtime-jdk25` for `-target 25`; or preserves `META-INF/versions/N/org/babblelang/runtime/**` and sets `Multi-Release: true` in `app.jar`'s manifest when emitting a multi-release AOT jar).
-     * Sets `Created-By: babblec (target JDK <N>)` in `MANIFEST.MF` while preserving `Babblec`'s deterministic sorted entries and fixed `ENTRY_TIME` timestamps.
+1. **`babblec -target 21|25|28|28-preview` cross-compilation:**
+   * [`Babblec`](../../src/main/java/org/babblelang/compiler/Babblec.java) defaults `-target` to the running edition (e.g., `25` in `babble-25`), and accepts `-target N` for any $21 \le N \le \text{edition}$ (e.g., `java -jar babble-25.jar -compile main.ba -target 21 -o app.jar`).
+   * Emits classfiles at `target.classfileMajor()` via `BytecodeBackend` (e.g., `ClassFileBytecodeBackend` emitting `V21` with zero ASM).
+   * Statically rejects imports or calls to target-gated stdlib modules requiring a JDK newer than `-target` (e.g., `std/foreign` when `-target 21`).
+   * Bundles **only** the runtime overlay modules with `minJdk <= target.jdkVersion()` (so `-target 21` bundles `babble-runtime` alone, excluding `babble-runtime-jdk25`, and writes `Created-By: babblec (target JDK 21)` while preserving deterministic sorted entries and fixed `ENTRY_TIME` timestamps).
 2. **`RuntimeBoundaryTestCase` per runtime module:**
-   * [`RuntimeBoundaryTestCase.java`](../../src/test/java/org/babblelang/tests/RuntimeBoundaryTestCase.java) already verifies that runtime `.class` files reference only `org/babblelang/runtime/`, `org/babblelang/engine/impl/natives/`, and `java.base` packages (`Object.class.getModule().getDescriptor().packages()`).
-   * In the multi-module monorepo, the exact same test runs inside every `babble-runtime*` module (`babble-runtime` on JDK 21, `babble-runtime-jdk25` on JDK 25, `babble-runtime-jdk28` on JDK 28, `babble-runtime-valhalla` on JDK 28 `--enable-preview`), guaranteeing that **no runtime overlay ever leaks `antlr`, `asm`, `javax.script`, or non-`java.base` JDK modules**!
+   * [`RuntimeBoundaryTestCase.java`](../../src/test/java/org/babblelang/tests/RuntimeBoundaryTestCase.java) runs inside every `babble-runtime*` module against that module's JDK `java.base`, guaranteeing no runtime overlay ever leaks `antlr`, `asm`, `javax.script`, or non-`java.base` JDK modules.
 
 ### 7.5 Maven Profiles, Toolchains & CI Verification Matrix
 
-#### Local Developer Ergonomics (`pom.xml` Profiles)
-
-Using JDK-version profile activation (`<activation><jdk>[25,)</jdk></activation>` plus explicit opt-in flags `-Pjdk25`, `-Pjdk28`, `-Pjdk28-preview`):
-
-* **Developer on JDK 21:** `mvn package` automatically builds and tests `Babble 21` (100% green, zero extra setup).
-* **Developer on JDK 25:** `mvn package` builds `Babble 21` (verified via `--release 21`) **and** `Babble 25` (via `--release 25`, zero ASM), running the shared test suite on both!
-* **Developer on JDK 26/27/28 (like the maintainer's Homebrew JDK 26 workstation noted in `AGENTS.md`):** `mvn package` builds all editions $\le$ the local JDK, and `mvn -Pjdk28-preview test` exercises Valhalla preview lowering when running on JDK 28 EA.
-* **Cross-JDK verification via `maven-toolchains-plugin` or containers:** When testing `Babble 21` bytecode on an *actual* JDK 21 JVM (not just `--release 21` API checking), CI runs a real matrix.
-
-#### GitHub Actions CI Matrix (`.github/workflows/maven.yml`)
+* **Local Developer Profiles (`pom.xml`):**
+  * On JDK 21: `mvn package` builds and tests `babble-21` cleanly with zero extra setup.
+  * On JDK 25+: `mvn -Pjdk25 package` (or automatic `<jdk>[25,)</jdk>` activation) builds and tests both `babble-21` (`--release 21`) and `babble-25` (`--release 25`, zero ASM).
+  * On JDK 28 EA: `mvn -Pjdk25,jdk28,jdk28-preview test` exercises `StructuredTaskScope` and Valhalla preview lowering.
+* **GitHub Actions CI Matrix (`.github/workflows/maven.yml`, activated after `BIP014` completes per `BIP018-D4`):**
 
 ```yaml
 strategy:
@@ -490,65 +476,170 @@ strategy:
       # Nightly / manual / opt-in label:
       - name: "Babble 28 (EA · Structured Concurrency + Valhalla Preview)"
         java: "28-ea"
-        distribution: "jdkfile" # or oracle/temurin EA
+        distribution: "jdkfile"
         maven_args: "-B -Pjdk25,jdk28,jdk28-preview test"
         jvm_args: "--enable-preview --illegal-final-field-mutation=deny"
 ```
 
-Every matrix cell executes the **same** `.ba` scripts, `DifferentialTestCase`, `.batest` corpus (`987+` cases), `RuntimeBoundaryTestCase`, `BabblecTestCase`, and `ExamplesTestCase` — proving **cross-edition semantic parity** (`interpret` == `Babble 21 ASM` == `Babble 25 Class-File` == `Babble 28` == `Babble 28-preview Valhalla`) and verifying byte-identical `examples/raytracer-argon/scene.ppm` across editions!
+Every matrix cell executes the **same** `.ba` scripts, `DifferentialTestCase`, `.batest` corpus, `RuntimeBoundaryTestCase`, `BabblecTestCase` (including cross-targeting `-target 21` smoke runs), and `ExamplesTestCase`, proving byte-identical `examples/raytracer-argon/scene.ppm` across `interpret`, `babble-21` (ASM), `babble-25` (`Class-File API`), `babble-28`, and `babble-28-preview` (Valhalla).
 
 ---
 
-## 8. Interaction with Existing & Draft BIPs
+## 8. Surface-Language & Stdlib "Exceed" Specifications (`BIP018-D7`)
 
-* **`BIP006` (`BIP006-D1` Single-Module Preference & `babblec`):** `BIP006-D1` originally kept Babble as a single Maven module (`babble-<version>-runtime.jar` via classifier) because there was only one JDK target and one bytecode backend. `BIP018` explicitly revisits `BIP006-D1` *only* when a second JDK backend/runtime overlay is introduced (`BIP018-P1`+), preserving `BIP006`'s core `java.base`-only runtime boundary and deterministic `babblec` AOT jars.
-* **`BIP014` (Compiler Optimization Passes — `BIP014-P0` & `BIP014-P1`):** **Strong sequencing synergy!** Writing a second bytecode backend (`ClassFileBytecodeBackend` via `JEP 484`) against today's 6,269-line ANTLR-coupled `CodeGenerator.java` would duplicate massive parse-tree traversal logic. Waiting until **`BIP014-P1`** lands `HirModule` + `HirEmitter` lets `AsmBytecodeBackend` and `ClassFileBytecodeBackend` both lower the exact same clean, typed, ANTLR-free `HIR`/`MIR`!
-* **`BIP015` (Down with the Ants):** Complementary dependency reduction. Today Babble has exactly **two** non-JDK runtime dependencies: `antlr4-runtime` (`BIP015`) and `asm` (`BIP018` `JEP 484`). Together, `BIP015` (if a non-ANTLR option is chosen) + `BIP018` (`Babble 25+`) reduce Babble's entire compiler, formatter, REPL, and runtime to **zero third-party dependencies**.
-* **`BIP007` §10 & `BIP016`/`BIP017` (Verified Parallelism):** `Babble 25` (`ScopedValue`) + `Babble 28` (`StructuredTaskScope`) provide the exact JDK primitives needed to implement `threadsafe` parallel combinators cleanly without custom thread-pool/cancellation boilerplate.
-* **`BIP002` (`record`) & `BIP011` (`T` vs. `T?`):** `Babble`'s existing `record` semantics and non-null-by-default types are **already** Valhalla-ready at the language level; `BIP018` only requires decoupling compiled `record`s from concrete `BabbleInstance` (replacing it with `abstract value class BabbleValue` or a field-only layout) to unlock `JEP 401`/`539` flattening and scalarization.
+All new syntax introduced by `BIP018` preserves Babble's `BIP012` (`RM006`) grammar invariants: **zero `@parser::members`, zero semantic predicates, single bracket type `()`, strict LL(1)/LL(2), pure `PredictionMode.SLL`, and every new keyword exempted in `memberName`**.
+
+### 8.1 `lazy def` — Pure, Deeply Immutable Lazy Constants
+
+* **Motivation & How It Exceeds Java:** Java's `LazyConstant<T>` (`[JEP547]`) allows arbitrary side effects inside its supplier lambda and mutable objects as values, making initialization timing observable and thread-safety manual. Babble's `lazy def` enforces **`BIP016` purity and deep immutability statically**, so evaluation order is unobservable, concurrent first-access races are impossible, `BIP014` optimizers can treat every read as a pure constant load, and HotSpot C2 constant-folds the slot once initialized.
+* **Grammar (`Babble.g4`, pure `SLL`):**
+  * Add token `LAZY: 'lazy';` and include `LAZY` in `memberName` (so `obj.lazy` keeps working).
+  * Extend `# defExpression`:
+    ```antlr
+    | (EXPORT | PRIVATE)? LAZY? DEF name=ID (OF typeParameters)? (':' type)?
+                 ('=' NL* (effectClause ON)? value=expression)?   # defExpression
+    ```
+* **Static Rules (`BlockScopes`, `TypeChecker`, `EffectChecker`):**
+  * **Placement:** Allowed at module top level (`export lazy def`), class/object/static bodies (`private lazy def`, `lazy def`), and local blocks (`lazy def`). Forbidden on `classParameters` and `interface` abstract declarations.
+  * **Mandatory initializer & read-only:** A `lazy def` MUST have an `= expr` initializer and is strictly read-only (reassigning it is a compile-time error: `Cannot assign to lazy def : <name>`).
+  * **Pure initializer (`BIP016`):** The initializer expression MUST be **pure** (`@HERMETIC @DETERMINISTIC` — no `io`, no `volatile`, no `mut` writes to captured/outer state). It may still construct fresh `unique` local structures and `freeze(...)` them before returning!
+  * **Deeply immutable type:** The inferred or declared type MUST be deeply immutable — one of the 9 core scalars, `null`, a deep `record`, `frozen T`, a pure `Type.Function`, or a nullable/union thereof. (Returning a mutable `list of int` without `freeze(...)` is rejected statically.)
+  * **Read effect:** Reading a `lazy def` is **100% pure** (`@HERMETIC @DETERMINISTIC`). If the initializer is also `nothrow @TERMINATING`, reading it inherits `nothrow @TERMINATING` as well.
+  * **Exceptions & cycles:** If a `lazy def` initializer throws, the slot remains uninitialized (matching `LazyConstant`); direct self-recursion inside a `lazy def` initializer is rejected or raises a clear runtime cycle error (`Lazy def cycle : <name>`).
+* **Example:**
+  ```babble
+  export lazy def sinTable: frozen list of double = (
+      def buf = list of double (capacity: 360)
+      def i = 0
+      while i < 360 then (
+          buf.add(java.lang.Math.sin(double(i) * 3.141592653589793 / 180.0))
+          i += 1
+      )
+      freeze(buf)
+  )
+  ```
+* **Runtime Lowering (Polyfilled on 21 → Native `LazyConstant` When Final):**
+  * `Babble 21`–`28`: `PlatformRuntime.newLazy(supplier)` backed by a lightweight double-checked-locking `LazySlot<T>` (volatile sentinel + synchronized compute-once).
+  * `Babble 29+` (once `JEP 547` finalizes): `PlatformRuntime.newLazy(supplier)` delegates directly to `java.lang.LazyConstant.of(supplier)`, unlocking HotSpot C2 trusted constant-folding.
+
+### 8.2 `scoped def` + `with ... then (...)` — `frozen`-Only, Effect-Tracked Dynamic Scoping
+
+* **Motivation & How It Exceeds Java:** Java's `ScopedValue<T>` (`[JEP506]`) has two sharp edges: (1) nothing prevents binding a mutable `ArrayList` and causing data races across virtual threads, and (2) `ScopedValue.get()` throws `NoSuchElementException` at runtime if called outside a `where(...).call(...)` scope, while silently breaking referential transparency of any method that reads it. Babble's `scoped def` eliminates all three hazards at compile time:
+  1. **Deeply immutable (`frozen`) values only** — impossible to smuggle mutable shared state across threads.
+  2. **Zero `NoSuchElementException`** — a `scoped def` either declares a default value (`scoped def ctx: frozen Config = defaultCfg` → reads as `frozen Config`) or omits the default and types reads as nullable (`scoped def reqId: string?` → reads as `string?`, evaluating to `null` when unbound!).
+  3. **Effect-tracked via `BIP016` `volatile`** — reading a `scoped def` requires `volatile` (still `@HERMETIC` / no I/O, but non-`@DETERMINISTIC` across call contexts), adding **zero** new effect keywords while preserving pure-by-default functions.
+* **Grammar (`Babble.g4`, pure `SLL`):**
+  * Add tokens `SCOPED: 'scoped';` and `WITH: 'with';` and include both in `memberName`.
+  * Add two LL(1) alternatives to `expression`:
+    ```antlr
+    | (EXPORT | PRIVATE)? SCOPED DEF name=ID ':' type ('=' NL* defaultValue=expression)? # scopedDefExpression
+    | WITH scopedBinding (NL* ',' NL* scopedBinding)* THEN NL* withBlock=block           # withExpression
+    ```
+    where `scopedBinding: target=expression '=' NL* value=expression;` (with `BlockScopes`/`TypeChecker` requiring `target` to resolve to a `scoped def`, supporting module-qualified `cfg.traceId = "abc"`!).
+* **Static Rules:**
+  * **Placement:** `scoped def` is allowed at module top level (`export scoped def`) and class/object `static` blocks (defining a stable scoped key identity).
+  * **Type restriction:** The declared type `T` MUST be deeply immutable (core scalar, deep `record`, `frozen T`, pure `Type.Function`, or nullable/union thereof). If no `= defaultValue` is provided, `T` MUST be nullable (`T?`) — omitting a default on a non-nullable type is a compile-time error (`Scoped def without default must be nullable : <name>`).
+  * **Read-only binding:** A `scoped def` cannot be assigned with `=` outside a `with ... then (...)` header (`Cannot assign to scoped def : <name>; use with ... then (...)`).
+  * **Effect rules:**
+    * Reading a `scoped def` injects `@VOLATILE` (non-`@DETERMINISTIC`, still `@HERMETIC`) into the enclosing function's inferred effects, so typed functions reading a `scoped def` must declare `fn volatile`.
+    * `with k = v then ( body )` evaluates `v` in the outer scope, runs `body` in the dynamically rebound scope, and restores the outer binding on normal or exceptional exit; `with` itself is pure if `v` and `body` are pure (note that calling a `volatile` helper inside `body` still propagates `volatile` unless future context-discharge rules apply).
+* **Example:**
+  ```babble
+  export scoped def locale: string = "en-US"
+  export scoped def requestId: string?
+
+  def formatGreeting = fn volatile (name: string): string -> (
+      def tag = if requestId != null then ( "[" + requestId + "] " ) else ( "" )
+      if locale == "fr-FR" then ( tag + "Bonjour, " + name ) else ( tag + "Hello, " + name )
+  )
+
+  def out = with locale = "fr-FR", requestId = "req-42" then (
+      formatGreeting("Ada")
+  )
+  ;; out == "[req-42] Bonjour, Ada" ; outside `with`, locale is "en-US" and requestId is null
+  ```
+* **Runtime Lowering (Polyfilled on 21 → Native `ScopedValue` on 25+):**
+  * `Babble 21`: `Jdk21PlatformRuntime` backs each `ScopedKey<T>` with a `ThreadLocal<T>` restored in a `try`/`finally` block (with an explicit capture helper when spawning virtual threads via `PlatformRuntime.StructuredExecutor` so child tasks inherit bindings identically to `ScopedValue`!).
+  * `Babble 25+`: `Jdk25PlatformRuntime` backs each `ScopedKey<T>` directly with `java.lang.ScopedValue.newInstance()`, using `ScopedValue.where(k, v).call(...)` (nesting multiple bindings in `with a = ..., b = ... then (...)` via chained `.where(k1, v1).where(k2, v2)`) and `k.orElse(defaultValue)`.
+
+### 8.3 Target-Gated `std/foreign` — Lifetime-Checked FFM Wrappers (`-target 22+`)
+
+* **Motivation & How It Exceeds Java:** Java's Foreign Function & Memory API (`[JEP454]`, JDK 22+) protects against C use-after-free with *runtime* session checks (`IllegalStateException: Already closed`), which fail only when a leaked `MemorySegment` is dereferenced after `Arena.close()`. Babble's `BIP007`/`BIP016`/`BIP017` ownership and effect system can catch arena-escape bugs **at compile time**!
+* **Target Gate (`Invariant 3`):** Importing `std/foreign` requires `TargetProfile.supportsFfm()` (`jdkVersion >= 22`). Compiling against `-target 21` fails cleanly at compile time:
+  ```text
+  Error : std/foreign requires target JDK 22 or higher (current target : 21)
+  ```
+* **Lifetime-Safe API Design (Zero New Grammar Needed!):**
+  * Uses existing `fn calling f`, `@BORROWED` (the unmarked default on parameters in `BIP016`!), `mut`, and `unique`!
+  * `std/foreign.withConfinedArena` takes a `fn calling f` callback whose `ArenaView` / `Segment` parameter is **borrowed** (`@BORROWED`, non-`shared`) and cannot be returned or stored into an outer variable:
+    ```babble
+    def foreign = import("std/foreign.ba")
+
+    def checksum = fn (n: long): long -> (
+        foreign.withConfinedArena(fn (mut arena: foreign.ConfinedArena): long -> (
+            def seg = arena.allocateLongs(n)   ;; derived from @BORROWED arena -> cannot escape!
+            seg.setAtIndex(0L, 42L)
+            seg.getAtIndex(0L)                 ;; returning core scalar `long` is valid!
+            ;; returning `seg` here is a COMPILE-TIME ERROR (cannot return @BORROWED derived value)
+        ))
+    )
+    ```
+  * Native C library calls via `java.lang.foreign.Linker` are marked `io` in `std/foreign`, while pure off-heap scratch-buffer allocations inside a confined arena stay `@HERMETIC` (allowing zero-GC native scratch buffers even inside pure numeric Babble routines!).
 
 ---
 
-## 9. Phased Rollout Plan (`BIP018-P0`–`P4`)
+## 9. Interaction with Existing & Draft BIPs
 
-Each phase is independently valuable, keeps `Babble 21` 100% green, and avoids premature refactoring:
+* **`BIP006` (`BIP006-D1` Single-Module Preference & `babblec`):** `BIP006-D1` kept Babble as a single Maven module when there was only one JDK target and one bytecode backend. `BIP018-D1` revisits `BIP006-D1` cleanly once `BIP018-P1` begins, preserving `BIP006`'s `java.base`-only runtime boundary and deterministic `babblec` AOT jars while adding `-target N` cross-targeting (`BIP018-D6`).
+* **`BIP014` (Compiler Optimization Passes — `BIP018-D4`):** **Strict sequencing gate!** All of `BIP018` (including `P0`) begins strictly **after `BIP014` completes**, keeping CI focused on JDK 21 during `BIP014` and letting `AsmBytecodeBackend` (JDK 21) and `ClassFileBytecodeBackend` (JDK 24+) both lower `BIP014`'s finalized, ANTLR-free `HirModule`/`MirModule`.
+* **`BIP015` (Down with the Ants):** Complementary dependency reduction. Together, `BIP015` (if a non-ANTLR parser is chosen) + `BIP018` (`babble-25`+ dropping ASM via `JEP 484`) reduce Babble's entire compiler, formatter, REPL, and runtime to **zero third-party dependencies**.
+* **`BIP007` §10 & `BIP016`/`BIP017` (Verified Parallelism):** `Babble 25` (`ScopedValue`) + `Babble 28` (`StructuredTaskScope`) transparently back `BIP007` §10's `std/` parallel combinators via `PlatformRuntime`, with virtual-thread executor fallback on `Babble 21`.
+* **`BIP002` (`record`) & `BIP011` (`T` vs. `T?`):** `BIP018-D8`'s field-free `abstract class BabbleInstance` shrinks compiled `record`s on all editions and enables zero-source-change Valhalla `value class` lowering (`JEP 401`/`539`) and future null-restricted storage (`JEP draft 8316779`).
 
-* **`BIP018-P0` — Multi-JDK CI Hygiene & Interop Profiles *(Zero structural change, lands anytime)*:**
-  * Add JDK 25 LTS and JDK 27 GA test legs to [`.github/workflows/maven.yml`](../../.github/workflows/maven.yml) running the existing `Babble 21` build on newer JVMs (with `--illegal-final-field-mutation=deny` on JDK 26+ per `JEP 500`).
-  * Add `java.lang.IO` (`JEP 512`), `java.util.stream.Gatherer`/`Gatherers` (`JEP 485`), and `java.lang.foreign.*` (`JEP 454`) entries to `HostEffects` and `JavaNullability` (using name-based lookup so `--release 21` compilation stays untouched!).
+---
+
+## 10. Phased Rollout Plan (`BIP018-P0`–`P4`)
+
+Per `BIP018-D4`, **`BIP018` begins strictly after `BIP014` completes**. Each phase is independently verifiable, keeps `babble-21` 100% green, and passes full dual-mode parity:
+
+* **`BIP018-P0` — Multi-JDK CI Matrix & Interop Profiles *(First PR after `BIP014`)*:**
+  * Add JDK 25 LTS and JDK 27 GA legs to [`.github/workflows/maven.yml`](../../.github/workflows/maven.yml) running with `--illegal-final-field-mutation=deny` on JDK 26+ (`JEP 500`).
+  * Add `java.lang.IO` (`JEP 512`), `java.util.stream.Gatherer`/`Gatherers` (`JEP 485`), and `java.lang.foreign.*` (`JEP 454`) entries to `HostEffects` and `JavaNullability`.
   * Document Leyden AOT cache usage (`-XX:AOTCacheOutput=app.aot`) with `babblec` jars on JDK 25+.
-* **`BIP018-P1` — Monorepo Module Split & SPI Extraction *(Recommended after `BIP014-P1` `HirModule`)*:**
-  * Introduce parent POM + `babble-runtime`, `babble-core`, `babble-backend-asm`, `babble-dist-21`, `babble-tests` with `TargetProfile`, `BytecodeBackend`, `BytecodeInspector`, and `PlatformRuntime` SPIs — **zero behavioral change** on JDK 21.
-  * Extend `RuntimeBoundaryTestCase` and `Babblec` (`-target`) to consume the runtime module cleanly.
-* **`BIP018-P2` — `Babble 25` (Modern LTS · Zero ASM):**
-  * Add `babble-backend-classfile` (`--release 24`, `JEP 484` `java.lang.classfile` emitter, verifier, and `BytecodeEffectAnalyzer` inspector — **zero `org.ow2.asm:asm`**) and `babble-runtime-jdk25` (`--release 25`, `JEP 506` `ScopedValue` hooks) + `babble-dist-25`.
-  * Verify 100% differential parity across `interpret`, `Babble 21` (ASM), and `Babble 25` (`Class-File API`) on `.batest`, `Benchmarks`, and byte-identical `examples/raytracer-argon/scene.ppm`.
+* **`BIP018-P1` — Multi-Module Monorepo Split, SPIs & `BabbleInstance` Refactor (`BIP018-D1`, `D2`, `D8`):**
+  * Split into `babble-runtime`, `babble-core`, `babble-backend-asm`, `babble-21`, and `babble-tests` with `TargetProfile`, `BytecodeBackend`, `BytecodeInspector`, and `PlatformRuntime` SPIs — **zero behavioral change** on JDK 21.
+  * Refactor `BabbleInstance` across all editions into a field-free `abstract class` (`BIP018-D8`), shrinking compiled `record` instances immediately while preserving all `instanceof BabbleInstance` sites.
+  * Wire `babblec -target N` (`BIP018-D6`) and per-module `RuntimeBoundaryTestCase`.
+* **`BIP018-P2` — `Babble 25` (Modern LTS · Zero ASM) + `lazy def` & `scoped def` + `std/foreign` (`BIP018-D6`, `D7`):**
+  * Add `babble-backend-classfile` (`--release 24`, `JEP 484` `java.lang.classfile` emitter, verifier, and `BytecodeEffectAnalyzer` inspector — **zero `org.ow2.asm:asm`**), `babble-runtime-jdk25` (`--release 25`, `JEP 506` `ScopedValue`), and `babble-25`.
+  * Implement predicate-free pure-`SLL` **`lazy def`** (§8.1) and **`scoped def` + `with ... then (...)`** (§8.2) across grammar, analysis, `Interpreter`, `HIR`/`MIR`, and both backends (polyfilled on `babble-21`, native `ScopedValue` on `babble-25`, ready for `LazyConstant` once finalized), plus target-gated **`std/foreign`** (`-target 22+`, §8.3).
   * Emit `ACC_FINAL` systematically on all immutable `record` and non-reassigned `class` header fields (`JEP 500` synergy).
-  * Optionally add `babblec --aot-cache` helper workflow targeting Leyden (`JEP 514`/`515`/`544`).
+  * Verify 100% differential parity across `interpret`, `babble-21` (ASM), `babble-25` (`Class-File API`), and `babble-25 -target 21` cross-compiled jars, including byte-identical `examples/raytracer-argon/scene.ppm`.
 * **`BIP018-P3` — `Babble 28` (Structured Concurrency & Leyden AOT Code Compilation):**
-  * Add `babble-runtime-jdk28` (`--release 28`, `JEP 543` `StructuredTaskScope` backing Babble's race-free parallel combinators from `BIP007` §10) and `babble-dist-28`.
-  * Benchmark `babblec` + `JEP 544` Leyden AOT Code Compilation on CLI/ray-tracer startup and warmup.
+  * Add `babble-runtime-jdk28` (`--release 28`, `JEP 543` `StructuredTaskScope` backing `BIP007` §10's parallel combinators via `PlatformRuntime`) and `babble-28`.
+  * Benchmark `babblec` + `JEP 544` Leyden AOT Code Compilation on CLI and ray-tracer startup/warmup.
 * **`BIP018-P4` — `Babble 28-preview` → `Babble 29` LTS (Valhalla Value `record`s & `ACC_STRICT_INIT`):**
-  * Decouple compiled `record`s from concrete `BabbleInstance` (via `abstract value class BabbleValue` in `babble-runtime-valhalla`).
-  * Add profile-gated `babble-backend-valhalla` (`-Pjdk28-preview`) emitting `JEP 401` value classes for Babble `record`s and `JEP 539` `ACC_STRICT_INIT | ACC_FINAL` for immutable class header fields.
-  * Benchmark `examples/raytracer-argon` (`Vec3`/`Ray`/`Color` allocation & throughput) against `Babble 21`/`25` to quantify Valhalla flattening/scalarization gains before promoting to non-preview when Valhalla finalizes (JDK 29 LTS+).
+  * Add profile-gated `babble-runtime-valhalla` (`abstract value class BabbleInstance`) and `babble-backend-valhalla` (`-Pjdk28-preview`) emitting `JEP 401` value classes for Babble `record`s and `JEP 539` `ACC_STRICT_INIT | ACC_FINAL` for immutable class header fields, assembled in `babble-28-preview`.
+  * Benchmark `examples/raytracer-argon` (`Vec3`/`Ray`/`Color` allocation & throughput) against `babble-21` and `babble-25` before promoting to non-preview when Valhalla finalizes (JDK 29 LTS+).
 
 ---
 
-## 10. Open Questions (`BIP018-Q1`–`Q8`)
+## 11. Design Decisions (`BIP018-Q1`–`Q8` → `BIP018-D1`–`D8`)
 
-* **`BIP018-Q1` — Monorepo Structure (`Option A` vs. `Option B` vs. `Option C`):** Should Babble adopt a multi-module Maven monorepo with sparse JDK overlay modules (`Option B`), add an optional Multi-Release JAR assembly on top for stable non-preview tracks (`Option C`), or try to stay single-module with JEP 238 MRJAR (`Option A`) despite the ASM dependency and preview-classfile constraints?
-* **`BIP018-Q2` — Artifact & Version Scheme:** Should editions be published as JDK-major versions (`org.babblelang:babble:21.1.0`, `25.1.0`, `28.1.0`) or edition-qualified artifact IDs with shared SemVer (`babble-jdk21:1.0.0`, `babble-jdk25:1.0.0`, `babble-jdk28:1.0.0`)?
-* **`BIP018-Q3` — Active Edition Matrix:** Should Babble actively build and publish only **LTS + Current Frontier** (`21`, `25`, `27`/`28`), or also publish intermediate non-LTS editions (`22`, `23`, `24`, `26`) via floor inheritance?
-* **`BIP018-Q4` — Sequencing Relative to `BIP014-P1` (`HirModule`):** Should `BIP018-P1`/`P2` (the `BytecodeBackend` SPI and `JEP 484` `Class-File API` backend) explicitly wait for `BIP014-P1` so `ClassFileBytecodeBackend` lowers `HirModule` instead of ANTLR4 parse trees? *(Note: `BIP018-P0` CI matrix + `HostEffects` updates can land immediately regardless.)*
-* **`BIP018-Q5` — `Babble 21` Sunsetting Horizon:** Under what concrete policy should a baseline LTS edition (like `Babble 21`) eventually be retired — e.g., N months after two newer LTS releases exist (when JDK 29 LTS is widely adopted and JDK 25 becomes the new baseline floor)?
-* **`BIP018-Q6` — Cross-Targeting in `babblec` (`-target N`):** Should `Babble 25+` support `babblec -target 21` (emitting `V21` bytecode via `java.lang.classfile` and bundling `babble-runtime` for JDK 21 JREs), or should each `Babble N` only target JDK $N$?
-* **`BIP018-Q7` — Surface-Language "Exceed" Features (`scoped`, `lazy def`, `std/foreign`):** Which JDK-enabled "Exceed" features should stay purely **invisible lowering optimizations** (Valhalla `record`s, `ACC_STRICT_INIT`, Leyden AOT) vs. becoming **new Babble language/stdlib constructs** (`frozen` `scoped` bindings on 25+, `parallel` structured concurrency on 28+, lifetime-checked `std/foreign` on 22+)?
-* **`BIP018-Q8` — `record` Superclass Refactoring (`BabbleInstance` vs. `BabbleValue`):** Should the decoupling of compiled `record`s from concrete `BabbleInstance` (eliminating the mutable `face` field and `Object[] values` slot on compiled `record`s) be done early across *all* editions (shrinking `record` heap size even on `Babble 21`/`25`!), or only inside the Valhalla overlay (`BIP018-P4`)?
+| Question | Decision | Resolution |
+|---|---|---|
+| `BIP018-Q1` | **`BIP018-D1`** | **Multi-module Maven monorepo with capability SPIs (`Option B`):** Split into `babble-runtime`, `babble-core` (`--release 21`), sparse JDK overlay modules (`babble-backend-asm`, `babble-backend-classfile`, `babble-runtime-jdk25`, `babble-runtime-jdk28`, profile-gated `babble-runtime-valhalla` / `babble-backend-valhalla`), and thin per-edition distributions (`babble-21`, `babble-25`, `babble-28`, `babble-28-preview`). Gives `babble-25`/`28` zero ASM dependency and isolates `--enable-preview` cleanly; a universal MRJAR assembly (`Option C`) remains a purely additive option later if desired. |
+| `BIP018-Q2` | **`BIP018-D2`** | **Edition-qualified artifact IDs with shared SemVer:** `org.babblelang:babble-21:<ver>`, `babble-25:<ver>`, `babble-28:<ver>`, `babble-28-preview:<ver>`. Builds cleanly in a single Maven reactor, preserves standard SemVer ordering, and keeps per-edition POM dependencies exact. |
+| `BIP018-Q3` | **`BIP018-D3`** | **Active tiers only with sparse floor inheritance:** Actively build, test, and publish Baseline LTS (`Babble 21`), Modern LTS (`Babble 25`), and Current Frontier / EA (`Babble 27` / `28` + `28-preview`). EOL non-LTS editions (`22`, `23`, `24`, `26`) require no separate releases or CI legs; overlays exist only for JDKs that introduce real capabilities (`21`, `22` `std/foreign`, `24` Class-File API, `25` `ScopedValue`, `28` `StructuredTaskScope`, `28-preview` Valhalla). |
+| `BIP018-Q4` | **`BIP018-D4`** | **Sequenced strictly after `BIP014` completes:** Bundle all of `BIP018` (including `BIP018-P0` CI matrix & host profiles) strictly after `BIP014` finishes, keeping CI on JDK 21 during `BIP014` and ensuring `ClassFileBytecodeBackend` lowers `BIP014`'s finalized `HirModule`/`MirModule` directly. |
+| `BIP018-Q5` | **`BIP018-D5`** | **Track upstream OpenJDK LTS End-of-Life:** Keep each Baseline LTS edition supported for as long as its upstream OpenJDK / Eclipse Temurin LTS update train (`jdk21u`, `jdk25u`, `jdk29u`, …) remains actively maintained, retiring `Babble N` (and legacy-only backends such as `babble-backend-asm` for `Babble 21`) once JDK $N$ reaches upstream EOL. |
+| `BIP018-Q6` | **`BIP018-D6`** | **Support `babblec -target N` cross-targeting:** Newer editions (e.g., `babble-25`) support `-target 21` (emitting `V21` bytecode via `java.lang.classfile` with zero ASM, bundling only `babble-runtime`, and rejecting `22+`/`25+`-only target-gated stdlib calls statically at compile time). |
+| `BIP018-Q7` | **`BIP018-D7`** | **Include polyfilled core grammar additions + target-gated `std/foreign` in `BIP018`:** Design predicate-free pure-`SLL` **`lazy def`** (pure `@HERMETIC @DETERMINISTIC`, deeply immutable, top-level/class-object/local blocks; DCL holder on 21 → `LazyConstant` once final) and **`scoped def` + `with ... then (...)`** (deeply immutable/`frozen`-only, mandatory default or nullable `T?` preventing `NoSuchElementException`, reads tracked via existing `BIP016` `volatile` effect; `ThreadLocal` stack on 21 → `ScopedValue` on 25+) with full `Babble 21` polyfills via `PlatformRuntime`, plus target-gated **`std/foreign`** (`-target 22+`, `@BORROWED`/`unique` lifetime-checked `Arena`/`MemorySegment`). `StructuredTaskScope` (JDK 28+) backs `BIP007` §10's `std/` parallel combinators transparently with no new `parallel` block syntax in `BIP018`. |
+| `BIP018-Q8` | **`BIP018-D8`** | **Universal field-free `abstract class BabbleInstance` refactoring:** Refactor `BabbleInstance` across all editions (`BIP018-P1`) into a field-free `abstract class` (moving `Object[] values` and mutable `Object face` into subclasses), shrinking compiled `record` instances immediately on `Babble 21`/`25`, keeping all ~22 `instanceof BabbleInstance` sites intact, and letting `babble-runtime-valhalla` (`BIP018-P4`) simply flip it to `abstract value class BabbleInstance`. |
 
 ---
 
-## 11. References
+## 12. References
 
 * **`[JDK22]`–`[JDK28]`** OpenJDK Release Project Pages: *[JDK 22](https://openjdk.org/projects/jdk/22/)*, *[JDK 23](https://openjdk.org/projects/jdk/23/)*, *[JDK 24](https://openjdk.org/projects/jdk/24/)*, *[JDK 25 (LTS)](https://openjdk.org/projects/jdk/25/)*, *[JDK 26](https://openjdk.org/projects/jdk/26/)*, *[JDK 27](https://openjdk.org/projects/jdk/27/)*, *[JDK 28](https://openjdk.org/projects/jdk/28/)*.
 * **`[JEP238]`** Paul Sandoz. *[JEP 238: Multi-Release JAR Files](https://openjdk.org/jeps/238)* (JDK 9) and Apache Maven Compiler Plugin *[Multi Release Guide](https://maven.apache.org/plugins/maven-compiler-plugin/multirelease.html)*.
