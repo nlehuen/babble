@@ -575,6 +575,8 @@ memberName
 
 ### 8.2 Built-In `BIP007` Effect Profiles (`BIP011-D12`)
 
+*Since `BIP019`, the profiles of Java classes in this section (`String`, the core collections, `Map.Entry`) are axioms stated in the stubs of `org.babblelang.axioms`, no longer in `EffectChecker`.*
+
 Today `EffectChecker` (`RM002`) treats `java.util.List` / `Map` calls as `impure` unless the user writes file-level `axiom` declarations. `BIP011` seeds `HostEffects` / `EffectChecker` with built-in baseline contracts for all core types (overridable only if tightened or compatible, never requiring boilerplate `axiom`s):
 
 | Target Family | Built-In `BIP007` Effect Profile | Receiver / Parameter Modifiers |
