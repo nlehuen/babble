@@ -58,6 +58,18 @@
 
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- The Babble axioms (BIP019) live next to the Java stubs of org.babblelang.axioms. -->
+            <resource>
+                <directory>src/main/java</directory>
+                <includes>
+                    <include>org/babblelang/axioms/**/*.ba</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

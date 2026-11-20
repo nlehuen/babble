@@ -147,57 +147,13 @@ final class OperatorTypes {
         return r <= 2 ? Type.INT : operand;
     }
 
-    static final EffectSet PURE_DET = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false, false, true);
     static final EffectSet PURE_DET_NOTHROW = EffectSet.ofInferred(
             EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false, false, true);
     static final EffectSet PURE_DET_NOTHROW_UNIQUE = EffectSet.ofInferred(
             EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false, true, true);
-    static final EffectSet SAME_EFFECTS = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW, Effect.COMMUTATIVE), false, false, false, true);
-
     /** Accepts any value including {@code null} and {@code frozen T} without unwrapping {@code frozen} (BIP007-D8/D9). */
     static final Type ANY_OR_FROZEN = Type.union(Type.NULLABLE_ANY, Type.FROZEN_ANY);
 
-    private static final Type JAVA_NUMBER = new Type.JavaInstance(Number.class);
-    private static final Type INTEGRAL_CONVERSION_INPUT = Type.union(List.of(
-            Type.BYTE, Type.SHORT, Type.INT, Type.LONG, Type.FLOAT, Type.DOUBLE, JAVA_NUMBER, Type.CHAR, Type.STRING));
-    private static final Type FLOAT_CONVERSION_INPUT = Type.union(List.of(
-            Type.BYTE, Type.SHORT, Type.INT, Type.LONG, Type.FLOAT, Type.DOUBLE, JAVA_NUMBER, Type.STRING));
-    private static final Type BOOL_CONVERSION_INPUT = Type.union(List.of(Type.BOOL, Type.STRING));
-    private static final Type CHAR_CONVERSION_INPUT = Type.union(List.of(
-            Type.CHAR, Type.BYTE, Type.SHORT, Type.INT, Type.LONG, Type.STRING));
-
-    static final Type.Function BYTE_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", INTEGRAL_CONVERSION_INPUT, false, false, true, false)), Type.BYTE, PURE_DET);
-    static final Type.Function SHORT_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", INTEGRAL_CONVERSION_INPUT, false, false, true, false)), Type.SHORT, PURE_DET);
-    static final Type.Function INT_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", Type.ANY, false, false, true, false)), Type.INT, PURE_DET);
-    static final Type.Function LONG_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", INTEGRAL_CONVERSION_INPUT, false, false, true, false)), Type.LONG, PURE_DET);
-    static final Type.Function FLOAT_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", FLOAT_CONVERSION_INPUT, false, false, true, false)), Type.FLOAT, PURE_DET);
-    static final Type.Function DOUBLE_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", Type.ANY, false, false, true, false)), Type.DOUBLE, PURE_DET);
-    static final Type.Function BOOL_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", BOOL_CONVERSION_INPUT, false, false, true, false)), Type.BOOL, PURE_DET);
-    static final Type.Function CHAR_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", CHAR_CONVERSION_INPUT, false, false, true, false)), Type.CHAR, PURE_DET);
-    static final Type.Function STRING_CONVERSION = new Type.Function(
-            List.of(new Type.Parameter("value", Type.NULLABLE_ANY, false, false, true, false)), Type.STRING, PURE_DET);
-
-    static final Type.Function ASSERT_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("c", Type.BOOL, false, false, true, false),
-                    new Type.Parameter("message", Type.NULLABLE_ANY, true, false, true, false)),
-            Type.BOOL, PURE_DET);
-    static final Type.Function SAME_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("a", ANY_OR_FROZEN, false, false, true, false),
-                    new Type.Parameter("b", ANY_OR_FROZEN, false, false, true, false)),
-            Type.BOOL, SAME_EFFECTS);
-    static final Type.Function CLASSOF_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("v", ANY_OR_FROZEN, false, false, true, false)),
-            Type.NULLABLE_ANY, PURE_DET_NOTHROW);
     private static final Type.TypeVar MOVE_TV = new Type.TypeVar(new Type.SymbolId("move"), "T", 0);
     private static final Type.TypeVar FREEZE_TV = new Type.TypeVar(new Type.SymbolId("freeze"), "T", 0);
     static final Type.Function MOVE_FUNCTION = new Type.Function(
@@ -223,26 +179,18 @@ final class OperatorTypes {
     Type implicitType(String name) {
         return switch (name) {
             case "java", "javax" -> new Type.JavaPackage(name);
-            case "byte" -> BYTE_CONVERSION;
-            case "short" -> SHORT_CONVERSION;
-            case "int" -> INT_CONVERSION;
-            case "long" -> LONG_CONVERSION;
-            case "float" -> FLOAT_CONVERSION;
-            case "double" -> DOUBLE_CONVERSION;
-            case "bool" -> BOOL_CONVERSION;
-            case "char" -> CHAR_CONVERSION;
-            case "string" -> STRING_CONVERSION;
             case "print", "println", "affiche", "afficherc" -> Type.PRINT;
-            case "assert", "suppose" -> ASSERT_FUNCTION;
-            case "same" -> SAME_FUNCTION;
-            case "classof" -> CLASSOF_FUNCTION;
             case "move" -> MOVE_FUNCTION;
             case "freeze" -> FREEZE_FUNCTION;
             case "discard" -> DISCARD_FUNCTION;
             case "import", "importe" -> IMPORT_FUNCTION;
             case "STDOUT" -> STDOUT_TYPE;
             case "args" -> ARGS_TYPE;
-            default -> Type.ANY;
+            // The built-ins of the prelude (BIP019-P4), else a host binding.
+            default -> {
+                Type builtin = BuiltinAxioms.get().builtins().get(name);
+                yield builtin != null ? builtin : Type.ANY;
+            }
         };
     }
 
@@ -317,18 +265,7 @@ final class OperatorTypes {
 
     /** Whether a function type is one of the built-in functions'. */
     static boolean isBuiltinFunction(Type.Function fn) {
-        return fn == BYTE_CONVERSION
-                || fn == SHORT_CONVERSION
-                || fn == INT_CONVERSION
-                || fn == LONG_CONVERSION
-                || fn == FLOAT_CONVERSION
-                || fn == DOUBLE_CONVERSION
-                || fn == BOOL_CONVERSION
-                || fn == CHAR_CONVERSION
-                || fn == STRING_CONVERSION
-                || fn == ASSERT_FUNCTION
-                || fn == SAME_FUNCTION
-                || fn == CLASSOF_FUNCTION
+        return BuiltinAxioms.get().isBuiltin(fn)
                 || fn == MOVE_FUNCTION
                 || fn == FREEZE_FUNCTION
                 || fn == DISCARD_FUNCTION

@@ -109,6 +109,7 @@ class AxiomsTestCase {
         java.lang.reflect.Method arraySize = java.util.ArrayList.class.getMethod("size");
         java.lang.reflect.Method sqrt = Math.class.getMethod("sqrt", double.class);
         String pure = "def f = fn (s: string): int -> (s.length())";
+        String builtin = "def n: int = int(4.5)";
 
         // With the axioms of the class path.
         assertEquals(JavaNullability.Nullness.PARAMETRIC, JavaNullability.returnNullness(listGet));
@@ -117,6 +118,7 @@ class AxiomsTestCase {
         assertTrue(BytecodeEffectAnalyzer.analyze(sqrt).effects().isPure());
         assertTrue(BuiltinAxioms.get().annotationMeaning("org.jspecify.annotations.Nullable") != null);
         compile(pure);
+        compile(builtin);
 
         BuiltinAxioms.runWith(BuiltinAxioms.EMPTY, () -> {
             assertEquals(JavaNullability.Nullness.UNSPECIFIED, JavaNullability.returnNullness(listGet));
@@ -127,6 +129,10 @@ class AxiomsTestCase {
             javax.script.ScriptException e = org.junit.jupiter.api.Assertions.assertThrows(javax.script.ScriptException.class,
                     () -> compile(pure));
             assertTrue(e.getMessage().contains("violates pure guarantee"), e.getMessage());
+            // The built-ins are unknown too : int is an untyped name.
+            javax.script.ScriptException b = org.junit.jupiter.api.Assertions.assertThrows(javax.script.ScriptException.class,
+                    () -> compile(builtin));
+            assertTrue(b.getMessage().contains("int is not callable"), b.getMessage());
         });
     }
 

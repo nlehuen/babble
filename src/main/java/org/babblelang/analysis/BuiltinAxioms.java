@@ -42,8 +42,13 @@ public final class BuiltinAxioms {
     /** Axioms that replace the class path's, while a test runs them (see {@link #runWith}). */
     private static volatile BuiltinAxioms override;
 
-    /** No axioms at all : the analysis then knows nothing about any Java class. */
-    static final BuiltinAxioms EMPTY = new BuiltinAxioms(List.of());
+    /** No axioms at all : the analysis then knows nothing about any Java class, nor about the built-ins. */
+    static final BuiltinAxioms EMPTY = new BuiltinAxioms(List.of(), false);
+
+    /** The prelude : the built-ins' axiom declarations (BIP019-P4). */
+    private static final String BUILTINS = PACKAGE + "/builtins.ba";
+    /** Set while the prelude is analysed, which must not see the built-ins it declares. */
+    private static final ThreadLocal<Boolean> LOADING_BUILTINS = ThreadLocal.withInitial(() -> false);
 
     /** A stub : its target, and its methods by name. */
     private record Stub(Class<?> target, boolean inherited, Class<?> type, Profile allMethods, Profile allConstructors,
@@ -76,8 +81,12 @@ public final class BuiltinAxioms {
     /** The meaning of annotations, by their class's name. */
     private final Map<String, org.babblelang.axioms.AnnotationMeaning> meanings = new HashMap<>();
 
-    private BuiltinAxioms(List<Stub> stubs) {
+    private final boolean withBuiltins;
+    private volatile Map<String, Type> builtins;
+
+    private BuiltinAxioms(List<Stub> stubs, boolean withBuiltins) {
         this.stubs = stubs;
+        this.withBuiltins = withBuiltins;
         for (Stub stub : stubs) {
             Axioms axioms = stub.type().getAnnotation(Axioms.class);
             org.babblelang.axioms.AnnotationMeaning meaning = stub.type().getAnnotation(org.babblelang.axioms.AnnotationMeaning.class);
@@ -98,7 +107,7 @@ public final class BuiltinAxioms {
             synchronized (BuiltinAxioms.class) {
                 axioms = loaded;
                 if (axioms == null) {
-                    axioms = new BuiltinAxioms(load(BuiltinAxioms.class.getClassLoader()));
+                    axioms = new BuiltinAxioms(load(BuiltinAxioms.class.getClassLoader()), true);
                     loaded = axioms;
                 }
             }
@@ -119,6 +128,62 @@ public final class BuiltinAxioms {
             override = null;
             BytecodeEffectAnalyzer.clearCache();
         }
+    }
+
+    /**
+     * The built-ins, by name : the types the prelude ({@code builtins.ba}) gives them, analysed
+     * once ; none while the prelude itself is analysed, nor without axioms (BIP019-P4).
+     */
+    Map<String, Type> builtins() {
+        if (!withBuiltins || LOADING_BUILTINS.get()) {
+            return Map.of();
+        }
+        Map<String, Type> result = builtins;
+        if (result == null) {
+            synchronized (this) {
+                result = builtins;
+                if (result == null) {
+                    LOADING_BUILTINS.set(true);
+                    try {
+                        result = loadBuiltins();
+                    } finally {
+                        LOADING_BUILTINS.set(false);
+                    }
+                    builtins = result;
+                }
+            }
+        }
+        return result;
+    }
+
+    /** Whether {@code type} is one of the built-ins' types (by identity : another function may have the same signature). */
+    boolean isBuiltin(Type type) {
+        for (Type builtin : builtins().values()) {
+            if (builtin == type) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Map<String, Type> loadBuiltins() {
+        String text;
+        try (java.io.InputStream in = BuiltinAxioms.class.getClassLoader().getResourceAsStream(BUILTINS)) {
+            if (in == null) {
+                throw new IllegalStateException("Missing axioms : " + BUILTINS);
+            }
+            text = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot read " + BUILTINS, e);
+        }
+        org.babblelang.parser.BabbleParser parser = new org.babblelang.parser.BabbleParser(
+                new org.antlr.v4.runtime.CommonTokenStream(new org.babblelang.parser.BabbleLexer(
+                        org.antlr.v4.runtime.CharStreams.fromString(text, "builtins.ba"))));
+        ScopeAnalysis analysis = BlockScopes.analyze(parser.file());
+        if (parser.getNumberOfSyntaxErrors() > 0 || !analysis.typeDiagnostics().isEmpty()) {
+            throw new IllegalStateException("Invalid axioms in " + BUILTINS + " : " + analysis.typeDiagnostics());
+        }
+        return analysis.axiomDefTypes();
     }
 
     /** The stub types found, for tests and documentation. */

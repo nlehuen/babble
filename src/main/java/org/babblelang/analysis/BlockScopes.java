@@ -66,10 +66,10 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final List<PendingAssignment> assignments = new ArrayList<>();
     final Map<ParserRuleContext, ScopeNode> definitionScopes = new HashMap<>();
     /**
-     * The {@code axiom def}s of each scope (BIP019-D8) : names given a type without a value, which
+     * The {@code axiom} declarations of each scope (BIP019-D8) : names given a type without a value, which
      * comes from outside the program ; they declare nothing at runtime.
      */
-    final Map<ScopeNode, Map<String, BabbleParser.AxiomDefExpressionContext>> axiomDefs = new HashMap<>();
+    final Map<ScopeNode, Map<String, BabbleParser.AxiomExpressionContext>> axiomDefs = new HashMap<>();
     final Map<ParserRuleContext, TypeNode> typeNodes = new HashMap<>();
     final Map<ParserRuleContext, ScopeNode> scopeNodes = new HashMap<>();
     final List<Occurrence> occurrences = new ArrayList<>();
@@ -485,7 +485,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     @Override
-    public Void visitAxiomDefExpression(BabbleParser.AxiomDefExpressionContext ctx) {
+    public Void visitAxiomExpression(BabbleParser.AxiomExpressionContext ctx) {
         String name = ctx.name != null ? ctx.name.getText() : ctx.scalarName.getText();
         axiomDefs.computeIfAbsent(current(), s -> new HashMap<>()).put(name, ctx);
         return null;

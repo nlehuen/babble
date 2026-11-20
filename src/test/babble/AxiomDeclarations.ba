@@ -1,12 +1,12 @@
-;; axiom def (BIP019-D8) : a name given a type, whose value comes from outside the program (the
+;; axiom name: type (BIP019-D8) : a name given a type, whose value comes from outside the program (the
 ;; runtime's built-ins here, a host's bindings elsewhere). It declares nothing at runtime.
 
 ;; Its name may be a core scalar keyword (BIP019-D14).
-axiom def int: fn (value: any): int
+axiom int: fn (value: any): int
 assert(int(4.5) == 4)
 
 def bump = fn (x: int): int -> (
-    axiom def same: fn (a: any?, b: any?): bool
+    axiom same: fn (a: any?, b: any?): bool
     if same(x, x) then (x + 1) else (x)
 )
 assert(bump(1) == 2)

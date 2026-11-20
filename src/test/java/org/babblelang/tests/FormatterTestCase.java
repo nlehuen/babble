@@ -436,8 +436,10 @@ public class FormatterTestCase {
     @Test
     public void testEveryScript() throws Exception {
         List<Path> scripts;
-        try (Stream<Path> tests = Files.walk(Path.of("src/test/babble")); Stream<Path> examples = Files.walk(Path.of("examples"))) {
-            scripts = Stream.concat(tests, examples).filter(path -> path.toString().endsWith(".ba")).sorted().toList();
+        try (Stream<Path> tests = Files.walk(Path.of("src/test/babble")); Stream<Path> examples = Files.walk(Path.of("examples"));
+             Stream<Path> axioms = Files.walk(Path.of("src/main/java/org/babblelang/axioms"))) {
+            scripts = Stream.concat(Stream.concat(tests, examples), axioms)
+                    .filter(path -> path.toString().endsWith(".ba")).sorted().toList();
         }
         Assertions.assertFalse(scripts.isEmpty());
         for (Path script : scripts) {

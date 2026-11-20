@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 019 |
 | **Date** | 2026-11-20 |
-| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D16` decided; `BIP019-P1`–`P3` implemented, `P4`–`P6` not started) |
+| **Status** | Decided (`BIP019-D1`–`D6`, `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`, and `BIP019-D14`–`D17` decided; `BIP019-P1`–`P3` implemented, `P4`–`P6` not started) |
 | **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
 | **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as `.java` and `.ba` files ; one bytecode analyzer derives axioms from seeds, either while compiling or offline into the same directory |
 
@@ -109,16 +109,16 @@ Every overload is listed with its exact signature (`BIP019-D9`) : today's rules 
 
 ### 2.3 Babble axioms : the prelude
 
-`builtins.ba` declares Babble's built-ins in Babble. Those with an ordinary signature are **`axiom def`s** (`BIP019-D8`) : a declaration with a type and no value, whose effects follow pure-by-default, and which the analysis trusts instead of checking :
+`builtins.ba` declares Babble's built-ins in Babble. Those with an ordinary signature are **`axiom` declarations** (`BIP019-D8`) : a declaration with a type and no value, whose effects follow pure-by-default, and which the analysis trusts instead of checking :
 
 ```babble
-axiom def int: fn (value: any): int
-axiom def same: fn (a: any?, b: any?): bool
+axiom int: fn (value: any): int
+axiom same: fn (a: any?, b: any?): bool
 ```
 
-`axiom def` is a language form, valid anywhere : it states that a name exists with this type and these effects, and that its value comes from outside the program — the runtime's implicits for the built-ins, a host's bindings elsewhere. It applies to its scope and the scopes it encloses, declares nothing at runtime (its value as an expression is `null`), and has no `export` ; reading a name that nothing provides fails as `No such name`. Being a language change, it goes through every stage that sees the syntax : the grammar, the analysis passes, both backends and the formatter.
+`axiom name: type` is a language form, valid anywhere : it states that a name exists with this type and these effects, and that its value comes from outside the program — the runtime's implicits for the built-ins, a host's bindings elsewhere. It applies to its scope and the scopes it encloses, declares nothing at runtime (its value as an expression is `null`), and has no `export` ; reading a name that nothing provides fails as `No such name`. Being a language change, it goes through every stage that sees the syntax : the grammar, the analysis passes, both backends and the formatter.
 
-The special forms, whose typing is a rule of the language — `print`, `move`, `freeze`, `discard`, `import`, `STDOUT`, `args` — keep their typing rules in code, and get their effects from effect declarations in the same file (`io on print`). The prelude is analysed once, like a module ; `OperatorTypes` reads its `TypedModuleSummary` instead of its constants.
+The special forms — `print` (any number of arguments, and `to:`), `move`, `freeze` and `discard` (ownership rules), `import` (modules), `STDOUT` and `args` — keep their typing in the type checker, as rules of the language rather than assumptions about functions (`BIP019-D17`). The prelude is analysed once, like a module, through `BuiltinAxioms`, and `OperatorTypes` gives a name it doesn't otherwise know the prelude's type ; without axioms (`BuiltinAxioms.EMPTY`) the built-ins are unknown.
 
 ### 2.4 The loader and the tiers
 
@@ -183,7 +183,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 
 ---
 
-## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`; `BIP019-D14`–`D16`)
+## 4. Settled Decisions (`BIP019-D1`–`D6`; `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13`; `BIP019-D14`–`D17`)
 
 * **`BIP019-D1` — One directory :** every assumption about a Java or Babble function or method lives in `src/main/java/org/babblelang/axioms/`, and nowhere else.
 * **`BIP019-D2` — Layout :** Java axioms are stubs that mirror their target's package and name (`java.util.List` → `org.babblelang.axioms.java.util.ListAxioms`) ; Babble-level axioms are `.ba` files.
@@ -192,14 +192,15 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 * **`BIP019-D5` — Precedence :** user `axiom` declarations, engine overrides and annotations on host classes keep precedence over the built-in axioms ; the bytecode analysis comes after them.
 * **`BIP019-D6` — One analyzer :** the same bytecode analyzer derives axioms while compiling (opt-in) and offline (a generator caching them as `@Derived` stubs).
 * **`BIP019-Q1` → `BIP019-D7` — Discovery :** the loader lists the axioms package on the class path, in a directory or a jar ; no index and no build step.
-* **`BIP019-Q2` → `BIP019-D8` — `axiom def` :** a new language form, valid anywhere, declares a name with a type and no value, trusted by the analysis and provided from outside (the runtime's implicits for `builtins.ba`, a host's bindings elsewhere) ; it goes through the grammar, the analysis passes, both backends and the formatter.
+* **`BIP019-Q2` → `BIP019-D8` — `axiom name: type` :** a new language form, valid anywhere, declares a name with a type and no value, trusted by the analysis and provided from outside (the runtime's implicits for `builtins.ba`, a host's bindings elsewhere) ; it goes through the grammar, the analysis passes, both backends and the formatter.
 * **`BIP019-Q3` → `BIP019-D9` — Overloads :** every overload is listed with its exact signature ; no annotation matches by name.
 * **`BIP019-Q4` → `BIP019-D10` — Annotation names :** what third-party nullness annotations mean moves to the axioms too, one stub per annotation, matched by name.
 * **`BIP019-Q5` → `BIP019-D11` — First fix :** after the migration, the protocol methods (`equals`, `hashCode`, `compareTo`, `Comparator.compare`) are fixed first : Babble implementations must be pure.
 * **`BIP019-Q6` → `BIP019-D12` — Stronger derivations :** reported only ; hand-written axioms never change without a person deciding.
 * **`BIP019-Q7` → `BIP019-D13` — Re-derivation :** every CI build re-derives the axioms and fails on any difference.
-* **`BIP019-D14` — Keyword names :** `axiom def` accepts a core scalar keyword as its name, so that the conversions are declared like any built-in : `export axiom def int: fn (value: any): int`.
+* **`BIP019-D14` — Keyword names :** `axiom name: type` accepts a core scalar keyword as its name, so that the conversions are declared like any built-in : `axiom int: fn (value: any): int`.
 * **`BIP019-D15` — Optional parameters in function types :** a function type may mark a named parameter optional, `fn (c: bool, message?: any?): bool`, which a function whose parameter has a default satisfies ; `assert` is declared with it, and so may any function type.
+* **`BIP019-D17` — Special forms :** `print`, `move`, `freeze`, `discard`, `import`, `STDOUT` and `args` are rules of the language, whose typing stays in the type checker ; the prelude declares the built-ins with an ordinary signature : the conversions, `assert` / `suppose`, `same` and `classof`.
 * **`BIP019-D16` — Nearest surface form :** the built-ins are written with ordinary effect words (pure-by-default, `nothrow`, `commutative`, `io`) even where the former internal profiles differed in details the language cannot state (the conversions not borrowing `this`, `import`'s fully unconstrained effects) ; any difference a test, a golden or a diagnostic can see is reported, not hidden.
 
 ## 6. Phases (`BIP019-P1`–`P6`)
@@ -209,7 +210,7 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 | **`BIP019-P1` — Mechanism and effects** | `Axioms`, the new annotations, the `pom.xml` resource entry, the package's `package-info.java` and `README.md` ; stubs for `Object`, `Comparable`, `String`, `Map.Entry`, `Collection`, `Map`, `Iterable`, `Iterator` and the concrete collections' constructors ; tier 6 of both resolvers, the shallow and view rules and `evalFor` read `Axioms` ; `standardProtocolDefault` and the `COLLECTION_*` and `STRING_*` sets are deleted. |
 | **`BIP019-P2` — Optimizer and bytecode seeds** | `SEEDED_INTRINSICS` and `HirPurity`'s four lists become stubs for `Math`, `StrictMath`, `Double`, `Float`, `Integer`, `Long` and `String` (`@Foldable` marks exactly today's narrower folding subset) ; `ConstFoldPass` asks `Axioms`. |
 | **`BIP019-P3` — Nullness and immutability** | `JavaNullability`'s overlay becomes `@NullMarked` stubs with `@Nullable` where it said nullable ; `Map.Entry`'s deep immutability becomes `@DeeplyImmutable`. ; the meaning of third-party nullness annotations becomes one stub per annotation (`@MeansNonNull`…), and `JavaNullability` loses its name lists. |
-| **`BIP019-P4` — Built-ins** | optional parameters in function types (`BIP019-D15`) ; `axiom def`, its name a core scalar keyword too (`BIP019-D14`) (grammar, `BlockScopes`, `TypeChecker`, `Interpreter`, `HirBuilder`/`HirEmitter`, formatter, with `.ba`, `DifferentialTestCase`, `TypeCheckerTestCase` and `FormatterTestCase` tests) ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
+| **`BIP019-P4` — Built-ins** | optional parameters in function types (`BIP019-D15`) ; `axiom name: type`, its name a core scalar keyword too (`BIP019-D14`) (grammar, `BlockScopes`, `TypeChecker`, `Interpreter`, `HirBuilder`/`HirEmitter`, formatter, with `.ba`, `DifferentialTestCase`, `TypeCheckerTestCase` and `FormatterTestCase` tests) ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
 | **`BIP019-P5` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 | **`BIP019-P6` — The analyzer and the generator** | §3 : the value lattice, calls through axioms, the fixed point ; `AxiomGenerator` and the first derived stubs, generated on JDK 21 ; the compile-time tier and the generator share the analyzer. ; CI re-derives the axioms on every build and fails on any difference (`BIP019-D13`). |
 

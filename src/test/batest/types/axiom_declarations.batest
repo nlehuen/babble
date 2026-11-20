@@ -1,15 +1,15 @@
-;; BIP019-D8 : axiom def
+;; BIP019-D8 : axiom declarations, `axiom name: type`
 
 {{{{{
 ;; The declared type is checked like any other
-axiom def greet: fn (name: string): string
+axiom greet: fn (name: string): string
 def bad: int = greet("x")
 }}}}}
 Type error : expected int, got string
 
 {{{{{
 ;; Its value comes from outside : nothing provides it here
-axiom def greet: fn (name: string): string
+axiom greet: fn (name: string): string
 println(greet("x"))
 }}}}}
 No such name : greet
@@ -17,7 +17,7 @@ No such name : greet
 {{{{{
 ;; It applies to its scope and the scopes it encloses : outside, the name is an untyped host binding
 def f = fn (): int -> (
-    axiom def answer: fn (): int
+    axiom answer: fn (): int
     1
 )
 def g: fn (): int = answer

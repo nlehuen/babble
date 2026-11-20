@@ -1,0 +1,24 @@
+;; The built-ins of Babble (BIP019) : what the type checker assumes about the functions the
+;; runtime provides to every program. Each is an axiom declaration : a type, its value from outside.
+;;
+;; print, move, freeze, discard, import, STDOUT and args are not here : their typing is a rule of
+;; the language (a variable number of arguments, ownership, modules), kept in the type checker.
+
+;; Number, character, boolean and string conversions
+axiom byte: fn (value: byte | short | int | long | float | double | java.lang.Number | char | string): byte
+axiom short: fn (value: byte | short | int | long | float | double | java.lang.Number | char | string): short
+axiom int: fn (value: any): int
+axiom long: fn (value: byte | short | int | long | float | double | java.lang.Number | char | string): long
+axiom float: fn (value: byte | short | int | long | float | double | java.lang.Number | string): float
+axiom double: fn (value: any): double
+axiom bool: fn (value: bool | string): bool
+axiom char: fn (value: char | byte | short | int | long | string): char
+axiom string: fn (value: any?): string
+
+;; Assertions, and their French name
+axiom assert: fn (c: bool, message?: any?): bool
+axiom suppose: fn (c: bool, message?: any?): bool
+
+;; Identity and classes, on any value, frozen ones included
+axiom same: fn nothrow commutative (a: any? | frozen any, b: any? | frozen any): bool
+axiom classof: fn nothrow (v: any? | frozen any): any?

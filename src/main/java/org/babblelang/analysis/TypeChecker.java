@@ -457,7 +457,21 @@ final class TypeChecker {
             pass.analysis.typeDiagnostic(diagnostic.message(), diagnostic.line(), diagnostic.column());
         }
         LoweringAnalyzer.publish(pass, file, this);
+        publishAxiomDefTypes();
         this.builtSummary = TypedModuleSummary.build(pass, this, new StaticRefs(pass, this));
+    }
+
+    /** The types of the file's top-level {@code axiom} declarations (BIP019-D8). */
+    private void publishAxiomDefTypes() {
+        Map<String, Type> types = new java.util.LinkedHashMap<>();
+        for (Map.Entry<ScopeNode, Map<String, BabbleParser.AxiomExpressionContext>> e : pass.axiomDefs.entrySet()) {
+            if (e.getKey().kind == ScopeNode.Kind.FILE) {
+                for (Map.Entry<String, BabbleParser.AxiomExpressionContext> def : e.getValue().entrySet()) {
+                    types.put(def.getKey(), annotator.annotation(def.getValue().type(), e.getKey()));
+                }
+            }
+        }
+        pass.analysis.setAxiomDefTypes(types);
     }
 
     /** The type of the file's last statement, for {@code :type} in the interactive mode (docs/design/bip004_repl.md §9). */
@@ -1590,7 +1604,7 @@ final class TypeChecker {
                 case BabbleParser.IfExpressionContext c -> type(c.ifExpr(), expected, role);
                 case BabbleParser.IfExprContext c -> visitIfExpr(c, expected, role);
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
-                case BabbleParser.AxiomDefExpressionContext c -> visitAxiomDefExpression(c);
+                case BabbleParser.AxiomExpressionContext c -> visitAxiomExpression(c);
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
                 case BabbleParser.ForExpressionContext c -> visitForExpression(c, expected, role);
                 case BabbleParser.ClassExpressionContext c -> visitClassExpression(c, expected, role);
@@ -2210,17 +2224,17 @@ final class TypeChecker {
             return axiom != null ? axiom : operators.implicitType(name);
         }
 
-        /** {@code axiom def x: T} : checks {@code T} ; the expression itself is null (BIP019-D8). */
-        private Type visitAxiomDefExpression(BabbleParser.AxiomDefExpressionContext ctx) {
+        /** {@code axiom x: T} : checks {@code T} ; the expression itself is null (BIP019-D8). */
+        private Type visitAxiomExpression(BabbleParser.AxiomExpressionContext ctx) {
             annotator.annotation(ctx.type(), scopeOf(ctx));
             return Type.NULL;
         }
 
-        /** The type an {@code axiom def} in {@code scope} or an enclosing one gives {@code name}, or null (BIP019-D8). */
+        /** The type an {@code axiom} declaration in {@code scope} or an enclosing one gives {@code name}, or null (BIP019-D8). */
         private Type axiomDefType(String name, ScopeNode scope) {
             for (ScopeNode s = scope; s != null; s = s.parent) {
-                Map<String, BabbleParser.AxiomDefExpressionContext> defs = pass.axiomDefs.get(s);
-                BabbleParser.AxiomDefExpressionContext def = defs != null ? defs.get(name) : null;
+                Map<String, BabbleParser.AxiomExpressionContext> defs = pass.axiomDefs.get(s);
+                BabbleParser.AxiomExpressionContext def = defs != null ? defs.get(name) : null;
                 if (def != null) {
                     return annotator.annotation(def.type(), s);
                 }

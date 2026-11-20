@@ -3435,7 +3435,7 @@ final class EffectChecker {
             if (stmt == null) {
                 return;
             }
-            if (stmt instanceof BabbleParser.AxiomDefExpressionContext) {
+            if (stmt instanceof BabbleParser.AxiomExpressionContext) {
                 return; // a declaration, with no runtime effect (BIP019-D8)
             }
             if (stmt instanceof BabbleParser.DefExpressionContext

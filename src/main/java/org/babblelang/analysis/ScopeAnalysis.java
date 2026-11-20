@@ -169,6 +169,8 @@ public final class ScopeAnalysis {
     private final List<Warning> warnings = new ArrayList<>();
     private final List<Warning> typeDiagnostics = new ArrayList<>();
     private String resultType;
+    /** The types of the file's top-level {@code axiom} declarations, by name (BIP019-D8). */
+    private Map<String, Type> axiomDefTypes = Map.of();
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
     private final ParseTreeProperty<String> isBuiltins = new ParseTreeProperty<>();
     private final java.util.Map<ParserRuleContext, Integer> numericWidenings = new java.util.IdentityHashMap<>();
@@ -444,6 +446,15 @@ public final class ScopeAnalysis {
 
     void setResultType(String type) {
         resultType = type;
+    }
+
+    void setAxiomDefTypes(Map<String, Type> types) {
+        axiomDefTypes = Map.copyOf(types);
+    }
+
+    /** The types of the file's top-level {@code axiom} declarations, by name : the prelude's built-ins, for one (BIP019-P4). */
+    Map<String, Type> axiomDefTypes() {
+        return axiomDefTypes;
     }
 
     /**
