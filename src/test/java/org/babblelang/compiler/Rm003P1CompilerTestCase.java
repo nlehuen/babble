@@ -105,7 +105,7 @@ public class Rm003P1CompilerTestCase {
         genClasses.put("gen/C2", List.of(babbleInstance, "gen/Left"));
         genClasses.put("gen/Unrelated", List.of(babbleInstance));
 
-        CodeGenerator.ScriptClassWriter writer = new CodeGenerator.ScriptClassWriter(
+        ScriptClassWriter writer = new ScriptClassWriter(
                 Rm003P1CompilerTestCase.class.getClassLoader(), script, genClasses, genIfaces);
 
         // Diamond interfaces & direct subtype
