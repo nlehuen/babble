@@ -13,6 +13,7 @@ import org.babblelang.runtime.ScriptRuntime;
 
 import javax.script.ScriptContext;
 import javax.script.ScriptException;
+import java.util.SortedSet;
 
 /**
  * An interactive session (docs/design/bip004_repl.md) : successive inputs, each a small script
@@ -96,12 +97,7 @@ public final class BabbleSession {
      * @param sourceName what errors call the input : a file's name, when it is one
      */
     public Object eval(String source, String sourceName) throws ScriptException {
-        BabbleParser.FileContext file;
-        try {
-            file = BabbleScriptEngine.parse(CharStreams.fromString(source));
-        } catch (ParseFailure e) {
-            throw e.toScriptException(sourceName);
-        }
+        BabbleParser.FileContext file = parse(source, sourceName);
         ScopeAnalysis scopes = engine.analyze(file, sourceName, context, analysis);
         BabbleScript script = engine.script(file, scopes, sourceName);
         if (analysis.commit(scopes)) {
@@ -112,5 +108,42 @@ public final class BabbleSession {
                     compiled.interfaceJvmNames(), compiled.classJvmNames());
         }
         return script.eval(new ScriptRuntime(namespace, context.getWriter(), modules));
+    }
+
+    /**
+     * The static type of an input's value, as type diagnostics show it ({@code list of int},
+     * {@code fn (n : int) : int}), or null when it has none : the input is analysed as
+     * {@link #eval} would, but it does not run, and the session stays as it was
+     * (docs/design/bip004_repl.md §9). Its syntax and type errors are reported as {@code eval}'s.
+     */
+    public String typeOf(String source) throws ScriptException {
+        String sourceName = BabbleScriptEngine.sourceName(context);
+        BabbleParser.FileContext file = parse(source, sourceName);
+        return engine.analyze(file, sourceName, context, analysis).resultType();
+    }
+
+    /** Every name an input could use now : what earlier inputs defined, the bindings, and the implicits. */
+    public SortedSet<String> names() {
+        return namespace.names();
+    }
+
+    /**
+     * The value of a name, for completion : it runs nothing. Null when the name is unknown,
+     * or its definition hasn't run.
+     */
+    public Object peek(String name) {
+        try {
+            return namespace.isDeclared(name) ? namespace.lookup(name) : null;
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private static BabbleParser.FileContext parse(String source, String sourceName) throws ScriptException {
+        try {
+            return BabbleScriptEngine.parse(CharStreams.fromString(source));
+        } catch (ParseFailure e) {
+            throw e.toScriptException(sourceName);
+        }
     }
 }

@@ -168,6 +168,7 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<InterfaceCallTarget> interfaceCallTargets = new ParseTreeProperty<>();
     private final List<Warning> warnings = new ArrayList<>();
     private final List<Warning> typeDiagnostics = new ArrayList<>();
+    private String resultType;
     private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
     private final ParseTreeProperty<String> isBuiltins = new ParseTreeProperty<>();
     private final java.util.Map<ParserRuleContext, Integer> numericWidenings = new java.util.IdentityHashMap<>();
@@ -439,6 +440,19 @@ public final class ScopeAnalysis {
      */
     public List<Warning> typeDiagnostics() {
         return typeDiagnostics;
+    }
+
+    void setResultType(String type) {
+        resultType = type;
+    }
+
+    /**
+     * The static type of the file's last statement, as type diagnostics show it, or null
+     * for an empty file : what {@code :type} shows in the interactive mode
+     * (docs/design/bip004_repl.md §9).
+     */
+    public String resultType() {
+        return resultType;
     }
 
     /**

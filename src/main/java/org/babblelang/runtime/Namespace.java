@@ -3,6 +3,8 @@ package org.babblelang.runtime;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 public class Namespace implements Scope<Object> {
     private final Namespace parent;
@@ -107,6 +109,15 @@ public class Namespace implements Scope<Object> {
             }
         }
         throw new BabbleException("No such name : " + key);
+    }
+
+    /** Every name visible here, this scope's and its parents', for completion in the interactive mode. */
+    public SortedSet<String> names() {
+        SortedSet<String> names = new TreeSet<>();
+        for (Namespace current = this; current != null; current = current.parent) {
+            names.addAll(current.locals.keySet());
+        }
+        return names;
     }
 
 }
