@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 019 |
 | **Date** | 2026-11-20 |
-| **Status** | Decided (`BIP019-D1`–`D6` and `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13` decided; `BIP019-P1`–`P6` not started) |
+| **Status** | Decided (`BIP019-D1`–`D6` and `BIP019-Q1`–`Q7` → `BIP019-D7`–`D13` decided; `BIP019-P1` in progress, `P2`–`P6` not started) |
 | **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
 | **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as `.java` and `.ba` files ; one bytecode analyzer derives axioms from seeds, either while compiling or offline into the same directory |
 
@@ -67,27 +67,35 @@ src/main/java/org/babblelang/axioms/
 
 ### 2.2 Java axioms : stubs
 
-A stub mirrors the signatures of its target and annotates them with the effect vocabulary host classes already use (`org.babblelang.effects` : `@Pure`, `@Mut`, `@Shared`, `@Unique`, `@Nothrow`, `@IO`, `@Volatile`, `@NotNull` and the algebraic properties), so the effect checker reads a stub exactly as it reads an annotated host class (`profileFromAnnotations`) :
+A stub mirrors the signatures of its target and annotates each with what the analysis assumes about it. The collection stubs below were generated once from JDK 21's classes, so that they reproduce the former name lists exactly, overload by overload ; they are maintained by hand from then on :
 
 ```java
 package org.babblelang.axioms.java.util;
 
-/** QUESTIONABLE : by name, on every implementation of Collection (BIP019 §2.6). */
-@Axioms(target = java.util.Collection.class, inherited = true)
-interface CollectionAxioms<E> {
-    @Hermetic @Nothrow int size();
-    @Mut @ShallowMut boolean add(@Shared E e);
-    @Mut @ShallowMut boolean addAll(java.util.Collection<? extends E> c);   // parameters are borrowed unless @Shared
-    @View java.util.Iterator<E> iterator();
+/** QUESTIONABLE : they hold for every implementation, not only Babble's core collections (§2.6). */
+@Axioms(value = java.util.Collection.class,
+        allConstructors = @Profile(value = {HERMETIC, DETERMINISTIC}, receiver = Receiver.SHARED, terminating = false))
+interface CollectionAxioms {
+    @ShallowMut @Profile(value = {HERMETIC, DETERMINISTIC}, mutThis = true, borrowThis = false, mutReceiver = true,
+            receiver = Receiver.SHARED)
+    boolean add(java.lang.Object p0);
+
+    @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true)
+    int size();
+
+    @View @Profile(value = {HERMETIC, DETERMINISTIC, NOTHROW}, borrowedParameters = true, nothrow = true)
+    java.util.Iterator iterator();
     …                                  // every overload, with its exact signature
 }
 ```
 
-New annotations, in `org.babblelang.effects`, only where a rule of today cannot be stated otherwise :
+The stubs' own annotations live in `org.babblelang.axioms`, next to the stubs, not in the public `org.babblelang.effects`. In `BIP019-P1`, `@Profile` states each profile **literally**, field for field as the effect checker used it, so that the migration changes nothing ; friendlier forms built on the `org.babblelang.effects` vocabulary can replace it later. `@Axioms(allMethods = @Profile(…))` states the profile of every method of a target the stub doesn't list (all of `String`'s), `@Axioms(allConstructors = @Profile(…))` that of its constructors. The annotations, as they stand or are planned :
 
 | Annotation | Meaning |
 |---|---|
-| `@Axioms(target, inherited)` | this type states axioms about `target` (and, if `inherited`, its subtypes) |
+| `@Axioms(value, inherited, allMethods, allConstructors)` | this type states axioms about `value` (and, if `inherited`, its subtypes) |
+| `@Profile` | the profile of a method or constructor, literally : effects, receiver, parameters, `nothrow`… |
+| `@FreshResult` | the result is a new object aliasing no argument (`List.of`) |
 | `@ShallowMut` | the mutator changes the receiver but not the objects it holds |
 | `@View` | the result aliases the receiver |
 | `@DeeplyImmutable` | on a stub type : instances are deeply immutable |
@@ -114,7 +122,7 @@ The special forms, whose typing is a rule of the language — `print`, `move`, `
 
 ### 2.4 The loader and the tiers
 
-`org.babblelang.analysis.Axioms` loads the directory once and is immutable afterwards. It answers `methodProfile`, `constructorProfile`, `returnNullness`, `parameterNullness`, `nullMarked`, `isDeeplyImmutable`, `isFoldable`, `isIdempotent` and `builtins` ; `Axioms.EMPTY` knows nothing, for tests. The resolvers of `EffectChecker` keep their order, with tier 6 replaced (`BIP019-D5`) :
+`org.babblelang.analysis.BuiltinAxioms` loads the directory once and is immutable afterwards. It answers `methodProfile`, `constructorProfile`, `returnNullness`, `parameterNullness`, `nullMarked`, `isDeeplyImmutable`, `isFoldable`, `isIdempotent` and `builtins` ; `BuiltinAxioms.EMPTY` knows nothing, for tests. The resolvers of `EffectChecker` keep their order, with tier 6 replaced (`BIP019-D5`) :
 
 1. file, module or session `axiom` / `io` declarations on a method ;
 2. engine overrides on a method (`assumeEffects`) ;
@@ -207,6 +215,6 @@ Today it is a conservative suggester : any field write clears `hermetic`, any op
 * After each phase : the full suite in its three runs (interpreter, compiled `-O1`, compiled `-O0`) with **unchanged** expectations — the migration preserves behavior — plus `-Pbatest` where effects or nullness are covered, and argon compiled with `babblec` rendering `scene.ppm` byte for byte.
 * `AxiomsTestCase` :
   1. every stub method matches a real executable (by name and erased parameters), every public overload the migrated by-name rules reached is listed, and every stub's package and name agree with its target — stale or mistyped axioms fail ;
-  2. **with `Axioms.EMPTY` the analysis knows nothing** : `String.length`, `List.add`, `Math.sqrt` and `Map.get` are unconstrained and of unspecified nullness, nothing is foldable, the built-ins are unknown — which proves that no assumption survives anywhere else ;
+  2. **with `BuiltinAxioms.EMPTY` the analysis knows nothing** : `String.length`, `List.add`, `Math.sqrt` and `Map.get` are unconstrained and of unspecified nullness, nothing is foldable, the built-ins are unknown — which proves that no assumption survives anywhere else ;
   3. the axioms' README lists every file.
 * §1's example behaves as today until its `QUESTIONABLE` axiom is fixed, as its own change.
