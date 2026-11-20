@@ -116,7 +116,7 @@ The *meaning* of third-party nullness annotations (`lombok.NonNull`, `jakarta.an
 
 Some former rules are known to be doubtful. The simulation (§2.2) shows where dropping one changes behavior ; where a doubtful rule is kept, it is a curated axiom tagged `QUESTIONABLE` and listed in the README, so that fixing it later is a reviewable edit of one axiom. The protocol methods come first, since they close §1's hole :
 
-* **`equals`, `hashCode`, `compareTo`, `Comparator.compare` pure on every class** (`java/lang/curated.ba`, `java/util/curated.ba`) — false for user classes (§1) ; the fix is to require Babble implementations of these protocol methods to be pure ;
+* **`equals`, `hashCode`, `compareTo`, `Comparator.compare` pure on every class** (`java/lang/curated.ba`, `java/util/curated.ba`) — false for user classes (§1) ; the fix is the axioms of §3.1 (`axiom pure java.lang.Object.hashCode`…) applying to descendants as contracts (§3.2), so that a Babble implementation must be pure ;
 * **collection methods on every implementation** (curated axioms for `Collection`, `Map`, `Iterator` and `Iterable`) — any `java.util.List` written by anyone is trusted ; the fix is to keep the shallow and hermetic axioms for Babble's core collections' classes only ;
 * **`Map.Entry` deeply immutable** (`java/util/curated.ba`) — the entries of `entrySet()` support `setValue`.
 
@@ -140,6 +140,14 @@ axiom java.util.Collection of E (
 
 The same contents as Java annotations would take a `@Profile` of seven fields, two nullness annotations and a marker per method.
 
+Where only effects need stating, a one-line form names the member directly :
+
+```babble
+axiom pure java.lang.Object.hashCode
+axiom pure java.lang.Object.equals
+axiom pure java.lang.Comparable.compareTo
+```
+
 ### 3.2 Syntax
 
 `axiom` followed by a Java class (and its type parameters), class words, and a block of members, each a name and a Babble function type :
@@ -148,15 +156,18 @@ The same contents as Java annotations would take a `@Profile` of seven fields, t
 axiomClass: AXIOM target=axiomTarget (OF typeParameters)? classWord=ID* NL* '(' sep? (axiomMember (sep axiomMember)* sep?)? ')' ;
 axiomTarget: ID ('.' memberName)* ;
 axiomMember: (memberName | '*') '*'? ':' type ;     // m, *, new, new *
+axiomShort: AXIOM effectWord+ target=axiomTarget ;   // the last name of the target is the member
 ```
 
-* **Telling it apart :** after `axiom`, a qualified name followed by `of`, a class word or `(` is a class ; a name followed by `:` is an `axiom` declaration (§2.3) ; an effect word is an effect declaration (`axiom pure on …`). The grammar stays predicate-free.
+* **Telling it apart :** after `axiom`, a name followed by `:` is an `axiom` declaration (§2.3) ; a name followed by `.` starts a class form (a target is always qualified : it starts with a root package, `java.`, `javax.`…) ; an effect word followed by another effect word or by a qualified name is the one-line form. Two tokens tell them apart, and the grammar stays predicate-free.
 * **Members :** a method by its name (any name, `getClass` included), a constructor as `new`. Overloads are separate members of the same name, told apart by their parameter types (§3.3). `*: fn …` states the profile of every method the block doesn't list, `new *: fn …` that of every constructor ; they come first in a block.
 * **The class's type parameters** are in scope in its members' types.
+* **The one-line form :** `axiom pure java.lang.Object.hashCode` states the effects of a member, every overload of it, and nothing else : its parameters' modes and its nullness stay inferred (or come from a class-form member about it). It is the short spelling of a class-form member whose function type has only these words, for the common case where an axiom is only about effects.
 * **Member words :** `view`, `shallow`, `fresh` and `foldable` (§3.3) are identifiers, not keywords : the effect checker accepts them as effect words only in the function type of an axiom member, so the language reserves no new word.
-* **Class words :** `exact` (the axioms don't hold for subtypes, which they otherwise do), `nullmarked` (unannotated type arguments in the signatures of the classes the block applies to are non-null) and `immutable` (instances are deeply immutable when their type arguments are). The former overlay null-marks `Object`'s own signatures without its subtypes', and the subtypes of `Iterable` without `Iterable`'s members applying to them : in the class form, `Object`'s members state their nullness one by one, and the `Iterable` case is a simulation difference to review.
+* **Descendants :** an axiom about a class or an interface applies by default to all its descendants, including their overrides of the member : `axiom pure java.lang.Object.hashCode` speaks of every `hashCode`. The most specific axiom wins — an axiom about `java.lang.String.hashCode` overrides `Object`'s for `String` and its subclasses —, and any axiom wins over what is inferred for a descendant's override. For a Babble class that overrides the member (directly, or through a Java interface it implements), the inherited axiom is a **contract** : the effect checker checks its implementation against it, as it checks an interface method's declared effects, and reports, in the style of the other effect diagnostics, `Function compareTo violates pure guarantee of axiom java.lang.Comparable.compareTo`. That is how §1's hole closes : `Evil.compareTo`, mutating its parameter, no longer satisfies `java.lang.Comparable.compareTo`'s axiom.
+* **Class words :** `exact` (the axioms hold for the class itself, not for its descendants), `nullmarked` (unannotated type arguments in the signatures of the classes the block applies to are non-null) and `immutable` (instances are deeply immutable when their type arguments are). The former overlay null-marks `Object`'s own signatures without its subtypes', and the subtypes of `Iterable` without `Iterable`'s members applying to them : in the class form, `Object`'s members state their nullness one by one, and the `Iterable` case is a simulation difference to review.
 * **Where :** the class form may be written anywhere — in the axioms directory and in programs, whose axioms take precedence over the built-in ones. It declares nothing at runtime : both backends evaluate it to `null`.
-* **`axiom … on` :** `axiom pure on X.m` becomes shorthand for a member covering every overload of `m`, and is deprecated in favor of the class form, with a warning.
+* **`axiom … on` :** BIP007's `axiom pure on X.m` is the former spelling of the one-line form, and is deprecated in favor of it, with a warning (`axiom pure X.m`).
 
 ### 3.3 Mapping to what the analysis assumes
 
@@ -182,7 +193,7 @@ axiomMember: (memberName | '*') '*'? ':' type ;     // m, *, new, new *
 
 * **One file per package :** the curated axioms about the classes of a Java package are in a single file, `curated.ba`, in that package's directory of the axioms (`java/util/curated.ba` holds `Collection`, `List`, `Map`… ; `java/lang/curated.ba` holds `Object`, `String`, `Math`…), one `axiom Class ( … )` block per class. `AxiomsTestCase` checks that a block in `java/util/curated.ba` is about a class of `java.util`.
 * **Sorted :** a `curated.ba` has one canonical form, so that it reads the same whoever wrote it and diffs only where an axiom changed :
-  * its blocks are sorted by the class's binary name (`java.util.AbstractMap$SimpleEntry` after `java.util.AbstractMap`) ;
+  * its blocks and one-line axioms are sorted by the class's binary name (`java.util.AbstractMap$SimpleEntry` after `java.util.AbstractMap`), the one-line axioms about a class before its block, by member name ;
   * in a block, the class words come in a fixed order (`exact`, `nullmarked`, `immutable`), and the members are sorted by name (`*` and `new *`, then `new`, first), then by their parameters' Java erasures, compared as type descriptors ;
   * within a function type, the effect words come in the order the formatter writes them ;
   * the file is formatter-clean, and comments are only allowed above a block or a member, which keeps them attached when sorting ;
@@ -263,14 +274,14 @@ Until the phase that migrates a former rule, the rule stays in the code, consult
 
 | Phase | Deliverables |
 |---|---|
-| **`BIP019-P1` — Mechanism and the class form** | the axioms directory and `README.md`, the `pom.xml` resource entry ; `BuiltinAxioms` loading each package's `curated.ba` on first use, with a cache (§3.4), and `BuiltinAxioms.EMPTY` ; the class form `axiom Class ( … )` with its member and class words (§3.2, §3.3 : grammar, analysis passes, both backends, formatter) ; the canonical order ; tier 6 of both resolvers, nullness, deep immutability and the optimizer ask `BuiltinAxioms` first. |
+| **`BIP019-P1` — Mechanism and the class form** | the axioms directory and `README.md`, the `pom.xml` resource entry ; `BuiltinAxioms` loading each package's `curated.ba` on first use, with a cache (§3.4), and `BuiltinAxioms.EMPTY` ; the class form `axiom Class ( … )` with its member and class words, and the one-line form `axiom pure X.m` (§3.2, §3.3 : grammar, analysis passes, both backends, formatter) ; axioms applying to descendants, the most specific winning, and checked as contracts on Babble overrides ; the canonical order ; tier 6 of both resolvers, nullness, deep immutability and the optimizer ask `BuiltinAxioms` first. |
 | **`BIP019-P2` — Reads of mutable state** | §4 : summaries record the receiver and parameters a function reads mutable state from ; a call is deterministic only on frozen, deeply immutable or exclusively owned arguments ; results of deterministic callees are tracked ; tests, examples (argon's `fromList`) and goldens updated. The analyzer infers in this model. |
 | **`BIP019-P3` — The analyzer in the compiler** | §5 : the value lattice, reads, calls through axioms, the fixed point, the budget and the in-memory cache ; tier 7 on by default, under the curated axioms ; `babble.axioms.report` ; dumping what is inferred for a class or a package (`-axioms`, `babble.dumpAxioms`), with `MainTestCase` and golden tests ; the simulation against the former rules (§2.2). |
 | **`BIP019-P4` — Effects** | curated axioms in `java/lang/curated.ba` and `java/util/curated.ba` (protocol methods, interface contracts, `QUESTIONABLE` where a doubtful rule is kept), the rest inferred ; the simulation of the effect rules reviewed ; `standardProtocolDefault`, the `COLLECTION_*` and `STRING_*` sets, the constructor rules, the shallow and view rules and `evalFor`'s case deleted. |
 | **`BIP019-P5` — Optimizer** | `SEEDED_INTRINSICS` becomes curated axioms for the natives (`StrictMath`…), the rest inferred ; `HirPurity`'s four lists become `foldable` and `idempotent` curated axioms ; `ConstFoldPass` asks `BuiltinAxioms`. |
 | **`BIP019-P6` — Nullness and immutability** | `JavaNullability`'s overlay becomes `nullmarked` classes and the nullness of members' types, inferred where the analyzer can tell (a result always `new` or constant), curated elsewhere ; `Map.Entry`'s deep immutability becomes `immutable` ; the meaning of third-party nullness annotations becomes one Java stub per annotation, and `JavaNullability` loses its name lists. |
 | **`BIP019-P7` — Built-ins** | optional parameters in function types ; `axiom name: type`, its name a core scalar keyword too ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
-| **`BIP019-P8` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; `axiom … on` deprecated in favor of the class form ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
+| **`BIP019-P8` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; `axiom … on` deprecated in favor of the one-line form ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 
 ## 7. Verification
 
