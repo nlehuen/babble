@@ -189,7 +189,7 @@ final class LoweringAnalyzer {
         if (receiver instanceof Type.Module module) {
             int index = module.module().exportIndex(name);
             if (module.module().summary() != null && module.module().exports().contains(name) && index >= 0) {
-                pass.analysis.setModuleExportTarget(selector, new ScopeAnalysis.ModuleExportTarget(index, name));
+                pass.analysis.setModuleExportTarget(selector, new ScopeAnalysis.ModuleExportTarget(index, name, module.module().name()));
             }
         } else if (receiver instanceof Type.JavaArray array && "length".equals(name)) {
             pass.analysis.setArrayLengthClass(selector, array.javaClass());

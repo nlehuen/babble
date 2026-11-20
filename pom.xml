@@ -63,8 +63,9 @@
                     </systemPropertyVariables>
                 </configuration>
                 <executions>
-                    <!-- The whole suite runs a second time with scripts compiled to bytecode,
-                         and every generated class checked by ASM's CheckClassAdapter. -->
+                    <!-- The whole suite runs a second time with scripts compiled to bytecode at -O1
+                         (the default), and every generated class checked by HirVerifier and ASM's
+                         CheckClassAdapter. -->
                     <execution>
                         <id>compiled-tests</id>
                         <goals>
@@ -74,6 +75,22 @@
                             <reportsDirectory>${project.build.directory}/surefire-reports-compiled</reportsDirectory>
                             <systemPropertyVariables>
                                 <babble.mode>compile</babble.mode>
+                                <babble.verify>true</babble.verify>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </execution>
+                    <!-- And a third time at -O0 (BIP014-D9) so interpret, compile -O0, and compile -O1
+                         stay continuously differential-tested across the entire suite. -->
+                    <execution>
+                        <id>compiled-tests-O0</id>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <reportsDirectory>${project.build.directory}/surefire-reports-compiled-O0</reportsDirectory>
+                            <systemPropertyVariables>
+                                <babble.mode>compile</babble.mode>
+                                <babble.opt>0</babble.opt>
                                 <babble.verify>true</babble.verify>
                             </systemPropertyVariables>
                         </configuration>
