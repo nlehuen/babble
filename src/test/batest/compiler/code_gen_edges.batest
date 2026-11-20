@@ -741,7 +741,7 @@ java.lang.NumberFormatException : For input string: "bad_num"
 ;; emitJavaConstructorCall exception catch handler
 java.io.FileReader("nonexistent_batest_file_xyz.txt")
 }}}}}
-java.io.FileNotFoundException : nonexistent_batest_file_xyz.txt (No such file or directory)
+java.io.FileNotFoundException : nonexistent_batest_file_xyz.txt (<OS error>)
 
 {{{{{
 ;; Out-of-range integer literal rejected cleanly

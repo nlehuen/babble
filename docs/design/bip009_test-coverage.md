@@ -281,6 +281,9 @@ Three explicit decisions govern normalization:
      * `^Lexical error at line \d+:\d+ : ` → `Lexical error : `
      * `^Assertion failed at line \d+ : ` → `Assertion failed : `
      * ` because of the (assignment|call) at line \d+\)` → ` because of the $1)`
+  4. Normalize what depends on the platform rather than on Babble, so the suite passes in any locale and on any JDK 21+:
+     * `^(java\.io\.FileNotFoundException : .*) \([^()]*\)$` → `$1 (<OS error>)` (the operating system's reason, in its own language)
+     * `object of type \S+ is not an instance of \S+$` → `object is not an instance of declaring class` (JDK 22+ wording of a reflective call on a receiver of the wrong class)
 * **`BIP009-D6` — Primary halting diagnostic per case.**
   When `TypeChecker` records multiple diagnostics on a snippet, `BabbleScriptEngine` already throws `TypeCheckException` carrying the first diagnostic in source order (`scopes.typeDiagnostics().get(0)`). The `.batest` harness uses that primary thrown diagnostic rather than concatenating every secondary follow-on diagnostic from `errorWriter`. Because `.batest` cases are small and synthetic (one error condition per `{{{{{` block), asserting the primary error avoids cascading-diagnostic churn if error recovery in `TypeChecker` evolves.
 * **`BIP009-D7` — Unwrap `InvocationTargetException` at the Java interop boundary.**

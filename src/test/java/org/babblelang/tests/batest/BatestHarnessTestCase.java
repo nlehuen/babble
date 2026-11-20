@@ -97,6 +97,18 @@ public class BatestHarnessTestCase {
         Assertions.assertEquals(
                 "No such export : cube in m.ba",
                 BatestRunner.normalizeMessage("org.babblelang.runtime.BabbleException: No such export : cube in m.ba in m.ba at line number 2 in <input> at line number 6"));
+        Assertions.assertEquals(
+                "java.io.FileNotFoundException : missing.txt (<OS error>)",
+                BatestRunner.normalizeMessage("org.babblelang.runtime.BabbleException: java.io.FileNotFoundException : missing.txt (Aucun fichier ou dossier de ce nom) in <input> at line number 2"));
+        Assertions.assertEquals(
+                "java.io.FileNotFoundException : missing.txt (<OS error>)",
+                BatestRunner.normalizeMessage("java.io.FileNotFoundException : missing.txt (No such file or directory)"));
+        Assertions.assertEquals(
+                "java.lang.IllegalArgumentException : object is not an instance of declaring class",
+                BatestRunner.normalizeMessage("java.lang.IllegalArgumentException : object of type org.babblelang.engine.impl.Function is not an instance of java.util.function.IntPredicate"));
+        Assertions.assertEquals(
+                "java.lang.IllegalArgumentException : object is not an instance of declaring class",
+                BatestRunner.normalizeMessage("java.lang.IllegalArgumentException : object is not an instance of declaring class"));
     }
 
     @Test

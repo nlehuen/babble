@@ -29,6 +29,11 @@ public final class BatestRunner {
     private static final Pattern ASSERTION_LINE = Pattern.compile("^Assertion failed at line -?\\d+ : ");
     private static final Pattern REASON_LINE = Pattern.compile(" because of the (assignment|call) at line \\d+\\)");
     private static final Pattern TYPE_ID_PAIR = Pattern.compile(" \\(expected T\\d+, got T\\d+\\)$");
+    /** The operating system's reason, in its locale, that {@code FileInputStream} and friends append to the path. */
+    private static final Pattern OS_FILE_ERROR = Pattern.compile("^(java\\.io\\.FileNotFoundException : .*) \\([^()]*\\)$");
+    /** JDK 22+ words a reflective call on a receiver of the wrong class differently from JDK 21. */
+    private static final Pattern WRONG_RECEIVER = Pattern.compile(
+            "object of type \\S+ is not an instance of \\S+$");
 
     public enum Kind {
         OK,
@@ -169,6 +174,8 @@ public final class BatestRunner {
         text = ASSERTION_LINE.matcher(text).replaceFirst("Assertion failed : ");
         text = REASON_LINE.matcher(text).replaceAll(" because of the $1)");
         text = TYPE_ID_PAIR.matcher(text).replaceFirst(" (expected T#, got T#)");
+        text = OS_FILE_ERROR.matcher(text).replaceFirst("$1 (<OS error>)");
+        text = WRONG_RECEIVER.matcher(text).replaceFirst("object is not an instance of declaring class");
         return text.strip();
     }
 
