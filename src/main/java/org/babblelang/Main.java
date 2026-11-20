@@ -5,12 +5,14 @@ import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.engine.BabbleSession;
 import org.babblelang.engine.TypeCheckException;
 import org.babblelang.engine.impl.natives.java.JavaObject;
+import org.babblelang.repl.TerminalInput;
 
 import javax.script.Bindings;
 import javax.script.ScriptContext;
 import javax.script.ScriptException;
 import javax.script.SimpleScriptContext;
 import java.io.BufferedReader;
+import java.io.Console;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
@@ -60,7 +62,7 @@ public final class Main {
 
     public static void main(String[] args) throws IOException {
         int status = run(args, new BufferedReader(new InputStreamReader(System.in)), new PrintWriter(System.out, true),
-                new PrintWriter(System.err, true), System.console() != null);
+                new PrintWriter(System.err, true), isTerminal());
         if (status != 0) {
             // Not on success : threads the script started may still be working.
             System.exit(status);
@@ -68,7 +70,26 @@ public final class Main {
     }
 
     /**
-     * @param console whether a person is typing : the interactive mode then shows its prompts
+     * Whether a person is typing, at a terminal. Since JDK 22, {@code System.console()} also
+     * returns a console when the input is piped in : {@code Console.isTerminal()} tells, where
+     * it exists (the build targets JDK 21, hence the reflection).
+     */
+    static boolean isTerminal() {
+        Console console = System.console();
+        if (console == null) {
+            return false;
+        }
+        try {
+            return (Boolean) Console.class.getMethod("isTerminal").invoke(console);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // JDK 21 : a console is a terminal.
+            return true;
+        }
+    }
+
+    /**
+     * @param console whether a person is typing : the interactive mode then shows its prompts,
+     *                and edits lines with history and completion (docs/design/bip004_repl.md §9)
      * @return the exit status
      */
     static int run(String[] args, BufferedReader in, PrintWriter out, PrintWriter err, boolean console) throws IOException {
@@ -135,10 +156,42 @@ public final class Main {
             errors.flush();
         }
         if (interactive) {
-            new Repl(session, in, out, console).run();
+            interact(session, in, out, console);
             return 0;
         }
         return status;
+    }
+
+    /**
+     * The interactive mode : with the line editor on a terminal, unless
+     * {@code -Dbabble.lineEditing=false} ; with plain lines otherwise, or if the terminal can't
+     * be used.
+     */
+    private static void interact(BabbleSession session, BufferedReader in, PrintWriter out, boolean console) throws IOException {
+        if (console && !"false".equals(System.getProperty("babble.lineEditing"))) {
+            TerminalInput terminal = openTerminal(session);
+            if (terminal != null) {
+                try (terminal) {
+                    new Repl(session, terminal, out, true).run();
+                }
+                return;
+            }
+        }
+        new Repl(session, in, out, console).run();
+    }
+
+    private static TerminalInput openTerminal(BabbleSession session) {
+        try {
+            return TerminalInput.open(session, historyFile());
+        } catch (IOException | RuntimeException | LinkageError e) {
+            return null;
+        }
+    }
+
+    /** Where the interactive mode keeps its inputs : {@code -Dbabble.history=file}, else {@code ~/.babble_history}. */
+    static Path historyFile() {
+        String file = System.getProperty("babble.history");
+        return file != null ? Path.of(file) : Path.of(System.getProperty("user.home"), ".babble_history");
     }
 
     /** {@code -compile main.ba [-o app.jar] [-root dir] [-O0|-O1|-O2]} : babblec. */
