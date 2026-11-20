@@ -1,6 +1,6 @@
-# CLAUDE.md
+# Agentic development guidelines
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to [Antigravity](https://antigravity.google/), [Claude Code](https://claude.ai/code) or any other agentic development harness when working with code in this repository.
 
 ## Overview
 
@@ -126,6 +126,10 @@ The pipeline is: Babble source → ANTLR4 parse tree → analysis → tree-walki
 - **Formatter** (`org.babblelang.format.Formatter`, command line `-format`, `org.babblelang.Babblefmt`): works on the token stream, comments included (the lexer puts them on the hidden channel, so the parser never sees them; anything counting tokens must look at the channel, as `BabbleSession.classify` does).
   - It reads in the parse tree (`BabbleScriptEngine.parseSource`) what each token is: a call's `(` or a block's, a newline that separates expressions (`sep`), continues one (+1 indent), sits in a parenthesised list, or precedes a block/`else`/`static` (dropped unless a comment is in the way). It keeps the source's line breaks otherwise; indentation comes from a stack of open parentheses, each anchored to the line where its `if`/function/class starts.
   - The result is parsed again and must give the same tree, newlines and semicolons aside (`IllegalStateException` otherwise). Note that `;;( … ;;)` closed on its line and followed by code lexes as a line comment (longest match).
+
+## Long running sessions
+
+- Regularly commit ongoing work on the branch and push it, so no data is lost in case the agent crashes, and you work is externally observable. Make sure to mention which BIP or RM is being worked on as the first word in the commit description (e.g. "BIP042 Reticulating splines"). Make sure intermediary commits are reasonably stable (i.e. all lightweight unit tests pass), but you don't need to spend time running the entire continuous integration suite - this is only for major steps like completing an implementation phase or an entire session.
 
 ## Known issues
 
