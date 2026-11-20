@@ -39,6 +39,7 @@ expression:
           ifExpr                                              # ifExpression
           | (EXPORT | PRIVATE)? DEF name=ID (OF typeParameters)? (':' type)?
                      ('=' NL* (effectClause ON)? value=expression)?   # defExpression
+          | AXIOM DEF (name=ID | scalarName=coreScalarKeyword) ':' type   # axiomDefExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           | FOR name=ID (':' type)? IN NL* iterable=expression THEN NL* forBlock=block # forExpression
           | (CLASS | RECORD) classParameters (IMPLEMENTS typeList)? NL* classBlock=block

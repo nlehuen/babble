@@ -392,6 +392,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return null;
     }
 
+    /** {@code axiom def x: T} declares nothing at runtime : {@code x}'s value comes from outside (BIP019-D8). */
+    @Override
+    public Object visitAxiomDefExpression(BabbleParser.AxiomDefExpressionContext ctx) {
+        last = ctx;
+        return null;
+    }
+
     @Override
     public Object visitBoolean(BabbleParser.BooleanContext ctx) {
         last = ctx;

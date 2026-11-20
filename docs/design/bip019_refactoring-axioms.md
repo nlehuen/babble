@@ -112,11 +112,11 @@ Every overload is listed with its exact signature (`BIP019-D9`) : today's rules 
 `builtins.ba` declares Babble's built-ins in Babble. Those with an ordinary signature are **`axiom def`s** (`BIP019-D8`) : a declaration with a type and no value, whose effects follow pure-by-default, and which the analysis trusts instead of checking :
 
 ```babble
-export axiom def int: fn (value: byte | short | int | long | float | double | char | string): int
-export axiom def same: fn (a: any?, b: any?): bool
+axiom def int: fn (value: any): int
+axiom def same: fn (a: any?, b: any?): bool
 ```
 
-`axiom def` is a language form, valid anywhere : it states that a name exists with this type and these effects, and that its value comes from outside the program — the runtime's implicits for the built-ins, a host's bindings elsewhere. Reading one that nothing provides fails like reading an unset name. Being a language change, it goes through every stage that sees the syntax : the grammar, the analysis passes, both backends and the formatter.
+`axiom def` is a language form, valid anywhere : it states that a name exists with this type and these effects, and that its value comes from outside the program — the runtime's implicits for the built-ins, a host's bindings elsewhere. It applies to its scope and the scopes it encloses, declares nothing at runtime (its value as an expression is `null`), and has no `export` ; reading a name that nothing provides fails as `No such name`. Being a language change, it goes through every stage that sees the syntax : the grammar, the analysis passes, both backends and the formatter.
 
 The special forms, whose typing is a rule of the language — `print`, `move`, `freeze`, `discard`, `import`, `STDOUT`, `args` — keep their typing rules in code, and get their effects from effect declarations in the same file (`io on print`). The prelude is analysed once, like a module ; `OperatorTypes` reads its `TypedModuleSummary` instead of its constants.
 

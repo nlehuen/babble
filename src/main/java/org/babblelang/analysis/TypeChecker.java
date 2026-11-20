@@ -1590,6 +1590,7 @@ final class TypeChecker {
                 case BabbleParser.IfExpressionContext c -> type(c.ifExpr(), expected, role);
                 case BabbleParser.IfExprContext c -> visitIfExpr(c, expected, role);
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
+                case BabbleParser.AxiomDefExpressionContext c -> visitAxiomDefExpression(c);
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
                 case BabbleParser.ForExpressionContext c -> visitForExpression(c, expected, role);
                 case BabbleParser.ClassExpressionContext c -> visitClassExpression(c, expected, role);
@@ -1990,7 +1991,8 @@ final class TypeChecker {
                     Type narrowed = narrowing.narrowedType(declaration);
                     return narrowed != null ? narrowed : typeOfDeclaration(declaration);
                 }
-                return operators.implicitType(name);
+                Type axiom = axiomDefType(name, occurrenceScopes.get(ctx));
+                return axiom != null ? axiom : operators.implicitType(name);
             }
             if (receiver instanceof BabbleParser.SuperExpressionContext superExpr) {
                 TypeChecks.Provider provider = pass.superProviders.get(superExpr);
@@ -2203,7 +2205,27 @@ final class TypeChecker {
         }
 
         private Type visitCoreScalarRef(BabbleParser.CoreScalarRefContext ctx, Type expected, Role role) {
-            return operators.implicitType(ctx.coreScalarKeyword().getText());
+            String name = ctx.coreScalarKeyword().getText();
+            Type axiom = axiomDefType(name, scopeOf(ctx));
+            return axiom != null ? axiom : operators.implicitType(name);
+        }
+
+        /** {@code axiom def x: T} : checks {@code T} ; the expression itself is null (BIP019-D8). */
+        private Type visitAxiomDefExpression(BabbleParser.AxiomDefExpressionContext ctx) {
+            annotator.annotation(ctx.type(), scopeOf(ctx));
+            return Type.NULL;
+        }
+
+        /** The type an {@code axiom def} in {@code scope} or an enclosing one gives {@code name}, or null (BIP019-D8). */
+        private Type axiomDefType(String name, ScopeNode scope) {
+            for (ScopeNode s = scope; s != null; s = s.parent) {
+                Map<String, BabbleParser.AxiomDefExpressionContext> defs = pass.axiomDefs.get(s);
+                BabbleParser.AxiomDefExpressionContext def = defs != null ? defs.get(name) : null;
+                if (def != null) {
+                    return annotator.annotation(def.type(), s);
+                }
+            }
+            return null;
         }
 
         private Type visitCoreCollection(BabbleParser.CoreCollectionContext ctx, Type expected, Role role) {
