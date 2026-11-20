@@ -2300,6 +2300,40 @@ final class EffectChecker {
         }
     }
 
+    /**
+     * The parameters of a function literal with {@code borrow} as declared (no {@code shared} nor
+     * {@code unique}) rather than as inferred, so that a callback of a {@code calling} clause that
+     * escapes is reported once, as escaping, and not also as not borrowed.
+     */
+    private List<Type.Parameter> declaredBorrows(BabbleParser.FunctionLiteralContext fn,
+                                                 List<Type.Parameter> params) {
+        List<BabbleParser.FnParamContext> decls = fn.fnParameters().fnParam();
+        if (decls.size() != params.size()) {
+            return params;
+        }
+        List<Type.Parameter> result = new ArrayList<>(params.size());
+        for (int i = 0; i < params.size(); i++) {
+            Type.Parameter p = params.get(i);
+            ParamMods declared = parseParamMods(decls.get(i), false);
+            boolean borrow = !declared.shared() && !declared.unique();
+            result.add(new Type.Parameter(p.name(), p.type(), p.optional(), p.mut(), borrow,
+                    p.explicitShared(), p.unique()));
+        }
+        return result;
+    }
+
+    private static boolean inCallingClause(BabbleParser.FunctionLiteralContext fn, String name) {
+        if (fn.effectPrefix() == null || fn.effectPrefix().callingClause() == null) {
+            return false;
+        }
+        for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().callingClause().ID()) {
+            if (name.equals(id.getText())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static Set<Integer> resolveForwardedParamIndices(BabbleParser.FunctionLiteralContext fn) {
         if (fn.effectPrefix() == null || fn.effectPrefix().callingClause() == null) {
             return Set.of();
@@ -2323,7 +2357,7 @@ final class EffectChecker {
             ParsedPrefix prefix = parseFunctionPrefix(fn, false);
             Type rawType = checker.rawTypeOf(fn);
             if (rawType instanceof Type.Function tf) {
-                validateCallingClause(fn.effectPrefix(), tf.parameters());
+                validateCallingClause(fn.effectPrefix(), declaredBorrows(fn, tf.parameters()));
                 if (!prefix.io()) {
                     validateAlgebraicSignature(prefix.effects(), tf.parameters(), tf.result(),
                             prefix.mutThis(), prefix.axiom(), fn);
@@ -5028,6 +5062,13 @@ final class EffectChecker {
                 ParamMods declared = parseParamMods(params.get(p), false);
                 if (!declared.shared() && !declared.unique()) {
                     String pName = ScopeAnalysis.paramId(params.get(p)).getText();
+                    if (inCallingClause((BabbleParser.FunctionLiteralContext) owner, pName)) {
+                        // calling forwards f's effects only while the call runs: an escaping f
+                        // must leave the clause and be shared, whatever calls it later.
+                        reportOnce("Parameter in calling clause escapes via " + destination
+                                + " : remove " + pName + " from calling and mark it as shared", at);
+                        return;
+                    }
                     reportOnce("Borrowed parameter " + pName + " escapes via " + destination
                             + " : mark parameter as shared " + pName, at);
                 }

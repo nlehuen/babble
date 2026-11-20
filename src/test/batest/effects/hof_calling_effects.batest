@@ -273,6 +273,20 @@ println(bad(fn (x: int): int -> (x)))
 Parameter in calling clause must be borrowed : f
 
 {{{{{
+;; Negative: a callback of the calling clause captured by the returned closure escapes
+def compose of (A, B, C) = fn calling (f, g) (f: fn (A): B, g: fn (B): C): fn (A): C -> (fn (a: A) -> (g(f(a))))
+println(compose(fn (x: int): int -> (x + 1), fn (x: int): int -> (x * 2))(3))
+}}}}}
+Parameter in calling clause escapes via captured closure : remove f from calling and mark it as shared
+
+{{{{{
+;; compose captures its callbacks : shared, not calling
+def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn (A): C -> (fn (a: A) -> (g(f(a))))
+println(compose(fn (x: int): int -> (x + 1), fn (x: int): string -> ("v" + x))(41))
+}}}}}
+v42
+
+{{{{{
 ;; Negative: BIP017-D4 fn io HOF no longer implicitly specialized intra-file
 def applyIo = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
 def bad = fn (x: int): int -> (applyIo(fn (n: int): int -> (n + 1), x))

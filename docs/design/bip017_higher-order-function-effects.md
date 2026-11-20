@@ -87,6 +87,7 @@ export def logAndApply = fn io calling (f, g) (v: int, f: fn (x: int): int, g: f
 * **Validation:**
   * Every identifier named in `calling ...` must match a parameter of the function whose type is a `Type.Function` (not a non-function type, not a duplicate name).
   * Every parameter named in `calling ...` must be **`@BORROWED`** (the unmarked default — rejecting `shared f` or `unique f` in `calling f`, because a stored/escaping callback could be invoked *after* the call returns, breaking synchronous call-site effect forwarding).
+  * The same holds for a callback the body lets escape (stored, returned, or captured by a returned closure, as in `compose`): it is reported once as `Parameter in calling clause escapes via … : remove f from calling and mark it as shared`, not as a borrowed parameter to mark `shared`. Such a combinator takes `shared` callbacks without `calling`.
 
 ### 2.2 Forwarded Traits (`BIP017-D2`)
 
