@@ -99,7 +99,10 @@ public final class ScopeAnalysis {
     public record JavaFieldTarget(java.lang.reflect.Field field, boolean isStatic, boolean unwrapReceiver) {
     }
 
-    public record ModuleExportTarget(int index, String name) {
+    public record ModuleExportTarget(int index, String name, String moduleName) {
+        public ModuleExportTarget(int index, String name) {
+            this(index, name, null);
+        }
     }
 
     public record FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind) {
