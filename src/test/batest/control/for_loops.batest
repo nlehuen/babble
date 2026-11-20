@@ -265,3 +265,37 @@ def bad = fn (mut xs: list of int) -> (
 )
 }}}}}
 Cannot mutate collection while iterating over it
+
+{{{{{
+;; is narrows a for loop's variable, a fresh read-only binding per iteration, also across and
+def A = interface ( def k: fn (): int )
+def B = class (def r: double) implements A ( def k = fn (): int -> (1) )
+def D = class () implements A ( def k = fn (): int -> (2) )
+def Cur = class (private def i: int) (
+    def hasNext = fn (): bool -> (this.i < 2)
+    def next = fn mut (): A -> (this.i += 1; if this.i == 1 then (D()) else (B(2.5)))
+)
+def C = class () ( def iterator = fn (): Cur -> (Cur(0)) )
+for h in C() then (
+    if h is B and h.r > 1.0 then (println(h.r))
+    if not (h is B) then (println(h.k()))
+)
+}}}}}
+2
+2.5
+
+{{{{{
+;; Negative: the narrowing of a for loop's variable ends with its if
+def A = interface ( def k: fn (): int )
+def B = class (def r: double) implements A ( def k = fn (): int -> (1) )
+def Cur = class (private def i: int) (
+    def hasNext = fn (): bool -> (this.i < 1)
+    def next = fn mut (): A -> (this.i += 1; B(2.5))
+)
+def C = class () ( def iterator = fn (): Cur -> (Cur(0)) )
+for h in C() then (
+    if h is B then (println(h.k()))
+    println(h.r)
+)
+}}}}}
+No such member : r

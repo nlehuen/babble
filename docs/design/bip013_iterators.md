@@ -289,6 +289,7 @@ Integrating `for` into `RM004`'s modular `org.babblelang.analysis` architecture 
 1. **Narrowing eviction (`Narrowing`):**
    Just like `visitWhileExpression`, before checking `forBlock`, evict from `TypeEnv` all outer locals assigned inside `forBlock` (`narrowing.assignedLocals(ctx)`), because earlier iterations may mutate those locals before later iterations read them!
    * Note: `iterable` is synthesized **before** loop-body eviction (since `iterable` runs once before the loop starts), so narrowing before the loop (e.g. `if xs != null then ( for v in xs then ( ... ) )`) naturally applies to `xs`!
+   * The loop variable itself is narrowable (`Narrowing.narrowableDeclaration` accepts the `ForExpressionContext` it resolves to), since it is a fresh read-only binding per iteration: `for h in items then ( if h is Sphere and h.mat is Dielectric then ( ... ) )`.
 2. **Iterable resolution:**
    Synthesize `Type iterType = synth(ctx.iterable)`.
    * If `iterType == Type.ERROR`, bind `name` to `Type.ERROR` and check `forBlock` to avoid cascading diagnostics.
