@@ -373,6 +373,8 @@ Because an unannotated Java parameter `void foo(String s)` translates to `s: str
 
 ### 6.4 Built-In Parametric-Nullness Overlay for Core & `java.base` APIs (`BIP011-D7`)
 
+*Since `BIP019`, this overlay is a set of axioms : the stubs of `org.babblelang.axioms` state the nullness of `java.base`'s results and parameters (`@NonNull`, `@Nullable`, `@Parametric`) and which classes are null-marked, and the nullness annotations `JavaNullability` recognizes are stubs too (`@AnnotationMeaning`).*
+
 Because JDK 21's `java.base` classfiles do not yet ship JSpecify annotations, `JavaTypeBridge` contains a compact, declarative **JDK Nullability Overlay** giving exact parametric-nullness signatures to Babble's core types and everyday `java.base` classes:
 
 #### Core Collections & Iteration (`java.util`, `java.lang`)
