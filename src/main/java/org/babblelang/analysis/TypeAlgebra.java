@@ -456,6 +456,11 @@ final class TypeAlgebra {
         if (!effectiveFromEffects.satisfies(to.effects())) {
             return false;
         }
+        // A function forwarding a captured callback's effects has those effects on top of its
+        // own, which only a type forwarding the same callback accounts for (BIP017-D5).
+        if (!to.capturedCallings().containsAll(from.capturedCallings())) {
+            return false;
+        }
         for (int i = 0; i < to.parameters().size(); i++) {
             Type.Parameter fp = from.parameters().get(i);
             Type.Parameter tp = to.parameters().get(i);
@@ -726,7 +731,10 @@ final class TypeAlgebra {
             inter.retainAll(second.forwardedEffectParams());
             commonForwarded = inter;
         }
-        return new Type.Function(first.typeParameters(), params, first.result(), common, commonForwarded);
+        // Forwarding a captured callback weakens a function : the join forwards those of both.
+        Set<String> captured = new java.util.TreeSet<>(first.capturedCallings());
+        captured.addAll(second.capturedCallings());
+        return new Type.Function(first.typeParameters(), params, first.result(), common, commonForwarded, captured);
     }
 
     // ---------------------------------------------------------------- generics and projections
@@ -768,7 +776,7 @@ final class TypeAlgebra {
                     params.add(p.withType(substitute(p.type(), active)));
                 }
                 Type.Function substituted = new Type.Function(fn.typeParameters(), params, substitute(fn.result(), active),
-                        fn.effects(), fn.forwardedEffectParams());
+                        fn.effects(), fn.forwardedEffectParams(), fn.capturedCallings());
                 env.derived(fn, substituted);
                 return substituted;
             }

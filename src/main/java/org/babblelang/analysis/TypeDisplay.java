@@ -45,11 +45,8 @@ final class TypeDisplay {
         if (!prefix.isEmpty()) {
             text.append(prefix).append(' ');
         }
-        if (!function.forwardedEffectParams().isEmpty()) {
-            List<String> names = function.forwardedEffectParams().stream().sorted()
-                    .filter(i -> i >= 0 && i < function.parameters().size())
-                    .map(i -> function.parameters().get(i).name())
-                    .toList();
+        {
+            List<String> names = function.callingNames();
             if (!names.isEmpty()) {
                 text.append("calling ").append(names.size() == 1 ? names.get(0) : "(" + String.join(", ", names) + ")").append(' ');
             }

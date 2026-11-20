@@ -1,0 +1,118 @@
+;; BIP017-D5: calling clauses naming callbacks captured from an enclosing function (compose, currying)
+
+========== combinators.ba ==========
+export def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn calling (f, g) (A): C -> (fn calling (f, g) (a: A) -> (g(f(a))))
+
+{{{{{
+;; compose of pure callbacks is a pure function
+def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn calling (f, g) (A): C -> (fn calling (f, g) (a: A) -> (g(f(a))))
+def show: fn (x: int): string = compose(fn (x: int): int -> (x + 1), fn (x: int): string -> ("v" + x))
+def p = fn (x: int): string -> (show(x))
+println(p(41))
+}}}}}
+v42
+
+{{{{{
+;; compose of an io callback is an io function
+def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn calling (f, g) (A): C -> (fn calling (f, g) (a: A) -> (g(f(a))))
+def loud: fn io (x: int): int = compose(fn io (x: int): int -> (println("in " + x); x + 1), fn (x: int): int -> (x * 2))
+println(loud(3))
+}}}}}
+in 3
+8
+
+{{{{{
+;; Negative: the composition of an io callback is not a pure function
+def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn calling (f, g) (A): C -> (fn calling (f, g) (a: A) -> (g(f(a))))
+def bad: fn (x: int): int = compose(fn io (x: int): int -> (println(x); x + 1), fn (x: int): int -> (x * 2))
+}}}}}
+Type error : expected (x : int) : int, got io (p0 : int) : int
+
+{{{{{
+;; Negative: calling the composition reaches the caller with the callbacks' effects
+def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn calling (f, g) (A): C -> (fn calling (f, g) (a: A) -> (g(f(a))))
+def p = fn (x: int): int -> (compose(fn io (y: int): int -> (println(y); y), fn (y: int): int -> (y))(x))
+}}}}}
+Function p violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+;; Negative: same with an inferred result type, whose closure's own summary takes f and g as pure
+def compose = fn (shared f: fn (int): int, shared g: fn (int): int) -> (fn calling (f, g) (a: int): int -> (g(f(a))))
+def p = fn (x: int): int -> (compose(fn io (y: int): int -> (println(y); y), fn (y: int): int -> (y))(x))
+}}}}}
+Function p violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+;; Negative: a closure forwarding captured callbacks is not a function that doesn't
+def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn (A): C -> (fn calling (f, g) (a: A) -> (g(f(a))))
+}}}}}
+Type error : expected (p0 : A) : C, got calling (f, g) (a : A) : C
+
+{{{{{
+;; Negative: a captured name must be a callback
+def k = fn (shared f: fn (int): int, n: int): fn calling (f, n) (int): int -> (fn calling (f, n) (a: int): int -> (f(a) + n))
+}}}}}
+Parameter in calling clause must be a function : n
+
+{{{{{
+;; Negative: a parameter type can't name a sibling parameter
+def k = fn (shared f: fn (int): int, h: fn calling f (int): int): int -> (h(f(1)))
+}}}}}
+Unknown parameter in calling clause : f
+
+{{{{{
+;; Currying : the captured callbacks of nested function types are instantiated one call at a time
+def curry = fn (shared f: fn (int): int): fn (shared g: fn (int): int): fn calling (f, g) (int): int -> (
+    fn (shared g: fn (int): int): fn calling (f, g) (int): int -> (fn calling (f, g) (a: int): int -> (g(f(a))))
+)
+def p = fn (x: int): int -> (curry(fn (y: int): int -> (y + 1))(fn (y: int): int -> (y * 10))(x))
+println(p(1))
+def loud: fn io (x: int): int = curry(fn io (y: int): int -> (println("in " + y); y))(fn (y: int): int -> (y))
+println(loud(7))
+}}}}}
+20
+in 7
+7
+
+{{{{{
+;; Calling a forwarding closure inside the function that captures the callbacks has their declared effects
+def ok = fn (shared f: fn (int): int): int -> (
+    def h = fn calling f (a: int): int -> (f(a) + 1)
+    h(1)
+)
+println(ok(fn (x: int): int -> (x * 5)))
+def bad = fn (shared f: fn io (int): int): int -> (
+    def h = fn calling f (a: int): int -> (f(a) + 1)
+    h(1)
+)
+}}}}}
+Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+;; Across modules
+def combinators = import("combinators.ba")
+def show = fn (x: int): string -> (combinators.compose(fn (y: int): int -> (y + 1), fn (y: int): string -> ("v" + y))(x))
+println(show(41))
+def loud: fn io (x: int): int = combinators.compose(fn io (y: int): int -> (println("in " + y); y), fn (y: int): int -> (y + 1))
+println(loud(1))
+}}}}}
+v42
+in 1
+2
+
+{{{{{
+;; Negative: across modules, the io reaches the caller
+def combinators = import("combinators.ba")
+def p = fn (x: int): int -> (combinators.compose(fn io (y: int): int -> (println(y); y), fn (y: int): int -> (y))(x))
+}}}}}
+Function p violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+;; Across session inputs
+def compose of (A, B, C) = fn (shared f: fn (A): B, shared g: fn (B): C): fn calling (f, g) (A): C -> (fn calling (f, g) (a: A) -> (g(f(a))))
+----------
+def loud: fn io (x: int): int = compose(fn io (y: int): int -> (println("in " + y); y), fn (y: int): int -> (y * 3))
+println(loud(2))
+}}}}}
+in 2
+6
