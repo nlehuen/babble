@@ -4,9 +4,15 @@ The Babble Language
 [![Build & Test](https://github.com/nlehuen/babble/actions/workflows/maven.yml/badge.svg)](https://github.com/nlehuen/babble/actions/workflows/maven.yml)
 [![CodeQL](https://github.com/nlehuen/babble/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/nlehuen/babble/actions/workflows/codeql-analysis.yml)
 
+> **AI use disclosure**
+>
+> This project started on 2013-12-06 and was manually authored by a real, meat-made human up to 2022-05-25. Starting on 2026-07-16 and commit `c8afb703272cf5375675cb5838927a5762667ae3`, [nlehuen](https://github.com/nlehuen) began using a mix of open-source and commercial AI models from different providers.
+>
+> Initially [nlehuen](https://github.com/nlehuen) mainly used [Claude Code](https://claude.ai/code) but lately largely transitioned to using [Antigravity](https://antigravity.google/) and the Google Gemini family of models. [nlehuen](https://github.com/nlehuen) works at Google, but the entirety of this project has been done on personal time, using personal resources (i.e. personal funding of Claude + Antigravity access).
+
 Babble is a toy language running on top of the Java Virtual Machine. Its objectives are :
 
-* to teach myself about parsing, interpreting and compiling a simple programming language.
+* to teach myself ([nlehuen](https://github.com/nlehuen)) about parsing, interpreting and compiling a simple programming language.
 * to build a simple programming language that in turn can be used to teach programming to beginners.
 
 Scripts run either in a tree-walking interpreter, or compiled to JVM bytecode. Both modes
