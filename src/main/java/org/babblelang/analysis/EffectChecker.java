@@ -2287,7 +2287,18 @@ final class EffectChecker {
                 }
             }
             if (matched == null) {
-                checker.effectDiagnostic("Unknown parameter in calling clause : " + name, effectPrefix.callingClause());
+                // A callback of an enclosing function this one captures (BIP017-D5) : no borrow
+                // requirement, since capturing it is what the clause is for.
+                ParserRuleContext captured = TypeAnnotations.enclosingParameter(effectPrefix, name);
+                if (captured == null) {
+                    checker.effectDiagnostic("Unknown parameter in calling clause : " + name, effectPrefix.callingClause());
+                } else {
+                    Type capturedType = capturedParameterType(captured);
+                    if (capturedType != null && capturedType != Type.ERROR && !(capturedType instanceof Type.Function)) {
+                        checker.effectDiagnostic("Parameter in calling clause must be a function : " + name,
+                                effectPrefix.callingClause());
+                    }
+                }
                 continue;
             }
             if (matched.type() != Type.ERROR && !(matched.type() instanceof Type.Function)) {
@@ -2320,6 +2331,45 @@ final class EffectChecker {
                     p.explicitShared(), p.unique()));
         }
         return result;
+    }
+
+    /** The declared type of a parameter of a function literal or of a function type. */
+    private Type capturedParameterType(ParserRuleContext param) {
+        if (param instanceof BabbleParser.FnTypeParamContext typeParam
+                && typeParam.getParent() instanceof BabbleParser.FnTypeParametersContext list
+                && list.getParent() instanceof BabbleParser.FunctionTypeContext ft
+                && checker.annotationTypeOf(ft) instanceof Type.Function fn) {
+            int index = list.fnTypeParam().indexOf(typeParam);
+            return index >= 0 && index < fn.parameters().size() ? fn.parameters().get(index).type() : Type.ERROR;
+        }
+        return checker.typeOfDeclarationForEffects(param);
+    }
+
+    /** Whether {@code fn}'s calling clause names {@code param}, a callback of an enclosing function (BIP017-D5). */
+    private static boolean capturesCallback(BabbleParser.FunctionLiteralContext fn, BabbleParser.FnParamContext param) {
+        if (fn.effectPrefix() == null || fn.effectPrefix().callingClause() == null || param.ID() == null) {
+            return false;
+        }
+        String name = param.ID().getText();
+        return inCallingClause(fn, name)
+                && !fn.fnParameters().fnParam().contains(param)
+                && TypeAnnotations.enclosingParameter(fn.effectPrefix(), name) == param;
+    }
+
+    /** Whether {@code fn}'s calling clause names a callback of an enclosing function (BIP017-D5). */
+    private static boolean capturesCallbacks(BabbleParser.FunctionLiteralContext fn) {
+        if (fn.effectPrefix() == null || fn.effectPrefix().callingClause() == null) {
+            return false;
+        }
+        for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().callingClause().ID()) {
+            String name = id.getText();
+            boolean own = fn.fnParameters().fnParam().stream()
+                    .anyMatch(p -> p.ID() != null && name.equals(p.ID().getText()));
+            if (!own && TypeAnnotations.enclosingParameter(fn.effectPrefix(), name) != null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean inCallingClause(BabbleParser.FunctionLiteralContext fn, String name) {
@@ -4560,13 +4610,58 @@ final class EffectChecker {
             if (idx != null && forwardedParams.contains(idx)) {
                 return true;
             }
-            if (decl instanceof BabbleParser.FnParamContext) {
+            if (decl instanceof BabbleParser.FnParamContext param) {
+                if (owner instanceof BabbleParser.FunctionLiteralContext ownerFn && capturesCallback(ownerFn, param)) {
+                    return true;
+                }
                 for (BabbleParser.FunctionLiteralContext encFn : frameChain) {
                     List<BabbleParser.FnParamContext> encParams = encFn.fnParameters().fnParam();
                     int encIdx = encParams.indexOf(decl);
-                    if (encIdx >= 0 && resolveForwardedParamIndices(encFn).contains(encIdx)) {
+                    if (encIdx >= 0 && resolveForwardedParamIndices(encFn).contains(encIdx)
+                            || capturesCallback(encFn, param)) {
                         return true;
                     }
+                }
+            }
+            return false;
+        }
+
+        /**
+         * The effects of calling a function value that still forwards captured callbacks (inside
+         * the function that captures them, before a call instantiates them, BIP017-D5) : those of
+         * each callback, unless the current function forwards it in turn.
+         */
+        private EffectSet withCapturedCallbackEffects(Type.Function fn, BabbleParser.ExpressionContext calleeExpr) {
+            EffectSet effects = fn.effects();
+            for (String name : fn.capturedCallings()) {
+                Object resolved = checker.resolveNameForEffects(name, checker.occurrenceScopeOf(calleeExpr));
+                if (resolved instanceof BabbleParser.FnParamContext param) {
+                    if (forwardsParameter(param)) {
+                        stmtHasSideEffect = true;
+                        continue;
+                    }
+                    if (checker.typeOfDeclarationForEffects(param) instanceof Type.Function cb) {
+                        effects = effects.combineForwarded(cb.effects());
+                        continue;
+                    }
+                }
+                effects = effects.combineForwarded(EffectSet.IO_DECLARED);
+            }
+            return effects;
+        }
+
+        private boolean forwardsParameter(BabbleParser.FnParamContext param) {
+            Integer idx = paramIndex.get(param);
+            if (idx != null && forwardedParams.contains(idx)) {
+                return true;
+            }
+            if (owner instanceof BabbleParser.FunctionLiteralContext ownerFn && capturesCallback(ownerFn, param)) {
+                return true;
+            }
+            for (BabbleParser.FunctionLiteralContext encFn : frameChain) {
+                int encIdx = encFn.fnParameters().fnParam().indexOf(param);
+                if (encIdx >= 0 && resolveForwardedParamIndices(encFn).contains(encIdx) || capturesCallback(encFn, param)) {
+                    return true;
                 }
             }
             return false;
@@ -4682,7 +4777,10 @@ final class EffectChecker {
 
             // Statically resolved concrete Babble function literal (intra-file):
             BabbleParser.FunctionLiteralContext targetLit = resolveConcreteBabbleTarget(fn, calleeExpr, receiverExpr);
-            if (targetLit != null) {
+            if (targetLit != null && capturesCallbacks(targetLit)) {
+                // Its summary takes the captured callbacks as pure : the type has their effects (BIP017-D5).
+                targetLit = null;
+            } else if (targetLit != null) {
                 ParsedPrefix targetPrefix = parseFunctionPrefix(targetLit, false);
                 // BIP017-D4: retire BIP016-D6 implicit intra-file `fn io` HOF specialization;
                 // `fn calling f` uses uniform call-site forwarding across concrete, cross-module, and interface HOFs.
@@ -4719,7 +4817,8 @@ final class EffectChecker {
                 bp[i] = fn.parameters().get(i).borrow();
                 up[i] = fn.parameters().get(i).unique();
             }
-            return new CallableSummary(fn.effects(), mp, bp, up, Set.of(), Set.of(), fn.effects().mutThis());
+            EffectSet effects = fn.capturedCallings().isEmpty() ? fn.effects() : withCapturedCallbackEffects(fn, calleeExpr);
+            return new CallableSummary(effects, mp, bp, up, Set.of(), Set.of(), effects.mutThis());
         }
 
         private Type.Function[] collectBoundCallbacks(List<Type.Parameter> calleeParams,

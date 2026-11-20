@@ -116,13 +116,15 @@ final class CallSolver {
         if (callee instanceof Type.Function function) {
             List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
             boolean frozenBorrowSafe = function.effects().uniqueResult() || checker.isDeeplyImmutable(function.result());
+            Set<Integer> relaxed = withCapturedCallbacks(function.forwardedEffectParams(), function.parameters(),
+                    function.result());
             if (function.typeParameters().isEmpty()) {
-                bind(function.parameters(), decls, arguments, ctx, frozenBorrowSafe, function.forwardedEffectParams());
-                return function.result();
+                bind(function.parameters(), decls, arguments, ctx, frozenBorrowSafe, relaxed);
+                return instantiateCapturedCallings(function.result(), function.parameters(), arguments);
             }
             Type result = genericBabbleCall(function.typeParameters(), function.parameters(), decls, function.result(),
-                    function.effects().uniqueResult(), function.forwardedEffectParams(), arguments, ctx, ctx.expression().getText(), expected);
-            return result;
+                    function.effects().uniqueResult(), relaxed, arguments, ctx, ctx.expression().getText(), expected);
+            return instantiateCapturedCallings(result, function.parameters(), arguments);
         }
         if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
             TypeNode node = value.node();
@@ -261,7 +263,8 @@ final class CallSolver {
             return Type.ERROR;
         }
         Set<Type.TypeVar> solving = Set.copyOf(fn.typeParameters());
-        Type.Function unparameterized = new Type.Function(fn.parameters(), fn.result(), fn.effects(), fn.forwardedEffectParams());
+        Type.Function unparameterized = new Type.Function(List.of(), fn.parameters(), fn.result(), fn.effects(),
+                fn.forwardedEffectParams(), fn.capturedCallings());
         BabbleParser.FunctionLiteralContext lit = checker.functionLiterals().get(fn);
         if (lit != null) {
             checker.functionLiterals().put(unparameterized, lit);
@@ -284,6 +287,81 @@ final class CallSolver {
     void bind(List<Type.Parameter> parameters, List<? extends ParserRuleContext> declarations,
               List<BabbleParser.CallParameterContext> arguments, ParserRuleContext ctx, boolean frozenBorrowSafe) {
         bind(parameters, declarations, arguments, ctx, frozenBorrowSafe, Set.of());
+    }
+
+    /**
+     * {@code forwarded} plus the callback parameters the result captures and forwards
+     * ({@code compose}'s {@code f} and {@code g}, BIP017-D5) : like a {@code calling}
+     * parameter, they accept a callback of any effects.
+     */
+    static Set<Integer> withCapturedCallbacks(Set<Integer> forwarded, List<Type.Parameter> parameters, Type result) {
+        Set<String> captured = Type.Function.capturedCallingsOf(result);
+        if (captured.isEmpty()) {
+            return forwarded;
+        }
+        Set<Integer> relaxed = new LinkedHashSet<>(forwarded);
+        for (int i = 0; i < parameters.size(); i++) {
+            if (captured.contains(parameters.get(i).name()) && parameters.get(i).type() instanceof Type.Function) {
+                relaxed.add(i);
+            }
+        }
+        return relaxed;
+    }
+
+    /**
+     * The result of a call, with the effects of the callbacks it was given folded into every
+     * function type of the result that captures them (BIP017-D5) : {@code compose(h, k)} of an
+     * {@code io h} is an {@code io} function. A callback the call doesn't give stays captured.
+     */
+    Type instantiateCapturedCallings(Type result, List<Type.Parameter> parameters,
+                                     List<BabbleParser.CallParameterContext> arguments) {
+        if (result == Type.ERROR || Type.Function.capturedCallingsOf(result).isEmpty()) {
+            return result;
+        }
+        Map<String, Type> given = new HashMap<>();
+        Type.Parameter[] argParams = mapArgumentsToParameters(parameters, arguments);
+        for (int i = 0; i < arguments.size(); i++) {
+            if (argParams[i] != null) {
+                given.put(argParams[i].name(), checker.synth(arguments.get(i).expression()));
+            }
+        }
+        return instantiateCapturedCallings(result, given);
+    }
+
+    private static Type instantiateCapturedCallings(Type type, Map<String, Type> given) {
+        if (type instanceof Type.Union union) {
+            List<Type> members = new ArrayList<>(union.members().size());
+            for (Type member : union.members()) {
+                members.add(instantiateCapturedCallings(member, given));
+            }
+            return Type.union(members);
+        }
+        if (!(type instanceof Type.Function fn)) {
+            return type;
+        }
+        Type result = instantiateCapturedCallings(fn.result(), given);
+        EffectSet effects = fn.effects();
+        Set<String> remaining = new java.util.TreeSet<>();
+        for (String name : fn.capturedCallings()) {
+            Type callback = given.get(name);
+            if (callback == null) {
+                remaining.add(name);
+                continue;
+            }
+            for (Type member : Type.membersOf(callback)) {
+                if (member instanceof Type.Function cb) {
+                    effects = effects.combineForwarded(cb.effects());
+                } else if (member != Type.NULL && member != Type.ERROR) {
+                    // A callback of unknown effects (a Java functional object) : assume the worst.
+                    effects = effects.combineForwarded(EffectSet.IO_DECLARED);
+                }
+            }
+        }
+        if (result == fn.result() && remaining.equals(fn.capturedCallings())) {
+            return fn;
+        }
+        return new Type.Function(fn.typeParameters(), fn.parameters(), result, effects,
+                fn.forwardedEffectParams(), remaining);
     }
 
     void bind(List<Type.Parameter> parameters, List<? extends ParserRuleContext> declarations,
@@ -1449,7 +1527,8 @@ final class CallSolver {
                 substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), env)));
             }
             Type substitutedResult = checker.algebra().substitute(fn.result(), env);
-            Type.Function specialized = new Type.Function(substitutedParams, substitutedResult, fn.effects(), fn.forwardedEffectParams());
+            Type.Function specialized = new Type.Function(List.of(), substitutedParams, substitutedResult, fn.effects(),
+                    fn.forwardedEffectParams(), fn.capturedCallings());
             BabbleParser.FunctionLiteralContext lit = checker.functionLiterals().get(fn);
             if (lit != null) {
                 checker.functionLiterals().put(specialized, lit);

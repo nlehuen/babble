@@ -54,7 +54,8 @@ final class TypeAnnotations {
         if (declaration instanceof BabbleParser.DefExpressionContext def && def.type() != null) {
             Type declared = annotation(def.type(), checker.scopeOf(def));
             if (def.typeParameters() != null && declared instanceof Type.Function fn) {
-                return new Type.Function(typeVarsOf(def), fn.parameters(), fn.result(), fn.effects(), fn.forwardedEffectParams());
+                return new Type.Function(typeVarsOf(def), fn.parameters(), fn.result(), fn.effects(),
+                        fn.forwardedEffectParams(), fn.capturedCallings());
             }
             return declared;
         }
@@ -194,9 +195,9 @@ final class TypeAnnotations {
                     : EffectSet.EMPTY;
             List<Type.Parameter> fnParams = functionTypeParameters(function.fnTypeParameters(), scope);
             java.util.Set<Integer> forwarded = resolveForwardedParams(function.effectPrefix(), fnParams);
-            return new Type.Function(fnParams,
+            return new Type.Function(List.of(), fnParams,
                     function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY,
-                    effs, forwarded);
+                    effs, forwarded, resolveCapturedCallings(function.effectPrefix(), fnParams).keySet());
         }
         if (primary instanceof BabbleParser.NullTypeContext) {
             return Type.NULL;
@@ -217,6 +218,66 @@ final class TypeAnnotations {
             result = Type.frozen(result);
         }
         return result;
+    }
+
+    /**
+     * The names of a {@code calling} clause that aren't parameters of its own function but of an
+     * enclosing function literal or function type, mapped to that parameter (a {@code FnParamContext}
+     * or a {@code FnTypeParamContext}, BIP017-D5) : the clause of a function type in the enclosing
+     * function's result type, or of a function type or literal in its body, may name the callbacks
+     * it captures. Not its parameter types : a callback can't forward a sibling.
+     */
+    static java.util.Map<String, ParserRuleContext> resolveCapturedCallings(
+            BabbleParser.EffectPrefixContext prefix, List<Type.Parameter> ownParams) {
+        if (prefix == null || prefix.callingClause() == null) {
+            return java.util.Map.of();
+        }
+        java.util.Map<String, ParserRuleContext> captured = new java.util.TreeMap<>();
+        for (org.antlr.v4.runtime.tree.TerminalNode id : prefix.callingClause().ID()) {
+            String name = id.getText();
+            if (ownParams.stream().anyMatch(p -> name.equals(p.name()))) {
+                continue;
+            }
+            ParserRuleContext param = enclosingParameter(prefix, name);
+            if (param != null) {
+                captured.put(name, param);
+            }
+        }
+        return captured;
+    }
+
+    /**
+     * The parameter {@code name} of the innermost function literal or function type enclosing
+     * {@code prefix} that has one (see above), or null.
+     */
+    static ParserRuleContext enclosingParameter(BabbleParser.EffectPrefixContext prefix, String name) {
+        org.antlr.v4.runtime.tree.ParseTree child = prefix;
+        org.antlr.v4.runtime.tree.ParseTree parent = prefix.getParent();
+        while (parent != null) {
+            if (parent instanceof BabbleParser.FunctionLiteralContext enclosing && child != enclosing.effectPrefix()) {
+                if (child == enclosing.fnParameters()) {
+                    return null;
+                }
+                for (BabbleParser.FnParamContext param : enclosing.fnParameters().fnParam()) {
+                    if (param.ID() != null && name.equals(param.ID().getText())) {
+                        return param;
+                    }
+                }
+            }
+            if (parent instanceof BabbleParser.FunctionTypeContext enclosing && child != enclosing.effectPrefix()) {
+                if (child == enclosing.fnTypeParameters()) {
+                    return null;
+                }
+                for (BabbleParser.FnTypeParamContext param : enclosing.fnTypeParameters().fnTypeParam()) {
+                    if (param.ID() != null && name.equals(param.ID().getText())) {
+                        return param;
+                    }
+                }
+            }
+            child = parent;
+            parent = parent.getParent();
+        }
+        return null;
     }
 
     /** Resolves {@code calling f} / {@code calling (f, g)} parameter names to 0-based parameter indices (BIP017). */

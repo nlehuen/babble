@@ -195,12 +195,43 @@ sealed interface Type {
         }
     }
 
+    /**
+     * A function type. {@code forwardedEffectParams} are the indices of its own callback
+     * parameters named in {@code calling} (BIP017-D1); {@code capturedCallings} the names of
+     * callback parameters of an enclosing function it captures and forwards the effects of
+     * ({@code fn calling (f, g) (a : A) : C} returned by {@code compose}), which a call of that
+     * enclosing function replaces by the effects of its arguments (BIP017-D5).
+     */
     record Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result,
-                    EffectSet effects, Set<Integer> forwardedEffectParams) implements Type {
+                    EffectSet effects, Set<Integer> forwardedEffectParams, Set<String> capturedCallings) implements Type {
         public Function {
             effects = effects != null ? effects : EffectSet.EMPTY;
             forwardedEffectParams = forwardedEffectParams == null || forwardedEffectParams.isEmpty()
                     ? Set.of() : Set.copyOf(forwardedEffectParams);
+            capturedCallings = capturedCallings == null || capturedCallings.isEmpty()
+                    ? Set.of() : java.util.Collections.unmodifiableSet(new java.util.TreeSet<>(capturedCallings));
+        }
+
+        Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result,
+                 EffectSet effects, Set<Integer> forwardedEffectParams) {
+            this(typeParameters, parameters, result, effects, forwardedEffectParams, Set.of());
+        }
+
+        /** This type with other captured callbacks (and the same everything else). */
+        Function withCapturedCallings(EffectSet newEffects, Set<String> newCaptured) {
+            return new Function(typeParameters, parameters, result, newEffects, forwardedEffectParams, newCaptured);
+        }
+
+        /** The names of the enclosing function's parameters that {@code type} (a result) forwards. */
+        static Set<String> capturedCallingsOf(Type type) {
+            Set<String> names = new java.util.TreeSet<>();
+            for (Type member : membersOf(type)) {
+                if (member instanceof Function fn) {
+                    names.addAll(fn.capturedCallings());
+                    names.addAll(capturedCallingsOf(fn.result()));
+                }
+            }
+            return names;
         }
 
         Function(List<Parameter> parameters, Type result) {
@@ -224,22 +255,26 @@ sealed interface Type {
         }
 
         Function withEffects(EffectSet newEffects) {
-            return new Function(typeParameters, parameters, result, newEffects, forwardedEffectParams);
+            return new Function(typeParameters, parameters, result, newEffects, forwardedEffectParams, capturedCallings);
         }
 
         Function withEffects(EffectSet newEffects, List<Parameter> newParameters) {
-            return new Function(typeParameters, newParameters, result, newEffects, forwardedEffectParams);
+            return new Function(typeParameters, newParameters, result, newEffects, forwardedEffectParams, capturedCallings);
         }
 
-        private String formatCallingClause() {
-            if (forwardedEffectParams.isEmpty()) {
-                return "";
-            }
-            List<String> names = forwardedEffectParams.stream()
+        /** The names a {@code calling} clause lists : own callback parameters, then captured ones. */
+        List<String> callingNames() {
+            List<String> names = new ArrayList<>(forwardedEffectParams.stream()
                     .sorted()
                     .filter(i -> i >= 0 && i < parameters.size())
                     .map(i -> parameters.get(i).name())
-                    .toList();
+                    .toList());
+            names.addAll(capturedCallings);
+            return names;
+        }
+
+        private String formatCallingClause() {
+            List<String> names = callingNames();
             if (names.isEmpty()) {
                 return "";
             }
@@ -648,7 +683,8 @@ sealed interface Type {
                 }
                 Type res = fn.result().mapTypes(mapper);
                 yield (out != null || res != fn.result())
-                        ? new Function(fn.typeParameters(), out != null ? out : src, res, fn.effects())
+                        ? new Function(fn.typeParameters(), out != null ? out : src, res, fn.effects(),
+                                fn.forwardedEffectParams(), fn.capturedCallings())
                         : fn;
             }
             case Instance inst -> {
