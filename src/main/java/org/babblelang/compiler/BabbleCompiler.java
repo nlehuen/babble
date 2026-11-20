@@ -128,8 +128,17 @@ public final class BabbleCompiler {
             }
         }
         ClassLoader parentLoader = delegates.isEmpty() ? runtimeLoader : new CompositeClassLoader(runtimeLoader, delegates);
-        CodeGenerator generator = new CodeGenerator(internalName, sourceName, scopes, parentLoader, knownInterfaceJvmNames, knownClassJvmNames);
-        Map<String, byte[]> classes = generator.generate(file);
+        org.babblelang.ir.hir.HirModule hir = org.babblelang.ir.hir.HirBuilder.build(
+                internalName, sourceName, file, scopes, knownInterfaceJvmNames, knownClassJvmNames);
+        if (Boolean.getBoolean(VERIFY)) {
+            org.babblelang.ir.hir.HirVerifier.verify(hir);
+        }
+        String dumpIr = resolveDumpIr(engine);
+        if (dumpIr != null) {
+            dumpIr(dumpIr, internalName, "hir", org.babblelang.ir.hir.HirPrinter.print(hir));
+        }
+        HirEmitter emitter = new HirEmitter(hir, parentLoader);
+        Map<String, byte[]> classes = emitter.generate();
 
         String dump = System.getProperty(DUMP_CLASSES);
         Map<String, byte[]> byBinaryName = new LinkedHashMap<>();
@@ -163,8 +172,8 @@ public final class BabbleCompiler {
         } catch (ReflectiveOperationException e) {
             throw new BabbleException("Cannot load the compiled script", e);
         }
-        return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, file.getStart().getLine(), scopes.exports(),
-                generator.interfaceJvmNames(), generator.classJvmNames());
+        return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, hir.startLine(), hir.exports(),
+                hir.ownInterfaceJvmNames(), hir.ownClassJvmNames());
     }
 
     /**
@@ -202,6 +211,22 @@ public final class BabbleCompiler {
             Files.write(path, bytes);
         } catch (IOException e) {
             throw new BabbleException("Cannot dump " + path, e);
+        }
+    }
+
+    static void dumpIr(String target, String internalName, String phase, String text) {
+        if ("stderr".equalsIgnoreCase(target) || "true".equalsIgnoreCase(target)
+                || "hir".equalsIgnoreCase(target) || "all".equalsIgnoreCase(target)) {
+            System.err.println("=== " + phase + " : " + internalName + " ===");
+            System.err.println(text);
+            return;
+        }
+        Path path = Path.of(target).resolve(internalName + "." + phase + ".txt");
+        try {
+            Files.createDirectories(path.getParent());
+            Files.writeString(path, text);
+        } catch (IOException e) {
+            throw new BabbleException("Cannot dump IR to " + path, e);
         }
     }
 }

@@ -64,6 +64,12 @@ final class LoweringAnalyzer {
         for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
             if (checker.inFile(entry.getKey())) {
                 pass.analysis.setExpressionKind(entry.getKey(), ScopeAnalysis.PrimitiveKind.of(entry.getValue()));
+                if (checker.isDeeplyImmutable(entry.getValue())) {
+                    pass.analysis.markExpressionDeeplyImmutable(entry.getKey());
+                }
+                if (entry.getValue() == Type.STRING) {
+                    pass.analysis.markExpressionString(entry.getKey());
+                }
             }
             if (entry.getKey() instanceof BabbleParser.IsExpressionContext isCtx && checker.inFile(isCtx)
                     && checker.isTargetType(isCtx) instanceof Type.Instance inst
