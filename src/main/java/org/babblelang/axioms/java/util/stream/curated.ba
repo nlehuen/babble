@@ -1,0 +1,19 @@
+;; Curated axioms for java.util.stream (BIP019-P6)
+
+axiom java.util.stream.BaseStream of (T, S): class nullmarked (
+)
+
+axiom java.util.stream.DoubleStream: class nullmarked (
+)
+
+axiom java.util.stream.IntStream: class nullmarked (
+)
+
+axiom java.util.stream.LongStream: class nullmarked (
+)
+
+axiom java.util.stream.Stream of T: class nullmarked (
+)
+
+axiom java.util.stream.StreamSupport: class nullmarked (
+)

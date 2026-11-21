@@ -228,7 +228,7 @@ public class BytecodeEffectAnalyzerTestCase {
         Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.BuiltinAxioms.checkCanonicalOrder(mathDump, "Math"));
 
         String listDump = org.babblelang.analysis.AxiomDumper.dumpClass(java.util.ArrayList.class, org.babblelang.analysis.BuiltinAxioms.standard());
-        Assertions.assertTrue(listDump.startsWith("axiom java.util.ArrayList of E: class (\n"), listDump);
+        Assertions.assertTrue(listDump.startsWith("axiom java.util.ArrayList of E: class nullmarked (\n"), listDump);
         Assertions.assertTrue(listDump.contains("def clear: fn mut shared shallow (): void"), listDump);
         Assertions.assertTrue(listDump.contains("def isEmpty: fn nothrow (): bool"), listDump);
         Assertions.assertTrue(listDump.contains("def iterator: fn shared nothrow view (): java.util.Iterator of any?"), listDump);

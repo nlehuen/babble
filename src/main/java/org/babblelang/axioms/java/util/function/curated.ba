@@ -1,0 +1,130 @@
+;; Curated axioms for java.util.function (BIP019-P6)
+
+axiom java.util.function.BiConsumer of (T, U): class nullmarked (
+)
+
+axiom java.util.function.BiFunction of (T, U, R): class nullmarked (
+)
+
+axiom java.util.function.BiPredicate of (T, U): class nullmarked (
+)
+
+axiom java.util.function.BinaryOperator of T: class nullmarked (
+)
+
+axiom java.util.function.BooleanSupplier: class nullmarked (
+)
+
+axiom java.util.function.Consumer of T: class nullmarked (
+)
+
+axiom java.util.function.DoubleBinaryOperator: class nullmarked (
+)
+
+axiom java.util.function.DoubleConsumer: class nullmarked (
+)
+
+axiom java.util.function.DoubleFunction of R: class nullmarked (
+)
+
+axiom java.util.function.DoublePredicate: class nullmarked (
+)
+
+axiom java.util.function.DoubleSupplier: class nullmarked (
+)
+
+axiom java.util.function.DoubleToIntFunction: class nullmarked (
+)
+
+axiom java.util.function.DoubleToLongFunction: class nullmarked (
+)
+
+axiom java.util.function.DoubleUnaryOperator: class nullmarked (
+)
+
+axiom java.util.function.Function of (T, R): class nullmarked (
+)
+
+axiom java.util.function.IntBinaryOperator: class nullmarked (
+)
+
+axiom java.util.function.IntConsumer: class nullmarked (
+)
+
+axiom java.util.function.IntFunction of R: class nullmarked (
+)
+
+axiom java.util.function.IntPredicate: class nullmarked (
+)
+
+axiom java.util.function.IntSupplier: class nullmarked (
+)
+
+axiom java.util.function.IntToDoubleFunction: class nullmarked (
+)
+
+axiom java.util.function.IntToLongFunction: class nullmarked (
+)
+
+axiom java.util.function.IntUnaryOperator: class nullmarked (
+)
+
+axiom java.util.function.LongBinaryOperator: class nullmarked (
+)
+
+axiom java.util.function.LongConsumer: class nullmarked (
+)
+
+axiom java.util.function.LongFunction of R: class nullmarked (
+)
+
+axiom java.util.function.LongPredicate: class nullmarked (
+)
+
+axiom java.util.function.LongSupplier: class nullmarked (
+)
+
+axiom java.util.function.LongToDoubleFunction: class nullmarked (
+)
+
+axiom java.util.function.LongToIntFunction: class nullmarked (
+)
+
+axiom java.util.function.LongUnaryOperator: class nullmarked (
+)
+
+axiom java.util.function.ObjDoubleConsumer of T: class nullmarked (
+)
+
+axiom java.util.function.ObjIntConsumer of T: class nullmarked (
+)
+
+axiom java.util.function.ObjLongConsumer of T: class nullmarked (
+)
+
+axiom java.util.function.Predicate of T: class nullmarked (
+)
+
+axiom java.util.function.Supplier of T: class nullmarked (
+)
+
+axiom java.util.function.ToDoubleBiFunction of (T, U): class nullmarked (
+)
+
+axiom java.util.function.ToDoubleFunction of T: class nullmarked (
+)
+
+axiom java.util.function.ToIntBiFunction of (T, U): class nullmarked (
+)
+
+axiom java.util.function.ToIntFunction of T: class nullmarked (
+)
+
+axiom java.util.function.ToLongBiFunction of (T, U): class nullmarked (
+)
+
+axiom java.util.function.ToLongFunction of T: class nullmarked (
+)
+
+axiom java.util.function.UnaryOperator of T: class nullmarked (
+)
