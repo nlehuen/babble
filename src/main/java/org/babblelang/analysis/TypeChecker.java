@@ -748,7 +748,8 @@ final class TypeChecker {
                 isTargetTypes.put(ctx, Type.ERROR);
                 return Type.ERROR;
             }
-            if (simple.OF() != null) {
+            if (simple.OF() != null && !"array".equals(simple.typeName().getText())
+                    && !annotator.resolvesToArrayAlias(simple, scopeOf(ctx))) {
                 warn("Cannot test erased type arguments with 'is' : use 'is " + simple.typeName().getText() + "'", simple);
                 isTargetTypes.put(ctx, Type.ERROR);
                 return Type.ERROR;
@@ -779,12 +780,67 @@ final class TypeChecker {
             isTargetTypes.put(ctx, Type.ERROR);
             return Type.ERROR;
         }
-        if (singleSimple != null && singleSimple.typeName().coreTypeKeyword() != null && singleSimple.question == null) {
+        if (singleSimple != null && singleSimple.typeName().coreTypeKeyword() != null && singleSimple.question == null
+                && singleSimple.OF() == null) {
             pass.analysis.setIsBuiltin(ctx, singleSimple.typeName().getText());
         }
         pass.analysis.setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
         isTargetTypes.put(ctx, target);
         return target;
+    }
+
+    private static boolean isArrayTypeErasedAtRuntime(Type.Array array) {
+        Type elem = array.element();
+        if (Type.isPrimitiveScalar(elem)) {
+            return false;
+        }
+        if (elem instanceof Type.Frozen) {
+            return true;
+        }
+        Type base = Type.withoutNull(elem);
+        if (Type.containsNull(elem) && Type.isPrimitiveScalar(base)) {
+            return false;
+        }
+        if (!Type.containsNull(elem)) {
+            return true;
+        }
+        if (base instanceof Type.JavaInstance ji) {
+            for (Type arg : ji.typeArguments()) {
+                if (!Type.NULLABLE_ANY.equals(arg)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (base instanceof Type.Array inner) {
+            return isArrayTypeErasedAtRuntime(inner);
+        }
+        return base != Type.STRING && base != Type.ANY;
+    }
+
+    private static boolean containsErasedArray(Type target) {
+        if (target == null || target == Type.ERROR || target == Type.NOTHING || target == Type.NULL) {
+            return false;
+        }
+        return switch (target) {
+            case Type.Array a -> isArrayTypeErasedAtRuntime(a);
+            case Type.Union u -> u.members().stream().anyMatch(TypeChecker::containsErasedArray);
+            case Type.Intersection i -> i.members().stream().anyMatch(TypeChecker::containsErasedArray);
+            case Type.Frozen f -> containsErasedArray(f.of());
+            default -> false;
+        };
+    }
+
+    private boolean isUncheckedArrayCheck(Type source, Type target) {
+        if (!containsErasedArray(target)) {
+            return false;
+        }
+        for (Type m : TypeAlgebra.alternatives(source)) {
+            if (m != Type.NULL && algebra.overlapsErased(m, target) && !algebra.assignable(m, target)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static ScopeNode callableScope(ScopeNode scope) {
@@ -1841,9 +1897,9 @@ final class TypeChecker {
                 return new ForIterableInfo(kind, null, joinedElem != null ? joinedElem : Type.NULLABLE_ANY,
                         null, null, null, null, null);
             }
-            if (unwrapped instanceof Type.JavaArray arr) {
+            if (unwrapped instanceof Type.Array arr) {
                 Type elem = frozenIterable ? Type.frozen(arr.element()) : arr.element();
-                return new ForIterableInfo(ScopeAnalysis.ForKind.ARRAY, arr.javaClass(), elem,
+                return new ForIterableInfo(ScopeAnalysis.ForKind.ARRAY, JavaTypeBridge.checkedArrayClass(arr), elem,
                         null, null, null, null, null);
             }
             if (unwrapped instanceof Type.JavaInstance ji) {
@@ -2192,8 +2248,11 @@ final class TypeChecker {
         }
 
         private Type visitIsExpression(BabbleParser.IsExpressionContext ctx, Type expected, Role role) {
-            synth(ctx.left);
-            resolveIsTarget(ctx);
+            Type source = synth(ctx.left);
+            Type target = resolveIsTarget(ctx);
+            if (target != Type.ERROR && isUncheckedArrayCheck(source, target)) {
+                analysisWarn("Unchecked cast : " + target, ctx);
+            }
             return Type.BOOL;
         }
 
@@ -2246,6 +2305,8 @@ final class TypeChecker {
                 warn("Type error : expected " + target + ", got " + source, ctx.left);
             } else if (algebra.alwaysIs(source, target)) {
                 analysisWarn("Redundant cast : " + target, ctx);
+            } else if (isUncheckedArrayCheck(source, target)) {
+                analysisWarn("Unchecked cast : " + target, ctx);
             }
             pass.analysis.setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
             return target;

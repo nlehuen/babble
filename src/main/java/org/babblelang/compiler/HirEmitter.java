@@ -2212,16 +2212,15 @@ final class HirEmitter {
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
             return;
         }
-        if (i.target() != null) {
-            String targetJvm = i.target().kind() == ClassShape.Kind.INTERFACE
-                    ? allInterfaceJvmNames.get(i.target().typeId())
-                    : allClassJvmNames.get(i.target().typeId());
-            if (targetJvm != null) {
-                line(ln);
-                mv.visitTypeInsn(INSTANCEOF, targetJvm);
-                stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
-                return;
+        String targetJvm = resolveIsTargetJvm(i.target());
+        if (targetJvm != null) {
+            if (i.target().jvmInternalName() != null) {
+                mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
             }
+            line(ln);
+            mv.visitTypeInsn(INSTANCEOF, targetJvm);
+            stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
+            return;
         }
         if (i.descriptor() == null) {
             mv.visitInsn(POP);
@@ -2235,31 +2234,39 @@ final class HirEmitter {
         stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
     }
 
+    private String resolveIsTargetJvm(ScopeAnalysis.IsTarget target) {
+        if (target == null) {
+            return null;
+        }
+        if (target.jvmInternalName() != null) {
+            return target.jvmInternalName();
+        }
+        return target.kind() == ClassShape.Kind.INTERFACE
+                ? allInterfaceJvmNames.get(target.typeId())
+                : allClassJvmNames.get(target.typeId());
+    }
+
     private void emitAsExpr(HirExpr.As a) {
         if (a.targetDescriptor() == null) {
             emitAndWiden(a.left());
             return;
         }
         emitBoxed(a.left());
-        if (a.target() != null) {
-            String targetJvm = a.target().kind() == ClassShape.Kind.INTERFACE
-                    ? allInterfaceJvmNames.get(a.target().typeId())
-                    : allClassJvmNames.get(a.target().typeId());
-            if (targetJvm != null) {
-                Label slow = new Label();
-                Label done = new Label();
-                mv.visitInsn(DUP);
-                mv.visitTypeInsn(INSTANCEOF, targetJvm);
-                mv.visitJumpInsn(IFEQ, slow);
-                mv.visitTypeInsn(CHECKCAST, targetJvm);
-                mv.visitJumpInsn(GOTO, done);
-                mv.visitLabel(slow);
-                line(a.meta().line());
-                checkType(a.targetDescriptor());
-                mv.visitLabel(done);
-                stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-                return;
-            }
+        String targetJvm = resolveIsTargetJvm(a.target());
+        if (targetJvm != null) {
+            Label slow = new Label();
+            Label done = new Label();
+            mv.visitInsn(DUP);
+            mv.visitTypeInsn(INSTANCEOF, targetJvm);
+            mv.visitJumpInsn(IFEQ, slow);
+            mv.visitTypeInsn(CHECKCAST, targetJvm);
+            mv.visitJumpInsn(GOTO, done);
+            mv.visitLabel(slow);
+            line(a.meta().line());
+            checkType(a.targetDescriptor());
+            mv.visitLabel(done);
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return;
         }
         line(a.meta().line());
         checkType(a.targetDescriptor());

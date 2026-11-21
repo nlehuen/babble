@@ -3227,7 +3227,7 @@ final class EffectChecker {
         if (type instanceof Type.JavaInstance ji) {
             return resolveJavaMethodProfile(ji.type(), "toString", null).effects();
         }
-        if (type instanceof Type.JavaArray) {
+        if (type instanceof Type.Array) {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true, false, true);
         }
         return EffectSet.EMPTY;

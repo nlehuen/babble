@@ -67,6 +67,10 @@ sealed interface Type {
         return numericRank(type) >= 0;
     }
 
+    static boolean isPrimitiveScalar(Type type) {
+        return isNumericScalar(type) || type == BOOL || type == CHAR;
+    }
+
     static boolean isCoreScalar(Type type) {
         return isNumericScalar(type) || type == BOOL || type == CHAR || type == STRING;
     }
@@ -77,7 +81,7 @@ sealed interface Type {
         public String toString() {
             if (members.size() == 2 && members.get(1) == NULL) {
                 Type base = members.get(0);
-                return (base instanceof Function || base instanceof Intersection ? "(" + base + ")" : base.toString()) + "?";
+                return (base instanceof Function || base instanceof Intersection || base instanceof Array ? "(" + base + ")" : base.toString()) + "?";
             }
             return members.stream()
                     .map(m -> m instanceof Function ? "(" + m + ")" : m.toString())
@@ -157,11 +161,27 @@ sealed interface Type {
         return false;
     }
 
-    /** A Java array, with {@code length} and assignable to matching Java array parameters. */
-    record JavaArray(Class<?> javaClass, Type element) implements Type {
+    /** A JVM array {@code array of T} (BIP020-D1). */
+    record Array(Type element) implements Type {
         @Override
         public String toString() {
-            return element + "[]";
+            return "array of " + formatElement(element);
+        }
+
+        private static String formatElement(Type t) {
+            return isSimpleElement(t) ? t.toString() : "(" + t + ")";
+        }
+
+        private static boolean isSimpleElement(Type t) {
+            return switch (t) {
+                case Simple ignored -> true;
+                case TypeVar ignored -> true;
+                case Instance i -> i.typeArguments().isEmpty();
+                case JavaInstance j -> j.typeArguments().isEmpty();
+                case CoreCollection c -> c.typeArguments().isEmpty();
+                case Union u -> u.members().size() == 2 && u.members().get(1) == NULL && isSimpleElement(u.members().get(0));
+                default -> false;
+            };
         }
     }
 
@@ -665,7 +685,7 @@ sealed interface Type {
                 yield false;
             }
             case Frozen f -> f.of().anyMatch(predicate);
-            case JavaArray ja -> ja.element().anyMatch(predicate);
+            case Array a -> a.element().anyMatch(predicate);
             case Function fn -> {
                 for (Parameter p : fn.parameters()) {
                     if (p.type().anyMatch(predicate)) {
@@ -754,9 +774,9 @@ sealed interface Type {
                 Type inner = f.of().mapTypes(mapper);
                 yield inner != f.of() ? frozen(inner) : f;
             }
-            case JavaArray ja -> {
-                Type elem = ja.element().mapTypes(mapper);
-                yield elem != ja.element() ? new JavaArray(ja.javaClass(), elem) : ja;
+            case Array a -> {
+                Type elem = a.element().mapTypes(mapper);
+                yield elem != a.element() ? new Array(elem) : a;
             }
             case Function fn -> {
                 List<Parameter> src = fn.parameters();

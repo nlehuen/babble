@@ -139,11 +139,15 @@ final class MemberTypes {
         if (receiver == Type.STRING) {
             return javaMember(String.class, List.of(), name, false, at);
         }
-        if (receiver instanceof Type.JavaArray array) {
+        if (receiver instanceof Type.Array array) {
             if ("length".equals(name)) {
                 return Type.INT;
             }
-            return javaMember(array.javaClass(), List.of(), name, false, at);
+            if (JavaTypeBridge.hasJavaMethod(Object.class, name)) {
+                return new Type.JavaMethod(JavaTypeBridge.checkedArrayClass(array), List.of(), name);
+            }
+            checker.warn("No such name in " + array + " : " + name, at);
+            return Type.ERROR;
         }
         // The 8 primitives, null, functions, any : memberless.
         checker.warn("Not a scope : " + receiverText, at);
@@ -235,7 +239,7 @@ final class MemberTypes {
             }
         } else if (!(receiver instanceof Type.Module || receiver instanceof Type.JavaPackage
                 || receiver instanceof Type.JavaClassValue || receiver instanceof Type.JavaInstance
-                || receiver instanceof Type.JavaArray || TypeChecker.isUnresolved(receiver))) {
+                || receiver instanceof Type.Array || TypeChecker.isUnresolved(receiver))) {
             String receiverText = at instanceof BabbleParser.AssignExpressionContext assign
                     ? ScopeAnalysis.assignReceiver(assign).getText() : name;
             checker.warn("Not a scope : " + receiverText, at);

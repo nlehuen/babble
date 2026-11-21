@@ -634,8 +634,8 @@ public class TypeCheckerTestCase {
                 + "parts.length = 1\n"
                 + "parts.nope",
                 "4:18 Type error : expected string, got int",
-                "5:1 Cannot assign final field : java.lang.String[].length",
-                "6:1 No such name in java.lang.String[] : nope");
+                "5:1 Cannot assign final field : array of string.length",
+                "6:1 No such name in array of string : nope");
     }
 
     @Test
@@ -771,7 +771,7 @@ public class TypeCheckerTestCase {
                 + "p.nope",
                 "2:1 Not a scope : l.get(0)",
                 "7:1 No such name in java.util.Iterator : nope",
-                "10:1 No such name in java.lang.String[] : nope",
+                "10:1 No such name in array of string : nope",
                 "13:1 No such name in java.lang.Process : nope");
     }
 

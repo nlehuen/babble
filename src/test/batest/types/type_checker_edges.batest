@@ -86,7 +86,7 @@ Type error : expected int, got double
 def arr = java.lang.String("abc").toCharArray()
 arr.length = 5
 }}}}}
-Cannot assign final field : char[].length
+Cannot assign final field : array of char.length
 
 {{{{{
 ;; Private method cannot implement interface method

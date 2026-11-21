@@ -70,7 +70,7 @@ final class JavaTypeBridge {
             return Type.NULL;
         }
         if (java.isArray()) {
-            return new Type.JavaArray(java, fromJava(java.getComponentType()));
+            return new Type.Array(fromJavaArrayComponent(java.getComponentType()));
         }
         if (java == Object.class) {
             return Type.ANY;
@@ -84,15 +84,40 @@ final class JavaTypeBridge {
         return new Type.JavaInstance(java);
     }
 
+    private static boolean isBoxedPrimitive(Class<?> java) {
+        return java == Byte.class || java == Short.class || java == Integer.class || java == Long.class
+                || java == Float.class || java == Double.class || java == Boolean.class || java == Character.class;
+    }
+
+    static Type fromJavaArrayComponent(Class<?> comp) {
+        if (comp.isPrimitive()) {
+            return fromJava(comp);
+        }
+        if (isBoxedPrimitive(comp)) {
+            return Type.nullable(fromJava(comp));
+        }
+        if (comp.isArray()) {
+            return new Type.Array(fromJavaArrayComponent(comp.getComponentType()));
+        }
+        return fromJava(comp);
+    }
+
     /** Translates a reflected Java class according to its nullability (unannotated references become {@code T?}). */
     static Type fromJavaReflected(Class<?> java, JavaNullability.Nullness nullness) {
         if (java == void.class) {
             return Type.NULL;
         }
         if (java.isArray()) {
-            Type comp = fromJavaReflected(java.getComponentType(),
-                    java.getComponentType().isPrimitive() ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.UNSPECIFIED);
-            Type arr = new Type.JavaArray(java, comp);
+            Class<?> compCls = java.getComponentType();
+            Type comp;
+            if (compCls.isPrimitive()) {
+                comp = fromJava(compCls);
+            } else if (isBoxedPrimitive(compCls)) {
+                comp = Type.nullable(fromJava(compCls));
+            } else {
+                comp = fromJavaReflected(compCls, JavaNullability.Nullness.UNSPECIFIED);
+            }
+            Type arr = new Type.Array(comp);
             return nullness == JavaNullability.Nullness.NON_NULL ? arr : Type.nullable(arr);
         }
         Type base = fromJava(java);
@@ -288,18 +313,23 @@ final class JavaTypeBridge {
             AnnotatedType compAnn = annType instanceof AnnotatedArrayType aat ? aat.getAnnotatedGenericComponentType() : null;
             Type component = fromJavaType(gat.getGenericComponentType(), compAnn, env, false, false,
                     JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards);
-            Class<?> arrayClass = Array.newInstance(erasedClass(gat.getGenericComponentType()), 0).getClass();
-            Type arr = new Type.JavaArray(arrayClass, component);
+            Type arr = new Type.Array(component);
             return eff == JavaNullability.Nullness.NON_NULL ? arr : Type.nullable(arr);
         }
         if (type instanceof Class<?> cls) {
             if (cls.isArray()) {
                 AnnotatedType compAnn = annType instanceof AnnotatedArrayType aat ? aat.getAnnotatedGenericComponentType() : null;
                 Class<?> compCls = cls.getComponentType();
-                Type comp = compCls.isPrimitive()
-                        ? fromJava(compCls)
-                        : fromJavaReflected(compCls, effectiveNullness(JavaNullability.Nullness.UNSPECIFIED, compAnn, nullMarked));
-                Type arr = new Type.JavaArray(cls, comp);
+                Type comp;
+                if (compCls.isPrimitive()) {
+                    comp = fromJava(compCls);
+                } else if (isBoxedPrimitive(compCls)) {
+                    comp = Type.nullable(fromJava(compCls));
+                } else {
+                    comp = fromJavaType(compCls, compAnn, env, false, false,
+                            JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards);
+                }
+                Type arr = new Type.Array(comp);
                 return eff == JavaNullability.Nullness.NON_NULL ? arr : Type.nullable(arr);
             }
             return fromJavaReflected(cls, eff);
@@ -627,8 +657,8 @@ final class JavaTypeBridge {
      * Null when the receiver isn't Java.
      */
     static Object assignedField(Type receiver, String name) {
-        if (receiver instanceof Type.JavaArray array) {
-            String owner = array.javaClass().getCanonicalName();
+        if (receiver instanceof Type.Array array) {
+            String owner = array.toString();
             return "length".equals(name) ? "Cannot assign final field : " + owner + "." + name
                     : "No such field in " + owner + " : " + name;
         }
@@ -660,12 +690,51 @@ final class JavaTypeBridge {
                 widenTopTypeVar, false, JavaNullability.fieldNullness(field), false), algebra);
     }
 
+    /**
+     * The JVM array class checked at runtime for {@code array} ({@code BIP020-D5}, {@code BIP020-D9}) :
+     * primitive arrays, boxed arrays for nullable primitives, {@code C[]} for core scalars and Java
+     * classes, and {@code Object[]} for Babble-defined elements, intersections, unions, functions, {@code any}
+     * and type variables.
+     */
+    static Class<?> checkedArrayClass(Type.Array array) {
+        return checkedArrayClassForElement(array.element());
+    }
+
+    private static Class<?> checkedArrayClassForElement(Type elem) {
+        elem = TypeAlgebra.unwrapFrozen(elem);
+        if (elem == Type.BYTE) return byte[].class;
+        if (elem == Type.SHORT) return short[].class;
+        if (elem == Type.INT) return int[].class;
+        if (elem == Type.LONG) return long[].class;
+        if (elem == Type.FLOAT) return float[].class;
+        if (elem == Type.DOUBLE) return double[].class;
+        if (elem == Type.BOOL) return boolean[].class;
+        if (elem == Type.CHAR) return char[].class;
+        Type base = TypeAlgebra.unwrapFrozen(Type.withoutNull(elem));
+        if (base == Type.BYTE) return Byte[].class;
+        if (base == Type.SHORT) return Short[].class;
+        if (base == Type.INT) return Integer[].class;
+        if (base == Type.LONG) return Long[].class;
+        if (base == Type.FLOAT) return Float[].class;
+        if (base == Type.DOUBLE) return Double[].class;
+        if (base == Type.BOOL) return Boolean[].class;
+        if (base == Type.CHAR) return Character[].class;
+        if (base == Type.STRING) return String[].class;
+        if (base instanceof Type.JavaInstance ji) {
+            return Array.newInstance(ji.type(), 0).getClass();
+        }
+        if (base instanceof Type.Array inner) {
+            return Array.newInstance(checkedArrayClass(inner), 0).getClass();
+        }
+        return Object[].class;
+    }
+
     static Class<?> javaClassOf(Type type) {
         if (type instanceof Type.Simple simple) {
             return simple.javaClass();
         }
-        if (type instanceof Type.JavaArray array) {
-            return array.javaClass();
+        if (type instanceof Type.Array array) {
+            return checkedArrayClass(array);
         }
         return type instanceof Type.JavaInstance instance ? instance.type() : null;
     }
@@ -716,14 +785,21 @@ final class JavaTypeBridge {
 
     static boolean applicableGeneric(Executable candidate, int index, Type argument,
                                      Map<TypeVariable<?>, Type> receiverEnv, TypeAlgebra algebra) {
-        if (!applicable(candidate.getParameterTypes()[index], argument, algebra)) {
+        return applicableGeneric(candidate, index, argument, receiverEnv, algebra, false, false);
+    }
+
+    static boolean applicableGeneric(Executable candidate, int index, Type argument,
+                                     Map<TypeVariable<?>, Type> receiverEnv, TypeAlgebra algebra,
+                                     boolean borrowParam, boolean mutParam) {
+        Class<?> rawParam = candidate.getParameterTypes()[index];
+        if (!applicable(rawParam, argument, algebra)) {
             return false;
         }
         if (TypeChecker.isUnresolved(argument)) {
             return true;
         }
         java.lang.reflect.Type genericParam = candidate.getGenericParameterTypes()[index];
-        if (genericParam instanceof Class<?>) {
+        if (genericParam instanceof Class<?> && !rawParam.isArray()) {
             return true;
         }
         Map<TypeVariable<?>, Type.TypeVar> tvToSyn = candidateSolvingVars(candidate);
@@ -738,7 +814,7 @@ final class JavaTypeBridge {
                 }
                 return satisfiesJavaBound(Type.withoutNull(argument), pt, env, algebra);
             }
-            return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null);
+            return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null, borrowParam, !mutParam);
         }
         Type unwrappedPattern = Type.withoutNull(paramPattern);
         if (argument instanceof Type.Function aFn && unwrappedPattern instanceof Type.JavaInstance pJava
@@ -758,7 +834,7 @@ final class JavaTypeBridge {
         }
         Set<Type.TypeVar> solving = Set.copyOf(tvToSyn.values());
         TypeAlgebra.ConstraintStore store = algebra.store(solving, true);
-        return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store);
+        return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowParam, !mutParam);
     }
 
     private static boolean hasWildcard(ParameterizedType pt) {
@@ -798,11 +874,23 @@ final class JavaTypeBridge {
         if (TypeChecker.isUnresolved(argument)) {
             return true;
         }
+        if (argument instanceof Type.Frozen f) {
+            return applicable(parameter, f.of(), algebra);
+        }
         if (argument instanceof Type.Union union) {
             return union.members().stream().allMatch(member -> applicable(parameter, member, algebra));
         }
         if (argument == Type.NULL) {
             return !parameter.isPrimitive();
+        }
+        if (argument instanceof Type.Array array) {
+            if (parameter == Object.class || parameter == Cloneable.class || parameter == java.io.Serializable.class) {
+                return true;
+            }
+            if (!parameter.isArray()) {
+                return false;
+            }
+            return TypeAlgebra.jvmArrayAssignable(array.element(), fromJavaArrayComponent(parameter.getComponentType()));
         }
         Class<?> java = javaClassOf(argument);
         if (java != null) {

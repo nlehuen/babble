@@ -20,7 +20,7 @@ final class TypeDisplay {
                     .map(m -> m instanceof Type.Function || m instanceof Type.Union ? "(" + display(m) + ")" : display(m))
                     .collect(Collectors.joining(" & "));
             case Type.Frozen frozen -> "frozen " + (simpleOrGeneric(frozen.of()) ? display(frozen.of()) : "(" + display(frozen.of()) + ")");
-            case Type.JavaArray array -> "JavaArray" + of(List.of(array.element()));
+            case Type.Array array -> "array" + of(List.of(array.element()));
             case Type.Function function -> function(function);
             case Type.Instance instance -> instance.node().name + of(instance.typeArguments());
             case Type.ClassValue value -> (value.node().isInterface() ? "interface " : "class ") + value.node().name + of(value.typeArguments());
@@ -101,7 +101,7 @@ final class TypeDisplay {
     /** What {@code frozen} applies to without parentheses : a type name, with or without {@code of}. */
     private static boolean simpleOrGeneric(Type type) {
         return type instanceof Type.Instance || type instanceof Type.CoreCollection || type instanceof Type.JavaInstance
-                || type instanceof Type.Simple || type instanceof Type.TypeVar;
+                || type instanceof Type.Array || type instanceof Type.Simple || type instanceof Type.TypeVar;
     }
 
     private static String javaName(Type.JavaInstance instance) {

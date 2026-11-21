@@ -11,7 +11,7 @@ file: sep? (effectDeclaration | expression)
 // expression and a following '(' : that would be ambiguous with a call.
 sep: (';' | NL)+;
 
-coreCollectionKeyword: LIST | SET | SORTEDSET | MAP | SORTEDMAP | ENTRY;
+coreCollectionKeyword: LIST | SET | SORTEDSET | MAP | SORTEDMAP | ENTRY | ARRAY;
 
 coreScalarKeyword: BYTE | SHORT | INT_KW | LONG_KW | FLOAT_KW | DOUBLE_KW | BOOL_KW | CHAR_KW | STRING_KW;
 
@@ -246,6 +246,7 @@ SORTEDSET: 'sortedset';
 MAP: 'map';
 SORTEDMAP: 'sortedmap';
 ENTRY: 'entry';
+ARRAY: 'array';
 ANY: 'any';
 VOID: 'void';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;

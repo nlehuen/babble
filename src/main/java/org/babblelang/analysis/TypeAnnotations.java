@@ -451,6 +451,9 @@ final class TypeAnnotations {
         }
         Object resolved = TypeChecker.resolveName(null, path.get(0), scope);
         if (path.size() == 1 && resolved == null) {
+            if ("array".equals(path.get(0))) {
+                return instantiateArrayType(type, scope);
+            }
             Class<?> coreCollection = switch (path.get(0)) {
                 case "list" -> java.util.List.class;
                 case "set" -> java.util.Set.class;
@@ -549,6 +552,44 @@ final class TypeAnnotations {
     private static String sourceText(ParserRuleContext ctx) {
         return ctx.getStart().getInputStream().getText(
                 org.antlr.v4.runtime.misc.Interval.of(ctx.getStart().getStartIndex(), ctx.getStop().getStopIndex()));
+    }
+
+    private Type instantiateArrayType(BabbleParser.SimpleTypeContext simple, ScopeNode scope) {
+        if (simple.OF() == null) {
+            checker.warn("Missing type arguments : " + sourceText(simple), simple);
+            return Type.ERROR;
+        }
+        List<Type> args = resolveTypeArguments(simple, scope);
+        if (args == null) {
+            return Type.ERROR;
+        }
+        if (args.size() != 1) {
+            checker.warn("Wrong number of type arguments : expected 1, got " + args.size(), simple);
+            return Type.ERROR;
+        }
+        return new Type.Array(args.get(0));
+    }
+
+    /** Whether {@code simple} resolves to a type alias whose target type (ignoring nullability) is an array. */
+    boolean resolvesToArrayAlias(BabbleParser.SimpleTypeContext simple, ScopeNode scope) {
+        List<String> path = ScopeAnalysis.simpleTypePath(simple);
+        Object resolved = TypeChecker.resolveName(null, path.get(0), scope);
+        if (!(resolved instanceof BabbleParser.DefExpressionContext def)) {
+            return false;
+        }
+        Type body = null;
+        if (path.size() == 1 && def.value instanceof BabbleParser.TypeAliasExpressionContext) {
+            Type alias = aliasOf(def);
+            if (alias instanceof Type.TypeAlias typeAlias) {
+                body = typeAlias.aliased();
+            }
+        } else if (fromModule(def.value, checker.scopeOf(def), 0)) {
+            Type through = typeThroughModule(checker.typeOfDeclaration(def), path, simple);
+            if (through instanceof Type.TypeAlias typeAlias) {
+                body = typeAlias.aliased();
+            }
+        }
+        return body != null && Type.withoutNull(body) instanceof Type.Array;
     }
 
     private Type instantiateBabbleType(TypeNode node, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {

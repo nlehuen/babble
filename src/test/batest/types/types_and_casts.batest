@@ -161,13 +161,13 @@ true
 def stack = java.lang.Thread.currentThread().getStackTrace()
 stack.length = 5
 }}}}}
-Cannot assign final field : java.lang.StackTraceElement[].length
+Cannot assign final field : array of java.lang.StackTraceElement?.length
 
 {{{{{
 def stack = java.lang.Thread.currentThread().getStackTrace()
 println(stack.missing)
 }}}}}
-No such name in java.lang.StackTraceElement[] : missing
+No such name in array of java.lang.StackTraceElement? : missing
 
 {{{{{
 println(java.awt.Point.x)
