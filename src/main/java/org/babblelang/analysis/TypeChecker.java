@@ -1586,6 +1586,7 @@ final class TypeChecker {
                 case BabbleParser.IfExprContext c -> visitIfExpr(c, expected, role);
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
+                case BabbleParser.TypeAliasExpressionContext c -> visitTypeAlias(c);
                 case BabbleParser.ForExpressionContext c -> visitForExpression(c, expected, role);
                 case BabbleParser.ClassExpressionContext c -> visitClassExpression(c, expected, role);
                 case BabbleParser.InterfaceExpressionContext c -> visitInterfaceExpression(c, expected, role);
@@ -1964,8 +1965,25 @@ final class TypeChecker {
             return Type.ERROR;
         }
 
+        /** {@code def name = type T} (BIP023) : only as a def's value, which takes no annotation of its own. */
+        private Type visitTypeAlias(BabbleParser.TypeAliasExpressionContext ctx) {
+            if (!(ctx.getParent() instanceof BabbleParser.DefExpressionContext def) || def.value != ctx) {
+                warn("A type alias is the value of a def : " + ctx.getText().replaceFirst("^type", "type "), ctx);
+                return Type.ERROR;
+            }
+            if (def.type() != null) {
+                warn("A type alias takes no annotation : " + def.name.getText(), def.type());
+                return Type.ERROR;
+            }
+            return annotator.aliasOf(def);
+        }
+
         private Type visitSelector(BabbleParser.SelectorContext ctx, Type expected, Role role) {
             Type result = selectUninstantiated(ctx);
+            if (result instanceof Type.TypeAlias) {
+                warn("A type alias is not a value : " + ctx.getText(), ctx);
+                return Type.ERROR;
+            }
             checkSelectorEscape(ctx, result, role);
             if (result instanceof Type.Function fn && !fn.typeParameters().isEmpty() && !role.isCallee()) {
                 result = callSolver.instantiateFunctionValue(fn, ctx, expected);

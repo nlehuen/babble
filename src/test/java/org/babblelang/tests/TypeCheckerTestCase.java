@@ -879,6 +879,26 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testTypeAliases() {
+        // BIP023 : placement, annotation, recursion, values, and type arguments.
+        assertDiagnostics("def Box of A = type list of A\n"
+                        + "def L = type (int | L)?\n"
+                        + "def T : int = type int\n"
+                        + "def f = fn () -> ( type int )\n"
+                        + "def v = Box\n"
+                        + "def b : Box = list.of(1)\n"
+                        + "def c : Box of (int, string) = list.of(1)\n"
+                        + "def d : Box of int = list.of(\"x\")",
+                "2:14 Recursive type alias : L",
+                "3:9 A type alias takes no annotation : T",
+                "4:20 A type alias is the value of a def : type int",
+                "5:9 A type alias is not a value : Box",
+                "6:9 Missing type arguments : Box",
+                "7:9 Wrong number of type arguments : expected 1, got 2",
+                "8:22 Type error : expected list(int), got list(string)");
+    }
+
+    @Test
     public void testIntersectionTypes() {
         // BIP022 : operands, nullable operands, member conflicts, and A & B as an argument.
         assertDiagnostics("def Shape = interface ( def area : fn () : double )\n"
@@ -1149,7 +1169,7 @@ public class TypeCheckerTestCase {
         org.babblelang.analysis.AnalysisException misplaced = Assertions.assertThrows(
                 org.babblelang.analysis.AnalysisException.class,
                 () -> diagnostics("def bad of T = 42"));
-        Assertions.assertTrue(misplaced.getMessage().contains("Type parameters only apply to functions, classes, and interfaces : bad"), misplaced.getMessage());
+        Assertions.assertTrue(misplaced.getMessage().contains("Type parameters only apply to functions, classes, interfaces, and type aliases : bad"), misplaced.getMessage());
     }
 
     @Test

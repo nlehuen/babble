@@ -370,6 +370,17 @@ public class ReplTestCase {
                         ":type def s : Shape = f(object implements Shape, Named ( def area = fn () : double -> ( 1.0 ) ; def name = fn () : string -> ( \"o\" ) )) ; if s is Named then ( s ) else ( s as Shape & Named )"));
     }
 
+    /** Aliases (BIP023) stand for their types : {@code :type} shows what they stand for, across inputs. */
+    @Test
+    public void testTypeAliasesAcrossInputs() throws Exception {
+        Assertions.assertEquals(List.of("interface Shape", "interface Named", "(Shape & Named)?", "list of int"),
+                transcript("def Shape = interface ( def area : fn () : double )",
+                        "def Named = interface ( def name : fn () : string )",
+                        "def SN = type Shape & Named ; def Box of T = type list of T",
+                        ":type def a : SN? = null ; a",
+                        ":type def b : Box of int = list.of(1) ; b"));
+    }
+
     /** {@code :type} neither runs its input nor keeps what it defines ; its errors are reported as an input's. */
     @Test
     public void testTypeCommandLeavesTheSessionAlone() throws Exception {

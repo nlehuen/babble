@@ -1,0 +1,119 @@
+;; Type aliases (BIP023) : def Name = type T names a type, generic over the def's type parameters
+
+========== shapes.ba ==========
+export def Shape = interface ( def area: fn (): double )
+export def Named = interface ( def name: fn (): string )
+export def ShapeWithName = type Shape & Named
+export def Box of T = type list of T
+export def Tile = class () implements Shape, Named (
+    def area = fn (): double -> ( 1.5 )
+    def name = fn (): string -> ( "tile" )
+)
+
+==========
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def Label = interface ( def text: fn (): string )
+def Tile = class () implements Shape, Named (
+    def area = fn (): double -> ( 1.5 )
+    def name = fn (): string -> ( "tile" )
+)
+def Sign = class () implements Shape, Label (
+    def area = fn (): double -> ( 2.0 )
+    def text = fn (): string -> ( "sign" )
+)
+
+{{{{{
+;; An alias stands for its type, unions and intersections included
+def ShapeWithText = type Shape & (Named | Label)
+def describe = fn (x: ShapeWithText): string -> ( if x is Named then ( x.name() ) else ( x.text() ) )
+println(describe(Tile()), " ", describe(Sign()))
+}}}}}
+tile sign
+
+{{{{{
+;; An alias in nullable, is and as positions
+def ShapeWithText = type Shape & (Named | Label)
+def maybe: ShapeWithText? = null
+def a: any = Sign()
+println(maybe == null, " ", a is ShapeWithText, " ", (a as ShapeWithText).area())
+}}}}}
+true true 2.0
+
+{{{{{
+;; A generic alias takes its def's type parameters
+def Pair of (A, B) = type entry of (A, B)
+def p: Pair of (string, int) = entry("a", 1)
+println(p.getKey(), p.getValue() + 1)
+}}}}}
+a2
+
+{{{{{
+;; An alias of an alias, and of a union of scalars
+def Num = type int | double
+def Again = type Num
+def twice = fn (n: Again): Num -> ( if n is int then ( n * 2 ) else ( n * 2.0 ) )
+println(twice(2), " ", twice(1.5))
+}}}}}
+4 3.0
+
+{{{{{
+;; An exported alias, used through its module
+def shapes = import("shapes.ba")
+def f = fn (x: shapes.ShapeWithName): string -> ( x.name() + ":" + x.area() )
+def b: shapes.Box of int = list.of(1, 2)
+println(f(shapes.Tile()), " ", b.size())
+}}}}}
+tile:1.5 2
+
+{{{{{
+;; An alias is not a value
+def T = type Shape & Named
+println(T)
+}}}}}
+A type alias is not a value : T
+
+{{{{{
+;; A type alias is only the value of a def
+def f = fn () -> ( type int )
+}}}}}
+A type alias is the value of a def : type int
+
+{{{{{
+;; A type alias takes no annotation of its own
+def T: int = type int
+}}}}}
+A type alias takes no annotation : T
+
+{{{{{
+;; An alias that names itself
+def L = type (int | L)?
+}}}}}
+Recursive type alias : L
+
+{{{{{
+;; A generic alias needs its type arguments
+def Box of A = type list of A
+def x: Box = list.of(1)
+}}}}}
+Missing type arguments : Box
+
+{{{{{
+;; ... as many as it has type parameters
+def Box of A = type list of A
+def x: Box of (int, string) = list.of(1)
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+;; A plain alias takes none
+def T = type int
+def x: T of int = 1
+}}}}}
+Wrong number of type arguments : expected 0, got 1
+
+{{{{{
+;; type stays a member name after a dot (a Java method here)
+println(java.lang.ProcessBuilder.Redirect.INHERIT.type())
+}}}}}
+INHERIT

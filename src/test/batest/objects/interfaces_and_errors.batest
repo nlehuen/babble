@@ -151,7 +151,7 @@ Name already defined : T
 {{{{{
 def x of T = 1
 }}}}}
-Type parameters only apply to functions, classes, and interfaces : x
+Type parameters only apply to functions, classes, interfaces, and type aliases : x
 
 {{{{{
 def f = fn () -> (

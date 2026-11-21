@@ -256,6 +256,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return Types.matches(value, scopes.checkedType(ctx));
     }
 
+    /** A type alias (BIP023) only stands for a type : its def's value, which nothing can read, is null. */
+    @Override
+    public Object visitTypeAliasExpression(BabbleParser.TypeAliasExpressionContext ctx) {
+        last = ctx;
+        return null;
+    }
+
     @Override
     public Object visitAsExpression(BabbleParser.AsExpressionContext ctx) {
         last = ctx;

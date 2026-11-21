@@ -36,6 +36,7 @@ final class TypeAnnotations {
     /** Forgets the resolved annotations (type variables keep their identity across walks). */
     void clear() {
         annotations.clear();
+        aliases.clear();
     }
 
     /** The identity of the type variables a generic def declares, or null. */
@@ -100,7 +101,8 @@ final class TypeAnnotations {
     Type.TypeVar resolveTypeVar(String name, ParserRuleContext at, ScopeNode scope) {
         if (at != null) {
             for (ParserRuleContext p = at; p != null; p = p.getParent()) {
-                if (p.getParent() instanceof BabbleParser.DefExpressionContext def && def.type() == p && def.typeParameters() != null) {
+                if (p.getParent() instanceof BabbleParser.DefExpressionContext def && def.typeParameters() != null
+                        && (def.type() == p || p instanceof BabbleParser.TypeAliasExpressionContext && def.value == p)) {
                     for (Type.TypeVar tv : typeVarsOf(def)) {
                         if (tv.name().equals(name)) {
                             return tv;
@@ -485,6 +487,10 @@ final class TypeAnnotations {
             return builtin;
         }
         if (resolved instanceof BabbleParser.DefExpressionContext def) {
+            if (path.size() == 1 && def.value instanceof BabbleParser.TypeAliasExpressionContext) {
+                Type alias = aliasOf(def);
+                return alias instanceof Type.TypeAlias typeAlias ? instantiateAlias(typeAlias, type, scope, allowRaw) : alias;
+            }
             if (path.size() == 1) {
                 if (!checker.isReassigned(def)) {
                     TypeNode node = classNode(def.value, checker.scopeOf(def), 0);
@@ -506,6 +512,9 @@ final class TypeAnnotations {
                 }
                 if (through instanceof Type.Instance inst) {
                     return instantiateBabbleType(inst.node(), type, scope, allowRaw);
+                }
+                if (through instanceof Type.TypeAlias alias) {
+                    return instantiateAlias(alias, type, scope, allowRaw);
                 }
                 return null;
             }
@@ -656,7 +665,73 @@ final class TypeAnnotations {
         if (type == Type.ERROR) {
             return Type.ERROR;
         }
+        if (type instanceof Type.TypeAlias alias) {
+            return alias;
+        }
         return type instanceof Type.ClassValue value ? new Type.Instance(value.node()) : null;
+    }
+
+    private final Map<BabbleParser.DefExpressionContext, Type> aliases = new IdentityHashMap<>();
+    private final java.util.Set<BabbleParser.DefExpressionContext> resolvingAliases =
+            java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /**
+     * What {@code def name = type T} stands for (BIP023) : a {@link Type.TypeAlias} of {@code T},
+     * resolved where the def is, generic over the def's type parameters ; an error for an alias
+     * that names itself.
+     */
+    Type aliasOf(BabbleParser.DefExpressionContext def) {
+        Type cached = aliases.get(def);
+        if (cached != null) {
+            return cached;
+        }
+        BabbleParser.TypeAliasExpressionContext alias = (BabbleParser.TypeAliasExpressionContext) def.value;
+        if (!resolvingAliases.add(def)) {
+            checker.warn("Recursive type alias : " + def.name.getText(), alias.aliased);
+            return Type.ERROR;
+        }
+        Type result;
+        try {
+            Type aliased = annotation(alias.aliased, checker.scopeOf(def));
+            result = aliased == Type.ERROR ? Type.ERROR
+                    : new Type.TypeAlias(def.name.getText(), typeVarsOf(def), aliased);
+        } finally {
+            resolvingAliases.remove(def);
+        }
+        aliases.put(def, result);
+        return result;
+    }
+
+    /** An annotation naming an alias : its type, with the alias's type parameters bound to the annotation's arguments. */
+    private Type instantiateAlias(Type.TypeAlias alias, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
+        int expected = alias.typeParameters().size();
+        if (simple.OF() == null) {
+            if (expected == 0) {
+                return alias.aliased();
+            }
+            if (allowRaw) {
+                Map<Type.TypeVar, Type> raw = new HashMap<>();
+                for (Type.TypeVar tv : alias.typeParameters()) {
+                    raw.put(tv, Type.NULLABLE_ANY);
+                }
+                return checker.algebra().substitute(alias.aliased(), raw);
+            }
+            checker.warn("Missing type arguments : " + sourceText(simple), simple);
+            return Type.ERROR;
+        }
+        List<Type> args = resolveTypeArguments(simple, scope);
+        if (args == null) {
+            return Type.ERROR;
+        }
+        if (args.size() != expected) {
+            checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
+            return Type.ERROR;
+        }
+        Map<Type.TypeVar, Type> bindings = new HashMap<>();
+        for (int i = 0; i < expected; i++) {
+            bindings.put(alias.typeParameters().get(i), args.get(i));
+        }
+        return checker.algebra().substitute(alias.aliased(), bindings);
     }
 
     private TypeNode classNode(BabbleParser.ExpressionContext value, ScopeNode scope, int depth) {
