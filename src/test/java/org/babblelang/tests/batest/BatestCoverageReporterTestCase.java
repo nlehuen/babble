@@ -144,4 +144,104 @@ public class BatestCoverageReporterTestCase {
         Assertions.assertThrows(AssertionError.class,
                 () -> BatestCoverageReporter.run(reportDir, xmlI, xmlC, tmp.resolve("src"), "", ""));
     }
+
+    @Test
+    public void testThreeWayCompileO0IsolationAndParity(@TempDir Path tmp) throws Exception {
+        Path reportDir = tmp.resolve("report3");
+        Files.createDirectories(reportDir);
+
+        String interpXml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <report name="interpret">
+                  <package name="org/babblelang/engine/impl">
+                    <class name="org/babblelang/engine/impl/Interpreter" sourcefilename="Interpreter.java"/>
+                    <sourcefile name="Interpreter.java">
+                      <line nr="10" mi="0" ci="2" mb="0" cb="2"/>
+                      <counter type="LINE" missed="0" covered="1"/>
+                      <counter type="BRANCH" missed="0" covered="2"/>
+                    </sourcefile>
+                  </package>
+                  <package name="org/babblelang/runtime">
+                    <class name="org/babblelang/runtime/Operators" sourcefilename="Operators.java"/>
+                    <sourcefile name="Operators.java">
+                      <line nr="20" mi="0" ci="2" mb="1" cb="1"/>
+                      <line nr="21" mi="2" ci="0" mb="2" cb="0"/>
+                      <counter type="LINE" missed="1" covered="1"/>
+                      <counter type="BRANCH" missed="3" covered="1"/>
+                    </sourcefile>
+                  </package>
+                </report>
+                """;
+        String compileXml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <report name="compile">
+                  <package name="org/babblelang/compiler">
+                    <class name="org/babblelang/compiler/BabbleCompiler" sourcefilename="BabbleCompiler.java"/>
+                    <sourcefile name="BabbleCompiler.java">
+                      <line nr="5" mi="0" ci="2" mb="0" cb="2"/>
+                      <line nr="6" mi="1" ci="0" mb="2" cb="0"/>
+                      <counter type="LINE" missed="1" covered="1"/>
+                      <counter type="BRANCH" missed="2" covered="2"/>
+                    </sourcefile>
+                  </package>
+                  <package name="org/babblelang/runtime">
+                    <class name="org/babblelang/runtime/Operators" sourcefilename="Operators.java"/>
+                    <sourcefile name="Operators.java">
+                      <line nr="20" mi="2" ci="0" mb="2" cb="0"/>
+                      <line nr="21" mi="2" ci="0" mb="2" cb="0"/>
+                      <counter type="LINE" missed="2" covered="0"/>
+                      <counter type="BRANCH" missed="4" covered="0"/>
+                    </sourcefile>
+                  </package>
+                </report>
+                """;
+        String compileO0Xml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <report name="compile-O0">
+                  <package name="org/babblelang/compiler">
+                    <class name="org/babblelang/compiler/BabbleCompiler" sourcefilename="BabbleCompiler.java"/>
+                    <sourcefile name="BabbleCompiler.java">
+                      <line nr="5" mi="2" ci="0" mb="2" cb="0"/>
+                      <line nr="6" mi="0" ci="2" mb="0" cb="1"/>
+                      <counter type="LINE" missed="1" covered="1"/>
+                      <counter type="BRANCH" missed="3" covered="1"/>
+                    </sourcefile>
+                  </package>
+                  <package name="org/babblelang/runtime">
+                    <class name="org/babblelang/runtime/Operators" sourcefilename="Operators.java"/>
+                    <sourcefile name="Operators.java">
+                      <line nr="20" mi="2" ci="0" mb="2" cb="0"/>
+                      <line nr="21" mi="0" ci="2" mb="0" cb="2"/>
+                      <counter type="LINE" missed="1" covered="1"/>
+                      <counter type="BRANCH" missed="2" covered="2"/>
+                    </sourcefile>
+                  </package>
+                </report>
+                """;
+        Path xmlI = tmp.resolve("jacoco-i.xml");
+        Path xmlC = tmp.resolve("jacoco-c.xml");
+        Path xmlC0 = tmp.resolve("jacoco-c0.xml");
+        Files.writeString(xmlI, interpXml, StandardCharsets.UTF_8);
+        Files.writeString(xmlC, compileXml, StandardCharsets.UTF_8);
+        Files.writeString(xmlC0, compileO0Xml, StandardCharsets.UTF_8);
+
+        String ok = "{\"file\":\"a.batest\",\"index\":1,\"line\":1,\"expected\":\"5\",\"kind\":\"OK\",\"text\":\"5\",\"passed\":true}\n";
+        Files.writeString(reportDir.resolve("outcomes-interpret.jsonl"), ok, StandardCharsets.UTF_8);
+        Files.writeString(reportDir.resolve("outcomes-compile.jsonl"), ok, StandardCharsets.UTF_8);
+        Files.writeString(reportDir.resolve("outcomes-compile-O0.jsonl"), ok, StandardCharsets.UTF_8);
+
+        BatestCoverageReporter.run(reportDir, xmlI, xmlC, xmlC0, tmp.resolve("src"), "", "", 0.0);
+        String summary = Files.readString(reportDir.resolve("summary.json"), StandardCharsets.UTF_8);
+        Assertions.assertTrue(summary.contains("\"compileO0Passed\": 1"), summary);
+        Assertions.assertTrue(summary.contains("\"compiler\": {\"linesCovered\": 1, \"linesTotal\": 2, \"linePct\": 50.00, \"branchesCovered\": 2, \"branchesTotal\": 4"), summary);
+        Assertions.assertTrue(summary.contains("\"compilerO0\": {\"linesCovered\": 1, \"linesTotal\": 2, \"linePct\": 50.00, \"branchesCovered\": 1, \"branchesTotal\": 4"), summary);
+        Assertions.assertTrue(summary.contains("\"sharedRuntimeCombined\": {\"linesCovered\": 2, \"linesTotal\": 2, \"linePct\": 100.00, \"branchesCovered\": 3, \"branchesTotal\": 4"), summary);
+
+        // Verify compile -O0 parity mismatch triggers AssertionError
+        Files.writeString(reportDir.resolve("outcomes-compile-O0.jsonl"),
+                "{\"file\":\"a.batest\",\"index\":1,\"line\":1,\"expected\":\"5\",\"kind\":\"OK\",\"text\":\"7\",\"passed\":false}\n",
+                StandardCharsets.UTF_8);
+        Assertions.assertThrows(AssertionError.class,
+                () -> BatestCoverageReporter.run(reportDir, xmlI, xmlC, xmlC0, tmp.resolve("src"), "", "", 0.0));
+    }
 }
