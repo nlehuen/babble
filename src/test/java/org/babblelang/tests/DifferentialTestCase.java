@@ -292,7 +292,12 @@ public class DifferentialTestCase {
                         + "def T = class () implements S, N ( def area = fn () : double -> ( 2.0 ) ; def name = fn () : string -> ( \"t\" ) )\n"
                         + "def D = class () implements S ( def area = fn () : double -> ( 1.0 ) )\n"
                         + "def f = fn (x : S & N) : string -> ( x.name() + x.area() ) ; def s : S = T()\n"
-                        + "f(id(T()) as S & N) + (if s is N then ( s.name() ) else ( \"-\" )) + (D() is S & N)\nf(id(D()) as S & N)"
+                        + "f(id(T()) as S & N) + (if s is N then ( s.name() ) else ( \"-\" )) + (D() is S & N)\nf(id(D()) as S & N)",
+                // BIP023 : an alias checked at runtime through as and is.
+                id + "def S = interface ( def area : fn () : double )\ndef N = interface ( def name : fn () : string )\ndef SN = type S & N\n"
+                        + "def T = class () implements S, N ( def area = fn () : double -> ( 2.0 ) ; def name = fn () : string -> ( \"t\" ) )\n"
+                        + "def D = class () implements S ( def area = fn () : double -> ( 1.0 ) )\n"
+                        + "(id(T()) as SN).name() + (D() is SN)\n(id(D()) as SN).area()"
         );
     }
 

@@ -406,6 +406,17 @@ sealed interface Type {
         }
     }
 
+    /**
+     * The value of {@code def name = type T} (a type alias, BIP023) : what annotations naming it
+     * stand for, generic over {@code typeParameters}. Not a value programs can use.
+     */
+    record TypeAlias(String name, List<TypeVar> typeParameters, Type aliased) implements Type {
+        @Override
+        public String toString() {
+            return "type " + aliased;
+        }
+    }
+
     /** The value of a class or interface expression : its constructor and statics, optionally specialized via {@code of}. */
     record ClassValue(TypeNode node, List<Type> typeArguments) implements Type {
         ClassValue(TypeNode node) {
@@ -698,6 +709,7 @@ sealed interface Type {
             case Simple ignored -> false;
             case TypeVar ignored -> false;
             case ClassValue ignored -> false;
+            case TypeAlias ignored -> false;
             case Module ignored -> false;
             case JavaPackage ignored -> false;
             case JavaClassValue ignored -> false;
