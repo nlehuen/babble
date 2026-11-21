@@ -221,8 +221,9 @@ public class BytecodeEffectAnalyzerTestCase {
     public void testGoldenDumpsForMathAndArrayList() throws Exception {
         String mathDump = org.babblelang.analysis.AxiomDumper.dumpClass(Math.class, org.babblelang.analysis.BuiltinAxioms.standard());
         Assertions.assertTrue(mathDump.startsWith("axiom java.lang.Math: class (\n) static (\n"), mathDump);
-        Assertions.assertTrue(mathDump.contains("def abs: fn nothrow (p0: double): double"), mathDump);
-        Assertions.assertTrue(mathDump.contains("def sqrt: fn nothrow (p0: double): double"), mathDump);
+        Assertions.assertTrue(mathDump.contains("def abs: fn nothrow idempotent foldable (p0: double): double"), mathDump);
+        Assertions.assertTrue(mathDump.contains("def sqrt: fn nothrow foldable (p0: double): double"), mathDump);
+        Assertions.assertTrue(mathDump.contains("def addExact: fn (p0: int, p1: int): int"), mathDump);
         Assertions.assertTrue(mathDump.contains("def ceilDiv: fn (p0: int, p1: int): int"), mathDump);
         Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.BuiltinAxioms.checkCanonicalOrder(mathDump, "Math"));
 
