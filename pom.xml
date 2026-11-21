@@ -16,6 +16,7 @@
         <batest.filter></batest.filter>
         <batest.inspect></batest.inspect>
         <batest.includes>**/BatestTestCase.java</batest.includes>
+        <maven.test.redirectTestOutputToFile>true</maven.test.redirectTestOutputToFile>
     </properties>
 
     <dependencies>
