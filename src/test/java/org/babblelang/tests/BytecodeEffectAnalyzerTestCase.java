@@ -108,10 +108,18 @@ public class BytecodeEffectAnalyzerTestCase {
         Assertions.assertFalse(rSync.isPure());
         Assertions.assertFalse(rSync.isDeterministic());
 
-        // Open virtual dispatch drops pure/deterministic/nothrow
-        BytecodeEffectAnalyzer.Result rOpen = BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("openDispatch", Object.class));
-        Assertions.assertFalse(rOpen.effects().isPure());
-        Assertions.assertTrue(rOpen.reasons().stream().anyMatch(s -> s.contains("open dispatch")));
+        // Open virtual dispatch without curated axiom drops pure/deterministic/nothrow;
+        // with curated Object.hashCode it resolves through the curated axiom to pure volatile (BIP019 §5.2).
+        BytecodeEffectAnalyzer.Result rOpenEmpty = BytecodeEffectAnalyzer.analyze(
+                SampleHelpers.class.getMethod("openDispatch", Object.class),
+                org.babblelang.analysis.BuiltinAxioms.EMPTY);
+        Assertions.assertFalse(rOpenEmpty.effects().isPure());
+        Assertions.assertTrue(rOpenEmpty.reasons().stream().anyMatch(s -> s.contains("open dispatch")));
+        BytecodeEffectAnalyzer.Result rOpenCurated = BytecodeEffectAnalyzer.analyze(
+                SampleHelpers.class.getMethod("openDispatch", Object.class),
+                org.babblelang.analysis.BuiltinAxioms.standard());
+        Assertions.assertTrue(rOpenCurated.effects().isPure());
+        Assertions.assertFalse(rOpenCurated.effects().isDeterministic());
 
         // Loop drops @TERMINATING while staying pure deterministic nothrow
         EffectSet rLoop = BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("loopSum", int.class)).effects();
@@ -220,9 +228,9 @@ public class BytecodeEffectAnalyzerTestCase {
 
         String listDump = org.babblelang.analysis.AxiomDumper.dumpClass(java.util.ArrayList.class, org.babblelang.analysis.BuiltinAxioms.standard());
         Assertions.assertTrue(listDump.startsWith("axiom java.util.ArrayList of E: class (\n"), listDump);
-        Assertions.assertTrue(listDump.contains("def clear: fn mut shallow (): void"), listDump);
+        Assertions.assertTrue(listDump.contains("def clear: fn mut shared shallow (): void"), listDump);
         Assertions.assertTrue(listDump.contains("def isEmpty: fn nothrow (): bool"), listDump);
-        Assertions.assertTrue(listDump.contains("def iterator: fn shared fresh (): java.util.Iterator of any?"), listDump);
+        Assertions.assertTrue(listDump.contains("def iterator: fn shared nothrow view (): java.util.Iterator of any?"), listDump);
         Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.BuiltinAxioms.checkCanonicalOrder(listDump, "ArrayList"));
     }
 

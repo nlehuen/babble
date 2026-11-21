@@ -91,12 +91,14 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     @Test
     public void testCallsFromJavaPrintAndFail() throws Exception {
-        String noisy = "def Noisy = class (def v : int) implements java.lang.Comparable of Noisy (\n"
+        String noisy = "axiom java.lang.Comparable.compareTo: fn io\n"
+                + "def Noisy = class (def v : int) implements java.lang.Comparable of Noisy (\n"
                 + "    def compareTo = fn io (o : Noisy) : int -> ( print(\"<\") ; this.v - o.v )\n"
                 + ")\n"
                 + "def l : java.util.List of Noisy = java.util.ArrayList() ; l.add(Noisy(2)) ; l.add(Noisy(1)) ; java.util.Collections.sort(l)";
         Assertions.assertTrue(output(noisy).startsWith("<"));
-        String broken = "def Broken = class () implements java.lang.Comparable of Broken (\n"
+        String broken = "axiom java.lang.Comparable.compareTo: fn io\n"
+                + "def Broken = class () implements java.lang.Comparable of Broken (\n"
                 + "    def compareTo = fn io (o : Broken) : int -> ( nosuchname ; 0 )\n"
                 + ")\n"
                 + "def l : java.util.List of Broken = java.util.ArrayList() ; l.add(Broken()) ; l.add(Broken()) ; java.util.Collections.sort(l)";

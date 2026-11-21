@@ -1,0 +1,57 @@
+;; Curated axioms for java.lang (BIP019-P4)
+
+axiom java.lang.Class of T: class (
+    def getCanonicalName: fn nothrow (): string?
+    def getName: fn nothrow (): string
+    def getSimpleName: fn nothrow (): string
+)
+
+;; QUESTIONABLE : assumes every Comparable.compareTo implementation is pure
+axiom java.lang.Comparable of T: class (
+    def compareTo: fn (o: T): int
+)
+
+;; QUESTIONABLE : assumes every Iterable.iterator implementation is pure shared nothrow view
+axiom java.lang.Iterable of T: class (
+    def iterator: fn shared nothrow view (): java.util.Iterator of T
+)
+
+;; QUESTIONABLE : assumes Object's own hashCode and toString are pure volatile
+axiom java.lang.Object: class exact (
+    def getClass: fn nothrow (): java.lang.Class of any?
+    def hashCode: fn volatile (): int
+    def toString: fn volatile (): string
+)
+
+;; QUESTIONABLE : assumes every Object.equals implementation is pure
+axiom java.lang.Object.equals: fn (obj: any?): bool
+
+axiom java.lang.String: class (
+    def *: fn pure
+    def compareTo: fn nothrow
+    def compareToIgnoreCase: fn nothrow
+    def concat: fn nothrow
+    def contains: fn nothrow
+    def contentEquals: fn nothrow
+    def endsWith: fn nothrow
+    def equals: fn nothrow (anObject: any?): bool
+    def equalsIgnoreCase: fn nothrow
+    def hashCode: fn nothrow
+    def indexOf: fn nothrow
+    def isBlank: fn nothrow
+    def isEmpty: fn nothrow
+    def lastIndexOf: fn nothrow
+    def length: fn nothrow
+    def replace: fn nothrow
+    def startsWith: fn nothrow
+    def strip: fn nothrow
+    def stripLeading: fn nothrow
+    def stripTrailing: fn nothrow
+    def toLowerCase: fn nothrow
+    def toString: fn nothrow
+    def toUpperCase: fn nothrow
+    def trim: fn nothrow
+) static (
+    def *: fn pure
+    def new: fn pure
+)

@@ -16,8 +16,14 @@ Every assumption the analysis, compiler, interpreter, and optimizer make about s
 
 ## Files
 
-*(Axiom files are added across `BIP019-P4`–`P7`.)*
+- `java/lang/curated.ba` — protocol contracts (`Comparable`, `Iterable`, `Object`) and `String`
+- `java/util/curated.ba` — core collections, maps, entries, iterators, `Comparator`, and collection/entry constructors
 
 ## `QUESTIONABLE` Axioms
 
-*(None yet; doubtful axioms kept during migration are tagged `;; QUESTIONABLE` and indexed here.)*
+- `java/lang/curated.ba` : `java.lang.Comparable` (`compareTo` assumed pure on every implementation)
+- `java/lang/curated.ba` : `java.lang.Iterable` (`iterator` assumed pure nothrow view on every implementation)
+- `java/lang/curated.ba` : `java.lang.Object` (`hashCode` and `toString` assumed pure volatile on `Object` itself)
+- `java/lang/curated.ba` : `java.lang.Object.equals` (assumed pure on every implementation)
+- `java/util/curated.ba` : `java.util.Collection`, `java.util.List`, `java.util.Map`, `java.util.Iterator`, `java.util.ListIterator` (core collection/iterator effect contracts assumed for every implementation)
+- `java/util/curated.ba` : `java.util.Comparator` (`compare` assumed pure on every implementation)

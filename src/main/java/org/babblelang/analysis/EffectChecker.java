@@ -1453,17 +1453,13 @@ final class EffectChecker {
         if (declOwner != owner && hasClassEffectAnnotation(declOwner)) {
             return profileFromAnnotations(exactMethod, declOwner, true);
         }
-        // Tier 6: Curated axioms (BIP019) first, then legacy standard value protocol defaults (retired in BIP019-P4).
+        // Tier 6: Curated axioms (BIP019).
         AxiomData.MemberAxiom curatedAx = pass.hostEffects.builtinAxioms().methodAxiom(owner, methodName, exactMethod);
         if (curatedAx != null) {
             if (exactMethod != null && Boolean.getBoolean("babble.axioms.report")) {
                 reportRedundantCuratedAxiom(exactMethod, curatedAx);
             }
             return curatedAx.toProfile(exactMethod);
-        }
-        JavaCallProfile protocol = standardProtocolDefault(owner, methodName, exactMethod);
-        if (protocol != null) {
-            return protocol;
         }
         // Tier 7: ASM bytecode static analysis (on by default, BIP019 §5).
         if (exactMethod != null && pass.hostEffects.bytecodeEffectAnalysis()) {
@@ -1511,7 +1507,7 @@ final class EffectChecker {
         if (hasClassEffectAnnotation(owner)) {
             return profileFromAnnotations(exactCtor, owner, true);
         }
-        // Tier 6: Curated axioms (BIP019) first, then legacy BIP011 core type constructor profiles (retired in BIP019-P4).
+        // Tier 6: Curated axioms (BIP019).
         AxiomData.MemberAxiom curatedAx = pass.hostEffects.builtinAxioms().constructorAxiom(owner, exactCtor);
         if (curatedAx != null) {
             if (exactCtor != null && Boolean.getBoolean("babble.axioms.report")) {
@@ -1520,18 +1516,6 @@ final class EffectChecker {
             return curatedAx.toProfile(exactCtor);
         }
         int paramCount = exactCtor != null ? exactCtor.getParameterCount() : 0;
-        if (owner == String.class) {
-            boolean[] borrowParams = new boolean[paramCount];
-            Arrays.fill(borrowParams, true);
-            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
-            return new JavaCallProfile(set, false, false, new boolean[paramCount], borrowParams, false);
-        }
-        if (isCoreCollectionClass(owner)
-                || owner == java.util.AbstractMap.SimpleImmutableEntry.class
-                || owner == java.util.AbstractMap.SimpleEntry.class) {
-            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
-            return new JavaCallProfile(set, false, false, new boolean[paramCount], new boolean[paramCount], false);
-        }
         // Tier 7: ASM bytecode static analysis of constructors (on by default, BIP019 §5).
         if (exactCtor != null && pass.hostEffects.bytecodeEffectAnalysis()) {
             BytecodeEffectAnalyzer.Result analyzed = BytecodeEffectAnalyzer.analyze(exactCtor, pass.hostEffects.builtinAxioms());
@@ -1762,132 +1746,7 @@ final class EffectChecker {
         }
     }
 
-    private static final Set<String> STRING_NOTHROW_METHODS = Set.of(
-            "length", "isEmpty", "isBlank", "trim", "strip", "stripLeading", "stripTrailing",
-            "toLowerCase", "toUpperCase", "startsWith", "endsWith", "contains", "indexOf",
-            "lastIndexOf", "equals", "equalsIgnoreCase", "contentEquals", "compareTo",
-            "compareToIgnoreCase", "hashCode", "toString", "concat", "replace");
 
-    private static final Set<String> COLLECTION_READ_METHODS = Set.of(
-            "size", "isEmpty", "get", "getOrDefault", "contains", "containsKey",
-            "containsValue", "indexOf", "lastIndexOf", "first", "last", "getFirst",
-            "getLast", "firstKey", "lastKey", "hasNext", "hasPrevious", "peek",
-            "element", "comparator");
-
-    private static final Set<String> COLLECTION_READ_NOTHROW_METHODS = Set.of(
-            "size", "isEmpty", "hasNext", "hasPrevious", "comparator");
-
-    private static final Set<String> COLLECTION_VIEW_METHODS = Set.of(
-            "iterator", "listIterator", "subList", "keySet", "values", "entrySet",
-            "headSet", "tailSet", "subSet", "headMap", "tailMap", "subMap",
-            "reversed", "descendingSet", "descendingMap");
-
-    private static final Set<String> COLLECTION_VIEW_NOTHROW_METHODS = Set.of(
-            "iterator", "keySet", "values", "entrySet", "reversed",
-            "descendingSet", "descendingMap");
-
-    private static final Set<String> COLLECTION_MUT_METHODS = Set.of(
-            "add", "addAll", "addFirst", "addLast", "set", "put", "putIfAbsent",
-            "putAll", "putFirst", "putLast", "remove", "removeFirst", "removeLast",
-            "removeAll", "retainAll", "replace", "replaceAll", "clear", "sort");
-
-    private static final Set<String> COLLECTION_MUT_BORROW_ARG_METHODS = Set.of(
-            "addAll", "putAll", "removeAll", "retainAll");
-
-    private static boolean isCoreCollectionClass(Class<?> cls) {
-        return cls != null && (java.util.Collection.class.isAssignableFrom(cls)
-                || java.util.Map.class.isAssignableFrom(cls)
-                || cls == java.lang.Iterable.class
-                || java.util.Iterator.class.isAssignableFrom(cls));
-    }
-
-    private static boolean isViewMethod(Class<?> owner, String methodName) {
-        return isCoreCollectionClass(owner) && COLLECTION_VIEW_METHODS.contains(methodName);
-    }
-
-    /** Tier 6 : Standard value protocol & BIP011 core type defaults (bip007_effects.md §4.3, §6.2; bip011 §8.2). */
-    private static JavaCallProfile standardProtocolDefault(Class<?> owner, String methodName, Method exactMethod) {
-        int paramCount = exactMethod != null ? exactMethod.getParameterCount() : -1;
-        if (owner == String.class) {
-            boolean isNothrow = STRING_NOTHROW_METHODS.contains(methodName);
-            EnumSet<Effect> effs = isNothrow
-                    ? EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW)
-                    : EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC);
-            int pCount = Math.max(paramCount, 0);
-            boolean[] borrowParams = new boolean[pCount];
-            Arrays.fill(borrowParams, true);
-            boolean isStatic = exactMethod != null && Modifier.isStatic(exactMethod.getModifiers());
-            EffectSet set = EffectSet.ofInferred(effs, false, true, false, true);
-            return new JavaCallProfile(set, false, !isStatic, new boolean[pCount], borrowParams, isNothrow);
-        }
-        if (owner != null && java.util.Map.Entry.class.isAssignableFrom(owner)) {
-            if (("getKey".equals(methodName) || "getValue".equals(methodName)) && (paramCount == -1 || paramCount == 0)) {
-                EffectSet set = EffectSet.ofInferred(
-                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
-                return new JavaCallProfile(set, false, true, new boolean[0], new boolean[0], true);
-            }
-            if ("setValue".equals(methodName) && (paramCount == -1 || paramCount == 1)) {
-                EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), true, false, false, true);
-                return new JavaCallProfile(set, true, false, new boolean[1], new boolean[1], false);
-            }
-        }
-        if (isCoreCollectionClass(owner)) {
-            if (COLLECTION_READ_METHODS.contains(methodName) || COLLECTION_VIEW_METHODS.contains(methodName)) {
-                boolean isNothrow = COLLECTION_READ_NOTHROW_METHODS.contains(methodName)
-                        || COLLECTION_VIEW_NOTHROW_METHODS.contains(methodName);
-                EnumSet<Effect> effs = isNothrow
-                        ? EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW)
-                        : EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC);
-                int pCount = Math.max(paramCount, 0);
-                boolean[] borrowParams = new boolean[pCount];
-                Arrays.fill(borrowParams, true);
-                EffectSet set = EffectSet.ofInferred(effs, false, true, false, true);
-                return new JavaCallProfile(set, false, true, new boolean[pCount], borrowParams, isNothrow);
-            }
-            if (COLLECTION_MUT_METHODS.contains(methodName)) {
-                EnumSet<Effect> effs = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC);
-                int pCount = Math.max(paramCount, 0);
-                boolean[] borrowParams = new boolean[pCount];
-                if (COLLECTION_MUT_BORROW_ARG_METHODS.contains(methodName)) {
-                    Arrays.fill(borrowParams, true);
-                }
-                EffectSet set = EffectSet.ofInferred(effs, true, false, false, true);
-                return new JavaCallProfile(set, true, false, new boolean[pCount], borrowParams, false);
-            }
-        }
-        if ("equals".equals(methodName) && (paramCount == -1 || paramCount == 1)) {
-            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
-            return new JavaCallProfile(set, false, true, new boolean[]{false}, new boolean[]{true}, false);
-        }
-        if ("compareTo".equals(methodName) && (paramCount == -1 || paramCount == 1)
-                && (owner != null && Comparable.class.isAssignableFrom(owner))) {
-            EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
-            return new JavaCallProfile(set, false, true, new boolean[]{false}, new boolean[]{true}, false);
-        }
-        if (("hashCode".equals(methodName) || "toString".equals(methodName)) && (paramCount == -1 || paramCount == 0)) {
-            Class<?> decl = resolveDeclaringClass(owner, methodName);
-            boolean deterministic = isCoreCollectionClass(owner)
-                    || (owner != null && java.util.Map.Entry.class.isAssignableFrom(owner))
-                    || (decl != null && decl != Object.class && !decl.isInterface());
-            EnumSet<Effect> effs = deterministic
-                    ? EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC)
-                    : EnumSet.of(Effect.PURE, Effect.HERMETIC);
-            EffectSet set = EffectSet.ofInferred(effs, false, true, false, true);
-            return new JavaCallProfile(set, false, true, new boolean[0], new boolean[0], false);
-        }
-        return null;
-    }
-
-    private static Class<?> resolveDeclaringClass(Class<?> owner, String methodName) {
-        if (owner == null) {
-            return null;
-        }
-        try {
-            return owner.getMethod(methodName).getDeclaringClass();
-        } catch (NoSuchMethodException e) {
-            return Object.class;
-        }
-    }
 
     Type.Function applySamJavaEffects(Method samMethod, Type.Function rawSam) {
         JavaCallProfile profile = resolveJavaMethodProfile(samMethod.getDeclaringClass(), samMethod.getName(), samMethod);
@@ -3612,12 +3471,23 @@ final class EffectChecker {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true, false, true);
         }
         if (type instanceof Type.JavaInstance ji) {
-            return resolveJavaMethodProfile(ji.type(), "toString", null).effects();
+            return resolveJavaMethodProfile(ji.type(), "toString", lookupPublicMethod(ji.type(), "toString")).effects();
         }
         if (type instanceof Type.Array arr) {
             return toStringProfile(arr.element());
         }
         return EffectSet.EMPTY;
+    }
+
+    private static Method lookupPublicMethod(Class<?> cls, String name, Class<?>... params) {
+        if (cls == null) {
+            return null;
+        }
+        try {
+            return cls.getMethod(name, params);
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
     }
 
     private EffectSet equalityProfile(Type left, Type right) {
@@ -3657,7 +3527,7 @@ final class EffectChecker {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
         if (type instanceof Type.JavaInstance ji) {
-            return resolveJavaMethodProfile(ji.type(), "equals", null).effects();
+            return resolveJavaMethodProfile(ji.type(), "equals", lookupPublicMethod(ji.type(), "equals", Object.class)).effects();
         }
         if (type instanceof Type.Array arr) {
             return singleEqualityProfile(arr.element());
@@ -3684,7 +3554,11 @@ final class EffectChecker {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
         if (left instanceof Type.JavaInstance ji) {
-            return resolveJavaMethodProfile(ji.type(), "compareTo", null).effects();
+            Method cmp = lookupPublicMethod(ji.type(), "compareTo", ji.type());
+            if (cmp == null) {
+                cmp = lookupPublicMethod(ji.type(), "compareTo", Object.class);
+            }
+            return resolveJavaMethodProfile(ji.type(), "compareTo", cmp).effects();
         }
         return EffectSet.EMPTY;
     }
@@ -4764,7 +4638,8 @@ final class EffectChecker {
                         if (fromType instanceof Type.Array arr) {
                             staysUnique = isDeeplyImmutable(arr.element());
                         } else if (fromType instanceof Type.JavaInstance ji) {
-                            if (!isCoreCollectionClass(ji.type())) {
+                            JavaCallProfile iterProf = resolveJavaMethodProfile(ji.type(), "iterator", lookupPublicMethod(ji.type(), "iterator"));
+                            if (!iterProf.effects().isHermetic()) {
                                 terminating = false;
                             }
                             if (!ji.typeArguments().isEmpty()) {
@@ -5064,9 +4939,7 @@ final class EffectChecker {
                 }
             }
             if (effectiveMutRecv) {
-                boolean shallowJavaMut = profile.shallow()
-                        || (isCoreCollectionClass(owner) && COLLECTION_MUT_METHODS.contains(methodName));
-                recordTargetMutation(recvOrig, receiverExpr, "mut Java method " + calleeExpr.getText(), call, shallowJavaMut);
+                recordTargetMutation(recvOrig, receiverExpr, "mut Java method " + calleeExpr.getText(), call, profile.shallow());
             }
             boolean recvCanEscape = !profile.borrowReceiver() && !profile.effects().isPure()
                     && !(profile.effects().isHermetic() && !anyTrue(profile.mutParams()) && isDeeplyImmutable(resType));
@@ -5141,7 +5014,7 @@ final class EffectChecker {
             if (profile.fresh() || profile.effects().uniqueResult()) {
                 return Origin.ofUnique(call, null, false);
             }
-            if (receiverExpr != null && (profile.view() || isViewMethod(owner, methodName))) {
+            if (receiverExpr != null && profile.view()) {
                 return recvOrig.deriveMember("$" + methodName, false);
             }
             boolean deterministicCall = profile.effects().isHermetic() && profile.effects().isDeterministic();
@@ -6070,13 +5943,14 @@ final class EffectChecker {
                         terminating = false;
                         nothrow = false;
                         Type unwrapped = iterType instanceof Type.Frozen f ? f.of() : iterType;
-                        if (unwrapped instanceof Type.JavaInstance ji && isCoreCollectionClass(ji.type())) {
-                            trackConcurrentMut = true;
-                        } else if (unwrapped instanceof Type.JavaInstance ji) {
-                            JavaCallProfile iterProf = resolveJavaMethodProfile(ji.type(), "iterator", null);
+                        if (unwrapped instanceof Type.JavaInstance ji) {
+                            JavaCallProfile iterProf = resolveJavaMethodProfile(ji.type(), "iterator", lookupPublicMethod(ji.type(), "iterator"));
                             applyEffects(iterProf.effects());
                             if (iterProf.mutReceiver()) {
                                 recordTargetMutation(iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
+                            }
+                            if (iterProf.view()) {
+                                trackConcurrentMut = true;
                             }
                         }
                     }
