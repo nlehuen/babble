@@ -90,37 +90,54 @@ final class EffectChecker {
                            Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
                            boolean deepMutThis,
                            BitSet returnParams, boolean returnThis, boolean returnExternal, boolean returnKnown,
-                           BitSet ctorStoredParams) {
+                           BitSet ctorStoredParams,
+                           boolean[] readParams, boolean readsThis) {
+        CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
+                        Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
+                        Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
+                        boolean deepMutThis,
+                        BitSet returnParams, boolean returnThis, boolean returnExternal, boolean returnKnown,
+                        BitSet ctorStoredParams) {
+            this(effects, mutParams, borrowParams, uniqueParams, frameReadOwners, frameWriteOwners, deepMutThis,
+                    returnParams, returnThis, returnExternal, returnKnown, ctorStoredParams,
+                    new boolean[mutParams.length], false);
+        }
+
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
                         Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
                         Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
                         boolean deepMutThis) {
             this(effects, mutParams, borrowParams, uniqueParams, frameReadOwners, frameWriteOwners, deepMutThis,
-                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS,
+                    new boolean[mutParams.length], false);
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
                         Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
                         Set<BabbleParser.FunctionLiteralContext> frameWriteOwners) {
             this(effects, mutParams, borrowParams, uniqueParams, frameReadOwners, frameWriteOwners, false,
-                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS,
+                    new boolean[mutParams.length], false);
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams,
                         Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
                         Set<BabbleParser.FunctionLiteralContext> frameWriteOwners) {
             this(effects, mutParams, borrowParams, new boolean[mutParams.length], frameReadOwners, frameWriteOwners, false,
-                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS,
+                    new boolean[mutParams.length], false);
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams) {
             this(effects, mutParams, borrowParams, uniqueParams, Set.of(), Set.of(), false,
-                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS,
+                    new boolean[mutParams.length], false);
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams) {
             this(effects, mutParams, borrowParams, new boolean[mutParams.length], Set.of(), Set.of(), false,
-                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS);
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS,
+                    new boolean[mutParams.length], false);
         }
 
         @Override
@@ -135,10 +152,12 @@ final class EffectChecker {
                     && returnThis == that.returnThis
                     && returnExternal == that.returnExternal
                     && returnKnown == that.returnKnown
+                    && readsThis == that.readsThis
                     && Objects.equals(effects, that.effects)
                     && Arrays.equals(mutParams, that.mutParams)
                     && Arrays.equals(borrowParams, that.borrowParams)
                     && Arrays.equals(uniqueParams, that.uniqueParams)
+                    && Arrays.equals(readParams, that.readParams)
                     && Objects.equals(frameReadOwners, that.frameReadOwners)
                     && Objects.equals(frameWriteOwners, that.frameWriteOwners)
                     && Objects.equals(returnParams, that.returnParams)
@@ -148,26 +167,43 @@ final class EffectChecker {
         @Override
         public int hashCode() {
             int result = Objects.hash(effects, frameReadOwners, frameWriteOwners, deepMutThis,
-                    returnParams, returnThis, returnExternal, returnKnown, ctorStoredParams);
+                    returnParams, returnThis, returnExternal, returnKnown, ctorStoredParams, readsThis);
             result = 31 * result + Arrays.hashCode(mutParams);
             result = 31 * result + Arrays.hashCode(borrowParams);
             result = 31 * result + Arrays.hashCode(uniqueParams);
+            result = 31 * result + Arrays.hashCode(readParams);
             return result;
         }
     }
 
     record JavaCallProfile(EffectSet effects, boolean mutReceiver, boolean borrowReceiver,
                            boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
-                           boolean explicitNothrow, boolean view, boolean shallow, boolean fresh) {
+                           boolean explicitNothrow, boolean view, boolean shallow, boolean fresh,
+                           boolean readsReceiver, boolean[] readParams) {
+        JavaCallProfile(EffectSet effects, boolean mutReceiver, boolean borrowReceiver,
+                        boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
+                        boolean explicitNothrow, boolean view, boolean shallow, boolean fresh) {
+            this(effects, mutReceiver, borrowReceiver, mutParams, borrowParams, uniqueParams, explicitNothrow,
+                    view, shallow, fresh, true, allTrue(mutParams.length));
+        }
+
         JavaCallProfile(EffectSet effects, boolean mutReceiver, boolean borrowReceiver,
                         boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
                         boolean explicitNothrow) {
-            this(effects, mutReceiver, borrowReceiver, mutParams, borrowParams, uniqueParams, explicitNothrow, false, false, false);
+            this(effects, mutReceiver, borrowReceiver, mutParams, borrowParams, uniqueParams, explicitNothrow,
+                    false, false, false, true, allTrue(mutParams.length));
         }
 
         JavaCallProfile(EffectSet effects, boolean mutReceiver, boolean borrowReceiver,
                         boolean[] mutParams, boolean[] borrowParams, boolean explicitNothrow) {
-            this(effects, mutReceiver, borrowReceiver, mutParams, borrowParams, new boolean[mutParams.length], explicitNothrow, false, false, false);
+            this(effects, mutReceiver, borrowReceiver, mutParams, borrowParams, new boolean[mutParams.length], explicitNothrow,
+                    false, false, false, true, allTrue(mutParams.length));
+        }
+
+        private static boolean[] allTrue(int n) {
+            boolean[] arr = new boolean[n];
+            Arrays.fill(arr, true);
+            return arr;
         }
     }
 
@@ -336,6 +372,30 @@ final class EffectChecker {
             }
             return new Origin((BitSet) params.clone(), aliasesThis, external, false, true, false, uniqueOwner,
                     nextElemParams, nextElemThis, nextElemExt, directKeys, pathKey);
+        }
+
+        Origin withoutUnique() {
+            BitSet merged = (BitSet) params.clone();
+            merged.or(elementParams);
+            boolean mergedThis = aliasesThis || elementThis;
+            boolean mergedExt = external || elementExternal;
+            return new Origin(merged, mergedThis, mergedExt, false, false, false, null,
+                    EMPTY_BITS, false, false, directKeys, pathKey);
+        }
+
+        Origin demoteAlias(Origin taint) {
+            BitSet merged = (BitSet) params.clone();
+            merged.or(elementParams);
+            boolean mergedThis = aliasesThis || elementThis;
+            boolean mergedExt = external || elementExternal;
+            if (taint != null && taint != IMMUTABLE) {
+                merged.or(taint.params);
+                merged.or(taint.elementParams);
+                mergedThis |= taint.aliasesThis || taint.elementThis;
+                mergedExt |= taint.external || taint.elementExternal;
+            }
+            return new Origin(merged, mergedThis, mergedExt, false, false, false, null,
+                    EMPTY_BITS, false, false, directKeys, pathKey);
         }
 
         Origin demoteToExternal(Origin taint) {
@@ -2253,7 +2313,8 @@ final class EffectChecker {
                 false);
         return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams(),
                 Set.copyOf(analyzer.frameReadOwners), Set.copyOf(analyzer.frameWriteOwners), analyzer.deepMutThis,
-                (BitSet) analyzer.returnParams.clone(), analyzer.returnThis, analyzer.returnExternal, true, EMPTY_SUMMARY_BITS);
+                (BitSet) analyzer.returnParams.clone(), analyzer.returnThis, analyzer.returnExternal, true, EMPTY_SUMMARY_BITS,
+                analyzer.readParams, analyzer.readsThis);
     }
 
     private CallableSummary analyzeConstructorBody(BabbleParser.ClassExpressionContext cls,
@@ -2313,7 +2374,8 @@ final class EffectChecker {
         boolean ctorUnique = analyzer.hermetic && analyzer.ctorStoredParams.isEmpty();
         EffectSet nextSet = EffectSet.ofInferred(nextEffects, false, true, ctorUnique, analyzer.terminating);
         return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams(),
-                Set.of(), Set.of(), false, EMPTY_SUMMARY_BITS, false, false, false, (BitSet) analyzer.ctorStoredParams.clone());
+                Set.of(), Set.of(), false, EMPTY_SUMMARY_BITS, false, false, false, (BitSet) analyzer.ctorStoredParams.clone(),
+                analyzer.readParams, false);
     }
 
     private CallableSummary finalizeSummary(ParserRuleContext callable, CallableSummary raw) {
@@ -2358,7 +2420,8 @@ final class EffectChecker {
                 false);
         return new CallableSummary(finalized, raw.mutParams(), raw.borrowParams(), raw.uniqueParams(),
                 raw.frameReadOwners(), raw.frameWriteOwners(), raw.deepMutThis(),
-                raw.returnParams(), raw.returnThis(), raw.returnExternal(), raw.returnKnown(), raw.ctorStoredParams());
+                raw.returnParams(), raw.returnThis(), raw.returnExternal(), raw.returnKnown(), raw.ctorStoredParams(),
+                raw.readParams(), raw.readsThis());
     }
 
     private CallableSummary buildVisibleSummary(ParserRuleContext callable, CallableSummary internal) {
@@ -2373,7 +2436,7 @@ final class EffectChecker {
             return internal;
         }
         // Typed function (BIP016-D2/D3/D4): lock explicit opt-outs (io, volatile, mut, shared, unique),
-        // while preserving inferred @NOTHROW, @TERMINATING, algebraic traits, and frame-closure provenance.
+        // while preserving inferred @NOTHROW, @TERMINATING, algebraic traits, reads, and frame-closure provenance.
         List<BabbleParser.FnParamContext> params = fn.fnParameters().fnParam();
         boolean[] visMut = new boolean[params.size()];
         boolean[] visBorrow = new boolean[params.size()];
@@ -2417,7 +2480,7 @@ final class EffectChecker {
         return new CallableSummary(visSet, visMut, visBorrow, visUnique,
                 internal.frameReadOwners(), internal.frameWriteOwners(), internal.deepMutThis(),
                 internal.returnParams(), internal.returnThis(), internal.returnExternal(), internal.returnKnown(),
-                internal.ctorStoredParams());
+                internal.ctorStoredParams(), internal.readParams(), internal.readsThis());
     }
 
     // ================================================================ 8. Verification Pass
@@ -3658,6 +3721,9 @@ final class EffectChecker {
          */
         private final Map<ParserRuleContext, Integer> pseudoForwarded = new IdentityHashMap<>();
         private final Map<ParserRuleContext, Origin> boundMethodReceivers = new IdentityHashMap<>();
+        /** Parameters and receiver from which this callable reads mutable state (BIP019 §4). */
+        final boolean[] readParams;
+        boolean readsThis = false;
 
         BodyAnalyzer(ParserRuleContext owner,
                      ScopeNode ownerScope,
@@ -3679,6 +3745,7 @@ final class EffectChecker {
             this.mutParams = mutParams;
             this.borrowParams = borrowParams;
             this.uniqueParams = uniqueParams;
+            this.readParams = new boolean[params.size()];
             this.mutThis = mutThis;
             this.borrowThis = borrowThis;
             this.declaredPrefix = declaredPrefix;
@@ -3712,11 +3779,42 @@ final class EffectChecker {
             }
         }
 
+        /**
+         * Records a read of mutable state from {@code orig} (BIP019 §4.1): deterministic if frozen,
+         * deeply immutable, or exclusively owned; composed into {@code readParams}/{@code readsThis}
+         * when reached via a parameter or {@code this}; volatile where provenance runs out.
+         */
+        private void recordTargetRead(Origin orig, Type targetType) {
+            if (targetType == Type.ERROR || targetType == Type.NOTHING || targetType == Type.NULL) {
+                return;
+            }
+            if (containsFrozen(targetType) || isDeeplyImmutable(targetType)) {
+                return;
+            }
+            if (orig == null || orig == Origin.IMMUTABLE) {
+                return;
+            }
+            if ((orig.unique || orig.localFresh) && !orig.external && orig.params.isEmpty() && !orig.aliasesThis) {
+                return;
+            }
+            for (int p = orig.params.nextSetBit(0); p >= 0; p = orig.params.nextSetBit(p + 1)) {
+                if (p < readParams.length) {
+                    readParams[p] = true;
+                }
+            }
+            if (orig.aliasesThis && !constructingSelf) {
+                readsThis = true;
+            }
+            if (orig.external) {
+                deterministic = false;
+            }
+        }
+
         private void demoteUniqueOwner(Object ownerKey, Origin taint) {
             if (ownerKey instanceof ParserRuleContext decl) {
                 Origin cur = env.get(decl);
                 if (cur != null && (cur.unique || cur.localFresh)) {
-                    env.put(decl, cur.demoteToExternal(taint));
+                    env.put(decl, cur.demoteAlias(taint));
                 }
             }
         }
@@ -3771,9 +3869,9 @@ final class EffectChecker {
                         Set.of(decl), new PathKey(decl, List.of()));
             }
             if ((rhs.unique || rhs.localFresh) && rhs.uniqueOwner != null) {
-                // Aliasing a live unique/localFresh local without move(...) demotes both to @EXTERNAL!
+                // Aliasing a live unique/localFresh local without move(...) drops uniqueness while preserving provenance.
                 demoteUniqueOwner(rhs.uniqueOwner, Origin.IMMUTABLE);
-                return withLocalAliasKey(rhs.demoteToExternal(Origin.IMMUTABLE), decl, localType);
+                return withLocalAliasKey(rhs.demoteAlias(Origin.IMMUTABLE), decl, localType);
             }
             return withLocalAliasKey(rhs, decl, localType);
         }
@@ -4281,8 +4379,12 @@ final class EffectChecker {
             ScopeAnalysis.JavaFieldTarget jft = checker.javaFieldTargetOf(sel);
             if (jft != null) {
                 Field jf = jft.field();
-                if (Modifier.isStatic(jf.getModifiers()) && !Modifier.isFinal(jf.getModifiers())) {
-                    deterministic = false;
+                if (Modifier.isStatic(jf.getModifiers())) {
+                    if (!Modifier.isFinal(jf.getModifiers())) {
+                        deterministic = false;
+                    }
+                } else if (!Modifier.isFinal(jf.getModifiers())) {
+                    recordTargetRead(recvOrig, recvType);
                 }
                 if (checker.hasCallCheck(sel)) {
                     nothrow = false;
@@ -4317,8 +4419,22 @@ final class EffectChecker {
             }
             if (resType instanceof Type.Function) {
                 boundMethodReceivers.put(sel, recvOrig);
+            } else if (readsMutableBabbleMember(recvType)) {
+                recordTargetRead(recvOrig, recvType);
             }
             return recvOrig.deriveMember(fieldName, immRes);
+        }
+
+        private boolean readsMutableBabbleMember(Type recvType) {
+            if (recvType == null || containsFrozen(recvType) || isDeeplyImmutable(recvType)) {
+                return false;
+            }
+            for (Type m : Type.membersOf(Type.withoutNull(recvType))) {
+                if (m instanceof Type.Instance inst && inst.node().kind != ClassShape.Kind.VALUE_CLASS) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private boolean isImmutableOuterBinding(ParserRuleContext decl, Type type) {
@@ -4591,12 +4707,14 @@ final class EffectChecker {
             if ("entry".equals(kind)) {
                 boolean immutableEntry = true;
                 boolean uniqueEntry = true;
+                Origin freshEntry = Origin.ofUnique(ccc, null, false);
                 for (int i = 0; i < argExprs.length; i++) {
                     Type argType = effectiveType(argExprs[i]);
                     if (!isDeeplyImmutable(argType)) {
                         immutableEntry = false;
                         if (!isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
                             uniqueEntry = false;
+                            freshEntry = freshEntry.absorbElement(argOrigins[i]);
                             if (argOrigins[i].unique && argOrigins[i].uniqueOwner != null) {
                                 demoteUniqueOwner(argOrigins[i].uniqueOwner, Origin.IMMUTABLE);
                             }
@@ -4607,7 +4725,7 @@ final class EffectChecker {
                 if (!immutableEntry) {
                     applyEffects(EffectSet.ofInferred(
                             EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true));
-                    return uniqueEntry ? Origin.ofUnique(ccc, null, false) : Origin.ofExternal(ccc, false);
+                    return uniqueEntry ? Origin.ofUnique(ccc, null, false) : freshEntry;
                 }
                 return Origin.IMMUTABLE;
             }
@@ -4615,14 +4733,13 @@ final class EffectChecker {
                 applyEffects(EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true));
                 nothrow = false;
                 boolean staysUnique = true;
+                Origin freshArr = Origin.ofUnique(ccc, null, false);
                 for (int i = 0; i < paramsList.size(); i++) {
                     BabbleParser.CallParameterContext p = paramsList.get(i);
                     String name = p.memberName() != null ? p.memberName().getText() : null;
                     if ("from".equals(name)) {
                         Type rawFrom = effectiveType(argExprs[i]);
-                        if (!(rawFrom instanceof Type.Frozen) && argOrigins[i].external) {
-                            deterministic = false;
-                        }
+                        recordTargetRead(argOrigins[i], rawFrom);
                         Type fromType = rawFrom instanceof Type.Frozen f ? f.of() : rawFrom;
                         if (fromType instanceof Type.Array arr) {
                             staysUnique = isDeeplyImmutable(arr.element());
@@ -4643,9 +4760,12 @@ final class EffectChecker {
                             staysUnique = false;
                             terminating = false;
                         }
+                        if (!staysUnique) {
+                            freshArr = freshArr.absorbElement(argOrigins[i]);
+                        }
                     }
                 }
-                return staysUnique ? Origin.ofUnique(ccc, null, false) : Origin.ofExternal(ccc, false);
+                return staysUnique ? Origin.ofUnique(ccc, null, false) : freshArr;
             }
 
             // list, set, sortedset, map, sortedmap: hermetic deterministic allocation (unique per BIP007-D6!)
@@ -4655,6 +4775,7 @@ final class EffectChecker {
             boolean hasComparator = false;
             boolean hasElements = false;
             boolean staysUnique = true;
+            Origin freshCol = Origin.ofUnique(ccc, null, false);
             for (int i = 0; i < paramsList.size(); i++) {
                 BabbleParser.CallParameterContext p = paramsList.get(i);
                 String name = p.memberName() != null ? p.memberName().getText() : null;
@@ -4662,19 +4783,26 @@ final class EffectChecker {
                     hasCapacity = true;
                 } else if ("from".equals(name)) {
                     hasFrom = true;
-                    // `from:` borrows the source collection; result is unique iff copied elements/keys+values are deeply immutable (BIP007-D6).
-                    Type fromType = effectiveType(argExprs[i]);
+                    // `from:` reads and copies elements from the source collection; result carries elements' provenance (BIP019 §4.1, §4.3).
+                    Type rawFrom = effectiveType(argExprs[i]);
+                    recordTargetRead(argOrigins[i], rawFrom);
+                    Type fromType = rawFrom;
                     if (fromType instanceof Type.Frozen f) {
                         fromType = f.of();
                     }
+                    boolean fromImm = true;
                     if (fromType instanceof Type.JavaInstance ji && !ji.typeArguments().isEmpty()) {
                         for (Type ta : ji.typeArguments()) {
                             if (!isDeeplyImmutable(ta)) {
-                                staysUnique = false;
+                                fromImm = false;
                             }
                         }
                     } else {
+                        fromImm = false;
+                    }
+                    if (!fromImm) {
                         staysUnique = false;
+                        freshCol = freshCol.absorbElement(argOrigins[i]);
                     }
                 } else if ("comparator".equals(name)) {
                     hasComparator = true;
@@ -4684,6 +4812,7 @@ final class EffectChecker {
                     if (!(cmpType instanceof Type.Function cmpFn)
                             || !cmpFn.effects().isPure() || !cmpFn.effects().isDeterministic()) {
                         staysUnique = false;
+                        freshCol = freshCol.absorbElement(argOrigins[i]);
                     }
                 } else {
                     hasElements = true;
@@ -4691,6 +4820,7 @@ final class EffectChecker {
                     if (!isDeeplyImmutable(argType)) {
                         if (!isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
                             staysUnique = false;
+                            freshCol = freshCol.absorbElement(argOrigins[i]);
                             if (argOrigins[i].unique && argOrigins[i].uniqueOwner != null) {
                                 demoteUniqueOwner(argOrigins[i].uniqueOwner, Origin.IMMUTABLE);
                             }
@@ -4721,7 +4851,7 @@ final class EffectChecker {
             if (hasCapacity || ((hasFrom || hasElements) && ("sortedset".equals(kind) || "sortedmap".equals(kind)))) {
                 nothrow = false;
             }
-            return staysUnique ? Origin.ofUnique(ccc, null, false) : Origin.ofExternal(ccc, false);
+            return staysUnique ? Origin.ofUnique(ccc, null, false) : freshCol;
         }
 
         private static boolean isArrayProtocolMethod(String name) {
@@ -4749,11 +4879,13 @@ final class EffectChecker {
             }
             applyEffects(EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true));
             boolean staysUnique = true;
+            Origin freshArr = Origin.ofUnique(call, null, false);
             for (int i = 0; i < argExprs.length; i++) {
                 Type argType = effectiveType(argExprs[i]);
                 if (!isDeeplyImmutable(argType)) {
                     if (!isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
                         staysUnique = false;
+                        freshArr = freshArr.absorbElement(argOrigins[i]);
                         if (argOrigins[i].unique && argOrigins[i].uniqueOwner != null) {
                             demoteUniqueOwner(argOrigins[i].uniqueOwner, Origin.IMMUTABLE);
                         }
@@ -4761,7 +4893,7 @@ final class EffectChecker {
                     markStoredOrigin(argOrigins[i], "array", argExprs[i]);
                 }
             }
-            return staysUnique ? Origin.ofUnique(call, null, false) : Origin.ofExternal(call, false);
+            return staysUnique ? Origin.ofUnique(call, null, false) : freshArr;
         }
 
         private Origin evalArrayMethodCall(ParserRuleContext call,
@@ -4781,9 +4913,7 @@ final class EffectChecker {
                 case "size" -> Origin.IMMUTABLE;
                 case "get" -> {
                     nothrow = false;
-                    if (!(recvType instanceof Type.Frozen) && recvOrig.external) {
-                        deterministic = false;
-                    }
+                    recordTargetRead(recvOrig, recvType);
                     if (isDeeplyImmutable(resType)) {
                         yield Origin.IMMUTABLE;
                     }
@@ -4821,26 +4951,20 @@ final class EffectChecker {
                 }
                 case "equals" -> {
                     applyEffects(singleEqualityProfile(arr.element()));
-                    if (!(recvType instanceof Type.Frozen) && recvOrig.external) {
-                        deterministic = false;
-                    }
-                    if (argExprs.length == 1 && !(effectiveType(argExprs[0]) instanceof Type.Frozen) && argOrigins[0].external) {
-                        deterministic = false;
+                    recordTargetRead(recvOrig, recvType);
+                    if (argExprs.length == 1) {
+                        recordTargetRead(argOrigins[0], effectiveType(argExprs[0]));
                     }
                     yield Origin.IMMUTABLE;
                 }
                 case "hashCode" -> {
                     applyEffects(singleEqualityProfile(arr.element()));
-                    if (!(recvType instanceof Type.Frozen) && recvOrig.external) {
-                        deterministic = false;
-                    }
+                    recordTargetRead(recvOrig, recvType);
                     yield Origin.IMMUTABLE;
                 }
                 case "toString" -> {
                     applyEffects(toStringProfile(arr.element()));
-                    if (!(recvType instanceof Type.Frozen) && recvOrig.external) {
-                        deterministic = false;
-                    }
+                    recordTargetRead(recvOrig, recvType);
                     yield Origin.IMMUTABLE;
                 }
                 default -> Origin.IMMUTABLE;
@@ -4906,8 +5030,11 @@ final class EffectChecker {
                 nothrow = false;
             }
 
-            // Receiver mut / borrow / frozen check:
+            // Receiver mut / borrow / frozen / read check:
             Type recvType = receiverExpr != null ? effectiveType(receiverExpr) : null;
+            if (receiverExpr != null && profile.readsReceiver()) {
+                recordTargetRead(recvOrig, recvType);
+            }
             boolean effectiveMutRecv = profile.mutReceiver() && receiverExpr != null && recvType != Type.STRING;
             if (receiverExpr != null && containsFrozen(recvType)) {
                 if (effectiveMutRecv) {
@@ -4930,13 +5057,17 @@ final class EffectChecker {
                 markStoredOrigin(recvOrig, "Java method call", call);
             }
 
-            // Parameter mut / borrow / unique / frozen / SAM callback checks:
+            // Parameter mut / borrow / unique / frozen / read / SAM callback checks:
             boolean[] argIsMut = new boolean[argExprs.length];
             for (int i = 0; i < argExprs.length; i++) {
                 Type argType = effectiveType(argExprs[i]);
                 boolean mutP = i < profile.mutParams().length && profile.mutParams()[i] && argType != Type.STRING;
                 boolean borrowP = i < profile.borrowParams().length && profile.borrowParams()[i];
                 boolean uniqueP = i < profile.uniqueParams().length && profile.uniqueParams()[i];
+                boolean readP = i < profile.readParams().length ? profile.readParams()[i] : true;
+                if (readP) {
+                    recordTargetRead(argOrigins[i], argType);
+                }
                 argIsMut[i] = mutP;
                 if (containsFrozen(argType)) {
                     if (mutP) {
@@ -4983,7 +5114,7 @@ final class EffectChecker {
             // Static call-site mut exclusivity:
             checkCallExclusivity(receiverExpr, recvOrig, effectiveMutRecv, argExprs, argOrigins, argIsMut, call);
 
-            // Result origin:
+            // Result origin (BIP019 §4.1: deterministic callees return fresh or argument/receiver-derived results):
             if (isDeeplyImmutable(resType)) {
                 return Origin.IMMUTABLE;
             }
@@ -4993,10 +5124,44 @@ final class EffectChecker {
             if (receiverExpr != null && (profile.view() || isViewMethod(owner, methodName))) {
                 return recvOrig.deriveMember("$" + methodName, false);
             }
-            Origin out = Origin.ofExternal(call, false);
+            boolean deterministicCall = profile.effects().isHermetic() && profile.effects().isDeterministic();
             if ("<init>".equals(methodName) || isCollectionFactoryMethod(owner, methodName)) {
+                if (deterministicCall) {
+                    Origin fresh = Origin.ofUnique(call, null, false);
+                    boolean staysUnique = true;
+                    for (int i = 0; i < argOrigins.length; i++) {
+                        Type argType = effectiveType(argExprs[i]);
+                        if (!isDeeplyImmutable(argType) && !isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
+                            staysUnique = false;
+                            fresh = fresh.absorbElement(argOrigins[i]);
+                        }
+                    }
+                    return staysUnique ? Origin.ofUnique(call, null, false) : fresh;
+                }
+                return Origin.ofExternal(call, false);
+            }
+            if (deterministicCall) {
+                Origin out = Origin.IMMUTABLE;
+                if (receiverExpr != null && recvOrig != Origin.IMMUTABLE) {
+                    Origin flatRecv = recvOrig.hasElementTaint() ? recvOrig.flattenElements() : recvOrig;
+                    out = flatRecv.stripDirectIdentity(false);
+                }
+                for (int i = 0; i < argOrigins.length; i++) {
+                    if (argOrigins[i] != Origin.IMMUTABLE) {
+                        Origin flatArg = argOrigins[i].hasElementTaint() ? argOrigins[i].flattenElements() : argOrigins[i];
+                        Origin stripped = flatArg.stripDirectIdentity(false);
+                        out = out == Origin.IMMUTABLE ? stripped : out.join(stripped);
+                    }
+                }
+                if (out == Origin.IMMUTABLE) {
+                    return Origin.ofUnique(call, null, false);
+                }
+                if (out.unique || out.localFresh) {
+                    out = out.withoutUnique();
+                }
                 return out;
             }
+            Origin out = Origin.ofExternal(call, false);
             if (receiverExpr != null) {
                 out = out.join(recvOrig.stripDirectIdentity(false));
             }
@@ -5082,6 +5247,17 @@ final class EffectChecker {
                         ? Origin.ofThis(THIS_KEY, false) : recvOrig;
                 boolean effectiveBorrowRecv = !isMethodCall || summary.effects().borrowThis()
                         || (summary.effects().isHermetic() && !anyTrue(summary.mutParams()) && isDeeplyImmutable(resType));
+                if (isMethodCall && summary.readsThis()) {
+                    Type rType = receiverExpr != null ? effectiveType(receiverExpr) : Type.ANY;
+                    recordTargetRead(effectiveRecvOrig, rType);
+                }
+                boolean[] calleeRead = summary.readParams();
+                for (int i = 0; i < args.size(); i++) {
+                    int pIdx = checker.parameterIndexForArg(fn.parameters(), args, args.get(i));
+                    if (pIdx >= 0 && pIdx < calleeRead.length && calleeRead[pIdx]) {
+                        recordTargetRead(argOrigins[i], effectiveType(argExprs[i]));
+                    }
+                }
                 applyBabbleArgEffects(call, calleeExpr, fn.parameters(), summary.mutParams(), summary.borrowParams(), summary.uniqueParams(),
                         isMethodCall ? receiverExpr : null, effectiveRecvOrig,
                         isMethodCall && summary.effects().mutThis(),
@@ -5320,13 +5496,17 @@ final class EffectChecker {
             boolean[] mp = new boolean[n];
             boolean[] bp = new boolean[n];
             boolean[] up = new boolean[n];
+            boolean[] rp = new boolean[n];
             for (int i = 0; i < n; i++) {
-                mp[i] = fn.parameters().get(i).mut();
-                bp[i] = fn.parameters().get(i).borrow();
-                up[i] = fn.parameters().get(i).unique();
+                Type.Parameter p = fn.parameters().get(i);
+                mp[i] = p.mut();
+                bp[i] = p.borrow();
+                up[i] = p.unique();
+                rp[i] = !isDeeplyImmutable(p.type());
             }
             EffectSet effects = fn.capturedCallings().isEmpty() ? fn.effects() : withCapturedCallbackEffects(fn, calleeExpr);
-            return new CallableSummary(effects, mp, bp, up, Set.of(), Set.of(), effects.mutThis());
+            return new CallableSummary(effects, mp, bp, up, Set.of(), Set.of(), effects.mutThis(),
+                    EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS, rp, true);
         }
 
         private Type.Function[] collectBoundCallbacks(List<Type.Parameter> calleeParams,
@@ -5460,7 +5640,8 @@ final class EffectChecker {
             }
             boolean resultDiscarded = call != null && call == discardedExpr;
             boolean known = summary.returnKnown();
-            boolean includeExternal = !known || summary.returnExternal();
+            boolean deterministicCallee = summary.effects().isHermetic() && summary.effects().isDeterministic();
+            boolean includeExternal = known ? summary.returnExternal() : !deterministicCallee;
             Origin out = includeExternal ? Origin.ofExternal(null, false) : Origin.IMMUTABLE;
             boolean includeRecv = isMethodCall && (!known || summary.returnThis() || !summary.effects().borrowThis());
             if (includeRecv && recvOrig != Origin.IMMUTABLE) {
@@ -5483,8 +5664,11 @@ final class EffectChecker {
                     out = out == Origin.IMMUTABLE ? flatArg : out.join(flatArg);
                 }
             }
-            if (out != Origin.IMMUTABLE && (out.unique || out.localFresh)) {
-                out = out.demoteToExternal(Origin.IMMUTABLE);
+            if (out == Origin.IMMUTABLE) {
+                return Origin.ofUnique(call, null, false);
+            }
+            if (out.unique || out.localFresh) {
+                out = out.withoutUnique();
             }
             return out;
         }
@@ -5857,12 +6041,10 @@ final class EffectChecker {
             TypeChecker.ForIterableInfo info = checker.forIterableInfo(ctx);
             boolean trackConcurrentMut = false;
             if (info != null) {
+                recordTargetRead(iterOrig, iterType);
                 switch (info.kind()) {
                     case ARRAY -> {
-                        // Indexed array loop : @HERMETIC @NOTHROW, terminates; reads mutable elements if external.
-                        if (!(iterType instanceof Type.Frozen) && iterOrig.external) {
-                            deterministic = false;
-                        }
+                        // Indexed array loop : @HERMETIC @NOTHROW, terminates; mutable read recorded above.
                     }
                     case JAVA_ITERABLE -> {
                         terminating = false;
@@ -5990,23 +6172,25 @@ final class EffectChecker {
                     if (res == Type.STRING) {
                         if (lt != Type.STRING) {
                             applyEffects(toStringProfile(lt));
-                            if (lt instanceof Type.Array && leftOrig.external) {
-                                deterministic = false;
+                            if (lt instanceof Type.Array) {
+                                recordTargetRead(leftOrig, lt);
                             }
                         }
                         if (rt != Type.STRING) {
                             applyEffects(toStringProfile(rt));
-                            if (rt instanceof Type.Array && rightOrig.external) {
-                                deterministic = false;
+                            if (rt instanceof Type.Array) {
+                                recordTargetRead(rightOrig, rt);
                             }
                         }
                     }
                 }
                 case "==", "!=", "<>" -> {
                     applyEffects(equalityProfile(lt, rt));
-                    if ((lt instanceof Type.Array && leftOrig.external)
-                            || (rt instanceof Type.Array && rightOrig.external)) {
-                        deterministic = false;
+                    if (lt instanceof Type.Array) {
+                        recordTargetRead(leftOrig, lt);
+                    }
+                    if (rt instanceof Type.Array) {
+                        recordTargetRead(rightOrig, rt);
                     }
                 }
                 case "<", "<=", ">", ">=" -> applyEffects(comparisonProfile(lt, rt));
