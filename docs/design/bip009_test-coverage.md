@@ -4,15 +4,15 @@
 |---|---|
 | **BIP** | 009 |
 | **Date** | 2026-11-17 |
-| **Status** | Accepted & implemented (`BIP009-Q1`–`BIP009-Q8` → `BIP009-D1`–`BIP009-D8` decided; `BIP009-P1`–`BIP009-P4` implemented) |
-| **Depends on** | Dual-mode execution ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), interactive sessions ([bip004_repl.md](bip004_repl.md)), in-memory module sources ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) §4.2), static typing diagnostics ([bip008_static-typing.md](bip008_static-typing.md)) |
-| **Scope** | `.batest` file format, leak-free error normalization (including Java interop unwrapping), JUnit 5 & dual-JVM JaCoCo harness (`-Pbatest`), coverage reporting CLI, and agentic test-synthesis workflow |
+| **Status** | Accepted & implemented (`BIP009-Q1`–`BIP009-Q8` → `BIP009-D1`–`BIP009-D8` decided; `BIP009-P1`–`BIP009-P4` implemented, extended to 3-JVM 5-scope `-Pbatest` coverage with `BIP014-D9` `-O0`/`-O1`) |
+| **Depends on** | Multi-mode execution ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md), [bip014_optimization-passes.md](bip014_optimization-passes.md)), interactive sessions ([bip004_repl.md](bip004_repl.md)), in-memory module sources ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) §4.2), static typing diagnostics ([bip008_static-typing.md](bip008_static-typing.md)) |
+| **Scope** | `.batest` file format, leak-free error normalization (including Java interop unwrapping), JUnit 5 & 3-JVM 5-scope JaCoCo harness (`-Pbatest`), coverage reporting CLI, and agentic test-synthesis workflow |
 
 ---
 
 ## 1. Summary
 
-This proposal introduces a **data-driven `.batest` specification format** and a **single-command dual-mode test & coverage harness** (`mvn -q verify -Pbatest`) designed for systematic, low-maintenance verification and autonomous agent-driven coverage closure across Babble's tree-walking interpreter and ASM bytecode compiler.
+This proposal introduces a **data-driven `.batest` specification format** and a **single-command multi-mode test & coverage harness** (`mvn -q verify -Pbatest`) designed for systematic, low-maintenance verification and autonomous agent-driven coverage closure across Babble's tree-walking interpreter, unoptimized (`-O0`) ASM bytecode compiler, and HIR Nanopass (`-O1`) optimizer.
 
 Each `.batest` file contains an optional Babble preamble followed by one or more synthetic test cases separated by `{{{{{` and `}}}}}` markers, pairing each snippet with its expected standard output or normalized compile/runtime error message:
 
@@ -35,9 +35,9 @@ print(ratio("ten", 2))
 Type error : expected int, got string
 ```
 
-* **Three-way oracle.** Every case is evaluated in both `INTERPRET` mode and `COMPILE` mode (`babble.verify=true`, checked by ASM's `CheckClassAdapter`). Both backends must agree on whether the case succeeded or failed, produce identical normalized text, and match the `.batest` golden expectation.
+* **Four-way oracle (`interpret`, `compile -O0`, `compile -O1`, expected).** Every case is evaluated in `INTERPRET` mode, `COMPILE -O1` mode (`babble.verify=true`, checked by `HirVerifier` and ASM's `CheckClassAdapter`), and `COMPILE -O0` mode (`babble.opt=0`, `babble.verify=true`). All three backends must agree on whether the case succeeded or failed, produce identical normalized text, and match the `.batest` golden expectation.
 * **Zero implementation leakage.** Stack traces, generated JVM class/method names (`Script$N`, `fn$0$f$spec`), exception wrapper prefixes (`org.babblelang.runtime.BabbleException:`), reflective wrappers (`java.lang.reflect.InvocationTargetException`), host filesystem paths, and preamble-sensitive line/column numbers are stripped or normalized out of test expectations. Internal engine crashes (`VerifyError`, uncaught JVM `NullPointerException`/`IllegalStateException` inside Babble) fail unconditionally and can never match an expected string.
-* **Fast targeted iteration & closed-loop coverage.** A full `mvn -q verify -Pbatest` run over the entire `.batest` suite compiles and verifies hundreds of synthetic scripts across two isolated JaCoCo-instrumented JVMs (`interpret` and `compile`) and is expected to take minutes; for rapid inner-loop iteration, `-Dbatest.filter=<file-or-pattern>` runs a single `.batest` file, directory, or case in seconds, optionally inspecting coverage on a single target class (`-Dbatest.inspect=<Class>`).
+* **Fast targeted iteration & closed-loop coverage.** A full `mvn -q verify -Pbatest` run over the entire `.batest` suite compiles and verifies hundreds of synthetic scripts across three isolated JaCoCo-instrumented JVMs (`interpret`, `compile -O1`, and `compile -O0`) and measures five independent scopes; for rapid inner-loop iteration, `-Dbatest.filter=<file-or-pattern>` runs a single `.batest` file, directory, or case in seconds, optionally inspecting coverage on a single target class (`-Dbatest.inspect=<Class>`).
 
 ---
 
@@ -323,41 +323,43 @@ The harness consists of two components in `src/test/java/org/babblelang/tests/ba
      ```bash
      mvn -q verify -Pbatest
      ```
-     Runs the entire `.batest` corpus (hundreds to thousands of synthetic tests compiled to verified JVM bytecode) in two isolated JaCoCo-instrumented JVMs (`interpret` and `compile`) and computes authoritative whole-suite coverage and top uncovered hotspots.
+     Runs the entire `.batest` corpus across three isolated JaCoCo-instrumented JVMs (`interpret`, `compile -O1`, and `compile -O0`) and computes authoritative whole-suite coverage across five scopes plus top uncovered hotspots.
 
    Inside `-Pbatest`:
    * **Test selection**: Surefire runs `BatestTestCase` only by default (measuring pure `.batest` synthetic coverage; `-Dbatest.includeLegacy=true` optionally includes the legacy JUnit classes for whole-repo coverage).
-   * **Isolated dual-JVM JaCoCo capture**:
-     * Execution `default-test` (`babble.mode=interpret`) attaches the JaCoCo agent writing to `target/jacoco-interpret.exec`.
-     * Execution `compiled-tests` (`babble.mode=compile`, `babble.verify=true`) attaches the JaCoCo agent writing to `target/jacoco-compile.exec`.
-     * Running in two separate JVMs prevents static runtime caches (`JavaClass`, `JavaTypes.FUNCTIONAL_METHODS`, `Overloads`) warmed during `interpret` from masking cold-path misses in `compile`, and keeps `interpret` and `compile` probe bitmaps strictly separate.
-   * **Agent instrumentation exclusions**: Both JaCoCo agents configure:
-     ```text
-     includes=org.babblelang.*
-     excludes=org.babblelang.generated.*:babble.*:org.babblelang.parser.*
-     ```
-     Excluding `org.babblelang.generated.*` and `babble.*` ensures dynamically emitted Babble script and module classes are never mutated with `$jacocoInit` probes before `CheckClassAdapter` or `MethodHandles.privateLookupIn` inspects them; excluding `org.babblelang.parser.*` avoids instrumenting ANTLR-generated state machines.
-   * **Non-aborting collection, strict exit code**: Surefire sets `<testFailureIgnore>true</testFailureIgnore>` inside `-Pbatest` so a failure in `interpret` never skips `compiled-tests` or JaCoCo XML generation (`target/site/jacoco-interpret/jacoco.xml` and `target/site/jacoco-compile/jacoco.xml`). Then `BatestCoverageReporter` runs in `verify`, prints the complete pass-rate, parity, and coverage report, writes machine-readable summaries to `target/batest-report/`, and **exits with status `1` if any `.batest` case failed in either mode or if any of the four coverage scopes falls below the `75%` branch coverage gate** on an unfiltered run (`-Dbatest.minBranchPct=75.0` by default; `0` when all pass and meet the threshold).
+   * **Isolated 3-JVM JaCoCo capture**:
+     * Execution `default-test` (`babble.mode=interpret`) attaches the JaCoCo agent writing to `target/jacoco-interpret.exec` (and `outcomes-interpret.jsonl`), excluding `org.babblelang.compiler.*`, `org.babblelang.ir.*`, and `org.babblelang.opt.*`.
+     * Execution `compiled-tests` (`babble.mode=compile`, `-O1`, `babble.verify=true`) attaches the JaCoCo agent writing to `target/jacoco-compile.exec` (and `outcomes-compile.jsonl`), including the optimizer package `org.babblelang.opt.*`.
+     * Execution `compiled-tests-O0` (`babble.mode=compile`, `babble.opt=0`, `babble.verify=true`) attaches the JaCoCo agent writing to `target/jacoco-compile-O0.exec` (and `outcomes-compile-O0.jsonl`), excluding `org.babblelang.opt.*` (matching `BabbleCompiler` bypassing `org.babblelang.opt.*` when `optLevel <= 0`).
+     * Running in three separate JVMs prevents `-O0` runs from overwriting `jacoco-interpret.exec` or `-O1` optimizer coverage, prevents static runtime caches warmed during one mode from masking cold-path misses in another, and keeps all three probe bitmaps strictly separate.
+   * **Agent & report instrumentation filters**: Every JaCoCo agent excludes `org.babblelang.generated.*`, `babble.*`, and `org.babblelang.parser.*` so dynamically emitted Babble script and module classes are never mutated with `$jacocoInit` probes before `CheckClassAdapter` or `MethodHandles.privateLookupIn` inspects them and ANTLR-generated state machines stay out of the denominator. During `verify`, `pom.xml` generates four filtered XML reports:
+     * `report-interpret` → `target/site/jacoco-interpret/jacoco.xml` (excludes `parser/**`, `compiler/**`, `ir/**`, `opt/**`)
+     * `report-compile-O0` → `target/site/jacoco-compile-O0/jacoco.xml` (excludes `parser/**`, `engine/impl/*`, `opt/**`)
+     * `report-compile` → `target/site/jacoco-compile/jacoco.xml` (excludes `parser/**`, `engine/impl/*`)
+     * `report-opt` (from `jacoco-compile.exec`) → `target/site/jacoco-opt/jacoco.xml` (includes `org/babblelang/opt/**` only)
+   * **Non-aborting collection, strict exit code**: Surefire sets `<testFailureIgnore>true</testFailureIgnore>` inside `-Pbatest` so a failure in one mode never skips later executions or JaCoCo XML generation. Then `BatestCoverageReporter` runs in `verify`, prints the complete pass-rate, 3-way parity, and 5-scope coverage report, writes machine-readable summaries to `target/batest-report/`, and **exits with status `1` if any `.batest` case failed in any mode, diverged across modes, or if any of the five coverage scopes falls below the `75%` branch coverage gate** on an unfiltered run (`-Dbatest.minBranchPct=75.0` by default; `0` when all pass and meet the threshold).
 
 ### 5.2 Coverage Scopes & Denominator Hygiene (`BIP009-D8`)
 
-Merging `jacoco-interpret.exec` and `jacoco-compile.exec` into a single number hides critical compiler gaps: for example, `1 + 2` in `interpret` calls `Operators.add`, which would mark `Operators.add` covered even if `CodeGenerator` never exercised its boxed arithmetic fallback!
+Merging `jacoco-interpret.exec`, `jacoco-compile-O0.exec`, and `jacoco-compile.exec` into a single number hides critical compiler gaps: for example, `1 + 2` in `interpret` calls `Operators.add` (marking it covered even if `-O0` never exercised its boxed fallback), and constant folding in `-O1` folds `1 + 2` before `-O0` codegen paths run!
 
-`BatestCoverageReporter` (**`BIP009-D8`**) therefore reports **line coverage** and **branch coverage** across four focused scopes, explicitly excluding non-evaluation tools:
+`BatestCoverageReporter` (**`BIP009-D8`**) therefore reports **line coverage** and **branch coverage** across five focused scopes, explicitly excluding non-evaluation tools:
 
 | Report Scope | Included Classes | JaCoCo Source | Why Separated |
 |---|---|---|---|
 | **1. Interpreter** | `org.babblelang.engine.impl.*` (`Interpreter`, `Function`, `BabbleCompiledScript`, `ReturnException`) | `jacoco-interpret.xml` | Measures direct coverage of every grammar visitor and interpreted closure/method path |
-| **2. Compiler** | `compiler.CodeGenerator`, `BabbleCompiler`, `CompiledBabbleScript`, `ScriptClassLoader` + compiler-only runtime (`Bootstrap`, `CompiledFunction`, `CompiledMethod`, `Frames`, `Cell`, `IntCell`, `DoubleCell`, `BoolCell`) | `jacoco-compile.xml` | Measures bytecode generation (`RM001` primitive lowering, closures, classes) AND runtime `invokedynamic` inline caches / typed cells |
-| **3. Shared Front-End** | `org.babblelang.analysis.*` + `org.babblelang.engine.*` (excluding `FileModuleSource`, `ClassPathModuleSource`) | `jacoco-compile.xml` *(identical to `interpret`, plus `Resolver`)* | Measures `BlockScopes`, `TypeChecks`, `Resolver`, `TypeChecker`, `AnalysisSession`, `BabbleSession`, and `MapModuleSource` |
-| **4. Shared Runtime & Natives** | `org.babblelang.runtime.*` (shared classes) + `org.babblelang.engine.impl.natives.**` | **Side-by-side**: `interpret` % vs `compile` % vs `union` % | Exposes runtime helpers reached by the interpreter vs compiled code |
+| **2. Compiler (`-O0`)** | `org.babblelang.compiler.*`, `org.babblelang.ir.*` (excluding `HirPrinter`), + compiler-only runtime (`Bootstrap`, `CompiledFunction`, `CompiledMethod`, `Frames`, `Cell`, `ByteCell`..`CharCell`) | `jacoco-compile-O0.xml` | Measures unoptimized HIR lowering (`HirBuilder`), bytecode emission (`HirEmitter`/`ClassGen`/`InterfaceGen`), and `invokedynamic` / typed cells without `-O1` folding masking gaps |
+| **3. Optimizer (`-O1`)** | `org.babblelang.opt.**` (`PassManager`, `PassContext`, `HirPass`, `HirPurity`, `HirRewriter`, `ConstFoldPass`, `AlgebraicSimplifyPass`, `InlinePass`, `HirDcePass`, `HirLicmPass`) | `jacoco-opt/jacoco.xml` *(from `jacoco-compile.exec`)* | Measures HIR Nanopass optimization and purity analysis strictly during `-O1` compilation (`BabbleCompiler` bypasses `opt.*` at `-O0`) |
+| **4. Shared Front-End** | `org.babblelang.analysis.*` (excluding opt-in `AxiomChecker`/`BytecodeEffectAnalyzer`) + `org.babblelang.effects.*` + `org.babblelang.engine.*` (excluding `FileModuleSource`, `ClassPathModuleSource`) | `jacoco-compile.xml` *(identical to `interpret`, plus `Resolver`)* | Measures `BlockScopes`, `TypeChecks`, `Resolver`, `TypeChecker`, `EffectChecker`, `AnalysisSession`, `BabbleSession`, and `MapModuleSource` |
+| **5. Shared Runtime & Natives** | `org.babblelang.runtime.*` (shared classes) + `org.babblelang.engine.impl.natives.**` | **Side-by-side**: `interpret` vs `compile-O0` vs `compile-O1` vs `combined` union | Exposes runtime helpers reached by the interpreter vs `-O0` vs `-O1`, gated on the combined union |
 
 **Excluded from the `.batest` coverage denominator:**
 
 * `org.babblelang.parser.*` — generated by `antlr4-maven-plugin` from `Babble.g4`.
 * `Main`, `Repl`, `Babblefmt`, `format.Formatter` — CLI & source-formatter tools (tested by `MainTestCase`, `ReplTestCase`, `BabblefmtTestCase`, `FormatterTestCase`).
 * `compiler.Babblec`, `compiler.FileModuleCompiler`, `runtime.Launcher`, `runtime.ProgramIndex` — ahead-of-time JAR packaging & standalone launcher (tested by `BabblecTestCase`).
-* `compiler.Debugging` — developer-only `-Dbabble.trace` / `-Dbabble.dumpClasses` switches (except `verify`, exercised when `babble.verify=true`).
+* `compiler.Debugging`, `ir.hir.HirPrinter` — developer-only `-Dbabble.trace` / `-Dbabble.dumpClasses` / `-Dbabble.dumpIr` switches.
+* `analysis.AxiomChecker`, `analysis.BytecodeEffectAnalyzer` — opt-in diagnostic tools (`-Dbabble.checkAxioms` / host ASM analyzer).
 * `engine.FileModuleSource`, `engine.ClassPathModuleSource` — filesystem/JAR resource adapters (tested by `FileModulesTestCase` and `ModuleSourcesTestCase`).
 
 ### 5.3 Console & Machine-Readable Output Format
@@ -470,7 +472,7 @@ src/test/batest/
 * **`BIP009-Q7` → `BIP009-D7` (Java interop exceptions):** *How should exceptions thrown by called Java methods/constructors be reported without leaking reflection internals?*
   **Proposed (`BIP009-D7`):** Unwrap `InvocationTargetException` in `JavaMethod`, `JavaClass`, `JavaLinker`, `JavaDefaultCall`, and `JavaTypes.wrapInvocationException` so both modes report `<ExceptionClass> : <message>` (or `<ExceptionClass>` when `getMessage() == null`) with zero `java.lang.reflect.InvocationTargetException` wrapper leakage and zero stack traces (§4.3).
 * **`BIP009-Q8` → `BIP009-D8` (Coverage measurement architecture & fast iteration):** *How do we avoid multi-minute feedback loops while keeping full-suite coverage accurate across backends?*
-  **Proposed (`BIP009-D8`):** Capture two isolated JaCoCo `.exec` files in `-Pbatest` (`jacoco-interpret.exec` and `jacoco-compile.exec`), exclude generated classes (`org.babblelang.generated.*`, `babble.*`, `org.babblelang.parser.*`) at the agent level, exclude standalone CLI/AOT/formatter classes from the report denominator, report separate coverage for Interpreter, Compiler, Shared Front-End, and Shared Runtime (§5.2), and support `-Dbatest.filter=<selector>` (both in `mvn test` and `-Pbatest`) for seconds-long single-file/subset iteration (§5.1, §6.1).
+  **Proposed (`BIP009-D8`):** Capture three isolated JaCoCo `.exec` files in `-Pbatest` (`jacoco-interpret.exec`, `jacoco-compile-O0.exec`, and `jacoco-compile.exec`), filter generated classes (`org.babblelang.generated.*`, `babble.*`, `org.babblelang.parser.*`) and `-O0`/`-O1` package boundaries (`org.babblelang.opt.*`) in `pom.xml`, exclude standalone CLI/AOT/formatter/debug tools from the report denominator, report separate coverage across five scopes (`Interpreter`, `Compiler (-O0)`, `Optimizer (-O1)`, `Shared Front-End`, and `Shared Runtime`, §5.2), and support `-Dbatest.filter=<selector>` (both in `mvn test` and `-Pbatest`) for seconds-long single-file/subset iteration (§5.1, §6.1).
 
 ---
 

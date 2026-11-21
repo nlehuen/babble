@@ -230,6 +230,9 @@
                                         <exclude>org.babblelang.generated.*</exclude>
                                         <exclude>babble.*</exclude>
                                         <exclude>org.babblelang.parser.*</exclude>
+                                        <exclude>org.babblelang.compiler.*</exclude>
+                                        <exclude>org.babblelang.ir.*</exclude>
+                                        <exclude>org.babblelang.opt.*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -270,6 +273,7 @@
                                         <exclude>org.babblelang.generated.*</exclude>
                                         <exclude>babble.*</exclude>
                                         <exclude>org.babblelang.parser.*</exclude>
+                                        <exclude>org.babblelang.opt.*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -282,6 +286,12 @@
                                 <configuration>
                                     <dataFile>${project.build.directory}/jacoco-interpret.exec</dataFile>
                                     <outputDirectory>${project.build.directory}/site/jacoco-interpret</outputDirectory>
+                                    <excludes>
+                                        <exclude>org/babblelang/parser/**</exclude>
+                                        <exclude>org/babblelang/compiler/**</exclude>
+                                        <exclude>org/babblelang/ir/**</exclude>
+                                        <exclude>org/babblelang/opt/**</exclude>
+                                    </excludes>
                                 </configuration>
                             </execution>
                             <execution>
@@ -293,6 +303,24 @@
                                 <configuration>
                                     <dataFile>${project.build.directory}/jacoco-compile.exec</dataFile>
                                     <outputDirectory>${project.build.directory}/site/jacoco-compile</outputDirectory>
+                                    <excludes>
+                                        <exclude>org/babblelang/parser/**</exclude>
+                                        <exclude>org/babblelang/engine/impl/*</exclude>
+                                    </excludes>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>report-opt</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
+                                <configuration>
+                                    <dataFile>${project.build.directory}/jacoco-compile.exec</dataFile>
+                                    <outputDirectory>${project.build.directory}/site/jacoco-opt</outputDirectory>
+                                    <includes>
+                                        <include>org/babblelang/opt/**</include>
+                                    </includes>
                                 </configuration>
                             </execution>
                             <execution>
@@ -304,6 +332,11 @@
                                 <configuration>
                                     <dataFile>${project.build.directory}/jacoco-compile-O0.exec</dataFile>
                                     <outputDirectory>${project.build.directory}/site/jacoco-compile-O0</outputDirectory>
+                                    <excludes>
+                                        <exclude>org/babblelang/parser/**</exclude>
+                                        <exclude>org/babblelang/engine/impl/*</exclude>
+                                        <exclude>org/babblelang/opt/**</exclude>
+                                    </excludes>
                                 </configuration>
                             </execution>
                         </executions>
@@ -409,6 +442,10 @@
                                         <systemProperty>
                                             <key>batest.jacocoCompileO0</key>
                                             <value>${project.build.directory}/site/jacoco-compile-O0/jacoco.xml</value>
+                                        </systemProperty>
+                                        <systemProperty>
+                                            <key>batest.jacocoOpt</key>
+                                            <value>${project.build.directory}/site/jacoco-opt/jacoco.xml</value>
                                         </systemProperty>
                                     </systemProperties>
                                 </configuration>

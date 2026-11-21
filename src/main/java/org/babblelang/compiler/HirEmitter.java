@@ -675,7 +675,8 @@ final class HirEmitter {
 
     private void generateClassBody(HirClass cls, String method) {
         ClassShape shape = cls.shape();
-        beginMethod(classWriter, cls.id(), ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, method,
+        // Package-private so compiled sibling class/interface bodies in this script can adapt cls$... via LambdaMetafactory.
+        beginMethod(classWriter, cls.id(), ACC_STATIC | ACC_SYNTHETIC, method,
                 CLASS_BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS, cls.capturedVars());
         loadCapturedCells(BABBLE_CLASS);
 

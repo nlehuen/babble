@@ -31,7 +31,8 @@ public final class BatestCoverageReporter {
 
     public enum Scope {
         INTERPRETER("Interpreter (impl.*)"),
-        COMPILER("Compiler (codegen+indy)"),
+        COMPILER("Compiler (-O0)"),
+        OPTIMIZER("Optimizer (-O1)"),
         FRONT_END("Shared Front-End (analysis)"),
         SHARED_RUNTIME("Shared Runtime & Natives"),
         EXCLUDED("Excluded");
@@ -52,6 +53,7 @@ public final class BatestCoverageReporter {
             "org.babblelang.compiler.Babblec",
             "org.babblelang.compiler.FileModuleCompiler",
             "org.babblelang.compiler.Debugging",
+            "org.babblelang.ir.hir.HirPrinter",
             "org.babblelang.runtime.Launcher",
             "org.babblelang.runtime.ProgramIndex",
             "org.babblelang.engine.FileModuleSource",
@@ -151,25 +153,31 @@ public final class BatestCoverageReporter {
         Path xmlInterpret = Path.of(System.getProperty("batest.jacocoInterpret", "target/site/jacoco-interpret/jacoco.xml"));
         Path xmlCompile = Path.of(System.getProperty("batest.jacocoCompile", "target/site/jacoco-compile/jacoco.xml"));
         Path xmlCompileO0 = Path.of(System.getProperty("batest.jacocoCompileO0", "target/site/jacoco-compile-O0/jacoco.xml"));
+        Path xmlOpt = Path.of(System.getProperty("batest.jacocoOpt", "target/site/jacoco-opt/jacoco.xml"));
         Path sourceRoot = Path.of(System.getProperty("batest.sourceRoot", "src/main/java"));
         String filter = System.getProperty("batest.filter", "").trim();
         String inspect = System.getProperty("batest.inspect", "").trim();
         double minBranchPct = Double.parseDouble(System.getProperty("batest.minBranchPct", "75.0").trim());
 
-        run(reportDir, xmlInterpret, xmlCompile, xmlCompileO0, sourceRoot, filter, inspect, minBranchPct);
+        run(reportDir, xmlInterpret, xmlCompile, xmlCompileO0, xmlOpt, sourceRoot, filter, inspect, minBranchPct);
     }
 
     static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path sourceRoot,
                     String filter, String inspect) throws Exception {
-        run(reportDir, xmlInterpret, xmlCompile, null, sourceRoot, filter, inspect, 0.0);
+        run(reportDir, xmlInterpret, xmlCompile, null, null, sourceRoot, filter, inspect, 0.0);
     }
 
     static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path sourceRoot,
                     String filter, String inspect, double minBranchPct) throws Exception {
-        run(reportDir, xmlInterpret, xmlCompile, null, sourceRoot, filter, inspect, minBranchPct);
+        run(reportDir, xmlInterpret, xmlCompile, null, null, sourceRoot, filter, inspect, minBranchPct);
     }
 
     static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path xmlCompileO0, Path sourceRoot,
+                    String filter, String inspect, double minBranchPct) throws Exception {
+        run(reportDir, xmlInterpret, xmlCompile, xmlCompileO0, null, sourceRoot, filter, inspect, minBranchPct);
+    }
+
+    static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path xmlCompileO0, Path xmlOpt, Path sourceRoot,
                     String filter, String inspect, double minBranchPct) throws Exception {
         Files.createDirectories(reportDir);
 
@@ -256,13 +264,19 @@ public final class BatestCoverageReporter {
                 ? parseJacocoXml(xmlCompile) : Map.of();
         boolean hasCompileO0Cov = xmlCompileO0 != null && Files.isRegularFile(xmlCompileO0);
         Map<String, FileCoverage> compileO0Cov = hasCompileO0Cov ? parseJacocoXml(xmlCompileO0) : Map.of();
+        boolean hasOptCov = xmlOpt != null && Files.isRegularFile(xmlOpt);
+        Map<String, FileCoverage> optCov = hasOptCov ? parseJacocoXml(xmlOpt) : Map.of();
+
+        Map<String, FileCoverage> compilerSourceCov = hasCompileO0Cov ? compileO0Cov : compileCov;
+        Map<String, FileCoverage> optSourceCov = hasOptCov ? optCov : compileCov;
+        Map<String, FileCoverage> frontSourceCov = compileCov.isEmpty() && hasCompileO0Cov ? compileO0Cov : compileCov;
 
         Counter[] scopeInterpLines = new Counter[]{new Counter(0, 0)};
         Counter[] scopeInterpBranches = new Counter[]{new Counter(0, 0)};
         Counter[] scopeCompileLines = new Counter[]{new Counter(0, 0)};
         Counter[] scopeCompileBranches = new Counter[]{new Counter(0, 0)};
-        Counter[] scopeCompileO0Lines = new Counter[]{new Counter(0, 0)};
-        Counter[] scopeCompileO0Branches = new Counter[]{new Counter(0, 0)};
+        Counter[] scopeOptLines = new Counter[]{new Counter(0, 0)};
+        Counter[] scopeOptBranches = new Counter[]{new Counter(0, 0)};
         Counter[] scopeFrontLines = new Counter[]{new Counter(0, 0)};
         Counter[] scopeFrontBranches = new Counter[]{new Counter(0, 0)};
         Counter[] sharedInterpLines = new Counter[]{new Counter(0, 0)};
@@ -284,24 +298,36 @@ public final class BatestCoverageReporter {
             }
         }
 
-        for (FileCoverage fc : compileCov.values()) {
+        for (FileCoverage fc : compilerSourceCov.values()) {
             if (fc.scope == Scope.COMPILER) {
                 scopeCompileLines[0] = scopeCompileLines[0].plus(fc.lines);
                 scopeCompileBranches[0] = scopeCompileBranches[0].plus(fc.branches);
-            } else if (fc.scope == Scope.FRONT_END) {
+            }
+        }
+
+        for (FileCoverage fc : optSourceCov.values()) {
+            if (fc.scope == Scope.OPTIMIZER) {
+                scopeOptLines[0] = scopeOptLines[0].plus(fc.lines);
+                scopeOptBranches[0] = scopeOptBranches[0].plus(fc.branches);
+            }
+        }
+
+        for (FileCoverage fc : frontSourceCov.values()) {
+            if (fc.scope == Scope.FRONT_END) {
                 scopeFrontLines[0] = scopeFrontLines[0].plus(fc.lines);
                 scopeFrontBranches[0] = scopeFrontBranches[0].plus(fc.branches);
-            } else if (fc.scope == Scope.SHARED_RUNTIME) {
+            }
+        }
+
+        for (FileCoverage fc : compileCov.values()) {
+            if (fc.scope == Scope.SHARED_RUNTIME) {
                 sharedCompileLines[0] = sharedCompileLines[0].plus(fc.lines);
                 sharedCompileBranches[0] = sharedCompileBranches[0].plus(fc.branches);
             }
         }
 
         for (FileCoverage fc : compileO0Cov.values()) {
-            if (fc.scope == Scope.COMPILER) {
-                scopeCompileO0Lines[0] = scopeCompileO0Lines[0].plus(fc.lines);
-                scopeCompileO0Branches[0] = scopeCompileO0Branches[0].plus(fc.branches);
-            } else if (fc.scope == Scope.SHARED_RUNTIME) {
+            if (fc.scope == Scope.SHARED_RUNTIME) {
                 sharedCompileO0Lines[0] = sharedCompileO0Lines[0].plus(fc.lines);
                 sharedCompileO0Branches[0] = sharedCompileO0Branches[0].plus(fc.branches);
             }
@@ -343,8 +369,18 @@ public final class BatestCoverageReporter {
                 canonicalClasses.add(fc);
             }
         }
-        for (FileCoverage fc : compileCov.values()) {
-            if (fc.scope == Scope.COMPILER || fc.scope == Scope.FRONT_END) {
+        for (FileCoverage fc : compilerSourceCov.values()) {
+            if (fc.scope == Scope.COMPILER) {
+                canonicalClasses.add(fc);
+            }
+        }
+        for (FileCoverage fc : optSourceCov.values()) {
+            if (fc.scope == Scope.OPTIMIZER) {
+                canonicalClasses.add(fc);
+            }
+        }
+        for (FileCoverage fc : frontSourceCov.values()) {
+            if (fc.scope == Scope.FRONT_END) {
                 canonicalClasses.add(fc);
             }
         }
@@ -363,11 +399,11 @@ public final class BatestCoverageReporter {
                 hasCompileO0Outcomes, interpPassed, compilePassed, compileO0Passed, parityMatched, failures,
                 scopeInterpLines[0], scopeInterpBranches[0],
                 scopeCompileLines[0], scopeCompileBranches[0],
-                hasCompileO0Cov, scopeCompileO0Lines[0], scopeCompileO0Branches[0],
+                scopeOptLines[0], scopeOptBranches[0],
                 scopeFrontLines[0], scopeFrontBranches[0],
                 sharedInterpLines[0], sharedInterpBranches[0],
+                hasCompileO0Cov, sharedCompileO0Lines[0], sharedCompileO0Branches[0],
                 sharedCompileLines[0], sharedCompileBranches[0],
-                sharedCompileO0Lines[0], sharedCompileO0Branches[0],
                 sharedUnionLines[0], sharedUnionBranches[0],
                 canonicalClasses);
 
@@ -375,11 +411,11 @@ public final class BatestCoverageReporter {
                 hasCompileO0Outcomes, interpPassed, compilePassed, compileO0Passed, parityMatched, failures,
                 scopeInterpLines[0], scopeInterpBranches[0],
                 scopeCompileLines[0], scopeCompileBranches[0],
-                hasCompileO0Cov, scopeCompileO0Lines[0], scopeCompileO0Branches[0],
+                scopeOptLines[0], scopeOptBranches[0],
                 scopeFrontLines[0], scopeFrontBranches[0],
                 sharedInterpLines[0], sharedInterpBranches[0],
+                hasCompileO0Cov, sharedCompileO0Lines[0], sharedCompileO0Branches[0],
                 sharedCompileLines[0], sharedCompileBranches[0],
-                sharedCompileO0Lines[0], sharedCompileO0Branches[0],
                 sharedUnionLines[0], sharedUnionBranches[0],
                 hotspots, reportDir, inspect, canonicalClasses, sourceRoot);
 
@@ -392,10 +428,8 @@ public final class BatestCoverageReporter {
         if (filter.isEmpty() && minBranchPct > 0.0) {
             List<String> below = new ArrayList<>();
             checkBranchThreshold(below, "Interpreter (impl.*)", scopeInterpBranches[0], minBranchPct);
-            checkBranchThreshold(below, "Compiler (codegen+indy)", scopeCompileBranches[0], minBranchPct);
-            if (hasCompileO0Cov) {
-                checkBranchThreshold(below, "Compiler (-O0)", scopeCompileO0Branches[0], minBranchPct);
-            }
+            checkBranchThreshold(below, "Compiler (-O0)", scopeCompileBranches[0], minBranchPct);
+            checkBranchThreshold(below, "Optimizer (-O1)", scopeOptBranches[0], minBranchPct);
             checkBranchThreshold(below, "Shared Front-End (analysis)", scopeFrontBranches[0], minBranchPct);
             checkBranchThreshold(below, "Shared Runtime (combined)", sharedUnionBranches[0], minBranchPct);
             if (!below.isEmpty()) {
@@ -499,7 +533,11 @@ public final class BatestCoverageReporter {
         if (qualifiedClass.startsWith("org.babblelang.engine.impl.")) {
             return Scope.INTERPRETER;
         }
+        if (qualifiedClass.startsWith("org.babblelang.opt.")) {
+            return Scope.OPTIMIZER;
+        }
         if (qualifiedClass.startsWith("org.babblelang.compiler.")
+                || qualifiedClass.startsWith("org.babblelang.ir.")
                 || COMPILER_RUNTIME_CLASSES.contains(qualifiedClass)) {
             return Scope.COMPILER;
         }
@@ -631,11 +669,11 @@ public final class BatestCoverageReporter {
             int parityMatched, List<FailureEntry> failures,
             Counter interpL, Counter interpB,
             Counter compL, Counter compB,
-            boolean hasCompileO0Cov, Counter compO0L, Counter compO0B,
+            Counter optL, Counter optB,
             Counter frontL, Counter frontB,
             Counter shInterpL, Counter shInterpB,
+            boolean hasCompileO0Cov, Counter shCompO0L, Counter shCompO0B,
             Counter shCompL, Counter shCompB,
-            Counter shCompO0L, Counter shCompO0B,
             Counter shUnionL, Counter shUnionB,
             List<FileCoverage> hotspots, Path reportDir, String inspect,
             List<FileCoverage> canonicalClasses, Path sourceRoot) throws IOException {
@@ -685,16 +723,14 @@ public final class BatestCoverageReporter {
         System.out.println("Scope                        Lines                Branches");
         System.out.println("---------------------------  -------------------  -------------------");
         printScopeRow("Interpreter (impl.*)", interpL, interpB);
-        printScopeRow("Compiler (codegen+indy)", compL, compB);
-        if (hasCompileO0Cov) {
-            printScopeRow("Compiler (-O0)", compO0L, compO0B);
-        }
+        printScopeRow("Compiler (-O0)", compL, compB);
+        printScopeRow("Optimizer (-O1)", optL, optB);
         printScopeRow("Shared Front-End (analysis)", frontL, frontB);
         printScopeRow("Shared Runtime (interpret)", shInterpL, shInterpB);
-        printScopeRow("Shared Runtime (compile)", shCompL, shCompB);
         if (hasCompileO0Cov) {
             printScopeRow("Shared Runtime (compile-O0)", shCompO0L, shCompO0B);
         }
+        printScopeRow("Shared Runtime (compile-O1)", shCompL, shCompB);
         printScopeRow("Shared Runtime (combined)", shUnionL, shUnionB);
 
         System.out.println();
@@ -838,11 +874,11 @@ public final class BatestCoverageReporter {
             int parityMatched, List<FailureEntry> failures,
             Counter interpL, Counter interpB,
             Counter compL, Counter compB,
-            boolean hasCompileO0Cov, Counter compO0L, Counter compO0B,
+            Counter optL, Counter optB,
             Counter frontL, Counter frontB,
             Counter shInterpL, Counter shInterpB,
+            boolean hasCompileO0Cov, Counter shCompO0L, Counter shCompO0B,
             Counter shCompL, Counter shCompB,
-            Counter shCompO0L, Counter shCompO0B,
             Counter shUnionL, Counter shUnionB,
             List<FileCoverage> canonicalClasses) throws IOException {
         StringBuilder sb = new StringBuilder();
@@ -859,15 +895,13 @@ public final class BatestCoverageReporter {
         sb.append("  \"scopes\": {\n");
         sb.append("    \"interpreter\": ").append(scopeJson(interpL, interpB)).append(",\n");
         sb.append("    \"compiler\": ").append(scopeJson(compL, compB)).append(",\n");
-        if (hasCompileO0Cov) {
-            sb.append("    \"compilerO0\": ").append(scopeJson(compO0L, compO0B)).append(",\n");
-        }
+        sb.append("    \"optimizer\": ").append(scopeJson(optL, optB)).append(",\n");
         sb.append("    \"frontEnd\": ").append(scopeJson(frontL, frontB)).append(",\n");
         sb.append("    \"sharedRuntimeInterpret\": ").append(scopeJson(shInterpL, shInterpB)).append(",\n");
-        sb.append("    \"sharedRuntimeCompile\": ").append(scopeJson(shCompL, shCompB)).append(",\n");
         if (hasCompileO0Cov) {
             sb.append("    \"sharedRuntimeCompileO0\": ").append(scopeJson(shCompO0L, shCompO0B)).append(",\n");
         }
+        sb.append("    \"sharedRuntimeCompile\": ").append(scopeJson(shCompL, shCompB)).append(",\n");
         sb.append("    \"sharedRuntimeCombined\": ").append(scopeJson(shUnionL, shUnionB)).append("\n");
         sb.append("  },\n");
         sb.append("  \"failures\": [");

@@ -24,9 +24,15 @@ public class BatestCoverageReporterTestCase {
         Assertions.assertEquals(BatestCoverageReporter.Scope.COMPILER,
                 BatestCoverageReporter.scopeOf("org.babblelang.compiler.CodeGenerator"));
         Assertions.assertEquals(BatestCoverageReporter.Scope.COMPILER,
+                BatestCoverageReporter.scopeOf("org.babblelang.ir.hir.HirBuilder"));
+        Assertions.assertEquals(BatestCoverageReporter.Scope.COMPILER,
                 BatestCoverageReporter.scopeOf("org.babblelang.runtime.Bootstrap"));
         Assertions.assertEquals(BatestCoverageReporter.Scope.COMPILER,
                 BatestCoverageReporter.scopeOf("org.babblelang.runtime.IntCell"));
+        Assertions.assertEquals(BatestCoverageReporter.Scope.OPTIMIZER,
+                BatestCoverageReporter.scopeOf("org.babblelang.opt.PassManager"));
+        Assertions.assertEquals(BatestCoverageReporter.Scope.OPTIMIZER,
+                BatestCoverageReporter.scopeOf("org.babblelang.opt.hir.ConstFoldPass"));
 
         Assertions.assertEquals(BatestCoverageReporter.Scope.FRONT_END,
                 BatestCoverageReporter.scopeOf("org.babblelang.analysis.TypeChecker"));
@@ -52,6 +58,8 @@ public class BatestCoverageReporterTestCase {
                 BatestCoverageReporter.scopeOf("org.babblelang.compiler.Babblec"));
         Assertions.assertEquals(BatestCoverageReporter.Scope.EXCLUDED,
                 BatestCoverageReporter.scopeOf("org.babblelang.compiler.Debugging"));
+        Assertions.assertEquals(BatestCoverageReporter.Scope.EXCLUDED,
+                BatestCoverageReporter.scopeOf("org.babblelang.ir.hir.HirPrinter"));
         Assertions.assertEquals(BatestCoverageReporter.Scope.EXCLUDED,
                 BatestCoverageReporter.scopeOf("org.babblelang.runtime.Launcher"));
         Assertions.assertEquals(BatestCoverageReporter.Scope.EXCLUDED,
@@ -184,6 +192,14 @@ public class BatestCoverageReporterTestCase {
                       <counter type="BRANCH" missed="2" covered="2"/>
                     </sourcefile>
                   </package>
+                  <package name="org/babblelang/opt">
+                    <class name="org/babblelang/opt/PassManager" sourcefilename="PassManager.java"/>
+                    <sourcefile name="PassManager.java">
+                      <line nr="12" mi="0" ci="3" mb="1" cb="3"/>
+                      <counter type="LINE" missed="0" covered="1"/>
+                      <counter type="BRANCH" missed="1" covered="3"/>
+                    </sourcefile>
+                  </package>
                   <package name="org/babblelang/runtime">
                     <class name="org/babblelang/runtime/Operators" sourcefilename="Operators.java"/>
                     <sourcefile name="Operators.java">
@@ -207,6 +223,14 @@ public class BatestCoverageReporterTestCase {
                       <counter type="BRANCH" missed="3" covered="1"/>
                     </sourcefile>
                   </package>
+                  <package name="org/babblelang/opt">
+                    <class name="org/babblelang/opt/PassManager" sourcefilename="PassManager.java"/>
+                    <sourcefile name="PassManager.java">
+                      <line nr="12" mi="3" ci="0" mb="4" cb="0"/>
+                      <counter type="LINE" missed="1" covered="0"/>
+                      <counter type="BRANCH" missed="4" covered="0"/>
+                    </sourcefile>
+                  </package>
                   <package name="org/babblelang/runtime">
                     <class name="org/babblelang/runtime/Operators" sourcefilename="Operators.java"/>
                     <sourcefile name="Operators.java">
@@ -218,12 +242,27 @@ public class BatestCoverageReporterTestCase {
                   </package>
                 </report>
                 """;
+        String optXml = """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <report name="opt">
+                  <package name="org/babblelang/opt/hir">
+                    <class name="org/babblelang/opt/hir/ConstFoldPass" sourcefilename="ConstFoldPass.java"/>
+                    <sourcefile name="ConstFoldPass.java">
+                      <line nr="10" mi="0" ci="4" mb="0" cb="4"/>
+                      <counter type="LINE" missed="0" covered="1"/>
+                      <counter type="BRANCH" missed="0" covered="4"/>
+                    </sourcefile>
+                  </package>
+                </report>
+                """;
         Path xmlI = tmp.resolve("jacoco-i.xml");
         Path xmlC = tmp.resolve("jacoco-c.xml");
         Path xmlC0 = tmp.resolve("jacoco-c0.xml");
+        Path xmlOpt = tmp.resolve("jacoco-opt.xml");
         Files.writeString(xmlI, interpXml, StandardCharsets.UTF_8);
         Files.writeString(xmlC, compileXml, StandardCharsets.UTF_8);
         Files.writeString(xmlC0, compileO0Xml, StandardCharsets.UTF_8);
+        Files.writeString(xmlOpt, optXml, StandardCharsets.UTF_8);
 
         String ok = "{\"file\":\"a.batest\",\"index\":1,\"line\":1,\"expected\":\"5\",\"kind\":\"OK\",\"text\":\"5\",\"passed\":true}\n";
         Files.writeString(reportDir.resolve("outcomes-interpret.jsonl"), ok, StandardCharsets.UTF_8);
@@ -233,15 +272,19 @@ public class BatestCoverageReporterTestCase {
         BatestCoverageReporter.run(reportDir, xmlI, xmlC, xmlC0, tmp.resolve("src"), "", "", 0.0);
         String summary = Files.readString(reportDir.resolve("summary.json"), StandardCharsets.UTF_8);
         Assertions.assertTrue(summary.contains("\"compileO0Passed\": 1"), summary);
-        Assertions.assertTrue(summary.contains("\"compiler\": {\"linesCovered\": 1, \"linesTotal\": 2, \"linePct\": 50.00, \"branchesCovered\": 2, \"branchesTotal\": 4"), summary);
-        Assertions.assertTrue(summary.contains("\"compilerO0\": {\"linesCovered\": 1, \"linesTotal\": 2, \"linePct\": 50.00, \"branchesCovered\": 1, \"branchesTotal\": 4"), summary);
+        Assertions.assertTrue(summary.contains("\"compiler\": {\"linesCovered\": 1, \"linesTotal\": 2, \"linePct\": 50.00, \"branchesCovered\": 1, \"branchesTotal\": 4"), summary);
+        Assertions.assertTrue(summary.contains("\"optimizer\": {\"linesCovered\": 1, \"linesTotal\": 1, \"linePct\": 100.00, \"branchesCovered\": 3, \"branchesTotal\": 4"), summary);
         Assertions.assertTrue(summary.contains("\"sharedRuntimeCombined\": {\"linesCovered\": 2, \"linesTotal\": 2, \"linePct\": 100.00, \"branchesCovered\": 3, \"branchesTotal\": 4"), summary);
+
+        BatestCoverageReporter.run(reportDir, xmlI, xmlC, xmlC0, xmlOpt, tmp.resolve("src"), "", "", 0.0);
+        String optSummary = Files.readString(reportDir.resolve("summary.json"), StandardCharsets.UTF_8);
+        Assertions.assertTrue(optSummary.contains("\"optimizer\": {\"linesCovered\": 1, \"linesTotal\": 1, \"linePct\": 100.00, \"branchesCovered\": 4, \"branchesTotal\": 4"), optSummary);
 
         // Verify compile -O0 parity mismatch triggers AssertionError
         Files.writeString(reportDir.resolve("outcomes-compile-O0.jsonl"),
                 "{\"file\":\"a.batest\",\"index\":1,\"line\":1,\"expected\":\"5\",\"kind\":\"OK\",\"text\":\"7\",\"passed\":false}\n",
                 StandardCharsets.UTF_8);
         Assertions.assertThrows(AssertionError.class,
-                () -> BatestCoverageReporter.run(reportDir, xmlI, xmlC, xmlC0, tmp.resolve("src"), "", "", 0.0));
+                () -> BatestCoverageReporter.run(reportDir, xmlI, xmlC, xmlC0, xmlOpt, tmp.resolve("src"), "", "", 0.0));
     }
 }
