@@ -1454,26 +1454,22 @@ final class EffectChecker {
             return profileFromAnnotations(exactMethod, declOwner, true);
         }
         // Tier 6: Curated axioms (BIP019) first, then legacy standard value protocol defaults (retired in BIP019-P4).
-        JavaCallProfile curated = pass.hostEffects.builtinAxioms().methodProfile(owner, methodName, exactMethod);
-        if (curated != null) {
-            return curated;
+        AxiomData.MemberAxiom curatedAx = pass.hostEffects.builtinAxioms().methodAxiom(owner, methodName, exactMethod);
+        if (curatedAx != null) {
+            if (exactMethod != null && Boolean.getBoolean("babble.axioms.report")) {
+                reportRedundantCuratedAxiom(exactMethod, curatedAx);
+            }
+            return curatedAx.toProfile(exactMethod);
         }
         JavaCallProfile protocol = standardProtocolDefault(owner, methodName, exactMethod);
         if (protocol != null) {
             return protocol;
         }
-        // Tier 7: ASM bytecode static analysis of closed Java helpers.
+        // Tier 7: ASM bytecode static analysis (on by default, BIP019 §5).
         if (exactMethod != null && pass.hostEffects.bytecodeEffectAnalysis()) {
-            BytecodeEffectAnalyzer.Result analyzed = BytecodeEffectAnalyzer.analyze(exactMethod);
+            BytecodeEffectAnalyzer.Result analyzed = BytecodeEffectAnalyzer.analyze(exactMethod, pass.hostEffects.builtinAxioms());
             if (!analyzed.effects().isUnconstrained()) {
-                int pCount = exactMethod.getParameterCount();
-                boolean[] borrowParams = new boolean[pCount];
-                if (analyzed.effects().isPure()) {
-                    Arrays.fill(borrowParams, true);
-                }
-                boolean isStatic = Modifier.isStatic(exactMethod.getModifiers());
-                return new JavaCallProfile(analyzed.effects(), false, !isStatic && analyzed.effects().isPure(),
-                        new boolean[pCount], borrowParams, analyzed.effects().isNothrow());
+                return analyzed.toProfile(exactMethod);
             }
         }
         // Tier 8: Unconstrained default.
@@ -1516,9 +1512,12 @@ final class EffectChecker {
             return profileFromAnnotations(exactCtor, owner, true);
         }
         // Tier 6: Curated axioms (BIP019) first, then legacy BIP011 core type constructor profiles (retired in BIP019-P4).
-        JavaCallProfile curated = pass.hostEffects.builtinAxioms().constructorProfile(owner, exactCtor);
-        if (curated != null) {
-            return curated;
+        AxiomData.MemberAxiom curatedAx = pass.hostEffects.builtinAxioms().constructorAxiom(owner, exactCtor);
+        if (curatedAx != null) {
+            if (exactCtor != null && Boolean.getBoolean("babble.axioms.report")) {
+                reportRedundantCuratedAxiom(exactCtor, curatedAx);
+            }
+            return curatedAx.toProfile(exactCtor);
         }
         int paramCount = exactCtor != null ? exactCtor.getParameterCount() : 0;
         if (owner == String.class) {
@@ -1533,8 +1532,29 @@ final class EffectChecker {
             EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
             return new JavaCallProfile(set, false, false, new boolean[paramCount], new boolean[paramCount], false);
         }
+        // Tier 7: ASM bytecode static analysis of constructors (on by default, BIP019 §5).
+        if (exactCtor != null && pass.hostEffects.bytecodeEffectAnalysis()) {
+            BytecodeEffectAnalyzer.Result analyzed = BytecodeEffectAnalyzer.analyze(exactCtor, pass.hostEffects.builtinAxioms());
+            if (!analyzed.effects().isUnconstrained()) {
+                return analyzed.toProfile(exactCtor);
+            }
+        }
         // Tier 8: Unconstrained default.
         return new JavaCallProfile(EffectSet.EMPTY, false, false, new boolean[paramCount], new boolean[paramCount], false);
+    }
+
+    private static final Set<String> REPORTED_REDUNDANT_AXIOMS = Collections.synchronizedSet(new HashSet<>());
+
+    private void reportRedundantCuratedAxiom(Executable exec, AxiomData.MemberAxiom curated) {
+        String key = exec.getDeclaringClass().getName() + "." + (exec instanceof Constructor<?> ? "new" : exec.getName())
+                + Arrays.toString(exec.getParameterTypes());
+        if (!REPORTED_REDUNDANT_AXIOMS.add(key)) {
+            return;
+        }
+        BytecodeEffectAnalyzer.Result inferred = BytecodeEffectAnalyzer.analyzeRaw(exec, pass.hostEffects.builtinAxioms());
+        if (BytecodeEffectAnalyzer.isAtLeastAsStrongAs(inferred, curated, exec)) {
+            System.err.println("Axiom report : " + key + " curated axiom can be inferred as is or stronger");
+        }
     }
 
     private static HostEffects.OverrideEntry lookupHierarchyMethod(

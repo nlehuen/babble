@@ -30,6 +30,11 @@
             <artifactId>asm</artifactId>
             <version>${asm.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-analysis</artifactId>
+            <version>${asm.version}</version>
+        </dependency>
         <!-- Only for the babble.trace and babble.verify debugging switches. -->
         <dependency>
             <groupId>org.ow2.asm</groupId>

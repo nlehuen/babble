@@ -137,6 +137,14 @@ public final class BabbleCompiler {
         int optLevel = resolveOptLevel(engine);
         boolean verify = Boolean.getBoolean(VERIFY);
         String dumpIr = resolveDumpIr(engine);
+        org.babblelang.analysis.BuiltinAxioms activeAxioms = engine != null
+                ? engine.builtinAxioms()
+                : org.babblelang.analysis.BuiltinAxioms.standard();
+        String dumpAxioms = System.getProperty("babble.dumpAxioms");
+        if (dumpAxioms != null && !dumpAxioms.isBlank()) {
+            org.babblelang.analysis.AxiomDumper.dumpTargets(dumpAxioms, activeAxioms,
+                    new java.io.PrintWriter(System.err, true));
+        }
         if (optLevel <= 0) {
             if (verify) {
                 org.babblelang.ir.hir.HirVerifier.verify(hir);
@@ -153,9 +161,6 @@ public final class BabbleCompiler {
             org.babblelang.opt.PassContext passCtx = new org.babblelang.opt.PassContext(
                     optLevel, verify, dumpIr, aotCrossModule,
                     aotInlineCache != null ? aotInlineCache : Map.of());
-            org.babblelang.analysis.BuiltinAxioms activeAxioms = engine != null
-                    ? engine.builtinAxioms()
-                    : org.babblelang.analysis.BuiltinAxioms.standard();
             org.babblelang.ir.hir.HirModule unoptimized = hir;
             hir = org.babblelang.analysis.BuiltinAxioms.withCurrent(activeAxioms,
                     () -> org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(

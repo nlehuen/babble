@@ -160,7 +160,7 @@ public final class HostEffects {
         }
     }
 
-    public static final HostEffects DEFAULT = new HostEffects(true, false, Map.of(), BuiltinAxioms.standard());
+    public static final HostEffects DEFAULT = new HostEffects(true, true, Map.of(), BuiltinAxioms.standard());
 
     private final boolean allowAxioms;
     private final boolean bytecodeEffectAnalysis;
@@ -168,7 +168,7 @@ public final class HostEffects {
     private final BuiltinAxioms builtinAxioms;
 
     public HostEffects(boolean allowAxioms, Map<JavaTarget, OverrideEntry> overrides) {
-        this(allowAxioms, false, overrides, BuiltinAxioms.standard());
+        this(allowAxioms, true, overrides, BuiltinAxioms.standard());
     }
 
     public HostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, Map<JavaTarget, OverrideEntry> overrides) {

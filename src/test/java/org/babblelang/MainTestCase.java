@@ -166,4 +166,21 @@ public class MainTestCase {
         Assertions.assertEquals(0, run("", "-compile", s, "-O1", "-o", jar1.toString()).status());
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile", s, "-O3", "-o", jar0.toString()).status());
     }
+
+    @Test
+    public void testAxiomsDumpCommand() throws Exception {
+        Run cls = run("", "-axioms", "java.lang.Math");
+        Assertions.assertEquals(0, cls.status(), cls.err().toString());
+        String joined = String.join("\n", cls.out());
+        Assertions.assertTrue(joined.contains("axiom java.lang.Math: class"), joined);
+        Assertions.assertTrue(joined.contains("def abs:"), joined);
+
+        Run pkg = run("", "-axioms", "java.util.function");
+        Assertions.assertEquals(0, pkg.status(), pkg.err().toString());
+        String pkgOut = String.join("\n", pkg.out());
+        Assertions.assertTrue(pkgOut.contains("axiom java.util.function.Function of (T, R): class"), pkgOut);
+
+        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-axioms").status());
+        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-axioms", "no.such.ClassOrPackage").status());
+    }
 }

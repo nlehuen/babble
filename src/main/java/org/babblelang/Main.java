@@ -51,7 +51,9 @@ public final class Main {
               java -jar app.jar [arguments...]. Modules are under -root, by default main.ba's directory ;
               the jar is main.jar there unless -o names it.
             Or : java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
-              Formats source files : see java -jar babble.jar -format -help.""";
+              Formats source files : see java -jar babble.jar -format -help.
+            Or : java -jar babble.jar -axioms [-O0|-O1|-O2] <class-or-package>
+              Prints what Babble assumes (curated or inferred) about a Java class or package.""";
 
     /** The exit statuses : a script that failed, and a command line that can't be used. */
     static final int FAILED = 1;
@@ -98,6 +100,9 @@ public final class Main {
         }
         if (args.length > 0 && (args[0].equals("-format") || args[0].equals("--format"))) {
             return Babblefmt.run(Arrays.copyOfRange(args, 1, args.length), in, out, err);
+        }
+        if (args.length > 0 && (args[0].equals("-axioms") || args[0].equals("--axioms"))) {
+            return dumpAxioms(args, out, err);
         }
         boolean keepAlive = false;
         Integer optLevel = null;
@@ -276,5 +281,41 @@ public final class Main {
             errors.println("Error : Stack overflow in " + name);
         }
         return FAILED;
+    }
+
+    /** {@code -axioms [-O0|-O1|-O2] <class-or-package>} : dumps assumed/inferred axioms (BIP019 §5.1). */
+    private static int dumpAxioms(String[] args, PrintWriter out, PrintWriter err) {
+        String target = null;
+        for (int i = 1; i < args.length; i++) {
+            String opt = args[i];
+            if (opt.equals("-O0") || opt.equals("-O1") || opt.equals("-O2")) {
+                continue;
+            }
+            if (opt.equals("-help") || opt.equals("--help") || opt.equals("-h")) {
+                out.println(USAGE);
+                out.flush();
+                return 0;
+            }
+            if (!opt.startsWith("-") && target == null) {
+                target = opt;
+            } else {
+                err.println("Unknown option : " + opt);
+                err.println(USAGE);
+                err.flush();
+                return USAGE_ERROR;
+            }
+        }
+        if (target == null) {
+            err.println("-axioms needs a class or package name");
+            err.println(USAGE);
+            err.flush();
+            return USAGE_ERROR;
+        }
+        if (!org.babblelang.analysis.AxiomDumper.dumpTarget(target, org.babblelang.analysis.BuiltinAxioms.standard(), out)) {
+            err.println("Unknown class or package : " + target);
+            err.flush();
+            return USAGE_ERROR;
+        }
+        return 0;
     }
 }
