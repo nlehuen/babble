@@ -715,6 +715,7 @@ Language features :
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module or an object, instead of one `def` per name.
 - [ ] `yield` keyword : transform functions/method into iterators.
+- [ ] variadic parameters (`...xs: T`), spread arguments, Java varargs calls, and overload sets (`overload(f, g)`) of disjoint signatures (see [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
 - [ ] functional-style programming : `map` (standard library).
 
 Implementation features :
