@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +55,12 @@ public final class BuiltinAxioms {
     private final Map<Class<?>, Boolean> nullMarkedCache = new ConcurrentHashMap<>();
     private final Map<Class<?>, Boolean> immutableCache = new ConcurrentHashMap<>();
     private volatile Map<String, Type.Function> builtinsCache;
+    private volatile AnnotationStubs annotationStubs;
+
+    private record AnnotationStubs(
+            Map<String, JavaNullability.Nullness> valueNullness,
+            Map<String, JavaNullability.Nullness> scopeNullness) {
+    }
 
     private BuiltinAxioms(boolean loadFromClasspath, AxiomData.AxiomTable fixedTable) {
         this.loadFromClasspath = loadFromClasspath;
@@ -335,6 +342,99 @@ public final class BuiltinAxioms {
             throw new IllegalStateException("Invalid curated axiom file " + sourceName + ":\n" + String.join("\n", errors));
         }
         return builder.build();
+    }
+
+    /** Nullness meaning of a third-party annotation binary name, or {@code UNSPECIFIED}. */
+    JavaNullability.Nullness annotationNullness(String annotationBinaryName) {
+        if (!loadFromClasspath || annotationBinaryName == null) {
+            return JavaNullability.Nullness.UNSPECIFIED;
+        }
+        return loadAnnotationStubs().valueNullness().getOrDefault(annotationBinaryName, JavaNullability.Nullness.UNSPECIFIED);
+    }
+
+    /** Null-marked scope meaning of a third-party annotation binary name, or {@code UNSPECIFIED}. */
+    JavaNullability.Nullness annotationNullMarkedScope(String annotationBinaryName) {
+        if (!loadFromClasspath || annotationBinaryName == null) {
+            return JavaNullability.Nullness.UNSPECIFIED;
+        }
+        return loadAnnotationStubs().scopeNullness().getOrDefault(annotationBinaryName, JavaNullability.Nullness.UNSPECIFIED);
+    }
+
+    private AnnotationStubs loadAnnotationStubs() {
+        AnnotationStubs cached = annotationStubs;
+        if (cached != null) {
+            return cached;
+        }
+        Map<String, JavaNullability.Nullness> values = new HashMap<>();
+        Map<String, JavaNullability.Nullness> scopes = new HashMap<>();
+        try {
+            ClassLoader cl = BuiltinAxioms.class.getClassLoader();
+            for (String clsName : discoverAnnotationStubs()) {
+                Class<?> stub = Class.forName(clsName, false, cl);
+                org.babblelang.axioms.Axioms ax = stub.getAnnotation(org.babblelang.axioms.Axioms.class);
+                if (ax == null || ax.targetName().isEmpty()) {
+                    continue;
+                }
+                String target = ax.targetName();
+                if (stub.isAnnotationPresent(org.babblelang.axioms.MeansNonNull.class)) {
+                    values.put(target, JavaNullability.Nullness.NON_NULL);
+                } else if (stub.isAnnotationPresent(org.babblelang.axioms.MeansNullable.class)) {
+                    values.put(target, JavaNullability.Nullness.NULLABLE);
+                }
+                if (stub.isAnnotationPresent(org.babblelang.axioms.MeansNullMarked.class)) {
+                    scopes.put(target, JavaNullability.Nullness.NON_NULL);
+                } else if (stub.isAnnotationPresent(org.babblelang.axioms.MeansNullUnmarked.class)) {
+                    scopes.put(target, JavaNullability.Nullness.NULLABLE);
+                }
+            }
+        } catch (IOException | ClassNotFoundException e) {
+            throw new IllegalStateException("Failed to discover annotation axiom stubs", e);
+        }
+        AnnotationStubs built = new AnnotationStubs(Collections.unmodifiableMap(values), Collections.unmodifiableMap(scopes));
+        annotationStubs = built;
+        return built;
+    }
+
+    /** Lists binary names of all {@code *Axioms} Java stub classes under {@code org/babblelang/axioms/}. */
+    public static Set<String> discoverAnnotationStubs() throws IOException {
+        Set<String> stubs = new TreeSet<>();
+        ClassLoader cl = BuiltinAxioms.class.getClassLoader();
+        Enumeration<URL> roots = cl.getResources(AXIOMS_RESOURCE_ROOT);
+        while (roots.hasMoreElements()) {
+            URL url = roots.nextElement();
+            if ("file".equals(url.getProtocol())) {
+                try {
+                    Path dir = Path.of(url.toURI());
+                    try (Stream<Path> walk = Files.walk(dir)) {
+                        walk.filter(p -> {
+                            String fn = p.getFileName().toString();
+                            return fn.endsWith("Axioms.class") && !fn.equals("Axioms.class");
+                        }).forEach(p -> {
+                            Path rel = dir.relativize(p);
+                            String s = rel.toString().replace('\\', '/');
+                            String cls = "org.babblelang.axioms." + s.substring(0, s.length() - ".class".length()).replace('/', '.');
+                            stubs.add(cls);
+                        });
+                    }
+                } catch (Exception e) {
+                    throw new IOException("Failed to scan annotation axiom stubs in " + url, e);
+                }
+            } else if ("jar".equals(url.getProtocol())) {
+                JarURLConnection conn = (JarURLConnection) url.openConnection();
+                try (JarFile jar = conn.getJarFile()) {
+                    Enumeration<JarEntry> entries = jar.entries();
+                    while (entries.hasMoreElements()) {
+                        String name = entries.nextElement().getName();
+                        if (name.startsWith(AXIOMS_RESOURCE_ROOT) && name.endsWith("Axioms.class")
+                                && !name.equals(AXIOMS_RESOURCE_ROOT + "Axioms.class")) {
+                            String cls = name.substring(0, name.length() - ".class".length()).replace('/', '.');
+                            stubs.add(cls);
+                        }
+                    }
+                }
+            }
+        }
+        return Collections.unmodifiableSet(stubs);
     }
 
     /**

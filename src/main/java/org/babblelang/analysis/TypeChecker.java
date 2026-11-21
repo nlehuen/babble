@@ -214,11 +214,11 @@ final class TypeChecker {
                     ? effectChecker.isJavaClassDeeplyImmutable(ji.type())
                     : BuiltinAxioms.current().isDeeplyImmutable(ji.type());
             if (axiomaticImmutable) {
+                if (ji.type().getTypeParameters().length > 0 && ji.typeArguments().isEmpty()) {
+                    return false;
+                }
                 return ji.typeArguments().isEmpty()
                         || ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
-            }
-            if (ji.type() == java.util.Map.Entry.class) {
-                return !ji.typeArguments().isEmpty() && ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
             }
         }
         if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.OBJECT) {
@@ -442,7 +442,7 @@ final class TypeChecker {
         new ReturnFinder().visit(file);
         this.checkingEffects = false;
         this.effectChecker = new EffectChecker(pass, new TypedProgram(this));
-        JavaNullability.runWithLocalAxioms(effectChecker.localAxioms(), () -> {
+        JavaNullability.runWithContext(effectChecker.localAxioms(), pass.hostEffects.bytecodeEffectAnalysis(), () -> {
             slots.rank(file);
             slots.converge(file);
             effectChecker.inferAll(file);

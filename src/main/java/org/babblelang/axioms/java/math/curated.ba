@@ -1,0 +1,4 @@
+;; Curated axioms for java.math (BIP019-P6)
+
+axiom java.math.BigInteger: class nullmarked (
+)

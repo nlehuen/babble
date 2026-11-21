@@ -1,0 +1,4 @@
+;; Curated axioms for java.util.regex (BIP019-P6)
+
+axiom java.util.regex.Pattern: class nullmarked (
+)

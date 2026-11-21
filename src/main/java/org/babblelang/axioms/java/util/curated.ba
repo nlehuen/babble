@@ -1,4 +1,4 @@
-;; Curated axioms for java.util (BIP019-P4)
+;; Curated axioms for java.util (BIP019-P4, P6)
 
 axiom java.util.AbstractMap.SimpleEntry of (K, V): class (
 ) static (
@@ -20,8 +20,36 @@ axiom java.util.ArrayList of E: class (
     def new: fn shared
 )
 
+axiom java.util.Arrays: class (
+) static (
+    def asList: fn of T io (a: array of T): java.util.List of T
+    def copyOf: fn io (original: array of byte, newLength: int): array of byte
+    def copyOf: fn io (original: array of char, newLength: int): array of char
+    def copyOf: fn io (original: array of double, newLength: int): array of double
+    def copyOf: fn io (original: array of float, newLength: int): array of float
+    def copyOf: fn io (original: array of int, newLength: int): array of int
+    def copyOf: fn io (original: array of long, newLength: int): array of long
+    def copyOf: fn of T io (original: array of T, newLength: int): array of T
+    def copyOf: fn io (original: array of short, newLength: int): array of short
+    def copyOf: fn io (original: array of bool, newLength: int): array of bool
+    def copyOfRange: fn of T io (original: array of T, from: int, to: int): array of T
+    def stream: fn io (arr: array of double): java.util.stream.DoubleStream
+    def stream: fn io (arr: array of int): java.util.stream.IntStream
+    def stream: fn io (arr: array of long): java.util.stream.LongStream
+    def stream: fn of T io (arr: array of T): java.util.stream.Stream of T
+    def toString: fn io (a: (array of byte)?): string
+    def toString: fn io (a: (array of char)?): string
+    def toString: fn io (a: (array of double)?): string
+    def toString: fn io (a: (array of float)?): string
+    def toString: fn io (a: (array of int)?): string
+    def toString: fn io (a: (array of long)?): string
+    def toString: fn io (a: (array of any?)?): string
+    def toString: fn io (a: (array of short)?): string
+    def toString: fn io (a: (array of bool)?): string
+)
+
 ;; QUESTIONABLE : assumes every Collection implementation obeys core collection effects
-axiom java.util.Collection of E: class (
+axiom java.util.Collection of E: class nullmarked (
     def add: fn mut shared shallow (shared e: E): bool
     def addAll: fn mut shared shallow (c: java.util.Collection of E): bool
     def clear: fn mut shared shallow (): void
@@ -37,8 +65,38 @@ axiom java.util.Collection of E: class (
     def toString: fn (): string
 )
 
+axiom java.util.Collections: class (
+) static (
+    def emptyEnumeration: fn of T io (): java.util.Enumeration of T
+    def emptyIterator: fn of T io (): java.util.Iterator of T
+    def emptyList: fn of T io (): java.util.List of T
+    def emptyListIterator: fn of T io (): java.util.ListIterator of T
+    def emptyMap: fn of (K, V) io (): java.util.Map of (K, V)
+    def emptyNavigableMap: fn of (K, V) io (): java.util.NavigableMap of (K, V)
+    def emptyNavigableSet: fn of T io (): java.util.NavigableSet of T
+    def emptySet: fn of T io (): java.util.Set of T
+    def emptySortedMap: fn of (K, V) io (): java.util.SortedMap of (K, V)
+    def emptySortedSet: fn of T io (): java.util.SortedSet of T
+    def nCopies: fn of T io (n: int, o: T): java.util.List of T
+    def reverseOrder: fn of T io (): java.util.Comparator of T
+    def reverseOrder: fn of T io (cmp: (java.util.Comparator of T)?): java.util.Comparator of T
+    def singleton: fn of T io (o: T): java.util.Set of T
+    def singletonList: fn of T io (o: T): java.util.List of T
+    def singletonMap: fn of (K, V) io (key: K, value: V): java.util.Map of (K, V)
+    def synchronizedCollection: fn of T io (c: java.util.Collection of T): java.util.Collection of T
+    def synchronizedList: fn of T io (xs: java.util.List of T): java.util.List of T
+    def synchronizedMap: fn of (K, V) io (m: java.util.Map of (K, V)): java.util.Map of (K, V)
+    def synchronizedSet: fn of T io (s: java.util.Set of T): java.util.Set of T
+    def unmodifiableCollection: fn of T io (c: java.util.Collection of T): java.util.Collection of T
+    def unmodifiableList: fn of T io (xs: java.util.List of T): java.util.List of T
+    def unmodifiableMap: fn of (K, V) io (m: java.util.Map of (K, V)): java.util.Map of (K, V)
+    def unmodifiableSet: fn of T io (s: java.util.Set of T): java.util.Set of T
+    def unmodifiableSortedMap: fn of (K, V) io (m: java.util.SortedMap of (K, V)): java.util.SortedMap of (K, V)
+    def unmodifiableSortedSet: fn of T io (s: java.util.SortedSet of T): java.util.SortedSet of T
+)
+
 ;; QUESTIONABLE : assumes every Comparator.compare implementation is pure
-axiom java.util.Comparator of T: class (
+axiom java.util.Comparator of T: class nullmarked (
     def compare: fn (o1: T, o2: T): int
 )
 
@@ -53,7 +111,7 @@ axiom java.util.HashSet of E: class (
 )
 
 ;; QUESTIONABLE : assumes every Iterator implementation obeys core iterator effects
-axiom java.util.Iterator of E: class (
+axiom java.util.Iterator of E: class nullmarked (
     def hasNext: fn nothrow (): bool
     def remove: fn mut shared shallow (): void
 )
@@ -74,7 +132,7 @@ axiom java.util.LinkedList of E: class (
 )
 
 ;; QUESTIONABLE : assumes every List implementation obeys core list effects
-axiom java.util.List of E: class (
+axiom java.util.List of E: class nullmarked (
     def add: fn mut shared shallow (index: int, shared element: E): void
     def addAll: fn mut shared shallow (index: int, c: java.util.Collection of E): bool
     def get: fn (index: int): E
@@ -91,15 +149,18 @@ axiom java.util.List of E: class (
 )
 
 ;; QUESTIONABLE : assumes every ListIterator implementation obeys core iterator effects
-axiom java.util.ListIterator of E: class (
+axiom java.util.ListIterator of E: class nullmarked (
     def add: fn mut shared shallow (shared e: E): void
     def hasPrevious: fn nothrow (): bool
     def set: fn mut shared shallow (shared e: E): void
 )
 
 ;; QUESTIONABLE : assumes every Map implementation obeys core map effects
-axiom java.util.Map of (K, V): class (
+axiom java.util.Map of (K, V): class nullmarked (
     def clear: fn mut shared shallow (): void
+    def compute: fn io (key: K, remappingFunction: java.util.function.BiFunction of (K, V?, V?)): V?
+    def computeIfAbsent: fn io (key: K, mappingFunction: java.util.function.Function of (K, V)): V?
+    def computeIfPresent: fn io (key: K, remappingFunction: java.util.function.BiFunction of (K, V, V?)): V?
     def containsKey: fn (key: any?): bool
     def containsValue: fn (value: any?): bool
     def entrySet: fn nothrow view (): java.util.Set of (java.util.Map.Entry of (K, V))
@@ -109,6 +170,7 @@ axiom java.util.Map of (K, V): class (
     def hashCode: fn (): int
     def isEmpty: fn nothrow (): bool
     def keySet: fn nothrow view (): java.util.Set of K
+    def merge: fn io (key: K, value: V, remappingFunction: java.util.function.BiFunction of (V, V, V?)): V?
     def put: fn mut shared shallow (shared key: K, shared value: V): V?
     def putAll: fn mut shared shallow (m: java.util.Map of (K, V)): void
     def putIfAbsent: fn mut shared shallow (shared key: K, shared value: V): V?
@@ -122,7 +184,8 @@ axiom java.util.Map of (K, V): class (
     def values: fn nothrow view (): java.util.Collection of V
 )
 
-axiom java.util.Map.Entry of (K, V): class (
+;; QUESTIONABLE : assumes Map.Entry is deeply immutable despite setValue
+axiom java.util.Map.Entry of (K, V): class nullmarked immutable (
     def equals: fn (o: any?): bool
     def getKey: fn nothrow (): K
     def getValue: fn nothrow (): V
@@ -131,18 +194,45 @@ axiom java.util.Map.Entry of (K, V): class (
     def toString: fn (): string
 )
 
-axiom java.util.NavigableMap of (K, V): class (
+axiom java.util.NavigableMap of (K, V): class nullmarked (
+    def ceilingEntry: fn io (key: K): (java.util.Map.Entry of (K, V))?
+    def ceilingKey: fn io (key: K): K?
     def descendingMap: fn nothrow view (): java.util.NavigableMap of (K, V)
+    def firstEntry: fn io (): (java.util.Map.Entry of (K, V))?
+    def floorEntry: fn io (key: K): (java.util.Map.Entry of (K, V))?
+    def floorKey: fn io (key: K): K?
     def headMap: fn view (toKey: K, inclusive: bool): java.util.NavigableMap of (K, V)
+    def higherEntry: fn io (key: K): (java.util.Map.Entry of (K, V))?
+    def higherKey: fn io (key: K): K?
+    def lastEntry: fn io (): (java.util.Map.Entry of (K, V))?
+    def lowerEntry: fn io (key: K): (java.util.Map.Entry of (K, V))?
+    def lowerKey: fn io (key: K): K?
+    def pollFirstEntry: fn io (): (java.util.Map.Entry of (K, V))?
+    def pollLastEntry: fn io (): (java.util.Map.Entry of (K, V))?
     def subMap: fn view (fromKey: K, fromInclusive: bool, toKey: K, toInclusive: bool): java.util.NavigableMap of (K, V)
     def tailMap: fn view (fromKey: K, inclusive: bool): java.util.NavigableMap of (K, V)
 )
 
-axiom java.util.NavigableSet of E: class (
+axiom java.util.NavigableSet of E: class nullmarked (
+    def ceiling: fn io (e: E): E?
     def descendingSet: fn nothrow view (): java.util.NavigableSet of E
+    def floor: fn io (e: E): E?
     def headSet: fn view (toElement: E, inclusive: bool): java.util.NavigableSet of E
+    def higher: fn io (e: E): E?
+    def lower: fn io (e: E): E?
+    def pollFirst: fn io (): E?
+    def pollLast: fn io (): E?
     def subSet: fn view (fromElement: E, fromInclusive: bool, toElement: E, toInclusive: bool): java.util.NavigableSet of E
     def tailSet: fn view (fromElement: E, inclusive: bool): java.util.NavigableSet of E
+)
+
+axiom java.util.Optional of T: class nullmarked (
+    def get: fn io (): T
+    def orElse: fn io (other: T): T
+    def orElseThrow: fn io (): T
+) static (
+    def of: fn of T io (value: T): java.util.Optional of T
+    def ofNullable: fn of T io (value: T?): java.util.Optional of T
 )
 
 axiom java.util.PriorityQueue of E: class (
@@ -150,12 +240,12 @@ axiom java.util.PriorityQueue of E: class (
     def new: fn shared
 )
 
-axiom java.util.Queue of E: class (
+axiom java.util.Queue of E: class nullmarked (
     def element: fn (): E
     def peek: fn (): E?
 )
 
-axiom java.util.SequencedCollection of E: class (
+axiom java.util.SequencedCollection of E: class nullmarked (
     def addFirst: fn mut shared shallow (shared e: E): void
     def addLast: fn mut shared shallow (shared e: E): void
     def getFirst: fn (): E
@@ -165,13 +255,13 @@ axiom java.util.SequencedCollection of E: class (
     def reversed: fn nothrow view (): java.util.SequencedCollection of E
 )
 
-axiom java.util.SequencedMap of (K, V): class (
+axiom java.util.SequencedMap of (K, V): class nullmarked (
     def putFirst: fn mut shared shallow (shared k: K, shared v: V): V?
     def putLast: fn mut shared shallow (shared k: K, shared v: V): V?
     def reversed: fn nothrow view (): java.util.SequencedMap of (K, V)
 )
 
-axiom java.util.SortedMap of (K, V): class (
+axiom java.util.SortedMap of (K, V): class nullmarked (
     def comparator: fn nothrow (): (java.util.Comparator of K)?
     def firstKey: fn (): K
     def headMap: fn view (toKey: K): java.util.SortedMap of (K, V)
@@ -180,13 +270,18 @@ axiom java.util.SortedMap of (K, V): class (
     def tailMap: fn view (fromKey: K): java.util.SortedMap of (K, V)
 )
 
-axiom java.util.SortedSet of E: class (
+axiom java.util.SortedSet of E: class nullmarked (
     def comparator: fn nothrow (): (java.util.Comparator of E)?
     def first: fn (): E
     def headSet: fn view (toElement: E): java.util.SortedSet of E
     def last: fn (): E
     def subSet: fn view (fromElement: E, toElement: E): java.util.SortedSet of E
     def tailSet: fn view (fromElement: E): java.util.SortedSet of E
+)
+
+axiom java.util.StringTokenizer: class (
+    def nextToken: fn io (): string
+    def nextToken: fn io (delim: string): string
 )
 
 axiom java.util.TreeMap of (K, V): class (
