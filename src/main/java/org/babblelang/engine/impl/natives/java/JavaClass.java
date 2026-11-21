@@ -58,14 +58,14 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
         if (clazz.isInterface() && args.length == 1 && Values.isBabbleCallable(args[0]) && JavaTypes.isFunctionalInterface(clazz)) {
             return Values.toJava(args[0], clazz, rt);
         }
-        Constructor<?> constructor = constructors.find(args);
-        if (constructor == null) {
-            constructor = Overloads.resolveConstructor(clazz, args);
-            constructors.put(args, constructor);
+        Overloads.Resolved<Constructor<?>> resolved = constructors.findResolved(args);
+        if (resolved == null) {
+            resolved = Overloads.resolveConstructorDetailed(clazz, args);
+            constructors.putResolved(args, resolved);
         }
-        Object[] java = Values.toJava(args, constructor.getParameterTypes(), rt);
+        Object[] java = Overloads.toJavaArguments(resolved.executable(), resolved.varArgs(), args, rt);
         try {
-            return new JavaObject(this, constructor.newInstance(java));
+            return new JavaObject(this, resolved.executable().newInstance(java));
         } catch (Throwable t) {
             throw JavaTypes.wrapInvocationException(t);
         }

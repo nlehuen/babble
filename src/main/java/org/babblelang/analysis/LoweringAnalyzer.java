@@ -247,12 +247,13 @@ final class LoweringAnalyzer {
             return;
         }
         Method method = checker.callSolver().resolvedMethod(call);
+        boolean javaVarArgs = checker.callSolver().isResolvedVarArgs(call);
         if (method != null && !safe) {
-            deriveJavaMethodCall(method, arguments, call);
+            deriveJavaMethodCall(method, javaVarArgs, arguments, call);
         }
         Constructor<?> constructor = checker.callSolver().resolvedConstructor(call);
         if (constructor != null && !safe) {
-            deriveJavaConstructor(constructor, arguments, call);
+            deriveJavaConstructor(constructor, javaVarArgs, arguments, call);
         }
         if (pass.modules.containsKey(call)) {
             return;
@@ -403,11 +404,31 @@ final class LoweringAnalyzer {
     }
 
     /** Whether the arguments are all positional and statically applicable to the Java parameters, for a direct call. */
-    private boolean staticallyApplicable(Class<?>[] paramTypes, List<BabbleParser.CallParameterContext> arguments) {
-        if (paramTypes.length != arguments.size()) {
+    private boolean staticallyApplicable(Class<?>[] paramTypes, boolean varArgs,
+                                         List<BabbleParser.CallParameterContext> arguments) {
+        if (!varArgs) {
+            if (paramTypes.length != arguments.size()) {
+                return false;
+            }
+            for (int i = 0; i < paramTypes.length; i++) {
+                Type argType = types.get(arguments.get(i).expression());
+                if (ScopeAnalysis.callParamName(arguments.get(i)) != null
+                        || !JavaTypeBridge.guaranteedApplicable(paramTypes[i], argType)
+                        || !JavaTypeBridge.supportedStaticJavaArg(paramTypes[i], argType)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        int fixed = paramTypes.length - 1;
+        if (fixed < 0 || arguments.size() < fixed || !paramTypes[fixed].isArray()) {
             return false;
         }
-        for (int i = 0; i < paramTypes.length; i++) {
+        Class<?> comp = paramTypes[fixed].getComponentType();
+        if (!JavaTypeBridge.isBytecodeAccessible(comp)) {
+            return false;
+        }
+        for (int i = 0; i < fixed; i++) {
             Type argType = types.get(arguments.get(i).expression());
             if (ScopeAnalysis.callParamName(arguments.get(i)) != null
                     || !JavaTypeBridge.guaranteedApplicable(paramTypes[i], argType)
@@ -415,19 +436,29 @@ final class LoweringAnalyzer {
                 return false;
             }
         }
+        for (int i = fixed; i < arguments.size(); i++) {
+            Type argType = types.get(arguments.get(i).expression());
+            if (ScopeAnalysis.callParamName(arguments.get(i)) != null
+                    || !JavaTypeBridge.guaranteedApplicable(comp, argType)
+                    || !JavaTypeBridge.supportedStaticJavaArg(comp, argType)) {
+                return false;
+            }
+        }
         return true;
     }
 
-    private void deriveJavaConstructor(Constructor<?> ctor, List<BabbleParser.CallParameterContext> arguments,
+    private void deriveJavaConstructor(Constructor<?> ctor, boolean varArgs,
+                                       List<BabbleParser.CallParameterContext> arguments,
                                        BabbleParser.CallContext call) {
         Class<?> java = ctor.getDeclaringClass();
         if (Modifier.isPublic(ctor.getModifiers()) && Modifier.isPublic(java.getModifiers())
-                && JavaTypes.isAccessible(java) && staticallyApplicable(ctor.getParameterTypes(), arguments)) {
-            pass.analysis.setJavaConstructorTarget(call, new ScopeAnalysis.JavaConstructorTarget(ctor));
+                && JavaTypes.isAccessible(java) && staticallyApplicable(ctor.getParameterTypes(), varArgs, arguments)) {
+            pass.analysis.setJavaConstructorTarget(call, new ScopeAnalysis.JavaConstructorTarget(ctor, varArgs));
         }
     }
 
-    private void deriveJavaMethodCall(Method best, List<BabbleParser.CallParameterContext> arguments,
+    private void deriveJavaMethodCall(Method best, boolean varArgs,
+                                      List<BabbleParser.CallParameterContext> arguments,
                                       BabbleParser.CallContext call) {
         if (!(call.expression() instanceof BabbleParser.SelectorContext sel)
                 || sel.expression() == null
@@ -451,11 +482,11 @@ final class LoweringAnalyzer {
         }
         boolean isStatic = Modifier.isStatic(accessible.getModifiers());
         if (receiverType instanceof Type.JavaClassValue && !isStatic
-                || !staticallyApplicable(accessible.getParameterTypes(), arguments)) {
+                || !staticallyApplicable(accessible.getParameterTypes(), varArgs, arguments)) {
             return;
         }
         boolean unwrapReceiver = !isStatic && receiverType != Type.STRING;
-        pass.analysis.setJavaCallTarget(call, new ScopeAnalysis.JavaCallTarget(accessible, isStatic, unwrapReceiver));
+        pass.analysis.setJavaCallTarget(call, new ScopeAnalysis.JavaCallTarget(accessible, isStatic, unwrapReceiver, varArgs));
     }
 
     /** A call of a known Babble function : its literal, for a direct call, and its primitive signature ({@code RM001}, {@code BIP021-D3/D4}). */

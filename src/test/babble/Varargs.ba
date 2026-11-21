@@ -1,0 +1,53 @@
+;; Java varargs resolution and direct array lowering (BIP021-P2 / BIP021-D8).
+
+;; String.format with 0, 1, and many arguments
+assert(java.lang.String.format("hello") == "hello")
+assert(java.lang.String.format("v=%d", 7) == "v=7")
+assert(java.lang.String.format("%s-%d-%s", "a", 2, "c") == "a-2-c")
+assert(java.lang.String.format("%s:%s", null, "x") == "null:x")
+
+;; Arrays.asList: varargs expansion vs passing an array directly (Phase 1-2 vs Phase 3)
+def emptyList: java.util.List of string = java.util.Arrays.asList()
+assert(emptyList.size() == 0)
+def singleList = java.util.Arrays.asList("only")
+assert(singleList.size() == 1 and singleList.get(0) == "only")
+def intList: java.util.List of int = java.util.Arrays.asList(10, 20, 30)
+assert(intList.size() == 3 and intList.get(2) == 30)
+
+def strArr = array.of("x", "y")
+def fromStrArr: java.util.List of string = java.util.Arrays.asList(strArr)
+assert(fromStrArr.size() == 2 and fromStrArr.get(1) == "y")
+
+def intArr = array.of(1, 2, 3)
+def wrappedIntArr: java.util.List of array of int = java.util.Arrays.asList(intArr)
+assert(wrappedIntArr.size() == 1 and wrappedIntArr.get(0).get(2) == 3)
+
+;; List.of beyond 10 elements uses the varargs overload
+def dozen: java.util.List of int = java.util.List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
+assert(dozen.size() == 12 and dozen.get(0) == 1 and dozen.get(11) == 12)
+
+;; Path.of
+assert(java.nio.file.Path.of("root").toString() == "root")
+assert(java.nio.file.Path.of("a", "b", "c").getNameCount() == 3)
+
+;; IntStream.of (primitive int... varargs)
+assert(java.util.stream.IntStream.of().sum() == 0)
+assert(java.util.stream.IntStream.of(5).sum() == 5)
+assert(java.util.stream.IntStream.of(1, 2, 3, 4).sum() == 10)
+
+;; EnumSet.of with 6+ elements (varargs overload)
+def workDays = java.util.EnumSet.of(
+    java.time.DayOfWeek.MONDAY,
+    java.time.DayOfWeek.TUESDAY,
+    java.time.DayOfWeek.WEDNESDAY,
+    java.time.DayOfWeek.THURSDAY,
+    java.time.DayOfWeek.FRIDAY,
+    java.time.DayOfWeek.SATURDAY
+)
+assert(workDays.size() == 6 and workDays.contains(java.time.DayOfWeek.MONDAY))
+
+;; Dynamic varargs through a function value (JavaMethod.invoke / Overloads.Cache)
+def fmt: fn (s: string, a: int, b: string): string = java.lang.String.format
+assert(fmt("%d:%s", 9, "ok") == "9:ok")
+
+true

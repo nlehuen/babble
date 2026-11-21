@@ -83,13 +83,17 @@ public final class JavaLinker {
         } else {
             return null;
         }
-        Method resolved;
+        org.babblelang.runtime.Overloads.Resolved<Method> resolvedCall;
         try {
-            resolved = method.resolve(args);
+            resolvedCall = method.resolveDetailed(args);
         } catch (BabbleException e) {
             // No applicable overload : the generic path reports it.
             return null;
         }
+        if (resolvedCall.varArgs()) {
+            return null;
+        }
+        Method resolved = resolvedCall.executable();
         boolean isStatic = Modifier.isStatic(resolved.getModifiers());
         Class<?>[] parameters = resolved.getParameterTypes();
         if (!bound && !isStatic || parameters.length != args.length) {

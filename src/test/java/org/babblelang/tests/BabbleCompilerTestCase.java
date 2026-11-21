@@ -728,4 +728,21 @@ public class BabbleCompilerTestCase {
         List<String> indirectOps = methodInstructions(script.getClassBytes(), "fn$2$indirectCalls$spec");
         Assertions.assertTrue(indirectOps.stream().anyMatch(o -> o.contains("Bootstrap.typedCallOpt")), indirectOps.toString());
     }
+
+    @Test
+    public void testBip021P2JavaVarargsDirectArrayEmission() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def run = fn io (a : int, b : int) : string -> (\n"
+                        + "  def s = java.util.stream.IntStream.of(a, b, 3).sum()\n"
+                        + "  java.lang.String.format(\"%d:%s\", s, \"ok\")\n"
+                        + ")\n"
+                        + "run(10, 20)");
+        assertVerifies(script);
+        Assertions.assertEquals("33:ok", script.eval(new SimpleBindings()));
+
+        List<String> ops = methodInstructions(script.getClassBytes(), "fn$0$run$spec");
+        Assertions.assertTrue(ops.contains("CALL:java/util/stream/IntStream.of"), ops.toString());
+        Assertions.assertTrue(ops.contains("CALL:java/lang/String.format"), ops.toString());
+        Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:") || o.contains("Overloads")), ops.toString());
+    }
 }

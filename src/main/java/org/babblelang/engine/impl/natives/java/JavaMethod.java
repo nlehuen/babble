@@ -32,11 +32,11 @@ class JavaMethod implements Callable {
      * Values.fromJava, so Babble code never sees the Java face of an instance.
      */
     Object invoke(Object thiz, Object[] args, ScriptRuntime rt) {
-        Method method = resolve(args);
-        Object[] java = Values.toJava(args, method.getParameterTypes(), rt);
+        Overloads.Resolved<Method> resolved = resolveDetailed(args);
+        Object[] java = Overloads.toJavaArguments(resolved.executable(), resolved.varArgs(), args, rt);
         Object result;
         try {
-            result = method.invoke(thiz, java);
+            result = resolved.executable().invoke(thiz, java);
         } catch (Throwable t) {
             throw JavaTypes.wrapInvocationException(t);
         }
@@ -44,12 +44,12 @@ class JavaMethod implements Callable {
     }
 
     /** The overload these arguments call, by their kinds : what {@link JavaLinker} guards on. */
-    Method resolve(Object[] args) {
-        Method method = overloads.find(args);
-        if (method == null) {
-            method = Overloads.resolveMethod(clazz, name, args);
-            overloads.put(args, method);
+    Overloads.Resolved<Method> resolveDetailed(Object[] args) {
+        Overloads.Resolved<Method> resolved = overloads.findResolved(args);
+        if (resolved == null) {
+            resolved = Overloads.resolveMethodDetailed(clazz, name, args);
+            overloads.putResolved(args, resolved);
         }
-        return method;
+        return resolved;
     }
 }
