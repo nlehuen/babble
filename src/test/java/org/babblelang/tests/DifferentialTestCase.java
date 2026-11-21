@@ -302,7 +302,23 @@ public class DifferentialTestCase {
                 id + "def S = interface ( def area : fn () : double )\ndef N = interface ( def name : fn () : string )\ndef SN = type S & N\n"
                         + "def T = class () implements S, N ( def area = fn () : double -> ( 2.0 ) ; def name = fn () : string -> ( \"t\" ) )\n"
                         + "def D = class () implements S ( def area = fn () : double -> ( 1.0 ) )\n"
-                        + "(id(T()) as SN).name() + (D() is SN)\n(id(D()) as SN).area()"
+                        + "(id(T()) as SN).name() + (D() is SN)\n(id(D()) as SN).area()",
+                // BIP020 : array out-of-bounds, negative length, covariant ArrayStoreException, generic creation, primitive type-var, frozen set, non-null default, alias call, and .length.
+                "def a = array.of(10, 20) ; a.get(5)",
+                "def a = array.of(10, 20) ; a.set(-1, 99)",
+                "(array of int)(-2)",
+                "def Shape = interface ( def area : fn () : int )\n"
+                        + "def Circle = class (def r : int) implements Shape ( def area = fn () : int -> ( this.r ) )\n"
+                        + "def Square = class (def s : int) implements Shape ( def area = fn () : int -> ( this.s ) )\n"
+                        + "def cs = array.of(Circle(1))\n"
+                        + "def shapes : array of Shape = cs\n"
+                        + "shapes.set(0, Square(2))",
+                "def mk of T = fn () : array of T -> ( array(1) )",
+                "def first of T = fn io (a : array of T) : T -> ( a.get(0) ) ; first(\"abc\".toCharArray())",
+                "def f = fn (a : frozen array of int) -> ( a.set(0, 1) )",
+                "(array of string)(3)",
+                "def Ints = type array of int ; (Ints)(10)",
+                "def a = array.of(1, 2) ; a.length"
         );
     }
 

@@ -113,7 +113,10 @@ public final class BatestRunner {
             String msg = se.getMessage();
             boolean isUserError = se instanceof TypeCheckException
                     || cause instanceof BabbleException
-                    || (msg != null && msg.startsWith(BABBLE_EXCEPTION_PREFIX));
+                    || (msg != null && (msg.startsWith(BABBLE_EXCEPTION_PREFIX)
+                    || msg.startsWith("java.lang.ArrayIndexOutOfBoundsException")
+                    || msg.startsWith("java.lang.NegativeArraySizeException")
+                    || msg.startsWith("java.lang.ArrayStoreException")));
             if (!isUserError) {
                 return new CaseOutcome(Kind.INTERNAL_CRASH, se.toString(), se);
             }

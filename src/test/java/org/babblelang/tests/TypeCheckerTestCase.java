@@ -641,6 +641,45 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testBip020ArraysVarianceCastsAndBridges() {
+        String source = "def Shape = interface ( def area : fn () : int )\n"
+                + "def Named = interface ( def name : fn () : string )\n"
+                + "def Circle = class (def r : int) implements Shape, Named (\n"
+                + "  def area = fn () : int -> ( this.r )\n"
+                + "  def name = fn () : string -> ( \"c\" )\n"
+                + ")\n"
+                + "def strs = (array of string).of(\"a\")\n"
+                + "def badNull : array of string? = strs\n"
+                + "def okBorrow = fn (xs : array of string?) : int -> ( xs.size() )\n"
+                + "okBorrow(strs)\n"
+                + "java.util.Arrays.toString(strs)\n"
+                + "def inters : array of (Shape & Named) = (array of (Shape & Named)).of(Circle(1))\n"
+                + "def badToShape : array of Shape = inters\n"
+                + "def unions = (array of (int | string)).of(1, \"x\")\n"
+                + "def badToAny : array of any = unions\n"
+                + "def x : any = strs\n"
+                + "def w1 = x is array of string\n"
+                + "def w2 = x as array of Circle\n"
+                + "def ns : (array of string)? = null\n"
+                + "def okNullCast = ns as (array of int)?\n"
+                + "def badNonNullCast = strs as array of int\n"
+                + "def tests = import(\"org.babblelang.tests\")\n"
+                + "def BadImpl = class () implements tests.JavaClassDemo.ArrayTransformer of string (\n"
+                + "  def transform = fn (a : array of string) : array of string -> ( a )\n"
+                + ")\n"
+                + "def badIfaceArg : (tests.JavaClassDemo.ArrayTransformer of int)? = null";
+        assertDiagnostics(source,
+                "8:34 Type error : expected array of string?, got array of string",
+                "13:35 Type error : expected array of Shape, got array of (Shape & Named)",
+                "15:31 Type error : expected array of any, got array of (int | string)",
+                "21:22 Type error : expected array of int, got array of string",
+                "26:60 Type error : type argument int cannot be a primitive in array of E");
+        assertWarnings(source,
+                "17:10 Unchecked cast : array of string",
+                "18:10 Unchecked cast : array of Circle");
+    }
+
+    @Test
     public void testIfIntToDoubleConversion() {
         assertDiagnostics("def f = fn (c : bool) -> ( if c then ( 1 ) else ( 2.0 ) )\n"
                 + "def g = fn (c : bool) -> ( if c then ( return 1 ) ; 2.0 )\n"

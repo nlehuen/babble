@@ -53,31 +53,8 @@ public final class CoreCollections {
             "sortedset", new CoreConstructor("sortedset", SortedSet.class),
             "map", new CoreConstructor("map", Map.class),
             "sortedmap", new CoreConstructor("sortedmap", SortedMap.class),
-            "entry", new CoreConstructor("entry", Map.Entry.class),
-            "array", new ArrayConstructor()
+            "entry", new CoreConstructor("entry", Map.Entry.class)
     );
-
-    private static final class ArrayConstructor implements Callable, HasMembers {
-        @Override
-        public Object call(ScriptRuntime runtime, Object[] arguments, String[] names, CallSite site) {
-            throw new BabbleException("array constructor requires a known element type");
-        }
-
-        @Override
-        public Object getMember(String name, boolean own) {
-            if ("of".equals(name)) {
-                return (Callable) (rt, args, names, site) -> {
-                    throw new BabbleException("array.of requires a known element type");
-                };
-            }
-            throw new BabbleException("No such name in array : " + name);
-        }
-
-        @Override
-        public void setMember(String name, Object value, boolean own) {
-            throw new BabbleException("No such field in array : " + name);
-        }
-    }
 
     private CoreCollections() {
     }

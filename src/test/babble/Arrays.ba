@@ -1,0 +1,186 @@
+;;(
+    End-to-end tests for BIP020: `array of T` over plain JVM arrays — every element type
+    of §2.2, creation (`(array of T)(n)`, expected-type `array(n)` including through BIP023
+    aliases, `.of(...)`, `from:`), `size()`/`get`/`set`, `for`, content equality/hash/printing
+    (nested arrays and records holding arrays), `frozen`, covariance, nullable `is`/`as`,
+    generics, and Java round trips.
+;;)
+
+;; 1. All 8 primitive element types + default length construction + get/set/size
+def bytes = (array of byte)(2)
+bytes.set(0, 7)
+bytes.set(index: 1, value: -3)
+assert(bytes.size() == 2 and bytes.get(0) == 7 and bytes.get(index: 1) == -3)
+
+def shorts = (array of short).of(100, 200)
+assert(shorts.size() == 2 and shorts.get(1) == 200)
+
+def ints = (array of int)(3)
+def setRes: void = ints.set(1, 42)
+assert(setRes == null and ints == array.of(0, 42, 0))
+
+def longs = array.of(10L, 20L, 30L)
+assert(longs.size() == 3 and longs.get(2) == 30L)
+
+def floats = (array of float).of(1.5f, 2.5f)
+assert(floats.get(0) + floats.get(1) == 4.0f)
+
+def doubles = array.of(1.25, 2.75)
+assert(doubles.get(0) + doubles.get(1) == 4.0)
+
+def bools = (array of bool)(2)
+bools.set(0, true)
+assert(bools.get(0) and not bools.get(1))
+
+def chars = array.of('B', 'a')
+assert("" + chars == "[B, a]")
+
+;; 2. Boxed nullable primitives, strings, Babble classes/records/interfaces, intersections, aliases, functions, unions, nested arrays, any/any?
+def optInts = (array of int?)(3)
+optInts.set(0, 10)
+optInts.set(2, 30)
+assert(optInts == (array of int?).of(10, null, 30))
+
+def optStrings: array of string? = array(2)
+optStrings.set(1, "ok")
+assert(optStrings.get(0) == null and optStrings.get(1) == "ok")
+
+def words = (array of string).of("hello", "world")
+assert(words.size() == 2 and words.get(0) == "hello")
+
+def Point = record (x: int, y: int) ()
+def Shape = interface (
+    def area: fn (): int
+)
+def Named = interface (
+    def name: fn (): string
+)
+def Circle = class (def r: int, def tag: string) implements Shape, Named (
+    def area = fn (): int -> (3 * this.r * this.r)
+    def name = fn (): string -> (this.tag)
+)
+
+def pts = array.of(Point(1, 2), Point(3, 4))
+assert(pts.get(0) == Point(1, 2) and "" + pts == "[Point(x: 1, y: 2), Point(x: 3, y: 4)]")
+
+def shapes: array of Shape = (array of Shape).of(Circle(2, "c2"))
+assert(shapes.get(0).area() == 12)
+
+def inters: array of (Shape & Named) = (array of (Shape & Named)).of(Circle(3, "c3"))
+assert(inters.get(0).name() == "c3" and inters.get(0).area() == 27)
+
+def Ints = type array of int
+def Matrix of T = type array of (array of T)
+def viaAlias: Ints = array(3)
+viaAlias.set(2, 9)
+assert(viaAlias == (array of int).of(0, 0, 9))
+
+def mat: Matrix of double = array.of(array.of(1.0, 2.0), array.of(3.0, 4.0))
+assert(mat.get(1).get(0) == 3.0 and "" + mat == "[[1.0, 2.0], [3.0, 4.0]]")
+
+def listArr = (array of (list of int)).of(list(1, 2), list(3))
+assert(listArr.get(0).get(1) == 2)
+
+def fnArr: array of (fn (x: int): int) = (array of (fn (x: int): int)).of(
+    fn (x: int): int -> (x + 1),
+    fn (x: int): int -> (x * 10)
+)
+assert(fnArr.get(0)(4) == 5 and fnArr.get(1)(4) == 40)
+
+def unionArr = (array of (int | string)).of(1, "two", 3)
+assert("" + unionArr == "[1, two, 3]")
+
+def anyArr = (array of any).of("a", 2, true)
+def anyNullArr: array of any? = array(2)
+anyNullArr.set(0, "present")
+assert(anyArr.size() == 3 and anyNullArr == (array of any?).of("present", null))
+
+;; 3. Copying with `from:` and `for` iteration
+def copiedInts = array(from: list(4, 5, 6))
+def widenedDoubles = (array of double)(from: copiedInts)
+def sum = 0.0
+for x in widenedDoubles then (
+    sum += x
+)
+assert(copiedInts == array.of(4, 5, 6) and widenedDoubles == array.of(4.0, 5.0, 6.0) and sum == 15.0)
+
+;; 4. Content equality, hashCode, NaN / signed zero, and records holding arrays
+assert(array.of(1, 2) == array.of(1, 2))
+assert(array.of(1, 2) != array.of(1, 3))
+assert(not same(array.of(1, 2), array.of(1, 2)))
+assert(array.of(1, 2).equals(array.of(1, 2)))
+assert(array.of(1, 2).hashCode() == array.of(1, 2).hashCode())
+
+def nan = 0.0 / 0.0
+assert(array.of(nan) == array.of(nan))
+assert(array.of(0.0) != array.of(-0.0))
+
+def Packet = record (tag: string, payload: frozen array of int) ()
+def p1 = Packet("hdr", freeze(array.of(10, 20)))
+def p2 = Packet("hdr", freeze(array.of(10, 20)))
+def p3 = Packet("hdr", freeze(array.of(10, 99)))
+assert(p1 == p2 and p1 != p3)
+assert("" + p1 == "Packet(tag: hdr, payload: [10, 20])")
+
+;; 5. Pure functions with `frozen` and fresh `unique` arrays
+def buildRange = fn (n: int): unique array of int -> (
+    def out = (array of int)(n)
+    def i = 0
+    while i < n then (
+        out.set(i, i * i)
+        i += 1
+    )
+    out
+)
+def frozenSquares: frozen array of int = freeze(buildRange(4))
+def sumFrozen = fn (xs: frozen array of int): int -> (
+    def acc = 0
+    for v in xs then (
+        acc += v
+    )
+    acc
+)
+assert(frozenSquares == array.of(0, 1, 4, 9) and sumFrozen(frozenSquares) == 14)
+
+;; 6. Exact-store covariance, borrowed covariance, and BIP008 §11 nullable casts
+def circles = array.of(Circle(1, "a"), Circle(2, "b"))
+def asShapes: array of Shape = circles
+def asBoth: array of (Shape & Named) = circles
+assert(asShapes.get(1).area() == 12 and asBoth.get(0).name() == "a")
+
+def countNonNull = fn io (xs: array of string?): int -> (
+    def c = 0
+    for s in xs then (
+        if s != null then (c += 1)
+    )
+    c
+)
+assert(countNonNull(words) == 2)
+
+def maybeStrArr: (array of string)? = null
+assert(maybeStrArr is (array of int)?)
+assert((maybeStrArr as (array of int)?) == null)
+
+;; 7. Generics and Java interoperability round trips
+def first of T = fn io (a: array of T): T -> (a.get(0))
+assert(first(words) == "hello")
+assert(first(pts) == Point(1, 2))
+assert(first(mat) == array.of(1.0, 2.0))
+
+def splitParts = "red,green,blue".split(",")
+assert(splitParts == array.of("red", "green", "blue"))
+assert(java.util.Arrays.toString(splitParts) == "[red, green, blue]")
+
+def charArr = "hey".toCharArray()
+assert(charArr == array.of('h', 'e', 'y'))
+
+def unsorted = array.of(9, 3, 7, 1)
+java.util.Arrays.sort(unsorted)
+assert(unsorted == array.of(1, 3, 7, 9))
+
+def fromList: array of string = list("p", "q").toArray((array of string).of())
+assert(fromList == array.of("p", "q"))
+
+def singleAsList = java.util.Arrays.asList(array.of("only"))
+assert(singleAsList.size() == 1 and singleAsList.get(0) == "only")
+assert(java.lang.String.format("%s=%d", (array of any).of("x", 7)) == "x=7")

@@ -1,7 +1,7 @@
 ;;(
     End-to-end differential tests for BIP013 :
     for loops, parameterized static factory selection, multi-tier iteration
-    (Java Iterable, bare Iterator, JavaArray, Babble custom iterable/iterator),
+    (Java Iterable, bare Iterator, array of T, Babble custom iterable/iterator),
     break [expr], continue, closure capture, and BIP016 effects.
 ;;)
 
@@ -26,7 +26,7 @@ def emptyRes = for v in empty then (
 )
 assert(emptyRes == null)
 
-;; 2. Set, Map views, and JavaArray (primitive & reference)
+;; 2. Set, Map views, and array of T (primitive & reference)
 def s = (set of string).of("a", "b", "c")
 def count = 0
 for item in s then (

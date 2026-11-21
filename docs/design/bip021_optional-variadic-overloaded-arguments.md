@@ -380,16 +380,16 @@ def temp = fn (..., celsius: double = ..., fahrenheit: double = ...) -> ( … ) 
 * the parameter is **borrowed**, like any parameter under `BIP016` : the callee reads it but may not mutate it (`Iterator.remove` is a mutation), it is returned only through borrow (`BIP016-D10`), and keeping it beyond the call needs `shared`, which then aliases the caller's collection. A callee that wants a list of its own copies explicitly : `def own = list(from: xs)` ;
 * the price of the abstraction is that only iteration is guaranteed : no `size()` or `get(i)` on `xs`, and elements are boxed when iterated, unless the call is inlined (`InlinePass`) and the view's array is visible to the compiler.
 
-(A fresh `list of T` was decided first, then changed in review ; a `frozen` list and a `JavaArray of T` were the other alternatives, `BIP021-Q3`.)
+(A fresh `list of T` was decided first, then changed in review ; a `frozen` list and a `array of T` were the other alternatives, `BIP021-Q3`.)
 
-**`BIP021-D7` — `...e` passes an iterable as any sequence parameter, adapting it only when the conventions differ.** In a call, `...e`, positional or named (`f(items: ...e)`), passes the elements of `e` — any `java.lang.Iterable of U` (every core collection of `BIP011`) or a `JavaArray of U` — to **one** parameter whose type takes a sequence : a rest `T...` (`BIP021-D6`), an `Iterable of T`, a `list of T`, or a `JavaArray of T` (a Java varargs parameter included, `BIP021-D8`), with `U` assignable to `T`. The spread adapts `e` to what the parameter expects :
+**`BIP021-D7` — `...e` passes an iterable as any sequence parameter, adapting it only when the conventions differ.** In a call, `...e`, positional or named (`f(items: ...e)`), passes the elements of `e` — any `java.lang.Iterable of U` (every core collection of `BIP011`) or a `array of U` — to **one** parameter whose type takes a sequence : a rest `T...` (`BIP021-D6`), an `Iterable of T`, a `list of T`, or a `array of T` (a Java varargs parameter included, `BIP021-D8`), with `U` assignable to `T`. The spread adapts `e` to what the parameter expects :
 
 | The parameter takes | `e` already fits it (assignable, including `BIP011`'s `borrow` covariance) | `e` does not |
 |---|---|---|
 | a rest `T...` | passed as is | an array is viewed ; plain arguments and further spreads around it are chained in a view (`BIP021-D6`) |
 | `Iterable of T` | passed as is | an array is viewed |
 | `list of T` | passed as is | an array is viewed when the parameter is borrowed (the callee cannot mutate it), else copied ; any other iterable is copied into a new list |
-| `JavaArray of T` | passed as is | copied into a new array of the parameter's component type, unboxing for a primitive one (`int[]`) |
+| `array of T` | passed as is | copied into a new array of the parameter's component type, unboxing for a primitive one (`int[]`) |
 
 ```babble
 def total = fn (xs: list of int): int -> ( … )
@@ -407,7 +407,7 @@ So **nothing is copied when caller and callee follow the same convention**, and 
 * A spread fills exactly **one** parameter : the rest when the spread stands at or after the rest's position, the parameter at its position or of its name otherwise. Spreading the elements of one iterable over several fixed parameters (`f(...pair)` for `f(a, b)`) stays refused (`BIP021-Q4`) : its arity is unknowable statically. Only a rest takes several spreads and plain arguments together, in any order and any number. This is why `maxOf` above takes `xs: int...` rather than `fn (first: int, rest: int...)` : with that signature, the first spread would land on `first`, an `int`, and the call is refused ; the function then checks for an empty `xs` itself.
 * A spread into a parameter that takes no sequence is `Spread into a parameter that takes no sequence : x`. A bare `java.util.Iterator` is not spread : it cannot be iterated twice.
 * Other collection types are not conversion targets (a `set of T` parameter takes a set, `...` or not) : a spread whose source fits by subtyping is passed as is, whatever the parameter's type, and converts only to the three shapes above.
-* Overload resolution (`BIP021-D11`) treats a spread argument as fitting every alternative whose parameter at its position takes a sequence of a supertype of `U` ; an alternative that takes `e` as is beats one that needs a view, which beats one that needs a copy. Two alternatives needing the same kind of adaptation are ambiguous at the call (`Ambiguous call to f for (...set of int) : candidates are (xs : list of int), (xs : JavaArray of int)`) — like an untyped lambda, a spread is an argument whose type depends on the alternative, which `BIP021-D10` cannot see.
+* Overload resolution (`BIP021-D11`) treats a spread argument as fitting every alternative whose parameter at its position takes a sequence of a supertype of `U` ; an alternative that takes `e` as is beats one that needs a view, which beats one that needs a copy. Two alternatives needing the same kind of adaptation are ambiguous at the call (`Ambiguous call to f for (...set of int) : candidates are (xs : list of int), (xs : array of int)`) — like an untyped lambda, a spread is an argument whose type depends on the alternative, which `BIP021-D10` cannot see.
 * Lowering : identity is no code ; views are `runtime.ArgumentsView` over an array ; copies are `new ArrayList(…)` or a typed array filled in a loop. The interpreter calls the same runtime helper (`Spreads.adapt`). `Callable.call` keeps its argument array.
 
 ### 4.4 Java varargs
@@ -415,10 +415,10 @@ So **nothing is copied when caller and callee follow the same convention**, and 
 **`BIP021-D8` — Java varargs as a third phase, as `javac` does.** Java calls (`Overloads` at runtime, `JavaTypeBridge`/`CallSolver` statically) resolve exactly as today first ; **only if no overload is applicable by fixed arity**, variable-arity methods (`isVarArgs`) are tried with their trailing arguments collected into the array, and the most specific is chosen by [§15.12.2.5](https://docs.oracle.com/javase/specs/jls/se21/html/jls-15.html#jls-15.12.2.5)'s rule for variable arity. Since the new phase only runs where today's answer is `No applicable overload`, **no call that works today changes meaning** (L8).
 
 * `String.format("%s-%s", "a", "b")`, `Arrays.asList("only")`, `Path.of("a", "b")`, `List.of(…)` with eleven elements, `IntStream.of(1, 2, 3)` (an `int[]`, unboxed), `EnumSet.of(…)` all work. Passing an array still binds it directly (phase 1), and a lone `null` is the array, as in Java.
-* `...e` spreads into a Java varargs parameter as into any `JavaArray` parameter (`BIP021-D7`) : an array of the right component type is passed as is, any other iterable is copied into one. With a spread, the variable-arity phase is not needed : the varargs parameter is filled directly.
-* A generic `T...` is inferred as Java infers it, `Arrays.asList(ints)` included (a `List of JavaArray of int`, as in Java ; a warning may point at `...ints`).
+* `...e` spreads into a Java varargs parameter as into any `array` parameter (`BIP021-D7`) : an array of the right component type is passed as is, any other iterable is copied into one. With a spread, the variable-arity phase is not needed : the varargs parameter is filled directly.
+* A generic `T...` is inferred as Java infers it, `Arrays.asList(ints)` included (a `List of array of int`, as in Java ; a warning may point at `...ints`).
 * Compiled code : a statically resolved varargs call (`JavaCallTarget`) builds the array at the call site (`ANEWARRAY`/`NEWARRAY` and stores) and calls directly, as `javac`'s output does ; the runtime path collects into the array before `invoke`. `Overloads.Cache` keys by argument kinds, so a varargs call of a new arity is a new entry.
-* A Babble method implementing a Java varargs method (`String format(String f, Object... args)`) may take a rest parameter (`fn (f: string, args: any?...)`) or a `JavaArray of any?` ; the bridge (`RM003`) passes the array as a view (`BIP021-D6`), or as is.
+* A Babble method implementing a Java varargs method (`String format(String f, Object... args)`) may take a rest parameter (`fn (f: string, args: any?...)`) or a `array of any?` ; the bridge (`RM003`) passes the array as a view (`BIP021-D6`), or as is.
 
 ### 4.5 Overload sets
 
@@ -599,7 +599,7 @@ Worded like the runtime errors they predict, with a space before the colon :
 | A named argument out of its position, followed by a positional one | `Named argument out of position : b` |
 | A parameter given by position and by name | `Parameter given twice : a` |
 | A spread into a parameter that takes no sequence | `Spread into a parameter that takes no sequence : x` |
-| A spread that fits several alternatives with the same adaptation | `Ambiguous call to f for (...set of int) : candidates are (xs : list of int), (xs : JavaArray of int)` |
+| A spread that fits several alternatives with the same adaptation | `Ambiguous call to f for (...set of int) : candidates are (xs : list of int), (xs : array of int)` |
 | A second rest, or a rest with a default | `More than one variadic parameter : ys`, `Variadic parameter with a default : xs` |
 | A rest passed by name | `No such parameter : xs` (as today for unknown names) |
 | A required parameter where the type allows omitting it | `Type mismatch : …` (the existing message, now also for §2.2 (c)) |

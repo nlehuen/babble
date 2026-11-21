@@ -229,9 +229,9 @@ monomorphic, so it would rarely type more than calls do, with errors harder to e
   Babble instance passed to Java comes back as itself where `I` is declared) is kept by making
   member lookup on `JavaInstance(I)` accept both : the members are `I`'s methods, whichever kind
   of object holds them (`Faces` already makes a Babble instance answer `I`'s methods).
-* An array is a new `Type.JavaArray(T)` (`String[]` is `JavaArray(string)`), assignable to the
-  Java parameters that take that array type, with `length`. Until Babble has an indexing
-  syntax, elements are reached through `java.lang.reflect.Array.get(a, i)`, which is `any`.
+* An array is `Type.Array(T)` (`array of T`, promoted from `Type.JavaArray(T)` in [BIP020](bip020_array-types.md) : `String[]` is `array of string`), assignable to the
+  Java parameters that take that array type (§2.5 of `BIP020`), with `size()`, `get(i)` and
+  `set(i, v)` (`BIP020` replaced `length` and `java.lang.reflect.Array.get(a, i)`).
 * A class Babble can't access directly (`List.of()`'s) is typed by the accessible type it is
   reached through (`JavaTypes.accessible`), as calls already are.
 

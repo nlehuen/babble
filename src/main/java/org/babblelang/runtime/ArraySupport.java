@@ -5,7 +5,6 @@ import org.babblelang.engine.impl.natives.java.JavaObject;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -101,23 +100,14 @@ public final class ArraySupport {
             }
             return dst;
         }
-        Object javaSrc = Values.toJava(raw, Iterable.class, rt);
-        if (javaSrc instanceof Collection<?> col) {
-            List<Object> items = new ArrayList<>(col);
-            Object dst = newArray(componentType, items.size());
-            for (int i = 0; i < items.size(); i++) {
-                set(dst, i, widenBoxedNumeric(componentType, Values.fromJava(items.get(i))), rt);
-            }
-            return dst;
-        }
-        if (javaSrc instanceof Iterable<?> it) {
+        if (Values.toJava(raw, Iterable.class, rt) instanceof Iterable<?> it) {
             List<Object> items = new ArrayList<>();
             for (Object e : it) {
-                items.add(e);
+                items.add(Values.fromJava(e));
             }
             Object dst = newArray(componentType, items.size());
             for (int i = 0; i < items.size(); i++) {
-                set(dst, i, widenBoxedNumeric(componentType, Values.fromJava(items.get(i))), rt);
+                set(dst, i, widenBoxedNumeric(componentType, items.get(i)), rt);
             }
             return dst;
         }
@@ -151,23 +141,14 @@ public final class ArraySupport {
             }
             return dst;
         }
-        Object javaSrc = Values.toJava(raw, Iterable.class, rt);
-        if (javaSrc instanceof Collection<?> col) {
-            List<Object> items = new ArrayList<>(col);
-            Object dst = newBabbleArray(typeId, displayName, conformIds, nestedDims, items.size());
-            for (int i = 0; i < items.size(); i++) {
-                set(dst, i, Values.fromJava(items.get(i)), rt);
-            }
-            return dst;
-        }
-        if (javaSrc instanceof Iterable<?> it) {
+        if (Values.toJava(raw, Iterable.class, rt) instanceof Iterable<?> it) {
             List<Object> items = new ArrayList<>();
             for (Object e : it) {
-                items.add(e);
+                items.add(Values.fromJava(e));
             }
             Object dst = newBabbleArray(typeId, displayName, conformIds, nestedDims, items.size());
             for (int i = 0; i < items.size(); i++) {
-                set(dst, i, Values.fromJava(items.get(i)), rt);
+                set(dst, i, items.get(i), rt);
             }
             return dst;
         }
@@ -177,16 +158,7 @@ public final class ArraySupport {
     // ---------------------------------------------------------------- element access
 
     public static int size(Object array) {
-        Object raw = Values.unwrap(array);
-        if (raw instanceof int[] a) return a.length;
-        if (raw instanceof double[] a) return a.length;
-        if (raw instanceof long[] a) return a.length;
-        if (raw instanceof boolean[] a) return a.length;
-        if (raw instanceof byte[] a) return a.length;
-        if (raw instanceof short[] a) return a.length;
-        if (raw instanceof float[] a) return a.length;
-        if (raw instanceof char[] a) return a.length;
-        return ((Object[]) raw).length;
+        return Array.getLength(Values.unwrap(array));
     }
 
     public static Object get(Object array, int index) {

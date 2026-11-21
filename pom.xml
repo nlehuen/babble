@@ -314,6 +314,12 @@
                                     </systemPropertyVariables>
                                 </configuration>
                             </execution>
+                            <execution>
+                                <id>compiled-tests-O0</id>
+                                <configuration>
+                                    <skip>true</skip>
+                                </configuration>
+                            </execution>
                         </executions>
                     </plugin>
                     <plugin>

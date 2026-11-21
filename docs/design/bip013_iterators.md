@@ -6,7 +6,7 @@
 | **Date** | 2026-11-19 |
 | **Status** | Implemented in `RM009` (`BIP013-D1`–`D10` decided; `BIP013-P1`–`P4` implemented across `Babble.g4`, `Formatter`, `CoreCollections`, `BlockScopes`/`TypeChecks`/`Resolver`/`TypeChecker`/`EffectChecker`/`LoweringAnalyzer`, `Interpreter`, and `CodeGenerator`, with `Iterators.ba` and `for_loops.batest`) |
 | **Depends on** | Bytecode compiler, `RM001` primitive lowering & `RM003` JVM/Java interface bridges ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §19–§20), object model & operator protocol ([bip002_object-model.md](bip002_object-model.md)), function effects & `RM002`/`RM007`/`RM008` ([bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)), mandatory static typing, nullables & generics ([bip008_static-typing.md](bip008_static-typing.md)), `.batest` coverage harness ([bip009_test-coverage.md](bip009_test-coverage.md)), modular type-checker architecture (`RM004`, [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), core scalar & collection types and Java nullability alignment (`RM005`, [bip011_core-types.md](bip011_core-types.md)), predicate-free LL(1)/LL(2) grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)) |
-| **Scope** | First-class iteration protocol (`java.lang.Iterable of T`, `java.util.Iterator of T`, `JavaArray of T`, and Babble custom iterables/iterators), `for <var> [: <type>] in <iterable> then ( ... )` loop expressions, `break [expr]` and `continue` across both `while` and `for` loops, static factory selection on specialized generic types (`(list of int).of(1, 2, 3)` / `list.of(1, 2, 3)` / `(java.util.List of int).of(...)`), `Babble.g4` & `Formatter`, `BlockScopes`/`Resolver`/`TypeChecker`/`EffectChecker`/`LoweringAnalyzer`, `Interpreter` & `CodeGenerator` lowering, and REPL multi-line classification |
+| **Scope** | First-class iteration protocol (`java.lang.Iterable of T`, `java.util.Iterator of T`, `array of T`, and Babble custom iterables/iterators), `for <var> [: <type>] in <iterable> then ( ... )` loop expressions, `break [expr]` and `continue` across both `while` and `for` loops, static factory selection on specialized generic types (`(list of int).of(1, 2, 3)` / `list.of(1, 2, 3)` / `(java.util.List of int).of(...)`), `Babble.g4` & `Formatter`, `BlockScopes`/`Resolver`/`TypeChecker`/`EffectChecker`/`LoweringAnalyzer`, `Interpreter` & `CodeGenerator` lowering, and REPL multi-line classification |
 
 ---
 
@@ -35,7 +35,7 @@ The design rests on six cohesive pillars aligned with Babble's existing architec
    `for` iterates natively over:
    * any `java.lang.Iterable of T` — covering all `RM005` core collections (`list`, `set`, `sortedset`, `map.entrySet()`/`keySet()`/`values()`), any JDK `Iterable`, and any Babble class `implements java.lang.Iterable of T` (compiled directly to a JVM `implements` bridge with zero `Proxy` allocation under `RM003`),
    * any bare `java.util.Iterator of T` directly (consuming one-shot iterators),
-   * any `JavaArray of T` (`int[]`, `double[]`, `string[]`, ...) lowered directly to an indexed array loop with zero `Iterator` allocation, and
+   * any `array of T` (`int[]`, `double[]`, `string[]`, ...) lowered directly to an indexed array loop with zero `Iterator` allocation, and
    * any Babble custom iterable or iterator (class, `record`, interface, or object defining `iterator()` returning an object with `hasNext(): bool` and `next(): T`, or exposing `hasNext(): bool` and `next(): T` directly), mirroring `BIP002`'s operator-method protocol and unlocking `$spec` unboxed primitive iteration.
    * `string` and `map of (K, V)` are intentionally **not** directly iterable: string iteration is ambiguous across UTF-16 code units vs Unicode code points/graphemes (use explicit methods/helpers like `.toCharArray()`), and maps use explicit `m.entrySet()` / `m.keySet()` / `m.values()` until destructuring `for (k, v) in m` (`BIP005-D3`) lands.
 4. **Expression semantics & per-iteration lexical scoping (`BIP013-D6`).**
@@ -43,7 +43,7 @@ The design rests on six cohesive pillars aligned with Babble's existing architec
 5. **Sound static typing, nullability & `BIP007` effects (`BIP013-D8`).**
    Leveraging `RM005`'s parametric-nullness overlay (`BIP011` §6.4: `Iterable.iterator(): Iterator of T` and `Iterator.next(): T`), `for value in foo` infers `value: int` (non-nullable!) on `list of int` and `value: int?` on `list of int?`, rejects nullable iterables (`(list of int)?`) statically, and propagates `BIP007` (`RM002`) `hermetic deterministic` / `borrow` effects and `@PARAM`/`@THIS` element origins through `EffectChecker`.
 6. **Direct unboxed bytecode lowering (`RM001`/`RM003`/`RM005`) with exact `Interpreter` parity.**
-   `LoweringAnalyzer` (`RM004` / `BIP010-D5`) publishes a converged `ForLoopTarget` per `for` loop. In compiled mode, `JavaArray of T` compiles to an indexed `<X>ALOAD` loop, `java.lang.Iterable of T` / `java.util.Iterator of T` compiles to direct `INVOKEINTERFACE` calls with `RM005` (`BIP011` §6.6)'s single-`INSTANCEOF` boundary check and unboxed primitive `value` local across all 8 JVM primitives (`sum += value` lowers to raw `IADD`), and Babble custom iterables dispatch directly to `$spec` methods — all preserving HotSpot's empty-stack OSR invariant at the loop head.
+   `LoweringAnalyzer` (`RM004` / `BIP010-D5`) publishes a converged `ForLoopTarget` per `for` loop. In compiled mode, `array of T` compiles to an indexed `<X>ALOAD` loop, `java.lang.Iterable of T` / `java.util.Iterator of T` compiles to direct `INVOKEINTERFACE` calls with `RM005` (`BIP011` §6.6)'s single-`INSTANCEOF` boundary check and unboxed primitive `value` local across all 8 JVM primitives (`sum += value` lowers to raw `IADD`), and Babble custom iterables dispatch directly to `$spec` methods — all preserving HotSpot's empty-stack OSR invariant at the loop head.
 
 ---
 
@@ -80,7 +80,7 @@ With `RM001`–`RM005` landed (8-primitive unboxed lowering, `BIP007-P1` static 
 
 **Goals:**
 
-* **Zero-ceremony iteration** over `RM005` core collections (`list`, `set`, `sortedset`, `map` views), any `java.lang.Iterable of T`, any bare `java.util.Iterator of T`, any `JavaArray of T`, and user-defined Babble iterables/iterators.
+* **Zero-ceremony iteration** over `RM005` core collections (`list`, `set`, `sortedset`, `map` views), any `java.lang.Iterable of T`, any bare `java.util.Iterator of T`, any `array of T`, and user-defined Babble iterables/iterators.
 * **Exact static typing and nullability:** `value` gets the exact parametric element type (`int` for `list of int`, `int?` for `list of int?`), with zero casts and full 8-primitive unboxing inside the loop body.
 * **Motivating example works cleanly** in both `interpret` and `compile` modes, with zero `@parser::members` semantic predicates (`BIP012` SLL/LL gate preserved).
 * **Closure-safe per-iteration binding** and full `BIP007` effect/alias soundness.
@@ -182,13 +182,13 @@ Any non-nullable type $S$ such that $S \mathrel{<:} \texttt{java.lang.Iterable o
 
 **Element type extraction:** `JavaTypeBridge` projects $S$ onto its `java.lang.Iterable` or `java.util.Iterator` supertype to obtain the instantiated type argument $T$ (through `RM005` / `BIP011` §6.4's parametric-nullness overlay). For a raw Java `Iterable`/`Iterator` with no type argument, $T = \texttt{any?}$.
 
-### 4.2 Tier 2: `JavaArray of T` (Java Arrays)
+### 4.2 Tier 2: `array of T` (Arrays, `BIP020`)
 
-Any non-nullable `JavaArray of T` (`int[]`, `double[]`, `byte[]`, `char[]`, `string[]`, `Object[]`, etc.) is iterable with element type $T$:
+Any non-nullable `array of T` (`int[]`, `double[]`, `byte[]`, `char[]`, `string[]`, `Object[]`, etc. — formerly `Type.JavaArray`, renamed `Type.Array` / `array of T` in [BIP020](bip020_array-types.md)) is iterable with element type $T$:
 
 * For all 8 primitive arrays (`byte[]`..`char[]`), $T$ is the non-nullable core scalar (`byte`..`char`) — **zero boxing** and **zero `Iterator` allocation**!
-* For reference arrays (`string[]` from `"a,b,c".split(",")` under `RM005`'s overlay $\to$ `JavaArray of string`), $T$ is `string` (or `T?` for unannotated Java reference arrays).
-* Lowered directly to an indexed `0 .. arr.length - 1` loop (`ARRAYLENGTH` + `<X>ALOAD`), matching Java's enhanced `for` loop on arrays.
+* For reference arrays (`string[]` from `"a,b,c".split(",")` under `RM005`'s overlay $\to$ `array of string`), $T$ is `string` (or `T?` for unannotated Java reference arrays).
+* Lowered directly to an indexed `0 .. arr.size() - 1` loop (`ARRAYLENGTH` + `<X>ALOAD`), matching Java's enhanced `for` loop on arrays.
 
 ### 4.3 Tier 3: Babble Custom Iterable & Iterator Protocol (`BIP013-D9`)
 
@@ -227,7 +227,7 @@ And if the author *also* wants the class to be passed to Java APIs expecting `ja
 
 ### 4.4 Union Iterables
 
-If the iterable expression has a union type $A \mid B$ (e.g., `list of int | set of int` or `list of int | JavaArray of int`):
+If the iterable expression has a union type $A \mid B$ (e.g., `list of int | set of int` or `list of int | array of int`):
 
 * If **every** member of the union is non-null and iterable with element types $T_1, \dots, T_k$, then the union is iterable with element type $\text{join}(T_1, \dots, T_k)$ (e.g., `list of int | set of int` yields `int`; `list of int | list of double` yields `double` per `TypeAlgebra.join`).
 * If any union branch is `null` (`(list of int)?`) or non-iterable (`list of int | string`), `TypeChecker` rejects it at compile time (`Type error : cannot iterate over nullable type (list of int)?` or `Not iterable : <type>`).
@@ -295,7 +295,7 @@ Integrating `for` into `RM004`'s modular `org.babblelang.analysis` architecture 
    * If `iterType == Type.ERROR`, bind `name` to `Type.ERROR` and check `forBlock` to avoid cascading diagnostics.
    * If `algebra.admitsNull(iterType)`, emit `Type error : cannot iterate over nullable type <iterType>`.
    * Otherwise resolve the iteration protocol (§4) to obtain `(ForKind, elemType)`:
-     * `JavaArray of T` $\to$ `elemType = T`
+     * `array of T` $\to$ `elemType = T`
      * `iterType <: java.lang.Iterable of T` or `java.util.Iterator of T` $\to$ `elemType = T` (via `JavaTypeBridge` + `RM005` overlay)
      * Babble custom iterable/iterator (`iterator()` / `hasNext(): bool` / `next(): T`) $\to$ `elemType = T` (via `MemberTypes` + `CallSolver`)
      * Union of valid iterables $\to$ joined `elemType`
@@ -329,7 +329,7 @@ When `MemberTypes` resolves `.member` on a `JavaClassValue` or `ClassValue` (inc
 1. **Effect attribution by iterable tier:**
    | Iterable Tier | Iteration Overhead Effects | Receiver Modifier |
    |---|---|---|
-   | `JavaArray of T` | `pure deterministic nothrow` | `borrow` (read-only array indexing) |
+   | `array of T` | `pure deterministic nothrow` | `borrow` (read-only array indexing) |
    | `RM005` core collections (`list`, `set`, `sortedset`, `map` views) | `hermetic deterministic` *(not `nothrow` unless unaliased/unmodified, due to potential `ConcurrentModificationException` on concurrent mutation)* | **`borrow`** (non-`mut`!) |
    | Bare `java.util.Iterator of T` | `hermetic deterministic` on JDK core-collection iterators (otherwise per `HostEffects` / `axiom` / `@Pure`) | **`mut`** on the iterator handle (advancing `next()` mutates iterator state!) |
    | Other `java.lang.Iterable of T` | Inherited from `HostEffects` / `axiom` / `@Pure` annotations on `iterator()`, `hasNext()`, `next()` (defaults to `impure` if unannotated third-party Java) | Per host contract |
@@ -355,7 +355,7 @@ When `MemberTypes` resolves `.member` on a `JavaClassValue` or `ClassValue` (inc
 
 Following `BIP010-D5`, `TypeChecker` records no bytecode targets; instead, post-convergence `LoweringAnalyzer` inspects each `ForExpressionContext` once and publishes a `ScopeAnalysis.ForLoopTarget`:
 
-* `ForKind`: `ARRAY`, `JAVA_ITERABLE`, `JAVA_ITERATOR`, `BABBLE_ITERABLE`, `BABBLE_ITERATOR`, or `DYNAMIC_UNION` (only when iterating a heterogeneous union like `list of int | JavaArray of int`).
+* `ForKind`: `ARRAY`, `JAVA_ITERABLE`, `JAVA_ITERATOR`, `BABBLE_ITERABLE`, `BABBLE_ITERATOR`, or `DYNAMIC_UNION` (only when iterating a heterogeneous union like `list of int | array of int`).
 * `PrimitiveKind elemKind`: the unboxed primitive kind of the loop variable `name` (`BYTE`, `SHORT`, `INT`, `LONG`, `FLOAT`, `DOUBLE`, `BOOL`, `CHAR`, or `NONE` per `RM005` / `BIP011-D13`).
 * `NumericCoercion elemCoercion`: optional widening (e.g. `I2D` for `for x: double in list.of(1, 2, 3)`).
 * `RuntimeTypeCheck elemCheck`: `RM005` (`BIP011` §6.6) defensive boundary check for erased `Iterator.next()` returns (e.g. `INSTANCEOF java/lang/Integer` for `list of int`).
@@ -414,9 +414,9 @@ end:
 
 Zero `invokedynamic`, zero `Overloads` reflection, zero boxing of `sum` or `value` in the body, and a single predicted `INSTANCEOF` at the erased Java boundary!
 
-#### Case B: `JavaArray of T`
+#### Case B: `array of T`
 
-For `for v in arr then ( ... )` where `arr: JavaArray of int`:
+For `for v in arr then ( ... )` where `arr: array of int`:
 
 ```
   ALOAD arr
@@ -517,7 +517,7 @@ Every phase keeps `mvn -B package` (`interpret` + `compile` with `CheckClassAdap
 | Phase | Deliverables |
 |---|---|
 | **`BIP013-P1`: Grammar, `Formatter`, REPL & Scope Analysis** | Reserve `FOR`, `IN`, `BREAK`, and `CONTINUE` in `Babble.g4` with `IN`/`BREAK`/`CONTINUE` in `memberName` (`BIP013-D1`, `D10`) and add strictly LL(1)/`SLL` `# forExpression`, `# breakExpression`, and `# continueExpression`; update `Formatter` (spacing, newlines, indentation, round-trip checks) and verify `BabbleSession.classify` multi-line REPL handling; implement `BlockScopes` loop-target stack (for `while`/`for`, rejecting `break`/`continue` outside loops or across `fn` boundaries), `BlockScopes.visitForExpression` (outer-scope iterable, fresh `forBlock` scope with read-only loop variable per `BIP013-D6`, duplicate-name check, `returnTarget` propagation), and `Resolver` (loop variable slot + per-iteration capture cell allocation). |
-| **`BIP013-P2`: Core Typing, `break`/`continue`, Specialized Static Factories & `Iterable`/`Iterator`/`JavaArray` Backends** | Implement `visitForExpression`, `visitBreakExpression`, and `visitContinueExpression` in `TypeChecker`, `Narrowing` (`assignedLocals` eviction), and specialized static member selection (`(list of int).of(...)`, `list.of(...)`, `(java.util.List of int).of(...)`, `BIP013-D2`) in `MemberTypes`/`CallSolver`; add `ForLoopTarget` to `ScopeAnalysis` and `LoweringAnalyzer` (`BIP010-D5`); implement `Interpreter` and `CodeGenerator` lowering for `while`/`for` `break [expr]`/`continue`, `java.lang.Iterable of T`, bare `java.util.Iterator of T` (`BIP013-D3`) (direct `INVOKEINTERFACE` + `RM005` boundary check + 8-primitive unboxed `value` local/`*Cell`), and `JavaArray of T` (`ARRAYLENGTH` + `<X>ALOAD`). **Milestone:** the motivating example + `break`/`continue` run end-to-end in both modes! |
+| **`BIP013-P2`: Core Typing, `break`/`continue`, Specialized Static Factories & `Iterable`/`Iterator`/`JavaArray` Backends** | Implement `visitForExpression`, `visitBreakExpression`, and `visitContinueExpression` in `TypeChecker`, `Narrowing` (`assignedLocals` eviction), and specialized static member selection (`(list of int).of(...)`, `list.of(...)`, `(java.util.List of int).of(...)`, `BIP013-D2`) in `MemberTypes`/`CallSolver`; add `ForLoopTarget` to `ScopeAnalysis` and `LoweringAnalyzer` (`BIP010-D5`); implement `Interpreter` and `CodeGenerator` lowering for `while`/`for` `break [expr]`/`continue`, `java.lang.Iterable of T`, bare `java.util.Iterator of T` (`BIP013-D3`) (direct `INVOKEINTERFACE` + `RM005` boundary check + 8-primitive unboxed `value` local/`*Cell`), and `array of T` (`ARRAYLENGTH` + `<X>ALOAD`). **Milestone:** the motivating example + `break`/`continue` run end-to-end in both modes! |
 | **`BIP013-P3`: Babble Custom Iterable/Iterator Protocol & `BIP016` Effects** | Add Tier-3 duck-typed Babble custom iterable & iterator resolution (`iterator()`/`hasNext(): bool`/`next(): T`, `BIP013-D9`) in `TypeChecker` / `LoweringAnalyzer` with `$spec` unboxed primitive dispatch in `CodeGenerator` and parity in `Interpreter`; add `evalFor`, `evalBreak`, and `evalContinue` to `EffectChecker` (`RM008` / `BIP016`: `JavaArray` `@HERMETIC @DETERMINISTIC @NOTHROW`, `RM005` core collection `@HERMETIC @DETERMINISTIC` + `@BORROWED`, bare `Iterator` `mut`, `frozen` iterable element propagation, custom iterable effect propagation, `@PARAM`/`@THIS` element origin propagation, definite-unassignment across `break`/`continue` joins, and `@BORROWED`/`mut` concurrent-mutation enforcement per `BIP013-D8`). |
 | **`BIP013-P4`: Systematic Tests, Coverage & Documentation** | Add `src/test/babble/Iterators.ba` (end-to-end differential & format-checked), `.batest` specs under `src/test/batest/control/for_loops.batest` (covering collections, bare `Iterator`, arrays, custom iterables/iterators, `break`, `break expr`, `continue` in both `while` and `for`, closures capturing loop variables, shadowing `for x in x`, empty iterables, expression value / `join` with `null`, explicit type annotations & widening, nullability errors, `Not iterable` including `string` and `map`, read-only assignment error, `java.lang.System.in` compatibility, and `BIP016` effects), `TypeCheckerTestCase` / `FormatterTestCase` / `EffectsTestCase` / `ReplTestCase` tests, and update [README.md](../../README.md) & [CLAUDE.md](../../CLAUDE.md). |
 
