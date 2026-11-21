@@ -86,6 +86,9 @@ final class ClassGen {
             for (int i = 0; i < sig.parameterKinds().length; i++) {
                 HirEmitter.loadKindOn(m, sig.parameterKinds()[i], paramSlots[i]);
             }
+            if (sig.hasOptionalMask()) {
+                m.visitVarInsn(ILOAD, HirEmitter.bridgeMaskSlot(sig));
+            }
             m.visitMethodInsn(INVOKESPECIAL, directParentJvm, HirEmitter.bridgeMethodName(memberName), desc, true);
             m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
             m.visitMaxs(0, 0);
@@ -178,27 +181,23 @@ final class ClassGen {
                 m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
                 m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_METHOD);
                 m.visitVarInsn(ALOAD, 1);
-                if (fn.hasSpec() && ifaceCount == fnCount) {
+                if (fn.hasSpec() && ifaceCount <= fnCount && HirEmitter.allOptionalFrom(fn, ifaceCount)) {
                     List<HirParam> params = fn.params();
                     for (int i = 0; i < ifaceCount; i++) {
-                        ScopeAnalysis.PrimitiveKind fromK = sig.parameterKinds()[i];
                         HirParam param = params.get(i);
-                        ScopeAnalysis.PrimitiveKind toK = param.kind();
-                        HirEmitter.loadKindOn(m, fromK, paramSlots[i]);
-                        HirEmitter.emitAdaptKind(m, fromK, toK);
-                        if (toK == ScopeAnalysis.PrimitiveKind.NONE) {
-                            HirEmitter.emitWidenBoxed(m, param.wideningRank());
-                        }
+                        HirEmitter.emitAdaptBridgeArg(m, sig, paramSlots, i, param.kind(), param.wideningRank());
                     }
+                    for (int i = ifaceCount; i < fnCount; i++) {
+                        HirEmitter.emitDefaultValueOn(m, params.get(i).kind());
+                    }
+                    HirEmitter.emitRemapBridgeMask(m, sig, fn, ifaceCount);
                     m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName) + "$spec", HirEmitter.methodSpecDescriptor(fn), false);
                     HirEmitter.emitAdaptKind(m, fn.returnKind(), sig.returnKind());
                     m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
                 } else if (fn.isSpread() && ifaceCount <= fnCount) {
                     m.visitInsn(ACONST_NULL);
                     for (int i = 0; i < ifaceCount; i++) {
-                        ScopeAnalysis.PrimitiveKind pk = sig.parameterKinds()[i];
-                        HirEmitter.loadKindOn(m, pk, paramSlots[i]);
-                        HirEmitter.boxOn(m, pk);
+                        HirEmitter.emitLoadBridgeArgBoxed(m, sig, paramSlots, i);
                     }
                     for (int i = ifaceCount; i < fnCount; i++) {
                         m.visitFieldInsn(GETSTATIC, HirEmitter.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
@@ -359,11 +358,17 @@ final class ClassGen {
             m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_METHOD);
             m.visitVarInsn(ALOAD, rtSlot);
-            if (fn.hasSpec() && paramTypes.length == fnCount) {
+            if (fn.hasSpec() && paramTypes.length <= fnCount && HirEmitter.allOptionalFrom(fn, paramTypes.length)) {
                 List<HirParam> params = fn.params();
                 for (int i = 0; i < paramTypes.length; i++) {
                     HirParam param = params.get(i);
                     HirEmitter.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], param.kind(), param.wideningRank(), param.checkedType());
+                }
+                for (int i = paramTypes.length; i < fnCount; i++) {
+                    HirEmitter.emitDefaultValueOn(m, params.get(i).kind());
+                }
+                if (fn.hasOptionalMask()) {
+                    ConstantPool.pushInt(m, org.babblelang.runtime.Arguments.remapMask(0, fn.optionalParamBits(), paramTypes.length));
                 }
                 m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + "$spec", HirEmitter.methodSpecDescriptor(fn), false);
                 HirEmitter.emitReturnToJava(m, fn.returnKind(), retType, descText, rtSlot);
@@ -398,6 +403,9 @@ final class ClassGen {
             m.visitVarInsn(ALOAD, rtSlot);
             for (int i = 0; i < paramTypes.length; i++) {
                 HirEmitter.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ancSig.parameterKinds()[i], -1, null);
+            }
+            if (ancSig.hasOptionalMask()) {
+                m.visitInsn(ICONST_0);
             }
             m.visitMethodInsn(INVOKEVIRTUAL, name, HirEmitter.bridgeMethodName(mName), babbleAnc.descriptor(), false);
             HirEmitter.emitReturnToJava(m, ancSig.returnKind(), retType, descText, rtSlot);

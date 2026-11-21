@@ -348,7 +348,7 @@ def pr : fn io (s : string, shared to : any?) : fn () = print
 pr("hi", to: 123)
 }}}}}
 ok
-print to: expects a Writer or PrintStream
+hi123
 
 {{{{{
 def dyn = fn (v : any) : any -> ( v )
@@ -440,7 +440,7 @@ def sb2 = java.lang.StringBuilder("a")
 println(same(ch1, ch1), ":", same(sb1, sb1), ":", same(sb1, sb2))
 
 def fnRename : fn (x : int) : int = fn (y = 0) : int -> ( y + 1 )
-fnRename(x: 5)
+println(fnRename(x: 5))
 }}}}}
 true:true:true:false:true:false
 false:true:true:true:false
@@ -448,7 +448,7 @@ true
 true:true:true:true
 true
 true:true:false
-No such parameter : x
+6
 
 {{{{{
 ;; JavaTypes: functionalMethod (Comparator), Objects.toString loop (isNull/BabbleInstance/JavaObject), AssertFunction, Overloads signature with null

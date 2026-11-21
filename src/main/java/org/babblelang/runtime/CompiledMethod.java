@@ -18,18 +18,24 @@ public final class CompiledMethod implements BabbleFunction {
     private final MethodHandle spec;
     private final String[] params;
     private final int required;
+    private final int optionalParamBits;
     private final String name;
 
     public CompiledMethod(MethodBody body, MethodHandle direct, String[] params, int required, String name) {
-        this(body, direct, null, params, required, name);
+        this(body, direct, null, params, required, 0, name);
     }
 
     public CompiledMethod(MethodBody body, MethodHandle direct, MethodHandle spec, String[] params, int required, String name) {
+        this(body, direct, spec, params, required, 0, name);
+    }
+
+    public CompiledMethod(MethodBody body, MethodHandle direct, MethodHandle spec, String[] params, int required, int optionalParamBits, String name) {
         this.body = body;
         this.direct = direct;
         this.spec = spec;
         this.params = params;
         this.required = required;
+        this.optionalParamBits = optionalParamBits;
         this.name = name;
     }
 
@@ -46,6 +52,11 @@ public final class CompiledMethod implements BabbleFunction {
     /** The specialized primitive entry point, or null. */
     public MethodHandle spec() {
         return spec;
+    }
+
+    /** Bitmask of parameter indices (for methods with {@code <= 32} parameters) that have defaults, or 0. */
+    public int optionalParamBits() {
+        return optionalParamBits;
     }
 
     public String[] params() {

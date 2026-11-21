@@ -707,4 +707,25 @@ public class BabbleCompilerTestCase {
             }
         }
     }
+
+    @Test
+    public void testBip021P1OptionalSpecMaskAndStaticNamedBinding() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def add = fn (a : int, b : int = 10, ..., c : int = 100) : int -> ( a + b + c )\n"
+                        + "def indirect : fn (x : int, y : int = ..., ..., z : int = ...) : int = add\n"
+                        + "def directCalls = fn () : int -> ( add(1) + add(1, 2) + add(c: 200, a: 3) )\n"
+                        + "def indirectCalls = fn () : int -> ( indirect(1) + indirect(z: 200, x: 3) )\n"
+                        + "directCalls() + indirectCalls()");
+        assertVerifies(script);
+        Assertions.assertEquals(111 + 103 + 213 + 111 + 213, script.eval(new SimpleBindings()));
+
+        // Direct calls with optional & reordered named args invoke fn$0$add$spec directly without indy.
+        List<String> directOps = methodInstructions(script.getClassBytes(), "fn$1$directCalls$spec");
+        Assertions.assertTrue(directOps.stream().anyMatch(o -> o.endsWith(".fn$0$add$spec")), directOps.toString());
+        Assertions.assertTrue(directOps.stream().noneMatch(o -> o.startsWith("INDY:")), directOps.toString());
+
+        // Indirect calls through function value with omitted optional args use typedCallOpt indy.
+        List<String> indirectOps = methodInstructions(script.getClassBytes(), "fn$2$indirectCalls$spec");
+        Assertions.assertTrue(indirectOps.stream().anyMatch(o -> o.contains("Bootstrap.typedCallOpt")), indirectOps.toString());
+    }
 }

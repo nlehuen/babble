@@ -105,7 +105,62 @@ public final class ScopeAnalysis {
         }
     }
 
-    public record FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind) {
+    public record FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind, int optionalParamBits) {
+        public FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind) {
+            this(parameterKinds, returnKind, 0);
+        }
+
+        public int optionalCount() {
+            return Integer.bitCount(optionalParamBits);
+        }
+
+        public boolean hasOptionalMask() {
+            return optionalParamBits != 0;
+        }
+
+        public boolean isOptional(int index) {
+            return index < 32 && (optionalParamBits & (1 << index)) != 0;
+        }
+    }
+
+    /**
+     * Static argument binding for a Babble call ({@code BIP021-D4}).
+     * {@code paramToArg[p]} is the source call-argument index {@code 0..argCount-1} supplying
+     * parameter {@code p}, or {@code -1} if parameter {@code p} is omitted.
+     * {@code missingParamBits} has bit {@code p} set when {@code p < 32 && paramToArg[p] < 0}.
+     */
+    public record ArgumentBinding(int[] paramToArg, int argCount, boolean reordered, int missingParamBits) {
+        public boolean hasOmitted() {
+            for (int a : paramToArg) {
+                if (a < 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public int paramCount() {
+            return paramToArg.length;
+        }
+
+        public boolean isIdentityPositional() {
+            return !reordered && !hasOmitted() && paramToArg.length == argCount;
+        }
+
+        /** Computes the callee's {@code $spec} optional-ordinal mask from {@code calleeOptionalParamBits}. */
+        public int specMaskFor(int calleeOptionalParamBits, int calleeParamCount) {
+            int mask = 0;
+            int optBit = 0;
+            for (int p = 0; p < calleeParamCount; p++) {
+                if ((calleeOptionalParamBits & (1 << p)) != 0) {
+                    if (p >= paramToArg.length || paramToArg[p] < 0) {
+                        mask |= (1 << optBit);
+                    }
+                    optBit++;
+                }
+            }
+            return mask;
+        }
     }
 
     public record ParentRef(String babbleTypeId, Class<?> javaClass) {
@@ -197,6 +252,8 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<String[]> declared = new ParseTreeProperty<>();
     private final ParseTreeProperty<String[]> parameters = new ParseTreeProperty<>();
     private final ParseTreeProperty<Integer> requiredParameters = new ParseTreeProperty<>();
+    private final ParseTreeProperty<Integer> keywordOnlyStarts = new ParseTreeProperty<>();
+    private final ParseTreeProperty<ArgumentBinding> argumentBindings = new ParseTreeProperty<>();
     private final ParseTreeProperty<ClassShape> shapes = new ParseTreeProperty<>();
     private final ParseTreeProperty<DefTarget> defTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<BabbleParser.TypeContext> superTargets = new ParseTreeProperty<>();
@@ -324,8 +381,17 @@ public final class ScopeAnalysis {
     }
 
     void setParameters(BabbleParser.FunctionLiteralContext function, String[] names, int required) {
+        setParameters(function, names, required, names.length);
+    }
+
+    void setParameters(BabbleParser.FunctionLiteralContext function, String[] names, int required, int keywordOnlyStart) {
         parameters.put(function, names);
         requiredParameters.put(function, required);
+        keywordOnlyStarts.put(function, keywordOnlyStart);
+    }
+
+    void setArgumentBinding(BabbleParser.CallContext call, ArgumentBinding binding) {
+        argumentBindings.put(call, binding);
     }
 
     void setShape(ParserRuleContext type, ClassShape shape) {
@@ -626,6 +692,17 @@ public final class ScopeAnalysis {
         return requiredParameters.get(function);
     }
 
+    /** The index of the first keyword-only parameter (after {@code ...}), or {@code parameters.length}. */
+    public int keywordOnlyStart(BabbleParser.FunctionLiteralContext function) {
+        Integer start = keywordOnlyStarts.get(function);
+        return start != null ? start : parameters(function).length;
+    }
+
+    /** Static argument binding for a Babble call ({@code BIP021-D4}), or {@code null}. */
+    public ArgumentBinding argumentBinding(BabbleParser.CallContext call) {
+        return argumentBindings.get(call);
+    }
+
     /** The shape of a class, object or interface expression. */
     public ClassShape shape(ParserRuleContext type) {
         return shapes.get(type);
@@ -755,6 +832,27 @@ public final class ScopeAnalysis {
     /** Parameter declarations of a function literal. */
     public static List<? extends ParserRuleContext> paramsOf(BabbleParser.FunctionLiteralContext ctx) {
         return ctx.fnParameters().fnParam();
+    }
+
+    /** Index of the first keyword-only parameter in a function parameter list (or total count if none). */
+    public static int keywordOnlyStart(BabbleParser.FnParametersContext ctx) {
+        int total = ctx.fnParam().size();
+        return ctx.kwSep == null ? total : total - ctx.kwParam.size();
+    }
+
+    /** Index of the first keyword-only parameter in a class parameter list (or total count if none). */
+    public static int keywordOnlyStart(BabbleParser.ClassParametersContext ctx) {
+        if (ctx == null) {
+            return 0;
+        }
+        int total = ctx.classParam().size();
+        return ctx.kwSep == null ? total : total - ctx.kwParam.size();
+    }
+
+    /** Index of the first keyword-only parameter in a function-type parameter list (or total count if none). */
+    public static int keywordOnlyStart(BabbleParser.FnTypeParametersContext ctx) {
+        int total = ctx.fnTypeParam().size();
+        return ctx.kwSep == null ? total : total - ctx.kwParam.size();
     }
 
     /** Identifier terminal of a class, function, or function-type parameter. */

@@ -563,4 +563,19 @@ public class FormatterTestCase {
                 def e = ( array  of  double ) ( from : d )
                 """);
     }
+
+    @Test
+    public void testBip021OptionalAndKeywordOnlySyntax() throws Exception {
+        assertFormats("""
+                def f: fn (a: int, b: int = ..., ..., c: string = ...): int = fn (a: int, b: int = 1, ..., c: string = ""): int -> (
+                    a + b
+                )
+                def C = class (def x: int = 0, ..., def y: int) ()
+                """, """
+                def f : fn ( a : int , b : int = ... , ... , c : string = ... ) : int = fn ( a : int , b : int = 1 , ... , c : string = "" ) : int -> (
+                    a + b
+                )
+                def C = class ( def x : int = 0 , ... , def y : int ) ( )
+                """);
+    }
 }

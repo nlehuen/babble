@@ -373,20 +373,38 @@ final class CallSolver {
     void bind(List<Type.Parameter> parameters, List<? extends ParserRuleContext> declarations,
               List<BabbleParser.CallParameterContext> arguments, ParserRuleContext ctx,
               boolean frozenBorrowSafe, Set<Integer> forwardedEffectParams) {
-        int count = arguments.size();
         String[] names = argumentNames(arguments);
-        boolean named = Arrays.stream(names).anyMatch(java.util.Objects::nonNull);
-        boolean[] consumed = new boolean[count];
-        int[] matched = matchArguments(parameters, names, consumed);
+        BindResult res = bindArguments(parameters, names);
+        boolean bindingError = false;
+        if (!res.unknownNames().isEmpty()) {
+            checker.warn("No such parameter : " + String.join(", ", res.unknownNames()), ctx);
+            bindingError = true;
+        } else if (res.outOfPosition() != null) {
+            checker.warn("Named argument out of position : " + res.outOfPosition(), ctx);
+            bindingError = true;
+        } else if (res.duplicate() != null) {
+            checker.warn("Parameter given twice : " + res.duplicate(), ctx);
+            bindingError = true;
+        } else if (res.extraPositional() > 0) {
+            int declared = res.keywordOnlyStart() < parameters.size() ? res.keywordOnlyStart() : parameters.size();
+            int given = res.keywordOnlyStart() < parameters.size()
+                    ? res.positionalCount()
+                    : (res.distinctNameCount() > 0 ? res.positionalCount() + res.distinctNameCount() : arguments.size());
+            checker.warn("Too many parameters : " + declared + " declared, " + given + " given", ctx);
+            bindingError = true;
+        }
+        int[] matched = res.paramToArg();
+        boolean[] checked = new boolean[arguments.size()];
         for (int index = 0; index < parameters.size(); index++) {
             Type.Parameter parameter = parameters.get(index);
             int found = matched[index];
             if (found < 0) {
-                if (!parameter.optional()) {
+                if (!parameter.optional() && !bindingError) {
                     checker.warn("Missing parameter : " + parameter.name(), ctx);
                 }
                 continue;
             }
+            checked[found] = true;
             BabbleParser.ExpressionContext argument = arguments.get(found).expression();
             ParserRuleContext decl = declarations != null && index < declarations.size()
                     ? declarations.get(index) : null;
@@ -397,30 +415,10 @@ final class CallSolver {
             Type actual = checker.check(argument, expectedParam);
             bindArgument(decl, actual, expectedParam, frozenBorrowSafe && parameter.borrow() && !parameter.mut(), argument);
         }
-        if (!named) {
-            if (count > parameters.size()) {
-                checker.warn("Too many parameters : " + parameters.size() + " declared, " + count + " given", ctx);
+        for (int i = 0; i < arguments.size(); i++) {
+            if (!checked[i]) {
+                checker.synth(arguments.get(i).expression());
             }
-            return;
-        }
-        Set<String> distinctNames = new LinkedHashSet<>();
-        List<String> unknownNames = new ArrayList<>();
-        int positional = 0;
-        int extraPositional = 0;
-        for (int i = 0; i < count; i++) {
-            if (names[i] == null) {
-                positional++;
-                if (!consumed[i]) {
-                    extraPositional++;
-                }
-            } else if (distinctNames.add(names[i]) && !consumed[i]) {
-                unknownNames.add(names[i]);
-            }
-        }
-        if (!unknownNames.isEmpty()) {
-            checker.warn("No such parameter : " + String.join(", ", unknownNames), ctx);
-        } else if (extraPositional > 0) {
-            checker.warn("Too many parameters : " + parameters.size() + " declared, " + (positional + distinctNames.size()) + " given", ctx);
         }
     }
 
@@ -1069,35 +1067,121 @@ final class CallSolver {
         return names;
     }
 
-    /**
-     * The argument each parameter gets, by the rules of {@code Arguments} : the last argument
-     * named after it, else the positional argument at its index ; -1 for none. {@code consumed}
-     * marks the arguments taken.
-     */
-    private static int[] matchArguments(List<Type.Parameter> parameters, String[] names, boolean[] consumed) {
-        int[] matched = new int[parameters.size()];
-        for (int index = 0; index < parameters.size(); index++) {
-            int found = -1;
-            for (int i = 0; i < names.length; i++) {
-                if (parameters.get(index).name().equals(names[i])) {
-                    found = i;
-                    consumed[i] = true;
+    record BindResult(int[] paramToArg, List<String> unknownNames, String outOfPosition,
+                      String duplicate, int extraPositional, int positionalCount, int distinctNameCount,
+                      int keywordOnlyStart) {
+        boolean hasErrors(List<Type.Parameter> parameters) {
+            if (!unknownNames.isEmpty() || outOfPosition != null || duplicate != null || extraPositional > 0) {
+                return true;
+            }
+            for (int i = 0; i < parameters.size(); i++) {
+                if (paramToArg[i] < 0 && !parameters.get(i).optional()) {
+                    return true;
                 }
             }
-            if (found < 0 && index < names.length && names[index] == null) {
-                found = index;
-                consumed[index] = true;
-            }
-            matched[index] = found;
+            return false;
         }
-        return matched;
+
+        ScopeAnalysis.ArgumentBinding toArgumentBinding(int argCount) {
+            boolean reordered = false;
+            int missingParamBits = 0;
+            boolean seenOmitted = false;
+            for (int p = 0; p < paramToArg.length; p++) {
+                int a = paramToArg[p];
+                if (a < 0) {
+                    seenOmitted = true;
+                    if (p < 32) {
+                        missingParamBits |= (1 << p);
+                    }
+                } else {
+                    if (a != p || seenOmitted) {
+                        reordered = true;
+                    }
+                }
+            }
+            return new ScopeAnalysis.ArgumentBinding(paramToArg, argCount, reordered, missingParamBits);
+        }
+    }
+
+    static int keywordOnlyStart(List<Type.Parameter> parameters) {
+        for (int i = 0; i < parameters.size(); i++) {
+            if (parameters.get(i).keywordOnly()) {
+                return i;
+            }
+        }
+        return parameters.size();
+    }
+
+    /**
+     * Binds call arguments to parameters under {@code BIP021-D23} (C#'s rule) and keyword-only
+     * parameters after {@code ...}.
+     */
+    static BindResult bindArguments(List<Type.Parameter> parameters, String[] names) {
+        int n = parameters.size();
+        int kwStart = keywordOnlyStart(parameters);
+        int[] map = new int[n];
+        Arrays.fill(map, -1);
+        List<String> unknown = new ArrayList<>();
+        Set<String> distinct = new LinkedHashSet<>();
+        String firstOutOfPos = null;
+        String outOfPosError = null;
+        String dupError = null;
+        int extra = 0;
+        int posCount = 0;
+        for (int j = 0; j < names.length; j++) {
+            String name = names[j];
+            if (name == null) {
+                posCount++;
+                if (firstOutOfPos != null) {
+                    if (outOfPosError == null) {
+                        outOfPosError = firstOutOfPos;
+                    }
+                } else if (j < kwStart) {
+                    map[j] = j;
+                } else {
+                    extra++;
+                }
+            } else {
+                boolean added = distinct.add(name);
+                int pIdx = -1;
+                for (int i = 0; i < n; i++) {
+                    if (name.equals(parameters.get(i).name())) {
+                        pIdx = i;
+                        break;
+                    }
+                }
+                if (pIdx < 0) {
+                    if (added) {
+                        unknown.add(name);
+                    }
+                } else {
+                    if (map[pIdx] >= 0) {
+                        if (dupError == null) {
+                            dupError = name;
+                        }
+                    } else {
+                        map[pIdx] = j;
+                    }
+                    if ((pIdx != j || pIdx >= kwStart) && firstOutOfPos == null) {
+                        firstOutOfPos = name;
+                    }
+                }
+            }
+        }
+        return new BindResult(map, unknown, outOfPosError, dupError, extra, posCount, distinct.size(), kwStart);
+    }
+
+    static ScopeAnalysis.ArgumentBinding computeArgumentBinding(List<Type.Parameter> parameters,
+                                                                List<BabbleParser.CallParameterContext> arguments) {
+        BindResult res = bindArguments(parameters, argumentNames(arguments));
+        return res.hasErrors(parameters) ? null : res.toArgumentBinding(arguments.size());
     }
 
     /** The parameter each argument binds to, or null. */
     static Type.Parameter[] mapArgumentsToParameters(List<Type.Parameter> parameters,
                                                      List<BabbleParser.CallParameterContext> arguments) {
         Type.Parameter[] mapping = new Type.Parameter[arguments.size()];
-        int[] matched = matchArguments(parameters, argumentNames(arguments), new boolean[arguments.size()]);
+        int[] matched = bindArguments(parameters, argumentNames(arguments)).paramToArg();
         for (int index = 0; index < matched.length; index++) {
             if (matched[index] >= 0) {
                 mapping[matched[index]] = parameters.get(index);

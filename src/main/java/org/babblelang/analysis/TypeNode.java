@@ -72,6 +72,7 @@ final class TypeNode {
     final List<String> parameters = new ArrayList<>();
     final List<Integer> parameterMembers = new ArrayList<>();
     int requiredParameters = 0;
+    int keywordOnlyStart = -1;
 
     /** Resolved parents : TypeNode interfaces or Java interface classes. */
     final List<Object> parents = new ArrayList<>();
@@ -133,8 +134,9 @@ final class TypeNode {
             staticFlags[member.index] = member.flags;
             staticTypeDescriptors[member.index] = staticTypes.get(member.name);
         }
+        int kwStart = keywordOnlyStart >= 0 ? keywordOnlyStart : parameters.size();
         return new ClassShape(kind, name, memberNames, flags, parameters.toArray(new String[0]),
-                parameterMembers.stream().mapToInt(Integer::intValue).toArray(), requiredParameters, staticNames, staticFlags,
+                parameterMembers.stream().mapToInt(Integer::intValue).toArray(), requiredParameters, kwStart, staticNames, staticFlags,
                 id, memberTypeDescriptors, staticTypeDescriptors);
     }
 }

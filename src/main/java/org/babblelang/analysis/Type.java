@@ -242,29 +242,34 @@ sealed interface Type {
     Type NULLABLE_FROZEN_ANY = new Union(List.of(FROZEN_ANY, NULL));
 
     /** A parameter of a function type : its name is part of the type, since calls bind by name. */
-    record Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
+    record Parameter(String name, Type type, boolean optional, boolean keywordOnly,
+                     boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
         Parameter(String name, Type type, boolean optional) {
-            this(name, type, optional, false, false, false, false);
+            this(name, type, optional, false, false, false, false, false);
         }
 
         Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow) {
-            this(name, type, optional, mut, borrow, false, false);
+            this(name, type, optional, false, mut, borrow, false, false);
         }
 
         Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitShared) {
-            this(name, type, optional, mut, borrow, explicitShared, false);
+            this(name, type, optional, false, mut, borrow, explicitShared, false);
+        }
+
+        Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
+            this(name, type, optional, false, mut, borrow, explicitShared, unique);
         }
 
         Parameter withType(Type newType) {
-            return new Parameter(name, newType, optional, mut, borrow, explicitShared, unique);
+            return new Parameter(name, newType, optional, keywordOnly, mut, borrow, explicitShared, unique);
         }
 
         Parameter withModifiers(boolean newMut, boolean newBorrow) {
-            return new Parameter(name, type, optional, newMut, newBorrow && !explicitShared && !unique, explicitShared, unique);
+            return new Parameter(name, type, optional, keywordOnly, newMut, newBorrow && !explicitShared && !unique, explicitShared, unique);
         }
 
         Parameter withModifiers(boolean newMut, boolean newBorrow, boolean newUnique) {
-            return new Parameter(name, type, optional, newMut, newBorrow && !explicitShared && !newUnique,
+            return new Parameter(name, type, optional, keywordOnly, newMut, newBorrow && !explicitShared && !newUnique,
                     explicitShared && !newUnique, newUnique);
         }
 
@@ -275,7 +280,7 @@ sealed interface Type {
                     + (showShared ? "shared " : "")
                     + name
                     + (type == ERROR ? "" : " : " + type)
-                    + (optional ? " = …" : "");
+                    + (optional ? " = ..." : "");
         }
 
         @Override
@@ -391,12 +396,18 @@ sealed interface Type {
             String tp = typeParameters.isEmpty() ? ""
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
             StringBuilder params = new StringBuilder("(");
+            boolean emittedKwSep = false;
             for (int i = 0; i < parameters.size(); i++) {
                 if (i > 0) {
                     params.append(", ");
                 }
+                Parameter p = parameters.get(i);
+                if (p.keywordOnly() && !emittedKwSep) {
+                    params.append("..., ");
+                    emittedKwSep = true;
+                }
                 boolean showShared = i < expected.parameters().size() && expected.parameters().get(i).borrow();
-                params.append(parameters.get(i).format(showShared));
+                params.append(p.format(showShared));
             }
             params.append(")");
             return prefix + tp + params
@@ -407,8 +418,22 @@ sealed interface Type {
         public String toString() {
             String tp = typeParameters.isEmpty() ? ""
                     : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
+            StringBuilder params = new StringBuilder("(");
+            boolean emittedKwSep = false;
+            for (int i = 0; i < parameters.size(); i++) {
+                if (i > 0) {
+                    params.append(", ");
+                }
+                Parameter p = parameters.get(i);
+                if (p.keywordOnly() && !emittedKwSep) {
+                    params.append("..., ");
+                    emittedKwSep = true;
+                }
+                params.append(p);
+            }
+            params.append(")");
             return effects.formatDeclaredPrefix() + formatCallingClause() + tp
-                    + parameters.stream().map(Parameter::toString).collect(Collectors.joining(", ", "(", ")"))
+                    + params
                     + (result == ERROR ? "" : " : " + (effects.explicitUniqueResult() ? "unique " : "") + result);
         }
     }

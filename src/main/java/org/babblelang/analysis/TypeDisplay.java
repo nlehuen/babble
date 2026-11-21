@@ -59,7 +59,21 @@ final class TypeDisplay {
             text.append("of ").append(function.typeParameters().size() == 1 ? function.typeParameters().get(0).name()
                     : function.typeParameters().stream().map(Type.TypeVar::name).collect(Collectors.joining(", ", "(", ")"))).append(' ');
         }
-        text.append(function.parameters().stream().map(TypeDisplay::parameter).collect(Collectors.joining(", ", "(", ")")));
+        text.append('(');
+        boolean emittedKwSep = false;
+        List<Type.Parameter> params = function.parameters();
+        for (int i = 0; i < params.size(); i++) {
+            if (i > 0) {
+                text.append(", ");
+            }
+            Type.Parameter p = params.get(i);
+            if (p.keywordOnly() && !emittedKwSep) {
+                text.append("..., ");
+                emittedKwSep = true;
+            }
+            text.append(parameter(p));
+        }
+        text.append(')');
         if (function.result() != Type.ERROR) {
             text.append(" : ").append(function.effects().explicitUniqueResult() ? "unique " : "").append(display(function.result()));
         }
@@ -72,7 +86,7 @@ final class TypeDisplay {
                 + (!parameter.unique() && parameter.explicitShared() ? "shared " : "")
                 + parameter.name()
                 + (parameter.type() == Type.ERROR ? "" : " : " + display(parameter.type()))
-                + (parameter.optional() ? " = …" : "");
+                + (parameter.optional() ? " = ..." : "");
     }
 
     /** {@code of int}, {@code of (string, int)}, or nothing without type arguments. */

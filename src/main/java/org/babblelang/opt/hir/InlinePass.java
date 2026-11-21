@@ -355,6 +355,7 @@ public final class InlinePass implements HirPass {
             }
             HirFunction calleeFn = inlineable.get(targetId);
             if (calleeFn == null || call.args().size() != calleeFn.params().size()
+                    || (call.binding() != null && !call.binding().isIdentityPositional())
                     || !canInlineReturnKind(calleeFn, call.meta())) {
                 return cur;
             }
@@ -368,6 +369,7 @@ public final class InlinePass implements HirPass {
                 && exp.target().moduleName() != null) {
             HirFunction calleeFn = crossModule.get(exp.target().moduleName() + "#" + exp.target().name());
             if (calleeFn == null || call.args().size() != calleeFn.params().size()
+                    || (call.binding() != null && !call.binding().isIdentityPositional())
                     || !canInlineReturnKind(calleeFn, call.meta())) {
                 return cur;
             }

@@ -213,7 +213,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             Namespace scope = Classes.constructorScope(babbleClass, instance);
             ClassShape shape = babbleClass.shape();
             String[] parameters = shape.parameters();
-            Arguments.Binder binder = Arguments.binder(parameters, args, names);
+            Arguments.Binder binder = Arguments.binder(parameters, shape.keywordOnlyStart(), args, names);
             for (int i = 0; i < parameters.length; i++) {
                 Object value = binder.take(i);
                 if (value == Arguments.MISSING) {
@@ -890,9 +890,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             last = ctx;
             CallSite site = callSite(ctx);
             var callable = Calls.callable(callee, site);
-            Object[] args = arguments(ctx);
+            Object[] args = bindStaticArguments(ctx, arguments(ctx));
             last = ctx;
-            return Types.check(callable.call(runtime, args, callNames.get(ctx), site), scopes.checkedType(ctx));
+            return Types.check(callable.call(runtime, args, effectiveCallNames(ctx), site), scopes.checkedType(ctx));
         }
         ScopeAnalysis.JavaCallTarget javaCall = scopes.javaCallTarget(ctx);
         if (javaCall != null && !javaCall.isStatic() && javaCall.unwrapReceiver()
@@ -916,9 +916,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         CallSite site = callSite(ctx);
         var callable = Calls.callable(callee, site);
-        Object[] args = arguments(ctx);
+        Object[] args = bindStaticArguments(ctx, arguments(ctx));
         last = ctx;
-        return Types.check(callable.call(runtime, args, callNames.get(ctx), site), scopes.checkedType(ctx));
+        return Types.check(callable.call(runtime, args, effectiveCallNames(ctx), site), scopes.checkedType(ctx));
     }
 
     /** {@code super.m(args)} : the default method the analysis resolved, called on {@code this}. */
@@ -926,9 +926,34 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object thiz = namespace.lookup("this");
         Object type = Classes.type(type(scopes.superTarget(superExpression)), superExpression.getText());
         CallSite site = callSite(ctx);
-        Object[] args = arguments(ctx);
+        Object[] args = bindStaticArguments(ctx, arguments(ctx));
         last = ctx;
-        return Supers.call(thiz, type, ScopeAnalysis.selectorName(selector), runtime, args, callNames.get(ctx), site);
+        return Supers.call(thiz, type, ScopeAnalysis.selectorName(selector), runtime, args, effectiveCallNames(ctx), site);
+    }
+
+    private Object[] bindStaticArguments(BabbleParser.CallContext ctx, Object[] rawArgs) {
+        ScopeAnalysis.ArgumentBinding binding = scopes.argumentBinding(ctx);
+        if (binding == null) {
+            return rawArgs;
+        }
+        int[] map = binding.paramToArg();
+        int effective = map.length;
+        while (effective > 0 && map[effective - 1] < 0) {
+            effective--;
+        }
+        if (effective == 0) {
+            return Arguments.NONE;
+        }
+        Object[] pos = new Object[effective];
+        for (int p = 0; p < effective; p++) {
+            int a = map[p];
+            pos[p] = a >= 0 ? rawArgs[a] : Arguments.MISSING;
+        }
+        return pos;
+    }
+
+    private String[] effectiveCallNames(BabbleParser.CallContext ctx) {
+        return scopes.argumentBinding(ctx) != null ? null : callNames.get(ctx);
     }
 
     private Object widen(ParserRuleContext ctx, Object value) {

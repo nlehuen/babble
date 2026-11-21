@@ -397,6 +397,7 @@ public final class HirBuilder {
                     captured,
                     params,
                     scopes.requiredParameters(literal),
+                    scopes.keywordOnlyStart(literal),
                     scopes.functionReturnKind(literal),
                     scopes.numericWideningRank(literal.functionBlock),
                     scopes.callableEffects(literal),
@@ -949,6 +950,7 @@ public final class HirBuilder {
         ExprMeta meta = metaOf(ctx, callFx);
         List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
         String[] names = Interpreter.callNames(ctx);
+        ScopeAnalysis.ArgumentBinding binding = scopes.argumentBinding(ctx);
 
         // 1. Safe call recv?.m(args)
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector && selector.safe != null) {
@@ -959,7 +961,8 @@ public final class HirBuilder {
                     selector.getStart().getLine(),
                     scopes.checkedType(selector),
                     lowerCallArgs(params),
-                    names == null ? scopes.babbleCallSignature(ctx) : null,
+                    binding,
+                    (binding != null || names == null) ? scopes.babbleCallSignature(ctx) : null,
                     Interpreter.callSite(ctx, sourceName),
                     meta
             );
@@ -1019,7 +1022,7 @@ public final class HirBuilder {
         // 3. Super call super.m(args)
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpr) {
-            ScopeAnalysis.SuperTargetInfo info = names == null ? scopes.superTargetInfo(superExpr) : null;
+            ScopeAnalysis.SuperTargetInfo info = (binding != null || names == null) ? scopes.superTargetInfo(superExpr) : null;
             int ownerClsId = -1;
             if (info != null && !info.ownerIsInterface()) {
                 ParserRuleContext ownerClsCtx = findEnclosingOwnerClassCtx(superExpr, info.ownerTypeId());
@@ -1034,30 +1037,34 @@ public final class HirBuilder {
                     info,
                     lowerTypeRef(scopes.superTarget(superExpr), superExpr),
                     lowerCallArgs(params),
+                    binding,
                     Interpreter.callSite(ctx, sourceName),
                     meta
             );
         }
 
         // 4. Direct self-recursion via recurse(...)
-        if (ctx.expression() instanceof BabbleParser.RecurseContext recurseCtx && names == null && currentFunction != null) {
+        if (ctx.expression() instanceof BabbleParser.RecurseContext recurseCtx && (binding != null || names == null) && currentFunction != null) {
             Resolution.Variable v = resolution.variable(recurseCtx);
             if (v != null && v.method() == currentFunction) {
                 int count = scopes.parameters(currentFunction).length;
                 boolean spec = hasSpec(currentFunction);
                 boolean spread = isSpread(currentFunction);
-                if ((spec && params.size() == count) || (spread && params.size() <= count)) {
-                    return new HirExpr.SelfRecurseCall(functionIds.get(currentFunction), lowerPositionalArgs(params), meta);
+                boolean arityOk = binding != null
+                        ? binding.paramCount() == count
+                        : ((spec && params.size() == count) || (spread && params.size() <= count));
+                if (arityOk && (spec || spread)) {
+                    return new HirExpr.SelfRecurseCall(functionIds.get(currentFunction), lowerPositionalArgs(params), binding, meta);
                 }
             }
         }
 
         // 5. Direct free Babble function call
         BabbleParser.FunctionLiteralContext targetFn = scopes.babbleCallFunction(ctx);
-        if (targetFn != null && names == null && params.size() == scopes.parameters(targetFn).length) {
+        if (targetFn != null && binding != null && binding.paramCount() == scopes.parameters(targetFn).length) {
             if (hasSpec(targetFn) || isSpread(targetFn)) {
                 return new HirExpr.DirectBabbleCall(lowerExpr(ctx.expression()), functionIds.get(targetFn),
-                        lowerPositionalArgs(params), meta);
+                        lowerPositionalArgs(params), binding, meta);
             }
         }
 
@@ -1077,6 +1084,7 @@ public final class HirBuilder {
                             member,
                             functionIds.get(methodLit),
                             lowerCallArgs(params),
+                            binding,
                             Interpreter.callSite(ctx, sourceName),
                             meta
                     );
@@ -1085,11 +1093,12 @@ public final class HirBuilder {
         }
 
         // 7. Static Babble JVM interface method call
-        ScopeAnalysis.InterfaceCallTarget ifaceCall = names == null ? scopes.interfaceCallTarget(ctx) : null;
+        ScopeAnalysis.InterfaceCallTarget ifaceCall = (binding != null || names == null) ? scopes.interfaceCallTarget(ctx) : null;
         if (ifaceCall != null) {
             String ifaceJvm = allInterfaceJvmNames.get(ifaceCall.interfaceTypeId());
             ScopeAnalysis.FunctionSignature sig = ifaceCall.signature();
-            if (ifaceJvm != null && sig != null && params.size() == sig.parameterKinds().length) {
+            if (ifaceJvm != null && sig != null
+                    && (binding != null ? binding.paramCount() == sig.parameterKinds().length : params.size() == sig.parameterKinds().length)) {
                 BabbleParser.SelectorContext selector = (BabbleParser.SelectorContext) ctx.expression();
                 return new HirExpr.InterfaceCall(
                         lowerExpr(selector.expression()),
@@ -1099,6 +1108,7 @@ public final class HirBuilder {
                         ifaceCall.memberName(),
                         sig,
                         lowerPositionalArgs(params),
+                        binding,
                         meta
                 );
             }
@@ -1133,11 +1143,12 @@ public final class HirBuilder {
             );
         }
 
-        // 10. General dynamic call (including typedCall indy when babbleSig != null)
+        // 10. General dynamic call (including typedCall/typedCallOpt indy when babbleSig != null)
         return new HirExpr.DynamicCall(
                 lowerExpr(ctx.expression()),
                 lowerCallArgs(params),
-                names == null ? scopes.babbleCallSignature(ctx) : null,
+                binding,
+                (binding != null || names == null) ? scopes.babbleCallSignature(ctx) : null,
                 Interpreter.callSite(ctx, sourceName),
                 meta
         );
@@ -1175,9 +1186,19 @@ public final class HirBuilder {
         if (!isSpread(literal)) {
             return false;
         }
+        List<BabbleParser.FnParamContext> fnParams = literal.fnParameters().fnParam();
+        int opt = 0;
+        for (BabbleParser.FnParamContext decl : fnParams) {
+            if (decl.defaultValue != null) {
+                opt++;
+            }
+        }
+        if (opt > 32 || (opt > 0 && fnParams.size() > 32)) {
+            return false;
+        }
         boolean hasPrimitive = scopes.functionReturnKind(literal).isPrimitive();
-        int slots = 3;
-        for (BabbleParser.FnParamContext decl : literal.fnParameters().fnParam()) {
+        int slots = 3 + (opt > 0 ? 1 : 0);
+        for (BabbleParser.FnParamContext decl : fnParams) {
             ScopeAnalysis.PrimitiveKind kind = scopes.declarationKind(decl);
             if (kind.isPrimitive()) {
                 hasPrimitive = true;

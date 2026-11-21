@@ -43,16 +43,23 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
 
     @Test
     public void testParameterPassingWithDefaults() throws Exception {
-        Assertions.assertEquals("ab", interpret("def add = fn (a=\"hello\", b:string) -> ( a + b ) ; add(a:\"a\",b:\"b\")"));
-        Assertions.assertEquals("hellob", interpret("def add = fn (a=\"hello\", b:string) -> ( a + b ) ; add(b:\"b\")"));
+        Assertions.assertEquals("ab", interpret("def add = fn (a:string = \"hello\", ..., b:string) -> ( a + b ) ; add(a:\"a\",b:\"b\")"));
+        Assertions.assertEquals("hellob", interpret("def add = fn (a:string = \"hello\", ..., b:string) -> ( a + b ) ; add(b:\"b\")"));
         Assertions.assertEquals("ahello", interpret("def add = fn (a:string, b=\"hello\") -> ( a + b ) ; add(\"a\")"));
         Assertions.assertEquals("hello world", interpret("def add = fn (a=\"hello\", b=\" world\") -> ( a + b ) ; add()"));
 
         try {
-            Assertions.assertEquals("ba", interpret("def add = fn (a=\"b\", b:string) -> ( a + b ) ; add(a:\"a\")"));
+            interpret("def add = fn (a=\"hello\", b:string) -> ( a + b ) ; add(a:\"a\",b:\"b\")");
+            Assertions.fail("Should report \"Required parameter after an optional one : b\"");
+        } catch (ScriptException e) {
+            Assertions.assertTrue(e.getMessage().contains("Required parameter after an optional one : b"), e.getMessage());
+        }
+
+        try {
+            Assertions.assertEquals("ba", interpret("def add = fn (a=\"b\", ..., b:string) -> ( a + b ) ; add(a:\"a\")"));
             Assertions.fail("Should report \"Missing parameter : b\"");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : b in <input> at line number 1 at column number 47", e.getMessage());
+            Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : b in <input> at line number 1 at column number 52", e.getMessage());
         }
     }
 
@@ -166,7 +173,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
     public void testNamedArgumentsUseUpTheirPosition() {
         ScriptException e = Assertions.assertThrows(ScriptException.class,
                 () -> interpret("def f = fn (a:int, b:int) -> ( a ) ; f(1, a: 2)"));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Missing parameter : b in <input> at line number 1 at column number 38", e.getMessage());
+        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Parameter given twice : a in <input> at line number 1 at column number 38", e.getMessage());
     }
 
     @Test

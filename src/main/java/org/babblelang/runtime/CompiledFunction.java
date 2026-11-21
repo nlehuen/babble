@@ -22,6 +22,7 @@ public final class CompiledFunction implements BabbleFunction {
     private final Object[] captured;
     private final String[] params;
     private final int required;
+    private final int optionalParamBits;
     private final String name;
 
     /**
@@ -30,10 +31,14 @@ public final class CompiledFunction implements BabbleFunction {
      * @param captured the cells of the variables of enclosing methods the function uses
      */
     public CompiledFunction(FunctionBody body, MethodHandle direct, Namespace closure, Object[] captured, String[] params, int required, String name) {
-        this(body, direct, null, closure, captured, params, required, name);
+        this(body, direct, null, closure, captured, params, required, 0, name);
     }
 
     public CompiledFunction(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, String name) {
+        this(body, direct, spec, closure, captured, params, required, 0, name);
+    }
+
+    public CompiledFunction(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, int optionalParamBits, String name) {
         this.body = body;
         this.direct = direct;
         this.spec = spec;
@@ -41,17 +46,23 @@ public final class CompiledFunction implements BabbleFunction {
         this.captured = captured;
         this.params = params;
         this.required = required;
+        this.optionalParamBits = optionalParamBits;
         this.name = name;
     }
 
     /** What compiled code calls to create the value of a function literal. */
     public static CompiledFunction create(FunctionBody body, MethodHandle direct, Namespace closure, Object[] captured, String[] params, int required, String name) {
-        return new CompiledFunction(body, direct, null, closure, captured, params, required, name);
+        return new CompiledFunction(body, direct, null, closure, captured, params, required, 0, name);
     }
 
     /** What compiled code calls to create the value of a function literal with a specialized primitive entry point. */
     public static CompiledFunction create(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, String name) {
-        return new CompiledFunction(body, direct, spec, closure, captured, params, required, name);
+        return new CompiledFunction(body, direct, spec, closure, captured, params, required, 0, name);
+    }
+
+    /** What compiled code calls to create a function literal with a specialized entry point carrying an optional-argument mask. */
+    public static CompiledFunction create(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, int optionalParamBits, String name) {
+        return new CompiledFunction(body, direct, spec, closure, captured, params, required, optionalParamBits, name);
     }
 
     /** The direct entry point, or null when the function has too many parameters for one. */
@@ -62,6 +73,11 @@ public final class CompiledFunction implements BabbleFunction {
     /** The specialized primitive entry point, or null. */
     public MethodHandle spec() {
         return spec;
+    }
+
+    /** Bitmask of parameter indices (for functions with {@code <= 32} parameters) that have defaults, or 0. */
+    public int optionalParamBits() {
+        return optionalParamBits;
     }
 
     public Object[] captured() {

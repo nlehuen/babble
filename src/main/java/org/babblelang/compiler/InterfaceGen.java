@@ -58,6 +58,9 @@ final class InterfaceGen {
             for (int i = 0; i < sig.parameterKinds().length; i++) {
                 HirEmitter.loadKindOn(m, sig.parameterKinds()[i], paramSlots[i]);
             }
+            if (sig.hasOptionalMask()) {
+                m.visitVarInsn(ILOAD, HirEmitter.bridgeMaskSlot(sig));
+            }
             m.visitMethodInsn(INVOKESPECIAL, directParentJvm, HirEmitter.bridgeMethodName(memberName), desc, true);
             m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
             m.visitMaxs(0, 0);
@@ -111,10 +114,14 @@ final class InterfaceGen {
                         m.visitVarInsn(ALOAD, 0);
                         m.visitVarInsn(ALOAD, 1);
                         for (int i = 0; i < anc.signature().parameterKinds().length; i++) {
-                            ScopeAnalysis.PrimitiveKind fromK = anc.signature().parameterKinds()[i];
-                            ScopeAnalysis.PrimitiveKind toK = ownSig.parameterKinds()[i];
-                            HirEmitter.loadKindOn(m, fromK, paramSlots[i]);
-                            HirEmitter.emitAdaptKind(m, fromK, toK);
+                            HirEmitter.emitAdaptBridgeArg(m, anc.signature(), paramSlots, i, ownSig.parameterKinds()[i], -1);
+                        }
+                        if (ownSig.hasOptionalMask()) {
+                            if (anc.signature().hasOptionalMask()) {
+                                m.visitVarInsn(ILOAD, HirEmitter.bridgeMaskSlot(anc.signature()));
+                            } else {
+                                m.visitInsn(ICONST_0);
+                            }
                         }
                         m.visitMethodInsn(INVOKEINTERFACE, name, mName, HirEmitter.bridgeDescriptor(ownSig), true);
                         HirEmitter.emitAdaptKind(m, ownSig.returnKind(), anc.signature().returnKind());
@@ -165,21 +172,20 @@ final class InterfaceGen {
         m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "interfaceDefault",
                 "(Ljava/lang/Object;Ljava/lang/String;I)L" + HirEmitter.RUNTIME + "BabbleFunction;", false);
 
-        if (fn != null && !fn.isCompiledClassMethod() && fn.hasSpec() && ifaceCount == fnCount) {
+        if (fn != null && !fn.isCompiledClassMethod() && fn.hasSpec()
+                && ifaceCount <= fnCount && HirEmitter.allOptionalFrom(fn, ifaceCount)) {
             List<HirParam> params = fn.params();
             m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_FUNCTION);
             m.visitVarInsn(ALOAD, 0);
             m.visitVarInsn(ALOAD, 1);
             for (int i = 0; i < ifaceCount; i++) {
-                ScopeAnalysis.PrimitiveKind fromK = sig.parameterKinds()[i];
                 HirParam param = params.get(i);
-                ScopeAnalysis.PrimitiveKind toK = param.kind();
-                HirEmitter.loadKindOn(m, fromK, paramSlots[i]);
-                HirEmitter.emitAdaptKind(m, fromK, toK);
-                if (toK == ScopeAnalysis.PrimitiveKind.NONE) {
-                    HirEmitter.emitWidenBoxed(m, param.wideningRank());
-                }
+                HirEmitter.emitAdaptBridgeArg(m, sig, paramSlots, i, param.kind(), param.wideningRank());
             }
+            for (int i = ifaceCount; i < fnCount; i++) {
+                HirEmitter.emitDefaultValueOn(m, params.get(i).kind());
+            }
+            HirEmitter.emitRemapBridgeMask(m, sig, fn, ifaceCount);
             m.visitMethodInsn(INVOKESTATIC, emitter.className, fn.jvmMethodName() + "$spec",
                     HirEmitter.functionSpecDescriptor(fn), false);
             HirEmitter.emitAdaptKind(m, fn.returnKind(), sig.returnKind());
@@ -192,9 +198,7 @@ final class InterfaceGen {
             m.visitVarInsn(ALOAD, 1);
             m.visitInsn(ACONST_NULL);
             for (int i = 0; i < ifaceCount; i++) {
-                ScopeAnalysis.PrimitiveKind pk = sig.parameterKinds()[i];
-                HirEmitter.loadKindOn(m, pk, paramSlots[i]);
-                HirEmitter.boxOn(m, pk);
+                HirEmitter.emitLoadBridgeArgBoxed(m, sig, paramSlots, i);
             }
             for (int i = ifaceCount; i < fnCount; i++) {
                 m.visitFieldInsn(GETSTATIC, HirEmitter.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
