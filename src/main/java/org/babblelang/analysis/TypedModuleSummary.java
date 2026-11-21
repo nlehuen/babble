@@ -111,11 +111,12 @@ final class TypedModuleSummary {
             Map<ParserRuleContext, Type> memberTypes,
             Map<ParserRuleContext, Object> staticSingletons,
             Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> javaEffects,
+            AxiomData.AxiomTable axioms,
             Map<ParserRuleContext, EffectChecker.CallableSummary> callableSummaries) {
     }
 
     static final TypedModuleSummary EMPTY = new TypedModuleSummary(
-            Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), null);
+            Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), AxiomData.AxiomTable.EMPTY, null);
 
     private final Map<String, Type> exports;
     private final Map<String, Object> staticSingletons;
@@ -126,6 +127,7 @@ final class TypedModuleSummary {
     private final Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries;
     private final Map<Type.Function, CallableEffectTemplate> callableTemplates;
     private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects;
+    private final AxiomData.AxiomTable exportedAxioms;
     private final Session session;
 
     TypedModuleSummary(
@@ -138,6 +140,7 @@ final class TypedModuleSummary {
             Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries,
             Map<Type.Function, CallableEffectTemplate> callableTemplates,
             Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects,
+            AxiomData.AxiomTable exportedAxioms,
             Session session) {
         this.session = session;
         this.exports = exports != null ? Map.copyOf(exports) : Map.of();
@@ -149,6 +152,7 @@ final class TypedModuleSummary {
         this.constructorSummaries = constructorSummaries != null ? constructorSummaries : Map.of();
         this.callableTemplates = callableTemplates != null ? callableTemplates : Map.of();
         this.exportedJavaEffects = exportedJavaEffects != null ? Map.copyOf(exportedJavaEffects) : Map.of();
+        this.exportedAxioms = exportedAxioms != null ? exportedAxioms : AxiomData.AxiomTable.EMPTY;
     }
 
     /**
@@ -240,11 +244,13 @@ final class TypedModuleSummary {
                 constructorSummaries,
                 callableTemplates,
                 checker.exportedJavaEffects(),
+                checker.exportedAxioms(),
                 pass.session == null ? null : new Session(
                         frozenDeclarations(checker),
                         frozenMembers(pass, checker),
                         refs.frozenSingletons(),
                         checker.effectChecker != null ? checker.effectChecker.committedJavaEffects() : Map.of(),
+                        checker.effectChecker != null ? checker.effectChecker.committedAxioms() : AxiomData.AxiomTable.EMPTY,
                         checker.effectChecker != null ? checker.effectChecker.committedCallableSummaries() : Map.of()));
     }
 
@@ -325,6 +331,10 @@ final class TypedModuleSummary {
 
     Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
         return exportedJavaEffects;
+    }
+
+    AxiomData.AxiomTable exportedAxioms() {
+        return exportedAxioms;
     }
 
     Map<TypeNode, List<Type.TypeVar>> typeNodeVarsMap() {

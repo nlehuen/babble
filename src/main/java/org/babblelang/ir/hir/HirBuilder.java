@@ -732,6 +732,10 @@ public final class HirBuilder {
             // A type alias (BIP023) only stands for a type : its def's value, which nothing can read, is null.
             return new HirExpr.Const(null, metaOf(alias).withKind(ScopeAnalysis.PrimitiveKind.NONE));
         }
+        if (ctx instanceof BabbleParser.AxiomExpressionContext axiom) {
+            // An axiom (BIP019) is a compile-time assumption : it declares nothing at runtime and evaluates to null.
+            return new HirExpr.Const(null, metaOf(axiom).withKind(ScopeAnalysis.PrimitiveKind.NONE));
+        }
         if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
             return new HirExpr.As(lowerExpr(asCtx.left), scopes.asTarget(asCtx), scopes.checkedType(asCtx), metaOf(asCtx));
         }

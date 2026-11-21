@@ -68,6 +68,11 @@ public final class HirPurity {
         return isNumericKind(lk) && isNumericKind(rk);
     }
 
+    public static boolean isFoldableJava(Method m) {
+        return org.babblelang.analysis.BuiltinAxioms.current().isFoldable(m)
+                || isWhitelistedPureMath(m) || isWhitelistedPureString(m);
+    }
+
     public static boolean isWhitelistedPureMath(Method m) {
         return m.getDeclaringClass() == Math.class
                 && Modifier.isStatic(m.getModifiers())
@@ -75,6 +80,9 @@ public final class HirPurity {
     }
 
     public static boolean isWhitelistedIdempotentJava(Method m) {
+        if (org.babblelang.analysis.BuiltinAxioms.current().isIdempotent(m)) {
+            return true;
+        }
         if (m.getDeclaringClass() == Math.class && Modifier.isStatic(m.getModifiers())
                 && m.getParameterCount() == 1 && IDEMPOTENT_MATH.contains(m.getName())) {
             return true;
@@ -170,7 +178,7 @@ public final class HirPurity {
                     yield false;
                 }
                 Method m = c.target().method();
-                if (isWhitelistedPureMath(m) || isWhitelistedPureString(m)) {
+                if (isFoldableJava(m)) {
                     yield true;
                 }
                 EffectSet fx = c.meta().effects();
@@ -286,7 +294,7 @@ public final class HirPurity {
                     if (!isDeterministic(a, module, visitingFns)) yield false;
                 }
                 Method m = c.target().method();
-                yield isWhitelistedPureMath(m) || isWhitelistedPureString(m) || c.meta().effects().isDeterministic();
+                yield isFoldableJava(m) || c.meta().effects().isDeterministic();
             }
             default -> false;
         };

@@ -209,8 +209,17 @@ final class TypeChecker {
         if (type instanceof Type.Union u) {
             return u.members().stream().allMatch(m -> isDeeplyImmutable(m, visiting));
         }
-        if (type instanceof Type.JavaInstance ji && ji.type() == java.util.Map.Entry.class) {
-            return !ji.typeArguments().isEmpty() && ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
+        if (type instanceof Type.JavaInstance ji) {
+            boolean axiomaticImmutable = effectChecker != null
+                    ? effectChecker.isJavaClassDeeplyImmutable(ji.type())
+                    : BuiltinAxioms.current().isDeeplyImmutable(ji.type());
+            if (axiomaticImmutable) {
+                return ji.typeArguments().isEmpty()
+                        || ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
+            }
+            if (ji.type() == java.util.Map.Entry.class) {
+                return !ji.typeArguments().isEmpty() && ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
+            }
         }
         if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.OBJECT) {
             for (TypeNode.Member member : inst.node().members.values()) {
@@ -403,6 +412,10 @@ final class TypeChecker {
     }
 
     void run(BabbleParser.FileContext file) {
+        BuiltinAxioms.runWithCurrent(pass.hostEffects.builtinAxioms(), () -> runWithAxioms(file));
+    }
+
+    private void runWithAxioms(BabbleParser.FileContext file) {
         this.file = file;
         if (pass.session != null) {
             occurrenceScopes.putAll(pass.session.occurrenceScopes);
@@ -429,30 +442,32 @@ final class TypeChecker {
         new ReturnFinder().visit(file);
         this.checkingEffects = false;
         this.effectChecker = new EffectChecker(pass, new TypedProgram(this));
-        slots.rank(file);
-        slots.converge(file);
-        effectChecker.inferAll(file);
-        // The function types the slots hold now carry their inferred effects.
-        slots.converge(file);
-        this.checkingEffects = true;
-        resetPass(true);
-        walk(file);
-        publishResultType(file);
-        for (BabbleParser.FunctionLiteralContext function : functions) {
-            checkResult(function);
-        }
-        members.checkInterfaces();
-        checkMissingTypes(file);
-        effectChecker.verify(file);
-        diagnostics.addAll(effectDiagnostics);
-        for (Diagnostic warning : warnings) {
-            pass.analysis.warn(warning.message(), warning.line(), warning.column());
-        }
-        for (Diagnostic diagnostic : diagnostics) {
-            pass.analysis.typeDiagnostic(diagnostic.message(), diagnostic.line(), diagnostic.column());
-        }
-        LoweringAnalyzer.publish(pass, file, this);
-        this.builtSummary = TypedModuleSummary.build(pass, this, new StaticRefs(pass, this));
+        JavaNullability.runWithLocalAxioms(effectChecker.localAxioms(), () -> {
+            slots.rank(file);
+            slots.converge(file);
+            effectChecker.inferAll(file);
+            // The function types the slots hold now carry their inferred effects.
+            slots.converge(file);
+            this.checkingEffects = true;
+            resetPass(true);
+            walk(file);
+            publishResultType(file);
+            for (BabbleParser.FunctionLiteralContext function : functions) {
+                checkResult(function);
+            }
+            members.checkInterfaces();
+            checkMissingTypes(file);
+            effectChecker.verify(file);
+            diagnostics.addAll(effectDiagnostics);
+            for (Diagnostic warning : warnings) {
+                pass.analysis.warn(warning.message(), warning.line(), warning.column());
+            }
+            for (Diagnostic diagnostic : diagnostics) {
+                pass.analysis.typeDiagnostic(diagnostic.message(), diagnostic.line(), diagnostic.column());
+            }
+            LoweringAnalyzer.publish(pass, file, this);
+            this.builtSummary = TypedModuleSummary.build(pass, this, new StaticRefs(pass, this));
+        });
     }
 
     /** The type of the file's last statement, for {@code :type} in the interactive mode (docs/design/bip004_repl.md §9). */
@@ -1643,6 +1658,7 @@ final class TypeChecker {
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
                 case BabbleParser.TypeAliasExpressionContext c -> visitTypeAlias(c);
+                case BabbleParser.AxiomExpressionContext c -> Type.NULL;
                 case BabbleParser.ForExpressionContext c -> visitForExpression(c, expected, role);
                 case BabbleParser.ClassExpressionContext c -> visitClassExpression(c, expected, role);
                 case BabbleParser.InterfaceExpressionContext c -> visitInterfaceExpression(c, expected, role);
@@ -2796,6 +2812,10 @@ final class TypeChecker {
 
     Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
         return effectChecker != null ? effectChecker.exportedJavaEffects() : Map.of();
+    }
+
+    AxiomData.AxiomTable exportedAxioms() {
+        return effectChecker != null ? effectChecker.exportedAxioms() : AxiomData.AxiomTable.EMPTY;
     }
 
 }

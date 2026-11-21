@@ -123,6 +123,10 @@ public final class ModuleInterface {
         return summary != null ? summary.exportedJavaEffects() : Map.of();
     }
 
+    AxiomData.AxiomTable exportedAxioms() {
+        return summary != null ? summary.exportedAxioms() : AxiomData.AxiomTable.EMPTY;
+    }
+
     /**
      * Resolves {@code path[index…]}, a path through the file's exports, to an interface : a
      * TypeNode or a Java interface class.

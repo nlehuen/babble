@@ -160,20 +160,27 @@ public final class HostEffects {
         }
     }
 
-    public static final HostEffects DEFAULT = new HostEffects(true, false, Map.of());
+    public static final HostEffects DEFAULT = new HostEffects(true, false, Map.of(), BuiltinAxioms.standard());
 
     private final boolean allowAxioms;
     private final boolean bytecodeEffectAnalysis;
     private final Map<JavaTarget, OverrideEntry> overrides;
+    private final BuiltinAxioms builtinAxioms;
 
     public HostEffects(boolean allowAxioms, Map<JavaTarget, OverrideEntry> overrides) {
-        this(allowAxioms, false, overrides);
+        this(allowAxioms, false, overrides, BuiltinAxioms.standard());
     }
 
     public HostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, Map<JavaTarget, OverrideEntry> overrides) {
+        this(allowAxioms, bytecodeEffectAnalysis, overrides, BuiltinAxioms.standard());
+    }
+
+    public HostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, Map<JavaTarget, OverrideEntry> overrides,
+                       BuiltinAxioms builtinAxioms) {
         this.allowAxioms = allowAxioms;
         this.bytecodeEffectAnalysis = bytecodeEffectAnalysis;
         this.overrides = overrides.isEmpty() ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(overrides));
+        this.builtinAxioms = builtinAxioms != null ? builtinAxioms : BuiltinAxioms.standard();
     }
 
     public boolean allowAxioms() {
@@ -186,6 +193,10 @@ public final class HostEffects {
 
     public Map<JavaTarget, OverrideEntry> overrides() {
         return overrides;
+    }
+
+    public BuiltinAxioms builtinAxioms() {
+        return builtinAxioms;
     }
 
     public OverrideEntry lookup(JavaTarget target) {
