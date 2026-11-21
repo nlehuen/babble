@@ -250,6 +250,13 @@ final class TypeAlgebra {
             return true;
         }
         try {
+            // An intersection with a union member is a union of intersections, first (BIP022-D2)
+            if (sub instanceof Type.Intersection intersection) {
+                Type distributed = distribute(intersection);
+                if (distributed != intersection) {
+                    return relate(distributed, sup, mode, store, active, borrowCovariant);
+                }
+            }
             // Left-union universal split ([FCB08])
             if (sub instanceof Type.Union union) {
                 for (Type member : union.members()) {
@@ -283,12 +290,8 @@ final class TypeAlgebra {
             if (sup instanceof Type.Union union) {
                 return anyMemberRelates(sub, union, mode, store, active, borrowCovariant);
             }
-            // Left intersection : a union member distributes, then one member suffices (BIP022-D2, D3)
+            // Left intersection : one member suffices (BIP022-D3) ; union members were distributed above
             if (sub instanceof Type.Intersection intersection) {
-                Type distributed = distribute(intersection);
-                if (distributed != intersection) {
-                    return relate(distributed, sup, mode, store, active, borrowCovariant);
-                }
                 for (Type member : intersection.members()) {
                     int mark = store != null ? store.mark() : 0;
                     if (relate(member, sup, mode, store, active, borrowCovariant)) {
@@ -402,6 +405,19 @@ final class TypeAlgebra {
             alternatives.add(Type.intersection(product));
         }
         return Type.union(alternatives);
+    }
+
+    /** The members of a union, with intersections of unions distributed : {@code Shape & (Named | Label)} has two. */
+    static List<Type> alternatives(Type type) {
+        List<Type> out = new ArrayList<>();
+        for (Type member : Type.membersOf(type)) {
+            if (member instanceof Type.Intersection intersection) {
+                out.addAll(Type.membersOf(distribute(intersection)));
+            } else {
+                out.add(member);
+            }
+        }
+        return out;
     }
 
     /** Interface types and intersections of them : what {@code is} can intersect (BIP022-D5). */
@@ -652,7 +668,7 @@ final class TypeAlgebra {
     /** What {@code x is target} narrows {@code current} to (preserving {@code frozen} per BIP007-D7). */
     Type narrowTarget(Type current, Type target) {
         List<Type> narrowed = new ArrayList<>();
-        for (Type member : Type.membersOf(current)) {
+        for (Type member : alternatives(current)) {
             if (member == Type.NULL) {
                 continue;
             }
@@ -675,7 +691,7 @@ final class TypeAlgebra {
     /** What remains of {@code current} when {@code x is target} fails. */
     Type subtractType(Type current, Type target) {
         List<Type> remaining = new ArrayList<>();
-        for (Type member : Type.membersOf(current)) {
+        for (Type member : alternatives(current)) {
             if (member instanceof Type.Frozen mf) {
                 if (!runtimeSubtype(mf.of(), target)) {
                     remaining.add(member);

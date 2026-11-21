@@ -11,6 +11,10 @@ def Note = class () implements Label, Named (
     def text = fn (): string -> ( "note" )
     def name = fn (): string -> ( "n" )
 )
+def Sign = class () implements Shape, Label (
+    def area = fn (): double -> ( 2.0 )
+    def text = fn (): string -> ( "sign" )
+)
 
 {{{{{
 ;; A & B accepts a value that implements both, and is assignable to each
@@ -41,6 +45,31 @@ def x = pick()
 if x is Named then ( println(x.name()) )
 }}}}}
 n
+
+{{{{{
+;; A union inside an intersection : Shape & (Named | Label) is a Shape, and a Named | Label
+def describe = fn (y: Named | Label): string -> ( if y is Named then ( y.name() ) else ( y.text() ) )
+def measure = fn (s: Shape): double -> ( s.area() )
+def run = fn (x: Shape & (Named | Label)): string -> ( describe(x) + ":" + measure(x) + ":" + x.area() )
+println(run(Tile()), " ", run(Sign()))
+}}}}}
+tile:1.5:1.5 sign:2.0:2.0
+
+{{{{{
+;; is narrows Shape & (Named | Label) to Shape & Named, and to Shape & Label otherwise
+def named = fn (z: Shape & Named): string -> ( z.name() + "/" + z.area() )
+def labelled = fn (z: Shape & Label): string -> ( z.text() + "/" + z.area() )
+def run = fn (x: Shape & (Named | Label)): string -> ( if x is Named then ( named(x) ) else ( labelled(x) ) )
+println(run(Tile()), " ", run(Sign()))
+}}}}}
+tile/1.5 sign/2.0
+
+{{{{{
+;; Without narrowing, Shape & (Named | Label) is not a Named
+def name = fn (n: Named): string -> ( n.name() )
+def run = fn (x: Shape & (Named | Label)): string -> ( name(x) )
+}}}}}
+Type error : expected Named, got Shape & (Named | Label)
 
 {{{{{
 ;; is and as test every operand at runtime
