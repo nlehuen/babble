@@ -4,9 +4,10 @@
 |---|---|
 | **BIP** | 020 |
 | **Date** | 2026-11-21 |
-| **Status** | Draft (`BIP020-D1`–`D4` decided, `BIP020-D5`–`D10` proposed, `BIP020-Q1`–`Q6` open ; `BIP020-P1`–`P5` not started) |
+| **Status** | Decided (`BIP020-D1`–`D10` and `BIP020-Q1`–`Q6` → `BIP020-D11`–`D16` decided, plus `BIP020-D17`–`D18` ; `BIP020-P1`–`P6` not started) |
 | **Depends on** | static typing and Java arrays ([bip008_static-typing.md](bip008_static-typing.md) §5.1), core types, nullness and variance ([bip011_core-types.md](bip011_core-types.md)), `of` generics ([bip012_grammar-improvements.md](bip012_grammar-improvements.md)), `for` loops over arrays and static factories ([bip013_iterators.md](bip013_iterators.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)), axioms ([bip019_refactoring-axioms.md](bip019_refactoring-axioms.md)) |
-| **Scope** | A type for JVM arrays, `array of T`, that programs and axioms can write ; creating arrays (`(array of int)(100)`, `(array of int).of(1, 2, 3)`) ; reading and writing their elements ; their representation, nullness, variance and effects ; and the type parameters of generic members (`def toArray of T = fn …`), in classes, interfaces and axioms |
+| **Supersedes** | the field-free `abstract class BabbleInstance` of `BIP018-D8` ([bip018_tracking-java-improvements.md](bip018_tracking-java-improvements.md)) : compiled classes extend no runtime class at all (§2.10) |
+| **Scope** | A type for JVM arrays, `array of T`, that programs and axioms can write ; creating arrays (`(array of int)(100)`, `(array of int).of(1, 2, 3)`, `from:`) ; their elements, size, equality and printing ; their representation, nullness, variance and effects ; the type parameters of generic members (`def toArray of T = fn …`), in classes, interfaces and axioms ; and compiled Babble classes as plain JVM classes, the runtime base class becoming the interpreter's alone |
 
 ---
 
@@ -60,11 +61,11 @@ def sum = fn (xs: array of int): int -> (…)
 * **Syntax :** `array` is a core type keyword, like `list` (`BIP011-D11`), and takes one type argument with `of`. It joins `coreCollectionKeyword` in `Babble.g4`, which puts it everywhere `list` is — in types, as an expression (`array.of(…)`, `(array of int)(…)`), and exempted after `.` in `memberName`, so `buffer.array()` (`java.nio.ByteBuffer`) keeps working. One token, no new rule, no predicate.
 * **Nullness** reads as it does for `list` : `array of int?` holds nullable elements, `(array of int)?` is a nullable array, `array of ((array of int)?)` an array of nullable arrays.
 * **`array` is reserved** from then on ; no identifier of the repository is named `array`.
-* **`array of T` replaces `JavaArray of T`** wherever types are shown (`:type`, `TypeDisplay`) and in diagnostics, which show `string[]` or `java.lang.String[]` today : `Type error : expected int, got array of string`, `No such name in array of string : nope`, `Cannot assign final field : array of string.length`. `Type.JavaArray` becomes `Type.Array`, since arrays are no longer only Java's.
+* **`array of T` replaces `JavaArray of T`** wherever types are shown (`:type`, `TypeDisplay`) and in diagnostics, which show `string[]` or `java.lang.String[]` today : `Type error : expected int, got array of string`, `No such name in array of string : nope`. `Type.JavaArray` becomes `Type.Array`, since arrays are no longer only Java's.
 
 ### 2.2 Representation (`BIP020-D5`)
 
-An `array of T` is a plain JVM array, in both modes : no wrapper, the same object Java returns or receives (as core collections are the `java.util` interfaces, BIP011). Its class is the array of the **erasure** of `T` :
+An `array of T` is a plain JVM array : no wrapper, the same object Java returns or receives (as core collections are the `java.util` interfaces, BIP011). Its class is the array of `T`'s JVM class :
 
 | Element type | JVM array |
 |---|---|
@@ -74,12 +75,13 @@ An `array of T` is a plain JVM array, in both modes : no wrapper, the same objec
 | a Java class or interface `C`, `C?` | `C[]` |
 | `list of …`, `set of …`, `map of …`, `entry of …` | `List[]`, `Set[]`, `Map[]`, `Map.Entry[]` |
 | `array of U` | the array of `U`'s array (`array of (array of int)` is `int[][]`) |
-| `any`, `any?`, unions, function types, Babble classes, records, interfaces and objects, type variables | `Object[]` |
+| a Babble class, record, object or interface `P` | compiled : `P`'s JVM class or interface (`Point[]`, `Shape[]`) ; interpreted : the interpreter's instance class (§2.10) |
+| `any`, `any?`, unions, function types, type variables | `Object[]` |
 
-* **Element nullness is erased**, except for the primitives : `array of string` and `array of string?` are both `String[]`, but `array of int` (`int[]`) and `array of int?` (`Integer[]`) are different objects. That is the one place where `int` and `int?` differ in representation inside a container (`list of int` and `list of int?` are both a `List` of `Integer`), and it drives variance (§2.5).
-* **Babble-defined element types erase to `Object[]`** in both modes, although the compiler has a JVM class for a Babble class : an array made in one mode must have the same class in the other, and the interpreter has none.
+* **Element nullness is erased**, except for the primitives : `array of string` and `array of string?` are both `String[]`, but `array of int` (`int[]`) and `array of int?` (`Integer[]`) are different objects — the one place where `int` and `int?` differ in representation inside a container (`list of int` and `list of int?` are both a `List` of `Integer`).
+* **Babble-defined element types differ between the modes** : compiled mode has a JVM class (or interface) per Babble class (or interface) and uses it, so `get` needs no cast and the JVM checks stores exactly ; the interpreter has one instance class for every Babble object, and keeps each such array's element class in a weak side table of `ArraySupport`, so that `set` checks stores as the JVM does in compiled mode and throws the same `ArrayStoreException` (§2.5). A copy made by Java (`java.util.Arrays.copyOf`) is not in the table, and its stores are checked only by the JVM in the interpreter.
 
-### 2.3 Creating arrays (`BIP020-D2`, `D3`, `D6`)
+### 2.3 Creating arrays (`BIP020-D2`, `D3`, `D6`, `D11`)
 
 | Form | Result | JVM |
 |---|---|---|
@@ -87,47 +89,51 @@ An `array of T` is a plain JVM array, in both modes : no wrapper, the same objec
 | `array(100)`, with an expected type (`def a: array of int = array(100)`) | the same, `T` from the expected type, as `list()` (BIP011 §5.2) | |
 | `(array of int).of(1, 2, 3)` | the given elements | `new int[] {1, 2, 3}` |
 | `array.of(1, 2, 3)` | the same, `T` inferred from the elements (`array of int`) | |
-| `(array of int)(from: xs)` | a copy of an iterable (a core collection, any `java.lang.Iterable of T`, another `array of T`) | |
-| `(array of string)(10, fill: "")`, `(array of Point)(10, init: fn (i: int): Point -> (…))` | see `BIP020-Q1` | |
+| `(array of int)(from: xs)` | a copy of an iterable : a core collection, any `java.lang.Iterable of T`, another `array of T` | |
 
-* **`(array of T)(n)`** (`BIP020-D2`) is a length, as in Java's `new int[n]` ; a negative length throws `NegativeArraySizeException`. The default element is `0`, `0.0`, `false` or `'\0'` for the primitives and `null` for nullable types. **A non-null reference element type has no default** : `(array of string)(10)` would hold ten `null`s typed `string`, so it is rejected (`BIP020-Q1` says what to write instead).
-* **`.of(…)`** (`BIP020-D3`) gives the elements, like `(list of int).of(…)` (BIP013 §3.2). Unlike `list.of`, whose list is unmodifiable, the array is an ordinary, mutable one : the JVM has no read-only arrays (`frozen`, §2.6, is the static way to get one).
+* **`(array of T)(n)`** (`BIP020-D2`) is a length, as in Java's `new int[n]` ; a negative length throws `NegativeArraySizeException`. The default element is `0`, `0.0`, `false` or `'\0'` for the primitives and `null` for nullable types.
+* **A non-null reference element type has no default** (`BIP020-Q1` → `BIP020-D11`) : `(array of string)(10)` would hold ten `null`s typed `string`, so it is rejected (`No default element : array of string has non-null elements`). There is no `fill:` nor `init:` argument : a program writes `(array of string?)(10)`, gives the elements with `.of(…)`, or builds a collection and copies it with `from:` — `(array of Point)(from: points)` is the way to a non-null array of computed elements.
+* **`.of(…)`** (`BIP020-D3`) gives the elements, like `(list of int).of(…)` (BIP013 §3.2). Unlike `list.of`, whose list is unmodifiable, the array is an ordinary, mutable one : the JVM has no read-only arrays (`frozen`, §2.4, is the static way to get one).
 * **`list(100)` and `array(100)` differ** — a one-element list, a hundred zeros. The length form follows Java, where arrays have a fixed length and no capacity ; `.of(…)` is the element form for both.
-* **Element types must be reifiable** (`BIP020-D6`) : an array is created with its class, which a type variable doesn't give at run time (generics are erased). `(array of T)(n)`, `(array of T).of(x)` and `(array of T)(from: xs)` are rejected (`Generic array creation : array of T`), as are element types whose erasure depends on a type variable (`T?`, `array of T`, a union with a type variable) ; `array of (list of T)` is fine (`List[]`). Generic code that needs storage uses a `list of T`, or receives its array from a caller who knows the type.
+* **Element types must be reifiable** (`BIP020-D6`) : an array is created with its class, which a type variable doesn't give at run time (generics are erased). `(array of T)(n)`, `(array of T).of(x)` and `(array of T)(from: xs)` are rejected (`Generic array creation : array of T`), as are element types whose class depends on a type variable (`T?`, `array of T`, a union with a type variable) ; `array of (list of T)` is fine (`List[]`). Generic code that needs storage uses a `list of T`, or receives its array from a caller who knows the type.
 
-### 2.4 Members (`BIP020-D7`)
+### 2.4 Members, equality and printing (`BIP020-D7`, `D14`, `D16`, `D17`)
 
 | Member | Type | Compiled to |
 |---|---|---|
-| `a.length` | `int`, read-only (as today) | `ARRAYLENGTH` |
+| `a.size()` | `int` | `ARRAYLENGTH` |
 | `a.get(i)` | `T` | `<X>ALOAD` |
 | `a.set(i, v)` | `null` ; `v: T` | `<X>ASTORE` |
 | `for x in a then (…)` | as today (BIP013, tier 2) | indexed loop |
 
-* `get` and `set` are named as `list`'s are, so an indexing syntax (BIP008 §5.1) can later lower to the same members for arrays and lists alike, without semantics of its own. A bad index throws `ArrayIndexOutOfBoundsException`, an incompatible store (§2.5) `ArrayStoreException`.
-* The interpreter reads and writes through one runtime helper (`org.babblelang.runtime.ArraySupport`, `java.base` only, in the runtime jar) switching on the array's class ; the compiler emits the typed instruction, the element type being always known (a type variable's array is an `Object[]`, §2.6).
-* **`==` is identity**, as `equals` is for JVM arrays ; `java.util.Arrays.equals(a, b)` compares contents. Arrays as map keys or set elements are compared by identity too.
+* **Named as `list`'s** (`BIP020-Q6` → `BIP020-D16`), so an indexing syntax (BIP008 §5.1) can later lower to the same members for arrays and lists alike. They ship now, since arrays are unusable without them. **`size()` replaces the JVM's `length`**, which disappears from the language : existing uses are migrated, and `a.length` reports `No such name in array of string : length (use size())`.
+* A bad index throws `ArrayIndexOutOfBoundsException`, an incompatible store (§2.5) `ArrayStoreException`.
+* The interpreter reads and writes through one runtime helper (`org.babblelang.runtime.ArraySupport`, `java.base` only, in the runtime jar) switching on the array's class ; the compiler emits the typed instruction, the element class being always known (a type variable's array is an `Object[]`, §2.6).
+* **Equality is by contents** (`BIP020-D17`), as for lists : `a == b` (and `!=`) compares elements with `Arrays.deepEquals` semantics, through Babble's own `==` on each element (so `NaN` and signed zeros compare as Babble's `==` does on doubles), and Babble calls of `a.equals(b)` and `a.hashCode()` on an array are intercepted the same way (`deepEquals`, `deepHashCode`). A record holding an array compares it by contents. **Java still sees identity** : arrays as keys of a `map` or elements of a `set`, and any `equals` Java calls itself, compare them by identity, as the JVM does.
+* **Printing** (`BIP020-Q4` → `BIP020-D14`) : arrays render as lists do, `[a, b]`, nested arrays too (`Arrays.deepToString`), in `print`, `println`, string `+`, the interactive mode, and Babble calls of `a.toString()`, which are intercepted. A `toString` Java calls itself (`String.valueOf(Object)`) stays Java's.
 * **Effects** (BIP016 vocabulary) :
 
   | Operation | Effects |
   |---|---|
-  | `length` | `pure nothrow` — an array's length never changes, so it is not a read of mutable state |
-  | `get` | pure, borrows `a` ; may throw |
+  | `size()` | `pure nothrow` — an array's size never changes, so it is not a read of mutable state |
+  | `get`, `==`, `equals`, `hashCode`, `toString` | pure, borrow the array(s) ; `get` may throw |
   | `set` | `mut` on `a`, `shared v`, shallow (touches no element) ; may throw |
-  | constructors, `.of` | pure, fresh `unique` result (so `freeze((array of int).of(1, 2, 3))` is a `frozen array of int`) ; `init:` forwards its callback's effects (`calling init`, BIP017) |
+  | constructors, `.of`, `from:` | pure, fresh `unique` result (so `freeze((array of int).of(1, 2, 3))` is a `frozen array of int`, on which `set` is rejected) |
 
-### 2.5 Subtyping and variance (`BIP020-D8`)
+### 2.5 Subtyping and variance (`BIP020-D8`, `D12`)
 
-Arrays are mutable containers, so they follow BIP011-D8 — with one more condition, since the JVM checks an array's class :
+Arrays follow Java's covariance for reference elements, restricted to where the JVM's store check is exact (`BIP020-D8`) :
 
-* **Same representation first.** `array of S` and `array of T` are related only if their element types relate *without changing representation* : never `array of int` and `array of int?`, nor `array of int` and `array of long` or `array of any` (an `int[]` is none of `Integer[]`, `long[]`, `Object[]`).
-* **Invariant** in ordinary assignments : `def ys: array of any = parts` is rejected, as for `list of any`.
-* **Covariant where the array can't be written** : at a non-`mut` borrowed parameter (the default for typed parameters since BIP016), and for `frozen array of T` (BIP007-D7) — `array of string` passes for `array of string?` or `array of any?`.
-* **Java parameters** keep Java's covariance of reference arrays today (`TypeAlgebra` checks `isAssignableFrom`) ; `BIP020-Q2` decides whether they move to the rule above.
+* **Primitive arrays are invariant** : `array of int` relates to no other array (`int[]` is none of `long[]`, `Integer[]`, `Object[]`).
+* **Reference arrays are covariant** — `array of string` is an `array of any`, `array of Circle` an `array of Shape` (Circle implementing Shape) — on two conditions, which make a bad store fail with `ArrayStoreException` instead of polluting the array :
+  * **same element nullness :** `array of string` is not an `array of string?` (nor of `any?`) — both are `String[]`, and storing `null` would succeed ;
+  * **an exact source class :** the source's element type must have its own JVM class, so not one erased to `Object[]` (function types, unions, `any`) — storing anything would succeed. (`array of int?` is an `array of any` : `Integer[]` is exact.)
+* **Where the array can't be written**, both conditions are lifted : at a non-`mut` borrowed parameter (the default for typed parameters since BIP016), and for `frozen array of T` (BIP007-D7), as BIP011-D8 does for collections — `array of string` passes for a borrowed `array of string?`.
+* **Java parameters** (`BIP020-Q2` → `BIP020-D12`) : unannotated Java array parameters have nullable elements (`Arrays.toString(Object[])` takes `(array of any?)?`), so at a Java parameter the nullness condition is waived, as BIP011 already trusts Java with a `list of string` where Java sees `List<String>` — only the JVM-class part applies, and `java.util.Arrays.toString(parts)` compiles. Once an axiom (BIP019) or the bytecode analysis says Java writes the parameter (`mut`), the nullness condition applies there again.
 
-### 2.6 Type variables (`BIP020-D6`, `BIP020-Q3`)
+### 2.6 Type variables (`BIP020-D6`, `D13`)
 
-`array of T`, for a type variable `T`, is an `Object[]` at run time (§2.2). Only an instantiation with the same representation is sound, so `T` may only be bound to a type whose array is a reference array :
+`array of T`, for a type variable `T`, is an `Object[]` to generic code (§2.2). A type variable therefore binds only elements stored as references (`BIP020-Q3` → `BIP020-D13`), as in Java, where a type variable is never a primitive ; generic code compiles to `AALOAD`/`AASTORE` :
 
 ```babble
 def first of T = fn (a: array of T): T -> (a.get(0))
@@ -135,20 +141,19 @@ first(parts)                ;; T = string
 first("abc".toCharArray())  ;; Type error : expected array of T, got array of char
 ```
 
-The same holds for a Java method's type variables (`<T> T[] toArray(T[] a)` : `xs.toArray((array of int)(0))` is rejected, `xs.toArray((array of int?)(0))` gives an `array of int?`). This is the rule Java has, where a type variable is never a primitive ; `BIP020-Q3` weighs it against generic code over primitive arrays.
+The same holds for a Java method's type variables (`<T> T[] toArray(T[] a)` : `xs.toArray((array of int)(0))` is rejected, `xs.toArray((array of int?)(0))` gives an `array of int?`). Generic code over primitives uses `list of T`. Creation is §2.3's.
 
-### 2.7 Java interoperability (`BIP020-D9`)
+### 2.7 Java interoperability (`BIP020-D9`, `D15`)
 
 * **From Java**, an array `E[]` maps to `array of E'` with BIP011's nullness (§6.2 there) : an unannotated `String[]` is `(array of string?)?`, a null-marked one `array of string`, `"a,b".split(",")` (overlay) `array of string`.
 * **To Java**, an `array of T` passes as itself where its class fits the parameter (§2.5).
-* **Varargs** are still matched on their array parameter and not expanded ; `.of` is the explicit spelling : `java.util.Arrays.asList(array.of("only"))`, `java.lang.String.format("%s=%d", (array of any).of("x", 1))` (`BIP020-Q5`).
+* **Varargs** (`BIP020-Q5` → `BIP020-D15`) are still matched on their array parameter and never expanded ; `.of` is the explicit spelling : `java.util.Arrays.asList(array.of("only"))`, `java.lang.String.format("%s=%d", (array of any).of("x", 1))`. Expansion, if wanted, is its own change.
 * **Stores into arrays of Java interface types** convert a Babble object as passing it to a Java parameter does (`set` on an `array of java.lang.Runnable` stores the object's Java face in the interpreter, the object itself in compiled mode).
-* **`is` and `as`** check the array's class (`INSTANCEOF [I`, `[Ljava/lang/String;`). Where the class doesn't tell the whole type — element nullness (`array of string` against `array of string?`), Babble-defined or `any` elements (`Object[]`) — they warn `Unchecked cast`, as for `is list of string`.
-* **Printing** : `BIP020-Q4`.
+* **`is` and `as`** check the array's class (`INSTANCEOF [I`, `[Ljava/lang/String;`). Where the class doesn't tell the whole type, they warn `Unchecked cast`, as for `is list of string` : element nullness (`array of string` against `array of string?`), elements erased to `Object[]`, and **Babble-defined elements, checked as `Object[]` in both modes** — compiled mode deliberately doesn't use the stricter `INSTANCEOF [LPoint;`, which the interpreter couldn't match.
 
-### 2.8 The type parameters of generic members (`BIP020-D4`, `BIP020-D10`)
+### 2.8 The type parameters of generic members (`BIP020-D4`, `D10`)
 
-A member declares its own type parameters as any `def` does (`BIP012-D3`) : with `of` after its name, whether it has a value or only a type.
+A member declares its own type parameters as any `def` does (`BIP012-D3`) : with `of` after its name, whether it has a value or only a type (`BIP020-D4`).
 
 ```babble
 ;; a class's method : already valid
@@ -163,9 +168,9 @@ axiom java.util.Collection of E: class (
 )
 ```
 
-(`BIP020-D4`.) A call gives the type arguments by inference or explicitly, as for a function value (`(c.conv of string)("a")` works today).
+A call gives the type arguments by inference or explicitly, as for a function value (`(c.conv of string)("a")` works today).
 
-**Conformance** (`BIP020-D10`) : an implementation or an override of a generic member, or a Babble class's method against an inherited axiom's contract (BIP019), must declare the same number of type parameters ; its type is compared with the declared one after renaming its type parameters to the declared ones, by position, then as any function type (parameters contravariant, result covariant, effects). A non-generic implementation of a generic member, or the reverse, is reported by name : `Type parameters of conv : expected 1, got 0`. This fixes §1's example.
+**Conformance** (`BIP020-D10`) : an implementation or an override of a generic member, or a Babble class's method against an inherited axiom's contract (BIP019), must declare the same number of type parameters ; its type is compared with the declared one after renaming its type parameters to the declared ones, by position, then as any function type (parameters contravariant, result covariant, effects). Any mismatch in number — a non-generic implementation of a generic member, or the reverse — is reported by name : `Type parameters of conv : expected 1, got 0`. This fixes §1's example.
 
 **Bridges** (`RM003`) : a Babble class implementing a Java interface's generic method gets its bridge at the erased signature, `toArray([Ljava/lang/Object;)[Ljava/lang/Object;` for `Collection.toArray(T[])` — which, with array types, a Babble class can now implement at all.
 
@@ -190,6 +195,20 @@ axiom java.util.Arrays: class (
 
 BIP019's provision that "methods taking arrays, which Babble types cannot name, are left to the analyzer or to a future form" is this form ; its text points here once both land.
 
+### 2.10 Compiled classes without a runtime base class (`BIP020-D18`)
+
+Today every compiled Babble class extends `org.babblelang.runtime.BabbleInstance`, the interpreter's instance class, which gives the runtime a generic view of any Babble object : its class (`babbleClass()`), its members (`HasMembers`), its runtime, its Java face, and the equality, hash and string of records. `BIP018-D8` planned to make it a field-free abstract class. Instead, **no compiled class extends a runtime class** : compiled classes, records and objects are plain JVM classes, and compiled Babble interfaces plain JVM interfaces. The base class becomes the interpreter's alone (renamed `InterpretedInstance`), which nothing compiled extends.
+
+Strict typing already makes most of the generic view unnecessary — member access on `any` is rejected — and the rest moves into each class :
+
+* **`is` / `as` on a Babble type** compile to `INSTANCEOF` / `CHECKCAST` ;
+* **equality, hash and string** of records, and `toString` of classes, are generated per class ;
+* **the Java face** (a compiled class implements its Java interfaces directly, `RM003`) and the lookup for Java default methods are generated per class ;
+* **the class value** (`classof`, diagnostics) comes from a static field of the class ;
+* **what still goes through the generic view** — `Bootstrap`'s select caches, `Values.is`, `Types.check`, `Classes.*`, `Faces` — is rewritten against plain classes, or removed where static types make it dead.
+
+It comes first (`BIP020-P1`), so that the array code (`Point[]`, §2.2) is written once, against plain compiled classes. It also clears the way for Valhalla `value` records (BIP018), which cannot extend an identity class.
+
 ---
 
 ## 3. Alternatives Considered
@@ -198,54 +217,52 @@ BIP019's provision that "methods taking arrays, which Babble types cannot name, 
 * **`JavaArray of T`**, the name shown today : long, and arrays are a core type, not a Java curiosity.
 * **`array(1, 2, 3)` for elements**, as `list(1, 2, 3)` : the length would then need a name (`array(length: 100)`). Java's meaning of a length was preferred, with `.of(…)` for elements.
 * **A wrapper class** (a Babble `Array` holding a Java array) : a copy, or an unwrap, at every Java call, against BIP011's zero-wrapper rule.
+* **Every Babble-defined element type as `Object[]`** in both modes : simpler and mode-independent, but every `get` needs a cast and the JVM can't check stores ; compiled `Point[]` was preferred, with a side table for the interpreter.
+* **A common supertype of Babble objects** (`BabbleInstance`, or a marker interface `BabbleObject`) so that `is array of Point` checks something stricter than `Object[]` : rejected with §2.10.
+* **`fill:` and `init:` arguments** for non-null elements : `fill:` puts the same object in every slot (the classic trap with `(array of (array of double))(n, fill: row)`), and `from:` already covers computed elements.
+* **Strict invariance, as for collections (BIP011-D8)** : sound without runtime checks, but every `array of string` given to `array of any` would need a borrowed parameter ; Java's covariance was kept where the JVM checks it exactly.
+* **Type variables over primitive arrays**, through `ArraySupport` with boxing : `first(chars)` would work, but generic arrays could then never reach a Java array parameter, and every access would box.
 * **Type parameters on the function type** (`def toArray: fn of T (a: array of T): array of T`) : `def … of T` is how a `def` declares them already ; a function type with its own type parameters (a parameter that must itself be generic) is a separate feature.
 
 ---
 
-## 4. Open Questions (`BIP020-Q1`–`Q6`)
-
-* **`BIP020-Q1` — Non-null reference elements.** `(array of string)(10)` has no default to fill with. Options : (a) reject it, and let programs write `(array of string?)(10)` or `.of(…)` ; (b) a `fill:` value, `(array of string)(10, fill: "")`, as `java.util.Arrays.fill` — but every slot holds the same object, the classic trap with mutable elements (`(array of (array of double))(n, fill: row)`) ; (c) an `init:` function of the index, `(array of Point)(10, init: fn (i: int): Point -> (Point(i, 0)))`, as `java.util.Arrays.setAll`, effects forwarded with `calling init`. *Proposed :* (a) and (c) ; `fill:` adds a trap for little gain over `init: fn (i: int): string -> ("")`.
-* **`BIP020-Q2` — Java parameters.** Keep Java's covariance of reference arrays at Java parameters (an `array of string` passes for `Object[]`) — safe at run time, since the JVM checks every store and throws `ArrayStoreException`, but a store Babble types accept can fail — or apply §2.5 there too, where a parameter is covariant only if the axioms or the bytecode analysis say Java doesn't write it ? *Proposed :* apply §2.5, with Java parameters of unknown effects kept covariant until the axioms cover them, so that `java.util.Arrays.toString(parts)` keeps compiling.
-* **`BIP020-Q3` — Type variables over primitive arrays.** §2.6 binds a type variable only to reference-array elements, as Java does : simple, fast (`AALOAD`), and sound at Java boundaries. The alternative lets `first("abc".toCharArray())` bind `T = char`, `array of T` being then any array, read through `ArraySupport` with boxing, and never passed to a Java array parameter. *Proposed :* the Java rule ; `list of T` serves generic code over primitives.
-* **`BIP020-Q4` — Printing.** `println(parts)` prints `[Ljava.lang.String;@2ea6137`, and so do the interactive mode and string concatenation. Render arrays as lists are (`[a, b]`, through `java.util.Arrays.deepToString`) in `print`, `println`, `+` on strings and the interactive mode ? `toString()` called explicitly stays Java's. *Proposed :* yes.
-* **`BIP020-Q5` — Varargs expansion.** With arrays easy to make, keep varargs unexpanded (`asList(array.of("only"))`) or expand trailing arguments into the varargs array, as Java does (`asList("only")`) ? Expansion brings back the ambiguities Java resolves in phases (an `array of any?` passed to `Object...`). *Proposed :* keep them unexpanded here ; expansion, if wanted, is its own change.
-* **`BIP020-Q6` — `get` and `set` before an indexing syntax.** Ship `get`/`set` now (§2.4), or wait for the indexing syntax BIP008 §5.1 anticipates ? *Proposed :* now : arrays are unusable without them, and the indexing syntax lowers to them anyway.
-
----
-
-## 5. Decisions (`BIP020-D1`–`D10`)
-
-Decided :
+## 4. Decisions (`BIP020-D1`–`D18`)
 
 * **`BIP020-D1` — The type :** `array of T`, `array` a core type keyword (§2.1).
 * **`BIP020-D2` — Length constructor :** `(array of T)(n)`, or `array(n)` with an expected type, makes an array of `n` default elements (§2.3).
-* **`BIP020-D3` — Elements :** `(array of T).of(…)`, or `array.of(…)` with `T` inferred, makes an array of the given elements (§2.3).
+* **`BIP020-D3` — Elements :** `(array of T).of(…)`, or `array.of(…)` with `T` inferred, makes a mutable array of the given elements (§2.3).
 * **`BIP020-D4` — Generic members :** a member declares its own type parameters with `of` after its name, `def toArray of T = fn …`, `def toArray of T: fn …` without a value, in classes, interfaces and axioms alike (§2.8).
-
-Proposed :
-
-* **`BIP020-D5` — Representation :** plain JVM arrays of the element type's erasure, the same in both modes (§2.2).
-* **`BIP020-D6` — Reifiable creation, reference type variables :** no array is created of an element type whose erasure depends on a type variable ; a type variable binds only reference-array elements (§2.3, §2.6).
-* **`BIP020-D7` — Members :** `length`, `get`, `set` and `for`, with the effects of §2.4.
-* **`BIP020-D8` — Variance :** same representation, invariant, covariant where unwritable (§2.5).
-* **`BIP020-D9` — Java :** BIP011's nullness, no varargs expansion, `is`/`as` by class with `Unchecked cast` warnings (§2.7).
-* **`BIP020-D10` — Conformance of generic members :** same number of type parameters, compared after renaming (§2.8).
+* **`BIP020-D5` — Representation :** plain JVM arrays of the element's JVM class ; Babble-defined elements use their compiled class or interface in compiled mode, and the interpreter's instance class plus a side table of element classes when interpreted (§2.2).
+* **`BIP020-D6` — Reifiable creation :** no array is created of an element type whose class depends on a type variable (§2.3).
+* **`BIP020-D7` — Members and effects :** `size()`, `get`, `set` and `for`, with the effects of §2.4.
+* **`BIP020-D8` — Variance :** primitive arrays invariant ; reference arrays covariant where the JVM's store check is exact (same element nullness, an exact source class), and fully covariant where unwritable (§2.5).
+* **`BIP020-D9` — Java and casts :** BIP011's nullness ; `is`/`as` by class, Babble-defined elements checked as `Object[]` in both modes, with `Unchecked cast` warnings (§2.7).
+* **`BIP020-D10` — Conformance of generic members :** same number of type parameters, compared after renaming ; mismatches reported by name (§2.8).
+* **`BIP020-Q1` → `BIP020-D11` — No default for non-null elements :** `(array of string)(n)` is rejected ; no `fill:` nor `init:` ; `from:` copies an iterable (§2.3).
+* **`BIP020-Q2` → `BIP020-D12` — Java parameters :** the nullness condition of §2.5 is waived at Java parameters, unless an axiom or the analysis says Java writes them (§2.5).
+* **`BIP020-Q3` → `BIP020-D13` — Type variables :** bind only elements stored as references (§2.6).
+* **`BIP020-Q4` → `BIP020-D14` — Printing :** `[a, b]` in `print`, `println`, string `+`, the interactive mode and Babble calls of `toString()` (§2.4).
+* **`BIP020-Q5` → `BIP020-D15` — Varargs :** not expanded ; `.of(…)` is the spelling (§2.7).
+* **`BIP020-Q6` → `BIP020-D16` — Element access now :** `get`/`set` ship with the type ; `size()` replaces `length` (§2.4).
+* **`BIP020-D17` — Equality by contents :** `==`, and Babble calls of `equals` and `hashCode`, compare arrays by contents ; Java still sees identity (§2.4).
+* **`BIP020-D18` — No runtime base class for compiled classes :** compiled classes, records, objects and interfaces are plain JVM types ; the base class is the interpreter's alone, superseding `BIP018-D8`'s abstract class (§2.10).
 
 ---
 
-## 6. Phases (`BIP020-P1`–`P5`)
+## 5. Phases (`BIP020-P1`–`P6`)
 
 | Phase | Deliverables |
 |---|---|
-| **`BIP020-P1` — The type** | `ARRAY` in `Babble.g4` (`coreCollectionKeyword`) ; `array of T` in `TypeAnnotations` ; `Type.JavaArray` → `Type.Array` with the representation of §2.2 ; variance (§2.5) in `TypeAlgebra` ; `is`/`as` and `Unchecked cast` ; `TypeDisplay` and diagnostics ; the formatter (spacing as for `list of T`) ; `ParserGrammarTestCase` stays predicate-free. |
-| **`BIP020-P2` — Creating and using** | `array` as a `CoreConstructor` with `(n)`, `from:`, `.of(…)` and `BIP020-Q1`'s answer ; `get`/`set` ; `ArraySupport` in the runtime ; both backends (`Interpreter`, `HirBuilder`/`HirEmitter` : `NEWARRAY`, `ANEWARRAY`, `<X>ALOAD`, `<X>ASTORE`) ; effects (§2.4) ; printing per `BIP020-Q4`. |
-| **`BIP020-P3` — Generics** | the reifiability and reference-binding rules (§2.3, §2.6) in `TypeChecker` and `CallSolver`, for Babble and Java type variables ; conformance of generic members (§2.8) in `TypeAlgebra.functionRelates` ; `RM003` bridges for generic Java methods. |
-| **`BIP020-P4` — Axioms** | once BIP019's Babble form lands : array parameters in its erasure mapping ; the overloads left to effects-only axioms or to inference get their signatures. |
-| **`BIP020-P5` — Docs and migration** | `java.lang.reflect.Array` in tests and examples replaced where it stood for missing syntax ; README tour and checklists, AGENTS.md, BIP008 §5.1, BIP011 §6 and BIP013 §4.2 speak of `array of T`. |
+| **`BIP020-P1` — Plain compiled classes** | §2.10 : `ClassGen` emits classes extending `Object` (records' equality, hash and string, `toString`, Java default lookups and the class value generated per class) ; `is`/`as` by `INSTANCEOF`/`CHECKCAST` ; `Bootstrap`, `Values`, `Types`, `Classes` and `Faces` rewritten without `instanceof BabbleInstance` on compiled objects ; `BabbleInstance` renamed `InterpretedInstance`, interpreter-only ; `RuntimeBoundaryTestCase` and argon unchanged. |
+| **`BIP020-P2` — The type** | `ARRAY` in `Babble.g4` (`coreCollectionKeyword`) ; `array of T` in `TypeAnnotations` ; `Type.JavaArray` → `Type.Array` with the representation of §2.2 ; variance (§2.5) in `TypeAlgebra` ; `is`/`as` and `Unchecked cast` ; `TypeDisplay` and diagnostics ; the formatter (spacing as for `list of T`) ; `ParserGrammarTestCase` stays predicate-free. |
+| **`BIP020-P3` — Creating and using** | `array` as a `CoreConstructor` with `(n)`, `from:` and `.of(…)` ; `size()`, `get`, `set`, with `length` removed and its uses migrated ; `ArraySupport` in the runtime, with the interpreter's side table of element classes ; both backends (`Interpreter`, `HirBuilder`/`HirEmitter` : `NEWARRAY`, `ANEWARRAY`, `ARRAYLENGTH`, `<X>ALOAD`, `<X>ASTORE`) ; equality, hash and printing by contents ; effects (§2.4). |
+| **`BIP020-P4` — Generics** | the reifiability and reference-binding rules (§2.3, §2.6) in `TypeChecker` and `CallSolver`, for Babble and Java type variables ; conformance of generic members (§2.8) in `TypeAlgebra.functionRelates` ; `RM003` bridges for generic Java methods. |
+| **`BIP020-P5` — Axioms** | once BIP019's Babble form lands : array parameters in its erasure mapping ; the overloads left to effects-only axioms or to inference get their signatures ; the `mut` exception of `BIP020-D12` reads them. |
+| **`BIP020-P6` — Docs and migration** | `java.lang.reflect.Array` in tests and examples replaced where it stood for missing syntax ; README tour and checklists, AGENTS.md (architecture : compiled classes no longer extend `BabbleInstance`), BIP008 §5.1, BIP011 §6, BIP013 §4.2 and BIP018-D8 speak of `array of T` and plain compiled classes. |
 
-## 7. Verification
+## 6. Verification
 
-* The suite in its three runs (interpreter, compiled `-O1`, compiled `-O0`) after each phase, `-Pbatest`, `-format -check`, and argon rendering `scene.ppm` byte for byte.
-* A `src/test/babble/Arrays.ba` script (both modes, type-checked, format-checked) : every element type of §2.2's table, creation, `get`/`set`, `for`, `frozen`, Java round trips (`split`, `toCharArray`, `toArray`, `Arrays.sort`, varargs through `.of`).
-* `DifferentialTestCase` snippets for the errors : out-of-bounds, negative length, `ArrayStoreException` through a covariant Java parameter, `Generic array creation`, a primitive array bound to a type variable, `set` on a `frozen array`, `(array of string)(n)`.
-* `TypeCheckerTestCase` goldens : variance (§2.5), `Unchecked cast`, diagnostics naming `array of …`, generic member conformance (§1's example compiles, a non-generic implementation is reported) ; `FormatterTestCase` goldens for `array of …` types and constructors.
+* The suite in its three runs (interpreter, compiled `-O1`, compiled `-O0`) after each phase, `-Pbatest`, `-format -check`, and argon rendering `scene.ppm` byte for byte — after `BIP020-P1` especially, which changes every compiled class without changing behavior.
+* A `src/test/babble/Arrays.ba` script (both modes, type-checked, format-checked) : every element type of §2.2's table, creation, `size`/`get`/`set`, `for`, `==` and printing (nested arrays, records holding arrays), `frozen`, Java round trips (`split`, `toCharArray`, `toArray`, `Arrays.sort`, varargs through `.of`).
+* `DifferentialTestCase` snippets for the errors, identical in both modes : out-of-bounds, negative length, `ArrayStoreException` through covariance (a `Square` stored into an `array of Circle` seen as `array of Shape` — compiled by the JVM, interpreted by the side table), `Generic array creation`, a primitive array bound to a type variable, `set` on a `frozen array`, `(array of string)(n)`, `a.length`.
+* `TypeCheckerTestCase` goldens : variance (§2.5, including the nullness and exactness conditions and the Java-parameter waiver), `Unchecked cast`, diagnostics naming `array of …`, generic member conformance (§1's example compiles, a non-generic implementation is reported) ; `FormatterTestCase` goldens for `array of …` types and constructors.
