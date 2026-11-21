@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 022 |
 | **Date** | 2026-11-21 |
-| **Status** | Decided (`BIP022-D1`–`D8` decided, resolving `BIP022-Q1`–`Q4` (§9) ; `BIP022-P1`–`P2` not started) |
+| **Status** | Partially implemented (`BIP022-D1`–`D8` decided, resolving `BIP022-Q1`–`Q4` (§9) ; `BIP022-P1` implemented, §12 records what landed and how it departs from the design ; `BIP022-P2` not started) |
 | **Depends on** | the object model, interfaces and Java interface bridges ([bip002_object-model.md](bip002_object-model.md)), static typing, unions, narrowing and generics ([bip008_static-typing.md](bip008_static-typing.md)), the type checker's collaborators ([bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), Java nullability and generic invariance ([bip011_core-types.md](bip011_core-types.md)), the predicate-free grammar ([bip012_grammar-improvements.md](bip012_grammar-improvements.md)), bounds and overload sets ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)) |
 | **Scope** | `A & B` for interface types : the values that are both. Covers normalization, subtyping, members, `is` narrowing, runtime checks and JVM erasure, Java type variables with several bounds and intersection casts, bounds of type parameters, and the meets of overload sets — across `Babble.g4`, `TypeAlgebra`, `MemberTypes`, `Narrowing`, `JavaTypeBridge`, `LoweringAnalyzer`, `runtime.Types`, `Faces`, both backends, the formatter and `:type` |
 
@@ -56,13 +56,11 @@ def s: Shape = Tile()
 if s is Named then ( println(s.name() + " " + s.area()) )
 ;; Error : No such member : area
 
-;; (b) a Java type variable with several bounds is read through its first one
-def xs = java.util.List.of(3, 1, 2)
-println(java.util.Collections.max(xs) + 1)
-;; Error : Not a number : java.util.Collections.max(xs)
 ```
 
-(a) : `Narrowing` replaces `Shape` by `Named` when `s is Named` succeeds, where the value is both. (b) : `Collections.max` is `<T extends Object & Comparable<? super T>> T max(Collection<? extends T>)`, and `JavaTypeBridge` keeps only a type variable's first bound (`erasedClass(tv.getBounds()[0])`), here `Object`.
+(a) : `Narrowing` replaces `Shape` by `Named` when `s is Named` succeeds, where the value is both.
+
+An earlier draft gave a second example, `java.util.Collections.max(xs) + 1` failing with `Not a number`, and blamed `max`'s `T extends Object & Comparable<? super T>`. Checking it while implementing showed otherwise : `T` is inferred as `int`, and all of a Java type variable's bounds are already checked (`JavaTypeBridge.satisfiesJavaBounds`) ; the result is `int?` because `Collections` carries no nullness annotations (`BIP011`), so the failure is a nullness one, not an intersection one.
 
 ### 2.2 What else needs a name for "both"
 
@@ -142,8 +140,7 @@ println(java.util.Collections.max(xs) + 1)
 ## 5. Grammar, formatter and display
 
 ```antlr
-type:             intersectionType ('|' NL* intersectionType)* ;
-intersectionType: nullableType (NL* '&' NL* nullableType)* ;
+type:             nullableType (('|' | '&') NL* nullableType)* ;   // as implemented : see §12
 AMP: '&' ;
 ```
 
@@ -184,8 +181,8 @@ LL(1), with no predicate (`ParserGrammarTestCase`) : `&` is not otherwise a toke
 
 ## 8. Phases
 
-1. **`BIP022-P1` — The type.** Syntax, normal form, subtyping, members, narrowing, runtime checks and erasure, bounds (`BIP022-D1`–`D6`, the bound part of `D8`). Fixes §2.1 (a). `BIP021-P3`'s bounds with `&` need it.
-2. **`BIP022-P2` — Java and overload sets.** Java type variables with several bounds and intersection casts (`BIP022-D7`), fixing §2.1 (b) ; meets in overload sets once `BIP021-P5` lands (the rest of `D8`).
+1. **`BIP022-P1` — The type.** *(Implemented, §12.)* Syntax, normal form, subtyping, members, narrowing, runtime checks (`BIP022-D1`–`D6`). Fixes §2.1 (a). `BIP021-P3`'s bounds with `&` need it.
+2. **`BIP022-P2` — Java, dispatch and overload sets.** Java type variables with several bounds (an unbound one translates to `any?` today, not to its first bound) and intersection casts (`BIP022-D7`) ; static dispatch on intersection receivers (§12) ; bounds once `BIP021-P3` lands, and meets in overload sets once `BIP021-P5` does (`D8`).
 
 ---
 
@@ -219,3 +216,18 @@ External (not fetched while drafting) :
 * **Java** : JLS 21 [§4.4](https://docs.oracle.com/javase/specs/jls/se21/html/jls-4.html#jls-4.4), [§4.6](https://docs.oracle.com/javase/specs/jls/se21/html/jls-4.html#jls-4.6), [§4.9](https://docs.oracle.com/javase/specs/jls/se21/html/jls-4.html#jls-4.9) ; [`LambdaMetafactory.altMetafactory`](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/invoke/LambdaMetafactory.html#altMetafactory(java.lang.invoke.MethodHandles.Lookup,java.lang.String,java.lang.invoke.MethodType,java.lang.Object...)).
 * **Scala 3** : [Intersection types](https://docs.scala-lang.org/scala3/reference/new-types/intersection-types.html). **TypeScript** : [Intersection types](https://www.typescriptlang.org/docs/handbook/2/objects.html#intersection-types). **Ceylon** : [Types](https://ceylon-lang.org/documentation/1.3/tour/types/). **Kotlin** : [Generics](https://kotlinlang.org/docs/generics.html).
 * **Theory** : Frisch, Castagna & Benzaken, *Semantic subtyping*, JACM 2008, [doi:10.1145/1391289.1391293](https://doi.org/10.1145/1391289.1391293) ; Castagna, Ghelli & Longo, *A calculus for overloaded functions with subtyping*, LFP 1992, [doi:10.1145/141471.141537](https://doi.org/10.1145/141471.141537).
+
+---
+
+## 12. What landed in `BIP022-P1`
+
+* **Grammar.** `type` stays one flat list of `nullableType`s, now separated by `|` or `&` (`AMP`), and `TypeAnnotations` groups the operands between two `|` into an intersection. That gives `&` its higher precedence without a new parser rule, so every caller of `type.nullableType()` is unchanged. `ParserGrammarTestCase` still finds no predicate.
+* **The type.** `Type.Intersection` and `Type.intersection(…)`, the normal form of `BIP022-D2` : nested intersections flattened, `any` and `java.lang.Object` dropped, duplicates removed, and an interface another operand extends removed, first by Babble nodes (`TypeAlgebra.isSubtype`) and then by Java classes, when it has no type arguments. Operands keep their source order.
+* **Operands** (`BIP022-D1`) : Babble and Java interfaces, generic or not, and unions of them ; anything else is `Only interfaces intersect : …`, and a nullable operand is `Nullable inside an intersection : B? (write (A & B)?)`.
+* **Relations** (`BIP022-D3`) : `TypeAlgebra.relate` requires every operand on the right, and one on the left after distributing a union operand (`TypeAlgebra.distribute`) ; `overlapsErased` and `canCast` require every operand to overlap.
+* **Members** (`BIP022-D4`) : `MemberTypes` asks each operand that declares the name. **Departure** : a conflict is reported where the member is used, `Conflicting member m in A & B` on `x.m()`, rather than where the intersection is written.
+* **Narrowing** (`BIP022-D5`) : `TypeAlgebra.narrowTarget` intersects an interface member with an interface target, which also distributes over a union's members.
+* **Runtime** (`BIP022-D6`) : an `inter` descriptor (`LoweringAnalyzer.descriptor`) and `Types.IntersectionType`, checking every member for `is`, `as` and declared types, with the same messages in both modes. **Departure** : compiled code holds every reference as `Object` already, so there is nothing to erase. A member call on an intersection receiver goes through the `invokedynamic` site, which finds the member by name at runtime, rather than a `CHECKCAST` and `INVOKEINTERFACE`. One consequence : an interface method called on a core scalar through an intersection (`x: java.io.Serializable & java.lang.Comparable of int`, `x.compareTo(1)`) fails at runtime with `Not a scope : x` in both modes. With a single interface type it fails the same way in interpret mode today, so the dynamic member lookup on scalars is what needs fixing. That and static dispatch move to `BIP022-P2`.
+* **Display.** `TypeDisplay` and `Type.toString` print `A & B` and `(A & B)?`.
+* **Not yet** : `BIP022-D7` (Java type variables with several bounds, marker interfaces on function conversions) and `BIP022-D8` (bounds, overload meets), all in `BIP022-P2` or waiting on `BIP021`.
+* **Tests** : `src/test/babble/Intersections.ba` ; `types/intersections.batest` (14 cases) ; goldens in `TypeCheckerTestCase` (`testIntersectionTypes`), `FormatterTestCase` (`testSpaces`) and `ReplTestCase` (`testTypeCommandShowsIntersections`) ; a `DifferentialTestCase` snippet for the runtime checks.

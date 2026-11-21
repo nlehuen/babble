@@ -35,6 +35,7 @@ public class FormatterTestCase {
         assertFormats("def x: int | string?\ndef y: (int | string)? = null\ndef z: (fn (n: int): int)? = fn (n: int): int -> (n)\n",
                 "def x:int|string ?\ndef y:(int|string)?=null\ndef z:(fn (n:int):int)?=fn (n:int):int->(n)");
         assertFormats("def n: null = null\n", "def  n : null = null");
+        assertFormats("def x: A & B | C\ndef y: (A & B)? = null\n", "def x:A&B|C\ndef y:(A  &  B)?=null");
         assertFormats("return (a)\n", "return(a)");
     }
 

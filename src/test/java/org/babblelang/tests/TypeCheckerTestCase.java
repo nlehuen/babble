@@ -879,6 +879,25 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testIntersectionTypes() {
+        // BIP022 : operands, nullable operands, member conflicts, and A & B as an argument.
+        assertDiagnostics("def Shape = interface ( def area : fn () : double )\n"
+                        + "def Named = interface ( def name : fn () : string )\n"
+                        + "def Disk = class () implements Shape ( def area = fn () : double -> ( 1.0 ) )\n"
+                        + "def A = interface ( def m : fn () : int )\n"
+                        + "def B = interface ( def m : fn () : string )\n"
+                        + "def bad1 : Disk & Named = Disk()\n"
+                        + "def bad2 : Shape & Named? = null\n"
+                        + "def bad3 = fn (x : A & B) : string -> ( \"\" + x.m() )\n"
+                        + "def need = fn (x : Shape & Named) : string -> ( x.name() )\n"
+                        + "need(Disk())",
+                "6:12 Only interfaces intersect : Disk & Named",
+                "7:20 Nullable inside an intersection : Named? (write (Shape & Named)?)",
+                "8:46 Conflicting member m in A & B",
+                "10:6 Type error : expected Shape & Named, got Disk");
+    }
+
+    @Test
     public void testP6aUnionAndNullableTypes() {
         // Normalization, T?, null type, any vs any?, non-nullability of plain types.
         assertDiagnostics("def a : int | null = null\n"
