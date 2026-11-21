@@ -314,6 +314,10 @@
                                     </systemPropertyVariables>
                                 </configuration>
                             </execution>
+                            <!-- -Pbatest compares interpret against default compile (-O1) across two
+                                 isolated JaCoCo files (BIP009 §5.1) : without skipping compiled-tests-O0
+                                 here, it inherits the plugin-level jacocoInterpretArgLine (append=false)
+                                 and overwrites jacoco-interpret.exec (mvn test still runs all three modes). -->
                             <execution>
                                 <id>compiled-tests-O0</id>
                                 <configuration>
