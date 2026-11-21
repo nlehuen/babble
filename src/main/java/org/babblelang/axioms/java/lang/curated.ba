@@ -1,4 +1,4 @@
-;; Curated axioms for java.lang (BIP019-P4)
+;; Curated axioms for java.lang (BIP019-P4, P5)
 
 axiom java.lang.Class of T: class (
     def getCanonicalName: fn nothrow (): string?
@@ -11,9 +11,61 @@ axiom java.lang.Comparable of T: class (
     def compareTo: fn (o: T): int
 )
 
+axiom java.lang.Double: class (
+) static (
+    def doubleToRawLongBits: fn nothrow (value: double): long
+    def longBitsToDouble: fn nothrow (bits: long): double
+)
+
+axiom java.lang.Float: class (
+) static (
+    def floatToRawIntBits: fn nothrow (value: float): int
+    def intBitsToFloat: fn nothrow (bits: int): float
+)
+
 ;; QUESTIONABLE : assumes every Iterable.iterator implementation is pure shared nothrow view
 axiom java.lang.Iterable of T: class (
     def iterator: fn shared nothrow view (): java.util.Iterator of T
+)
+
+axiom java.lang.Math: class (
+) static (
+    def IEEEremainder: fn nothrow
+    def abs: fn nothrow idempotent foldable
+    def acos: fn nothrow foldable
+    def asin: fn nothrow foldable
+    def atan: fn nothrow foldable
+    def atan2: fn nothrow foldable
+    def cbrt: fn nothrow foldable
+    def ceil: fn nothrow idempotent foldable
+    def copySign: fn nothrow
+    def cos: fn nothrow foldable
+    def cosh: fn nothrow foldable
+    def exp: fn nothrow foldable
+    def expm1: fn nothrow
+    def floor: fn nothrow idempotent foldable
+    def fma: fn nothrow
+    def hypot: fn nothrow foldable
+    def log: fn nothrow foldable
+    def log10: fn nothrow foldable
+    def log1p: fn nothrow
+    def max: fn nothrow foldable
+    def min: fn nothrow foldable
+    def nextDown: fn nothrow
+    def nextUp: fn nothrow
+    def pow: fn nothrow foldable
+    def rint: fn nothrow idempotent foldable
+    def round: fn nothrow foldable
+    def scalb: fn nothrow
+    def signum: fn nothrow foldable
+    def sin: fn nothrow foldable
+    def sinh: fn nothrow foldable
+    def sqrt: fn nothrow foldable
+    def tan: fn nothrow foldable
+    def tanh: fn nothrow foldable
+    def toDegrees: fn nothrow foldable
+    def toRadians: fn nothrow foldable
+    def ulp: fn nothrow
 )
 
 ;; QUESTIONABLE : assumes Object's own hashCode and toString are pure volatile
@@ -25,6 +77,30 @@ axiom java.lang.Object: class exact (
 
 ;; QUESTIONABLE : assumes every Object.equals implementation is pure
 axiom java.lang.Object.equals: fn (obj: any?): bool
+
+axiom java.lang.StrictMath: class (
+) static (
+    def IEEEremainder: fn nothrow
+    def acos: fn nothrow
+    def asin: fn nothrow
+    def atan: fn nothrow
+    def atan2: fn nothrow
+    def cbrt: fn nothrow
+    def cos: fn nothrow
+    def cosh: fn nothrow
+    def exp: fn nothrow
+    def expm1: fn nothrow
+    def hypot: fn nothrow
+    def log: fn nothrow
+    def log10: fn nothrow
+    def log1p: fn nothrow
+    def pow: fn nothrow
+    def sin: fn nothrow
+    def sinh: fn nothrow
+    def sqrt: fn nothrow
+    def tan: fn nothrow
+    def tanh: fn nothrow
+)
 
 axiom java.lang.String: class (
     def *: fn pure
@@ -39,9 +115,9 @@ axiom java.lang.String: class (
     def hashCode: fn nothrow
     def indexOf: fn nothrow
     def isBlank: fn nothrow
-    def isEmpty: fn nothrow
+    def isEmpty: fn nothrow foldable (): bool
     def lastIndexOf: fn nothrow
-    def length: fn nothrow
+    def length: fn nothrow foldable (): int
     def replace: fn nothrow
     def startsWith: fn nothrow
     def strip: fn nothrow
@@ -50,8 +126,12 @@ axiom java.lang.String: class (
     def toLowerCase: fn nothrow
     def toString: fn nothrow
     def toUpperCase: fn nothrow
-    def trim: fn nothrow
+    def trim: fn nothrow idempotent foldable (): string
 ) static (
     def *: fn pure
     def new: fn pure
+)
+
+axiom java.lang.Throwable: class (
+    def fillInStackTrace: fn mut nothrow (): java.lang.Throwable
 )

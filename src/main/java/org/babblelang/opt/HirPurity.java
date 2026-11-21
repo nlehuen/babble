@@ -24,23 +24,6 @@ import java.util.Set;
  * reference {@code Interpreter}.
  */
 public final class HirPurity {
-    private static final Set<String> PURE_NOTHROW_TERMINATING_MATH = Set.of(
-            "abs", "sqrt", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-            "exp", "log", "log10", "pow", "min", "max", "floor", "ceil", "rint",
-            "round", "cbrt", "hypot", "signum", "toRadians", "toDegrees", "sinh", "cosh", "tanh"
-    );
-
-    private static final Set<String> IDEMPOTENT_MATH = Set.of(
-            "abs", "floor", "ceil", "rint"
-    );
-
-    private static final Set<String> PURE_NOTHROW_TERMINATING_STRING = Set.of(
-            "length", "isEmpty", "trim"
-    );
-
-    private static final Set<String> IDEMPOTENT_STRING = Set.of(
-            "trim"
-    );
 
     private HirPurity() {
     }
@@ -69,32 +52,11 @@ public final class HirPurity {
     }
 
     public static boolean isFoldableJava(Method m) {
-        return org.babblelang.analysis.BuiltinAxioms.current().isFoldable(m)
-                || isWhitelistedPureMath(m) || isWhitelistedPureString(m);
-    }
-
-    public static boolean isWhitelistedPureMath(Method m) {
-        return m.getDeclaringClass() == Math.class
-                && Modifier.isStatic(m.getModifiers())
-                && PURE_NOTHROW_TERMINATING_MATH.contains(m.getName());
+        return org.babblelang.analysis.BuiltinAxioms.current().isFoldable(m);
     }
 
     public static boolean isWhitelistedIdempotentJava(Method m) {
-        if (org.babblelang.analysis.BuiltinAxioms.current().isIdempotent(m)) {
-            return true;
-        }
-        if (m.getDeclaringClass() == Math.class && Modifier.isStatic(m.getModifiers())
-                && m.getParameterCount() == 1 && IDEMPOTENT_MATH.contains(m.getName())) {
-            return true;
-        }
-        return m.getDeclaringClass() == String.class && !Modifier.isStatic(m.getModifiers())
-                && m.getParameterCount() == 0 && IDEMPOTENT_STRING.contains(m.getName());
-    }
-
-    public static boolean isWhitelistedPureString(Method m) {
-        return m.getDeclaringClass() == String.class
-                && !Modifier.isStatic(m.getModifiers())
-                && PURE_NOTHROW_TERMINATING_STRING.contains(m.getName());
+        return org.babblelang.analysis.BuiltinAxioms.current().isIdempotent(m);
     }
 
     public static boolean isStringCheckedType(String checkedType) {

@@ -156,9 +156,6 @@ public final class BytecodeEffectAnalyzer {
         }
     }
 
-    /** Seeded JVM native / JDK intrinsics (migrated to curated.ba in BIP019-P5). */
-    private static final Map<String, EffectSet> SEEDED_INTRINSICS = buildSeededIntrinsics();
-
     /** Per-(BuiltinAxioms, ClassLoader) cache for converged bytecode analysis results. */
     private static final Map<BuiltinAxioms, Map<ClassLoader, Map<MethodKey, Result>>> CACHES =
             Collections.synchronizedMap(new IdentityHashMap<>());
@@ -169,54 +166,6 @@ public final class BytecodeEffectAnalyzer {
     private static final ClassNode MISSING_CLASS_NODE = new ClassNode();
 
     private BytecodeEffectAnalyzer() {
-    }
-
-    private static Map<String, EffectSet> buildSeededIntrinsics() {
-        Map<String, EffectSet> map = new HashMap<>();
-        EffectSet pureDetNothrow = EffectSet.ofInferred(
-                EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
-        EffectSet pureDet = EffectSet.ofInferred(
-                EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
-
-        for (String m : List.of("abs", "min", "max", "sin", "cos", "tan", "asin", "acos", "atan", "atan2",
-                "exp", "log", "log10", "log1p", "expm1", "sqrt", "cbrt", "pow", "hypot", "ceil", "floor",
-                "rint", "round", "signum", "copySign", "ulp", "sinh", "cosh", "tanh", "toRadians", "toDegrees",
-                "fma", "scalb", "nextUp", "nextDown", "IEEEremainder")) {
-            map.put("java/lang/Math#" + m, pureDetNothrow);
-            map.put("java/lang/StrictMath#" + m, pureDetNothrow);
-        }
-        for (String m : List.of("addExact", "subtractExact", "multiplyExact", "negateExact",
-                "floorDiv", "floorMod", "toIntExact")) {
-            map.put("java/lang/Math#" + m, pureDet);
-            map.put("java/lang/StrictMath#" + m, pureDet);
-        }
-        for (String m : List.of("doubleToRawLongBits", "doubleToLongBits", "longBitsToDouble", "isNaN", "isInfinite", "isFinite", "compare")) {
-            map.put("java/lang/Double#" + m, pureDetNothrow);
-        }
-        for (String m : List.of("floatToRawIntBits", "floatToIntBits", "intBitsToFloat", "isNaN", "isInfinite", "isFinite", "compare")) {
-            map.put("java/lang/Float#" + m, pureDetNothrow);
-        }
-        for (String m : List.of("compare", "compareUnsigned", "bitCount", "highestOneBit",
-                "lowestOneBit", "numberOfLeadingZeros", "numberOfTrailingZeros", "rotateLeft", "rotateRight",
-                "reverse", "reverseBytes", "signum", "sum", "max", "min", "intValue", "longValue", "doubleValue")) {
-            map.put("java/lang/Integer#" + m, pureDetNothrow);
-            map.put("java/lang/Long#" + m, pureDetNothrow);
-        }
-        map.put("java/lang/Integer#valueOf(I)Ljava/lang/Integer;", pureDetNothrow);
-        map.put("java/lang/Long#valueOf(J)Ljava/lang/Long;", pureDetNothrow);
-        for (String m : List.of("length", "isEmpty", "isBlank", "trim", "strip", "toLowerCase", "toUpperCase",
-                "startsWith", "endsWith", "contains", "indexOf", "lastIndexOf", "equals", "equalsIgnoreCase",
-                "compareTo", "hashCode", "toString", "concat")) {
-            map.put("java/lang/String#" + m, pureDetNothrow);
-        }
-        for (String d : List.of("(Z)Ljava/lang/String;", "(C)Ljava/lang/String;", "(I)Ljava/lang/String;",
-                "(J)Ljava/lang/String;", "(F)Ljava/lang/String;", "(D)Ljava/lang/String;")) {
-            map.put("java/lang/String#valueOf" + d, pureDetNothrow);
-        }
-        for (String m : List.of("charAt", "substring", "codePointAt")) {
-            map.put("java/lang/String#" + m, pureDet);
-        }
-        return Collections.unmodifiableMap(map);
     }
 
     private static Map<MethodKey, Result> cacheFor(BuiltinAxioms axioms, ClassLoader loader) {
@@ -1041,19 +990,6 @@ public final class BytecodeEffectAnalyzer {
                         }
                     }
                 }
-            }
-            // 2. Legacy SEEDED_INTRINSICS (migrated to curated.ba in BIP019-P5)
-            EffectSet seeded = SEEDED_INTRINSICS.get(key.ownerInternalName() + "#" + key.name() + key.descriptor());
-            if (seeded == null) {
-                seeded = SEEDED_INTRINSICS.get(key.ownerInternalName() + "#" + key.name());
-            }
-            if (seeded != null) {
-                int pCount = Type.getArgumentTypes(key.descriptor()).length;
-                boolean[] bp = new boolean[pCount];
-                Arrays.fill(bp, true);
-                boolean[] rp = new boolean[pCount];
-                return new Result(seeded, false, true, new boolean[pCount], bp,
-                        false, rp, "java/lang/String".equals(key.ownerInternalName()), false, false, false, List.of());
             }
             return null;
         }
