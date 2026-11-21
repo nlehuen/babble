@@ -161,7 +161,7 @@ final class CallSolver {
                 parameters = List.of();
             }
             Type patternReturn = new Type.Instance(node, List.copyOf(classVars));
-            return genericBabbleCall(classVars, parameters, decls, patternReturn, false, arguments, ctx, node.name, expected);
+            return genericBabbleCall(classVars, parameters, decls, patternReturn, false, Set.of(), node, arguments, ctx, node.name, expected);
         }
         if (callee instanceof Type.JavaClassValue value) {
             Class<?> java = value.type();
@@ -280,6 +280,9 @@ final class CallSolver {
         if (inferred == null) {
             checker.warn("Missing type : cannot infer type arguments for " + ScopeAnalysis.selectorName(ctx), ctx);
             return Type.ERROR;
+        }
+        if (checker.algebra().findPrimitiveArraySubstitution(unparameterized, inferred) != null) {
+            return unparameterized;
         }
         return checker.algebra().substitute(unparameterized, inferred);
     }
@@ -482,12 +485,22 @@ final class CallSolver {
                            Type resultPattern, boolean uniqueResult, List<BabbleParser.CallParameterContext> arguments,
                            BabbleParser.CallContext ctx, String description, Type expected) {
         return genericBabbleCall(solvingList, parameters, declarations, resultPattern, uniqueResult,
-                Set.of(), arguments, ctx, description, expected);
+                Set.of(), null, arguments, ctx, description, expected);
     }
 
     Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
                            List<? extends ParserRuleContext> declarations,
                            Type resultPattern, boolean uniqueResult, Set<Integer> forwardedEffectParams,
+                           List<BabbleParser.CallParameterContext> arguments,
+                           BabbleParser.CallContext ctx, String description, Type expected) {
+        return genericBabbleCall(solvingList, parameters, declarations, resultPattern, uniqueResult,
+                forwardedEffectParams, null, arguments, ctx, description, expected);
+    }
+
+    Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
+                           List<? extends ParserRuleContext> declarations,
+                           Type resultPattern, boolean uniqueResult, Set<Integer> forwardedEffectParams,
+                           TypeNode ctorNode,
                            List<BabbleParser.CallParameterContext> arguments,
                            BabbleParser.CallContext ctx, String description, Type expected) {
         Type.Parameter[] argParams = mapArgumentsToParameters(parameters, arguments);
@@ -510,6 +523,7 @@ final class CallSolver {
             argExprs.add(arguments.get(i).expression());
         }
         Type[] argTypes = new Type[arguments.size()];
+        boolean[] argFailedRelate = new boolean[arguments.size()];
         boolean progress;
         do {
             progress = false;
@@ -526,7 +540,10 @@ final class CallSolver {
                     if (paramPattern != null) {
                         boolean borrowReadOnly = frozenBorrowSafePattern
                                 && argParams[i] != null && argParams[i].borrow() && !argParams[i].mut();
-                        checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly);
+                        if (!checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly)
+                                && !TypeChecker.isUnresolved(actual)) {
+                            argFailedRelate[i] = true;
+                        }
                     }
                     progress = true;
                 }
@@ -543,14 +560,47 @@ final class CallSolver {
                 if (paramPattern != null) {
                     boolean borrowReadOnly = frozenBorrowSafePattern
                             && argParams[i] != null && argParams[i].borrow() && !argParams[i].mut();
-                    checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly);
+                    if (!checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly)
+                            && !TypeChecker.isUnresolved(actual)) {
+                        argFailedRelate[i] = true;
+                    }
                 }
+            }
+        }
+        int firstFailedArg = -1;
+        for (int i = 0; i < argFailedRelate.length; i++) {
+            if (argFailedRelate[i]) {
+                firstFailedArg = i;
+                break;
             }
         }
         Map<Type.TypeVar, Type> inferred = solveAll(solvingList, store, retHints, paramPatterns, argExprs);
         if (inferred == null) {
             if (Arrays.stream(argTypes).noneMatch(TypeChecker::isUnresolved)) {
-                checker.warn("Missing type : cannot infer type arguments for " + description, ctx);
+                if (firstFailedArg >= 0) {
+                    Map<Type.TypeVar, Type> partial = new HashMap<>();
+                    for (Type.TypeVar tv : solvingList) {
+                        Type s = store.solution(tv);
+                        if (s != null) {
+                            partial.put(tv, s);
+                        }
+                    }
+                    Type expectedPat = checker.algebra().substitute(paramPatterns.get(firstFailedArg), partial);
+                    checker.warn("Type error : expected " + expectedPat + ", got " + argTypes[firstFailedArg],
+                            argExprs.get(firstFailedArg));
+                } else {
+                    checker.warn("Missing type : cannot infer type arguments for " + description, ctx);
+                }
+            }
+            return Type.ERROR;
+        }
+        String badArrayMsg = findGenericBabbleArrayError(solvingList, parameters, resultPattern, ctorNode, inferred);
+        if (badArrayMsg != null) {
+            if (firstFailedArg >= 0) {
+                checker.warn("Type error : expected " + paramPatterns.get(firstFailedArg) + ", got " + argTypes[firstFailedArg],
+                        argExprs.get(firstFailedArg));
+            } else {
+                checker.warn(badArrayMsg, ctx);
             }
             return Type.ERROR;
         }
@@ -562,6 +612,31 @@ final class CallSolver {
         }
         bind(substitutedParams, declarations, arguments, ctx, frozenBorrowSafe, forwardedEffectParams);
         return substitutedResult;
+    }
+
+    private String findGenericBabbleArrayError(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
+                                               Type resultPattern, TypeNode ctorNode, Map<Type.TypeVar, Type> inferred) {
+        for (Type.Parameter p : parameters) {
+            TypeAlgebra.BadArraySubstitution bad = checker.algebra().findPrimitiveArraySubstitution(p.type(), inferred);
+            if (bad != null) {
+                return bad.message();
+            }
+        }
+        TypeAlgebra.BadArraySubstitution badRes = checker.algebra().findPrimitiveArraySubstitution(resultPattern, inferred);
+        if (badRes != null) {
+            return badRes.message();
+        }
+        if (ctorNode != null) {
+            List<Type> ordered = new ArrayList<>(solvingList.size());
+            for (Type.TypeVar tv : solvingList) {
+                ordered.add(inferred.get(tv));
+            }
+            JavaTypeBridge.BadJavaArrayTypeArg badNode = checker.annotator().checkBabbleNodeArrayTypeArgs(ctorNode, ordered);
+            if (badNode != null) {
+                return badNode.message();
+            }
+        }
+        return null;
     }
 
     Type javaGenericSamCall(Class<?> java, BabbleParser.ExpressionContext argExpr, BabbleParser.CallContext ctx, Type expected) {
@@ -611,6 +686,11 @@ final class CallSolver {
                         + typeParams[i].getName() + " of " + java.getCanonicalName(), argExpr);
                 return Type.ERROR;
             }
+        }
+        JavaTypeBridge.BadJavaArrayTypeArg badArrSam = JavaTypeBridge.checkJavaClassArrayTypeArgs(java, solvedArgs, checker.algebra());
+        if (badArrSam != null) {
+            checker.warn(badArrSam.message(), argExpr);
+            return Type.ERROR;
         }
         Type.JavaInstance result = new Type.JavaInstance(java, solvedArgs);
         if (actualArg instanceof Type.Function actualFn) {
@@ -749,6 +829,12 @@ final class CallSolver {
                 return null;
             }
         }
+        JavaTypeBridge.BadJavaArrayTypeArg badArrJava = JavaTypeBridge.checkJavaExecutableArrayTypeArgs(
+                executable, variables, solved, checker.algebra());
+        if (badArrJava != null) {
+            checker.warn(badArrJava.message(), ctx);
+            return null;
+        }
         checkJavaArgumentWidening(executable, solved, arguments, argumentTypes);
         return solved;
     }
@@ -882,12 +968,17 @@ final class CallSolver {
         if (resultPattern == null || actualExpected == null || actualExpected == Type.ERROR || resultPattern == Type.ERROR) {
             return Map.of();
         }
+        Type patBase = resultPattern;
         Type expBase = Type.containsNull(resultPattern) ? actualExpected : Type.withoutNull(actualExpected);
-        if (expBase == Type.NOTHING || expBase instanceof Type.Union) {
+        if (Type.containsNull(resultPattern) && Type.containsNull(actualExpected)) {
+            patBase = Type.withoutNull(resultPattern);
+            expBase = Type.withoutNull(actualExpected);
+        }
+        if (expBase == Type.NOTHING || patBase == Type.NOTHING || expBase instanceof Type.Union) {
             return Map.of();
         }
         TypeAlgebra.ConstraintStore retStore = checker.algebra().store(solving, false);
-        checker.algebra().relate(resultPattern, expBase, TypeAlgebra.RelateMode.SUBTYPE, retStore);
+        checker.algebra().relate(patBase, expBase, TypeAlgebra.RelateMode.SUBTYPE, retStore);
         Map<Type.TypeVar, Type> hints = new HashMap<>();
         for (Type.TypeVar tv : solving) {
             Type hint = retStore.solution(tv);
@@ -1155,7 +1246,10 @@ final class CallSolver {
             return null;
         }
         Type base = TypeAlgebra.unwrapFrozen(Type.withoutNull(expected));
-        return base instanceof Type.Array arr ? arr.element() : null;
+        if (base instanceof Type.Array arr && !arr.element().hasSyntheticTypeVar()) {
+            return arr.element();
+        }
+        return null;
     }
 
     private static boolean dependsOnTypeVar(Type t) {
@@ -1681,11 +1775,31 @@ final class CallSolver {
                     break;
                 }
             }
-            if (boundsOk) {
+            if (boundsOk && JavaTypeBridge.checkJavaExecutableArrayTypeArgs(m, Arrays.asList(mParams), env, checker.algebra()) == null) {
                 candidates.add(m);
             }
         }
         return candidates;
+    }
+
+    private JavaTypeBridge.BadJavaArrayTypeArg firstJavaMethodArrayError(
+            List<Method> all, Map<TypeVariable<?>, Type> receiverEnv, List<Type> explicitTypeArgs) {
+        for (Method m : all) {
+            TypeVariable<?>[] mParams = m.getTypeParameters();
+            if (mParams.length != explicitTypeArgs.size()) {
+                continue;
+            }
+            Map<TypeVariable<?>, Type> env = new HashMap<>(receiverEnv);
+            for (int i = 0; i < mParams.length; i++) {
+                env.put(mParams[i], explicitTypeArgs.get(i));
+            }
+            JavaTypeBridge.BadJavaArrayTypeArg bad = JavaTypeBridge.checkJavaExecutableArrayTypeArgs(
+                    m, Arrays.asList(mParams), env, checker.algebra());
+            if (bad != null) {
+                return bad;
+            }
+        }
+        return null;
     }
 
     /** First-class generic type application {@code expr of typeArguments} (BIP012-D4). */
@@ -1722,6 +1836,21 @@ final class CallSolver {
             for (int i = 0; i < explicitTypeArgs.size(); i++) {
                 env.put(fn.typeParameters().get(i), explicitTypeArgs.get(i));
             }
+            TypeAlgebra.BadArraySubstitution badFnArr = null;
+            for (Type.Parameter p : fn.parameters()) {
+                badFnArr = checker.algebra().findPrimitiveArraySubstitution(p.type(), env);
+                if (badFnArr != null) {
+                    break;
+                }
+            }
+            if (badFnArr == null) {
+                badFnArr = checker.algebra().findPrimitiveArraySubstitution(fn.result(), env);
+            }
+            if (badFnArr != null) {
+                int idx = badFnArr.cause() != null ? fn.typeParameters().indexOf(badFnArr.cause()) : 0;
+                checker.warn(badFnArr.message(), TypeAnnotations.typeArgumentNode(ctx.typeArguments(), Math.max(0, idx)));
+                return Type.ERROR;
+            }
             List<Type.Parameter> substitutedParams = new ArrayList<>(fn.parameters().size());
             for (Type.Parameter p : fn.parameters()) {
                 substitutedParams.add(p.withType(checker.algebra().substitute(p.type(), env)));
@@ -1745,6 +1874,11 @@ final class CallSolver {
             if (classVars.size() != explicitTypeArgs.size()) {
                 checker.warn("Wrong number of type arguments : expected " + classVars.size()
                         + ", got " + explicitTypeArgs.size(), ctx.typeArguments());
+                return Type.ERROR;
+            }
+            JavaTypeBridge.BadJavaArrayTypeArg badClsArr = checker.annotator().checkBabbleNodeArrayTypeArgs(node, explicitTypeArgs);
+            if (badClsArr != null) {
+                checker.warn(badClsArr.message(), TypeAnnotations.typeArgumentNode(ctx.typeArguments(), badClsArr.index()));
                 return Type.ERROR;
             }
             return new Type.ClassValue(node, explicitTypeArgs);
@@ -1773,6 +1907,12 @@ final class CallSolver {
                     return Type.ERROR;
                 }
             }
+            JavaTypeBridge.BadJavaArrayTypeArg badJavaClsArr = JavaTypeBridge.checkJavaClassArrayTypeArgs(
+                    java, explicitTypeArgs, checker.algebra());
+            if (badJavaClsArr != null) {
+                checker.warn(badJavaClsArr.message(), TypeAnnotations.typeArgumentNode(ctx.typeArguments(), badJavaClsArr.index()));
+                return Type.ERROR;
+            }
             return new Type.JavaClassValue(java, explicitTypeArgs);
         }
         if (target instanceof Type.JavaMethod method) {
@@ -1785,6 +1925,11 @@ final class CallSolver {
                     ? Map.of() : JavaTypeBridge.javaTypeEnv(method.owner(), method.typeArguments());
             List<Method> candidates = matchingGenericJavaMethods(all, receiverEnv, explicitTypeArgs);
             if (candidates.isEmpty()) {
+                JavaTypeBridge.BadJavaArrayTypeArg badM = firstJavaMethodArrayError(all, receiverEnv, explicitTypeArgs);
+                if (badM != null) {
+                    checker.warn(badM.message(), TypeAnnotations.typeArgumentNode(ctx.typeArguments(), badM.index()));
+                    return Type.ERROR;
+                }
                 checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
                 return Type.ERROR;
             }

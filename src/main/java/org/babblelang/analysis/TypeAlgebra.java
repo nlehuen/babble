@@ -363,17 +363,26 @@ final class TypeAlgebra {
                 Type se = array.element();
                 Type te = target.element();
                 boolean solvingTarget = store != null && te.anyMatch(t -> t instanceof Type.TypeVar tv && store.solving().contains(tv));
+                boolean solvingSource = store != null && se.anyMatch(t -> t instanceof Type.TypeVar tv && store.solving().contains(tv));
                 if (Type.isPrimitiveScalar(se) || Type.isPrimitiveScalar(te)) {
-                    return !solvingTarget && se.equals(te);
+                    return !(solvingTarget || solvingSource) && se.equals(te);
                 }
-                if (!jvmArrayAssignable(se, te)) {
+                if (!arrayClassDependsOnSolvingVar(se, store)
+                        && !arrayClassDependsOnSolvingVar(te, store)
+                        && !jvmArrayAssignable(se, te)) {
                     return false;
                 }
                 RelateMode elemMode = mode == RelateMode.RUNTIME_EXACT ? RelateMode.RUNTIME_EXACT : RelateMode.SUBTYPE;
                 if (!relate(se, te, elemMode, store, active, false, false)) {
                     return false;
                 }
-                if (solvingTarget || mode == RelateMode.RUNTIME_EXACT || borrowCovariant) {
+                if (mode == RelateMode.RUNTIME_EXACT || borrowCovariant) {
+                    return true;
+                }
+                if (!waiveArrayNullness && !solvingSource && Type.containsNull(te) && !Type.containsNull(se)) {
+                    return false;
+                }
+                if (solvingTarget || solvingSource) {
                     return true;
                 }
                 if (!waiveArrayNullness && Type.containsNull(se) != Type.containsNull(te)) {
@@ -1141,6 +1150,140 @@ final class TypeAlgebra {
             }
         }
         return false;
+    }
+
+    /** Whether {@code elem}'s runtime JVM array class still depends on a variable in {@code store.solving()}. */
+    private static boolean arrayClassDependsOnSolvingVar(Type elem, ConstraintStore store) {
+        if (store == null || elem == null) {
+            return false;
+        }
+        return switch (elem) {
+            case Type.TypeVar tv -> store.solving().contains(tv);
+            case Type.Frozen f -> arrayClassDependsOnSolvingVar(f.of(), store);
+            case Type.Array a -> arrayClassDependsOnSolvingVar(a.element(), store);
+            case Type.Union u -> u.members().stream().anyMatch(m -> arrayClassDependsOnSolvingVar(m, store));
+            case Type.Intersection i -> i.members().stream().anyMatch(m -> arrayClassDependsOnSolvingVar(m, store));
+            default -> false;
+        };
+    }
+
+    record BadArraySubstitution(Type.TypeVar cause, Type.Array patternArray, Type substitutedElement) {
+        String message() {
+            return "Type error : type argument " + substitutedElement + " cannot be a primitive in " + patternArray;
+        }
+    }
+
+    /**
+     * Checks BIP020-D13 (§2.6) : whether substituting {@code env} into {@code pattern} turns any
+     * generic reference array ({@code Object[]} in generic code) into a primitive array ({@code int[]}, etc.).
+     */
+    BadArraySubstitution findPrimitiveArraySubstitution(Type pattern, Map<Type.TypeVar, Type> env) {
+        if (pattern == null || env == null || env.isEmpty()) {
+            return null;
+        }
+        boolean anyPrimitive = false;
+        for (Type v : env.values()) {
+            if (v != null && Type.isPrimitiveScalar(v)) {
+                anyPrimitive = true;
+                break;
+            }
+        }
+        if (!anyPrimitive) {
+            return null;
+        }
+        return scanPrimitiveArraySubstitution(pattern, env);
+    }
+
+    private BadArraySubstitution scanPrimitiveArraySubstitution(Type type, Map<Type.TypeVar, Type> env) {
+        if (type == null) {
+            return null;
+        }
+        if (type instanceof Type.Array arr) {
+            Type elem = arr.element();
+            if (!Type.isPrimitiveScalar(elem)) {
+                Type substitutedElem = substitute(elem, env);
+                if (Type.isPrimitiveScalar(substitutedElem)) {
+                    Type.TypeVar cause = findPrimitivelyBoundVar(elem, env);
+                    return new BadArraySubstitution(cause, arr, substitutedElem);
+                }
+            }
+            return scanPrimitiveArraySubstitution(elem, env);
+        }
+        return switch (type) {
+            case Type.Frozen f -> scanPrimitiveArraySubstitution(f.of(), env);
+            case Type.Union u -> {
+                for (Type m : u.members()) {
+                    BadArraySubstitution found = scanPrimitiveArraySubstitution(m, env);
+                    if (found != null) {
+                        yield found;
+                    }
+                }
+                yield null;
+            }
+            case Type.Intersection i -> {
+                for (Type m : i.members()) {
+                    BadArraySubstitution found = scanPrimitiveArraySubstitution(m, env);
+                    if (found != null) {
+                        yield found;
+                    }
+                }
+                yield null;
+            }
+            case Type.Function fn -> {
+                for (Type.Parameter p : fn.parameters()) {
+                    BadArraySubstitution found = scanPrimitiveArraySubstitution(p.type(), env);
+                    if (found != null) {
+                        yield found;
+                    }
+                }
+                yield scanPrimitiveArraySubstitution(fn.result(), env);
+            }
+            case Type.Instance inst -> {
+                for (Type a : inst.typeArguments()) {
+                    BadArraySubstitution found = scanPrimitiveArraySubstitution(a, env);
+                    if (found != null) {
+                        yield found;
+                    }
+                }
+                yield null;
+            }
+            case Type.JavaInstance ji -> {
+                for (Type a : ji.typeArguments()) {
+                    BadArraySubstitution found = scanPrimitiveArraySubstitution(a, env);
+                    if (found != null) {
+                        yield found;
+                    }
+                }
+                yield null;
+            }
+            case Type.CoreCollection cc -> {
+                for (Type a : cc.typeArguments()) {
+                    BadArraySubstitution found = scanPrimitiveArraySubstitution(a, env);
+                    if (found != null) {
+                        yield found;
+                    }
+                }
+                yield null;
+            }
+            default -> null;
+        };
+    }
+
+    private static Type.TypeVar findPrimitivelyBoundVar(Type elem, Map<Type.TypeVar, Type> env) {
+        return switch (elem) {
+            case Type.TypeVar tv -> Type.isPrimitiveScalar(env.get(tv)) ? tv : null;
+            case Type.Frozen f -> findPrimitivelyBoundVar(f.of(), env);
+            case Type.Union u -> {
+                for (Type m : u.members()) {
+                    Type.TypeVar found = findPrimitivelyBoundVar(m, env);
+                    if (found != null) {
+                        yield found;
+                    }
+                }
+                yield null;
+            }
+            default -> null;
+        };
     }
 
     /** Whether a class or interface implements the Java type {@code java}, directly or through its ancestors. */

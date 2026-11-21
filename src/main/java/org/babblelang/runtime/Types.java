@@ -428,4 +428,66 @@ public final class Types {
         String canonical = comp.getCanonicalName();
         return canonical != null ? canonical : comp.getName();
     }
+
+    /**
+     * Whether a non-null Java parameter of erased class {@code javaParam} on a {@code default}
+     * Java interface method can match a Babble parameter with runtime check {@code descriptor}
+     * (so e.g. {@code Collection.toArray(IntFunction)} stays on Java's {@code default} overload
+     * when Babble implements {@code toArray(array of ...)}).
+     */
+    public static boolean canAcceptJavaParamClass(String descriptor, Class<?> javaParam) {
+        if (descriptor == null || javaParam == Object.class) {
+            return true;
+        }
+        return canAcceptJavaType(parse(descriptor), javaParam);
+    }
+
+    private static boolean canAcceptJavaType(Type type, Class<?> javaParam) {
+        return switch (type) {
+            case AnyType ignored -> true;
+            case NullType ignored -> !javaParam.isPrimitive();
+            case UnionType u -> {
+                for (Type m : u.members) {
+                    if (canAcceptJavaType(m, javaParam)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case IntersectionType inter -> {
+                for (Type m : inter.members) {
+                    if (!canAcceptJavaType(m, javaParam)) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
+            case Builtin b -> {
+                Class<?> boxed = JavaTypes.box(javaParam);
+                yield b.javaClass.isAssignableFrom(boxed)
+                        || boxed.isAssignableFrom(b.javaClass)
+                        || JavaTypes.isWidening(boxed, b.javaClass);
+            }
+            case FunctionType ignored -> Callable.class.isAssignableFrom(javaParam)
+                    || javaParam.isAssignableFrom(Callable.class);
+            case NominalType ignored -> !javaParam.isPrimitive() && !javaParam.isArray()
+                    && (javaParam.isInterface() || javaParam == Object.class);
+            case JavaClassType j -> {
+                Class<?> expected = j.javaClass;
+                if (expected.isArray()) {
+                    if (javaParam.isArray()) {
+                        yield expected.isAssignableFrom(javaParam) || javaParam.isAssignableFrom(expected);
+                    }
+                    yield javaParam == Cloneable.class || javaParam == java.io.Serializable.class;
+                }
+                if (javaParam.isArray()) {
+                    yield expected == Cloneable.class || expected == java.io.Serializable.class;
+                }
+                Class<?> boxed = JavaTypes.box(javaParam);
+                yield expected.isAssignableFrom(boxed)
+                        || boxed.isAssignableFrom(expected)
+                        || (boxed.isInterface() && expected.isInterface());
+            }
+        };
+    }
 }

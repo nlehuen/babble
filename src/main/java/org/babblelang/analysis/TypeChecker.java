@@ -771,7 +771,7 @@ final class TypeChecker {
             return Type.ERROR;
         }
         if (target.hasTypeVar()) {
-            warn("Cannot test type parameter with 'is' : " + ctx.right.getText(), ctx.right);
+            warn("Cannot test type parameter with 'is' : " + target, ctx.right);
             isTargetTypes.put(ctx, Type.ERROR);
             return Type.ERROR;
         }
@@ -2294,7 +2294,7 @@ final class TypeChecker {
                 return Type.ERROR;
             }
             if (target != null && target.hasTypeVar()) {
-                warn("Cannot cast to type parameter : " + ctx.right.getText(), ctx.right);
+                warn("Cannot cast to type parameter : " + target, ctx.right);
                 return Type.ERROR;
             }
             if (containsFunction(target)) {

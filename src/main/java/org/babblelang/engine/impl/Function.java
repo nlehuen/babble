@@ -72,6 +72,20 @@ public class Function implements BabbleFunction {
     }
 
     @Override
+    public boolean acceptsJavaDefaultOverload(Class<?>[] javaParams) {
+        if (!BabbleFunction.super.acceptsJavaDefaultOverload(javaParams)) {
+            return false;
+        }
+        for (int i = 0; i < javaParams.length; i++) {
+            String desc = interpreter.scopes().checkedType(definition.fnParameters().fnParam(i));
+            if (!org.babblelang.runtime.Types.canAcceptJavaParamClass(desc, javaParams[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    @Override
     public String toString() {
         String name = ScopeAnalysis.functionName(definition);
         return name != null ? "function " + name : "function";

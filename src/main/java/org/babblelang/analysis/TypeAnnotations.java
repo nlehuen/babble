@@ -24,6 +24,7 @@ final class TypeAnnotations {
     private final Map<BabbleParser.TypeContext, Type> annotations = new HashMap<>();
     private final Map<BabbleParser.DefExpressionContext, List<Type.TypeVar>> defTypeVars = new IdentityHashMap<>();
     private final Map<BabbleParser.DefExpressionContext, Type.SymbolId> defSymbolIds = new IdentityHashMap<>();
+    private final java.util.Set<TypeNode> activeArrayChecks = Collections.newSetFromMap(new IdentityHashMap<>());
 
     TypeAnnotations(TypeChecker checker) {
         this.checker = checker;
@@ -37,6 +38,7 @@ final class TypeAnnotations {
     void clear() {
         annotations.clear();
         aliases.clear();
+        activeArrayChecks.clear();
     }
 
     /** The identity of the type variables a generic def declares, or null. */
@@ -616,7 +618,119 @@ final class TypeAnnotations {
             checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
             return Type.ERROR;
         }
+        JavaTypeBridge.BadJavaArrayTypeArg badArr = checkBabbleNodeArrayTypeArgs(node, args);
+        if (badArr != null) {
+            checker.warn(badArr.message(), simpleTypeArgNode(simple, badArr.index()));
+            return Type.ERROR;
+        }
         return new Type.Instance(node, args);
+    }
+
+    /**
+     * Checks BIP020-D13 (§2.6) on a generic Babble class or interface instantiation : rejects
+     * primitive scalar type arguments when a class/interface type parameter becomes a primitive
+     * array element in constructor parameters, members, or parent interfaces.
+     */
+    JavaTypeBridge.BadJavaArrayTypeArg checkBabbleNodeArrayTypeArgs(TypeNode node, List<Type> args) {
+        if (node == null || args.isEmpty() || args.stream().noneMatch(Type::isPrimitiveScalar)
+                || !activeArrayChecks.add(node)) {
+            return null;
+        }
+        try {
+            List<Type.TypeVar> vars = typeVarsOf(node);
+            if (vars.size() != args.size()) {
+                return null;
+            }
+            Map<Type.TypeVar, Type> env = new HashMap<>(vars.size());
+            for (int i = 0; i < vars.size(); i++) {
+                env.put(vars.get(i), args.get(i));
+            }
+            if (!node.isInterface()) {
+                if (!checker.isLocal(node.ctx)) {
+                    List<Type.Parameter> importedCtor = checker.imported().constructorParams(node);
+                    if (importedCtor != null) {
+                        for (Type.Parameter p : importedCtor) {
+                            TypeAlgebra.BadArraySubstitution bad = checker.algebra().findPrimitiveArraySubstitution(p.type(), env);
+                            if (bad != null) {
+                                return toBadArg(vars, bad);
+                            }
+                        }
+                    }
+                } else if (node.ctx instanceof BabbleParser.ClassExpressionContext cls && cls.classParameters() != null) {
+                    ScopeNode clsScope = checker.scopeOf(cls);
+                    for (BabbleParser.ClassParamContext p : cls.classParameters().classParam()) {
+                        Type pt = p.type() != null ? annotation(p.type(), clsScope) : checker.inferredParams().get(p);
+                        TypeAlgebra.BadArraySubstitution bad = checker.algebra().findPrimitiveArraySubstitution(pt, env);
+                        if (bad != null) {
+                            return toBadArg(vars, bad);
+                        }
+                    }
+                }
+            }
+            for (TypeNode.Member member : node.members.values()) {
+                Type mt = memberPatternForArrayCheck(node, member);
+                TypeAlgebra.BadArraySubstitution bad = checker.algebra().findPrimitiveArraySubstitution(mt, env);
+                if (bad != null) {
+                    return toBadArg(vars, bad);
+                }
+            }
+            for (int i = 0; i < node.parents.size(); i++) {
+                Type pt = parentAnnotation(node, i);
+                TypeAlgebra.BadArraySubstitution bad = checker.algebra().findPrimitiveArraySubstitution(pt, env);
+                if (bad != null) {
+                    return toBadArg(vars, bad);
+                }
+                if (pt instanceof Type.Instance parentInst && !parentInst.typeArguments().isEmpty()) {
+                    List<Type> subParentArgs = parentInst.typeArguments().stream()
+                            .map(a -> checker.algebra().substitute(a, env)).toList();
+                    JavaTypeBridge.BadJavaArrayTypeArg parentBad = checkBabbleNodeArrayTypeArgs(parentInst.node(), subParentArgs);
+                    if (parentBad != null) {
+                        return parentBad;
+                    }
+                } else if (pt instanceof Type.JavaInstance javaParent && !javaParent.typeArguments().isEmpty()) {
+                    List<Type> subParentArgs = javaParent.typeArguments().stream()
+                            .map(a -> checker.algebra().substitute(a, env)).toList();
+                    JavaTypeBridge.BadJavaArrayTypeArg parentBad = JavaTypeBridge.checkJavaClassArrayTypeArgs(
+                            javaParent.type(), subParentArgs, checker.algebra());
+                    if (parentBad != null) {
+                        return parentBad;
+                    }
+                }
+            }
+            return null;
+        } finally {
+            activeArrayChecks.remove(node);
+        }
+    }
+
+    private Type memberPatternForArrayCheck(TypeNode node, TypeNode.Member member) {
+        if (!checker.isLocal(member.declaration)) {
+            return checker.imported().memberType(node, member.name);
+        }
+        Type declared = declaredType(member.declaration);
+        if (declared != null) {
+            return declared;
+        }
+        if (member.function != null) {
+            ScopeNode fnScope = checker.scopeOf(member.function);
+            List<Type.Parameter> params = new ArrayList<>();
+            for (BabbleParser.FnParamContext fp : member.function.fnParameters().fnParam()) {
+                Type pt = fp.type() != null ? annotation(fp.type(), fnScope) : checker.inferredParams().get(fp);
+                if (pt != null) {
+                    params.add(new Type.Parameter(fp.ID().getText(), pt, fp.defaultValue != null));
+                }
+            }
+            Type ret = member.function.type() != null
+                    ? annotation(member.function.type(), fnScope)
+                    : Type.NULLABLE_ANY;
+            return new Type.Function(params, ret);
+        }
+        return checker.inferredMembers().get(member.declaration);
+    }
+
+    private static JavaTypeBridge.BadJavaArrayTypeArg toBadArg(List<Type.TypeVar> vars, TypeAlgebra.BadArraySubstitution bad) {
+        int idx = bad.cause() != null ? vars.indexOf(bad.cause()) : 0;
+        return new JavaTypeBridge.BadJavaArrayTypeArg(Math.max(0, idx), bad.message());
     }
 
     private Type instantiateJavaType(Class<?> java, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
@@ -648,6 +762,11 @@ final class TypeAnnotations {
             checker.warn("Type error : type argument " + args.get(badArg) + " does not satisfy bound "
                     + JavaTypeBridge.typeParameterName(java, badArg) + " of " + java.getName(),
                     simpleTypeArgNode(simple, badArg));
+            return Type.ERROR;
+        }
+        JavaTypeBridge.BadJavaArrayTypeArg badArr = JavaTypeBridge.checkJavaClassArrayTypeArgs(java, args, checker.algebra());
+        if (badArr != null) {
+            checker.warn(badArr.message(), simpleTypeArgNode(simple, badArr.index()));
             return Type.ERROR;
         }
         return new Type.JavaInstance(java, args);

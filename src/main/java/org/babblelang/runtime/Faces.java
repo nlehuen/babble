@@ -318,7 +318,7 @@ final class Faces {
                 return instance.toString();
             }
             BabbleFunction function = BabbleObjects.method(instance, method.getName());
-            if (function != null) {
+            if (function != null && (!method.isDefault() || function.acceptsJavaDefaultOverload(method.getParameterTypes()))) {
                 Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), method.getParameterTypes());
                 ScriptRuntime rt = BabbleObjects.runtime(instance);
                 Object result = function.invoke(instance, rt, babble, null, site(method.getName(), babble.length));

@@ -21,6 +21,19 @@ public interface BabbleFunction extends Callable {
         return -1;
     }
 
+    /**
+     * Whether this Babble method can implement/override a Java {@code default} interface overload
+     * with parameter types {@code javaParams} (or whether Java's {@code default} overload should be kept).
+     */
+    default boolean acceptsJavaDefaultOverload(Class<?>[] javaParams) {
+        int min = minArity();
+        int max = maxArity();
+        if (min >= 0 && javaParams.length < min) {
+            return false;
+        }
+        return max < 0 || javaParams.length <= max;
+    }
+
     @Override
     default Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         return invoke(Undefined.UNBOUND, rt, args, names, site);

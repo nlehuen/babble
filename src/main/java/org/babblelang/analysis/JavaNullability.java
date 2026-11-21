@@ -189,7 +189,7 @@ final class JavaNullability {
         }
     }
 
-    private static boolean isNullMarkedClass(Class<?> cls) {
+    static boolean isNullMarkedClass(Class<?> cls) {
         for (Class<?> c = cls; c != null; c = c.getEnclosingClass()) {
             Nullness scope = scanNullMarkedScope(c);
             if (scope != Nullness.UNSPECIFIED) {
