@@ -125,7 +125,10 @@ public final class ScopeAnalysis {
                                   String memberName) {
     }
 
-    public record IsTarget(String typeId, ClassShape.Kind kind) {
+    public record IsTarget(String typeId, ClassShape.Kind kind, String jvmInternalName) {
+        public IsTarget(String typeId, ClassShape.Kind kind) {
+            this(typeId, kind, null);
+        }
     }
 
     public record InterfaceCallTarget(String interfaceTypeId, String memberName, FunctionSignature signature, boolean guaranteedCallable) {

@@ -390,6 +390,42 @@ public final class Types {
         if (value instanceof Callable) {
             return "function";
         }
+        if (value.getClass().isArray()) {
+            return describeArray(value.getClass());
+        }
         return value.getClass().getName();
+    }
+
+    private static String describeArray(Class<?> arrayClass) {
+        Class<?> comp = arrayClass.getComponentType();
+        if (comp.isArray()) {
+            return "array of (" + describeArray(comp) + ")";
+        }
+        return "array of " + describeArrayComponent(comp);
+    }
+
+    private static String describeArrayComponent(Class<?> comp) {
+        if (comp == byte.class) return "byte";
+        if (comp == short.class) return "short";
+        if (comp == int.class) return "int";
+        if (comp == long.class) return "long";
+        if (comp == float.class) return "float";
+        if (comp == double.class) return "double";
+        if (comp == boolean.class) return "bool";
+        if (comp == char.class) return "char";
+        if (comp == Byte.class) return "byte?";
+        if (comp == Short.class) return "short?";
+        if (comp == Integer.class) return "int?";
+        if (comp == Long.class) return "long?";
+        if (comp == Float.class) return "float?";
+        if (comp == Double.class) return "double?";
+        if (comp == Boolean.class) return "bool?";
+        if (comp == Character.class) return "char?";
+        if (comp == String.class) return "string";
+        if (comp == Object.class || comp == InterpretedInstance.class || BabbleObjects.isCompiledClass(comp)) {
+            return "any";
+        }
+        String canonical = comp.getCanonicalName();
+        return canonical != null ? canonical : comp.getName();
     }
 }

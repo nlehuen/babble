@@ -138,6 +138,11 @@ public final class BabbleObjects {
         return compiledInfo(value) != null;
     }
 
+    /** Whether {@code cls} is a plain compiled Babble class. */
+    static boolean isCompiledClass(Class<?> cls) {
+        return cls != null && COMPILED.get(cls) != null;
+    }
+
     /** The {@link BabbleClass} that created {@code value}, or null if {@code value} is not a Babble instance. */
     public static BabbleClass babbleClass(Object value) {
         if (value instanceof InterpretedInstance interpreted) {

@@ -345,6 +345,7 @@ public class ReplTestCase {
     public void testTypeCommand() throws Exception {
         Assertions.assertEquals(List.of("class P", "function twice", "function hello", "class Box",
                         "int", "string", "double", "bool", "list of int", "map of (string, int)", "list of string",
+                        "array of string", "array of char",
                         "class P", "P", "P?", "fn (n : int) : int", "fn (f : fn (n : int) : int, v : int) : int", "fn io () : null",
                         "int | string", "(list of int)?", "Box of int", "list of (int | string)"),
                 transcript("def P = record (x : int, y : int) ()",
@@ -353,6 +354,7 @@ public class ReplTestCase {
                         "def m : P? = null",
                         "def Box of T = class (def v : T) ()",
                         ":type 1 + 2", ":type \"a\"", ":t 1.5", ":type 1 < 2", ":type list.of(1, 2)", ":type map.of(\"a\", 1)", ":type args",
+                        ":type \"a,b\".split(\",\")", ":type \"abc\".toCharArray()",
                         ":type P", ":type P(1, 2)", ":type m", ":type fn (n : int) : int -> ( n )", ":type twice", ":type hello",
                         ":type def u : int | string = 1 ; u", ":type def nl : (list of int)? = null ; nl", ":type Box(1)",
                         ":type def lu : list of (int | string) = list.of() ; lu"));

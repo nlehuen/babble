@@ -725,7 +725,8 @@ final class CallSolver {
             Type paramPat = JavaTypeBridge.javaExecutableParamType(executable, i, patternEnv);
             paramPatterns.add(paramPat);
             argExprs.add(arguments.get(i).expression());
-            checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
+            checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store,
+                    isJavaParamBorrow(executable, i), !isJavaParamMut(executable, i));
         }
         Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern.apply(synthetic), expected, solving);
         Map<Type.TypeVar, Type> inferred = solveAll(solvingList, store, retHints, paramPatterns, argExprs);
@@ -773,7 +774,8 @@ final class CallSolver {
             Type actual = checker.check(argument, argExpected);
             argTypes[i] = actual;
             final int index = i;
-            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, receiverEnv, checker.algebra()));
+            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, receiverEnv,
+                    checker.algebra(), isJavaParamBorrow(candidate, index), isJavaParamMut(candidate, index)));
         }
         for (int i = 0; i < arguments.size(); i++) {
             if (!deferred[i]) {
@@ -786,7 +788,8 @@ final class CallSolver {
             Type actual = checker.check(argument, argExpected);
             argTypes[i] = actual;
             final int index = i;
-            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, refinedEnv, checker.algebra()));
+            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, refinedEnv,
+                    checker.algebra(), isJavaParamBorrow(candidate, index), isJavaParamMut(candidate, index)));
         }
         outArgumentTypes.clear();
         for (Type t : argTypes) {
@@ -822,7 +825,8 @@ final class CallSolver {
         for (int i = 0; i < argTypes.length; i++) {
             if (!deferred[i] && argTypes[i] != null) {
                 Type paramPat = JavaTypeBridge.javaExecutableParamType(cand, i, patternEnv);
-                checker.algebra().relate(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store);
+                checker.algebra().relate(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store,
+                        isJavaParamBorrow(cand, i), !isJavaParamMut(cand, i));
             }
         }
         Type ctxExpected = expected;
@@ -1070,7 +1074,37 @@ final class CallSolver {
         return expectedBase != null && expectedBase.hasSyntheticTypeVar();
     }
 
+    private EffectChecker.JavaCallProfile javaProfile(Executable exec) {
+        EffectChecker ec = checker.effectChecker();
+        if (ec == null || exec == null) {
+            return null;
+        }
+        if (exec instanceof Constructor<?> ctor) {
+            return ec.resolveJavaConstructorProfile(ctor.getDeclaringClass(), ctor);
+        }
+        if (exec instanceof Method m) {
+            return ec.resolveJavaMethodProfile(m.getDeclaringClass(), m.getName(), m);
+        }
+        return null;
+    }
+
+    private boolean isJavaParamMut(Executable exec, int index) {
+        EffectChecker.JavaCallProfile profile = javaProfile(exec);
+        return profile != null && index < profile.mutParams().length && profile.mutParams()[index];
+    }
+
+    private boolean isJavaParamBorrow(Executable exec, int index) {
+        EffectChecker.JavaCallProfile profile = javaProfile(exec);
+        return profile != null && index < profile.borrowParams().length && profile.borrowParams()[index]
+                && (index >= profile.mutParams().length || !profile.mutParams()[index]);
+    }
+
     Type coreCollectionCall(String kind, List<Type> explicitArgs, BabbleParser.CallContext ctx, Type expected) {
+        if ("array".equals(kind)) {
+            synthAll(ctx.callParameters().callParameter());
+            checker.warn("array constructor is not implemented yet", ctx);
+            return Type.ERROR;
+        }
         Class<?> javaClass = switch (kind) {
             case "list" -> List.class;
             case "set" -> Set.class;

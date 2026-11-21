@@ -48,12 +48,20 @@ public class FormatterTestCase {
                 def l: java.util.List of string = java.util.ArrayList()
                 def m: java.util.Map of (string, (Stack of int)?) = java.util.HashMap()
                 def f: (fn (x: int): Box of (int | string))? = null
+                def a: array of int = (array of int)(10)
+                def g: array of (array of double) = (array of (array of double))(2)
+                def b: (array of int)? = null
+                def p = (array of int).of(1, 2, 3)
                 """, """
                 def id  of  T : fn ( x : T ) : T = fn ( x : T ) : T -> ( x )
                 def Stack  of  T = class ( def value : T , def next : ( Stack  of  T ) ? ) ( )
                 def l : java.util.List  of  string = java.util.ArrayList ( )
                 def m : java.util.Map  of  ( string , ( Stack  of  int ) ? ) = java.util.HashMap ( )
                 def f : ( fn ( x : int ) : Box  of  ( int | string ) ) ? = null
+                def a : array  of  int = ( array  of  int ) ( 10 )
+                def g : array  of  ( array  of  double ) = ( array  of  ( array  of  double ) ) ( 2 )
+                def b : ( array  of  int ) ? = null
+                def p = ( array  of  int ) . of ( 1 , 2 , 3 )
                 """);
     }
 

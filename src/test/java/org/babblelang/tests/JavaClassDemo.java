@@ -282,4 +282,24 @@ public class JavaClassDemo {
     public interface FloatUnary {
         float apply(float x);
     }
+
+    // BIP020-P2 array interop helpers (unannotated, @Pure borrow, @Mut).
+    @org.babblelang.effects.Pure
+    public static int readObjectArray(Object[] xs) {
+        return xs.length;
+    }
+
+    public static void mutateObjectArray(@org.babblelang.effects.Mut Object[] xs) {
+        if (xs.length > 0) {
+            xs[0] = null;
+        }
+    }
+
+    public static Integer @org.babblelang.effects.NotNull [] boxedIntArray() {
+        return new Integer[]{1, null, 3};
+    }
+
+    public static int @org.babblelang.effects.NotNull [] @org.babblelang.effects.NotNull [] jaggedIntArray() {
+        return new int[][]{new int[]{1, 2}, new int[]{3}};
+    }
 }

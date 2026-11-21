@@ -71,15 +71,30 @@ final class LoweringAnalyzer {
                     pass.analysis.markExpressionString(entry.getKey());
                 }
             }
-            if (entry.getKey() instanceof BabbleParser.IsExpressionContext isCtx && checker.inFile(isCtx)
-                    && checker.isTargetType(isCtx) instanceof Type.Instance inst
-                    && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
-                pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
+            if (entry.getKey() instanceof BabbleParser.IsExpressionContext isCtx && checker.inFile(isCtx)) {
+                Type isTarget = checker.isTargetType(isCtx);
+                if (isTarget instanceof Type.Instance inst
+                        && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
+                    pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
+                } else if (isTarget instanceof Type.Array array) {
+                    Class<?> checked = JavaTypeBridge.checkedArrayClass(array);
+                    if (JavaTypeBridge.isBytecodeAccessible(checked)) {
+                        pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(null, null,
+                                checked.getName().replace('.', '/')));
+                    }
+                }
             }
-            if (entry.getKey() instanceof BabbleParser.AsExpressionContext asCtx && checker.inFile(asCtx)
-                    && entry.getValue() instanceof Type.Instance inst
-                    && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
-                pass.analysis.setAsTarget(asCtx, new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
+            if (entry.getKey() instanceof BabbleParser.AsExpressionContext asCtx && checker.inFile(asCtx)) {
+                if (entry.getValue() instanceof Type.Instance inst
+                        && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
+                    pass.analysis.setAsTarget(asCtx, new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
+                } else if (entry.getValue() instanceof Type.Array array) {
+                    Class<?> checked = JavaTypeBridge.checkedArrayClass(array);
+                    if (JavaTypeBridge.isBytecodeAccessible(checked)) {
+                        pass.analysis.setAsTarget(asCtx, new ScopeAnalysis.IsTarget(null, null,
+                                checked.getName().replace('.', '/')));
+                    }
+                }
             }
         }
         for (ParserRuleContext decl : pass.definitionScopes.keySet()) {
@@ -196,8 +211,8 @@ final class LoweringAnalyzer {
             if (module.module().summary() != null && module.module().exports().contains(name) && index >= 0) {
                 pass.analysis.setModuleExportTarget(selector, new ScopeAnalysis.ModuleExportTarget(index, name, module.module().name()));
             }
-        } else if (receiver instanceof Type.JavaArray array && "length".equals(name)) {
-            pass.analysis.setArrayLengthClass(selector, array.javaClass());
+        } else if (receiver instanceof Type.Array array && "length".equals(name)) {
+            pass.analysis.setArrayLengthClass(selector, JavaTypeBridge.checkedArrayClass(array));
         } else {
             ScopeAnalysis.JavaFieldTarget target = fieldReadTarget(receiver, name, checker.algebra());
             if (target != null) {
@@ -216,8 +231,8 @@ final class LoweringAnalyzer {
             member = JavaTypeBridge.javaMember(value.type(), List.of(), name, true, algebra);
         } else if (receiver instanceof Type.JavaInstance instance) {
             member = JavaTypeBridge.javaMember(instance.type(), instance.typeArguments(), name, false, algebra);
-        } else if (receiver instanceof Type.JavaArray array && !"length".equals(name)) {
-            member = JavaTypeBridge.javaMember(array.javaClass(), List.of(), name, false, algebra);
+        } else if (receiver instanceof Type.Array array && !"length".equals(name)) {
+            member = JavaTypeBridge.javaMember(JavaTypeBridge.checkedArrayClass(array), List.of(), name, false, algebra);
         } else {
             return null;
         }
@@ -281,7 +296,7 @@ final class LoweringAnalyzer {
         Type receiverType = types.get(sel.expression());
         if (!(receiverType instanceof Type.JavaClassValue
                 || receiverType instanceof Type.JavaInstance
-                || receiverType instanceof Type.JavaArray
+                || receiverType instanceof Type.Array
                 || receiverType == Type.STRING)) {
             return;
         }
@@ -649,8 +664,8 @@ final class LoweringAnalyzer {
         if (type instanceof Type.JavaInstance java) {
             return "java|" + java.type().getName() + "|" + java.type().getName();
         }
-        if (type instanceof Type.JavaArray array) {
-            return "java|" + array + "|" + array.javaClass().getName();
+        if (type instanceof Type.Array array) {
+            return "java|" + array + "|" + JavaTypeBridge.checkedArrayClass(array).getName();
         }
         return null;
     }

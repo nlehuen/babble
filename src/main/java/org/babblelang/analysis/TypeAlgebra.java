@@ -70,7 +70,7 @@ final class TypeAlgebra {
         }
     }
 
-    private record RelationKey(Type sub, Type sup, RelateMode mode, boolean borrowCovariant) {
+    private record RelationKey(Type sub, Type sup, RelateMode mode, boolean borrowCovariant, boolean waiveArrayNullness) {
     }
 
     /**
@@ -179,22 +179,22 @@ final class TypeAlgebra {
 
     /** Whether a value of type {@code from} can be used where {@code to} is declared. */
     boolean assignable(Type from, Type to) {
-        return relate(from, to, RelateMode.ASSIGNABLE, null, new HashSet<>(), false);
+        return relate(from, to, RelateMode.ASSIGNABLE, null, new HashSet<>(), false, false);
     }
 
     /** Whether a value of type {@code from} can be passed to a non-{@code mut} {@code borrow} parameter of type {@code to}. */
     boolean borrowAssignable(Type from, Type to) {
-        return relate(from, to, RelateMode.ASSIGNABLE, null, new HashSet<>(), true);
+        return relate(from, to, RelateMode.ASSIGNABLE, null, new HashSet<>(), true, false);
     }
 
     /** Assignability without the implicit {@code int -> double} widening (container arguments, results). */
     boolean subtype(Type from, Type to) {
-        return relate(from, to, RelateMode.SUBTYPE, null, new HashSet<>(), false);
+        return relate(from, to, RelateMode.SUBTYPE, null, new HashSet<>(), false, false);
     }
 
     /** Subtyping of runtime representations (no widening, functions only by identity). */
     boolean runtimeSubtype(Type from, Type to) {
-        return relate(from, to, RelateMode.RUNTIME_EXACT, null, new HashSet<>(), false);
+        return relate(from, to, RelateMode.RUNTIME_EXACT, null, new HashSet<>(), false, false);
     }
 
     /** Whether {@code from as to} always holds with no conversion (a redundant cast). */
@@ -210,14 +210,19 @@ final class TypeAlgebra {
     }
 
     boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store) {
-        return relate(sub, sup, mode, store, new HashSet<>(), false);
+        return relate(sub, sup, mode, store, new HashSet<>(), false, false);
     }
 
     boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, boolean borrowCovariant) {
-        return relate(sub, sup, mode, store, new HashSet<>(), borrowCovariant);
+        return relate(sub, sup, mode, store, new HashSet<>(), borrowCovariant, false);
     }
 
-    private boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, Set<RelationKey> active, boolean borrowCovariant) {
+    boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, boolean borrowCovariant, boolean waiveArrayNullness) {
+        return relate(sub, sup, mode, store, new HashSet<>(), borrowCovariant, waiveArrayNullness);
+    }
+
+    private boolean relate(Type sub, Type sup, RelateMode mode, ConstraintStore store, Set<RelationKey> active,
+                           boolean borrowCovariant, boolean waiveArrayNullness) {
         if (sub == Type.ERROR || sup == Type.ERROR || sub == Type.NOTHING) {
             return true;
         }
@@ -242,10 +247,10 @@ final class TypeAlgebra {
             return true;
         }
         if (mode == RelateMode.INVARIANT_ARG) {
-            return relate(sub, sup, RelateMode.SUBTYPE, store, active, false)
-                    && relate(sup, sub, RelateMode.SUBTYPE, store, active, false);
+            return relate(sub, sup, RelateMode.SUBTYPE, store, active, false, false)
+                    && relate(sup, sub, RelateMode.SUBTYPE, store, active, false, false);
         }
-        RelationKey key = new RelationKey(sub, sup, mode, borrowCovariant);
+        RelationKey key = new RelationKey(sub, sup, mode, borrowCovariant, waiveArrayNullness);
         if (!active.add(key)) {
             return true;
         }
@@ -254,13 +259,13 @@ final class TypeAlgebra {
             if (sub instanceof Type.Intersection intersection) {
                 Type distributed = distribute(intersection);
                 if (distributed != intersection) {
-                    return relate(distributed, sup, mode, store, active, borrowCovariant);
+                    return relate(distributed, sup, mode, store, active, borrowCovariant, waiveArrayNullness);
                 }
             }
             // Left-union universal split ([FCB08])
             if (sub instanceof Type.Union union) {
                 for (Type member : union.members()) {
-                    if (!relate(member, sup, mode, store, active, borrowCovariant)) {
+                    if (!relate(member, sup, mode, store, active, borrowCovariant, waiveArrayNullness)) {
                         return false;
                     }
                 }
@@ -269,7 +274,7 @@ final class TypeAlgebra {
             // Right intersection : a value of every member (BIP022-D3)
             if (sup instanceof Type.Intersection intersection) {
                 for (Type member : intersection.members()) {
-                    if (!relate(sub, member, mode, store, active, borrowCovariant)) {
+                    if (!relate(sub, member, mode, store, active, borrowCovariant, waiveArrayNullness)) {
                         return false;
                     }
                 }
@@ -281,20 +286,20 @@ final class TypeAlgebra {
                     return true;
                 }
                 return sup.equals(Type.NULLABLE_ANY)
-                        || (sup instanceof Type.Union union && anyMemberRelates(sub, union, mode, store, active, borrowCovariant));
+                        || (sup instanceof Type.Union union && anyMemberRelates(sub, union, mode, store, active, borrowCovariant, waiveArrayNullness));
             }
             if (sup instanceof Type.TypeVar tv && tv.owner() == null) {
                 return true;
             }
             // Right-union existential search with ConstraintStore rollback
             if (sup instanceof Type.Union union) {
-                return anyMemberRelates(sub, union, mode, store, active, borrowCovariant);
+                return anyMemberRelates(sub, union, mode, store, active, borrowCovariant, waiveArrayNullness);
             }
             // Left intersection : one member suffices (BIP022-D3) ; union members were distributed above
             if (sub instanceof Type.Intersection intersection) {
                 for (Type member : intersection.members()) {
                     int mark = store != null ? store.mark() : 0;
-                    if (relate(member, sup, mode, store, active, borrowCovariant)) {
+                    if (relate(member, sup, mode, store, active, borrowCovariant, waiveArrayNullness)) {
                         return true;
                     }
                     if (store != null) {
@@ -308,16 +313,16 @@ final class TypeAlgebra {
             }
             if (sup instanceof Type.Frozen sf) {
                 if (sub instanceof Type.Frozen subf) {
-                    return relate(subf.of(), sf.of(), mode, store, active, true);
+                    return relate(subf.of(), sf.of(), mode, store, active, true, false);
                 }
                 if (sub != Type.ANY && env.isDeeplyImmutable(sub)) {
-                    return relate(sub, sf.of(), mode, store, active, true);
+                    return relate(sub, sf.of(), mode, store, active, true, false);
                 }
                 return false;
             }
             if (sub instanceof Type.Frozen subf) {
                 return mode != RelateMode.RUNTIME_EXACT && borrowCovariant
-                        && relate(subf.of(), sup, mode, store, active, true);
+                        && relate(subf.of(), sup, mode, store, active, true, waiveArrayNullness);
             }
             if (sup == Type.ANY) {
                 return true;
@@ -351,10 +356,35 @@ final class TypeAlgebra {
                 }
                 return false;
             }
-            if (sup instanceof Type.JavaArray target) {
-                return sub instanceof Type.JavaArray array
-                        && target.javaClass().isAssignableFrom(array.javaClass())
-                        && relate(array.element(), target.element(), argMode, store, active, false);
+            if (sup instanceof Type.Array target) {
+                if (!(sub instanceof Type.Array array)) {
+                    return false;
+                }
+                Type se = array.element();
+                Type te = target.element();
+                boolean solvingTarget = store != null && te.anyMatch(t -> t instanceof Type.TypeVar tv && store.solving().contains(tv));
+                if (Type.isPrimitiveScalar(se) || Type.isPrimitiveScalar(te)) {
+                    return !solvingTarget && se.equals(te);
+                }
+                if (!jvmArrayAssignable(se, te)) {
+                    return false;
+                }
+                RelateMode elemMode = mode == RelateMode.RUNTIME_EXACT ? RelateMode.RUNTIME_EXACT : RelateMode.SUBTYPE;
+                if (!relate(se, te, elemMode, store, active, false, false)) {
+                    return false;
+                }
+                if (solvingTarget || mode == RelateMode.RUNTIME_EXACT || borrowCovariant) {
+                    return true;
+                }
+                if (!waiveArrayNullness && Type.containsNull(se) != Type.containsNull(te)) {
+                    return false;
+                }
+                if (isErasedToObjectArray(unwrapFrozen(Type.withoutNull(se)))) {
+                    Type srcCheck = waiveArrayNullness ? Type.withoutNull(se) : se;
+                    Type tgtCheck = waiveArrayNullness ? Type.withoutNull(te) : te;
+                    return srcCheck.equals(tgtCheck) || relate(tgtCheck, srcCheck, RelateMode.SUBTYPE, null, active, false, false);
+                }
+                return true;
             }
             if (sup instanceof Type.Instance target) {
                 if (!(sub instanceof Type.Instance instance)
@@ -440,7 +470,7 @@ final class TypeAlgebra {
     private boolean argumentsRelate(List<Type> subArgs, List<Type> supArgs, RelateMode mode,
                                     ConstraintStore store, Set<RelationKey> active) {
         for (int i = 0; i < supArgs.size(); i++) {
-            if (!relate(subArgs.get(i), supArgs.get(i), mode, store, active, false)) {
+            if (!relate(subArgs.get(i), supArgs.get(i), mode, store, active, false, false)) {
                 return false;
             }
         }
@@ -448,10 +478,11 @@ final class TypeAlgebra {
     }
 
     private boolean anyMemberRelates(Type sub, Type.Union supUnion, RelateMode mode,
-                                     ConstraintStore store, Set<RelationKey> active, boolean borrowCovariant) {
+                                     ConstraintStore store, Set<RelationKey> active,
+                                     boolean borrowCovariant, boolean waiveArrayNullness) {
         for (Type member : supUnion.members()) {
             int mark = store != null ? store.mark() : 0;
-            if (relate(sub, member, mode, store, active, borrowCovariant)) {
+            if (relate(sub, member, mode, store, active, borrowCovariant, waiveArrayNullness)) {
                 return true;
             }
             if (store != null) {
@@ -510,14 +541,14 @@ final class TypeAlgebra {
                         fromParamType = ff.withEffects(ff.effects().relaxedForForwardedCallback());
                     }
                 }
-                if (!relate(toParamType, fromParamType, RelateMode.ASSIGNABLE, store, active, borrowReadOnly)) {
+                if (!relate(toParamType, fromParamType, RelateMode.ASSIGNABLE, store, active, borrowReadOnly, false)) {
                     return false;
                 }
             } else if (!fp.optional()) {
                 return false;
             }
         }
-        if (!relate(from.result(), to.result(), RelateMode.SUBTYPE, store, active, false)) {
+        if (!relate(from.result(), to.result(), RelateMode.SUBTYPE, store, active, false, false)) {
             return false;
         }
         if (!withEffects) {
@@ -548,6 +579,71 @@ final class TypeAlgebra {
         return true;
     }
 
+    static Type unwrapFrozen(Type t) {
+        while (t instanceof Type.Frozen f) {
+            t = f.of();
+        }
+        return t;
+    }
+
+    static boolean isErasedToObjectArray(Type base) {
+        if (base instanceof Type.Simple s) {
+            return s == Type.ANY || s == Type.NULL || s == Type.NOTHING || s == Type.ERROR;
+        }
+        if (base instanceof Type.JavaInstance ji) {
+            return ji.type() == Object.class;
+        }
+        return !(base instanceof Type.Instance) && !(base instanceof Type.Array);
+    }
+
+    private static Class<?> jvmRefElemClass(Type base) {
+        if (base instanceof Type.Simple simple) {
+            return simple.javaClass();
+        }
+        if (base instanceof Type.JavaInstance ji) {
+            return ji.type();
+        }
+        return null;
+    }
+
+    static boolean jvmArrayAssignable(Type srcElem, Type tgtElem) {
+        Type s = unwrapFrozen(srcElem);
+        Type t = unwrapFrozen(tgtElem);
+        if (Type.isPrimitiveScalar(s) || Type.isPrimitiveScalar(t)) {
+            return s.equals(t);
+        }
+        Type sBase = unwrapFrozen(Type.withoutNull(s));
+        Type tBase = unwrapFrozen(Type.withoutNull(t));
+        if (sBase == Type.NOTHING || isErasedToObjectArray(tBase)) {
+            return true;
+        }
+        if (isErasedToObjectArray(sBase)) {
+            return false;
+        }
+        if (tBase instanceof Type.Array tInner) {
+            return sBase instanceof Type.Array sInner && jvmArrayAssignable(sInner.element(), tInner.element());
+        }
+        if (sBase instanceof Type.Array) {
+            return tBase instanceof Type.JavaInstance tj
+                    && (tj.type() == Cloneable.class || tj.type() == java.io.Serializable.class);
+        }
+        if (tBase instanceof Type.Instance tInst) {
+            return sBase instanceof Type.Instance sInst && isSubtype(sInst.node(), tInst.node());
+        }
+        if (tBase instanceof Type.JavaInstance tJava) {
+            if (sBase instanceof Type.Instance sInst) {
+                return implementsJava(sInst.node(), tJava.type());
+            }
+            Class<?> sc = jvmRefElemClass(sBase);
+            return sc != null && tJava.type().isAssignableFrom(sc);
+        }
+        if (tBase instanceof Type.Simple tSimple && tSimple.javaClass() != null) {
+            Class<?> sc = jvmRefElemClass(sBase);
+            return sc != null && tSimple.javaClass().isAssignableFrom(sc);
+        }
+        return false;
+    }
+
     // ---------------------------------------------------------------- runtime tags
 
     private boolean isErasedSubtype(Type from, Type to) {
@@ -564,8 +660,8 @@ final class TypeAlgebra {
             Class<?> fc = JavaTypeBridge.javaClassOf(from);
             return fc != null && t.type().isAssignableFrom(fc);
         }
-        if (to instanceof Type.JavaArray t) {
-            return from instanceof Type.JavaArray a && t.javaClass().isAssignableFrom(a.javaClass());
+        if (to instanceof Type.Array t) {
+            return from instanceof Type.Array a && jvmArrayAssignable(a.element(), t.element());
         }
         return false;
     }
@@ -601,6 +697,19 @@ final class TypeAlgebra {
         }
         if (b instanceof Type.Intersection i) {
             return i.members().stream().allMatch(m -> overlapsErased(a, m));
+        }
+        if (a instanceof Type.Array aa && b instanceof Type.Array ba) {
+            Type ae = unwrapFrozen(aa.element());
+            Type be = unwrapFrozen(ba.element());
+            if (Type.isPrimitiveScalar(ae) || Type.isPrimitiveScalar(be)) {
+                return ae.equals(be);
+            }
+            Type aBase = unwrapFrozen(Type.withoutNull(ae));
+            Type bBase = unwrapFrozen(Type.withoutNull(be));
+            if (aBase == Type.NOTHING || bBase == Type.NOTHING) {
+                return true;
+            }
+            return overlapsErased(aBase, bBase);
         }
         if (runtimeSubtype(a, b) || runtimeSubtype(b, a) || isErasedSubtype(a, b) || isErasedSubtype(b, a)) {
             return true;
@@ -927,8 +1036,9 @@ final class TypeAlgebra {
         if (source instanceof Type.Simple simple && simple.javaClass() != null) {
             return projectToJava(new Type.JavaInstance(simple.javaClass()), targetClass);
         }
-        if (source instanceof Type.JavaArray array) {
-            return targetClass.isAssignableFrom(array.javaClass()) ? JavaTypeBridge.fromJava(targetClass) : null;
+        if (source instanceof Type.Array) {
+            return (targetClass == Object.class || targetClass == Cloneable.class || targetClass == java.io.Serializable.class)
+                    ? JavaTypeBridge.fromJava(targetClass) : null;
         }
         return null;
     }
