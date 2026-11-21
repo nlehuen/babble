@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 022 |
 | **Date** | 2026-11-21 |
-| **Status** | Draft (`BIP022-D1`–`D8` proposed ; `BIP022-Q1`–`Q4` open, each with a recommendation ; `BIP022-P1`–`P2` not started) |
+| **Status** | Decided (`BIP022-D1`–`D8` decided, resolving `BIP022-Q1`–`Q4` (§9) ; `BIP022-P1`–`P2` not started) |
 | **Depends on** | the object model, interfaces and Java interface bridges ([bip002_object-model.md](bip002_object-model.md)), static typing, unions, narrowing and generics ([bip008_static-typing.md](bip008_static-typing.md)), the type checker's collaborators ([bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), Java nullability and generic invariance ([bip011_core-types.md](bip011_core-types.md)), the predicate-free grammar ([bip012_grammar-improvements.md](bip012_grammar-improvements.md)), bounds and overload sets ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)) |
 | **Scope** | `A & B` for interface types : the values that are both. Covers normalization, subtyping, members, `is` narrowing, runtime checks and JVM erasure, Java type variables with several bounds and intersection casts, bounds of type parameters, and the meets of overload sets — across `Babble.g4`, `TypeAlgebra`, `MemberTypes`, `Narrowing`, `JavaTypeBridge`, `LoweringAnalyzer`, `runtime.Types`, `Faces`, both backends, the formatter and `:type` |
 
@@ -34,7 +34,7 @@ def biggest of (T: java.lang.Comparable of T & java.io.Serializable) = fn (a: T,
 
 `A & B` holds the values that are an `A` and a `B` : instances of classes implementing both, `object`s implementing both, Java objects whose class implements both. It has the members of both. It is what `is` narrows to, what a Java type variable with several bounds means, what several bounds of a Babble type parameter are, and what lets an overload set (`BIP021`) mention two interfaces. At runtime, a check tests both interfaces, and a value is stored as its first operand, as Java erases a type variable to its leftmost bound.
 
-Only interfaces intersect : a Babble class has no subclasses, so `Circle & Shape` is `Circle` or nothing. Intersections of classes, primitives and function types are not proposed (`BIP022-Q1`).
+Only interfaces intersect : a Babble class has no subclasses, so `Circle & Shape` is `Circle` or nothing. Intersections of classes, primitives and function types are not proposed (`BIP022-Q1`, §9).
 
 ---
 
@@ -104,13 +104,13 @@ println(java.util.Collections.max(xs) + 1)
 
 ## 4. Design
 
-**`BIP022-D1` — `A & B` for interface types.** The operands of an intersection are interface types : Babble interfaces, Java interfaces, and their generic instances (`java.lang.Comparable of int`). Any other operand is `Only interfaces intersect : Circle & Shape`, with one exception : `any` and Java's `Object` are dropped, so the bounds Java writes `Object & Comparable<…>` translate (`BIP022-D7`).
+**`BIP022-D1` — `A & B` for interface types.** The operands of an intersection are interface types : Babble interfaces, Java interfaces, and their generic instances (`java.lang.Comparable of int`). Any other operand is `Only interfaces intersect : Circle & Shape` — Java classes included, even where Java bounds start with one (`BIP022-Q1`) — with one exception : `any` and Java's `Object` are dropped, so the bounds Java writes `Object & Comparable<…>` translate (`BIP022-D7`).
 
 **`BIP022-D2` — Normal form and syntax.**
 
 * Nested intersections flatten, duplicates go, and an operand implied by another goes (`Shape & Base` is `Shape` when `Shape extends Base`), so `A & B` and `B & A` are one type, and `:type` shows it in source order with implied operands removed.
 * An intersection of one operand is that operand ; `BIP022` adds no empty intersection.
-* `&` binds tighter than `|` : `A & B | C` is `(A & B) | C`, as in Scala 3 and TypeScript. A union inside an intersection distributes when relations need it (`(A | B) & C` relates as `(A & C) | (B & C)`, `BIP022-Q3`).
+* `&` binds tighter than `|` : `A & B | C` is `(A & B) | C`, as in Scala 3 and TypeScript. A union inside an intersection distributes only when relations need it (`(A | B) & C` relates as `(A & C) | (B & C)`) ; types are kept as written otherwise, so diagnostics and `:type` show what the program says (`BIP022-Q3`).
 * A nullable intersection is `(A & B)?` ; a nullable operand (`A & B?`) is rejected : `Nullable inside an intersection : B? (write (A & B)?)`.
 * A function type's result is a whole type, so `fn (): A & B` returns an intersection.
 
@@ -118,17 +118,17 @@ println(java.util.Collections.max(xs) + 1)
 
 **`BIP022-D4` — Members.** An `A & B` has the members of `A` and of `B`. A name both declare must have the same type, or one type must be a subtype of the other, which is then the member's type ; otherwise the intersection is rejected where it is written : `Conflicting member area in Shape & Named`. Effects (`BIP016`) follow the member chosen.
 
-**`BIP022-D5` — Narrowing intersects.** `x is T` narrows `x` to `x`'s type intersected with `T`, instead of replacing it by `T` : with `s: Shape`, `if s is Named then ( … )` sees a `Shape & Named`, which fixes §2.1 (a). When the intersection is not a valid type (`T` a class), narrowing keeps today's behavior : a class `C` that implements the interface narrows to `C`. The `else` branch subtracts as today (`BIP008`).
+**`BIP022-D5` — Narrowing intersects.** `x is T` narrows `x` to `x`'s type intersected with `T`, instead of replacing it by `T` : with `s: Shape`, `if s is Named then ( … )` sees a `Shape & Named`, which fixes §2.1 (a). A union distributes : with `x: Shape | Label`, `if x is Named then ( … )` sees `(Shape & Named) | (Label & Named)` (`BIP022-Q2`). When the intersection is not a valid type (`T` a class), narrowing keeps today's behavior : a class `C` that implements the interface narrows to `C`. The `else` branch subtracts as today (`BIP008`).
 
 **`BIP022-D6` — Runtime checks and lowering.**
 
 * `x is A & B` and `x as A & B` test both operands : `Types.check` gets a conjunction of descriptors, and compiled code two `INSTANCEOF`.
-* The JVM has no intersection types. A local, field, parameter or result of type `A & B` is **erased to its first operand** after normalization, as Java erases a type variable to its leftmost bound. Using a member of another operand compiles to `CHECKCAST` to that operand, then `INVOKEINTERFACE` (or `bm$m` for a Babble interface, `RM003`) ; the cast cannot fail, since the checker proved the value implements it.
+* The JVM has no intersection types. A local, field, parameter or result of type `A & B` is **erased to its first operand** after normalization, as Java erases a type variable to its leftmost bound (`BIP022-Q4`) : descriptors stay predictable, at the price of a cast before the other operands' members. Using a member of another operand compiles to `CHECKCAST` to that operand, then `INVOKEINTERFACE` (or `bm$m` for a Babble interface, `RM003`) ; the cast cannot fail, since the checker proved the value implements it.
 * `$spec` descriptors (`RM001`) and JVM interface bridges (`RM003`) use the erasure.
 
 **`BIP022-D7` — Java.**
 
-* A Java type variable with several bounds translates to the intersection of its bounds (`JavaTypeBridge`), with `Object` dropped and a leading class other than `Object` kept as the bound for now (`BIP022-Q1`). So `Collections.max(xs)`, with `xs: java.util.List of int`, infers `T = int` against `java.lang.Comparable of int`, and `max(xs) + 1` types (§2.1 (b)).
+* A Java type variable with several bounds translates to the intersection of its bounds (`JavaTypeBridge`), with `Object` dropped and a leading class other than `Object` kept alone as the bound (`BIP022-Q1` : intersections stay interfaces only ; `T extends Number & Comparable<T>` is read as `Number`). So `Collections.max(xs)`, with `xs: java.util.List of int`, infers `T = int` against `java.lang.Comparable of int`, and `max(xs) + 1` types (§2.1 (b)).
 * A Babble function converted to an intersection of one functional interface and marker interfaces — `java.lang.Runnable & java.io.Serializable`, by an expected type or an explicit conversion — implements all of them : `Faces` uses `LambdaMetafactory.altMetafactory` with the markers (and its serializable flag when `java.io.Serializable` is one of them). Two operands with abstract methods are not a functional interface : `Not a functional interface : A & B`.
 
 **`BIP022-D8` — Bounds and overload sets (`BIP021`).**
@@ -189,12 +189,16 @@ LL(1), with no predicate (`ParserGrammarTestCase`) : `&` is not otherwise a toke
 
 ---
 
-## 9. Open questions
+## 9. Resolved questions
 
-* **`BIP022-Q1` — A class among the operands.** Java bounds may start with one class (`T extends Number & Comparable<T>`), and Java values do have class hierarchies : an `Integer` is a `Number & Comparable<Integer>`. Allow one Java class first in an intersection, or keep interfaces only ? *Recommendation : interfaces only for now*, translating a Java bound's leading class other than `Object` to that class alone ; revisit if Java APIs need it.
-* **`BIP022-Q2` — How far narrowing intersects.** `BIP022-D5` intersects for interface tests only. Should `is` also refine a union's components (`(Shape | Label) is Named` → `(Shape & Named) | (Label & Named)`) ? *Recommendation : yes*, by distributing as relations do (`BIP022-Q3`).
-* **`BIP022-Q3` — Normalizing to a union of intersections.** Keep types as written and distribute only when relating them, or store every type as a union of intersections, as Ceylon does ? *Recommendation : distribute when relating*, so diagnostics and `:type` show what was written.
-* **`BIP022-Q4` — Which operand a value is erased to.** The first operand after normalization (Java's leftmost-bound rule), or the operand whose members the code uses most ? *Recommendation : the first*, which is predictable for JVM descriptors and for Java code reading Babble's generated interfaces.
+All decided on 2026-11-21, each as recommended. Each answer is now part of the decision it names.
+
+| Question | Decided | Answer |
+|---|---|---|
+| **`BIP022-Q1`** — a class among the operands | **`BIP022-D1`**, **`BIP022-D7`** | **interfaces only** ; a Java bound's leading class other than `Object` is kept alone as the bound, to revisit if Java APIs need more |
+| **`BIP022-Q2`** — how far narrowing intersects | **`BIP022-D5`** | **unions distribute** : `(Shape \| Label) is Named` gives `(Shape & Named) \| (Label & Named)` |
+| **`BIP022-Q3`** — normalizing to a union of intersections | **`BIP022-D2`** | **distribute only when relating** ; types keep the form they were written in |
+| **`BIP022-Q4`** — which operand a value is erased to | **`BIP022-D6`** | **the first operand** after normalization, Java's leftmost-bound rule |
 
 ---
 
