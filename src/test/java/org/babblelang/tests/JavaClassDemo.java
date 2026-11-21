@@ -338,4 +338,54 @@ public class JavaClassDemo {
     public static String[] invokeExportableStrings(ArrayExportable<@org.babblelang.effects.NotNull String> exp) {
         return exp.toArray(String[]::new);
     }
+
+    // BIP021-P2 Java varargs helpers.
+    public static class VarArgsCtor {
+        public final String summary;
+
+        public VarArgsCtor(String prefix, int... values) {
+            StringBuilder sb = new StringBuilder(prefix).append(":");
+            for (int i = 0; i < values.length; i++) {
+                if (i > 0) sb.append(",");
+                sb.append(values[i]);
+            }
+            this.summary = sb.toString();
+        }
+    }
+
+    public static String vaPick(Object... xs) {
+        return "Object...:" + xs.length;
+    }
+
+    public static String vaPick(String... xs) {
+        return "String...:" + xs.length;
+    }
+
+    public static String vaPick(String single) {
+        return "fixed:" + single;
+    }
+
+    public static String vaAmbig(int a, int... rest) {
+        return "a:" + rest.length;
+    }
+
+    public static String vaAmbig(int... all) {
+        return "all:" + all.length;
+    }
+
+    public static double vaSumDoubles(double... xs) {
+        double sum = 0.0;
+        for (double x : xs) {
+            sum += x;
+        }
+        return sum;
+    }
+
+    public static int vaRunAll(java.util.function.IntUnaryOperator... ops) {
+        int v = 1;
+        for (java.util.function.IntUnaryOperator op : ops) {
+            v = op.applyAsInt(v);
+        }
+        return v;
+    }
 }

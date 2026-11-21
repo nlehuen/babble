@@ -90,10 +90,16 @@ public final class ScopeAnalysis {
         }
     }
 
-    public record JavaCallTarget(java.lang.reflect.Method method, boolean isStatic, boolean unwrapReceiver) {
+    public record JavaCallTarget(java.lang.reflect.Method method, boolean isStatic, boolean unwrapReceiver, boolean varArgs) {
+        public JavaCallTarget(java.lang.reflect.Method method, boolean isStatic, boolean unwrapReceiver) {
+            this(method, isStatic, unwrapReceiver, false);
+        }
     }
 
-    public record JavaConstructorTarget(java.lang.reflect.Constructor<?> constructor) {
+    public record JavaConstructorTarget(java.lang.reflect.Constructor<?> constructor, boolean varArgs) {
+        public JavaConstructorTarget(java.lang.reflect.Constructor<?> constructor) {
+            this(constructor, false);
+        }
     }
 
     public record JavaFieldTarget(java.lang.reflect.Field field, boolean isStatic, boolean unwrapReceiver) {

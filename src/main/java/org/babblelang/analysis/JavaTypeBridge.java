@@ -519,15 +519,30 @@ final class JavaTypeBridge {
     }
 
     private static TypeAlgebra.BadArraySubstitution scanExecutableWithEnv(
-            Executable exec, Map<TypeVariable<?>, Type> synEnv, Map<Type.TypeVar, Type> subEnv, TypeAlgebra algebra) {
+            Executable exec, Map<TypeVariable<?>, Type> synEnv, Map<Type.TypeVar, Type> subEnv,
+            TypeAlgebra algebra) {
+        return scanExecutableWithEnv(exec, synEnv, subEnv, algebra, false);
+    }
+
+    private static TypeAlgebra.BadArraySubstitution scanExecutableWithEnv(
+            Executable exec, Map<TypeVariable<?>, Type> synEnv, Map<Type.TypeVar, Type> subEnv,
+            TypeAlgebra algebra, boolean varArgs) {
         java.lang.reflect.Type[] gParams = exec.getGenericParameterTypes();
-        for (int i = 0; i < gParams.length; i++) {
+        int fixed = varArgs ? gParams.length - 1 : gParams.length;
+        for (int i = 0; i < fixed; i++) {
             if (!(gParams[i] instanceof Class<?>)) {
                 Type pat = javaExecutableParamType(exec, i, synEnv);
                 TypeAlgebra.BadArraySubstitution bad = algebra.findPrimitiveArraySubstitution(pat, subEnv);
                 if (bad != null) {
                     return bad;
                 }
+            }
+        }
+        if (varArgs && gParams.length > 0 && !(gParams[fixed] instanceof Class<?>)) {
+            Type compPat = javaVarArgParamType(exec, fixed, synEnv);
+            TypeAlgebra.BadArraySubstitution bad = algebra.findPrimitiveArraySubstitution(compPat, subEnv);
+            if (bad != null) {
+                return bad;
             }
         }
         if (exec instanceof Method m && !(m.getGenericReturnType() instanceof Class<?>)) {
@@ -544,6 +559,12 @@ final class JavaTypeBridge {
      */
     static BadJavaArrayTypeArg checkJavaExecutableArrayTypeArgs(
             Executable exec, List<TypeVariable<?>> orderedVars, Map<TypeVariable<?>, Type> fullSolvedEnv, TypeAlgebra algebra) {
+        return checkJavaExecutableArrayTypeArgs(exec, orderedVars, fullSolvedEnv, algebra, false);
+    }
+
+    static BadJavaArrayTypeArg checkJavaExecutableArrayTypeArgs(
+            Executable exec, List<TypeVariable<?>> orderedVars, Map<TypeVariable<?>, Type> fullSolvedEnv,
+            TypeAlgebra algebra, boolean varArgs) {
         if (fullSolvedEnv.isEmpty() || fullSolvedEnv.values().stream().noneMatch(Type::isPrimitiveScalar)) {
             return null;
         }
@@ -557,7 +578,7 @@ final class JavaTypeBridge {
             synEnv.put(tp, tv);
             subEnv.put(tv, fullSolvedEnv.get(tp));
         }
-        TypeAlgebra.BadArraySubstitution bad = scanExecutableWithEnv(exec, synEnv, subEnv, algebra);
+        TypeAlgebra.BadArraySubstitution bad = scanExecutableWithEnv(exec, synEnv, subEnv, algebra, varArgs);
         if (bad == null && exec instanceof Constructor<?>) {
             Class<?> cls = exec.getDeclaringClass();
             TypeVariable<?>[] clsTps = cls.getTypeParameters();
@@ -597,6 +618,43 @@ final class JavaTypeBridge {
         AnnotatedType ann = index < annParams.length ? annParams[index] : null;
         return fromJavaType(genericParams[index], ann, env, false, true,
                 JavaNullability.parameterNullness(exec, index), JavaNullability.isNullMarked(exec));
+    }
+
+    /**
+     * Parameter type for argument {@code argIndex} in a Phase 3 variable-arity Java call ({@code BIP021-D8}):
+     * fixed parameters use {@link #javaExecutableParamType}, trailing arguments use the varargs array's component type.
+     */
+    static Type javaVarArgParamType(Executable exec, int argIndex, Map<TypeVariable<?>, Type> env) {
+        int fixed = exec.getParameterCount() - 1;
+        if (argIndex < fixed) {
+            return javaExecutableParamType(exec, argIndex, env);
+        }
+        java.lang.reflect.Type[] genericParams = exec.getGenericParameterTypes();
+        java.lang.reflect.Type varParam = genericParams[fixed];
+        AnnotatedType[] annParams = exec.getAnnotatedParameterTypes();
+        AnnotatedType varAnn = fixed < annParams.length ? annParams[fixed] : null;
+        AnnotatedType compAnn = varAnn instanceof AnnotatedArrayType aat ? aat.getAnnotatedGenericComponentType() : null;
+        java.lang.reflect.Type compGeneric;
+        if (varParam instanceof GenericArrayType gat) {
+            compGeneric = gat.getGenericComponentType();
+        } else if (varParam instanceof Class<?> cls && cls.isArray()) {
+            compGeneric = cls.getComponentType();
+        } else {
+            return Type.ANY;
+        }
+        boolean nullMarked = JavaNullability.isNullMarked(exec);
+        JavaNullability.Nullness compNullness;
+        if (compGeneric instanceof Class<?> c && c.isPrimitive()) {
+            compNullness = JavaNullability.Nullness.NON_NULL;
+        } else if (compGeneric instanceof TypeVariable<?>) {
+            compNullness = JavaNullability.Nullness.PARAMETRIC;
+        } else {
+            JavaNullability.Nullness paramNullness = JavaNullability.parameterNullness(exec, fixed);
+            compNullness = paramNullness == JavaNullability.Nullness.NULLABLE
+                    ? JavaNullability.Nullness.NULLABLE
+                    : (nullMarked ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.UNSPECIFIED);
+        }
+        return fromJavaType(compGeneric, compAnn, env, false, true, compNullness, nullMarked);
     }
 
     static Type makeAccessible(Type type, TypeAlgebra algebra) {
@@ -915,6 +973,11 @@ final class JavaTypeBridge {
 
     static <E extends Executable> Type expectedGenericJavaArgumentType(
             List<E> candidates, int index, boolean isLambdaArg, Map<TypeVariable<?>, Type> receiverEnv) {
+        return expectedGenericJavaArgumentType(candidates, index, isLambdaArg, receiverEnv, false);
+    }
+
+    static <E extends Executable> Type expectedGenericJavaArgumentType(
+            List<E> candidates, int index, boolean isLambdaArg, Map<TypeVariable<?>, Type> receiverEnv, boolean varArgs) {
         if (candidates.isEmpty()) {
             return null;
         }
@@ -922,7 +985,9 @@ final class JavaTypeBridge {
         for (E candidate : candidates) {
             Map<TypeVariable<?>, Type> env = new HashMap<>(receiverEnv);
             candidateSolvingVars(candidate).forEach(env::putIfAbsent);
-            paramTypes.add(javaExecutableParamType(candidate, index, env));
+            paramTypes.add(varArgs
+                    ? javaVarArgParamType(candidate, index, env)
+                    : javaExecutableParamType(candidate, index, env));
         }
         if (paramTypes.size() == 1) {
             return paramTypes.iterator().next();
@@ -945,27 +1010,46 @@ final class JavaTypeBridge {
 
     static boolean applicableGeneric(Executable candidate, int index, Type argument,
                                      Map<TypeVariable<?>, Type> receiverEnv, TypeAlgebra algebra) {
-        return applicableGeneric(candidate, index, argument, receiverEnv, algebra, false, false);
+        return applicableGeneric(candidate, index, argument, receiverEnv, algebra, false, false, false);
     }
 
     static boolean applicableGeneric(Executable candidate, int index, Type argument,
                                      Map<TypeVariable<?>, Type> receiverEnv, TypeAlgebra algebra,
                                      boolean borrowParam, boolean mutParam) {
-        Class<?> rawParam = candidate.getParameterTypes()[index];
+        return applicableGeneric(candidate, index, argument, receiverEnv, algebra, borrowParam, mutParam, false);
+    }
+
+    static boolean applicableGeneric(Executable candidate, int index, Type argument,
+                                     Map<TypeVariable<?>, Type> receiverEnv, TypeAlgebra algebra,
+                                     boolean borrowParam, boolean mutParam, boolean varArgs) {
+        int fixed = candidate.getParameterCount() - 1;
+        boolean inVarTail = varArgs && index >= fixed;
+        Class<?> rawParam = inVarTail
+                ? candidate.getParameterTypes()[fixed].getComponentType()
+                : candidate.getParameterTypes()[index];
         if (!applicable(rawParam, argument, algebra)) {
             return false;
         }
         if (TypeChecker.isUnresolved(argument)) {
             return true;
         }
-        java.lang.reflect.Type genericParam = candidate.getGenericParameterTypes()[index];
+        java.lang.reflect.Type genericParam;
+        if (inVarTail) {
+            java.lang.reflect.Type vp = candidate.getGenericParameterTypes()[fixed];
+            genericParam = vp instanceof GenericArrayType gat ? gat.getGenericComponentType()
+                    : (vp instanceof Class<?> c && c.isArray() ? c.getComponentType() : Object.class);
+        } else {
+            genericParam = candidate.getGenericParameterTypes()[index];
+        }
         if (genericParam instanceof Class<?> && !rawParam.isArray()) {
             return true;
         }
         Map<TypeVariable<?>, Type.TypeVar> tvToSyn = candidateSolvingVars(candidate);
         Map<TypeVariable<?>, Type> env = new HashMap<>(receiverEnv);
         env.putAll(tvToSyn);
-        Type paramPattern = javaExecutableParamType(candidate, index, env);
+        Type paramPattern = inVarTail
+                ? javaVarArgParamType(candidate, index, env)
+                : javaExecutableParamType(candidate, index, env);
         if (!paramPattern.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null)) {
             if (genericParam instanceof ParameterizedType pt && hasWildcard(pt)
                     && !(Type.withoutNull(argument) instanceof Type.Function)) {
@@ -1008,21 +1092,67 @@ final class JavaTypeBridge {
 
     /** The overload more specific than all the others, as {@code Overloads.resolve} finds it, or null. */
     static <E extends Executable> E mostSpecific(List<E> applicable) {
+        return mostSpecific(applicable, false);
+    }
+
+    static <E extends Executable> E mostSpecific(List<E> applicable, boolean varArgs) {
         for (E candidate : applicable) {
-            if (applicable.stream().allMatch(other -> other == candidate || isMoreSpecific(candidate, other))) {
+            boolean beatsAll = true;
+            for (E other : applicable) {
+                if (other == candidate) {
+                    continue;
+                }
+                boolean more = varArgs ? isVarArgsMoreSpecific(candidate, other) : isMoreSpecific(candidate, other);
+                if (!more) {
+                    beatsAll = false;
+                    break;
+                }
+                if (varArgs) {
+                    boolean reverse = isVarArgsMoreSpecific(other, candidate);
+                    boolean sameParams = Arrays.equals(candidate.getParameterTypes(), other.getParameterTypes());
+                    if (reverse && !sameParams) {
+                        beatsAll = false;
+                        break;
+                    }
+                }
+            }
+            if (beatsAll) {
                 return candidate;
             }
         }
         return null;
     }
 
+    private static boolean isTypeMoreSpecific(Class<?> candidateType, Class<?> otherType) {
+        Class<?> from = JavaTypes.box(candidateType);
+        Class<?> to = JavaTypes.box(otherType);
+        return to.isAssignableFrom(from) || JavaTypes.isWidening(from, to);
+    }
+
     private static boolean isMoreSpecific(Executable candidate, Executable other) {
         Class<?>[] candidateTypes = candidate.getParameterTypes();
         Class<?>[] otherTypes = other.getParameterTypes();
         for (int i = 0; i < candidateTypes.length; i++) {
-            Class<?> from = JavaTypes.box(candidateTypes[i]);
-            Class<?> to = JavaTypes.box(otherTypes[i]);
-            if (!to.isAssignableFrom(from) && !JavaTypes.isWidening(from, to)) {
+            if (!isTypeMoreSpecific(candidateTypes[i], otherTypes[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** JLS §15.12.2.5 variable-arity specificity comparison between two varargs executables. */
+    private static boolean isVarArgsMoreSpecific(Executable candidate, Executable other) {
+        Class<?>[] cTypes = candidate.getParameterTypes();
+        Class<?>[] oTypes = other.getParameterTypes();
+        int m = cTypes.length;
+        int n = oTypes.length;
+        Class<?> cComp = cTypes[m - 1].getComponentType();
+        Class<?> oComp = oTypes[n - 1].getComponentType();
+        int max = Math.max(m, n);
+        for (int i = 0; i < max; i++) {
+            Class<?> from = i < m - 1 ? cTypes[i] : cComp;
+            Class<?> to = i < n - 1 ? oTypes[i] : oComp;
+            if (!isTypeMoreSpecific(from, to)) {
                 return false;
             }
         }

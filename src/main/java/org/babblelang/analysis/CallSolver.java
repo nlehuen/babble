@@ -34,6 +34,10 @@ final class CallSolver {
     /** The Java method or constructor each call resolved to (for effects and lowering). */
     private final Map<ParserRuleContext, Method> resolvedMethods = new java.util.IdentityHashMap<>();
     private final Map<ParserRuleContext, Constructor<?>> resolvedConstructors = new java.util.IdentityHashMap<>();
+    private final Set<ParserRuleContext> resolvedVarArgs = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    private record JavaCallMatch<E extends Executable>(List<E> applicable, boolean varArgs) {
+    }
 
     CallSolver(TypeChecker checker) {
         this.checker = checker;
@@ -43,11 +47,22 @@ final class CallSolver {
     void reset() {
         resolvedMethods.clear();
         resolvedConstructors.clear();
+        resolvedVarArgs.clear();
     }
 
-    private void recordConstructor(Executable winner, ParserRuleContext ctx) {
+    private void recordConstructor(Executable winner, boolean varArgs, ParserRuleContext ctx) {
         if (winner instanceof Constructor<?> constructor) {
             resolvedConstructors.put(ctx, constructor);
+            if (varArgs) {
+                resolvedVarArgs.add(ctx);
+            }
+        }
+    }
+
+    private void recordMethod(Method winner, boolean varArgs, ParserRuleContext ctx) {
+        resolvedMethods.put(ctx, winner);
+        if (varArgs) {
+            resolvedVarArgs.add(ctx);
         }
     }
 
@@ -57,6 +72,10 @@ final class CallSolver {
 
     Constructor<?> resolvedConstructor(ParserRuleContext call) {
         return resolvedConstructors.get(call);
+    }
+
+    boolean isResolvedVarArgs(ParserRuleContext call) {
+        return resolvedVarArgs.contains(call);
     }
 
     /** The type of a call of {@code callee} ; {@code recordTarget} records the Java executable it resolves to (not for a union member). */
@@ -180,15 +199,16 @@ final class CallSolver {
                     env.put(classParams[i], explicitTypeArgs.get(i));
                 }
                 List<Type> argumentTypes = new ArrayList<>();
-                List<Executable> matching = javaCall(Arrays.asList(java.getConstructors()), java.getCanonicalName(),
+                JavaCallMatch<Executable> match = javaCall(Arrays.asList(java.getConstructors()), java.getCanonicalName(),
                         env, arguments, ctx, expected, argumentTypes);
+                List<Executable> matching = match.applicable();
                 Executable winner = matching.isEmpty() ? null
-                        : matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching);
+                        : matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching, match.varArgs());
                 if (winner != null) {
                     if (recordTarget) {
-                        recordConstructor(winner, ctx);
+                        recordConstructor(winner, match.varArgs(), ctx);
                     }
-                    checkJavaArgumentWidening(winner, env, arguments, argumentTypes);
+                    checkJavaArgumentWidening(winner, env, arguments, argumentTypes, match.varArgs());
                 }
                 return new Type.JavaInstance(java, explicitTypeArgs);
             }
@@ -218,24 +238,25 @@ final class CallSolver {
                     }
                 }
                 List<Type> argumentTypes = new ArrayList<>();
-                List<Method> applicable = javaCall(candidates, method.owner().getCanonicalName() + "." + method.name(),
+                JavaCallMatch<Method> match = javaCall(candidates, method.owner().getCanonicalName() + "." + method.name(),
                         callEnv, arguments, ctx, expected, argumentTypes);
+                List<Method> applicable = match.applicable();
                 if (applicable.isEmpty()) {
                     return Type.ERROR;
                 }
-                Method best = applicable.size() == 1 ? applicable.get(0) : JavaTypeBridge.mostSpecific(applicable);
+                Method best = applicable.size() == 1 ? applicable.get(0) : JavaTypeBridge.mostSpecific(applicable, match.varArgs());
                 if (best == null) {
                     return Type.ERROR;
                 }
                 if (recordTarget) {
-                    resolvedMethods.put(ctx, best);
+                    recordMethod(best, match.varArgs(), ctx);
                 }
                 Map<TypeVariable<?>, Type> bestEnv = new HashMap<>(receiverEnv);
                 TypeVariable<?>[] bestParams = best.getTypeParameters();
                 for (int i = 0; i < bestParams.length; i++) {
                     bestEnv.put(bestParams[i], explicitTypeArgs.get(i));
                 }
-                checkJavaArgumentWidening(best, bestEnv, arguments, argumentTypes);
+                checkJavaArgumentWidening(best, bestEnv, arguments, argumentTypes, match.varArgs());
                 return JavaTypeBridge.javaMethodResult(best, bestEnv, checker.algebra());
             }
             return javaMethodCall(all, method.owner().getCanonicalName() + "." + method.name(),
@@ -701,14 +722,16 @@ final class CallSolver {
                              BabbleParser.CallContext ctx, Type expected, boolean recordTarget) {
         List<Type> argumentTypes = new ArrayList<>();
         String description = java.getCanonicalName();
-        List<Executable> matching = javaCall(Arrays.asList(java.getConstructors()), description, Map.of(), arguments, ctx, expected, argumentTypes);
+        JavaCallMatch<Executable> match = javaCall(Arrays.asList(java.getConstructors()), description, Map.of(), arguments, ctx, expected, argumentTypes);
+        List<Executable> matching = match.applicable();
+        boolean varArgs = match.varArgs();
         TypeVariable<?>[] classParams = java.getTypeParameters();
-        Executable winner = matching.isEmpty() ? null : matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching);
+        Executable winner = matching.isEmpty() ? null : matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching, varArgs);
         if (classParams.length == 0) {
             if (winner != null) {
-                checkJavaArgumentWidening(winner, Map.of(), arguments, argumentTypes);
+                checkJavaArgumentWidening(winner, Map.of(), arguments, argumentTypes, varArgs);
                 if (recordTarget) {
-                    recordConstructor(winner, ctx);
+                    recordConstructor(winner, varArgs, ctx);
                 }
             }
             return new Type.JavaInstance(java);
@@ -720,12 +743,12 @@ final class CallSolver {
         variables.addAll(Arrays.asList(winner.getTypeParameters()));
         Map<TypeVariable<?>, Type> solved = solveJava(winner, variables, Map.of(),
                 synthetic -> new Type.JavaInstance(java, Arrays.stream(classParams).map(tp -> (Type) synthetic.get(tp)).toList()),
-                arguments, argumentTypes, description, ctx, expected);
+                arguments, argumentTypes, description, ctx, expected, varArgs);
         if (solved == null) {
             return Type.ERROR;
         }
         if (recordTarget) {
-            recordConstructor(winner, ctx);
+            recordConstructor(winner, varArgs, ctx);
         }
         return new Type.JavaInstance(java, Arrays.stream(classParams).map(solved::get).toList());
     }
@@ -734,13 +757,15 @@ final class CallSolver {
                         List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx,
                         Type expected, boolean recordTarget) {
         List<Type> argumentTypes = new ArrayList<>();
-        List<Method> applicable = javaCall(candidates, description, receiverEnv, arguments, ctx, expected, argumentTypes);
+        JavaCallMatch<Method> match = javaCall(candidates, description, receiverEnv, arguments, ctx, expected, argumentTypes);
+        List<Method> applicable = match.applicable();
+        boolean varArgs = match.varArgs();
         if (applicable.isEmpty()) {
             return Type.ERROR;
         }
         Method best = applicable.size() == 1 ? applicable.get(0) : null;
         if (best == null && argumentTypes.stream().noneMatch(TypeChecker::isUnresolved)) {
-            best = JavaTypeBridge.mostSpecific(applicable);
+            best = JavaTypeBridge.mostSpecific(applicable, varArgs);
         }
         if (best == null) {
             Set<Class<?>> results = applicable.stream().map(Method::getReturnType).collect(Collectors.toSet());
@@ -751,7 +776,7 @@ final class CallSolver {
         }
         Map<TypeVariable<?>, Type> env = receiverEnv;
         if (best.getTypeParameters().length == 0) {
-            checkJavaArgumentWidening(best, receiverEnv, arguments, argumentTypes);
+            checkJavaArgumentWidening(best, receiverEnv, arguments, argumentTypes, varArgs);
         } else {
             Method generic = best;
             env = solveJava(best, Arrays.asList(best.getTypeParameters()), receiverEnv,
@@ -761,7 +786,7 @@ final class CallSolver {
                         return JavaTypeBridge.fromJavaType(generic.getGenericReturnType(), generic.getAnnotatedReturnType(),
                                 patternEnv, false, false, JavaNullability.returnNullness(generic), JavaNullability.isNullMarked(generic));
                     },
-                    arguments, argumentTypes, description, ctx, expected);
+                    arguments, argumentTypes, description, ctx, expected, varArgs);
             if (env == null) {
                 return Type.ERROR;
             }
@@ -774,7 +799,7 @@ final class CallSolver {
             }
         }
         if (recordTarget) {
-            resolvedMethods.put(ctx, best);
+            recordMethod(best, varArgs, ctx);
         }
         return result;
     }
@@ -789,7 +814,7 @@ final class CallSolver {
                                                  Map<TypeVariable<?>, Type> knownEnv,
                                                  java.util.function.Function<Map<TypeVariable<?>, Type.TypeVar>, Type> resultPattern,
                                                  List<BabbleParser.CallParameterContext> arguments, List<Type> argumentTypes,
-                                                 String description, BabbleParser.CallContext ctx, Type expected) {
+                                                 String description, BabbleParser.CallContext ctx, Type expected, boolean varArgs) {
         Map<TypeVariable<?>, Type.TypeVar> synthetic = new HashMap<>();
         for (TypeVariable<?> tp : variables) {
             synthetic.putIfAbsent(tp, new Type.TypeVar(null, tp.getName(), synthetic.size()));
@@ -799,15 +824,18 @@ final class CallSolver {
         Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(knownEnv);
         patternEnv.putAll(synthetic);
         TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
-        java.lang.reflect.Type[] genericParams = executable.getGenericParameterTypes();
+        int fixed = executable.getParameterCount() - 1;
         List<Type> paramPatterns = new ArrayList<>(arguments.size());
         List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
         for (int i = 0; i < arguments.size(); i++) {
-            Type paramPat = JavaTypeBridge.javaExecutableParamType(executable, i, patternEnv);
+            Type paramPat = varArgs
+                    ? JavaTypeBridge.javaVarArgParamType(executable, i, patternEnv)
+                    : JavaTypeBridge.javaExecutableParamType(executable, i, patternEnv);
             paramPatterns.add(paramPat);
             argExprs.add(arguments.get(i).expression());
+            int pIdx = varArgs ? Math.min(i, fixed) : i;
             checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store,
-                    isJavaParamBorrow(executable, i), !isJavaParamMut(executable, i));
+                    isJavaParamBorrow(executable, pIdx), !isJavaParamMut(executable, pIdx));
         }
         Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern.apply(synthetic), expected, solving);
         Map<Type.TypeVar, Type> inferred = solveAll(solvingList, store, retHints, paramPatterns, argExprs);
@@ -828,32 +856,39 @@ final class CallSolver {
             }
         }
         JavaTypeBridge.BadJavaArrayTypeArg badArrJava = JavaTypeBridge.checkJavaExecutableArrayTypeArgs(
-                executable, variables, solved, checker.algebra());
+                executable, variables, solved, checker.algebra(), varArgs);
         if (badArrJava != null) {
             checker.warn(badArrJava.message(), ctx);
             return null;
         }
-        checkJavaArgumentWidening(executable, solved, arguments, argumentTypes);
+        checkJavaArgumentWidening(executable, solved, arguments, argumentTypes, varArgs);
         return solved;
     }
 
-    private <E extends Executable> List<E> javaCall(List<E> candidates, String description,
-                                                    Map<TypeVariable<?>, Type> receiverEnv,
-                                                    List<BabbleParser.CallParameterContext> arguments,
-                                                    ParserRuleContext ctx, Type expected,
-                                                    List<Type> outArgumentTypes) {
-        List<E> matching = new ArrayList<>();
+    private <E extends Executable> JavaCallMatch<E> javaCall(List<E> candidates, String description,
+                                                             Map<TypeVariable<?>, Type> receiverEnv,
+                                                             List<BabbleParser.CallParameterContext> arguments,
+                                                             ParserRuleContext ctx, Type expected,
+                                                             List<Type> outArgumentTypes) {
+        List<E> fixedCandidates = new ArrayList<>();
+        List<E> varArgCandidates = new ArrayList<>();
         for (E candidate : candidates) {
             if (candidate.getParameterCount() == arguments.size()) {
-                matching.add(candidate);
+                fixedCandidates.add(candidate);
+            }
+            if (candidate.isVarArgs() && candidate.getParameterCount() > 0
+                    && arguments.size() >= candidate.getParameterCount() - 1) {
+                varArgCandidates.add(candidate);
             }
         }
+        boolean varArgs = fixedCandidates.isEmpty() && !varArgCandidates.isEmpty();
+        List<E> matching = new ArrayList<>(varArgs ? varArgCandidates : fixedCandidates);
         Type[] argTypes = new Type[arguments.size()];
         boolean[] deferred = new boolean[arguments.size()];
         for (int i = 0; i < arguments.size(); i++) {
             BabbleParser.ExpressionContext argument = arguments.get(i).expression();
             boolean isLambda = checker.unwrapFunctionLiteral(argument) != null;
-            Type argExpected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, receiverEnv);
+            Type argExpected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, receiverEnv, varArgs);
             if (needsDeferredLambdaTyping(argument, argExpected)) {
                 deferred[i] = true;
                 continue;
@@ -861,22 +896,47 @@ final class CallSolver {
             Type actual = checker.check(argument, argExpected);
             argTypes[i] = actual;
             final int index = i;
-            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, receiverEnv,
-                    checker.algebra(), isJavaParamBorrow(candidate, index), isJavaParamMut(candidate, index)));
+            final boolean va = varArgs;
+            matching.removeIf(candidate -> {
+                int pIdx = va ? Math.min(index, candidate.getParameterCount() - 1) : index;
+                return !JavaTypeBridge.applicableGeneric(candidate, index, actual, receiverEnv,
+                        checker.algebra(), isJavaParamBorrow(candidate, pIdx), isJavaParamMut(candidate, pIdx), va);
+            });
         }
         for (int i = 0; i < arguments.size(); i++) {
             if (!deferred[i]) {
                 continue;
             }
             BabbleParser.ExpressionContext argument = arguments.get(i).expression();
-            Map<TypeVariable<?>, Type> refinedEnv = refineJavaEnvFromArgs(matching, receiverEnv, argTypes, deferred, ctx, expected);
+            Map<TypeVariable<?>, Type> refinedEnv = refineJavaEnvFromArgs(matching, receiverEnv, argTypes, deferred, ctx, expected, varArgs);
             boolean isLambda = checker.unwrapFunctionLiteral(argument) != null;
-            Type argExpected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, refinedEnv);
+            Type argExpected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, refinedEnv, varArgs);
             Type actual = checker.check(argument, argExpected);
             argTypes[i] = actual;
             final int index = i;
-            matching.removeIf(candidate -> !JavaTypeBridge.applicableGeneric(candidate, index, actual, refinedEnv,
-                    checker.algebra(), isJavaParamBorrow(candidate, index), isJavaParamMut(candidate, index)));
+            final boolean va = varArgs;
+            matching.removeIf(candidate -> {
+                int pIdx = va ? Math.min(index, candidate.getParameterCount() - 1) : index;
+                return !JavaTypeBridge.applicableGeneric(candidate, index, actual, refinedEnv,
+                        checker.algebra(), isJavaParamBorrow(candidate, pIdx), isJavaParamMut(candidate, pIdx), va);
+            });
+        }
+        // Phase 3 fallback (BIP021-D8): if fixed-arity phase 1-2 found nothing, try variable-arity candidates.
+        if (!varArgs && matching.isEmpty() && !varArgCandidates.isEmpty()) {
+            List<E> vaMatching = new ArrayList<>(varArgCandidates);
+            for (int i = 0; i < argTypes.length; i++) {
+                final int index = i;
+                final Type actual = argTypes[i];
+                vaMatching.removeIf(candidate -> {
+                    int pIdx = Math.min(index, candidate.getParameterCount() - 1);
+                    return !JavaTypeBridge.applicableGeneric(candidate, index, actual, receiverEnv,
+                            checker.algebra(), isJavaParamBorrow(candidate, pIdx), isJavaParamMut(candidate, pIdx), true);
+                });
+            }
+            if (!vaMatching.isEmpty()) {
+                matching = vaMatching;
+                varArgs = true;
+            }
         }
         outArgumentTypes.clear();
         for (Type t : argTypes) {
@@ -887,16 +947,16 @@ final class CallSolver {
                     + outArgumentTypes.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")")), ctx);
         } else if (matching.size() > 1
                 && outArgumentTypes.stream().noneMatch(TypeChecker::isUnresolved)
-                && JavaTypeBridge.mostSpecific(matching) == null) {
+                && JavaTypeBridge.mostSpecific(matching, varArgs) == null) {
             checker.warn("Ambiguous call to " + description + " for "
                     + outArgumentTypes.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")")), ctx);
         }
-        return matching;
+        return new JavaCallMatch<>(matching, varArgs);
     }
 
     private <E extends Executable> Map<TypeVariable<?>, Type> refineJavaEnvFromArgs(
             List<E> matching, Map<TypeVariable<?>, Type> receiverEnv, Type[] argTypes, boolean[] deferred,
-            ParserRuleContext ctx, Type expected) {
+            ParserRuleContext ctx, Type expected, boolean varArgs) {
         if (matching.size() != 1) {
             return receiverEnv;
         }
@@ -909,11 +969,15 @@ final class CallSolver {
         Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(receiverEnv);
         patternEnv.putAll(tvToSyn);
         TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
+        int fixed = cand.getParameterCount() - 1;
         for (int i = 0; i < argTypes.length; i++) {
             if (!deferred[i] && argTypes[i] != null) {
-                Type paramPat = JavaTypeBridge.javaExecutableParamType(cand, i, patternEnv);
+                Type paramPat = varArgs
+                        ? JavaTypeBridge.javaVarArgParamType(cand, i, patternEnv)
+                        : JavaTypeBridge.javaExecutableParamType(cand, i, patternEnv);
+                int pIdx = varArgs ? Math.min(i, fixed) : i;
                 checker.algebra().relate(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store,
-                        isJavaParamBorrow(cand, i), !isJavaParamMut(cand, i));
+                        isJavaParamBorrow(cand, pIdx), !isJavaParamMut(cand, pIdx));
             }
         }
         Type ctxExpected = expected;
@@ -946,12 +1010,15 @@ final class CallSolver {
     }
 
     private void checkJavaArgumentWidening(Executable candidate, Map<TypeVariable<?>, Type> env,
-                                           List<BabbleParser.CallParameterContext> arguments, List<Type> argumentTypes) {
+                                           List<BabbleParser.CallParameterContext> arguments, List<Type> argumentTypes,
+                                           boolean varArgs) {
         for (int i = 0; i < arguments.size(); i++) {
             if (i < argumentTypes.size()) {
                 BabbleParser.ExpressionContext argExpr = arguments.get(i).expression();
                 Type argType = argumentTypes.get(i);
-                Type paramType = JavaTypeBridge.javaExecutableParamType(candidate, i, env);
+                Type paramType = varArgs
+                        ? JavaTypeBridge.javaVarArgParamType(candidate, i, env)
+                        : JavaTypeBridge.javaExecutableParamType(candidate, i, env);
                 if (!Type.containsNull(paramType) && Type.containsNull(argType) && !TypeChecker.isUnresolved(argType)) {
                     checker.subsumes(argExpr, argType, paramType);
                 }

@@ -4503,14 +4503,14 @@ final class EffectChecker {
                 JavaCallProfile profile = resolveJavaMethodProfile(rm.getDeclaringClass(), rm.getName(), rm);
                 BabbleParser.ExpressionContext instanceRecv = Modifier.isStatic(rm.getModifiers()) ? null : receiverExpr;
                 return applyJavaCall(call, calleeExpr, profile, rm.getDeclaringClass(), rm.getName(),
-                        rm.getParameterTypes(), instanceRecv, recvOrig, argExprs, argOrigins, resType);
+                        rm.getParameterTypes(), checker.isResolvedJavaVarArgs(call), instanceRecv, recvOrig, argExprs, argOrigins, resType);
             }
             if (calleeType instanceof Type.JavaMethod jm) {
                 JavaCallProfile profile = resolveJavaMethodProfile(jm.owner(), jm.name(), null);
                 Class<?>[] samTypes = findOverloadSamTypes(jm.owner(), jm.name(), args.size());
                 boolean isClassRecv = receiverExpr != null && checker.rawTypeOf(receiverExpr) instanceof Type.JavaClassValue;
                 return applyJavaCall(call, calleeExpr, profile, jm.owner(), jm.name(),
-                        samTypes, isClassRecv ? null : receiverExpr, recvOrig, argExprs, argOrigins, resType);
+                        samTypes, false, isClassRecv ? null : receiverExpr, recvOrig, argExprs, argOrigins, resType);
             }
 
             // 3. Java constructor call or Java functional interface SAM conversion `Predicate(fn)`
@@ -4518,7 +4518,7 @@ final class EffectChecker {
             if (rc != null) {
                 JavaCallProfile profile = resolveJavaConstructorProfile(rc.getDeclaringClass(), rc);
                 return applyJavaCall(call, calleeExpr, profile, rc.getDeclaringClass(), "<init>",
-                        rc.getParameterTypes(), null, Origin.IMMUTABLE, argExprs, argOrigins, resType);
+                        rc.getParameterTypes(), checker.isResolvedJavaVarArgs(call), null, Origin.IMMUTABLE, argExprs, argOrigins, resType);
             }
             if (calleeType instanceof Type.JavaClassValue jcv) {
                 if (jcv.type().isInterface() && args.size() == 1 && JavaTypes.isFunctionalInterface(jcv.type())) {
@@ -4527,7 +4527,7 @@ final class EffectChecker {
                 }
                 JavaCallProfile profile = resolveJavaConstructorProfile(jcv.type(), null);
                 return applyJavaCall(call, calleeExpr, profile, jcv.type(), "<init>",
-                        null, null, Origin.IMMUTABLE, argExprs, argOrigins, resType);
+                        null, false, null, Origin.IMMUTABLE, argExprs, argOrigins, resType);
             }
 
             // 4. Babble class constructor call `Point(1, 2)`
@@ -4926,6 +4926,7 @@ final class EffectChecker {
                                      Class<?> owner,
                                      String methodName,
                                      Class<?>[] javaParamTypes,
+                                     boolean varArgs,
                                      BabbleParser.ExpressionContext receiverExpr,
                                      Origin recvOrig,
                                      BabbleParser.ExpressionContext[] argExprs,
@@ -4966,12 +4967,14 @@ final class EffectChecker {
 
             // Parameter mut / borrow / unique / frozen / read / SAM callback checks:
             boolean[] argIsMut = new boolean[argExprs.length];
+            int fixed = varArgs && javaParamTypes != null ? javaParamTypes.length - 1 : -1;
             for (int i = 0; i < argExprs.length; i++) {
                 Type argType = effectiveType(argExprs[i]);
-                boolean mutP = i < profile.mutParams().length && profile.mutParams()[i] && argType != Type.STRING;
-                boolean borrowP = i < profile.borrowParams().length && profile.borrowParams()[i];
-                boolean uniqueP = i < profile.uniqueParams().length && profile.uniqueParams()[i];
-                boolean readP = i < profile.readParams().length ? profile.readParams()[i] : true;
+                int pIdx = varArgs && fixed >= 0 ? Math.min(i, fixed) : i;
+                boolean mutP = pIdx < profile.mutParams().length && profile.mutParams()[pIdx] && argType != Type.STRING;
+                boolean borrowP = pIdx < profile.borrowParams().length && profile.borrowParams()[pIdx];
+                boolean uniqueP = pIdx < profile.uniqueParams().length && profile.uniqueParams()[pIdx];
+                boolean readP = pIdx < profile.readParams().length ? profile.readParams()[pIdx] : true;
                 if (readP) {
                     recordTargetRead(argOrigins[i], argType);
                 }
@@ -5012,9 +5015,14 @@ final class EffectChecker {
                     markStoredOrigin(argOrigins[i], "Java call argument", argExprs[i]);
                 }
                 // Java SAM callback static effect propagation (§6.3):
-                if (javaParamTypes != null && i < javaParamTypes.length && javaParamTypes[i] != null
-                        && JavaTypes.isFunctionalInterface(javaParamTypes[i])) {
-                    propagateSamCallbackEffects(argType, javaParamTypes[i]);
+                Class<?> javaParamClass = null;
+                if (javaParamTypes != null && pIdx < javaParamTypes.length) {
+                    javaParamClass = (varArgs && i >= fixed && javaParamTypes[fixed] != null && javaParamTypes[fixed].isArray())
+                            ? javaParamTypes[fixed].getComponentType()
+                            : javaParamTypes[pIdx];
+                }
+                if (javaParamClass != null && JavaTypes.isFunctionalInterface(javaParamClass)) {
+                    propagateSamCallbackEffects(argType, javaParamClass);
                 }
             }
 

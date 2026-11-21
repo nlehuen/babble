@@ -142,6 +142,10 @@ final class TypedProgram {
         return checker.callSolver().resolvedConstructor(call);
     }
 
+    boolean isResolvedJavaVarArgs(ParserRuleContext call) {
+        return checker.callSolver().isResolvedVarArgs(call);
+    }
+
     /** The Java field a selection reads, when it has a static target. */
     ScopeAnalysis.JavaFieldTarget javaFieldTargetOf(BabbleParser.SelectorContext sel) {
         return sel.expression() == null || sel.safe != null ? null

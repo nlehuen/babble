@@ -3312,6 +3312,66 @@ final class HirEmitter {
         finishCallCheck(c.meta());
     }
 
+    private int[] emitJavaArgsToLocals(List<HirExpr> args, Class<?>[] paramTypes, boolean varArgs, int ln) {
+        int[] argLocals = new int[paramTypes.length];
+        if (!varArgs) {
+            for (int i = 0; i < paramTypes.length; i++) {
+                argLocals[i] = emitJavaArgToLocal(args.get(i), paramTypes[i], ln);
+            }
+            return argLocals;
+        }
+        int fixed = paramTypes.length - 1;
+        for (int i = 0; i < fixed; i++) {
+            argLocals[i] = emitJavaArgToLocal(args.get(i), paramTypes[i], ln);
+        }
+        Class<?> comp = paramTypes[fixed].getComponentType();
+        int varCount = args.size() - fixed;
+        int[] varLocals = new int[varCount];
+        for (int j = 0; j < varCount; j++) {
+            varLocals[j] = emitJavaArgToLocal(args.get(fixed + j), comp, ln);
+        }
+        ConstantPool.pushInt(mv, varCount);
+        if (comp.isPrimitive()) {
+            mv.visitIntInsn(NEWARRAY, javaPrimitiveArrayType(comp));
+        } else {
+            mv.visitTypeInsn(ANEWARRAY, Type.getInternalName(comp));
+        }
+        int storeOp = javaArrayStoreOpcode(comp);
+        for (int j = 0; j < varCount; j++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, j);
+            loadJavaLocal(comp, varLocals[j]);
+            mv.visitInsn(storeOp);
+        }
+        int arrLocal = newLocal();
+        mv.visitVarInsn(ASTORE, arrLocal);
+        argLocals[fixed] = arrLocal;
+        return argLocals;
+    }
+
+    private static int javaPrimitiveArrayType(Class<?> comp) {
+        if (comp == boolean.class) return T_BOOLEAN;
+        if (comp == char.class) return T_CHAR;
+        if (comp == float.class) return T_FLOAT;
+        if (comp == double.class) return T_DOUBLE;
+        if (comp == byte.class) return T_BYTE;
+        if (comp == short.class) return T_SHORT;
+        if (comp == int.class) return T_INT;
+        if (comp == long.class) return T_LONG;
+        throw new IllegalStateException("Unexpected primitive array component: " + comp);
+    }
+
+    private static int javaArrayStoreOpcode(Class<?> comp) {
+        if (comp == boolean.class || comp == byte.class) return BASTORE;
+        if (comp == char.class) return CASTORE;
+        if (comp == short.class) return SASTORE;
+        if (comp == int.class) return IASTORE;
+        if (comp == long.class) return LASTORE;
+        if (comp == float.class) return FASTORE;
+        if (comp == double.class) return DASTORE;
+        return AASTORE;
+    }
+
     private void emitJavaConstructorCall(HirExpr.JavaConstructorCall c) {
         int ln = c.meta().line();
         if (!c.pureStaticCallee()) {
@@ -3320,10 +3380,7 @@ final class HirEmitter {
         }
         Constructor<?> ctor = c.target().constructor();
         Class<?>[] paramTypes = ctor.getParameterTypes();
-        int[] argLocals = new int[paramTypes.length];
-        for (int i = 0; i < paramTypes.length; i++) {
-            argLocals[i] = emitJavaArgToLocal(c.args().get(i), paramTypes[i], ln);
-        }
+        int[] argLocals = emitJavaArgsToLocals(c.args(), paramTypes, c.target().varArgs(), ln);
         String internalClass = Type.getInternalName(ctor.getDeclaringClass());
         Label tryStart = new Label();
         Label tryEnd = new Label();
@@ -3370,10 +3427,7 @@ final class HirEmitter {
             mv.visitVarInsn(ASTORE, recvLocal);
         }
         Class<?>[] paramTypes = method.getParameterTypes();
-        int[] argLocals = new int[paramTypes.length];
-        for (int i = 0; i < paramTypes.length; i++) {
-            argLocals[i] = emitJavaArgToLocal(c.args().get(i), paramTypes[i], ln);
-        }
+        int[] argLocals = emitJavaArgsToLocals(c.args(), paramTypes, target.varArgs(), ln);
         boolean itf = method.getDeclaringClass().isInterface();
         Label tryStart = new Label();
         Label tryEnd = new Label();
