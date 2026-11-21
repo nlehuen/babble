@@ -77,7 +77,7 @@ sealed interface Type {
         public String toString() {
             if (members.size() == 2 && members.get(1) == NULL) {
                 Type base = members.get(0);
-                return (base instanceof Function ? "(" + base + ")" : base.toString()) + "?";
+                return (base instanceof Function || base instanceof Intersection ? "(" + base + ")" : base.toString()) + "?";
             }
             return members.stream()
                     .map(m -> m instanceof Function ? "(" + m + ")" : m.toString())
@@ -87,6 +87,75 @@ sealed interface Type {
 
     /** The universal nullable top type {@code any?}. */
     Type NULLABLE_ANY = new Union(List.of(ANY, NULL));
+
+    /**
+     * An intersection of interface types (BIP022) : the values that are all of its members.
+     * Built by {@link #intersection}, so it has at least two distinct members, none of them an
+     * intersection, {@code any} or a type another member implies ; a member may be a union of
+     * interfaces, which relations distribute (BIP022-D2).
+     */
+    record Intersection(List<Type> members) implements Type {
+        @Override
+        public String toString() {
+            return members.stream()
+                    .map(m -> m instanceof Union || m instanceof Function ? "(" + m + ")" : m.toString())
+                    .collect(Collectors.joining(" & "));
+        }
+    }
+
+    static Type intersection(Type... types) {
+        return intersection(Arrays.asList(types));
+    }
+
+    /**
+     * The normal form of an intersection (BIP022-D2) : nested intersections flattened,
+     * {@code any} and duplicates dropped, and a member another member implies dropped
+     * ({@code Shape & Base} is {@code Shape} when {@code Shape extends Base}) ; one member left
+     * is that member.
+     */
+    static Type intersection(Collection<? extends Type> types) {
+        List<Type> flat = new ArrayList<>();
+        for (Type t : types) {
+            if (t == ERROR || t == NOTHING) {
+                return t;
+            }
+            if (t instanceof Intersection i) {
+                flat.addAll(i.members());
+            } else if (t != ANY) {
+                flat.add(t);
+            }
+        }
+        List<Type> kept = new ArrayList<>(flat.size());
+        for (int i = 0; i < flat.size(); i++) {
+            Type candidate = flat.get(i);
+            boolean redundant = false;
+            for (int j = 0; j < flat.size() && !redundant; j++) {
+                if (i == j) {
+                    continue;
+                }
+                Type other = flat.get(j);
+                redundant = other.equals(candidate) ? j < i : impliesNominally(other, candidate);
+            }
+            if (!redundant) {
+                kept.add(candidate);
+            }
+        }
+        if (kept.isEmpty()) {
+            return ANY;
+        }
+        return kept.size() == 1 ? kept.get(0) : new Intersection(List.copyOf(kept));
+    }
+
+    /** Whether every value of {@code sub} is a {@code sup}, by declared interfaces alone (no type arguments on {@code sup}). */
+    private static boolean impliesNominally(Type sub, Type sup) {
+        if (sub instanceof Instance s && sup instanceof Instance t && t.typeArguments().isEmpty()) {
+            return s.node() != t.node() && TypeAlgebra.isSubtype(s.node(), t.node());
+        }
+        if (sub instanceof JavaInstance s && sup instanceof JavaInstance t && t.typeArguments().isEmpty()) {
+            return s.type() != t.type() && t.type().isAssignableFrom(s.type());
+        }
+        return false;
+    }
 
     /** A Java array, with {@code length} and assignable to matching Java array parameters. */
     record JavaArray(Class<?> javaClass, Type element) implements Type {
@@ -122,7 +191,7 @@ sealed interface Type {
     record Frozen(Type of) implements Type {
         @Override
         public String toString() {
-            return "frozen " + (of instanceof Union || of instanceof Function ? "(" + of + ")" : of);
+            return "frozen " + (of instanceof Union || of instanceof Function || of instanceof Intersection ? "(" + of + ")" : of);
         }
     }
 
@@ -576,6 +645,14 @@ sealed interface Type {
                 }
                 yield false;
             }
+            case Intersection i -> {
+                for (Type m : i.members()) {
+                    if (m.anyMatch(predicate)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
             case Frozen f -> f.of().anyMatch(predicate);
             case JavaArray ja -> ja.element().anyMatch(predicate);
             case Function fn -> {
@@ -656,6 +733,10 @@ sealed interface Type {
                     }
                 }
                 yield out != null ? union(out) : u;
+            }
+            case Intersection i -> {
+                List<Type> mapped = mapList(i.members(), mapper);
+                yield mapped != i.members() ? intersection(mapped) : i;
             }
             case Frozen f -> {
                 Type inner = f.of().mapTypes(mapper);

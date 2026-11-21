@@ -16,6 +16,9 @@ final class TypeDisplay {
     static String display(Type type) {
         return switch (type) {
             case Type.Union union -> union(union);
+            case Type.Intersection intersection -> intersection.members().stream()
+                    .map(m -> m instanceof Type.Function || m instanceof Type.Union ? "(" + display(m) + ")" : display(m))
+                    .collect(Collectors.joining(" & "));
             case Type.Frozen frozen -> "frozen " + (simpleOrGeneric(frozen.of()) ? display(frozen.of()) : "(" + display(frozen.of()) + ")");
             case Type.JavaArray array -> "JavaArray" + of(List.of(array.element()));
             case Type.Function function -> function(function);

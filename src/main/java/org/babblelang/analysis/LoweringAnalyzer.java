@@ -621,6 +621,20 @@ final class LoweringAnalyzer {
             }
             return "union|" + union + "|" + payload;
         }
+        if (type instanceof Type.Intersection intersection) {
+            StringBuilder payload = new StringBuilder();
+            for (Type member : intersection.members()) {
+                String sub = descriptor(member);
+                if (sub == null) {
+                    return null;
+                }
+                if (!payload.isEmpty()) {
+                    payload.append(',');
+                }
+                payload.append(org.babblelang.runtime.Types.encodeComponent(sub));
+            }
+            return "inter|" + intersection + "|" + payload;
+        }
         if (type instanceof Type.Function) {
             return "fn|" + type + "|";
         }

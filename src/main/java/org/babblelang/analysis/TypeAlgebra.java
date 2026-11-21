@@ -259,6 +259,15 @@ final class TypeAlgebra {
                 }
                 return true;
             }
+            // Right intersection : a value of every member (BIP022-D3)
+            if (sup instanceof Type.Intersection intersection) {
+                for (Type member : intersection.members()) {
+                    if (!relate(sub, member, mode, store, active, borrowCovariant)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
             // Unconstrained TypeVar top-guard
             if (sub instanceof Type.TypeVar tv) {
                 if (tv.owner() == null && store != null) {
@@ -273,6 +282,23 @@ final class TypeAlgebra {
             // Right-union existential search with ConstraintStore rollback
             if (sup instanceof Type.Union union) {
                 return anyMemberRelates(sub, union, mode, store, active, borrowCovariant);
+            }
+            // Left intersection : a union member distributes, then one member suffices (BIP022-D2, D3)
+            if (sub instanceof Type.Intersection intersection) {
+                Type distributed = distribute(intersection);
+                if (distributed != intersection) {
+                    return relate(distributed, sup, mode, store, active, borrowCovariant);
+                }
+                for (Type member : intersection.members()) {
+                    int mark = store != null ? store.mark() : 0;
+                    if (relate(member, sup, mode, store, active, borrowCovariant)) {
+                        return true;
+                    }
+                    if (store != null) {
+                        store.reset(mark);
+                    }
+                }
+                return false;
             }
             if (sub == Type.NULL) {
                 return sup == Type.NULL;
@@ -348,6 +374,41 @@ final class TypeAlgebra {
         } finally {
             active.remove(key);
         }
+    }
+
+    /** {@code (A | B) & C} as {@code (A & C) | (B & C)} ; an intersection without union members as is. */
+    static Type distribute(Type.Intersection intersection) {
+        List<List<Type>> products = new ArrayList<>();
+        products.add(new ArrayList<>());
+        boolean any = false;
+        for (Type member : intersection.members()) {
+            List<Type> choices = Type.membersOf(member);
+            any |= choices.size() > 1;
+            List<List<Type>> next = new ArrayList<>();
+            for (List<Type> product : products) {
+                for (Type choice : choices) {
+                    List<Type> extended = new ArrayList<>(product);
+                    extended.add(choice);
+                    next.add(extended);
+                }
+            }
+            products = next;
+        }
+        if (!any) {
+            return intersection;
+        }
+        List<Type> alternatives = new ArrayList<>(products.size());
+        for (List<Type> product : products) {
+            alternatives.add(Type.intersection(product));
+        }
+        return Type.union(alternatives);
+    }
+
+    /** Interface types and intersections of them : what {@code is} can intersect (BIP022-D5). */
+    static boolean isInterfaceLike(Type type) {
+        return type instanceof Type.Intersection
+                || type instanceof Type.Instance instance && instance.node().isInterface()
+                || type instanceof Type.JavaInstance java && java.type().isInterface();
     }
 
     private static boolean isMutableParameterized(Type type) {
@@ -519,6 +580,12 @@ final class TypeAlgebra {
         if (b instanceof Type.Union u) {
             return u.members().stream().anyMatch(m -> overlapsErased(a, m));
         }
+        if (a instanceof Type.Intersection i) {
+            return i.members().stream().allMatch(m -> overlapsErased(m, b));
+        }
+        if (b instanceof Type.Intersection i) {
+            return i.members().stream().allMatch(m -> overlapsErased(a, m));
+        }
         if (runtimeSubtype(a, b) || runtimeSubtype(b, a) || isErasedSubtype(a, b) || isErasedSubtype(b, a)) {
             return true;
         }
@@ -551,6 +618,12 @@ final class TypeAlgebra {
         }
         if (to instanceof Type.Union union) {
             return union.members().stream().anyMatch(member -> canCast(from, member));
+        }
+        if (from instanceof Type.Intersection intersection) {
+            return intersection.members().stream().allMatch(member -> canCast(member, to));
+        }
+        if (to instanceof Type.Intersection intersection) {
+            return intersection.members().stream().allMatch(member -> canCast(from, member));
         }
         if (from == Type.NULL || to == Type.NULL) {
             return from == to;
@@ -592,7 +665,8 @@ final class TypeAlgebra {
             } else if (runtimeSubtype(member, target)) {
                 narrowed.add(member);
             } else if (overlapsErased(member, target)) {
-                narrowed.add(target);
+                // An interface tested against an interface keeps what it was : Shape is Named gives Shape & Named (BIP022-D5).
+                narrowed.add(isInterfaceLike(member) && isInterfaceLike(target) ? Type.intersection(member, target) : target);
             }
         }
         return narrowed.isEmpty() ? target : Type.union(narrowed);
