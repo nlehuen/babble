@@ -328,7 +328,7 @@ public class ReplTestCase {
         assertFails(session, "def bad = fn volatile (x: Box): int -> ( x.addFrom(b) ; x.v )", "Cannot mutate parameter x");
 
         // Top-level `axiom` persists across REPL turns:
-        assertFails(session, "def badSep = fn (): string -> (java.lang.System.lineSeparator())", "violates pure guarantee");
+        assertFails(session, "def badSep = fn (): string -> (java.lang.System.lineSeparator())", "violates deterministic guarantee");
         session.eval("axiom pure nothrow on java.lang.System.lineSeparator");
         session.eval("def okSep = fn nothrow (): string -> (java.lang.System.lineSeparator())");
         Assertions.assertEquals(System.lineSeparator(), session.eval("okSep()"));

@@ -126,7 +126,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private final Map<String, ModuleId> compiledAs = new HashMap<>();
 
     private boolean allowAxioms = true;
-    private boolean bytecodeEffectAnalysis = false;
+    private boolean bytecodeEffectAnalysis = true;
     private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> hostEffectOverrides = new LinkedHashMap<>();
     private org.babblelang.analysis.BuiltinAxioms builtinAxioms = org.babblelang.analysis.BuiltinAxioms.standard();
 
@@ -273,7 +273,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     HostEffects hostEffects() {
         synchronized (moduleLock) {
-            if (allowAxioms && !bytecodeEffectAnalysis && hostEffectOverrides.isEmpty()
+            if (allowAxioms && bytecodeEffectAnalysis && hostEffectOverrides.isEmpty()
                     && builtinAxioms == org.babblelang.analysis.BuiltinAxioms.standard()) {
                 return HostEffects.DEFAULT;
             }

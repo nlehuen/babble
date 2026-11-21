@@ -119,6 +119,21 @@ public final class BuiltinAxioms {
         return ax != null ? ax.toProfile(exactMethod) : null;
     }
 
+    /** Checks that an axiom source obeys the BIP019 §3.4 canonical order; returns violations (empty if valid). */
+    public static List<String> checkCanonicalOrder(String source, String sourceName) {
+        return checkCanonicalOrder(source, sourceName, null);
+    }
+
+    /** Checks canonical order and (if non-null) that every class belongs to {@code expectedPackage}. */
+    public static List<String> checkCanonicalOrder(String source, String sourceName, String expectedPackage) {
+        try {
+            BabbleParser.FileContext file = BabbleScriptEngine.parseSource(source, sourceName);
+            return AxiomData.checkCanonicalOrder(file, expectedPackage);
+        } catch (javax.script.ScriptException e) {
+            return List.of("Failed to parse " + sourceName + " : " + e.getMessage());
+        }
+    }
+
     /** Curated {@link AxiomData.MemberAxiom} for a Java method, or {@code null} if none applies. */
     AxiomData.MemberAxiom methodAxiom(Class<?> owner, String methodName, Method exactMethod) {
         if (isEmpty() || owner == null) {

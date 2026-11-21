@@ -2,50 +2,171 @@ package org.babblelang.analysis;
 
 import org.babblelang.effects.Effect;
 import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassVisitor;
-import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.TypeInsnNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.Frame;
+import org.objectweb.asm.tree.analysis.Interpreter;
+import org.objectweb.asm.tree.analysis.Value;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Opt-in ASM bytecode static effect suggester for closed Java helper methods
- * ({@code docs/design/bip007_effects.md §6.4}, {@code BIP007-P3}).
+ * ASM bytecode static effect, alias, reads, and nullness analyzer for Java methods and constructors
+ * ({@code docs/design/bip019_refactoring-axioms.md} §5).
  *
- * <p>Conservative by construction: any unseeded {@code native} method, open virtual/interface
- * dispatch, synchronization, field/array/static mutation, or non-final static read drops the
- * corresponding effect guarantees and records the reason.
+ * <p>Runs lazily on demand as tier 7 (below curated axioms, on by default), uses an ASM
+ * {@link Analyzer} provenance + nullness value lattice over a budget-bounded Tarjan SCC call-graph
+ * fixed point, applies curated axioms to open/native calls it encounters, and caches converged
+ * results in memory per {@code (BuiltinAxioms, ClassLoader)}.
  */
 public final class BytecodeEffectAnalyzer {
 
-    public record Result(EffectSet effects, List<String> reasons) {
-        public static final Result UNCONSTRAINED = new Result(EffectSet.EMPTY, List.of("unconstrained"));
+    /** Provenance bit flags on a JVM value. */
+    private static final long PROV_THIS = 1L << 0;
+    private static final long PROV_FRESH = 1L << 1;
+    private static final long PROV_EXTERNAL = 1L << 2;
+    private static final long PROV_CONST = 1L << 3;
+    private static final long PROV_STORED_ELEM = 1L << 4;
+    private static final int PROV_PARAM_SHIFT = 5;
+    private static final int MAX_TRACKED_PARAMS = 58;
+
+    private static final int MAX_CALL_GRAPH_NODES = 64;
+    private static final int MAX_CALL_DEPTH = 12;
+    private static final int MAX_SCC_ITERATIONS = 8;
+
+    /** Full inferred summary for one Java method or constructor. */
+    public record Result(
+            EffectSet effects,
+            boolean mutReceiver,
+            boolean borrowReceiver,
+            boolean[] mutParams,
+            boolean[] borrowParams,
+            boolean readsReceiver,
+            boolean[] readParams,
+            boolean returnNonNull,
+            boolean fresh,
+            boolean view,
+            boolean shallow,
+            List<String> reasons) {
+
+        public static final Result UNCONSTRAINED = new Result(
+                EffectSet.EMPTY, false, false, new boolean[0], new boolean[0],
+                true, new boolean[0], false, false, false, false, List.of("unconstrained"));
+
+        public Result(EffectSet effects, List<String> reasons) {
+            this(effects, false, effects.isPure(), new boolean[0], new boolean[0],
+                    true, new boolean[0], false, effects.uniqueResult(), false, false, reasons);
+        }
+
+        static Result unconstrained(int paramCount, boolean isStatic, List<String> reasons) {
+            boolean[] rp = new boolean[paramCount];
+            Arrays.fill(rp, true);
+            return new Result(EffectSet.EMPTY, false, false, new boolean[paramCount], new boolean[paramCount],
+                    !isStatic, rp, false, false, false, false, List.copyOf(reasons));
+        }
+
+        EffectChecker.JavaCallProfile toProfile(Executable exec) {
+            int pCount = exec != null ? exec.getParameterCount() : mutParams.length;
+            boolean isCtor = exec instanceof Constructor<?>;
+            boolean isStatic = isCtor || (exec != null && Modifier.isStatic(exec.getModifiers()));
+            boolean[] mp = padOrCopy(mutParams, pCount, false);
+            boolean[] bp = padOrCopy(borrowParams, pCount, !effects.isUnconstrained() && effects.isPure());
+            boolean[] rp = padOrCopy(readParams, pCount, true);
+            boolean[] up = new boolean[pCount];
+            return new EffectChecker.JavaCallProfile(
+                    effects,
+                    !isStatic && mutReceiver,
+                    !isStatic && borrowReceiver,
+                    mp, bp, up,
+                    effects.isNothrow(),
+                    view, shallow, fresh,
+                    !isStatic && readsReceiver,
+                    rp);
+        }
+
+        private static boolean[] padOrCopy(boolean[] src, int len, boolean fill) {
+            boolean[] out = new boolean[len];
+            int n = Math.min(src.length, len);
+            System.arraycopy(src, 0, out, 0, n);
+            if (fill && n < len) {
+                Arrays.fill(out, n, len, true);
+            }
+            return out;
+        }
+
+        boolean sameSummary(Result other) {
+            if (other == null) return false;
+            return mutReceiver == other.mutReceiver
+                    && borrowReceiver == other.borrowReceiver
+                    && readsReceiver == other.readsReceiver
+                    && returnNonNull == other.returnNonNull
+                    && fresh == other.fresh
+                    && view == other.view
+                    && shallow == other.shallow
+                    && effects.equals(other.effects)
+                    && Arrays.equals(mutParams, other.mutParams)
+                    && Arrays.equals(borrowParams, other.borrowParams)
+                    && Arrays.equals(readParams, other.readParams);
+        }
     }
 
-    private static final int MAX_DEPTH = 8;
-
-    private record MethodKey(String ownerInternalName, String name, String descriptor) {
+    private record MethodKey(String ownerInternalName, String name, String descriptor) implements Comparable<MethodKey> {
+        @Override
+        public int compareTo(MethodKey o) {
+            int c = ownerInternalName.compareTo(o.ownerInternalName);
+            if (c != 0) return c;
+            c = name.compareTo(o.name);
+            return c != 0 ? c : descriptor.compareTo(o.descriptor);
+        }
     }
 
-    /** Seeded JVM native / JDK intrinsics known to be pure deterministic. */
+    /** Seeded JVM native / JDK intrinsics (migrated to curated.ba in BIP019-P5). */
     private static final Map<String, EffectSet> SEEDED_INTRINSICS = buildSeededIntrinsics();
 
-    private static final Map<MethodKey, Result> CACHE = new ConcurrentHashMap<>();
+    /** Per-(BuiltinAxioms, ClassLoader) cache for converged bytecode analysis results. */
+    private static final Map<BuiltinAxioms, Map<ClassLoader, Map<MethodKey, Result>>> CACHES =
+            Collections.synchronizedMap(new IdentityHashMap<>());
+    /** ClassNode cache per ClassLoader so each class file is parsed with ASM only once. */
+    private static final Map<ClassLoader, Map<String, ClassNode>> CLASS_NODE_CACHES =
+            Collections.synchronizedMap(new WeakHashMap<>());
+    private static final ClassLoader NULL_LOADER_SENTINEL = new ClassLoader(null) {};
+    private static final ClassNode MISSING_CLASS_NODE = new ClassNode();
 
     private BytecodeEffectAnalyzer() {
     }
@@ -75,16 +196,22 @@ public final class BytecodeEffectAnalyzer {
         for (String m : List.of("floatToRawIntBits", "floatToIntBits", "intBitsToFloat", "isNaN", "isInfinite", "isFinite", "compare")) {
             map.put("java/lang/Float#" + m, pureDetNothrow);
         }
-        for (String m : List.of("valueOf", "compare", "compareUnsigned", "bitCount", "highestOneBit",
+        for (String m : List.of("compare", "compareUnsigned", "bitCount", "highestOneBit",
                 "lowestOneBit", "numberOfLeadingZeros", "numberOfTrailingZeros", "rotateLeft", "rotateRight",
                 "reverse", "reverseBytes", "signum", "sum", "max", "min", "intValue", "longValue", "doubleValue")) {
             map.put("java/lang/Integer#" + m, pureDetNothrow);
             map.put("java/lang/Long#" + m, pureDetNothrow);
         }
+        map.put("java/lang/Integer#valueOf(I)Ljava/lang/Integer;", pureDetNothrow);
+        map.put("java/lang/Long#valueOf(J)Ljava/lang/Long;", pureDetNothrow);
         for (String m : List.of("length", "isEmpty", "isBlank", "trim", "strip", "toLowerCase", "toUpperCase",
                 "startsWith", "endsWith", "contains", "indexOf", "lastIndexOf", "equals", "equalsIgnoreCase",
-                "compareTo", "hashCode", "toString", "concat", "valueOf")) {
+                "compareTo", "hashCode", "toString", "concat")) {
             map.put("java/lang/String#" + m, pureDetNothrow);
+        }
+        for (String d : List.of("(Z)Ljava/lang/String;", "(C)Ljava/lang/String;", "(I)Ljava/lang/String;",
+                "(J)Ljava/lang/String;", "(F)Ljava/lang/String;", "(D)Ljava/lang/String;")) {
+            map.put("java/lang/String#valueOf" + d, pureDetNothrow);
         }
         for (String m : List.of("charAt", "substring", "codePointAt")) {
             map.put("java/lang/String#" + m, pureDet);
@@ -92,26 +219,64 @@ public final class BytecodeEffectAnalyzer {
         return Collections.unmodifiableMap(map);
     }
 
-    /** Analyzes a single Java {@link Method} and returns its conservative inferred {@link EffectSet} and reasons. */
+    private static Map<MethodKey, Result> cacheFor(BuiltinAxioms axioms, ClassLoader loader) {
+        BuiltinAxioms keyAxioms = axioms != null ? axioms : BuiltinAxioms.standard();
+        ClassLoader keyLoader = loader != null ? loader : NULL_LOADER_SENTINEL;
+        Map<ClassLoader, Map<MethodKey, Result>> byLoader;
+        synchronized (CACHES) {
+            byLoader = CACHES.computeIfAbsent(keyAxioms, k -> Collections.synchronizedMap(new WeakHashMap<>()));
+        }
+        synchronized (byLoader) {
+            return byLoader.computeIfAbsent(keyLoader, k -> new ConcurrentHashMap<>());
+        }
+    }
+
+    /** Analyzes a single Java {@link Method} using the active {@link BuiltinAxioms}. */
     public static Result analyze(Method method) {
-        if (method == null) {
+        return analyze((Executable) method, BuiltinAxioms.current());
+    }
+
+    /** Analyzes a Java {@link Method} or {@link Constructor} using {@code axioms}. */
+    public static Result analyze(Executable exec, BuiltinAxioms axioms) {
+        if (exec == null) {
             return Result.UNCONSTRAINED;
         }
-        Class<?> owner = method.getDeclaringClass();
+        Class<?> owner = exec.getDeclaringClass();
         String ownerInternal = Type.getInternalName(owner);
-        String desc = Type.getMethodDescriptor(method);
-        MethodKey key = new MethodKey(ownerInternal, method.getName(), desc);
-        Result cached = CACHE.get(key);
+        String name = exec instanceof Constructor<?> ? "<init>" : exec.getName();
+        String desc = exec instanceof Constructor<?> c ? Type.getConstructorDescriptor(c) : Type.getMethodDescriptor((Method) exec);
+        MethodKey root = new MethodKey(ownerInternal, name, desc);
+        BuiltinAxioms effectiveAxioms = axioms != null ? axioms : BuiltinAxioms.standard();
+        Map<MethodKey, Result> cache = cacheFor(effectiveAxioms, owner.getClassLoader());
+        Result cached = cache.get(root);
         if (cached != null) {
             return cached;
         }
-        Result computed = analyzeInternal(ownerInternal, method.getName(), desc, owner.getClassLoader(),
-                new HashSet<>(), 0);
-        CACHE.put(key, computed);
-        return computed;
+        Session session = new Session(effectiveAxioms, owner.getClassLoader(), cache, false);
+        return session.solveRoot(root);
     }
 
-    /** Analyzes all declared public/package methods of {@code cls}. */
+    /**
+     * Analyzes {@code exec}'s own bytecode directly (ignoring any curated axiom on {@code exec}
+     * itself, while still applying curated axioms to callees), for {@code babble.axioms.report}
+     * and {@code -axioms} dumps (§5.1).
+     */
+    public static Result analyzeRaw(Executable exec, BuiltinAxioms axioms) {
+        if (exec == null) {
+            return Result.UNCONSTRAINED;
+        }
+        Class<?> owner = exec.getDeclaringClass();
+        String ownerInternal = Type.getInternalName(owner);
+        String name = exec instanceof Constructor<?> ? "<init>" : exec.getName();
+        String desc = exec instanceof Constructor<?> c ? Type.getConstructorDescriptor(c) : Type.getMethodDescriptor((Method) exec);
+        MethodKey root = new MethodKey(ownerInternal, name, desc);
+        BuiltinAxioms effectiveAxioms = axioms != null ? axioms : BuiltinAxioms.standard();
+        Map<MethodKey, Result> cache = cacheFor(effectiveAxioms, owner.getClassLoader());
+        Session session = new Session(effectiveAxioms, owner.getClassLoader(), cache, true);
+        return session.solveRoot(root);
+    }
+
+    /** Analyzes all declared non-synthetic methods of {@code cls}. */
     public static Map<Method, Result> analyzeClass(Class<?> cls) {
         Map<Method, Result> results = new LinkedHashMap<>();
         for (Method m : cls.getDeclaredMethods()) {
@@ -122,7 +287,60 @@ public final class BytecodeEffectAnalyzer {
         return results;
     }
 
-    /** Formats a ready-to-paste Babble {@code axiom ... on Class.method} suggestion, or {@code null} if unconstrained. */
+    /**
+     * Whether {@code inferred} is at least as strong as {@code curated} on effects, mutation,
+     * borrowing, and return nullness (for {@code babble.axioms.report} and {@code ;; curated, inferred the same}).
+     */
+    static boolean isAtLeastAsStrongAs(Result inferred, AxiomData.MemberAxiom curated, Executable exec) {
+        if (inferred == null || curated == null) {
+            return false;
+        }
+        EffectSet req = curated.effects();
+        if (req.isIO()) {
+            return true;
+        }
+        // Foldable and algebraic properties cannot be inferred from bytecode alone.
+        if (curated.foldable()) {
+            return false;
+        }
+        for (Effect e : req.effects()) {
+            if (e == Effect.IDEMPOTENT || e == Effect.COMMUTATIVE || e == Effect.ASSOCIATIVE
+                    || e == Effect.MONOTONE || e == Effect.INJECTIVE) {
+                return false;
+            }
+        }
+        EffectSet inf = inferred.effects();
+        if (req.isHermetic() && !inf.isHermetic()) return false;
+        if (req.isPure() && !inf.isPure()) return false;
+        if (req.isDeterministic() && !inf.isDeterministic()) return false;
+        if (req.isNothrow() && !inf.isNothrow()) return false;
+        if ((curated.fresh() || req.uniqueResult()) && !(inferred.fresh() || inf.uniqueResult())) return false;
+        if (curated.view() && !inferred.view()) return false;
+        if (curated.shallow() && !inferred.shallow()) return false;
+        boolean isStatic = exec instanceof Constructor<?> || (exec != null && Modifier.isStatic(exec.getModifiers()));
+        if (!isStatic) {
+            if (!curated.mutReceiver() && inferred.mutReceiver()) return false;
+            if (curated.borrowReceiver() && !inferred.borrowReceiver()) return false;
+        }
+        int pCount = exec != null ? exec.getParameterCount() : curated.paramDescriptors().size();
+        for (int i = 0; i < pCount; i++) {
+            boolean cMut = curated.hasSignature() && i < curated.mutParams().length && curated.mutParams()[i];
+            boolean cBorrow = curated.hasSignature()
+                    ? (i < curated.borrowParams().length && curated.borrowParams()[i])
+                    : !curated.sharedReceiver();
+            boolean iMut = i < inferred.mutParams().length && inferred.mutParams()[i];
+            boolean iBorrow = i < inferred.borrowParams().length && inferred.borrowParams()[i];
+            if (!cMut && iMut) return false;
+            if (cBorrow && !iBorrow) return false;
+        }
+        if (curated.hasSignature() && curated.returnNullness() == JavaNullability.Nullness.NON_NULL
+                && exec instanceof Method m && !m.getReturnType().isPrimitive() && !inferred.returnNonNull()) {
+            return false;
+        }
+        return true;
+    }
+
+    /** Formats a ready-to-paste Babble {@code axiom Class.method: fn ...} suggestion, or {@code null} if unconstrained. */
     public static String suggestAxiom(Method method) {
         Result r = analyze(method);
         EffectSet eff = r.effects();
@@ -135,74 +353,1046 @@ public final class BytecodeEffectAnalyzer {
         } else if (eff.isHermetic() && !eff.isDeterministic()) {
             sb.append("volatile ");
         }
+        if (r.mutReceiver()) {
+            sb.append("mut ");
+        }
+        if (!Modifier.isStatic(method.getModifiers()) && !r.borrowReceiver()) {
+            sb.append("shared ");
+        }
         if (eff.isNothrow()) {
             sb.append("nothrow ");
         }
-        if (eff.mutThis()) {
-            sb.append("mut ");
+        if (r.view()) {
+            sb.append("view ");
         }
-        for (Effect e : eff.effects()) {
-            if (e == Effect.IDEMPOTENT || e == Effect.COMMUTATIVE || e == Effect.ASSOCIATIVE
-                    || e == Effect.MONOTONE || e == Effect.INJECTIVE) {
-                sb.append(e.name().toLowerCase()).append(' ');
-            }
+        if (r.shallow()) {
+            sb.append("shallow ");
         }
-        if (eff.uniqueResult()) {
-            sb.append("unique ");
+        if (r.fresh() || eff.uniqueResult()) {
+            sb.append("fresh ");
         }
         String prefix = sb.toString().trim();
         if (prefix.isEmpty()) {
             return null;
         }
-        return "axiom " + prefix + " on " + method.getDeclaringClass().getName() + "." + method.getName();
+        return "axiom " + method.getDeclaringClass().getName() + "." + method.getName() + ": fn " + prefix;
     }
 
-    private static Result analyzeInternal(String ownerInternal, String name, String desc,
-                                          ClassLoader loader, Set<MethodKey> visiting, int depth) {
-        EffectSet seeded = SEEDED_INTRINSICS.get(ownerInternal + "#" + name);
-        if (seeded != null) {
-            return new Result(seeded, List.of());
+    // ================================================================ Value Lattice (§5.2)
+
+    private static final class ProvValue implements Value {
+        static final ProvValue UNINITIALIZED = new ProvValue(1, 0L, true);
+        static final ProvValue CONST_1 = new ProvValue(1, PROV_CONST, false);
+        static final ProvValue CONST_2 = new ProvValue(2, PROV_CONST, false);
+        static final ProvValue NULL_VAL = new ProvValue(1, PROV_CONST, true);
+        static final ProvValue THIS_VAL = new ProvValue(1, PROV_THIS, false);
+        static final ProvValue FRESH_VAL = new ProvValue(1, PROV_FRESH, false);
+        static final ProvValue EXTERNAL_NULLABLE = new ProvValue(1, PROV_EXTERNAL, true);
+        static final ProvValue EXTERNAL_NONNULL = new ProvValue(1, PROV_EXTERNAL, false);
+
+        final int size;
+        final long provBits;
+        final boolean mayBeNull;
+
+        ProvValue(int size, long provBits, boolean mayBeNull) {
+            this.size = size;
+            this.provBits = provBits;
+            this.mayBeNull = mayBeNull;
         }
-        MethodKey key = new MethodKey(ownerInternal, name, desc);
-        if (depth > MAX_DEPTH) {
-            return new Result(EffectSet.EMPTY, List.of("max call depth exceeded"));
+
+        static ProvValue of(int size, long provBits, boolean mayBeNull) {
+            if (size == 2 && provBits == PROV_CONST && !mayBeNull) return CONST_2;
+            if (size == 1 && provBits == PROV_CONST && !mayBeNull) return CONST_1;
+            if (size == 1 && provBits == PROV_THIS && !mayBeNull) return THIS_VAL;
+            if (size == 1 && provBits == PROV_FRESH && !mayBeNull) return FRESH_VAL;
+            if (size == 1 && provBits == PROV_EXTERNAL) return mayBeNull ? EXTERNAL_NULLABLE : EXTERNAL_NONNULL;
+            return new ProvValue(size, provBits, mayBeNull);
         }
-        if (!visiting.add(key)) {
-            // Recursive cycle: keep pure/hermetic/deterministic/nothrow neutral, drop @TERMINATING.
-            return new Result(EffectSet.ofInferred(
-                    EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
-                    false, true, false, false), List.of("recursive cycle"));
+
+        static ProvValue ofParam(int paramIndex, Type type) {
+            int sz = type.getSize();
+            if (isPrimitive(type)) {
+                return sz == 2 ? CONST_2 : CONST_1;
+            }
+            long bit = paramIndex < MAX_TRACKED_PARAMS ? (1L << (PROV_PARAM_SHIFT + paramIndex)) : PROV_EXTERNAL;
+            return new ProvValue(1, bit, true);
         }
-        try {
-            byte[] bytecode = loadClassBytes(ownerInternal, loader);
-            if (bytecode == null) {
-                return new Result(EffectSet.EMPTY, List.of("bytecode unavailable for " + ownerInternal));
+
+        boolean isPurelyFresh() {
+            return (provBits & ~(PROV_FRESH | PROV_CONST)) == 0 && (provBits & PROV_FRESH) != 0;
+        }
+
+        boolean hasThis() {
+            return (provBits & PROV_THIS) != 0;
+        }
+
+        boolean hasExternal() {
+            return (provBits & PROV_EXTERNAL) != 0;
+        }
+
+        boolean hasStoredElem() {
+            return (provBits & PROV_STORED_ELEM) != 0;
+        }
+
+        @Override
+        public int getSize() {
+            return size;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof ProvValue that)) return false;
+            return size == that.size && provBits == that.provBits && mayBeNull == that.mayBeNull;
+        }
+
+        @Override
+        public int hashCode() {
+            int r = Long.hashCode(provBits);
+            r = 31 * r + size;
+            r = 31 * r + (mayBeNull ? 1 : 0);
+            return r;
+        }
+    }
+
+    private static boolean isPrimitive(Type t) {
+        return switch (t.getSort()) {
+            case Type.BOOLEAN, Type.CHAR, Type.BYTE, Type.SHORT, Type.INT, Type.FLOAT, Type.LONG, Type.DOUBLE, Type.VOID -> true;
+            default -> false;
+        };
+    }
+
+    // ================================================================ Fixed-Point Analysis Session
+
+    private static final class Session {
+        final BuiltinAxioms axioms;
+        final ClassLoader loader;
+        final Map<MethodKey, Result> globalCache;
+        final boolean ignoreRootCurated;
+        final Map<MethodKey, MethodNode> methodNodes = new HashMap<>();
+        final Map<MethodKey, Set<MethodKey>> callGraph = new LinkedHashMap<>();
+        final Set<MethodKey> visited = new HashSet<>();
+        final Map<MethodKey, Result> localResults = new HashMap<>();
+        boolean budgetExceeded = false;
+
+        Session(BuiltinAxioms axioms, ClassLoader loader, Map<MethodKey, Result> globalCache, boolean ignoreRootCurated) {
+            this.axioms = axioms;
+            this.loader = loader;
+            this.globalCache = globalCache;
+            this.ignoreRootCurated = ignoreRootCurated;
+        }
+
+        Result solveRoot(MethodKey root) {
+            discover(root, 0, true);
+            List<List<MethodKey>> sccs = tarjanSccs(root);
+            for (List<MethodKey> scc : sccs) {
+                solveScc(scc, root);
             }
-            MethodScan scan = scanMethod(bytecode, name, desc, loader, visiting, depth);
-            if (!scan.found) {
-                return new Result(EffectSet.EMPTY, List.of("method not found in bytecode: " + ownerInternal + "." + name));
-            }
-            if (scan.isNative || scan.isAbstract) {
-                return new Result(EffectSet.EMPTY, List.of(scan.isNative ? "native method" : "abstract method"));
-            }
-            EnumSet<Effect> effs = EnumSet.noneOf(Effect.class);
-            if (scan.hermetic) {
-                effs.add(Effect.HERMETIC);
-                if (!scan.mutatesObject) {
-                    effs.add(Effect.PURE);
+            Result out = localResults.getOrDefault(root, Result.UNCONSTRAINED);
+            if (!ignoreRootCurated && !budgetExceeded) {
+                for (Map.Entry<MethodKey, Result> e : localResults.entrySet()) {
+                    globalCache.putIfAbsent(e.getKey(), e.getValue());
                 }
             }
-            if (scan.deterministic) {
+            return out;
+        }
+
+        private void discover(MethodKey key, int depth, boolean isRoot) {
+            if (!visited.add(key)) {
+                return;
+            }
+            if (!isRoot && globalCache.containsKey(key)) {
+                localResults.put(key, globalCache.get(key));
+                callGraph.put(key, Set.of());
+                return;
+            }
+            if (!isRoot) {
+                Result preset = lookupCuratedOrSeeded(key);
+                if (preset != null) {
+                    localResults.put(key, preset);
+                    callGraph.put(key, Set.of());
+                    return;
+                }
+            }
+            if (depth > MAX_CALL_DEPTH || methodNodes.size() >= MAX_CALL_GRAPH_NODES) {
+                budgetExceeded = true;
+                Type[] args = Type.getArgumentTypes(key.descriptor());
+                localResults.put(key, Result.unconstrained(args.length, false, List.of("analysis budget exceeded")));
+                callGraph.put(key, Set.of());
+                return;
+            }
+            MethodNode mn = findMethodNode(key);
+            if (mn == null) {
+                Type[] args = Type.getArgumentTypes(key.descriptor());
+                localResults.put(key, Result.unconstrained(args.length, false, List.of("bytecode unavailable for " + key.ownerInternalName)));
+                callGraph.put(key, Set.of());
+                return;
+            }
+            methodNodes.put(key, mn);
+            Set<MethodKey> callees = new TreeSet<>();
+            if ((mn.access & (Opcodes.ACC_NATIVE | Opcodes.ACC_ABSTRACT)) == 0 && mn.instructions != null) {
+                for (AbstractInsnNode insn = mn.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (insn instanceof MethodInsnNode mi) {
+                        if ("<init>".equals(mi.name) && "java/lang/Object".equals(mi.owner)) {
+                            continue;
+                        }
+                        MethodKey calleeKey = new MethodKey(mi.owner, mi.name, mi.desc);
+                        if (lookupCuratedOrSeeded(calleeKey) != null) {
+                            continue;
+                        }
+                        if (isClosedCall(mi.getOpcode(), mi.owner, mi.name, mi.desc)) {
+                            callees.add(calleeKey);
+                        }
+                    }
+                }
+            }
+            callGraph.put(key, callees);
+            for (MethodKey callee : callees) {
+                discover(callee, depth + 1, false);
+            }
+        }
+
+        private List<List<MethodKey>> tarjanSccs(MethodKey root) {
+            Map<MethodKey, Integer> indexMap = new HashMap<>();
+            Map<MethodKey, Integer> lowlink = new HashMap<>();
+            Deque<MethodKey> stack = new ArrayDeque<>();
+            Set<MethodKey> onStack = new HashSet<>();
+            List<List<MethodKey>> sccs = new ArrayList<>();
+            int[] nextIndex = {0};
+
+            class Dfs {
+                void visit(MethodKey v) {
+                    indexMap.put(v, nextIndex[0]);
+                    lowlink.put(v, nextIndex[0]);
+                    nextIndex[0]++;
+                    stack.push(v);
+                    onStack.add(v);
+                    for (MethodKey w : callGraph.getOrDefault(v, Set.of())) {
+                        if (!indexMap.containsKey(w)) {
+                            visit(w);
+                            lowlink.put(v, Math.min(lowlink.get(v), lowlink.get(w)));
+                        } else if (onStack.contains(w)) {
+                            lowlink.put(v, Math.min(lowlink.get(v), indexMap.get(w)));
+                        }
+                    }
+                    if (lowlink.get(v).equals(indexMap.get(v))) {
+                        List<MethodKey> comp = new ArrayList<>();
+                        while (true) {
+                            MethodKey w = stack.pop();
+                            onStack.remove(w);
+                            comp.add(w);
+                            if (w.equals(v)) break;
+                        }
+                        comp.sort(Comparator.naturalOrder());
+                        sccs.add(comp);
+                    }
+                }
+            }
+            new Dfs().visit(root);
+            return sccs;
+        }
+
+        private void solveScc(List<MethodKey> scc, MethodKey root) {
+            if (scc.size() == 1 && localResults.containsKey(scc.get(0))) {
+                return;
+            }
+            boolean cyclic = scc.size() > 1 || callGraph.getOrDefault(scc.get(0), Set.of()).contains(scc.get(0));
+            for (MethodKey k : scc) {
+                if (localResults.containsKey(k)) continue;
+                MethodNode mn = methodNodes.get(k);
+                if (mn == null) continue;
+                int pCount = Type.getArgumentTypes(k.descriptor()).length;
+                boolean isStatic = (mn.access & Opcodes.ACC_STATIC) != 0;
+                boolean[] bp = new boolean[pCount];
+                Arrays.fill(bp, true);
+                EffectSet opt = EffectSet.ofInferred(
+                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
+                        false, !isStatic, false, !cyclic);
+                localResults.put(k, new Result(opt, false, !isStatic, new boolean[pCount], bp,
+                        false, new boolean[pCount], true, true, false, true, List.of()));
+            }
+            for (int iter = 0; iter < MAX_SCC_ITERATIONS; iter++) {
+                boolean changed = false;
+                for (MethodKey k : scc) {
+                    MethodNode mn = methodNodes.get(k);
+                    if (mn == null) continue;
+                    Result prev = localResults.get(k);
+                    Result next = analyzeSingleMethod(k, mn, cyclic, k.equals(root) && ignoreRootCurated);
+                    if (!next.sameSummary(prev)) {
+                        localResults.put(k, next);
+                        changed = true;
+                    }
+                }
+                if (!changed) {
+                    break;
+                }
+            }
+        }
+
+        private Result analyzeSingleMethod(MethodKey key, MethodNode mn, boolean cyclic, boolean skipSelfCurated) {
+            boolean isStatic = (mn.access & Opcodes.ACC_STATIC) != 0;
+            boolean isCtor = "<init>".equals(key.name());
+            Type[] argTypes = Type.getArgumentTypes(key.descriptor());
+            int pCount = argTypes.length;
+            Type retType = Type.getReturnType(key.descriptor());
+
+            if ((mn.access & Opcodes.ACC_NATIVE) != 0) {
+                return Result.unconstrained(pCount, isStatic || isCtor, List.of("native method"));
+            }
+            if ((mn.access & Opcodes.ACC_ABSTRACT) != 0 || mn.instructions == null || mn.instructions.size() == 0) {
+                return Result.unconstrained(pCount, isStatic || isCtor, List.of("abstract method"));
+            }
+
+            if (!skipSelfCurated) {
+                Result preset = lookupCuratedOrSeeded(key);
+                if (preset != null) {
+                    return preset;
+                }
+            }
+
+            // Run ASM Analyzer<ProvValue> for sound control-flow value lattice.
+            ProvInterpreter interp = new ProvInterpreter(this, isStatic, isCtor, argTypes);
+            Frame<ProvValue>[] frames;
+            try {
+                Analyzer<ProvValue> analyzer = new Analyzer<>(interp);
+                frames = analyzer.analyze(key.ownerInternalName(), mn);
+            } catch (AnalyzerException | RuntimeException e) {
+                return Result.unconstrained(pCount, isStatic || isCtor, List.of("bytecode verification failed"));
+            }
+
+            // Initialize summary state from analyzed frames.
+            boolean hermetic = true;
+            boolean deterministic = true;
+            boolean nothrow = true;
+            boolean terminating = !cyclic;
+            boolean mutReceiver = false;
+            boolean borrowReceiver = !(isStatic || isCtor);
+            boolean[] mutParams = new boolean[pCount];
+            boolean[] borrowParams = new boolean[pCount];
+            Arrays.fill(borrowParams, true);
+            boolean readsReceiver = false;
+            boolean[] readParams = new boolean[pCount];
+            boolean returnNonNull = !isPrimitive(retType);
+            boolean hasObjectReturn = false;
+            boolean allReturnsFresh = !isPrimitive(retType);
+            boolean allReturnsAliasThis = !(isStatic || isCtor) && !isPrimitive(retType);
+            boolean touchedStoredElemCall = false;
+            Set<String> reasons = new LinkedHashSet<>();
+
+            if ((mn.access & Opcodes.ACC_SYNCHRONIZED) != 0) {
+                hermetic = false;
+                deterministic = false;
+                nothrow = false;
+                reasons.add("synchronized method");
+            }
+            if (cyclic) {
+                reasons.add("recursive cycle");
+            }
+
+            // Map labels to instruction indices for backward-branch loop detection.
+            Map<LabelNode, Integer> labelIndex = new HashMap<>();
+            AbstractInsnNode[] insns = mn.instructions.toArray();
+            for (int i = 0; i < insns.length; i++) {
+                if (insns[i] instanceof LabelNode ln) {
+                    labelIndex.put(ln, i);
+                }
+            }
+
+            for (int i = 0; i < insns.length; i++) {
+                Frame<ProvValue> frame = frames[i];
+                if (frame == null) {
+                    continue; // unreachable instruction
+                }
+                AbstractInsnNode insn = insns[i];
+                int op = insn.getOpcode();
+                if (op < 0) {
+                    continue;
+                }
+                if (insn instanceof JumpInsnNode jn) {
+                    Integer targetIdx = labelIndex.get(jn.label);
+                    if (targetIdx != null && targetIdx <= i) {
+                        terminating = false;
+                    }
+                    continue;
+                }
+                switch (op) {
+                    case Opcodes.PUTSTATIC -> {
+                        FieldInsnNode fi = (FieldInsnNode) insn;
+                        hermetic = false;
+                        deterministic = false;
+                        reasons.add("writes static " + fi.owner + "." + fi.name);
+                    }
+                    case Opcodes.GETSTATIC -> {
+                        FieldInsnNode fi = (FieldInsnNode) insn;
+                        if (!isFinalStaticField(fi.owner, fi.name)) {
+                            deterministic = false;
+                            reasons.add("reads mutable static " + fi.owner + "." + fi.name);
+                        }
+                    }
+                    case Opcodes.PUTFIELD -> {
+                        FieldInsnNode fi = (FieldInsnNode) insn;
+                        int top = frame.getStackSize();
+                        ProvValue obj = frame.getStack(top - 2);
+                        ProvValue val = frame.getStack(top - 1);
+                        if (obj.mayBeNull) {
+                            nothrow = false;
+                        }
+                        if (!obj.isPurelyFresh()) {
+                            if (obj.hasThis() && !(isCtor && (obj.provBits & ~PROV_THIS) == 0)) {
+                                mutReceiver = true;
+                            }
+                            markParamBits(obj.provBits, mutParams);
+                            if (obj.hasExternal()) {
+                                hermetic = false;
+                                reasons.add("writes external field " + fi.owner + "." + fi.name);
+                            }
+                            // Escape of stored value:
+                            if (val.hasThis() && !(obj.hasThis() && (obj.provBits & ~PROV_THIS) == 0)) {
+                                borrowReceiver = false;
+                            }
+                            clearParamBits(val.provBits, borrowParams);
+                        }
+                    }
+                    case Opcodes.GETFIELD -> {
+                        FieldInsnNode fi = (FieldInsnNode) insn;
+                        ProvValue obj = frame.getStack(frame.getStackSize() - 1);
+                        if (obj.mayBeNull) {
+                            nothrow = false;
+                        }
+                        if (!isFinalInstanceField(fi.owner, fi.name)) {
+                            if (obj.hasThis() && !isCtor) {
+                                readsReceiver = true;
+                            }
+                            markParamBits(obj.provBits, readParams);
+                            if (obj.hasExternal()) {
+                                deterministic = false;
+                                reasons.add("reads external field " + fi.owner + "." + fi.name);
+                            }
+                        }
+                    }
+                    case Opcodes.IASTORE, Opcodes.LASTORE, Opcodes.FASTORE, Opcodes.DASTORE,
+                         Opcodes.AASTORE, Opcodes.BASTORE, Opcodes.CASTORE, Opcodes.SASTORE -> {
+                        nothrow = false;
+                        int top = frame.getStackSize();
+                        ProvValue arr = frame.getStack(top - 3);
+                        ProvValue val = frame.getStack(top - 1);
+                        if (!arr.isPurelyFresh()) {
+                            if (arr.hasThis() && !(isCtor && (arr.provBits & ~PROV_THIS) == 0)) {
+                                mutReceiver = true;
+                            }
+                            markParamBits(arr.provBits, mutParams);
+                            if (arr.hasExternal()) {
+                                hermetic = false;
+                                reasons.add("writes external array");
+                            }
+                            if (op == Opcodes.AASTORE) {
+                                if (val.hasThis() && !(arr.hasThis() && (arr.provBits & ~PROV_THIS) == 0)) {
+                                    borrowReceiver = false;
+                                }
+                                clearParamBits(val.provBits, borrowParams);
+                            }
+                        }
+                    }
+                    case Opcodes.IALOAD, Opcodes.LALOAD, Opcodes.FALOAD, Opcodes.DALOAD,
+                         Opcodes.AALOAD, Opcodes.BALOAD, Opcodes.CALOAD, Opcodes.SALOAD -> {
+                        nothrow = false;
+                        ProvValue arr = frame.getStack(frame.getStackSize() - 2);
+                        if (!arr.isPurelyFresh()) {
+                            if (arr.hasThis() && !isCtor) {
+                                readsReceiver = true;
+                            }
+                            markParamBits(arr.provBits, readParams);
+                            if (arr.hasExternal()) {
+                                deterministic = false;
+                                reasons.add("reads external array");
+                            }
+                        }
+                    }
+                    case Opcodes.ARRAYLENGTH -> {
+                        ProvValue arr = frame.getStack(frame.getStackSize() - 1);
+                        if (arr.mayBeNull) {
+                            nothrow = false;
+                        }
+                    }
+                    case Opcodes.IDIV, Opcodes.IREM, Opcodes.LDIV, Opcodes.LREM -> nothrow = false;
+                    case Opcodes.ATHROW -> nothrow = false;
+                    case Opcodes.CHECKCAST -> nothrow = false;
+                    case Opcodes.MONITORENTER, Opcodes.MONITOREXIT -> {
+                        hermetic = false;
+                        deterministic = false;
+                        nothrow = false;
+                        reasons.add("monitor synchronization");
+                    }
+                    case Opcodes.ARETURN -> {
+                        hasObjectReturn = true;
+                        ProvValue ret = frame.getStack(frame.getStackSize() - 1);
+                        if (ret.mayBeNull) {
+                            returnNonNull = false;
+                        }
+                        if (!ret.isPurelyFresh()) {
+                            allReturnsFresh = false;
+                        }
+                        if (!ret.hasThis()) {
+                            allReturnsAliasThis = false;
+                        }
+                    }
+                    case Opcodes.INVOKESTATIC, Opcodes.INVOKESPECIAL, Opcodes.INVOKEVIRTUAL, Opcodes.INVOKEINTERFACE -> {
+                        MethodInsnNode mi = (MethodInsnNode) insn;
+                        if ("<init>".equals(mi.name) && "java/lang/Object".equals(mi.owner)) {
+                            break;
+                        }
+                        Type[] cArgs = Type.getArgumentTypes(mi.desc);
+                        boolean cStatic = op == Opcodes.INVOKESTATIC;
+                        int totalPop = cArgs.length + (cStatic ? 0 : 1);
+                        int base = frame.getStackSize() - totalPop;
+                        ProvValue cRecv = cStatic ? null : frame.getStack(base);
+                        ProvValue[] cArgVals = new ProvValue[cArgs.length];
+                        for (int a = 0; a < cArgs.length; a++) {
+                            cArgVals[a] = frame.getStack(base + (cStatic ? 0 : 1) + a);
+                        }
+                        if (cRecv != null && cRecv.mayBeNull) {
+                            nothrow = false;
+                        }
+
+                        MethodKey calleeKey = new MethodKey(mi.owner, mi.name, mi.desc);
+                        Result calleeRes = resolveCalleeResult(op, mi, calleeKey, reasons);
+                        if (calleeRes == null) {
+                            hermetic = false;
+                            deterministic = false;
+                            nothrow = false;
+                            terminating = false;
+                            borrowReceiver = false;
+                            Arrays.fill(borrowParams, false);
+                            reasons.add("open dispatch " + mi.owner + "." + mi.name);
+                            break;
+                        }
+                        EffectSet ce = calleeRes.effects();
+                        if (!ce.isHermetic()) hermetic = false;
+                        if (!ce.isDeterministic()) deterministic = false;
+                        if (!ce.isNothrow()) nothrow = false;
+                        if (!ce.terminating()) terminating = false;
+
+                        if (cRecv != null) {
+                            if (calleeRes.mutReceiver() && !cRecv.isPurelyFresh()) {
+                                if (cRecv.hasThis() && !(isCtor && (cRecv.provBits & ~PROV_THIS) == 0)) {
+                                    mutReceiver = true;
+                                }
+                                markParamBits(cRecv.provBits, mutParams);
+                                if (cRecv.hasExternal()) {
+                                    hermetic = false;
+                                }
+                            }
+                            if (calleeRes.readsReceiver() && !cRecv.isPurelyFresh()) {
+                                if (cRecv.hasThis() && !isCtor) {
+                                    readsReceiver = true;
+                                }
+                                markParamBits(cRecv.provBits, readParams);
+                                if (cRecv.hasExternal()) {
+                                    deterministic = false;
+                                }
+                            }
+                            if (!calleeRes.borrowReceiver() && !ce.isPure()) {
+                                if (cRecv.hasThis()) {
+                                    borrowReceiver = false;
+                                }
+                                clearParamBits(cRecv.provBits, borrowParams);
+                            }
+                            if (cRecv.hasStoredElem()) {
+                                touchedStoredElemCall = true;
+                            }
+                        }
+                        for (int a = 0; a < cArgVals.length; a++) {
+                            ProvValue av = cArgVals[a];
+                            boolean cMutP = a < calleeRes.mutParams().length && calleeRes.mutParams()[a];
+                            boolean cReadP = a < calleeRes.readParams().length && calleeRes.readParams()[a];
+                            boolean cBorrowP = a < calleeRes.borrowParams().length && calleeRes.borrowParams()[a];
+                            if (cMutP && !av.isPurelyFresh()) {
+                                if (av.hasThis() && !(isCtor && (av.provBits & ~PROV_THIS) == 0)) {
+                                    mutReceiver = true;
+                                }
+                                markParamBits(av.provBits, mutParams);
+                                if (av.hasExternal()) {
+                                    hermetic = false;
+                                }
+                            }
+                            if (cReadP && !av.isPurelyFresh()) {
+                                if (av.hasThis() && !isCtor) {
+                                    readsReceiver = true;
+                                }
+                                markParamBits(av.provBits, readParams);
+                                if (av.hasExternal()) {
+                                    deterministic = false;
+                                }
+                            }
+                            if (!cBorrowP) {
+                                if (av.hasThis()) {
+                                    borrowReceiver = false;
+                                }
+                                clearParamBits(av.provBits, borrowParams);
+                            }
+                            if (av.hasStoredElem() && !ce.isPure()) {
+                                touchedStoredElemCall = true;
+                            }
+                        }
+                        if (!calleeRes.reasons().isEmpty() && (!ce.isHermetic() || !ce.isDeterministic())) {
+                            reasons.addAll(calleeRes.reasons());
+                        }
+                    }
+                    case Opcodes.INVOKEDYNAMIC -> {
+                        InvokeDynamicInsnNode indy = (InvokeDynamicInsnNode) insn;
+                        String bsmOwner = indy.bsm != null ? indy.bsm.getOwner() : "";
+                        if ("java/lang/invoke/StringConcatFactory".equals(bsmOwner)) {
+                            // Pure, deterministic, nothrow string concatenation!
+                        } else if ("java/lang/invoke/LambdaMetafactory".equals(bsmOwner)) {
+                            // Creating a lambda captures its arguments (shared) without running the body.
+                            Type[] cArgs = Type.getArgumentTypes(indy.desc);
+                            int base = frame.getStackSize() - cArgs.length;
+                            for (int a = 0; a < cArgs.length; a++) {
+                                ProvValue av = frame.getStack(base + a);
+                                if (av.hasThis()) borrowReceiver = false;
+                                clearParamBits(av.provBits, borrowParams);
+                            }
+                        } else {
+                            hermetic = false;
+                            deterministic = false;
+                            nothrow = false;
+                            terminating = false;
+                            reasons.add("invokedynamic " + indy.name);
+                        }
+                    }
+                    default -> {
+                    }
+                }
+            }
+
+            boolean nonNullRet = isCtor || (hasObjectReturn && returnNonNull);
+            if (!hermetic) {
+                boolean[] allReads = new boolean[pCount];
+                Arrays.fill(allReads, true);
+                return new Result(EffectSet.EMPTY, false, false, new boolean[pCount], new boolean[pCount],
+                        !(isStatic || isCtor), allReads, nonNullRet, false, false, false, List.copyOf(reasons));
+            }
+            boolean anyMutParam = false;
+            for (boolean mp : mutParams) {
+                anyMutParam |= mp;
+            }
+            EnumSet<Effect> effs = EnumSet.noneOf(Effect.class);
+            effs.add(Effect.HERMETIC);
+            if (!mutReceiver && !anyMutParam) {
+                effs.add(Effect.PURE);
+            }
+            if (deterministic) {
                 effs.add(Effect.DETERMINISTIC);
             }
-            if (scan.nothrow) {
+            if (nothrow) {
                 effs.add(Effect.NOTHROW);
             }
-            EffectSet set = EffectSet.ofInferred(effs, false, scan.hermetic && !scan.mutatesObject, false, scan.terminating);
-            return new Result(set, List.copyOf(scan.reasons));
-        } finally {
-            visiting.remove(key);
+            boolean isFresh = hasObjectReturn && allReturnsFresh;
+            boolean isView = hasObjectReturn && allReturnsAliasThis && !mutReceiver;
+            boolean isShallow = mutReceiver && !anyMutParam && !touchedStoredElemCall;
+            if (isCtor) {
+                mutReceiver = false;
+                borrowReceiver = false;
+                readsReceiver = false;
+                isFresh = allParamsBorrowed(borrowParams);
+            }
+            EffectSet effectSet = EffectSet.ofInferred(effs, mutReceiver, borrowReceiver, isFresh, terminating);
+            return new Result(effectSet, mutReceiver, borrowReceiver, mutParams, borrowParams,
+                    readsReceiver, readParams, nonNullRet, isFresh, isView, isShallow, List.copyOf(reasons));
         }
+
+        Result resolveCalleeResult(int opcode, MethodInsnNode mi, MethodKey calleeKey, Set<String> reasons) {
+            if (mi.owner.startsWith("[") && "clone".equals(mi.name) && "()Ljava/lang/Object;".equals(mi.desc)) {
+                EffectSet es = EffectSet.ofInferred(
+                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
+                        false, true, true, true);
+                return new Result(es, false, true, new boolean[0], new boolean[0],
+                        true, new boolean[0], true, true, false, false, List.of());
+            }
+            Result curated = lookupCuratedOrSeeded(calleeKey);
+            if (curated != null) {
+                if (reasons != null && !curated.reasons().isEmpty()) {
+                    reasons.addAll(curated.reasons());
+                }
+                return curated;
+            }
+            if (isClosedCall(opcode, mi.owner, mi.name, mi.desc)) {
+                return localResults.get(calleeKey);
+            }
+            return null;
+        }
+
+        Result lookupCuratedOrSeeded(MethodKey key) {
+            // 1. Curated axioms (BIP019 §5.1–§5.2)
+            if (axioms != null && !axioms.isEmpty()) {
+                Class<?> cls = loadClass(key.ownerInternalName(), loader);
+                if (cls != null) {
+                    if ("<init>".equals(key.name())) {
+                        Constructor<?> ctor = findReflectedConstructor(cls, key.descriptor());
+                        AxiomData.MemberAxiom ax = axioms.constructorAxiom(cls, ctor);
+                        if (ax != null) {
+                            return resultFromAxiom(ax, ctor, "curated " + ax.ownerClass().getSimpleName() + ".new");
+                        }
+                    } else {
+                        Method m = findReflectedMethod(cls, key.name(), key.descriptor());
+                        AxiomData.MemberAxiom ax = axioms.methodAxiom(cls, key.name(), m);
+                        if (ax != null) {
+                            return resultFromAxiom(ax, m, "curated " + ax.ownerClass().getSimpleName() + "." + ax.name());
+                        }
+                    }
+                }
+            }
+            // 2. Legacy SEEDED_INTRINSICS (migrated to curated.ba in BIP019-P5)
+            EffectSet seeded = SEEDED_INTRINSICS.get(key.ownerInternalName() + "#" + key.name() + key.descriptor());
+            if (seeded == null) {
+                seeded = SEEDED_INTRINSICS.get(key.ownerInternalName() + "#" + key.name());
+            }
+            if (seeded != null) {
+                int pCount = Type.getArgumentTypes(key.descriptor()).length;
+                boolean[] bp = new boolean[pCount];
+                Arrays.fill(bp, true);
+                boolean[] rp = new boolean[pCount];
+                return new Result(seeded, false, true, new boolean[pCount], bp,
+                        false, rp, "java/lang/String".equals(key.ownerInternalName()), false, false, false, List.of());
+            }
+            return null;
+        }
+
+        private Result resultFromAxiom(AxiomData.MemberAxiom ax, Executable exec, String reason) {
+            EffectChecker.JavaCallProfile prof = ax.toProfile(exec);
+            boolean retNonNull = exec instanceof Constructor<?>
+                    || (ax.hasSignature() && ax.returnNullness() == JavaNullability.Nullness.NON_NULL);
+            return new Result(prof.effects(), prof.mutReceiver(), prof.borrowReceiver(),
+                    prof.mutParams(), prof.borrowParams(),
+                    prof.readsReceiver(), prof.readParams(),
+                    retNonNull, prof.fresh(), prof.view(), prof.shallow(), List.of(reason));
+        }
+
+        private boolean isClosedCall(int opcode, String ownerInternal, String methodName, String methodDesc) {
+            if (opcode == Opcodes.INVOKESTATIC || opcode == Opcodes.INVOKESPECIAL) {
+                return true;
+            }
+            if (opcode == Opcodes.INVOKEVIRTUAL) {
+                Class<?> cls = loadClass(ownerInternal, loader);
+                if (cls == null) {
+                    return false;
+                }
+                if (Modifier.isFinal(cls.getModifiers())) {
+                    return true;
+                }
+                Method m = findReflectedMethod(cls, methodName, methodDesc);
+                if (m != null && (Modifier.isFinal(m.getModifiers()) || Modifier.isPrivate(m.getModifiers()))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private MethodNode findMethodNode(MethodKey key) {
+            ClassNode cn = loadClassNode(key.ownerInternalName(), loader);
+            if (cn == null) {
+                return null;
+            }
+            for (MethodNode mn : cn.methods) {
+                if (mn.name.equals(key.name()) && mn.desc.equals(key.descriptor())) {
+                    return mn;
+                }
+            }
+            // Method may be inherited from superclass (e.g. ArrayList.isEmpty inherited or superclass helper).
+            if (cn.superName != null && !"<init>".equals(key.name())) {
+                return findMethodNode(new MethodKey(cn.superName, key.name(), key.descriptor()));
+            }
+            return null;
+        }
+
+        private boolean isFinalStaticField(String ownerInternal, String fieldName) {
+            try {
+                Class<?> cls = loadClass(ownerInternal, loader);
+                if (cls == null) return false;
+                for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
+                    try {
+                        Field f = c.getDeclaredField(fieldName);
+                        return Modifier.isFinal(f.getModifiers()) && Modifier.isStatic(f.getModifiers());
+                    } catch (NoSuchFieldException ignored) {
+                    }
+                }
+                return false;
+            } catch (Throwable t) {
+                return false;
+            }
+        }
+
+        private boolean isFinalInstanceField(String ownerInternal, String fieldName) {
+            try {
+                Class<?> cls = loadClass(ownerInternal, loader);
+                if (cls == null) return false;
+                for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
+                    try {
+                        Field f = c.getDeclaredField(fieldName);
+                        return Modifier.isFinal(f.getModifiers()) && !Modifier.isStatic(f.getModifiers());
+                    } catch (NoSuchFieldException ignored) {
+                    }
+                }
+                return false;
+            } catch (Throwable t) {
+                return false;
+            }
+        }
+    }
+
+    // ================================================================ ASM Interpreter for ProvValue
+
+    private static final class ProvInterpreter extends Interpreter<ProvValue> {
+        private final Session session;
+        private final boolean isStatic;
+        private final boolean isCtor;
+        private final Type[] argTypes;
+        private int nextParamLocal = 0;
+
+        ProvInterpreter(Session session, boolean isStatic, boolean isCtor, Type[] argTypes) {
+            super(Opcodes.ASM9);
+            this.session = session;
+            this.isStatic = isStatic;
+            this.isCtor = isCtor;
+            this.argTypes = argTypes;
+        }
+
+        @Override
+        public ProvValue newParameterValue(boolean isInstanceMethod, int local, Type type) {
+            if (isInstanceMethod && local == 0) {
+                nextParamLocal = 1;
+                return ProvValue.THIS_VAL;
+            }
+            int paramIdx = findParamIndex(isInstanceMethod, local);
+            return ProvValue.ofParam(paramIdx, type);
+        }
+
+        private int findParamIndex(boolean isInstanceMethod, int local) {
+            int slot = isInstanceMethod ? 1 : 0;
+            for (int i = 0; i < argTypes.length; i++) {
+                if (slot == local) {
+                    return i;
+                }
+                slot += argTypes[i].getSize();
+            }
+            return MAX_TRACKED_PARAMS;
+        }
+
+        @Override
+        public ProvValue newReturnTypeValue(Type type) {
+            if (type == Type.VOID_TYPE) return null;
+            return newValue(type);
+        }
+
+        @Override
+        public ProvValue newEmptyValue(int local) {
+            return ProvValue.UNINITIALIZED;
+        }
+
+        @Override
+        public ProvValue newValue(Type type) {
+            if (type == null) return ProvValue.UNINITIALIZED;
+            if (type == Type.VOID_TYPE) return null;
+            if (isPrimitive(type)) {
+                return type.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
+            }
+            return ProvValue.EXTERNAL_NULLABLE;
+        }
+
+        @Override
+        public ProvValue newOperation(AbstractInsnNode insn) {
+            return switch (insn.getOpcode()) {
+                case Opcodes.ACONST_NULL -> ProvValue.NULL_VAL;
+                case Opcodes.LCONST_0, Opcodes.LCONST_1, Opcodes.DCONST_0, Opcodes.DCONST_1 -> ProvValue.CONST_2;
+                case Opcodes.LDC -> {
+                    Object cst = ((LdcInsnNode) insn).cst;
+                    if (cst instanceof Long || cst instanceof Double) yield ProvValue.CONST_2;
+                    yield ProvValue.CONST_1; // non-null String/Class/Number constant
+                }
+                case Opcodes.GETSTATIC -> {
+                    FieldInsnNode fi = (FieldInsnNode) insn;
+                    Type ft = Type.getType(fi.desc);
+                    if (isPrimitive(ft)) yield ft.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
+                    boolean nonNull = isNonNullFinalStatic(fi.owner, fi.name);
+                    yield nonNull ? ProvValue.EXTERNAL_NONNULL : ProvValue.EXTERNAL_NULLABLE;
+                }
+                case Opcodes.NEW -> ProvValue.FRESH_VAL;
+                default -> ProvValue.CONST_1;
+            };
+        }
+
+        private boolean isNonNullFinalStatic(String ownerInternal, String name) {
+            try {
+                Class<?> cls = loadClass(ownerInternal, session.loader);
+                if (cls == null) return false;
+                Field f = cls.getDeclaredField(name);
+                if (Modifier.isStatic(f.getModifiers()) && Modifier.isFinal(f.getModifiers()) && Modifier.isPublic(f.getModifiers())) {
+                    return f.get(null) != null;
+                }
+            } catch (Throwable ignored) {
+            }
+            return false;
+        }
+
+        @Override
+        public ProvValue copyOperation(AbstractInsnNode insn, ProvValue value) {
+            return value;
+        }
+
+        @Override
+        public ProvValue unaryOperation(AbstractInsnNode insn, ProvValue value) {
+            return switch (insn.getOpcode()) {
+                case Opcodes.LNEG, Opcodes.DNEG, Opcodes.I2L, Opcodes.I2D, Opcodes.F2L, Opcodes.F2D,
+                     Opcodes.L2D, Opcodes.D2L -> ProvValue.CONST_2;
+                case Opcodes.NEWARRAY, Opcodes.ANEWARRAY -> ProvValue.FRESH_VAL;
+                case Opcodes.CHECKCAST -> value; // preserves provenance and nullness
+                case Opcodes.GETFIELD -> {
+                    FieldInsnNode fi = (FieldInsnNode) insn;
+                    Type ft = Type.getType(fi.desc);
+                    if (isPrimitive(ft)) yield ft.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
+                    // Field loaded from `this` carries PROV_THIS | PROV_STORED_ELEM.
+                    long bits = value.provBits;
+                    if ((bits & PROV_THIS) != 0) {
+                        bits |= PROV_STORED_ELEM;
+                    }
+                    yield ProvValue.of(1, bits, true);
+                }
+                default -> ProvValue.CONST_1;
+            };
+        }
+
+        @Override
+        public ProvValue binaryOperation(AbstractInsnNode insn, ProvValue value1, ProvValue value2) {
+            return switch (insn.getOpcode()) {
+                case Opcodes.LALOAD, Opcodes.DALOAD, Opcodes.LADD, Opcodes.DADD, Opcodes.LSUB, Opcodes.DSUB,
+                     Opcodes.LMUL, Opcodes.DMUL, Opcodes.LDIV, Opcodes.DDIV, Opcodes.LREM, Opcodes.DREM,
+                     Opcodes.LSHL, Opcodes.LSHR, Opcodes.LUSHR, Opcodes.LAND, Opcodes.LOR, Opcodes.LXOR -> ProvValue.CONST_2;
+                case Opcodes.AALOAD -> {
+                    long bits = value1.provBits;
+                    if ((bits & PROV_THIS) != 0) {
+                        bits |= PROV_STORED_ELEM;
+                    }
+                    yield ProvValue.of(1, bits, true);
+                }
+                case Opcodes.PUTFIELD -> null;
+                default -> ProvValue.CONST_1;
+            };
+        }
+
+        @Override
+        public ProvValue ternaryOperation(AbstractInsnNode insn, ProvValue value1, ProvValue value2, ProvValue value3) {
+            return null;
+        }
+
+        @Override
+        public ProvValue naryOperation(AbstractInsnNode insn, List<? extends ProvValue> values) {
+            int op = insn.getOpcode();
+            if (op == Opcodes.MULTIANEWARRAY) {
+                return ProvValue.FRESH_VAL;
+            }
+            if (op == Opcodes.INVOKEDYNAMIC) {
+                InvokeDynamicInsnNode indy = (InvokeDynamicInsnNode) insn;
+                Type ret = Type.getReturnType(indy.desc);
+                if (ret == Type.VOID_TYPE) return null;
+                if (isPrimitive(ret)) return ret.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
+                String bsmOwner = indy.bsm != null ? indy.bsm.getOwner() : "";
+                if ("java/lang/invoke/StringConcatFactory".equals(bsmOwner)
+                        || "java/lang/invoke/LambdaMetafactory".equals(bsmOwner)) {
+                    return ProvValue.FRESH_VAL;
+                }
+                return ProvValue.EXTERNAL_NULLABLE;
+            }
+            MethodInsnNode mi = (MethodInsnNode) insn;
+            Type ret = Type.getReturnType(mi.desc);
+            if (ret == Type.VOID_TYPE) return null;
+            if (isPrimitive(ret)) return ret.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
+
+            MethodKey calleeKey = new MethodKey(mi.owner, mi.name, mi.desc);
+            Result res = session.resolveCalleeResult(op, mi, calleeKey, null);
+            if (res == null) {
+                return ProvValue.EXTERNAL_NULLABLE;
+            }
+            boolean mayBeNull = !res.returnNonNull();
+            if (res.fresh() || res.effects().uniqueResult()) {
+                return ProvValue.of(1, PROV_FRESH, mayBeNull);
+            }
+            if (res.effects().isHermetic() && res.effects().isDeterministic()) {
+                long bits = 0L;
+                for (ProvValue v : values) {
+                    bits |= v.provBits;
+                }
+                if (bits == 0L) {
+                    bits = PROV_FRESH;
+                }
+                return ProvValue.of(1, bits, mayBeNull);
+            }
+            return ProvValue.of(1, PROV_EXTERNAL, mayBeNull);
+        }
+
+        @Override
+        public void returnOperation(AbstractInsnNode insn, ProvValue value, ProvValue expected) {
+        }
+
+        @Override
+        public ProvValue merge(ProvValue v1, ProvValue v2) {
+            if (v1.equals(v2)) return v1;
+            int sz = v1.size == v2.size ? v1.size : 1;
+            return ProvValue.of(sz, v1.provBits | v2.provBits, v1.mayBeNull | v2.mayBeNull);
+        }
+    }
+
+    // ================================================================ Helpers
+
+    private static void markParamBits(long provBits, boolean[] target) {
+        long pBits = provBits >>> PROV_PARAM_SHIFT;
+        int idx = 0;
+        while (pBits != 0L && idx < target.length) {
+            if ((pBits & 1L) != 0L) {
+                target[idx] = true;
+            }
+            pBits >>>= 1;
+            idx++;
+        }
+    }
+
+    private static void clearParamBits(long provBits, boolean[] target) {
+        long pBits = provBits >>> PROV_PARAM_SHIFT;
+        int idx = 0;
+        while (pBits != 0L && idx < target.length) {
+            if ((pBits & 1L) != 0L) {
+                target[idx] = false;
+            }
+            pBits >>>= 1;
+            idx++;
+        }
+    }
+
+    private static boolean allParamsBorrowed(boolean[] borrowParams) {
+        for (boolean b : borrowParams) {
+            if (!b) return false;
+        }
+        return true;
+    }
+
+    private static ClassNode loadClassNode(String ownerInternal, ClassLoader loader) {
+        ClassLoader key = loader != null ? loader : NULL_LOADER_SENTINEL;
+        Map<String, ClassNode> byName;
+        synchronized (CLASS_NODE_CACHES) {
+            byName = CLASS_NODE_CACHES.computeIfAbsent(key, k -> new ConcurrentHashMap<>());
+        }
+        ClassNode cached = byName.get(ownerInternal);
+        if (cached != null) {
+            return cached == MISSING_CLASS_NODE ? null : cached;
+        }
+        byte[] bytes = loadClassBytes(ownerInternal, loader);
+        if (bytes == null) {
+            byName.put(ownerInternal, MISSING_CLASS_NODE);
+            return null;
+        }
+        ClassNode cn = new ClassNode();
+        new ClassReader(bytes).accept(cn, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+        byName.put(ownerInternal, cn);
+        return cn;
     }
 
     private static byte[] loadClassBytes(String ownerInternal, ClassLoader loader) {
@@ -218,229 +1408,6 @@ public final class BytecodeEffectAnalyzer {
         }
     }
 
-    private static final class MethodScan {
-        boolean found;
-        boolean isNative;
-        boolean isAbstract;
-        boolean hermetic = true;
-        boolean mutatesObject = false;
-        boolean deterministic = true;
-        boolean nothrow = true;
-        boolean terminating = true;
-        final List<String> reasons = new ArrayList<>();
-    }
-
-    private static MethodScan scanMethod(byte[] bytecode, String targetName, String targetDesc,
-                                         ClassLoader loader, Set<MethodKey> visiting, int depth) {
-        MethodScan scan = new MethodScan();
-        ClassReader reader = new ClassReader(bytecode);
-        reader.accept(new ClassVisitor(Opcodes.ASM9) {
-            @Override
-            public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-                if (!name.equals(targetName) || !descriptor.equals(targetDesc)) {
-                    return null;
-                }
-                scan.found = true;
-                if ((access & Opcodes.ACC_NATIVE) != 0) {
-                    scan.isNative = true;
-                    return null;
-                }
-                if ((access & Opcodes.ACC_ABSTRACT) != 0) {
-                    scan.isAbstract = true;
-                    return null;
-                }
-                if ((access & Opcodes.ACC_SYNCHRONIZED) != 0) {
-                    scan.hermetic = false;
-                    scan.deterministic = false;
-                    scan.nothrow = false;
-                    scan.reasons.add("synchronized method");
-                }
-                return new MethodVisitor(Opcodes.ASM9) {
-                    private final Set<org.objectweb.asm.Label> seenLabels = new HashSet<>();
-
-                    @Override
-                    public void visitLabel(org.objectweb.asm.Label label) {
-                        seenLabels.add(label);
-                    }
-
-                    @Override
-                    public void visitJumpInsn(int opcode, org.objectweb.asm.Label label) {
-                        if (seenLabels.contains(label)) {
-                            // Backward branch -> loop -> cannot prove @TERMINATING.
-                            scan.terminating = false;
-                        }
-                    }
-
-                    @Override
-                    public void visitInsn(int opcode) {
-                        switch (opcode) {
-                            case Opcodes.IASTORE, Opcodes.LASTORE, Opcodes.FASTORE, Opcodes.DASTORE,
-                                 Opcodes.AASTORE, Opcodes.BASTORE, Opcodes.CASTORE, Opcodes.SASTORE -> {
-                                scan.hermetic = false;
-                                scan.mutatesObject = true;
-                                scan.nothrow = false;
-                                scan.reasons.add("array store");
-                            }
-                            case Opcodes.IALOAD, Opcodes.LALOAD, Opcodes.FALOAD, Opcodes.DALOAD,
-                                 Opcodes.AALOAD, Opcodes.BALOAD, Opcodes.CALOAD, Opcodes.SALOAD,
-                                 Opcodes.ARRAYLENGTH -> {
-                                scan.nothrow = false;
-                                scan.reasons.add("array access may throw");
-                            }
-                            case Opcodes.IDIV, Opcodes.IREM, Opcodes.LDIV, Opcodes.LREM -> {
-                                scan.nothrow = false;
-                                scan.reasons.add("integer division/remainder may throw");
-                            }
-                            case Opcodes.ATHROW -> {
-                                scan.nothrow = false;
-                                scan.reasons.add("explicit throw");
-                            }
-                            case Opcodes.MONITORENTER, Opcodes.MONITOREXIT -> {
-                                scan.hermetic = false;
-                                scan.deterministic = false;
-                                scan.nothrow = false;
-                                scan.reasons.add("monitor synchronization");
-                            }
-                            default -> {
-                            }
-                        }
-                    }
-
-                    @Override
-                    public void visitTypeInsn(int opcode, String type) {
-                        if (opcode == Opcodes.CHECKCAST) {
-                            scan.nothrow = false;
-                            scan.reasons.add("checkcast may throw");
-                        }
-                    }
-
-                    @Override
-                    public void visitFieldInsn(int opcode, String owner, String fieldName, String fieldDesc) {
-                        switch (opcode) {
-                            case Opcodes.PUTSTATIC -> {
-                                scan.hermetic = false;
-                                scan.mutatesObject = true;
-                                scan.deterministic = false;
-                                scan.reasons.add("static field write " + owner + "." + fieldName);
-                            }
-                            case Opcodes.PUTFIELD -> {
-                                scan.hermetic = false;
-                                scan.mutatesObject = true;
-                                scan.nothrow = false;
-                                scan.reasons.add("instance field write " + owner + "." + fieldName);
-                            }
-                            case Opcodes.GETSTATIC -> {
-                                if (!isFinalStaticField(owner, fieldName, loader)) {
-                                    scan.deterministic = false;
-                                    scan.reasons.add("non-final static field read " + owner + "." + fieldName);
-                                }
-                            }
-                            case Opcodes.GETFIELD -> {
-                                // Conservative on NPE unless proven non-null.
-                                scan.nothrow = false;
-                            }
-                            default -> {
-                            }
-                        }
-                    }
-
-                    @Override
-                    public void visitMethodInsn(int opcode, String owner, String mName, String mDesc, boolean isInterface) {
-                        EffectSet seeded = SEEDED_INTRINSICS.get(owner + "#" + mName);
-                        if (seeded != null) {
-                            mergeCallee(scan, seeded);
-                            return;
-                        }
-                        boolean closed = opcode == Opcodes.INVOKESTATIC
-                                || opcode == Opcodes.INVOKESPECIAL
-                                || (opcode == Opcodes.INVOKEVIRTUAL && isClosedVirtualTarget(owner, mName, loader));
-                        if (!closed) {
-                            scan.hermetic = false;
-                            scan.deterministic = false;
-                            scan.nothrow = false;
-                            scan.terminating = false;
-                            scan.reasons.add("open dispatch " + owner + "." + mName);
-                            return;
-                        }
-                        if ("<init>".equals(mName) && "java/lang/Object".equals(owner)) {
-                            return;
-                        }
-                        Result sub = analyzeInternal(owner, mName, mDesc, loader, visiting, depth + 1);
-                        mergeCallee(scan, sub.effects());
-                        if (!sub.reasons().isEmpty()) {
-                            scan.reasons.addAll(sub.reasons());
-                        }
-                    }
-
-                    @Override
-                    public void visitInvokeDynamicInsn(String mName, String mDesc, org.objectweb.asm.Handle bsm, Object... bsmArgs) {
-                        // Allow StringConcatFactory (`makeConcatWithConstants`) as pure deterministic nothrow.
-                        if ("java/lang/invoke/StringConcatFactory".equals(bsm.getOwner())) {
-                            return;
-                        }
-                        scan.hermetic = false;
-                        scan.deterministic = false;
-                        scan.nothrow = false;
-                        scan.terminating = false;
-                        scan.reasons.add("invokedynamic " + mName);
-                    }
-                };
-            }
-        }, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
-        return scan;
-    }
-
-    private static void mergeCallee(MethodScan scan, EffectSet callee) {
-        if (!callee.isHermetic()) {
-            scan.hermetic = false;
-        }
-        if (!callee.isPure()) {
-            scan.mutatesObject = true;
-        }
-        if (!callee.isDeterministic()) {
-            scan.deterministic = false;
-        }
-        if (!callee.isNothrow()) {
-            scan.nothrow = false;
-        }
-        if (!callee.terminating()) {
-            scan.terminating = false;
-        }
-    }
-
-    private static boolean isFinalStaticField(String ownerInternal, String fieldName, ClassLoader loader) {
-        try {
-            Class<?> cls = loadClass(ownerInternal, loader);
-            if (cls == null) {
-                return false;
-            }
-            Field f = cls.getDeclaredField(fieldName);
-            return Modifier.isFinal(f.getModifiers()) && Modifier.isStatic(f.getModifiers());
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    private static boolean isClosedVirtualTarget(String ownerInternal, String methodName, ClassLoader loader) {
-        try {
-            Class<?> cls = loadClass(ownerInternal, loader);
-            if (cls == null) {
-                return false;
-            }
-            if (Modifier.isFinal(cls.getModifiers())) {
-                return true;
-            }
-            for (Method m : cls.getDeclaredMethods()) {
-                if (m.getName().equals(methodName) && Modifier.isFinal(m.getModifiers())) {
-                    return true;
-                }
-            }
-            return false;
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
     private static Class<?> loadClass(String internalName, ClassLoader loader) {
         try {
             String binary = internalName.replace('/', '.');
@@ -448,5 +1415,30 @@ public final class BytecodeEffectAnalyzer {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    private static Method findReflectedMethod(Class<?> cls, String name, String desc) {
+        for (Method m : cls.getMethods()) {
+            if (m.getName().equals(name) && Type.getMethodDescriptor(m).equals(desc)) {
+                return m;
+            }
+        }
+        for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
+            for (Method m : c.getDeclaredMethods()) {
+                if (m.getName().equals(name) && Type.getMethodDescriptor(m).equals(desc)) {
+                    return m;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Constructor<?> findReflectedConstructor(Class<?> cls, String desc) {
+        for (Constructor<?> c : cls.getDeclaredConstructors()) {
+            if (Type.getConstructorDescriptor(c).equals(desc)) {
+                return c;
+            }
+        }
+        return null;
     }
 }
