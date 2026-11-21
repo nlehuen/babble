@@ -358,6 +358,18 @@ public class ReplTestCase {
                         ":type def lu : list of (int | string) = list.of() ; lu"));
     }
 
+    /** {@code :type} shows intersections (BIP022), and the intersection {@code is} narrows to. */
+    @Test
+    public void testTypeCommandShowsIntersections() throws Exception {
+        Assertions.assertEquals(List.of("interface Shape", "interface Named", "function f", "Named & Shape", "(Shape & Named)?", "Shape & Named"),
+                transcript("def Shape = interface ( def area : fn () : double )",
+                        "def Named = interface ( def name : fn () : string )",
+                        "def f = fn (x : Shape) : Shape -> ( x )",
+                        ":type def a : Named & Shape & Shape = f(object implements Shape, Named ( def area = fn () : double -> ( 1.0 ) ; def name = fn () : string -> ( \"o\" ) )) as Named & Shape ; a",
+                        ":type def b : (Shape & Named)? = null ; b",
+                        ":type def s : Shape = f(object implements Shape, Named ( def area = fn () : double -> ( 1.0 ) ; def name = fn () : string -> ( \"o\" ) )) ; if s is Named then ( s ) else ( s as Shape & Named )"));
+    }
+
     /** {@code :type} neither runs its input nor keeps what it defines ; its errors are reported as an input's. */
     @Test
     public void testTypeCommandLeavesTheSessionAlone() throws Exception {

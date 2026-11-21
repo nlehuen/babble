@@ -286,7 +286,13 @@ public class DifferentialTestCase {
                 "def id = fn (x : any?) : any? -> ( x )\ndef d : double? = id(2) as double?\n\"\" + classof(d) + \":\" + d + \":\" + (id(null) as double?)",
                 "def id = fn (x : any?) : any? -> ( x )\ndef u : int | double = id(2) as (int | double)\nclassof(u)",
                 // P6b : Java generic boundary check rejects corrupted element read and permits null.
-                "def l : java.util.List of int = java.util.ArrayList()\n(l as java.util.List).add(null)\nl.get(0)\n(l as java.util.List).add(\"bad\")\nl.get(1)"
+                "def l : java.util.List of int = java.util.ArrayList()\n(l as java.util.List).add(null)\nl.get(0)\n(l as java.util.List).add(\"bad\")\nl.get(1)",
+                // BIP022 : intersections checked at runtime through as and is, and narrowing by is.
+                id + "def S = interface ( def area : fn () : double )\ndef N = interface ( def name : fn () : string )\n"
+                        + "def T = class () implements S, N ( def area = fn () : double -> ( 2.0 ) ; def name = fn () : string -> ( \"t\" ) )\n"
+                        + "def D = class () implements S ( def area = fn () : double -> ( 1.0 ) )\n"
+                        + "def f = fn (x : S & N) : string -> ( x.name() + x.area() ) ; def s : S = T()\n"
+                        + "f(id(T()) as S & N) + (if s is N then ( s.name() ) else ( \"-\" )) + (D() is S & N)\nf(id(D()) as S & N)"
         );
     }
 

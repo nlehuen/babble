@@ -425,6 +425,17 @@ def label: Box of string = Box(21).map(fn (n) -> ( "v=" + n ))
 def names: java.util.List of string = java.util.ArrayList()
 ```
 
+An intersection `A & B` of interface types holds the values that are both, and has the members
+of both ; `&` binds tighter than `|`, and `is` narrows to an intersection instead of forgetting
+what it knew (see [BIP022](docs/design/bip022_intersection-types.md)) :
+
+```
+def describe = fn (x: Shape & Named): string -> ( x.name() + " " + x.area() )
+def s: Shape = pick()
+if s is Named then ( describe(s) )      ;; s : Shape & Named
+def maybe: (Shape & Named)? = null
+```
+
 ### Function effects and contracts
 
 Unannotated functions automatically infer their effects (`pure`, `hermetic`, `deterministic`,
@@ -683,11 +694,11 @@ Language features :
 - [x] functions (`fn (...) -> (...)`), supporting recursion (`recurse`) and closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional & named parameters in function calls, and default values for parameters.
-- [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions (`fn (...) : R`), union types (`A | B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types (`Box of T`, `list of int`, `java.util.List of string`).
+- [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions (`fn (...) : R`), union types (`A | B`), intersection types of interfaces (`A & B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types (`Box of T`, `list of int`, `java.util.List of string`).
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, records (`record`), private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md) and [BIP012](docs/design/bip012_grammar-improvements.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, Babble classes implementing Java (including generic) interfaces, and Java nullability alignment (`@NotNull`/`@Nullable`/JSpecify, mapped `java.base` parametric nullness, and defensive boundary checks, see [BIP011](docs/design/bip011_core-types.md)).
-- [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference (`C of T (...)` and inferred `C(...)`), strict non-nullability with `T?` and `e!`, union types (`A | B`), safe navigation (`?.`), invariant mutable generics with covariant `record`/`entry`/`borrow` parameters, flow-sensitive narrowing (`is`, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md), [BIP008](docs/design/bip008_static-typing.md), and [BIP011](docs/design/bip011_core-types.md)).
+- [x] static type checking : call-site parameter inference for non-exported/non-escaping callables, required annotations on exports, escapes, interfaces and uncalled functions, bidirectional local inference and generic call/constructor inference (`C of T (...)` and inferred `C(...)`), strict non-nullability with `T?` and `e!`, union types (`A | B`), safe navigation (`?.`), invariant mutable generics with covariant `record`/`entry`/`borrow` parameters, flow-sensitive narrowing (`is`, intersecting interfaces, `else` subtraction, `== null`/`!= null`/truthiness), checked `as` casts and sound top type `any` / `any?`, and runtime checks at casts and Java boundaries (see [BIP003](docs/design/bip003_type-system.md), [BIP008](docs/design/bip008_static-typing.md), and [BIP011](docs/design/bip011_core-types.md)).
 - [x] static function effects, ownership, algebraic contracts, and HOF forwarding (`RM002`, `RM007`, `RM008`, `RM009`) : pure-by-default opt-out surface syntax (`io`, `volatile`, `mut`, `shared`, `unique`, opt-in `nothrow`, `axiom pure`, `fn calling f`), return-through-borrow provenance, fixed-point inference and verification of internal orthogonal traits and algebraic properties (`idempotent`, `commutative`, `associative`, `monotone`, `injective`), static `mut` alias/exclusivity checking, `unique`/`frozen` ownership with `move`/`freeze`/`discard`, `@TERMINATING` inference, unused pure expression checks, cross-module/interface/first-class callback-effect forwarding (`fn calling f`), including callbacks a returned closure captures (`compose`'s `fn calling (f, g) (A): C`), closures that alias rather than store what they capture, `axiom`/`io` Java contracts (`axiom pure on Target`), `org.babblelang.effects` host annotations (`@Pure`, `@Volatile`, `@Shared`, `@IO`, `@Mut`, `@Unique`, `@Nothrow`), opt-in ASM bytecode effect analysis, property-based `babble.checkAxioms` fuzzing, and built-in core type effect profiles (see [BIP007](docs/design/bip007_effects.md), [BIP011](docs/design/bip011_core-types.md), [BIP016](docs/design/bip016_consolidating-effect-annotations.md), and [BIP017](docs/design/bip017_higher-order-function-effects.md)).
 - [x] "native" functions : `print`/`println`, `assert` (or `suppose`), `import` (Java packages and Babble modules), `same`, `classof`, `move`, `freeze`, `discard`, all 9 scalar conversions (`byte`..`string`), and core collection factories (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`).
 
@@ -716,7 +727,7 @@ Language features :
   a module or an object, instead of one `def` per name.
 - [ ] `yield` keyword : transform functions/method into iterators.
 - [ ] variadic parameters (`xs: T...`, a generic `Iterable of T`), spread arguments, Java varargs calls, generic function literals, bounded type parameters (`of (T: B)`) and polymorphic function types, and overload sets (`overload (f, g)`) resolved statically to the most specific signature (see [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
-- [ ] intersection types of interfaces : `java.io.Serializable & java.lang.Comparable of int`, `is` narrowing that keeps what it knew, and Java type variables with several bounds (see [BIP022](docs/design/bip022_intersection-types.md)).
+- [ ] the rest of intersection types : Java type variables with several bounds, marker interfaces on function conversions (`Runnable & Serializable`), static dispatch on intersection receivers, and the meets of overload sets (`BIP022-P2`, see [BIP022](docs/design/bip022_intersection-types.md)).
 - [ ] functional-style programming : `map` (standard library).
 
 Implementation features :
