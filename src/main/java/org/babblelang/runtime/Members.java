@@ -29,6 +29,10 @@ public final class Members {
         if (target instanceof Scope<?> scope) {
             return scope.get(name).get();
         }
+        Object unwrapped = Values.unwrap(target);
+        if (unwrapped != null && unwrapped.getClass().isArray()) {
+            return ArraySupport.member(unwrapped, name);
+        }
         if (isJavaObject(target)) {
             // As Java calls return them : not wrapped, but their methods are as callable.
             return JavaObject.member(target, name);

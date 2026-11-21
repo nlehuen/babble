@@ -69,7 +69,7 @@ def ip : java.util.function.IntPredicate = fn (x : int) -> ( x > 0 )
 def dp : java.util.function.DoublePredicate = fn (x : double) -> ( x > 1.0 )
 def ff : java.io.FilenameFilter = fn (d, s) -> ( s == "pom.xml" )
 def found = java.io.File(".").list(ff)!
-println(java.util.stream.IntStream.range(1, 4).allMatch(ip), ":", java.util.stream.DoubleStream.of(1.5).allMatch(dp), ":", found.length >= 0)
+println(java.util.stream.IntStream.range(1, 4).allMatch(ip), ":", java.util.stream.DoubleStream.of(1.5).allMatch(dp), ":", found.size() >= 0)
 }}}}}
 true:true:true
 

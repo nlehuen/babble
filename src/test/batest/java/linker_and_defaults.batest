@@ -147,7 +147,7 @@ I.m has no default
 {{{{{
 ;; Java array length in Babble and primitive/boxed returns (byte, short, char, long, float, void)
 def frames = java.lang.Thread.currentThread().getStackTrace()
-println(frames.length > 0)
+println(frames.size() > 0)
 def b = java.lang.Byte.parseByte("7")
 def s = java.lang.Short.parseShort("12")
 def ch = java.lang.Character.valueOf(java.lang.StringBuilder("abc").charAt(1))

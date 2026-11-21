@@ -464,6 +464,14 @@ sealed interface Type {
         }
     }
 
+    /** The {@code of} factory of an array type ({@code array.of} or {@code (array of T).of}, BIP020 §2.3). */
+    record ArrayOfFactory(Type element) implements Type {
+        @Override
+        public String toString() {
+            return element == null ? "array.of" : "(" + new Array(element) + ").of";
+        }
+    }
+
     /** A module imported statically : its exports are its members (docs/design/bip005_modules.md §8.2). */
     record Module(ModuleInterface module) implements Type {
         @Override
@@ -726,6 +734,7 @@ sealed interface Type {
                 }
                 yield false;
             }
+            case ArrayOfFactory af -> af.element() != null && af.element().anyMatch(predicate);
             case Simple ignored -> false;
             case TypeVar ignored -> false;
             case ClassValue ignored -> false;
@@ -811,6 +820,13 @@ sealed interface Type {
             case JavaMethod jm -> {
                 List<Type> mapped = mapList(jm.typeArguments(), mapper);
                 yield mapped != jm.typeArguments() ? new JavaMethod(jm.owner(), mapped, jm.name()) : jm;
+            }
+            case ArrayOfFactory af -> {
+                if (af.element() == null) {
+                    yield af;
+                }
+                Type mapped = af.element().mapTypes(mapper);
+                yield mapped != af.element() ? new ArrayOfFactory(mapped) : af;
             }
             default -> this;
         };

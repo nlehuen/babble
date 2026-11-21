@@ -10,6 +10,7 @@ import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.Arguments;
+import org.babblelang.runtime.ArraySupport;
 import org.babblelang.runtime.BabbleClass;
 import org.babblelang.runtime.BabbleInterface;
 import org.babblelang.runtime.BabbleObjects;
@@ -843,6 +844,29 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitCall(BabbleParser.CallContext ctx) {
         last = ctx;
+        ScopeAnalysis.ArrayCreationTarget arrCreate = scopes.arrayCreationTarget(ctx);
+        if (arrCreate != null) {
+            Object[] args = arguments(ctx);
+            last = ctx;
+            Object created = switch (arrCreate.kind()) {
+                case SIZE -> {
+                    int len = ((Number) args[0]).intValue();
+                    yield arrCreate.babbleTypeId() != null
+                            ? ArraySupport.newBabbleArray(arrCreate.babbleTypeId(), arrCreate.babbleDisplayName(),
+                                    arrCreate.babbleConformIds(), arrCreate.nestedDims(), len)
+                            : ArraySupport.newArray(arrCreate.componentClass(), len);
+                }
+                case OF -> arrCreate.babbleTypeId() != null
+                        ? ArraySupport.ofBabble(arrCreate.babbleTypeId(), arrCreate.babbleDisplayName(),
+                                arrCreate.babbleConformIds(), arrCreate.nestedDims(), args)
+                        : ArraySupport.of(arrCreate.componentClass(), args, runtime);
+                case FROM -> arrCreate.babbleTypeId() != null
+                        ? ArraySupport.fromBabble(arrCreate.babbleTypeId(), arrCreate.babbleDisplayName(),
+                                arrCreate.babbleConformIds(), arrCreate.nestedDims(), args[0], runtime)
+                        : ArraySupport.from(arrCreate.componentClass(), args[0], runtime);
+            };
+            return Types.check(created, scopes.checkedType(ctx));
+        }
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpression) {
             return Types.check(superCall(ctx, selector, superExpression), scopes.checkedType(ctx));

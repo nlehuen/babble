@@ -136,7 +136,7 @@ def mapCtor = java.util.HashMap(java.util.Map.of("k", 9))
 def rev : java.util.Comparator of int = java.util.Collections.reverseOrder()
 def cDyn : java.lang.CharSequence = java.lang.StringBuilder("hi")
 
-println(takeArr(asList), ":", parts.length, ":", id(7), ":", mapped.toString(), ":", listCtor.size(), ":", mapCtor.get("k"), ":", STDOUT != null, ":", cDyn is java.lang.Appendable, ":", rev is java.lang.Comparable)
+println(takeArr(asList), ":", parts.size(), ":", id(7), ":", mapped.toString(), ":", listCtor.size(), ":", mapCtor.get("k"), ":", STDOUT != null, ":", cDyn is java.lang.Appendable, ":", rev is java.lang.Comparable)
 }}}}}
 3:3:7:[10, 20, 30]:2:9:true:true:false
 

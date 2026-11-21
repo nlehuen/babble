@@ -98,7 +98,7 @@ def i : any = 5
 def d : any = 2.5
 def b : any = true
 def s : any = "hi"
-println(p is java.awt.Point, ":", arr.length, ":", it.hasNext(), ":", i is int, ":", i is double, ":", d is double, ":", b is bool, ":", s is string)
+println(p is java.awt.Point, ":", arr.size(), ":", it.hasNext(), ":", i is int, ":", i is double, ":", d is double, ":", b is bool, ":", s is string)
 }}}}}
 true:2:true:true:false:true:true:true
 

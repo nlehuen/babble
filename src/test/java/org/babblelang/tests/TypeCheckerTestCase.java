@@ -628,14 +628,16 @@ public class TypeCheckerTestCase {
     @Test
     public void testJavaArrays() {
         assertDiagnostics("def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b\")\n"
-                + "def n : int = parts.length\n"
+                + "def n : int = parts.size()\n"
                 + "java.util.Arrays.asList(parts)\n"
-                + "def s : string = parts.length\n"
+                + "def s : string = parts.size()\n"
                 + "parts.length = 1\n"
+                + "parts.length\n"
                 + "parts.nope",
                 "4:18 Type error : expected string, got int",
-                "5:1 Cannot assign final field : array of string.length",
-                "6:1 No such name in array of string : nope");
+                "5:1 No such field in array of string : length (use size())",
+                "6:1 No such name in array of string : length (use size())",
+                "7:1 No such name in array of string : nope");
     }
 
     @Test
@@ -764,7 +766,7 @@ public class TypeCheckerTestCase {
                 + "def ts : string = it.toString()\n"
                 + "it.nope()\n"
                 + "def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b\")\n"
-                + "def len : int = parts.length\n"
+                + "def len : int = parts.size()\n"
                 + "parts.nope\n"
                 + "def p = java.lang.ProcessBuilder(java.util.Arrays.asList(parts)).start()\n"
                 + "def code : int = p.exitValue()\n"

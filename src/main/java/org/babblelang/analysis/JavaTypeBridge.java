@@ -659,7 +659,7 @@ final class JavaTypeBridge {
     static Object assignedField(Type receiver, String name) {
         if (receiver instanceof Type.Array array) {
             String owner = array.toString();
-            return "length".equals(name) ? "Cannot assign final field : " + owner + "." + name
+            return "length".equals(name) ? "No such field in " + owner + " : length (use size())"
                     : "No such field in " + owner + " : " + name;
         }
         boolean onClass = receiver instanceof Type.JavaClassValue;

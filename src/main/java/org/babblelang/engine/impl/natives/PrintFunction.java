@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl.natives;
 
+import org.babblelang.runtime.ArraySupport;
 import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
@@ -44,7 +45,7 @@ public class PrintFunction implements Callable {
         try {
             for (int i = 0; i < args.length; i++) {
                 if (names == null || !"to".equals(names[i])) {
-                    out.append(String.valueOf(args[i]));
+                    out.append(ArraySupport.format(args[i]));
                 }
             }
             if (newLine) {

@@ -40,6 +40,7 @@ public final class HirBuilder {
     private final Map<String, String> allClassJvmNames = new LinkedHashMap<>();
     private final Map<String, String> ownInterfaceJvmNames = new LinkedHashMap<>();
     private final Map<String, String> ownClassJvmNames = new LinkedHashMap<>();
+    private final Map<String, String> localClassJvmNamesById = new LinkedHashMap<>();
 
     private final Map<BabbleParser.InterfaceExpressionContext, Integer> interfaceIds = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Integer> classIds = new IdentityHashMap<>();
@@ -235,6 +236,9 @@ public final class HirBuilder {
             String preassigned = preassignedClassNames.get(clsCtx);
             String name = preassigned != null ? preassigned : className + "$C" + (classCount++) + "$" + shape.name();
             compiledClassJvmNames.put(clsCtx, name);
+            if (shape != null) {
+                localClassJvmNamesById.put(shape.id(), name);
+            }
         }
 
         // Assign JVM method names & owning compiled class for every function literal.
@@ -883,10 +887,6 @@ public final class HirBuilder {
         if (ctx.safe != null) {
             return new HirExpr.DynamicSelect(lowerExpr(receiver), receiver.getText(), name, true, metaOf(ctx));
         }
-        Class<?> arrayClass = scopes.arrayLengthClass(ctx);
-        if (arrayClass != null) {
-            return new HirExpr.ArrayLength(lowerExpr(receiver), receiver.getText(), arrayClass, metaOf(ctx));
-        }
         ScopeAnalysis.JavaFieldTarget javaField = scopes.javaFieldTarget(ctx);
         if (javaField != null) {
             return new HirExpr.JavaFieldGet(lowerExpr(receiver), receiver.getText(),
@@ -961,7 +961,51 @@ public final class HirBuilder {
             );
         }
 
-        // 2. Core collection constructor
+        // 2. Array creation or array protocol operation (BIP020-P3)
+        ScopeAnalysis.ArrayCreationTarget arrCreate = scopes.arrayCreationTarget(ctx);
+        if (arrCreate != null) {
+            String compInternalName;
+            boolean compIsJavaIface;
+            if (arrCreate.elemKind().isPrimitive()) {
+                compInternalName = null;
+                compIsJavaIface = false;
+            } else if (arrCreate.babbleTypeId() != null) {
+                String base = resolveBabbleJvmName(arrCreate.babbleTypeId());
+                compInternalName = arrCreate.nestedDims() > 0
+                        ? "[".repeat(arrCreate.nestedDims()) + "L" + base + ";"
+                        : base;
+                compIsJavaIface = false;
+            } else {
+                Class<?> comp = arrCreate.componentClass() != null ? arrCreate.componentClass() : Object.class;
+                compInternalName = Type.getInternalName(comp);
+                compIsJavaIface = comp.isInterface();
+            }
+            return new HirExpr.ArrayCreate(
+                    arrCreate.kind(),
+                    arrCreate.elemKind(),
+                    compInternalName,
+                    compIsJavaIface,
+                    arrCreate.componentClass(),
+                    lowerPositionalArgs(params),
+                    meta
+            );
+        }
+        ScopeAnalysis.ArrayOpTarget arrOp = scopes.arrayOpTarget(ctx);
+        if (arrOp != null) {
+            BabbleParser.SelectorContext selector = (BabbleParser.SelectorContext) ctx.expression();
+            return new HirExpr.ArrayOp(
+                    arrOp.kind(),
+                    lowerExpr(selector.expression()),
+                    selector.expression().getText(),
+                    arrOp.elemKind(),
+                    arrOp.arrayClass(),
+                    arrOp.componentClass(),
+                    lowerPositionalArgs(params),
+                    meta
+            );
+        }
+
+        // 3. Core collection constructor
         BabbleParser.ExpressionContext directCallee = ctx.expression() instanceof BabbleParser.TypeApplyContext ta
                 ? ta.expression() : ctx.expression();
         if (directCallee instanceof BabbleParser.CoreCollectionContext cc) {
@@ -1231,6 +1275,22 @@ public final class HirBuilder {
             return v != null && v.declaration() != null && scopes.isDefinitelyDefined(v.declaration());
         }
         return false;
+    }
+
+    private String resolveBabbleJvmName(String typeId) {
+        String iface = allInterfaceJvmNames.get(typeId);
+        if (iface != null) {
+            return iface;
+        }
+        String cls = allClassJvmNames.get(typeId);
+        if (cls != null) {
+            return cls;
+        }
+        String local = localClassJvmNamesById.get(typeId);
+        if (local != null) {
+            return local;
+        }
+        return "java/lang/Object";
     }
 
     private List<Class<?>> implementableJavaInterfaces(ClassShape shape) {

@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl.natives;
 
+import org.babblelang.runtime.ArraySupport;
 import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
@@ -304,9 +305,7 @@ public final class ConvertFunction implements Callable {
     }
 
     public static String toStringValue(Object value) {
-        Object unwrapped = Values.unwrap(value);
-        String s = String.valueOf(unwrapped);
-        return s != null ? s : "null";
+        return ArraySupport.format(value);
     }
 
     @Override

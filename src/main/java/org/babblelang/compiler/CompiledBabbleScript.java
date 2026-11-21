@@ -2,6 +2,7 @@ package org.babblelang.compiler;
 
 import org.babblelang.engine.BabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
+import org.babblelang.runtime.ArraySupport;
 import org.babblelang.runtime.ScriptRuntime;
 
 import javax.script.ScriptException;
@@ -80,11 +81,11 @@ public final class CompiledBabbleScript extends BabbleScript {
         try {
             return (Object) run.invokeExact(runtime, runtime.root());
         } catch (Exception e) {
-            throw new ScriptException(e.toString(), sourceName, lineOf(e));
+            throw new ScriptException(ArraySupport.formatThrowable(e), sourceName, lineOf(e));
         } catch (Error e) {
             throw e;
         } catch (Throwable t) {
-            throw new ScriptException(t.toString(), sourceName, lineOf(t));
+            throw new ScriptException(ArraySupport.formatThrowable(t), sourceName, lineOf(t));
         } finally {
             BabbleScriptEngine.flush(runtime.writer());
         }

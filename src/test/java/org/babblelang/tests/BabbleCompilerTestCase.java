@@ -640,7 +640,7 @@ public class BabbleCompilerTestCase {
         CompiledBabbleScript typedJava = compile(
                 "def work = fn io (shared sb : java.lang.StringBuilder, items : java.util.List of int, xs) : double -> (\n"
                         + "  sb.append(\"a\")\n"
-                        + "  sb.length() + items.size() + xs.length + java.lang.Math.sqrt(items.size() + 8)\n"
+                        + "  sb.length() + items.size() + xs.size() + java.lang.Math.sqrt(items.size() + 8)\n"
                         + ")\n"
                         + "def l : java.util.List of int = java.util.ArrayList() ; l.add(10)\n"
                         + "def arr = java.util.regex.Pattern.compile(\",\").split(\"x,y\")\n"
@@ -657,7 +657,7 @@ public class BabbleCompilerTestCase {
                 || o.startsWith("INDY:org/babblelang/runtime/Bootstrap.")), workOps.toString());
 
         Exception nullErr = Assertions.assertThrows(Exception.class,
-                () -> compile("java.lang.Class.forName(\"java.lang.String\").getEnumConstants().length"));
+                () -> compile("java.lang.Class.forName(\"java.lang.String\").getEnumConstants().size()"));
         Assertions.assertTrue(nullErr.getMessage().contains("Not a scope"), nullErr.getMessage());
 
         CompiledBabbleScript retInJavaArg = compile(

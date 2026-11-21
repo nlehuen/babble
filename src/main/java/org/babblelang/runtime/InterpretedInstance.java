@@ -171,7 +171,7 @@ public final class InterpretedInstance implements HasMembers {
                 if (!first) {
                     result.append(", ");
                 }
-                result.append(shape.member(i)).append(": ").append(values[i]);
+                result.append(shape.member(i)).append(": ").append(ArraySupport.format(values[i]));
                 first = false;
             }
         }

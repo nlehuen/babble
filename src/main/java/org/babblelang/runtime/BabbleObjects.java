@@ -311,7 +311,7 @@ public final class BabbleObjects {
                 if (!first) {
                     result.append(", ");
                 }
-                result.append(shape.member(i)).append(": ").append(field(info, instance, i));
+                result.append(shape.member(i)).append(": ").append(ArraySupport.format(field(info, instance, i)));
                 first = false;
             }
         }

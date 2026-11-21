@@ -81,9 +81,18 @@ public final class HirRewriter {
                 HirExpr nr = transform.apply(g.receiver());
                 yield nr == g.receiver() ? g : new HirExpr.JavaFieldGet(nr, g.receiverText(), g.pureStaticReceiver(), g.target(), g.meta());
             }
-            case HirExpr.ArrayLength a -> {
-                HirExpr nr = transform.apply(a.receiver());
-                yield nr == a.receiver() ? a : new HirExpr.ArrayLength(nr, a.receiverText(), a.arrayClass(), a.meta());
+            case HirExpr.ArrayCreate c -> {
+                List<HirExpr> na = rewriteList(c.args(), transform);
+                yield na == c.args() ? c : new HirExpr.ArrayCreate(
+                        c.kind(), c.elemKind(), c.componentInternalName(), c.componentIsJavaInterface(),
+                        c.componentClass(), na, c.meta());
+            }
+            case HirExpr.ArrayOp op -> {
+                HirExpr nr = transform.apply(op.receiver());
+                List<HirExpr> na = rewriteList(op.args(), transform);
+                yield (nr == op.receiver() && na == op.args()) ? op
+                        : new HirExpr.ArrayOp(op.kind(), nr, op.receiverText(), op.elemKind(),
+                                op.arrayClass(), op.componentClass(), na, op.meta());
             }
             case HirExpr.ModuleExportGet g -> {
                 HirExpr nr = transform.apply(g.receiver());

@@ -1,10 +1,12 @@
 package org.babblelang.analysis;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.babblelang.effects.Effect;
 import org.babblelang.parser.BabbleParser;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Set;
 import java.util.IdentityHashMap;
@@ -18,6 +20,15 @@ import java.util.Map;
  * {@code is private}, {@code Not a scope}).
  */
 final class MemberTypes {
+    private static final EffectSet ARRAY_SIZE_EFFECTS = EffectSet.ofInferred(
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+    private static final EffectSet ARRAY_READ_EFFECTS = EffectSet.ofInferred(
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
+    private static final EffectSet ARRAY_PROTOCOL_EFFECTS = EffectSet.ofInferred(
+            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+    private static final EffectSet ARRAY_SET_EFFECTS = EffectSet.ofInferred(
+            EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), true, true, false, true);
+
     private final TypeChecker checker;
 
     MemberTypes(TypeChecker checker) {
@@ -105,6 +116,16 @@ final class MemberTypes {
             return java != null ? new Type.JavaClassValue(java) : new Type.JavaPackage(qualified);
         }
         if (receiver instanceof Type.CoreCollection cc) {
+            if ("array".equals(cc.kind())) {
+                if ("of".equals(name)) {
+                    if (cc.typeArguments().size() > 1) {
+                        return Type.ERROR;
+                    }
+                    return new Type.ArrayOfFactory(cc.typeArguments().isEmpty() ? null : cc.typeArguments().get(0));
+                }
+                checker.warn("No such name in " + receiver + " : " + name, at);
+                return Type.ERROR;
+            }
             Class<?> javaClass = switch (cc.kind()) {
                 case "list" -> java.util.List.class;
                 case "set" -> java.util.Set.class;
@@ -141,7 +162,31 @@ final class MemberTypes {
         }
         if (receiver instanceof Type.Array array) {
             if ("length".equals(name)) {
-                return Type.INT;
+                checker.warn("No such name in " + array + " : length (use size())", at);
+                return Type.ERROR;
+            }
+            switch (name) {
+                case "size":
+                    return new Type.Function(List.of(), Type.INT, ARRAY_SIZE_EFFECTS);
+                case "get":
+                    return new Type.Function(
+                            List.of(new Type.Parameter("index", Type.INT, false, false, true, false)),
+                            array.element(), ARRAY_READ_EFFECTS);
+                case "set":
+                    return new Type.Function(
+                            List.of(new Type.Parameter("index", Type.INT, false, false, true, false),
+                                    new Type.Parameter("value", array.element(), false, false, false, true)),
+                            Type.NULL, ARRAY_SET_EFFECTS);
+                case "equals":
+                    return new Type.Function(
+                            List.of(new Type.Parameter("other", OperatorTypes.ANY_OR_FROZEN, false, false, true, false)),
+                            Type.BOOL, ARRAY_PROTOCOL_EFFECTS);
+                case "hashCode":
+                    return new Type.Function(List.of(), Type.INT, ARRAY_PROTOCOL_EFFECTS);
+                case "toString":
+                    return new Type.Function(List.of(), Type.STRING, ARRAY_PROTOCOL_EFFECTS);
+                default:
+                    break;
             }
             if (JavaTypeBridge.hasJavaMethod(Object.class, name)) {
                 return new Type.JavaMethod(JavaTypeBridge.checkedArrayClass(array), List.of(), name);

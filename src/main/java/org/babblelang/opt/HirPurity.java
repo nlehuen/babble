@@ -265,6 +265,8 @@ public final class HirPurity {
             case HirExpr.As a -> isDeterministic(a.left(), module, visitingFns);
             case HirExpr.TypeApply t -> isDeterministic(t.inner(), module, visitingFns);
             case HirExpr.ThisFieldGet g -> isDeterministic(g.receiver(), module, visitingFns);
+            case HirExpr.ArrayOp op -> op.kind() == ScopeAnalysis.ArrayOpKind.SIZE
+                    && isDeterministic(op.receiver(), module, visitingFns);
             case HirExpr.DirectBabbleCall c -> {
                 boolean calleeOk = isDeterministic(c.callee(), module, visitingFns)
                         || (c.callee() instanceof HirExpr.NameRead nr
@@ -343,7 +345,13 @@ public final class HirPurity {
             }
             case HirExpr.ThisFieldGet g -> collectModifiedVars(g.receiver(), out);
             case HirExpr.JavaFieldGet g -> collectModifiedVars(g.receiver(), out);
-            case HirExpr.ArrayLength a -> collectModifiedVars(a.receiver(), out);
+            case HirExpr.ArrayCreate c -> {
+                for (HirExpr a : c.args()) collectModifiedVars(a, out);
+            }
+            case HirExpr.ArrayOp op -> {
+                collectModifiedVars(op.receiver(), out);
+                for (HirExpr a : op.args()) collectModifiedVars(a, out);
+            }
             case HirExpr.ModuleExportGet g -> collectModifiedVars(g.receiver(), out);
             case HirExpr.DynamicSelect s -> collectModifiedVars(s.receiver(), out);
             case HirExpr.Unary u -> collectModifiedVars(u.operand(), out);

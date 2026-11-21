@@ -4,6 +4,7 @@ import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.engine.BabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.ArraySupport;
 import org.babblelang.runtime.ScriptRuntime;
 
 import javax.script.ScriptException;
@@ -34,7 +35,7 @@ public class BabbleCompiledScript extends BabbleScript {
         try {
             return interpreter.visitFile(file);
         } catch (Exception e) {
-            throw new ScriptException(e.toString(), sourceName, interpreter.getLast().getStart().getLine());
+            throw new ScriptException(ArraySupport.formatThrowable(e), sourceName, interpreter.getLast().getStart().getLine());
         } finally {
             BabbleScriptEngine.flush(runtime.writer());
         }
