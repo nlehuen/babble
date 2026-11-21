@@ -47,6 +47,8 @@ public final class BatestCoverageReporter {
             "org.babblelang.Main",
             "org.babblelang.Repl",
             "org.babblelang.Babblefmt",
+            "org.babblelang.analysis.AxiomChecker",
+            "org.babblelang.analysis.BytecodeEffectAnalyzer",
             "org.babblelang.compiler.Babblec",
             "org.babblelang.compiler.FileModuleCompiler",
             "org.babblelang.compiler.Debugging",
@@ -62,9 +64,14 @@ public final class BatestCoverageReporter {
             "org.babblelang.runtime.CompiledMethod",
             "org.babblelang.runtime.Frames",
             "org.babblelang.runtime.Cell",
+            "org.babblelang.runtime.ByteCell",
+            "org.babblelang.runtime.ShortCell",
             "org.babblelang.runtime.IntCell",
+            "org.babblelang.runtime.LongCell",
+            "org.babblelang.runtime.FloatCell",
             "org.babblelang.runtime.DoubleCell",
-            "org.babblelang.runtime.BoolCell"
+            "org.babblelang.runtime.BoolCell",
+            "org.babblelang.runtime.CharCell"
     );
 
     public record CaseKey(String file, int index, int line) implements Comparable<CaseKey> {

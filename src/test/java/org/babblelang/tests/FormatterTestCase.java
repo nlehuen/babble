@@ -539,4 +539,21 @@ public class FormatterTestCase {
                 )
                 """);
     }
+
+    @Test
+    public void testBip020ArraySyntax() throws Exception {
+        assertFormats("""
+                def a: array of int = (array of int)(100)
+                def b: (array of (Shape & Named))? = null
+                def c = (array of int).of(1, 2, 3)
+                def d = array.of(1, 2)
+                def e = (array of double)(from: d)
+                """, """
+                def a : array  of  int = ( array  of  int ) ( 100 )
+                def b : ( array  of ( Shape & Named ) ) ? = null
+                def c = ( array  of  int ) . of ( 1 , 2 , 3 )
+                def d = array . of ( 1 , 2 )
+                def e = ( array  of  double ) ( from : d )
+                """);
+    }
 }

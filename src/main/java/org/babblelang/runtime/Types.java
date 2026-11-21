@@ -396,6 +396,28 @@ public final class Types {
         return value.getClass().getName();
     }
 
+    private static final Map<Class<?>, String> ARRAY_COMPONENT_NAMES = Map.ofEntries(
+            Map.entry(byte.class, "byte"),
+            Map.entry(short.class, "short"),
+            Map.entry(int.class, "int"),
+            Map.entry(long.class, "long"),
+            Map.entry(float.class, "float"),
+            Map.entry(double.class, "double"),
+            Map.entry(boolean.class, "bool"),
+            Map.entry(char.class, "char"),
+            Map.entry(Byte.class, "byte?"),
+            Map.entry(Short.class, "short?"),
+            Map.entry(Integer.class, "int?"),
+            Map.entry(Long.class, "long?"),
+            Map.entry(Float.class, "float?"),
+            Map.entry(Double.class, "double?"),
+            Map.entry(Boolean.class, "bool?"),
+            Map.entry(Character.class, "char?"),
+            Map.entry(String.class, "string"),
+            Map.entry(Object.class, "any"),
+            Map.entry(InterpretedInstance.class, "any")
+    );
+
     private static String describeArray(Class<?> arrayClass) {
         Class<?> comp = arrayClass.getComponentType();
         if (comp.isArray()) {
@@ -405,24 +427,11 @@ public final class Types {
     }
 
     private static String describeArrayComponent(Class<?> comp) {
-        if (comp == byte.class) return "byte";
-        if (comp == short.class) return "short";
-        if (comp == int.class) return "int";
-        if (comp == long.class) return "long";
-        if (comp == float.class) return "float";
-        if (comp == double.class) return "double";
-        if (comp == boolean.class) return "bool";
-        if (comp == char.class) return "char";
-        if (comp == Byte.class) return "byte?";
-        if (comp == Short.class) return "short?";
-        if (comp == Integer.class) return "int?";
-        if (comp == Long.class) return "long?";
-        if (comp == Float.class) return "float?";
-        if (comp == Double.class) return "double?";
-        if (comp == Boolean.class) return "bool?";
-        if (comp == Character.class) return "char?";
-        if (comp == String.class) return "string";
-        if (comp == Object.class || comp == InterpretedInstance.class || BabbleObjects.isCompiledClass(comp)) {
+        String named = ARRAY_COMPONENT_NAMES.get(comp);
+        if (named != null) {
+            return named;
+        }
+        if (BabbleObjects.isCompiledClass(comp)) {
             return "any";
         }
         String canonical = comp.getCanonicalName();
@@ -436,58 +445,21 @@ public final class Types {
      * when Babble implements {@code toArray(array of ...)}).
      */
     public static boolean canAcceptJavaParamClass(String descriptor, Class<?> javaParam) {
-        if (descriptor == null || javaParam == Object.class) {
-            return true;
-        }
-        return canAcceptJavaType(parse(descriptor), javaParam);
+        return descriptor == null || javaParam == Object.class || canAcceptJavaType(parse(descriptor), javaParam);
     }
 
     private static boolean canAcceptJavaType(Type type, Class<?> javaParam) {
+        Class<?> boxed = JavaTypes.box(javaParam);
         return switch (type) {
             case AnyType ignored -> true;
             case NullType ignored -> !javaParam.isPrimitive();
-            case UnionType u -> {
-                for (Type m : u.members) {
-                    if (canAcceptJavaType(m, javaParam)) {
-                        yield true;
-                    }
-                }
-                yield false;
-            }
-            case IntersectionType inter -> {
-                for (Type m : inter.members) {
-                    if (!canAcceptJavaType(m, javaParam)) {
-                        yield false;
-                    }
-                }
-                yield true;
-            }
-            case Builtin b -> {
-                Class<?> boxed = JavaTypes.box(javaParam);
-                yield b.javaClass.isAssignableFrom(boxed)
-                        || boxed.isAssignableFrom(b.javaClass)
-                        || JavaTypes.isWidening(boxed, b.javaClass);
-            }
-            case FunctionType ignored -> Callable.class.isAssignableFrom(javaParam)
-                    || javaParam.isAssignableFrom(Callable.class);
-            case NominalType ignored -> !javaParam.isPrimitive() && !javaParam.isArray()
-                    && (javaParam.isInterface() || javaParam == Object.class);
-            case JavaClassType j -> {
-                Class<?> expected = j.javaClass;
-                if (expected.isArray()) {
-                    if (javaParam.isArray()) {
-                        yield expected.isAssignableFrom(javaParam) || javaParam.isAssignableFrom(expected);
-                    }
-                    yield javaParam == Cloneable.class || javaParam == java.io.Serializable.class;
-                }
-                if (javaParam.isArray()) {
-                    yield expected == Cloneable.class || expected == java.io.Serializable.class;
-                }
-                Class<?> boxed = JavaTypes.box(javaParam);
-                yield expected.isAssignableFrom(boxed)
-                        || boxed.isAssignableFrom(expected)
-                        || (boxed.isInterface() && expected.isInterface());
-            }
+            case UnionType u -> java.util.Arrays.stream(u.members).anyMatch(m -> canAcceptJavaType(m, javaParam));
+            case IntersectionType inter -> java.util.Arrays.stream(inter.members).allMatch(m -> canAcceptJavaType(m, javaParam));
+            case Builtin b -> b.javaClass.isAssignableFrom(boxed) || JavaTypes.isWidening(boxed, b.javaClass);
+            case FunctionType ignored -> Callable.class.isAssignableFrom(boxed) || boxed.isAssignableFrom(Callable.class);
+            case NominalType ignored -> !javaParam.isPrimitive() && !javaParam.isArray() && boxed.isInterface();
+            case JavaClassType j -> j.javaClass.isAssignableFrom(boxed) || boxed.isAssignableFrom(j.javaClass)
+                    || (boxed.isInterface() && j.javaClass.isInterface());
         };
     }
 }
