@@ -17,7 +17,7 @@ def red2 = 3 as int
 def i1 : I1 = if true then ( c ) else ( C2() )
 def cBack = i1 as C
 def stack = java.lang.Thread.currentThread().getStackTrace()
-println(red1.x, ":", red2, ":", cBack.x, ":", stack.length > 0)
+println(red1.x, ":", red2, ":", cBack.x, ":", stack.size() > 0)
 }}}}}
 Warning : Redundant cast : C
 Warning : Redundant cast : int
@@ -161,7 +161,7 @@ true
 def stack = java.lang.Thread.currentThread().getStackTrace()
 stack.length = 5
 }}}}}
-Cannot assign final field : array of java.lang.StackTraceElement?.length
+No such field in array of java.lang.StackTraceElement? : length (use size())
 
 {{{{{
 def stack = java.lang.Thread.currentThread().getStackTrace()

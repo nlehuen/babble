@@ -9,9 +9,9 @@ import org.babblelang.runtime.JavaType;
 import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.Overloads;
 import org.babblelang.runtime.ScriptRuntime;
+import org.babblelang.runtime.Types;
 import org.babblelang.runtime.Values;
 
-import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -93,8 +93,7 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
 
     /** Whether the class has a member of that name, as {@link #get} would find it ; never throws. */
     public boolean isDeclared(String key) {
-        return clazz.isArray() && "length".equals(key)
-                || members.containsKey(key) || fields.containsKey(key) || lookup(key) != null;
+        return members.containsKey(key) || fields.containsKey(key) || lookup(key) != null;
     }
 
     public Slot<Object> get(String key) {
@@ -117,12 +116,6 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
      * a field is read from the receiver when it is an instance field.
      */
     public Object value(Object receiver, String key) {
-        if (clazz.isArray() && "length".equals(key)) {
-            if (receiver == null) {
-                throw new BabbleException("Not a static field : " + clazz.getCanonicalName() + ".length");
-            }
-            return Array.getLength(receiver);
-        }
         Slot<Object> member = members.get(key);
         if (member != null) {
             return member.get();
@@ -153,11 +146,10 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
      */
     public void assign(Object receiver, String key, Object value) {
         if (clazz.isArray() && "length".equals(key)) {
-            String description = clazz.getCanonicalName() + ".length";
             if (receiver == null) {
-                throw new BabbleException("Not a static field : " + description);
+                throw new BabbleException("Not a static field : " + clazz.getCanonicalName() + ".length");
             }
-            throw new BabbleException("Cannot assign final field : " + description);
+            throw new BabbleException("No such field in " + Types.describe(receiver) + " : length (use size())");
         }
         Field field = field(clazz, key);
         String description = clazz.getCanonicalName() + "." + key;
@@ -191,7 +183,7 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
      * static final fields are : what {@code invokedynamic} sites may keep.
      */
     public boolean isConstant(String key) {
-        return !(clazz.isArray() && "length".equals(key)) && !fields.containsKey(key);
+        return !fields.containsKey(key);
     }
 
     /** A member's value, or a static field that isn't final, to read when selected. */

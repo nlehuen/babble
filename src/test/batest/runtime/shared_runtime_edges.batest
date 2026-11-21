@@ -856,7 +856,7 @@ tbl.put(1.0, "one")
 tbl.put(0.0 / 0.0, "nan")
 tbl.put(pt, "pt")
 tbl.put(o, "obj")
-println(o == o, ":", o == java.lang.Object(), ":", pt.x, ":", arr.length, ":", java.lang.String == java.lang.String, ":", java.lang.String == java.lang.Integer, ":", tbl.get(1.0), ":", java.awt.Point(3, 4))
+println(o == o, ":", o == java.lang.Object(), ":", pt.x, ":", arr.size(), ":", java.lang.String == java.lang.String, ":", java.lang.String == java.lang.Integer, ":", tbl.get(1.0), ":", java.awt.Point(3, 4))
 }}}}}
 true:false:7:2:true:false:one:java.awt.Point[x=3,y=4]
 

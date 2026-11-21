@@ -162,7 +162,7 @@ public final class Launcher {
      * stack trace's frames of the program's classes, whose source files are module names.
      */
     private String message(Throwable t) {
-        String message = t instanceof BabbleException ? t.getMessage() : t.toString();
+        String message = t instanceof BabbleException ? t.getMessage() : ArraySupport.formatThrowable(t);
         for (StackTraceElement frame : t.getStackTrace()) {
             if (frame.getLineNumber() >= 0 && isProgramClass(frame.getClassName())) {
                 return message + " in " + frame.getFileName() + " at line number " + frame.getLineNumber();

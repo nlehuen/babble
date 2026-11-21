@@ -123,7 +123,11 @@ public final class HirVerifier {
                 }
             }
             case HirExpr.JavaFieldGet g -> verifyExpr(module, g.receiver(), inFunction, loopDepth);
-            case HirExpr.ArrayLength a -> verifyExpr(module, a.receiver(), inFunction, loopDepth);
+            case HirExpr.ArrayCreate c -> verifyStatements(module, c.args(), inFunction, loopDepth);
+            case HirExpr.ArrayOp op -> {
+                verifyExpr(module, op.receiver(), inFunction, loopDepth);
+                verifyStatements(module, op.args(), inFunction, loopDepth);
+            }
             case HirExpr.ModuleExportGet g -> verifyExpr(module, g.receiver(), inFunction, loopDepth);
             case HirExpr.DynamicSelect s -> verifyExpr(module, s.receiver(), inFunction, loopDepth);
             case HirExpr.Unary u -> verifyExpr(module, u.operand(), inFunction, loopDepth);

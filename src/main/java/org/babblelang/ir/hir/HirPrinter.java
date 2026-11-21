@@ -159,9 +159,15 @@ public final class HirPrinter {
                 }
                 sb.append(')');
             }
-            case HirExpr.ArrayLength a -> {
-                sb.append("(array-length ");
-                printExpr(sb, a.receiver(), depth + 1);
+            case HirExpr.ArrayCreate c -> {
+                sb.append("(array-new ").append(c.kind());
+                printArgs(sb, c.args(), depth + 1);
+                sb.append(')');
+            }
+            case HirExpr.ArrayOp op -> {
+                sb.append("(array-op ").append(op.kind()).append(' ');
+                printExpr(sb, op.receiver(), depth + 1);
+                printArgs(sb, op.args(), depth + 1);
                 sb.append(')');
             }
             case HirExpr.ModuleExportGet g -> {

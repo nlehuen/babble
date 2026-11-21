@@ -51,7 +51,7 @@ public final class Operators {
 
     public static Object add(Object a, Object b, OpSite site) {
         if (a instanceof String sa) {
-            return sa + b;
+            return sa + ArraySupport.format(b);
         }
         Number na = number(a, site.leftText());
         Number nb = number(b, site.rightText());
@@ -170,7 +170,8 @@ public final class Operators {
 
     /**
      * Equality never fails : null is only equal to null, numbers compare numerically
-     * across types so that "1 == 1.0" holds, and everything else uses Java's equals().
+     * across types so that "1 == 1.0" holds, arrays compare deeply by contents, and
+     * everything else uses Java's equals().
      */
     public static boolean equal(Object a, Object b) {
         if (a == null || b == null) {
@@ -178,6 +179,11 @@ public final class Operators {
         }
         if (a instanceof Number na && b instanceof Number nb) {
             return compareNumbers(na, nb) == 0;
+        }
+        Object ua = Values.unwrap(a);
+        Object ub = Values.unwrap(b);
+        if (ua != null && ub != null && ua.getClass().isArray() && ub.getClass().isArray()) {
+            return ArraySupport.deepEquals(ua, ub);
         }
         return a.equals(b);
     }

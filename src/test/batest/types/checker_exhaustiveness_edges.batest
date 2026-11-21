@@ -399,7 +399,7 @@ def arr = java.util.regex.Pattern.compile(",").split("a,b")
 def arrCopy = java.util.Arrays.copyOf(arr, 3)
 def arrObj = arrCopy as java.lang.Object
 def genTest of T = fn (x : T) : bool -> ( x is string )
-println(i2.b(), ":", back.a(), ":", nil, ":", arrCopy.length, ":", arrObj != null, ":", genTest("hi"), ":", genTest(1))
+println(i2.b(), ":", back.a(), ":", nil, ":", arrCopy.size(), ":", arrObj != null, ":", genTest("hi"), ":", genTest(1))
 }}}}}
 Warning : Redundant cast : any
 2:1:null:3:true:true:false

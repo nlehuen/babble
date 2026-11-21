@@ -158,6 +158,40 @@ public final class ScopeAnalysis {
     ) {
     }
 
+    public enum ArrayCreationKind {
+        SIZE,
+        OF,
+        FROM
+    }
+
+    public record ArrayCreationTarget(
+            ArrayCreationKind kind,
+            PrimitiveKind elemKind,
+            Class<?> componentClass,
+            String babbleTypeId,
+            String babbleDisplayName,
+            Set<String> babbleConformIds,
+            int nestedDims
+    ) {
+    }
+
+    public enum ArrayOpKind {
+        SIZE,
+        GET,
+        SET,
+        EQUALS,
+        HASH_CODE,
+        TO_STRING
+    }
+
+    public record ArrayOpTarget(
+            ArrayOpKind kind,
+            PrimitiveKind elemKind,
+            Class<?> arrayClass,
+            Class<?> componentClass
+    ) {
+    }
+
     private final ParseTreeProperty<ForLoopTarget> forLoopTargets = new ParseTreeProperty<>();
 
     private final ParseTreeProperty<String[]> declared = new ParseTreeProperty<>();
@@ -187,7 +221,8 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<JavaCallTarget> javaCallTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<JavaConstructorTarget> javaConstructorTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<JavaFieldTarget> javaFieldTargets = new ParseTreeProperty<>();
-    private final java.util.Map<ParserRuleContext, Class<?>> arrayLengthSelectors = new java.util.IdentityHashMap<>();
+    private final java.util.Map<ParserRuleContext, ArrayCreationTarget> arrayCreationTargets = new java.util.IdentityHashMap<>();
+    private final java.util.Map<ParserRuleContext, ArrayOpTarget> arrayOpTargets = new java.util.IdentityHashMap<>();
     private final ParseTreeProperty<ModuleExportTarget> moduleExportTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<BabbleParser.FunctionLiteralContext> babbleCallFunctions = new ParseTreeProperty<>();
     private final ParseTreeProperty<FunctionSignature> babbleCallSignatures = new ParseTreeProperty<>();
@@ -427,8 +462,12 @@ public final class ScopeAnalysis {
         javaFieldTargets.put(ctx, target);
     }
 
-    void setArrayLengthClass(ParserRuleContext ctx, Class<?> arrayClass) {
-        arrayLengthSelectors.put(ctx, arrayClass);
+    void setArrayCreationTarget(ParserRuleContext ctx, ArrayCreationTarget target) {
+        arrayCreationTargets.put(ctx, target);
+    }
+
+    void setArrayOpTarget(ParserRuleContext ctx, ArrayOpTarget target) {
+        arrayOpTargets.put(ctx, target);
     }
 
     void setModuleExportTarget(ParserRuleContext ctx, ModuleExportTarget target) {
@@ -537,12 +576,12 @@ public final class ScopeAnalysis {
         return javaFieldTargets.get(ctx);
     }
 
-    public boolean isArrayLength(ParserRuleContext ctx) {
-        return arrayLengthSelectors.containsKey(ctx);
+    public ArrayCreationTarget arrayCreationTarget(ParserRuleContext ctx) {
+        return arrayCreationTargets.get(ctx);
     }
 
-    public Class<?> arrayLengthClass(ParserRuleContext ctx) {
-        return arrayLengthSelectors.get(ctx);
+    public ArrayOpTarget arrayOpTarget(ParserRuleContext ctx) {
+        return arrayOpTargets.get(ctx);
     }
 
     public ModuleExportTarget moduleExportTarget(ParserRuleContext ctx) {

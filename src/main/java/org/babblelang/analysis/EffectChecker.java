@@ -3227,8 +3227,8 @@ final class EffectChecker {
         if (type instanceof Type.JavaInstance ji) {
             return resolveJavaMethodProfile(ji.type(), "toString", null).effects();
         }
-        if (type instanceof Type.Array) {
-            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true, false, true);
+        if (type instanceof Type.Array arr) {
+            return toStringProfile(arr.element());
         }
         return EffectSet.EMPTY;
     }
@@ -3271,6 +3271,9 @@ final class EffectChecker {
         }
         if (type instanceof Type.JavaInstance ji) {
             return resolveJavaMethodProfile(ji.type(), "equals", null).effects();
+        }
+        if (type instanceof Type.Array arr) {
+            return singleEqualityProfile(arr.element());
         }
         return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
     }
@@ -4039,16 +4042,36 @@ final class EffectChecker {
             if (effectiveType(calleeExpr) instanceof Type.CoreCollection cc) {
                 return evalCoreCollectionCall(cc.kind(), call, args);
             }
+            if (effectiveType(calleeExpr) instanceof Type.ArrayOfFactory) {
+                return evalArrayOfCall(call, args);
+            }
             BabbleParser.ExpressionContext unwrappedCallee = calleeExpr instanceof BabbleParser.TypeApplyContext ta
                     ? ta.expression() : calleeExpr;
             // Evaluate receiver / callee expression and arguments!
             Origin recvOrig = Origin.IMMUTABLE;
             BabbleParser.ExpressionContext receiverExpr = null;
+            Type arrayRecvType = null;
+            Type.Array arrayRecv = null;
+            String arrayMethodName = null;
             if (unwrappedCallee instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
                 receiverExpr = sel.expression();
                 Type recvType = effectiveType(receiverExpr);
+                Type unwrappedRecv = TypeAlgebra.unwrapFrozen(recvType);
+                if (unwrappedRecv instanceof Type.Array arr) {
+                    String mName = ScopeAnalysis.selectorName(sel);
+                    if (isArrayProtocolMethod(mName)) {
+                        arrayRecvType = recvType;
+                        arrayRecv = arr;
+                        arrayMethodName = mName;
+                    }
+                }
                 if (!(recvType instanceof Type.JavaPackage || recvType instanceof Type.Module)) {
+                    boolean preserveSizeDet = "size".equals(arrayMethodName) && isNonReassignedBareBinding(receiverExpr);
+                    boolean detBefore = deterministic;
                     recvOrig = eval(receiverExpr);
+                    if (preserveSizeDet) {
+                        deterministic = detBefore;
+                    }
                 }
             } else {
                 eval(calleeExpr);
@@ -4072,6 +4095,10 @@ final class EffectChecker {
             }
 
             Type resType = checker.rawTypeOf(call);
+            if (arrayMethodName != null) {
+                return evalArrayMethodCall(call, receiverExpr, recvOrig, arrayRecvType, arrayRecv,
+                        arrayMethodName, args, argExprs, argOrigins, resType);
+            }
             Type calleeType = resolveCalleeType(calleeExpr);
 
             // 1. Built-in `print` / `println` / `import` / scalar conversions
@@ -4280,6 +4307,42 @@ final class EffectChecker {
                 }
                 return Origin.IMMUTABLE;
             }
+            if ("array".equals(kind)) {
+                applyEffects(EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true));
+                nothrow = false;
+                boolean staysUnique = true;
+                for (int i = 0; i < paramsList.size(); i++) {
+                    BabbleParser.CallParameterContext p = paramsList.get(i);
+                    String name = p.memberName() != null ? p.memberName().getText() : null;
+                    if ("from".equals(name)) {
+                        Type rawFrom = effectiveType(argExprs[i]);
+                        if (!(rawFrom instanceof Type.Frozen) && argOrigins[i].external) {
+                            deterministic = false;
+                        }
+                        Type fromType = rawFrom instanceof Type.Frozen f ? f.of() : rawFrom;
+                        if (fromType instanceof Type.Array arr) {
+                            staysUnique = isDeeplyImmutable(arr.element());
+                        } else if (fromType instanceof Type.JavaInstance ji) {
+                            if (!isCoreCollectionClass(ji.type())) {
+                                terminating = false;
+                            }
+                            if (!ji.typeArguments().isEmpty()) {
+                                for (Type ta : ji.typeArguments()) {
+                                    if (!isDeeplyImmutable(ta)) {
+                                        staysUnique = false;
+                                    }
+                                }
+                            } else {
+                                staysUnique = false;
+                            }
+                        } else {
+                            staysUnique = false;
+                            terminating = false;
+                        }
+                    }
+                }
+                return staysUnique ? Origin.ofUnique(ccc, null, false) : Origin.ofExternal(ccc, false);
+            }
 
             // list, set, sortedset, map, sortedmap: hermetic deterministic allocation (unique per BIP007-D6!)
             applyEffects(EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true));
@@ -4355,6 +4418,129 @@ final class EffectChecker {
                 nothrow = false;
             }
             return staysUnique ? Origin.ofUnique(ccc, null, false) : Origin.ofExternal(ccc, false);
+        }
+
+        private static boolean isArrayProtocolMethod(String name) {
+            return "size".equals(name) || "get".equals(name) || "set".equals(name)
+                    || "equals".equals(name) || "hashCode".equals(name) || "toString".equals(name);
+        }
+
+        private boolean isNonReassignedBareBinding(BabbleParser.ExpressionContext expr) {
+            while (expr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+                expr = b.block().expression(0);
+            }
+            if (expr instanceof BabbleParser.SelectorContext rsel && rsel.expression() == null) {
+                Object resolved = checker.resolveNameForEffects(rsel.ID().getText(), checker.occurrenceScopeOf(rsel));
+                return resolved instanceof ParserRuleContext decl && !checker.isReassigned(decl);
+            }
+            return false;
+        }
+
+        private Origin evalArrayOfCall(ParserRuleContext call, List<BabbleParser.CallParameterContext> paramsList) {
+            BabbleParser.ExpressionContext[] argExprs = new BabbleParser.ExpressionContext[paramsList.size()];
+            Origin[] argOrigins = new Origin[paramsList.size()];
+            for (int i = 0; i < paramsList.size(); i++) {
+                argExprs[i] = paramsList.get(i).expression();
+                argOrigins[i] = eval(argExprs[i]);
+            }
+            applyEffects(EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true));
+            boolean staysUnique = true;
+            for (int i = 0; i < argExprs.length; i++) {
+                Type argType = effectiveType(argExprs[i]);
+                if (!isDeeplyImmutable(argType)) {
+                    if (!isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
+                        staysUnique = false;
+                        if (argOrigins[i].unique && argOrigins[i].uniqueOwner != null) {
+                            demoteUniqueOwner(argOrigins[i].uniqueOwner, Origin.IMMUTABLE);
+                        }
+                    }
+                    markStoredOrigin(argOrigins[i], "array", argExprs[i]);
+                }
+            }
+            return staysUnique ? Origin.ofUnique(call, null, false) : Origin.ofExternal(call, false);
+        }
+
+        private Origin evalArrayMethodCall(ParserRuleContext call,
+                                           BabbleParser.ExpressionContext receiverExpr,
+                                           Origin recvOrig,
+                                           Type recvType,
+                                           Type.Array arr,
+                                           String methodName,
+                                           List<BabbleParser.CallParameterContext> args,
+                                           BabbleParser.ExpressionContext[] argExprs,
+                                           Origin[] argOrigins,
+                                           Type resType) {
+            if (resType == Type.ERROR) {
+                return Origin.IMMUTABLE;
+            }
+            return switch (methodName) {
+                case "size" -> Origin.IMMUTABLE;
+                case "get" -> {
+                    nothrow = false;
+                    if (!(recvType instanceof Type.Frozen) && recvOrig.external) {
+                        deterministic = false;
+                    }
+                    if (isDeeplyImmutable(resType)) {
+                        yield Origin.IMMUTABLE;
+                    }
+                    Origin flat = recvOrig.hasElementTaint() ? recvOrig.flattenElements() : recvOrig;
+                    yield new Origin(flat.params, flat.aliasesThis, flat.external, false, false, false, null,
+                            Origin.EMPTY_BITS, false, false, Set.of(call), new PathKey(call, List.of()));
+                }
+                case "set" -> {
+                    nothrow = false;
+                    if (containsFrozen(recvType)) {
+                        reportOnce("Cannot call mut method set on frozen value", call);
+                    }
+                    recordTargetMutation(recvOrig, receiverExpr, "mut method set", call, true);
+                    int valIdx = -1;
+                    for (int i = 0; i < args.size(); i++) {
+                        if ("value".equals(ScopeAnalysis.callParamName(args.get(i)))) {
+                            valIdx = i;
+                            break;
+                        }
+                    }
+                    if (valIdx < 0 && args.size() >= 2 && ScopeAnalysis.callParamName(args.get(1)) == null) {
+                        valIdx = 1;
+                    }
+                    if (valIdx >= 0 && valIdx < argExprs.length) {
+                        Origin valOrig = argOrigins[valIdx];
+                        Type valType = effectiveType(argExprs[valIdx]);
+                        if (!isDeeplyImmutable(valType)) {
+                            if ((valOrig.unique || valOrig.localFresh) && valOrig.uniqueOwner != null) {
+                                demoteUniqueOwner(valOrig.uniqueOwner, Origin.IMMUTABLE);
+                            }
+                            markStoredIntoTarget(recvOrig, valOrig, valType, "element", argExprs[valIdx]);
+                        }
+                    }
+                    yield Origin.IMMUTABLE;
+                }
+                case "equals" -> {
+                    applyEffects(singleEqualityProfile(arr.element()));
+                    if (!(recvType instanceof Type.Frozen) && recvOrig.external) {
+                        deterministic = false;
+                    }
+                    if (argExprs.length == 1 && !(effectiveType(argExprs[0]) instanceof Type.Frozen) && argOrigins[0].external) {
+                        deterministic = false;
+                    }
+                    yield Origin.IMMUTABLE;
+                }
+                case "hashCode" -> {
+                    applyEffects(singleEqualityProfile(arr.element()));
+                    if (!(recvType instanceof Type.Frozen) && recvOrig.external) {
+                        deterministic = false;
+                    }
+                    yield Origin.IMMUTABLE;
+                }
+                case "toString" -> {
+                    applyEffects(toStringProfile(arr.element()));
+                    if (!(recvType instanceof Type.Frozen) && recvOrig.external) {
+                        deterministic = false;
+                    }
+                    yield Origin.IMMUTABLE;
+                }
+                default -> Origin.IMMUTABLE;
+            };
         }
 
         private Type resolveCalleeType(BabbleParser.ExpressionContext calleeExpr) {
@@ -5368,7 +5554,10 @@ final class EffectChecker {
             if (info != null) {
                 switch (info.kind()) {
                     case ARRAY -> {
-                        // Indexed array loop : @HERMETIC @DETERMINISTIC @NOTHROW, terminates.
+                        // Indexed array loop : @HERMETIC @NOTHROW, terminates; reads mutable elements if external.
+                        if (!(iterType instanceof Type.Frozen) && iterOrig.external) {
+                            deterministic = false;
+                        }
                     }
                     case JAVA_ITERABLE -> {
                         terminating = false;
@@ -5482,8 +5671,8 @@ final class EffectChecker {
         }
 
         private Origin evalBinaryOp(BabbleParser.BinaryOpContext bin) {
-            eval(bin.left);
-            eval(bin.right);
+            Origin leftOrig = eval(bin.left);
+            Origin rightOrig = eval(bin.right);
             String op = bin.op.getText();
             Type lt = effectiveType(bin.left);
             Type rt = effectiveType(bin.right);
@@ -5496,13 +5685,25 @@ final class EffectChecker {
                     if (res == Type.STRING) {
                         if (lt != Type.STRING) {
                             applyEffects(toStringProfile(lt));
+                            if (lt instanceof Type.Array && leftOrig.external) {
+                                deterministic = false;
+                            }
                         }
                         if (rt != Type.STRING) {
                             applyEffects(toStringProfile(rt));
+                            if (rt instanceof Type.Array && rightOrig.external) {
+                                deterministic = false;
+                            }
                         }
                     }
                 }
-                case "==", "!=", "<>" -> applyEffects(equalityProfile(lt, rt));
+                case "==", "!=", "<>" -> {
+                    applyEffects(equalityProfile(lt, rt));
+                    if ((lt instanceof Type.Array && leftOrig.external)
+                            || (rt instanceof Type.Array && rightOrig.external)) {
+                        deterministic = false;
+                    }
+                }
                 case "<", "<=", ">", ">=" -> applyEffects(comparisonProfile(lt, rt));
                 default -> {
                     // -, *, / on numbers are pure deterministic nothrow (1 / 0 == Infinity).

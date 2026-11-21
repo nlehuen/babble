@@ -25,6 +25,10 @@ public final class Values {
         if (value instanceof Number number) {
             return hash(number.doubleValue());
         }
+        Object unwrapped = unwrap(value);
+        if (unwrapped != null && unwrapped.getClass().isArray()) {
+            return ArraySupport.deepHashCode(unwrapped);
+        }
         return value.hashCode();
     }
 

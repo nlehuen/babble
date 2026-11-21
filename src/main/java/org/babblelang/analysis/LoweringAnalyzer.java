@@ -200,7 +200,7 @@ final class LoweringAnalyzer {
         }
     }
 
-    /** {@code receiver.name} : an indexed module export, an array's length, or a Java field. */
+    /** {@code receiver.name} : an indexed module export or a Java field. */
     private void deriveSelection(BabbleParser.SelectorContext selector) {
         if (selector.expression() == null || selector.safe != null || !(types.get(selector.expression()) instanceof Type receiver)) {
             return;
@@ -211,8 +211,6 @@ final class LoweringAnalyzer {
             if (module.module().summary() != null && module.module().exports().contains(name) && index >= 0) {
                 pass.analysis.setModuleExportTarget(selector, new ScopeAnalysis.ModuleExportTarget(index, name, module.module().name()));
             }
-        } else if (receiver instanceof Type.Array array && "length".equals(name)) {
-            pass.analysis.setArrayLengthClass(selector, JavaTypeBridge.checkedArrayClass(array));
         } else {
             ScopeAnalysis.JavaFieldTarget target = fieldReadTarget(receiver, name, checker.algebra());
             if (target != null) {
@@ -231,7 +229,7 @@ final class LoweringAnalyzer {
             member = JavaTypeBridge.javaMember(value.type(), List.of(), name, true, algebra);
         } else if (receiver instanceof Type.JavaInstance instance) {
             member = JavaTypeBridge.javaMember(instance.type(), instance.typeArguments(), name, false, algebra);
-        } else if (receiver instanceof Type.Array array && !"length".equals(name)) {
+        } else if (receiver instanceof Type.Array array) {
             member = JavaTypeBridge.javaMember(JavaTypeBridge.checkedArrayClass(array), List.of(), name, false, algebra);
         } else {
             return null;
@@ -242,6 +240,12 @@ final class LoweringAnalyzer {
     private void deriveCall(BabbleParser.CallContext call) {
         List<BabbleParser.CallParameterContext> arguments = call.callParameters().callParameter();
         boolean safe = call.expression() instanceof BabbleParser.SelectorContext sel && sel.safe != null;
+        if (!safe && deriveArrayCreation(arguments, call)) {
+            return;
+        }
+        if (!safe && deriveArrayOp(arguments, call)) {
+            return;
+        }
         Method method = checker.callSolver().resolvedMethod(call);
         if (method != null && !safe) {
             deriveJavaMethodCall(method, arguments, call);
@@ -259,6 +263,107 @@ final class LoweringAnalyzer {
         } else if (types.get(call) != Type.ERROR) {
             deriveInterfaceCall(arguments, call);
         }
+    }
+
+    private boolean deriveArrayCreation(List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext call) {
+        if (!(types.get(call) instanceof Type.Array resultArr)) {
+            return false;
+        }
+        Type calleeType = types.get(call.expression());
+        ScopeAnalysis.ArrayCreationKind kind;
+        if (calleeType instanceof Type.CoreCollection cc && "array".equals(cc.kind())) {
+            if (arguments.size() != 1) {
+                return false;
+            }
+            String name0 = ScopeAnalysis.callParamName(arguments.get(0));
+            if ("from".equals(name0)) {
+                kind = ScopeAnalysis.ArrayCreationKind.FROM;
+            } else if (name0 == null) {
+                kind = ScopeAnalysis.ArrayCreationKind.SIZE;
+            } else {
+                return false;
+            }
+        } else if (calleeType instanceof Type.ArrayOfFactory) {
+            for (BabbleParser.CallParameterContext arg : arguments) {
+                if (ScopeAnalysis.callParamName(arg) != null) {
+                    return false;
+                }
+            }
+            kind = ScopeAnalysis.ArrayCreationKind.OF;
+        } else {
+            return false;
+        }
+
+        ScopeAnalysis.PrimitiveKind elemKind = ScopeAnalysis.PrimitiveKind.of(resultArr.element());
+        Class<?> componentClass = null;
+        String babbleTypeId = null;
+        String babbleDisplayName = null;
+        Set<String> babbleConformIds = null;
+        int nestedDims = 0;
+
+        if (elemKind.isPrimitive()) {
+            componentClass = JavaTypeBridge.checkedArrayClass(resultArr).getComponentType();
+        } else {
+            Type cur = TypeAlgebra.unwrapFrozen(Type.withoutNull(resultArr.element()));
+            int dims = 0;
+            while (cur instanceof Type.Array nestedArr) {
+                dims++;
+                cur = TypeAlgebra.unwrapFrozen(Type.withoutNull(nestedArr.element()));
+            }
+            if (cur instanceof Type.Instance inst) {
+                babbleTypeId = inst.node().id;
+                babbleDisplayName = inst.node().name;
+                Set<String> conformIds = new LinkedHashSet<>();
+                conformIds.add(inst.node().id);
+                Set<Class<?>> ignoredJava = new LinkedHashSet<>();
+                Set<TypeNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+                visited.add(inst.node());
+                collectAncestorInterfaces(inst.node(), conformIds, ignoredJava, visited);
+                babbleConformIds = Collections.unmodifiableSet(conformIds);
+                nestedDims = dims;
+            } else {
+                componentClass = JavaTypeBridge.checkedArrayClass(resultArr).getComponentType();
+            }
+        }
+
+        pass.analysis.setArrayCreationTarget(call, new ScopeAnalysis.ArrayCreationTarget(
+                kind, elemKind, componentClass, babbleTypeId, babbleDisplayName, babbleConformIds, nestedDims));
+        return true;
+    }
+
+    private boolean deriveArrayOp(List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext call) {
+        if (!(call.expression() instanceof BabbleParser.SelectorContext sel)
+                || sel.expression() == null
+                || sel.expression() instanceof BabbleParser.SuperExpressionContext) {
+            return false;
+        }
+        Type rawRecv = types.get(sel.expression());
+        Type unwrapped = rawRecv != null ? TypeAlgebra.unwrapFrozen(rawRecv) : null;
+        if (!(unwrapped instanceof Type.Array arr)) {
+            return false;
+        }
+        for (BabbleParser.CallParameterContext arg : arguments) {
+            if (ScopeAnalysis.callParamName(arg) != null) {
+                return false;
+            }
+        }
+        String name = ScopeAnalysis.selectorName(sel);
+        ScopeAnalysis.ArrayOpKind kind = switch (name) {
+            case "size" -> arguments.isEmpty() ? ScopeAnalysis.ArrayOpKind.SIZE : null;
+            case "get" -> arguments.size() == 1 ? ScopeAnalysis.ArrayOpKind.GET : null;
+            case "set" -> arguments.size() == 2 ? ScopeAnalysis.ArrayOpKind.SET : null;
+            case "equals" -> arguments.size() == 1 ? ScopeAnalysis.ArrayOpKind.EQUALS : null;
+            case "hashCode" -> arguments.isEmpty() ? ScopeAnalysis.ArrayOpKind.HASH_CODE : null;
+            case "toString" -> arguments.isEmpty() ? ScopeAnalysis.ArrayOpKind.TO_STRING : null;
+            default -> null;
+        };
+        if (kind == null) {
+            return false;
+        }
+        Class<?> arrCls = JavaTypeBridge.checkedArrayClass(arr);
+        pass.analysis.setArrayOpTarget(call, new ScopeAnalysis.ArrayOpTarget(
+                kind, ScopeAnalysis.PrimitiveKind.of(arr.element()), arrCls, arrCls.getComponentType()));
+        return true;
     }
 
     /** Whether the arguments are all positional and statically applicable to the Java parameters, for a direct call. */

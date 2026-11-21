@@ -189,8 +189,9 @@ public class DifferentialTestCase {
                 "def f = fn (v : any) -> ( v as double ) ; f(null)",
                 "def f = fn (v : any) -> ( v as bool ) ; f(null)",
                 "def S = interface ( def k : int ) ; def A = class (def k : int) implements S () ; def B = class () () ; def f = fn (x : any) -> ( (x as S).k ) ; f(A(5)) ; f(B())",
-                "def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b,c\") ; \"\" + parts.length + \":\" + java.util.Arrays.asList(parts)",
+                "def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b,c\") ; \"\" + parts.size() + \":\" + java.util.Arrays.asList(parts)",
                 "def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b\") ; def id = fn (x : any) : any -> ( x ) ; id(parts).length = 1",
+                "def parts = java.util.regex.Pattern.compile(\",\").split(\"a,b\") ; def id = fn (x : any) : any -> ( x ) ; id(parts).length",
                 "def pick = fn (c : bool) -> ( if c then ( 1 ) else ( 2.0 ) ) ; def w = pick(true) ; \"\" + classof(w) + \":\" + (w + w)",
                 "def pick2 = fn (n : int) -> ( if n == 0 then ( 1.0 ) else if n == 1 then ( 2 ) else ( 3 ) ) ; \"\" + classof(pick2(1)) + \":\" + classof(pick2(2)) + \":\" + (pick2(1) + pick2(2))",
                 "def ret = fn (c : bool) -> ( if c then ( return 1 ) ; 2.0 ) ; def w = ret(true) ; \"\" + classof(w) + \":\" + (w + w)",
@@ -200,7 +201,7 @@ public class DifferentialTestCase {
                 "import(\"org\").babblelang.tests.JavaClassDemo.boxedBool(false)",
                 "def id = fn (x : any?) : any? -> ( x ) ; (id(null) as java.awt.Point).x = 1",
                 "def id = fn (x : any?) : any? -> ( x ) ; (id(null) as java.awt.Point).x",
-                "java.lang.Class.forName(\"java.lang.String\").getEnumConstants().length"
+                "java.lang.Class.forName(\"java.lang.String\").getEnumConstants().size()"
         );
     }
 
@@ -238,6 +239,10 @@ public class DifferentialTestCase {
         // Both modes represent instances cleanly via BabbleObjects.
         if (org.babblelang.runtime.BabbleObjects.isInstance(value)) {
             return "<instance>:" + value;
+        }
+        if (value != null && value.getClass().isArray()) {
+            String tag = value instanceof Object[] ? "<array>" : value.getClass().getName();
+            return tag + ":" + org.babblelang.runtime.ArraySupport.deepToString(value);
         }
         return value == null ? "null" : value.getClass().getName() + ":" + value;
     }
@@ -342,7 +347,7 @@ public class DifferentialTestCase {
                 "def nz = -0.0 ; def pz = 0.0 ; def nan = 0.0 / 0.0 ; \"\" + (nz == pz) + \":\" + (nz < pz) + \":\" + (pz < nz) + \":\" + (1.0 / nz) + \":\" + (nan == nan) + \":\" + (nan != nan) + \":\" + (nan < 1.0) + \":\" + (nan > 1.0)",
                 "def minV = -2147483648 ; def maxV = 2147483647 ; \"\" + (maxV + 1) + \":\" + (minV - 1) + \":\" + (-minV) + \":\" + (minV * -1)",
                 "def f = fn (a : int?, b : double?, c : bool?) : double -> ( (if a != null then ( a + 1 ) else ( 0 )) + (if b != null then ( b * 2 ) else ( 0.5 )) + (if c != null and c then ( 10 ) else ( 20 )) ) ; \"\" + f(3, 1.5, true) + \":\" + f(null, null, false) + \":\" + f(null, 2, null)",
-                "def d = import(\"org\").babblelang.tests.JavaClassDemo(\"n\") ; d.count = 4 ; d.count += 5 ; def a = java.lang.String(\"xyz\").getBytes() ; \"\" + d.count + \":\" + a.length + \":\" + d.label",
+                "def d = import(\"org\").babblelang.tests.JavaClassDemo(\"n\") ; d.count = 4 ; d.count += 5 ; def a = java.lang.String(\"xyz\").getBytes() ; \"\" + d.count + \":\" + a.size() + \":\" + d.label",
                 "def g = fn io () : int -> ( java.lang.Math.max(1, return 7) ) ; g()",
                 "def sb = java.lang.StringBuilder() ; import(\"org\").babblelang.tests.JavaClassDemo.appendChar(sb, java.lang.String(\"x\").charAt(0)) ; sb.toString()"
         );

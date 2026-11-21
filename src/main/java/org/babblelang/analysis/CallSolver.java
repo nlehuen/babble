@@ -113,6 +113,9 @@ final class CallSolver {
         if (callee instanceof Type.CoreCollection cc) {
             return coreCollectionCall(cc.kind(), cc.typeArguments().isEmpty() ? null : cc.typeArguments(), ctx, expected);
         }
+        if (callee instanceof Type.ArrayOfFactory af) {
+            return arrayOfCall(af, ctx, expected);
+        }
         if (callee instanceof Type.Function function) {
             List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
             boolean frozenBorrowSafe = function.effects().uniqueResult() || checker.isDeeplyImmutable(function.result());
@@ -1101,9 +1104,7 @@ final class CallSolver {
 
     Type coreCollectionCall(String kind, List<Type> explicitArgs, BabbleParser.CallContext ctx, Type expected) {
         if ("array".equals(kind)) {
-            synthAll(ctx.callParameters().callParameter());
-            checker.warn("array constructor is not implemented yet", ctx);
-            return Type.ERROR;
+            return checkArrayCall(explicitArgs, ctx, expected);
         }
         Class<?> javaClass = switch (kind) {
             case "list" -> List.class;
@@ -1147,6 +1148,171 @@ final class CallSolver {
             }
         }
         return null;
+    }
+
+    private Type extractExpectedArrayElement(Type expected) {
+        if (expected == null || expected == Type.ERROR || expected == Type.NOTHING) {
+            return null;
+        }
+        Type base = TypeAlgebra.unwrapFrozen(Type.withoutNull(expected));
+        return base instanceof Type.Array arr ? arr.element() : null;
+    }
+
+    private static boolean dependsOnTypeVar(Type t) {
+        return switch (t) {
+            case Type.TypeVar ignored -> true;
+            case Type.Frozen f -> dependsOnTypeVar(f.of());
+            case Type.Array a -> dependsOnTypeVar(a.element());
+            case Type.Union u -> u.members().stream().anyMatch(CallSolver::dependsOnTypeVar);
+            case Type.Intersection i -> i.members().stream().anyMatch(CallSolver::dependsOnTypeVar);
+            default -> false;
+        };
+    }
+
+    private static boolean hasDefaultElement(Type elem) {
+        return Type.isPrimitiveScalar(elem) || Type.containsNull(elem);
+    }
+
+    private Type checkArrayCall(List<Type> explicitArgs, BabbleParser.CallContext ctx, Type expected) {
+        List<BabbleParser.CallParameterContext> args = ctx.callParameters().callParameter();
+        Type explicitElem = explicitArgs != null && explicitArgs.size() == 1 ? explicitArgs.get(0) : null;
+        Type expectedElem = explicitElem == null ? extractExpectedArrayElement(expected) : null;
+        Type hintElem = explicitElem != null ? explicitElem : expectedElem;
+
+        if (args.isEmpty()) {
+            checker.warn("Missing parameter : size", ctx);
+            return Type.ERROR;
+        }
+        if (args.size() > 1) {
+            checker.warn("Too many parameters : 1 declared, " + args.size() + " given", ctx);
+            synthAll(args);
+            return Type.ERROR;
+        }
+
+        BabbleParser.CallParameterContext arg0 = args.get(0);
+        String name0 = ScopeAnalysis.callParamName(arg0);
+        if ("from".equals(name0)) {
+            Type fromHint = hintElem != null ? new Type.JavaInstance(Iterable.class, List.of(hintElem)) : null;
+            Type srcType = checker.check(arg0.expression(), fromHint);
+            if (TypeChecker.isUnresolved(srcType)) {
+                return hintElem != null ? new Type.Array(hintElem) : Type.ERROR;
+            }
+            Type unwrappedSrc = TypeAlgebra.unwrapFrozen(srcType);
+            Type srcElem = unwrappedSrc instanceof Type.Array sa ? sa.element() : extractIterableElement(unwrappedSrc);
+            if (srcElem == null) {
+                checker.warn("Type error : expected iterable or array, got " + srcType, arg0.expression());
+                return Type.ERROR;
+            }
+            Type elem = hintElem != null ? hintElem : srcElem;
+            if (hintElem != null && !TypeChecker.isUnresolved(srcElem) && !checker.algebra().assignable(srcElem, hintElem)) {
+                checker.warn("Type error : expected " + hintElem + " elements, got " + srcElem, arg0.expression());
+                return Type.ERROR;
+            }
+            if (dependsOnTypeVar(elem)) {
+                checker.warn("Generic array creation : " + new Type.Array(elem), ctx);
+                return Type.ERROR;
+            }
+            return new Type.Array(elem);
+        }
+
+        if (name0 == null) {
+            Type lenType = checker.check(arg0.expression(), Type.INT);
+            checker.subsumes(arg0.expression(), lenType, Type.INT);
+            Type elem = hintElem;
+            if (elem == null) {
+                checker.warn("Missing type : cannot infer type arguments for array", ctx);
+                return Type.ERROR;
+            }
+            if (dependsOnTypeVar(elem)) {
+                checker.warn("Generic array creation : " + new Type.Array(elem), ctx);
+                return Type.ERROR;
+            }
+            if (!TypeChecker.isUnresolved(elem) && !hasDefaultElement(elem)) {
+                checker.warn("No default element : " + new Type.Array(elem) + " has non-null elements", ctx);
+                return Type.ERROR;
+            }
+            return new Type.Array(elem);
+        }
+
+        synthAll(args);
+        checker.warn("No such parameter : " + name0, ctx);
+        return Type.ERROR;
+    }
+
+    private Type arrayOfCall(Type.ArrayOfFactory factory, BabbleParser.CallContext ctx, Type expected) {
+        List<BabbleParser.CallParameterContext> args = ctx.callParameters().callParameter();
+        for (BabbleParser.CallParameterContext arg : args) {
+            String name = ScopeAnalysis.callParamName(arg);
+            if (name != null) {
+                synthAll(args);
+                checker.warn("No such parameter : " + name, ctx);
+                return Type.ERROR;
+            }
+        }
+        Type explicitElem = factory.element();
+        Type expectedElem = explicitElem == null ? extractExpectedArrayElement(expected) : null;
+        Type hintElem = explicitElem != null ? explicitElem : expectedElem;
+
+        if (args.isEmpty()) {
+            if (hintElem == null) {
+                checker.warn("Missing type : cannot infer type arguments for array", ctx);
+                return Type.ERROR;
+            }
+            if (dependsOnTypeVar(hintElem)) {
+                checker.warn("Generic array creation : " + new Type.Array(hintElem), ctx);
+                return Type.ERROR;
+            }
+            return new Type.Array(hintElem);
+        }
+
+        List<BabbleParser.ExpressionContext> exprs = new ArrayList<>(args.size());
+        List<Type> actuals = new ArrayList<>(args.size());
+        for (BabbleParser.CallParameterContext arg : args) {
+            exprs.add(arg.expression());
+            actuals.add(checker.check(arg.expression(), hintElem));
+        }
+
+        Type elem;
+        if (explicitElem != null) {
+            elem = explicitElem;
+            for (int i = 0; i < exprs.size(); i++) {
+                checker.subsumes(exprs.get(i), actuals.get(i), elem);
+            }
+        } else if (expectedElem != null && allAssignable(actuals, expectedElem)) {
+            elem = expectedElem;
+            for (int i = 0; i < exprs.size(); i++) {
+                checker.coerce(exprs.get(i), actuals.get(i), elem);
+            }
+        } else {
+            elem = actuals.get(0);
+            for (int i = 1; i < actuals.size(); i++) {
+                elem = checker.algebra().join(elem, actuals.get(i));
+                if (elem == null) {
+                    return Type.ERROR;
+                }
+            }
+            if (TypeChecker.isUnresolved(elem)) {
+                return Type.ERROR;
+            }
+            for (int i = 0; i < exprs.size(); i++) {
+                checker.coerce(exprs.get(i), actuals.get(i), elem);
+            }
+        }
+
+        if (dependsOnTypeVar(elem)) {
+            checker.warn("Generic array creation : " + new Type.Array(elem), ctx);
+            return Type.ERROR;
+        }
+        return new Type.Array(elem);
+    }
+
+    private boolean allAssignable(List<Type> actuals, Type target) {
+        for (Type a : actuals) {
+            if (TypeChecker.isUnresolved(a) || !checker.algebra().assignable(a, target)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private Type checkEntryCall(List<BabbleParser.CallParameterContext> args, List<Type> explicitArgs,

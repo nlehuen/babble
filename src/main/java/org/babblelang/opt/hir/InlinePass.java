@@ -204,6 +204,12 @@ public final class InlinePass implements HirPass {
                 ok[0] = false;
                 return;
             }
+            case HirExpr.ArrayCreate c -> {
+                if (c.componentClass() == null && !c.elemKind().isPrimitive()) {
+                    ok[0] = false;
+                    return;
+                }
+            }
             default -> {
             }
         }

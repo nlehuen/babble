@@ -86,8 +86,8 @@ public class Bip020P2ArrayTypesTestCase {
                 def Strings = type array of string
                 def Matrix of T = type array of (array of T)
                 def aliasParts: Strings = parts
-                def checkMatrix = fn (m: Matrix of int): int -> ( m.length )
-                aliasParts.length + chars.length + ints.length + grid.length + backing.length + checkMatrix(grid)
+                def checkMatrix = fn (m: Matrix of int): int -> ( m.size() )
+                aliasParts.size() + chars.size() + ints.size() + grid.size() + backing.size() + checkMatrix(grid)
                 """;
         assertNoErrors(valid);
         assertAllModesEqual(valid, 2 + 3 + 3 + 2 + 4 + 2);
@@ -116,15 +116,15 @@ public class Bip020P2ArrayTypesTestCase {
                 def chars: array of char = "abc".toCharArray()
                 def both: java.lang.Cloneable & java.io.Serializable = parts
                 def bothPrim: java.lang.Cloneable & java.io.Serializable = chars
-                def acceptShapeNamed = fn (mut xs: array of (Shape & Named)): int -> ( xs.length )
-                def acceptAnyBorrow = fn (xs: array of any?): int -> ( xs.length )
+                def acceptShapeNamed = fn (mut xs: array of (Shape & Named)): int -> ( xs.size() )
+                def acceptAnyBorrow = fn (xs: array of any?): int -> ( xs.size() )
                 def takeAny = fn (x: any): bool -> ( x is java.lang.Cloneable & java.io.Serializable )
                 def testAlias = fn (xs: array of Circle, sn: array of (Shape & Named)): int -> (
                     acceptAnyBorrow(sn)
                 )
                 assert(both != null and bothPrim != null)
                 assert(takeAny(parts) and takeAny(chars))
-                parts.length + chars.length
+                parts.size() + chars.size()
                 """;
         assertNoErrors(assignInterfaces);
         assertAllModesEqual(assignInterfaces, 5);
@@ -148,10 +148,10 @@ public class Bip020P2ArrayTypesTestCase {
                 def parts: array of string = java.util.regex.Pattern.compile(",").split("a,b")
                 def boxed: array of int? = Demo.boxedIntArray()
 
-                def readStrings = fn (xs: array of string?): int -> ( xs.length )
-                def readAnys = fn (xs: array of any?): int -> ( xs.length )
-                def writeAnyNullable = fn (mut xs: array of any?): int -> ( xs.length )
-                def writeStringsNullable = fn (mut xs: array of string?): int -> ( xs.length )
+                def readStrings = fn (xs: array of string?): int -> ( xs.size() )
+                def readAnys = fn (xs: array of any?): int -> ( xs.size() )
+                def writeAnyNullable = fn (mut xs: array of any?): int -> ( xs.size() )
+                def writeStringsNullable = fn (mut xs: array of string?): int -> ( xs.size() )
                 def toStringOut = java.util.Arrays.toString(parts)
 
                 readStrings(parts) + readAnys(parts) + writeAnyNullable(boxed) + Demo.readObjectArray(parts) + toStringOut.length()
@@ -169,13 +169,13 @@ public class Bip020P2ArrayTypesTestCase {
                 def parts: array of string = java.util.regex.Pattern.compile(",").split("a,b")
                 def boxed: array of int? = Demo.boxedIntArray()
 
-                def borrowLongs = fn (xs: array of long) -> ( xs.length )
-                def borrowBoxedChars = fn (xs: array of char?) -> ( xs.length )
-                def borrowAnys = fn (xs: array of any) -> ( xs.length )
-                def writeStringsNull = fn (mut xs: array of string?) -> ( xs.length )
-                def writeAnyNull = fn (mut xs: array of any?) -> ( xs.length )
-                def borrowShapes = fn (xs: array of Shape) -> ( xs.length )
-                def writeAny = fn (mut xs: array of any) -> ( xs.length )
+                def borrowLongs = fn (xs: array of long) -> ( xs.size() )
+                def borrowBoxedChars = fn (xs: array of char?) -> ( xs.size() )
+                def borrowAnys = fn (xs: array of any) -> ( xs.size() )
+                def writeStringsNull = fn (mut xs: array of string?) -> ( xs.size() )
+                def writeAnyNull = fn (mut xs: array of any?) -> ( xs.size() )
+                def borrowShapes = fn (xs: array of Shape) -> ( xs.size() )
+                def writeAny = fn (mut xs: array of any) -> ( xs.size() )
 
                 borrowLongs(chars)
                 borrowBoxedChars(chars)
@@ -204,7 +204,7 @@ public class Bip020P2ArrayTypesTestCase {
     public void testMutableGenericVarianceWithJavaAndBabble() {
         // Primitive array invariant even against borrowed int[] -> long[] directly
         assertDiagnostics("""
-                def borrowInts = fn (xs: array of int) -> ( xs.length )
+                def borrowInts = fn (xs: array of int) -> ( xs.size() )
                 def chars: array of char = "abc".toCharArray()
                 borrowInts(chars)
                 """, "Type error : expected array of int, got array of char");
@@ -217,7 +217,7 @@ public class Bip020P2ArrayTypesTestCase {
                     def area = fn () : int -> ( 1 )
                     def name = fn () : string -> ( "c" )
                 )
-                def takeInter = fn (mut xs: array of (Shape & Named)) -> ( xs.length )
+                def takeInter = fn (mut xs: array of (Shape & Named)) -> ( xs.size() )
                 def checkCircle = fn (mut cs: array of Circle) -> ( takeInter(cs) )
                 """);
 
@@ -299,10 +299,10 @@ public class Bip020P2ArrayTypesTestCase {
                 assert(not (chars is array of string?))
                 assert(not (chars is array of int))
                 assert(parts is array of string?)
-                assert((parts as array of string).length == 2)
+                assert((parts as array of string).size() == 2)
                 assert(raw is array of Point)
                 assert(raw is array of any?)
-                assert((raw as array of Point).length == 2)
+                assert((raw as array of Point).size() == 2)
                 assert(grid is Matrix of int)
                 assert(null is Ints?)
                 assert(not (null is Ints))

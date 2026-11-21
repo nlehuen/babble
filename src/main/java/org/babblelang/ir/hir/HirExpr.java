@@ -28,7 +28,8 @@ public sealed interface HirExpr permits
         HirExpr.DynamicFieldAssign,
         HirExpr.ThisFieldGet,
         HirExpr.JavaFieldGet,
-        HirExpr.ArrayLength,
+        HirExpr.ArrayCreate,
+        HirExpr.ArrayOp,
         HirExpr.ModuleExportGet,
         HirExpr.DynamicSelect,
         HirExpr.Unary,
@@ -222,10 +223,25 @@ public sealed interface HirExpr permits
     ) implements HirExpr {
     }
 
-    record ArrayLength(
+    record ArrayCreate(
+            ScopeAnalysis.ArrayCreationKind kind,
+            ScopeAnalysis.PrimitiveKind elemKind,
+            String componentInternalName,
+            boolean componentIsJavaInterface,
+            Class<?> componentClass,
+            List<HirExpr> args,
+            ExprMeta meta
+    ) implements HirExpr {
+    }
+
+    record ArrayOp(
+            ScopeAnalysis.ArrayOpKind kind,
             HirExpr receiver,
             String receiverText,
+            ScopeAnalysis.PrimitiveKind elemKind,
             Class<?> arrayClass,
+            Class<?> componentClass,
+            List<HirExpr> args,
             ExprMeta meta
     ) implements HirExpr {
     }

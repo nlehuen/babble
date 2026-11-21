@@ -79,9 +79,9 @@ def Square = class (def side) implements Shape (
 def shape: Shape = Square(3.0)
 assert((shape as Square).side == 3.0)
 
-;; ---- Java arrays and `.length`
+;; ---- Java arrays and `.size()`
 def parts = java.util.regex.Pattern.compile(",").split("one,two,three")
-assert(parts.length == 3)
+assert(parts.size() == 3)
 assert(java.lang.reflect.Array.get(parts, 1) == "two")
 assert(java.util.Arrays.asList(parts).size() == 3)
 

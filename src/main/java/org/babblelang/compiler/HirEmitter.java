@@ -326,7 +326,8 @@ final class HirEmitter {
             case HirExpr.DynamicFieldAssign a -> 1 + countNodes(a.receiver()) + countNodes(a.value());
             case HirExpr.ThisFieldGet g -> 1 + countNodes(g.receiver());
             case HirExpr.JavaFieldGet g -> 1 + countNodes(g.receiver());
-            case HirExpr.ArrayLength a -> 1 + countNodes(a.receiver());
+            case HirExpr.ArrayCreate c -> 1 + countList(c.args());
+            case HirExpr.ArrayOp op -> 1 + countNodes(op.receiver()) + countList(op.args());
             case HirExpr.ModuleExportGet g -> 1 + countNodes(g.receiver());
             case HirExpr.DynamicSelect s -> 1 + countNodes(s.receiver());
             case HirExpr.Unary u -> 1 + countNodes(u.operand());
@@ -1048,7 +1049,8 @@ final class HirEmitter {
             case HirExpr.DynamicFieldAssign a -> emitDynamicFieldAssign(a);
             case HirExpr.ThisFieldGet g -> emitThisFieldGet(g);
             case HirExpr.JavaFieldGet g -> emitJavaFieldGet(g);
-            case HirExpr.ArrayLength a -> emitArrayLength(a);
+            case HirExpr.ArrayCreate c -> emitArrayCreate(c);
+            case HirExpr.ArrayOp op -> emitArrayOp(op);
             case HirExpr.ModuleExportGet g -> emitModuleExportGet(g);
             case HirExpr.DynamicSelect s -> emitDynamicSelect(s);
             case HirExpr.Unary u -> emitUnary(u);
@@ -1793,12 +1795,187 @@ final class HirEmitter {
         checkSelectorType(g.meta());
     }
 
-    private void emitArrayLength(HirExpr.ArrayLength a) {
-        int ln = a.meta().line();
-        emitCheckedJavaReceiver(a.receiver(), a.receiverText(), ln, true, Type.getInternalName(a.arrayClass()), "notAScope", null);
-        mv.visitInsn(ARRAYLENGTH);
-        stackKind = ScopeAnalysis.PrimitiveKind.INT;
-        checkSelectorType(a.meta());
+    private void emitArrayCreate(HirExpr.ArrayCreate c) {
+        int ln = c.meta().line();
+        ScopeAnalysis.PrimitiveKind elemKind = c.elemKind();
+        switch (c.kind()) {
+            case SIZE -> {
+                emitAs(c.args().get(0), ScopeAnalysis.PrimitiveKind.INT);
+                line(ln);
+                emitNewArray(elemKind, c.componentInternalName());
+            }
+            case OF -> {
+                ConstantPool.pushInt(mv, c.args().size());
+                line(ln);
+                emitNewArray(elemKind, c.componentInternalName());
+                int arrLocal = newLocal();
+                mv.visitVarInsn(ASTORE, arrLocal);
+                for (int i = 0; i < c.args().size(); i++) {
+                    mv.visitVarInsn(ALOAD, arrLocal);
+                    ConstantPool.pushInt(mv, i);
+                    if (elemKind.isPrimitive()) {
+                        emitAs(c.args().get(i), elemKind);
+                    } else {
+                        emitBoxed(c.args().get(i));
+                        if (c.componentIsJavaInterface() && c.componentClass() != null) {
+                            mv.visitLdcInsn(Type.getType(c.componentClass()));
+                            mv.visitVarInsn(ALOAD, rtLocal);
+                            mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava",
+                                    "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+                        } else {
+                            mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                        }
+                    }
+                    line(ln);
+                    mv.visitInsn(astoreInsn(elemKind));
+                }
+                mv.visitVarInsn(ALOAD, arrLocal);
+            }
+            case FROM -> {
+                if (elemKind.isPrimitive()) {
+                    pushPrimitiveClass(elemKind);
+                } else {
+                    mv.visitLdcInsn(Type.getObjectType(c.componentInternalName()));
+                }
+                emitBoxed(c.args().get(0));
+                mv.visitVarInsn(ALOAD, rtLocal);
+                line(ln);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "from",
+                        "(Ljava/lang/Class;Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+            }
+        }
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        finishCallCheck(c.meta());
+    }
+
+    private void emitArrayOp(HirExpr.ArrayOp op) {
+        int ln = op.meta().line();
+        ScopeAnalysis.PrimitiveKind elemKind = op.elemKind();
+        String castName = elemKind.isPrimitive() ? Type.getInternalName(op.arrayClass()) : "[Ljava/lang/Object;";
+        switch (op.kind()) {
+            case SIZE -> {
+                emitCheckedJavaReceiver(op.receiver(), op.receiverText(), ln, true, castName, "notAScope", null);
+                line(ln);
+                mv.visitInsn(ARRAYLENGTH);
+                stackKind = ScopeAnalysis.PrimitiveKind.INT;
+            }
+            case GET -> {
+                emitCheckedJavaReceiver(op.receiver(), op.receiverText(), ln, true, castName, "notAScope", null);
+                emitAs(op.args().get(0), ScopeAnalysis.PrimitiveKind.INT);
+                line(ln);
+                if (elemKind.isPrimitive()) {
+                    mv.visitInsn(aloadInsn(elemKind));
+                    stackKind = elemKind;
+                } else {
+                    mv.visitInsn(AALOAD);
+                    mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+                }
+            }
+            case SET -> {
+                emitCheckedJavaReceiver(op.receiver(), op.receiverText(), ln, true, castName, "notAScope", null);
+                emitAs(op.args().get(0), ScopeAnalysis.PrimitiveKind.INT);
+                if (elemKind.isPrimitive()) {
+                    emitAs(op.args().get(1), elemKind);
+                } else {
+                    emitBoxed(op.args().get(1));
+                    if (op.componentClass() != null && op.componentClass().isInterface()) {
+                        mv.visitLdcInsn(Type.getType(op.componentClass()));
+                        mv.visitVarInsn(ALOAD, rtLocal);
+                        mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava",
+                                "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+                    } else {
+                        mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    }
+                }
+                line(ln);
+                mv.visitInsn(astoreInsn(elemKind));
+                mv.visitInsn(ACONST_NULL);
+                stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            }
+            case EQUALS -> {
+                emitBoxed(op.receiver());
+                emitBoxed(op.args().get(0));
+                line(ln);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "deepEquals",
+                        "(Ljava/lang/Object;Ljava/lang/Object;)Z", false);
+                stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
+            }
+            case HASH_CODE -> {
+                emitBoxed(op.receiver());
+                line(ln);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "deepHashCode", "(Ljava/lang/Object;)I", false);
+                stackKind = ScopeAnalysis.PrimitiveKind.INT;
+            }
+            case TO_STRING -> {
+                emitBoxed(op.receiver());
+                line(ln);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "deepToString",
+                        "(Ljava/lang/Object;)Ljava/lang/String;", false);
+                stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            }
+        }
+        finishCallCheck(op.meta());
+    }
+
+    private void emitNewArray(ScopeAnalysis.PrimitiveKind elemKind, String componentInternalName) {
+        if (elemKind.isPrimitive()) {
+            int code = switch (elemKind) {
+                case BYTE -> T_BYTE;
+                case SHORT -> T_SHORT;
+                case INT -> T_INT;
+                case LONG -> T_LONG;
+                case FLOAT -> T_FLOAT;
+                case DOUBLE -> T_DOUBLE;
+                case BOOL -> T_BOOLEAN;
+                case CHAR -> T_CHAR;
+                case NONE -> throw new IllegalStateException();
+            };
+            mv.visitIntInsn(NEWARRAY, code);
+        } else {
+            mv.visitTypeInsn(ANEWARRAY, componentInternalName);
+        }
+    }
+
+    private void pushPrimitiveClass(ScopeAnalysis.PrimitiveKind elemKind) {
+        String wrapper = switch (elemKind) {
+            case BYTE -> "java/lang/Byte";
+            case SHORT -> "java/lang/Short";
+            case INT -> "java/lang/Integer";
+            case LONG -> "java/lang/Long";
+            case FLOAT -> "java/lang/Float";
+            case DOUBLE -> "java/lang/Double";
+            case BOOL -> "java/lang/Boolean";
+            case CHAR -> "java/lang/Character";
+            case NONE -> throw new IllegalStateException();
+        };
+        mv.visitFieldInsn(GETSTATIC, wrapper, "TYPE", "Ljava/lang/Class;");
+    }
+
+    private static int aloadInsn(ScopeAnalysis.PrimitiveKind elemKind) {
+        return switch (elemKind) {
+            case BYTE, BOOL -> BALOAD;
+            case SHORT -> SALOAD;
+            case INT -> IALOAD;
+            case LONG -> LALOAD;
+            case FLOAT -> FALOAD;
+            case DOUBLE -> DALOAD;
+            case CHAR -> CALOAD;
+            case NONE -> AALOAD;
+        };
+    }
+
+    private static int astoreInsn(ScopeAnalysis.PrimitiveKind elemKind) {
+        return switch (elemKind) {
+            case BYTE, BOOL -> BASTORE;
+            case SHORT -> SASTORE;
+            case INT -> IASTORE;
+            case LONG -> LASTORE;
+            case FLOAT -> FASTORE;
+            case DOUBLE -> DASTORE;
+            case CHAR -> CASTORE;
+            case NONE -> AASTORE;
+        };
     }
 
     private void emitModuleExportGet(HirExpr.ModuleExportGet g) {

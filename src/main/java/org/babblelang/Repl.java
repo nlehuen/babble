@@ -4,7 +4,7 @@ import org.babblelang.engine.BabbleSession;
 import org.babblelang.engine.TypeCheckException;
 import org.babblelang.repl.LineSource;
 import org.babblelang.repl.PlainInput;
-import org.babblelang.runtime.JavaValue;
+import org.babblelang.runtime.ArraySupport;
 
 import javax.script.ScriptException;
 import java.io.BufferedReader;
@@ -204,15 +204,12 @@ public final class Repl {
         return text;
     }
 
-    /** A value as the session shows it : a string between quotes, anything else as {@code "" + value} gives it. */
+    /** A value as the session shows it : a string between quotes, arrays as {@code [a, b]}, anything else as {@code "" + value} gives it. */
     static String show(Object value) {
         if (value instanceof String string) {
             return "\"" + string.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
         }
-        if (value instanceof JavaValue wrapper) {
-            return String.valueOf(wrapper.javaValue());
-        }
-        return String.valueOf(value);
+        return ArraySupport.format(value);
     }
 
     /**
