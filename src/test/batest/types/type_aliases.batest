@@ -22,6 +22,7 @@ def Sign = class () implements Shape, Label (
     def area = fn (): double -> ( 2.0 )
     def text = fn (): string -> ( "sign" )
 )
+def Disk = class () implements Shape ( def area = fn (): double -> ( 3.0 ) )
 
 {{{{{
 ;; An alias stands for its type, unions and intersections included
@@ -39,6 +40,27 @@ def a: any = Sign()
 println(maybe == null, " ", a is ShapeWithText, " ", (a as ShapeWithText).area())
 }}}}}
 true true 2.0
+
+{{{{{
+;; is with an alias and with its nullable : null is only a T?
+def ShapeWithText = type Shape & (Named | Label)
+def maybe: ShapeWithText? = null
+println(maybe is ShapeWithText, " ", maybe is ShapeWithText?)
+maybe = Tile()
+println(maybe is ShapeWithText, " ", maybe is ShapeWithText?)
+}}}}}
+false true
+true true
+
+{{{{{
+;; is on a nullable : a T? test accepts null, a T test does not
+def d: Disk? = null
+println(d is Shape?, " ", d is Shape, " ", d is Named?, " ", d is Label?)
+d = Disk()
+println(d is Shape?, " ", d is Shape, " ", d is Named?, " ", d is Label?)
+}}}}}
+true false true true
+true true false false
 
 {{{{{
 ;; A generic alias takes its def's type parameters
