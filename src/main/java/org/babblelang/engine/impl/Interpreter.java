@@ -11,8 +11,8 @@ import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.Arguments;
 import org.babblelang.runtime.BabbleClass;
-import org.babblelang.runtime.BabbleInstance;
 import org.babblelang.runtime.BabbleInterface;
+import org.babblelang.runtime.BabbleObjects;
 import org.babblelang.runtime.BabbleType;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
@@ -20,6 +20,7 @@ import org.babblelang.runtime.Calls;
 import org.babblelang.runtime.ClassBody;
 import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.Classes;
+import org.babblelang.runtime.InterpretedInstance;
 import org.babblelang.runtime.Members;
 import org.babblelang.runtime.OpSite;
 import org.babblelang.runtime.Operators;
@@ -141,7 +142,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
         last = ctx;
         Object[] interfaces = types(ctx.typeList());
-        BabbleInstance object = BabbleClass.object(scopes.shape(ctx), namespace, new InterpretedClassBody(ctx), interfaces, runtime);
+        Object object = BabbleClass.object(scopes.shape(ctx), namespace, new InterpretedClassBody(ctx), interfaces, runtime);
         last = ctx;
         return object;
     }
@@ -207,7 +208,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
 
         @Override
-        public void construct(BabbleClass babbleClass, BabbleInstance instance, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        public void construct(BabbleClass babbleClass, Object instance, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
             Namespace scope = Classes.constructorScope(babbleClass, instance);
             ClassShape shape = babbleClass.shape();
             String[] parameters = shape.parameters();
@@ -225,7 +226,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 value = widen(((BabbleParser.ClassExpressionContext) ctx).classParameters().classParam(i), value);
                 int member = shape.parameterMember(i);
                 if (member >= 0) {
-                    instance.initMember(member, value);
+                    ((InterpretedInstance) instance).initMember(member, value);
                 } else {
                     scope.defineParameter(parameters[i], value);
                 }
@@ -413,7 +414,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
 
         String method = Operators.method(ctx.op.getText());
-        if (method != null && a instanceof BabbleInstance) {
+        if (method != null && BabbleObjects.isInstance(a)) {
             // An operator method : a + b is a.plus(b).
             b = widen(ctx.right, b);
             return operatorCall(a, method, ctx.left.getText(), ctx.right.getText(), b, ctx);
@@ -471,7 +472,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
         Object value = visit(ctx.operand);
         last = ctx;
-        if (value instanceof BabbleInstance) {
+        if (BabbleObjects.isInstance(value)) {
             return operatorCall(value, Operators.NEGATE, ctx.operand.getText(), null, null, ctx);
         }
         return Operators.negate(value, ctx.operand.getText());
@@ -513,7 +514,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         String target = targetText(ctx);
         String method = Operators.method(operator);
-        if (current instanceof BabbleInstance) {
+        if (BabbleObjects.isInstance(current)) {
             return operatorCall(current, method, target, ctx.value.getText(), value, ctx);
         }
         OpSite site = opSites.get(ctx);

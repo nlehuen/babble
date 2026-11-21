@@ -110,8 +110,9 @@ public final class Overloads {
         if (argument == null) {
             return NULL_KIND;
         }
-        if (argument instanceof BabbleInstance instance) {
-            return instance.babbleClass();
+        BabbleClass cls = BabbleObjects.babbleClass(argument);
+        if (cls != null) {
+            return cls;
         }
         // The anonymous class of an object literal can't be called, so it isn't a function.
         if (argument instanceof BabbleClass babbleClass && !Values.isBabbleCallable(babbleClass)) {
@@ -176,7 +177,8 @@ public final class Overloads {
         }
         // A Babble instance is applicable where its class's declared Java interfaces are,
         // since it reaches Java as its face (Values.toJava).
-        if (argument instanceof BabbleInstance instance && instance.babbleClass().isJava(parameterType)) {
+        BabbleClass cls = BabbleObjects.babbleClass(argument);
+        if (cls != null && cls.isJava(parameterType)) {
             return true;
         }
         // A Babble function converts to any functional interface.

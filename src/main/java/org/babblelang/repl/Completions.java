@@ -3,7 +3,8 @@ package org.babblelang.repl;
 import org.babblelang.engine.BabbleSession;
 import org.babblelang.engine.impl.natives.java.JavaClass;
 import org.babblelang.parser.BabbleLexer;
-import org.babblelang.runtime.BabbleInstance;
+import org.babblelang.runtime.BabbleClass;
+import org.babblelang.runtime.BabbleObjects;
 import org.babblelang.runtime.BabbleType;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.ClassShape;
@@ -133,15 +134,17 @@ public final class Completions {
     /** The members a value can be selected on, without its private ones. */
     static SortedSet<String> members(Object value) {
         SortedSet<String> members = new TreeSet<>();
-        switch (value) {
-            case BabbleInstance instance -> {
-                ClassShape shape = instance.babbleClass().shape();
-                for (int i = 0; i < shape.memberCount(); i++) {
-                    if (!shape.isPrivate(i)) {
-                        members.add(shape.member(i));
-                    }
+        BabbleClass babbleClass = BabbleObjects.babbleClass(value);
+        if (babbleClass != null) {
+            ClassShape shape = babbleClass.shape();
+            for (int i = 0; i < shape.memberCount(); i++) {
+                if (!shape.isPrivate(i)) {
+                    members.add(shape.member(i));
                 }
             }
+            return members;
+        }
+        switch (value) {
             case BabbleType type -> {
                 ClassShape shape = type.shape();
                 for (int i = 0; i < shape.staticCount(); i++) {

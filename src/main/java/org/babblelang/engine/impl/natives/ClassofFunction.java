@@ -5,8 +5,8 @@ import org.babblelang.runtime.Namespace;
 import org.babblelang.engine.impl.natives.java.JavaClass;
 import org.babblelang.engine.impl.natives.java.JavaPackage;
 import org.babblelang.runtime.BabbleClass;
-import org.babblelang.runtime.BabbleInstance;
 import org.babblelang.runtime.BabbleInterface;
+import org.babblelang.runtime.BabbleObjects;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.JavaValue;
@@ -26,8 +26,9 @@ public class ClassofFunction implements Callable {
         if (value == null) {
             return null;
         }
-        if (value instanceof BabbleInstance instance) {
-            return instance.babbleClass();
+        BabbleClass cls = BabbleObjects.babbleClass(value);
+        if (cls != null) {
+            return cls;
         }
         if (value instanceof JavaValue wrapper) {
             return JavaClass.of(wrapper.javaValue().getClass());

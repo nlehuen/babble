@@ -154,8 +154,8 @@ public class BabbleCompilerTestCase {
         // Each class expression has its own class, with a field per member and its methods.
         Map.Entry<String, byte[]> point = script.getClasses().entrySet().stream()
                 .filter(e -> e.getKey().endsWith("$Point")).findFirst().orElseThrow();
-        Assertions.assertEquals(List.of("x", "y", "norm"), fieldNames(point.getValue()));
-        Assertions.assertTrue(methodNames(point.getValue()).containsAll(List.of("<init>", "field", "setField", "m$norm")), methodNames(point.getValue()).toString());
+        Assertions.assertEquals(List.of("$babble$class", "$babble$rt", "x", "y", "norm"), fieldNames(point.getValue()));
+        Assertions.assertTrue(methodNames(point.getValue()).containsAll(List.of("<init>", "$babble$field", "$babble$setField", "m$norm")), methodNames(point.getValue()).toString());
         Assertions.assertEquals(4, script.getClasses().size());
     }
 
@@ -164,7 +164,7 @@ public class BabbleCompilerTestCase {
         CompiledBabbleScript script = compile("def C = class (start : int) ( def next = fn io () -> ( start = start + 1 ) ) ; def c = C(10) ; c.next() ; c.next()");
         Assertions.assertEquals(12, script.eval(new SimpleBindings()));
         byte[] c = script.getClasses().entrySet().stream().filter(e -> e.getKey().endsWith("$C")).findFirst().orElseThrow().getValue();
-        Assertions.assertEquals(List.of("next", "$v$start"), fieldNames(c));
+        Assertions.assertEquals(List.of("$babble$class", "$babble$rt", "next", "$v$start"), fieldNames(c));
         assertVerifies(script);
     }
 
@@ -617,7 +617,7 @@ public class BabbleCompilerTestCase {
 
         byte[] pointBytes = script.getClasses().entrySet().stream()
                 .filter(e -> e.getKey().endsWith("$Point")).findFirst().orElseThrow().getValue();
-        Assertions.assertEquals(List.of("x:I", "y:I", "norm:Ljava/lang/Object;"), fieldEntries(pointBytes));
+        Assertions.assertEquals(List.of("$babble$class:Lorg/babblelang/runtime/BabbleClass;", "$babble$rt:Lorg/babblelang/runtime/ScriptRuntime;", "x:I", "y:I", "norm:Ljava/lang/Object;"), fieldEntries(pointBytes));
         List<String> normOps = methodInstructions(pointBytes, "m$norm$spec");
         Assertions.assertTrue(normOps.contains("IMUL") && normOps.contains("IADD"), normOps.toString());
         Assertions.assertTrue(normOps.stream().noneMatch(o -> o.contains("org/babblelang/runtime/Operators")
@@ -626,7 +626,7 @@ public class BabbleCompilerTestCase {
         byte[] lazyBytes = script.getClasses().entrySet().stream()
                 .filter(e -> e.getKey().endsWith("$Lazy")).findFirst().orElseThrow().getValue();
         Assertions.assertTrue(fieldEntries(lazyBytes).contains("$defined$0:I"), fieldEntries(lazyBytes).toString());
-        Assertions.assertTrue(methodDescriptors(lazyBytes).contains("isMemberDefined:(I)Z"), methodDescriptors(lazyBytes).toString());
+        Assertions.assertTrue(methodDescriptors(lazyBytes).contains("$babble$isDefined:(I)Z"), methodDescriptors(lazyBytes).toString());
 
         CompiledBabbleScript earlyFail = compile(
                 "def Bad = class (early : bool) ( def a : int = if early then ( this.b ) else ( 0 ) ; def b : int = 5 ) ; Bad(true)");

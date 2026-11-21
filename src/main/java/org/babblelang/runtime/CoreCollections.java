@@ -229,13 +229,13 @@ public final class CoreCollections {
     }
 
     private static boolean needsBabbleComparable(Object o) {
-        return o instanceof BabbleInstance && !(o instanceof Comparable<?>);
+        return BabbleObjects.isInstance(o) && !(o instanceof Comparable<?>);
     }
 
     @SuppressWarnings("unchecked")
     private static int compareBabble(Object a, Object b) {
-        Object ca = a instanceof BabbleInstance bi ? bi.face() : a;
-        Object cb = b instanceof BabbleInstance bj ? bj.face() : b;
+        Object ca = BabbleObjects.face(a);
+        Object cb = BabbleObjects.face(b);
         return ((Comparable<Object>) ca).compareTo(cb);
     }
 

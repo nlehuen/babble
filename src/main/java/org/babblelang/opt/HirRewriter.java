@@ -114,7 +114,7 @@ public final class HirRewriter {
             }
             case HirExpr.As a -> {
                 HirExpr nl = transform.apply(a.left());
-                yield nl == a.left() ? a : new HirExpr.As(nl, a.targetDescriptor(), a.meta());
+                yield nl == a.left() ? a : new HirExpr.As(nl, a.target(), a.targetDescriptor(), a.meta());
             }
             case HirExpr.NonNull n -> {
                 HirExpr no = transform.apply(n.operand());

@@ -23,14 +23,18 @@ public final class Values {
             return Long.hashCode(((Number) value).longValue());
         }
         if (value instanceof Number number) {
-            double d = number.doubleValue();
-            long l = (long) d;
-            if (l == d && d >= Long.MIN_VALUE && d <= Long.MAX_VALUE) {
-                return Long.hashCode(l);
-            }
-            return Double.hashCode(d);
+            return hash(number.doubleValue());
         }
         return value.hashCode();
+    }
+
+    /** Numeric hash matching {@link #hash(Object)} for unboxed doubles in compiled records. */
+    public static int hash(double d) {
+        long l = (long) d;
+        if (l == d && d >= Long.MIN_VALUE && d <= Long.MAX_VALUE) {
+            return Long.hashCode(l);
+        }
+        return Double.hashCode(d);
     }
 
     /**
@@ -60,15 +64,17 @@ public final class Values {
     /** {@code value is type} : type is a class value, an interface value or a Java class. */
     public static Object is(Object value, Object type, String typeText) {
         if (type instanceof BabbleClass babbleClass) {
-            return value instanceof BabbleInstance instance && instance.babbleClass() == babbleClass;
+            return BabbleObjects.babbleClass(value) == babbleClass;
         }
         if (type instanceof BabbleInterface babbleInterface) {
-            return value instanceof BabbleInstance instance && instance.babbleClass().implementsType(babbleInterface);
+            BabbleClass cls = BabbleObjects.babbleClass(value);
+            return cls != null && cls.implementsType(babbleInterface);
         }
         if (type instanceof JavaType javaType) {
             Class<?> java = javaType.javaClass();
-            if (value instanceof BabbleInstance instance) {
-                return instance.babbleClass().isJava(java);
+            BabbleClass cls = BabbleObjects.babbleClass(value);
+            if (cls != null) {
+                return cls.isJava(java);
             }
             if (value instanceof JavaValue wrapper) {
                 value = wrapper.javaValue();
@@ -139,8 +145,8 @@ public final class Values {
         if (value instanceof JavaValue wrapper) {
             return wrapper.javaValue();
         }
-        if (value instanceof BabbleInstance instance) {
-            return instance.face();
+        if (BabbleObjects.isInstance(value)) {
+            return BabbleObjects.face(value);
         }
         if (type != null && !type.isInstance(value) && isBabbleCallable(value) && JavaTypes.isFunctionalInterface(type)) {
             return Faces.function((Callable) value, type, rt);

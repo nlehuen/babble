@@ -3221,7 +3221,7 @@ final class EffectChecker {
                 }
                 return acc;
             }
-            // Non-value BabbleInstance default toString uses identity hash -> pure only (not deterministic)!
+            // Non-value Babble instance default toString uses identity hash -> pure only (not deterministic)!
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true, false, true);
         }
         if (type instanceof Type.JavaInstance ji) {
@@ -3266,7 +3266,7 @@ final class EffectChecker {
                 }
                 return acc;
             }
-            // Regular BabbleInstance uses `==` reference identity (pure deterministic nothrow)!
+            // Regular Babble instance uses `==` reference identity (pure deterministic nothrow)!
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
         if (type instanceof Type.JavaInstance ji) {

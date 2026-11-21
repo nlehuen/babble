@@ -42,7 +42,7 @@ import static org.objectweb.asm.Opcodes.*;
 /**
  * ANTLR-free JVM bytecode emitter consuming a {@link HirModule} (BIP014-P1, BIP014-D8).
  *
- * <p>Emits the script class, compiled {@code BabbleInstance} subclasses ({@link ClassGen}),
+ * <p>Emits the script class, compiled plain classes ({@link ClassGen}),
  * JVM interfaces ({@link InterfaceGen}), and chunked constant-pool initialization
  * ({@link ConstantPool}) without referencing {@code org.antlr} or {@code BabbleParser}.
  */
@@ -72,7 +72,7 @@ final class HirEmitter {
     static final String CLASS_SHAPE = RUNTIME + "ClassShape";
     static final String BABBLE_CLASS = RUNTIME + "BabbleClass";
     static final String BABBLE_INTERFACE = RUNTIME + "BabbleInterface";
-    static final String BABBLE_INSTANCE = RUNTIME + "BabbleInstance";
+    static final String BABBLE_OBJECTS = RUNTIME + "BabbleObjects";
     static final String CLASS_BODY = RUNTIME + "ClassBody";
     static final String CLASSES = RUNTIME + "Classes";
     static final String INSTANCE_FACTORY = RUNTIME + "InstanceFactory";
@@ -87,7 +87,7 @@ final class HirEmitter {
     private static final String RUN_DESCRIPTOR = "(L" + SCRIPT_RUNTIME + ";L" + NAMESPACE + ";)Ljava/lang/Object;";
     private static final String BODY_DESCRIPTOR = "(L" + COMPILED_FUNCTION + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME
             + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
-    private static final String CLASS_BODY_DESCRIPTOR = "(L" + BABBLE_CLASS + ";L" + BABBLE_INSTANCE + ";L" + SCRIPT_RUNTIME
+    private static final String CLASS_BODY_DESCRIPTOR = "(L" + BABBLE_CLASS + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME
             + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)V";
     static final String METHOD_DESCRIPTOR = "(L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME
             + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
@@ -239,7 +239,7 @@ final class HirEmitter {
                 continue;
             }
             List<String> parents = new ArrayList<>(1 + cls.implementedJvmInterfaces().size());
-            parents.add(BABBLE_INSTANCE);
+            parents.add(OBJECT);
             parents.addAll(cls.implementedJvmInterfaces());
             generatedClassParents.put(cls.jvmName(), List.copyOf(parents));
             ClassGen gen = new ClassGen(this, cls);
@@ -600,7 +600,7 @@ final class HirEmitter {
     private void loadClosure() {
         if (methodClass != null) {
             mv.visitVarInsn(ALOAD, 0);
-            mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "babbleClass", "()L" + BABBLE_CLASS + ";", false);
+            mv.visitFieldInsn(GETFIELD, methodClass.name, "$babble$class", "L" + BABBLE_CLASS + ";");
             mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
         } else {
             mv.visitVarInsn(ALOAD, SELF);
@@ -678,27 +678,20 @@ final class HirEmitter {
                 CLASS_BODY_DESCRIPTOR, FN_NS + 1, FN_RT, FN_NS, cls.capturedVars());
         loadCapturedCells(BABBLE_CLASS);
 
-        if (cls.arrayBacked()) {
-            mv.visitVarInsn(ALOAD, SELF);
+        constructorClass = classGens.get(cls.id());
+        if (constructorClass != null) {
+            typedThisLocal = newLocal();
             mv.visitVarInsn(ALOAD, INSTANCE);
-            mv.visitMethodInsn(INVOKESTATIC, CLASSES, "constructorScope", "(L" + BABBLE_CLASS + ";L" + BABBLE_INSTANCE + ";)L" + NAMESPACE + ";", false);
-            mv.visitVarInsn(ASTORE, FN_NS);
-        } else {
-            constructorClass = classGens.get(cls.id());
-            if (constructorClass != null) {
-                typedThisLocal = newLocal();
+            mv.visitTypeInsn(CHECKCAST, constructorClass.name);
+            mv.visitVarInsn(ASTORE, typedThisLocal);
+        }
+        mv.visitVarInsn(ALOAD, SELF);
+        mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
+        mv.visitVarInsn(ASTORE, FN_NS);
+        for (HirVar variable : declareVariables(cls.declaredVars())) {
+            if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
                 mv.visitVarInsn(ALOAD, INSTANCE);
-                mv.visitTypeInsn(CHECKCAST, constructorClass.name);
-                mv.visitVarInsn(ASTORE, typedThisLocal);
-            }
-            mv.visitVarInsn(ALOAD, SELF);
-            mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
-            mv.visitVarInsn(ASTORE, FN_NS);
-            for (HirVar variable : declareVariables(cls.declaredVars())) {
-                if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
-                    mv.visitVarInsn(ALOAD, INSTANCE);
-                    initVariable(variable, ScopeAnalysis.PrimitiveKind.NONE);
-                }
+                initVariable(variable, ScopeAnalysis.PrimitiveKind.NONE);
             }
         }
 
@@ -770,12 +763,6 @@ final class HirEmitter {
                 convertStack(ScopeAnalysis.PrimitiveKind.NONE, mk);
                 mv.visitFieldInsn(PUTFIELD, constructorClass.name, shape.member(member), jvmDescriptor(mk));
                 stackKind = ScopeAnalysis.PrimitiveKind.NONE;
-            } else if (member >= 0) {
-                mv.visitVarInsn(ALOAD, INSTANCE);
-                ConstantPool.pushInt(mv, member);
-                mv.visitVarInsn(ALOAD, value);
-                mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "initMember", "(ILjava/lang/Object;)Ljava/lang/Object;", false);
-                mv.visitInsn(POP);
             } else if (param.var() != null) {
                 HirVar variable = param.var();
                 ScopeAnalysis.PrimitiveKind vk = variable.primitiveKind();
@@ -814,7 +801,7 @@ final class HirEmitter {
         capturedLocal = newLocal();
         if (methodClass != null) {
             mv.visitVarInsn(ALOAD, 0);
-            mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "babbleClass", "()L" + BABBLE_CLASS + ";", false);
+            mv.visitFieldInsn(GETFIELD, methodClass.name, "$babble$class", "L" + BABBLE_CLASS + ";");
         } else {
             mv.visitVarInsn(ALOAD, SELF);
         }
@@ -1197,7 +1184,10 @@ final class HirEmitter {
             storeVariable(d.var(), true, vk, d.meta().line());
             return;
         }
-        if (target.kind() == ScopeAnalysis.DefKind.MEMBER && constructorClass != null) {
+        if (target.kind() == ScopeAnalysis.DefKind.MEMBER) {
+            if (constructorClass == null) {
+                throw new IllegalStateException("Unexpected MEMBER def outside compiled class : " + d.name());
+            }
             int idx = target.index();
             ScopeAnalysis.PrimitiveKind mk = constructorClass.memberKinds[idx];
             if (mk.isPrimitive()) {
@@ -1219,10 +1209,10 @@ final class HirEmitter {
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
             return;
         }
-        switch (target.kind()) {
-            case MEMBER -> mv.visitVarInsn(ALOAD, INSTANCE);
-            case STATIC -> mv.visitVarInsn(ALOAD, staticTarget);
-            default -> mv.visitVarInsn(ALOAD, nsLocal);
+        if (target.kind() == ScopeAnalysis.DefKind.STATIC) {
+            mv.visitVarInsn(ALOAD, staticTarget);
+        } else {
+            mv.visitVarInsn(ALOAD, nsLocal);
         }
         if (target.kind() == ScopeAnalysis.DefKind.LEXICAL) {
             mv.visitLdcInsn(d.name());
@@ -1232,7 +1222,6 @@ final class HirEmitter {
         defValueAs(d, ScopeAnalysis.PrimitiveKind.NONE);
         switch (target.kind()) {
             case LEXICAL -> mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "initialize", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
-            case MEMBER -> mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "initMember", "(ILjava/lang/Object;)Ljava/lang/Object;", false);
             case STATIC -> mv.visitMethodInsn(INVOKEVIRTUAL, RUNTIME + "BabbleType", "initStatic", "(ILjava/lang/Object;)Ljava/lang/Object;", false);
             default -> mv.visitMethodInsn(INVOKESTATIC, CLASSES, "setDefault", "(L" + NAMESPACE + ";ILjava/lang/Object;)Ljava/lang/Object;", false);
         }
@@ -1923,7 +1912,7 @@ final class HirEmitter {
         Label number = new Label();
         Label end = new Label();
         mv.visitVarInsn(ALOAD, operand);
-        mv.visitTypeInsn(INSTANCEOF, RUNTIME + "BabbleInstance");
+        mv.visitMethodInsn(INVOKESTATIC, BABBLE_OBJECTS, "isInstance", "(Ljava/lang/Object;)Z", false);
         mv.visitJumpInsn(IFEQ, number);
         emitOperatorCall(u.meta().line(), u.operandText(), Operators.NEGATE, null, operand, -1);
         mv.visitJumpInsn(GOTO, end);
@@ -2052,7 +2041,7 @@ final class HirEmitter {
         Label numbers = new Label();
         Label end = new Label();
         mv.visitVarInsn(ALOAD, left);
-        mv.visitTypeInsn(INSTANCEOF, RUNTIME + "BabbleInstance");
+        mv.visitMethodInsn(INVOKESTATIC, BABBLE_OBJECTS, "isInstance", "(Ljava/lang/Object;)Z", false);
         mv.visitJumpInsn(IFEQ, numbers);
         emitOperatorCall(lineNumber, leftText, Operators.method(operator), rightText, left, right);
         mv.visitJumpInsn(GOTO, end);
@@ -2252,6 +2241,26 @@ final class HirEmitter {
             return;
         }
         emitBoxed(a.left());
+        if (a.target() != null) {
+            String targetJvm = a.target().kind() == ClassShape.Kind.INTERFACE
+                    ? allInterfaceJvmNames.get(a.target().typeId())
+                    : allClassJvmNames.get(a.target().typeId());
+            if (targetJvm != null) {
+                Label slow = new Label();
+                Label done = new Label();
+                mv.visitInsn(DUP);
+                mv.visitTypeInsn(INSTANCEOF, targetJvm);
+                mv.visitJumpInsn(IFEQ, slow);
+                mv.visitTypeInsn(CHECKCAST, targetJvm);
+                mv.visitJumpInsn(GOTO, done);
+                mv.visitLabel(slow);
+                line(a.meta().line());
+                checkType(a.targetDescriptor());
+                mv.visitLabel(done);
+                stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+                return;
+            }
+        }
         line(a.meta().line());
         checkType(a.targetDescriptor());
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
@@ -2821,7 +2830,7 @@ final class HirEmitter {
             if (directJvm != null && sig != null && args.size() == sig.parameterKinds().length) {
                 String desc = bridgeDescriptor(sig);
                 if (interfaceHasMethod(info.directBabbleTypeId(), info.memberName(), desc)) {
-                    if (!info.ownerIsInterface() && methodClass != null && !methodClass.arrayBacked
+                    if (!info.ownerIsInterface() && methodClass != null
                             && methodClass.shape.id().equals(info.ownerTypeId())) {
                         mv.visitVarInsn(ALOAD, 0);
                         mv.visitVarInsn(ALOAD, rtLocal);
@@ -3318,7 +3327,7 @@ final class HirEmitter {
             line(expr.meta().line());
             mv.visitMethodInsn(INVOKESTATIC, BABBLE_CLASS, "object",
                     "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";[Ljava/lang/Object;L" + CLASS_BODY + ";[Ljava/lang/Object;"
-                            + (gen != null ? "L" + INSTANCE_FACTORY + ";" : "") + "L" + SCRIPT_RUNTIME + ";)L" + BABBLE_INSTANCE + ";", false);
+                            + (gen != null ? "L" + INSTANCE_FACTORY + ";" : "") + "L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
         } else {
             if (gen != null) {
                 emitInstanceFactory(gen);
@@ -3347,7 +3356,7 @@ final class HirEmitter {
     }
 
     private void emitInstanceFactory(ClassGen gen) {
-        String descriptor = "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)L" + BABBLE_INSTANCE + ";";
+        String descriptor = "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;";
         mv.visitInvokeDynamicInsn("create", "()L" + INSTANCE_FACTORY + ";", METAFACTORY,
                 Type.getMethodType(descriptor),
                 new Handle(H_NEWINVOKESPECIAL, gen.name, "<init>", "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)V", false),
@@ -4232,7 +4241,7 @@ final class HirEmitter {
         m.visitVarInsn(ALOAD, 0);
         m.visitLdcInsn(memberName);
         m.visitInsn(ICONST_0);
-        m.visitMethodInsn(INVOKEVIRTUAL, BABBLE_INSTANCE, "getMember", "(Ljava/lang/String;Z)Ljava/lang/Object;", false);
+        m.visitMethodInsn(INVOKESTATIC, BABBLE_OBJECTS, "getMember", "(Ljava/lang/Object;Ljava/lang/String;Z)Ljava/lang/Object;", false);
         m.visitFieldInsn(GETSTATIC, className, siteField, "L" + CALL_SITE + ";");
         m.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
         m.visitVarInsn(ALOAD, 1);

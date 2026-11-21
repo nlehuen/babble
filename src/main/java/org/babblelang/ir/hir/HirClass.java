@@ -17,7 +17,6 @@ public record HirClass(
         boolean isObject,
         ClassShape shape,
         String jvmName,
-        boolean arrayBacked,
         List<String> implementedJvmInterfaces,
         List<Class<?>> javaInterfaces,
         List<HirVar> declaredVars,
@@ -45,7 +44,7 @@ public record HirClass(
         body = List.copyOf(body);
     }
 
-    /** Whether this class/object emits a dedicated JVM subclass of {@code BabbleInstance}. */
+    /** Whether this class/object emits a dedicated plain JVM class. */
     public boolean hasCompiledClass() {
         return jvmName != null;
     }
@@ -55,7 +54,7 @@ public record HirClass(
     }
 
     public HirClass withBodyAndStatic(List<HirParam> newParams, List<HirExpr> newBody, HirStaticBlock newStatic) {
-        return new HirClass(id, isObject, shape, jvmName, arrayBacked, implementedJvmInterfaces, javaInterfaces,
+        return new HirClass(id, isObject, shape, jvmName, implementedJvmInterfaces, javaInterfaces,
                 declaredVars, capturedVars, newParams, memberKinds, primDefBits, primDefCount, methodFunctionIds,
                 implementedTypes, newBody, newStatic, line);
     }

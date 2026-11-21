@@ -43,8 +43,8 @@ final class Faces {
     private Faces() {
     }
 
-    static Object create(BabbleInstance instance) {
-        Class<?>[] interfaces = instance.babbleClass().javaInterfaces();
+    static Object create(Object instance) {
+        Class<?>[] interfaces = BabbleObjects.babbleClass(instance).javaInterfaces();
         return Proxy.newProxyInstance(loader(interfaces), interfaces, new FaceHandler(instance));
     }
 
@@ -296,13 +296,13 @@ final class Faces {
     }
 
     static final class FaceHandler implements InvocationHandler {
-        private final BabbleInstance instance;
+        private final Object instance;
 
-        FaceHandler(BabbleInstance instance) {
+        FaceHandler(Object instance) {
             this.instance = instance;
         }
 
-        BabbleInstance instance() {
+        Object instance() {
             return instance;
         }
 
@@ -317,12 +317,13 @@ final class Faces {
             if (isObjectMethod(method, "toString", 0)) {
                 return instance.toString();
             }
-            BabbleFunction function = instance.method(method.getName());
+            BabbleFunction function = BabbleObjects.method(instance, method.getName());
             if (function != null) {
                 Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), method.getParameterTypes());
-                Object result = function.invoke(instance, instance.runtime(), babble, null, site(method.getName(), babble.length));
+                ScriptRuntime rt = BabbleObjects.runtime(instance);
+                Object result = function.invoke(instance, rt, babble, null, site(method.getName(), babble.length));
                 return JavaTypes.convertResult(result, method.getReturnType(),
-                        instance.babbleClass().name() + "." + method.getName(), instance.runtime());
+                        BabbleObjects.babbleClass(instance).name() + "." + method.getName(), rt);
             }
             return invokeDefault(proxy, method, args);
         }

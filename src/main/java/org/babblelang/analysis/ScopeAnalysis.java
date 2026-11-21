@@ -165,6 +165,7 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<BabbleParser.TypeContext> superTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<SuperTargetInfo> superTargetInfos = new ParseTreeProperty<>();
     private final ParseTreeProperty<IsTarget> isTargets = new ParseTreeProperty<>();
+    private final ParseTreeProperty<IsTarget> asTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<InterfaceCallTarget> interfaceCallTargets = new ParseTreeProperty<>();
     private final List<Warning> warnings = new ArrayList<>();
     private final List<Warning> typeDiagnostics = new ArrayList<>();
@@ -307,6 +308,10 @@ public final class ScopeAnalysis {
 
     void setIsTarget(BabbleParser.IsExpressionContext ctx, IsTarget target) {
         isTargets.put(ctx, target);
+    }
+
+    void setAsTarget(BabbleParser.AsExpressionContext ctx, IsTarget target) {
+        asTargets.put(ctx, target);
     }
 
     void setInterfaceCallTarget(BabbleParser.CallContext ctx, InterfaceCallTarget target) {
@@ -603,6 +608,10 @@ public final class ScopeAnalysis {
 
     public IsTarget isTarget(BabbleParser.IsExpressionContext ctx) {
         return isTargets.get(ctx);
+    }
+
+    public IsTarget asTarget(BabbleParser.AsExpressionContext ctx) {
+        return asTargets.get(ctx);
     }
 
     public InterfaceCallTarget interfaceCallTarget(BabbleParser.CallContext ctx) {

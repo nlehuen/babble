@@ -2,7 +2,7 @@ package org.babblelang.compiler;
 
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
-import org.babblelang.runtime.BabbleInstance;
+import org.babblelang.runtime.BabbleObjects;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
@@ -54,12 +54,12 @@ public class Rm003P3JavaImplementsTestCase {
                 """);
         assertVerifies(script);
 
-        Object result = script.eval(new SimpleBindings());
-        Assertions.assertInstanceOf(BabbleInstance.class, result);
-        BabbleInstance inst = (BabbleInstance) result;
+        Object inst = script.eval(new SimpleBindings());
+        Assertions.assertTrue(BabbleObjects.isCompiledInstance(inst));
+        Assertions.assertSame(Object.class, inst.getClass().getSuperclass());
 
-        // Zero Proxy allocation: face() returns the compiled BabbleInstance itself.
-        Assertions.assertSame(inst, inst.face());
+        // Zero Proxy allocation: face() returns the compiled instance itself.
+        Assertions.assertSame(inst, BabbleObjects.face(inst));
         Assertions.assertFalse(Proxy.isProxyClass(inst.getClass()));
         Assertions.assertInstanceOf(Comparable.class, inst);
         Assertions.assertInstanceOf(IntUnaryOperator.class, inst);

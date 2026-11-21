@@ -23,6 +23,9 @@ public final class Members {
         if (target instanceof HasMembers members) {
             return members.getMember(name, false);
         }
+        if (BabbleObjects.isCompiledInstance(target)) {
+            return BabbleObjects.getMember(target, name, false);
+        }
         if (target instanceof Scope<?> scope) {
             return scope.get(name).get();
         }
@@ -51,6 +54,9 @@ public final class Members {
         if (thiz instanceof HasMembers members) {
             return members.getMember(name, true);
         }
+        if (BabbleObjects.isCompiledInstance(thiz)) {
+            return BabbleObjects.getMember(thiz, name, true);
+        }
         return select(thiz, name, "this");
     }
 
@@ -59,7 +65,8 @@ public final class Members {
      * evaluated, as the target comes first in the source.
      */
     public static Object assignable(Object target, String targetText) {
-        if (!(target instanceof HasMembers) && !(target instanceof Scope<?>) && !isJavaObject(target)) {
+        if (!(target instanceof HasMembers) && !BabbleObjects.isCompiledInstance(target)
+                && !(target instanceof Scope<?>) && !isJavaObject(target)) {
             throw new BabbleException("Not an assignable scope : " + targetText);
         }
         return target;
@@ -69,6 +76,8 @@ public final class Members {
     public static Object assign(Object target, Object value, String name) {
         if (target instanceof HasMembers members) {
             members.setMember(name, value, false);
+        } else if (BabbleObjects.isCompiledInstance(target)) {
+            BabbleObjects.setMember(target, name, value, false);
         } else if (target instanceof JavaClass || target instanceof JavaValue || isJavaObject(target)) {
             // A Java field : a class's static one, or an object's.
             JavaObject.assign(target, name, value);
@@ -82,6 +91,10 @@ public final class Members {
     public static Object assignOwn(Object thiz, Object value, String name) {
         if (thiz instanceof HasMembers members) {
             members.setMember(name, value, true);
+            return value;
+        }
+        if (BabbleObjects.isCompiledInstance(thiz)) {
+            BabbleObjects.setMember(thiz, name, value, true);
             return value;
         }
         return assign(assignable(thiz, "this"), value, name);
