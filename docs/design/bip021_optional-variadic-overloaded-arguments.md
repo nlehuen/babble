@@ -397,12 +397,14 @@ total(...scores)                   ;; scores: list of int : passed as is
 total(...java.util.Set.of(1, 2))   ;; a set : copied into a list, instead of total(list(from: …))
 log("%s : %s", ...pair, level: Level.WARN)
 join(...first, "middle", ...second)          ;; several spreads and plain arguments mix in a rest
+def maxOf = fn (xs: int...): int -> ( … )
+maxOf(...firstList, ...secondList, 5, -12)   ;; any number of spreads and plain arguments, in any order
 java.lang.String.format("%s-%s", ...parts)   ;; into a Java varargs array
 ```
 
 So **nothing is copied when caller and callee follow the same convention**, and the conversions callers would otherwise write by hand (`list(from: …)`, `toArray`, wrapping an array) disappear when they do not. A copy is a fresh value (`unique`), so passing it costs no effect ; passing as is or viewed only reads `e` (`@BORROWED`).
 
-* A spread fills exactly **one** parameter : the rest when the spread stands at or after the rest's position, the parameter at its position or of its name otherwise. Spreading the elements of one iterable over several fixed parameters (`f(...pair)` for `f(a, b)`) stays refused (`BIP021-Q4`) : its arity is unknowable statically. Only a rest takes several spreads and plain arguments together.
+* A spread fills exactly **one** parameter : the rest when the spread stands at or after the rest's position, the parameter at its position or of its name otherwise. Spreading the elements of one iterable over several fixed parameters (`f(...pair)` for `f(a, b)`) stays refused (`BIP021-Q4`) : its arity is unknowable statically. Only a rest takes several spreads and plain arguments together, in any order and any number. This is why `maxOf` above takes `xs: int...` rather than `fn (first: int, rest: int...)` : with that signature, the first spread would land on `first`, an `int`, and the call is refused ; the function then checks for an empty `xs` itself.
 * A spread into a parameter that takes no sequence is `Spread into a parameter that takes no sequence : x`. A bare `java.util.Iterator` is not spread : it cannot be iterated twice.
 * Other collection types are not conversion targets (a `set of T` parameter takes a set, `...` or not) : a spread whose source fits by subtyping is passed as is, whatever the parameter's type, and converts only to the three shapes above.
 * Overload resolution (`BIP021-D11`) treats a spread argument as fitting every alternative whose parameter at its position takes a sequence of a supertype of `U` ; an alternative that takes `e` as is beats one that needs a view, which beats one that needs a copy. Two alternatives needing the same kind of adaptation are ambiguous at the call (`Ambiguous call to f for (...set of int) : candidates are (xs : list of int), (xs : JavaArray of int)`) — like an untyped lambda, a spread is an argument whose type depends on the alternative, which `BIP021-D10` cannot see.
