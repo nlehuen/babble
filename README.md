@@ -750,6 +750,7 @@ Language features :
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module or an object, instead of one `def` per name.
 - [ ] `yield` keyword : transform functions/method into iterators.
+- [ ] array types (`array of T` over plain JVM arrays, `(array of int)(100)`, `(array of int).of(1, 2, 3)`, `from:`, `size()`/`get`/`set`, equality and printing by contents) and compiled classes without a runtime base class (see [BIP020](docs/design/bip020_array-types.md)).
 - [ ] variadic parameters (`xs: T...`, a generic `Iterable of T`), spread arguments, Java varargs calls, generic function literals, bounded type parameters (`of (T: B)`) and polymorphic function types, and overload sets (`overload (f, g)`) resolved statically to the most specific signature (see [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
 - [ ] the rest of intersection types : Java type variables with several bounds, marker interfaces on function conversions (`Runnable & Serializable`), static dispatch on intersection receivers, and the meets of overload sets (`BIP022-P2`, see [BIP022](docs/design/bip022_intersection-types.md)).
 - [ ] functional-style programming : `map` (standard library).
