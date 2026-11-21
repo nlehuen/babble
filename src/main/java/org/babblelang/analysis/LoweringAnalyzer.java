@@ -254,15 +254,51 @@ final class LoweringAnalyzer {
         if (constructor != null && !safe) {
             deriveJavaConstructor(constructor, arguments, call);
         }
-        if (safe || pass.modules.containsKey(call) || !(types.get(call.expression()) instanceof Type.Function function)) {
+        if (pass.modules.containsKey(call)) {
+            return;
+        }
+        Type rawCallee = types.get(call.expression());
+        Type callee = safe && rawCallee != null ? Type.withoutNull(rawCallee) : rawCallee;
+        ScopeAnalysis.ArgumentBinding binding = deriveArgumentBinding(callee, arguments);
+        if (binding != null) {
+            pass.analysis.setArgumentBinding(call, binding);
+        }
+        if (safe || !(callee instanceof Type.Function function)) {
             return;
         }
         if (function.typeParameters().isEmpty()) {
-            deriveBabbleCall(function, arguments, call);
-            deriveInterfaceCall(arguments, call);
+            deriveBabbleCall(function, arguments, binding, call);
+            deriveInterfaceCall(arguments, binding, call);
         } else if (types.get(call) != Type.ERROR) {
-            deriveInterfaceCall(arguments, call);
+            deriveInterfaceCall(arguments, binding, call);
         }
+    }
+
+    private ScopeAnalysis.ArgumentBinding deriveArgumentBinding(Type callee,
+                                                                List<BabbleParser.CallParameterContext> arguments) {
+        if (callee instanceof Type.Function fn) {
+            return CallSolver.computeArgumentBinding(fn.parameters(), arguments);
+        }
+        if (callee instanceof Type.ClassValue cv && !cv.node().isInterface()) {
+            List<Type.Parameter> params = checker.constructorParameters(cv.node());
+            return params != null ? CallSolver.computeArgumentBinding(params, arguments) : null;
+        }
+        if (callee instanceof Type.Union union) {
+            ScopeAnalysis.ArgumentBinding agreed = null;
+            for (Type member : union.members()) {
+                ScopeAnalysis.ArgumentBinding b = deriveArgumentBinding(member, arguments);
+                if (b == null) {
+                    return null;
+                }
+                if (agreed == null) {
+                    agreed = b;
+                } else if (!java.util.Arrays.equals(agreed.paramToArg(), b.paramToArg())) {
+                    return null;
+                }
+            }
+            return agreed;
+        }
+        return null;
     }
 
     private boolean deriveArrayCreation(List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext call) {
@@ -422,26 +458,32 @@ final class LoweringAnalyzer {
         pass.analysis.setJavaCallTarget(call, new ScopeAnalysis.JavaCallTarget(accessible, isStatic, unwrapReceiver));
     }
 
-    /** A call of a known Babble function : its literal, for a direct call, and its primitive signature ({@code RM001}). */
+    /** A call of a known Babble function : its literal, for a direct call, and its primitive signature ({@code RM001}, {@code BIP021-D3/D4}). */
     private void deriveBabbleCall(Type.Function function, List<BabbleParser.CallParameterContext> arguments,
-                                  BabbleParser.CallContext ctx) {
-        if (arguments.size() != function.parameters().size()) {
+                                  ScopeAnalysis.ArgumentBinding binding, BabbleParser.CallContext ctx) {
+        if (binding == null) {
             return;
         }
-        for (BabbleParser.CallParameterContext arg : arguments) {
-            if (ScopeAnalysis.callParamName(arg) != null) {
-                return;
-            }
-        }
-        ScopeAnalysis.PrimitiveKind[] paramKinds = new ScopeAnalysis.PrimitiveKind[arguments.size()];
+        List<Type.Parameter> params = function.parameters();
+        int paramCount = params.size();
+        ScopeAnalysis.PrimitiveKind[] paramKinds = new ScopeAnalysis.PrimitiveKind[paramCount];
         boolean hasPrimitive = false;
         int slots = 0;
-        for (int i = 0; i < arguments.size(); i++) {
-            ScopeAnalysis.PrimitiveKind kind = ScopeAnalysis.PrimitiveKind.of(function.parameters().get(i).type());
+        int optionalParamBits = 0;
+        int optionalCount = 0;
+        for (int i = 0; i < paramCount; i++) {
+            Type.Parameter p = params.get(i);
+            ScopeAnalysis.PrimitiveKind kind = ScopeAnalysis.PrimitiveKind.of(p.type());
             paramKinds[i] = kind;
             slots += kind.slots();
             if (kind.isPrimitive()) {
                 hasPrimitive = true;
+            }
+            if (p.optional()) {
+                optionalCount++;
+                if (i < 32) {
+                    optionalParamBits |= (1 << i);
+                }
             }
         }
         ScopeAnalysis.PrimitiveKind returnKind = ScopeAnalysis.PrimitiveKind.of(function.result());
@@ -465,15 +507,19 @@ final class LoweringAnalyzer {
                     }
                 }
             }
-            if (hasPrimitive) {
-                pass.analysis.setBabbleCallSignature(ctx, new ScopeAnalysis.FunctionSignature(paramKinds, returnKind));
+            boolean canUseTypedIndy = hasPrimitive
+                    && optionalCount <= 32
+                    && (!binding.hasOmitted() || paramCount <= 32);
+            if (canUseTypedIndy) {
+                pass.analysis.setBabbleCallSignature(ctx, new ScopeAnalysis.FunctionSignature(paramKinds, returnKind, optionalParamBits));
             }
         }
     }
 
-    /** A call of a member of a Babble interface : its {@code INVOKEINTERFACE} target ({@code RM003}). */
-    private void deriveInterfaceCall(List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext ctx) {
-        if (!checker.inFile(ctx) || !(ctx.expression() instanceof BabbleParser.SelectorContext sel)) {
+    /** A call of a member of a Babble interface : its {@code INVOKEINTERFACE} target ({@code RM003}, {@code BIP021-D3/D4}). */
+    private void deriveInterfaceCall(List<BabbleParser.CallParameterContext> arguments,
+                                     ScopeAnalysis.ArgumentBinding binding, BabbleParser.CallContext ctx) {
+        if (binding == null || !checker.inFile(ctx) || !(ctx.expression() instanceof BabbleParser.SelectorContext sel)) {
             return;
         }
         if (sel.safe != null || sel.expression() == null || sel.expression() instanceof BabbleParser.SuperExpressionContext) {
@@ -481,11 +527,6 @@ final class LoweringAnalyzer {
         }
         if (!(types.get(sel.expression()) instanceof Type.Instance recvInst) || !recvInst.node().isInterface()) {
             return;
-        }
-        for (BabbleParser.CallParameterContext arg : arguments) {
-            if (ScopeAnalysis.callParamName(arg) != null) {
-                return;
-            }
         }
         FoundInterfaceMember found = findDeclaringInterfaceMember(recvInst.node(), ScopeAnalysis.selectorName(sel));
         if (found == null) {
@@ -495,7 +536,7 @@ final class LoweringAnalyzer {
         if (!(mt instanceof Type.Function uninstFn)) {
             return;
         }
-        if (arguments.size() != uninstFn.parameters().size()) {
+        if (binding.paramCount() != uninstFn.parameters().size()) {
             return;
         }
         ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(uninstFn);
@@ -904,13 +945,24 @@ final class LoweringAnalyzer {
         }
         ScopeAnalysis.PrimitiveKind[] paramKinds = new ScopeAnalysis.PrimitiveKind[params.size()];
         int slots = 2;
+        int optionalParamBits = 0;
         for (int i = 0; i < params.size(); i++) {
-            Type pt = params.get(i).type();
+            Type.Parameter p = params.get(i);
+            Type pt = p.type();
             ScopeAnalysis.PrimitiveKind pk = pt instanceof Type.TypeVar
                     ? ScopeAnalysis.PrimitiveKind.NONE
                     : ScopeAnalysis.PrimitiveKind.of(pt);
             paramKinds[i] = pk;
             slots += pk.slots();
+            if (p.optional()) {
+                if (i >= 32) {
+                    return null;
+                }
+                optionalParamBits |= (1 << i);
+            }
+        }
+        if (optionalParamBits != 0) {
+            slots += 1;
         }
         if (slots > 200) {
             return null;
@@ -919,6 +971,6 @@ final class LoweringAnalyzer {
         ScopeAnalysis.PrimitiveKind rk = rt instanceof Type.TypeVar
                 ? ScopeAnalysis.PrimitiveKind.NONE
                 : ScopeAnalysis.PrimitiveKind.of(rt);
-        return new ScopeAnalysis.FunctionSignature(paramKinds, rk);
+        return new ScopeAnalysis.FunctionSignature(paramKinds, rk, optionalParamBits);
     }
 }

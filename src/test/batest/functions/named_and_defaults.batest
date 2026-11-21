@@ -34,18 +34,18 @@ print(f(1, z: 2))
 No such parameter : z
 
 {{{{{
-;; Positional slot left unconsumed when parameter is overridden by name
+;; Parameter given both positionally and by name (BIP021-D23)
 def f = fn (a : int, b : int = 1, c : int = 2) : int -> ( a + b + c )
 print(f(1, a: 2))
 }}}}}
-Too many parameters : 3 declared, 2 given
+Parameter given twice : a
 
 {{{{{
-;; Repeating the same parameter name: last value wins
+;; Repeating the same parameter name is an error (BIP021-D23)
 def f = fn (a : int, b : int = 10) : int -> ( a + b )
 print(f(a: 1, a: 5))
 }}}}}
-15
+Parameter given twice : a
 
 {{{{{
 ;; Missing required argument when other argument passed by name

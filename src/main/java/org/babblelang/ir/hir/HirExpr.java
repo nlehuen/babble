@@ -399,6 +399,7 @@ public sealed interface HirExpr permits
             ScopeAnalysis.SuperTargetInfo targetInfo,
             HirTypeRef superTypeRef,
             List<HirCallArg> args,
+            ScopeAnalysis.ArgumentBinding binding,
             CallSite callSite,
             ExprMeta meta
     ) implements HirExpr {
@@ -410,6 +411,7 @@ public sealed interface HirExpr permits
     record SelfRecurseCall(
             int functionId,
             List<HirExpr> args,
+            ScopeAnalysis.ArgumentBinding binding,
             ExprMeta meta
     ) implements HirExpr {
         public SelfRecurseCall {
@@ -421,6 +423,7 @@ public sealed interface HirExpr permits
             HirExpr callee,
             int targetFunctionId,
             List<HirExpr> args,
+            ScopeAnalysis.ArgumentBinding binding,
             ExprMeta meta
     ) implements HirExpr {
         public DirectBabbleCall {
@@ -434,6 +437,7 @@ public sealed interface HirExpr permits
             String memberName,
             int targetFunctionId,
             List<HirCallArg> args,
+            ScopeAnalysis.ArgumentBinding binding,
             CallSite callSite,
             ExprMeta meta
     ) implements HirExpr {
@@ -450,6 +454,7 @@ public sealed interface HirExpr permits
             String memberName,
             ScopeAnalysis.FunctionSignature signature,
             List<HirExpr> args,
+            ScopeAnalysis.ArgumentBinding binding,
             ExprMeta meta
     ) implements HirExpr {
         public InterfaceCall {
@@ -491,6 +496,7 @@ public sealed interface HirExpr permits
             int selectorLine,
             String selectorCheckedType,
             List<HirCallArg> args,
+            ScopeAnalysis.ArgumentBinding binding,
             ScopeAnalysis.FunctionSignature babbleSig,
             CallSite callSite,
             ExprMeta meta
@@ -503,6 +509,7 @@ public sealed interface HirExpr permits
     record DynamicCall(
             HirExpr callee,
             List<HirCallArg> args,
+            ScopeAnalysis.ArgumentBinding binding,
             ScopeAnalysis.FunctionSignature babbleSig,
             CallSite callSite,
             ExprMeta meta

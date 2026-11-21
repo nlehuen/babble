@@ -113,20 +113,23 @@ block: '(' sep? ')'
      | '(' sep? (effectDeclaration | expression)
        (sep (effectDeclaration | expression))* sep? ')';
 
-classParameters: '(' NL* classParam (NL* ',' NL* classParam)* NL* ')'
+classParameters: '(' NL* classParam (NL* ',' NL* classParam)* (NL* ',' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=classParam)*)? NL* ')'
+               | '(' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=classParam)* NL* ')'
                | '(' NL* ')';
 
 classParam: PRIVATE? DEF? paramModifier* ID (':' type)? ('=' NL* defaultValue=expression)?;
 
-fnParameters: '(' NL* fnParam (NL* ',' NL* fnParam)* NL* ')'
+fnParameters: '(' NL* fnParam (NL* ',' NL* fnParam)* (NL* ',' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnParam)*)? NL* ')'
+            | '(' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnParam)* NL* ')'
             | '(' NL* ')';
 
 fnParam: paramModifier* ID (':' type)? ('=' NL* defaultValue=expression)?;
 
-fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* NL* ')'
+fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* (NL* ',' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnTypeParam)*)? NL* ')'
+                | '(' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnTypeParam)* NL* ')'
                 | '(' NL* ')';
 
-fnTypeParam: paramModifier* (ID ':')? type ('=' NL* ELLIPSIS)?;
+fnTypeParam: paramModifier* (ID ':')? type ('=' NL* optional=ELLIPSIS)?;
 
 paramModifier: MUT | SHARED | UNIQUE;
 

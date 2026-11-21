@@ -171,29 +171,29 @@ public final class HirRewriter {
             case HirExpr.SuperCall c -> {
                 List<HirCallArg> na = rewriteCallArgs(c.args(), transform);
                 yield na == c.args() ? c
-                        : new HirExpr.SuperCall(c.thisVar(), c.ownerClassId(), c.memberName(), c.targetInfo(), c.superTypeRef(), na, c.callSite(), c.meta());
+                        : new HirExpr.SuperCall(c.thisVar(), c.ownerClassId(), c.memberName(), c.targetInfo(), c.superTypeRef(), na, c.binding(), c.callSite(), c.meta());
             }
             case HirExpr.SelfRecurseCall c -> {
                 List<HirExpr> na = rewriteList(c.args(), transform);
-                yield na == c.args() ? c : new HirExpr.SelfRecurseCall(c.functionId(), na, c.meta());
+                yield na == c.args() ? c : new HirExpr.SelfRecurseCall(c.functionId(), na, c.binding(), c.meta());
             }
             case HirExpr.DirectBabbleCall c -> {
                 HirExpr nc = transform.apply(c.callee());
                 List<HirExpr> na = rewriteList(c.args(), transform);
                 yield (nc == c.callee() && na == c.args()) ? c
-                        : new HirExpr.DirectBabbleCall(nc, c.targetFunctionId(), na, c.meta());
+                        : new HirExpr.DirectBabbleCall(nc, c.targetFunctionId(), na, c.binding(), c.meta());
             }
             case HirExpr.DirectThisMethodCall c -> {
                 HirExpr nr = transform.apply(c.receiver());
                 List<HirCallArg> na = rewriteCallArgs(c.args(), transform);
                 yield (nr == c.receiver() && na == c.args()) ? c
-                        : new HirExpr.DirectThisMethodCall(nr, c.classId(), c.memberName(), c.targetFunctionId(), na, c.callSite(), c.meta());
+                        : new HirExpr.DirectThisMethodCall(nr, c.classId(), c.memberName(), c.targetFunctionId(), na, c.binding(), c.callSite(), c.meta());
             }
             case HirExpr.InterfaceCall c -> {
                 HirExpr nr = transform.apply(c.receiver());
                 List<HirExpr> na = rewriteList(c.args(), transform);
                 yield (nr == c.receiver() && na == c.args()) ? c
-                        : new HirExpr.InterfaceCall(nr, c.receiverText(), c.selectorLine(), c.interfaceTypeId(), c.memberName(), c.signature(), na, c.meta());
+                        : new HirExpr.InterfaceCall(nr, c.receiverText(), c.selectorLine(), c.interfaceTypeId(), c.memberName(), c.signature(), na, c.binding(), c.meta());
             }
             case HirExpr.JavaConstructorCall c -> {
                 HirExpr nc = transform.apply(c.callee());
@@ -211,13 +211,13 @@ public final class HirRewriter {
                 HirExpr nr = transform.apply(c.receiver());
                 List<HirCallArg> na = rewriteCallArgs(c.args(), transform);
                 yield (nr == c.receiver() && na == c.args()) ? c
-                        : new HirExpr.SafeCall(nr, c.receiverText(), c.memberName(), c.selectorLine(), c.selectorCheckedType(), na, c.babbleSig(), c.callSite(), c.meta());
+                        : new HirExpr.SafeCall(nr, c.receiverText(), c.memberName(), c.selectorLine(), c.selectorCheckedType(), na, c.binding(), c.babbleSig(), c.callSite(), c.meta());
             }
             case HirExpr.DynamicCall c -> {
                 HirExpr nc = transform.apply(c.callee());
                 List<HirCallArg> na = rewriteCallArgs(c.args(), transform);
                 yield (nc == c.callee() && na == c.args()) ? c
-                        : new HirExpr.DynamicCall(nc, na, c.babbleSig(), c.callSite(), c.meta());
+                        : new HirExpr.DynamicCall(nc, na, c.binding(), c.babbleSig(), c.callSite(), c.meta());
             }
         };
     }

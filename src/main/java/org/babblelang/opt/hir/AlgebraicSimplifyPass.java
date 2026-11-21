@@ -193,7 +193,8 @@ public final class AlgebraicSimplifyPass implements HirPass {
     }
 
     private static HirExpr simplifyIdempotentBabble(HirExpr.DirectBabbleCall outer, HirModule module) {
-        if (outer.args().size() != 1 || outer.meta().checkedType() != null || outer.meta().wideningRank() >= 0) {
+        if (outer.args().size() != 1 || outer.meta().checkedType() != null || outer.meta().wideningRank() >= 0
+                || (outer.binding() != null && !outer.binding().isIdentityPositional())) {
             return null;
         }
         if (!HirPurity.isIdempotentCall(outer, module)) {
@@ -209,6 +210,7 @@ public final class AlgebraicSimplifyPass implements HirPass {
         if (arg instanceof HirExpr.DirectBabbleCall inner
                 && inner.targetFunctionId() == outer.targetFunctionId()
                 && inner.args().size() == 1
+                && (inner.binding() == null || inner.binding().isIdentityPositional())
                 && inner.meta().wideningRank() < 0
                 && inner.meta().checkedType() == null) {
             return inner;

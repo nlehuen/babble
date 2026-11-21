@@ -540,7 +540,16 @@ final class TypeAlgebra {
             Type.Parameter fp = from.parameters().get(i);
             boolean borrowReadOnly = frozenBorrowSafe && fp.borrow() && !fp.mut();
             if (i < to.parameters().size()) {
-                Type toParamType = to.parameters().get(i).type();
+                Type.Parameter tp = to.parameters().get(i);
+                // BIP021-D3 : a required parameter cannot satisfy an optional one,
+                // and a keyword-only parameter cannot satisfy a positional one.
+                if (tp.optional() && !fp.optional()) {
+                    return false;
+                }
+                if (!tp.keywordOnly() && fp.keywordOnly()) {
+                    return false;
+                }
+                Type toParamType = tp.type();
                 Type fromParamType = fp.type();
                 if (withEffects) {
                     if (to.forwardedEffectParams().contains(i) && toParamType instanceof Type.Function tf) {
@@ -899,7 +908,8 @@ final class TypeAlgebra {
         for (int i = 0; i < fa.parameters().size(); i++) {
             Type.Parameter pa = fa.parameters().get(i);
             Type.Parameter pb = fb.parameters().get(i);
-            if (!pa.name().equals(pb.name()) || !pa.type().equals(pb.type()) || pa.optional() != pb.optional()) {
+            if (!pa.name().equals(pb.name()) || !pa.type().equals(pb.type())
+                    || pa.optional() != pb.optional() || pa.keywordOnly() != pb.keywordOnly()) {
                 return false;
             }
         }
@@ -919,7 +929,8 @@ final class TypeAlgebra {
             Type.Parameter b = second.parameters().get(i);
             boolean mut = a.mut() || b.mut();
             anyMutParam |= mut;
-            params.add(new Type.Parameter(a.name(), a.type(), a.optional(), mut,
+            params.add(new Type.Parameter(a.name(), a.type(), a.optional() && b.optional(),
+                    a.keywordOnly() || b.keywordOnly(), mut,
                     a.borrow() && b.borrow(), a.explicitShared() || b.explicitShared(),
                     a.unique() || b.unique()));
         }

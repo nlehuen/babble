@@ -1394,6 +1394,30 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testBip021P1OptionalAndNamedParameters() {
+        assertDiagnostics("def badOpt : fn (x : int, y : int = ...) : int = fn (x : int, y : int) : int -> ( x + y )\n"
+                        + "def badKw : fn (x : int, y : int) : int = fn (x : int, ..., y : int) : int -> ( x + y )\n"
+                        + "def f = fn (a : int, b : int, c : int = 0) : int -> ( a + b + c )\n"
+                        + "f(b: 2, 1)\n"
+                        + "f(1, a: 2)\n"
+                        + "f(a: 1, a: 2)\n"
+                        + "def kw = fn (a : int, ..., b : int) : int -> ( a + b )\n"
+                        + "kw(1, 2)\n"
+                        + "kw(1)\n"
+                        + "kw(1, b: 2)\n"
+                        + "def okOpt : fn (x : int, y : int = ...) : int = fn (a : int, b : int = 5) : int -> ( a + b )\n"
+                        + "okOpt(x: 1)\n"
+                        + "okOpt(y: 2, x: 1)",
+                "1:50 Type error : expected (x : int, y : int = ...) : int, got (x : int, y : int) : int",
+                "2:43 Type error : expected (x : int, y : int) : int, got (x : int, ..., y : int) : int",
+                "4:1 Named argument out of position : b",
+                "5:1 Parameter given twice : a",
+                "6:1 Parameter given twice : a",
+                "8:1 Too many parameters : 1 declared, 2 given",
+                "9:1 Missing parameter : b");
+    }
+
+    @Test
     public void testAllScriptsCompileCleanly() throws Exception {
         // Every .ba test script and example compiles cleanly with static typing.
         List<Path> all = new java.util.ArrayList<>();

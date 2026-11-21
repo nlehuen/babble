@@ -1763,7 +1763,7 @@ final class EffectChecker {
             boolean mut = i < profile.mutParams().length && profile.mutParams()[i];
             boolean borrow = i < profile.borrowParams().length && profile.borrowParams()[i];
             boolean unique = i < profile.uniqueParams().length && profile.uniqueParams()[i];
-            updated.add(new Type.Parameter(p.name(), p.type(), p.optional(), mut, borrow, !borrow && !unique, unique));
+            updated.add(new Type.Parameter(p.name(), p.type(), p.optional(), p.keywordOnly(), mut, borrow, !borrow && !unique, unique));
         }
         EffectSet fnEffects = new EffectSet(profile.effects().effects(), profile.effects().declared(),
                 false, false, false,
@@ -2469,7 +2469,7 @@ final class EffectChecker {
             Type.Parameter p = params.get(i);
             ParamMods declared = parseParamMods(decls.get(i), false);
             boolean borrow = !declared.shared() && !declared.unique();
-            result.add(new Type.Parameter(p.name(), p.type(), p.optional(), p.mut(), borrow,
+            result.add(new Type.Parameter(p.name(), p.type(), p.optional(), p.keywordOnly(), p.mut(), borrow,
                     p.explicitShared(), p.unique()));
         }
         return result;

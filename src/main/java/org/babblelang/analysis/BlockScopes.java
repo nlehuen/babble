@@ -287,19 +287,56 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 current().staticMethod = isStatic;
                 List<String> parameters = new ArrayList<>();
                 int required = 0;
-                for (BabbleParser.FnParamContext parameter : ctx.fnParameters().fnParam()) {
+                int kwStart = ScopeAnalysis.keywordOnlyStart(ctx.fnParameters());
+                boolean seenOptional = false;
+                List<BabbleParser.FnParamContext> fnParams = ctx.fnParameters().fnParam();
+                for (int i = 0; i < fnParams.size(); i++) {
+                    BabbleParser.FnParamContext parameter = fnParams.get(i);
                     declare(parameter.ID().getSymbol(), parameter, false);
                     parameters.add(parameter.ID().getText());
+                    if (parameter.type() != null) {
+                        visit(parameter.type());
+                    }
                     if (parameter.defaultValue != null) {
+                        if (i < kwStart) {
+                            seenOptional = true;
+                        }
                         inReturnTarget(ReturnTarget.DEFAULT, () -> visit(parameter.defaultValue));
                     } else {
+                        if (i < kwStart && seenOptional) {
+                            throw error("Required parameter after an optional one : " + parameter.ID().getText(), parameter.ID().getSymbol());
+                        }
                         required++;
                     }
                 }
-                analysis.setParameters(ctx, parameters.toArray(new String[0]), required);
+                if (ctx.type() != null) {
+                    visit(ctx.type());
+                }
+                analysis.setParameters(ctx, parameters.toArray(new String[0]), required, kwStart);
                 visitChildren(ctx.functionBlock);
             });
         });
+        return null;
+    }
+
+    @Override
+    public Void visitFnTypeParameters(BabbleParser.FnTypeParametersContext ctx) {
+        int kwStart = ScopeAnalysis.keywordOnlyStart(ctx);
+        boolean seenOptional = false;
+        List<BabbleParser.FnTypeParamContext> params = ctx.fnTypeParam();
+        for (int i = 0; i < params.size(); i++) {
+            BabbleParser.FnTypeParamContext parameter = params.get(i);
+            if (parameter.optional != null) {
+                if (i < kwStart) {
+                    seenOptional = true;
+                }
+            } else if (i < kwStart && seenOptional) {
+                String name = parameter.ID() != null ? parameter.ID().getText() : "p" + i;
+                Token tok = parameter.ID() != null ? parameter.ID().getSymbol() : parameter.getStart();
+                throw error("Required parameter after an optional one : " + name, tok);
+            }
+            visit(parameter.type());
+        }
         return null;
     }
 
@@ -313,7 +350,12 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             inScope(ScopeNode.Kind.CLASS_BODY, ctx, type, () -> {
                 Set<String> parameterNames = new HashSet<>();
                 if (ctx.classParameters() != null) {
-                    for (BabbleParser.ClassParamContext parameter : ctx.classParameters().classParam()) {
+                    int kwStart = ScopeAnalysis.keywordOnlyStart(ctx.classParameters());
+                    type.keywordOnlyStart = kwStart;
+                    boolean seenOptional = false;
+                    List<BabbleParser.ClassParamContext> classParams = ctx.classParameters().classParam();
+                    for (int i = 0; i < classParams.size(); i++) {
+                        BabbleParser.ClassParamContext parameter = classParams.get(i);
                         Token name = parameter.ID().getSymbol();
                         if (!parameterNames.add(name.getText())) {
                             throw error("Name already defined : " + name.getText(), name);
@@ -325,6 +367,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                         if (isValue && parameter.DEF() != null) {
                             analysis.warn("def is redundant on a value class parameter : " + name.getText(), name.getLine());
                         }
+                        if (parameter.type() != null) {
+                            visit(parameter.type());
+                        }
                         type.parameters.add(name.getText());
                         if (member) {
                             int flags = parameter.PRIVATE() != null ? ClassShape.PRIVATE : 0;
@@ -334,8 +379,14 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                             declare(name, parameter, false);
                         }
                         if (parameter.defaultValue != null) {
+                            if (i < kwStart) {
+                                seenOptional = true;
+                            }
                             visit(parameter.defaultValue);
                         } else {
+                            if (i < kwStart && seenOptional) {
+                                throw error("Required parameter after an optional one : " + name.getText(), name);
+                            }
                             type.requiredParameters++;
                         }
                     }
@@ -494,6 +545,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 declare(ctx.name, ctx, true);
             }
         }
+        if (ctx.type() != null) {
+            visit(ctx.type());
+        }
         if (ctx.value != null) {
             visit(ctx.value);
         }
@@ -515,6 +569,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitForExpression(BabbleParser.ForExpressionContext ctx) {
+        if (ctx.type() != null) {
+            visit(ctx.type());
+        }
         visit(ctx.iterable);
         inLoop(() -> inScope(ScopeNode.Kind.BLOCK, ctx.forBlock, null, () -> {
             declare(ctx.name, ctx, false);
@@ -683,6 +740,10 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     @Override
     public Void visitAsExpression(BabbleParser.AsExpressionContext ctx) {
-        return visit(ctx.left);
+        visit(ctx.left);
+        if (ctx.type() != null) {
+            visit(ctx.type());
+        }
+        return null;
     }
 }

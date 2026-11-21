@@ -420,6 +420,7 @@ final class TypeAnnotations {
 
     private List<Type.Parameter> functionTypeParameters(BabbleParser.FnTypeParametersContext declaration, ScopeNode scope) {
         List<Type.Parameter> result = new ArrayList<>();
+        int kwStart = ScopeAnalysis.keywordOnlyStart(declaration);
         int index = 0;
         for (BabbleParser.FnTypeParamContext parameter : declaration.fnTypeParam()) {
             Type type = annotation(parameter.type(), scope);
@@ -427,9 +428,10 @@ final class TypeAnnotations {
                     ? checker.effectChecker.parseParamMods(parameter, checker.checkingEffects())
                     : EffectChecker.ParamMods.NONE;
             String name = parameter.ID() != null ? parameter.ID().getText() : "p" + index;
-            boolean optional = parameter.ELLIPSIS() != null;
+            boolean optional = parameter.optional != null;
+            boolean keywordOnly = index >= kwStart;
             boolean borrow = checker.effectChecker != null && !pm.shared() && !pm.unique();
-            result.add(new Type.Parameter(name, type, optional,
+            result.add(new Type.Parameter(name, type, optional, keywordOnly,
                     pm.mut(), borrow, pm.shared(), pm.unique()));
             index++;
         }

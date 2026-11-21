@@ -37,6 +37,7 @@ public final class Bootstrap {
     private static final MethodHandle BOUND_FUNCTION;
     private static final MethodHandle RECEIVER;
     private static final MethodHandle TYPED_CALL_FALLBACK;
+    private static final MethodHandle TYPED_CALL_GENERIC_OPT;
     private static final MethodHandle SELECT_FALLBACK;
     private static final MethodHandle SELECT_GENERIC;
     private static final MethodHandle IS_CLASS;
@@ -60,6 +61,7 @@ public final class Bootstrap {
             BOUND_FUNCTION = LOOKUP.findStatic(Bootstrap.class, "boundFunction", MethodType.methodType(CompiledFunction.class, Callable.class));
             RECEIVER = LOOKUP.findStatic(Bootstrap.class, "receiver", MethodType.methodType(Object.class, Callable.class));
             TYPED_CALL_FALLBACK = LOOKUP.findStatic(Bootstrap.class, "typedCallFallback", MethodType.methodType(Object.class, TypedCallCache.class, Object[].class));
+            TYPED_CALL_GENERIC_OPT = LOOKUP.findStatic(Bootstrap.class, "typedCallGenericOpt", MethodType.methodType(Object.class, int.class, Callable.class, ScriptRuntime.class, CallSite.class, Object[].class));
             SELECT_FALLBACK = LOOKUP.findStatic(Bootstrap.class, "selectFallback", MethodType.methodType(Object.class, SelectCache.class, Object.class));
             SELECT_GENERIC = LOOKUP.findStatic(Members.class, "select", MethodType.methodType(Object.class, Object.class, String.class, String.class));
             IS_CLASS = LOOKUP.findStatic(Bootstrap.class, "isClass", MethodType.methodType(boolean.class, Class.class, Object.class));
@@ -230,23 +232,39 @@ public final class Bootstrap {
      * inline-caching the callee's {@code $spec} entry point.
      */
     public static java.lang.invoke.CallSite typedCall(MethodHandles.Lookup lookup, String name, MethodType type) {
-        return new TypedCallCache(type);
+        return new TypedCallCache(type, 0);
+    }
+
+    /**
+     * {@code typedCallOpt(Callable callee, ScriptRuntime rt, CallSite site, <args...>)<ret>}
+     * with a constant {@code missingBits} mask (bit {@code i} set when argument {@code i} was
+     * omitted and uses its default, {@code BIP021-D3}).
+     */
+    public static java.lang.invoke.CallSite typedCallOpt(MethodHandles.Lookup lookup, String name, MethodType type, int missingBits) {
+        return new TypedCallCache(type, missingBits);
     }
 
     static final class TypedCallCache extends MutableCallSite {
         private final MethodHandle generic;
+        private final int missingBits;
         private int depth;
 
-        TypedCallCache(MethodType type) {
+        TypedCallCache(MethodType type, int missingBits) {
             super(type);
+            this.missingBits = missingBits;
             int arguments = type.parameterCount() - 3;
             MethodHandle fallback = TYPED_CALL_FALLBACK.bindTo(this)
                     .asCollector(Object[].class, type.parameterCount())
                     .asType(type);
-            MethodHandle noNames = MethodHandles.insertArguments(CALL_GENERIC, 2, new Object[]{null});
-            this.generic = (arguments == 0
-                    ? MethodHandles.insertArguments(noNames, 3, (Object) Arguments.NONE)
-                    : noNames.asCollector(Object[].class, arguments)).asType(type);
+            if (missingBits == 0) {
+                MethodHandle noNames = MethodHandles.insertArguments(CALL_GENERIC, 2, new Object[]{null});
+                this.generic = (arguments == 0
+                        ? MethodHandles.insertArguments(noNames, 3, (Object) Arguments.NONE)
+                        : noNames.asCollector(Object[].class, arguments)).asType(type);
+            } else {
+                MethodHandle optGeneric = MethodHandles.insertArguments(TYPED_CALL_GENERIC_OPT, 0, missingBits);
+                this.generic = optGeneric.asCollector(Object[].class, arguments).asType(type);
+            }
             setTarget(fallback);
         }
 
@@ -265,37 +283,53 @@ public final class Bootstrap {
             int arguments = arguments();
             MethodHandle test = null;
             MethodHandle fast = null;
-            if (callee instanceof CompiledFunction f && f.spec() != null && compatibleSpec(f.spec().type(), type())) {
-                MethodHandle spec = f.spec();
-                test = IS_FUNCTION_SPEC.bindTo(spec);
-                MethodHandle h = MethodHandles.insertArguments(spec, 1, Undefined.UNBOUND);
-                fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
+            if (callee instanceof CompiledFunction f && f.spec() != null) {
+                MethodHandle adapted = adaptSpec(f.spec(), f.optionalParamBits(), type(), missingBits);
+                if (adapted != null) {
+                    test = IS_FUNCTION_SPEC.bindTo(f.spec());
+                    MethodHandle h = MethodHandles.insertArguments(adapted, 1, Undefined.UNBOUND);
+                    fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
+                }
             } else if (callee instanceof BoundMethod bound) {
-                if (bound.function() instanceof CompiledMethod m && m.spec() != null
-                        && compatibleSpec(m.spec().type(), type())) {
-                    MethodHandle spec = m.spec();
-                    test = IS_BOUND_METHOD.bindTo(m);
-                    MethodHandle h = MethodHandles.insertArguments(spec, 1, m);
-                    h = h.asType(h.type().changeParameterType(0, Object.class));
-                    h = MethodHandles.filterArguments(h, 0, RECEIVER);
-                    fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
-                } else if (bound.function() instanceof CompiledFunction f && f.spec() != null
-                        && compatibleSpec(f.spec().type(), type())) {
-                    MethodHandle spec = f.spec();
-                    test = IS_BOUND_FUNCTION_SPEC.bindTo(spec);
-                    MethodHandle h = MethodHandles.filterArguments(spec, 0, BOUND_FUNCTION, RECEIVER);
-                    int[] reorder = new int[h.type().parameterCount()];
-                    for (int i = 1; i < reorder.length; i++) {
-                        reorder[i] = i - 1;
+                if (bound.function() instanceof CompiledMethod m && m.spec() != null) {
+                    MethodHandle adapted = adaptSpec(m.spec(), m.optionalParamBits(), type(), missingBits);
+                    if (adapted != null) {
+                        test = IS_BOUND_METHOD.bindTo(m);
+                        MethodHandle h = MethodHandles.insertArguments(adapted, 1, m);
+                        h = h.asType(h.type().changeParameterType(0, Object.class));
+                        h = MethodHandles.filterArguments(h, 0, RECEIVER);
+                        fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
                     }
-                    h = MethodHandles.permuteArguments(h, h.type().dropParameterTypes(0, 1), reorder);
-                    fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
+                } else if (bound.function() instanceof CompiledFunction f && f.spec() != null) {
+                    MethodHandle adapted = adaptSpec(f.spec(), f.optionalParamBits(), type(), missingBits);
+                    if (adapted != null) {
+                        test = IS_BOUND_FUNCTION_SPEC.bindTo(f.spec());
+                        MethodHandle h = MethodHandles.filterArguments(adapted, 0, BOUND_FUNCTION, RECEIVER);
+                        int[] reorder = new int[h.type().parameterCount()];
+                        for (int i = 1; i < reorder.length; i++) {
+                            reorder[i] = i - 1;
+                        }
+                        h = MethodHandles.permuteArguments(h, h.type().dropParameterTypes(0, 1), reorder);
+                        fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
+                    }
                 }
             }
             if (test == null) {
                 test = callTest(callee, arguments);
                 if (test != null) {
-                    fast = MethodHandles.dropArguments(callTarget(callee, arguments), 2, CallSite.class).asType(type());
+                    MethodHandle target = callTarget(callee, arguments);
+                    if (missingBits != 0) {
+                        for (int i = 0; i < arguments && i < 32; i++) {
+                            if ((missingBits & (1 << i)) != 0) {
+                                target = MethodHandles.insertArguments(target, 2 + i, Arguments.MISSING);
+                                target = MethodHandles.dropArguments(target, 2 + i, type().parameterType(3 + i));
+                            }
+                        }
+                    }
+                    fast = MethodHandles.dropArguments(target, 2, CallSite.class).asType(type());
+                } else if (missingBits != 0) {
+                    test = IS_CLASS.bindTo(callee.getClass()).asType(MethodType.methodType(boolean.class, Callable.class));
+                    fast = generic;
                 } else {
                     test = IS_CLASS.bindTo(callee.getClass()).asType(MethodType.methodType(boolean.class, Callable.class));
                     MethodHandle noNames = MethodHandles.insertArguments(
@@ -309,21 +343,95 @@ public final class Bootstrap {
             setTarget(MethodHandles.guardWithTest(test, fast, getTarget()));
         }
 
-        private static boolean compatibleSpec(MethodType specType, MethodType callType) {
-            int args = callType.parameterCount() - 3;
-            if (specType.parameterCount() != 3 + args) {
-                return false;
+        private static MethodHandle adaptSpec(MethodHandle spec, int optionalParamBits, MethodType callType, int missingBits) {
+            MethodType specType = spec.type();
+            int k = callType.parameterCount() - 3;
+            boolean hasMask = optionalParamBits != 0;
+            int n = specType.parameterCount() - 3 - (hasMask ? 1 : 0);
+            if (k > n || specType.returnType() != callType.returnType()) {
+                return null;
             }
-            if (specType.returnType() != callType.returnType()) {
-                return false;
-            }
-            for (int i = 0; i < args; i++) {
-                if (specType.parameterType(3 + i) != callType.parameterType(3 + i)) {
-                    return false;
+            if (!hasMask) {
+                if (k != n || missingBits != 0) {
+                    return null;
                 }
             }
-            return true;
+            for (int i = 0; i < k; i++) {
+                boolean omitted = i < 32 && (missingBits & (1 << i)) != 0;
+                if (omitted) {
+                    if ((optionalParamBits & (1 << i)) == 0) {
+                        return null;
+                    }
+                } else if (specType.parameterType(3 + i) != callType.parameterType(3 + i)) {
+                    return null;
+                }
+            }
+            for (int i = k; i < n; i++) {
+                if (i >= 32 || (optionalParamBits & (1 << i)) == 0) {
+                    return null;
+                }
+            }
+            MethodHandle h = spec;
+            if (hasMask) {
+                int calleeMask = 0;
+                int optBit = 0;
+                for (int i = 0; i < n; i++) {
+                    if ((optionalParamBits & (1 << i)) != 0) {
+                        if (i >= k || (i < 32 && (missingBits & (1 << i)) != 0)) {
+                            calleeMask |= (1 << optBit);
+                        }
+                        optBit++;
+                    }
+                }
+                h = MethodHandles.insertArguments(h, 3 + n, calleeMask);
+            }
+            if (k < n) {
+                Object[] padValues = new Object[n - k];
+                for (int i = k; i < n; i++) {
+                    padValues[i - k] = defaultValue(specType.parameterType(3 + i));
+                }
+                h = MethodHandles.insertArguments(h, 3 + k, padValues);
+            }
+            if (missingBits != 0) {
+                for (int i = 0; i < k && i < 32; i++) {
+                    if ((missingBits & (1 << i)) != 0) {
+                        Class<?> expectedType = specType.parameterType(3 + i);
+                        Class<?> incomingType = callType.parameterType(3 + i);
+                        if (expectedType != incomingType) {
+                            h = MethodHandles.insertArguments(h, 3 + i, defaultValue(expectedType));
+                            h = MethodHandles.dropArguments(h, 3 + i, incomingType);
+                        }
+                    }
+                }
+            }
+            return h;
         }
+
+        private static Object defaultValue(Class<?> type) {
+            if (!type.isPrimitive()) {
+                return null;
+            }
+            if (type == boolean.class) return Boolean.FALSE;
+            if (type == byte.class) return (byte) 0;
+            if (type == short.class) return (short) 0;
+            if (type == char.class) return '\0';
+            if (type == int.class) return 0;
+            if (type == long.class) return 0L;
+            if (type == float.class) return 0.0f;
+            if (type == double.class) return 0.0d;
+            return null;
+        }
+    }
+
+    private static Object typedCallGenericOpt(int missingBits, Callable callee, ScriptRuntime rt, CallSite site, Object[] args) {
+        if (missingBits != 0) {
+            for (int i = 0; i < args.length && i < 32; i++) {
+                if ((missingBits & (1 << i)) != 0) {
+                    args[i] = Arguments.MISSING;
+                }
+            }
+        }
+        return callee.call(rt, args, null, site);
     }
 
     private static Object typedCallFallback(TypedCallCache cache, Object[] all) {
@@ -331,6 +439,13 @@ public final class Bootstrap {
         ScriptRuntime rt = (ScriptRuntime) all[1];
         CallSite site = (CallSite) all[2];
         Object[] args = all.length == 3 ? Arguments.NONE : Arrays.copyOfRange(all, 3, all.length);
+        if (cache.missingBits != 0) {
+            for (int i = 0; i < args.length && i < 32; i++) {
+                if ((cache.missingBits & (1 << i)) != 0) {
+                    args[i] = Arguments.MISSING;
+                }
+            }
+        }
         Object result = callee.call(rt, args, null, site);
         cache.relink(callee);
         return result;

@@ -1,0 +1,141 @@
+;; Sound optional parameters (= ...), static named argument binding, and keyword-only parameters (BIP021-P1).
+
+;; Optional parameter in function types and direct calls
+def add = fn (a: int, b: int = 10, c: int = a + b): int -> (
+    a + b + c
+)
+assert(add(1) == 22)
+assert(add(1, 2) == 6)
+assert(add(1, 2, 3) == 6)
+assert(add(c: 99, a: 2) == 111)
+assert(add(5, c: 20) == 35)
+assert(add(a: 2, 3) == 10)
+
+;; Function types with optional parameters (= ...) and subtyping
+def optFn: fn (x: int, y: int = ...): int = fn (a: int, b: int = 10): int -> (
+    a * 100 + b
+)
+assert(optFn(3) == 310)
+assert(optFn(3, 7) == 307)
+assert(optFn(y: 7, x: 3) == 307)
+assert(optFn(x: 4) == 410)
+
+;; Shorter function type satisfied by function with trailing defaults (still binds statically)
+def shortFn: fn (x: int): int = fn (y: int = 0): int -> (
+    y + 1
+)
+assert(shortFn(5) == 6)
+assert(shortFn(x: 5) == 6)
+
+;; Interface methods with optional parameters (= ...) and renamed parameters (BIP021-D2, D4)
+def Greeter = interface (
+    def greet: fn (target: string, prefix: string = ...): string
+    def withDefault = fn (a: int, b: int = 5): int -> (
+        a * 10 + b
+    )
+)
+
+def FormalGreeter = class (def suffix: string = "!") implements Greeter (
+    def greet = fn (who: string, head: string = "Hello"): string -> (
+        head + ", " + who + this.suffix
+    )
+)
+
+def g: Greeter = FormalGreeter()
+assert(g.greet("world") == "Hello, world!")
+assert(g.greet("world", "Hi") == "Hi, world!")
+assert(g.greet(prefix: "Hey", target: "Babble") == "Hey, Babble!")
+assert(g.greet(target: "Babble") == "Hello, Babble!")
+assert(g.withDefault(3) == 35)
+assert(g.withDefault(b: 2, a: 4) == 42)
+
+;; Interface super call with optional and named arguments
+def LoudGreeter = class () implements Greeter (
+    def greet = fn (who: string, head: string = "HI"): string -> (
+        head + " " + who
+    )
+    def withDefault = fn (a: int, b: int = 9): int -> (
+        super(Greeter).withDefault(b: b, a: a) + 100
+    )
+)
+def lg: Greeter = LoudGreeter()
+assert(lg.withDefault(2) == 129)
+assert(lg.withDefault(2, 3) == 123)
+
+;; Left-to-right evaluation order preserved when named arguments are reordered
+def trace = java.lang.StringBuilder()
+def step = fn io (label: string, value: int): int -> (
+    trace.append(label)
+    value
+)
+def sub = fn (a: int, b: int, c: int = 0): int -> (
+    a * 100 + b * 10 + c
+)
+def subVal: fn (x: int, y: int, z: int = ...): int = sub
+assert(sub(c: step("c", 3), a: step("a", 1), b: step("b", 2)) == 123)
+assert(trace.toString() == "cab")
+trace.setLength(0)
+assert(subVal(z: step("z", 4), y: step("y", 2), x: step("x", 1)) == 124)
+assert(trace.toString() == "zyx")
+
+;; Keyword-only parameters via bare ... on functions, function types, interfaces, and classes
+def connect = fn (host: string, ..., port: int, tls: bool = true): string -> (
+    host + ":" + port + ":" + tls
+)
+assert(connect("example.com", port: 443) == "example.com:443:true")
+assert(connect("example.com", tls: false, port: 80) == "example.com:80:false")
+assert(connect(port: 8080, host: "localhost") == "localhost:8080:true")
+
+;; All keyword-only parameters
+def tag = fn (..., name: string, value: string = "1"): string -> (
+    name + "=" + value
+)
+assert(tag(name: "k") == "k=1")
+assert(tag(value: "v", name: "k") == "k=v")
+
+;; Optional positional before ..., required keyword-only after ...
+def range = fn (start: int = 0, ..., stop: int, step: int = 1): int -> (
+    int((stop - start) / step)
+)
+assert(range(stop: 10) == 10)
+assert(range(2, stop: 10, step: 2) == 4)
+
+;; Function type with keyword-only parameters satisfied by positional or keyword-only callee
+def kwType: fn (x: int, ..., y: int = ...): int = fn (a: int, b: int = 7): int -> (
+    a + b
+)
+assert(kwType(3) == 10)
+assert(kwType(3, y: 4) == 7)
+assert(kwType(y: 4, x: 3) == 7)
+
+;; Class and record with keyword-only parameters
+def Config = record (name: string = "default", ..., retries: int, timeout: double = 1.5) ()
+def cfg = Config(retries: 3)
+assert(cfg.name == "default" and cfg.retries == 3 and cfg.timeout == 1.5)
+def cfg2 = Config("custom", timeout: 2.5, retries: 5)
+assert(cfg2.name == "custom" and cfg2.retries == 5 and cfg2.timeout == 2.5)
+
+;; Recursive function with optional and named arguments
+def sumDown = fn (n: int, acc: int = 0): int -> (
+    if n <= 0 then (
+        acc
+    ) else (
+        recurse(acc: acc + n, n: n - 1)
+    )
+)
+assert(sumDown(5) == 15)
+assert(sumDown(n: 4) == 10)
+
+;; Safe call with optional and named arguments
+def maybeG: Greeter? = g
+assert(maybeG?.greet(target: "safe") == "Hello, safe!")
+def noG: Greeter? = null
+assert(noG?.greet(target: "safe") == null)
+
+;; Captured Cell parameter with forward reference in default expression
+def capDefault = fn (a: int, b: fn (): int = fn (): int -> (c), c: int = a + 5): int -> (
+    b()
+)
+assert(capDefault(10) == 15)
+
+true

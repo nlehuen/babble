@@ -421,4 +421,13 @@ public class ReplTestCase {
         Assertions.assertEquals("1", lines.get(7));
         Assertions.assertEquals(8, lines.size(), lines.toString());
     }
+
+    @Test
+    public void testTypeCommandShowsOptionalAndKeywordOnly() throws Exception {
+        List<String> lines = transcript(
+                "def f = fn (a : int, b : int = 1, ..., c : string = \"x\") : int -> ( a + b )",
+                ":type f");
+        Assertions.assertTrue(lines.stream().anyMatch(l -> l.contains("b : int = ...") && l.contains("..., c : string = ...")),
+                lines.toString());
+    }
 }

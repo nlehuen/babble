@@ -28,7 +28,7 @@ public class Function implements BabbleFunction {
     public Object invoke(Object thiz, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         Namespace namespace = Frames.enter(closure, recurseTarget(thiz), thiz, interpreter.scopes().declared(definition));
         String[] parameters = interpreter.scopes().parameters(definition);
-        Arguments.Binder binder = Arguments.binder(parameters, args, names);
+        Arguments.Binder binder = Arguments.binder(parameters, interpreter.scopes().keywordOnlyStart(definition), args, names);
         for (int i = 0; i < parameters.length; i++) {
             Object value = binder.take(i);
             if (value == Arguments.MISSING) {

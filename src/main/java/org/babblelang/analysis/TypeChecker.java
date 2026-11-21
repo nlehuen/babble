@@ -1275,6 +1275,7 @@ final class TypeChecker {
         }
         boolean untyped = effectChecker != null && effectChecker.isCompletelyUntyped(literal);
         List<BabbleParser.FnParamContext> decls = literal.fnParameters().fnParam();
+        int kwStart = ScopeAnalysis.keywordOnlyStart(literal.fnParameters());
         List<Type.Parameter> result = new ArrayList<>(decls.size());
         for (int i = 0; i < decls.size(); i++) {
             BabbleParser.FnParamContext parameter = decls.get(i);
@@ -1288,7 +1289,7 @@ final class TypeChecker {
                     : (effectChecker != null && !untyped && !pm.shared() && !pm.unique());
             boolean unique = summary != null && i < summary.uniqueParams().length ? summary.uniqueParams()[i] : pm.unique();
             result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null,
-                    mut, borrow, pm.shared(), unique));
+                    i >= kwStart, mut, borrow, pm.shared(), unique));
         }
         return result;
     }
@@ -2776,6 +2777,7 @@ final class TypeChecker {
         ScopeNode scope = scopeOf(cls);
         EffectChecker.CallableSummary cs = (effectChecker != null && node != null) ? effectChecker.constructorSummary(node) : null;
         List<BabbleParser.ClassParamContext> decls = cls.classParameters().classParam();
+        int kwStart = ScopeAnalysis.keywordOnlyStart(cls.classParameters());
         List<Type.Parameter> result = new ArrayList<>(decls.size());
         for (int i = 0; i < decls.size(); i++) {
             BabbleParser.ClassParamContext parameter = decls.get(i);
@@ -2792,7 +2794,7 @@ final class TypeChecker {
             boolean borrow = cs != null && i < cs.borrowParams().length ? cs.borrowParams()[i] : false;
             boolean unique = cs != null && i < cs.uniqueParams().length ? cs.uniqueParams()[i] : pm.unique();
             result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null,
-                    mut, borrow, pm.shared(), unique));
+                    i >= kwStart, mut, borrow, pm.shared(), unique));
         }
         return result;
     }

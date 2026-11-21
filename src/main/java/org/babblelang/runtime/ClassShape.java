@@ -36,6 +36,7 @@ public final class ClassShape {
     private final String[] parameters;
     private final int[] parameterMembers;
     private final int requiredParameters;
+    private final int keywordOnlyStart;
     private final String[] statics;
     private final int[] staticFlags;
     private final String id;
@@ -50,7 +51,7 @@ public final class ClassShape {
      */
     public ClassShape(Kind kind, String name, String[] members, int[] flags, String[] parameters, int[] parameterMembers,
                       int requiredParameters, String[] statics, int[] staticFlags) {
-        this(kind, name, members, flags, parameters, parameterMembers, requiredParameters, statics, staticFlags, "",
+        this(kind, name, members, flags, parameters, parameterMembers, requiredParameters, parameters.length, statics, staticFlags, "",
                 new String[members.length], new String[statics.length]);
     }
 
@@ -61,6 +62,13 @@ public final class ClassShape {
      */
     public ClassShape(Kind kind, String name, String[] members, int[] flags, String[] parameters, int[] parameterMembers,
                       int requiredParameters, String[] statics, int[] staticFlags, String id, String[] memberTypes, String[] staticTypes) {
+        this(kind, name, members, flags, parameters, parameterMembers, requiredParameters, parameters.length,
+                statics, staticFlags, id, memberTypes, staticTypes);
+    }
+
+    public ClassShape(Kind kind, String name, String[] members, int[] flags, String[] parameters, int[] parameterMembers,
+                      int requiredParameters, int keywordOnlyStart, String[] statics, int[] staticFlags,
+                      String id, String[] memberTypes, String[] staticTypes) {
         this.id = id;
         this.memberTypes = memberTypes;
         this.staticTypes = staticTypes;
@@ -71,6 +79,7 @@ public final class ClassShape {
         this.parameters = parameters;
         this.parameterMembers = parameterMembers;
         this.requiredParameters = requiredParameters;
+        this.keywordOnlyStart = keywordOnlyStart;
         this.statics = statics;
         this.staticFlags = staticFlags;
         for (int i = 0; i < members.length; i++) {
@@ -126,6 +135,10 @@ public final class ClassShape {
         return requiredParameters;
     }
 
+    public int keywordOnlyStart() {
+        return keywordOnlyStart;
+    }
+
     public int staticCount() {
         return statics.length;
     }
@@ -162,12 +175,13 @@ public final class ClassShape {
     // ------------------------------------------------------------------ encoding
 
     /**
-     * {@code KIND;name;required;m:f,m:f;p:i,p:i;s:f,s:f;id;t,t;t,t}, names being Babble
+     * {@code KIND;name;required;m:f,m:f;p:i,p:i;s:f,s:f;id;t,t;t,t[;kwStart]}, names being Babble
      * identifiers, and type descriptors URL-encoded, empty for none.
      */
     public String encode() {
-        return kind + ";" + name + ";" + requiredParameters + ";" + pairs(members, flags) + ";" + pairs(parameters, parameterMembers)
+        String base = kind + ";" + name + ";" + requiredParameters + ";" + pairs(members, flags) + ";" + pairs(parameters, parameterMembers)
                 + ";" + pairs(statics, staticFlags) + ";" + id + ";" + typeList(memberTypes) + ";" + typeList(staticTypes);
+        return keywordOnlyStart < parameters.length ? base + ";" + keywordOnlyStart : base;
     }
 
     private static String typeList(String[] types) {
@@ -214,8 +228,9 @@ public final class ClassShape {
         unpair(parts[3], members, flags);
         unpair(parts[4], parameters, parameterMembers);
         unpair(parts[5], statics, staticFlags);
+        int kwStart = parts.length > 9 && !parts[9].isEmpty() ? Integer.parseInt(parts[9]) : parameters.size();
         return new ClassShape(Kind.valueOf(parts[0]), parts[1], members.toArray(new String[0]), ints(flags),
-                parameters.toArray(new String[0]), ints(parameterMembers), Integer.parseInt(parts[2]),
+                parameters.toArray(new String[0]), ints(parameterMembers), Integer.parseInt(parts[2]), kwStart,
                 statics.toArray(new String[0]), ints(staticFlags), parts[6],
                 decodeTypes(parts[7], members.size()), decodeTypes(parts[8], statics.size()));
     }
