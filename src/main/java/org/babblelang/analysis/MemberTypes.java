@@ -52,6 +52,9 @@ final class MemberTypes {
             }
             return Type.union(memberTypes);
         }
+        if (receiver instanceof Type.Intersection intersection) {
+            return intersectionMember(intersection, name, own, at, receiverText);
+        }
         if (receiver instanceof Type.Frozen frozen) {
             Type inner = member(frozen.of(), name, own, at, receiverText);
             if (inner == Type.ERROR || inner instanceof Type.Function || inner instanceof Type.JavaMethod) {
@@ -145,6 +148,63 @@ final class MemberTypes {
         // The 8 primitives, null, functions, any : memberless.
         checker.warn("Not a scope : " + receiverText, at);
         return Type.ERROR;
+    }
+
+    /**
+     * A member of {@code A & B} (BIP022-D4) : the member of the operands that declare it ; two
+     * that declare it must agree, one type being a subtype of the other, which is then the
+     * member's type. A union operand distributes first.
+     */
+    private Type intersectionMember(Type.Intersection intersection, String name, boolean own,
+                                    ParserRuleContext at, String receiverText) {
+        Type distributed = TypeAlgebra.distribute(intersection);
+        if (distributed != intersection) {
+            return member(distributed, name, own, at, receiverText);
+        }
+        Type found = null;
+        for (Type operand : intersection.members()) {
+            if (!hasMember(operand, name)) {
+                continue;
+            }
+            Type type = member(operand, name, own, at, receiverText);
+            if (type == Type.ERROR) {
+                return Type.ERROR;
+            }
+            if (found == null || found instanceof Type.JavaMethod && type instanceof Type.JavaMethod) {
+                found = found == null ? type : found;
+            } else if (!type.equals(found)) {
+                if (checker.algebra().assignable(type, found)) {
+                    found = type;
+                } else if (!checker.algebra().assignable(found, type)) {
+                    checker.warn("Conflicting member " + name + " in " + intersection, at);
+                    return Type.ERROR;
+                }
+            }
+        }
+        if (found == null) {
+            checker.warn("No such member : " + name, at);
+            return Type.ERROR;
+        }
+        return found;
+    }
+
+    /** Whether an operand of an intersection has a member, without reporting anything. */
+    private boolean hasMember(Type operand, String name) {
+        if (operand instanceof Type.Instance instance) {
+            return findMember(instance, name) != null || inheritedMember(instance, name) != null;
+        }
+        if (operand instanceof Type.JavaInstance java) {
+            if (JavaTypeBridge.hasJavaMethod(java.type(), name)) {
+                return true;
+            }
+            try {
+                java.type().getField(name);
+                return true;
+            } catch (NoSuchFieldException e) {
+                return false;
+            }
+        }
+        return false;
     }
 
     /** What {@code receiver.name = value} must assign : the member's declared or closed type, or null if inferred locally. */

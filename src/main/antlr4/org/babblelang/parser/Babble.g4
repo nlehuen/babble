@@ -127,7 +127,8 @@ callParameter: (memberName ':')? expression;
 
 typeList: type (NL* ',' NL* type)*;
 
-type: nullableType ('|' NL* nullableType)*;
+// '&' (intersection, BIP022) binds tighter than '|' (union) : TypeAnnotations groups the operands.
+type: nullableType (('|' | '&') NL* nullableType)*;
 
 nullableType: nonParenNullableType                                                    # nonParenType
             | frozen=FROZEN? '(' NL* type NL* ')' question='?'?                       # parenType
@@ -176,6 +177,7 @@ DOT: '.';
 SAFE_DOT: '?.';
 ARROW: '->';
 PIPE: '|';
+AMP: '&';
 QUESTION: '?';
 LPAREN: '(';
 RPAREN: ')';

@@ -1,0 +1,77 @@
+;; Intersection types of interfaces (BIP022) : A & B holds the values that are both.
+
+def Shape = interface (
+    def area: fn (): double
+)
+def Named = interface (
+    def name: fn (): string
+)
+def Label = interface (
+    def text: fn (): string
+)
+def Base = interface (
+    def id: fn (): int
+)
+def Tagged = interface extends Base (
+    def tag: fn (): string
+)
+
+def Tile = class () implements Shape, Named (
+    def area = fn (): double -> (1.5)
+    def name = fn (): string -> ("tile")
+)
+def Disk = class () implements Shape (
+    def area = fn (): double -> (3.0)
+)
+def Note = class () implements Label, Named (
+    def text = fn (): string -> ("note")
+    def name = fn (): string -> ("n")
+)
+
+;; an intersection annotation : the members of both
+def describe = fn (x: Shape & Named): string -> (x.name() + " " + x.area())
+assert(describe(Tile()) == "tile 1.5")
+
+;; an A & B is an A and a B
+def both: Shape & Named = Tile()
+def asShape: Shape = both
+def asNamed: Named = both
+assert(asShape.area() == 1.5)
+assert(asNamed.name() == "tile")
+
+;; is narrows to the intersection, keeping what it knew
+def s: Shape = Tile()
+if s is Named then (
+    assert(s.name() + " " + s.area() == "tile 1.5")
+)
+
+;; over a union, narrowing distributes : (Shape & Named) | (Label & Named)
+def pick = fn (b: bool): Shape | Label -> (if b then (Tile()) else (Note()))
+def p = pick(false)
+def seen = if p is Named then (p.name()) else ("none")
+assert(seen == "n")
+
+;; is and as test every member at runtime
+assert(Tile() is Shape & Named)
+assert(not (Disk() is Shape & Named))
+def anyTile: any = Tile()
+assert((anyTile as Shape & Named).name() == "tile")
+
+;; a nullable intersection
+def maybe: (Shape & Named)? = null
+assert(maybe == null)
+maybe = Tile()
+assert(maybe?.name() == "tile")
+
+;; normal form : order does not matter, implied operands and any drop out
+def flipped: Named & Shape = both
+def implied: Tagged & Base = object implements Tagged (
+    def id = fn (): int -> (7)
+    def tag = fn (): string -> ("t")
+)
+assert(flipped.area() == 1.5)
+assert(implied.id() == 7)
+
+;; Java interfaces intersect too
+def text: java.lang.CharSequence & java.lang.Comparable of string = "abc"
+assert(text.length() == 3)

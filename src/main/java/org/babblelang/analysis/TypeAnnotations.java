@@ -1,6 +1,9 @@
 package org.babblelang.analysis;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.tree.ParseTree;
+import org.antlr.v4.runtime.tree.TerminalNode;
+import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 
 import java.util.ArrayList;
@@ -153,23 +156,93 @@ final class TypeAnnotations {
                 return cached;
             }
         }
-        List<BabbleParser.NullableTypeContext> parts = type.nullableType();
-        List<Type> members = new ArrayList<>(parts.size());
-        for (BabbleParser.NullableTypeContext part : parts) {
-            Type member = nullableAnnotation(part, scope, allowRaw);
-            if (member == Type.ERROR) {
-                if (!allowRaw) {
-                    annotations.put(type, Type.ERROR);
-                }
-                return Type.ERROR;
+        // '&' binds tighter than '|' : the operands between two '|' form one intersection (BIP022-D2).
+        List<Type> members = new ArrayList<>();
+        List<BabbleParser.NullableTypeContext> group = new ArrayList<>();
+        for (int i = 0; i < type.getChildCount(); i++) {
+            ParseTree child = type.getChild(i);
+            if (child instanceof BabbleParser.NullableTypeContext part) {
+                group.add(part);
+            } else if (child instanceof TerminalNode terminal && terminal.getSymbol().getType() == BabbleLexer.PIPE) {
+                members.add(groupAnnotation(group, scope, allowRaw));
+                group = new ArrayList<>();
             }
-            members.add(member);
+        }
+        members.add(groupAnnotation(group, scope, allowRaw));
+        if (members.contains(Type.ERROR)) {
+            if (!allowRaw) {
+                annotations.put(type, Type.ERROR);
+            }
+            return Type.ERROR;
         }
         Type result = Type.union(members);
         if (!allowRaw) {
             annotations.put(type, result);
         }
         return result;
+    }
+
+    /** One operand of a union : a single type, or the intersection of several (BIP022-D1). */
+    private Type groupAnnotation(List<BabbleParser.NullableTypeContext> group, ScopeNode scope, boolean allowRaw) {
+        List<Type> operands = new ArrayList<>(group.size());
+        for (BabbleParser.NullableTypeContext part : group) {
+            Type operand = nullableAnnotation(part, scope, allowRaw);
+            if (operand == Type.ERROR) {
+                return Type.ERROR;
+            }
+            operands.add(operand);
+        }
+        if (operands.size() == 1) {
+            return operands.get(0);
+        }
+        String text = intersectionText(group);
+        for (int i = 0; i < operands.size(); i++) {
+            Type operand = operands.get(i);
+            if (Type.containsNull(operand)) {
+                checker.warn("Nullable inside an intersection : " + group.get(i).getText()
+                        + " (write (" + text + ")?)", group.get(i));
+                return Type.ERROR;
+            }
+            if (!isIntersectable(operand)) {
+                checker.warn("Only interfaces intersect : " + text, group.get(i));
+                return Type.ERROR;
+            }
+            if (operand instanceof Type.JavaInstance java && java.type() == Object.class) {
+                operands.set(i, Type.ANY);
+            }
+        }
+        return Type.intersection(operands);
+    }
+
+    private static String intersectionText(List<BabbleParser.NullableTypeContext> group) {
+        StringBuilder text = new StringBuilder();
+        for (BabbleParser.NullableTypeContext part : group) {
+            if (!text.isEmpty()) {
+                text.append(" & ");
+            }
+            text.append(part.getText().replace("?", ""));
+        }
+        return text.toString();
+    }
+
+    /** Interfaces (Babble or Java, generic or not), unions of them, and {@code any} / {@code Object}, which drop out. */
+    private static boolean isIntersectable(Type type) {
+        if (type == Type.ANY) {
+            return true;
+        }
+        if (type instanceof Type.Instance instance) {
+            return instance.node().isInterface();
+        }
+        if (type instanceof Type.JavaInstance java) {
+            return java.type().isInterface() || java.type() == Object.class;
+        }
+        if (type instanceof Type.Intersection) {
+            return true;
+        }
+        if (type instanceof Type.Union union) {
+            return union.members().stream().allMatch(TypeAnnotations::isIntersectable);
+        }
+        return false;
     }
 
     private Type nullableAnnotation(BabbleParser.NullableTypeContext nullable, ScopeNode scope, boolean allowRaw) {

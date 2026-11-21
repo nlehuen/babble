@@ -14,7 +14,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <li>{@code int}, {@code double}, {@code bool}, {@code string} : the built-in types ;</li>
  * <li>{@code fn} : a function type, which any callable value satisfies ;</li>
  * <li>{@code java}, with the Java class's name ;</li>
- * <li>{@code babble}, with the id of the class or interface expression (nominal).</li>
+ * <li>{@code babble}, with the id of the class or interface expression (nominal) ;</li>
+ * <li>{@code union} and {@code inter}, with their members' encoded descriptors (BIP022).</li>
  * </ul>
  * {@code display} is how the type reads in the message. Types that need no check
  * ({@code any}) have no descriptor.
@@ -26,7 +27,7 @@ public final class Types {
     }
 
     /** A declared type, ready to check values against. */
-    public abstract static sealed class Type permits Builtin, FunctionType, JavaClassType, NominalType, NullType, AnyType, UnionType {
+    public abstract static sealed class Type permits Builtin, FunctionType, JavaClassType, NominalType, NullType, AnyType, UnionType, IntersectionType {
         private final String display;
 
         Type(String display) {
@@ -195,6 +196,36 @@ public final class Types {
         }
     }
 
+    /** An intersection of interfaces (BIP022-D6) : a value has it when it has every member. */
+    static final class IntersectionType extends Type {
+        private final Type[] members;
+
+        IntersectionType(String display, Type[] members) {
+            super(display);
+            this.members = members;
+        }
+
+        @Override
+        boolean accepts(Object value) {
+            for (Type member : members) {
+                if (!member.accepts(value)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        @Override
+        boolean isInstance(Object value) {
+            for (Type member : members) {
+                if (!member.isInstance(value)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
     /** Encodes a sub-descriptor so it contains neither {@code ','} nor {@code '|'}. */
     public static String encodeComponent(String component) {
         return component.replace("%", "%25").replace(",", "%2C").replace("|", "%7C");
@@ -260,6 +291,14 @@ public final class Types {
                     members[i] = parse(decodeComponent(encoded[i]));
                 }
                 yield new UnionType(display, members);
+            }
+            case "inter" -> {
+                String[] encoded = payload.split(",", -1);
+                Type[] members = new Type[encoded.length];
+                for (int i = 0; i < encoded.length; i++) {
+                    members[i] = parse(decodeComponent(encoded[i]));
+                }
+                yield new IntersectionType(display, members);
             }
             default -> throw new IllegalArgumentException("Bad type descriptor : " + descriptor);
         };

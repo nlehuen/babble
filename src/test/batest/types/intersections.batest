@@ -1,0 +1,156 @@
+;; Intersection types of interfaces (BIP022) : normal form, subtyping, members, narrowing, runtime checks
+
+{{{{{
+;; A & B accepts a value that implements both, and is assignable to each
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def Tile = class () implements Shape, Named (
+    def area = fn (): double -> ( 1.5 )
+    def name = fn (): string -> ( "tile" )
+)
+def t: Shape & Named = Tile()
+def s: Shape = t
+def n: Named = t
+println(s.area(), ":", n.name(), ":", t.name(), ":", t.area())
+}}}}}
+1.5:tile:tile:1.5
+
+{{{{{
+;; A value that implements only one operand is not an A & B
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def Disk = class () implements Shape ( def area = fn (): double -> ( 3.0 ) )
+def t: Shape & Named = Disk()
+}}}}}
+Type error : expected Shape & Named, got Disk
+
+{{{{{
+;; is keeps what it knew : Shape is Named narrows to Shape & Named
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def Tile = class () implements Shape, Named (
+    def area = fn (): double -> ( 1.5 )
+    def name = fn (): string -> ( "tile" )
+)
+def s: Shape = Tile()
+if s is Named then ( println(s.name(), " ", s.area()) )
+}}}}}
+tile 1.5
+
+{{{{{
+;; Narrowing a union distributes over its members
+def Shape = interface ( def area: fn (): double )
+def Label = interface ( def text: fn (): string )
+def Named = interface ( def name: fn (): string )
+def Note = class () implements Label, Named (
+    def text = fn (): string -> ( "note" )
+    def name = fn (): string -> ( "n" )
+)
+def pick = fn (): Shape | Label -> ( Note() )
+def x = pick()
+if x is Named then ( println(x.name()) )
+}}}}}
+n
+
+{{{{{
+;; is and as test every operand at runtime
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def Tile = class () implements Shape, Named (
+    def area = fn (): double -> ( 1.5 )
+    def name = fn (): string -> ( "tile" )
+)
+def Disk = class () implements Shape ( def area = fn (): double -> ( 3.0 ) )
+def a: any = Tile()
+println(Tile() is Shape & Named, ":", Disk() is Shape & Named, ":", (a as Shape & Named).name())
+}}}}}
+true:false:tile
+
+{{{{{
+;; A failed cast to an intersection names it
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def Disk = class () implements Shape ( def area = fn (): double -> ( 3.0 ) )
+def a: any = Disk()
+print((a as Shape & Named).name())
+}}}}}
+Type error : expected Shape & Named, got Disk
+
+{{{{{
+;; Only interfaces intersect
+def Named = interface ( def name: fn (): string )
+def Disk = class () ( def r = 1 )
+def d: Disk & Named = Disk()
+}}}}}
+Only interfaces intersect : Disk & Named
+
+{{{{{
+;; A primitive is not an interface either
+def Named = interface ( def name: fn (): string )
+def d: Named & int = 1
+}}}}}
+Only interfaces intersect : Named & int
+
+{{{{{
+;; A nullable operand must be written as a nullable intersection
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def d: Shape & Named? = null
+}}}}}
+Nullable inside an intersection : Named? (write (Shape & Named)?)
+
+{{{{{
+;; A nullable intersection
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def Tile = class () implements Shape, Named (
+    def area = fn (): double -> ( 1.5 )
+    def name = fn (): string -> ( "tile" )
+)
+def m: (Shape & Named)? = null
+println(m == null)
+m = Tile()
+println(m?.name())
+}}}}}
+true
+tile
+
+{{{{{
+;; Two operands declaring one member with unrelated types conflict
+def A = interface ( def m: fn (): int )
+def B = interface ( def m: fn (): string )
+def f = fn (x: A & B): string -> ( "" + x.m() )
+}}}}}
+Conflicting member m in A & B
+
+{{{{{
+;; A member only one operand declares comes from that operand ; others are not members
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def f = fn (x: Shape & Named): string -> ( x.title() )
+}}}}}
+No such member : title
+
+{{{{{
+;; Normal form : order does not matter, implied operands and any / Object drop out
+def Base = interface ( def id: fn (): int )
+def Tagged = interface extends Base ( def tag: fn (): string )
+def Named = interface ( def name: fn (): string )
+def o = object implements Tagged, Named (
+    def id = fn (): int -> ( 7 )
+    def tag = fn (): string -> ( "t" )
+    def name = fn (): string -> ( "o" )
+)
+def a: Tagged & Base & any = o
+def b: Named & Tagged = o
+def c: Tagged & Named & java.lang.Object = b
+println(a.id(), ":", b.tag(), ":", c.name())
+}}}}}
+7:t:o
+
+{{{{{
+;; Java interfaces intersect, and a string is both a CharSequence and a Comparable
+def s: java.lang.CharSequence & java.lang.Comparable of string = "abc"
+println(s.length())
+}}}}}
+3
