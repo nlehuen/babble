@@ -416,6 +416,166 @@ final class JavaTypeBridge {
         return algebra.relate(actual, expectedBound, TypeAlgebra.RelateMode.ASSIGNABLE, null);
     }
 
+    record BadJavaArrayTypeArg(int index, String message) {
+    }
+
+    /**
+     * Checks BIP020-D13 (§2.6) on a generic Java class instantiation : rejects primitive scalar
+     * type arguments for any class type parameter used directly as an array element {@code T[]}.
+     */
+    static BadJavaArrayTypeArg checkJavaClassArrayTypeArgs(Class<?> java, List<Type> args, TypeAlgebra algebra) {
+        if (args.isEmpty() || args.stream().noneMatch(Type::isPrimitiveScalar)) {
+            return null;
+        }
+        TypeVariable<?>[] tps = java.getTypeParameters();
+        if (tps.length != args.size()) {
+            return null;
+        }
+        Map<TypeVariable<?>, Type> synEnv = new HashMap<>();
+        Map<Type.TypeVar, Type> subEnv = new HashMap<>();
+        List<Type.TypeVar> synVars = new ArrayList<>(tps.length);
+        for (int i = 0; i < tps.length; i++) {
+            Type.TypeVar tv = new Type.TypeVar(null, tps[i].getName(), i);
+            synVars.add(tv);
+            synEnv.put(tps[i], tv);
+            subEnv.put(tv, args.get(i));
+        }
+        TypeAlgebra.BadArraySubstitution bad = scanClassHierarchyForArrayTypeVars(
+                java, synEnv, subEnv, algebra, new HashSet<>());
+        if (bad == null) {
+            return null;
+        }
+        int idx = bad.cause() != null ? synVars.indexOf(bad.cause()) : 0;
+        return new BadJavaArrayTypeArg(Math.max(0, idx), bad.message());
+    }
+
+    private static TypeAlgebra.BadArraySubstitution scanClassHierarchyForArrayTypeVars(
+            Class<?> cls, Map<TypeVariable<?>, Type> synEnv, Map<Type.TypeVar, Type> subEnv,
+            TypeAlgebra algebra, Set<Class<?>> visited) {
+        if (cls == null || cls == Object.class || !visited.add(cls)) {
+            return null;
+        }
+        for (Constructor<?> ctor : cls.getConstructors()) {
+            TypeAlgebra.BadArraySubstitution bad = scanExecutableWithEnv(ctor, synEnv, subEnv, algebra);
+            if (bad != null) {
+                return bad;
+            }
+        }
+        for (Field f : cls.getDeclaredFields()) {
+            if (!Modifier.isPublic(f.getModifiers()) || Modifier.isStatic(f.getModifiers())) {
+                continue;
+            }
+            if (!(f.getGenericType() instanceof Class<?>)) {
+                Type pat = fromJavaType(f.getGenericType(), f.getAnnotatedType(), synEnv,
+                        false, false, JavaNullability.fieldNullness(f), JavaNullability.isNullMarkedClass(cls));
+                TypeAlgebra.BadArraySubstitution bad = algebra.findPrimitiveArraySubstitution(pat, subEnv);
+                if (bad != null) {
+                    return bad;
+                }
+            }
+        }
+        for (Method m : cls.getDeclaredMethods()) {
+            if (!Modifier.isPublic(m.getModifiers()) || Modifier.isStatic(m.getModifiers()) || JavaTypes.isObjectMethod(m)) {
+                continue;
+            }
+            TypeAlgebra.BadArraySubstitution bad = scanExecutableWithEnv(m, synEnv, subEnv, algebra);
+            if (bad != null) {
+                return bad;
+            }
+        }
+        java.lang.reflect.Type genericSuper = cls.getGenericSuperclass();
+        if (genericSuper != null) {
+            TypeAlgebra.BadArraySubstitution bad = scanSuperTypeForArrayTypeVars(genericSuper, synEnv, subEnv, algebra, visited);
+            if (bad != null) {
+                return bad;
+            }
+        }
+        for (java.lang.reflect.Type genericIface : cls.getGenericInterfaces()) {
+            TypeAlgebra.BadArraySubstitution bad = scanSuperTypeForArrayTypeVars(genericIface, synEnv, subEnv, algebra, visited);
+            if (bad != null) {
+                return bad;
+            }
+        }
+        return null;
+    }
+
+    private static TypeAlgebra.BadArraySubstitution scanSuperTypeForArrayTypeVars(
+            java.lang.reflect.Type superType, Map<TypeVariable<?>, Type> synEnv, Map<Type.TypeVar, Type> subEnv,
+            TypeAlgebra algebra, Set<Class<?>> visited) {
+        if (!(superType instanceof ParameterizedType pt) || !(pt.getRawType() instanceof Class<?> rawSuper)) {
+            return null;
+        }
+        TypeVariable<?>[] superTps = rawSuper.getTypeParameters();
+        java.lang.reflect.Type[] actualArgs = pt.getActualTypeArguments();
+        if (superTps.length != actualArgs.length) {
+            return null;
+        }
+        Map<TypeVariable<?>, Type> parentSynEnv = new HashMap<>();
+        for (int i = 0; i < superTps.length; i++) {
+            parentSynEnv.put(superTps[i], fromJavaType(actualArgs[i], null, synEnv, false, false,
+                    JavaNullability.Nullness.UNSPECIFIED, true));
+        }
+        return scanClassHierarchyForArrayTypeVars(rawSuper, parentSynEnv, subEnv, algebra, visited);
+    }
+
+    private static TypeAlgebra.BadArraySubstitution scanExecutableWithEnv(
+            Executable exec, Map<TypeVariable<?>, Type> synEnv, Map<Type.TypeVar, Type> subEnv, TypeAlgebra algebra) {
+        java.lang.reflect.Type[] gParams = exec.getGenericParameterTypes();
+        for (int i = 0; i < gParams.length; i++) {
+            if (!(gParams[i] instanceof Class<?>)) {
+                Type pat = javaExecutableParamType(exec, i, synEnv);
+                TypeAlgebra.BadArraySubstitution bad = algebra.findPrimitiveArraySubstitution(pat, subEnv);
+                if (bad != null) {
+                    return bad;
+                }
+            }
+        }
+        if (exec instanceof Method m && !(m.getGenericReturnType() instanceof Class<?>)) {
+            Type pat = fromJavaType(m.getGenericReturnType(), m.getAnnotatedReturnType(), synEnv,
+                    true, false, JavaNullability.returnNullness(m), JavaNullability.isNullMarked(m));
+            return algebra.findPrimitiveArraySubstitution(pat, subEnv);
+        }
+        return null;
+    }
+
+    /**
+     * Checks BIP020-D13 (§2.6) on a generic Java method or constructor call with solved/explicit
+     * type arguments : rejects primitive scalars bound to a type parameter used in {@code T[]}.
+     */
+    static BadJavaArrayTypeArg checkJavaExecutableArrayTypeArgs(
+            Executable exec, List<TypeVariable<?>> orderedVars, Map<TypeVariable<?>, Type> fullSolvedEnv, TypeAlgebra algebra) {
+        if (fullSolvedEnv.isEmpty() || fullSolvedEnv.values().stream().noneMatch(Type::isPrimitiveScalar)) {
+            return null;
+        }
+        Map<TypeVariable<?>, Type> synEnv = new HashMap<>(fullSolvedEnv);
+        Map<Type.TypeVar, Type> subEnv = new HashMap<>();
+        List<Type.TypeVar> synVars = new ArrayList<>(orderedVars.size());
+        for (int i = 0; i < orderedVars.size(); i++) {
+            TypeVariable<?> tp = orderedVars.get(i);
+            Type.TypeVar tv = new Type.TypeVar(null, tp.getName(), i);
+            synVars.add(tv);
+            synEnv.put(tp, tv);
+            subEnv.put(tv, fullSolvedEnv.get(tp));
+        }
+        TypeAlgebra.BadArraySubstitution bad = scanExecutableWithEnv(exec, synEnv, subEnv, algebra);
+        if (bad == null && exec instanceof Constructor<?>) {
+            Class<?> cls = exec.getDeclaringClass();
+            TypeVariable<?>[] clsTps = cls.getTypeParameters();
+            if (clsTps.length > 0) {
+                List<Type> clsArgs = new ArrayList<>(clsTps.length);
+                for (TypeVariable<?> tp : clsTps) {
+                    clsArgs.add(fullSolvedEnv.get(tp));
+                }
+                return checkJavaClassArrayTypeArgs(cls, clsArgs, algebra);
+            }
+        }
+        if (bad == null) {
+            return null;
+        }
+        int idx = bad.cause() != null ? synVars.indexOf(bad.cause()) : 0;
+        return new BadJavaArrayTypeArg(Math.max(0, idx), bad.message());
+    }
+
     /**
      * The type of what a Java method returns, or a Java field holds: an instance of its
      * class (whose members are checked), or the closest accessible supertype / {@code any}

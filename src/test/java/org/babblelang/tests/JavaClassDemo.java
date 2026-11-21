@@ -302,4 +302,40 @@ public class JavaClassDemo {
     public static int @org.babblelang.effects.NotNull [] @org.babblelang.effects.NotNull [] jaggedIntArray() {
         return new int[][]{new int[]{1, 2}, new int[]{3}};
     }
+
+    // BIP020-P4 generic array helpers & RM003 Java array bridge interfaces.
+    public interface ArrayTransformer<E> {
+        @org.babblelang.effects.NotNull
+        E @org.babblelang.effects.NotNull [] transform(@org.babblelang.effects.NotNull E @org.babblelang.effects.NotNull [] input);
+    }
+
+    public interface ArrayExportable<E> {
+        <T> T @org.babblelang.effects.NotNull [] toArray(T @org.babblelang.effects.NotNull [] a);
+
+        default <T> T @org.babblelang.effects.NotNull [] toArray(java.util.function.IntFunction<T[]> generator) {
+            return toArray(generator.apply(2));
+        }
+
+        @SuppressWarnings("unchecked")
+        default int toArray() {
+            return toArray((E[]) new Object[2]).length;
+        }
+    }
+
+    public static <T> T echoArrayWithSample(@org.babblelang.effects.NotNull T sample, T[] arr) {
+        return arr != null && arr.length > 0 && arr[0] != null ? arr[0] : sample;
+    }
+
+    public static <E> E[] invokeArrayTransformer(ArrayTransformer<E> transformer, E[] input) {
+        return transformer.transform(input);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public static Object invokeArrayTransformerRaw(ArrayTransformer<?> transformer, Object raw) {
+        return ((ArrayTransformer) transformer).transform((Object[]) raw);
+    }
+
+    public static String[] invokeExportableStrings(ArrayExportable<@org.babblelang.effects.NotNull String> exp) {
+        return exp.toArray(String[]::new);
+    }
 }

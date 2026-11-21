@@ -266,31 +266,53 @@ final class ClassGen {
             boolean ownMethod = ownIdx >= 0 && shape.isMethod(ownIdx);
             HirEmitter.InheritedDefault inheritedBabbleDefault = ownIdx < 0 ? emitter.findInheritedDefault(hierarchy, mName) : null;
             boolean hasBabbleImpl = ownMethod || inheritedBabbleDefault != null;
+            boolean hasActiveJavaDefault = hasActiveJavaDefault(candidates);
             if (!hasBabbleImpl) {
-                boolean hasActiveJavaDefault = false;
-                for (Method cand : candidates) {
-                    if (cand.isDefault()) {
-                        boolean reabstracted = false;
-                        for (Method other : candidates) {
-                            if (!other.isDefault()
-                                    && other.getDeclaringClass() != cand.getDeclaringClass()
-                                    && cand.getDeclaringClass().isAssignableFrom(other.getDeclaringClass())) {
-                                reabstracted = true;
-                                break;
-                            }
-                        }
-                        if (!reabstracted) {
-                            hasActiveJavaDefault = true;
-                            break;
-                        }
-                    }
-                }
                 if (hasActiveJavaDefault) {
                     continue;
                 }
+            } else if (hasActiveJavaDefault && ownMethod
+                    && !acceptsJavaDefaultOverload(methodFunction(mName), jm.getParameterTypes())) {
+                continue;
             }
             emitJavaMethodBridge(jm, ownMethod, inheritedBabbleDefault, babbleAncestors.get(mName));
         }
+    }
+
+    private static boolean hasActiveJavaDefault(List<Method> candidates) {
+        for (Method cand : candidates) {
+            if (cand.isDefault()) {
+                boolean reabstracted = false;
+                for (Method other : candidates) {
+                    if (!other.isDefault()
+                            && other.getDeclaringClass() != cand.getDeclaringClass()
+                            && cand.getDeclaringClass().isAssignableFrom(other.getDeclaringClass())) {
+                        reabstracted = true;
+                        break;
+                    }
+                }
+                if (!reabstracted) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean acceptsJavaDefaultOverload(HirFunction fn, Class<?>[] javaParams) {
+        if (fn == null) {
+            return true;
+        }
+        if (javaParams.length < fn.requiredParams() || javaParams.length > fn.params().size()) {
+            return false;
+        }
+        for (int i = 0; i < javaParams.length; i++) {
+            String checked = fn.params().get(i).checkedType();
+            if (!org.babblelang.runtime.Types.canAcceptJavaParamClass(checked, javaParams[i])) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void emitJavaMethodBridge(Method jm, boolean ownMethod,
@@ -346,9 +368,10 @@ final class ClassGen {
                 m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + "$spec", HirEmitter.methodSpecDescriptor(fn), false);
                 HirEmitter.emitReturnToJava(m, fn.returnKind(), retType, descText, rtSlot);
             } else if (fn.isSpread() && paramTypes.length <= fnCount) {
+                List<HirParam> params = fn.params();
                 m.visitInsn(ACONST_NULL);
                 for (int i = 0; i < paramTypes.length; i++) {
-                    HirEmitter.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ScopeAnalysis.PrimitiveKind.NONE, -1, null);
+                    HirEmitter.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ScopeAnalysis.PrimitiveKind.NONE, -1, params.get(i).checkedType());
                 }
                 for (int i = paramTypes.length; i < fnCount; i++) {
                     m.visitFieldInsn(GETSTATIC, HirEmitter.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
