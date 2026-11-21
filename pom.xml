@@ -254,6 +254,26 @@
                                 </configuration>
                             </execution>
                             <execution>
+                                <id>prepare-agent-compile-O0</id>
+                                <phase>process-test-classes</phase>
+                                <goals>
+                                    <goal>prepare-agent</goal>
+                                </goals>
+                                <configuration>
+                                    <propertyName>jacocoCompileO0ArgLine</propertyName>
+                                    <destFile>${project.build.directory}/jacoco-compile-O0.exec</destFile>
+                                    <append>false</append>
+                                    <includes>
+                                        <include>org.babblelang.*</include>
+                                    </includes>
+                                    <excludes>
+                                        <exclude>org.babblelang.generated.*</exclude>
+                                        <exclude>babble.*</exclude>
+                                        <exclude>org.babblelang.parser.*</exclude>
+                                    </excludes>
+                                </configuration>
+                            </execution>
+                            <execution>
                                 <id>report-interpret</id>
                                 <phase>verify</phase>
                                 <goals>
@@ -273,6 +293,17 @@
                                 <configuration>
                                     <dataFile>${project.build.directory}/jacoco-compile.exec</dataFile>
                                     <outputDirectory>${project.build.directory}/site/jacoco-compile</outputDirectory>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>report-compile-O0</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
+                                <configuration>
+                                    <dataFile>${project.build.directory}/jacoco-compile-O0.exec</dataFile>
+                                    <outputDirectory>${project.build.directory}/site/jacoco-compile-O0</outputDirectory>
                                 </configuration>
                             </execution>
                         </executions>
@@ -314,14 +345,27 @@
                                     </systemPropertyVariables>
                                 </configuration>
                             </execution>
-                            <!-- -Pbatest compares interpret against default compile (-O1) across two
-                                 isolated JaCoCo files (BIP009 §5.1) : without skipping compiled-tests-O0
-                                 here, it inherits the plugin-level jacocoInterpretArgLine (append=false)
-                                 and overwrites jacoco-interpret.exec (mvn test still runs all three modes). -->
+                            <!-- Run compiled-tests-O0 with its own isolated JaCoCo agent (jacoco-compile-O0.exec)
+                                 so -O0 never overwrites jacoco-interpret.exec or jacoco-compile.exec (-O1). -->
                             <execution>
                                 <id>compiled-tests-O0</id>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
                                 <configuration>
-                                    <skip>true</skip>
+                                    <argLine>${jacocoCompileO0ArgLine}</argLine>
+                                    <reportsDirectory>${project.build.directory}/surefire-reports-compiled-O0</reportsDirectory>
+                                    <includes>
+                                        <include>${batest.includes}</include>
+                                    </includes>
+                                    <testFailureIgnore>true</testFailureIgnore>
+                                    <systemPropertyVariables>
+                                        <babble.mode>compile</babble.mode>
+                                        <babble.opt>0</babble.opt>
+                                        <babble.verify>true</babble.verify>
+                                        <batest.filter>${batest.filter}</batest.filter>
+                                        <batest.record>${project.build.directory}/batest-report</batest.record>
+                                    </systemPropertyVariables>
                                 </configuration>
                             </execution>
                         </executions>
@@ -361,6 +405,10 @@
                                         <systemProperty>
                                             <key>batest.jacocoCompile</key>
                                             <value>${project.build.directory}/site/jacoco-compile/jacoco.xml</value>
+                                        </systemProperty>
+                                        <systemProperty>
+                                            <key>batest.jacocoCompileO0</key>
+                                            <value>${project.build.directory}/site/jacoco-compile-O0/jacoco.xml</value>
                                         </systemProperty>
                                     </systemProperties>
                                 </configuration>
