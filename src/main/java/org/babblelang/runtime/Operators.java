@@ -198,8 +198,9 @@ public final class Operators {
             return compareNumbers(na, nb);
         }
         if (a instanceof Comparable<?> && a.getClass().isInstance(b)) {
-            //noinspection unchecked
-            return ((Comparable<Object>) a).compareTo(b);
+            @SuppressWarnings("unchecked")
+            Comparable<Object> comparable = (Comparable<Object>) a;
+            return comparable.compareTo(b);
         }
         throw new BabbleException("Not comparable : " + site.leftText() + " and " + site.rightText());
     }
