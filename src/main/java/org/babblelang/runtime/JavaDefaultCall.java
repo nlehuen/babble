@@ -22,11 +22,11 @@ final class JavaDefaultCall implements Callable {
         }
     };
 
-    private final BabbleInstance instance;
+    private final Object instance;
     private final List<Method> methods;
     private final String description;
 
-    JavaDefaultCall(BabbleInstance instance, List<Method> methods, String description) {
+    JavaDefaultCall(Object instance, List<Method> methods, String description) {
         this.instance = instance;
         this.methods = methods;
         this.description = description;
@@ -36,7 +36,7 @@ final class JavaDefaultCall implements Callable {
     public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         Method method = Overloads.resolve(methods, description, args);
         Object[] java = Values.toJava(args, method.getParameterTypes(), rt);
-        Object face = instance.face();
+        Object face = BabbleObjects.face(instance);
         Object result;
         try {
             if (face instanceof Proxy) {
@@ -44,7 +44,7 @@ final class JavaDefaultCall implements Callable {
             } else {
                 MethodHandle mh = SPECIAL_HANDLES.get(face.getClass()).computeIfAbsent(method, m -> {
                     try {
-                        MethodHandles.Lookup lookup = instance.javaDefaultLookup();
+                        MethodHandles.Lookup lookup = BabbleObjects.javaDefaultLookup(instance);
                         MethodType mt = MethodType.methodType(m.getReturnType(), m.getParameterTypes());
                         return lookup.findSpecial(m.getDeclaringClass(), m.getName(), mt, face.getClass()).asFixedArity();
                     } catch (ReflectiveOperationException e) {

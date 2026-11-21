@@ -3,14 +3,11 @@ package org.babblelang.runtime;
 import java.util.Arrays;
 
 /**
- * An instance of a Babble class : its class value, and its member values indexed through
- * the class's shape. The member set is fixed by the class.
- * <p>
- * The interpreter keeps the members in an array. Compiled classes (compiler phase 2)
- * extend this class with one JVM field per member, and override {@link #field} and
- * {@link #setField} ; their own code reaches the fields directly.
+ * An instance of a Babble class in the interpreter : its class value, and its member
+ * values in an array indexed through the class's shape. Compiled classes are plain JVM
+ * classes with fields of their own (BIP020-D18).
  */
-public class BabbleInstance implements HasMembers {
+public final class InterpretedInstance implements HasMembers {
     private static final CallSite TO_STRING = new CallSite("<toString>", -1, "toString", new String[0]);
 
     private final BabbleClass babbleClass;
@@ -18,40 +15,11 @@ public class BabbleInstance implements HasMembers {
     private final ScriptRuntime runtime;
     private Object face;
 
-    public BabbleInstance(BabbleClass babbleClass, ScriptRuntime runtime) {
-        this(babbleClass, runtime, true);
-    }
-
-    /**
-     * @param array whether members are kept in an array ; a compiled class keeps them in
-     *              fields, which its constructor sets to undefined
-     */
-    protected BabbleInstance(BabbleClass babbleClass, ScriptRuntime runtime, boolean array) {
+    public InterpretedInstance(BabbleClass babbleClass, ScriptRuntime runtime) {
         this.babbleClass = babbleClass;
-        this.values = array ? new Object[babbleClass.shape().memberCount()] : null;
+        this.values = new Object[babbleClass.shape().memberCount()];
         this.runtime = runtime;
-        if (array) {
-            Arrays.fill(values, Undefined.UNDEFINED);
-        }
-    }
-
-    /** The value of the member with that index, undefined until its def has run. */
-    protected Object field(int index) {
-        return values[index];
-    }
-
-    protected void setField(int index, Object value) {
-        values[index] = value;
-    }
-
-    /** Whether a compiled primitive member has been defined. */
-    protected boolean isMemberDefined(int index) {
-        return true;
-    }
-
-    /** Lookup in a compiled subclass's context for invoking Java interface default methods without a Proxy. */
-    protected java.lang.invoke.MethodHandles.Lookup javaDefaultLookup() {
-        return null;
+        Arrays.fill(values, Undefined.UNDEFINED);
     }
 
     public BabbleClass babbleClass() {
@@ -65,7 +33,7 @@ public class BabbleInstance implements HasMembers {
 
     /** Runs the definition of a member : a {@code def} in the body, or a header member. */
     public Object initMember(int index, Object value) {
-        setField(index, value);
+        values[index] = value;
         return value;
     }
 
@@ -86,7 +54,7 @@ public class BabbleInstance implements HasMembers {
         if (shape.isPrivate(index) && !own) {
             throw Members.isPrivate(name);
         }
-        Object value = field(index);
+        Object value = values[index];
         if (value == Undefined.UNDEFINED) {
             throw Members.usedBeforeDefinition(name);
         }
@@ -115,10 +83,10 @@ public class BabbleInstance implements HasMembers {
         if (shape.isValue()) {
             throw Members.readOnly(name);
         }
-        if (field(index) == Undefined.UNDEFINED) {
+        if (values[index] == Undefined.UNDEFINED) {
             throw Members.usedBeforeDefinition(name);
         }
-        setField(index, Types.check(value, shape.memberType(index)));
+        values[index] = Types.check(value, shape.memberType(index));
     }
 
     /**
@@ -129,15 +97,14 @@ public class BabbleInstance implements HasMembers {
         ClassShape shape = babbleClass.shape();
         int index = shape.memberIndex(name);
         if (index >= 0) {
-            return shape.isMethod(index) && field(index) instanceof BabbleFunction function ? function : null;
+            return shape.isMethod(index) && values[index] instanceof BabbleFunction function ? function : null;
         }
         return babbleClass.defaultMethod(name);
     }
 
     /**
      * What Java sees of this instance : itself when its class implements no Java
-     * interfaces or when this compiled instance already implements them directly,
-     * otherwise a cached proxy implementing them.
+     * interfaces, otherwise a cached proxy implementing them.
      */
     public Object face() {
         Class<?>[] interfaces = babbleClass.javaInterfaces();
@@ -145,18 +112,9 @@ public class BabbleInstance implements HasMembers {
             return this;
         }
         if (face == null) {
-            face = implementsAll(interfaces) ? this : Faces.create(this);
+            face = Faces.create(this);
         }
         return face;
-    }
-
-    private boolean implementsAll(Class<?>[] interfaces) {
-        for (Class<?> iface : interfaces) {
-            if (!iface.isInstance(this)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     @Override
@@ -165,12 +123,12 @@ public class BabbleInstance implements HasMembers {
         if (!babbleClass.shape().isValue()) {
             return this == o;
         }
-        if (!(o instanceof BabbleInstance other) || other.babbleClass != babbleClass) {
+        if (!(o instanceof InterpretedInstance other) || other.babbleClass != babbleClass) {
             return false;
         }
         ClassShape shape = babbleClass.shape();
         for (int i = 0; i < shape.memberCount(); i++) {
-            if (!shape.isMethod(i) && !Operators.equal(field(i), other.field(i))) {
+            if (!shape.isMethod(i) && !Operators.equal(values[i], other.values[i])) {
                 return false;
             }
         }
@@ -186,7 +144,7 @@ public class BabbleInstance implements HasMembers {
         int hash = 1;
         for (int i = 0; i < shape.memberCount(); i++) {
             if (!shape.isMethod(i)) {
-                hash = 31 * hash + Values.hash(field(i));
+                hash = 31 * hash + Values.hash(values[i]);
             }
         }
         return hash;
@@ -213,7 +171,7 @@ public class BabbleInstance implements HasMembers {
                 if (!first) {
                     result.append(", ");
                 }
-                result.append(shape.member(i)).append(": ").append(field(i));
+                result.append(shape.member(i)).append(": ").append(values[i]);
                 first = false;
             }
         }

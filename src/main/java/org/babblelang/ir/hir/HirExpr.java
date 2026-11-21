@@ -287,6 +287,7 @@ public sealed interface HirExpr permits
 
     record As(
             HirExpr left,
+            ScopeAnalysis.IsTarget target,
             String targetDescriptor,
             ExprMeta meta
     ) implements HirExpr {

@@ -228,17 +228,13 @@ public final class HirBuilder {
         // Compute compiled JVM names and implemented interfaces for every class/object.
         for (ParserRuleContext clsCtx : orderedClasses) {
             ClassShape shape = scopes.shape(clsCtx);
-            boolean arrayBacked = resolution.isNamespaceScope(clsCtx);
             List<Class<?>> javaIfaces = implementableJavaInterfaces(shape);
             List<String> implemented = implementedInterfaces(shape, javaIfaces);
             classJavaInterfaces.put(clsCtx, javaIfaces);
             classImplementedJvm.put(clsCtx, implemented);
-            boolean hasCompiled = !(arrayBacked && !preassignedClassNames.containsKey(clsCtx) && implemented.isEmpty());
-            if (hasCompiled) {
-                String preassigned = preassignedClassNames.get(clsCtx);
-                String name = preassigned != null ? preassigned : className + "$C" + (classCount++) + "$" + shape.name();
-                compiledClassJvmNames.put(clsCtx, name);
-            }
+            String preassigned = preassignedClassNames.get(clsCtx);
+            String name = preassigned != null ? preassigned : className + "$C" + (classCount++) + "$" + shape.name();
+            compiledClassJvmNames.put(clsCtx, name);
         }
 
         // Assign JVM method names & owning compiled class for every function literal.
@@ -286,7 +282,7 @@ public final class HirBuilder {
         }
         for (ParserRuleContext p = def.getParent(); p != null; p = p.getParent()) {
             if (p instanceof BabbleParser.ClassExpressionContext || p instanceof BabbleParser.ObjectExpressionContext) {
-                if (compiledClassJvmNames.containsKey(p) && !resolution.isNamespaceScope(p)) {
+                if (compiledClassJvmNames.containsKey(p)) {
                     return classIds.get(p);
                 }
                 return -1;
@@ -415,7 +411,6 @@ public final class HirBuilder {
             int id = classIds.get(ctx);
             boolean isObject = ctx instanceof BabbleParser.ObjectExpressionContext;
             ClassShape shape = scopes.shape(ctx);
-            boolean arrayBacked = resolution.isNamespaceScope(ctx);
             String jvmName = compiledClassJvmNames.get(ctx);
             List<String> implementedJvm = classImplementedJvm.get(ctx);
             List<Class<?>> javaIfaces = classJavaInterfaces.get(ctx);
@@ -429,45 +424,36 @@ public final class HirBuilder {
             BabbleParser.BlockContext staticBlk = ctx instanceof BabbleParser.ClassExpressionContext c
                     ? c.staticBlock : null;
 
-            ScopeAnalysis.PrimitiveKind[] memberKinds;
-            int[] primDefBits;
-            int primDefCount;
-            if (arrayBacked || jvmName == null) {
-                memberKinds = new ScopeAnalysis.PrimitiveKind[0];
-                primDefBits = new int[0];
-                primDefCount = 0;
-            } else {
-                int count = shape.memberCount();
-                memberKinds = new ScopeAnalysis.PrimitiveKind[count];
-                primDefBits = new int[count];
-                Arrays.fill(memberKinds, ScopeAnalysis.PrimitiveKind.NONE);
-                Arrays.fill(primDefBits, -1);
-                if (ctx instanceof BabbleParser.ClassExpressionContext c && c.classParameters() != null) {
-                    for (int p = 0; p < shape.parameters().length; p++) {
-                        int idx = shape.parameterMember(p);
-                        if (idx >= 0 && !shape.isMethod(idx)) {
-                            memberKinds[idx] = scopes.declarationKind(c.classParameters().classParam(p));
-                        }
+            int count = shape.memberCount();
+            ScopeAnalysis.PrimitiveKind[] memberKinds = new ScopeAnalysis.PrimitiveKind[count];
+            int[] primDefBits = new int[count];
+            Arrays.fill(memberKinds, ScopeAnalysis.PrimitiveKind.NONE);
+            Arrays.fill(primDefBits, -1);
+            if (ctx instanceof BabbleParser.ClassExpressionContext c && c.classParameters() != null) {
+                for (int p = 0; p < shape.parameters().length; p++) {
+                    int idx = shape.parameterMember(p);
+                    if (idx >= 0 && !shape.isMethod(idx)) {
+                        memberKinds[idx] = scopes.declarationKind(c.classParameters().classParam(p));
                     }
                 }
-                int bits = 0;
-                for (BabbleParser.ExpressionContext expr : bodyBlock.expression()) {
-                    if (expr instanceof BabbleParser.DefExpressionContext def) {
-                        ScopeAnalysis.DefTarget dt = scopes.defTarget(def);
-                        if (dt.kind() == ScopeAnalysis.DefKind.MEMBER) {
-                            int idx = dt.index();
-                            if (!shape.isMethod(idx)) {
-                                ScopeAnalysis.PrimitiveKind pk = scopes.declarationKind(def);
-                                memberKinds[idx] = pk;
-                                if (pk.isPrimitive()) {
-                                    primDefBits[idx] = bits++;
-                                }
+            }
+            int bits = 0;
+            for (BabbleParser.ExpressionContext expr : bodyBlock.expression()) {
+                if (expr instanceof BabbleParser.DefExpressionContext def) {
+                    ScopeAnalysis.DefTarget dt = scopes.defTarget(def);
+                    if (dt.kind() == ScopeAnalysis.DefKind.MEMBER) {
+                        int idx = dt.index();
+                        if (!shape.isMethod(idx)) {
+                            ScopeAnalysis.PrimitiveKind pk = scopes.declarationKind(def);
+                            memberKinds[idx] = pk;
+                            if (pk.isPrimitive()) {
+                                primDefBits[idx] = bits++;
                             }
                         }
                     }
                 }
-                primDefCount = bits;
             }
+            int primDefCount = bits;
 
             Map<String, Integer> methodFnIds = new LinkedHashMap<>();
             for (BabbleParser.ExpressionContext expr : bodyBlock.expression()) {
@@ -504,7 +490,6 @@ public final class HirBuilder {
                     isObject,
                     shape,
                     jvmName,
-                    arrayBacked,
                     implementedJvm,
                     javaIfaces,
                     hirVars(resolution.declared(ctx)),
@@ -542,7 +527,7 @@ public final class HirBuilder {
                         }
                     } else if (parent.javaClass() != null) {
                         Class<?> jc = parent.javaClass();
-                        if (jc.isInterface() && JavaTypes.isAccessible(jc) && !conflictsWithBabbleInstanceMethod(jc)) {
+                        if (jc.isInterface() && JavaTypes.isAccessible(jc)) {
                             String javaInternal = Type.getInternalName(jc);
                             if (!extendedJvm.contains(javaInternal)) {
                                 extendedJvm.add(javaInternal);
@@ -744,7 +729,7 @@ public final class HirBuilder {
             return new HirExpr.Const(null, metaOf(alias).withKind(ScopeAnalysis.PrimitiveKind.NONE));
         }
         if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
-            return new HirExpr.As(lowerExpr(asCtx.left), scopes.checkedType(asCtx), metaOf(asCtx));
+            return new HirExpr.As(lowerExpr(asCtx.left), scopes.asTarget(asCtx), scopes.checkedType(asCtx), metaOf(asCtx));
         }
         if (ctx instanceof BabbleParser.BlockExpressionContext blkExpr) {
             return lowerBlock(blkExpr.block(), blkExpr);
@@ -1180,13 +1165,13 @@ public final class HirBuilder {
         for (ParserRuleContext p = thisExpression.getParent(); p != null; child = p, p = p.getParent()) {
             if (p instanceof BabbleParser.ClassExpressionContext c) {
                 if (child == c.classBlock || child == c.classParameters()) {
-                    return compiledClassJvmNames.containsKey(c) && !resolution.isNamespaceScope(c) ? c : null;
+                    return compiledClassJvmNames.containsKey(c) ? c : null;
                 }
                 return null;
             }
             if (p instanceof BabbleParser.ObjectExpressionContext o) {
                 if (child == o.createBlock) {
-                    return compiledClassJvmNames.containsKey(o) && !resolution.isNamespaceScope(o) ? o : null;
+                    return compiledClassJvmNames.containsKey(o) ? o : null;
                 }
                 return null;
             }
@@ -1289,23 +1274,9 @@ public final class HirBuilder {
         return implemented;
     }
 
-    private static boolean conflictsWithBabbleInstanceMethod(Class<?> jc) {
-        for (java.lang.reflect.Method jm : jc.getMethods()) {
-            if (java.lang.reflect.Modifier.isStatic(jm.getModifiers()) || JavaTypes.isObjectMethod(jm)) {
-                continue;
-            }
-            try {
-                org.babblelang.runtime.BabbleInstance.class.getDeclaredMethod(jm.getName(), jm.getParameterTypes());
-                return true;
-            } catch (NoSuchMethodException ignored) {
-            }
-        }
-        return false;
-    }
-
     private static void collectImplementableJavaInterfaces(Class<?> iface, Set<Class<?>> out) {
         if (iface == null || !iface.isInterface() || !JavaTypes.isAccessible(iface)
-                || conflictsWithBabbleInstanceMethod(iface) || !out.add(iface)) {
+                || !out.add(iface)) {
             return;
         }
         for (Class<?> parent : iface.getInterfaces()) {

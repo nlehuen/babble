@@ -182,8 +182,9 @@ public final class JavaTypes {
             value = wrapper.javaValue();
         }
         // An instance by its Babble class : its JVM class depends on the mode.
-        if (value instanceof BabbleInstance instance) {
-            return instance.babbleClass().name();
+        BabbleClass cls = BabbleObjects.babbleClass(value);
+        if (cls != null) {
+            return cls.name();
         }
         return value.getClass().getCanonicalName();
     }
@@ -387,9 +388,10 @@ public final class JavaTypes {
         }
         Class<?> expected = box(type);
         Object java = value instanceof JavaValue wrapper ? wrapper.javaValue() : value;
+        BabbleClass cls = BabbleObjects.babbleClass(java);
         if (java == null
                 || expected.isInstance(java)
-                || java instanceof BabbleInstance instance && instance.babbleClass().isJava(expected)
+                || cls != null && cls.isJava(expected)
                 || Values.isBabbleCallable(java) && isFunctionalInterface(expected)) {
             return value;
         }

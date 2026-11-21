@@ -76,6 +76,11 @@ final class LoweringAnalyzer {
                     && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
                 pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
             }
+            if (entry.getKey() instanceof BabbleParser.AsExpressionContext asCtx && checker.inFile(asCtx)
+                    && entry.getValue() instanceof Type.Instance inst
+                    && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
+                pass.analysis.setAsTarget(asCtx, new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
+            }
         }
         for (ParserRuleContext decl : pass.definitionScopes.keySet()) {
             if (!checker.inFile(decl)) {

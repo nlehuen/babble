@@ -24,7 +24,7 @@ public final class Supers {
         if (type instanceof JavaType wrapper) {
             type = wrapper.javaClass();
         }
-        if (type instanceof Class<?> java && thiz instanceof BabbleInstance instance) {
+        if (type instanceof Class<?> java && BabbleObjects.isInstance(thiz)) {
             List<Method> methods = new ArrayList<>();
             for (Method method : java.getMethods()) {
                 if (method.isDefault() && method.getName().equals(name)) {
@@ -34,7 +34,7 @@ public final class Supers {
             if (methods.isEmpty()) {
                 throw new BabbleException("No default " + name + " to call");
             }
-            return new JavaDefaultCall(instance, methods, java.getSimpleName() + "." + name).call(rt, args, names, site);
+            return new JavaDefaultCall(thiz, methods, java.getSimpleName() + "." + name).call(rt, args, names, site);
         }
         throw new BabbleException("super needs an interface");
     }

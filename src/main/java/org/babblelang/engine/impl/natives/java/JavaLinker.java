@@ -2,7 +2,7 @@ package org.babblelang.engine.impl.natives.java;
 
 import org.babblelang.runtime.BabbleClass;
 import org.babblelang.runtime.BabbleException;
-import org.babblelang.runtime.BabbleInstance;
+import org.babblelang.runtime.BabbleObjects;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.JavaTypes;
@@ -111,7 +111,7 @@ public final class JavaLinker {
         MethodHandle[] filters = new MethodHandle[parameters.length];
         for (int i = 0; i < args.length; i++) {
             Object arg = args[i];
-            if (arg instanceof BabbleInstance || arg instanceof BabbleClass || Values.isBabbleCallable(arg)) {
+            if (BabbleObjects.isInstance(arg) || arg instanceof BabbleClass || Values.isBabbleCallable(arg)) {
                 return null;
             }
             Class<?> parameter = parameters[i];

@@ -58,7 +58,7 @@ public final class Classes {
     }
 
     /** The namespace of a constructor call, a child of the class's closure. */
-    public static Namespace constructorScope(BabbleClass babbleClass, BabbleInstance instance) {
+    public static Namespace constructorScope(BabbleClass babbleClass, Object instance) {
         Namespace namespace = babbleClass.closure().enter();
         namespace.define("this", true).set(instance);
         return namespace;
@@ -77,7 +77,7 @@ public final class Classes {
     }
 
     public static Object initMember(Namespace namespace, int index, Object value) {
-        return ((BabbleInstance) namespace.lookup("this")).initMember(index, value);
+        return ((InterpretedInstance) namespace.lookup("this")).initMember(index, value);
     }
 
     public static Object initStatic(Namespace namespace, int index, Object value) {
@@ -89,10 +89,10 @@ public final class Classes {
     }
 
     public static BabbleFunction interfaceDefault(Object instance, String ifaceTypeId, int memberIndex) {
-        return ((BabbleInstance) instance).babbleClass().interfaceDefault(ifaceTypeId, memberIndex);
+        return BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberIndex);
     }
 
     public static BabbleFunction interfaceDefault(Object instance, String ifaceTypeId, String memberName) {
-        return ((BabbleInstance) instance).babbleClass().interfaceDefault(ifaceTypeId, memberName);
+        return BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberName);
     }
 }

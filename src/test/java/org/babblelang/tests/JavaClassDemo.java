@@ -205,7 +205,11 @@ public class JavaClassDemo {
     }
 
     public static void setMemberRaw(Object target, String name, Object value) {
-        ((org.babblelang.runtime.HasMembers) target).setMember(name, value, false);
+        if (target instanceof org.babblelang.runtime.HasMembers members) {
+            members.setMember(name, value, false);
+        } else {
+            org.babblelang.runtime.BabbleObjects.setMember(target, name, value, false);
+        }
     }
 
     // RM003-P4 SAM metafactory, bridge, arity, and Proxy-fallback helpers.

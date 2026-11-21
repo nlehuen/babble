@@ -406,9 +406,9 @@ public final class Bootstrap {
                     test = IS_SAME.bindTo(mod);
                     fast = MethodHandles.dropArguments(MethodHandles.insertArguments(EXPORT_AT.bindTo(mod), 0, index), 0, Object.class);
                 }
-            } else if (target instanceof BabbleInstance instance && target.getClass() != BabbleInstance.class) {
+            } else if (BabbleObjects.isCompiledInstance(target)) {
                 test = IS_CLASS.bindTo(target.getClass());
-                fast = instanceMember(instance);
+                fast = instanceMember(target);
             } else {
                 // A Java object's method, bound to it.
                 MethodHandle[] java = JavaLinker.select(target, result);
@@ -432,8 +432,8 @@ public final class Bootstrap {
          * caller's : a class another file compiled is in another class loader, whose
          * package-private fields the caller can't reach (an imported module's class).
          */
-        private MethodHandle instanceMember(BabbleInstance instance) {
-            ClassShape shape = instance.babbleClass().shape();
+        private MethodHandle instanceMember(Object instance) {
+            ClassShape shape = BabbleObjects.babbleClass(instance).shape();
             int index = shape.memberIndex(member);
             if (index < 0 || shape.isPrivate(index)) {
                 return null;
@@ -479,7 +479,7 @@ public final class Bootstrap {
     }
 
     private static void requireMemberDefined(Object receiver, int index, String name) {
-        if (!((BabbleInstance) receiver).isMemberDefined(index)) {
+        if (!BabbleObjects.isMemberDefined(receiver, index)) {
             throw Members.usedBeforeDefinition(name);
         }
     }

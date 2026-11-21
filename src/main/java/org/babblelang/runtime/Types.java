@@ -101,16 +101,24 @@ public final class Types {
         @Override
         boolean accepts(Object value) {
             Object java = value instanceof JavaValue wrapper ? wrapper.javaValue() : value;
-            return java != null && (javaClass.isInstance(java)
-                    || java instanceof BabbleInstance instance && instance.babbleClass().isJava(javaClass)
-                    || Values.isBabbleCallable(java) && JavaTypes.isFunctionalInterface(javaClass));
+            if (java == null) {
+                return false;
+            }
+            BabbleClass cls = BabbleObjects.babbleClass(java);
+            return javaClass.isInstance(java)
+                    || cls != null && cls.isJava(javaClass)
+                    || Values.isBabbleCallable(java) && JavaTypes.isFunctionalInterface(javaClass);
         }
 
         @Override
         boolean isInstance(Object value) {
             Object java = value instanceof JavaValue wrapper ? wrapper.javaValue() : value;
-            return java != null && (JavaTypes.box(javaClass).isInstance(java)
-                    || java instanceof BabbleInstance instance && instance.babbleClass().isJava(javaClass));
+            if (java == null) {
+                return false;
+            }
+            BabbleClass cls = BabbleObjects.babbleClass(java);
+            return JavaTypes.box(javaClass).isInstance(java)
+                    || cls != null && cls.isJava(javaClass);
         }
     }
 
@@ -124,7 +132,8 @@ public final class Types {
 
         @Override
         boolean accepts(Object value) {
-            return value instanceof BabbleInstance instance && instance.babbleClass().conformsTo(id);
+            BabbleClass cls = BabbleObjects.babbleClass(value);
+            return cls != null && cls.conformsTo(id);
         }
     }
 
@@ -316,9 +325,10 @@ public final class Types {
     public static Object check(Object value, Type type) {
         if (!type.accepts(value)) {
             String got = describe(value);
-            if (type instanceof NominalType nominal && got.equals(type.toString()) && value instanceof BabbleInstance instance) {
+            BabbleClass cls = type instanceof NominalType && got.equals(type.toString()) ? BabbleObjects.babbleClass(value) : null;
+            if (type instanceof NominalType nominal && cls != null) {
                 // Two classes of one name, as two modules may define : their ids tell which.
-                got += " (expected " + nominal.id + ", got " + instance.babbleClass().shape().id() + ")";
+                got += " (expected " + nominal.id + ", got " + cls.shape().id() + ")";
             }
             throw new BabbleException("Type error : expected " + type + ", got " + got);
         }
@@ -370,8 +380,9 @@ public final class Types {
         if (value instanceof String) {
             return "string";
         }
-        if (value instanceof BabbleInstance instance) {
-            return instance.babbleClass().name();
+        BabbleClass cls = BabbleObjects.babbleClass(value);
+        if (cls != null) {
+            return cls.name();
         }
         if (value instanceof BabbleType type) {
             return type.toString();

@@ -38,7 +38,7 @@ public final class BabbleClass extends BabbleType implements Callable {
      *                 (compiled code) : stored once per class value, not per instance
      */
     public BabbleClass(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces) {
-        this(shape, closure, captured, body, interfaces, BabbleInstance::new);
+        this(shape, closure, captured, body, interfaces, InterpretedInstance::new);
     }
 
     /**
@@ -90,23 +90,23 @@ public final class BabbleClass extends BabbleType implements Callable {
         return construct(rt, args, names, site);
     }
 
-    public BabbleInstance construct(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
-        BabbleInstance instance = factory.create(this, rt);
+    public Object construct(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        Object instance = factory.create(this, rt);
         body.construct(this, instance, rt, args, names, site);
         return instance;
     }
 
     /** Creates the single instance of an object literal. */
-    public static BabbleInstance object(ClassShape shape, Namespace closure, ClassBody body, Object[] interfaces, ScriptRuntime rt) {
+    public static Object object(ClassShape shape, Namespace closure, ClassBody body, Object[] interfaces, ScriptRuntime rt) {
         return object(shape, closure, Arguments.NONE, body, interfaces, rt);
     }
 
-    public static BabbleInstance object(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces, ScriptRuntime rt) {
+    public static Object object(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces, ScriptRuntime rt) {
         return new BabbleClass(shape, closure, captured, body, interfaces).construct(rt, Arguments.NONE, null, null);
     }
 
-    public static BabbleInstance object(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces,
-                                        InstanceFactory factory, ScriptRuntime rt) {
+    public static Object object(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces,
+                                InstanceFactory factory, ScriptRuntime rt) {
         return new BabbleClass(shape, closure, captured, body, interfaces, factory).construct(rt, Arguments.NONE, null, null);
     }
 

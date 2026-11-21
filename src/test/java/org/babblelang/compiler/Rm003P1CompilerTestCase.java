@@ -84,7 +84,7 @@ public class Rm003P1CompilerTestCase {
     @Test
     public void testScriptClassWriterGraphLcaMatrix() {
         String script = "gen/Script$1";
-        String babbleInstance = "org/babblelang/runtime/BabbleInstance";
+        String object = "java/lang/Object";
         Map<String, List<String>> genClasses = new java.util.HashMap<>();
         Map<String, List<String>> genIfaces = new java.util.HashMap<>();
 
@@ -100,10 +100,12 @@ public class Rm003P1CompilerTestCase {
         genIfaces.put("gen/Spec1", List.of("gen/Base", "gen/Left"));
         genIfaces.put("gen/Spec2", List.of("gen/Mid"));
 
-        // Generated concrete classes sharing Babble and Java interfaces
-        genClasses.put("gen/C1", List.of(babbleInstance, "gen/Left", "java/lang/Runnable"));
-        genClasses.put("gen/C2", List.of(babbleInstance, "gen/Left"));
-        genClasses.put("gen/Unrelated", List.of(babbleInstance));
+        // Generated plain concrete classes sharing Babble and Java interfaces (superclass java/lang/Object)
+        genClasses.put("gen/C1", List.of(object, "gen/Left", "java/lang/Runnable"));
+        genClasses.put("gen/C2", List.of(object, "gen/Left"));
+        genClasses.put("gen/Unrelated", List.of(object));
+        genClasses.put("gen/NumSub1", List.of("java/lang/Number"));
+        genClasses.put("gen/NumSub2", List.of("java/lang/Number"));
 
         ScriptClassWriter writer = new ScriptClassWriter(
                 Rm003P1CompilerTestCase.class.getClassLoader(), script, genClasses, genIfaces);
@@ -118,8 +120,9 @@ public class Rm003P1CompilerTestCase {
         Assertions.assertEquals("java/lang/Object", writer.getCommonSuperClass("gen/Fork1", "gen/Fork2"));
         Assertions.assertEquals("java/lang/Object", writer.getCommonSuperClass("gen/Base", "gen/OtherBase"));
 
-        // Two generated classes sharing an interface merge on their common superclass (BabbleInstance)
-        Assertions.assertEquals(babbleInstance, writer.getCommonSuperClass("gen/C1", "gen/C2"));
+        // Plain compiled classes have java/lang/Object as their common superclass; classes sharing Number merge on Number
+        Assertions.assertEquals(object, writer.getCommonSuperClass("gen/C1", "gen/C2"));
+        Assertions.assertEquals("java/lang/Number", writer.getCommonSuperClass("gen/NumSub1", "gen/NumSub2"));
 
         // Mixed class & interface: returns interface iff class () implements it, else Object
         Assertions.assertEquals("gen/Left", writer.getCommonSuperClass("gen/C1", "gen/Left"));
