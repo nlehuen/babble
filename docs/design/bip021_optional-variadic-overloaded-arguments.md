@@ -6,7 +6,7 @@
 | **Date** | 2026-11-21 |
 | **Status** | Decided (`BIP021-D1`–`D23` decided, resolving `BIP021-Q1`–`Q11` (§7); `BIP021-P1`–`P6` not started) |
 | **Depends on** | argument binding and parameter defaults ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §2.4, `BIP001-D3`), the object model and Java interface bridges ([bip002_object-model.md](bip002_object-model.md) §9.2, §9.5), static typing, unions and generics ([bip008_static-typing.md](bip008_static-typing.md) §4.1, §5.3), core types and numeric widening ([bip011_core-types.md](bip011_core-types.md) `BIP011-D4`, `BIP011-D10`), the predicate-free grammar ([bip012_grammar-improvements.md](bip012_grammar-improvements.md)), `for` loops over arrays and iterables ([bip013_iterators.md](bip013_iterators.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects and callback forwarding ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), built-in signatures as axioms ([bip019_refactoring-axioms.md](bip019_refactoring-axioms.md)) |
-| **Scope** | Optional parameters in function types and their soundness, statically bound named arguments, variadic parameters (`...xs: T`) and spread arguments (`f(...xs)`), keyword-only parameters, Java varargs calls, generic parameters (generic function literals `fn of T (…)`, bounds `of (T: B)`, polymorphic function types and generic interface methods), and overload sets (`overload (f, g, …)`) : several signatures under one name, resolved statically to the most specific, with any possible ambiguity rejected where the set is built, and union arguments dispatched on their runtime class ; across `Babble.g4`, the four analysis passes, `runtime`, both backends, the formatter and `:type` |
+| **Scope** | Optional parameters in function types and their soundness, statically bound named arguments, variadic parameters (`xs: T...`, sugar for a generic `Iterable of T`) and spread arguments (`f(...xs)`), keyword-only parameters, Java varargs calls, generic parameters (generic function literals `fn of T (…)`, bounds `of (T: B)`, polymorphic function types and generic interface methods), and overload sets (`overload (f, g, …)`) : several signatures under one name, resolved statically to the most specific, with any possible ambiguity rejected where the set is built, and union arguments dispatched on their runtime class ; across `Babble.g4`, the four analysis passes, `runtime`, both backends, the formatter and `:type` |
 
 ---
 
@@ -23,7 +23,7 @@ def Shape = interface (
 )
 
 ;; variadic parameters, spread arguments, keyword-only parameters after the rest
-def join = fn (...parts: string, sep: string = ", "): string -> (
+def join = fn (parts: string..., sep: string = ", "): string -> (
     def sb = java.lang.StringBuilder()
     for p in parts then ( if sb.length() > 0 then ( sb.append(sep) ) ; sb.append(p) )
     sb.toString()
@@ -153,7 +153,7 @@ def twice = fn (f: fn of T (t: T): T) -> ( … )   ;; Syntax error : unexpected 
 
 * **Java interop** is the first motivation. Babble's whole library is Java's, and a large part of Java's API surface is varargs (`String.format`, `List.of` beyond ten elements, `Path.of`, `Arrays.asList`, `EnumSet.of`, `Stream.of`, `MessageFormat.format`, logging façades…). Implementing an overloaded Java interface in Babble (`Appendable`, `Consumer`/`IntConsumer` pairs, `Comparator` helpers) means one hand-dispatched method today.
 * **Ergonomics.** The ray tracers want `v * 2.0` and `v * w` on the same `Vec3`, so they write `v.scale(2.0)` and `v.mul(w)` ; `join`, `max`, `sum`, `printf`-like helpers want any number of arguments ; built-in functions get signatures user code cannot write.
-* **Typing the built-ins.** `BIP019` moves the built-ins' signatures to `builtins.ba` ; with `...values: any?` and keyword-only parameters, `print`, `println` and the core collection constructors of `BIP011-D10` become ordinary declarations instead of cases in `OperatorTypes` and `CallSolver`.
+* **Typing the built-ins.** `BIP019` moves the built-ins' signatures to `builtins.ba` ; with `values: any?...` and keyword-only parameters, `print`, `println` and the core collection constructors of `BIP011-D10` become ordinary declarations instead of cases in `OperatorTypes` and `CallSolver`.
 
 ### 2.4 Goals and non-goals
 
@@ -299,13 +299,13 @@ The survey follows the four questions this BIP has to answer : *when* is a defau
 | Clojure | arity only | argument count | when compiled | — | — | — | seq | `apply` |
 | Common Lisp | CLOS, dynamic, required args | class precedence | none (linearized) | per call | yes, supplied-p | `&key` | list | `apply` |
 | Groovy | dynamic, runtime types | distance between types | at runtime | as overloads | yes | via a `Map` | array | `*list` |
-| **Babble (this BIP)** | **static, closed sets** | **most specific, from static types ; union splits** | **where the set is built, exhaustively** | **per call, in the callee** (today) | **yes** (today) | **yes, bound statically** | **`list of T`** | **`...e`, into the rest only** |
+| **Babble (this BIP)** | **static, closed sets** | **most specific, from static types ; union splits** | **where the set is built, exhaustively** | **per call, in the callee** (today) | **yes** (today) | **yes, bound statically** | **an `Iterable of T` (generic, borrowed)** | **`...e`, into the rest only, uncopied** |
 
 ### 3.11 Lessons for Babble
 
 * **L1 — Defaults belong to the callee, evaluated per call.** Babble already does what Julia, Kotlin, Common Lisp and JavaScript do. Python's definition-time evaluation, C#'s constants copied into callers and C++'s static-type defaults on virtual calls are the three failure modes this avoids ; Kotlin's `$default` bitmask shows how to keep it cheap on the JVM. → `BIP021-D1`, `D3`.
 * **L2 — Names belong to declarations, and are bound statically.** Swift removed labels from function types, Kotlin refuses named calls through them, C# binds names against the statically chosen signature. Babble's runtime binding by the callee's names is what makes §2.2 (d) and (e) fail. → `BIP021-D4`.
-* **L3 — Varargs : typed by the element, a collection inside, keyword-only parameters after.** Java, Kotlin, Swift and Go annotate the element ; Python, Kotlin and Julia make what follows the rest keyword-only. Spread should **copy** (Python, JavaScript), not alias (Go, Java). → `BIP021-D5`–`D7`.
+* **L3 — Varargs : typed by the element, keyword-only parameters after, and a choice between copying and aliasing.** Java, Kotlin, Swift and Go annotate the element ; Python, Kotlin and Julia make what follows the rest keyword-only. Python and JavaScript copy a spread into a fresh tuple or array ; Go and Java pass the slice or array itself. Babble passes the caller's iterable itself, and makes it safe by borrowing (`BIP016`). → `BIP021-D5`–`D7`.
 * **L4 — Ranking is the price of overlap, and ambiguity its risk.** C++'s conversion ranks, Java's phases and most-specific rule, C#'s better function member, Kotlin's and Scala's default tie-breaks all exist because candidates may overlap, and each reports at a call an ambiguity the author of the overloads never saw. Java's most-specific rule is the one Babble's users already meet through Java calls ; λ&'s well-formedness condition (a meet for every overlapping pair) and Julia's ambiguity detection show that ambiguity can instead be ruled out where overloads are declared. Overlap is also what lets the static choice and the runtime type disagree (Java's puzzler, Groovy's divergence from `javac`) : a design has to pick one. → `BIP021-D10`, `D11`.
 * **L5 — Open extension brings non-local ambiguity.** Julia's type piracy and the restrictions Millstein and Chambers need for modular checking come from methods added anywhere. A **closed** set, extended by building a new value, keeps the check local. → `BIP021-D9`, `D14`.
 * **L6 — An overloaded value has an intersection type.** λ&, Typed Racket's `case->`, TypeScript's multiple call signatures and Scala 3's `&` agree ; λ&'s conditions on such types are what `BIP021-D10` checks. → `BIP021-D12`.
@@ -358,28 +358,31 @@ A function type says *that* a parameter may be omitted, never *what* the default
 
 ### 4.3 Variadic parameters and spread arguments
 
-**`BIP021-D5` — `...name: T` declares a rest parameter ; the parameters after it are keyword-only.**
+**`BIP021-D5` — `name: T...` declares a rest parameter ; the parameters after it are keyword-only.**
 
 ```babble
-def max = fn (first: int, ...rest: int): int -> ( … )              ;; one or more ints
-def log = fn io (fmt: string, ...args: any?, level: Level = Level.INFO) -> ( … )
+def max = fn (first: int, rest: int...): int -> ( … )              ;; one or more ints
+def log = fn io (fmt: string, args: any?..., level: Level = Level.INFO) -> ( … )
 def temp = fn (..., celsius: double = ..., fahrenheit: double = ...) -> ( … )  ;; keyword-only, no rest
 ```
 
-* `T` is the **element** type (L3) ; inside the body, `rest` is a `list of T`. A function has at most one rest parameter. It has no default (absent, it is empty) and is never passed by name.
-* Parameters after the rest are **keyword-only** : they are only bound by name, so `log("%d", 1, 2, level: Level.DEBUG)` is unambiguous. A bare `...` with no name declares keyword-only parameters without accepting extra arguments (Python's bare `*`, [PEP 3102](https://peps.python.org/pep-3102/)).
-* Binding (`Arguments`) : the rest collects, in order, every positional argument at or after its index ; the parameters after it are bound by name only.
-* Parameter modifiers on a rest apply to its **elements** : `mut ...counters: Counter` lets the callee mutate the counters. The list itself is always fresh and owned by the callee (`BIP021-D6`).
-* Function types write it the same way : `fn (fmt: string, ...args: any?): string`. A rest parameter is optional in the sense of `BIP021-D3` : `fn (a: int, ...r: int)` ≤ `fn (a: int)`, and ≤ `fn (a: int, b: int)` (the extra argument goes to the rest).
+* The `...` follows the **element** type `T` (L3), as in Java's `T... xs` and Swift's `xs: T...`. A function has at most one rest parameter. It has no default (absent, it is empty) and is never passed by name.
+* Parameters after the rest are **keyword-only** : they are only bound by name, so `log("%d", 1, 2, level: Level.DEBUG)` is unambiguous. A bare `...` in place of a parameter declares keyword-only parameters without accepting extra arguments (Python's bare `*`, [PEP 3102](https://peps.python.org/pep-3102/)).
+* Binding (`Arguments`) : the rest receives, in order, every positional argument at or after its index ; the parameters after it are bound by name only.
+* Parameter modifiers on a rest apply to its **elements** : `mut counters: Counter...` lets the callee mutate the counters.
+* Function types write it the same way : `fn (fmt: string, args: any?...): string`. A rest parameter is optional in the sense of `BIP021-D3` : `fn (a: int, r: int...)` ≤ `fn (a: int)`, and ≤ `fn (a: int, b: int)` (the extra argument goes to the rest).
+* `int?...` lexes as `int`, `?` and `...` : a `'?...'` token keeps `?.` (safe navigation) from taking the `?` first.
 
-**`BIP021-D6` — Inside, a fresh `list of T` ; outside, whatever is cheapest.** The rest's value is a new `list of T` (`BIP011` core list) the callee owns (`unique`, `BIP007-P2`) : it can return it, `move` it, mutate it inside a `pure` function (fresh local mutation, `BIP007-D6`), and nothing the caller holds aliases it. That is the semantics ; the lowering is free to do better :
+**`BIP021-D6` — `xs: T...` is a generic `Iterable` parameter.** `fn (xs: T...)` means `fn of S (xs: S)` with an anonymous type parameter `S: java.lang.Iterable of T` (`BIP021-D19`) : inside the body, `xs` is an `Iterable of T` — `for x in xs` (`BIP013`), `xs.iterator()`, `list(from: xs)` — and each call instantiates `S` with what the caller passes. Varargs are then **syntactic sugar for passing a cheap iterable** :
 
-* when the analysis proves the list is neither mutated nor escapes (`@BORROWED`, no `mut` use), the compiled function receives an array and the body's `size()`, `get(i)` and `for x in rest` lower to `ARRAYLENGTH`, `<X>ALOAD` and the indexed loop of `BIP013` ;
-* for a primitive element type, the `$spec` entry point takes the primitive array (`[I` for `...xs: int`), so `max(1, 2, 3)` boxes nothing.
+* **plain arguments** — `max(1, 2, 3)` — are passed as a fixed-size, read-only sequence the call site builds over an array (`runtime.ArgumentsView`, an `Iterable` with `size` and indexed access for the compiler), without a list ; for a primitive element type, over a primitive array (`int[]`) ;
+* **a spread** — `max(0, ...scores)` — passes the caller's iterable itself when it is the only argument the rest receives, and otherwise a view that chains the plain arguments and the spread iterables (`BIP021-D7`) ; nothing is copied ;
+* the parameter is **borrowed**, like any parameter under `BIP016` : the callee reads it but may not mutate it (`Iterator.remove` is a mutation), it is returned only through borrow (`BIP016-D10`), and keeping it beyond the call needs `shared`, which then aliases the caller's collection. A callee that wants a list of its own copies explicitly : `def own = list(from: xs)` ;
+* the price of the abstraction is that only iteration is guaranteed : no `size()` or `get(i)` on `xs`, and elements are boxed when iterated, unless the call is inlined (`InlinePass`) and the view's array is visible to the compiler.
 
-(A `frozen` list and a `JavaArray of T` were the alternatives, `BIP021-Q3`.)
+(A fresh `list of T` was decided first, then changed in review ; a `frozen` list and a `JavaArray of T` were the other alternatives, `BIP021-Q3`.)
 
-**`BIP021-D7` — `...e` spreads an iterable into a rest parameter, and copies it.** In a call, `...e` passes the elements of `e` : a `JavaArray of T`, a `list of T` or any `java.lang.Iterable of T`, whose element type must fit the rest's.
+**`BIP021-D7` — `...e` spreads an iterable into a rest parameter, without copying it.** In a call, `...e` passes the elements of `e` : any `java.lang.Iterable of T` (every core collection of `BIP011`) or a `JavaArray of T` (wrapped in a view of the array), whose element type must fit the rest's. A bare `java.util.Iterator` is not spread : it cannot be iterated twice.
 
 ```babble
 max(0, ...scores)
@@ -388,8 +391,8 @@ join(...first, "middle", ...second)          ;; several spreads and plain argume
 ```
 
 * A spread only feeds a **rest parameter** (a Babble rest, or a Java varargs parameter, `BIP021-D8`) : spreading into fixed parameters would make the arity of the call unknowable statically (`BIP021-Q4`). Spread and plain arguments after the fixed ones mix freely, in order.
-* Spreading **copies** : the callee's list is new even when `e` is a list (L3) ; spreading reads `e` (`@BORROWED`).
-* Since `Callable.call` already takes an argument array, a spread costs building that array ; a call to a statically known function with a statically known spread builds the callee's list or array directly.
+* Spreading **does not copy** a Babble rest's argument : the callee iterates what the caller passed (`BIP021-D6`), which spreading only reads (`@BORROWED`). A Java varargs parameter is an array, so spreading into one does copy (`BIP021-D8`).
+* `Callable.call` keeps its argument array : on the generic path the rest's view is built from the trailing arguments, and a call to a statically known function passes the view, or the spread iterable, directly.
 
 ### 4.4 Java varargs
 
@@ -399,7 +402,7 @@ join(...first, "middle", ...second)          ;; several spreads and plain argume
 * `...e` spreads into a Java varargs parameter, converting a list or iterable to an array of the parameter's component type (`toArray`), or passing a copy of an array.
 * A generic `T...` is inferred as Java infers it, `Arrays.asList(ints)` included (a `List of JavaArray of int`, as in Java ; a warning may point at `...ints`).
 * Compiled code : a statically resolved varargs call (`JavaCallTarget`) builds the array at the call site (`ANEWARRAY`/`NEWARRAY` and stores) and calls directly, as `javac`'s output does ; the runtime path collects into the array before `invoke`. `Overloads.Cache` keys by argument kinds, so a varargs call of a new arity is a new entry.
-* A Babble method implementing a Java varargs method (`String format(String f, Object... args)`) may take a rest parameter (`fn (f: string, ...args: any?)`) or a `JavaArray of any?` ; the bridge (`RM003`) passes the array as a list or as is.
+* A Babble method implementing a Java varargs method (`String format(String f, Object... args)`) may take a rest parameter (`fn (f: string, args: any?...)`) or a `JavaArray of any?` ; the bridge (`RM003`) passes the array as a view (`BIP021-D6`), or as is.
 
 ### 4.5 Overload sets
 
@@ -427,7 +430,7 @@ Error : Ambiguous overloads of f : f(int, int) fits fn (a : int, b : double) and
 
 Precisely : for every call shape — a number of positional arguments and a set of names, bound by the rules of §4.2–§4.3 — and every pair of alternatives A and B accepting it whose parameter types at that shape **overlap statically** (some argument types fit both), A must be more specific than B, or B than A, or a third alternative must be their **meet** : more specific than both, and accepting every argument list both accept. That is the well-formedness condition of λ&'s overloaded types ([Castagna, Ghelli & Longo](https://doi.org/10.1145/141471.141537)) and the condition Julia's ambiguity detection looks for, checked once, statically, where the set is built, rather than met at a call. Consequences :
 
-* **Equal parameter types at some shape are ambiguous** : two alternatives with the same signature, and an alternative that reaches another's arity through a default or a rest with the same types — `f(a: int)` beside `f(a: int, b: int = ...)`, or beside `f(...xs: int)`. Defaults and rests never break ties.
+* **Equal parameter types at some shape are ambiguous** : two alternatives with the same signature, and an alternative that reaches another's arity through a default or a rest with the same types — `f(a: int)` beside `f(a: int, b: int = ...)`, or beside `f(xs: int...)`. Defaults and rests never break ties.
 * `f(a: int, b: double)` and `f(a: double, b: int)` need a `f(a: int, b: int)`.
 * Two interfaces always overlap (a class may implement both) and their meet is not a writable type, so `f(s: Shape)` beside `f(n: Named)` is rejected unless one interface extends the other.
 * A generic alternative is less specific than one whose parameter types it can be instantiated to accept (Java's rule), so `fn of T (t: T)` is a valid fallback beside `fn (n: int)`.
@@ -484,7 +487,7 @@ def area = overload (shapes.area, fn (t: Triangle): double -> ( … ))
 
 which shadows or rebinds the name as any `def` does (`BIP004-D1`), with `BIP021-D10` checked again. That is the closed-world answer to L5 : every ambiguity is found where a set is built.
 
-**`BIP021-D15` — Effects follow the alternative.** A resolved call has its alternative's effects, `calling` forwarding (`BIP017`) and algebraic properties (`BIP007`) ; a split call has the join of the effects of the alternatives it may reach, and only the properties they all have. Building a set is pure, as building a function value is. A rest list is fresh (`unique`) ; spreading reads its source.
+**`BIP021-D15` — Effects follow the alternative.** A resolved call has its alternative's effects, `calling` forwarding (`BIP017`) and algebraic properties (`BIP007`) ; a split call has the join of the effects of the alternatives it may reach, and only the properties they all have. Building a set is pure, as building a function value is. A rest parameter is borrowed ; spreading only reads its source.
 
 **`BIP021-D16` — Runtime and lowering.**
 
@@ -534,7 +537,7 @@ both(id) ; both(fn of T (t: T): T -> ( t ))
 **`BIP021-D21` — Generics meet the rest of this BIP** (resolves `BIP021-Q11`).
 
 * **Optional parameters.** A default is checked once, valid for every instantiation : `fn of T (a: T, b: T? = null)` and `fn of T (a: T, b: T = a)` are fine, `b: T = null` is not (`Type error : expected T, got null`). A type parameter that only omitted arguments would determine comes from the expected type, else `Missing type : cannot infer type arguments for f`, as `java.util.List.of()` needs today ; the bound is never used instead.
-* **Rests.** `fn of T (...xs: T): list of T` infers `T` from every element, spread ones included, joined as calls join today (`listOf(1, "a")` is a `list of (int | string)`) ; an empty rest determines nothing (previous point). Returning the rest, or its elements, is a return through borrow (`BIP016-D10`).
+* **Rests.** `fn of T (xs: T...): list of T -> ( list(from: xs) )` infers `T` from every element, spread ones included (a spread `Iterable of U` gives `U`), and `S` (`BIP021-D6`) from what the rest receives, joined as calls join today (`listOf(1, "a")` is a `list of (int | string)`) ; an empty rest determines nothing (previous point). Returning the rest itself, or its elements, is a return through borrow (`BIP016-D10`).
 * **Overload sets.** An alternative's type parameters are instantiated after it is selected. For `BIP021-D10`, a parameter of type `T` overlaps what `T`'s bounds overlap, and a generic alternative is less specific than one whose parameter types it can be instantiated to accept, so `fn of T (t: T)` serves as the fallback beside `fn (n: int)`. A runtime split never chooses by a type variable (L11). Type arguments cannot be applied to a set (`Cannot apply type arguments to an overload set : f`) : apply them to an alternative before building it.
 * **Named arguments** bind against a generic signature as against any other (`BIP021-D4`).
 
@@ -544,25 +547,25 @@ both(id) ; both(fn of T (t: T): T -> ( t ))
 expression:      …
                | OVERLOAD '(' NL* expression (NL* ',' NL* expression)* NL* ')'   # overloadExpression
 functionLiteral: FN (OF typeParameters)? effectPrefix? fnParameters (':' UNIQUE? type)? '->' NL* block ;
-fnParam:         paramModifier* ELLIPSIS? ID (':' type)? ('=' NL* defaultValue=expression)?
+fnParam:         paramModifier* ID (':' type rest=(ELLIPSIS | Q_ELLIPSIS)?)? ('=' NL* defaultValue=expression)?
                | ELLIPSIS ;                                               // bare ... : keyword-only after
 callParameter:   (memberName ':')? expression
                | ELLIPSIS expression ;                                    // spread
 nonParenNullableType: …
                | FN (OF typeParameters)? effectPrefix? fnTypeParameters (':' UNIQUE? type)?   # functionType
                | OVERLOAD '(' NL* type (NL* ',' NL* type)* NL* ')'                            # overloadType
-fnTypeParam:     paramModifier* ELLIPSIS? (ID ':')? type ('=' NL* ELLIPSIS)?
+fnTypeParam:     paramModifier* (ID ':')? type rest=(ELLIPSIS | Q_ELLIPSIS)? ('=' NL* ELLIPSIS)?
                | ELLIPSIS ;
 typeParameters:  ID
                | '(' NL* typeParam (NL* ',' NL* typeParam)* NL* ')' ;     // bounds only in parentheses
 typeParam:       ID (':' type (NL* '&' NL* type)*)? ;
 memberName:      … | OVERLOAD ;
-OVERLOAD: 'overload' ;   ELLIPSIS: '...' ;   AMP: '&' ;
+OVERLOAD: 'overload' ;   ELLIPSIS: '...' ;   Q_ELLIPSIS: '?...' ;   AMP: '&' ;   // Q_ELLIPSIS : a nullable element, int?...
 ```
 
 All LL(1)/LL(2), with no predicate (`ParserGrammarTestCase`). `...` cannot start an expression, and a floating-point literal needs a digit on both sides of its `.`, so `ELLIPSIS` takes no existing program's tokens. `&` appears only between bounds. `fn of` cannot be a type application (`expression OF typeArguments`), since `fn` is a keyword. `overload` becomes a keyword, which no `.ba` or `.batest` file of the repository uses as a name. The analysis rejects `...` in a function literal's default, a rest with a default, a second rest, a required parameter after an optional one (`BIP021-D22`), a spread outside a call to a variadic callee, and an `overload` operand without a function or set type.
 
-The formatter writes `...xs` and `...e` with no space, `= ...` spaced as any default, `&` with a space on each side, and `overload (` as it writes `interface (`, one alternative per line when they do not fit. `TypeDisplay` (`:type`) renders `= ...`, `...xs : int`, `overload (fn …, fn …)`, `fn of T (…)` and bounds `of (T : A & B)`.
+The formatter writes `xs: T...` and the spread `...e` with no space, `= ...` spaced as any default, `&` with a space on each side, and `overload (` as it writes `interface (`, one alternative per line when they do not fit. `TypeDisplay` (`:type`) renders `= ...`, `xs : int...`, `overload (fn …, fn …)`, `fn of T (…)` and bounds `of (T : A & B)`.
 
 ### 4.8 Diagnostics
 
@@ -600,7 +603,7 @@ Worded like the runtime errors they predict, with a space before the colon :
 | `Resolver` | nothing new : a set is a value under one name |
 | `TypeChecker` (`TypeAnnotations`, `TypeAlgebra`, `CallSolver`, `JavaTypeBridge`, `LoweringAnalyzer`) | `Type.Parameter.rest`, keyword-only flag ; `Type.Overloaded` (`overload (…)` types) ; `functionRelates` with `BIP021-D3`'s optional rule and rests ; static overlap, meets and the exhaustive ambiguity check (`BIP021-D10`, building on `TypeAlgebra`'s overlap), runtime disjointness for splits ; `overload (…)` expressions ; binding with rests, spreads and static names recorded per call (`BIP021-D4`) ; most-specific resolution, widening ranks and union splits (`BIP021-D11`) ; Java phase 3 (`BIP021-D8`) ; new lowering targets (`ArgumentBinding`, `OverloadTarget`, varargs `JavaCallTarget`) |
 | Generics (`TypeAnnotations`, `TypeAlgebra`, `MemberTypes`, `CallSolver`) | `Type.TypeVar` bounds ; members of `T` through its bound ; bound checks at every instantiation ; `functionRelates` relating polymorphic types by renaming (fixing §2.2 (g)) ; generic values typed polymorphically instead of `cannot infer` ; rigid type parameters while checking a lambda against a polymorphic type ; `TypedModuleSummary` carrying bounds |
-| `EffectChecker` | effects per alternative, joins for dispatched calls, rest lists fresh, spreads borrowed (`BIP021-D15`) |
+| `EffectChecker` | effects per alternative, joins for dispatched calls, rest parameters and spreads borrowed (`BIP021-D15`) |
 | `runtime` | `Arguments` (rest, keyword-only, `BIP021-D23`), `OverloadSet`, `Overloads` phase 3, `CompiledFunction` (rest index, missing mask) |
 | `Interpreter` | static bindings and the alternatives chosen by the checker, from `ScopeAnalysis` (required : resolution is static) ; union splits |
 | HIR, `HirEmitter`, `ClassGen`, `InterfaceGen` | `Call` with a static binding and spreads ; `MakeOverloadSet` ; dispatch typecase ; `$spec` with missing mask and primitive rest arrays ; one JVM method per alternative of an overloaded method ; varargs array construction for Java |
@@ -617,7 +620,7 @@ Each phase keeps `mvn package` green in all three Surefire runs and comes with i
 1. **`BIP021-P1` — Sound optional and named parameters.** `= ...` in function types and interfaces (`BIP021-D2`), the optional-parameter subtyping rule (`BIP021-D3`), statically bound named arguments lowered positionally in both backends (`BIP021-D4`), the `$spec` missing mask, and the two binding restrictions (`BIP021-D22`, `BIP021-D23`) as errors, with the repository's programs fixed. Fixes §2.2 (c)–(e). No new syntax beyond `= ...` and a bare `...`.
 2. **`BIP021-P2` — Java varargs.** Phase 3 in `Overloads` and the checker, array construction for statically resolved calls (`BIP021-D8`). `overloads_and_varargs.batest`'s "not expanded" case flips. Independent of the others ; the largest interop payoff for the smallest change.
 3. **`BIP021-P3` — Generic parameters.** `fn of T` literals, bounds (`&` included) on functions, classes, records and interfaces, polymorphic function types, implementable generic interface methods (`BIP021-D17`–`D20`). Fixes §2.2 (f)–(i).
-4. **`BIP021-P4` — Babble variadic parameters and spread.** `...xs: T`, keyword-only parameters, `...e` into Babble rests and Java varargs, array-backed and primitive lowering (`BIP021-D5`–`D7`), and the built-ins' signatures, with the generic rests of `BIP021-D21`.
+4. **`BIP021-P4` — Babble variadic parameters and spread.** `xs: T...` as a generic `Iterable` parameter, keyword-only parameters, `...e` into Babble rests without copying and into Java varargs, `runtime.ArgumentsView` and its primitive variants (`BIP021-D5`–`D7`), and the built-ins' signatures, with the generic rests of `BIP021-D21`.
 5. **`BIP021-P5` — Overload sets.** The `overload` keyword, the exhaustive ambiguity check, most-specific resolution with union splits, `overload (…)` types, `OverloadSet`, the resolved and split lowerings, modules and sessions, effects (`BIP021-D9`–`D12`, `D14`–`D16`), and generic alternatives (`BIP021-D21`).
 6. **`BIP021-P6` — Overloaded methods.** Methods, interface members, Java interface bridges and operator methods (`BIP021-D13`) ; `Vec3.times` in the ray tracers, which must still render `examples/raytracer-argon/scene.ppm` byte for byte.
 
@@ -631,8 +634,8 @@ All decided on 2026-11-21. Each question's answer is now part of the decision it
 |---|---|---|
 | **`BIP021-Q1`** — required parameters after optional ones | **`BIP021-D22`** | **forbidden** : after an optional parameter, every parameter is optional, a rest, or keyword-only |
 | **`BIP021-Q2`** — positional arguments after named ones | **`BIP021-D23`** | **C#'s rule** : allowed only while every named argument before them is in its own position ; an error from `BIP021-P1` on, with the repository's calls fixed in the same change |
-| **`BIP021-Q3`** — what a rest parameter is inside | **`BIP021-D6`** | a **fresh `list of T`** owned by the callee, array-backed when unmutated and unescaped |
-| **`BIP021-Q4`** — spreading into fixed parameters | **`BIP021-D7`** | **no** : a spread only feeds a rest or a Java varargs parameter |
+| **`BIP021-Q3`** — what a rest parameter is inside | **`BIP021-D6`** | first a fresh `list of T` ; **changed in review** : `xs: T...` is sugar for an anonymous generic `S: java.lang.Iterable of T`, so a spread passes the caller's iterable without copying |
+| **`BIP021-Q4`** — spreading into fixed parameters | **`BIP021-D7`** | **no** : a spread only feeds a rest or a Java varargs parameter, and is never copied into a Babble rest |
 | **`BIP021-Q5`** — how a set is written | **`BIP021-D9`** | a **reserved keyword**, `overload ( … )` |
 | **`BIP021-Q6`** — numeric widening in resolution | **`BIP021-D11`** | **Java's nearest widening** : an exact type beats a widening, and a type that widens to another is more specific |
 | **`BIP021-Q7`** — writable set types | **`BIP021-D12`** | **writable**, as `overload (fn …, fn …)` rather than `&` |
