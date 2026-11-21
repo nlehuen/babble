@@ -5,7 +5,7 @@
 | **BIP** | 019 |
 | **Date** | 2026-11-20 |
 | **Status** | Decided ; no phase implemented. A prototype of the former ordering was reverted ; what it taught is recorded where it applies (§3.2, §3.3, §4.3). |
-| **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)) |
+| **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)), optional parameters and polymorphic function types ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)), and BIP020's array types (in progress) |
 | **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as a small set of curated `.ba` axioms (and `.java` stubs only for what Babble cannot state) ; everything else about Java classes is inferred from their bytecode by the compiler, the curated axioms overriding what it infers ; reads of mutable state become part of the effect model |
 
 ---
@@ -79,12 +79,12 @@ The **Java stubs** remain only for what Babble cannot state : what a third-party
 
 ```babble
 axiom int: fn (value: any): int
-axiom assert: fn (c: bool, message?: any?): bool
+axiom assert: fn (c: bool, message: any? = ...): bool
 axiom same: fn nothrow commutative (a: any?, b: any?): bool
 ```
 
 * **An axiom about a Babble name** states that the name exists with this signature and these effects, and that its value comes from outside the program — the runtime's implicits for the built-ins, a host's bindings elsewhere. It is valid anywhere, applies to its scope and the scopes it encloses, declares nothing at runtime (its value as an expression is `null`), and has no `export` ; reading a name that nothing provides fails as `No such name`. Nothing can be inferred about such a name, so its signature is required. Its name may be a core scalar keyword, so that the conversions are declared like any built-in (`axiom int: fn …`).
-* **Optional parameters :** a function type may mark a named parameter optional, `fn (c: bool, message?: any?): bool`, which a function whose parameter has a default satisfies ; `assert` is declared with it, and so may any function type, in an axiom or not.
+* **Optional parameters :** BIP021's optional parameters in function types (`message: any? = ...`), which a function whose parameter has a default satisfies, declare `assert`'s optional message.
 * **Special forms stay rules of the language :** `print` (any number of arguments, and `to:`), `move`, `freeze` and `discard` (ownership rules), `import` (modules), `STDOUT` and `args` keep their typing in the type checker. The prelude declares the built-ins with an ordinary signature : the conversions, `assert` / `suppose`, `same` and `classof`.
 * **Nearest surface form :** the built-ins are written with ordinary effect words (pure-by-default, `nothrow`, `commutative`, `io`) even where the former internal profiles differed in details the language cannot state (the conversions not borrowing `this`, `import`'s fully unconstrained effects) ; any difference a test, a golden or a diagnostic can see is reported, not hidden.
 
@@ -186,11 +186,12 @@ axiomMember: DEF (memberName | '*') ':' axiomType ;      // a class's members ar
 | `fn shared …` | keeps its receiver |
 | unmarked, `shared`, `unique`, `mut` parameter | borrowed, kept, consumed, mutated |
 | `T`, `T?`, a type variable `E` | non-null, nullable, as nullable as its argument |
-| `p?: T` | optional parameter |
+| `p: T = ...` | optional parameter (BIP021) |
+| `fn of T (…)` | a generic method's own type parameters (BIP021's polymorphic function types) |
 | `idempotent`, `commutative`… | algebraic properties |
 | `view`, `shallow`, `fresh`, `foldable` | the result aliases the receiver ; a mutator touching no element ; a fresh result ; may be called at compile time |
 
-* **Overloads :** a signature's parameter types map to Java's erasures — `int` to `int`, `string` to `String`, a type variable to its bound (`Object`), `list of T` to `List`, a Java class to itself — and the axiom describes the overload with those parameter types. Where Babble's types don't pin one down (`int` against `Integer`, `char` against `int`), the parameter is written with the Java type itself (`e: java.lang.Integer`) ; methods taking arrays, which Babble types cannot name, are left to the analyzer or to a future form.
+* **Overloads :** a signature's parameter types map to Java's erasures — `int` to `int`, `string` to `String`, a type variable to its bound (`Object`), `list of T` to `List`, a Java class to itself — and the axiom describes the overload with those parameter types. Where Babble's types don't pin one down (`int` against `Integer`, `char` against `int`), the parameter is written with the Java type itself (`e: java.lang.Integer`) ; a generic method's own type parameters are those of a polymorphic function type (`def toArray: fn of T (a: …): …`, BIP021) ; an array parameter is written with BIP020's array types, and until they land, a method taking arrays is left to the analyzer or to an effects-only axiom.
 * **Nullness, where a signature is given, is always stated :** a signature never leaves a position's nullness unspecified (`T` or `T?`) ; without a signature, nullness is inferred.
 * **One profile :** an axiom states one profile, which the effect checker uses and the bytecode analyzer applies to the calls it meets ; where the former rules disagreed (`String.valueOf`), the simulation reports it.
 * **Exactness :** some of the former rules' details have no surface form — a receiver borrowed unless the method is static, `Object`'s "deterministic where overridden", constructors that may not terminate. The nearest surface form is used, and every difference a test, a golden or a diagnostic can see is reported. Reads are plain `fn`s, their determinism decided at the call site (§4).
@@ -286,7 +287,7 @@ Until the phase that migrates a former rule, the rule stays in the code, consult
 | **`BIP019-P4` — Effects** | curated axioms in `java/lang/curated.ba` and `java/util/curated.ba` (protocol methods, interface contracts, `QUESTIONABLE` where a doubtful rule is kept), the rest inferred ; the simulation of the effect rules reviewed ; `standardProtocolDefault`, the `COLLECTION_*` and `STRING_*` sets, the constructor rules, the shallow and view rules and `evalFor`'s case deleted. |
 | **`BIP019-P5` — Optimizer** | `SEEDED_INTRINSICS` becomes curated axioms for the natives (`StrictMath`…), the rest inferred ; `HirPurity`'s four lists become `foldable` and `idempotent` curated axioms ; `ConstFoldPass` asks `BuiltinAxioms`. |
 | **`BIP019-P6` — Nullness and immutability** | `JavaNullability`'s overlay becomes `nullmarked` classes and the nullness of members' types, inferred where the analyzer can tell (a result always `new` or constant), curated elsewhere ; `Map.Entry`'s deep immutability becomes `immutable` ; the meaning of third-party nullness annotations becomes one Java stub per annotation, and `JavaNullability` loses its name lists. |
-| **`BIP019-P7` — Built-ins** | optional parameters in function types ; axioms about Babble names (`axiom int: fn (value: any): int`), a core scalar keyword included ; `builtins.ba` ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
+| **`BIP019-P7` — Built-ins** | axioms about Babble names (`axiom int: fn (value: any): int`), a core scalar keyword included ; `builtins.ba`, `assert`'s optional message using BIP021's optional parameters (after BIP021's phase that brings them) ; `OperatorTypes` reads the prelude ; diagnostics keep their wording. |
 | **`BIP019-P8` — Enforcement and docs** | `AxiomsTestCase` (§7) ; `-format -check` covers the axioms ; `axiom … on` deprecated in favor of `axiom X.m: fn …` ; AGENTS.md gets the rule "a new assumption goes in the axioms directory" ; README, BIP007 §4 and BIP011 §6.4, §8.2 point to the axioms. |
 
 ## 7. Verification
