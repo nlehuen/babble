@@ -414,6 +414,21 @@ def half = fn (n: int): double -> ( n / 2 )
 half(id("4") as int)   ;; Type error : expected int, got string, at line number 3
 ```
 
+Since `T?` is `T | null`, the value `null` belongs to every nullable type : `null is T?` is
+`true` and `null as T?` succeeds whatever `T` is, even an interface the declared class never
+implements, while `null is T` is `false` and `null as T` fails. A cast is rejected statically
+only when the two types share no value, and `null` is one they share once both are nullable :
+
+```
+def d: Disk? = null
+d is Named?            ;; true
+d as Named?            ;; null
+d is Named             ;; false
+def i: int? = null
+i as string?           ;; null : int? and string? share null
+i as string            ;; Type error : expected string, got int?, before running
+```
+
 Functions, classes and interfaces can also take type parameters with `of` — Babble never uses
 square or angle brackets — and type arguments are inferred at call sites :
 
