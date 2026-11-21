@@ -137,18 +137,27 @@ public final class BabbleCompiler {
         int optLevel = resolveOptLevel(engine);
         boolean verify = Boolean.getBoolean(VERIFY);
         String dumpIr = resolveDumpIr(engine);
-        boolean aotCrossModule = engine != null && Boolean.TRUE.equals(engine.get(AOT_CROSS_MODULE));
-        @SuppressWarnings("unchecked")
-        Map<String, org.babblelang.ir.hir.HirFunction> aotInlineCache = aotCrossModule
-                ? (Map<String, org.babblelang.ir.hir.HirFunction>) engine.get(AOT_INLINE_CACHE)
-                : null;
-        org.babblelang.opt.PassContext passCtx = new org.babblelang.opt.PassContext(
-                optLevel, verify, dumpIr, aotCrossModule,
-                aotInlineCache != null ? aotInlineCache : Map.of());
-        hir = org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(
-                hir, passCtx, dumpIr != null ? (phase, text) -> dumpIr(dumpIr, internalName, phase, text) : null);
-        if (aotCrossModule && aotInlineCache != null && moduleKey != null) {
-            aotInlineCache.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir));
+        if (optLevel <= 0) {
+            if (verify) {
+                org.babblelang.ir.hir.HirVerifier.verify(hir);
+            }
+            if (dumpIr != null) {
+                dumpIr(dumpIr, internalName, "hir-before", org.babblelang.ir.hir.HirPrinter.print(hir));
+            }
+        } else {
+            boolean aotCrossModule = engine != null && Boolean.TRUE.equals(engine.get(AOT_CROSS_MODULE));
+            @SuppressWarnings("unchecked")
+            Map<String, org.babblelang.ir.hir.HirFunction> aotInlineCache = aotCrossModule
+                    ? (Map<String, org.babblelang.ir.hir.HirFunction>) engine.get(AOT_INLINE_CACHE)
+                    : null;
+            org.babblelang.opt.PassContext passCtx = new org.babblelang.opt.PassContext(
+                    optLevel, verify, dumpIr, aotCrossModule,
+                    aotInlineCache != null ? aotInlineCache : Map.of());
+            hir = org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(
+                    hir, passCtx, dumpIr != null ? (phase, text) -> dumpIr(dumpIr, internalName, phase, text) : null);
+            if (aotCrossModule && aotInlineCache != null && moduleKey != null) {
+                aotInlineCache.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir));
+            }
         }
         HirEmitter emitter = new HirEmitter(hir, parentLoader);
         Map<String, byte[]> classes = emitter.generate();
