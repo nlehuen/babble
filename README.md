@@ -414,6 +414,21 @@ def half = fn (n: int): double -> ( n / 2 )
 half(id("4") as int)   ;; Type error : expected int, got string, at line number 3
 ```
 
+Since `T?` is `T | null`, the value `null` belongs to every nullable type : `null is T?` is
+`true` and `null as T?` succeeds whatever `T` is, even an interface the declared class never
+implements, while `null is T` is `false` and `null as T` fails. A cast is rejected statically
+only when the two types share no value, and `null` is one they share once both are nullable :
+
+```
+def d: Disk? = null
+d is Named?            ;; true
+d as Named?            ;; null
+d is Named             ;; false
+def i: int? = null
+i as string?           ;; null : int? and string? share null
+i as string            ;; Type error : expected string, got int?, before running
+```
+
 Functions, classes and interfaces can also take type parameters with `of` — Babble never uses
 square or angle brackets — and type arguments are inferred at call sites :
 
@@ -434,6 +449,15 @@ def describe = fn (x: Shape & Named): string -> ( x.name() + " " + x.area() )
 def s: Shape = pick()
 if s is Named then ( describe(s) )      ;; s : Shape & Named
 def maybe: (Shape & Named)? = null
+```
+
+A type alias names a type, so that a long one is written once ; it is transparent, can take type
+parameters, and can be exported (see [BIP023](docs/design/bip023_type-aliases.md)) :
+
+```
+def ShapeWithText = type Shape & (Named | Label)
+def Pair of (A, B) = type entry of (A, B)
+def p: Pair of (string, int) = entry("a", 1)
 ```
 
 ### Function effects and contracts
@@ -694,7 +718,7 @@ Language features :
 - [x] functions (`fn (...) -> (...)`), supporting recursion (`recurse`) and closures.
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional & named parameters in function calls, and default values for parameters.
-- [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions (`fn (...) : R`), union types (`A | B`), intersection types of interfaces (`A & B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types (`Box of T`, `list of int`, `java.util.List of string`).
+- [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions (`fn (...) : R`), union types (`A | B`), intersection types of interfaces (`A & B`), type aliases (`def T = type A | B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types (`Box of T`, `list of int`, `java.util.List of string`).
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, records (`record`), private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md) and [BIP012](docs/design/bip012_grammar-improvements.md)).
 - [x] Java interop both ways : Java classes and generic types used directly from Babble, Babble functions passed as Java functional interfaces, Babble classes implementing Java (including generic) interfaces, and Java nullability alignment (`@NotNull`/`@Nullable`/JSpecify, mapped `java.base` parametric nullness, and defensive boundary checks, see [BIP011](docs/design/bip011_core-types.md)).

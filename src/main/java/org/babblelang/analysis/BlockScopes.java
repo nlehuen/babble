@@ -441,8 +441,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             if (scope.kind != ScopeNode.Kind.INTERFACE_BODY
                     && !(ctx.value instanceof BabbleParser.FunctionLiteralContext
                     || ctx.value instanceof BabbleParser.ClassExpressionContext
-                    || ctx.value instanceof BabbleParser.InterfaceExpressionContext)) {
-                throw error("Type parameters only apply to functions, classes, and interfaces : " + ctx.name.getText(), ctx.typeParameters());
+                    || ctx.value instanceof BabbleParser.InterfaceExpressionContext
+                    || ctx.value instanceof BabbleParser.TypeAliasExpressionContext)) {
+                throw error("Type parameters only apply to functions, classes, interfaces, and type aliases : " + ctx.name.getText(), ctx.typeParameters());
             }
         }
 

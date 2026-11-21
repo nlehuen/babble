@@ -412,6 +412,12 @@ system itself and introduces union types (`A | B`) :
   `T | null` (`string?`, `Point?`, `int?`, `any?`, `((x : int) : int)?`). `null` is also a type
   assignable to any `T?` and to no `T` ; `T` is assignable to `T?`, and `T?` is not assignable to
   `T` without narrowing.
+* **`null` and `T?`.** Because `T?` is the union `T | null`, the value `null` is a member of every
+  nullable type : `null is T?` is `true` and `null as T?` succeeds for any `T`, including an
+  interface the declared class never implements (`def d: Disk? = null` then `d as Named?`), while
+  `null is T` is `false` and `null as T` fails (`expected T, got null`). Statically, a cast is rejected only
+  when the two types share no value, and `null` is a shared value once both are nullable : `i as string?` is accepted for `i: int?` (and yields `null`), while
+  `i as string` is `Type error : expected string, got int?` before running.
 * **Union types (`A | B`).** Unions flatten nested unions, deduplicate members, absorb `any`
   (`any` or `any?`), and canonicalize `null` last (`T | null` formats as `T?`). `if`, `while`
   and `return` join branches into unions (while joining `int`/`int?` with `double`/`double?`

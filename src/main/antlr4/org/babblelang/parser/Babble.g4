@@ -20,7 +20,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE;
 
 effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
 
@@ -39,6 +39,7 @@ expression:
           ifExpr                                              # ifExpression
           | (EXPORT | PRIVATE)? DEF name=ID (OF typeParameters)? (':' type)?
                      ('=' NL* (effectClause ON)? value=expression)?   # defExpression
+          | TYPE NL* aliased=type                             # typeAliasExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           | FOR name=ID (':' type)? IN NL* iterable=expression THEN NL* forBlock=block # forExpression
           | (CLASS | RECORD) classParameters (IMPLEMENTS typeList)? NL* classBlock=block
@@ -201,6 +202,7 @@ RECURSE: 'recurse';
 OBJECT: 'object';
 CLASS: 'class';
 RECORD: 'record';
+TYPE: 'type';
 INTERFACE: 'interface';
 IMPLEMENTS: 'implements';
 EXTENDS: 'extends';

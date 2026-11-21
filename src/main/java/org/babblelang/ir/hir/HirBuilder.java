@@ -739,6 +739,10 @@ public final class HirBuilder {
             return new HirExpr.Is(lowerExpr(isCtx.left), scopes.isBuiltin(isCtx), scopes.isTarget(isCtx),
                     scopes.checkedType(isCtx), metaOf(isCtx));
         }
+        if (ctx instanceof BabbleParser.TypeAliasExpressionContext alias) {
+            // A type alias (BIP023) only stands for a type : its def's value, which nothing can read, is null.
+            return new HirExpr.Const(null, metaOf(alias).withKind(ScopeAnalysis.PrimitiveKind.NONE));
+        }
         if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
             return new HirExpr.As(lowerExpr(asCtx.left), scopes.checkedType(asCtx), metaOf(asCtx));
         }

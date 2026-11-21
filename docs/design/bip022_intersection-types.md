@@ -231,3 +231,5 @@ External (not fetched while drafting) :
 * **Display.** `TypeDisplay` and `Type.toString` print `A & B` and `(A & B)?`.
 * **Not yet** : `BIP022-D7` (Java type variables with several bounds, marker interfaces on function conversions) and `BIP022-D8` (bounds, overload meets), all in `BIP022-P2` or waiting on `BIP021`.
 * **Tests** : `src/test/babble/Intersections.ba` ; `types/intersections.batest` (18 cases) ; goldens in `TypeCheckerTestCase` (`testIntersectionTypes`), `FormatterTestCase` (`testSpaces`) and `ReplTestCase` (`testTypeCommandShowsIntersections`) ; a `DifferentialTestCase` snippet for the runtime checks.
+
+Intersections are long to write : `BIP023` added type aliases to name them, `def ShapeWithText = type Shape & (Named | Label)`.
