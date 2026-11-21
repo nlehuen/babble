@@ -265,6 +265,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return null;
     }
 
+    /** An axiom (BIP019) is a compile-time assumption : it declares nothing at runtime and evaluates to null. */
+    @Override
+    public Object visitAxiomExpression(BabbleParser.AxiomExpressionContext ctx) {
+        last = ctx;
+        return null;
+    }
+
     @Override
     public Object visitAsExpression(BabbleParser.AsExpressionContext ctx) {
         last = ctx;

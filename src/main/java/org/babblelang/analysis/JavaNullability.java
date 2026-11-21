@@ -70,13 +70,44 @@ final class JavaNullability {
     private static final String JSPECIFY_NULL_MARKED = "org.jspecify.annotations.NullMarked";
     private static final String JSPECIFY_NULL_UNMARKED = "org.jspecify.annotations.NullUnmarked";
 
+    private static final ThreadLocal<AxiomData.AxiomTable> LOCAL_AXIOMS = new ThreadLocal<>();
+
     private JavaNullability() {
     }
 
-    /** Nullness of a Java method's return value (overlay first, then annotations, then {@code @NullMarked}). */
+    static void runWithLocalAxioms(AxiomData.AxiomTable table, Runnable action) {
+        if (table == null || table.isEmpty()) {
+            action.run();
+            return;
+        }
+        AxiomData.AxiomTable prev = LOCAL_AXIOMS.get();
+        LOCAL_AXIOMS.set(table);
+        try {
+            action.run();
+        } finally {
+            if (prev == null) {
+                LOCAL_AXIOMS.remove();
+            } else {
+                LOCAL_AXIOMS.set(prev);
+            }
+        }
+    }
+
+    /** Nullness of a Java method's return value (local/curated axioms first, then legacy overlay, annotations, {@code @NullMarked}). */
     static Nullness returnNullness(Method method) {
         if (method.getReturnType().isPrimitive()) {
             return Nullness.NON_NULL;
+        }
+        AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
+        if (local != null && !local.isEmpty()) {
+            AxiomData.MemberAxiom ax = AxiomData.lookupMethod(method.getDeclaringClass(), method.getName(), method, local::directMembers);
+            if (ax != null && ax.hasSignature() && ax.returnNullness() != null) {
+                return ax.returnNullness();
+            }
+        }
+        Nullness curated = BuiltinAxioms.current().returnNullness(method);
+        if (curated != null) {
+            return curated;
         }
         Nullness overlay = overlayReturnNullness(method);
         if (overlay != null) {
@@ -97,6 +128,21 @@ final class JavaNullability {
         }
         if (rawParams[index].isPrimitive()) {
             return Nullness.NON_NULL;
+        }
+        AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
+        if (local != null && !local.isEmpty()) {
+            AxiomData.MemberAxiom ax = exec instanceof Method m
+                    ? AxiomData.lookupMethod(m.getDeclaringClass(), m.getName(), m, local::directMembers)
+                    : exec instanceof Constructor<?> c
+                    ? AxiomData.lookupConstructor(c.getDeclaringClass(), c, local::directMembers)
+                    : null;
+            if (ax != null && ax.hasSignature() && index < ax.paramNullness().length) {
+                return ax.paramNullness()[index];
+            }
+        }
+        Nullness curated = BuiltinAxioms.current().parameterNullness(exec, index);
+        if (curated != null) {
+            return curated;
         }
         Nullness overlay = overlayParameterNullness(exec, index);
         if (overlay != null) {
@@ -137,9 +183,17 @@ final class JavaNullability {
 
     /**
      * Whether nested type arguments in this executable's signature default to non-null
-     * (either via {@code @NullMarked} or via the built-in {@code java.base} overlay).
+     * (via local/curated axioms, {@code @NullMarked}, or the legacy {@code java.base} overlay).
      */
     static boolean isNullMarked(Executable exec) {
+        AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
+        if (local != null && !local.isEmpty()
+                && AxiomData.lookupClassFlag(exec.getDeclaringClass(), local::directClassAxiom, AxiomData.ClassAxiom::nullMarked)) {
+            return true;
+        }
+        if (BuiltinAxioms.current().nullMarked(exec)) {
+            return true;
+        }
         if (isOverlayNullMarked(exec)) {
             return true;
         }
@@ -190,6 +244,14 @@ final class JavaNullability {
     }
 
     static boolean isNullMarkedClass(Class<?> cls) {
+        AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
+        if (local != null && !local.isEmpty()
+                && AxiomData.lookupClassFlag(cls, local::directClassAxiom, AxiomData.ClassAxiom::nullMarked)) {
+            return true;
+        }
+        if (BuiltinAxioms.current().nullMarked(cls)) {
+            return true;
+        }
         for (Class<?> c = cls; c != null; c = c.getEnclosingClass()) {
             Nullness scope = scanNullMarkedScope(c);
             if (scope != Nullness.UNSPECIFIED) {

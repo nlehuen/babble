@@ -153,8 +153,14 @@ public final class BabbleCompiler {
             org.babblelang.opt.PassContext passCtx = new org.babblelang.opt.PassContext(
                     optLevel, verify, dumpIr, aotCrossModule,
                     aotInlineCache != null ? aotInlineCache : Map.of());
-            hir = org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(
-                    hir, passCtx, dumpIr != null ? (phase, text) -> dumpIr(dumpIr, internalName, phase, text) : null);
+            org.babblelang.analysis.BuiltinAxioms activeAxioms = engine != null
+                    ? engine.builtinAxioms()
+                    : org.babblelang.analysis.BuiltinAxioms.standard();
+            org.babblelang.ir.hir.HirModule unoptimized = hir;
+            hir = org.babblelang.analysis.BuiltinAxioms.withCurrent(activeAxioms,
+                    () -> org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(
+                            unoptimized, passCtx,
+                            dumpIr != null ? (phase, text) -> dumpIr(dumpIr, internalName, phase, text) : null));
             if (aotCrossModule && aotInlineCache != null && moduleKey != null) {
                 aotInlineCache.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir));
             }

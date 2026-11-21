@@ -181,7 +181,9 @@ public final class Formatter {
                 // the line where that expression starts, wherever its parenthesis is.
                 anchors[index] = parent instanceof BabbleParser.BlockContext block
                         && !(block.getParent() instanceof BabbleParser.BlockExpressionContext)
-                        ? block.getParent().getStart().getTokenIndex() : index;
+                        ? block.getParent().getStart().getTokenIndex()
+                        : parent instanceof BabbleParser.AxiomTypeContext axType
+                        ? axType.getParent().getStart().getTokenIndex() : index;
             }
             return;
         }
@@ -189,8 +191,10 @@ public final class Formatter {
             ParserRuleContext parent = sep.getParent();
             int position = parent.children.indexOf(sep);
             boolean first = position == 0 || parent instanceof BabbleParser.BlockContext && position == 1;
-            // Followed by the end of the file, or by the block's ")".
-            boolean last = position == parent.getChildCount() - 2;
+            // Followed by the end of the file, by the block's ")", or at the end of axiomMembers.
+            boolean last = parent instanceof BabbleParser.AxiomMembersContext
+                    ? position == parent.getChildCount() - 1
+                    : position == parent.getChildCount() - 2;
             if (sep.NL().isEmpty() && !first && !last) {
                 keptSemicolons[((TerminalNode) sep.getChild(0)).getSymbol().getTokenIndex()] = true;
             }
@@ -217,7 +221,8 @@ public final class Formatter {
                 || parent instanceof BabbleParser.WhileExpressionContext || parent instanceof BabbleParser.ForExpressionContext
                 || parent instanceof BabbleParser.ClassExpressionContext
                 || parent instanceof BabbleParser.InterfaceExpressionContext || parent instanceof BabbleParser.ObjectExpressionContext
-                || parent instanceof BabbleParser.FunctionLiteralContext) {
+                || parent instanceof BabbleParser.FunctionLiteralContext
+                || parent instanceof BabbleParser.AxiomTypeContext) {
             return JOINS;
         }
         return CONTINUES;

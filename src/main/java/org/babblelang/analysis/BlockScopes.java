@@ -59,6 +59,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     record PendingEffectDecl(BabbleParser.EffectDeclarationContext ctx, ScopeNode scope) {
     }
 
+    record PendingAxiomExpr(BabbleParser.AxiomExpressionContext ctx, ScopeNode scope) {
+    }
+
     final ScopeAnalysis analysis = new ScopeAnalysis();
     final List<TypeNode> types = new ArrayList<>();
     final List<PendingSuper> supers = new ArrayList<>();
@@ -70,6 +73,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final List<Occurrence> occurrences = new ArrayList<>();
     final List<PendingImport> imports = new ArrayList<>();
     final List<PendingEffectDecl> effectDeclarations = new ArrayList<>();
+    final List<PendingAxiomExpr> axiomExpressions = new ArrayList<>();
     /** The interfaces of the files imported statically, by import call. */
     final Map<BabbleParser.CallContext, ModuleInterface> modules = new LinkedHashMap<>();
 
@@ -404,6 +408,19 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             throw error("export only applies to the top-level definitions of a file", ctx.EXPORT().getSymbol());
         }
         effectDeclarations.add(new PendingEffectDecl(ctx, scope));
+        return null;
+    }
+
+    @Override
+    public Void visitAxiomExpression(BabbleParser.AxiomExpressionContext ctx) {
+        ScopeNode scope = current();
+        if (scope.whileTests > 0) {
+            throw error("Axiom declaration in a while test", ctx);
+        }
+        if (ctx.EXPORT() != null && scope.kind != ScopeNode.Kind.FILE) {
+            throw error("export only applies to the top-level definitions of a file", ctx.EXPORT().getSymbol());
+        }
+        axiomExpressions.add(new PendingAxiomExpr(ctx, scope));
         return null;
     }
 

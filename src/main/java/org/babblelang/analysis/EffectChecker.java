@@ -40,6 +40,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -157,10 +158,16 @@ final class EffectChecker {
 
     record JavaCallProfile(EffectSet effects, boolean mutReceiver, boolean borrowReceiver,
                            boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
-                           boolean explicitNothrow) {
+                           boolean explicitNothrow, boolean view, boolean shallow, boolean fresh) {
+        JavaCallProfile(EffectSet effects, boolean mutReceiver, boolean borrowReceiver,
+                        boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
+                        boolean explicitNothrow) {
+            this(effects, mutReceiver, borrowReceiver, mutParams, borrowParams, uniqueParams, explicitNothrow, false, false, false);
+        }
+
         JavaCallProfile(EffectSet effects, boolean mutReceiver, boolean borrowReceiver,
                         boolean[] mutParams, boolean[] borrowParams, boolean explicitNothrow) {
-            this(effects, mutReceiver, borrowReceiver, mutParams, borrowParams, new boolean[mutParams.length], explicitNothrow);
+            this(effects, mutReceiver, borrowReceiver, mutParams, borrowParams, new boolean[mutParams.length], explicitNothrow, false, false, false);
         }
     }
 
@@ -444,8 +451,19 @@ final class EffectChecker {
     private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> committedJavaEffects = new LinkedHashMap<>();
     /** Exported Java overrides published on {@link ModuleInterface}. */
     private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects = new LinkedHashMap<>();
+    /** BIP019 structured axioms from imports, session, and this file (tier 1). */
+    private AxiomData.AxiomTable localAxioms = AxiomData.AxiomTable.EMPTY;
+    /** Top-level BIP019 axioms committed when this input belongs to a REPL session. */
+    private AxiomData.AxiomTable committedAxioms = AxiomData.AxiomTable.EMPTY;
+    /** Exported BIP019 axioms published on {@link ModuleInterface}. */
+    private AxiomData.AxiomTable exportedAxioms = AxiomData.AxiomTable.EMPTY;
+    /** Diagnostics recorded while pre-parsing {@code axiomExpressions} before inference. */
+    private final List<PendingAxiomDiag> pendingAxiomDiags = new ArrayList<>();
     /** Defs that carry {@code = axiom ...} or {@code = impure ...} on non-function-literal values. */
     private final Map<BabbleParser.DefExpressionContext, ParsedPrefix> defPrefixes = new IdentityHashMap<>();
+
+    private record PendingAxiomDiag(String message, ParserRuleContext at) {
+    }
 
     private final Map<BabbleParser.FunctionLiteralContext, ParsedPrefix> fnPrefixes = new IdentityHashMap<>();
     private final Map<ParserRuleContext, ParamMods> paramModsMap = new IdentityHashMap<>();
@@ -476,11 +494,37 @@ final class EffectChecker {
         // Seed from statically imported modules (export axiom / export impure) and REPL session.
         for (ModuleInterface module : pass.modules.values()) {
             localJavaEffects.putAll(module.exportedJavaEffects());
+            localAxioms = localAxioms.mergeOver(module.exportedAxioms());
         }
         if (pass.session != null) {
             localJavaEffects.putAll(pass.session.javaEffects);
+            localAxioms = localAxioms.mergeOver(pass.session.axioms);
             visibleSummaries.putAll(pass.session.callableSummaries);
         }
+        collectAxiomExpressions();
+    }
+
+    AxiomData.AxiomTable localAxioms() {
+        return localAxioms;
+    }
+
+    AxiomData.AxiomTable exportedAxioms() {
+        return exportedAxioms;
+    }
+
+    AxiomData.AxiomTable committedAxioms() {
+        return committedAxioms;
+    }
+
+    boolean isJavaClassDeeplyImmutable(Class<?> cls) {
+        if (cls == null) {
+            return false;
+        }
+        if (!localAxioms.isEmpty()
+                && AxiomData.lookupClassFlag(cls, localAxioms::directClassAxiom, AxiomData.ClassAxiom::immutable)) {
+            return true;
+        }
+        return pass.hostEffects.builtinAxioms().isDeeplyImmutable(cls);
     }
 
     Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
@@ -985,7 +1029,131 @@ final class EffectChecker {
 
     // ================================================================ 3. Pre-pass : Axiom & IO Collection
 
+    private void collectAxiomExpressions() {
+        if (pass.axiomExpressions.isEmpty()) {
+            return;
+        }
+        AxiomData.Builder localBuilder = new AxiomData.Builder();
+        AxiomData.Builder committedBuilder = new AxiomData.Builder();
+        AxiomData.Builder exportedBuilder = new AxiomData.Builder();
+        AxiomData.ErrorSink sink = (msg, at) -> pendingAxiomDiags.add(new PendingAxiomDiag(msg, at));
+
+        for (BlockScopes.PendingAxiomExpr pending : pass.axiomExpressions) {
+            BabbleParser.AxiomExpressionContext ctx = pending.ctx();
+            ScopeNode scope = pending.scope();
+            if (!pass.hostEffects.allowAxioms()) {
+                sink.report("axiom declarations are disabled on this engine", ctx);
+                continue;
+            }
+            AxiomData.ClassResolver resolver = path -> resolveAxiomClassPath(path, scope);
+            AxiomData.ParsedAxiom parsed = AxiomData.parse(ctx, resolver, false, sink);
+            if (parsed == null || !parsed.isJava()) {
+                continue;
+            }
+            if (parsed.classAxiom() != null) {
+                if (localBuilder.hasClassAxiom(parsed.classAxiom().targetClass())) {
+                    sink.report("Duplicate axiom for class : " + parsed.classAxiom().targetClass().getName(), ctx);
+                    continue;
+                }
+                boolean conflict = false;
+                for (AxiomData.MemberAxiom m : parsed.classAxiom().members()) {
+                    if (localBuilder.hasMemberConflict(m)) {
+                        sink.report("Duplicate axiom for member : " + m.ownerClass().getName() + "." + m.name(), ctx);
+                        conflict = true;
+                    }
+                }
+                if (conflict) {
+                    continue;
+                }
+                localBuilder.addClassAxiom(parsed.classAxiom());
+                if (scope.kind == ScopeNode.Kind.FILE) {
+                    committedBuilder.addClassAxiom(parsed.classAxiom());
+                }
+                if (ctx.EXPORT() != null) {
+                    exportedBuilder.addClassAxiom(parsed.classAxiom());
+                }
+            } else if (parsed.memberAxiom() != null) {
+                AxiomData.MemberAxiom m = parsed.memberAxiom();
+                if (localBuilder.hasMemberConflict(m)) {
+                    sink.report("Duplicate axiom for member : " + m.ownerClass().getName() + "." + m.name(), ctx);
+                    continue;
+                }
+                localBuilder.addMemberAxiom(m);
+                if (scope.kind == ScopeNode.Kind.FILE) {
+                    committedBuilder.addMemberAxiom(m);
+                }
+                if (ctx.EXPORT() != null) {
+                    exportedBuilder.addMemberAxiom(m);
+                }
+            }
+        }
+        AxiomData.AxiomTable fileTable = localBuilder.build();
+        if (!fileTable.isEmpty()) {
+            localAxioms = localAxioms.mergeOver(fileTable);
+        }
+        committedAxioms = committedBuilder.build();
+        exportedAxioms = exportedBuilder.build();
+    }
+
+    private static Class<?> resolveAxiomClassPath(List<String> path, ScopeNode scope) {
+        Class<?> direct = JavaTypeBridge.loadClass(String.join(".", path));
+        if (direct != null) {
+            return direct;
+        }
+        Object resolved = TypeChecker.resolveName(null, path.get(0), scope);
+        if (resolved instanceof BabbleParser.DefExpressionContext def && def.value != null) {
+            String pkg = importedJavaPackageName(def.value);
+            if (pkg != null) {
+                String joined = path.size() == 1 ? pkg : pkg + "." + String.join(".", path.subList(1, path.size()));
+                return JavaTypeBridge.loadClass(joined);
+            }
+            List<String> selectorPath = staticSelectorPath(def.value);
+            if (selectorPath != null) {
+                List<String> full = new ArrayList<>(selectorPath);
+                full.addAll(path.subList(1, path.size()));
+                return JavaTypeBridge.loadClass(String.join(".", full));
+            }
+        }
+        return null;
+    }
+
+    private static String importedJavaPackageName(BabbleParser.ExpressionContext expr) {
+        if (expr instanceof BabbleParser.CallContext call
+                && call.expression() instanceof BabbleParser.SelectorContext sel && sel.expression() == null
+                && ("import".equals(sel.ID().getText()) || "importe".equals(sel.ID().getText()))
+                && call.callParameters().callParameter().size() == 1
+                && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext str) {
+            String name = Interpreter.unescape(str.getText());
+            return name.endsWith(".ba") ? null : name;
+        }
+        return null;
+    }
+
+    private static List<String> staticSelectorPath(BabbleParser.ExpressionContext expr) {
+        if (expr instanceof BabbleParser.SelectorContext sel) {
+            if (sel.expression() == null) {
+                return List.of(sel.ID().getText());
+            }
+            List<String> prefix = staticSelectorPath(sel.expression());
+            if (prefix == null) {
+                return null;
+            }
+            List<String> out = new ArrayList<>(prefix);
+            out.add(sel.memberName().getText());
+            return out;
+        }
+        return null;
+    }
+
     private void collectDeclarations(BabbleParser.FileContext file) {
+        // 0. Report any diagnostics discovered while parsing BIP019 axiomExpressions.
+        for (PendingAxiomDiag diag : pendingAxiomDiags) {
+            checker.effectDiagnostic(diag.message(), diag.at());
+        }
+        for (BlockScopes.PendingAxiomExpr pending : pass.axiomExpressions) {
+            checkDeclarationPlacement(pending.scope(), "axiom", pending.ctx());
+        }
+
         // 1. Standalone effectDeclarations recorded by BlockScopes.
         for (BlockScopes.PendingEffectDecl pending : pass.effectDeclarations) {
             BabbleParser.EffectDeclarationContext ctx = pending.ctx();
@@ -1182,7 +1350,13 @@ final class EffectChecker {
     // ================================================================ 4. 7-Tier Java Effect Resolution
 
     JavaCallProfile resolveJavaMethodProfile(Class<?> owner, String methodName, Method exactMethod) {
-        // Tier 1: File / module / session method override.
+        // Tier 1: File / module / session method override (BIP019 structured axioms first, then legacy effectDeclarations).
+        if (!localAxioms.isEmpty()) {
+            AxiomData.MemberAxiom localAx = AxiomData.lookupMethod(owner, methodName, exactMethod, localAxioms::directMembers);
+            if (localAx != null) {
+                return localAx.toProfile(exactMethod);
+            }
+        }
         HostEffects.OverrideEntry localMethod = lookupHierarchyMethod(localJavaEffects, owner, methodName);
         if (localMethod != null) {
             return profileFromOverride(localMethod, exactMethod, localMethod.effects().contains(Effect.NOTHROW));
@@ -1219,12 +1393,16 @@ final class EffectChecker {
         if (declOwner != owner && hasClassEffectAnnotation(declOwner)) {
             return profileFromAnnotations(exactMethod, declOwner, true);
         }
-        // Tier 6: Standard value protocol defaults (equals, compareTo, hashCode, toString) + String methods.
+        // Tier 6: Curated axioms (BIP019) first, then legacy standard value protocol defaults (retired in BIP019-P4).
+        JavaCallProfile curated = pass.hostEffects.builtinAxioms().methodProfile(owner, methodName, exactMethod);
+        if (curated != null) {
+            return curated;
+        }
         JavaCallProfile protocol = standardProtocolDefault(owner, methodName, exactMethod);
         if (protocol != null) {
             return protocol;
         }
-        // Tier 6.5 (opt-in BIP007-P3): ASM bytecode static analysis of closed Java helpers.
+        // Tier 7: ASM bytecode static analysis of closed Java helpers.
         if (exactMethod != null && pass.hostEffects.bytecodeEffectAnalysis()) {
             BytecodeEffectAnalyzer.Result analyzed = BytecodeEffectAnalyzer.analyze(exactMethod);
             if (!analyzed.effects().isUnconstrained()) {
@@ -1238,13 +1416,19 @@ final class EffectChecker {
                         new boolean[pCount], borrowParams, analyzed.effects().isNothrow());
             }
         }
-        // Tier 7: Unconstrained default.
+        // Tier 8: Unconstrained default.
         int paramCount = exactMethod != null ? exactMethod.getParameterCount() : 0;
         return new JavaCallProfile(EffectSet.EMPTY, false, false, new boolean[paramCount], new boolean[paramCount], false);
     }
 
     JavaCallProfile resolveJavaConstructorProfile(Class<?> owner, Constructor<?> exactCtor) {
-        // Tier 1: File / module / session constructor (Class()) override.
+        // Tier 1: File / module / session constructor override (BIP019 structured axioms first, then legacy).
+        if (!localAxioms.isEmpty()) {
+            AxiomData.MemberAxiom localAx = AxiomData.lookupConstructor(owner, exactCtor, localAxioms::directMembers);
+            if (localAx != null) {
+                return localAx.toProfile(exactCtor);
+            }
+        }
         HostEffects.OverrideEntry localCtor = localJavaEffects.get(HostEffects.JavaTarget.ofConstructor(owner));
         if (localCtor != null) {
             return profileFromOverride(localCtor, exactCtor, localCtor.effects().contains(Effect.NOTHROW));
@@ -1271,7 +1455,11 @@ final class EffectChecker {
         if (hasClassEffectAnnotation(owner)) {
             return profileFromAnnotations(exactCtor, owner, true);
         }
-        // Tier 6: Built-in BIP011 core type constructor profiles.
+        // Tier 6: Curated axioms (BIP019) first, then legacy BIP011 core type constructor profiles (retired in BIP019-P4).
+        JavaCallProfile curated = pass.hostEffects.builtinAxioms().constructorProfile(owner, exactCtor);
+        if (curated != null) {
+            return curated;
+        }
         int paramCount = exactCtor != null ? exactCtor.getParameterCount() : 0;
         if (owner == String.class) {
             boolean[] borrowParams = new boolean[paramCount];
@@ -1285,7 +1473,7 @@ final class EffectChecker {
             EffectSet set = EffectSet.ofInferred(EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), false, true);
             return new JavaCallProfile(set, false, false, new boolean[paramCount], new boolean[paramCount], false);
         }
-        // Tier 7: Unconstrained default.
+        // Tier 8: Unconstrained default.
         return new JavaCallProfile(EffectSet.EMPTY, false, false, new boolean[paramCount], new boolean[paramCount], false);
     }
 
@@ -2451,6 +2639,7 @@ final class EffectChecker {
                     checker.effectDiagnostic(prefixMsg + " declared unique return violates unique guarantee", fn);
                 }
             }
+            verifyInheritedAxiomContract(fn, verified);
             return;
         }
 
@@ -2466,6 +2655,121 @@ final class EffectChecker {
                 checker.effectDiagnostic("value class " + node.name + " constructor must be deterministic", cls);
             }
         }
+    }
+
+    /**
+     * Checks a Babble class/object method overriding a Java supertype ({@code Object} or an
+     * implemented Java interface) against the most specific inherited non-exact axiom contract
+     * ({@code docs/design/bip019_refactoring-axioms.md} §3.2).
+     */
+    private void verifyInheritedAxiomContract(BabbleParser.FunctionLiteralContext fn, CallableSummary verified) {
+        ScopeNode fnScope = pass.scopeNodes.get(fn);
+        if (fnScope == null || fnScope.memberOf == null || fnScope.memberOf.isInterface()) {
+            return;
+        }
+        String methodName = ScopeAnalysis.functionName(fn);
+        if (methodName == null) {
+            return;
+        }
+        Set<Class<?>> javaSupertypes = collectJavaSupertypes(fnScope.memberOf);
+        int arity = fn.fnParameters().fnParam().size();
+        AxiomData.MemberAxiom contract = null;
+        if (!localAxioms.isEmpty()) {
+            contract = AxiomData.lookupInheritedContract(javaSupertypes, methodName, arity, localAxioms::directMembers);
+        }
+        if (contract == null) {
+            contract = pass.hostEffects.builtinAxioms().inheritedContract(javaSupertypes, methodName, arity);
+        }
+        if (contract == null || !hasJavaMethodWithArity(contract.ownerClass(), methodName, arity)) {
+            return;
+        }
+        EffectSet required = contract.effects();
+        if (required.isIO()) {
+            return;
+        }
+        EffectSet actual = verified.effects();
+        String axiomLabel = "axiom " + contract.ownerClass().getName() + "." + contract.name();
+        String prefixMsg = "Function " + methodName;
+        if (required.isPure()) {
+            if (!actual.isPure() || actual.mutThis() || anyTrue(verified.mutParams()) || !actual.isHermetic()) {
+                checker.effectDiagnostic(prefixMsg + " violates pure guarantee of " + axiomLabel, fn);
+                return;
+            }
+        } else if (required.isHermetic() && !actual.isHermetic()) {
+            checker.effectDiagnostic(prefixMsg + " violates hermetic guarantee of " + axiomLabel, fn);
+            return;
+        }
+        if (required.isDeterministic() && !actual.isDeterministic()) {
+            checker.effectDiagnostic(prefixMsg + " violates deterministic guarantee of " + axiomLabel, fn);
+        }
+        if (required.isNothrow() && !actual.isNothrow()) {
+            checker.effectDiagnostic(prefixMsg + " violates nothrow guarantee of " + axiomLabel, fn);
+        }
+        for (Effect req : required.effects()) {
+            if (req == Effect.IDEMPOTENT || req == Effect.COMMUTATIVE || req == Effect.ASSOCIATIVE
+                    || req == Effect.MONOTONE || req == Effect.INJECTIVE) {
+                if (!actual.has(req)) {
+                    checker.effectDiagnostic(prefixMsg + " violates " + EffectSet.keywordOf(req) + " guarantee of " + axiomLabel, fn);
+                }
+            }
+        }
+        if (required.uniqueResult() && !actual.uniqueResult()) {
+            checker.effectDiagnostic(prefixMsg + " violates unique guarantee of " + axiomLabel, fn);
+        }
+        if (contract.borrowReceiver() && !actual.borrowThis()) {
+            checker.effectDiagnostic(prefixMsg + " violates borrow guarantee of " + axiomLabel, fn);
+        }
+        boolean[] actualBorrowParams = verified.borrowParams();
+        boolean[] actualMutParams = verified.mutParams();
+        for (int i = 0; i < actualBorrowParams.length; i++) {
+            boolean reqBorrow = contract.hasSignature()
+                    ? (i < contract.borrowParams().length && contract.borrowParams()[i])
+                    : !contract.sharedReceiver();
+            boolean allowMut = contract.hasSignature()
+                    && i < contract.mutParams().length && contract.mutParams()[i];
+            if (actualMutParams[i] && !allowMut) {
+                checker.effectDiagnostic(prefixMsg + " violates pure guarantee of " + axiomLabel, fn);
+                break;
+            }
+            if (reqBorrow && !actualBorrowParams[i]) {
+                checker.effectDiagnostic(prefixMsg + " violates borrow guarantee of " + axiomLabel, fn);
+                break;
+            }
+        }
+    }
+
+    private static Set<Class<?>> collectJavaSupertypes(TypeNode node) {
+        Set<Class<?>> result = new LinkedHashSet<>();
+        result.add(Object.class);
+        collectJavaSupertypesInto(node, result, Collections.newSetFromMap(new IdentityHashMap<>()));
+        return result;
+    }
+
+    private static void collectJavaSupertypesInto(TypeNode node, Set<Class<?>> out, Set<TypeNode> visited) {
+        if (node == null || !visited.add(node)) {
+            return;
+        }
+        for (Object parent : node.parents) {
+            if (parent instanceof Class<?> cls) {
+                out.add(cls);
+            } else if (parent instanceof TypeNode tn) {
+                collectJavaSupertypesInto(tn, out, visited);
+            }
+        }
+    }
+
+    private static boolean hasJavaMethodWithArity(Class<?> owner, String name, int arity) {
+        for (Method m : owner.getMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == arity) {
+                return true;
+            }
+        }
+        for (Method m : owner.getDeclaredMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == arity) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void verifyTopLevelAndStatics(BabbleParser.FileContext file) {
@@ -4613,7 +4917,8 @@ final class EffectChecker {
                 }
             }
             if (effectiveMutRecv) {
-                boolean shallowJavaMut = isCoreCollectionClass(owner) && COLLECTION_MUT_METHODS.contains(methodName);
+                boolean shallowJavaMut = profile.shallow()
+                        || (isCoreCollectionClass(owner) && COLLECTION_MUT_METHODS.contains(methodName));
                 recordTargetMutation(recvOrig, receiverExpr, "mut Java method " + calleeExpr.getText(), call, shallowJavaMut);
             }
             boolean recvCanEscape = !profile.borrowReceiver() && !profile.effects().isPure()
@@ -4682,10 +4987,10 @@ final class EffectChecker {
             if (isDeeplyImmutable(resType)) {
                 return Origin.IMMUTABLE;
             }
-            if (profile.effects().uniqueResult()) {
+            if (profile.fresh() || profile.effects().uniqueResult()) {
                 return Origin.ofUnique(call, null, false);
             }
-            if (receiverExpr != null && isViewMethod(owner, methodName)) {
+            if (receiverExpr != null && (profile.view() || isViewMethod(owner, methodName))) {
                 return recvOrig.deriveMember("$" + methodName, false);
             }
             Origin out = Origin.ofExternal(call, false);

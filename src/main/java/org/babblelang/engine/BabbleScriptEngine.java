@@ -128,6 +128,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private boolean allowAxioms = true;
     private boolean bytecodeEffectAnalysis = false;
     private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> hostEffectOverrides = new LinkedHashMap<>();
+    private org.babblelang.analysis.BuiltinAxioms builtinAxioms = org.babblelang.analysis.BuiltinAxioms.standard();
 
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
         super();
@@ -138,6 +139,27 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     public Namespace getImplicits() {
         return implicits;
+    }
+
+    /**
+     * Configures the {@link org.babblelang.analysis.BuiltinAxioms} consulted during analysis and
+     * compilation (defaults to {@link org.babblelang.analysis.BuiltinAxioms#standard()}).
+     */
+    public BabbleScriptEngine setBuiltinAxioms(org.babblelang.analysis.BuiltinAxioms axioms) {
+        org.babblelang.analysis.BuiltinAxioms next = axioms != null ? axioms : org.babblelang.analysis.BuiltinAxioms.standard();
+        synchronized (moduleLock) {
+            if (this.builtinAxioms != next) {
+                this.builtinAxioms = next;
+                this.moduleCache.clear();
+            }
+        }
+        return this;
+    }
+
+    public org.babblelang.analysis.BuiltinAxioms builtinAxioms() {
+        synchronized (moduleLock) {
+            return builtinAxioms;
+        }
     }
 
     /**
@@ -251,10 +273,11 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     HostEffects hostEffects() {
         synchronized (moduleLock) {
-            if (allowAxioms && !bytecodeEffectAnalysis && hostEffectOverrides.isEmpty()) {
+            if (allowAxioms && !bytecodeEffectAnalysis && hostEffectOverrides.isEmpty()
+                    && builtinAxioms == org.babblelang.analysis.BuiltinAxioms.standard()) {
                 return HostEffects.DEFAULT;
             }
-            return new HostEffects(allowAxioms, bytecodeEffectAnalysis, hostEffectOverrides);
+            return new HostEffects(allowAxioms, bytecodeEffectAnalysis, hostEffectOverrides, builtinAxioms);
         }
     }
 

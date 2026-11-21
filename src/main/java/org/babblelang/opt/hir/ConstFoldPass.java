@@ -433,7 +433,8 @@ public final class ConstFoldPass implements HirPass {
 
     private static HirExpr tryFoldJavaCall(HirExpr.JavaMethodCall c) {
         Method m = c.target().method();
-        if (c.target().isStatic() && c.pureStaticReceiver() && HirPurity.isWhitelistedPureMath(m)) {
+        if (c.target().isStatic() && c.pureStaticReceiver()
+                && (org.babblelang.analysis.BuiltinAxioms.current().isFoldable(m) || HirPurity.isWhitelistedPureMath(m))) {
             if (c.meta().checkedType() != null) {
                 return null;
             }
@@ -463,7 +464,8 @@ public final class ConstFoldPass implements HirPass {
                 return null;
             }
         }
-        if (!c.target().isStatic() && HirPurity.isWhitelistedPureString(m)) {
+        if (!c.target().isStatic()
+                && (org.babblelang.analysis.BuiltinAxioms.current().isFoldable(m) || HirPurity.isWhitelistedPureString(m))) {
             if (!HirPurity.isStringCheckedType(c.meta().checkedType())) {
                 return null;
             }

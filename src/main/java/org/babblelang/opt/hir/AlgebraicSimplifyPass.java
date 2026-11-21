@@ -223,7 +223,9 @@ public final class AlgebraicSimplifyPass implements HirPass {
         if (!HirPurity.isIdempotentCall(outer, module)) {
             return null;
         }
-        boolean isWhitelistedStr = HirPurity.isWhitelistedPureString(outer.target().method());
+        boolean isWhitelistedStr = outer.target().method().getDeclaringClass() == String.class
+                && (org.babblelang.analysis.BuiltinAxioms.current().isFoldable(outer.target().method())
+                || HirPurity.isWhitelistedPureString(outer.target().method()));
         if (outer.meta().checkedType() != null && !(isWhitelistedStr && HirPurity.isStringCheckedType(outer.meta().checkedType()))) {
             return null;
         }

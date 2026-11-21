@@ -20,7 +20,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | AND | OR | NOT;
 
 effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
 
@@ -35,10 +35,25 @@ callingClause: CALLING (ID | '(' NL* ID (NL* ',' NL* ID)* NL* ')');
 
 effectWord: AXIOM | effectModifier;
 
+axiomTarget: (ID | coreScalarKeyword) ('.' memberName)*;
+
+axiomEffectWord: effectModifier | UNIQUE | ID;
+
+axiomEffectPrefix: axiomEffectWord+ callingClause?
+                 | callingClause;
+
+axiomType: FN (OF typeParameters)? axiomEffectPrefix? (fnTypeParameters (':' uniqueReturn=UNIQUE? type)?)?
+         | CLASS classWords+=ID* NL* '(' axiomMembers ')' (NL* STATIC NL* '(' axiomMembers ')')?;
+
+axiomMembers: sep? (axiomMember (sep axiomMember)* sep?)?;
+
+axiomMember: DEF (memberName | '*') ':' axiomType;
+
 expression:
           ifExpr                                              # ifExpression
           | (EXPORT | PRIVATE)? DEF name=ID (OF typeParameters)? (':' type)?
                      ('=' NL* (effectClause ON)? value=expression)?   # defExpression
+          | EXPORT? AXIOM target=axiomTarget (OF typeParameters)? ':' axiomType   # axiomExpression
           | TYPE NL* aliased=type                             # typeAliasExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           | FOR name=ID (':' type)? IN NL* iterable=expression THEN NL* forBlock=block # forExpression
@@ -111,7 +126,7 @@ fnParam: paramModifier* ID (':' type)? ('=' NL* defaultValue=expression)?;
 fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* NL* ')'
                 | '(' NL* ')';
 
-fnTypeParam: paramModifier* (ID ':')? type;
+fnTypeParam: paramModifier* (ID ':')? type ('=' NL* ELLIPSIS)?;
 
 paramModifier: MUT | SHARED | UNIQUE;
 
@@ -174,6 +189,7 @@ PLUS_ASSIGN: '+=';
 MINUS_ASSIGN: '-=';
 MUL_ASSIGN: '*=';
 DIV_ASSIGN: '/=';
+ELLIPSIS: '...';
 DOT: '.';
 SAFE_DOT: '?.';
 ARROW: '->';

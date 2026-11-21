@@ -427,8 +427,9 @@ final class TypeAnnotations {
                     ? checker.effectChecker.parseParamMods(parameter, checker.checkingEffects())
                     : EffectChecker.ParamMods.NONE;
             String name = parameter.ID() != null ? parameter.ID().getText() : "p" + index;
+            boolean optional = parameter.ELLIPSIS() != null;
             boolean borrow = checker.effectChecker != null && !pm.shared() && !pm.unique();
-            result.add(new Type.Parameter(name, type, false,
+            result.add(new Type.Parameter(name, type, optional,
                     pm.mut(), borrow, pm.shared(), pm.unique()));
             index++;
         }
