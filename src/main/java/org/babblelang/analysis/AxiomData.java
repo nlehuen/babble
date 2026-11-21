@@ -387,7 +387,8 @@ final class AxiomData {
                 continue;
             }
             for (MemberAxiom m : members) {
-                if (m.exact() && candidate != owner) {
+                if (m.exact() && candidate != owner
+                        && !(exactMethod != null && exactMethod.getDeclaringClass() == candidate)) {
                     continue;
                 }
                 boolean matches = exactMethod != null
