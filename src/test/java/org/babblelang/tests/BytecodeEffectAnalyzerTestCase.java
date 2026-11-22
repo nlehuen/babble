@@ -235,6 +235,20 @@ public class BytecodeEffectAnalyzerTestCase {
         Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(listDump, "ArrayList"));
     }
 
+    /** JDK 22+ constructors read Throwable.jfrTracing for JFR : the curated Throwable and Error constructors keep exceptions nothrow on every JDK. */
+    @Test
+    public void testExceptionConstructorsIgnoreJfrTracing() {
+        org.babblelang.analysis.BuiltinAxioms axioms = org.babblelang.analysis.BuiltinAxioms.standard();
+        String arithmetic = org.babblelang.analysis.AxiomDumper.dumpClass(ArithmeticException.class, axioms);
+        Assertions.assertTrue(arithmetic.contains("def new: fn nothrow fresh ()"), arithmetic);
+        Assertions.assertTrue(arithmetic.contains("def new: fn nothrow (shared p0: string?)"), arithmetic);
+        String linkage = org.babblelang.analysis.AxiomDumper.dumpClass(LinkageError.class, axioms);
+        Assertions.assertTrue(linkage.contains("def new: fn nothrow (shared p0: string?)"), linkage);
+        Assertions.assertTrue(linkage.contains("def new: fn nothrow (shared p0: string?, shared p1: java.lang.Throwable?)"), linkage);
+        Assertions.assertFalse(arithmetic.contains("jfrTracing"), arithmetic);
+        Assertions.assertFalse(linkage.contains("jfrTracing"), linkage);
+    }
+
     @Test
     public void testDumpAxiomsAndReportSwitches() throws Exception {
         String oldDump = System.getProperty("babble.dumpAxioms");

@@ -32,6 +32,16 @@ axiom java.lang.Double: class nullmarked (
     def longBitsToDouble: fn nothrow (bits: long): double
 )
 
+;; JFR : since JDK 22 the constructors read the mutable static Throwable.jfrTracing and, when Flight Recorder
+;; traces exceptions, report the new Error to it (JDK-8319374, https://github.com/openjdk/jdk/commit/e8418972474d41c6cc1985df5c650461ded34313).
+;; A program cannot observe that, so these keep the effects inferred without it (as on JDK 21).
+axiom java.lang.Error: class (
+) static (
+    def new: fn nothrow fresh ()
+    def new: fn nothrow (shared message: string?)
+    def new: fn nothrow (shared message: string?, shared cause: java.lang.Throwable?)
+)
+
 axiom java.lang.Float: class nullmarked (
 ) static (
     def floatToRawIntBits: fn nothrow (value: float): int
@@ -198,6 +208,14 @@ axiom java.lang.Thread: class (
     def currentThread: fn io (): java.lang.Thread
 )
 
+;; JFR : since JDK 22 the constructors read the mutable static jfrTracing and, when Flight Recorder traces
+;; exceptions, report the new Throwable to it (JDK-8319374, https://github.com/openjdk/jdk/commit/e8418972474d41c6cc1985df5c650461ded34313).
+;; A program cannot observe that, so these keep the effects inferred without it (as on JDK 21); new(cause) stays
+;; inferred, since it calls cause.toString().
 axiom java.lang.Throwable: class (
     def fillInStackTrace: fn mut nothrow (): java.lang.Throwable
+) static (
+    def new: fn nothrow fresh ()
+    def new: fn nothrow (shared message: string?)
+    def new: fn nothrow (shared message: string?, shared cause: java.lang.Throwable?)
 )
