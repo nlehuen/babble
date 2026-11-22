@@ -296,12 +296,18 @@ final class TailCalls {
         return false;
     }
 
-    /** The arguments are bound at compile time, or positional and as many as the parameters. */
+    /**
+     * The arguments are bound at compile time, or positional and as many as the parameters ; neither
+     * a rest parameter nor a spread argument ({@code BIP021}) is involved.
+     */
     private boolean bindsStatically(BabbleParser.FunctionLiteralContext function, BabbleParser.CallContext call) {
+        var arguments = call.callParameters().callParameter();
+        if (analysis.restIndex(function) >= 0 || arguments.stream().anyMatch(a -> a.spread != null)) {
+            return false;
+        }
         if (analysis.argumentBinding(call) != null) {
             return true;
         }
-        var arguments = call.callParameters().callParameter();
         for (BabbleParser.CallParameterContext argument : arguments) {
             if (argument.memberName() != null) {
                 return false;

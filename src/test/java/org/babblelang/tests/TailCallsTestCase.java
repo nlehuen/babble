@@ -82,6 +82,14 @@ public class TailCallsTestCase {
     }
 
     @Test
+    public void testRestParametersAndSpreadArguments() {
+        // BIP021 rest parameters and spread arguments are not optimized (BIP024-D4).
+        Assertions.assertEquals(List.of(),
+                tailCalls("def r = fn (n : int, xs : int...) : int -> ( if n > 0 then ( recurse(n - 1, ...xs) ) else ( 0 ) )\n"
+                        + "def s = fn (n : int, xs : int...) : int -> ( if n > 0 then ( s(n - 1) ) else ( 0 ) )"));
+    }
+
+    @Test
     public void testWidenedSiblingBranch() {
         // The int branch widens to double ; the call's value, already the function's double, goes unchanged.
         Assertions.assertEquals(List.of("recurse(n-1)"),
