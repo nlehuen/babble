@@ -28,7 +28,7 @@ The ANTLR lexer/parser/visitor classes (`org.babblelang.parser.*`) are **generat
 
 Any JDK 21+ and Maven 3.9 build Babble; `java -version` and `mvn -v` tell what a machine has (CI and the cloud sessions run JDK 21). The build sets `release 21`, so compilation is checked against the right API level whatever the JDK, but tests execute on whichever JVM runs them.
 
-On the maintainer's workstation, Maven and a JDK **26** come from Homebrew (`/home/linuxbrew/.linuxbrew/bin`). To reproduce CI exactly there — or to check a failure that might be JVM-version-specific — run Maven in a container, substituting any `mvn ...` command:
+On the maintainer's workstation, Maven and a JDK **27** come from Homebrew (`/home/linuxbrew/.linuxbrew/bin`). To reproduce CI exactly there — or to check a failure that might be JVM-version-specific — run Maven in a container, substituting any `mvn ...` command:
 
 ```
 podman run --rm -v /var/home/nlehuen/babble:/work:z -v ~/.m2:/root/.m2:z -w /work \

@@ -48,7 +48,7 @@ Every JDK feature reviewed in this document is assigned one (or more, when a fea
 
 Before reviewing JDK 22+, a direct audit of Babble's current codebase establishes an unusually clean starting point:
 
-* **Bytecode & dependencies ([`pom.xml`](../../pom.xml)):** Only two non-JDK runtime dependencies — `org.antlr:antlr4-runtime:4.13.2` (evaluated in `BIP015`) and `org.ow2.asm:asm:9.11` (plus optional `asm-util` for `CheckClassAdapter`/`TraceClassVisitor`). Emitted class files target `V21` in [`CodeGenerator.java`](../../src/main/java/org/babblelang/compiler/CodeGenerator.java) (`L730`, `L1078`, `L1686`), all setting `ACC_SUPER` on concrete classes.
+* **Bytecode & dependencies ([`pom.xml`](../../pom.xml)):** Only two non-JDK runtime dependencies — `org.antlr:antlr4-runtime:4.13.2` (evaluated in `BIP015`) and `org.ow2.asm:asm:9.11.1` (plus optional `asm-util` for `CheckClassAdapter`/`TraceClassVisitor`). Emitted class files target `V21` in [`CodeGenerator.java`](../../src/main/java/org/babblelang/compiler/CodeGenerator.java) (`L730`, `L1078`, `L1686`), all setting `ACC_SUPER` on concrete classes.
 * **ASM touchpoints:** Isolated to exactly three files: [`CodeGenerator.java`](../../src/main/java/org/babblelang/compiler/CodeGenerator.java) (bytecode emission), [`Debugging.java`](../../src/main/java/org/babblelang/compiler/Debugging.java) (`TraceClassVisitor`, `CheckClassAdapter.verify`), and [`BytecodeEffectAnalyzer.java`](../../src/main/java/org/babblelang/analysis/BytecodeEffectAnalyzer.java) (`ClassReader`/`ClassVisitor` effect scanning).
 * **Runtime boundary ([`RuntimeBoundaryTestCase.java`](../../src/test/java/org/babblelang/tests/RuntimeBoundaryTestCase.java)):** `org.babblelang.runtime` and `org.babblelang.engine.impl.natives` depend **exclusively on `java.base`** — zero ANTLR, zero ASM, zero `javax.script`.
 * **Integrity-by-Default hygiene:** Static scans of `src/` show:
@@ -236,7 +236,7 @@ Tracking OpenJDK's active projects reveals why laying clean multi-JDK groundwork
 
 | JDK | Date / LTS | Key Feature / JEP | Class | Concrete Babble Action |
 |---|---|---|---|---|
-| **21** | Sep 2023 · **LTS** | Sealed classes, records, `switch` patterns, Virtual Threads | Baseline | Current Babble floor (`pom.xml` `--release 21`, `V21`, ASM 9.11) |
+| **21** | Sep 2023 · **LTS** | Sealed classes, records, `switch` patterns, Virtual Threads | Baseline | Current Babble floor (`pom.xml` `--release 21`, `V21`, ASM 9.11.1) |
 | **22** | Mar 2024 | `JEP 454` FFM API | **Adopt / Extend** | Interop profiles; optional lifetime-checked `unique`/`@BORROWED` `Arena` wrappers |
 | **22** | Mar 2024 | `JEP 456` Unnamed Variables `_` | **Adopt** | Cleanup in Babble Java sources (when on 22+); mirrors `_` in `BIP005-D3` |
 | **23** | Sep 2024 | `JEP 471` Deprecate `Unsafe` memory access; `JEP 474` GenZGC | **Migrate (Audit)** | Verified 0 `Unsafe` calls in Babble; no bespoke `Babble 23` overlay needed |
