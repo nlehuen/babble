@@ -196,4 +196,8 @@ final class TypedProgram {
     void effectDiagnostic(String message, ParserRuleContext at) {
         checker.effectDiagnostic(message, at);
     }
+
+    void effectWarning(String message, ParserRuleContext at) {
+        checker.analysisWarn(message, at);
+    }
 }

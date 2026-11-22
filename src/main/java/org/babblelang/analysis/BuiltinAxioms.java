@@ -126,39 +126,12 @@ public final class BuiltinAxioms {
 
     // ================================================================ Queries (§2.4)
 
-    /** Curated effect/alias/member-word profile for a Java method, or {@code null} if none applies. */
-    EffectChecker.JavaCallProfile methodProfile(Class<?> owner, String methodName, Method exactMethod) {
-        AxiomData.MemberAxiom ax = methodAxiom(owner, methodName, exactMethod);
-        return ax != null ? ax.toProfile(exactMethod) : null;
-    }
-
-    /** Checks that an axiom source obeys the BIP019 §3.4 canonical order; returns violations (empty if valid). */
-    public static List<String> checkCanonicalOrder(String source, String sourceName) {
-        return checkCanonicalOrder(source, sourceName, null);
-    }
-
-    /** Checks canonical order and (if non-null) that every class belongs to {@code expectedPackage}. */
-    public static List<String> checkCanonicalOrder(String source, String sourceName, String expectedPackage) {
-        try {
-            BabbleParser.FileContext file = BabbleScriptEngine.parseSource(source, sourceName);
-            return AxiomData.checkCanonicalOrder(file, expectedPackage);
-        } catch (javax.script.ScriptException e) {
-            return List.of("Failed to parse " + sourceName + " : " + e.getMessage());
-        }
-    }
-
     /** Curated {@link AxiomData.MemberAxiom} for a Java method, or {@code null} if none applies. */
     AxiomData.MemberAxiom methodAxiom(Class<?> owner, String methodName, Method exactMethod) {
         if (isEmpty() || owner == null) {
             return null;
         }
         return AxiomData.lookupMethod(owner, methodName, exactMethod, this::directMembers);
-    }
-
-    /** Curated profile for a Java constructor, or {@code null} if none applies. */
-    EffectChecker.JavaCallProfile constructorProfile(Class<?> owner, Constructor<?> exactCtor) {
-        AxiomData.MemberAxiom ax = constructorAxiom(owner, exactCtor);
-        return ax != null ? ax.toProfile(exactCtor) : null;
     }
 
     /** Curated {@link AxiomData.MemberAxiom} for a Java constructor, or {@code null} if none applies. */
@@ -485,45 +458,5 @@ public final class BuiltinAxioms {
             }
         }
         return Collections.unmodifiableSet(stubs);
-    }
-
-    /**
-     * Lists all Java package names that have a {@code curated.ba} resource under
-     * {@code org/babblelang/axioms/} on the classpath (directory or jar, §2.1).
-     */
-    public static Set<String> discoverCuratedPackages() throws IOException {
-        Set<String> packages = new TreeSet<>();
-        ClassLoader cl = BuiltinAxioms.class.getClassLoader();
-        Enumeration<URL> roots = cl.getResources(AXIOMS_RESOURCE_ROOT);
-        while (roots.hasMoreElements()) {
-            URL url = roots.nextElement();
-            if ("file".equals(url.getProtocol())) {
-                try {
-                    Path dir = Path.of(url.toURI());
-                    try (Stream<Path> walk = Files.walk(dir)) {
-                        walk.filter(p -> p.getFileName().toString().equals("curated.ba")).forEach(p -> {
-                            Path rel = dir.relativize(p.getParent());
-                            String pkg = rel.toString().replace('\\', '/').replace('/', '.');
-                            packages.add(pkg);
-                        });
-                    }
-                } catch (Exception e) {
-                    throw new IOException("Failed to scan axioms directory " + url, e);
-                }
-            } else if ("jar".equals(url.getProtocol())) {
-                JarURLConnection conn = (JarURLConnection) url.openConnection();
-                try (JarFile jar = conn.getJarFile()) {
-                    Enumeration<JarEntry> entries = jar.entries();
-                    while (entries.hasMoreElements()) {
-                        String name = entries.nextElement().getName();
-                        if (name.startsWith(AXIOMS_RESOURCE_ROOT) && name.endsWith("/curated.ba")) {
-                            String rel = name.substring(AXIOMS_RESOURCE_ROOT.length(), name.length() - "/curated.ba".length());
-                            packages.add(rel.replace('/', '.'));
-                        }
-                    }
-                }
-            }
-        }
-        return Collections.unmodifiableSet(packages);
     }
 }

@@ -16,7 +16,7 @@ bump()
 ========== wrap.ba ==========
 def m = import("math.ba")
 export def sumAndMul = fn (a : int, b : int) : int -> ( m.add(a, b) + m.mul(a, b) )
-export axiom pure nothrow on java.lang.Math.max
+export axiom java.lang.Math.max: fn pure nothrow
 
 ========== sub/deep.ba ==========
 def w = import("../wrap.ba")

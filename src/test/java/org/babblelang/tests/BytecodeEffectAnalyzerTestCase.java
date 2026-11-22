@@ -214,7 +214,7 @@ public class BytecodeEffectAnalyzerTestCase {
         Assertions.assertTrue(dump.contains("def storeRef: fn mut nothrow shallow (shared p0: any?): void"), dump);
         Assertions.assertTrue(dump.contains("def freshCopy: fn nothrow fresh ():"), dump);
         // Output parses back cleanly and obeys §3.4 canonical order:
-        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.BuiltinAxioms.checkCanonicalOrder(dump, "StatefulBox"));
+        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(dump, "StatefulBox"));
     }
 
     @Test
@@ -225,14 +225,14 @@ public class BytecodeEffectAnalyzerTestCase {
         Assertions.assertTrue(mathDump.contains("def sqrt: fn nothrow foldable (p0: double): double"), mathDump);
         Assertions.assertTrue(mathDump.contains("def addExact: fn (p0: int, p1: int): int"), mathDump);
         Assertions.assertTrue(mathDump.contains("def ceilDiv: fn (p0: int, p1: int): int"), mathDump);
-        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.BuiltinAxioms.checkCanonicalOrder(mathDump, "Math"));
+        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(mathDump, "Math"));
 
         String listDump = org.babblelang.analysis.AxiomDumper.dumpClass(java.util.ArrayList.class, org.babblelang.analysis.BuiltinAxioms.standard());
         Assertions.assertTrue(listDump.startsWith("axiom java.util.ArrayList of E: class nullmarked (\n"), listDump);
         Assertions.assertTrue(listDump.contains("def clear: fn mut shared shallow (): void"), listDump);
         Assertions.assertTrue(listDump.contains("def isEmpty: fn nothrow (): bool"), listDump);
         Assertions.assertTrue(listDump.contains("def iterator: fn shared nothrow view (): java.util.Iterator of any?"), listDump);
-        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.BuiltinAxioms.checkCanonicalOrder(listDump, "ArrayList"));
+        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(listDump, "ArrayList"));
     }
 
     @Test

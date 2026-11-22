@@ -1,8 +1,6 @@
 ;; Constants and utility functions : rtweekend.h in the book.
 
-export axiom pure nothrow on java.lang.Math
-export axiom mut nothrow on java.util.Random.nextDouble
-export axiom pure unique on java.util.ArrayList()
+export axiom java.util.Random.nextDouble: fn mut nothrow
 
 export def Math = java.lang.Math
 export def infinity = java.lang.Double.POSITIVE_INFINITY

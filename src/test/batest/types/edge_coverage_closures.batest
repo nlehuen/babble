@@ -103,6 +103,7 @@ def f = fn () : int -> (
     1
 )
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 axiom declaration is not allowed inside a verified constrained function
 
 {{{{{
@@ -117,6 +118,7 @@ io on java.lang.System.nanoTime
 def f = fn io () : int -> ( 1 )
 println(f(), ":", java.lang.System.nanoTime() != 0)
 }}}}}
+Warning : Deprecated syntax : 'io on ...' is deprecated, use 'axiom Target: fn io' instead
 1:true
 
 {{{{{

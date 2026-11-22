@@ -625,7 +625,7 @@ final class TypeChecker {
         return null;
     }
 
-    private void analysisWarn(String message, ParserRuleContext at) {
+    void analysisWarn(String message, ParserRuleContext at) {
         if (!inFile(at)) {
             return;
         }
@@ -642,6 +642,10 @@ final class TypeChecker {
 
     /** Types every expression and block, and resolves every annotation, in source order. */
     void walk(ParseTree tree) {
+        if (tree instanceof BabbleParser.AxiomExpressionContext axiom) {
+            synth(axiom);
+            return;
+        }
         if (tree instanceof BabbleParser.TypeContext type) {
             // Only annotations are walked to : implements lists, super qualifiers, and is/as targets are handled elsewhere.
             if (type.getParent() instanceof BabbleParser.AsExpressionContext asCtx && asCtx.right == type

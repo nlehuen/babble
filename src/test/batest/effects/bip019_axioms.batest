@@ -1,0 +1,704 @@
+;; BIP019 : structured axioms, descendant contracts, reads-of-mutable-state determinism,
+;; Babble-name axioms, array-parameter overloads, and curated folding/idempotence.
+
+========== axmod.ba ==========
+export axiom java.lang.StringBuilder: class (
+    def append: fn mut nothrow (s: string): java.lang.StringBuilder
+) static (
+    def new: fn pure fresh ()
+)
+export axiom java.lang.Integer.bitCount: fn pure nothrow (i: int): int
+export def countBits = fn nothrow (x: int): int -> (java.lang.Integer.bitCount(x))
+
+{{{{{
+;; Exported class and member axioms from a module, plus imported alias target
+def ax = import("axmod.ba")
+def jl = import("java.lang")
+axiom jl.Integer.highestOneBit: fn pure nothrow (i: int): int
+def sb = java.lang.StringBuilder()
+sb.append("ok")
+println(ax.countBits(7), ":", jl.Integer.highestOneBit(10), ":", sb.toString())
+}}}}}
+3:8:ok
+
+{{{{{
+;; Class axiom words (exact, nullmarked, immutable), static section, wildcards, and constructor new
+axiom java.lang.String: class exact nullmarked immutable (
+    def length: fn pure nothrow (): int
+    def isEmpty: fn pure nothrow (): bool
+) static (
+    def valueOf: fn pure nothrow (data: array of char): string
+)
+def cs = (array of char).of(char(97), char(98))
+def s = java.lang.String.valueOf(cs)
+println(s, ":", s.length(), ":", s.isEmpty())
+}}}}}
+ab:2:false
+
+{{{{{
+;; Axiom signature type erasure across primitives, nullables, collections, arrays, unions, intersections, fn types, generics
+axiom java.util.List of E: class (
+    def size: fn pure nothrow (): int
+    def get: fn (index: int): E
+    def add: fn mut (shared e: E): bool
+)
+axiom java.lang.Object: class (
+    def hashCode: fn pure nothrow (): int
+)
+axiom java.util.Objects: class () static (
+    def isNull: fn pure nothrow (obj: any?): bool
+    def nonNull: fn pure nothrow (obj: (any)?): bool
+    def equals: fn pure nothrow (a: any | null, b: string | int | null): bool
+)
+axiom java.util.Arrays: class () static (
+    def toString: fn pure nothrow (a: array of int): string
+    def deepToString: fn pure nothrow (a: array of (array of string)): string
+    def copyOf: fn of T (original: array of T, newLength: int): array of T
+)
+axiom java.lang.String.valueOf: fn pure nothrow (b: byte?): string
+axiom java.lang.String.valueOf: fn pure nothrow (s: short?): string
+axiom java.lang.String.valueOf: fn pure nothrow (i: int?): string
+axiom java.lang.String.valueOf: fn pure nothrow (l: long?): string
+axiom java.lang.String.valueOf: fn pure nothrow (f: float?): string
+axiom java.lang.String.valueOf: fn pure nothrow (d: double?): string
+axiom java.lang.String.valueOf: fn pure nothrow (z: bool?): string
+axiom java.lang.String.valueOf: fn pure nothrow (c: char?): string
+axiom java.lang.String.valueOf: fn pure nothrow (b: byte): string
+axiom java.lang.String.valueOf: fn pure nothrow (s: short): string
+axiom java.lang.String.valueOf: fn pure nothrow (l: long): string
+axiom java.lang.String.valueOf: fn pure nothrow (f: float): string
+axiom java.lang.String.valueOf: fn pure nothrow (d: double): string
+axiom java.lang.String.valueOf: fn pure nothrow (z: bool): string
+axiom java.lang.String.valueOf: fn pure nothrow (c: char): string
+axiom java.util.Collections: class () static (
+    def unmodifiableList: fn of T view (l: list of T): list of T
+    def unmodifiableSet: fn of T view (s: set of T): set of T
+    def unmodifiableSortedSet: fn of T view (s: sortedset of T): sortedset of T
+    def unmodifiableMap: fn of (K, V) view (m: map of (K, V)): map of (K, V)
+    def unmodifiableSortedMap: fn of (K, V) view (m: sortedmap of (K, V)): sortedmap of (K, V)
+)
+axiom java.lang.Comparable of T: class (
+    def compareTo: fn pure (o: T): int
+)
+axiom java.lang.Runnable: class (
+    def run: fn io (): void
+)
+axiom java.lang.Iterable of T: class (
+    def forEach: fn (action: fn (T): void): void
+)
+axiom java.util.Map.Entry of (K, V): class immutable (
+    def getKey: fn pure nothrow (): K
+    def getValue: fn pure nothrow (): V
+)
+def xs = (array of int).of(1, 2)
+def ys = java.util.Arrays.copyOf(xs, 2)
+println(java.util.Arrays.toString(ys), ":", java.util.Objects.isNull(null), ":", java.util.Objects.nonNull("x"))
+}}}}}
+[1, 2]:true:true
+
+{{{{{
+;; Parameter modifiers (mut, shared, unique), algebraic & member words (view, shallow, fresh, foldable)
+axiom java.lang.Math: class () static (
+    def abs: fn pure nothrow idempotent foldable (a: int): int
+    def min: fn pure nothrow commutative associative foldable (a: int, b: int): int
+    def max: fn pure nothrow commutative associative foldable (a: int, b: int): int
+    def floor: fn pure nothrow idempotent monotone foldable (a: double): double
+    def cbrt: fn pure nothrow injective (a: double): double
+    def random: fn volatile (): double
+)
+axiom java.util.ArrayList of E: class (
+    def clone: fn shallow (): any
+    def subList: fn view (from: int, to: int): list of E
+) static (
+    def new: fn pure fresh ()
+)
+def pureWork = fn nothrow (x: int): int -> (
+    java.lang.Math.min(java.lang.Math.abs(x), java.lang.Math.max(x, 10))
+)
+println(pureWork(-4), ":", int(java.lang.Math.floor(3.9)))
+}}}}}
+4:3
+
+{{{{{
+;; Error: unknown class in class axiom
+axiom no.such.MissingClass: class ()
+}}}}}
+Unknown class in axiom : no.such.MissingClass
+
+{{{{{
+;; Error: unknown class in member axiom
+axiom no.such.MissingClass.foo: fn pure
+}}}}}
+Unknown class in axiom : no.such.MissingClass
+
+{{{{{
+;; Error: duplicate and unknown class words
+axiom java.lang.String: class exact exact ()
+}}}}}
+Duplicate axiom class modifier : exact
+
+{{{{{
+axiom java.lang.String: class nullmarked nullmarked ()
+}}}}}
+Duplicate axiom class modifier : nullmarked
+
+{{{{{
+axiom java.lang.String: class immutable immutable ()
+}}}}}
+Duplicate axiom class modifier : immutable
+
+{{{{{
+axiom java.lang.String: class bogus ()
+}}}}}
+Unknown axiom class modifier : bogus
+
+{{{{{
+;; Error: duplicate type parameter in axiom
+axiom java.util.Map of (K, K): class ()
+}}}}}
+Duplicate type parameter in axiom : K
+
+{{{{{
+;; Error: class type inside axiom member section
+axiom java.lang.String: class (
+    def inner: class ()
+)
+}}}}}
+Axiom member must be a function type : inner
+
+{{{{{
+;; Error: constructor new inside instance section
+axiom java.lang.String: class (
+    def new: fn pure ()
+)
+}}}}}
+Constructor axiom new must be declared in static (...) : java.lang.String
+
+{{{{{
+;; Error: empty axiom (neither effects nor signature)
+axiom java.lang.Math.abs: fn
+}}}}}
+Empty axiom : java.lang.Math.abs
+
+{{{{{
+;; Error: unknown effect modifier in Java axiom
+axiom java.lang.Math.abs: fn mystery
+}}}}}
+Unknown effect modifier : mystery
+
+{{{{{
+;; Error: io combined with another modifier in Java axiom
+axiom java.lang.Math.abs: fn io pure
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+;; Error: pure combined with mut or volatile in Java axiom
+axiom java.lang.Math.abs: fn pure volatile
+}}}}}
+pure cannot be combined with mut or volatile in axiom : java.lang.Math.abs
+
+{{{{{
+;; Error: parameter both shared and unique
+axiom java.util.List.add: fn mut (shared unique e: any?): bool
+}}}}}
+Parameter cannot be both shared and unique
+
+{{{{{
+;; Error: duplicate class axiom in same file
+axiom java.lang.Math: class ()
+axiom java.lang.Math: class ()
+}}}}}
+Duplicate axiom for class : java.lang.Math
+
+{{{{{
+;; Error: duplicate member axiom in same file
+axiom java.lang.Math.abs: fn pure (a: int): int
+axiom java.lang.Math.abs: fn pure (a: int): int
+}}}}}
+Duplicate axiom for member : java.lang.Math.abs
+
+{{{{{
+;; Error: array missing type arguments / wrong count / unknown type in axiom
+axiom java.util.Arrays.toString: fn pure (a: array): string
+}}}}}
+Missing type arguments : array
+
+{{{{{
+axiom java.util.Arrays.toString: fn pure (a: array of (int, string)): string
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+axiom java.util.Arrays.toString: fn pure (a: NoSuchType): string
+}}}}}
+Unknown type : NoSuchType
+
+{{{{{
+;; Babble-name axioms: valid forms, modifiers, optional params, and block scoping
+def outer = fn (x: int): int -> (x + 1)
+(
+    axiom myPure: fn pure nothrow idempotent (int): int
+    axiom myBin: fn commutative associative (a: int, b: int): int
+    axiom myMono: fn monotone (x: double): double
+    axiom myInj: fn injective (x: int): int
+    axiom myVol: fn volatile (): int
+    axiom myIo: fn io (mut x: list of int, shared y: any?, unique z: any?, opt: string = ...)
+    axiom myShared: fn shared (): unique any
+    def ok = fn nothrow (v: int): int -> (outer(v))
+    println(ok(41))
+)
+println(outer(1))
+}}}}}
+42
+2
+
+{{{{{
+;; Babble-name axiom errors: export, missing signature, Java member word, unknown effect word
+export axiom foo: fn (): int
+}}}}}
+Axiom about a Babble name cannot be exported : foo
+
+{{{{{
+axiom foo: fn pure
+}}}}}
+Axiom about a Babble name requires a signature : foo
+
+{{{{{
+axiom foo: fn foldable (x: int): int
+}}}}}
+Java member word 'foldable' is not valid on a Babble name axiom : foo
+
+{{{{{
+axiom foo: fn unknownWord (x: int): int
+}}}}}
+Unknown effect word in axiom : unknownWord
+
+{{{{{
+;; Inherited axiom contracts on Babble overrides: valid Comparable.compareTo vs violating override
+def Num = record (v: int) implements java.lang.Comparable of Num (
+    def compareTo = fn (other: Num): int -> (this.v - other.v)
+)
+println(Num(3).compareTo(Num(1)) > 0, ":", Num(2).compareTo(Num(2)) == 0)
+}}}}}
+true:true
+
+{{{{{
+;; Violating java.lang.Comparable.compareTo curated pure axiom
+def Evil = class (def v: int) implements java.lang.Comparable of Evil (
+    def compareTo = fn io (other: Evil): int -> (
+        println("side")
+        this.v - other.v
+    )
+)
+}}}}}
+Function compareTo violates pure guarantee of axiom java.lang.Comparable.compareTo
+
+{{{{{
+;; Descendant contract: mutating a parameter in Comparable.compareTo is rejected
+def MutEvil = class (def v: int) implements java.lang.Comparable of MutEvil (
+    def compareTo = fn (mut other: MutEvil): int -> (
+        other.v = 0
+        this.v
+    )
+)
+}}}}}
+Function compareTo violates pure guarantee of axiom java.lang.Comparable.compareTo
+
+{{{{{
+;; BIP019-P2 reads-of-mutable-state determinism model
+def Box = class (def v: int) (
+    def get = fn (): int -> (this.v)
+    def bump = fn mut (): int -> (this.v += 1 ; this.v)
+)
+def readBox = fn (b: Box): int -> (b.get())
+def b = Box(10)
+def r1 = readBox(b)
+b.bump()
+def r2 = readBox(b)
+println(r1, ":", r2)
+}}}}}
+10:11
+
+{{{{{
+;; BIP019-P2: reading mutable top-level variable in a pure function violates determinism
+def counter = 0
+counter = 1
+def badRead = fn (): int -> (counter)
+}}}}}
+Function badRead violates deterministic guarantee : mark function as volatile (or io)
+
+{{{{{
+;; Curated nullability & deep immutability (Map.Entry, Collections.emptyList/emptyIterator)
+def empty: list of string = java.util.Collections.emptyList()
+def it: java.util.Iterator of string = java.util.Collections.emptyIterator()
+def pair: entry of (string, int) = java.util.Map.entry("k", 7)
+println(empty.size(), ":", it.hasNext(), ":", pair.getKey(), ":", pair.getValue())
+}}}}}
+0:false:k:7
+
+{{{{{
+;; Optimizer -O1 with curated foldable/idempotent + HirPurity.allArgsPrimitiveOrImmutable in loops
+def Point = record (x: int, y: int) ()
+def Cell = class (def v: int) ()
+def sumPair = fn nothrow (p: Point, tag: string, n: int): int -> (p.x + p.y + tag.length() + n)
+def readCell = fn nothrow (c: Cell): int -> (c.v)
+def run = fn io (n: int): string -> (
+    def p = Point(3, 4)
+    def c = Cell(5)
+    def acc = 0
+    def i = 0
+    while i < n then (
+        acc += sumPair(p, "hi", 1)
+        acc += readCell(c)
+        acc += java.lang.Math.abs(java.lang.Math.abs(-2))
+        i += 1
+    )
+    def f1 = java.lang.Math.sqrt(9.0)
+    def f2 = "  hi  ".trim()
+    def f3 = f2.trim()
+    "" + acc + ":" + f1 + ":" + f3
+)
+println(run(3))
+}}}}}
+51:3.0:hi
+
+{{{{{
+;; Boxed primitive erasure ((T)? and T | null), intersection erasure, null-only, and non-null multi-union
+axiom java.util.Objects: class () static (
+    def toString: fn pure nothrow (o: (byte)?): string
+    def toString: fn pure nothrow (o: (short)?): string
+    def toString: fn pure nothrow (o: (int)?): string
+    def toString: fn pure nothrow (o: (long)?): string
+    def toString: fn pure nothrow (o: (float)?): string
+    def toString: fn pure nothrow (o: (double)?): string
+    def toString: fn pure nothrow (o: (bool)?): string
+    def toString: fn pure nothrow (o: (char)?): string
+    def hashCode: fn pure nothrow (o: java.lang.CharSequence & java.io.Serializable): int
+    def equals: fn pure nothrow (a: null, b: string | int): bool
+)
+println(java.util.Objects.equals(null, "x"), ":", java.util.Objects.hashCode("hi") != 0)
+}}}}}
+false:true
+
+{{{{{
+;; Specificity: wildcard vs signatureless vs signatured on same class, and subclass over superclass
+axiom java.lang.CharSequence: class (
+    def *: fn volatile
+    def length: fn pure
+)
+axiom java.lang.String: class (
+    def *: fn pure
+    def length: fn pure nothrow
+    def length: fn pure nothrow (): int
+)
+def lenPure = fn nothrow (s: string): int -> (s.length())
+println(lenPure("hello"))
+}}}}}
+5
+
+{{{{{
+;; Static method with mut modifier applies mut to first parameter
+axiom java.util.Collections.reverse: fn mut (l: list of any?): void
+def rev = fn (mut xs: list of int): int -> (
+    java.util.Collections.reverse(xs)
+    xs.get(0)
+)
+def l: list of int = java.util.ArrayList()
+l.add(1)
+l.add(2)
+println(rev(l))
+}}}}}
+2
+
+{{{{{
+;; Error: duplicate member conflict inside a class axiom
+axiom java.lang.Math: class () static (
+    def abs: fn pure (a: int): int
+    def abs: fn pure nothrow (a: int): int
+)
+}}}}}
+Duplicate axiom for member : java.lang.Math.abs
+
+{{{{{
+;; Error: conflict between class axiom member and standalone member axiom
+axiom java.lang.Math: class () static (
+    def abs: fn pure (a: int): int
+)
+axiom java.lang.Math.abs: fn pure nothrow (a: int): int
+}}}}}
+Duplicate axiom for member : java.lang.Math.abs
+
+{{{{{
+;; Inherited axiom contracts on Comparator.compare and record toString/==
+def IntCmp = class () implements java.util.Comparator of int (
+    def compare = fn (a: int, b: int): int -> (a - b)
+)
+def Tag = record (id: int) (
+    def toString = fn (): string -> ("Tag:" + this.id)
+)
+println(IntCmp().compare(5, 2) > 0, ":", Tag(3) == Tag(3), ":", Tag(3).toString())
+}}}}}
+true:true:Tag:3
+
+{{{{{
+;; Violating Comparator.compare curated pure axiom
+def BadCmp = class () implements java.util.Comparator of int (
+    def compare = fn io (a: int, b: int): int -> (println(a) ; a - b)
+)
+}}}}}
+Function compare violates pure guarantee of axiom java.util.Comparator.compare
+
+{{{{{
+;; Violating Object.equals curated pure axiom
+def BadEq = class (def id: int) (
+    def equals = fn io (o: any?): bool -> (println("e") ; false)
+)
+}}}}}
+Warning : equals has no effect on == : use a value class
+Function equals violates pure guarantee of axiom java.lang.Object.equals
+
+{{{{{
+;; Exact class axiom does not apply to subclasses (CharSequence exact vs String)
+axiom java.lang.CharSequence: class exact (
+    def length: fn volatile (): int
+)
+def getLen = fn (s: string): int -> (s.length())
+println(getLen("abcdefg"))
+}}}}}
+7
+
+{{{{{
+;; Signatureless static mut axiom maps mut to first parameter (AxiomData.toProfile)
+axiom java.util.Collections.reverse: fn mut
+def rev2 = fn (mut xs: list of int): int -> (
+    java.util.Collections.reverse(xs)
+    xs.get(0)
+)
+def l: list of int = java.util.ArrayList()
+l.add(10)
+l.add(20)
+println(rev2(l))
+}}}}}
+20
+
+{{{{{
+;; Constructor overload resolution (signatured vs signatureless new) & constructor parameter nullness
+axiom java.lang.StringBuilder: class nullmarked (
+    def toString: fn pure nothrow (): string
+) static (
+    def new: fn pure fresh ()
+    def new: fn pure fresh (str: string)
+)
+def make = fn (): string -> (
+    def a = java.lang.StringBuilder()
+    def b = java.lang.StringBuilder("hi")
+    a.toString() + b.toString()
+)
+println(make())
+}}}}}
+hi
+
+{{{{{
+;; User nullmarked class axiom applies to public Java fields and unannotated returns
+axiom java.awt.Point: class nullmarked ()
+def px = fn (p: java.awt.Point): int -> (p.x)
+println(px(java.awt.Point(4, 9)))
+}}}}}
+4
+
+{{{{{
+;; BIP019-P2: reads of frozen / localFresh / parameter / this / external mutable state & demoteAlias
+def Node = class (def v: int) (
+    def get = fn (): int -> (this.v)
+)
+def Holder = class (def child: Node?) (
+    def link = fn mut (shared n: Node): int -> (
+        this.child = n
+        n.v
+    )
+    def readChild = fn (): int -> (
+        def c = this.child
+        if c != null then (c.v) else (0)
+    )
+)
+def readFrozen = fn (f: frozen Node): int -> (f.v)
+def readLocal = fn (): int -> (
+    def loc = Node(7)
+    loc.v
+)
+def aliasIntoParam = fn (mut h: Holder): int -> (
+    def loc = Node(9)
+    h.link(loc)
+    loc.v
+)
+def gNode = Node(5)
+def readGlobalVolatile = fn volatile (): int -> (gNode.v)
+def h = Holder(null)
+println(readFrozen(freeze(Node(3))), ":", readLocal(), ":", aliasIntoParam(h), ":", h.readChild(), ":", readGlobalVolatile())
+}}}}}
+3:7:9:9:5
+
+{{{{{
+;; BIP019-P2: reading an external mutable object inside a pure function violates determinism
+def Box = class (def v: int) ()
+def gBox = Box(1)
+def badReadExt = fn (): int -> (gBox.v)
+}}}}}
+Function badReadExt violates deterministic guarantee : mark function as volatile (or io)
+
+{{{{{
+;; BIP019-P2: aliasing a local unique object into an external holder demotes it so reading it is volatile
+def Box = class (def v: int) ()
+def Slot = class (def b: Box?) ()
+def gSlot = Slot(null)
+def leakAndRead = fn volatile (): int -> (
+    def loc = Box(4)
+    def copy = loc
+    loc.v + copy.v
+)
+println(leakAndRead())
+}}}}}
+8
+
+{{{{{
+;; Specificity: signatured overload beats signatureless on same class, and subclass beats superclass
+axiom java.lang.Object: class (
+    def toString: fn volatile
+)
+axiom java.lang.String: class (
+    def indexOf: fn pure
+    def indexOf: fn pure nothrow (ch: int): int
+    def toString: fn pure nothrow (): string
+)
+def probe = fn nothrow (s: string): string -> (
+    def i = s.indexOf(97)
+    s.toString() + i
+)
+println(probe("cat"))
+}}}}}
+cat1
+
+{{{{{
+;; Static and instance members of same name do not conflict; instance axiom ignores static call
+axiom java.lang.String: class (
+    def valueOf: fn volatile
+) static (
+    def valueOf: fn pure nothrow (i: int): string
+)
+def fmtInt = fn nothrow (x: int): string -> (java.lang.String.valueOf(x))
+println(fmtInt(42))
+}}}}}
+42
+
+{{{{{
+;; Unique return syntax, mut/unique Java params, bounded/extra type vars, non-null paren, array of null, nullable array
+axiom java.lang.Enum of E: class ()
+axiom java.lang.String of X: class ()
+axiom java.lang.StringBuilder: class (
+    def toString: fn pure nothrow (): unique string
+) static (
+    def new: fn pure unique ()
+)
+axiom java.util.Collections.reverse: fn (mut l: list of any?): void
+axiom java.util.List.add: fn mut (unique e: any?): bool
+axiom java.util.Arrays: class () static (
+    def toString: fn pure (a: (array of null)?): string
+    def equals: fn pure (a: (array of int), b: (array of int)?): bool
+)
+(
+    axiom int: fn (x: any?): int
+    def sb = java.lang.StringBuilder()
+    println(sb.toString().length(), ":", int("7"))
+)
+}}}}}
+0:7
+
+{{{{{
+;; Error: io combined with volatile / mut / shared / nothrow / idempotent / view / shallow / fresh / foldable
+axiom java.lang.Math.abs: fn io volatile
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+axiom java.lang.Math.abs: fn io mut
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+axiom java.lang.Math.abs: fn io shared
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+axiom java.lang.Math.abs: fn io nothrow
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+axiom java.lang.Math.abs: fn io idempotent
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+axiom java.lang.Math.abs: fn io view
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+axiom java.lang.Math.abs: fn io shallow
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+axiom java.lang.Math.abs: fn io fresh
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+axiom java.lang.Math.abs: fn io foldable
+}}}}}
+io cannot be combined with other effect modifiers in axiom : java.lang.Math.abs
+
+{{{{{
+axiom java.lang.Math.abs: fn pure mut
+}}}}}
+pure cannot be combined with mut or volatile in axiom : java.lang.Math.abs
+
+{{{{{
+;; Descendant contract specificity: class axiom vs interface axiom & subinterface vs superinterface
+axiom java.lang.Object.toString: fn pure
+axiom java.lang.CharSequence.toString: fn volatile
+def MySeq = class (def s: string) implements java.lang.CharSequence (
+    def length = fn (): int -> (this.s.length())
+    def charAt = fn (i: int): char -> (this.s.charAt(i))
+    def subSequence = fn (a: int, b: int): java.lang.CharSequence -> (this.s.subSequence(a, b))
+    def toString = fn (): string -> (this.s)
+)
+println(MySeq("ok").toString())
+}}}}}
+ok
+
+{{{{{
+;; EffectSet.intersect across pure, volatile, io function branches
+def pickFn = fn (flag: int): fn io (x: int): int -> (
+    def p = fn (x: int): int -> (x + 1)
+    def v = fn volatile (x: int): int -> (x + 2)
+    def i = fn io (x: int): int -> (x + 3)
+    def pv = if flag == 0 then (p) else (v)
+    if flag == 2 then (i) else (pv)
+)
+println(pickFn(0)(10), ":", pickFn(1)(10), ":", pickFn(2)(10))
+}}}}}
+11:12:13
+
+{{{{{
+;; EffectSet.satisfies: non-unique return assigned to unique fn type is rejected
+def Box = class (def v: int) ()
+def gBox = Box(1)
+def badUnique: fn (): unique Box = fn volatile (): Box -> (gBox)
+}}}}}
+Type error : expected () : unique Box, got volatile () : Box
+
+
+

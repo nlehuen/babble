@@ -37,9 +37,9 @@ println(bumpBox(box, 5), ":", inspectBox(box))
 
 {{{{{
 ;; Axiom declarations for Java methods
-axiom pure nothrow on java.lang.Math.abs
-axiom mut on java.util.List.add
-axiom pure on java.util.List.size
+axiom java.lang.Math.abs: fn pure nothrow
+axiom java.util.List.add: fn mut
+axiom java.util.List.size: fn pure
 def compute = fn (x : int) : int -> ( java.lang.Math.abs(x) )
 def l : java.util.List of int = java.util.ArrayList()
 l.add(-7)

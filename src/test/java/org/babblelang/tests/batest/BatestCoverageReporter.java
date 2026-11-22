@@ -49,6 +49,7 @@ public final class BatestCoverageReporter {
             "org.babblelang.Repl",
             "org.babblelang.Babblefmt",
             "org.babblelang.analysis.AxiomChecker",
+            "org.babblelang.analysis.AxiomDumper",
             "org.babblelang.analysis.BytecodeEffectAnalyzer",
             "org.babblelang.compiler.Babblec",
             "org.babblelang.compiler.FileModuleCompiler",

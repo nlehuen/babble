@@ -6,8 +6,6 @@ def Hittable = hittable.Hittable
 def HitRecord = hittable.HitRecord
 def Ray = import("ray.ba").Ray
 
-axiom pure unique on java.util.ArrayList()
-
 export def HittableList = class () implements Hittable (
     def objects: java.util.List of Hittable = java.util.ArrayList()
     private def bbox: AABB = AABB.empty
