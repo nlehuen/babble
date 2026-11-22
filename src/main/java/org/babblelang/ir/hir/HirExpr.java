@@ -49,6 +49,7 @@ public sealed interface HirExpr permits
         HirExpr.CoreCollectionCall,
         HirExpr.SuperCall,
         HirExpr.SelfRecurseCall,
+        HirExpr.SelfTailCall,
         HirExpr.DirectBabbleCall,
         HirExpr.DirectThisMethodCall,
         HirExpr.InterfaceCall,
@@ -426,6 +427,22 @@ public sealed interface HirExpr permits
             ExprMeta meta
     ) implements HirExpr {
         public SelfRecurseCall {
+            args = List.copyOf(args);
+        }
+    }
+
+    /**
+     * A self tail call (docs/design/bip024_tail-calls.md) : a call of function {@code functionId} to itself
+     * whose value is the function's result, run as a jump back to the start of the function with new
+     * arguments. It only ever appears in the body of that function.
+     */
+    record SelfTailCall(
+            int functionId,
+            List<HirCallArg> args,
+            ScopeAnalysis.ArgumentBinding binding,
+            ExprMeta meta
+    ) implements HirExpr {
+        public SelfTailCall {
             args = List.copyOf(args);
         }
     }

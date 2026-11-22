@@ -167,6 +167,8 @@ final class HirEmitter {
     private int thizLocal;
     private ClassGen methodClass;
     private ClassGen constructorClass;
+    /** The loop head of the function body being emitted, for its self tail calls (BIP024). */
+    private TailLoop tailLoop;
     private int typedThisLocal;
     private int frameNs;
     private int parameterBase;
@@ -355,6 +357,7 @@ final class HirEmitter {
             case HirExpr.CoreCollectionCall c -> 1 + countCallArgs(c.args());
             case HirExpr.SuperCall c -> 1 + countCallArgs(c.args());
             case HirExpr.SelfRecurseCall c -> 1 + countList(c.args());
+            case HirExpr.SelfTailCall c -> 1 + countCallArgs(c.args());
             case HirExpr.DirectBabbleCall c -> 1 + countNodes(c.callee()) + countList(c.args());
             case HirExpr.DirectThisMethodCall c -> 1 + countNodes(c.receiver()) + countCallArgs(c.args());
             case HirExpr.InterfaceCall c -> 1 + countNodes(c.receiver()) + countList(c.args());
@@ -414,6 +417,7 @@ final class HirEmitter {
         methodClass = null;
         constructorClass = null;
         typedThisLocal = -1;
+        tailLoop = null;
     }
 
     private void endMethod() {
@@ -681,6 +685,7 @@ final class HirEmitter {
     }
 
     private void functionBody(HirFunction fn, String paramsField, String selfType) {
+        beginTailLoop(null, -1);
         initFrameLocals(fn, selfType);
         bindParameters(paramsField, fn.params(), fn.keywordOnlyStart(), fn.restIndex(), null);
         statements(fn.body());
@@ -691,6 +696,7 @@ final class HirEmitter {
     }
 
     private void functionBodySpec(HirFunction fn, String selfType, int[] paramSlots, int maskSlot) {
+        beginTailLoop(paramSlots, maskSlot);
         initFrameLocals(fn, selfType);
         List<HirParam> params = fn.params();
         int optBit = 0;
@@ -1146,6 +1152,7 @@ final class HirEmitter {
             case HirExpr.CoreCollectionCall c -> emitCoreCollectionCall(c);
             case HirExpr.SuperCall c -> emitSuperCall(c);
             case HirExpr.SelfRecurseCall c -> emitSelfRecurseCall(c);
+            case HirExpr.SelfTailCall c -> emitSelfTailCall(c);
             case HirExpr.DirectBabbleCall c -> emitDirectBabbleCall(c);
             case HirExpr.DirectThisMethodCall c -> emitDirectThisMethodCall(c);
             case HirExpr.InterfaceCall c -> emitInterfaceCall(c);
@@ -3176,6 +3183,67 @@ final class HirEmitter {
                 + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", false);
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         finishCallCheck(c.meta());
+    }
+
+    /**
+     * Where a self tail call of the method's function jumps (docs/design/bip024_tail-calls.md) : before
+     * the frame is entered, so that each activation gets a fresh frame, declarations, cells, default
+     * values and parameter bindings. {@code paramSlots} are the parameters of a {@code $spec} method,
+     * null for the direct entry point (spread parameters, or the arguments array and names).
+     */
+    private record TailLoop(Label head, int[] paramSlots, int maskSlot) {
+    }
+
+    private void beginTailLoop(int[] paramSlots, int maskSlot) {
+        tailLoop = new TailLoop(new Label(), paramSlots, maskSlot);
+        mv.visitLabel(tailLoop.head());
+    }
+
+    /**
+     * A self tail call : the arguments are evaluated as for a call, then stored back into the method's
+     * own parameters, and the method starts again. The analysis only marks calls in statement position
+     * (BIP024-D3), so the operand stack is empty at the jump, as at a loop head.
+     */
+    private void emitSelfTailCall(HirExpr.SelfTailCall c) {
+        HirFunction fn = module.function(c.functionId());
+        TailLoop loop = tailLoop;
+        if (loop == null || methodOwnerId != fn.id()) {
+            throw new IllegalStateException("Self tail call of function #" + fn.id() + " outside of its body at line " + c.meta().line());
+        }
+        List<HirExpr> args = callArgExprs(c.args());
+        ScopeAnalysis.ArgumentBinding binding = c.binding();
+        int count = fn.params().size();
+        if (loop.paramSlots() != null) {
+            ScopeAnalysis.PrimitiveKind[] kinds = paramKindsOf(fn);
+            emitBoundTypedArgs(args, binding, kinds);
+            if (fn.hasOptionalMask()) {
+                ConstantPool.pushInt(mv, binding != null ? binding.specMaskFor(fn.optionalParamBits(), count) : 0);
+                mv.visitVarInsn(ISTORE, loop.maskSlot());
+            }
+            for (int i = count - 1; i >= 0; i--) {
+                storeLocal(kinds[i], loop.paramSlots()[i]);
+            }
+        } else if (fn.isSpread()) {
+            emitBoundBoxedArgs(args, binding, count);
+            for (int i = count - 1; i >= 0; i--) {
+                mv.visitVarInsn(ASTORE, FIRST_PARAMETER + i);
+            }
+            mv.visitInsn(ACONST_NULL);
+            mv.visitVarInsn(ASTORE, BINDER_LOCAL);
+        } else {
+            if (binding != null) {
+                emitBoundArgumentsArray(args, binding);
+            } else {
+                emitArgumentsArray(c.args());
+            }
+            mv.visitVarInsn(ASTORE, ARGS);
+            mv.visitInsn(ACONST_NULL);
+            mv.visitVarInsn(ASTORE, NAMES);
+        }
+        line(c.meta().line());
+        mv.visitJumpInsn(GOTO, loop.head());
+        mv.visitInsn(ACONST_NULL);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
     }
 
     private void emitSelfRecurseCall(HirExpr.SelfRecurseCall c) {

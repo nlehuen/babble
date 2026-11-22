@@ -285,6 +285,11 @@ public final class HirPrinter {
                 printArgs(sb, c.args(), depth + 1);
                 sb.append(')');
             }
+            case HirExpr.SelfTailCall c -> {
+                sb.append("(tail-call #").append(c.functionId());
+                printCallArgs(sb, c.args(), depth + 1);
+                sb.append(')');
+            }
             case HirExpr.DirectBabbleCall c -> {
                 sb.append("(call-fn #").append(c.targetFunctionId());
                 printArgs(sb, c.args(), depth + 1);

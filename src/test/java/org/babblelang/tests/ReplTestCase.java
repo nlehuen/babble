@@ -254,7 +254,7 @@ public class ReplTestCase {
     public void testErrorsDoNotEndTheLoop() throws Exception {
         Assertions.assertEquals(List.of("Error : No such name : nosuch", "Error : Syntax error : unexpected '='", "Error : Lexical error at line 1:2 : token recognition error at: '#'",
                         "Error : Not a number : true in <input> at line number 2, column 7", "function r", "Error : Stack overflow", "1"),
-                transcript("nosuch", "def = 3", "1 # 2", "def a = (", "  1 + true", ")", "def r = fn (n : int) : int -> ( recurse(n + 1) )", "r(1)", "1"));
+                transcript("nosuch", "def = 3", "1 # 2", "def a = (", "  1 + true", ")", "def r = fn (n : int) : int -> ( 1 + recurse(n + 1) )", "r(1)", "1"));
     }
 
     @Test

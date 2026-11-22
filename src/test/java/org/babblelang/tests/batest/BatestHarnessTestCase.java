@@ -152,7 +152,7 @@ public class BatestHarnessTestCase {
                 boom
 
                 {{{{{
-                def loop = fn (n : int) : int -> ( recurse(n + 1) )
+                def loop = fn (n : int) : int -> ( 1 + recurse(n + 1) )
                 loop(0)
                 }}}}}
                 Stack overflow

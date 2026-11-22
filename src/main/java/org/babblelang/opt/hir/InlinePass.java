@@ -273,6 +273,11 @@ public final class InlinePass implements HirPass {
                 ok[0] = false;
                 return;
             }
+            case HirExpr.SelfTailCall c -> {
+                // Its jump only makes sense in the callee's own method (BIP024).
+                ok[0] = false;
+                return;
+            }
             case HirExpr.RecurseRef r -> {
                 ok[0] = false;
                 return;

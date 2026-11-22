@@ -89,7 +89,7 @@ public class MainTestCase {
         String syntax = script("syntax.ba", "def a = 1\ndef = 2");
         Assertions.assertEquals(new Run(Main.FAILED, List.of(), List.of("Error : Syntax error : unexpected '=' in " + syntax + " at line number 2 at column number 5")),
                 run("", syntax));
-        String overflow = script("overflow.ba", "def r = fn (n : int) : int -> ( recurse(n + 1) )\nr(1)");
+        String overflow = script("overflow.ba", "def r = fn (n : int) : int -> ( 1 + recurse(n + 1) )\nr(1)");
         Assertions.assertEquals(new Run(Main.FAILED, List.of(), List.of("Error : Stack overflow in " + overflow)), run("", overflow));
     }
 
