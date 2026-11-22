@@ -447,7 +447,7 @@ final class MemberTypes {
         return null;
     }
 
-    /** Checks each class, object, and extending interface against all ancestor Babble interface member types. */
+    /** Checks each class, object, and extending interface against all ancestor Babble and Java interface member types. */
     void checkInterfaces() {
         for (TypeNode type : checker.pass().types) {
             if (type.parents.isEmpty()) {
@@ -463,6 +463,89 @@ final class MemberTypes {
                 if (parent instanceof TypeNode iface) {
                     checkInterfaceConformance(type, selfInst, iface, defaults, seen);
                 }
+            }
+            if (!type.isInterface()) {
+                checkJavaInterfaceOverloads(type, selfInst, defaults);
+            }
+        }
+    }
+
+    private void checkJavaInterfaceOverloads(TypeNode type, Type.Instance selfInst, Map<String, TypeChecks.Provider> defaults) {
+        Set<Class<?>> javaIfaces = new java.util.LinkedHashSet<>();
+        collectJavaInterfaces(type, javaIfaces, Collections.newSetFromMap(new IdentityHashMap<>()));
+        if (javaIfaces.isEmpty()) {
+            return;
+        }
+        Set<String> checked = new java.util.HashSet<>();
+        for (Class<?> javaIface : javaIfaces) {
+            Type projected = checker.algebra().projectToJava(selfInst, javaIface);
+            Map<java.lang.reflect.TypeVariable<?>, Type> javaEnv = projected instanceof Type.JavaInstance ji
+                    ? JavaTypeBridge.javaTypeEnv(javaIface, ji.typeArguments())
+                    : Map.of();
+            for (java.lang.reflect.Method jm : org.babblelang.runtime.JavaTypes.abstractMethods(javaIface)) {
+                String sigKey = jm.getName() + "#" + org.objectweb.asm.Type.getMethodDescriptor(jm);
+                if (!checked.add(sigKey)) {
+                    continue;
+                }
+                TypeNode.Member impl = type.members.get(jm.getName());
+                Type implType = null;
+                String ownerName = type.name;
+                ParserRuleContext errorSite = type.ctx;
+                if (impl != null && !impl.isPrivate()) {
+                    implType = checker.memberType(type, impl);
+                    if (impl.declaration != null) {
+                        errorSite = impl.declaration;
+                    }
+                } else {
+                    TypeChecks.Provider provider = defaults.get(jm.getName());
+                    if (provider != null && provider.owner() instanceof TypeNode owner) {
+                        TypeNode.Member defMember = owner.members.get(jm.getName());
+                        if (defMember != null) {
+                            Type projectedOwner = checker.algebra().projectToBabble(selfInst, owner);
+                            Map<Type.TypeVar, Type> ownerEnv = projectedOwner instanceof Type.Instance proj
+                                    ? checker.algebra().instanceEnv(proj) : Map.of();
+                            implType = checker.algebra().substitute(checker.memberType(owner, defMember), ownerEnv);
+                            ownerName = owner.name;
+                        }
+                    }
+                }
+                if (!(implType instanceof Type.Overloaded ov)) {
+                    continue;
+                }
+                int paramCount = jm.getParameterCount();
+                List<Type> javaParamTypes = new ArrayList<>(paramCount);
+                List<Type> fallbackParamTypes = new ArrayList<>(paramCount);
+                boolean hasFallbackDiff = false;
+                for (int i = 0; i < paramCount; i++) {
+                    Type pt = JavaTypeBridge.javaExecutableParamType(jm, i, javaEnv);
+                    javaParamTypes.add(pt);
+                    JavaNullability.Nullness nullness = JavaNullability.parameterNullness(jm, i);
+                    if (nullness == JavaNullability.Nullness.UNSPECIFIED && Type.containsNull(pt)) {
+                        fallbackParamTypes.add(Type.withoutNull(pt));
+                        hasFallbackDiff = true;
+                    } else {
+                        fallbackParamTypes.add(pt);
+                    }
+                }
+                int chosen = OverloadSolver.selectAlternativeForJavaMethod(
+                        checker.algebra(), ov, jm, javaParamTypes, hasFallbackDiff ? fallbackParamTypes : null);
+                if (chosen < 0) {
+                    checker.warn(ownerName + "." + jm.getName() + " has no alternative for "
+                            + OverloadSolver.javaMethodSignature(jm), errorSite);
+                }
+            }
+        }
+    }
+
+    private static void collectJavaInterfaces(TypeNode node, Set<Class<?>> out, Set<TypeNode> seen) {
+        if (!seen.add(node)) {
+            return;
+        }
+        for (Object parent : node.parents) {
+            if (parent instanceof Class<?> jc) {
+                out.add(jc);
+            } else if (parent instanceof TypeNode parentNode) {
+                collectJavaInterfaces(parentNode, out, seen);
             }
         }
     }

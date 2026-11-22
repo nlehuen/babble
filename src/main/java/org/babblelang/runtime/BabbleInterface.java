@@ -10,7 +10,7 @@ import java.util.Set;
  */
 public final class BabbleInterface extends BabbleType {
     private final Object[] parents;
-    private final BabbleFunction[] defaults;
+    private final Callable[] defaults;
 
     /**
      * @param parents the extended interfaces : BabbleInterface values or Java interface classes
@@ -18,12 +18,12 @@ public final class BabbleInterface extends BabbleType {
     public BabbleInterface(ClassShape shape, Object[] parents) {
         super(shape);
         this.parents = parents;
-        this.defaults = new BabbleFunction[shape.memberCount()];
+        this.defaults = new Callable[shape.memberCount()];
     }
 
     /** Runs the definition of a default method. */
     public Object setDefault(int index, Object function) {
-        defaults[index] = (BabbleFunction) function;
+        defaults[index] = (Callable) function;
         return function;
     }
 
@@ -31,14 +31,14 @@ public final class BabbleInterface extends BabbleType {
      * The default method this interface provides for a name : its own, or one it inherits.
      * A member of its own, required or not, hides what its parents provide.
      */
-    public BabbleFunction findDefault(String name) {
+    public Callable findDefault(String name) {
         int index = shape.memberIndex(name);
         if (index >= 0) {
             return defaults[index];
         }
         for (Object parent : parents) {
             if (parent instanceof BabbleInterface babble) {
-                BabbleFunction function = babble.findDefault(name);
+                Callable function = babble.findDefault(name);
                 if (function != null) {
                     return function;
                 }
@@ -48,14 +48,14 @@ public final class BabbleInterface extends BabbleType {
     }
 
     /** All the defaults this interface provides, its own hiding inherited ones. */
-    void collectDefaults(Map<String, BabbleFunction> result) {
-        Map<String, BabbleFunction> inherited = new LinkedHashMap<>();
+    void collectDefaults(Map<String, Callable> result) {
+        Map<String, Callable> inherited = new LinkedHashMap<>();
         for (Object parent : parents) {
             if (parent instanceof BabbleInterface babble) {
                 babble.collectDefaults(inherited);
             }
         }
-        for (Map.Entry<String, BabbleFunction> entry : inherited.entrySet()) {
+        for (Map.Entry<String, Callable> entry : inherited.entrySet()) {
             if (shape.memberIndex(entry.getKey()) < 0) {
                 result.putIfAbsent(entry.getKey(), entry.getValue());
             }
@@ -68,7 +68,7 @@ public final class BabbleInterface extends BabbleType {
     }
 
     /** Own default method at {@code index}, or null. */
-    BabbleFunction defaultAt(int index) {
+    Callable defaultAt(int index) {
         return index >= 0 && index < defaults.length ? defaults[index] : null;
     }
 

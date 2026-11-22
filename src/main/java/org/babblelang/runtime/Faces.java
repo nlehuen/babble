@@ -321,8 +321,25 @@ final class Faces {
             if (isObjectMethod(method, "toString", 0)) {
                 return instance.toString();
             }
-            BabbleFunction function = BabbleObjects.method(instance, method.getName());
-            if (function != null && (!method.isDefault() || function.acceptsJavaDefaultOverload(method.getParameterTypes()))) {
+            Object member = BabbleObjects.methodOrOverload(instance, method.getName());
+            if (member instanceof OverloadSet ov) {
+                Callable selected = ov.selectForJavaMethod(method);
+                if (selected != null) {
+                    Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), method.getParameterTypes());
+                    if (method.isVarArgs() && selected instanceof BabbleFunction bf
+                            && bf.restIndex() == babble.length - 1 && babble.length > 0 && babble[babble.length - 1] != null) {
+                        babble = babble.clone();
+                        babble[babble.length - 1] = Spreads.packedRest(ArgumentsView.fromArray(babble[babble.length - 1]));
+                    }
+                    ScriptRuntime rt = BabbleObjects.runtime(instance);
+                    Object result = selected instanceof BabbleFunction bf
+                            ? bf.invoke(instance, rt, babble, null, site(method.getName(), babble.length))
+                            : selected.call(rt, babble, null, site(method.getName(), babble.length));
+                    return JavaTypes.convertResult(result, method.getReturnType(),
+                            BabbleObjects.babbleClass(instance).name() + "." + method.getName(), rt);
+                }
+            } else if (member instanceof BabbleFunction function
+                    && (!method.isDefault() || function.acceptsJavaDefaultOverload(method.getParameterTypes()))) {
                 Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), method.getParameterTypes());
                 if (method.isVarArgs() && function.restIndex() == babble.length - 1
                         && babble.length > 0 && babble[babble.length - 1] != null) {

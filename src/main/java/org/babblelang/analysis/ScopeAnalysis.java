@@ -240,12 +240,27 @@ public final class ScopeAnalysis {
     public record ParentRef(String babbleTypeId, Class<?> javaClass) {
     }
 
-    public record MemberSpec(String name, boolean hasDefault, boolean required, boolean callable, FunctionSignature declaredSignature) {
+    public record MemberSpec(String name, boolean hasDefault, boolean required, boolean callable, FunctionSignature declaredSignature,
+                             List<FunctionSignature> overloadSignatures, List<String> overloadSignatureKeys) {
+        public MemberSpec(String name, boolean hasDefault, boolean required, boolean callable, FunctionSignature declaredSignature) {
+            this(name, hasDefault, required, callable, declaredSignature, List.of(), List.of());
+        }
+
+        public boolean isOverloaded() {
+            return overloadSignatures != null && !overloadSignatures.isEmpty();
+        }
     }
 
     public record TypeHierarchyInfo(String id, ClassShape.Kind kind, String name, List<ParentRef> directParents,
                                     java.util.Set<String> allBabbleInterfaceIds, java.util.Set<Class<?>> allJavaInterfaces,
-                                    Map<String, MemberSpec> interfaceMembers) {
+                                    Map<String, MemberSpec> interfaceMembers,
+                                    Map<String, Integer> javaBridgeOverloads,
+                                    Map<String, Integer> babbleBridgeOverloads) {
+        public TypeHierarchyInfo(String id, ClassShape.Kind kind, String name, List<ParentRef> directParents,
+                                 java.util.Set<String> allBabbleInterfaceIds, java.util.Set<Class<?>> allJavaInterfaces,
+                                 Map<String, MemberSpec> interfaceMembers) {
+            this(id, kind, name, directParents, allBabbleInterfaceIds, allJavaInterfaces, interfaceMembers, Map.of(), Map.of());
+        }
     }
 
     public record SuperTargetInfo(String ownerTypeId, boolean ownerIsInterface,
@@ -393,7 +408,7 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<FunctionSignature> babbleCallSignatures = new ParseTreeProperty<>();
     private final Map<BabbleParser.OverloadExpressionContext, List<OverloadAltMetaInfo>> overloadMetas = new java.util.IdentityHashMap<>();
     private final Map<ParserRuleContext, OverloadSelection> overloadSelections = new java.util.IdentityHashMap<>();
-    private final Map<BabbleParser.CallContext, OverloadDispatchTarget> overloadDispatches = new java.util.IdentityHashMap<>();
+    private final Map<ParserRuleContext, OverloadDispatchTarget> overloadDispatches = new java.util.IdentityHashMap<>();
     private final Map<String, TypeHierarchyInfo> typeHierarchies = new java.util.LinkedHashMap<>();
     private AnalysisSession session;
     private List<ModuleInterface> importedModules = List.of();
@@ -688,11 +703,11 @@ public final class ScopeAnalysis {
         return overloadSelections.get(ctx);
     }
 
-    void setOverloadDispatch(BabbleParser.CallContext ctx, OverloadDispatchTarget target) {
+    void setOverloadDispatch(ParserRuleContext ctx, OverloadDispatchTarget target) {
         overloadDispatches.put(ctx, target);
     }
 
-    public OverloadDispatchTarget overloadDispatch(BabbleParser.CallContext ctx) {
+    public OverloadDispatchTarget overloadDispatch(ParserRuleContext ctx) {
         return overloadDispatches.get(ctx);
     }
 
@@ -1206,7 +1221,11 @@ public final class ScopeAnalysis {
     }
 
     public static String functionName(BabbleParser.FunctionLiteralContext function) {
-        return definedName(function);
+        ParserRuleContext cur = function;
+        while (cur.getParent() instanceof BabbleParser.OverloadExpressionContext ov) {
+            cur = ov;
+        }
+        return definedName(cur);
     }
 
     /**

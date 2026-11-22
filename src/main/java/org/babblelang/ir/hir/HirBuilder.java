@@ -242,16 +242,43 @@ public final class HirBuilder {
         }
 
         // Assign JVM method names & owning compiled class for every function literal.
+        Map<String, Integer> overloadMemberCounters = new LinkedHashMap<>();
         for (BabbleParser.FunctionLiteralContext fnCtx : orderedFunctions) {
             int ownerCls = findCompiledMethodOwnerClassId(fnCtx);
             methodOwnerClassIds.put(fnCtx, ownerCls);
             if (ownerCls >= 0) {
-                String member = ((BabbleParser.DefExpressionContext) fnCtx.getParent()).name.getText();
+                BabbleParser.DefExpressionContext def = owningMemberDef(fnCtx);
+                String member = def.name.getText();
                 methodMemberNames.put(fnCtx, member);
-                functionJvmNames.put(fnCtx, "m$" + member);
+                if (def.value instanceof BabbleParser.OverloadExpressionContext) {
+                    int idx = overloadMemberCounters.merge(ownerCls + ":" + member, 1, Integer::sum) - 1;
+                    functionJvmNames.put(fnCtx, "m$" + member + "$" + idx);
+                } else {
+                    functionJvmNames.put(fnCtx, "m$" + member);
+                }
             } else {
                 String name = ScopeAnalysis.functionName(fnCtx);
                 functionJvmNames.put(fnCtx, "fn$" + (functionCount++) + (name != null ? "$" + name : ""));
+            }
+        }
+    }
+
+    private static BabbleParser.DefExpressionContext owningMemberDef(BabbleParser.FunctionLiteralContext literal) {
+        ParserRuleContext cur = literal;
+        while (cur.getParent() instanceof BabbleParser.OverloadExpressionContext ov) {
+            cur = ov;
+        }
+        return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur ? def : null;
+    }
+
+    private void collectOverloadFunctionIds(BabbleParser.OverloadExpressionContext ov, List<Integer> out) {
+        for (BabbleParser.ExpressionContext op : ov.expression()) {
+            if (op instanceof BabbleParser.FunctionLiteralContext lit) {
+                out.add(functionIds.get(lit));
+            } else if (op instanceof BabbleParser.OverloadExpressionContext nested) {
+                collectOverloadFunctionIds(nested, out);
+            } else {
+                out.add(-1);
             }
         }
     }
@@ -280,8 +307,8 @@ public final class HirBuilder {
     }
 
     private int findCompiledMethodOwnerClassId(BabbleParser.FunctionLiteralContext literal) {
-        if (!(literal.getParent() instanceof BabbleParser.DefExpressionContext def) || def.value != literal
-                || scopes.defTarget(def).kind() != ScopeAnalysis.DefKind.MEMBER) {
+        BabbleParser.DefExpressionContext def = owningMemberDef(literal);
+        if (def == null || scopes.defTarget(def).kind() != ScopeAnalysis.DefKind.MEMBER) {
             return -1;
         }
         for (ParserRuleContext p = def.getParent(); p != null; p = p.getParent()) {
@@ -462,10 +489,16 @@ public final class HirBuilder {
             int primDefCount = bits;
 
             Map<String, Integer> methodFnIds = new LinkedHashMap<>();
+            Map<String, List<Integer>> overloadMethodFnIds = new LinkedHashMap<>();
             for (BabbleParser.ExpressionContext expr : bodyBlock.expression()) {
-                if (expr instanceof BabbleParser.DefExpressionContext def
-                        && def.value instanceof BabbleParser.FunctionLiteralContext lit) {
-                    methodFnIds.put(def.name.getText(), functionIds.get(lit));
+                if (expr instanceof BabbleParser.DefExpressionContext def) {
+                    if (def.value instanceof BabbleParser.FunctionLiteralContext lit) {
+                        methodFnIds.put(def.name.getText(), functionIds.get(lit));
+                    } else if (def.value instanceof BabbleParser.OverloadExpressionContext ov) {
+                        List<Integer> ids = new ArrayList<>();
+                        collectOverloadFunctionIds(ov, ids);
+                        overloadMethodFnIds.put(def.name.getText(), ids);
+                    }
                 }
             }
 
@@ -505,6 +538,7 @@ public final class HirBuilder {
                     primDefBits,
                     primDefCount,
                     methodFnIds,
+                    overloadMethodFnIds,
                     lowerTypeList(typeList),
                     body,
                     lowerStaticBlock(staticBlk),
@@ -543,10 +577,16 @@ public final class HirBuilder {
                 }
             }
             Map<String, Integer> defaultFnIds = new LinkedHashMap<>();
+            Map<String, List<Integer>> defaultOverloadFnIds = new LinkedHashMap<>();
             for (BabbleParser.ExpressionContext expr : ctx.interfaceBlock.expression()) {
-                if (expr instanceof BabbleParser.DefExpressionContext def
-                        && def.value instanceof BabbleParser.FunctionLiteralContext lit) {
-                    defaultFnIds.put(def.name.getText(), functionIds.get(lit));
+                if (expr instanceof BabbleParser.DefExpressionContext def) {
+                    if (def.value instanceof BabbleParser.FunctionLiteralContext lit) {
+                        defaultFnIds.put(def.name.getText(), functionIds.get(lit));
+                    } else if (def.value instanceof BabbleParser.OverloadExpressionContext ov) {
+                        List<Integer> ids = new ArrayList<>();
+                        collectOverloadFunctionIds(ov, ids);
+                        defaultOverloadFnIds.put(def.name.getText(), ids);
+                    }
                 }
             }
             List<HirExpr> body = new ArrayList<>(ctx.interfaceBlock.expression().size());
@@ -559,6 +599,7 @@ public final class HirBuilder {
                     jvmName,
                     extendedJvm,
                     defaultFnIds,
+                    defaultOverloadFnIds,
                     lowerTypeList(ctx.typeList()),
                     body,
                     lowerStaticBlock(ctx.staticBlock),
@@ -684,6 +725,10 @@ public final class HirBuilder {
             if (neg.operand instanceof BabbleParser.IntegerContext lit) {
                 return lowerIntLiteral(neg, "-" + lit.getText());
             }
+            ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(neg);
+            if (ovDispatch != null) {
+                return lowerOperatorOverload(neg, neg.operand, neg.operand.getText(), Operators.NEGATE, null, null, ovDispatch);
+            }
             return new HirExpr.Unary(HirExpr.UnaryOp.NEGATE, lowerExpr(neg.operand), neg.operand.getText(), metaOf(neg));
         }
         if (ctx instanceof BabbleParser.BooleanNotContext not) {
@@ -692,6 +737,11 @@ public final class HirBuilder {
                             scopes.numericWideningRank(not), scopes.checkedType(not), EffectSet.EMPTY, true, false));
         }
         if (ctx instanceof BabbleParser.BinaryOpContext bin) {
+            ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(bin);
+            if (ovDispatch != null) {
+                return lowerOperatorOverload(bin, bin.left, bin.left.getText(), Operators.method(bin.op.getText()),
+                        bin.right, bin.right.getText(), ovDispatch);
+            }
             HirExpr.BinaryOp op = switch (bin.op.getType()) {
                 case BabbleLexer.PLUS -> HirExpr.BinaryOp.ADD;
                 case BabbleLexer.MINUS -> HirExpr.BinaryOp.SUB;
@@ -1079,19 +1129,57 @@ public final class HirBuilder {
             }
         }
 
-        // 4b. Overload set call (resolved directly or via union split, BIP021-P5)
+        // 4b. Overload set call (resolved directly or via union split, BIP021-P5/P6)
         ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
         if (ovDispatch != null) {
             if (!ovDispatch.isSplit()) {
+                // Overloaded Babble interface method call -> INVOKEINTERFACE bm$<member>$<k> (BIP021-D13).
+                ScopeAnalysis.InterfaceCallTarget ovIfaceCall = (binding != null || names == null) ? scopes.interfaceCallTarget(ctx) : null;
+                if (ovIfaceCall != null) {
+                    String ifaceJvm = allInterfaceJvmNames.get(ovIfaceCall.interfaceTypeId());
+                    ScopeAnalysis.FunctionSignature ifaceSig = ovIfaceCall.signature();
+                    if (ifaceJvm != null && ifaceSig != null
+                            && (binding != null ? binding.paramCount() == ifaceSig.parameterKinds().length : params.size() == ifaceSig.parameterKinds().length)) {
+                        BabbleParser.SelectorContext selector = (BabbleParser.SelectorContext) ctx.expression();
+                        return new HirExpr.InterfaceCall(
+                                lowerExpr(selector.expression()),
+                                selector.expression().getText(),
+                                selector.getStart().getLine(),
+                                ovIfaceCall.interfaceTypeId(),
+                                ovIfaceCall.memberName(),
+                                ifaceSig,
+                                lowerPositionalArgs(params, spreadAdapts),
+                                binding,
+                                meta
+                        );
+                    }
+                }
                 ScopeAnalysis.OverloadCallTarget target = ovDispatch.direct();
+                BabbleParser.FunctionLiteralContext directFn = target.directTarget();
+                int directOwnerCls = directFn != null ? methodOwnerClassIds.getOrDefault(directFn, -1) : -1;
+                if (directOwnerCls >= 0 && ctx.expression() instanceof BabbleParser.SelectorContext sel
+                        && sel.expression() != null) {
+                    String recvText = sel.expression() instanceof BabbleParser.ThisExpressionContext ? null : sel.expression().getText();
+                    return new HirExpr.DirectThisMethodCall(
+                            lowerExpr(sel.expression()),
+                            recvText,
+                            directOwnerCls,
+                            ScopeAnalysis.selectorName(sel),
+                            target.altIndex(),
+                            functionIds.get(directFn),
+                            lowerCallArgs(params, spreadAdapts),
+                            target.binding(),
+                            Interpreter.callSite(ctx, sourceName),
+                            meta
+                    );
+                }
                 HirExpr selectedCallee = new HirExpr.OverloadSelect(
                         lowerExpr(ctx.expression()),
                         target.altIndex(),
                         target.signatureKey(),
                         target.exactSet(),
                         ExprMeta.of(ctx.getStart().getLine(), ScopeAnalysis.PrimitiveKind.NONE));
-                BabbleParser.FunctionLiteralContext directFn = target.directTarget();
-                if (directFn != null && target.binding() != null
+                if (directFn != null && !isMemberMethod(directFn) && target.binding() != null
                         && target.binding().paramCount() == scopes.parameters(directFn).length
                         && (hasSpec(directFn) || isSpread(directFn))) {
                     return new HirExpr.DirectBabbleCall(
@@ -1113,7 +1201,8 @@ public final class HirBuilder {
             for (ScopeAnalysis.OverloadSplitBranch b : ovDispatch.splitBranches()) {
                 ScopeAnalysis.OverloadCallTarget bt = b.target();
                 int directFnId = -1;
-                if (bt.directTarget() != null && bt.binding() != null
+                if (bt.directTarget() != null && !isMemberMethod(bt.directTarget())
+                        && bt.binding() != null
                         && bt.binding().paramCount() == scopes.parameters(bt.directTarget()).length
                         && (hasSpec(bt.directTarget()) || isSpread(bt.directTarget()))) {
                     directFnId = functionIds.get(bt.directTarget());
@@ -1150,16 +1239,18 @@ public final class HirBuilder {
                 int index = shape.memberIndex(member);
                 if (index >= 0 && shape.isMethod(index)) {
                     BabbleParser.FunctionLiteralContext methodLit = methodLiteralOf(clsCtx, member);
-                    return new HirExpr.DirectThisMethodCall(
-                            lowerExpr(thisExpr),
-                            classIds.get(clsCtx),
-                            member,
-                            functionIds.get(methodLit),
-                            lowerCallArgs(params, spreadAdapts),
-                            binding,
-                            Interpreter.callSite(ctx, sourceName),
-                            meta
-                    );
+                    if (methodLit != null) {
+                        return new HirExpr.DirectThisMethodCall(
+                                lowerExpr(thisExpr),
+                                classIds.get(clsCtx),
+                                member,
+                                functionIds.get(methodLit),
+                                lowerCallArgs(params, spreadAdapts),
+                                binding,
+                                Interpreter.callSite(ctx, sourceName),
+                                meta
+                        );
+                    }
                 }
             }
         }
@@ -1260,6 +1351,57 @@ public final class HirBuilder {
             result.add(wrapSpreadAdapt(lowerExpr(p.expression()), adapts, i, p.getStart().getLine()));
         }
         return result;
+    }
+
+    private HirExpr lowerOperatorOverload(ParserRuleContext ctx, BabbleParser.ExpressionContext recvExpr,
+                                          String recvText, String method,
+                                          BabbleParser.ExpressionContext argExpr, String argText,
+                                          ScopeAnalysis.OverloadDispatchTarget ovDispatch) {
+        int ln = ctx.getStart().getLine();
+        CallSite site = Interpreter.operatorSite(ctx, recvText, method, argText, sourceName);
+        ExprMeta meta = metaOf(ctx);
+        if (!ovDispatch.isSplit()) {
+            ScopeAnalysis.OverloadCallTarget target = ovDispatch.direct();
+            BabbleParser.FunctionLiteralContext directFn = target.directTarget();
+            int directOwnerCls = directFn != null ? methodOwnerClassIds.getOrDefault(directFn, -1) : -1;
+            List<HirCallArg> callArgs = argExpr != null
+                    ? List.of(new HirCallArg(null, lowerExpr(argExpr)))
+                    : List.of();
+            if (directOwnerCls >= 0) {
+                String rt = recvExpr instanceof BabbleParser.ThisExpressionContext ? null : recvText;
+                return new HirExpr.DirectThisMethodCall(
+                        lowerExpr(recvExpr),
+                        rt,
+                        directOwnerCls,
+                        method,
+                        target.altIndex(),
+                        functionIds.get(directFn),
+                        callArgs,
+                        null,
+                        site,
+                        meta
+                );
+            }
+            HirExpr memberSelect = new HirExpr.DynamicSelect(
+                    lowerExpr(recvExpr), recvText, method, false,
+                    ExprMeta.of(ln, ScopeAnalysis.PrimitiveKind.NONE));
+            HirExpr selected = new HirExpr.OverloadSelect(
+                    memberSelect, target.altIndex(), target.signatureKey(), target.exactSet(),
+                    ExprMeta.of(ln, ScopeAnalysis.PrimitiveKind.NONE));
+            return new HirExpr.DynamicCall(selected, callArgs, null, target.signature(), site, meta);
+        }
+        List<HirExpr.OverloadBranch> hirBranches = new ArrayList<>(ovDispatch.splitBranches().size());
+        for (ScopeAnalysis.OverloadSplitBranch b : ovDispatch.splitBranches()) {
+            ScopeAnalysis.OverloadCallTarget bt = b.target();
+            hirBranches.add(new HirExpr.OverloadBranch(
+                    b.checks(), -1, bt.altIndex(), bt.signatureKey(), bt.exactSet(),
+                    bt.signature(), null, b.resultKind()));
+        }
+        HirExpr memberSelect = new HirExpr.DynamicSelect(
+                lowerExpr(recvExpr), recvText, method, false,
+                ExprMeta.of(ln, ScopeAnalysis.PrimitiveKind.NONE));
+        List<HirExpr> posArgs = argExpr != null ? List.of(lowerExpr(argExpr)) : List.of();
+        return new HirExpr.OverloadDispatch(memberSelect, recvText + "." + method, site, posArgs, hirBranches, meta);
     }
 
     // ---------------------------------------------------------------- helpers
@@ -1453,5 +1595,19 @@ public final class HirBuilder {
         for (Class<?> parent : iface.getInterfaces()) {
             collectImplementableJavaInterfaces(parent, out);
         }
+    }
+
+    private boolean isMemberMethod(BabbleParser.FunctionLiteralContext fn) {
+        ParserRuleContext cur = fn;
+        while ((cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
+                && blk.block().expression().size() == 1)
+                || cur.getParent() instanceof BabbleParser.OverloadExpressionContext) {
+            cur = cur.getParent();
+        }
+        if (cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur) {
+            ScopeAnalysis.DefTarget target = scopes.defTarget(def);
+            return target != null && target.kind() != ScopeAnalysis.DefKind.LEXICAL;
+        }
+        return false;
     }
 }

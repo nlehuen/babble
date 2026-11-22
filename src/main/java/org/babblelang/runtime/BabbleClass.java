@@ -21,7 +21,7 @@ public final class BabbleClass extends BabbleType implements Callable {
     private final InstanceFactory factory;
     private final Object[] interfaces;
     private final Map<String, BabbleInterface> babbleInterfaces;
-    private final Map<String, BabbleFunction> defaults = new LinkedHashMap<>();
+    private final Map<String, Callable> defaults = new LinkedHashMap<>();
     private final Class<?>[] javaInterfaces;
     private final Map<String, List<Method>> javaDefaults = new ConcurrentHashMap<>();
 
@@ -54,7 +54,7 @@ public final class BabbleClass extends BabbleType implements Callable {
         this.interfaces = interfaces;
 
         Map<String, BabbleInterface> byId = new LinkedHashMap<>();
-        Map<String, BabbleFunction> inherited = new LinkedHashMap<>();
+        Map<String, Callable> inherited = new LinkedHashMap<>();
         Set<Class<?>> java = new LinkedHashSet<>();
         for (Object implemented : interfaces) {
             if (implemented instanceof BabbleInterface babble) {
@@ -111,18 +111,18 @@ public final class BabbleClass extends BabbleType implements Callable {
     }
 
     /** The default method an implemented interface provides for a name the class doesn't define. */
-    public BabbleFunction defaultMethod(String name) {
+    public Callable defaultMethod(String name) {
         return defaults.get(name);
     }
 
     /** Own default method at {@code memberIndex} of the implemented Babble interface {@code typeId}. */
-    public BabbleFunction interfaceDefault(String typeId, int memberIndex) {
+    public Callable interfaceDefault(String typeId, int memberIndex) {
         BabbleInterface iface = babbleInterfaces.get(typeId);
         return iface != null ? iface.defaultAt(memberIndex) : null;
     }
 
     /** Own default method {@code memberName} of the implemented Babble interface {@code typeId}. */
-    public BabbleFunction interfaceDefault(String typeId, String memberName) {
+    public Callable interfaceDefault(String typeId, String memberName) {
         BabbleInterface iface = babbleInterfaces.get(typeId);
         return iface != null ? iface.defaultAt(iface.shape().memberIndex(memberName)) : null;
     }

@@ -489,9 +489,33 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     /** {@code a.method(b)}, or {@code a.method()} without an argument, for an operator. */
     private Object operatorCall(Object a, String method, String receiver, String argument, Object b, ParserRuleContext ctx) {
         CallSite site = operatorSite(ctx, receiver, method, argument, sourceName);
-        Callable callable = Calls.callable(Members.select(a, method, receiver), site);
+        Object member = Members.select(a, method, receiver);
+        Object[] rawArgs = argument == null ? Arguments.NONE : new Object[]{b};
+        ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
+        if (ovDispatch != null) {
+            if (!ovDispatch.isSplit()) {
+                ScopeAnalysis.OverloadCallTarget target = ovDispatch.direct();
+                Callable chosen = target.exactSet()
+                        ? org.babblelang.runtime.OverloadSet.memberOf(member, target.altIndex())
+                        : org.babblelang.runtime.OverloadSet.selectFrom(member, target.signatureKey());
+                last = ctx;
+                return chosen.call(runtime, rawArgs, null, site);
+            }
+            for (ScopeAnalysis.OverloadSplitBranch branch : ovDispatch.splitBranches()) {
+                if (matchesSplitChecks(branch.checks(), rawArgs)) {
+                    ScopeAnalysis.OverloadCallTarget target = branch.target();
+                    Callable chosen = target.exactSet()
+                            ? org.babblelang.runtime.OverloadSet.memberOf(member, target.altIndex())
+                            : org.babblelang.runtime.OverloadSet.selectFrom(member, target.signatureKey());
+                    last = ctx;
+                    return chosen.call(runtime, rawArgs, null, site);
+                }
+            }
+            throw new BabbleException("No applicable overload of " + receiver + "." + method);
+        }
+        Callable callable = Calls.callable(member, site);
         last = ctx;
-        return callable.call(runtime, argument == null ? Arguments.NONE : new Object[]{b}, null, site);
+        return callable.call(runtime, rawArgs, null, site);
     }
 
     /**
@@ -913,13 +937,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             };
             return Types.check(created, scopes.checkedType(ctx));
         }
-        ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
-        if (ovDispatch != null) {
-            return invokeOverloadDispatch(ctx, ovDispatch);
-        }
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpression) {
             return Types.check(superCall(ctx, selector, superExpression), scopes.checkedType(ctx));
+        }
+        ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
+        if (ovDispatch != null) {
+            return invokeOverloadDispatch(ctx, ovDispatch);
         }
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector && selector.safe != null) {
             BabbleParser.ExpressionContext receiverExpr = selector.expression();

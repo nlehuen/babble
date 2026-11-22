@@ -161,17 +161,17 @@ final class TypeChecker {
 
     private final Map<BabbleParser.OverloadExpressionContext, List<BabbleParser.FunctionLiteralContext>> overloadAltLiterals = new IdentityHashMap<>();
     private final Map<ParserRuleContext, ScopeAnalysis.OverloadSelection> overloadSelections = new IdentityHashMap<>();
-    private final Map<BabbleParser.CallContext, ResolvedOverloadCall> resolvedOverloadCalls = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, ResolvedOverloadCall> resolvedOverloadCalls = new IdentityHashMap<>();
 
     Map<ParserRuleContext, ScopeAnalysis.OverloadSelection> overloadSelections() {
         return overloadSelections;
     }
 
-    Map<BabbleParser.CallContext, ResolvedOverloadCall> resolvedOverloadCalls() {
+    Map<ParserRuleContext, ResolvedOverloadCall> resolvedOverloadCalls() {
         return resolvedOverloadCalls;
     }
 
-    void recordResolvedOverloadCall(BabbleParser.CallContext ctx, ResolvedOverloadCall call) {
+    void recordResolvedOverloadCall(ParserRuleContext ctx, ResolvedOverloadCall call) {
         resolvedOverloadCalls.put(ctx, call);
     }
 
@@ -1687,6 +1687,16 @@ final class TypeChecker {
             if (recv instanceof Type.Module) {
                 return true;
             }
+            String memberName = ScopeAnalysis.selectorName(sel);
+            TypeNode.Member member = null;
+            if (recv instanceof Type.Instance inst && !inst.node().isInterface()) {
+                member = inst.node().members.get(memberName);
+            } else if (recv instanceof Type.ClassValue cv) {
+                member = cv.node().statics.get(memberName);
+            }
+            if (member != null && member.declaration instanceof BabbleParser.DefExpressionContext def) {
+                return def.type() == null && def.value instanceof BabbleParser.OverloadExpressionContext;
+            }
         }
         return false;
     }
@@ -1703,10 +1713,25 @@ final class TypeChecker {
         if (expr instanceof BabbleParser.OverloadExpressionContext ov) {
             return overloadAltLiterals.get(ov);
         }
-        if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-            ScopeNode scope = occurrenceScopes.get(sel);
-            Object resolved = scope != null ? resolveName(sel, sel.ID().getText(), scope) : null;
-            if (resolved instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)
+        if (expr instanceof BabbleParser.SelectorContext sel) {
+            if (sel.expression() == null) {
+                ScopeNode scope = occurrenceScopes.get(sel);
+                Object resolved = scope != null ? resolveName(sel, sel.ID().getText(), scope) : null;
+                if (resolved instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)
+                        && def.value instanceof BabbleParser.OverloadExpressionContext ov && inFile(ov)) {
+                    return overloadAltLiterals.get(ov);
+                }
+                return null;
+            }
+            Type recv = types.get(sel.expression());
+            String memberName = ScopeAnalysis.selectorName(sel);
+            TypeNode.Member member = null;
+            if (recv instanceof Type.Instance inst && !inst.node().isInterface()) {
+                member = inst.node().members.get(memberName);
+            } else if (recv instanceof Type.ClassValue cv) {
+                member = cv.node().statics.get(memberName);
+            }
+            if (member != null && member.declaration instanceof BabbleParser.DefExpressionContext def
                     && def.value instanceof BabbleParser.OverloadExpressionContext ov && inFile(ov)) {
                 return overloadAltLiterals.get(ov);
             }
@@ -2726,7 +2751,7 @@ final class TypeChecker {
                             : memberType(ownerNode, member);
                 }
             }
-            if (declared == null && member != null && member.function == null
+            if (declared == null && member != null && !member.hasFunction
                     && member.declaration instanceof BabbleParser.DefExpressionContext def
                     && isLocal(def) && inFile(def)) {
                 return new LValue.Member(def, null, current, true);
@@ -2997,6 +3022,11 @@ final class TypeChecker {
         }
         if (member.function != null) {
             return synth(member.function);
+        }
+        if (member.isOverload && member.declaration instanceof BabbleParser.DefExpressionContext def
+                && def.value instanceof BabbleParser.OverloadExpressionContext ov) {
+            Type ready = types.get(ov);
+            return ready != null ? ready : synth(ov);
         }
         if (member.declaration instanceof BabbleParser.DefExpressionContext def) {
             slots.read(SlotInference.MEMBERS, def);

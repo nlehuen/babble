@@ -176,7 +176,8 @@ final class HirEmitter {
 
     private final Deque<LoopTarget> loopTargets = new ArrayDeque<>();
 
-    record AncestorMethod(String memberName, String descriptor, ScopeAnalysis.FunctionSignature signature) {
+    record AncestorMethod(String memberName, String bridgeKey, int overloadIndex, String signatureKey,
+                          String descriptor, ScopeAnalysis.FunctionSignature signature) {
     }
 
     record InheritedDefault(String directParentId, String providerId, ScopeAnalysis.MemberSpec providerSpec) {
@@ -557,7 +558,7 @@ final class HirEmitter {
         boolean hasOptMask = spec && fn.hasOptionalMask();
         int optBits = hasOptMask ? fn.optionalParamBits() : 0;
         int restIndex = fn.restIndex();
-        String method = gen.methodName(member);
+        String method = fn.jvmMethodName();
         String field = constantPool.add("METHOD", "L" + COMPILED_METHOD + ";", 32, m -> {
             m.visitTypeInsn(NEW, COMPILED_METHOD);
             m.visitInsn(DUP);
@@ -596,7 +597,7 @@ final class HirEmitter {
     }
 
     private void generateMethod(HirFunction fn, ClassGen gen, String paramsField) {
-        String method = gen.methodName(fn.memberName());
+        String method = fn.jvmMethodName();
         if (fn.isSpread()) {
             int count = fn.params().size();
             String direct = methodDirectDescriptor(fn);
@@ -3270,14 +3271,33 @@ final class HirEmitter {
         List<HirCallArg> args = c.args();
         ScopeAnalysis.ArgumentBinding binding = c.binding();
         String[] names = binding != null ? null : callArgNames(args);
-        loadThisAs(c.receiver(), gen);
+        if (c.receiverText() != null) {
+            emitBoxed(c.receiver());
+            Label ok = new Label();
+            mv.visitInsn(DUP);
+            mv.visitJumpInsn(IFNONNULL, ok);
+            mv.visitInsn(POP);
+            line(ln);
+            ConstantPool.pushString(mv, c.receiverText());
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "notAScope", "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;", false);
+            mv.visitInsn(ATHROW);
+            mv.visitLabel(ok);
+            mv.visitTypeInsn(CHECKCAST, gen.name);
+        } else {
+            loadThisAs(c.receiver(), gen);
+        }
         mv.visitInsn(DUP);
         mv.visitFieldInsn(GETFIELD, gen.name, c.memberName(), "Ljava/lang/Object;");
         mv.visitLdcInsn(c.memberName());
         line(ln);
         mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        if (c.overloadAltIndex() >= 0) {
+            ConstantPool.pushInt(mv, c.overloadAltIndex());
+            mv.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "memberOf", "(Ljava/lang/Object;I)L" + CALLABLE + ";", false);
+        }
         mv.visitTypeInsn(CHECKCAST, COMPILED_METHOD);
         mv.visitVarInsn(ALOAD, rtLocal);
+        String jvmMethod = fn.jvmMethodName();
         int count = fn.params().size();
         if (fn.hasSpec() && (binding != null ? binding.paramCount() == count : (names == null && args.size() == count))) {
             emitBoundTypedArgs(callArgExprs(args), binding, paramKindsOf(fn));
@@ -3285,7 +3305,7 @@ final class HirEmitter {
                 ConstantPool.pushInt(mv, binding != null ? binding.specMaskFor(fn.optionalParamBits(), count) : 0);
             }
             line(ln);
-            mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, gen.methodName(c.memberName()) + "$spec", methodSpecDescriptor(fn), false);
+            mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, jvmMethod + "$spec", methodSpecDescriptor(fn), false);
             stackKind = fn.returnKind();
             finishCallCheck(c.meta());
             return;
@@ -3294,7 +3314,7 @@ final class HirEmitter {
             mv.visitInsn(ACONST_NULL);
             emitBoundBoxedArgs(callArgExprs(args), binding, count);
             line(ln);
-            mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, gen.methodName(c.memberName()), methodDirectDescriptor(fn), false);
+            mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, jvmMethod, methodDirectDescriptor(fn), false);
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
             finishCallCheck(c.meta());
             return;
@@ -3313,7 +3333,7 @@ final class HirEmitter {
         }
         mv.visitFieldInsn(GETSTATIC, className, site, "L" + CALL_SITE + ";");
         line(ln);
-        mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, gen.methodName(c.memberName()) + (fn.isSpread() ? "$call" : ""), METHOD_DESCRIPTOR, false);
+        mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, jvmMethod + (fn.isSpread() ? "$call" : ""), METHOD_DESCRIPTOR, false);
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         finishCallCheck(c.meta());
     }
@@ -5261,7 +5281,28 @@ final class HirEmitter {
         return null;
     }
 
-    private boolean interfaceHasMethod(String ifaceId, String memberName, String descriptor) {
+    private boolean specHasMethod(ScopeAnalysis.MemberSpec spec, String bridgeKey, String descriptor) {
+        if (spec == null) {
+            return false;
+        }
+        if (spec.name().equals(bridgeKey) && spec.callable() && spec.declaredSignature() != null
+                && bridgeDescriptor(spec.declaredSignature()).equals(descriptor)) {
+            return true;
+        }
+        if (spec.isOverloaded() && bridgeKey.startsWith(spec.name() + "$")) {
+            try {
+                int idx = Integer.parseInt(bridgeKey.substring(spec.name().length() + 1));
+                if (idx >= 0 && idx < spec.overloadSignatures().size()
+                        && bridgeDescriptor(spec.overloadSignatures().get(idx)).equals(descriptor)) {
+                    return true;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return false;
+    }
+
+    private boolean interfaceHasMethod(String ifaceId, String bridgeKey, String descriptor) {
         if (ifaceId == null || !allInterfaceJvmNames.containsKey(ifaceId)) {
             return false;
         }
@@ -5269,9 +5310,12 @@ final class HirEmitter {
         if (info == null) {
             return false;
         }
-        ScopeAnalysis.MemberSpec own = info.interfaceMembers().get(memberName);
-        if (own != null && own.callable() && own.declaredSignature() != null
-                && bridgeDescriptor(own.declaredSignature()).equals(descriptor)) {
+        String memberName = bridgeKey;
+        int dollar = bridgeKey.indexOf('$');
+        if (dollar >= 0) {
+            memberName = bridgeKey.substring(0, dollar);
+        }
+        if (specHasMethod(info.interfaceMembers().get(memberName), bridgeKey, descriptor)) {
             return true;
         }
         for (String ancId : info.allBabbleInterfaceIds()) {
@@ -5282,22 +5326,20 @@ final class HirEmitter {
             if (ancInfo == null) {
                 continue;
             }
-            ScopeAnalysis.MemberSpec ancSpec = ancInfo.interfaceMembers().get(memberName);
-            if (ancSpec != null && ancSpec.callable() && ancSpec.declaredSignature() != null
-                    && bridgeDescriptor(ancSpec.declaredSignature()).equals(descriptor)) {
+            if (specHasMethod(ancInfo.interfaceMembers().get(memberName), bridgeKey, descriptor)) {
                 return true;
             }
         }
         return false;
     }
 
-    int countDirectParentsWithMethod(ScopeAnalysis.TypeHierarchyInfo hierarchy, String memberName, String descriptor) {
+    int countDirectParentsWithMethod(ScopeAnalysis.TypeHierarchyInfo hierarchy, String bridgeKey, String descriptor) {
         if (hierarchy == null) {
             return 0;
         }
         int count = 0;
         for (ScopeAnalysis.ParentRef parent : hierarchy.directParents()) {
-            if (parent.babbleTypeId() != null && interfaceHasMethod(parent.babbleTypeId(), memberName, descriptor)) {
+            if (parent.babbleTypeId() != null && interfaceHasMethod(parent.babbleTypeId(), bridgeKey, descriptor)) {
                 count++;
             }
         }
@@ -5321,7 +5363,18 @@ final class HirEmitter {
                 if (ancSpec.callable() && ancSpec.declaredSignature() != null) {
                     String desc = bridgeDescriptor(ancSpec.declaredSignature());
                     result.putIfAbsent(ancSpec.name() + "\0" + desc,
-                            new AncestorMethod(ancSpec.name(), desc, ancSpec.declaredSignature()));
+                            new AncestorMethod(ancSpec.name(), ancSpec.name(), -1, null, desc, ancSpec.declaredSignature()));
+                } else if (ancSpec.isOverloaded()) {
+                    List<ScopeAnalysis.FunctionSignature> sigs = ancSpec.overloadSignatures();
+                    List<String> keys = ancSpec.overloadSignatureKeys();
+                    for (int k = 0; k < sigs.size(); k++) {
+                        ScopeAnalysis.FunctionSignature sig = sigs.get(k);
+                        String bKey = ancSpec.name() + "$" + k;
+                        String desc = bridgeDescriptor(sig);
+                        String sigKey = k < keys.size() ? keys.get(k) : null;
+                        result.putIfAbsent(bKey + "\0" + desc,
+                                new AncestorMethod(ancSpec.name(), bKey, k, sigKey, desc, sig));
+                    }
                 }
             }
         }
@@ -5329,11 +5382,12 @@ final class HirEmitter {
     }
 
     void emitInheritedDefaultInvoke(MethodVisitor m, InheritedDefault def, String directParentJvm,
-                                    String memberName, String targetDesc, ScopeAnalysis.FunctionSignature targetSig) {
+                                    String memberName, String bridgeKey, String signatureKey,
+                                    String targetDesc, ScopeAnalysis.FunctionSignature targetSig) {
         int[] paramSlots = bridgeParamSlots(targetSig);
         int argCount = targetSig.parameterKinds().length;
-        String mName = bridgeMethodName(memberName);
-        if (directParentJvm != null && interfaceHasMethod(def.directParentId(), memberName, targetDesc)) {
+        String mName = bridgeMethodName(bridgeKey);
+        if (directParentJvm != null && interfaceHasMethod(def.directParentId(), bridgeKey, targetDesc)) {
             m.visitVarInsn(ALOAD, 0);
             m.visitVarInsn(ALOAD, 1);
             for (int i = 0; i < argCount; i++) {
@@ -5363,7 +5417,7 @@ final class HirEmitter {
                     m.visitInsn(ICONST_0);
                 }
             }
-            m.visitMethodInsn(INVOKESPECIAL, directParentJvm, mName, provDesc, true);
+            m.visitMethodInsn(INVOKESPECIAL, directParentJvm, bridgeMethodName(memberName), provDesc, true);
             emitAdaptKind(m, provSig.returnKind(), targetSig.returnKind());
             m.visitInsn(returnInsn(targetSig.returnKind()));
             return;
@@ -5373,8 +5427,13 @@ final class HirEmitter {
         m.visitLdcInsn(memberName);
         m.visitInsn(ICONST_0);
         m.visitMethodInsn(INVOKESTATIC, BABBLE_OBJECTS, "getMember", "(Ljava/lang/Object;Ljava/lang/String;Z)Ljava/lang/Object;", false);
-        m.visitFieldInsn(GETSTATIC, className, siteField, "L" + CALL_SITE + ";");
-        m.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
+        if (signatureKey != null) {
+            m.visitLdcInsn(signatureKey);
+            m.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "selectFrom", "(Ljava/lang/Object;Ljava/lang/String;)L" + CALLABLE + ";", false);
+        } else {
+            m.visitFieldInsn(GETSTATIC, className, siteField, "L" + CALL_SITE + ";");
+            m.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
+        }
         m.visitVarInsn(ALOAD, 1);
         packBridgeArgsArray(m, targetSig, paramSlots);
         m.visitInsn(ACONST_NULL);

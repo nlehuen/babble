@@ -4,13 +4,15 @@ def rtweekend = import("rtweekend.ba")
 def Math = rtweekend.Math
 def randomDouble = rtweekend.randomDouble
 
-;; Points, directions and colors. Babble has no operator overloading, hence the methods.
+;; Points, directions and colors.
 export def Vec3 = record (x: double, y: double, z: double) (
     def neg = fn (): Vec3 -> (Vec3(-this.x, -this.y, -this.z))
     def plus = fn (v: Vec3): Vec3 -> (Vec3(this.x + v.x, this.y + v.y, this.z + v.z))
     def minus = fn (v: Vec3): Vec3 -> (Vec3(this.x - v.x, this.y - v.y, this.z - v.z))
-    def mul = fn (v: Vec3): Vec3 -> (Vec3(this.x * v.x, this.y * v.y, this.z * v.z))
-    def times = fn (t: double): Vec3 -> (Vec3(this.x * t, this.y * t, this.z * t))
+    def times = overload (
+        fn (t: double): Vec3 -> (Vec3(this.x * t, this.y * t, this.z * t)),
+        fn (v: Vec3): Vec3 -> (Vec3(this.x * v.x, this.y * v.y, this.z * v.z))
+    )
     def div = fn (t: double): Vec3 -> (Vec3(this.x / t, this.y / t, this.z / t))
 
     def dot = fn (v: Vec3): double -> (this.x * v.x + this.y * v.y + this.z * v.z)

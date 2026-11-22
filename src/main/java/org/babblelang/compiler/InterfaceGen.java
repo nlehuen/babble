@@ -45,6 +45,15 @@ final class InterfaceGen {
         return fnId != null ? emitter.module.function(fnId) : null;
     }
 
+    private HirFunction defaultOverloadFunction(String member, int altIndex) {
+        List<Integer> fnIds = iface.defaultOverloadFunctionIds().get(member);
+        if (fnIds == null || altIndex < 0 || altIndex >= fnIds.size()) {
+            return null;
+        }
+        int fnId = fnIds.get(altIndex);
+        return fnId >= 0 ? emitter.module.function(fnId) : null;
+    }
+
     String superHelper(String directParentJvm, String memberName, ScopeAnalysis.FunctionSignature sig) {
         String desc = HirEmitter.bridgeDescriptor(sig);
         String key = directParentJvm + "." + memberName + desc;
@@ -76,27 +85,44 @@ final class InterfaceGen {
         }
         Set<String> emitted = new HashSet<>();
         for (ScopeAnalysis.MemberSpec spec : hierarchy.interfaceMembers().values()) {
-            if (!spec.callable() || spec.declaredSignature() == null) {
-                continue;
-            }
-            ScopeAnalysis.FunctionSignature sig = spec.declaredSignature();
-            String mName = HirEmitter.bridgeMethodName(spec.name());
-            String desc = HirEmitter.bridgeDescriptor(sig);
-            emitted.add(mName + desc);
-            if (!spec.hasDefault()) {
-                writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, mName, desc, null, null).visitEnd();
-            } else {
-                MethodVisitor m = writer.visitMethod(ACC_PUBLIC, mName, desc, null, null);
-                m.visitCode();
-                emitOwnDefaultInvoke(m, shape.memberIndex(spec.name()), spec.name(), defaultFunction(spec.name()), sig);
-                m.visitMaxs(0, 0);
-                m.visitEnd();
+            if (spec.callable() && spec.declaredSignature() != null) {
+                ScopeAnalysis.FunctionSignature sig = spec.declaredSignature();
+                String mName = HirEmitter.bridgeMethodName(spec.name());
+                String desc = HirEmitter.bridgeDescriptor(sig);
+                emitted.add(mName + desc);
+                if (!spec.hasDefault()) {
+                    writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, mName, desc, null, null).visitEnd();
+                } else {
+                    MethodVisitor m = writer.visitMethod(ACC_PUBLIC, mName, desc, null, null);
+                    m.visitCode();
+                    emitOwnDefaultInvoke(m, shape.memberIndex(spec.name()), spec.name(), -1, defaultFunction(spec.name()), sig);
+                    m.visitMaxs(0, 0);
+                    m.visitEnd();
+                }
+            } else if (spec.isOverloaded()) {
+                List<ScopeAnalysis.FunctionSignature> sigs = spec.overloadSignatures();
+                for (int k = 0; k < sigs.size(); k++) {
+                    ScopeAnalysis.FunctionSignature sig = sigs.get(k);
+                    String mName = HirEmitter.bridgeMethodName(spec.name() + "$" + k);
+                    String desc = HirEmitter.bridgeDescriptor(sig);
+                    emitted.add(mName + desc);
+                    if (!spec.hasDefault()) {
+                        writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, mName, desc, null, null).visitEnd();
+                    } else {
+                        MethodVisitor m = writer.visitMethod(ACC_PUBLIC, mName, desc, null, null);
+                        m.visitCode();
+                        emitOwnDefaultInvoke(m, shape.memberIndex(spec.name()), spec.name(), k,
+                                defaultOverloadFunction(spec.name(), k), sig);
+                        m.visitMaxs(0, 0);
+                        m.visitEnd();
+                    }
+                }
             }
         }
 
         Map<String, HirEmitter.AncestorMethod> ancestors = emitter.collectAncestorMethods(hierarchy);
         for (HirEmitter.AncestorMethod anc : ancestors.values()) {
-            String mName = HirEmitter.bridgeMethodName(anc.memberName());
+            String mName = HirEmitter.bridgeMethodName(anc.bridgeKey());
             if (emitted.contains(mName + anc.descriptor())) {
                 continue;
             }
@@ -105,6 +131,15 @@ final class InterfaceGen {
                 emitted.add(mName + anc.descriptor());
                 if (!ownSpec.hasDefault()) {
                     writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT | ACC_SYNTHETIC, mName, anc.descriptor(), null, null).visitEnd();
+                } else if (ownSpec.isOverloaded()) {
+                    MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, mName, anc.descriptor(), null, null);
+                    m.visitCode();
+                    int altIdx = anc.overloadIndex() >= 0 && anc.overloadIndex() < ownSpec.overloadSignatures().size()
+                            ? anc.overloadIndex() : 0;
+                    emitOwnDefaultInvoke(m, shape.memberIndex(anc.memberName()), anc.memberName(), altIdx,
+                            defaultOverloadFunction(anc.memberName(), altIdx), anc.signature());
+                    m.visitMaxs(0, 0);
+                    m.visitEnd();
                 } else {
                     MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, mName, anc.descriptor(), null, null);
                     m.visitCode();
@@ -123,11 +158,12 @@ final class InterfaceGen {
                                 m.visitInsn(ICONST_0);
                             }
                         }
-                        m.visitMethodInsn(INVOKEINTERFACE, name, mName, HirEmitter.bridgeDescriptor(ownSig), true);
+                        m.visitMethodInsn(INVOKEINTERFACE, name, HirEmitter.bridgeMethodName(anc.memberName()),
+                                HirEmitter.bridgeDescriptor(ownSig), true);
                         HirEmitter.emitAdaptKind(m, ownSig.returnKind(), anc.signature().returnKind());
                         m.visitInsn(HirEmitter.returnInsn(anc.signature().returnKind()));
                     } else {
-                        emitOwnDefaultInvoke(m, shape.memberIndex(anc.memberName()), anc.memberName(),
+                        emitOwnDefaultInvoke(m, shape.memberIndex(anc.memberName()), anc.memberName(), -1,
                                 defaultFunction(anc.memberName()), anc.signature());
                     }
                     m.visitMaxs(0, 0);
@@ -143,13 +179,18 @@ final class InterfaceGen {
                     continue;
                 }
                 ScopeAnalysis.FunctionSignature provSig = def.providerSpec().callable() ? def.providerSpec().declaredSignature() : null;
+                if (provSig == null && def.providerSpec().isOverloaded()
+                        && anc.overloadIndex() >= 0 && anc.overloadIndex() < def.providerSpec().overloadSignatures().size()) {
+                    provSig = def.providerSpec().overloadSignatures().get(anc.overloadIndex());
+                }
                 String provDesc = provSig != null ? HirEmitter.bridgeDescriptor(provSig) : null;
-                int parentsWithSig = emitter.countDirectParentsWithMethod(hierarchy, anc.memberName(), anc.descriptor());
+                int parentsWithSig = emitter.countDirectParentsWithMethod(hierarchy, anc.bridgeKey(), anc.descriptor());
                 if (parentsWithSig >= 2 || !anc.descriptor().equals(provDesc)) {
                     emitted.add(mName + anc.descriptor());
                     MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, mName, anc.descriptor(), null, null);
                     m.visitCode();
-                    emitter.emitInheritedDefaultInvoke(m, def, directParentJvm, anc.memberName(), anc.descriptor(), anc.signature());
+                    emitter.emitInheritedDefaultInvoke(m, def, directParentJvm, anc.memberName(), anc.bridgeKey(),
+                            anc.signatureKey(), anc.descriptor(), anc.signature());
                     m.visitMaxs(0, 0);
                     m.visitEnd();
                 }
@@ -157,7 +198,7 @@ final class InterfaceGen {
         }
     }
 
-    private void emitOwnDefaultInvoke(MethodVisitor m, int memberIndex, String memberName,
+    private void emitOwnDefaultInvoke(MethodVisitor m, int memberIndex, String memberName, int overloadAltIndex,
                                       HirFunction fn, ScopeAnalysis.FunctionSignature sig) {
         int[] paramSlots = HirEmitter.bridgeParamSlots(sig);
         int ifaceCount = sig.parameterKinds().length;
@@ -169,8 +210,14 @@ final class InterfaceGen {
         m.visitVarInsn(ALOAD, 0);
         m.visitLdcInsn(shape.id());
         ConstantPool.pushInt(m, memberIndex);
-        m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "interfaceDefault",
-                "(Ljava/lang/Object;Ljava/lang/String;I)L" + HirEmitter.RUNTIME + "BabbleFunction;", false);
+        if (overloadAltIndex >= 0) {
+            ConstantPool.pushInt(m, overloadAltIndex);
+            m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "interfaceDefaultAlt",
+                    "(Ljava/lang/Object;Ljava/lang/String;II)L" + HirEmitter.RUNTIME + "BabbleFunction;", false);
+        } else {
+            m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "interfaceDefault",
+                    "(Ljava/lang/Object;Ljava/lang/String;I)L" + HirEmitter.RUNTIME + "BabbleFunction;", false);
+        }
 
         if (fn != null && !fn.isCompiledClassMethod() && fn.hasSpec()
                 && ifaceCount <= fnCount && HirEmitter.allOptionalFrom(fn, ifaceCount)) {

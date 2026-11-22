@@ -19,17 +19,27 @@ final class TypeNode {
         final int flags;
         final int index;
         final boolean hasFunction;
+        final boolean isOverload;
         ParserRuleContext declaration;
         /** The function literal of a method or default, or null. */
         BabbleParser.FunctionLiteralContext function;
+        /** Direct function literal operands when this member is an {@code overload (...)} method or default. */
+        List<BabbleParser.FunctionLiteralContext> overloadFunctions;
 
         Member(String name, int flags, int index, ParserRuleContext declaration, BabbleParser.FunctionLiteralContext function) {
+            this(name, flags, index, declaration, function, false, List.of());
+        }
+
+        Member(String name, int flags, int index, ParserRuleContext declaration, BabbleParser.FunctionLiteralContext function,
+               boolean isOverload, List<BabbleParser.FunctionLiteralContext> overloadFunctions) {
             this.name = name;
             this.flags = flags;
             this.index = index;
-            this.hasFunction = function != null;
+            this.isOverload = isOverload;
+            this.hasFunction = function != null || isOverload;
             this.declaration = declaration;
             this.function = function;
+            this.overloadFunctions = overloadFunctions != null ? List.copyOf(overloadFunctions) : List.of();
         }
 
         boolean isMethod() {
@@ -43,6 +53,7 @@ final class TypeNode {
         void detachAst() {
             this.declaration = null;
             this.function = null;
+            this.overloadFunctions = List.of();
         }
     }
 

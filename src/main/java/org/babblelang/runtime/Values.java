@@ -137,6 +137,7 @@ public final class Values {
     /** A function, a bound method or a class value : what converts to a Java functional interface. */
     public static boolean isBabbleCallable(Object value) {
         return value instanceof BabbleFunction || value instanceof BoundMethod
+                || value instanceof OverloadSet
                 || value instanceof BabbleClass babbleClass && babbleClass.shape().kind() != ClassShape.Kind.OBJECT;
     }
 

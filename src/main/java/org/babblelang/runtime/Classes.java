@@ -89,10 +89,18 @@ public final class Classes {
     }
 
     public static BabbleFunction interfaceDefault(Object instance, String ifaceTypeId, int memberIndex) {
-        return BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberIndex);
+        return (BabbleFunction) BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberIndex);
+    }
+
+    public static BabbleFunction interfaceDefaultAlt(Object instance, String ifaceTypeId, int memberIndex, int altIndex) {
+        Callable def = BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberIndex);
+        if (def instanceof OverloadSet ov) {
+            return (BabbleFunction) ov.member(altIndex);
+        }
+        return (BabbleFunction) def;
     }
 
     public static BabbleFunction interfaceDefault(Object instance, String ifaceTypeId, String memberName) {
-        return BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberName);
+        return (BabbleFunction) BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberName);
     }
 }

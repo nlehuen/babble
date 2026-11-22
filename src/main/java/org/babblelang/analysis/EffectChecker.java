@@ -625,29 +625,40 @@ final class EffectChecker {
 
     private static boolean isNamedDefRhs(BabbleParser.FunctionLiteralContext fn) {
         ParserRuleContext cur = fn;
-        while (cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
-                && blk.block().expression().size() == 1) {
-            cur = blk;
+        while ((cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
+                && blk.block().expression().size() == 1)
+                || cur.getParent() instanceof BabbleParser.OverloadExpressionContext) {
+            cur = cur.getParent();
         }
         return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur;
     }
 
-    private boolean isExportOrInterfaceMethod(BabbleParser.FunctionLiteralContext fn) {
+    private boolean isInterfaceDefault(BabbleParser.FunctionLiteralContext fn) {
         ParserRuleContext cur = fn;
-        while (cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
-                && blk.block().expression().size() == 1) {
-            cur = blk;
+        while ((cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
+                && blk.block().expression().size() == 1)
+                || cur.getParent() instanceof BabbleParser.OverloadExpressionContext) {
+            cur = cur.getParent();
         }
         if (cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur) {
-            if (checker.isExportedDef(def)) {
-                return true;
-            }
-            ScopeNode defScope = pass.definitionScopes.get(def);
-            if (defScope != null && defScope.kind == ScopeNode.Kind.INTERFACE_BODY) {
-                return true;
-            }
+            ScopeAnalysis.DefTarget target = pass.analysis.defTarget(def);
+            return target != null && target.kind() == ScopeAnalysis.DefKind.DEFAULT;
         }
         return false;
+    }
+
+    private boolean isExportOrInterfaceMethod(BabbleParser.FunctionLiteralContext fn) {
+        if (isInterfaceDefault(fn)) {
+            return true;
+        }
+        ParserRuleContext cur = fn;
+        while ((cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
+                && blk.block().expression().size() == 1)
+                || cur.getParent() instanceof BabbleParser.OverloadExpressionContext) {
+            cur = cur.getParent();
+        }
+        return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur
+                && checker.isExportedDef(def);
     }
 
     ParsedPrefix parseFunctionPrefix(BabbleParser.FunctionLiteralContext ctx, boolean reportErrors) {
@@ -2016,6 +2027,13 @@ final class EffectChecker {
                     if (lit != null && callableSet.contains(lit)) {
                         out.add(lit);
                     }
+                } else if (m instanceof Type.Overloaded ov) {
+                    for (Type.Function fn : ov.alternatives()) {
+                        BabbleParser.FunctionLiteralContext lit = checker.literalOf(fn);
+                        if (lit != null && callableSet.contains(lit)) {
+                            out.add(lit);
+                        }
+                    }
                 } else if (m instanceof Type.ClassValue cv && cv.node().ctx instanceof BabbleParser.ClassExpressionContext cls
                         && callableSet.contains(cls)) {
                     out.add(cls);
@@ -2320,11 +2338,16 @@ final class EffectChecker {
             visUnique[i] = pm.unique();
             visBorrow[i] = !pm.shared() && !pm.unique() && internal.borrowParams()[i];
         }
-        EnumSet<Effect> effs = EffectSet.copySet(internal.effects().effects());
+        boolean ifaceDefault = isInterfaceDefault(fn);
+        EnumSet<Effect> effs = ifaceDefault
+                ? EffectSet.copySet(prefix.effects())
+                : EffectSet.copySet(internal.effects().effects());
         EnumSet<Effect> decl = EffectSet.copySet(prefix.effects());
         boolean mutThis = prefix.mutThis();
         boolean borrowThis = !prefix.explicitSharedThis() && internal.effects().borrowThis();
-        boolean uniqueResult = prefix.uniqueReturn() || (!prefix.io() && internal.effects().uniqueResult());
+        boolean uniqueResult = ifaceDefault
+                ? prefix.uniqueReturn()
+                : (prefix.uniqueReturn() || (!prefix.io() && internal.effects().uniqueResult()));
         boolean terminating = !prefix.io() && internal.effects().terminating();
         if (prefix.io()) {
             effs.remove(Effect.PURE);

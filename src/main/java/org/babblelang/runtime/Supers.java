@@ -15,11 +15,17 @@ public final class Supers {
 
     public static Object call(Object thiz, Object type, String name, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         if (type instanceof BabbleInterface babble) {
-            BabbleFunction function = babble.findDefault(name);
-            if (function == null) {
+            Callable found = babble.findDefault(name);
+            if (found == null) {
                 throw new BabbleException("No default " + name + " to call");
             }
-            return function.invoke(thiz, rt, args, names, site);
+            if (found instanceof BabbleFunction function) {
+                return function.invoke(thiz, rt, args, names, site);
+            }
+            if (found instanceof OverloadSet ov) {
+                return ov.bind(thiz).call(rt, args, names, site);
+            }
+            return found.call(rt, args, names, site);
         }
         if (type instanceof JavaType wrapper) {
             type = wrapper.javaClass();

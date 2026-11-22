@@ -788,7 +788,7 @@ final class OverloadSolver {
         return a;
     }
 
-    private static boolean isInterfaceLike(Type t) {
+    static boolean isInterfaceLike(Type t) {
         if (t instanceof Type.Instance i) {
             return i.node().isInterface();
         }
@@ -854,6 +854,119 @@ final class OverloadSolver {
             }
         }
         return best;
+    }
+
+    /**
+     * Picks the index of the most specific alternative in {@code set} accepting a Java interface
+     * method's parameter types (BIP021-D13), or {@code -1} if none matches. Tries exact Java
+     * nullability first, then falls back to non-null at {@code UNSPECIFIED} positions when needed.
+     */
+    static int selectAlternativeForJavaMethod(TypeAlgebra algebra, Type.Overloaded set,
+                                              java.lang.reflect.Method jm,
+                                              List<Type> javaParamTypes,
+                                              List<Type> fallbackParamTypes) {
+        int match = matchJavaMethodPass(algebra, set, jm, javaParamTypes);
+        if (match >= 0 || fallbackParamTypes == null) {
+            return match;
+        }
+        return matchJavaMethodPass(algebra, set, jm, fallbackParamTypes);
+    }
+
+    private static int matchJavaMethodPass(TypeAlgebra algebra, Type.Overloaded set,
+                                           java.lang.reflect.Method jm, List<Type> paramTypes) {
+        List<Type.Function> alts = set.alternatives();
+        int count = paramTypes.size();
+        CallShape shape = new CallShape(count, List.of());
+        List<Integer> matchedIdx = new ArrayList<>();
+        List<List<Type>> matchedEff = new ArrayList<>();
+        for (int i = 0; i < alts.size(); i++) {
+            Type.Function alt = alts.get(i);
+            List<Type> eff = effectiveParamTypes(alt, shape);
+            if (eff != null && acceptsWitness(algebra, alt, eff, paramTypes)) {
+                matchedIdx.add(i);
+                matchedEff.add(eff);
+                continue;
+            }
+            if (jm.isVarArgs() && count > 0 && alt.restIndex() == count - 1) {
+                Type last = Type.withoutNull(paramTypes.get(count - 1));
+                if (last instanceof Type.Array arr) {
+                    List<Type> expanded = new ArrayList<>(count);
+                    List<Type> effVar = new ArrayList<>(count);
+                    for (int j = 0; j < count - 1; j++) {
+                        expanded.add(paramTypes.get(j));
+                        effVar.add(alt.parameters().get(j).type());
+                    }
+                    expanded.add(arr.element());
+                    effVar.add(alt.parameters().get(count - 1).type());
+                    if (acceptsWitness(algebra, alt, effVar, expanded)) {
+                        matchedIdx.add(i);
+                        matchedEff.add(effVar);
+                    }
+                }
+            }
+        }
+        return pickMostSpecificIndex(algebra, alts, matchedIdx, matchedEff);
+    }
+
+    /** Picks the index of the most specific alternative in {@code set} accepting positional {@code argTypes}, or {@code -1}. */
+    static int selectAlternativeForPositionalArgs(TypeAlgebra algebra, Type.Overloaded set, List<Type> argTypes) {
+        List<Type.Function> alts = set.alternatives();
+        CallShape shape = new CallShape(argTypes.size(), List.of());
+        List<Integer> matchedIdx = new ArrayList<>();
+        List<List<Type>> matchedEff = new ArrayList<>();
+        for (int i = 0; i < alts.size(); i++) {
+            Type.Function alt = alts.get(i);
+            List<Type> eff = effectiveParamTypes(alt, shape);
+            if (eff != null && acceptsWitness(algebra, alt, eff, argTypes)) {
+                matchedIdx.add(i);
+                matchedEff.add(eff);
+            }
+        }
+        return pickMostSpecificIndex(algebra, alts, matchedIdx, matchedEff);
+    }
+
+    private static int pickMostSpecificIndex(TypeAlgebra algebra, List<Type.Function> alts,
+                                             List<Integer> matchedIdx, List<List<Type>> matchedEff) {
+        if (matchedIdx.isEmpty()) {
+            return -1;
+        }
+        int bestPos = -1;
+        for (int i = 0; i < matchedIdx.size(); i++) {
+            boolean beaten = false;
+            Type.Function cand = alts.get(matchedIdx.get(i));
+            List<Type> candEff = matchedEff.get(i);
+            for (int j = 0; j < matchedIdx.size(); j++) {
+                if (i == j) {
+                    continue;
+                }
+                Type.Function other = alts.get(matchedIdx.get(j));
+                if (compareAlternatives(algebra, other, matchedEff.get(j), cand, candEff) == Order.FIRST_BETTER) {
+                    beaten = true;
+                    break;
+                }
+            }
+            if (!beaten) {
+                if (bestPos >= 0) {
+                    return -1;
+                }
+                bestPos = i;
+            }
+        }
+        return bestPos >= 0 ? matchedIdx.get(bestPos) : -1;
+    }
+
+    /** Fully qualified Java method signature for BIP021 §4.8 diagnostics, e.g. {@code java.lang.Appendable.append(java.lang.CharSequence, int, int)}. */
+    static String javaMethodSignature(java.lang.reflect.Method method) {
+        StringBuilder sb = new StringBuilder(method.getDeclaringClass().getName())
+                .append('.').append(method.getName()).append('(');
+        Class<?>[] params = method.getParameterTypes();
+        for (int i = 0; i < params.length; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(params[i].getTypeName());
+        }
+        return sb.append(')').toString();
     }
 
     /** Canonical signature key for {@link org.babblelang.runtime.OverloadSet#select(String)}. */
