@@ -8,6 +8,7 @@ export def optDef = fn (x = 7) -> ( x )
 export def lang = import("java.lang")
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Cross-module inferred/generic exports + importedPackage type/interface resolution + package-private accessibleType
 def m = import("mod_tc_infer.ba")
 def lang = import("java.lang")
@@ -25,6 +26,7 @@ println(m.inc(4), ":", m.optDef(), ":", m.id("ok"), ":", r.ran, ":", sb.toString
 5:7:ok:true:hi:false:9:8
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Narrowing (&&, ||, not, reversed null), runtime subtype/cast checks (Babble/Java interfaces, final classes)
 def IA = interface ( def a : fn () : int )
 def IB = interface ( def b : fn () : int )
@@ -107,6 +109,7 @@ f(1.5)
 Type error : expected int, got double (x is double because of the call)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; BabbleInstance operatorCall success, widening, union, and error paths
 def Vec = class (def x : int) (
     def plus = fn (other : Vec) : Vec -> ( Vec(this.x + other.x) )
@@ -182,6 +185,7 @@ No such member : missing
 Not a scope : 1
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Generic Babble calls: function pattern, BabbleInstance pattern, List pattern, nullable pattern, return hint widening, failure
 def Box of T = class (def v : T) ()
 def wrap of T = fn (x : T) : Box of T -> ( Box(x) )
@@ -205,6 +209,7 @@ badInfer()
 Missing type : cannot infer type arguments for badInfer
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Unannotated & recursive function inference + computeBodyResult + null default param + Java SAM / overload / effect assignability
 def fact = fn (n : int) -> (
     if n <= 1 then ( 1 ) else ( n * recurse(n - 1) )

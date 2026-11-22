@@ -1,6 +1,7 @@
 ;; BIP011-P2: 9-scalar type system, contextual literals, JLS promotion, conversions, transparent string
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; All 9 core scalar types and java.lang.* annotation aliases
 def b : byte = 127
 def bMin : byte = -128
@@ -70,6 +71,7 @@ def f : float = 1.5d
 Type error : expected float, got double
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; All 9 conversion functions
 def b : byte = byte(42)
 def s : short = short(1000)
@@ -100,6 +102,7 @@ true:7.0
 true:false:A:Z:123:!
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JLS binary numeric promotion, float-preserving division, and unary minus
 def b1 : byte = 10
 def b2 : byte = 20
@@ -150,6 +153,7 @@ true:-10
 true:-5.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; 6-level implicit widening in assignments, calls, returns, and if/else joins
 def b : byte = 7
 def s : short = b

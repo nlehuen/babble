@@ -1,6 +1,7 @@
 ;; RM002 / BIP016 effect system: pure-by-default, io, volatile, mut, shared, algebraic markers, axioms, and violations
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Explicit nothrow / idempotent / commutative / associative / monotone / injective (pure + deterministic by default)
 def inc = fn nothrow monotone (x : double) : double -> ( x + 1.0 )
 def add = fn nothrow commutative associative (a : int, b : int) : int -> ( a + b )

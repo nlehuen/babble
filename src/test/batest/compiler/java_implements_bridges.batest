@@ -1,6 +1,7 @@
 ;; RM003-P3: Babble classes and interfaces implementing/extending Java interfaces with direct JVM bridges
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Primitive & reference Java interfaces on class, value class, and object literal
 def Counter = class (private def n : int) implements java.util.function.IntSupplier, java.lang.Runnable (
     def run = fn mut () : any? -> ( this.n += 10 ; null )
@@ -28,6 +29,7 @@ println(sup.getAsInt(), ":", xs.get(0).grams, ":", uniq.contains(Weight(10)), ":
 15:10:true:6.5
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Babble interface extending Java interface with default method, implemented by class & cross-called from Java
 def Ranked = interface extends java.lang.Comparable of Ranked (
     def rank : fn () : int
@@ -47,6 +49,7 @@ println(java.util.Objects.toString(items), ":", (items.get(0) is java.lang.Compa
 [a#1, b#2, c#3]:true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Overloaded Java interface methods (CharSequence + Appendable) served by Babble methods with optional params
 def Buf = class () implements java.lang.Appendable, java.lang.CharSequence (
     private def sb = java.lang.StringBuilder()
@@ -70,6 +73,7 @@ println(cs.length(), ":", cs.subSequence(0, 4), ":", java.lang.String.valueOf(cs
 7:ok-7:ok-7bcd
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Java default method inheritance and super(JavaInterface).m(...) override in both Babble interface and class
 def WrappingIter = interface extends java.util.Iterator of int (
     def forEachRemaining = fn io shared (shared action : java.util.function.Consumer of any?) : any? -> (
@@ -122,6 +126,7 @@ asJava.remove()
 java.lang.UnsupportedOperationException : remove
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; LongUnaryOperator, DoublePredicate, BooleanSupplier, and CharSequence.charAt bridges (long, double, boolean, char)
 def LongInc = class (delta : int) implements java.util.function.LongUnaryOperator (
     def applyAsLong = fn (x : any?) : int -> ( int(x as long) + delta )

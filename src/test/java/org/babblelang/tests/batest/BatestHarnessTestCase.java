@@ -267,4 +267,55 @@ public class BatestHarnessTestCase {
         Assertions.assertTrue(BatestFilter.parse("types/narrowing.batest:42").matches(f1, f1.cases().get(1)));
         Assertions.assertFalse(BatestFilter.parse("types/narrowing.batest:42").matches(f1, f1.cases().get(0)));
     }
+
+    @Test
+    public void testParserSizeBudgetsAndLargeOverride() {
+        String code399 = "def x = \"" + "a".repeat(389) + "\"";
+        Assertions.assertEquals(399, BatestParser.codeLength(code399));
+        BatestParser.parseString("{{{{{\n" + code399 + "\n}}}}}\n", "ok399.batest");
+
+        // Comments (line and block) do not count toward the 400-char case limit
+        String withLongComments = ";; " + "c".repeat(600) + "\n;;(\n" + "d".repeat(600) + "\n;;)\n" + code399;
+        Assertions.assertEquals(399, BatestParser.codeLength(withLongComments));
+        BatestParser.parseString("{{{{{\n" + withLongComments + "\n}}}}}\n", "comments_ok.batest");
+
+        // String containing ;; and char literal '"' must not confuse comment stripping
+        String quoted = "def q = '\"' ; def s = \";; not a comment\" ;; real comment";
+        Assertions.assertEquals("def q = '\"' ; def s = \";; not a comment\"", BatestParser.stripComments(quoted));
+
+        // 400 code chars fails without ;; LARGE: <reason>
+        String code400 = "def x = \"" + "a".repeat(390) + "\"";
+        Assertions.assertEquals(400, BatestParser.codeLength(code400));
+        IllegalArgumentException caseErr = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString("{{{{{\n" + code400 + "\n}}}}}\n", "big_case.batest"));
+        Assertions.assertTrue(caseErr.getMessage().contains("exceeds 400 code characters"), caseErr.getMessage());
+
+        // ;; LARGE: <reason> and ;; LARGE : <reason> override the case limit
+        BatestParser.parseString("{{{{{\n;; LARGE: intentional stress test\n" + code400 + "\n}}}}}\n", "large_case.batest");
+        BatestParser.parseString("{{{{{\n;; LARGE : space before colon\n" + code400 + "\n}}}}}\n", "large_case_spaced.batest");
+
+        // ;; LARGE without a reason fails immediately
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString("{{{{{\n;; LARGE\n" + code400 + "\n}}}}}\n", "no_reason1.batest"));
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString("{{{{{\n;; LARGE:\n" + code400 + "\n}}}}}\n", "no_reason2.batest"));
+
+        // Preamble: 799 passes, 800 fails, ;; LARGE: <reason> overrides
+        String pre799 = "def p = \"" + "b".repeat(789) + "\"";
+        String pre800 = "def p = \"" + "b".repeat(790) + "\"";
+        Assertions.assertEquals(799, BatestParser.codeLength(pre799));
+        Assertions.assertEquals(800, BatestParser.codeLength(pre800));
+        BatestParser.parseString(pre799 + "\n{{{{{\nassert(true)\n}}}}}\n", "pre799.batest");
+        IllegalArgumentException preErr = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString(pre800 + "\n{{{{{\nassert(true)\n}}}}}\n", "pre800.batest"));
+        Assertions.assertTrue(preErr.getMessage().contains("preamble exceeds 800 code characters"), preErr.getMessage());
+        BatestParser.parseString(";; LARGE: shared fixture\n" + pre800 + "\n{{{{{\nassert(true)\n}}}}}\n", "pre_large.batest");
+
+        // Virtual module: 800 fails, ;; LARGE: <reason> overrides
+        String mod800 = "========== m.ba ==========\n" + pre800 + "\n==========\n{{{{{\nassert(true)\n}}}}}\n";
+        IllegalArgumentException modErr = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString(mod800, "mod800.batest"));
+        Assertions.assertTrue(modErr.getMessage().contains("virtual module 'm.ba' exceeds 800 code characters"), modErr.getMessage());
+        BatestParser.parseString("========== m.ba ==========\n;; LARGE: fixture module\n" + pre800 + "\n==========\n{{{{{\nassert(true)\n}}}}}\n", "mod_large.batest");
+    }
 }

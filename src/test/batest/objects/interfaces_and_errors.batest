@@ -10,6 +10,7 @@ export def PI = interface (
 )
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Module-exported, local, alias, imported Java package, and inner Java Map.Entry
 def m = import("iface_mod.ba")
 def jutil = import("java.util")

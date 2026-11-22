@@ -1,6 +1,7 @@
 ;; BIP017: Higher-Order Function Callback-Effect Forwarding (`fn calling f`)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Basic fn calling f accepts pure, volatile, and io callbacks
 def apply = fn calling f (f: fn (x: int): int, v: int): int -> (f(v))
 def pureUse = fn (x: int): int -> (apply(fn (n: int): int -> (n * 2), x))
@@ -34,6 +35,7 @@ println(bad(1))
 Function bad violates deterministic guarantee : mark function as volatile (or io)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; fn calling (f, g) forwards multiple callbacks (and fn io calling (f, g) combines effect words with calling)
 def pipe2 = fn calling (f, g) (v: int, f: fn (x: int): int, g: fn (x: int): int): int -> (g(f(v)))
 def logPipe2 = fn io calling (f, g) (v: int, f: fn (x: int): int, g: fn (x: int): int): int -> (
@@ -90,6 +92,7 @@ println(bad((list of int).of(1)).size())
 Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Frame-local mutating closure through concrete and interface fn calling f
 def IntSeq = interface (
     def forEach: fn calling f (f: fn (x: int): any?)
@@ -115,6 +118,7 @@ println(sumSeq(RangeSeq(5)))
 10
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Bound mutating method buf.append forwarded through fn calling f in pure caller
 def IntBuf = class () (
     def total: int = 0
@@ -183,6 +187,7 @@ bad(SelfSeq())
 Exclusivity error : mut target s aliases argument s
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Nested forwarding through closure and direct pass-through
 def apply = fn calling f (f: fn (x: int): int, v: int): int -> (f(v))
 def wrapDirect = fn calling g (g: fn (x: int): int, v: int): int -> (apply(g, v))
@@ -199,6 +204,7 @@ println(pureCaller(4))
 21
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; First-class fn calling f subtyping
 def apply = fn calling f (f: fn (x: int): int, v: int): int -> (f(v))
 def asPure: fn (f: fn (x: int): int, v: int): int = apply

@@ -13,6 +13,7 @@ export def Dup = class (def x : int) ()
 export def Dup = class (def x : int) ()
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaLinker fast-path caches via loop calls (BoundJavaMethod, JavaMethod, isWrappedOf, bindWrapped,
 ;; bindRaw, isNull, isKind, isWrappedKind, toJava, fail)
 def xs : java.util.ArrayList of any? = java.util.ArrayList()
@@ -72,6 +73,7 @@ println(total)
 6
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Values.hash (via value class with null, int, 2.0, MAX_VALUE), UnionType.convert (double | string),
 ;; AnyType, and Types.describe variants
 def V = record (a : any?, b : double, c : double) ()
@@ -112,6 +114,7 @@ dyn(func) as string
 Type error : expected string, got function
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaTypes.convertResult widening (IntToLongFunction + Runnable void), Faces FunctionHandler (equals/hashCode/toString/default),
 ;; and Faces FaceHandler (equals/hashCode/toString)
 def sumL = java.util.stream.IntStream.range(1, 4).mapToLong(fn (x : int) : int -> ( x * 2 )).sum()
@@ -132,6 +135,7 @@ println(sumL, ":", c.apply(3), ":", pred.test(java.lang.Boolean.TRUE), ":", comp
 12:d=3.0:true:8:true:true:true:true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Standard SAMs are LambdaMetafactory-backed (not Proxy); FunctionHandler & JavaTypes.checkParameter covered via >16-arg Proxy fallback SAM
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = fn io (shared cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
@@ -162,6 +166,7 @@ h.invoke(p17, findM(p17.getClass(), "apply"), args17("bad", 1.0, java.io.File(".
 Type error : expected int, got string
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = fn io (shared cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
@@ -189,6 +194,7 @@ h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, "bad", java.io.File(".")
 Type error : expected double, got string
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = fn io (shared cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
     def xs = java.util.Arrays.asList(cls.getMethods())
@@ -216,6 +222,7 @@ h.invoke(p17, findM(p17.getClass(), "apply"), args17(1, 1.0, java.io.File("."), 
 Type error : expected string, got int
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; checkParameter double widened from int, and File non-File check via >16-arg Proxy fallback SAM
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def findM = fn io (shared cls : java.lang.Class of any?, name : string) : java.lang.reflect.Method -> (
@@ -261,6 +268,7 @@ import("../../missing.ba")
 Cannot import ../../missing.ba : no such module
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaLinker.call (Bootstrap.call with all non-primitive param/return types) & JavaLinker.select (wrapped & raw in loop)
 def tbl : java.util.Map of (any?, any?) = java.util.HashMap()
 def putFn : fn io (shared k : any?, shared v : any?) : any? = tbl.put
@@ -307,6 +315,7 @@ while i < 3 then (
 java.lang.NumberFormatException : For input string: "bad"
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Supers default Java interface call, BabbleInstance value equals/toString, Namespace reopen, same(), is/as edges
 def Cmp = class () implements java.util.Comparator of int (
     def compare = fn (a : int, b : int) : int -> ( a - b )
@@ -384,6 +393,7 @@ println(classof(obj) != null, ":", classof(Box(1)) == Box, ":", classof("hi") ==
 true:true:true:true:true:true:true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Types: UnionType convert, JavaClassType accepts (BabbleInstance & Callable), FunctionType fail, nominal collision
 def uNum : string | double = 3
 def dyn = fn (v : any) : any -> ( v )
@@ -408,6 +418,7 @@ def takeB = dyn(ma.Dup(1)) as mb.Dup
 Type error : expected Dup, got Dup (expected mod_box_b.ba#Dup, got mod_box_a.ba#Dup)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; BabbleInterface hierarchy, Values hash/same/is/isBuiltin/fromJava, Arguments rejectLeftovers
 def IA = interface (
     def ping = fn () : int -> ( 10 )
@@ -451,6 +462,7 @@ true:true:false
 6
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaTypes: functionalMethod (Comparator), Objects.toString loop (isNull/BabbleInstance/JavaObject), AssertFunction, Overloads signature with null
 def nums = java.util.ArrayList(java.util.List.of(3, 1, 2))
 java.util.Collections.sort(nums, fn (a, b) -> ( a - b ))
@@ -491,6 +503,7 @@ appFn(null, "bad", 1)
 No applicable overload of java.lang.StringBuilder.append for (null, java.lang.String, java.lang.Integer) : candidates are (java.lang.StringBuffer), (java.lang.CharSequence), (java.lang.CharSequence, int, int), (char[]), (java.lang.String), (java.lang.Object), (char), (int), (long), (float), (double), (boolean), (char[], int, int)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; BabbleType static read/write, Member used before definition (static), BabbleInstance javaDefaultMethods & toString(arg)
 def C = class (def x : int) (
     private def secret = 99
@@ -581,6 +594,7 @@ dyn("a") - dyn("b")
 Not a number : dyn("a")
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Operators isIntegral (Long, Short, Byte, Double), equal, Values.hash edge
 def dyn = fn (v : any?) : any? -> ( v )
 def iL = dyn(java.lang.Long.valueOf("5"))
@@ -596,6 +610,7 @@ true:true:true:true
 true:true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaTypes widen Byte/Short/Float/Long/Integer in convertResult via SAM returning any?, while Character does not widen to int
 def is1 = java.util.function.IntSupplier(fn io () : any? -> ( java.lang.Byte.valueOf("2") ))
 def is2 = java.util.function.IntSupplier(fn io () : any? -> ( java.lang.Short.valueOf("3") ))
@@ -644,6 +659,7 @@ true:true:false:false:false
 Member used before definition : late
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaLinker loop with mixed null, String, StringBuilder, BabbleInstance, BabbleClass across 2 passes
 def K = class (def v : int) (
     def toString = fn () : string -> ( "K" )
@@ -717,6 +733,7 @@ dyn(o) as java.lang.Runnable
 Type error : expected java.lang.Runnable, got object
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Faces default method invocation (FaceHandler & FunctionHandler) via Spliterator + StreamSupport, Object methods, Values.fromJava(FunctionHandler)
 def MySplit = class () implements java.util.Spliterator of int (
     def done : bool = false
@@ -749,6 +766,7 @@ BadIter().remove()
 java.lang.UnsupportedOperationException : remove
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaLinker isWrappedOf, isWrappedKind, BabbleInstance/BabbleClass/callable loop, fail, Overloads accessible interface
 def B = class (def x : int) ()
 def arr : java.util.List of any? = java.util.ArrayList()
@@ -798,6 +816,7 @@ false:true:false:true
 Type error : expected int, got null
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; BabbleInterface findDefault multi-parent & extendsId/extendsType diamond, Operators union arithmetic/comparisons
 def ILeft = interface ( def leftM = fn () : int -> ( 1 ) )
 def IRight = interface ( def rightM = fn () : int -> ( 2 ) )
@@ -846,6 +865,7 @@ a < b
 Not comparable : a and b
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaClass, JavaObject equals/hashCode/toString, array length, Java field write, Values.hash
 def o = java.lang.Object()
 def pt = java.awt.Point(1, 2)
@@ -861,6 +881,7 @@ println(o == o, ":", o == java.lang.Object(), ":", pt.x, ":", arr.size(), ":", j
 true:false:7:2:true:false:one:java.awt.Point[x=3,y=4]
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; BabbleClass implementsType, BabbleInterface extendsType with Java interface, Supers default call on Java interface
 def asAny = fn (v : any) : any -> ( v )
 def IRun = interface extends java.lang.Runnable ()

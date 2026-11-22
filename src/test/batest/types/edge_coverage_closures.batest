@@ -74,6 +74,7 @@ def badObjEnum : (java.util.EnumSet of java.lang.Object)? = null
 Type error : type argument any does not satisfy bound E of java.util.EnumSet
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; isRuntimeSubtype & canMatchAtRuntime across interfaces, Java interfaces, final classes, unions
 def I1 = interface ( def a : fn () : int )
 def I2 = interface ( def b : fn () : int )

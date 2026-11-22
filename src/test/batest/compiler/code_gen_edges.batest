@@ -1,6 +1,7 @@
 ;; Compiler bytecode lowering and Bootstrap invokedynamic cache edge cases
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; this.method(...) direct spec, spread direct (with missing optional arg), named-arg method,
 ;; recurse with omitted optional arg inside class method, boxed field assign, spread-to-double field assign,
 ;; and method capturing enclosing mutable cell (methodClass != null in loadCapturedCells)
@@ -142,6 +143,7 @@ assignRef()
 Name used before definition : s
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Standalone constant folding (MINUS, MUL, unary minus), boolean equality, negated/or conditions,
 ;; double comparisons in control flow, block with package, widening return/as, and object without methods
 println(10 - 3, ":", 4 * 5, ":", -(3) + 10, ":", -(2.5))
@@ -178,6 +180,7 @@ no
 7
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Java long/float arg lowering (emitJavaArgToLocal), pure static chain parens,
 ;; static field on non-pure Java receiver, and ScriptClassWriter.getCommonSuperClass merges
 println(java.lang.Long.sum(3, 4), ":", java.lang.Float.sum(3, 4), ":", (java.lang.Math).abs(-5))
@@ -200,6 +203,7 @@ println(java.util.Objects.toString(pickBuf(true)), ":", java.util.Objects.toStri
 a:b:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Bootstrap BoundMethod(CompiledFunction) spec/direct, TypedCallCache 0-arg, and MAX_DEPTH (>4) caches
 def extSpec = fn (x : int) : int -> ( x + 10 )
 def extSpread = fn (x : int, y : int = 5) : int -> ( x + y )
@@ -284,6 +288,7 @@ true
 21:102
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; this.field compound assign, union primitive field SelectCache, BabbleInterface 2-level super/extends,
 ;; Bootstrap BoundMethod(CompiledFunction) direct & TypedCallCache 0-arg BoundJavaMethod, Java compound assign
 def Counter = class (def n : int) (
@@ -343,6 +348,7 @@ UA()
 Member used before definition : late
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Loop calls to exercise Bootstrap isBoundFunction, isBoundFunctionSpec, boundFunction, isSame,
 ;; and CodeGenerator Java field assign/compound assign (float, int, double, String, typed Object, boxed fallback)
 def extSpec = fn (x : int) : int -> ( x + 10 )
@@ -392,6 +398,7 @@ println(pf.x, ":", pt.x, ":", pt.y, ":", tk.nval, ":", demo.nonNullLabel, ":", g
 3.0:16:4:5.5:ab:1:3.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; CodeGenerator compound assignment boxed/fallback branches (local /=, this./=, dyn +=, static /=)
 ;; and condition/negate/binary lowering
 def C = class (def n : int, def d : double, def b : bool) (
@@ -466,6 +473,7 @@ println(inst.bump(), ":", inst.bump())
 13.5:15.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Interface default methods called via bound function refs in loops (Bootstrap isBoundFunctionSpec, isBoundFunction, boundFunction)
 def IDef = interface (
     def dmSpec = fn (x : int) : int -> ( x + 10 )
@@ -492,6 +500,7 @@ println(s1, ":", s2, ":", s3)
 33:18:18
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Constant folding identities, block/while double widening, Rectangle2D.Double compound ops, and common superclass merges
 def fold = fn (x : int) : string -> (
     def a = x + 0
@@ -571,6 +580,7 @@ badBool(true)
 Name used before definition : x
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Bootstrap polymorphic CallCache & TypedCallCache mixing CompiledFunction, CompiledMethod, BoundMethod(CompiledFunction)
 def I = interface (
     def apply = fn (x : int) : int -> ( x + 100 )
@@ -613,6 +623,7 @@ readB(B(true))
 Member used before definition : x
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; CodeGenerator emitJavaFieldAssign & emitJavaFieldCompoundAssign (int, double, Object) + ScriptClassWriter merges
 def pt = java.awt.geom.Point2D.Double()
 pt.x = 3
@@ -640,6 +651,7 @@ println(pt.x, ":", pt.y, ":", rect.width, ":", strArg, ":", ev.arg, ":", w, ":",
 5.0:4.0:15:ok:42:3.0:true:s
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Bootstrap CallCache & TypedCallCache polymorphic predicate guards (isFunction, isBoundFunction, isBoundFunctionSpec, isBoundMethod)
 ;; plus SelectCache javaDefaultMethods miss on BabbleInstance & BabbleInstance operatorCall/neg/arithmetic
 def I1 = interface (
@@ -713,6 +725,7 @@ println(totalCall, ":", totalTyped, ":", rev1.compare(1, 5) > 0, ":", rev2.compa
 792:712:true:false:-10:-2:12:7:40:5:8
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; emitCondition INT/DOUBLE, evalIntConstant * & nested -, mixed comparisons, emitJavaConstructorCall/MethodCall catch
 def dCond = 1.5
 def dZero = 0.0
@@ -769,6 +782,7 @@ println(st.nval, ":", st.ttype, ":", demo.nonNullLabel)
 1.0:24:hi!
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; ScriptClassWriter getCommonSuperClass / commonSuperInterface / ancestorInterfaces / isAssignable merges
 def Root = interface ( def tag : fn () : string )
 def I1 = interface extends Root ()
@@ -819,6 +833,7 @@ println(f2.getAsDouble())
 3.5
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; emitJavaFieldAssign on int field (java.awt.Point) and widening assignments
 def pt = java.awt.Point()
 pt.x = 3
@@ -840,6 +855,7 @@ println(pt.x, ":", pt.y, ":", d1, ":", d2, ":", d3, ":", d4, ":", d5, ":", d6, "
 3:4:5.0:8.0:7.0:9.0:8.0:16.0:4.0:6.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; ScriptClassWriter getCommonSuperClass / commonSuperInterface on unannotated if/else joins
 def Root = interface ( def tag : fn () : string )
 def I1 = interface extends Root ()
@@ -859,6 +875,7 @@ println(joinIface(true, C1(), C2()), ":", joinIface(false, C1(), C2()), ":", joi
 c1:c2:1:2
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Paren-wrapped class/Java static chains, safe-nav static chain, method recurse, and interface constant
 def Box = ( class (def v : int) (
     def fact = fn (n : int) : int -> (
@@ -892,6 +909,7 @@ println(after)
 24
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Safe-navigation call on nullable Babble & Java receivers and super default call
 def I1 = interface (
     def greet = fn (x : int) : int -> ( x + 10 )
@@ -926,6 +944,7 @@ println(c1.calc(4), ":", C1().calc(4), ":", pf.x)
 5:5:5.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; ScriptClassWriter interface-interface & class-interface joins + Java primitive bridge args (DoublePredicate, IntToDoubleFunction, LongUnaryOperator)
 def getList = fn io () : java.util.List of string -> ( java.util.Collections.singletonList("a") )
 def getSet = fn io () : java.util.Set of string -> ( java.util.Collections.singleton("b") )
@@ -957,6 +976,7 @@ println(joinCol(true).size(), ":", joinCol(false).size(), ":", joinB(true).tag()
 1:1:1:2:true:2.5:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; superCall inside Babble interface default method, inside nested lambda in class, and with named arg
 def I1 = interface (
     def calc = fn (x : int) : int -> ( x + 10 )

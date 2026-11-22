@@ -19,6 +19,7 @@ println(readName(A(2)), ":", readName(B("z")))
 Not a scope : o
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Use interface Contract across multiple session inputs to transition indy CallSite/SelectCache across ScriptClassLoaders
 def Named = interface (
     def label : fn () : string

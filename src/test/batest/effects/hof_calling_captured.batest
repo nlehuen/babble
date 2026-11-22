@@ -61,6 +61,7 @@ def k = fn (f: fn (int): int, h: fn calling f (int): int): int -> (h(f(1)))
 Unknown parameter in calling clause : f
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Currying : the captured callbacks of nested function types are instantiated one call at a time
 def curry = fn (f: fn (int): int): fn (g: fn (int): int): fn calling (f, g) (int): int -> (
     fn (g: fn (int): int): fn calling (f, g) (int): int -> (fn calling (f, g) (a: int): int -> (g(f(a))))

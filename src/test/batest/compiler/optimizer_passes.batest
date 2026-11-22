@@ -1,6 +1,7 @@
 ;; Comprehensive coverage of org.babblelang.opt.* (-O1 Nanopass passes & HirPurity queries)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; ConstFoldPass: unary/binary folding, comparisons across bool/char/int/long/float/double, logic, if-pruning & local const propagation
 def foldAll = fn (): string -> (
     def b1 = true ; def b2 = false
@@ -45,6 +46,7 @@ println(foldAll())
 true:true:true:true:true:true:false:true:true:true:24:24:2.0:2.0:true:7:9:4.0:5.0:2.5:3:hi:true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; ConstFoldPass: whitelisted Math (sqrt/abs/min/max on int/long/float/double) & String (trim/length/isEmpty) + non-folding floorDiv
 def foldedJava = fn io (): string -> (
     def s = "  babble  ".trim()
@@ -62,6 +64,7 @@ println(foldedJava())
 babble:4:true:3.0:7:9:2.5:2:3
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; AlgebraicSimplifyPass: boolean identities, int + long identities & reassociation, string reassociation, idempotence, IEEE-754 preservation
 axiom java.lang.Character.toLowerCase: fn pure nothrow idempotent
 def clamp = fn axiom pure nothrow idempotent (x: int): int -> (if x < 0 then (0) else (x))
@@ -112,6 +115,7 @@ true:true:false:false:true:true:false:false:true:-10:-2:0:-55:8:16:0:44:  ok ab:
 false:false:true:true:false:false:true:true:false:6:14:0:33:-4:4:0:-22:hiab:3:3:3:-0.0:hi:z:false:3.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; HirLicmPass & HirPurity: while + for loops hoisting pure invariant calls, math/record fields, array.size, logic, if, block; rejecting impure/throwing
 def Vec = record (x: double, y: double) (
     def len = fn nothrow (): double -> (java.lang.Math.hypot(this.x, this.y))
@@ -154,6 +158,7 @@ println(runLoops(3, Vec(3.0, 4.0), array.of(1, 2), true))
 2907:0:6
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; InlinePass & HirDcePass: top-level, function, class body/static, interface default/static inlining, alpha-renaming, recursion, DCE after return/break/continue
 def addMul = fn (a: int, b: int): int -> (
     def s = a + b
@@ -216,6 +221,7 @@ caller(null)
 Type error : expected int, got null
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; HirPurity + HirLicmPass: hoist across widening ranks 1..5, As, Block, Unary/Binary/DIV, Logic, ThisRef, DirectBabbleCall via fn var, array.size()
 def Box = class (def x: double, def name: string) (
     def run = fn io (n: int, b: byte, flag: bool, mutFlag: bool, xs: array of int): double -> (
@@ -247,6 +253,7 @@ println(java.lang.Math.round(Box(1.0, "  hi  ").run(2, byte(2), true, true, arra
 5549
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; HirPurity.collectModifiedVars + InlinePass.alphaRename across loops/AST forms + ConstFoldPass javaRetKind/convertConstToKind
 def Base = interface (def tag = fn (): int -> (1))
 def Holder = class (def v: int) implements Base (
@@ -314,6 +321,7 @@ println(runAllForms(2, true))
 78:3:0.0:true:5:x:8:4:2.0:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; TypeApply, SelfRecurseCall, If non-constant & multi-stmt block folding, Local const propagation across short/long/float/double
 def idFn of T = fn (x: T): T -> (x)
 def recCount = fn (n: int): int -> (if n <= 0 then (0) else (recurse(n - 1) + 1))
@@ -335,6 +343,7 @@ println(testConversions())
 3:4:5:6.0:2.5:7.0:5:4.0:yo:4
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Record-based HirLicmPass (hoistFromWhile + hoistFromFor + ThisRef + ThisFieldGet + DirectBabbleCall + effectiveKind 1..5)
 def idByte = fn nothrow (x: byte): byte -> (x)
 def idInt = fn nothrow (x: int): int -> (x)
@@ -374,6 +383,7 @@ println(java.lang.Math.round(RecVec(byte(2), 3, 1.0, true, "hi", freeze(array.of
 7453
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; HirPurity.collectModifiedVars directly inside a loop + ConstFoldPass (unary negate/if-prune/convertConstToKind) + InlinePass (alphaRename)
 def Iface = interface (
     def ifaceVal = fn (x: int): int -> (x + 1)
@@ -442,6 +452,7 @@ println(exerciseAll(2))
 55:-4.0:-3:3.5:4:3:3:6:4.0:6.0:9:5:true:3
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Non-inlineable (>25 HIR nodes) pure functions so InlinePass preserves DirectBabbleCall for HirLicmPass & HirPurity
 axiom java.lang.Integer.bitCount: fn pure nothrow
 axiom java.util.Objects.nonNull: fn pure nothrow
@@ -547,6 +558,7 @@ println(java.lang.Math.round(HoistRec(byte(2), 3, 1.5f, 1.0, true).run(2, 4) * 1
 9402
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; ConstFoldPass (if-prune widening/convertConstToKind, logic non-bool RHS, string fold) + AlgebraicSimplifyPass + InlinePass
 def tick = 0
 def bump = fn io (): int -> (tick += 1 ; tick)
@@ -588,6 +600,7 @@ println("" + discard(7) + ":" + callShadowDiscard(4) + ":" + widenInside(5) + ":
 14:5:5.5:3.5:3
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; HirPurity.collectModifiedVars & TypeApply + InlinePass.scanCalleeBody guards
 def topMut = 0
 topMut = 1

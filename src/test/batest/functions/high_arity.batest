@@ -1,6 +1,7 @@
 ;; High-arity function (>200 parameters) exercising CodeGenerator Object[] array-adapter fallback
 
 {{{{{
+;; LARGE: exercises >200-parameter Object[] array-adapter fallback
 def big = fn (
     p001 : int = 1, p002 : int = 1, p003 : int = 1, p004 : int = 1, p005 : int = 1,
     p006 : int = 1, p007 : int = 1, p008 : int = 1, p009 : int = 1, p010 : int = 1,

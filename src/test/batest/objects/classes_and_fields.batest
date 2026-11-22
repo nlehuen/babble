@@ -1,6 +1,7 @@
 ;; Classes, constructor params, unboxed fields, private members, static blocks, forward reads, and package-backed classes
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Basic class with constructor parameter fields, local-only constructor param, body fields, methods, static block
 def Counter = class (def label : string, seed : int = 0) (
     private def count = seed

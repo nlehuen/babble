@@ -1,6 +1,7 @@
 ;; Runtime JavaLinker inline caches, Java default methods, Faces proxies, Supers, and Java field/primitive edges
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Unbound JavaMethod and BoundJavaMethod select/call through Bootstrap & JavaLinker
 def absFn = java.lang.Math.abs
 def parseFn = java.lang.Integer.parseInt
@@ -43,6 +44,7 @@ println(sb?.append("c")?.toString(), ":", noneSb?.toString(), ":", raw?.get(1), 
 abc:null:20:null
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Polymorphic and megamorphic JavaLinker select & call across wrapped/raw receivers and BabbleInstance args
 def Box = class (def n : int) ()
 def xs : java.util.List of any = java.util.ArrayList()
@@ -88,6 +90,7 @@ app()
 No applicable overload of java.lang.StringBuilder.append for ()
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Java default methods (JavaDefaultCall), super(JavaInterface), and Faces Object methods
 def EvenPred = class () implements java.util.function.IntPredicate (
     def test = fn (x : int) : bool -> ( int(x / 2) * 2 == x )
@@ -113,6 +116,7 @@ true
 true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Multi-level Babble interface inheritance, default lookup, 'is' checks, and interface/class toString
 def Base = interface (
     def req : fn () : int
@@ -145,6 +149,7 @@ println(C().m())
 I.m has no default
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Java array length in Babble and primitive/boxed returns (byte, short, char, long, float, void)
 def frames = java.lang.Thread.currentThread().getStackTrace()
 println(frames.size() > 0)
@@ -171,6 +176,7 @@ def x : int = java.lang.Integer.getInteger("babble.nonexistent.prop")!
 Type error : expected int, got null
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Java public mutable fields: double, float, long, int, String, Object (assign & compound assign)
 def p2d = java.awt.geom.Point2D.Double(1.0, 2.0)
 p2d.x = 3
@@ -204,6 +210,7 @@ println(st.sval, ":", st.nval)
 custom:10.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Redirected print(to: writer) and BoundMethod equality/hash/string + classof
 def sw = java.io.StringWriter()
 print("hello", " world", to: sw)
@@ -232,6 +239,7 @@ true:true
 bound function m
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Faces equals, FunctionHandler default method (andThen), Java long/float params, Point2D.Float/Event/StreamTokenizer compound assign
 def EvenPred = class () implements java.util.function.IntPredicate (
     def test = fn (x : int) : bool -> ( int(x / 2) * 2 == x )
@@ -279,6 +287,7 @@ def p = java.util.function.IntUnaryOperator(Pair)
 IntUnaryOperator.applyAsInt takes 1 arguments, function takes 2
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Values.hash(null/double), Values.same(JavaObject/null), Values.is / isBuiltin, and Types runtime checks
 def V = record (d : double, n : any?) ()
 def uniq : java.util.Set of V = java.util.HashSet()

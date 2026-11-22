@@ -18,6 +18,7 @@ export def Tagged = class (name : string) implements Tag (
 )
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Primitive & reference interface methods, defaults calling abstract methods on `this`, and `is` checks
 def Calc = interface (
     def compute : fn (a : int, b : double, negate : bool) : double
@@ -35,6 +36,7 @@ println(c.compute(3, 1.5, false), ":", c.check(4), ":", (c is Calc), ":", (c is 
 5.5:2.0:true:true:false
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Multi-evaluation closure-capturing interface factory: each BabbleInterface keeps its own captured cell
 def makeAdder = fn (offset : int) -> (
     def I = interface (
@@ -58,6 +60,7 @@ println(a10.eval(2, 5), ":", a100.eval(3, 5))
 45:420
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Diamond inheritance and sibling abstract + default resolution (JVMS 5.4.3.3 bridge conflict prevention)
 def Base = interface (
     def id = fn (x : int) : int -> ( x + 1 )
@@ -113,6 +116,7 @@ def Bad = class () implements ReAbstracted ()
 Bad does not implement ReAbstracted.val
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Generic Box(T) interface with primitive specializations, Box(double) int widening, and emitAs widened-int expression
 def Box of T = interface (
     def get : fn () : T
@@ -143,6 +147,7 @@ println(ib.get(), ":", ib.transform(5), ":", db.get(), ":", db.transform(4), ":"
 10:15:0.5:4.5:6.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Interface override adding optional defaulted parameters and dispatch through base signature
 def Unary = interface (
     def apply : fn (x : int) : int
@@ -163,6 +168,7 @@ println(u1.apply(5), ":", w1.apply(5, 2), ":", u2.apply(5), ":", w2.apply(5, 3))
 15:7:30:8
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Field-holding-function implementation and super default call in class implementing interface
 def Op = interface (
     def run : fn (x : int) : int
@@ -181,6 +187,7 @@ println(f.run(6), ":", f.base(6), ":", n.run(6), ":", (n is NsImpl), ":", (n is 
 24:106:113:true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Nested lambdas calling super.m() and super(Parent).m() inside both interface defaults and class methods
 def P1 = interface (
     def score : fn (x : int) : int = fn (x : int) : int -> ( x + 10 )
@@ -206,6 +213,7 @@ println(ci.score(3))
 49
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Cross-module JVM interface implementation, dispatch, super, and `is` checks
 def shapes = import("shapes.ba")
 def Rect = class (w : double, h : double) implements shapes.Shape (
@@ -228,6 +236,7 @@ println(check, ":", Later() is Later)
 false:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Multi-input REPL session sharing compiled JVM interfaces and classes across ScriptClassLoaders
 def Measurable = interface (
     def measure : fn () : int

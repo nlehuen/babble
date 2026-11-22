@@ -68,6 +68,7 @@ s as null
 Type error : expected null, got string
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Narrowing edges: is with Babble interfaces, Java interfaces, final/non-final classes, not/and/or, subtractType
 def I1 = interface ( def a : fn () : int )
 def I2 = interface ( def b : fn () : int )
@@ -103,6 +104,7 @@ println(testImp("a"))
 false
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Reassignment join and intersectCompatibleFunctions (pure vs impure, mut param, borrow param, null/nullable, int->double)
 def Box = class (def n : int) ()
 def count = 0
@@ -132,6 +134,7 @@ x = "bad"
 Type error : expected int, got string
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Operator overloading on class and union of classes, plus error cases
 def Vec = class (def x : int) (
     def plus = fn (o : Vec) : Vec -> ( Vec(this.x + o.x) )

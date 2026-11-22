@@ -1,6 +1,7 @@
 ;; BIP011-P4: Core collections (list, set, sortedset, map, sortedmap, entry), universal C(T)(...), variance, and is-checks
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Core collection constructors: explicit C(T)(...), inferred C(...), joins, and entry
 def a = list of int ()
 a.add(10)
@@ -26,6 +27,7 @@ def xs = list()
 Missing type : cannot infer type arguments for list
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; capacity: and from: named constructor arguments
 def capList : list of int = list(capacity: 4)
 capList.add(1)
@@ -50,6 +52,7 @@ def bad : list of int = list(capacity: -1)
 java.lang.IllegalArgumentException : Illegal Capacity: -1
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; sortedset and sortedmap with natural ordering, Babble Comparable, and lambda comparator:
 def Item = record (id : int) implements java.lang.Comparable of Item (
     def compareTo = fn (other : Item) : int -> ( this.id - other.id )
@@ -125,6 +128,7 @@ def b2 : Box of any = b1
 Type error : expected Box(any), got Box(int)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Covariance on immutable value class, entry, Optional, and non-mut borrow parameter
 def Pair of (A, B) = record (first : A, second : B) ()
 def p1 : Pair of (int, string) = Pair(1, "ok")

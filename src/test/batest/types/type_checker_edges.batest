@@ -33,6 +33,7 @@ println(r)
 1.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; extractNarrowing: null != x, not (null == x), &&, ||, paren-wrapped, and nullable bool
 def Box = class (def v : int) ()
 def check = fn (a : Box?, b : Box?, c : bool?) : string -> (
@@ -185,6 +186,7 @@ No such member : missing
 Not a scope : 42
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; unify: union actual, nullable pattern, Babble generic class pattern, Java generic interface pattern, function pattern
 def Box of T = class (def v : T) ()
 def unbox of T = fn (b : Box of T) : T -> ( b.v )
@@ -199,6 +201,7 @@ println(unbox(Box(3)), ":", first(xs), ":", orDefault(null, 9), ":", orDefault(4
 3:hi:9:4:7:6
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; canMatchAtRuntime & isRuntimeSubtype across classes, value classes, interfaces, Java classes/interfaces, unions, functions
 def I1 = interface ( def m : fn () : int )
 def I2 = interface ( def n : fn () : int )
