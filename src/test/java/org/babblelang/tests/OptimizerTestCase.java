@@ -187,6 +187,27 @@ public class OptimizerTestCase {
     // ------------------------------------------------------------------ O8 : InlinePass
 
     @Test
+    public void testBip024SelfTailCallsAreLoweredAtEveryLevelAndNeverInlined() throws Exception {
+        String src = ""
+                + "def count = fn (n : int, acc : int) : int -> ( if n == 0 then ( acc ) else ( recurse(n - 1, acc + 1) ) )\n"
+                + "def caller = fn (n : int) : int -> ( count(n, 0) )\n"
+                + "caller(1000000)";
+
+        Assertions.assertEquals(1000000, assertThreeWayEqual(src));
+
+        for (int level : new int[] {0, 1}) {
+            String ir = HirPrinter.print(optimizeHir(src, level));
+            int countStart = ir.indexOf("[fn$0$count]");
+            int callerStart = ir.indexOf("[fn$1$caller]");
+            Assertions.assertTrue(countStart >= 0 && callerStart > countStart, ir);
+            // A self tail call is part of the language (BIP024-D2) : lowered at -O0 already.
+            Assertions.assertTrue(ir.substring(countStart, callerStart).contains("(tail-call #1 "), "-O" + level + ":\n" + ir);
+            // Its jump only makes sense in its own method : the small count is never inlined into caller.
+            Assertions.assertTrue(ir.substring(callerStart).contains("(call-fn #1 "), "-O" + level + ":\n" + ir);
+        }
+    }
+
+    @Test
     public void testIntraModuleInliningAndConstFoldFixedPoint() throws Exception {
         String src = ""
                 + "def sq = fn (x : int) : int -> ( x * x )\n"

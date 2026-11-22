@@ -821,4 +821,69 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(ifaceOps.stream().anyMatch(o -> o.endsWith(".bm$f$1")), ifaceOps.toString());
         Assertions.assertTrue(ifaceOps.stream().noneMatch(o -> o.startsWith("INDY:")), ifaceOps.toString());
     }
+
+    /** Per method of every generated class : whether it jumps backwards, and the methods it calls. */
+    private static Map<String, Map.Entry<Boolean, List<String>>> jumpsAndCalls(CompiledBabbleScript script) {
+        Map<String, Map.Entry<Boolean, List<String>>> result = new java.util.TreeMap<>();
+        for (byte[] classFile : script.getClasses().values()) {
+            new ClassReader(classFile).accept(new ClassVisitor(Opcodes.ASM9) {
+                @Override
+                public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+                    List<String> calls = new ArrayList<>();
+                    java.util.Set<org.objectweb.asm.Label> seen = new java.util.HashSet<>();
+                    boolean[] backward = new boolean[1];
+                    return new MethodVisitor(Opcodes.ASM9) {
+                        @Override
+                        public void visitLabel(org.objectweb.asm.Label label) {
+                            seen.add(label);
+                        }
+
+                        @Override
+                        public void visitJumpInsn(int opcode, org.objectweb.asm.Label label) {
+                            if (opcode == Opcodes.GOTO && seen.contains(label)) {
+                                backward[0] = true;
+                            }
+                        }
+
+                        @Override
+                        public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor, boolean isInterface) {
+                            calls.add(methodName);
+                        }
+
+                        @Override
+                        public void visitEnd() {
+                            result.put(name, Map.entry(backward[0], calls));
+                        }
+                    };
+                }
+            }, 0);
+        }
+        return result;
+    }
+
+    @Test
+    public void testBip024SelfTailCallsJumpBack() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def sum = fn (n : int, acc : int) : int -> ( if n == 0 then ( acc ) else ( sum(n - 1, acc + n) ) )\n"
+                        + "def boxed = fn (n : int?, s : string) : string -> ( if n == null or n == 0 then ( s ) else ( recurse(n - 1, s) ) )\n"
+                        + "def many = fn (n : int, a : int, b : int, c : int, d : int, e : int, f : int, g : int, h : int) : int -> (\n"
+                        + "  if n == 0 then ( a ) else ( recurse(n - 1, b, c, d, e, f, g, h, a) ) )\n"
+                        + "def Walker = class () ( def walk = fn (n : int) : int -> ( if n == 0 then ( 0 ) else ( this.walk(n - 1) ) ) )\n"
+                        + "def fact = fn (n : int) : int -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )\n"
+                        + "\"\" + sum(100000, 0) + boxed(100000, \"x\") + many(100000, 1, 2, 3, 4, 5, 6, 7, 8) + Walker().walk(100000) + fact(5)");
+        assertVerifies(script);
+        Assertions.assertEquals("705082704x10120", script.eval(new SimpleBindings()));
+        Map<String, Map.Entry<Boolean, List<String>>> methods = jumpsAndCalls(script);
+        for (String suffix : List.of("$sum", "$sum$spec", "$boxed", "$many", "walk", "walk$spec")) {
+            List<String> names = methods.keySet().stream().filter(n -> n.endsWith(suffix)).toList();
+            Assertions.assertEquals(1, names.size(), suffix + " in " + methods.keySet());
+            String name = names.get(0);
+            Assertions.assertTrue(methods.get(name).getKey(), name + " jumps back");
+            Assertions.assertFalse(methods.get(name).getValue().stream().anyMatch(c -> c.startsWith(name.replace("$spec", ""))),
+                    name + " calls itself : " + methods.get(name).getValue());
+        }
+        String fact = methods.keySet().stream().filter(n -> n.endsWith("$fact$spec")).findFirst().orElseThrow();
+        Assertions.assertFalse(methods.get(fact).getKey(), fact);
+        Assertions.assertTrue(methods.get(fact).getValue().contains(fact), methods.get(fact).getValue().toString());
+    }
 }
