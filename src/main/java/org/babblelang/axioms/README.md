@@ -21,7 +21,7 @@ Every assumption the analysis, compiler, interpreter, and optimizer make about s
 
 ### Curated Java Package Axioms
 - `java/io/curated.ba` — `StringWriter`
-- `java/lang/curated.ba` — protocol contracts (`Comparable`, `Iterable`, `Object`), `Class`, `String`, `StringBuilder`/`StringBuffer`, `CharSequence`, boxed wrappers, `Math`/`StrictMath`, `System`, `Runtime`, `ProcessBuilder`, `Thread`, `Throwable`
+- `java/lang/curated.ba` — protocol contracts (`Comparable`, `Iterable`, `Object`), `Class`, `String`, `StringBuilder`/`StringBuffer`, `CharSequence`, boxed wrappers, `Math`/`StrictMath`, `System`, `Runtime`, `ProcessBuilder`, `Thread`, `Throwable` and `Error` constructors (JFR's `jfrTracing` read, JDK 22+)
 - `java/lang/reflect/curated.ba` — `Proxy`
 - `java/math/curated.ba` — `BigInteger`
 - `java/nio/curated.ba` — `CharBuffer`
