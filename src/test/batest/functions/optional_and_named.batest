@@ -186,3 +186,56 @@ println(big(p32: 10, p0: 2))
 }}}}}
 33
 43
+
+{{{{{
+;; Interface with optional parameters implemented by class with extra optional parameters (remapMask)
+def Adder = interface (
+    def add : fn (a : int, b : int = ...) : int
+)
+def Plus = class () implements Adder (
+    def add = fn (a : int, b : int = 10, c : int = 100) : int -> ( a + b + c )
+)
+def run = fn (x : Adder) : string -> (
+    "" + x.add(1) + ":" + x.add(1, 2) + ":" + x.add(b: 5, a: 2)
+)
+println(run(Plus()))
+}}}}}
+111:103:107
+
+{{{{{
+;; Indirect function calls with optional parameters (monomorphic & polymorphic call sites)
+def f1 = fn (a : int, b : int = 10) : int -> ( a + b )
+def f2 = fn (a : int, b : int = 20, c : int = 100) : int -> ( a + b + c )
+def invoke = fn (f : fn (a : int, b : int = ...) : int) : string -> (
+    "" + f(1) + ":" + f(1, 2)
+)
+println(invoke(f1), "|", invoke(f2))
+}}}}}
+11:3|121:103
+
+{{{{{
+;; assert with omitted optional message passes Arguments.MISSING
+assert(false)
+}}}}}
+Assertion failed : false
+
+{{{{{
+;; assert with explicit null message
+assert(false, null)
+}}}}}
+Assertion failed : false
+
+{{{{{
+;; Class and record with keyword-only parameters (exercises ClassShape keywordOnlyStart encode/decode)
+def Box = class (def a : int, ..., def b : int = 10, def c : string = "ok") ()
+def Pt = record (x : int, ..., y : int = 5) ()
+def b1 = Box(1)
+def b2 = Box(2, c: "hi", b: 20)
+def p1 = Pt(3)
+def p2 = Pt(3, y: 9)
+println(b1.a, ":", b1.b, ":", b1.c, "|", b2.a, ":", b2.b, ":", b2.c, "|", p1, "|", p2)
+}}}}}
+1:10:ok|2:20:hi|Pt(x: 3, y: 5)|Pt(x: 3, y: 9)
+
+
+

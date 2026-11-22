@@ -1,7 +1,6 @@
 package org.babblelang.runtime;
 
 
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -53,48 +52,37 @@ public final class Arguments {
     public static int remapMask(int missingParamBits, int targetOptionalParamBits, int incomingCount) {
         int mask = 0;
         int optBit = 0;
-        for (int i = 0; i < 32; i++) {
-            if ((targetOptionalParamBits & (1 << i)) != 0) {
-                if (i >= incomingCount || (missingParamBits & (1 << i)) != 0) {
-                    mask |= (1 << optBit);
-                }
-                optBit++;
+        for (int bits = targetOptionalParamBits; bits != 0; bits &= bits - 1) {
+            int i = Integer.numberOfTrailingZeros(bits);
+            if (i >= incomingCount || (missingParamBits & (1 << i)) != 0) {
+                mask |= (1 << optBit);
             }
+            optBit++;
         }
         return mask;
     }
 
     public static final class Binder {
         private final String[] parameters;
-        private final int keywordOnlyStart;
         private final Object[] args;
         private final String[] names;
         private final int[] matched;
-        private final List<String> unknownNames;
-        private final String outOfPosition;
-        private final String duplicate;
-        private final int extraPositional;
-        private final int positionalCount;
-        private final int distinctNameCount;
+        private final BabbleException tooManyError;
 
         private Binder(String[] parameters, int keywordOnlyStart, Object[] args, String[] names) {
             this.parameters = parameters;
-            this.keywordOnlyStart = Math.min(keywordOnlyStart, parameters.length);
+            int kwStart = Math.min(keywordOnlyStart, parameters.length);
             this.args = args;
             this.names = names;
             if (names == null) {
                 this.matched = null;
-                this.unknownNames = null;
-                this.outOfPosition = null;
-                this.duplicate = null;
-                this.extraPositional = 0;
-                this.positionalCount = args.length;
-                this.distinctNameCount = 0;
+                this.tooManyError = null;
                 return;
             }
             int[] map = new int[parameters.length];
             java.util.Arrays.fill(map, -1);
-            List<String> unknown = null;
+            List<String> paramList = java.util.Arrays.asList(parameters);
+            Set<String> unknown = new LinkedHashSet<>();
             Set<String> distinct = new LinkedHashSet<>();
             String firstOutOfPos = null;
             String outOfPosError = null;
@@ -109,43 +97,31 @@ public final class Arguments {
                         if (outOfPosError == null) {
                             outOfPosError = firstOutOfPos;
                         }
-                    } else if (j < this.keywordOnlyStart) {
+                    } else if (j < kwStart) {
                         map[j] = j;
                     } else {
                         extra++;
                     }
-                } else {
-                    boolean added = distinct.add(name);
-                    int pIdx = indexOf(parameters, name);
-                    if (pIdx < 0) {
-                        if (added) {
-                            if (unknown == null) {
-                                unknown = new ArrayList<>();
-                            }
-                            unknown.add(name);
-                        }
-                    } else {
-                        if (map[pIdx] >= 0) {
-                            if (dupError == null) {
-                                dupError = name;
-                            }
-                        } else {
-                            map[pIdx] = j;
-                        }
-                        if ((pIdx != j || pIdx >= this.keywordOnlyStart) && firstOutOfPos == null) {
-                            firstOutOfPos = name;
-                        }
+                    continue;
+                }
+                distinct.add(name);
+                int pIdx = paramList.indexOf(name);
+                if (pIdx < 0) {
+                    unknown.add(name);
+                    continue;
+                }
+                if (map[pIdx] >= 0) {
+                    if (dupError == null) {
+                        dupError = name;
                     }
+                } else {
+                    map[pIdx] = j;
+                }
+                if (firstOutOfPos == null && (pIdx != j || pIdx >= kwStart)) {
+                    firstOutOfPos = name;
                 }
             }
-            this.matched = map;
-            this.unknownNames = unknown;
-            this.outOfPosition = outOfPosError;
-            this.duplicate = dupError;
-            this.extraPositional = extra;
-            this.positionalCount = posCount;
-            this.distinctNameCount = distinct.size();
-            if (unknown != null) {
+            if (!unknown.isEmpty()) {
                 throw new BabbleException("No such parameter : " + String.join(", ", unknown));
             }
             if (outOfPosError != null) {
@@ -154,15 +130,12 @@ public final class Arguments {
             if (dupError != null) {
                 throw new BabbleException("Parameter given twice : " + dupError);
             }
-        }
-
-        private static int indexOf(String[] parameters, String name) {
-            for (int i = 0; i < parameters.length; i++) {
-                if (name.equals(parameters[i])) {
-                    return i;
-                }
-            }
-            return -1;
+            this.matched = map;
+            this.tooManyError = extra > 0
+                    ? (kwStart < parameters.length
+                            ? tooMany(kwStart, posCount)
+                            : tooMany(parameters.length, posCount + distinct.size()))
+                    : null;
         }
 
         /**
@@ -191,19 +164,8 @@ public final class Arguments {
                 }
                 return;
             }
-            if (unknownNames != null && !unknownNames.isEmpty()) {
-                throw new BabbleException("No such parameter : " + String.join(", ", unknownNames));
-            }
-            if (outOfPosition != null) {
-                throw new BabbleException("Named argument out of position : " + outOfPosition);
-            }
-            if (duplicate != null) {
-                throw new BabbleException("Parameter given twice : " + duplicate);
-            }
-            if (extraPositional > 0) {
-                int declared = keywordOnlyStart < parameters.length ? keywordOnlyStart : parameters.length;
-                int given = keywordOnlyStart < parameters.length ? positionalCount : positionalCount + distinctNameCount;
-                throw tooMany(declared, given);
+            if (tooManyError != null) {
+                throw tooManyError;
             }
         }
 

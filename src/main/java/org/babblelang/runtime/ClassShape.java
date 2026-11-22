@@ -228,7 +228,7 @@ public final class ClassShape {
         unpair(parts[3], members, flags);
         unpair(parts[4], parameters, parameterMembers);
         unpair(parts[5], statics, staticFlags);
-        int kwStart = parts.length > 9 && !parts[9].isEmpty() ? Integer.parseInt(parts[9]) : parameters.size();
+        int kwStart = parts.length > 9 ? Integer.parseInt(parts[9]) : parameters.size();
         return new ClassShape(Kind.valueOf(parts[0]), parts[1], members.toArray(new String[0]), ints(flags),
                 parameters.toArray(new String[0]), ints(parameterMembers), Integer.parseInt(parts[2]), kwStart,
                 statics.toArray(new String[0]), ints(staticFlags), parts[6],

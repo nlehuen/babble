@@ -250,3 +250,23 @@ def id = fn of T (t : T) : T -> ( t )
 println(maxOf(4, 9), ":", maxOf("x", "a"), ":", id(1), ":", id("ok"))
 }}}}}
 9:x:1:ok
+
+{{{{{
+;; Bounded Comparable generic across all 9 scalar types (exercises boxed primitive interface dispatch)
+def maxOf = fn of (T : java.lang.Comparable of T) (a : T, b : T) : T -> (
+    if a.compareTo(b) > 0 then ( a ) else ( b )
+)
+println(
+    maxOf(byte(2), byte(5)), ":",
+    maxOf(short(3), short(1)), ":",
+    maxOf(4, 9), ":",
+    maxOf(10L, 2L), ":",
+    maxOf(1.5f, 2.5f), ":",
+    maxOf(3.5, 1.5), ":",
+    maxOf(false, true), ":",
+    maxOf('a', 'z'), ":",
+    maxOf("cat", "ant")
+)
+}}}}}
+5:3:9:10:2.5:3.5:true:z:cat
+

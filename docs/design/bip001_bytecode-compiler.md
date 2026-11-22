@@ -110,7 +110,11 @@ to carry that text into the generated code.
 * Argument keys: a named argument is keyed by its name. **Every** argument also uses up a
   position, `$0`, `$1`, …, whether it is named or not. So `f(1, a: 2)` against `(a, b)` binds
   `a = 2` and then fails with `Missing parameter : b`, because `$1` was the named argument.
-  Leftover arguments are rejected (`No such parameter`, `Too many parameters`).
+  Leftover arguments are rejected (`No such parameter`, `Too many parameters`). *(Updated in
+  [BIP021-P1](bip021_optional-variadic-overloaded-arguments.md) : required parameters may not
+  follow optional ones, positional arguments after named ones follow C#'s rule, duplicate
+  arguments fail with `Parameter given twice`, and statically bound calls are lowered
+  positionally with a `$spec` missing-argument mask.)*
 * Binding happens in a fresh child of the closure. `$recurse` is defined first, then the
   parameters in order. A default value is evaluated **in that new namespace**, so it can see
   earlier parameters: `(a, b = a + 1)`.

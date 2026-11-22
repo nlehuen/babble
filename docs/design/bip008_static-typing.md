@@ -251,7 +251,8 @@ arguments for ...`.
 
 With S1 gone, every argument has a type, and the checker picks the overload the runtime picks
 (`mostSpecific`), or reports `No applicable overload` / an ambiguity, as it does today when the
-arguments are known.
+arguments are known. *(Extended in [BIP021-P2](bip021_optional-variadic-overloaded-arguments.md)
+with JLS §15.12.2 Phase 3 Java varargs resolution and direct array lowering.)*
 
 ## 6. Implicits, bindings and dynamic imports
 
