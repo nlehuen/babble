@@ -834,6 +834,10 @@ public final class HirBuilder {
         if (ctx instanceof BabbleParser.ReturnExpressionContext r) {
             return new HirExpr.Return(lowerExpr(r.expression()), metaOf(r));
         }
+        if (ctx instanceof BabbleParser.ForeverExpressionContext f) {
+            // An acknowledgement for the analysis only (BIP024) : the expression itself.
+            return lowerExpr(f.expression());
+        }
         if (ctx instanceof BabbleParser.DefExpressionContext def) {
             return new HirExpr.Def(
                     def.name.getText(),

@@ -51,6 +51,8 @@ public class DifferentialTestCase {
                 "1 + \"a\"",
                 "1 <\n \"x\"",
                 "def r = fn (n : int) : int -> ( recurse(n + 1) ) ; r(1)",
+                "def x = 0 ; while true then ( x += 1 )",
+                "def r = fn (n : int) : int -> ( forever recurse(n + 1) ) ; def x = 0 ; forever while (true) then ( assert(x < 3, \"done\") ; x += 1 )",
                 "def x = 99999999999 ; x",
                 "1 == 1.0 and not ( 1 != 1.0 )",
                 "def i = 0 ; while i < 10 then ( i = i + 1 ) ; null",

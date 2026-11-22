@@ -870,9 +870,28 @@ public class TypeCheckerTestCase {
                 + "def b = fn (n : int) : int -> ( while n > 3 then ( return n ) ; recurse(n + 1) )\n"
                 + "def c = fn (n : int) : int -> ( 1 + recurse(n + 1) )\n"
                 + "def d = fn (n : int) : int? -> ( if n > 0 then ( recurse(n - 1) ) )",
-                "1:9 Recursion without a base case : r",
-                "2:9 Recursion without a base case : s",
-                "3:31 Recursion without a base case : walk");
+                "1:33 Recursion without a base case : r. If this is intended, wrap the expression with forever",
+                "2:33 Recursion without a base case : s. If this is intended, wrap the expression with forever",
+                "3:55 Recursion without a base case : walk. If this is intended, wrap the expression with forever");
+        // forever acknowledges it, on the expression or on any expression of its tail paths.
+        assertDiagnostics("def r = fn (n : int) : int -> ( forever recurse(n + 1) )\n"
+                + "def s = fn (n : int) : int -> ( forever if n > 0 then ( s(n - 1) ) else ( s(1) ) )\n"
+                + "def t = fn (n : int) : int -> ( if n > 0 then ( t(n - 1) ) else ( forever t(1) ) )\n"
+                + "def u = fn (n : int) -> ( forever (while true then ( n += 1 )) )");
+    }
+
+    @Test
+    public void testLoopsWithoutExit() throws Exception {
+        // BIP024-D8 : while true with no break or return and nothing that can throw never ends.
+        assertDiagnostics("def x = 0\n"
+                + "while true then ( x += 1 )\n"
+                + "def f = fn (): int -> ( def i = 0 ; while (true) then ( i += 1 ; while true then ( break ) ) ; i )\n"
+                + "while true then ( if x > 3 then ( break ) ; x += 1 )\n"
+                + "def g = fn (): int -> ( while true then ( return 1 ) ; 0 )\n"
+                + "while true then ( assert(x < 9) ; x += 1 )\n"
+                + "forever while true then ( x += 1 )",
+                "2:1 Loop without an exit : while true. If this is intended, wrap the expression with forever",
+                "3:37 Loop without an exit : while true. If this is intended, wrap the expression with forever");
     }
 
     @Test
@@ -884,7 +903,7 @@ public class TypeCheckerTestCase {
                 "1:1 Missing type : even (recursive)",
                 "2:1 Missing type : odd (recursive)",
                 "3:1 Missing type : inf (recursive)",
-                "3:11 Recursion without a base case : inf");
+                "3:29 Recursion without a base case : inf. If this is intended, wrap the expression with forever");
 
         // Import cycle across files reports Missing type : <name> (import cycle with <module>).
         org.babblelang.engine.MapModuleSource source = new org.babblelang.engine.MapModuleSource()

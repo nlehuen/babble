@@ -332,6 +332,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         throw new ReturnException(value);
     }
 
+    /** {@code forever e} : the value of {@code e}, which the analysis knows never ends (BIP024). */
+    @Override
+    public Object visitForeverExpression(BabbleParser.ForeverExpressionContext ctx) {
+        last = ctx;
+        return visit(ctx.expression());
+    }
+
     @Override
     public Object visitBreakExpression(BabbleParser.BreakExpressionContext ctx) {
         last = ctx;

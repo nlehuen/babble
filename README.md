@@ -91,6 +91,15 @@ def fac = fn (n: int): int -> (
      )
 )
 
+;; a call of a function to itself in tail position is a loop : no stack overflow
+def sumTo = fn (n: int, acc: int): int -> (
+    if n == 0 then (acc) else (recurse(n - 1, acc + n))
+)
+sumTo(1000000, 0)
+
+;; code that can never end and cannot throw is an error, unless forever says it is intended
+def spin = fn (n: int): int -> (forever recurse(n + 1))
+
 ;; default values, including function literals
 def apply = fn (a: int, f: fn (v: int): int = fn (v) -> (v)) -> ( f(a) )
 
@@ -792,6 +801,7 @@ Language features :
 - [x] block scope : blocks, `if` branches, `while` bodies, and `for` bodies are scopes, and names are hoisted to the start of their scope.
 - [x] first-class iterators, `for ... in ... then (...)` loops, and uniform `break [expr]` / `continue` across `while` and `for` loops, plus parameterized static factories `(list of int).of(...)` / `list.of(...)` (`RM009`, see [BIP013](docs/design/bip013_iterators.md)).
 - [x] functions (`fn (...) -> (...)`), supporting recursion (`recurse`) and closures.
+- [x] self tail calls (`recurse(...)`, a function's own `def`, `this.m(...)`) run in constant stack space in every mode, and code that never ends must say so with `forever` (`docs/design/bip024_tail-calls.md`).
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional, statically bound named, optional (`= ...` in function types & interfaces, with `$spec` missing-argument masks), keyword-only (`...`), and variadic rest (`xs: T...`, a generic `Iterable of T` backed by `ArgumentsView` and primitive variants) parameters, plus `...e` spread arguments into any sequence parameter (`BIP021-P1`, `BIP021-P4`, see [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
 - [x] closed overload sets (`overload (f, g, ...)`) and set types (`overload (fn ..., fn ...)`): static ambiguity checking with witnesses where sets are built, most-specific resolution with numeric widening ranks, union/nullable runtime splits, overloaded class/record/object/static/interface methods, Java interface overload bridges, and overloaded operator methods (`BIP021-P5`–`P6`, see [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).

@@ -13,32 +13,45 @@ import java.util.function.Predicate;
  * jump back to the start of the function instead of a nested call.
  *
  * <p>A call is a self tail call when it is in tail position (the last expression of the function's
- * block, through block expressions and {@code if} branches, or the value of a {@code return} in
- * statement position), calls the function itself ({@code recurse(...)}, the function's own
- * non-reassigned {@code def} by name, or {@code this.m(...)} in method {@code m} of a class or
- * object), binds its arguments statically, and nothing between it and the function's result checks
- * or widens its value. Runs after {@link LoweringAnalyzer}, whose call targets, bindings, checks and
- * widenings it reads.
+ * block, through block expressions, {@code if} branches and {@code forever}, or the value of a
+ * {@code return} in statement position), calls the function itself ({@code recurse(...)}, the
+ * function's own non-reassigned {@code def} by name, or {@code this.m(...)} in method {@code m} of a
+ * class or object), binds its arguments statically, and nothing between it and the function's result
+ * checks or widens its value. Runs after {@link LoweringAnalyzer}, whose call targets, bindings, checks
+ * and widenings it reads, and after {@link EffectChecker}, whose inferred {@code nothrow} it reads.
  *
- * <p>It also rejects a function that can only end in a self tail call and cannot throw
- * ({@code BIP024-D7}) : it would loop forever, where it used to run out of stack.
+ * <p>It also rejects code that can never end and cannot throw, unless {@code forever} acknowledges it :
+ * a function that can only end in a self tail call ({@code BIP024-D7}), and a {@code while true} loop
+ * with no {@code break} or {@code return} ({@code BIP024-D8}).
  */
 final class TailCalls {
+    static final String FOREVER_HINT = ". If this is intended, wrap the expression with forever";
+
     private final ScopeAnalysis analysis;
     private final Predicate<ParserRuleContext> nothrow;
+    private final Predicate<BabbleParser.WhileExpressionContext> loopNothrow;
 
-    private TailCalls(ScopeAnalysis analysis, Predicate<ParserRuleContext> nothrow) {
+    private TailCalls(ScopeAnalysis analysis, Predicate<ParserRuleContext> nothrow,
+                      Predicate<BabbleParser.WhileExpressionContext> loopNothrow) {
         this.analysis = analysis;
         this.nothrow = nothrow;
+        this.loopNothrow = loopNothrow;
     }
 
-    static void publish(ScopeAnalysis analysis, BabbleParser.FileContext file, Predicate<ParserRuleContext> nothrow) {
-        TailCalls tailCalls = new TailCalls(analysis, nothrow);
+    static void publish(ScopeAnalysis analysis, BabbleParser.FileContext file, Predicate<ParserRuleContext> nothrow,
+                        Predicate<BabbleParser.WhileExpressionContext> loopNothrow) {
+        TailCalls tailCalls = new TailCalls(analysis, nothrow, loopNothrow);
         new BabbleBaseVisitor<Void>() {
             @Override
             public Void visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
                 tailCalls.function(ctx);
                 return super.visitFunctionLiteral(ctx);
+            }
+
+            @Override
+            public Void visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
+                tailCalls.loop(ctx);
+                return super.visitWhileExpression(ctx);
             }
         }.visit(file);
     }
@@ -48,48 +61,107 @@ final class TailCalls {
             return;
         }
         block(function, function.functionBlock, true);
-        if (alwaysRecurses(function.functionBlock) && !returnsOtherwise(function.functionBlock) && nothrow.test(function)) {
+        BabbleParser.ExpressionContext tail = lastExpression(function.functionBlock);
+        if (tail != null && alwaysRecurses(tail) && !returnsOtherwise(function.functionBlock)
+                && !acknowledged(tail) && !acknowledgedReturn(function.functionBlock) && nothrow.test(function)) {
             String name = ScopeAnalysis.functionName(function);
-            analysis.typeDiagnostic("Recursion without a base case : " + (name != null ? name : "function"),
-                    function.getStart().getLine(), function.getStart().getCharPositionInLine() + 1);
+            error("Recursion without a base case : " + (name != null ? name : "function") + FOREVER_HINT, tail);
         }
     }
 
-    /** Whether a block in tail position always ends in a self tail call (BIP024-D7). */
-    private boolean alwaysRecurses(BabbleParser.BlockContext block) {
+    /** {@code while true} with no way out and nothing that can throw never ends (BIP024-D8). */
+    private void loop(BabbleParser.WhileExpressionContext loop) {
+        if (isTrue(loop.test) && !exits(loop.whileBlock) && loopNothrow.test(loop) && !acknowledgedLoop(loop)) {
+            error("Loop without an exit : while true" + FOREVER_HINT, loop);
+        }
+    }
+
+    private void error(String message, ParserRuleContext at) {
+        analysis.typeDiagnostic(message, at.getStart().getLine(), at.getStart().getCharPositionInLine() + 1);
+    }
+
+    private static BabbleParser.ExpressionContext lastExpression(BabbleParser.BlockContext block) {
         ParseTree last = null;
         for (ParseTree child : block.children) {
             if (child instanceof BabbleParser.ExpressionContext || child instanceof BabbleParser.EffectDeclarationContext) {
                 last = child;
             }
         }
-        return last instanceof BabbleParser.ExpressionContext expression && alwaysRecurses(expression);
+        return last instanceof BabbleParser.ExpressionContext expression ? expression : null;
     }
 
+    /** Whether an expression in tail position always ends in a self tail call (BIP024-D7). */
     private boolean alwaysRecurses(BabbleParser.ExpressionContext expression) {
         return switch (expression) {
             case BabbleParser.CallContext call -> analysis.isSelfTailCall(call);
-            case BabbleParser.BlockExpressionContext b -> alwaysRecurses(b.block());
+            case BabbleParser.BlockExpressionContext b -> {
+                BabbleParser.ExpressionContext last = lastExpression(b.block());
+                yield last != null && alwaysRecurses(last);
+            }
             case BabbleParser.IfExpressionContext i -> alwaysRecurses(i.ifExpr());
             case BabbleParser.ReturnExpressionContext r -> alwaysRecurses(r.expression());
+            case BabbleParser.ForeverExpressionContext f -> alwaysRecurses(f.expression());
             default -> false;
         };
     }
 
     private boolean alwaysRecurses(BabbleParser.IfExprContext ifExpr) {
-        if (!alwaysRecurses(ifExpr.thenBlock)) {
+        BabbleParser.ExpressionContext then = lastExpression(ifExpr.thenBlock);
+        if (then == null || !alwaysRecurses(then)) {
             return false;
         }
         if (ifExpr.elseIf != null) {
             return alwaysRecurses(ifExpr.elseIf);
         }
-        return ifExpr.elseBlock != null && alwaysRecurses(ifExpr.elseBlock);
+        BabbleParser.ExpressionContext otherwise = ifExpr.elseBlock != null ? lastExpression(ifExpr.elseBlock) : null;
+        return otherwise != null && alwaysRecurses(otherwise);
+    }
+
+    /** Whether {@code forever} wraps an expression on the tail paths of an expression. */
+    private static boolean acknowledged(BabbleParser.ExpressionContext expression) {
+        return switch (expression) {
+            case BabbleParser.ForeverExpressionContext f -> true;
+            case BabbleParser.BlockExpressionContext b -> {
+                BabbleParser.ExpressionContext last = lastExpression(b.block());
+                yield last != null && acknowledged(last);
+            }
+            case BabbleParser.IfExpressionContext i -> acknowledged(i.ifExpr());
+            case BabbleParser.ReturnExpressionContext r -> acknowledged(r.expression());
+            default -> false;
+        };
+    }
+
+    private static boolean acknowledged(BabbleParser.IfExprContext ifExpr) {
+        BabbleParser.ExpressionContext then = lastExpression(ifExpr.thenBlock);
+        if (then != null && acknowledged(then)) {
+            return true;
+        }
+        if (ifExpr.elseIf != null) {
+            return acknowledged(ifExpr.elseIf);
+        }
+        BabbleParser.ExpressionContext otherwise = ifExpr.elseBlock != null ? lastExpression(ifExpr.elseBlock) : null;
+        return otherwise != null && acknowledged(otherwise);
+    }
+
+    /** Whether a {@code return} of the function's own body acknowledges its value with {@code forever}. */
+    private static boolean acknowledgedReturn(ParseTree tree) {
+        if (isNested(tree)) {
+            return false;
+        }
+        if (tree instanceof BabbleParser.ReturnExpressionContext r && acknowledged(r.expression())) {
+            return true;
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            if (acknowledgedReturn(tree.getChild(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Whether the function's own body holds a {@code return} that may end it with a value. */
     private boolean returnsOtherwise(ParseTree tree) {
-        if (tree instanceof BabbleParser.FunctionLiteralContext || tree instanceof BabbleParser.ClassExpressionContext
-                || tree instanceof BabbleParser.ObjectExpressionContext || tree instanceof BabbleParser.InterfaceExpressionContext) {
+        if (isNested(tree)) {
             return false;
         }
         if (tree instanceof BabbleParser.ReturnExpressionContext r && !alwaysRecurses(r.expression())) {
@@ -101,6 +173,57 @@ final class TailCalls {
             }
         }
         return false;
+    }
+
+    /** A function, class, object or interface inside the code being looked at : its own code. */
+    private static boolean isNested(ParseTree tree) {
+        return tree instanceof BabbleParser.FunctionLiteralContext || tree instanceof BabbleParser.ClassExpressionContext
+                || tree instanceof BabbleParser.ObjectExpressionContext || tree instanceof BabbleParser.InterfaceExpressionContext;
+    }
+
+    private static boolean isTrue(BabbleParser.ExpressionContext test) {
+        while (test instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+            test = b.block().expression(0);
+        }
+        return test instanceof BabbleParser.BooleanContext && "true".equals(test.getText());
+    }
+
+    /** Whether a loop body may leave the loop : a {@code break} of this loop, or a {@code return}. */
+    private static boolean exits(ParseTree tree) {
+        return exits(tree, false);
+    }
+
+    private static boolean exits(ParseTree tree, boolean innerLoop) {
+        if (isNested(tree)) {
+            return false;
+        }
+        if (tree instanceof BabbleParser.ReturnExpressionContext || !innerLoop && tree instanceof BabbleParser.BreakExpressionContext) {
+            return true;
+        }
+        boolean inner = innerLoop || tree instanceof BabbleParser.WhileExpressionContext || tree instanceof BabbleParser.ForExpressionContext;
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            if (exits(tree.getChild(i), inner)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** {@code forever while true then (...)}, possibly in parentheses. */
+    private static boolean acknowledgedLoop(BabbleParser.WhileExpressionContext loop) {
+        ParserRuleContext node = loop;
+        while (true) {
+            ParserRuleContext parent = node.getParent();
+            if (parent instanceof BabbleParser.ForeverExpressionContext) {
+                return true;
+            }
+            if (parent instanceof BabbleParser.BlockContext b && b.expression().size() == 1
+                    && b.getParent() instanceof BabbleParser.BlockExpressionContext be) {
+                node = be;
+                continue;
+            }
+            return false;
+        }
     }
 
     /** The statements of a block in statement position, the last one in tail position when the block is. */
@@ -124,6 +247,7 @@ final class TailCalls {
             case BabbleParser.WhileExpressionContext w -> block(function, w.whileBlock, false);
             case BabbleParser.ForExpressionContext f -> block(function, f.forBlock, false);
             case BabbleParser.ReturnExpressionContext r -> statement(function, r.expression(), true);
+            case BabbleParser.ForeverExpressionContext f -> statement(function, f.expression(), tail);
             case BabbleParser.CallContext call -> {
                 if (tail && isSelfTailCall(function, call)) {
                     analysis.setSelfTailCall(call);
