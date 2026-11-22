@@ -81,6 +81,42 @@ public class BatestHarnessTestCase {
     }
 
     @Test
+    public void testRegexExpectationLines() {
+        String content = """
+                {{{{{
+                println("JDK 27")
+                println("done")
+                }}}}}
+                ~~ JDK \\d+
+                done
+
+                {{{{{
+                def a = (array of int)(1)
+                a.get(5)
+                }}}}}
+                ~~ java\\.lang\\.ArrayIndexOutOfBoundsException: .*\\b5\\b.*
+                """;
+        BatestFile file = BatestParser.parseString(content, "regex.batest");
+        BatestFile.BatestCase output = file.cases().get(0);
+        Assertions.assertTrue(output.matches("JDK 27\ndone"));
+        Assertions.assertTrue(output.matches("JDK 21\ndone"));
+        Assertions.assertFalse(output.matches("JDK x\ndone"), "a regex line matches the whole line");
+        Assertions.assertFalse(output.matches("JDK 27\ndone!"), "other lines compare literally");
+        Assertions.assertFalse(output.matches("JDK 27"), "line counts must agree");
+        Assertions.assertFalse(output.matches("JDK 27\ndone\nmore"), "line counts must agree");
+        for (BatestFile.BatestCase c : file.cases()) {
+            for (Mode mode : Mode.values()) {
+                BatestRunner.CaseOutcome outcome = BatestRunner.run(file, c, mode);
+                Assertions.assertTrue(c.matches(outcome.text()), "case #" + c.index() + " " + mode + " : " + outcome.text());
+            }
+        }
+        IllegalArgumentException invalid = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString("{{{{{\nprint(1)\n}}}}}\n~~ (1\n", "bad_regex.batest"));
+        Assertions.assertTrue(invalid.getMessage().startsWith("bad_regex.batest:4: invalid regular expression"),
+                invalid.getMessage());
+    }
+
+    @Test
     public void testErrorMessageNormalizationRules() {
         Assertions.assertEquals(
                 "Lexical error : token recognition error at: '#'",

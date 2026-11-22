@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DynamicContainer;
 import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.TestFactory;
+import org.opentest4j.AssertionFailedError;
 
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -101,7 +102,7 @@ public class BatestTestCase {
     private static void executeCase(BatestFile file, BatestFile.BatestCase testCase, Path recordFile) {
         BatestRunner.CaseOutcome outcome = BatestRunner.run(file, testCase);
         boolean passed = outcome.kind() != BatestRunner.Kind.INTERNAL_CRASH
-                && testCase.expected().equals(outcome.text());
+                && testCase.matches(outcome.text());
         if (recordFile != null) {
             appendRecord(recordFile, file, testCase, outcome, passed);
         }
@@ -109,9 +110,11 @@ public class BatestTestCase {
             Assertions.fail("INTERNAL_CRASH in " + file.relativePath() + ":" + testCase.line()
                     + " (case #" + testCase.index() + ")\n" + stackTrace(outcome.crash()), outcome.crash());
         }
-        Assertions.assertEquals(testCase.expected(), outcome.text(),
-                file.relativePath() + ":" + testCase.line() + " (case #" + testCase.index()
-                        + ", kind=" + outcome.kind() + ")");
+        if (!passed) {
+            throw new AssertionFailedError(file.relativePath() + ":" + testCase.line() + " (case #" + testCase.index()
+                    + ", kind=" + outcome.kind() + ") ==> expected: <" + testCase.expected()
+                    + "> but was: <" + outcome.text() + ">", testCase.expected(), outcome.text());
+        }
     }
 
     private static synchronized void appendRecord(Path recordFile, BatestFile file, BatestFile.BatestCase testCase,
