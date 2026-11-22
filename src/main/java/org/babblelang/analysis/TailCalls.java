@@ -5,6 +5,8 @@ import org.antlr.v4.runtime.tree.ParseTree;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleParser;
 
+import java.util.function.Predicate;
+
 /**
  * Finds the self tail calls of a file (docs/design/bip024_tail-calls.md, {@code BIP024-D1}–{@code D4}) :
  * calls of a function to itself whose value is the function's result, which both backends run as a
@@ -17,16 +19,21 @@ import org.babblelang.parser.BabbleParser;
  * object), binds its arguments statically, and nothing between it and the function's result checks
  * or widens its value. Runs after {@link LoweringAnalyzer}, whose call targets, bindings, checks and
  * widenings it reads.
+ *
+ * <p>It also rejects a function that can only end in a self tail call and cannot throw
+ * ({@code BIP024-D7}) : it would loop forever, where it used to run out of stack.
  */
 final class TailCalls {
     private final ScopeAnalysis analysis;
+    private final Predicate<ParserRuleContext> nothrow;
 
-    private TailCalls(ScopeAnalysis analysis) {
+    private TailCalls(ScopeAnalysis analysis, Predicate<ParserRuleContext> nothrow) {
         this.analysis = analysis;
+        this.nothrow = nothrow;
     }
 
-    static void publish(ScopeAnalysis analysis, BabbleParser.FileContext file) {
-        TailCalls tailCalls = new TailCalls(analysis);
+    static void publish(ScopeAnalysis analysis, BabbleParser.FileContext file, Predicate<ParserRuleContext> nothrow) {
+        TailCalls tailCalls = new TailCalls(analysis, nothrow);
         new BabbleBaseVisitor<Void>() {
             @Override
             public Void visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
@@ -41,6 +48,59 @@ final class TailCalls {
             return;
         }
         block(function, function.functionBlock, true);
+        if (alwaysRecurses(function.functionBlock) && !returnsOtherwise(function.functionBlock) && nothrow.test(function)) {
+            String name = ScopeAnalysis.functionName(function);
+            analysis.typeDiagnostic("Recursion without a base case : " + (name != null ? name : "function"),
+                    function.getStart().getLine(), function.getStart().getCharPositionInLine() + 1);
+        }
+    }
+
+    /** Whether a block in tail position always ends in a self tail call (BIP024-D7). */
+    private boolean alwaysRecurses(BabbleParser.BlockContext block) {
+        ParseTree last = null;
+        for (ParseTree child : block.children) {
+            if (child instanceof BabbleParser.ExpressionContext || child instanceof BabbleParser.EffectDeclarationContext) {
+                last = child;
+            }
+        }
+        return last instanceof BabbleParser.ExpressionContext expression && alwaysRecurses(expression);
+    }
+
+    private boolean alwaysRecurses(BabbleParser.ExpressionContext expression) {
+        return switch (expression) {
+            case BabbleParser.CallContext call -> analysis.isSelfTailCall(call);
+            case BabbleParser.BlockExpressionContext b -> alwaysRecurses(b.block());
+            case BabbleParser.IfExpressionContext i -> alwaysRecurses(i.ifExpr());
+            case BabbleParser.ReturnExpressionContext r -> alwaysRecurses(r.expression());
+            default -> false;
+        };
+    }
+
+    private boolean alwaysRecurses(BabbleParser.IfExprContext ifExpr) {
+        if (!alwaysRecurses(ifExpr.thenBlock)) {
+            return false;
+        }
+        if (ifExpr.elseIf != null) {
+            return alwaysRecurses(ifExpr.elseIf);
+        }
+        return ifExpr.elseBlock != null && alwaysRecurses(ifExpr.elseBlock);
+    }
+
+    /** Whether the function's own body holds a {@code return} that may end it with a value. */
+    private boolean returnsOtherwise(ParseTree tree) {
+        if (tree instanceof BabbleParser.FunctionLiteralContext || tree instanceof BabbleParser.ClassExpressionContext
+                || tree instanceof BabbleParser.ObjectExpressionContext || tree instanceof BabbleParser.InterfaceExpressionContext) {
+            return false;
+        }
+        if (tree instanceof BabbleParser.ReturnExpressionContext r && !alwaysRecurses(r.expression())) {
+            return true;
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            if (returnsOtherwise(tree.getChild(i))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The statements of a block in statement position, the last one in tail position when the block is. */

@@ -861,6 +861,21 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testSelfTailCallsWithoutBaseCase() throws Exception {
+        // BIP024-D7 : a function that can only end in a self tail call and cannot throw would loop forever.
+        assertDiagnostics("def r = fn (n : int) : int -> ( recurse(n + 1) )\n"
+                + "def s = fn (n : int) : int -> ( if n > 0 then ( s(n - 1) ) else if n < 0 then ( return recurse(n + 1) ) else ( s(1) ) )\n"
+                + "def W = class () ( def walk = fn (n : int) : int -> ( this.walk(n + 1) ) )\n"
+                + "def a = fn (n : int) : int -> ( assert(n < 5) ; recurse(n + 1) )\n"
+                + "def b = fn (n : int) : int -> ( while n > 3 then ( return n ) ; recurse(n + 1) )\n"
+                + "def c = fn (n : int) : int -> ( 1 + recurse(n + 1) )\n"
+                + "def d = fn (n : int) : int? -> ( if n > 0 then ( recurse(n - 1) ) )",
+                "1:9 Recursion without a base case : r",
+                "2:9 Recursion without a base case : s",
+                "3:31 Recursion without a base case : walk");
+    }
+
+    @Test
     public void testStrictS10RecursionAndImportCycles() throws Exception {
         assertDiagnostics("def even = fn (n : int) -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )\n"
                 + "def odd = fn (n : int) -> ( if n == 0 then ( false ) else ( even(n - 1) ) )\n"
@@ -868,7 +883,8 @@ public class TypeCheckerTestCase {
                 + "def fac = fn (n : int) -> ( if n < 2 then ( 1 ) else ( n * recurse(n - 1) ) )",
                 "1:1 Missing type : even (recursive)",
                 "2:1 Missing type : odd (recursive)",
-                "3:1 Missing type : inf (recursive)");
+                "3:1 Missing type : inf (recursive)",
+                "3:11 Recursion without a base case : inf");
 
         // Import cycle across files reports Missing type : <name> (import cycle with <module>).
         org.babblelang.engine.MapModuleSource source = new org.babblelang.engine.MapModuleSource()

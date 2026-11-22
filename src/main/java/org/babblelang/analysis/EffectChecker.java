@@ -1020,6 +1020,12 @@ final class EffectChecker {
         }
     }
 
+    /** Whether a callable cannot throw, as inferred from its body (not its declared contract). */
+    boolean inferredNothrow(ParserRuleContext callable) {
+        CallableSummary summary = summaries.get(callable);
+        return summary != null && summary.effects().isNothrow();
+    }
+
     CallableSummary visibleSummary(BabbleParser.FunctionLiteralContext fn) {
         return visibleSummaries.get(fn);
     }
