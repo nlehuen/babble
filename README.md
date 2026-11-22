@@ -171,6 +171,27 @@ def last = while i < 3 then ( i = i + 1 ; i * 10 )
 assert(last == 30)
 ```
 
+### Strings
+
+Plain `"..."` and raw `r"..."` strings are strictly single-line (`r"..."` treats backslashes
+literally, so trailing backslashes like `r"C:\dir\"` work without escaping). Multiline `"""..."""`
+and raw multiline `r"""..."""` blocks require a line break after the opening delimiter and strip
+incidental leading indentation at compile time anchored on the closing `"""` (Java JEP 378 rules,
+rejecting mixed leading tabs and spaces and stripping trailing horizontal whitespace; `"""..."""`
+also supports `\s` and `\<newline>`). See [BIP026](docs/design/bip026_multiline-strings-and-string-templates.md).
+
+```
+def path = r"C:\Users\ada\"
+def query = """
+    SELECT id, name
+        FROM users \
+    WHERE active = 1  \s
+    """
+def pattern = r"""
+    ^\s*([a-zA-Z_]\w*)\s*=\s*"([^"]*)"\s*$
+    """
+```
+
 ### Numbers
 
 Numbers are `int`s (32 bits) or `double`s. `+`, `-` and `*` on two `int`s give an `int`, wrapping
@@ -579,7 +600,9 @@ assumes or infers). Java hosts can also annotate APIs with `@Pure`, `@Mut`, `@Sh
 
 `java -jar target/babble-1.0-SNAPSHOT.jar` reads an input, evaluates it, prints its value, and
 starts again. An input continues on the next line while it is incomplete : inside
-parentheses, or after an operator, a comma, `=`, `->`, `then` or `else`.
+parentheses, inside an unfinished `"""..."""` or `r"""..."""` multiline string, or after an
+operator, a comma, `=`, `->`, `then` or `else` (while unclosed single-line `"..."` and `r"..."`
+literals fail immediately on line 1).
 
 ```
 >> def twice = fn (f: fn (n: int): int, v: int): int -> (
@@ -746,6 +769,9 @@ def fac=fn(n:int):int->(          def fac = fn (n: int): int -> (
 
 - four spaces for each level of parentheses, and one more level for a line continuing an
   expression (after an operator, `=`, ...) ;
+- multiline `"""..."""` and `r"""..."""` blocks re-indent uniformly to one indent level past their
+  opening line (`(line.indent + 1) * 4` spaces), preserving intentional extra indentation and their
+  dedented string value ;
 - one space around binary operators, `=` (and `+=`, `-=`, `*=`, `/=`) and `->`, after `,` and `:`, none inside parentheses
   nor before a call's ;
 - a block's `(` comes back on the line of its `if`, `while`, function, class..., as do `else` and
@@ -806,6 +832,7 @@ Language features :
 - [x] positional, statically bound named, optional (`= ...` in function types & interfaces, with `$spec` missing-argument masks), keyword-only (`...`), and variadic rest (`xs: T...`, a generic `Iterable of T` backed by `ArgumentsView` and primitive variants) parameters, plus `...e` spread arguments into any sequence parameter (`BIP021-I1`, `BIP021-I4`, see [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
 - [x] closed overload sets (`overload (f, g, ...)`) and set types (`overload (fn ..., fn ...)`): static ambiguity checking with witnesses where sets are built, most-specific resolution with numeric widening ranks, union/nullable runtime splits, overloaded class/record/object/static/interface methods, Java interface overload bridges, and overloaded operator methods (`BIP021-I5`–`I6`, see [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
 - [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, `array of T` over plain JVM arrays (`(array of int)(100)`, `.of(...)`, `from:`, `size()`/`get`/`set`, content equality and printing, [BIP020](docs/design/bip020_array-types.md)), core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions (`fn (...) : R`) and polymorphic function types (`fn of T (...) : R`), overload set types (`overload (fn ..., fn ...)`), union types (`A | B`), intersection types of interfaces (`A & B`), type aliases (`def T = type A | B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types with upper bounds (`Box of (T: B)`, `list of int`, `java.util.List of string`).
+- [x] multiline & raw string literals : strictly single-line `"..."`, strict JEP 378 `"""..."""` with compile-time closing-delimiter dedenting (`\s`, `\<newline>`, no mixed tabs/spaces, uniform trailing-space stripping), and minimal raw `r"..."` / `r"""..."""` (`BIP026-I1`, see [BIP026](docs/design/bip026_multiline-strings-and-string-templates.md)).
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, overloaded members, and generic interface methods, records (`record`), private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md), [BIP012](docs/design/bip012_grammar-improvements.md), and [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
 - [x] Java interop both ways : Java classes, generic types, multi-bound Java `TypeVariable`s (`BIP022-I2`), and Java varargs calls (`BIP021-I2`, Phase 3 resolution and direct `NEWARRAY`/`ANEWARRAY` lowering) used directly from Babble, Babble functions eagerly converted to Java functional interfaces and SAM+marker intersections (`Runnable & Serializable`) via `LambdaMetafactory.altMetafactory` (`FLAG_MARKERS`), Babble classes implementing Java (including generic and overloaded) interfaces, and Java nullability alignment (`@NotNull`/`@Nullable`/JSpecify, mapped `java.base` parametric nullness, and defensive boundary checks, see [BIP011](docs/design/bip011_core-types.md), [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md), and [BIP022](docs/design/bip022_intersection-types.md)).

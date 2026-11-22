@@ -2738,7 +2738,7 @@ final class TypeChecker {
                     && ScopeAnalysis.callParamName(ctx.callParameters().callParameter(0)) == null
                     && ctx.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
                 synth(string);
-                String target = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
+                String target = org.babblelang.parser.StringLiterals.decode(string);
                 result = target.endsWith(".ba") ? Type.ANY : new Type.JavaPackage(target);
             } else {
                 result = callSolver.call(callee, ctx, expected, true);

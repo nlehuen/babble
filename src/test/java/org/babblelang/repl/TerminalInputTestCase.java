@@ -133,7 +133,20 @@ public class TerminalInputTestCase {
         BabbleLineParser parser = new BabbleLineParser(null);
         Assertions.assertThrows(EOFError.class, () -> parser.parse("def f = fn () -> (", 18, Parser.ParseContext.ACCEPT_LINE));
         Assertions.assertThrows(EOFError.class, () -> parser.parse("1 +", 3, Parser.ParseContext.ACCEPT_LINE));
-        Assertions.assertThrows(EOFError.class, () -> parser.parse("\"open", 5, Parser.ParseContext.ACCEPT_LINE));
+        Assertions.assertThrows(EOFError.class, () -> parser.parse("\"\"\"", 3, Parser.ParseContext.ACCEPT_LINE));
+        Assertions.assertThrows(EOFError.class, () -> parser.parse("r\"\"\"", 4, Parser.ParseContext.ACCEPT_LINE));
+        Assertions.assertThrows(EOFError.class, () -> parser.parse("\"\"\"\n  open", 10, Parser.ParseContext.ACCEPT_LINE));
+        Assertions.assertThrows(EOFError.class, () -> parser.parse("r\"\"\"\n  open", 11, Parser.ParseContext.ACCEPT_LINE));
+        Assertions.assertThrows(EOFError.class, () -> parser.parse("\"\"\"\n  a\\   ", 11, Parser.ParseContext.ACCEPT_LINE));
+        Assertions.assertThrows(EOFError.class, () -> parser.parse("\"\"\"\n  a\\\\   ", 12, Parser.ParseContext.ACCEPT_LINE));
+        Assertions.assertThrows(EOFError.class, () -> parser.parse("\"\"\"\n  a\\\\\\   ", 13, Parser.ParseContext.ACCEPT_LINE));
+        // Unclosed single-line strings, malformed multiline openings, and invalid escapes fail immediately.
+        Assertions.assertEquals("\"open", parser.parse("\"open", 5, Parser.ParseContext.ACCEPT_LINE).line());
+        Assertions.assertEquals("r\"open", parser.parse("r\"open", 6, Parser.ParseContext.ACCEPT_LINE).line());
+        Assertions.assertEquals("\"\"\"abc", parser.parse("\"\"\"abc", 6, Parser.ParseContext.ACCEPT_LINE).line());
+        Assertions.assertEquals("r\"\"\"abc", parser.parse("r\"\"\"abc", 7, Parser.ParseContext.ACCEPT_LINE).line());
+        Assertions.assertEquals("\"\"\"\n  a\\q   ", parser.parse("\"\"\"\n  a\\q   ", 12, Parser.ParseContext.ACCEPT_LINE).line());
+        Assertions.assertEquals("\"\"\"\n  a\\   \"\"\"", parser.parse("\"\"\"\n  a\\   \"\"\"", 14, Parser.ParseContext.ACCEPT_LINE).line());
         Assertions.assertEquals("1 + 2", parser.parse("1 + 2", 5, Parser.ParseContext.ACCEPT_LINE).line());
         // Syntax errors are complete : evaluating reports them.
         Assertions.assertEquals("def = 3", parser.parse("def = 3", 7, Parser.ParseContext.ACCEPT_LINE).line());

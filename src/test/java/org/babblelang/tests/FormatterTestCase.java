@@ -413,7 +413,8 @@ public class FormatterTestCase {
 
     @Test
     public void testStringsAreKept() throws Exception {
-        assertFormats("def s = \"a  ;; b ( \\\" \" + \"\n  c\"\n", "def s=\"a  ;; b ( \\\" \"+\"\n  c\"");
+        assertFormats("def s = \"a  ;; b ( \\\" \" + \"\\n  c\"\n", "def s=\"a  ;; b ( \\\" \"+\"\\n  c\"");
+        assertFormats("def p = r\"C:\\dir\\\"\n", "def p=r\"C:\\dir\\\"");
     }
 
     @Test
@@ -643,5 +644,89 @@ public class FormatterTestCase {
                 fn ( s : string ) : int -> ( s . length ( ) )
                 )
                 """);
+    }
+
+    @Test
+    public void testMultilineAndRawStrings() throws Exception {
+        // Top-level (line.indent = 0 -> 4 spaces), intentional extra indent preserved, trailing space stripped
+        assertFormats("""
+                def s = \"\"\"
+                      alpha
+                    beta
+
+                    gamma\\s
+                    \"\"\"
+                """, """
+                def s=\"\"\"  \s
+                  alpha  \s
+                beta
+                  \s
+                gamma\\s  \s
+                \"\"\"
+                """);
+
+        // Block-level (line.indent = 1 -> 8 spaces) and continuation (line.indent = 2 -> 12 spaces)
+        assertFormats("""
+                def f = fn (): string -> (
+                    def a = \"\"\"
+                        hello
+                        \"\"\"
+                    def b =
+                        r\"\"\"
+                            C:\\Users\\ada
+                            \"\"\"
+                    a + b
+                )
+                """, """
+                def f = fn () : string -> (
+                def a = \"\"\"
+                  hello
+                  \"\"\"
+                def b =
+                r\"\"\"
+                C:\\Users\\ada
+                \"\"\"
+                a + b
+                )
+                """);
+
+        // Closing delimiter on last content line, line continuation, and trailing comment
+        assertFormats("""
+                def c = \"\"\"
+                    first \\
+                    second\"\"\"  ;; trailing
+                """, """
+                def c = \"\"\"
+                  first \\
+                  second\"\"\" ;; trailing
+                """);
+
+        // Uniform tab indentation canonicalizes to spaces when no extra leading tabs exist
+        assertFormats("""
+                def t = \"\"\"
+                    one
+                    two
+                    \"\"\"
+                """, "def t = \"\"\"\n\tone\n\ttwo\n\t\"\"\"\n");
+
+        // Extra leading tab in raw/escaped block preserves oldMinIndent so spaces+tabs are never mixed
+        String rawTab = "def rt = r\"\"\"\n\tindented\n\"\"\"\n";
+        assertFormats(rawTab, rawTab);
+        String tabExtraBody = "def tb = \"\"\"\n\ta\n\t\tb\n\t\"\"\"\n";
+        assertFormats(tabExtraBody, tabExtraBody);
+        String rawTabExtraBody = "def rtb = r\"\"\"\n\ta\n\t\tb\n\t\"\"\"\n";
+        assertFormats(rawTabExtraBody, rawTabExtraBody);
+
+        // Whitespace-only closing line with extra tab does not emit tabs past minIndent, so canonicalizes to spaces idempotently
+        assertFormats("def tc = \"\"\"\n    a\n    \"\"\"\n", "def tc = \"\"\"\n\ta\n\t\t\"\"\"\n");
+        assertFormats("def rtc = r\"\"\"\n    a\n    \"\"\"\n", "def rtc = r\"\"\"\n\ta\n\t\t\"\"\"\n");
+        assertFormats("\"\"\"\n    a\n    \"\"\"\n", "\"\"\"\n\ta\n\t\t\"\"\"\n");
+        assertFormats("r\"\"\"\n    a\n    \"\"\"\n", "r\"\"\"\n\ta\n\t\t\"\"\"\n");
+
+        // Invalid multiline and unclosed single-line strings are rejected cleanly
+        Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = \"\"\"abc\"\"\""));
+        Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = \"\"\"\n \tbad\n \"\"\""));
+        Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = \"\"\"\n    \\q\n    \"\"\""));
+        Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = r\"open"));
     }
 }

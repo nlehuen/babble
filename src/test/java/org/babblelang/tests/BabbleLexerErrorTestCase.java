@@ -58,6 +58,35 @@ public class BabbleLexerErrorTestCase extends BabbleTestBase {
     @Test
     public void testValidScriptsStillCompile() throws Exception {
         Assertions.assertEquals("ab", interpret("def a = \"ab\" ; a"));
+        Assertions.assertEquals("C:\\dir\\", interpret("def a = r\"C:\\dir\\\" ; a"));
+        Assertions.assertEquals("a\nb\n", interpret("def a = \"\"\"\r\n  a\r  b\r\n  \"\"\" ; a"));
+        Assertions.assertEquals("ab", interpret("def a = \"\"\"\r\n  a\\\r\n  b\"\"\" ; a"));
         Assertions.assertEquals(3, interpret("1 + 2"));
+    }
+
+    @Test
+    public void testSingleLineAndMultilineLexicalErrors() {
+        Assertions.assertTrue(assertRejected("def s = \"a\nb\"").getMessage().contains("Lexical error"));
+        Assertions.assertTrue(assertRejected("def s = \"a\rb\"").getMessage().contains("Lexical error"));
+        Assertions.assertTrue(assertRejected("def s = r\"a\nb\"").getMessage().contains("Lexical error"));
+        Assertions.assertTrue(assertRejected("def s = r\"unclosed").getMessage().contains("Lexical error"));
+
+        ScriptException badOpen = assertRejected("def s = \"\"\"abc\"\"\"");
+        Assertions.assertTrue(badOpen.getMessage().contains("Lexical error at line 1:8 : multiline string opening \"\"\" must be followed by a newline"), badOpen.getMessage());
+        Assertions.assertTrue(assertRejected("def s = r\"\"\"abc\"\"\"").getMessage().contains("multiline string opening \"\"\" must be followed by a newline"));
+
+        ScriptException mixedWithin = assertRejected("def s = \"\"\"\n \thello\n \"\"\"");
+        Assertions.assertTrue(mixedWithin.getMessage().contains("mixed tabs and spaces in multiline string indentation"), mixedWithin.getMessage());
+        ScriptException mixedAcross = assertRejected("def s = r\"\"\"\n    hello\n\tworld\n    \"\"\"");
+        Assertions.assertTrue(mixedAcross.getMessage().contains("mixed tabs and spaces in multiline string indentation"), mixedAcross.getMessage());
+
+        ScriptException badEsc = assertRejected("def s = \"\"\"\n    \\q\n    \"\"\"");
+        Assertions.assertTrue(badEsc.getMessage().contains("unknown escape sequence : \\q"), badEsc.getMessage());
+        ScriptException badUni = assertRejected("def s = \"\"\"\n    \\u12g\n    \"\"\"");
+        Assertions.assertTrue(badUni.getMessage().contains("unknown escape sequence : \\u12g"), badUni.getMessage());
+        ScriptException shortUni = assertRejected("def s = \"\"\"\n    \\u12\n    \"\"\"");
+        Assertions.assertTrue(shortUni.getMessage().contains("unknown escape sequence : \\u12"), shortUni.getMessage());
+        ScriptException trailingAfterBackslash = assertRejected("def s = \"\"\"\n    a\\   \"\"\"");
+        Assertions.assertTrue(trailingAfterBackslash.getMessage().contains("unknown escape sequence : \\"), trailingAfterBackslash.getMessage());
     }
 }

@@ -1,0 +1,226 @@
+;; Multiline and raw string literals : JEP 378 dedenting, escapes, raw strings, and lexical errors
+;; References : BIP026-D1..D3, BIP026-I1, StringLiterals, BabbleScriptEngine
+
+def r = 7
+def Box = record (r: int) (
+    def sum = fn (x: int): int -> (this.r + x)
+)
+
+{{{{{
+;; Standard escapes and raw single-line strings
+assert("a\b\t\n\f\r\"\'\\\0\u0041" == "a\u0008\t\n\u000c\r\"'\\\u0000A")
+assert(r"" == "")
+assert(r"\n\t\s\u0041" == "\\n\\t\\s\\u0041")
+assert(r"C:\dir\" == "C:\\dir\\")
+}}}}}
+
+{{{{{
+;; r remains an ordinary identifier alongside raw strings
+assert(r == 7)
+assert(Box(3).r == 3)
+assert(Box(3).sum(r) == 10)
+assert(r"ok" == "ok")
+}}}}}
+
+{{{{{
+;; Basic JEP 378 dedent anchored on closing delimiter vs last content line
+def a = """
+      x
+    y
+    """
+def b = """
+    x
+    y"""
+assert(a == "  x\ny\n")
+assert(b == "x\ny")
+}}}}}
+
+{{{{{
+;; Empty multiline blocks and whitespace-only opening line
+def a = """   
+    """
+def b = """
+"""
+def c = r"""	
+"""
+assert(a == "")
+assert(b == "")
+assert(c == "")
+}}}}}
+
+{{{{{
+;; Blank lines (even shorter than minIndent) become empty lines
+def s = """
+    top
+  
+    bottom
+    """
+assert(s == "top\n\nbottom\n")
+}}}}}
+
+{{{{{
+;; Uniform trailing horizontal whitespace stripping and \s fencing
+def esc = """
+    ab   
+    cd\s   
+    """
+def raw = r"""
+    ef   	
+    gh\s   
+    """
+assert(esc == "ab\ncd \n")
+assert(raw == "ef\ngh\\s\n")
+}}}}}
+
+{{{{{
+;; Line continuation \<newline>, trailing spaces after \, escaped backslash before newline, and \uXXXX
+def s = """
+    alpha \
+    beta \   
+    gamma\\
+    \u0020\u0042
+    """
+assert(s == "alpha beta gamma\\\n B\n")
+}}}}}
+
+{{{{{
+;; Embedded quotes in escaped and raw multiline blocks
+def esc = """
+    "one" ""two"" ""\" \"\"\"
+    """
+def raw = r"""
+    "one" ""two""
+    """
+assert(esc == "\"one\" \"\"two\"\" \"\"\" \"\"\"\n")
+assert(raw == "\"one\" \"\"two\"\"\n")
+}}}}}
+
+{{{{{
+;; Uniform tab-only indentation is allowed and strips common leading tabs
+def a = """
+		x
+	y
+	"""
+def b = r"""
+	\t\n
+"""
+assert(a == "\tx\ny\n")
+assert(b == "\t\\t\\n\n")
+}}}}}
+
+{{{{{
+;; Four quotes at the end of raw block close on the first three, leaving the fourth as a new token
+def s = r"""
+    a""""
+}}}}}
+Lexical error : token recognition error at: '"'
+
+{{{{{
+;; Multiline literals across session inputs
+def header = """
+    SELECT *
+    FROM t
+    """
+----------
+def body = r"""
+    WHERE x = "ok"
+    """
+assert(header + body == "SELECT *\nFROM t\nWHERE x = \"ok\"\n")
+}}}}}
+
+{{{{{
+;; Single-line "..." rejects unescaped newline
+def s = "line1
+line2"
+}}}}}
+Lexical error : token recognition error at: '"line1\n'
+
+{{{{{
+;; Single-line r"..." rejects unescaped newline
+def s = r"line1
+line2"
+}}}}}
+Lexical error : token recognition error at: '"line1\n'
+
+{{{{{
+;; Opening """ must be followed by optional horizontal whitespace and newline
+def s = """abc"""
+}}}}}
+Lexical error : multiline string opening """ must be followed by a newline
+
+{{{{{
+def s = r"""abc"""
+}}}}}
+Lexical error : multiline string opening """ must be followed by a newline
+
+{{{{{
+def s = """  abc
+    """
+}}}}}
+Lexical error : multiline string opening """ must be followed by a newline
+
+{{{{{
+;; Mixed leading tabs and spaces within a line
+def s = """
+ 	hello
+ """
+}}}}}
+Lexical error : mixed tabs and spaces in multiline string indentation
+
+{{{{{
+;; Mixed leading tabs and spaces across lines (and with closing line)
+def s = r"""
+    hello
+	world
+    """
+}}}}}
+Lexical error : mixed tabs and spaces in multiline string indentation
+
+{{{{{
+def s = """
+    hello
+	"""
+}}}}}
+Lexical error : mixed tabs and spaces in multiline string indentation
+
+{{{{{
+;; Unknown escape sequences in multiline strings
+def s = """
+    hello \q
+    """
+}}}}}
+Lexical error : unknown escape sequence : \q
+
+{{{{{
+def s = """
+    \u12
+    """
+}}}}}
+Lexical error : unknown escape sequence : \u12
+
+{{{{{
+def s = """
+    \u12g0
+    """
+}}}}}
+Lexical error : unknown escape sequence : \u12g0
+
+{{{{{
+;; Unterminated multiline literals
+def s = """
+    unclosed
+}}}}}
+Lexical error : unterminated multiline string
+
+{{{{{
+def s = r"""
+    unclosed
+}}}}}
+Lexical error : unterminated multiline string
+
+{{{{{
+;; Escaped quote right before two quotes leaves literal unterminated
+def s = """
+    escaped\"""
+}}}}}
+Lexical error : unterminated multiline string

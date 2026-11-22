@@ -22,7 +22,7 @@ import java.util.stream.Stream;
 /**
  * Verifies RM006 / BIP012 parser invariants :
  * <ul>
- *   <li>Zero {@code @parser::members} and zero semantic predicates in {@code Babble.g4}.</li>
+ *   <li>Zero {@code @parser::members}, zero {@code @lexer::members}, and zero semantic predicates in {@code Babble.g4}.</li>
  *   <li>Pure {@link PredictionMode#SLL} parsing (zero LL fallback) across all {@code .ba} and valid {@code .batest} sources.</li>
  *   <li>{@code BIP012-D8} operator precedence for {@code as}, {@code is}, and {@code not}.</li>
  * </ul>
@@ -36,6 +36,8 @@ public class ParserGrammarTestCase extends BabbleTestBase {
                 .replaceAll("//.*", "");
         Assertions.assertFalse(content.contains("@parser::members"),
                 "Babble.g4 must have zero @parser::members blocks");
+        Assertions.assertFalse(content.contains("@lexer::members"),
+                "Babble.g4 must have zero @lexer::members blocks");
         Assertions.assertFalse(content.contains("}?"),
                 "Babble.g4 must have zero semantic predicates");
     }

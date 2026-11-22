@@ -393,6 +393,9 @@ public final class Formatter {
             }
             if (token.getType() == BabbleLexer.MULTILINECOMMENT) {
                 code.append(i == 0 ? moved(token, line.indent * INDENT) : stripped(token.getText().split("\\R", -1), 0));
+            } else if (token.getType() == BabbleLexer.MULTILINE_STRING
+                    || token.getType() == BabbleLexer.RAW_MULTILINE_STRING) {
+                code.append(formatMultilineString(token, (line.indent + 1) * INDENT));
             } else if (token.getType() == BabbleLexer.COMMENT) {
                 code.append(token.getText().stripTrailing());
             } else {
@@ -416,6 +419,28 @@ public final class Formatter {
             return false;
         }
         return type != OPEN || !callParentheses[token.getTokenIndex()];
+    }
+
+    private static String formatMultilineString(Token token, int targetIndent) {
+        org.babblelang.parser.StringLiterals.MultilineLayout layout = org.babblelang.parser.StringLiterals.layout(token);
+        List<String> lines = layout.lines();
+        boolean[] blank = layout.blank();
+        int minIndent = layout.minIndent();
+        String indentPrefix = layout.extraIndentHasTabs()
+                ? lines.get(lines.size() - 1).substring(0, minIndent)
+                : " ".repeat(targetIndent);
+        StringBuilder out = new StringBuilder(layout.openingDelimiter());
+        for (int i = 0; i < lines.size(); i++) {
+            out.append('\n');
+            if (!blank[i]) {
+                out.append(indentPrefix)
+                        .append(org.babblelang.parser.StringLiterals.stripTrailingHorizontal(lines.get(i).substring(minIndent)));
+            }
+            if (i == lines.size() - 1) {
+                out.append("\"\"\"");
+            }
+        }
+        return out.toString();
     }
 
     /** A comment of several lines starting a line : its other lines move as its first one does. */
@@ -481,7 +506,10 @@ public final class Formatter {
         if (node instanceof TerminalNode terminal) {
             int type = terminal.getSymbol().getType();
             if (type != BabbleLexer.NL && type != BabbleLexer.SEMICOLON) {
-                shape.append(type).append(':').append(terminal.getText()).append('\u0000');
+                String text = (type == BabbleLexer.MULTILINE_STRING || type == BabbleLexer.RAW_MULTILINE_STRING)
+                        ? org.babblelang.parser.StringLiterals.decode(terminal.getSymbol())
+                        : terminal.getText();
+                shape.append(type).append(':').append(text).append('\u0000');
             }
         } else if (!(node instanceof BabbleParser.SepContext)) {
             shape.append('<').append(node.getClass().getSimpleName()).append('\u0000');

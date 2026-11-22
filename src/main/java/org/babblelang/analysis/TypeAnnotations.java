@@ -964,7 +964,7 @@ final class TypeAnnotations {
                     && callee.ID().getText().equals("import")
                     && call.callParameters().callParameter().size() == 1
                     && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string
-                    && org.babblelang.engine.impl.Interpreter.unescape(string.getText()).endsWith(".ba");
+                    && org.babblelang.parser.StringLiterals.decode(string).endsWith(".ba");
         }
         if (value instanceof BabbleParser.SelectorContext selector) {
             if (selector.expression() != null) {
@@ -1096,7 +1096,7 @@ final class TypeAnnotations {
                 && callee.ID().getText().equals("import")
                 && call.callParameters().callParameter().size() == 1
                 && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
-            String name = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
+            String name = org.babblelang.parser.StringLiterals.decode(string);
             // A file name imports a Babble module, whose members are not known statically.
             return name.endsWith(".ba") ? null : name;
         }

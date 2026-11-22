@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 026 |
 | **Date** | 2026-11-22 |
-| **Status** | Draft (Options analysis & proposed design; Open Questions `BIP026-Q1`–`Q10`) |
+| **Status** | Partially implemented (`BIP026-I1` implemented under `BIP026-D1`–`D3`; Open Questions `BIP026-Q4`–`Q10` remain for `BIP026-P2`–`P5`) |
 | **Depends on** | object model & JVM interfaces ([bip002_object-model.md](bip002_object-model.md), `RM003`), interactive mode ([bip004_repl.md](bip004_repl.md)), `java.base`-only runtime boundary ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)), static typing, unions, nullables & generics ([bip008_static-typing.md](bip008_static-typing.md)), core types & transparent `string` ([bip011_core-types.md](bip011_core-types.md)), predicate-free single-bracket `()` grammar ([bip012_grammar-improvements.md](bip012_grammar-improvements.md)), `for` loops & iterables ([bip013_iterators.md](bip013_iterators.md)), ANTLR-free `HIR` & Nanopass optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), parser dependency analysis ([bip015_down-with-the-ants.md](bip015_down-with-the-ants.md)), pure-by-default effects & callback-effect forwarding ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), axioms ([bip019_refactoring-axioms.md](bip019_refactoring-axioms.md)), array types ([bip020_array-types.md](bip020_array-types.md)), optional/generic/overloaded calls ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)), intersection types ([bip022_intersection-types.md](bip022_intersection-types.md)), type aliases ([bip023_type-aliases.md](bip023_type-aliases.md)) |
 | **Scope** | Multiline and raw string literals with compile-time indentation handling; first-class string templates evaluating to a structured template object of static string fragments and placeholders backed by lazily memoized callbacks; a plug-in evaluation policy model (built-in string concatenation plus user/library policies such as SQL `PreparedStatement`, HTML escaping, and lazy structured logging); integration with Babble's single-bracket `()` grammar, `Formatter`, REPL `BabbleSession`, static types, `BIP016`/`BIP017` effects, `BIP019` axioms, both execution backends, and `BIP014` `-O1` deforestation |
 
@@ -227,20 +227,17 @@ def regexBlock = r"""
     """
 ```
 
-* **Escaped `"""..."""` rules:**
-  * The opening `"""` is followed by optional horizontal whitespace (`[ \t]*`) and a mandatory line break (`\r?\n`) for multiline blocks. *(Sub-option: also permit single-line `"""He said "hi"."""` with no dedent when content stays on the same line, or strictly require a newline after `"""` as in Java JEP 378 — `BIP026-Q2`.)*
+* **Escaped `"""..."""` rules (`BIP026-D2`):**
+  * The opening `"""` is followed by optional horizontal whitespace (`[ \t]*`) and a mandatory line break (`\r?\n`) (strict Java JEP 378).
   * Single `"` and `""` inside the block need no escaping; a literal `"""` is written `\"\"\"` (or `""\"`).
   * Supports all existing Babble escapes (`\b \t \n \f \r \" \' \\ \0 \uXXXX`) plus JEP 378's **`\s`** (literal space fencing trailing-whitespace stripping) and **`\` immediately before a newline** (line continuation suppressing `\n`).
-  * **Compile-time 3-step normalization:** (1) normalize `\r\n` and `\r` to `\n`, (2) compute minimum common leading whitespace across all non-blank lines *and* the closing `"""` line, strip that prefix from every line and strip trailing horizontal spaces, (3) translate escapes.
-* **Raw `r"..."` and `r"""..."""` rules:**
-  * Backslashes have **no escape meaning** (`r"\n"` is the two characters `\` and `n`). Unlike Python — where `\"` still escapes quotes during lexing, making `r"C:\dir\"` a syntax error — Babble can lex `r"..."` strictly as `~["\r\n]*` so trailing backslashes like `r"C:\dir\"` work cleanly (while strings containing embedded `"` use `r"""..."""`).
-  * For `r"""..."""`, dedenting runs Steps 1–2 (normalize line endings + strip incidental indent anchored on the closing `"""`) and skips Step 3 (no escape translation).
-  * **Embedding `"""` or trailing `\` inside raw blocks (sub-options `BIP026-Q3`):**
-    * **A1a (C# 11 / Swift variable quote count):** Allow $k \ge 3$ quotes (`""""...""""`) — any sequence of fewer than $k$ quotes is literal, including `"""`!
-    * **A1b (C++ custom delimiter `r"tag(...)tag"`):** Allow `r"tag(...)tag"` (matching Babble's `()` aesthetic!) alongside `r"..."` / `r"""..."""` for completely collision-proof raw blocks.
-    * **A1c (Keep it minimal):** Only `r"..."` and `r"""..."""`; use `"""..."""` with `""\"` or string concatenation in the rare case a raw literal contains `"""`.
-* **What about existing `"..."` literals (`BIP026-Q1`)?**
-  * Today `STRING` in `Babble.g4` permits raw newlines (`~[\\"]`). Once `"""..."""` exists, tightening `"..."` to **single-line only** (`~[\\"\r\n]`) catches unclosed strings on the offending line immediately and makes REPL `BabbleSession.classify` much cleaner — at the cost of breaking any script that relied on unescaped newlines inside `"..."` (worth auditing `src/test/` and `examples/` before deciding).
+  * **Compile-time 3-step normalization:** (1) normalize `\r\n` and `\r` to `\n`, (2) compute minimum common leading whitespace across all non-blank lines *and* the closing `"""` line (rejecting mixed leading tabs and spaces), strip that prefix from every line and strip trailing horizontal spaces, (3) translate escapes.
+* **Raw `r"..."` and `r"""..."""` rules (`BIP026-D2`, `BIP026-D3`):**
+  * Backslashes have **no escape meaning** (`r"\n"` is the two characters `\` and `n`). Unlike Python — where `\"` still escapes quotes during lexing, making `r"C:\dir\"` a syntax error — Babble lexes `r"..."` strictly as `~["\r\n]*` so trailing backslashes like `r"C:\dir\"` work cleanly (while strings containing embedded `"` use `r"""..."""`).
+  * For `r"""..."""`, dedenting runs Steps 1–2 (normalize line endings + strip incidental indent anchored on the closing `"""` + uniform trailing-space stripping, rejecting mixed leading tabs and spaces) and skips Step 3 (no escape translation).
+  * **Embedding `"""` inside raw blocks (`BIP026-D3` — minimal):** `BIP026-I1` keeps only `r"..."` and `r"""..."""` (zero `@lexer::members` in `Babble.g4` ahead of `BIP015`); in the rare case a raw literal needs `"""`, use escaped `"""..."""` with `""\"` or string concatenation. Variable quote count (`r""""...""""`) or custom delimiters (`r"tag(...)tag"`) remain possible future extensions.
+* **Existing `"..."` literals (`BIP026-D1`):**
+  * Tightened from `~[\\"]` to **strictly single-line** (`~[\\"\r\n]`), catching unclosed strings on the offending line immediately and making REPL `BabbleSession.classify` report unclosed `"..."` / `r"..."` on line 1 instead of hanging in `INCOMPLETE`.
 * **Pros:** Zero runtime cost; composes natively with `t"""..."""` templates (avoiding Python's PEP 822 problem); lets `babblefmt` re-indent blocks safely when surrounding code shifts; immediately familiar to Java/Python/Kotlin developers.
 * **Cons:** Requires specifying the dedent algorithm carefully (especially mixed tabs/spaces and blank lines, §5.2).
 
@@ -737,10 +734,10 @@ Applied identically to `"""..."""`, `r"""..."""`, `t"""..."""`, and `rt"""..."""
    * A line is **blank** iff it contains only horizontal whitespace (`[ \t]*`) and **no** placeholder markers (`$(...)`).
    * The closing `"""` line counts as a non-blank anchor line (its leading horizontal whitespace participates in the minimum, exactly as in Java JEP 378!).
    * Compute `minIndent` = minimum leading whitespace prefix across all non-blank lines and the closing `"""` line.
-   * **Tabs vs. spaces:** Count each space and tab as one code unit (matching `String.stripIndent()`), or reject mixed leading tabs/spaces inside a multiline literal with a clear lexical error (`Mixed tabs and spaces in multiline string indentation`) so layout is never ambiguous across editor tab widths (`BIP026-Q2`).
-4. **Stripping:**
+   * **Tabs vs. spaces (`BIP026-D2`):** Reject mixed leading tabs and spaces inside a multiline literal with a clear lexical error (`Lexical error : mixed tabs and spaces in multiline string indentation`) so layout is never ambiguous across editor tab widths (all-spaces or all-tabs are both allowed).
+4. **Stripping (`BIP026-D2`):**
    * Strip `minIndent` leading whitespace characters from every non-blank line; replace blank lines with `""`.
-   * Strip trailing horizontal whitespace (`[ \t]+`) from every line (stopping at `\s` in escaped blocks; **not** stripped in raw blocks if raw preserves trailing spaces, or stripped uniformly — settled in `BIP026-Q2`).
+   * Strip trailing horizontal whitespace (`[ \t]+`) uniformly from every line in both `"""..."""` and `r"""..."""` (stopping at `\s` in escaped blocks; use escaped `"""..."""` with `\s` when literal trailing spaces are needed).
    * Drop the closing delimiter line's own trailing `\n` (the newline immediately before the closing `"""` is kept if the closing `"""` is on its own line, matching Java JEP 378; placing `"""` at the end of the last content line omits the trailing newline).
 5. **Escape translation (escaped forms `"""..."""` and `t"""..."""` only):**
    * Translate `\b \t \n \f \r \" \' \\ \0 \uXXXX`, `\s` → `' '`, `\<newline>` → `""`, and `\$(` → `$(` (in templates).
@@ -751,8 +748,8 @@ Applied identically to `"""..."""`, `r"""..."""`, `t"""..."""`, and `rt"""..."""
 
 [`Formatter.java`](../../src/main/java/org/babblelang/format/Formatter.java) formats Babble code token-by-token, tracks indentation with a single parenthesis stack, shifts `MULTILINECOMMENT` tokens via `Formatter.moved()`, and verifies `shape(parse(formatted)).equals(shape(parse(source)))`.
 
-With compile-time closing-delimiter dedenting (Option A1) and split lexer modes (§5.1):
-1. **Multiline string literals (`"""..."""`, `r"""..."""`):** When the enclosing block's indentation shifts by $\Delta$ spaces, `Formatter` shifts every subsequent line of the multiline literal by $\Delta$ (clamped at 0, or aligning the closing `"""` to the line's indent + 1 level, just like `Formatter.moved()`). Because compile-time dedenting is relative to the closing `"""`, **the runtime string value is 100% preserved!**
+With compile-time closing-delimiter dedenting (`BIP026-D2`) and split lexer modes (§5.1):
+1. **Multiline string literals (`"""..."""`, `r"""..."""`):** `Formatter` canonicalizes the block's `minIndent` to one indent level deeper than the opening line (`(line.indent + 1) * 4` spaces), shifting every non-blank line (content and closing `"""`) uniformly by `targetIndent - oldMinIndent` (and trimming blank lines). This preserves intentional extra leading spaces when the closing `"""` sits to the left of content, avoids clamping bugs when un-indenting, and **preserves the runtime string value 100%!**
 2. **Template literals (`t"..."`, `t"""..."""`):**
    * `TEMPLATE_OPEN`, `TEMPLATE_TEXT`, `TEMPLATE_EXPR_OPEN`, `TEMPLATE_EXPR_CLOSE`, and `TEMPLATE_CLOSE` emit **zero injected spaces** at template boundaries (`space()` returns `false` adjacent to template delimiters/text).
    * Inside `TEMPLATE_EXPR_OPEN`..`TEMPLATE_EXPR_CLOSE`, the embedded expression consists of ordinary Babble tokens, so `babblefmt` automatically formats `t"$(a+b)"` into `t"$(a + b)"`!
@@ -762,8 +759,8 @@ With compile-time closing-delimiter dedenting (Option A1) and split lexer modes 
 ### 5.4 Interactive Mode (`BabbleSession.classify`)
 
 [`BabbleSession.classify`](../../src/main/java/org/babblelang/engine/BabbleSession.java) detects incomplete multiline REPL inputs via `ParseFailure.atEnd()` and `hasTokens()`.
-* An unfinished multiline string (`def s = """\n    hello`) or unfinished template (`def q = t"hello $(x +`) hits EOF in the lexer/parser (`atEnd() == true`, `hasTokens() == true`), returning `Input.INCOMPLETE` automatically — so the JLine interactive prompt (`BIP004` §9) continues reading lines until the closing delimiter arrives.
-* Tightening plain `"..."` to single-line (`BIP026-Q1`) also ensures an accidentally unclosed `"hello` at the REPL reports a crisp lexical error on line 1 instead of hanging in `INCOMPLETE` forever!
+* An unfinished multiline string (`def s = """\n    hello`, `def s = r"""\n    hello`) or unfinished template (`def q = t"hello $(x +`) hits EOF in the lexer/parser (`atEnd() == true`, `hasTokens() == true`), returning `Input.INCOMPLETE` — so the JLine interactive prompt (`BIP004` §9) continues reading lines until the closing delimiter arrives.
+* Tightening plain `"..."` (and `r"..."`) to single-line (`BIP026-D1`, `BIP026-D3`) ensures an accidentally unclosed `"hello` or `r"hello` at the REPL classifies as `Input.COMPLETE` and reports a crisp lexical error on line 1 instead of hanging in `INCOMPLETE`!
 
 ---
 
@@ -813,11 +810,11 @@ All messages follow Babble's `Message : detail` convention (space before colon) 
 
 | Situation | Stage | Message |
 |---|---|---|
-| Unclosed `"..."` hitting newline (if `BIP026-Q1` tightens `"..."`) | Lexer | `Lexical error : unterminated string literal` |
+| Unclosed `"..."` / `r"..."` hitting newline or EOF | Lexer | `Lexical error : token recognition error at: '"...'` |
 | Unclosed `"""...` or `t"...` at EOF | Lexer | `Lexical error : unterminated multiline string` / `unterminated template literal` |
-| Missing newline after opening `"""` (if required) | Lexer | `Lexical error : multiline string opening """ must be followed by a newline` |
+| Missing newline after opening `"""` | Lexer | `Lexical error : multiline string opening """ must be followed by a newline` |
 | Invalid escape sequence in `"..."` / `"""..."""` / `t"..."` | Lexer | `Lexical error : unknown escape sequence : \q` |
-| Mixed tabs and spaces in multiline indentation (if disallowed) | Lexer | `Lexical error : mixed tabs and spaces in multiline string indentation` |
+| Mixed tabs and spaces in multiline indentation | Lexer | `Lexical error : mixed tabs and spaces in multiline string indentation` |
 | `template + string` or `string + template` | `TypeChecker` | `Type error : cannot concatenate template with string` |
 | `void`-typed placeholder expression `t"$(println(1))"` | `TypeChecker` | `Type error : template placeholder has type void` |
 | Escaping `return`/`break`/`continue` inside `$(...)` | `BlockScopes`/`Resolver` | `Return outside of a function` / `Break outside of a loop` / `Continue outside of a loop` |
@@ -827,15 +824,24 @@ All messages follow Babble's `Message : detail` convention (space before colon) 
 
 ---
 
-## 8. Open Questions & Recommended Babble Package
+## 8. Decisions, Open Questions & Recommended Babble Package
 
-### 8.1 Open Questions (`BIP026-Q1`–`Q10`)
+### 8.1 Resolved Decisions (`BIP026-D1`–`D3`)
+
+Decided on 2026-11-22 and implemented in `BIP026-I1`:
+
+| Decision | Resolves | Choice |
+|---|---|---|
+| **`BIP026-D1`** | `BIP026-Q1` | **Strictly single-line `"..."`** (`~[\\"\r\n]`). Any existing multiline `"..."` literals in tests/examples are migrated to `"""..."""` or `\n`. Unclosed `"..."` / `r"..."` classifies as `Input.COMPLETE` in `BabbleSession.classify` (immediate lexical error on line 1). |
+| **`BIP026-D2`** | `BIP026-Q2` | **Strict Java JEP 378 `"""..."""` and `r"""..."""`:** mandatory `[ \t]*\r?\n` after opening `"""`, compile-time closing-`"""` dedenting, `\s` and `\<newline>` escapes in escaped `"""..."""`, reject mixed leading tabs/spaces with a lexical error, and strip trailing horizontal spaces uniformly in both `"""..."""` and `r"""..."""`. `Formatter` canonicalizes `minIndent` to `(line.indent + 1) * 4` spaces while shifting all non-blank lines uniformly and checking semantic dedented `shape()`. |
+| **`BIP026-D3`** | `BIP026-Q3` | **Minimal raw strings (`r"..."` and `r"""..."""` only):** `r"..."` is strictly raw single-line (`~["\r\n]*`, so trailing backslashes like `r"C:\dir\"` work cleanly), `r"""..."""` uses the same dedenting algorithm without escape translation, with zero `@lexer::members` in `Babble.g4` ahead of `BIP015`. |
+
+### 8.2 Open Questions (`BIP026-Q4`–`Q10`)
+
+Remaining open questions for `BIP026-P2`–`P5`:
 
 | ID | Question | Options | Recommendation |
 |---|---|---|---|
-| **`BIP026-Q1`** | Should plain `"..."` become strictly single-line once `"""..."""` exists? | (a) Single-line only (`~[\\"\r\n]`); (b) Keep allowing raw newlines in `"..."` | **(a) Single-line only** (after auditing existing `.ba`/`.batest` files for any multiline `"..."` literals). Dramatically improves syntax error locality and REPL `classify`. |
-| **`BIP026-Q2`** | Multiline `"""..."""` opening line & dedenting rules | (a) Mandatory newline after `"""`, JEP 378 closing-`"""` dedent, `\s` + `\<newline>`, reject mixed tabs/spaces; (b) Allow single-line `"""a "b" c"""` verbatim + multiline dedent; (c) Kotlin-style verbatim + `.stripIndent()` | **(a)** (or **(b)** if one-line quote-heavy literals are desired; both keep compile-time closing-`"""` dedenting so `t"""..."""` and `babblefmt` compose cleanly). |
-| **`BIP026-Q3`** | Raw string & delimiter-collision escape hatch | (a) `r"..."` + `r"""..."""` only; (b) Add variable quote count `r""""...""""` (C# 11); (c) Add C++-style `r"tag(...)tag"` | **(a)** in `P1`, with **(b)** or **(c)** as an optional clean extension (`r"tag(...)tag"` fits Babble's `()`-only identity especially well). |
 | **`BIP026-Q4`** | Template placeholder delimiter | (a) `$(expr)` only + multi-dollar `t$$"""..."""` (KEEP-380); (b) `$(expr)` + bare `$id`; (c) Swift-style `\(expr)`; (d) `{expr}` | **(a) `$(expr)` only + multi-dollar `t$$"""..."""`**. Preserves Babble's `()`-only rule, avoids `$100`/`$foo.bar` ambiguity, and composes cleanly with raw `rt"..."` templates. |
 | **`BIP026-Q5`** | Template prefix only (`t"..."`) vs. also eager string shorthand (`s"..."` / `f"..."`)? | (a) `t"..."` only (`.render()` for string); (b) `t"..."` (returns `template`) + `s"..."` (sugar for `t"...".render()`, deforested to `string`) | **(a)** initially for a minimal, safe-by-default surface — or **(b)** if everyday string interpolation ergonomics are a top priority (since SQL/HTML APIs taking `template` still reject `s"..."` statically!). |
 | **`BIP026-Q6`** | Type naming & `Template.toString()` behavior | Naming: (a) lowercase core keywords `template` / `placeholder` (exempted in `memberName`, like `array`/`entry`) vs. (b) PascalCase `Template` / `Placeholder`. `toString()`: (x) non-evaluating debug summary `Template(...)` vs. (y) forces `.render()` | **(a) `template` / `placeholder`** for consistency with `string`/`list`/`entry`/`array`, and **(x) non-evaluating `toString()`** so debugger/logging/Java `String.valueOf` never silently triggers side effects or flattens a safe template! |
@@ -844,11 +850,11 @@ All messages follow Babble's `Message : detail` convention (space before colon) 
 | **`BIP026-Q9`** | Optional per-placeholder format spec metadata | (a) None in v1 (policies inspect typed values or helper records); (b) Optional top-level `$(expr : spec)` captured as `p.format()` | **(a) None in v1** — keeps grammar and `Placeholder` minimal; `$(expr : spec)` can be added backward-compatibly later since top-level `:` cannot follow an expression. |
 | **`BIP026-Q10`** | Policy invocation API | (a) `TemplatePolicy of R` interface + `fn (template): R` + `tmpl.eval(policy)` + plain calls `policy(tmpl)` (Option D1); (b) Streaming `onText`/`onPlaceholder`/`finish` (Option D2); (c) Also add juxtaposition `policy t"..."` (Option D3) | **(a) Option D1** — avoids Java JEP 459's complected processor syntax, supports both stateless functions and configured classes (like `SqlPolicy(conn)`), and enables two-pass fragment caching. |
 
-### 8.2 Summary of the Recommended Babble Package
+### 8.3 Summary of the Recommended Babble Package
 
-Putting the recommended defaults together yields a cohesive, unmistakably Babble design:
+Putting the settled decisions (`BIP026-D1`–`D3`) and recommended template defaults together yields a cohesive, unmistakably Babble design:
 
-* **Multiline & raw strings:** `"""..."""` (JEP 378 compile-time closing-delimiter dedenting, `\s`, `\<newline>`), `r"..."`, `r"""..."""` (raw backslashes + multiline dedenting), and strictly single-line `"..."`.
+* **Multiline & raw strings (`BIP026-D1`–`D3`):** `"""..."""` (strict JEP 378 compile-time closing-delimiter dedenting, `\s`, `\<newline>`, no mixed tabs/spaces, uniform trailing-space stripping), `r"..."` (strictly raw single-line), `r"""..."""` (raw backslashes + multiline dedenting), and strictly single-line `"..."`.
 * **String templates:** `t"..."`, `t"""..."""`, `rt"..."`, `rt"""..."""` (plus multi-dollar `t$$"""..."""` / `rt$$"""..."""` for literal `$(` in raw text), using **`$(expr)`** — preserving Babble's single-bracket `()` rule and pure `SLL` split grammar.
 * **Runtime model:** First-class immutable `template` (`strings()`, `placeholders()`, `parts()`, `render()`, `eval(policy)`, `materialize()`, `+`) and `placeholder` (`value()` with `null`-safe, cycle-safe, thread-safe lazy memoization; `isEvaluated()`, `expression()`), 100% inside `org.babblelang.runtime` (`java.base` only) and declared via `BIP019` axioms.
 * **Plug-in policies:** Ordinary functions `fn (tmpl: template): R` and `TemplatePolicy of R` implementations (`tmpl.eval(policy)` or `policy(tmpl)`), with `tmpl.render()` as the built-in concatenation policy and `-O1` `StringConcatFactory` deforestation eliminating all allocations for direct `.render()`.
@@ -856,13 +862,13 @@ Putting the recommended defaults together yields a cohesive, unmistakably Babble
 
 ---
 
-## 9. Phased Implementation Plan (`BIP026-P1`–`P5`)
+## 9. Phased Implementation Plan (`BIP026-I1`, `BIP026-P2`–`P5`)
 
-Once `BIP026-Q1`–`Q10` are decided, implementation proceeds in five incremental phases, each keeping `mvn -B package` (all three Surefire modes: `interpret`, `compile -O1`, `compile -O0`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `AxiomsTestCase`, `FormatterTestCase`, `-Pbatest` (`>= 75%` branch gate), and `examples/raytracer-argon/scene.ppm` green:
+Implementation proceeds in five incremental phases (`BIP026-I1` is implemented under `BIP026-D1`–`D3`; `BIP026-P2`–`P5` wait on `BIP026-Q4`–`Q10`), each keeping `mvn -B package` (all three Surefire modes: `interpret`, `compile -O1`, `compile -O0`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `AxiomsTestCase`, `FormatterTestCase`, `-Pbatest` (`>= 75%` branch gate), and `examples/raytracer-argon/scene.ppm` green:
 
 | Phase | Scope & Deliverables | Key Verification |
 |---|---|---|
-| **`BIP026-P1`: Multiline & Raw String Literals** | Audit existing `.ba`/`.batest` for multiline `"..."`; tighten `"..."` (`Q1`), add `"""..."""`, `r"..."`, `r"""..."""` (`Q2`/`Q3`) and shared compile-time dedenter/unescaper (used by both `Interpreter` and `HirBuilder`); update `Formatter` (`moved`-style block shifting + semantic `shape()` check) and `BabbleSession.classify`. | New `src/test/babble/MultilineStrings.ba`, `.batest` dedent/escape/raw edge-case specs, `FormatterTestCase` round-trips, `ReplTestCase` multiline input tests. |
+| **`BIP026-I1` *(implemented)*: Multiline & Raw String Literals** | Audit existing `.ba`/`.batest` for multiline `"..."`; tighten `"..."` (`BIP026-D1`), add `"""..."""`, `r"..."`, `r"""..."""` (`BIP026-D2`/`D3`, zero `@lexer::members`) and shared compile-time dedenter/unescaper (`StringLiterals`, used by `BabbleScriptEngine`, `Interpreter`, `HirBuilder`, `analysis`, and `Formatter`); update `Formatter` (canonical `(line.indent + 1) * 4` block shifting + semantic dedented `shape()` check) and `BabbleSession.classify` (`INCOMPLETE` for unfinished `"""`/`r"""`, `COMPLETE` for unclosed `"..."`/`r"..."`). | `src/test/babble/MultilineStrings.ba`, `src/test/batest/primitives/multiline_and_raw_strings.batest`, `FormatterTestCase`, `ReplTestCase`, `TerminalInputTestCase`, `BabbleLexerErrorTestCase`, and `ParserGrammarTestCase`. |
 | **`BIP026-P2`: Split ANTLR4 Grammar & Template Syntax** | Split `Babble.g4` into `BabbleLexer.g4` + `BabbleParser.g4` with lexer modes and paren-depth stack (zero `@parser::members`, zero parser predicates, pure `SLL`); add `t"..."`, `t"""..."""`, `rt"..."`, `rt"""..."""`, multi-dollar escalation, and `$(expr)` (including nested templates); update `Formatter` for template token spacing and embedded expression formatting. | `ParserGrammarTestCase` (pure `SLL` across all files + nested template grammar tests), `FormatterTestCase` template round-trips, `ReplTestCase` unfinished template `INCOMPLETE` classification. |
 | **`BIP026-P3`: Runtime `Template`/`Placeholder`, Core Types & Dual-Mode Lowering** | Implement `org.babblelang.runtime.Template`, `Placeholder` (lazy `UNSET`/`EVALUATING` memoization, thread safety), and `TemplateSupport` (`java.base`-only); register `template`/`placeholder` types and `BIP019` axioms; wire `BlockScopes`, `Resolver`, `TypeChecker` (forbidding `void` placeholders and `template + string`), `Interpreter`, and `HirExpr.TemplateLiteral` (`HirBuilder`/`HirVerifier`/`HirPrinter`/`HirEmitter`). | `RuntimeBoundaryTestCase`, `AxiomsTestCase`, `DifferentialTestCase` + `.batest` specs for lazy memoization (`null`, side-effect count = 1, cycles, exceptions, nested templates, `materialize()`, `t1 + t2`, `.render()`). |
 | **`BIP026-P4`: Plug-in Evaluation Policies & Effect Integration** | Add `TemplatePolicy of R` + `tmpl.eval(policy)` (supporting both interface implementations and functions); integrate `BIP016`/`BIP017` effect tracking (`Q8`), `BIP017-D6` closure provenance (no viral `shared` for borrowed captures), and `unique`/`move` rejection inside lazy placeholders; add end-to-end policy tests (SQL `PreparedStatement` with an in-memory/mock JDBC `Connection`, HTML auto-escaping, guarded lazy logger). | `EffectsTestCase`, `src/test/babble/StringTemplates.ba`, `src/test/batest/strings/templates_and_policies.batest` (3-mode parity + JaCoCo coverage gate). |

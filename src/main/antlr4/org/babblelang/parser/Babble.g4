@@ -98,7 +98,7 @@ expression:
           | FLOAT_LIT                                         # floatLiteral
           | DOUBLE_LIT                                        # double
           | CHAR_LIT                                          # charLiteral
-          | STRING                                            # string
+          | (STRING | MULTILINE_STRING | RAW_STRING | RAW_MULTILINE_STRING) # string
           // "return" and "break" are prefix alternatives, so their operands are parsed at this
           // alternative's precedence. They must therefore come last, or "return a + b" / "break a + b"
           // would parse as "(return a) + b".
@@ -180,7 +180,42 @@ DOUBLE_LIT: [0-9]+ '.' [0-9]+ ([eE] [+-]? [0-9]+)? [dD]?
           | [0-9]+ [dD];
 INT: [0-9]+;
 CHAR_LIT: '\'' ( ~['\\\r\n] | '\\' ( [btnfr"'\\0] | 'u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] ) ) '\'';
-STRING: '"' ( ~[\\"] | '\\' ( [btnfr"'\\0] | 'u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] ) )* '"';
+STRING: '"' ( ~[\\"\r\n] | '\\' ( [btnfr"'\\0] | 'u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] ) )* '"';
+RAW_STRING: 'r"' ~["\r\n]* '"';
+MULTILINE_STRING
+    : '"""'
+      ( ~[\\"]
+      | '"' ( ~[\\"] | '\\' . )
+      | '""' ( ~[\\"] | '\\' . )
+      | '\\' .
+      )*
+      '"""'
+    ;
+RAW_MULTILINE_STRING
+    : 'r"""'
+      ( ~["]
+      | '"' ~["]
+      | '""' ~["]
+      )*
+      '"""'
+    ;
+UNTERMINATED_MULTILINE_STRING
+    : '"""'
+      ( ~[\\"]
+      | '"' ( ~[\\"] | '\\' . )
+      | '""' ( ~[\\"] | '\\' . )
+      | '\\' .
+      )*
+      ( '""' '\\'? | '"' '\\'? | '\\' )?
+    ;
+UNTERMINATED_RAW_MULTILINE_STRING
+    : 'r"""'
+      ( ~["]
+      | '"' ~["]
+      | '""' ~["]
+      )*
+      ( '""' | '"' )?
+    ;
 PLUS: '+';
 MINUS: '-';
 MUL: '*';

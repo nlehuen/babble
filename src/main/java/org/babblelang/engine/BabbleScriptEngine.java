@@ -6,13 +6,9 @@ import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
-import org.antlr.v4.runtime.IntStream;
-import org.antlr.v4.runtime.Lexer;
-import org.antlr.v4.runtime.LexerNoViableAltException;
 import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
 import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.misc.Interval;
 import org.antlr.v4.runtime.misc.ParseCancellationException;
 import org.babblelang.analysis.AnalysisSession;
 import org.babblelang.analysis.AnalysisException;
@@ -90,11 +86,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private static final BaseErrorListener FAIL_ON_LEXICAL_ERROR = new BaseErrorListener() {
         @Override
         public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line, int charPositionInLine, String msg, RecognitionException e) {
-            // A string still open where the text stops : more text could close it.
-            boolean atEnd = recognizer instanceof Lexer lexer && e instanceof LexerNoViableAltException noViableAlt
-                    && lexer.getInputStream().LA(1) == IntStream.EOF
-                    && lexer.getInputStream().getText(Interval.of(noViableAlt.getStartIndex(), noViableAlt.getStartIndex())).equals("\"");
-            throw new ParseFailure("Lexical error at line " + line + ":" + charPositionInLine + " : " + msg, line, charPositionInLine + 1, true, atEnd);
+            throw new ParseFailure("Lexical error at line " + line + ":" + charPositionInLine + " : " + msg, line, charPositionInLine + 1, true, false);
         }
     };
 
@@ -687,9 +679,33 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return name != null ? name.toString() : DEFAULT_SOURCE_NAME;
     }
 
-    /** A lexer that fails on the first character it doesn't recognise. */
+    /** A lexer that fails on the first character it doesn't recognise or invalid multiline string. */
     static BabbleLexer lexer(CharStream input) {
-        BabbleLexer lexer = new BabbleLexer(input);
+        BabbleLexer lexer = new BabbleLexer(input) {
+            @Override
+            public Token nextToken() {
+                Token token = super.nextToken();
+                switch (token.getType()) {
+                    case BabbleLexer.MULTILINE_STRING, BabbleLexer.RAW_MULTILINE_STRING -> {
+                        boolean raw = token.getType() == BabbleLexer.RAW_MULTILINE_STRING;
+                        org.babblelang.parser.StringLiterals.LexicalError err =
+                                org.babblelang.parser.StringLiterals.validateMultiline(token, raw);
+                        if (err != null) {
+                            throw new ParseFailure(err.formattedMessage(), err.line(), err.charPositionInLine() + 1, true, false);
+                        }
+                    }
+                    case BabbleLexer.UNTERMINATED_MULTILINE_STRING, BabbleLexer.UNTERMINATED_RAW_MULTILINE_STRING -> {
+                        boolean raw = token.getType() == BabbleLexer.UNTERMINATED_RAW_MULTILINE_STRING;
+                        org.babblelang.parser.StringLiterals.LexicalError err =
+                                org.babblelang.parser.StringLiterals.validateUnterminated(token, raw);
+                        throw new ParseFailure(err.formattedMessage(), err.line(), err.charPositionInLine() + 1, true, err.atEnd());
+                    }
+                    default -> {
+                    }
+                }
+                return token;
+            }
+        };
         // An error strategy only governs the parser : without this the lexer reports to
         // ANTLR's ConsoleErrorListener, which prints to stderr, skips the offending
         // character and lets compilation succeed on a mangled token stream.

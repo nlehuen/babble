@@ -1,0 +1,67 @@
+;;(
+    End-to-end differential tests for BIP026-I1 : strictly single-line "...",
+    JEP 378 """...""" with compile-time dedenting, \s, \<newline>, and raw r"..." / r"""...""".
+;;)
+
+;; Single-line escaped vs raw strings (trailing backslash works in r"...")
+def single = "a\nb\tc\"d\\e"
+def rawWin = r"C:\Users\ada\"
+def rawEscapes = r"\n\t\s\"
+assert(single.length() == 9)
+assert(rawWin == "C:\\Users\\ada\\")
+assert(rawEscapes == "\\n\\t\\s\\")
+
+;; r remains an ordinary identifier everywhere (variables, functions, members)
+def r = 10
+def Box = record (r: int) (
+    def getR = fn (): int -> (this.r + r)
+)
+assert(Box(5).getR() == 15)
+
+;; JEP 378 """...""" : closing delimiter anchor, intentional extra indent, blank lines
+def sql = """
+    SELECT id, name
+        FROM users
+
+    WHERE active = 1
+    """
+assert(sql == "SELECT id, name\n    FROM users\n\nWHERE active = 1\n")
+
+;; Closing delimiter on the last content line omits the trailing newline
+def noTrailingNl = """
+    line one
+    line two"""
+assert(noTrailingNl == "line one\nline two")
+
+;; Escapes in """...""" : \s fences trailing whitespace, \<newline> joins lines, ""\" embeds """
+def fenced = """
+    left  \s
+    wrapped \
+    together
+    quote ""\" here
+    """
+assert(fenced == "left   \nwrapped together\nquote \"\"\" here\n")
+
+;; Empty multiline blocks
+def emptyBlock = """
+    """
+def emptyMinimal = """
+    """
+assert(emptyBlock == "")
+assert(emptyMinimal == "")
+
+;; Raw multiline r"""...""" : dedented like """...""", quotes unescaped, backslashes literal
+def pattern = r"""
+    ^\s*([a-zA-Z_]\w*)\s*=\s*"([^"]*)"\s*$
+    ""two""
+    """
+assert(pattern == "^\\s*([a-zA-Z_]\\w*)\\s*=\\s*\"([^\"]*)\"\\s*$\n\"\"two\"\"\n")
+
+;; Multiline literal inside a nested function
+def greet = fn (who: string): string -> (
+    def msg = """
+        Hello, \
+        """ + who
+    msg
+)
+assert(greet("Babble") == "Hello, Babble")

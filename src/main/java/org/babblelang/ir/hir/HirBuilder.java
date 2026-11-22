@@ -750,7 +750,7 @@ public final class HirBuilder {
                             scopes.numericWideningRank(c), scopes.checkedType(c), EffectSet.EMPTY, true, false));
         }
         if (ctx instanceof BabbleParser.StringContext s) {
-            return new HirExpr.Const(Interpreter.unescape(s.STRING().getText()),
+            return new HirExpr.Const(org.babblelang.parser.StringLiterals.decode(s),
                     new ExprMeta(s.getStart().getLine(), ScopeAnalysis.PrimitiveKind.NONE,
                             scopes.numericWideningRank(s), scopes.checkedType(s), EffectSet.EMPTY, true, true));
         }
