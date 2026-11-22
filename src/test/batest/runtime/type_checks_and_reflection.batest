@@ -161,3 +161,29 @@ assert(i is int and not (i is double) and d is double and b is bool and s is str
 assert(java.util.Objects.hashCode(dyn(3.0)) != java.util.Objects.hashCode(dyn(3)))
 assert(java.util.Objects.hashCode(dyn(java.lang.Double.MAX_VALUE)) == java.util.Objects.hashCode(dyn(java.lang.Double.MAX_VALUE)))
 }}}}}
+
+{{{{{
+dyn(byte(1)) as string
+}}}}}
+Type error : expected string, got byte
+
+{{{{{
+dyn(short(1)) as string
+}}}}}
+Type error : expected string, got short
+
+{{{{{
+dyn(1L) as string
+}}}}}
+Type error : expected string, got long
+
+{{{{{
+dyn(1.0f) as string
+}}}}}
+Type error : expected string, got float
+
+{{{{{
+dyn('a') as string
+}}}}}
+Type error : expected string, got char
+

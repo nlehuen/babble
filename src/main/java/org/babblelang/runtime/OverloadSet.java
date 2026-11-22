@@ -3,6 +3,7 @@ package org.babblelang.runtime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -14,6 +15,25 @@ import java.util.concurrent.ConcurrentHashMap;
  * and untyped/reflective calls can fall back to {@link #call(Object...)}.</p>
  */
 public final class OverloadSet implements Callable {
+
+    private static final Map<Class<?>, String> JAVA_SCALAR_DESCS = Map.ofEntries(
+            Map.entry(byte.class, "byte|byte|"), Map.entry(Byte.class, "byte|byte|"),
+            Map.entry(short.class, "short|short|"), Map.entry(Short.class, "short|short|"),
+            Map.entry(int.class, "int|int|"), Map.entry(Integer.class, "int|int|"),
+            Map.entry(long.class, "long|long|"), Map.entry(Long.class, "long|long|"),
+            Map.entry(float.class, "float|float|"), Map.entry(Float.class, "float|float|"),
+            Map.entry(double.class, "double|double|"), Map.entry(Double.class, "double|double|"),
+            Map.entry(boolean.class, "bool|bool|"), Map.entry(Boolean.class, "bool|bool|"),
+            Map.entry(char.class, "char|char|"), Map.entry(Character.class, "char|char|"),
+            Map.entry(String.class, "string|string|"),
+            Map.entry(Object.class, ""));
+
+    private static final Map<Class<?>, Integer> RUNTIME_NUMERIC_RANKS = Map.of(
+            Byte.class, 0, Short.class, 1, Integer.class, 2,
+            Long.class, 3, Float.class, 4, Double.class, 5);
+
+    private static final Map<String, Integer> DESC_NUMERIC_RANKS = Map.of(
+            "byte", 0, "short", 1, "int", 2, "long", 3, "float", 4, "double", 5);
 
     /** Metadata for one alternative in an {@link OverloadSet}. */
     public static final class AltMeta {
@@ -31,7 +51,7 @@ public final class OverloadSet implements Callable {
             this.minArity = minArity;
             this.maxArity = maxArity;
             this.restIndex = restIndex;
-            this.paramDescriptors = paramDescriptors != null ? paramDescriptors : new String[0];
+            this.paramDescriptors = paramDescriptors;
         }
     }
 
@@ -51,33 +71,12 @@ public final class OverloadSet implements Callable {
     public static OverloadSet create(Object[] operands, String[] sigKeys, String[] displays,
                                      int[] minArities, int[] maxArities, int[] restIndices,
                                      String[][] paramDescriptors) {
-        List<Callable> flatCallables = new ArrayList<>();
-        List<AltMeta> flatMetas = new ArrayList<>();
-        int metaIdx = 0;
-        for (Object op : operands) {
-            if (op instanceof OverloadSet nested) {
-                for (int i = 0; i < nested.alternatives.length; i++) {
-                    flatCallables.add(nested.alternatives[i]);
-                    flatMetas.add(nested.metas[i]);
-                    metaIdx++;
-                }
-            } else if (op instanceof Callable c) {
-                flatCallables.add(c);
-                String sig = metaIdx < sigKeys.length ? sigKeys[metaIdx] : "";
-                String disp = metaIdx < displays.length ? displays[metaIdx] : "fn (...)";
-                int min = metaIdx < minArities.length ? minArities[metaIdx] : 0;
-                int max = metaIdx < maxArities.length ? maxArities[metaIdx] : 0;
-                int rest = metaIdx < restIndices.length ? restIndices[metaIdx] : -1;
-                String[] descs = metaIdx < paramDescriptors.length ? paramDescriptors[metaIdx] : new String[0];
-                flatMetas.add(new AltMeta(sig, disp, min, max, rest, descs));
-                metaIdx++;
-            } else {
-                throw new BabbleException("Not a function : " + op);
-            }
+        AltMeta[] metas = new AltMeta[sigKeys.length];
+        for (int i = 0; i < sigKeys.length; i++) {
+            metas[i] = new AltMeta(sigKeys[i], displays[i], minArities[i], maxArities[i],
+                    restIndices[i], paramDescriptors[i]);
         }
-        return new OverloadSet(
-                flatCallables.toArray(Callable[]::new),
-                flatMetas.toArray(AltMeta[]::new));
+        return of(operands, metas);
     }
 
     /** Convenience overload used by the interpreter and tests when metadata is already bundled. */
@@ -92,15 +91,9 @@ public final class OverloadSet implements Callable {
                     flatMetas.add(nested.metas[i]);
                     metaIdx++;
                 }
-            } else if (op instanceof Callable c) {
-                flatCallables.add(c);
-                AltMeta m = metaIdx < metas.length && metas[metaIdx] != null
-                        ? metas[metaIdx]
-                        : new AltMeta("", "fn (...)", 0, Integer.MAX_VALUE, -1, new String[0]);
-                flatMetas.add(m);
-                metaIdx++;
             } else {
-                throw new BabbleException("Not a function : " + op);
+                flatCallables.add((Callable) op);
+                flatMetas.add(metas[metaIdx++]);
             }
         }
         return new OverloadSet(
@@ -121,10 +114,7 @@ public final class OverloadSet implements Callable {
         if (target instanceof OverloadSet set) {
             return set.member(index);
         }
-        if (target instanceof Callable c) {
-            return c;
-        }
-        throw new BabbleException("Not a function : " + target);
+        return (Callable) target;
     }
 
     /**
@@ -135,10 +125,7 @@ public final class OverloadSet implements Callable {
         if (target instanceof OverloadSet set) {
             return set.select(signatureKey);
         }
-        if (target instanceof Callable c) {
-            return c;
-        }
-        throw new BabbleException("Not a function : " + target);
+        return (Callable) target;
     }
 
     /** Returns a new {@link OverloadSet} whose {@link BabbleFunction} alternatives are bound to {@code receiver}. */
@@ -164,26 +151,15 @@ public final class OverloadSet implements Callable {
         int best = -1;
         for (int i = 0; i < metas.length; i++) {
             AltMeta m = metas[i];
-            if (jm.isVarArgs() && m.restIndex == params.length - 1 && params.length > 0 && params[params.length - 1].isArray()) {
-                // Varargs Java method matches a Babble rest method at the same prefix.
-                boolean prefixOk = true;
-                for (int j = 0; j < params.length - 1; j++) {
-                    if (!descriptorAccepts(paramDescAt(m, j), descs[j])) {
-                        prefixOk = false;
-                        break;
-                    }
-                }
-                if (prefixOk && descriptorAccepts(paramDescAt(m, m.restIndex), javaClassToDescriptor(params[params.length - 1].getComponentType()))) {
-                    if (best < 0 || isMoreSpecificMeta(m, metas[best], params.length)) {
-                        best = i;
-                    }
-                }
-                continue;
+            boolean matches;
+            if (jm.isVarArgs() && m.restIndex == params.length - 1 && params[params.length - 1].isArray()) {
+                String[] expanded = Arrays.copyOf(descs, params.length);
+                expanded[params.length - 1] = javaClassToDescriptor(params[params.length - 1].getComponentType());
+                matches = acceptsDescriptors(m, expanded);
+            } else {
+                matches = acceptsDescriptors(m, descs);
             }
-            if (!acceptsDescriptors(m, descs)) {
-                continue;
-            }
-            if (best < 0 || isMoreSpecificMeta(m, metas[best], params.length)) {
+            if (matches && (best < 0 || isMoreSpecificMeta(m, metas[best], params.length))) {
                 best = i;
             }
         }
@@ -191,22 +167,8 @@ public final class OverloadSet implements Callable {
     }
 
     private static String javaClassToDescriptor(Class<?> cls) {
-        if (cls == byte.class || cls == Byte.class) return "byte|byte|";
-        if (cls == short.class || cls == Short.class) return "short|short|";
-        if (cls == int.class || cls == Integer.class) return "int|int|";
-        if (cls == long.class || cls == Long.class) return "long|long|";
-        if (cls == float.class || cls == Float.class) return "float|float|";
-        if (cls == double.class || cls == Double.class) return "double|double|";
-        if (cls == boolean.class || cls == Boolean.class) return "bool|bool|";
-        if (cls == char.class || cls == Character.class) return "char|char|";
-        if (cls == String.class) return "string|string|";
-        if (cls == Object.class) return "";
-        return "java|" + cls.getName() + "|" + cls.getName();
-    }
-
-    /** Number of flattened alternatives in this set. */
-    public int size() {
-        return alternatives.length;
+        String scalar = JAVA_SCALAR_DESCS.get(cls);
+        return scalar != null ? scalar : "java|" + cls.getName() + "|" + cls.getName();
     }
 
     /**
@@ -215,13 +177,7 @@ public final class OverloadSet implements Callable {
      * per signature key (BIP021-D12, BIP021-D16).
      */
     public Callable select(String signatureKey) {
-        Callable cached = selectionCache.get(signatureKey);
-        if (cached != null) {
-            return cached;
-        }
-        Callable chosen = findBySignature(signatureKey);
-        selectionCache.putIfAbsent(signatureKey, chosen);
-        return chosen;
+        return selectionCache.computeIfAbsent(signatureKey, this::findBySignature);
     }
 
     private Callable findBySignature(String signatureKey) {
@@ -238,10 +194,8 @@ public final class OverloadSet implements Callable {
         int best = -1;
         for (int i = 0; i < metas.length; i++) {
             AltMeta m = metas[i];
-            if (!acceptsDescriptors(m, targetDescs)) {
-                continue;
-            }
-            if (best < 0 || isMoreSpecificMeta(m, metas[best], targetDescs.length)) {
+            if (acceptsDescriptors(m, targetDescs)
+                    && (best < 0 || isMoreSpecificMeta(m, metas[best], targetDescs.length))) {
                 best = i;
             }
         }
@@ -258,8 +212,7 @@ public final class OverloadSet implements Callable {
             return false;
         }
         for (int i = 0; i < n; i++) {
-            String paramDesc = paramDescAt(m, i);
-            if (!descriptorAccepts(paramDesc, targetDescs[i])) {
+            if (!descriptorAccepts(paramDescAt(m, i), targetDescs[i])) {
                 return false;
             }
         }
@@ -267,10 +220,8 @@ public final class OverloadSet implements Callable {
     }
 
     private static String paramDescAt(AltMeta m, int index) {
-        if (m.restIndex >= 0 && index >= m.restIndex) {
-            return m.restIndex < m.paramDescriptors.length ? m.paramDescriptors[m.restIndex] : "";
-        }
-        return index < m.paramDescriptors.length ? m.paramDescriptors[index] : "";
+        int slot = (m.restIndex >= 0 && index >= m.restIndex) ? m.restIndex : index;
+        return slot < m.paramDescriptors.length ? m.paramDescriptors[slot] : "";
     }
 
     /**
@@ -279,59 +230,42 @@ public final class OverloadSet implements Callable {
      */
     @Override
     public Object call(ScriptRuntime runtime, Object[] arguments, String[] names, CallSite site) {
-        int n = arguments != null ? arguments.length : 0;
+        int n = arguments.length;
         int best = -1;
-        boolean ambiguous = false;
         for (int i = 0; i < metas.length; i++) {
             AltMeta m = metas[i];
-            if (n < m.minArity || n > m.maxArity) {
+            if (n < m.minArity || n > m.maxArity || !matchesRuntimeArgs(m, arguments)) {
                 continue;
             }
-            if (!matchesRuntimeArgs(m, arguments)) {
-                continue;
-            }
-            if (best < 0) {
+            if (best < 0 || isMoreSpecificMeta(m, metas[best], n)) {
                 best = i;
-            } else {
-                boolean iBetter = isMoreSpecificMeta(m, metas[best], n);
-                boolean bestBetter = isMoreSpecificMeta(metas[best], m, n);
-                if (iBetter && !bestBetter) {
-                    best = i;
-                    ambiguous = false;
-                } else if (!bestBetter) {
-                    ambiguous = true;
-                }
             }
         }
         if (best < 0) {
             throw new BabbleException("No applicable overload for (" + runtimeArgNames(arguments)
                     + ") : candidates are " + candidatesSummary());
         }
-        if (ambiguous) {
-            throw new BabbleException("Ambiguous call for (" + runtimeArgNames(arguments)
-                    + ") : candidates are " + candidatesSummary());
-        }
         Callable target = alternatives[best];
         AltMeta meta = metas[best];
-        if (meta.restIndex >= 0) {
-            Object[] packed = packRestArgs(arguments, meta.restIndex);
+        if (meta.restIndex >= 0 && !isPackedRestCall(meta, arguments)) {
+            Object[] packed = new Object[meta.restIndex + 1];
+            System.arraycopy(arguments, 0, packed, 0, meta.restIndex);
+            packed[meta.restIndex] = Spreads.packedRest(
+                    ArgumentsView.of(Arrays.copyOfRange(arguments, meta.restIndex, arguments.length)));
             return target.call(runtime, packed, null, site);
         }
         return target.call(runtime, arguments, names, site);
     }
 
-    private static Object[] packRestArgs(Object[] arguments, int restIndex) {
-        Object[] packed = new Object[restIndex + 1];
-        System.arraycopy(arguments, 0, packed, 0, restIndex);
-        Object[] tail = Arrays.copyOfRange(arguments, restIndex, arguments.length);
-        packed[restIndex] = Spreads.packedRest(ArgumentsView.of(tail));
-        return packed;
+    private static boolean isPackedRestCall(AltMeta m, Object[] arguments) {
+        return m.restIndex >= 0 && arguments.length == m.restIndex + 1
+                && arguments[m.restIndex] instanceof ArgumentsView.PackedRest;
     }
 
     private static boolean matchesRuntimeArgs(AltMeta m, Object[] arguments) {
-        for (int i = 0; i < arguments.length; i++) {
-            String desc = paramDescAt(m, i);
-            if (!matchesValue(arguments[i], desc)) {
+        int limit = isPackedRestCall(m, arguments) ? m.restIndex : arguments.length;
+        for (int i = 0; i < limit; i++) {
+            if (!matchesValue(arguments[i], paramDescAt(m, i))) {
                 return false;
             }
         }
@@ -339,14 +273,8 @@ public final class OverloadSet implements Callable {
     }
 
     private static boolean matchesValue(Object value, String desc) {
-        if (desc == null || desc.isEmpty() || "any?".equals(desc)) {
+        if (desc.isEmpty()) {
             return true;
-        }
-        if ("any|any|".equals(desc) || "any".equals(desc)) {
-            return value != null;
-        }
-        if ("null|null|".equals(desc) || "null".equals(desc)) {
-            return value == null;
         }
         if (Types.matches(value, desc)) {
             return true;
@@ -354,129 +282,67 @@ public final class OverloadSet implements Callable {
         if (value == null) {
             return false;
         }
-        // Numeric widening: byte < short < int < long < float < double
-        int valRank = runtimeNumericRank(value);
-        int targetRank = descriptorNumericRank(desc);
+        int valRank = RUNTIME_NUMERIC_RANKS.getOrDefault(value.getClass(), -1);
+        int targetRank = DESC_NUMERIC_RANKS.getOrDefault(descriptorTag(desc), -1);
         return valRank >= 0 && targetRank >= 0 && valRank <= targetRank;
     }
 
-    private static int runtimeNumericRank(Object value) {
-        if (value instanceof Byte) return 0;
-        if (value instanceof Short) return 1;
-        if (value instanceof Integer) return 2;
-        if (value instanceof Long) return 3;
-        if (value instanceof Float) return 4;
-        if (value instanceof Double) return 5;
-        return -1;
-    }
-
     private static String descriptorTag(String desc) {
-        if (desc == null || desc.isEmpty()) {
-            return "";
-        }
         int bar = desc.indexOf('|');
         return bar >= 0 ? desc.substring(0, bar) : desc;
     }
 
     private static String descriptorPayload(String desc) {
-        if (desc == null) {
-            return "";
-        }
         int first = desc.indexOf('|');
-        if (first < 0) {
-            return desc;
-        }
-        int second = desc.indexOf('|', first + 1);
+        int second = first >= 0 ? desc.indexOf('|', first + 1) : -1;
         return second >= 0 ? desc.substring(second + 1) : "";
     }
 
-    private static int descriptorNumericRank(String desc) {
-        return switch (descriptorTag(desc)) {
-            case "byte" -> 0;
-            case "short" -> 1;
-            case "int" -> 2;
-            case "long" -> 3;
-            case "float" -> 4;
-            case "double" -> 5;
-            default -> -1;
-        };
-    }
-
     private static boolean descriptorAccepts(String paramDesc, String argDesc) {
-        if (paramDesc == null || paramDesc.isEmpty() || "any?".equals(paramDesc)) {
-            return true;
-        }
-        if (paramDesc.equals(argDesc)) {
+        if (paramDesc.isEmpty() || paramDesc.equals(argDesc)) {
             return true;
         }
         String pTag = descriptorTag(paramDesc);
         String aTag = descriptorTag(argDesc);
         if ("union".equals(aTag)) {
-            String payload = descriptorPayload(argDesc);
-            if (payload.isEmpty()) {
-                return false;
-            }
-            for (String enc : payload.split(",", -1)) {
-                if (!descriptorAccepts(paramDesc, Types.decodeComponent(enc))) {
-                    return false;
-                }
-            }
-            return true;
+            return matchComponents(argDesc, paramDesc, true, true);
         }
         if ("union".equals(pTag)) {
-            String payload = descriptorPayload(paramDesc);
-            if (payload.isEmpty()) {
-                return false;
-            }
-            for (String enc : payload.split(",", -1)) {
-                if (descriptorAccepts(Types.decodeComponent(enc), argDesc)) {
-                    return true;
-                }
-            }
-            return false;
+            return matchComponents(paramDesc, argDesc, false, false);
         }
         if ("inter".equals(pTag)) {
-            String payload = descriptorPayload(paramDesc);
-            if (payload.isEmpty()) {
-                return false;
-            }
-            for (String enc : payload.split(",", -1)) {
-                if (!descriptorAccepts(Types.decodeComponent(enc), argDesc)) {
-                    return false;
-                }
-            }
-            return true;
+            return matchComponents(paramDesc, argDesc, true, false);
         }
         if ("inter".equals(aTag)) {
-            String payload = descriptorPayload(argDesc);
-            if (payload.isEmpty()) {
-                return false;
-            }
-            for (String enc : payload.split(",", -1)) {
-                if (descriptorAccepts(paramDesc, Types.decodeComponent(enc))) {
-                    return true;
-                }
-            }
-            return false;
+            return matchComponents(argDesc, paramDesc, false, true);
         }
         if ("any".equals(pTag)) {
             return !"null".equals(aTag) && !argDesc.isEmpty();
         }
-        int pr = descriptorNumericRank(paramDesc);
-        int ar = descriptorNumericRank(argDesc);
+        int pr = DESC_NUMERIC_RANKS.getOrDefault(pTag, -1);
+        int ar = DESC_NUMERIC_RANKS.getOrDefault(aTag, -1);
         if (pr >= 0 && ar >= 0) {
             return ar <= pr;
         }
-        if ("java".equals(pTag) && "java".equals(aTag)) {
+        if ("java".equals(pTag)) {
             Class<?> pc = resolveClass(descriptorPayload(paramDesc));
-            Class<?> ac = resolveClass(descriptorPayload(argDesc));
+            Class<?> ac = "string".equals(aTag) ? String.class
+                    : ("java".equals(aTag) ? resolveClass(descriptorPayload(argDesc)) : null);
             return pc != null && ac != null && pc.isAssignableFrom(ac);
         }
-        if ("java".equals(pTag) && "string".equals(aTag)) {
-            Class<?> pc = resolveClass(descriptorPayload(paramDesc));
-            return pc != null && pc.isAssignableFrom(String.class);
-        }
         return false;
+    }
+
+    private static boolean matchComponents(String compound, String other, boolean all, boolean compoundIsArg) {
+        String payload = descriptorPayload(compound);
+        for (String enc : payload.split(",", -1)) {
+            String comp = Types.decodeComponent(enc);
+            boolean ok = compoundIsArg ? descriptorAccepts(other, comp) : descriptorAccepts(comp, other);
+            if (ok != all) {
+                return ok;
+            }
+        }
+        return all;
     }
 
     private static boolean isMoreSpecificMeta(AltMeta a, AltMeta b, int arity) {
@@ -495,21 +361,11 @@ public final class OverloadSet implements Callable {
     }
 
     private static Class<?> resolveClass(String desc) {
-        return switch (desc) {
-            case "string" -> String.class;
-            case "bool" -> Boolean.class;
-            case "char" -> Character.class;
-            case "list" -> java.util.List.class;
-            case "set" -> java.util.Set.class;
-            case "map" -> java.util.Map.class;
-            default -> {
-                try {
-                    yield Class.forName(desc);
-                } catch (ClassNotFoundException e) {
-                    yield null;
-                }
-            }
-        };
+        try {
+            return Class.forName(desc);
+        } catch (ClassNotFoundException e) {
+            return null;
+        }
     }
 
     private String candidatesSummary() {
@@ -522,9 +378,6 @@ public final class OverloadSet implements Callable {
     }
 
     private static String runtimeArgNames(Object[] args) {
-        if (args == null) {
-            return "";
-        }
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < args.length; i++) {
             if (i > 0) sb.append(", ");
@@ -535,12 +388,6 @@ public final class OverloadSet implements Callable {
 
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder("overload (");
-        for (int i = 0; i < metas.length; i++) {
-            if (i > 0) sb.append(", ");
-            sb.append(metas[i].display);
-        }
-        sb.append(')');
-        return sb.toString();
+        return "overload (" + candidatesSummary() + ")";
     }
 }

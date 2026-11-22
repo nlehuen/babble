@@ -6128,7 +6128,7 @@ final class EffectChecker {
             }
             switch (op) {
                 case "+" -> {
-                    if (res == Type.STRING) {
+                    if (res == Type.STRING && (lt == Type.STRING || rt == Type.STRING)) {
                         if (lt != Type.STRING) {
                             applyEffects(toStringProfile(lt));
                             if (lt instanceof Type.Array) {

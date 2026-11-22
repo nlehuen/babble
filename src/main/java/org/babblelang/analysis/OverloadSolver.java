@@ -480,30 +480,17 @@ final class OverloadSolver {
     }
 
     private static boolean staticOverlaps(TypeAlgebra algebra, Type a, Type b, Set<String> active) {
+        a = TypeAlgebra.unwrapFrozen(a);
+        b = TypeAlgebra.unwrapFrozen(b);
         if (a == Type.ERROR || b == Type.ERROR || a == Type.NOTHING || b == Type.NOTHING || a.equals(b)) {
             return true;
         }
-        if (a instanceof Type.Frozen af && b instanceof Type.Frozen bf) {
-            return staticOverlaps(algebra, af.of(), bf.of(), active);
-        }
-        if (a instanceof Type.Frozen af) {
-            return staticOverlaps(algebra, af.of(), b, active);
-        }
-        if (b instanceof Type.Frozen bf) {
-            return staticOverlaps(algebra, a, bf.of(), active);
-        }
-        if (a instanceof Type.Union u) {
-            for (Type m : u.members()) {
-                if (staticOverlaps(algebra, m, b, active)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (b instanceof Type.Union u) {
-            for (Type m : u.members()) {
-                if (staticOverlaps(algebra, a, m, active)) {
-                    return true;
+        if (a instanceof Type.Union || b instanceof Type.Union) {
+            for (Type ma : Type.membersOf(a)) {
+                for (Type mb : Type.membersOf(b)) {
+                    if (staticOverlaps(algebra, ma, mb, active)) {
+                        return true;
+                    }
                 }
             }
             return false;
@@ -515,44 +502,16 @@ final class OverloadSolver {
             return true;
         }
         if (a instanceof Type.TypeVar tv) {
-            String key = "L:" + System.identityHashCode(tv) + ":" + b;
-            if (!active.add(key)) {
-                return true;
-            }
-            try {
-                Type bound = tv.bound() != null ? tv.bound() : Type.NULLABLE_ANY;
-                return staticOverlaps(algebra, bound, b, active);
-            } finally {
-                active.remove(key);
-            }
+            return typeVarOverlaps(algebra, tv, b, active);
         }
         if (b instanceof Type.TypeVar tv) {
-            String key = "R:" + a + ":" + System.identityHashCode(tv);
-            if (!active.add(key)) {
-                return true;
-            }
-            try {
-                Type bound = tv.bound() != null ? tv.bound() : Type.NULLABLE_ANY;
-                return staticOverlaps(algebra, a, bound, active);
-            } finally {
-                active.remove(key);
-            }
+            return typeVarOverlaps(algebra, tv, a, active);
         }
         if (a instanceof Type.Intersection ia) {
-            for (Type m : ia.members()) {
-                if (!staticOverlaps(algebra, m, b, active)) {
-                    return false;
-                }
-            }
-            return true;
+            return intersectionOverlaps(algebra, ia, b, active);
         }
         if (b instanceof Type.Intersection ib) {
-            for (Type m : ib.members()) {
-                if (!staticOverlaps(algebra, a, m, active)) {
-                    return false;
-                }
-            }
-            return true;
+            return intersectionOverlaps(algebra, ib, a, active);
         }
         // Numeric scalars overlap along the widening chain byte -> short -> int -> long -> float -> double.
         if (Type.isNumericScalar(a) && Type.isNumericScalar(b)) {
@@ -616,32 +575,52 @@ final class OverloadSolver {
         if (algebra.assignable(a, b) || algebra.assignable(b, a)) {
             return true;
         }
-        Class<?> ca = JavaTypeBridge.javaClassOf(a);
-        Class<?> cb = JavaTypeBridge.javaClassOf(b);
-        if (ca != null && cb != null) {
-            return (ca.isInterface() && cb.isInterface())
-                    || (ca.isInterface() && !Modifier.isFinal(cb.getModifiers()))
-                    || (cb.isInterface() && !Modifier.isFinal(ca.getModifiers()));
+        return javaClassesCastable(JavaTypeBridge.javaClassOf(a), JavaTypeBridge.javaClassOf(b));
+    }
+
+    private static boolean typeVarOverlaps(TypeAlgebra algebra, Type.TypeVar tv, Type other, Set<String> active) {
+        String key = "TV:" + System.identityHashCode(tv) + ":" + other;
+        if (!active.add(key)) {
+            return true;
         }
-        return false;
+        try {
+            Type bound = tv.bound() != null ? tv.bound() : Type.NULLABLE_ANY;
+            return staticOverlaps(algebra, bound, other, active);
+        } finally {
+            active.remove(key);
+        }
+    }
+
+    private static boolean intersectionOverlaps(TypeAlgebra algebra, Type.Intersection inter, Type other, Set<String> active) {
+        for (Type m : inter.members()) {
+            if (!staticOverlaps(algebra, m, other, active)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean javaClassesCastable(Class<?> ca, Class<?> cb) {
+        if (ca == null || cb == null) {
+            return false;
+        }
+        return (ca.isInterface() && cb.isInterface())
+                || (ca.isInterface() && !Modifier.isFinal(cb.getModifiers()))
+                || (cb.isInterface() && !Modifier.isFinal(ca.getModifiers()));
     }
 
     private static boolean babbleJavaOverlap(TypeAlgebra algebra, Type.Instance bi, Type.JavaInstance ji, Set<String> active) {
-        if (bi.node().isInterface() && ji.type().isInterface()) {
-            return true;
-        }
         if (ji.type().isInterface()) {
-            Type proj = algebra.projectToJava(bi, ji.type());
-            if (proj instanceof Type.JavaInstance pj) {
-                return typeArgsOverlap(algebra, isCovariantJavaClass(ji.type()),
-                        pj.typeArguments(), ji.typeArguments(), active);
+            if (bi.node().isInterface()) {
+                return true;
             }
-            return bi.node().isInterface();
+            Type proj = algebra.projectToJava(bi, ji.type());
+            return proj instanceof Type.JavaInstance pj
+                    && typeArgsOverlap(algebra, isCovariantJavaClass(ji.type()),
+                    pj.typeArguments(), ji.typeArguments(), active);
         }
-        if (bi.node().isInterface() && !Modifier.isFinal(ji.type().getModifiers())) {
-            return true;
-        }
-        return ji.type() == Object.class;
+        return (bi.node().isInterface() && !Modifier.isFinal(ji.type().getModifiers()))
+                || ji.type() == Object.class;
     }
 
     private static boolean javaTypesOverlap(TypeAlgebra algebra, Type.JavaInstance ja, Type.JavaInstance jb, Set<String> active) {
@@ -651,23 +630,18 @@ final class OverloadSolver {
             return typeArgsOverlap(algebra, isCovariantJavaClass(ca), ja.typeArguments(), jb.typeArguments(), active);
         }
         if (ca.isAssignableFrom(cb)) {
-            Type proj = algebra.projectToJava(jb, ca);
-            if (proj instanceof Type.JavaInstance pj) {
-                return typeArgsOverlap(algebra, isCovariantJavaClass(ca), ja.typeArguments(), pj.typeArguments(), active);
-            }
-            return true;
+            return javaSuperOverlap(algebra, ja, jb, active);
         }
         if (cb.isAssignableFrom(ca)) {
-            Type proj = algebra.projectToJava(ja, cb);
-            if (proj instanceof Type.JavaInstance pj) {
-                return typeArgsOverlap(algebra, isCovariantJavaClass(cb), pj.typeArguments(), jb.typeArguments(), active);
-            }
-            return true;
+            return javaSuperOverlap(algebra, jb, ja, active);
         }
-        // Unrelated classes: overlap iff castable (at least one is an interface and the other is non-final).
-        return (ca.isInterface() && cb.isInterface())
-                || (ca.isInterface() && !Modifier.isFinal(cb.getModifiers()))
-                || (cb.isInterface() && !Modifier.isFinal(ca.getModifiers()));
+        return javaClassesCastable(ca, cb);
+    }
+
+    private static boolean javaSuperOverlap(TypeAlgebra algebra, Type.JavaInstance sup, Type.JavaInstance sub, Set<String> active) {
+        Type proj = algebra.projectToJava(sub, sup.type());
+        return !(proj instanceof Type.JavaInstance pj)
+                || typeArgsOverlap(algebra, isCovariantJavaClass(sup.type()), sup.typeArguments(), pj.typeArguments(), active);
     }
 
     private static boolean isCovariantJavaClass(Class<?> cls) {
@@ -682,19 +656,11 @@ final class OverloadSolver {
         for (int i = 0; i < argsA.size(); i++) {
             Type ta = argsA.get(i);
             Type tb = argsB.get(i);
-            if (ta instanceof Type.TypeVar || tb instanceof Type.TypeVar) {
-                if (!staticOverlaps(algebra, ta, tb, active)) {
-                    return false;
-                }
-            } else if (covariant) {
-                if (!staticOverlaps(algebra, ta, tb, active)) {
-                    return false;
-                }
-            } else {
-                // Invariant mutable collection (e.g. list of int vs list of string): arguments must be equal.
-                if (!ta.equals(tb)) {
-                    return false;
-                }
+            boolean ok = (covariant || ta instanceof Type.TypeVar || tb instanceof Type.TypeVar)
+                    ? staticOverlaps(algebra, ta, tb, active)
+                    : ta.equals(tb);
+            if (!ok) {
+                return false;
             }
         }
         return true;
@@ -715,51 +681,25 @@ final class OverloadSolver {
         if (a.equals(b)) {
             return a;
         }
-        if (a == Type.NULL) {
-            return Type.containsNull(b) ? Type.NULL : null;
+        if (a == Type.NULL || b == Type.NULL) {
+            Type other = a == Type.NULL ? b : a;
+            return Type.containsNull(other) ? Type.NULL : null;
         }
-        if (b == Type.NULL) {
-            return Type.containsNull(a) ? Type.NULL : null;
-        }
-        if (a == Type.ANY) {
-            Type nonNull = Type.withoutNull(b);
-            return nonNull != Type.NOTHING ? nonNull : null;
-        }
-        if (b == Type.ANY) {
-            Type nonNull = Type.withoutNull(a);
+        if (a == Type.ANY || b == Type.ANY) {
+            Type nonNull = Type.withoutNull(a == Type.ANY ? b : a);
             return nonNull != Type.NOTHING ? nonNull : null;
         }
         if (a instanceof Type.TypeVar tv) {
-            String key = "ML:" + System.identityHashCode(tv) + ":" + b;
-            if (!active.add(key)) {
-                return b;
-            }
-            try {
-                Type bound = tv.bound() != null ? tv.bound() : Type.NULLABLE_ANY;
-                return staticMeet(algebra, bound, b, active);
-            } finally {
-                active.remove(key);
-            }
+            return typeVarMeet(algebra, tv, b, active);
         }
         if (b instanceof Type.TypeVar tv) {
-            String key = "MR:" + a + ":" + System.identityHashCode(tv);
-            if (!active.add(key)) {
-                return a;
-            }
-            try {
-                Type bound = tv.bound() != null ? tv.bound() : Type.NULLABLE_ANY;
-                return staticMeet(algebra, a, bound, active);
-            } finally {
-                active.remove(key);
-            }
+            return typeVarMeet(algebra, tv, a, active);
         }
         if (a instanceof Type.Union || b instanceof Type.Union) {
-            List<Type> ma = Type.membersOf(a);
-            List<Type> mb = Type.membersOf(b);
             // Prefer non-null witness when available.
             Type nullWitness = null;
-            for (Type x : ma) {
-                for (Type y : mb) {
+            for (Type x : Type.membersOf(a)) {
+                for (Type y : Type.membersOf(b)) {
                     Type m = staticMeet(algebra, x, y, active);
                     if (m != null && m != Type.NOTHING) {
                         if (m == Type.NULL) {
@@ -786,6 +726,19 @@ final class OverloadSolver {
             return Type.intersection(a, b);
         }
         return a;
+    }
+
+    private static Type typeVarMeet(TypeAlgebra algebra, Type.TypeVar tv, Type other, Set<String> active) {
+        String key = "M:" + System.identityHashCode(tv) + ":" + other;
+        if (!active.add(key)) {
+            return other;
+        }
+        try {
+            Type bound = tv.bound() != null ? tv.bound() : Type.NULLABLE_ANY;
+            return staticMeet(algebra, bound, other, active);
+        } finally {
+            active.remove(key);
+        }
     }
 
     static boolean isInterfaceLike(Type t) {

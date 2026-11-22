@@ -386,3 +386,26 @@ def C = class (def v: int) (
 )
 assert(C(3).run(2) == 12)
 }}}}}
+
+{{{{{
+;; LICM / HirPurity : loop-invariant as, TypeApply, array.size(), and pure overloaded helper
+def id of T = fn (x: T): int -> (1)
+def ov = overload (fn (a: int): int -> (a + 1), fn (a: int, b: int): int -> (a + b))
+def run = fn (x: any, arr: array of int): int -> (
+  def i = 0 ; def acc = 0
+  while i < 4 then (acc += (x as int) + (id of int)(x as int) + arr.size() + ov(2) + ov(1, 2) ; i += 1) ; acc
+)
+assert(run(5, array.of(10, 20, 30)) == 60)
+}}}}}
+
+{{{{{
+;; LICM in for-loop (Logic, DIV, Block) and DCE of unused MakeOverloadSet
+def run = fn (a: int, b: int, flag: bool, xs: list of int): double -> (
+  def unusedOv = overload (fn (n: int): int -> (n + 1), fn (s: string): int -> (s.length()))
+  def acc = 0.0
+  for e in xs then (if flag and (a > 0) then (acc += (a / b) + (a + b) + e))
+  acc
+)
+assert(run(10, 2, true, list(1, 2, 3)) == 57.0)
+}}}}}
+

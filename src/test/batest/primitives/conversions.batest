@@ -99,3 +99,29 @@ def f = fn () -> ( 1 )
 print(classof(f))
 }}}}}
 classof : a function has no class
+
+{{{{{
+byte(200)
+}}}}}
+Out of the byte range : 200
+
+{{{{{
+byte(0.0 / 0.0)
+}}}}}
+Out of the byte range : 0.0/0.0 = NaN
+
+{{{{{
+short(40000)
+}}}}}
+Out of the short range : 40000
+
+{{{{{
+short(32768.0)
+}}}}}
+Out of the short range : 32768.0
+
+{{{{{
+int(3000000000L)
+}}}}}
+Out of the int range : 3000000000L = 3000000000
+
