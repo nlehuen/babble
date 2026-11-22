@@ -1,6 +1,7 @@
-;; BIP021-P5 : Overload sets — static ambiguity checking, most-specific resolution,
-;; numeric widening ranks, union/nullable/intersection splits, set types, target selection,
-;; generics, lambdas, spreads, effects, modules, and sessions.
+;; Overload sets : static ambiguity checking, most-specific resolution, numeric widening ranks,
+;; union/nullable/intersection splits, set types, target selection, generics, lambdas, spreads,
+;; effects, modules, and sessions.
+;; References : BIP021-P5 (BIP021-D9..D16, D21), OverloadSolver, OverloadSet, CallSolver
 
 ========== ov_shapes.ba ==========
 export def Circle = record (r: double) ()
@@ -8,633 +9,446 @@ export def area = overload (
     fn (c: Circle): double -> ( 3.0 * c.r * c.r ),
     fn (n: int): double -> ( double(n) )
 )
+==========
 
-{{{{{
-;; Basic overload set, flattening/extension, recursive set call, and static dispatch
-def show = overload (
-    fn (n: int): string -> ( "int:" + n ),
-    fn (d: double): string -> ( "double:" + d ),
-    fn (s: string): string -> ( "string:" + s ),
-    fn (xs: list of int): string -> ( "list:" + xs.size() )
-)
-def describe = overload (
-    show,
-    fn (b: bool): string -> ( if b then ( "yes" ) else ( "no" ) )
-)
-println(show(42))
-println(show(3.5))
-println(show("hi"))
-println(show(list(1, 2, 3)))
-println(describe(7), "|", describe(true), "|", describe("ok"))
-
-;; Recursive self-call inside an overload set and recurse for same alternative
-def render = overload (
-    fn (n: int): string -> ( if n <= 0 then ( "0" ) else ( "n=" + recurse(n - 1) ) ),
-    fn (xs: list of int): string -> (
-        if xs.size() == 0 then ( "[]" ) else ( "[" + render(xs.get(0)) + "]" )
-    )
-)
-println(render(2))
-println(render(list(1)))
-}}}}}
-int:42
-double:3.5
-string:hi
-list:3
-int:7|yes|string:ok
-n=n=0
-[n=0]
-
-{{{{{
-;; Java-style nearest numeric widening ranks (byte < short < int < long < float < double)
-def pickNum = overload (
-    fn (x: long): string -> ( "long:" + x ),
-    fn (x: double): string -> ( "double:" + x )
-)
-def pickExact = overload (
-    fn (x: int): string -> ( "int:" + x ),
-    fn (x: long): string -> ( "long:" + x ),
-    fn (x: double): string -> ( "double:" + x )
-)
-println(pickNum(byte(1)), "|", pickNum(short(2)), "|", pickNum(3), "|", pickNum(4.5f), "|", pickNum(5.5))
-println(pickExact(byte(1)), "|", pickExact(2), "|", pickExact(3L), "|", pickExact(4.5))
-}}}}}
-long:1|long:2|long:3|double:4.5|double:5.5
-int:1|int:2|long:3|double:4.5
-
-{{{{{
-;; Static dispatch on interface type vs union split on Circle | Square and Shape | Named
 def Shape = interface ( def area: fn (): double )
 def Named = interface ( def name: fn (): string )
-def Circle = record (r: double) implements Shape (
-    def area = fn (): double -> ( 3.0 * this.r * this.r )
-)
-def Square = record (s: double) implements Shape (
-    def area = fn (): double -> ( this.s * this.s )
-)
-def Label = record (n: string) implements Named (
-    def name = fn (): string -> ( this.n )
-)
+def Circle = record (r: double) implements Shape ( def area = fn (): double -> ( 3.0 * this.r * this.r ) )
+def Square = record (s: double) implements Shape ( def area = fn (): double -> ( this.s * this.s ) )
+def Label = record (n: string) implements Named ( def name = fn (): string -> ( this.n ) )
 def NamedCircle = record (r: double, n: string) implements Shape, Named (
     def area = fn (): double -> ( 3.0 * this.r * this.r )
     def name = fn (): string -> ( this.n )
 )
 
-def tag = overload (
-    fn (c: Circle): string -> ( "circle" ),
-    fn (s: Shape): string -> ( "shape" )
+{{{{{
+def show = overload (
+    fn (n: int): string -> ( "i:" + n ),
+    fn (d: double): string -> ( "d:" + d ),
+    fn (s: string): string -> ( "s:" + s ),
+    fn (xs: list of int): string -> ( "l:" + xs.size() )
 )
+assert(show(42) == "i:42" and show(3.5) == "d:3.5" and show("hi") == "s:hi" and show(list(1, 2, 3)) == "l:3")
+}}}}}
+
+{{{{{
+def base = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string): string -> ( "s:" + s ) )
+def ext = overload ( base, fn (b: bool): string -> ( if b then ( "yes" ) else ( "no" ) ) )
+assert(ext(7) == "i:7" and ext(true) == "yes" and ext("ok") == "s:ok")
+}}}}}
+
+{{{{{
+def render = overload (
+    fn (n: int): string -> ( if n <= 0 then ( "0" ) else ( "n=" + recurse(n - 1) ) ),
+    fn (xs: list of int): string -> ( if xs.size() == 0 then ( "[]" ) else ( "[" + render(xs.get(0)) + "]" ) )
+)
+assert(render(2) == "n=n=0" and render(list(1)) == "[n=0]")
+}}}}}
+
+{{{{{
+def pickNum = overload ( fn (x: long): string -> ( "L:" + x ), fn (x: double): string -> ( "D:" + x ) )
+assert(pickNum(byte(1)) == "L:1" and pickNum(short(2)) == "L:2" and pickNum(3) == "L:3" and pickNum(4.5f) == "D:4.5")
+}}}}}
+
+{{{{{
+def pickExact = overload (
+    fn (x: int): string -> ( "I:" + x ),
+    fn (x: long): string -> ( "L:" + x ),
+    fn (x: double): string -> ( "D:" + x )
+)
+assert(pickExact(byte(1)) == "I:1" and pickExact(2) == "I:2" and pickExact(3L) == "L:3" and pickExact(4.5) == "D:4.5")
+}}}}}
+
+{{{{{
+;; Static dispatch picks by the expression's static type (Shape), not the runtime class (Circle)
+def tag = overload ( fn (c: Circle): string -> ( "circle" ), fn (s: Shape): string -> ( "shape" ) )
 def staticShape: Shape = Circle(2.0)
-;; Static dispatch: staticShape has static type Shape, so Shape alternative runs!
-println(tag(Circle(2.0)), "|", tag(staticShape))
+assert(tag(Circle(2.0)) == "circle" and tag(staticShape) == "shape")
+}}}}}
 
-;; Union split on disjoint classes Circle | Square
-def area = overload (
-    fn (c: Circle): double -> ( c.area() ),
-    fn (sq: Square): double -> ( sq.area() )
-)
+{{{{{
+def area = overload ( fn (c: Circle): double -> ( c.area() ), fn (sq: Square): double -> ( sq.area() ) )
 def getArea = fn (s: Circle | Square): double -> ( area(s) )
-println(getArea(Circle(2.0)), "|", getArea(Square(3.0)))
+assert(getArea(Circle(2.0)) == 12.0 and getArea(Square(3.0)) == 9.0)
+}}}}}
 
-;; Union split on interfaces with intersection meet Shape & Named tested first!
+{{{{{
+;; Union split over interfaces tests the intersection meet (Shape & Named) before single interfaces
 def showItem = overload (
     fn (s: Shape): string -> ( "S:" + s.area() ),
     fn (n: Named): string -> ( "N:" + n.name() ),
     fn (b: Shape & Named): string -> ( "SN:" + b.name() + ":" + b.area() )
 )
-def showAny = fn (x: Shape | Named): string -> ( showItem(x) )
-println(showAny(Circle(2.0)))
-println(showAny(Label("hi")))
-println(showAny(NamedCircle(2.0, "c")))
+def go = fn (x: Shape | Named): string -> ( showItem(x) )
+assert(go(Circle(2.0)) == "S:12.0" and go(Label("hi")) == "N:hi" and go(NamedCircle(2.0, "c")) == "SN:c:12.0")
 }}}}}
-circle|shape
-12.0|9.0
-S:12.0
-N:hi
-SN:c:12.0
 
 {{{{{
-;; Nullable union split (int? -> null vs int) and union of distinct generics? No: int | string
 def fmtOpt = overload (
     fn (n: null): string -> ( "none" ),
     fn (n: int): string -> ( "int:" + n ),
     fn (s: string): string -> ( "str:" + s )
 )
-def go = fn (v: int?): string -> ( fmtOpt(v) )
-def go2 = fn (v: int | string): string -> ( fmtOpt(v) )
-println(go(null), "|", go(9))
-println(go2(5), "|", go2("ok"))
+def goOpt = fn (v: int?): string -> ( fmtOpt(v) )
+def goU = fn (v: int | string): string -> ( fmtOpt(v) )
+assert(goOpt(null) == "none" and goOpt(9) == "int:9" and goU(5) == "int:5" and goU("ok") == "str:ok")
 }}}}}
-none|int:9
-int:5|str:ok
 
 {{{{{
-;; Overload set types (BIP021-D12): set <= fn, fn <= set, set <= set, set-typed params, SAM selection
-def fmt = overload (
-    fn (n: int): string -> ( "i:" + n ),
-    fn (s: string): string -> ( "s:" + s ),
-    fn (b: bool): string -> ( "b:" + b )
-)
-;; Target-type selection: set <= fn
+def fmt = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string): string -> ( "s:" + s ), fn (b: bool): string -> ( "b:" + b ) )
 def fmtInt: fn (x: int): string = fmt
-println(fmtInt(42))
-
-;; Passing a wider runtime set into a narrower set-typed parameter
-def usePair = fn (f: overload (fn (x: int): string, fn (x: string): string)): string -> (
-    f(1) + "/" + f("a")
-)
-println(usePair(fmt))
-
-;; A single general function satisfies an overload set type
-def general = fn (x: int | string): string -> ( "gen:" + x )
-println(usePair(general))
-
-;; Target-type selection into Java SAM (List.sort with Comparator)
-def cmp = overload (
-    fn (a: int, b: int): int -> ( b - a ),
-    fn (a: string, b: string): int -> ( a.compareTo(b) )
-)
-def nums = list(3, 1, 2)
-nums.sort(cmp)
-def words = list("pear", "apple", "fig")
-words.sort(cmp)
-println(nums)
-println(words)
+def use = fn (f: overload (fn (x: int): string, fn (x: string): string)): string -> ( f(1) + "/" + f("a") )
+assert(fmtInt(42) == "i:42" and use(fmt) == "i:1/s:a")
 }}}}}
-i:42
-i:1/s:a
-gen:1/gen:a
-[3, 2, 1]
-[apple, fig, pear]
 
 {{{{{
-;; Generic alternative fallback (BIP021-D21) + meet alternative resolving 2D widening ambiguity
-def show = overload (
-    fn (n: int): string -> ( "int:" + n ),
-    fn of T io (t: T): string -> ( "gen:" + t )
-)
-println(show(10), "|", show("hi"), "|", show(true))
+def use = fn (f: overload (fn (x: int): string, fn (x: string): string)): string -> ( f(1) + "/" + f("a") )
+def general = fn (x: int | string): string -> ( "gen:" + x )
+assert(use(general) == "gen:1/gen:a")
+}}}}}
 
-;; 2D widening resolved by explicit meet (int, int)
+{{{{{
+def cmp = overload ( fn (a: int, b: int): int -> ( b - a ), fn (a: string, b: string): int -> ( a.compareTo(b) ) )
+def nums = list(3, 1, 2) ; nums.sort(cmp)
+def words = list("pear", "apple", "fig") ; words.sort(cmp)
+assert(nums == list(3, 2, 1) and words == list("apple", "fig", "pear"))
+}}}}}
+
+{{{{{
+def fnOv = overload ( fn (s: string): int -> ( s.length() ), fn (n: int): int -> ( n * 10 ) )
+def mapper: java.util.function.Function of (string, int) = fnOv
+assert(mapper.apply("hello") == 5)
+}}}}}
+
+{{{{{
+def show = overload ( fn (n: int): string -> ( "int:" + n ), fn of T io (t: T): string -> ( "gen:" + t ) )
+assert(show(10) == "int:10" and show("hi") == "gen:hi" and show(true) == "gen:true")
+}}}}}
+
+{{{{{
 def mix = overload (
     fn (a: int, b: double): string -> ( "id" ),
     fn (a: double, b: int): string -> ( "di" ),
     fn (a: int, b: int): string -> ( "ii" )
 )
-println(mix(1, 2), "|", mix(1, 2.0), "|", mix(1.0, 2))
+assert(mix(1, 2) == "ii" and mix(1, 2.0) == "id" and mix(1.0, 2) == "di")
 }}}}}
-int:10|gen:hi|gen:true
-ii|id|di
 
 {{{{{
-;; Untyped lambda resolved from other argument + spread adaptation ranking (AS_IS > view > copy)
 def apply = overload (
     fn (x: int, f: fn (n: int): int): int -> ( f(x) ),
     fn (s: string, f: fn (t: string): int): int -> ( f(s) )
 )
-println(apply(5, fn (n) -> ( n * 2 )), "|", apply("hello", fn (t) -> ( t.length() )))
+assert(apply(5, fn (n) -> ( n * 2 )) == 10 and apply("hello", fn (t) -> ( t.length() )) == 5)
+}}}}}
 
+{{{{{
 def consume = overload (
     fn (xs: list of int): string -> ( "list:" + xs.size() ),
     fn (xs: array of int): string -> ( "array:" + xs.size() )
 )
-println(consume(...list(1, 2)), "|", consume(...array.of(3, 4, 5)))
+assert(consume(...list(1, 2)) == "list:2" and consume(...array.of(3, 4, 5)) == "array:3")
 }}}}}
-10|5
-list:2|array:3
 
 {{{{{
-;; Effects follow the chosen alternative (BIP021-D15)
+;; Effects follow the chosen alternative : pure callers may call a pure alternative alongside io siblings
+def sw = java.io.StringWriter()
 def action = overload (
     fn (n: int): int -> ( n + 1 ),
-    fn io (s: string): int -> ( println("io:" + s) ; s.length() )
+    fn io (s: string): int -> ( print("io:" + s, to: sw) ; s.length() )
 )
 def pureCaller = fn (x: int): int -> ( action(x) )
-println(pureCaller(41))
-println(action("hi"))
+assert(pureCaller(41) == 42 and action("hi") == 2 and sw.toString() == "io:hi")
 }}}}}
-42
-io:hi
-2
 
 {{{{{
-;; Error: calling io alternative from pure function is rejected
-def action = overload (
-    fn (n: int): int -> ( n + 1 ),
-    fn io (s: string): int -> ( println(s) ; s.length() )
+def wide = overload (
+    fn (d: double): string -> ( "d:" + d ),
+    fn io (c: java.lang.CharSequence): string -> ( "cs:" + c ),
+    fn (u: bool | null): string -> ( "bn:" + u )
 )
+assert("" + wide == "overload (fn (d : double) : string, fn io (c : java.lang.CharSequence) : string, fn (u : bool?) : string)")
+}}}}}
+
+{{{{{
+def wide = overload ( fn (d: double): string -> ( "d:" + d ), fn io (c: java.lang.CharSequence): string -> ( "cs:" + c ) )
+def call = fn io (g: overload (fn io (n: int): string, fn io (s: string): string)): string -> ( g(3) + "|" + g(4) + "|" + g("hi") )
+assert(call(wide) == "d:3.0|d:4.0|cs:hi")
+}}}}}
+
+{{{{{
+def wide = overload ( fn (u: bool | null): string -> ( "bn:" + u ), fn (n: int): string -> ( "i:" + n ) )
+def call = fn io (g: overload (fn io (b: bool): string, fn io (n: null): string)): string -> ( g(true) + "|" + g(null) )
+assert(call(wide) == "bn:true|bn:null")
+}}}}}
+
+{{{{{
+def anyS = overload ( fn io (x: any): string -> ( "any:" + x ), fn (n: null): string -> ( "null" ) )
+def callI = fn io (g: overload (fn io (n: int): string, fn io (s: string): string)): string -> ( g(3) + "|" + g("hi") )
+assert(callI(anyS) == "any:3|any:hi")
+}}}}}
+
+{{{{{
+def anyS = overload ( fn io (x: any): string -> ( "any:" + x ), fn (n: null): string -> ( "null" ) )
+def callB = fn io (g: overload (fn io (b: bool): string, fn io (n: null): string)): string -> ( g(true) + "|" + g(null) )
+assert(callB(anyS) == "any:true|null")
+}}}}}
+
+{{{{{
+def ovArr = overload (
+    fn (xs: array of int): string -> ( "ai:" + xs.size() ),
+    fn (xs: array of double): string -> ( "ad:" + xs.size() ),
+    fn (xs: array of string): string -> ( "as:" + xs.size() )
+)
+assert(ovArr(array.of(1, 2)) == "ai:2" and ovArr(array.of(1.0)) == "ad:1" and ovArr(array.of("a")) == "as:1")
+}}}}}
+
+{{{{{
+def ovFn = overload (
+    fn (f: fn (x: int): int): string -> ( "f1:" + f(5) ),
+    fn (f: fn (x: int, y: int): int): string -> ( "f2:" + f(2, 3) )
+)
+assert(ovFn(fn (x: int): int -> ( x + 1 )) == "f1:6" and ovFn(fn (x: int, y: int): int -> ( x + y )) == "f2:5")
+}}}}}
+
+{{{{{
+def ovLists = overload ( fn (xs: list of int): string -> ( "li:" + xs.size() ), fn (xs: list of string): string -> ( "ls:" + xs.size() ) )
+assert(ovLists(list(1, 2)) == "li:2" and ovLists(list("a")) == "ls:1")
+}}}}}
+
+{{{{{
+def ovFrozen = overload ( fn (xs: frozen list of int): string -> ( "fl:" + xs.size() ), fn (n: int): string -> ( "i:" + n ) )
+assert(ovFrozen(freeze(list(1, 2, 3))) == "fl:3" and ovFrozen(9) == "i:9")
+}}}}}
+
+{{{{{
+def ovEntry = overload (
+    fn (e: entry of (int, string)): string -> ( "ei:" + e.getKey() ),
+    fn (e: entry of (string, int)): string -> ( "es:" + e.getKey() )
+)
+assert(ovEntry(entry(7, "k")) == "ei:7" and ovEntry(entry("k", 7)) == "es:k")
+}}}}}
+
+{{{{{
+def ovJava = overload ( fn io (shared c: java.lang.CharSequence): string -> ( "cs:" + c.length() ), fn (s: string): string -> ( "s:" + s ) )
+def ovRest = overload ( fn (h: int, xs: int...): string -> ( "ri" ), fn (h: string, xs: string...): string -> ( "rs" ) )
+assert(ovJava(java.lang.StringBuilder("abc")) == "cs:3" and ovJava("ok") == "s:ok" and ovRest(1, 2) == "ri" and ovRest("a", "b") == "rs")
+}}}}}
+
+{{{{{
+def ovKw = overload (
+    fn (a: int, ..., tag: string = "x"): string -> ( "k1:" + a + ":" + tag ),
+    fn (a: string, ..., tag: string = "y"): string -> ( "k2:" + a + ":" + tag )
+)
+assert(ovKw(1) == "k1:1:x" and ovKw(1, tag: "z") == "k1:1:z" and ovKw("a", tag: "w") == "k2:a:w")
+}}}}}
+
+{{{{{
+def ovBound = overload (
+    fn (a: int, b: int): string -> ( "bi:" + (a + b) ),
+    fn of (T: java.lang.Comparable of T) (a: T, b: T): string -> ( "bc:" + a.compareTo(b) )
+)
+assert(ovBound(2, 3) == "bi:5" and ovBound("a", "b") == "bc:-1")
+}}}}}
+
+{{{{{
+def num = overload ( fn (n: int): string -> ( "i:" + n ), fn (d: double): string -> ( "d:" + d ), fn io (x: any): string -> ( "a:" + x ) )
+def go = fn io (g: overload (fn io (b: byte): string, fn io (f: float): string, fn io (s: string): string)): string -> ( g(byte(1)) + "|" + g(1.5f) + "|" + g("ok") )
+assert(go(num) == "i:1|d:1.5|a:ok")
+}}}}}
+
+{{{{{
+def go = fn io (g: overload (fn io (b: byte): string, fn io (f: float): string, fn io (s: string): string)): string -> ( g(byte(1)) + "|" + g(1.5f) + "|" + g("ok") )
+def one = fn io (x: any?): string -> ( "one:" + x )
+assert(go(one) == "one:1|one:1.5|one:ok")
+}}}}}
+
+{{{{{
+def ov = overload (
+    fn (a: int, b: int = 10): string -> ( "ab:" + a + "," + b ),
+    fn (f: fn (x: int): int): string -> ( "fn:" + f(4) )
+)
+assert(ov(b: 2, a: 1) == "ab:1,2" and ov(5) == "ab:5,10" and ov(fn (x) -> ( x * 3 )) == "fn:12")
+}}}}}
+
+{{{{{
+def ov = overload (
+    fn (n: int): string -> ( "i:" + n ),
+    fn (s: string, xs: int...): string -> ( def t = 0 ; for x in xs then ( t += x ) ; s + ":" + t )
+)
+assert(ov("sum", 1, 2, 3) == "sum:6" and ov("sp", ...list(4, 5)) == "sp:9")
+}}}}}
+
+{{{{{
+def CompCls = class (def n: int) implements java.lang.Comparable of CompCls ( def compareTo = fn (o: CompCls): int -> ( this.n - o.n ) )
+def ovComp = overload ( fn (c: CompCls): string -> ( "cls:" + c.n ), fn (c: java.lang.Comparable of CompCls): string -> ( "cmp" ) )
+assert(ovComp(CompCls(7)) == "cls:7")
+}}}}}
+
+{{{{{
+def AL = type java.util.ArrayList of int
+def ov = overload ( fn (xs: AL): string -> ( "al:" + xs.size() ), fn (xs: list of int): string -> ( "l:" + xs.size() ), fn (xs: java.lang.Iterable of int): string -> ( "it" ) )
+def al: AL = java.util.ArrayList() ; al.add(1) ; def li: list of int = al ; def it: java.lang.Iterable of int = al
+assert(ov(al) == "al:1" and ov(li) == "l:1" and ov(it) == "it")
+}}}}}
+
+{{{{{
+def ovArrCov = overload (
+    fn (xs: array of string): string -> ( "as:" + xs.size() ),
+    fn (xs: array of java.lang.CharSequence): string -> ( "acs:" + xs.size() )
+)
+def csArr: array of java.lang.CharSequence = (array of java.lang.CharSequence).of(java.lang.StringBuilder("a"))
+assert(ovArrCov(array.of("a", "b")) == "as:2" and ovArrCov(csArr) == "acs:1")
+}}}}}
+
+{{{{{
+;; Generic alternative T accepts the whole union statically without splitting
+def gen = overload ( fn (n: null): string -> ( "null" ), fn (n: int): string -> ( "int:" + n ), fn of T io (x: T): string -> ( "gen:" + x ) )
+def run = fn io (x: int | string | null): string -> ( gen(x) )
+assert(run(null) == "gen:null" and run(5) == "gen:5" and run("hi") == "gen:hi")
+}}}}}
+
+{{{{{
+def exactSetFn: overload (fn (n: int): string, fn (s: string): string) = fn (x: int | string): string -> ( "both:" + x )
+assert(exactSetFn(1) == "both:1" and exactSetFn("a") == "both:a")
+}}}}}
+
+{{{{{
+def uSet = overload ( fn (x: int | string): string -> ( "u:" + x ), fn (x: Shape): string -> ( "s:" + x.area() ) )
+def callU = fn (g: overload (fn (x: int | string): string, fn (x: Shape & Named): string)): string -> ( g(1) + "|" + g("s") + "|" + g(NamedCircle(2.0, "c")) )
+assert(callU(uSet) == "u:1|u:s|s:12.0")
+}}}}}
+
+{{{{{
+def iSet = overload ( fn (x: Shape & Named): string -> ( "sn:" + x.name() ), fn (x: int): string -> ( "i:" + x ) )
+def callI = fn (g: overload (fn (x: Shape & Named): string, fn (x: int): string)): string -> ( g(NamedCircle(2.0, "c")) + "|" + g(9) )
+assert(callI(iSet) == "sn:c|i:9")
+}}}}}
+
+{{{{{
+def shapes = import("ov_shapes.ba")
+def area = overload ( shapes.area, fn (sq: Square): double -> ( sq.s * sq.s ) )
+assert(shapes.area(shapes.Circle(2.0)) == 12.0)
+assert(area(shapes.Circle(2.0)) == 12.0 and area(5) == 5.0 and area(Square(4.0)) == 16.0)
+}}}}}
+
+{{{{{
+def f = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string): string -> ( "s:" + s ) )
+assert(f(1) == "i:1" and f("a") == "s:a")
+----------
+def f2 = overload ( f, fn (b: bool): string -> ( "b:" + b ) )
+assert(f2(2) == "i:2" and f2(true) == "b:true")
+----------
+def f = overload ( f2, fn (d: double): string -> ( "d:" + d ) )
+assert(f(1.5) == "d:1.5" and f(false) == "b:false")
+}}}}}
+
+{{{{{
+def action = overload ( fn (n: int): int -> ( n + 1 ), fn io (s: string): int -> ( println(s) ; s.length() ) )
 def bad = fn (s: string): int -> ( action(s) )
 }}}}}
 Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
-;; Error: exhaustive ambiguity check — 2D numeric widening without meet
-def f = overload (
-    fn (a: int, b: double): int -> ( 1 ),
-    fn (a: double, b: int): int -> ( 2 )
-)
+def f = overload ( fn (a: int, b: double): int -> ( 1 ), fn (a: double, b: int): int -> ( 2 ) )
 }}}}}
 Ambiguous overloads of f : f(int, int) fits fn (a : int, b : double) : int and fn (a : double, b : int) : int
 
 {{{{{
-;; Error: exhaustive ambiguity check — default reaches another alternative's arity
-def f = overload (
-    fn (a: int): int -> ( 1 ),
-    fn (a: int, b: int = 0): int -> ( 2 )
-)
+def f = overload ( fn (a: int): int -> ( 1 ), fn (a: int, b: int = 0): int -> ( 2 ) )
 }}}}}
 Ambiguous overloads of f : f(int) fits fn (a : int) : int and fn (a : int, b : int = ...) : int
 
 {{{{{
-;; Error: exhaustive ambiguity check — rest reaches another alternative's arity
-def f = overload (
-    fn (a: int): int -> ( 1 ),
-    fn (xs: int...): int -> ( 2 )
-)
+def f = overload ( fn (a: int): int -> ( 1 ), fn (xs: int...): int -> ( 2 ) )
 }}}}}
 Ambiguous overloads of f : f(int) fits fn (a : int) : int and fn (xs : int...) : int
 
 {{{{{
-;; Error: exhaustive ambiguity check — two unrelated interfaces without Shape & Named meet
-def Shape = interface ( def area: fn (): double )
-def Named = interface ( def name: fn (): string )
-def f = overload (
-    fn (s: Shape): string -> ( "s" ),
-    fn (n: Named): string -> ( "n" )
-)
+def f = overload ( fn (s: Shape): string -> ( "s" ), fn (n: Named): string -> ( "n" ) )
 }}}}}
 Ambiguous overloads of f : f(Shape & Named) fits fn (s : Shape) : string and fn (n : Named) : string
 
 {{{{{
-;; Error: runtime-erased union split rejected (list of int | list of string)
-def f = overload (
-    fn (xs: list of int): string -> ( "ints" ),
-    fn (xs: list of string): string -> ( "strs" )
-)
+def f = overload ( fn (xs: list of int): string -> ( "i" ), fn (xs: list of string): string -> ( "s" ) )
 def g = fn (xs: list of int | list of string): string -> ( f(xs) )
 }}}}}
 Cannot dispatch f on list of int | list of string : its alternatives are not told apart at runtime
 
 {{{{{
-;; Error: type arguments applied to an overload set (BIP021-D21)
-def f = overload (
-    fn (n: int): int -> ( n ),
-    fn of T (t: T): T -> ( t )
-)
+def f = overload ( fn (n: int): int -> ( n ), fn of T (t: T): T -> ( t ) )
 f of string
 }}}}}
 Cannot apply type arguments to an overload set : f
 
 {{{{{
-;; Error: untyped parameter in overload alternative (BIP021-D9)
-def f = overload (
-    fn (x): int -> ( 1 ),
-    fn (s: string): int -> ( 2 )
-)
+def f = overload ( fn (x): int -> ( 1 ), fn (s: string): int -> ( 2 ) )
 }}}}}
 Missing type : x
 
 {{{{{
-;; Error: untyped lambda ambiguous between alternatives differing only by lambda param
-def run = overload (
-    fn (f: fn (x: int): int): int -> ( f(1) ),
-    fn (f: fn (x: string): string): string -> ( f("a") )
-)
+def run = overload ( fn (f: fn (x: int): int): int -> ( f(1) ), fn (f: fn (x: string): string): string -> ( f("a") ) )
 run(fn (x) -> ( 1 ))
 }}}}}
 Missing type : x
 
 {{{{{
-;; Error: spread tie (set of int needs copy for both list of int and array of int)
-def f = overload (
-    fn (xs: list of int): int -> ( xs.size() ),
-    fn (xs: array of int): int -> ( xs.size() )
-)
+def f = overload ( fn (xs: list of int): int -> ( xs.size() ), fn (xs: array of int): int -> ( xs.size() ) )
 f(...set(1, 2))
 }}}}}
 Ambiguous call to f for (...set of int) : candidates are (xs : list of int), (xs : array of int)
 
 {{{{{
-;; Error: no applicable overload
-def Circle = record (r: double) ()
-def Square = record (s: double) ()
 def Triangle = record (b: double) ()
-def area = overload (
-    fn (c: Circle): double -> ( c.r ),
-    fn (s: Square): double -> ( s.s )
-)
+def area = overload ( fn (c: Circle): double -> ( c.r ), fn (s: Square): double -> ( s.s ) )
 area(Triangle(1.0))
 }}}}}
 No applicable overload of area for (Triangle) : candidates are (c : Circle), (s : Square)
 
 {{{{{
-;; Modules: export overload set and extend by rebinding (BIP021-D14)
-def shapes = import("ov_shapes.ba")
-def Square = record (s: double) ()
-def area = overload (
-    shapes.area,
-    fn (sq: Square): double -> ( sq.s * sq.s )
-)
-println(shapes.area(shapes.Circle(2.0)))
-println(area(shapes.Circle(2.0)), "|", area(5), "|", area(Square(4.0)))
-}}}}}
-12.0
-12.0|5.0|16.0
-
-{{{{{
-;; Sessions: extend overload set across inputs by rebinding (BIP021-D14)
-def f = overload (
-    fn (n: int): string -> ( "int:" + n ),
-    fn (s: string): string -> ( "str:" + s )
-)
-println(f(1), "|", f("a"))
-----------
-def f2 = overload (
-    f,
-    fn (b: bool): string -> ( "bool:" + b )
-)
-println(f2(2), "|", f2("b"), "|", f2(true))
-----------
-def f = overload (
-    f2,
-    fn (d: double): string -> ( "dbl:" + d )
-)
-println(f(3), "|", f(1.5), "|", f(false))
-}}}}}
-int:1|str:a
-int:2|str:b|bool:true
-int:3|dbl:1.5|bool:false
-
-{{{{{
-;; OverloadSet toString, set-type select fallback (widening, any, CharSequence, union, cache hit), and Java SAM conversion
-def wideSet = overload (
-    fn (d: double): string -> ("d:" + d),
-    fn io (c: java.lang.CharSequence): string -> ("cs:" + c),
-    fn (u: bool | null): string -> ("bn:" + u)
-)
-def anySet = overload (
-    fn io (x: any): string -> ("any:" + x),
-    fn (n: null): string -> ("null")
-)
-def callInt = fn io (g: overload (fn io (n: int): string, fn io (s: string): string)): string -> (
-    g(3) + "|" + g(4) + "|" + g("hi") + "|" + g("yo")
-)
-def callNullBool = fn io (g: overload (fn io (b: bool): string, fn io (n: null): string)): string -> (
-    g(true) + "|" + g(null)
-)
-def fnOv = overload (
-    fn (s: string): int -> (s.length()),
-    fn (n: int): int -> (n * 10)
-)
-def names = list("aa", "b", "ccc")
-names.sort(fn (a: string, b: string): int -> (fnOv(a) - fnOv(b)))
-def mapper: java.util.function.Function of (string, int) = fnOv
-println(wideSet)
-println(callInt(wideSet))
-println(callInt(anySet))
-println(callNullBool(wideSet))
-println(callNullBool(anySet))
-println(mapper.apply("hello"), "|", names.get(0))
-}}}}}
-overload (fn (d : double) : string, fn io (c : java.lang.CharSequence) : string, fn (u : bool?) : string)
-d:3.0|d:4.0|cs:hi|cs:yo
-any:3|any:4|any:hi|any:yo
-bn:true|bn:null
-any:true|null
-5|b
-
-{{{{{
-;; Static overlap/meet coverage: arrays, functions, frozen, Babble/Java interfaces, covariant Iterable/Entry, bounded generics, keyword-only, and rest
-def A = interface (def a: fn (): int)
-def B = interface (def b: fn (): int)
-def OnlyA = class () implements A (def a = fn (): int -> (1))
-def OnlyB = class () implements B (def b = fn (): int -> (2))
-def BothAB = class () implements A, B (def a = fn (): int -> (3) ; def b = fn (): int -> (4))
-def ovIface = overload (
-    fn (x: A): string -> ("A:" + x.a()),
-    fn (x: B): string -> ("B:" + x.b()),
-    fn (x: A & B): string -> ("AB:" + x.a() + "," + x.b())
-)
-def ovArrFn = overload (
-    fn (xs: array of int): string -> ("ai:" + xs.size()),
-    fn (xs: array of double): string -> ("ad:" + xs.size()),
-    fn (xs: array of string): string -> ("as:" + xs.size()),
-    fn (f: fn (x: int): int): string -> ("f1:" + f(5)),
-    fn (f: fn (x: int, y: int): int): string -> ("f2:" + f(2, 3))
-)
-def ovLists = overload (
-    fn (xs: list of int): string -> ("li:" + xs.size()),
-    fn (xs: list of string): string -> ("ls:" + xs.size())
-)
-def ovJava = overload (
-    fn io (shared c: java.lang.CharSequence): string -> ("cs:" + c.length()),
-    fn (s: string): string -> ("s:" + s)
-)
-def ovEntry = overload (
-    fn (e: entry of (int, string)): string -> ("ei:" + e.getKey()),
-    fn (e: entry of (string, int)): string -> ("es:" + e.getKey())
-)
-def ovFrozen = overload (
-    fn (xs: frozen list of int): string -> ("fl:" + xs.size()),
-    fn (n: int): string -> ("i:" + n)
-)
-def ovKw = overload (
-    fn (a: int, ..., tag: string = "x"): string -> ("k1:" + a + ":" + tag),
-    fn (a: string, ..., tag: string = "y"): string -> ("k2:" + a + ":" + tag)
-)
-def ovRest = overload (
-    fn (head: int, xs: int...): string -> ("ri"),
-    fn (head: string, xs: string...): string -> ("rs")
-)
-def ovBound = overload (
-    fn (a: int, b: int): string -> ("bi:" + (a + b)),
-    fn of (T: java.lang.Comparable of T) (a: T, b: T): string -> ("bc:" + a.compareTo(b))
-)
-println(ovIface(OnlyA()), "|", ovIface(OnlyB()), "|", ovIface(BothAB()))
-println(ovArrFn((array of int).of(1, 2)), "|", ovArrFn((array of double).of(1.0)), "|", ovArrFn((array of string).of("a")), "|", ovArrFn(fn (x: int): int -> (x + 1)), "|", ovArrFn(fn (x: int, y: int): int -> (x + y)))
-println(ovLists(list(1, 2)), "|", ovLists(list("a")), "|", ovEntry(entry(7, "k")), "|", ovJava(java.lang.StringBuilder("abc")), "|", ovJava("ok"))
-println(ovFrozen(freeze(list(1, 2, 3))), "|", ovFrozen(9))
-println(ovKw(1), "|", ovKw(1, tag: "z"), "|", ovKw("a", tag: "w"))
-println(ovRest(1, 2), "|", ovRest("a", "b"))
-println(ovBound(2, 3), "|", ovBound("a", "b"))
-}}}}}
-A:1|B:2|AB:3,4
-ai:2|ad:1|as:1|f1:6|f2:5
-li:2|ls:1|ei:7|cs:3|s:ok
-fl:3|i:9
-k1:1:x|k1:1:z|k2:a:w
-ri|rs
-bi:5|bc:-1
-
-{{{{{
-;; Error: ambiguous keyword-only optional overload pair
 def badKw = overload (
-    fn (a: int, ..., b: double = 1.0, c: int = 2): double -> (a + b + c),
-    fn (a: double, ..., b: int = 3, c: int = 4): double -> (a + b + c)
+    fn (a: int, ..., b: double = 1.0, c: int = 2): double -> ( a + b + c ),
+    fn (a: double, ..., b: int = 3, c: int = 4): double -> ( a + b + c )
 )
 badKw(1, b: 2)
 }}}}}
 Ambiguous overloads of badKw : badKw(int, b: int) fits fn (a : int, ..., b : double = ..., c : int = ...) : double and fn (a : double, ..., b : int = ..., c : int = ...) : double
 
 {{{{{
-;; Error: ambiguous rest overload pair with overlapping elements
-def badRest = overload (
-    fn (xs: int...): int -> (1),
-    fn (a: int, xs: double...): int -> (2)
-)
+def badRest = overload ( fn (xs: int...): int -> ( 1 ), fn (a: int, xs: double...): int -> ( 2 ) )
 badRest(1)
 }}}}}
 Ambiguous overloads of badRest : badRest(int) fits fn (xs : int...) : int and fn (a : int, xs : double...) : int
 
 {{{{{
-;; Error: ambiguous Babble interface vs Java interface overload without meet
-def Tag = interface (def tag: fn (): string)
-def badBJ = overload (
-    fn (x: Tag): string -> ("tag"),
-    fn (x: java.lang.CharSequence): string -> ("cs")
-)
+def badBJ = overload ( fn (x: Named): string -> ( "n" ), fn (x: java.lang.CharSequence): string -> ( "cs" ) )
 badBJ
 }}}}}
-Ambiguous overloads of badBJ : badBJ(Tag & java.lang.CharSequence) fits fn (x : Tag) : string and fn (x : java.lang.CharSequence) : string
+Ambiguous overloads of badBJ : badBJ(Named & java.lang.CharSequence) fits fn (x : Named) : string and fn (x : java.lang.CharSequence) : string
 
 {{{{{
-;; Error: ambiguous Java interface vs Java non-final class without meet
-def badJJ = overload (
-    fn (x: java.lang.CharSequence): string -> ("cs"),
-    fn (x: java.lang.Comparable of string): string -> ("cmp")
-)
+def badJJ = overload ( fn (x: java.lang.CharSequence): string -> ( "cs" ), fn (x: java.lang.Comparable of string): string -> ( "cmp" ) )
 badJJ
 }}}}}
 Ambiguous overloads of badJJ : badJJ(java.lang.CharSequence & java.lang.Comparable of string) fits fn (x : java.lang.CharSequence) : string and fn (x : java.lang.Comparable(string)) : string
 
 {{{{{
-;; Multi-candidate select specificity, named/default/rest/spread/untyped-lambda calls, and Java/Babble hierarchy overlaps
-def numChain = overload (
-    fn (n: int): string -> ("int:" + n),
-    fn (d: double): string -> ("dbl:" + d),
-    fn io (x: any): string -> ("any:" + x)
-)
-def callByte = fn io (g: overload (fn io (b: byte): string, fn io (f: float): string, fn io (s: string): string)): string -> (
-    g(byte(1)) + "|" + g(1.5f) + "|" + g("ok")
-)
-def singleFn = fn io (x: any?): string -> ("one:" + x)
-def namedOv = overload (
-    fn (a: int, b: int = 10): string -> ("ab:" + a + "," + b),
-    fn (s: string, xs: int...): string -> (def t = 0 ; for x in xs then (t += x) ; s + ":" + t),
-    fn (f: fn (x: int): int): string -> ("fn:" + f(4))
-)
-def CompCls = class (def n: int) implements java.lang.Comparable of CompCls (
-    def compareTo = fn (o: CompCls): int -> (this.n - o.n)
-)
-def ovComp = overload (
-    fn (c: CompCls): string -> ("cls:" + c.n),
-    fn (c: java.lang.Comparable of CompCls): string -> ("cmp")
-)
-def ovColls = overload (
-    fn (xs: java.util.ArrayList of int): string -> ("al:" + xs.size()),
-    fn (xs: list of int): string -> ("l:" + xs.size()),
-    fn (xs: java.lang.Iterable of int): string -> ("it")
-)
-def ovArrCov = overload (
-    fn (xs: array of string): string -> ("as:" + xs.size()),
-    fn (xs: array of java.lang.CharSequence): string -> ("acs:" + xs.size())
-)
-def al: java.util.ArrayList of int = java.util.ArrayList()
-al.add(1)
-def li: list of int = al
-def it: java.lang.Iterable of int = al
-def csArr: array of java.lang.CharSequence = (array of java.lang.CharSequence).of(java.lang.StringBuilder("a"))
-println(callByte(numChain))
-println(callByte(singleFn))
-println(namedOv(b: 2, a: 1), "|", namedOv(5), "|", namedOv("sum", 1, 2, 3), "|", namedOv("sp", ...list(4, 5)), "|", namedOv(fn (x) -> (x * 3)))
-println(ovComp(CompCls(7)), "|", ovColls(al), "|", ovColls(li), "|", ovColls(it), "|", ovArrCov((array of string).of("a", "b")), "|", ovArrCov(csArr))
-}}}}}
-int:1|dbl:1.5|any:ok
-one:1|one:1.5|one:ok
-ab:1,2|ab:5,10|sum:6|sp:9|fn:12
-cls:7|al:1|l:1|it|as:2|acs:1
-
-{{{{{
-;; Error: overlapping incomparable function-type alternatives in overload set
 def badFnOv = overload (
-    fn (f: fn (x: int, y: double): int): int -> (f(1, 2.0)),
-    fn (f: fn (x: double, y: int): int): int -> (f(1.0, 2))
+    fn (f: fn (x: int, y: double): int): int -> ( f(1, 2.0) ),
+    fn (f: fn (x: double, y: int): int): int -> ( f(1.0, 2) )
 )
 badFnOv
 }}}}}
 Ambiguous overloads of badFnOv : badFnOv(fn (x : int, y : double) : int) fits fn (f : (x : int, y : double) : int) : int and fn (f : (x : double, y : int) : int) : int
 
 {{{{{
-;; Single-function value satisfying overload set type, nullable/any/generic splits, and meet witnesses
-def genFallback = overload (
-    fn (n: null): string -> ("null"),
-    fn (n: int): string -> ("int:" + n),
-    fn of T io (x: T): string -> ("gen:" + x)
-)
-def runGenSplit = fn io (x: int | string | null): string -> (genFallback(x))
-def exactSetFn: overload (fn (n: int): string, fn (s: string): string) = fn (x: int | string): string -> ("both:" + x)
-println(runGenSplit(null), "|", runGenSplit(5), "|", runGenSplit("hi"))
-println(exactSetFn(1), "|", exactSetFn("a"))
-}}}}}
-gen:null|gen:5|gen:hi
-both:1|both:a
-
-{{{{{
-;; Error: ambiguous null vs nullable int?
-def badNull = overload (
-    fn (a: int?, b: int): int -> (b),
-    fn (a: int, b: int?): int -> (a)
-)
+def badNull = overload ( fn (a: int?, b: int): int -> ( b ), fn (a: int, b: int?): int -> ( a ) )
 badNull
 }}}}}
 Ambiguous overloads of badNull : badNull(int, int) fits fn (a : int?, b : int) : int and fn (a : int, b : int?) : int
 
 {{{{{
-;; Error: ambiguous any vs bounded type variable
-def badAnyTv = overload (
-    fn (a: any, b: int): int -> (b),
-    fn (a: int, b: any): int -> (a)
-)
-badAnyTv
+def badAny = overload ( fn (a: any, b: int): int -> ( b ), fn (a: int, b: any): int -> ( a ) )
+badAny
 }}}}}
-Ambiguous overloads of badAnyTv : badAnyTv(int, int) fits fn (a : any, b : int) : int and fn (a : int, b : any) : int
-
-{{{{{
-;; Set-type selection with union/intersection descriptors, boxed-primitive Comparable calls, record array hashCode, and static member mutation
-def IA = interface (def a: fn (): int)
-def IB = interface (def b: fn (): int)
-def CAB = class () implements IA, IB (def a = fn (): int -> (1) ; def b = fn (): int -> (2))
-def unionSet = overload (
-    fn (x: int | string): string -> ("u:" + x),
-    fn (x: IA): string -> ("a:" + x.a())
-)
-def interSet = overload (
-    fn (x: IA & IB): string -> ("ab:" + x.a() + "," + x.b()),
-    fn (x: int): string -> ("i:" + x)
-)
-def callUnionSet = fn (g: overload (fn (x: int | string): string, fn (x: IA & IB): string)): string -> (
-    g(1) + "|" + g("s") + "|" + g(CAB())
-)
-def callInterSet = fn (g: overload (fn (x: IA & IB): string, fn (x: int): string)): string -> (
-    g(CAB()) + "|" + g(9)
-)
-def cmp of (T: java.lang.Comparable of T) = fn (a: T, b: T): int -> (a.compareTo(b))
-def ArrRec = record (xs: array of int) ()
-def StaticBox = class () () static (
-    def count = 0
-)
-def r1 = ArrRec((array of int).of(1, 2))
-def r2 = ArrRec((array of int).of(1, 2))
-StaticBox.count = StaticBox.count + 1
-StaticBox.count = StaticBox.count + 1
-println(callUnionSet(unionSet), ";", callInterSet(interSet))
-println(cmp(byte(1), byte(2)), cmp(short(2), short(2)), cmp(long(3), long(2)), cmp(1.0f, 2.0f), cmp(true, false), cmp('a', 'b'))
-println(set(r1).contains(r2), "|", StaticBox.count)
-}}}}}
-u:1|u:s|a:1;ab:1,2|i:9
--101-11-1
-true|2
-
-
-
-
+Ambiguous overloads of badAny : badAny(int, int) fits fn (a : any, b : int) : int and fn (a : int, b : any) : int
