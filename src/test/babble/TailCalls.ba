@@ -85,4 +85,16 @@ def fact = fn (n: int): int -> (
     if n <= 1 then (1) else (n * recurse(n - 1))
 )
 assert(fact(10) == 3628800)
+
+;; forever acknowledges code that never ends (BIP024-D7, D8) : defined, never called
+def spin = fn (n: int): int -> (forever recurse(n + 1))
+def idle = fn (): int -> (
+    def ticks = 0
+    forever while true then (ticks += 1)
+    ticks
+)
+
+;; forever is transparent at runtime
+def bounded = fn (n: int): int -> (forever if n == 0 then (0) else (recurse(n - 1)))
+assert(bounded(deep) == 0)
 println("tail calls ok")

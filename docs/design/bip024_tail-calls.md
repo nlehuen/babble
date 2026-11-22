@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 024 |
 | **Date** | 2026-11-22 |
-| **Status** | Partially implemented (`BIP024-D1`–`D7` decided; `BIP024-P1`–`P2` implemented, `BIP024-P3` in progress ; §6 lists what landed) |
+| **Status** | Partially implemented (`BIP024-D1`–`D9` decided; `BIP024-P1`–`P2` implemented, `BIP024-P3` in progress ; §7 lists what landed) |
 | **Depends on** | the analysis passes and `LoweringAnalyzer` ([bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), static argument binding ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)), the `HIR` compiler ([bip014_optimization-passes.md](bip014_optimization-passes.md)) |
 | **Scope** | a call of a function to itself in tail position runs in constant stack space, in the interpreter and in compiled code at every optimization level ; across `analysis.TailCalls`, `ScopeAnalysis`, the `Interpreter`'s `Function`, `HirBuilder`, the `HIR` passes and `HirEmitter` |
 
@@ -49,19 +49,34 @@ Babble already has `recurse`, a name for the running function, so it is closest 
 * **`BIP024-D4` — Statically bound, unchanged values.** The call binds its arguments at compile time (`BIP021-D4`), or passes as many positional arguments as there are parameters ; and nothing between the call and the function's result checks its value at runtime or widens it (no `checkedType`, no numeric widening on the call, or on any block, branch or `return` in between). The widening of the function's own result still applies, to the value of the last activation.
 * **`BIP024-D5` — A fresh activation per call.** Each tail call starts a new activation as a call would : a new frame, the names the body defines declared again (`Name used before definition` until their `def` runs), new cells for captured variables, and the default values of omitted optional parameters evaluated again. A closure created by one activation keeps that activation's parameters. All arguments are evaluated before any parameter changes.
 * **`BIP024-D6` — Frames are gone.** An optimized activation leaves no frame : Java stack traces show one frame for the whole loop. Babble errors give the line of the innermost frame, so their messages do not change. A tail recursion that never ends now runs, like `while true`, where it used to fail with `Stack overflow` : a test that wants that error needs a recursion out of tail position, such as `1 + recurse(n + 1)`.
-* **`BIP024-D7` — Recursion without a base case.** A function whose block always ends in a self tail call (through block expressions, `return`, and `if` branches, each `if` with an `else`), with no other `return`, and that cannot throw (`nothrow` as inferred by `BIP007`) can never end : it is an error, `Recursion without a base case : r`, at the function literal. `fn (n: int): int -> (recurse(n + 1))` is one. A function that may throw stays legal, as `while true` is : `fn io () -> (handle(accept()) ; recurse())` is a server loop that ends with an error or an exit, and `println` may throw.
+* **`BIP024-D7` — Recursion without a base case.** A function whose block always ends in a self tail call (through block expressions, `return`, `forever`, and `if` branches, each `if` with an `else`), with no other `return`, and that cannot throw (`nothrow` as inferred by `BIP007`) can never end : it is an error at its tail expression, `Recursion without a base case : r. If this is intended, wrap the expression with forever`. `fn (n: int): int -> (recurse(n + 1))` is one. A function that may throw is not reported, as it may end with an error : `fn io () -> (handle(accept()) ; recurse())` is a server loop, and `println` may throw.
+* **`BIP024-D8` — Loops without an exit.** A `while true` (the literal, in parentheses or not) whose body has no `break` of that loop and no `return`, and whose test and body cannot throw (as inferred by `EffectChecker` for the loop itself), never ends either : `Loop without an exit : while true. If this is intended, wrap the expression with forever`, at the `while`. A condition other than `true` is not analysed.
+* **`BIP024-D9` — `forever`.** A new keyword acknowledges an expression that never ends : `forever e` is `e`, with its type and value, and runs as `e` does in both backends (`HirBuilder` lowers it to `e`). `forever recurse(n + 1)`, `forever if … then (…) else (…)` (any expression on the tail paths of a function counts, `D7`), and `forever while true then (…)` (`D8`) are accepted. It is a prefix alternative after `return`, so `forever a + b` is `forever (a + b)` ; it keeps tail and statement position (`D3`) ; and it stays a member name after `.` and `?.`. `forever` on an expression that does end is accepted too.
 
 ---
 
-## 4. Implementation
+## 4. Grammar
 
-* **Analysis.** `analysis.TailCalls` runs at the end of `TypeChecker.run`, after `LoweringAnalyzer`, whose static call targets, argument bindings, runtime checks and widenings it reads. It walks the block of each function literal per `D3`/`D4` and marks the self tail calls, `ScopeAnalysis.isSelfTailCall(call)`. Both backends read the mark, so they optimize exactly the same calls. It then reports `D7` from the marks and `EffectChecker.inferredNothrow`, the function's inferred (not declared) effects.
+```antlr
+expression: …
+          | RETURN expression                    # returnExpression
+          | FOREVER expression                   # foreverExpression
+          …
+memberName: … | FOREVER ;
+FOREVER: 'forever' ;
+```
+
+---
+
+## 5. Implementation
+
+* **Analysis.** `analysis.TailCalls` runs at the end of `TypeChecker.run`, after `LoweringAnalyzer`, whose static call targets, argument bindings, runtime checks and widenings it reads. It walks the block of each function literal per `D3`/`D4` and marks the self tail calls, `ScopeAnalysis.isSelfTailCall(call)`. Both backends read the mark, so they optimize exactly the same calls. It then reports `D7` from the marks and `EffectChecker.inferredNothrow`, the function's inferred (not declared) effects, and `D8` from `EffectChecker.loopNothrow`, which `evalWhile` records for each loop by saving and restoring the running `nothrow` flag around it.
 * **Interpreter.** A marked call evaluates its arguments, binds them as a call would, and returns a `TailCall` (the arguments and their names) without evaluating its callee (a name, `recurse` or `this.m`). By `D3`/`D4`, that value goes unchanged to the end of the function's block, or through `return`, to `Function.invoke`, which runs activations in a loop : a fresh frame, the parameters bound, the body evaluated, again while the body's value is a `TailCall`.
 * **Compiler.** `HirBuilder` lowers a marked call to `HirExpr.SelfTailCall`. `HirEmitter` puts a loop head in each method holding a function's body (the direct entry point, the `$spec` one, or the array one of a function with more than 8 parameters), after the captured cells are loaded and before the frame is entered. A `SelfTailCall` pushes its arguments as the corresponding call would, stores them back into the method's own parameter slots, and jumps to the loop head. The passes never inline a function holding one, and never move one.
 
 ---
 
-## 5. Phases
+## 6. Phases
 
 * **`BIP024-P1` — Analysis and interpreter.** `TailCalls`, `ScopeAnalysis.isSelfTailCall`, `TailCall` and the loop in `Function.invoke`.
 * **`BIP024-P2` — Compiler.** `HirExpr.SelfTailCall`, the passes, `HirVerifier`, `HirPrinter`, and the loop heads in `HirEmitter`.
@@ -69,8 +84,8 @@ Babble already has `recurse`, a name for the running function, so it is closest 
 
 ---
 
-## 6. What landed
+## 7. What landed
 
 * `BIP024-P1` : `analysis.TailCalls`, `ScopeAnalysis.isSelfTailCall`, the interpreter's `TailCall` and its loop in `Function.invoke`.
 * `BIP024-P2` : `HirExpr.SelfTailCall` (`HirBuilder` lowers every marked call to it, whatever the function's entry points), `HirRewriter`, `HirPrinter` (`tail-call #N`), `HirVerifier` (only in a function), `HirPurity` (impure, so never moved), `InlinePass` (never inlines a function holding one), and `HirEmitter`'s loop heads : the jump goes back to the method's first instruction, before the frame is entered. `src/test/babble/TailCalls.ba` runs a million activations of each kind in every mode. The tests that provoked `Stack overflow` with `recurse(n + 1)` use `1 + recurse(n + 1)`.
-* `BIP024-D7` : `Recursion without a base case`, with golden tests in `TypeCheckerTestCase` and a `DifferentialTestCase` snippet.
+* `BIP024-D7`–`D9` : `Recursion without a base case`, `Loop without an exit`, and the `forever` keyword (grammar, both backends, `TypeChecker`, `EffectChecker`), with golden tests in `TypeCheckerTestCase`, `DifferentialTestCase` snippets, and `forever` in `TailCalls.ba`.

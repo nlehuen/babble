@@ -499,7 +499,7 @@ final class TypeChecker {
                 pass.analysis.typeDiagnostic(diagnostic.message(), diagnostic.line(), diagnostic.column());
             }
             LoweringAnalyzer.publish(pass, file, this);
-            TailCalls.publish(pass.analysis, file, effectChecker::inferredNothrow);
+            TailCalls.publish(pass.analysis, file, effectChecker::inferredNothrow, effectChecker::loopNothrow);
             this.builtSummary = TypedModuleSummary.build(pass, this, new StaticRefs(pass, this));
         });
     }
@@ -1929,6 +1929,7 @@ final class TypeChecker {
                 case BabbleParser.CharLiteralContext c -> visitCharLiteral(c, expected, role);
                 case BabbleParser.StringContext c -> visitString(c, expected, role);
                 case BabbleParser.ReturnExpressionContext c -> visitReturnExpression(c, expected, role);
+                case BabbleParser.ForeverExpressionContext c -> type(c.expression(), expected, role);
                 case BabbleParser.BreakExpressionContext c -> visitBreakExpression(c, expected, role);
                 case BabbleParser.ContinueExpressionContext c -> visitContinueExpression(c, expected, role);
                 default -> {

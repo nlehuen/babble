@@ -20,7 +20,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER;
 
 effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
 
@@ -103,6 +103,9 @@ expression:
           // alternative's precedence. They must therefore come last, or "return a + b" / "break a + b"
           // would parse as "(return a) + b".
           | RETURN expression                                 # returnExpression
+          // "forever" acknowledges an expression that never ends (a loop or a recursion
+          // without an exit, docs/design/bip024_tail-calls.md) : its value is the expression's.
+          | FOREVER expression                                # foreverExpression
           | BREAK expression?                                 # breakExpression
           | CONTINUE                                          # continueExpression
           ;
@@ -212,6 +215,7 @@ THEN: 'then';
 ELSE: 'else';
 DEF: 'def';
 RETURN: 'return';
+FOREVER: 'forever';
 BREAK: 'break';
 CONTINUE: 'continue';
 WHILE: 'while';

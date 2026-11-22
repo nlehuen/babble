@@ -536,6 +536,7 @@ final class EffectChecker {
 
     /** Converged internal summaries for all callables (FunctionLiteralContext and ClassExpressionContext). */
     private final Map<ParserRuleContext, CallableSummary> summaries = new IdentityHashMap<>();
+    private final Map<BabbleParser.WhileExpressionContext, Boolean> loopNothrow = new IdentityHashMap<>();
     /** Caller-visible summaries (locked to declared contract for annotated callables per BIP007-D2). */
     private final Map<ParserRuleContext, CallableSummary> visibleSummaries = new IdentityHashMap<>();
     /** Callables belonging to a cyclic SCC (self-recursive or mutually recursive) — cannot be @TERMINATING. */
@@ -1018,6 +1019,11 @@ final class EffectChecker {
             pass.analysis.setCallableEffects(callable, visible.effects());
             pass.analysis.setCallableType(callable, checker.rawTypeOf(callable));
         }
+    }
+
+    /** Whether a {@code while} loop (its test and body) cannot throw, as last walked ; false if never walked. */
+    boolean loopNothrow(BabbleParser.WhileExpressionContext loop) {
+        return loopNothrow.getOrDefault(loop, false);
     }
 
     /** Whether a callable cannot throw, as inferred from its body (not its declared contract). */
@@ -3955,6 +3961,9 @@ final class EffectChecker {
             if (ctx instanceof BabbleParser.BlockExpressionContext be) {
                 return evalBlock(be.block(), false);
             }
+            if (ctx instanceof BabbleParser.ForeverExpressionContext f) {
+                return eval(f.expression());
+            }
             if (ctx instanceof BabbleParser.NullContext
                     || ctx instanceof BabbleParser.BooleanContext
                     || ctx instanceof BabbleParser.IntegerContext
@@ -5979,6 +5988,9 @@ final class EffectChecker {
             Origin[] breakAcc = new Origin[1];
             loopBreakOrigins.push(breakAcc);
             Origin bodyOrig = Origin.IMMUTABLE;
+            // Whether the loop itself can throw, for loops that never end (BIP024-D8).
+            boolean outerNothrow = nothrow;
+            nothrow = true;
             try {
                 int iter = 0;
                 while (iter++ < 8) {
@@ -5994,6 +6006,8 @@ final class EffectChecker {
                 }
             } finally {
                 loopBreakOrigins.pop();
+                loopNothrow.put(ctx, nothrow);
+                nothrow = outerNothrow && nothrow;
             }
             return breakAcc[0] != null ? bodyOrig.join(breakAcc[0]) : bodyOrig;
         }
