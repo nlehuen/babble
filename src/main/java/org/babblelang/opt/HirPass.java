@@ -3,7 +3,7 @@ package org.babblelang.opt;
 import org.babblelang.ir.hir.HirModule;
 
 /**
- * Single-responsibility Nanopass transformation over {@link HirModule} (BIP014-P2).
+ * Single-responsibility Nanopass transformation over {@link HirModule} (BIP014-I2).
  */
 public interface HirPass {
     String name();

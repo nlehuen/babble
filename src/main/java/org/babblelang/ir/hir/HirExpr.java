@@ -6,7 +6,7 @@ import org.babblelang.runtime.CallSite;
 import java.util.List;
 
 /**
- * Sealed hierarchy of High-Level Typed IR ({@code HIR}) expressions (BIP014-P1).
+ * Sealed hierarchy of High-Level Typed IR ({@code HIR}) expressions (BIP014-I1).
  *
  * <p>Every node is an immutable Java 21 {@code record} detached from ANTLR4 {@code ParserRuleContext},
  * carrying its resolved {@link ExprMeta} so Nanopass rewriters and {@code HirEmitter} can pattern-match
@@ -555,7 +555,7 @@ public sealed interface HirExpr permits
         }
     }
 
-    // ---------------------------------------------------------------- overload sets (BIP021-P5)
+    // ---------------------------------------------------------------- overload sets (BIP021-I5)
 
     record MakeOverloadSet(
             List<HirExpr> operands,

@@ -1,6 +1,6 @@
 ;; Variadic rest parameters (xs: T...), keyword-only options after rest, spread arguments (...e),
 ;; primitive rest views, generic rests, subtyping, interfaces, effects, and diagnostics.
-;; References : BIP021-P4 (BIP021-D7, D8, D19, D21), ArgumentsView, Spreads, CallSolver
+;; References : BIP021-I4 (BIP021-D7, D8, D19, D21), ArgumentsView, Spreads, CallSolver
 
 def sumInts = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
 def listOf of T = fn (xs: T...): list of T -> ( list(from: xs) )

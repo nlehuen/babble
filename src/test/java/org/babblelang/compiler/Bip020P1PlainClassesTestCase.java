@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Tests for BIP020-P1 : compiled classes without a runtime base class.
+ * Tests for BIP020-I1 : compiled classes without a runtime base class.
  */
 public class Bip020P1PlainClassesTestCase {
 

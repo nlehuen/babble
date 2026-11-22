@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
  * Compiled function literal, class/object method, or interface default method in {@link HirModule}
- * (BIP014-P1).
+ * (BIP014-I1).
  */
 public record HirFunction(
         int id,

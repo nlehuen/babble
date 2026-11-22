@@ -10,7 +10,7 @@ import java.util.Map;
 
 /**
  * Compiled {@code class}, {@code record}, or {@code object} declaration in {@link HirModule}
- * (BIP014-P1).
+ * (BIP014-I1).
  */
 public record HirClass(
         int id,

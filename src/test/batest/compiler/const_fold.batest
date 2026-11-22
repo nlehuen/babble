@@ -1,5 +1,5 @@
 ;; Constant folding, local constant propagation, widening conversions, if-pruning, and foldable Java calls
-;; References : BIP014-P2, org.babblelang.opt.hir.ConstFoldPass
+;; References : BIP014-I2, org.babblelang.opt.hir.ConstFoldPass
 
 def idFn of T = fn (x: T): T -> (x)
 def recCount = fn (n: int): int -> (if n <= 0 then (0) else (recurse(n - 1) + 1))

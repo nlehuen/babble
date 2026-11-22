@@ -22,7 +22,7 @@ import java.util.Set;
 
 /**
  * {@code O6} (structured subset) — Loop-Invariant Code Motion over {@code while} and {@code for}
- * loops inside frame-scoped functions (BIP014-P2, BIP014-D5).
+ * loops inside frame-scoped functions (BIP014-I2, BIP014-D5).
  *
  * <p>Hoists nontrivial {@code pure deterministic nothrow @TERMINATING} expressions whose result is
  * deeply immutable and whose operands are loop-invariant into a preheader {@link HirExpr.Block}

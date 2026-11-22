@@ -23,7 +23,7 @@ STRING: '"' ( ~[\\"] | '\\' ( [btnfr"'\\0] | 'u' [0-9a-fA-F] [0-9a-fA-F] [0-9a-f
 And a single unescaper in [`Interpreter.java`](../../src/main/java/org/babblelang/engine/impl/Interpreter.java) (`unescape`, lines 802–837). This creates four concrete pain points:
 
 1. **No real multiline or raw strings.** Because `~[\\"]` does not forbid `\r` or `\n`, plain `"..."` literals technically span lines today — but with none of the properties multiline text needs: leading code indentation leaks into the runtime string, every `"` and `\` must be escaped (`\"`, `\\`), an unclosed `"` swallows the rest of the file until EOF, and `babblefmt` ([`Formatter.java`](../../src/main/java/org/babblelang/format/Formatter.java)) cannot re-indent the literal safely without breaking its parse-tree equivalence check (`shape()`).
-2. **Verbose, error-prone string assembly.** Building formatted text relies on `"Hello, " + name + " (" + count + ")"` (`Operators.add` → `ArraySupport.format`), `java.lang.StringBuilder`, or `java.lang.String.format("%s (%d)", name, count)` (usable since `BIP021-P2` added Java varargs, but positional, detached from the embedded values, and runtime-checked).
+2. **Verbose, error-prone string assembly.** Building formatted text relies on `"Hello, " + name + " (" + count + ")"` (`Operators.add` → `ArraySupport.format`), `java.lang.StringBuilder`, or `java.lang.String.format("%s (%d)", name, count)` (usable since `BIP021-I2` added Java varargs, but positional, detached from the embedded values, and runtime-checked).
 3. **No structured template boundary (injection hazard).** Plain concatenation and eager interpolation flatten static text and dynamic user input into an undifferentiated `string`. A SQL, HTML, XML, shell, or JSON consumer cannot tell which characters were written by the programmer and which came from untrusted variables.
 4. **No lazy evaluation of embedded expressions.** Eager interpolation (`"debug: " + expensiveStats()`) evaluates its arguments even when a logger is disabled or a policy rejects a malformed template before binding parameters.
 
@@ -75,7 +75,7 @@ log.debug(t"Frame $(frameNo): $(computeExpensiveStats(world))")
 **Non-goals:**
 * **Compile-time SQL/HTML/regex syntax validation** (macro-style compile-time DSL execution belongs to future `BIP014-D4` macros; here, static fragments are fixed at compile time so policies can validate and cache them once per literal site at runtime).
 * **Implicit `template` → `string` coercion** or `template + string` concatenation — both would silently defeat injection safety.
-* **Format-mini-language parser baked into the core runtime** (like Python's full `format_spec` or `printf` specifiers); policies are free to accept format metadata if optional spec syntax is adopted, and Java's `String.format` already works via `BIP021-P2`.
+* **Format-mini-language parser baked into the core runtime** (like Python's full `format_spec` or `printf` specifiers); policies are free to accept format metadata if optional spec syntax is adopted, and Java's `String.format` already works via `BIP021-I2`.
 * **Runtime mutable templates** — a `template` is structurally immutable once constructed (its placeholders only transition monotonically from unevaluated to memoized).
 
 ---

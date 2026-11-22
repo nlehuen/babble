@@ -1,5 +1,5 @@
 ;; Ownership, frozen values, unused-pure checks, and return-through-borrow
-;; References : BIP007 (BIP007-P2, BIP007-D7), BIP016 (BIP016-D10)
+;; References : BIP007 (BIP007-I2, BIP007-D7), BIP016 (BIP016-D10)
 
 def MyRecord = record (a: int) ()
 def Box = class (def n: int) ()

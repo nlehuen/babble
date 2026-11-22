@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import javax.script.ScriptException;
 
 /**
- * Tests for RM007 (BIP007-P3) : {@code babble.checkAxioms} property-based axiom fuzzing
+ * Tests for RM007 (BIP007-I3) : {@code babble.checkAxioms} property-based axiom fuzzing
  * ({@link AxiomChecker}).
  */
 public class AxiomCheckerTestCase {

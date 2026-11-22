@@ -261,7 +261,7 @@ sealed interface Type {
         }
     }
 
-    /** A deeply immutable frozen view of a nominal/reference type (BIP007-P2, BIP007-D7). */
+    /** A deeply immutable frozen view of a nominal/reference type (BIP007-I2, BIP007-D7). */
     record Frozen(Type of) implements Type {
         @Override
         public String toString() {

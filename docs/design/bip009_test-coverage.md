@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 009 |
 | **Date** | 2026-11-17 |
-| **Status** | Accepted & implemented (`BIP009-Q1`–`BIP009-Q8` → `BIP009-D1`–`BIP009-D8` decided; `BIP009-P1`–`BIP009-P4` implemented, extended to 3-JVM 5-scope `-Pbatest` coverage with `BIP014-D9` `-O0`/`-O1`) |
+| **Status** | Accepted & implemented (`BIP009-Q1`–`BIP009-Q8` → `BIP009-D1`–`BIP009-D8` decided; `BIP009-I1`–`BIP009-I4` implemented, extended to 3-JVM 5-scope `-Pbatest` coverage with `BIP014-D9` `-O0`/`-O1`) |
 | **Depends on** | Multi-mode execution ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md), [bip014_optimization-passes.md](bip014_optimization-passes.md)), interactive sessions ([bip004_repl.md](bip004_repl.md)), in-memory module sources ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md) §4.2), static typing diagnostics ([bip008_static-typing.md](bip008_static-typing.md)) |
 | **Scope** | `.batest` file format, leak-free error normalization (including Java interop unwrapping), JUnit 5 & 3-JVM 5-scope JaCoCo harness (`-Pbatest`), coverage reporting CLI, and agentic test-synthesis workflow |
 
@@ -93,7 +93,7 @@ A `.batest` file is a UTF-8 plain-text file stored under `src/test/batest/` (org
    * the **expected outcome** (expected `stdout` text, or expected normalized error message, up to the next `{{{{{` line or EOF).
 
 ```text
-;; Shared helper with call-site inferred parameter `b` (BIP008-P7)
+;; Shared helper with call-site inferred parameter `b` (BIP008-I7)
 def Checked = value class (x: int) (
     def div = (k: int): int -> (
         assert(k != 0, "Divide by zero")
@@ -132,14 +132,14 @@ Type error : expected int, got string
 
 How the preamble combines with each test case is a critical design choice because of Babble's static analysis rules:
 
-* Under `BabbleSession` (`BIP004-D1`, `BIP008-D5`), each input closes call-site parameter inference (`BIP008-P7`) and freezes inferred declaration/member types at the end of the input. Evaluating `def f = (a: int, b) -> ( a / b )` alone as a separate session input fails immediately with `Missing type : b` before any test case is reached, and forces cross-input `Namespace` lookups instead of intra-script `BabbleCallTarget` direct calls (`RM001`).
+* Under `BabbleSession` (`BIP004-D1`, `BIP008-D5`), each input closes call-site parameter inference (`BIP008-I7`) and freezes inferred declaration/member types at the end of the input. Evaluating `def f = (a: int, b) -> ( a / b )` alone as a separate session input fails immediately with `Missing type : b` before any test case is reached, and forces cross-input `Namespace` lookups instead of intra-script `BabbleCallTarget` direct calls (`RM001`).
 * Under source concatenation, mutating preamble state in case 1 cannot leak into case 2 if each case runs on a fresh `ScriptRuntime`.
 
 Therefore (**`BIP009-D2`**): **by default, each test case evaluates `preamble + "\n" + caseCode` (or `caseCode` alone when the preamble is empty) as a fresh, isolated compilation unit on a fresh `ScriptRuntime`.**
 
 This gives three major properties simultaneously:
 
-1. Unannotated helper parameters (`def f = (a: int, b) -> ...`) and unannotated `def`s in the preamble participate in `BIP008-P7` call-site inference and `BIP008` §4.3 reassignment joins per test case.
+1. Unannotated helper parameters (`def f = (a: int, b) -> ...`) and unannotated `def`s in the preamble participate in `BIP008-I7` call-site inference and `BIP008` §4.3 reassignment joins per test case.
 2. Top-level functions and classes in the preamble exercise the same `Resolver` and `RM001` direct-dispatch codegen paths as single-file Babble programs.
 3. Every test case is completely hermetic and order-independent.
 
@@ -177,7 +177,7 @@ To keep `.batest` files 100% self-contained while keeping simple files free of c
 
    **Why this is needed:** Single-script concatenation (`preamble + "\n" + caseCode`) cannot exercise Babble's multi-input session machinery (`BabbleSession`, `AnalysisSession`, `ScopeNode` chaining, or cross-classloader `RM001` dispatch):
    * **Shadowing vs lexical capture (`BIP004-D1`):** In a single script, `def x = 1 ; def x = 2` is rejected statically (`Name already defined : x`). Across session inputs, a later `def x = 100` shadows `x` in a nested `Namespace` while closures defined in earlier inputs retain the original `x`, and assignments (`x = 5`) mutate the shared variable across inputs.
-   * **Per-input inference freezing (`BIP008-D5`):** `AnalysisSession.commit` freezes inferred `declarationTypes` and `memberTypes` and closes `BIP008-P7` call-site parameter inference at the end of each input — paths never executed in single-script runs.
+   * **Per-input inference freezing (`BIP008-D5`):** `AnalysisSession.commit` freezes inferred `declarationTypes` and `memberTypes` and closes `BIP008-I7` call-site parameter inference at the end of each input — paths never executed in single-script runs.
    * **Cross-`ScriptClassLoader` compiled dispatch (`RM001`):** In `compile` mode, each session input compiles into a distinct `Script$N` class in its own `ScriptClassLoader`. Accessing unboxed `int`/`double`/`bool` fields or calling `$spec` methods on instances created in an earlier input exercises `Bootstrap.SelectCache`'s `MethodHandles.privateLookupIn` cross-loader path and `Bootstrap.call` `$spec` linking.
    * **Type identity across redefinitions & module persistence:** Re-defining `def P = class ...` creates a distinct nominal type of the same name (`Type error : expected P, got P`), and a module imported across multiple inputs runs only once per session.
 
@@ -460,7 +460,7 @@ src/test/batest/
 * **`BIP009-Q1` → `BIP009-D1` (Delimiter syntax):** *Which case delimiters avoid conflicts with both Babble syntax and Git merge conflict markers?*
   **Proposed (`BIP009-D1`):** Use `{{{{{` and `}}}}}` (canonically 5 curly braces on their own line, parsed line-by-line matching `^\s*\{{5,}\s*$` and `^\s*\}{5,}\s*$` without requiring surrounding blank lines, failing fast on unmatched markers or 0-case files). Curly braces never appear in `Babble.g4` and never collide with Git's `<<<<<<<` / `=======` / `>>>>>>>` conflict markers (§3.2).
 * **`BIP009-Q2` → `BIP009-D2` (Preamble semantics):** *Evaluate the preamble once in a `BabbleSession` and run cases as child inputs, or concatenate `preamble + "\n" + case` per case?*
-  **Proposed (`BIP009-D2`):** Concatenate `preamble + "\n" + case` in a fresh compilation unit and `ScriptRuntime` per case so `BIP008-P7` call-site parameter inference, `BIP008` §4.3 reassignment widening, `RM001` intra-unit direct calls, and strict state isolation all hold (§3.3).
+  **Proposed (`BIP009-D2`):** Concatenate `preamble + "\n" + case` in a fresh compilation unit and `ScriptRuntime` per case so `BIP008-I7` call-site parameter inference, `BIP008` §4.3 reassignment widening, `RM001` intra-unit direct calls, and strict state isolation all hold (§3.3).
 * **`BIP009-Q3` → `BIP009-D3` (Modules and sessions in `.batest`):** *How should `.batest` cover multi-module imports and `BabbleSession` inputs without external file clutter?*
   **Proposed (`BIP009-D3`):** Support optional `========== name.ba ==========` virtual module headers in the preamble (backed by `MapModuleSource`, with `={8,}` so Git's 7-character `=======` never matches, and an empty `MapModuleSource` as default) and optional `----------` session-input dividers inside a case for sequential `BabbleSession` inputs (§3.4).
 * **`BIP009-Q4` → `BIP009-D4` (Error vs stdout disambiguation & internal crashes):** *Should `.batest` require an `Error :` prefix on expected errors, and what happens on internal JVM/verifier exceptions?*
@@ -478,14 +478,14 @@ src/test/batest/
 
 ## 8. Implementation & Verification Results
 
-* **`BIP009-P1` — `.batest` runner, normalizer & Java exception unwrapping *(Implemented)*.**
+* **`BIP009-I1` — `.batest` runner, normalizer & Java exception unwrapping *(Implemented)*.**
   * Unwrapped `InvocationTargetException` at the five Java interop boundary sites (`JavaClass`, `JavaLinker`, `JavaMethod`, `JavaDefaultCall`, `JavaTypes.wrapInvocationException`, `BIP009-D7`), plus `PrintFunction` unwrapping `Appendable` wrappers on `to:`.
   * Implemented `BatestParser`, `BatestRunner` (with `MapModuleSource`, `BabbleSession` `----------` support, `Kind` classification, warning capture, and `BIP009-D5` normalization), and JUnit 5 `BatestTestCase` (`@TestFactory`) with `-Dbatest.filter` support running in both Surefire executions of `mvn test`.
-* **`BIP009-P2` — `-Pbatest` JaCoCo profile & `BatestCoverageReporter` *(Implemented)*.**
+* **`BIP009-I2` — `-Pbatest` JaCoCo profile & `BatestCoverageReporter` *(Implemented)*.**
   * Added `jacoco-maven-plugin` and the `batest` profile to `pom.xml` with dual `.exec` files, agent exclusions, non-aborting test collection, `-Dbatest.filter` forwarding, and `BatestCoverageReporter` (`summary.json`, `uncovered.txt`, `-Dbatest.inspect=<Class>`, and non-zero exit on test failure).
-* **`BIP009-P3` — Foundational `.batest` suite *(Implemented)*.**
+* **`BIP009-I3` — Foundational `.batest` suite *(Implemented)*.**
   * Populated `src/test/batest/` (§6.3 plus `effects/` and `runtime/` suites) covering grammar alternatives, operators, built-ins, static typing & effect diagnostic families, modules, interactive sessions, and Java interop.
-* **`BIP009-P4` — Iterative coverage closure & dead-code audit *(Implemented)*.**
+* **`BIP009-I4` — Iterative coverage closure & dead-code audit *(Implemented)*.**
   * **Final `.batest`-only corpus:** **57 `.batest` files, 733 cases** — **733 / 733 passed (100.0%)** in both `interpret` and `compile` (`babble.verify=true`), **0 parity divergences**.
   * **Bugs caught & fixed by the 3-way oracle:**
     * `CodeGenerator`: avoid double `int`→`double` widening when assigning an already-widened `int` value to a `double` field (`RM001` parity), and coerce functional-interface / Babble-instance receivers via `Values.toJava` on statically resolved Java interface calls.
@@ -500,7 +500,7 @@ src/test/batest/
 | **Shared Front-End (`analysis`)** | **89.5%** (`7357/8224`) | **76.4%** (`6273/8207`) | Remaining lines/branches audited below |
 | **Shared Runtime (`combined`)** | **89.8%** (`1403/1563`) | **81.2%** (`1021/1258`) | `interpret`: 80.4% ln / 73.9% br; `compile`: 87.8% ln / 78.5% br |
 
-  * **Uncovered code & dead-code audit (`BIP009-P4`):**
+  * **Uncovered code & dead-code audit (`BIP009-I4`):**
     * *Dead internal helpers removed:* `Namespace.leave()` (0 callers), `Slot.isSet()` (0 callers), `EffectSet.withInferred(...)` (0 callers), and the unreachable non-`this` parameter-target branch in `EffectChecker.sameTargetField` (`params.size() == 1` precludes a separate parameter receiver).
     * *Host-API & Java-annotation paths (intentionally excluded from pure `.batest` scripts):* `BabbleScriptEngine` host registries (`assumeEffects`, `assumeConstructorEffects`, `markImpure`, `allowAxioms`), `HostEffects.OverrideEntry.fromEffects`, `EffectChecker` `@Pure`..`@Impure` Java reflection annotation scanning, `BabbleSession` programmatic helpers, and `Scope.isDeclared` implementations (`JavaPackage`, `JavaClass`, `JavaObject`, `Namespace`) tested by JUnit (`EffectsTestCase`, `BabbleScriptEngine`, `InterpreterNamespaceTest`).
     * *Statically preempted runtime guards (preserved for defense-in-depth):* `Members`, `Arguments`, `Calls`, `SameFunction`, `JavaClass.assign`, `BabbleInstance`/`BabbleType` missing/private/read-only member errors, and `Types` descriptor fallback branches guarded by `TypeChecker` at compile time.

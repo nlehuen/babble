@@ -48,7 +48,7 @@ import java.util.Set;
 
 /**
  * Compile-time effect, parameter/receiver mutability, borrow-escape, static {@code mut}
- * exclusivity, flow-sensitive {@code nothrow}, and compositional algebraic checker (BIP007-P1).
+ * exclusivity, flow-sensitive {@code nothrow}, and compositional algebraic checker (BIP007-I1).
  */
 final class EffectChecker {
 
@@ -5721,7 +5721,7 @@ final class EffectChecker {
                     }
                 }
             }
-            // In BIP007-P2 & BIP016-D9, shallow mutation of a fresh local container (or any mutation of a unique local/param)
+            // In BIP007-I2 & BIP016-D9, shallow mutation of a fresh local container (or any mutation of a unique local/param)
             // stays confined (hermetic/pure) without tainting stored elements!
             if ((target.unique || (target.localFresh && shallow))
                     && !target.external && target.params.isEmpty() && !target.aliasesThis) {

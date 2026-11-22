@@ -4,8 +4,8 @@
 |---|---|
 | **BIP** | 005 |
 | **Date** | 2026-11-11 |
-| **Status** | Accepted : the questions of §13 (`BIP005-Q1`–`BIP005-Q8`) were decided (`BIP005-D1`–`BIP005-D8`) as recommended. Steps `BIP005-P1` to `BIP005-P5` (§12) are implemented. |
-| **Depends on** | [bip002_object-model.md](bip002_object-model.md) (member access, `HasMembers`), [bip003_type-system.md](bip003_type-system.md) (what a module's type is), [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §4 (the file scope keeps a namespace) and `BIP001-P4` (ahead-of-time compilation) |
+| **Status** | Accepted : the questions of §13 (`BIP005-Q1`–`BIP005-Q8`) were decided (`BIP005-D1`–`BIP005-D8`) as recommended. Steps `BIP005-I1` to `BIP005-I5` (§12) are implemented. |
+| **Depends on** | [bip002_object-model.md](bip002_object-model.md) (member access, `HasMembers`), [bip003_type-system.md](bip003_type-system.md) (what a module's type is), [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §4 (the file scope keeps a namespace) and `BIP001-I4` (ahead-of-time compilation) |
 | **Unblocks** | Programs in several files, a standard library written in Babble, the AOT jar |
 
 ## 1. Summary
@@ -246,7 +246,7 @@ parsing and analysing the imported file, which in turn may have static imports.
   (`implements shapes.Shape`), a def holding the export (`def Shape = shapes.Shape`), an export
   that is itself an import or a re-export, or an exported package (`implements lib.geo.Solid`).
   Only exported names are reachable. Completeness, default conflicts and `super` resolution then
-  work as for a local interface. In `BIP005-P1` the analysis did not have the imported interface, and
+  work as for a local interface. In `BIP005-I1` the analysis did not have the imported interface, and
   splitting the ray tracers ran into it : their interfaces had to stay in the same file as the
   classes implementing them.
 * Imports run in the importing file's analysis after its pass 1 and before `TypeChecks`, so an
@@ -287,7 +287,7 @@ A checker serves every file that imports its file, one question at a time. So ty
 files without any file being checked twice, and diagnostics are reported once, by the file they
 are in.
 
-A compiled script refers to the class ids of the modules it was analysed against. Since `BIP006-P4`
+A compiled script refers to the class ids of the modules it was analysed against. Since `BIP006-I4`
 (bip006_module-sources-and-aot.md §5.2) a module's ids are its key and the class's name
 (`lib.ba#C`), the same every time it is compiled : a module changed after a script was compiled
 keeps its classes' identity. Two classes of one name from two modules are still two types, and
@@ -295,7 +295,7 @@ a type error between them gives both ids : `expected C, got C (expected a.ba#C, 
 
 ### 8.3 Compiler
 
-In `BIP005-P1`–`BIP005-P5`, the file scope kept a namespace in compiled code (bip001_bytecode-compiler.md §4),
+In `BIP005-I1`–`BIP005-I5`, the file scope kept a namespace in compiled code (bip001_bytecode-compiler.md §4),
 and `m.x` went through `invokedynamic` selection.
 
 In `RM001`, for a static import bound to a never-reassigned `def` referencing a non-cyclic export,
@@ -356,7 +356,7 @@ eval.
 * **Module sources** (`BIP005-D6`) : an engine attribute holding a function from a resolved path to a
   `Reader`, defaulting to the file system. It is what a host needs to serve modules from a
   database, tests need to avoid temporary files, and the AOT compiler needs to follow imports.
-* **AOT** (bip001_bytecode-compiler.md, `BIP001-P4`) : a jar contains one script class per file. Static
+* **AOT** (bip001_bytecode-compiler.md, `BIP001-I4`) : a jar contains one script class per file. Static
   imports are known at compile time, so the jar is closed over them, and `import` of a static
   path finds the class in the jar instead of a file. Dynamic imports keep reading files at
   runtime, or fail in a jar-only deployment. This is the main practical argument for making
@@ -369,18 +369,18 @@ eval.
 
 | Step | Content | State |
 |---|---|---|
-| **`BIP005-P1`** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
-| **`BIP005-P2`** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | Done, with tests in both modes and in sessions. |
-| **`BIP005-P3`** | `Type.Module` : types across files, nominal types of exported classes, runtime checks (§8.2). | Done, with tests in both modes. |
-| **`BIP005-P4`** | Module sources for hosts (§11). Designed with `BIP005-P5` in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (`BIP006-P2`, `BIP006-P3`). |
-| **`BIP005-P5`** | AOT : a jar closed over static imports. Designed in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (`BIP006-P4` to `BIP006-P6`) : `-compile`. |
+| **`BIP005-I1`** | `export`, dynamic `import("file.ba")`, the module value, own root, once per eval, cycles, errors, relative paths. Modules are `dynamic` for the checker ; a type named through a module is accepted and unchecked. | Done, with tests in both modes. |
+| **`BIP005-I2`** | Static imports : the analysis reads imported files (§8.1), missing files and exports are found before running, and classes implement imported interfaces. Compilation cache (§9). | Done, with tests in both modes and in sessions. |
+| **`BIP005-I3`** | `Type.Module` : types across files, nominal types of exported classes, runtime checks (§8.2). | Done, with tests in both modes. |
+| **`BIP005-I4`** | Module sources for hosts (§11). Designed with `BIP005-I5` in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (`BIP006-I2`, `BIP006-I3`). |
+| **`BIP005-I5`** | AOT : a jar closed over static imports. Designed in [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md). | Done (`BIP006-I4` to `BIP006-I6`) : `-compile`. |
 
 Each step leaves both modes passing the whole suite. Both ray tracers, `examples/raytracer-fable`
-and `examples/raytracer-argon`, were split into files after `BIP005-P1` as the acceptance test of the
-feature, each interface sharing a file with the classes implementing it. After `BIP005-P2` they no
+and `examples/raytracer-argon`, were split into files after `BIP005-I1` as the acceptance test of the
+feature, each interface sharing a file with the classes implementing it. After `BIP005-I2` they no
 longer have to : the fable one has the files of the book (`hittable.ba`, `sphere.ba`,
 `hittable_list.ba`, …), and the argon one separates its interfaces, materials and hittables.
-The argon one is typed throughout : after `BIP005-P3` its types hold across its files, and it passes
+The argon one is typed throughout : after `BIP005-I3` its types hold across its files, and it passes
 type checking cleanly, with its runtime checks. The fable one is dynamic : annotating it is
 left as an exercise.
 
@@ -414,8 +414,8 @@ Decided : not now. When it comes, a path that does not start with `.` or `/` and
 found next to the importer could be looked up in a list of roots (`babble.path`), and a
 `std/…` prefix reserved for modules shipped in the jar.
 
-**`BIP005-Q6` → `BIP005-D6`. Module sources : in `BIP005-P1` or `BIP005-P4` ?**
-Decided : `BIP005-P4`. It is an API to get right once the needs of AOT are clear.
+**`BIP005-Q6` → `BIP005-D6`. Module sources : in `BIP005-I1` or `BIP005-I4` ?**
+Decided : `BIP005-I4`. It is an API to get right once the needs of AOT are clear.
 
 **`BIP005-Q7` → `BIP005-D7`. Should exports be assignable from outside ?**
 Decided : no. Read-only exports are what lets the checker trust the type of
@@ -433,14 +433,14 @@ what the first did to its modules, which no other part of the engine does.
   packages and classes, static type checks, Java packages still imported.
 * `src/test/babble/Modules.ba` and `src/test/babble/modules/` : run by `ScriptTestCase` and
   by `DifferentialTestCase` in both modes, with enforced types.
-* `BIP005-P2` adds, to `BabbleModulesTestCase` : missing and broken files found before running, dynamic
+* `BIP005-I2` adds, to `BabbleModulesTestCase` : missing and broken files found before running, dynamic
   imports still resolved at runtime, classes, objects and interfaces implementing or extending
   imported interfaces (through defs, re-exports and exported packages), `super(I)` with an
   imported qualifier, unexported and cyclic interfaces rejected, missing exports and assignments
   to exports as errors, a script's own `import`, and the cache :
   one analysis per file until it or a dependency changes. `ReplTestCase` checks static imports
   across the inputs of a session.
-* `BIP005-P3` adds, to `BabbleModulesTestCase`, golden tests of type diagnostics across files (exports'
+* `BIP005-I3` adds, to `BabbleModulesTestCase`, golden tests of type diagnostics across files (exports'
   types, imported classes' constructors, members and methods, imported classes and interfaces as
   types, re-exports, cycles), and runtime checks of imported types, in both execution
   modes.

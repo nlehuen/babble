@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * {@code O4} — Structured Dead-Code and Dead-Expression Elimination (BIP014-P2).
+ * {@code O4} — Structured Dead-Code and Dead-Expression Elimination (BIP014-I2).
  *
  * <ul>
  *   <li>Eliminates unreachable statements after {@code return}, {@code break}, or {@code continue}.</li>

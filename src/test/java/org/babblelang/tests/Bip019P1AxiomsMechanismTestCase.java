@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Method;
 
 /**
- * Tests for {@code BIP019-P1} (mechanism and the form of axioms) and {@code BIP020-P5} (array
+ * Tests for {@code BIP019-I1} (mechanism and the form of axioms) and {@code BIP020-I5} (array
  * parameters in axiom signatures).
  */
 public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {

@@ -283,7 +283,7 @@ public class JavaClassDemo {
         float apply(float x);
     }
 
-    // BIP020-P2 array interop helpers (unannotated, @Pure borrow, @Mut).
+    // BIP020-I2 array interop helpers (unannotated, @Pure borrow, @Mut).
     @org.babblelang.effects.Pure
     public static int readObjectArray(Object[] xs) {
         return xs.length;
@@ -303,7 +303,7 @@ public class JavaClassDemo {
         return new int[][]{new int[]{1, 2}, new int[]{3}};
     }
 
-    // BIP020-P4 generic array helpers & RM003 Java array bridge interfaces.
+    // BIP020-I4 generic array helpers & RM003 Java array bridge interfaces.
     public interface ArrayTransformer<E> {
         @org.babblelang.effects.NotNull
         E @org.babblelang.effects.NotNull [] transform(@org.babblelang.effects.NotNull E @org.babblelang.effects.NotNull [] input);
@@ -339,7 +339,7 @@ public class JavaClassDemo {
         return exp.toArray(String[]::new);
     }
 
-    // BIP021-P2 Java varargs helpers.
+    // BIP021-I2 Java varargs helpers.
     public static class VarArgsCtor {
         public final String summary;
 
@@ -389,7 +389,7 @@ public class JavaClassDemo {
         return v;
     }
 
-    // BIP021-P4 Java varargs interface bridge helper.
+    // BIP021-I4 Java varargs interface bridge helper.
     @FunctionalInterface
     public interface VarArgsSink {
         int sum(int... xs);

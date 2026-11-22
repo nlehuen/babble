@@ -14,7 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Runtime support for {@code array of T} (BIP020-P3) : allocation, {@code size}/{@code get}/{@code set},
+ * Runtime support for {@code array of T} (BIP020-I3) : allocation, {@code size}/{@code get}/{@code set},
  * content equality/hashing/printing, interpreter Babble-element store checking via a weak side table,
  * and dynamic array member dispatch. Depends only on {@code org.babblelang.runtime} and {@code java.base}.
  */

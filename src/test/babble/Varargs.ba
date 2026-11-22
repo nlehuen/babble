@@ -1,4 +1,4 @@
-;; Java varargs resolution and direct array lowering (BIP021-P2 / BIP021-D8).
+;; Java varargs resolution and direct array lowering (BIP021-I2 / BIP021-D8).
 
 ;; String.format with 0, 1, and many arguments
 assert(java.lang.String.format("hello") == "hello")
@@ -50,7 +50,7 @@ assert(workDays.size() == 6 and workDays.contains(java.time.DayOfWeek.MONDAY))
 def fmt: fn (s: string, a: int, b: string): string = java.lang.String.format
 assert(fmt("%d:%s", 9, "ok") == "9:ok")
 
-;; Babble variadic rest parameters, keyword-only params, and spreads (BIP021-P4 / BIP021-D5..D7)
+;; Babble variadic rest parameters, keyword-only params, and spreads (BIP021-I4 / BIP021-D5..D7)
 def join = fn (parts: string..., sep: string = ", "): string -> (
     def res = ""
     def first = true

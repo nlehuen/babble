@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Tests for BIP020-P3 : creating arrays ({@code (array of T)(n)}, {@code array(n)},
+ * Tests for BIP020-I3 : creating arrays ({@code (array of T)(n)}, {@code array(n)},
  * {@code .of(...)}, {@code from:}), {@code size()}/{@code get}/{@code set}, {@code .length}
  * removal, content equality/hashing/printing, {@code ArrayStoreException} parity, and effects.
  */

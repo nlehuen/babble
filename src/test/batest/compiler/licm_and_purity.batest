@@ -1,5 +1,5 @@
 ;; Loop-invariant code motion (LICM) and HIR purity / modified-variable analysis
-;; References : BIP014-P2, org.babblelang.opt.hir.HirLicmPass, org.babblelang.opt.HirPurity
+;; References : BIP014-I2, org.babblelang.opt.hir.HirLicmPass, org.babblelang.opt.HirPurity
 
 ;; Non-trailing return prevents InlinePass from inlining in round 1 while HirPurity still sees pure/nothrow bodies
 def bigByte = fn nothrow (x: byte): byte -> (return x ; x)

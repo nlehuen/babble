@@ -2,8 +2,8 @@
 
 **BIP:** 007  
 **Date:** 2026-11-14 (updated 2026-11-19 for `RM005` / `BIP011`, `RM006` / `BIP012`, and `BIP016`)  
-**Status:** Implemented (`BIP007-P1` landed in `RM002`, core-type profiles landed in `RM005` / `BIP011-P5`, predicate-free syntax landed in `RM006` / `BIP012`, and `BIP007-P2`–`P3` landed in `RM007`; `BIP007-D1`–`D10` settled; optimizer passes postponed beyond `BIP007` per `BIP007-D10`). Surface syntax subsequently consolidated to pure-by-default (`io`, `volatile`, `mut`, `shared`, `unique`, opt-in `nothrow`, `axiom pure`) with return-through-borrow in [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md) (`BIP016-D1`–`D10`, `BIP016-P1`–`P4`) while preserving `BIP007`'s Layer 1 internal orthogonal `@TRAITS`.  
-**Depends on:** [bip008_static-typing.md](bip008_static-typing.md) (`BIP008-P1`–`P7`), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md) (`RM004`: `TypedProgram`, `LoweringAnalyzer`, `TypedModuleSummary`), [bip011_core-types.md](bip011_core-types.md) (`RM005`: 9 scalars, core collections, Java nullability, `e!`, 8-primitive unboxing), [bip012_grammar-improvements.md](bip012_grammar-improvements.md) (`RM006`: predicate-free `fn`/`of`/`on`/`record` LL(1)/LL(2) grammar)  
+**Status:** Implemented (`BIP007-I1` landed in `RM002`, core-type profiles landed in `RM005` / `BIP011-I5`, predicate-free syntax landed in `RM006` / `BIP012`, and `BIP007-I2`–`I3` landed in `RM007`; `BIP007-D1`–`D10` settled; optimizer passes postponed beyond `BIP007` per `BIP007-D10`). Surface syntax subsequently consolidated to pure-by-default (`io`, `volatile`, `mut`, `shared`, `unique`, opt-in `nothrow`, `axiom pure`) with return-through-borrow in [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md) (`BIP016-D1`–`D10`, `BIP016-I1`–`I4`) while preserving `BIP007`'s Layer 1 internal orthogonal `@TRAITS`.  
+**Depends on:** [bip008_static-typing.md](bip008_static-typing.md) (`BIP008-I1`–`I7`), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md) (`RM004`: `TypedProgram`, `LoweringAnalyzer`, `TypedModuleSummary`), [bip011_core-types.md](bip011_core-types.md) (`RM005`: 9 scalars, core collections, Java nullability, `e!`, 8-primitive unboxing), [bip012_grammar-improvements.md](bip012_grammar-improvements.md) (`RM006`: predicate-free `fn`/`of`/`on`/`record` LL(1)/LL(2) grammar)  
 **Scope:** Static type system, effect inference & verification engine, `axiom` declarations, optimizer contract, Java interop, and runtime/bytecode compiler integration.
 
 ---
@@ -50,7 +50,7 @@ Every property in the model is justified by concrete security guarantees or comp
 | **Stack Unboxing / Scalar Replacement** | `borrow` parameter (with `record` / fresh arg) | Pass `Point(x, y)` or closure captures directly in registers/locals without heap allocation. |
 | **Tree Reduction / Reassociation** | `pure deterministic associative` | Reassociate reductions and split folds into balanced subtrees. |
 | **Safe Automatic Retry** | `idempotent` (or `pure` for read/compute steps) | Re-run failed steps (`Files.createDirectories`, `set.add`, `upsert`) without duplicating effects. |
-| **Dead-Expression Elimination, Speculation & Unused-Result Errors** *(`BIP007-P2` / future optimizer BIP)* | `pure nothrow` (+ `@TERMINATING`) | **Report unused `pure nothrow` expressions in source as a compile-time error** in `BIP007-P2` (catching bugs like `s.trim()` with a discarded result; opt out explicitly with built-in `discard(expr)`); future optimizer passes drop dead `pure` expressions after inlining/CSE and speculatively evaluate before branches. |
+| **Dead-Expression Elimination, Speculation & Unused-Result Errors** *(`BIP007-I2` / future optimizer BIP)* | `pure nothrow` (+ `@TERMINATING`) | **Report unused `pure nothrow` expressions in source as a compile-time error** in `BIP007-I2` (catching bugs like `s.trim()` with a discarded result; opt out explicitly with built-in `discard(expr)`); future optimizer passes drop dead `pure` expressions after inlining/CSE and speculatively evaluate before branches. |
 
 ### 1.3 Non-Goals
 
@@ -123,11 +123,11 @@ Function declaration / Java target
   * Performs **no output or mutating I/O** (`print`, socket/file writes, mutating FFI). Read-only environment queries (`axiom pure on java.nio.file.Files.readString`, `axiom pure on java.time.Instant.now`) and reads of mutable outer state perform no writes and may be `pure`, but are **not** `deterministic`.
   * Mutates **no global/outer variables, static fields, or external objects** (`hermetic`).
   * Mutates **no parameters and not `this`**: **`pure` cannot be combined with `mut`** on parameters or `this` (`fn pure (mut x: T)` and `fn pure mut ()` are rejected).
-  * *Local builders (`unique`, `BIP007-P2`):* Inside a `pure` function, mutating **newly allocated `unique` local objects** (`def tmp = Counter(0); tmp.add(1)` or `def xs = list of int (); xs.add(1)`) *is* allowed whenever the called `mut` method/helper is **`hermetic`** (inferred, declared `fn hermetic mut`, built-in `RM005` core-collection mutators, or axiomatized via `axiom hermetic mut on ...`—without calling mutating functions "`pure`" in surface syntax). In `BIP007-P1` (`RM002`), before `unique` lands, mutating any object (including a newly allocated local) is disallowed in `pure`/`hermetic` functions, while local `def` variable reassignments remain valid.
+  * *Local builders (`unique`, `BIP007-I2`):* Inside a `pure` function, mutating **newly allocated `unique` local objects** (`def tmp = Counter(0); tmp.add(1)` or `def xs = list of int (); xs.add(1)`) *is* allowed whenever the called `mut` method/helper is **`hermetic`** (inferred, declared `fn hermetic mut`, built-in `RM005` core-collection mutators, or axiomatized via `axiom hermetic mut on ...`—without calling mutating functions "`pure`" in surface syntax). In `BIP007-I1` (`RM002`), before `unique` lands, mutating any object (including a newly allocated local) is disallowed in `pure`/`hermetic` functions, while local `def` variable reassignments remain valid.
 * **`hermetic` (No global or I/O side effects):**
-  * Performs **no output or mutating I/O** and mutates **no global/outer variables, static fields, or external objects**—any mutation is confined strictly to `mut` parameters, `mut` `this`, or `unique` local objects (`BIP007-P2`).
+  * Performs **no output or mutating I/O** and mutates **no global/outer variables, static fields, or external objects**—any mutation is confined strictly to `mut` parameters, `mut` `this`, or `unique` local objects (`BIP007-I2`).
   * Unlike `pure`, **`hermetic` may be combined with `mut`** (`fn hermetic mut (...)`, `fn hermetic (mut dst: list of string, item: string)`). Every `pure` function is automatically `hermetic`, and a `hermetic` function with no `mut` parameters or `mut` `this` is `pure`.
-  * Allows `pure` callers to invoke `hermetic mut` helpers, `RM005` core-collection mutators (`list.add`, `map.put`, `set.add`), and axiomatized Java methods (`axiom hermetic mut on java.util.ArrayList.add`) on `unique` local objects (`BIP007-P2`).
+  * Allows `pure` callers to invoke `hermetic mut` helpers, `RM005` core-collection mutators (`list.add`, `map.put`, `set.add`), and axiomatized Java methods (`axiom hermetic mut on java.util.ArrayList.add`) on `unique` local objects (`BIP007-I2`).
 * **`mut` + Call-Site Exclusivity:**
   * Written on a parameter (`fn (mut target: list of string, item: string)`) or on the function itself (`fn mut (...)`) to indicate **`this` may be mutated**. Mutually exclusive with `pure` (use `hermetic mut` when the function also guarantees zero global/I/O side effects).
   * Absent `mut`, a parameter or `this` is **read-only** across all typed functions—including effect-unannotated functions whenever any parameter type or `: R` return type is written (`fn (a: T) ->`, `fn (): R ->`, `fn (rng): Vec3 ->`): field assignments (`p.x = ...`), calling `mut` methods on `p`, and passing `p` as a `mut` argument are forbidden unless `mut` is declared on `p`/`this` (with `mut` inferred only on completely untyped functions having no effect modifiers, no parameter types, and no `: R` return type).
@@ -135,11 +135,11 @@ Function declaration / Java target
     * *Plain `mut` (shallow, purely static bug catcher — `BIP007-D9`):* whenever an argument (or receiver) is passed to a `mut` slot, **no other argument or `this` at the same call site may be the same object** (`EffectChecker` checks static conflicts for same bindings, tracked local aliases, and identical member paths; zero runtime `Values.same` fallback). This is an identity check only. Two distinct objects can still share mutable state (`Vec(data)` and `Vec(data)` over one list), and the callee can still reach the object through a captured variable or a global. **Plain `mut` therefore grants permission to mutate and nothing else: neither the callee nor the caller may assume deep non-aliasing from it.**
     * *`unique mut` (deep disjointness / no-alias):* a `unique` parameter receives a graph that nothing else can reach (see `unique` below), so it is disjoint from every other argument, from `this`, from captured variables and from globals **by construction**, with no runtime alias check at all. All no-alias transformations (§5.3.2) key on `unique mut`, never on plain `mut`.
     * *Caller side:* after a call that passes `x` to a plain `mut` slot (or any unconstrained call), the caller must drop every cached fact about objects that are not provably disjoint from `x`. Provably disjoint means: `unique` locals not passed to the call, and deeply immutable values.
-  * *Confined `mut` inference (`hermetic`):* Fixed-point inference tracks whether a `mut` Babble function avoids globals and I/O (`hermetic`), `RM005` (`BIP011-P5`) pre-registers core collection mutators as `hermetic mut`, and **`axiom hermetic mut on ...`** on Java targets likewise declares mutations confined strictly to `mut` targets with zero global/I/O effects—allowing `pure` callers to invoke them on `unique` local objects (`BIP007-P2`).
+  * *Confined `mut` inference (`hermetic`):* Fixed-point inference tracks whether a `mut` Babble function avoids globals and I/O (`hermetic`), `RM005` (`BIP011-I5`) pre-registers core collection mutators as `hermetic mut`, and **`axiom hermetic mut on ...`** on Java targets likewise declares mutations confined strictly to `mut` targets with zero global/I/O effects—allowing `pure` callers to invoke them on `unique` local objects (`BIP007-I2`).
 * **`borrow` (Frame-local parameter borrowing):**
   * Written (or automatically inferred) on a parameter (`fn (borrow p: Point)`) or receiver: guarantees the function never stores `p` (or mutable references reachable from `p`) into `this`, another parameter, or a global. Since `BIP016-D10` it may return `p`, and since `BIP017-D6` return a closure capturing it: the caller then sees the result as an alias of its argument, and storing it there is the escape.
   * Unlocks **read-only generic covariance** (`RM005` / `BIP011-D8`: `borrow list of Dog <: borrow list of Animal`) and **scalar replacement / stack unboxing** of wrapper objects (`Point`, temporary buffers, lambda captures) across call boundaries (future optimizer BIP).
-* **`unique`, `move(...)`, and `freeze(...)` *(`BIP007-P2` — single-owner graph ownership & zero-copy transition)*:**
+* **`unique`, `move(...)`, and `freeze(...)` *(`BIP007-I2` — single-owner graph ownership & zero-copy transition)*:**
   * **`unique`** on a parameter (`fn (unique mut buf: Buffer)`) or return slot (`fn (...): unique map of (int, int)`) asserts **deep ownership**: every *mutable* object reachable from the reference is reachable **only** through it (Pony `iso` / Rust owned value). Deeply immutable values (all 9 core scalars `byte`..`string`, `null`, `frozen T`, deep `record`s, deep `entry of (K, V)`) may be shared freely inside a unique graph, since sharing them is unobservable.
     * *Keeping a graph unique (`BIP007-D6`):* a newly allocated object (from a `pure` constructor, a `unique` return, an `object` literal, or an `RM005` core collection constructor `list`/`set`/`sortedset`/`map`/`sortedmap`) starts `unique` provided every argument passed to it is `unique` (moved in) or deeply immutable (and for `from: xs`, `xs`'s element type is deeply immutable; for `comparator: cmp`, `cmp` is `pure deterministic`), and stays `unique` only while every reference stored into it (including via built-in `hermetic mut` core collection mutators) is itself `unique` (moved in) or deeply immutable. Storing a parameter, an outer variable, an `any`/`any?` value, or anything else demotes it to `@EXTERNAL` (or `@PARAM`-tainted): no longer mutable in `pure`, movable, freezable, or returnable as `unique` (§5.2). Arguments passed to a Java method are assumed stored in the receiver unless the method's built-in profile or axiom marks that parameter `borrow`.
     * *Consume vs. borrow:* a `unique` parameter **consumes** its argument (the callee may store it). A `unique borrow` parameter is an **exclusive borrow** (Rust `&mut`): the callee may not store it, so the caller's binding is usable again, and still `unique`, after the call.
@@ -167,8 +167,8 @@ Function declaration / Java target
 * **`nothrow` (Exception-freedom):**
   * Guaranteed never to throw a runtime error or exception (`assert` / `suppose`, failing `as` cast, non-null assertion `e!`, narrowing scalar conversions like `int(d)` / `int("42")`, Java boundary check failure such as `JavaTypes.checkNotNull` / generic `TypeVariable` return, or throwing Java callee; note that Babble has no `throw` statement, `a / b` is non-throwing IEEE-754 `float`/`double` division, and non-nullable `T` prevents null dereference on `a.x` while `a?.x` short-circuits on `null`).
   * Essential for **speculative evaluation**, **hoisting out of guarded branches** (`if a != null then ( f(a) )`), and **reordering short-circuiting predicates**.
-  * With BIP008 (`BIP008-P5`), Babble-to-Babble calls have no runtime entry `Types.check`, so calling a `nothrow` Babble function is unconditionally `nothrow`.
-* **`@TERMINATING` *(`BIP007-P2` / optimizer flag, or combined as `@TOTAL` = `nothrow` + `@TERMINATING`)*:**
+  * With BIP008 (`BIP008-I5`), Babble-to-Babble calls have no runtime entry `Types.check`, so calling a `nothrow` Babble function is unconditionally `nothrow`.
+* **`@TERMINATING` *(`BIP007-I2` / optimizer flag, or combined as `@TOTAL` = `nothrow` + `@TERMINATING`)*:**
   * Guaranteed to finish in finite steps (no unbounded `while` loops or unguarded recursion). Required only when dropping dead calls whose infinite loop would otherwise prevent termination. Inferred in `EffectChecker` for functions whose body contains no `while` loops and no recursive calls (`recurse` or same-SCC callees) and calls only `@TERMINATING` callees.
 
 #### Axis 3 — Algebraic & Relational Properties
@@ -182,7 +182,7 @@ Function declaration / Java target
   * **Effect form** (`mut` method on receiver `S` or function taking `mut target: S`): two calls on the same `mut` target with different arguments produce the exact same observable **post-state**, $s.f(a); s.f(b) \equiv_{\text{state}} s.f(b); s.f(a)$, **ignoring return values** (e.g., `set.add(k)`, `counter.add(k)`). Together with `idempotent` for retries, enables **order-independent, retry-safe accumulation**.
 * **`associative`** *(binary combiners `fn (T, T): T`)*:
   * $(a \oplus b) \oplus c = a \oplus (b \oplus c)$ (e.g., `int`/`long` `+`, `*`, `min`, `max`, `string +`, list concat). Enables **tree reductions**, loop reassociation, and partition merges.
-  * *(`BIP007-D3`: `associative` takes no `identity(...)` clause in `BIP007-P1`; reductions supply explicit seeds as in §8.4, with optional monoid identity deferred.)*
+  * *(`BIP007-D3`: `associative` takes no `identity(...)` clause in `BIP007-I1`; reductions supply explicit seeds as in §8.4, with optional monoid identity deferred.)*
 * **`monotone`** *(order-preserving unary or first-arg mapping)*:
   * $x \le y \implies f(x) \le f(y)$ over the whole declared domain (e.g., `float`/`double` `x + k`, `x * k` for `k >= 0`, widening scalar conversions, monotonic timestamp/ID buckets). **Wrapping `int`/`long` arithmetic is not monotone** (`x + 1` wraps at the maximum), so `int`/`long` `x + k` and `x * k` never get the property; see §4.6. Enables **zone-map / min-max range pruning** and pushing range predicates ($f(x) > c$) down into storage scans.
 * **`injective`:**
@@ -191,9 +191,9 @@ Function declaration / Java target
 
 #### Soundness premise — static typing and external boundaries
 
-Every profile, inferred or verified, is derived assuming the arguments conform to their declared or inferred parameter types. Under BIP008 and RM005 (`BIP011`), that assumption is enforced statically throughout Babble (`TypeChecker`, `BIP008-P5`), with runtime `Types.check` / `JavaTypes.checkNotNull` remaining only at `as` casts, `e!` assertions, and Java boundaries:
+Every profile, inferred or verified, is derived assuming the arguments conform to their declared or inferred parameter types. Under BIP008 and RM005 (`BIP011`), that assumption is enforced statically throughout Babble (`TypeChecker`, `BIP008-I5`), with runtime `Types.check` / `JavaTypes.checkNotNull` remaining only at `as` casts, `e!` assertions, and Java boundaries:
 
-* **Typed parameters are statically guaranteed:** Every parameter has a static type (annotated, contextual, default, or call-site inferred via `BIP008-P7`), and `TypeChecker` rejects mismatches before execution. Inside `fn (x: int, y: int) -> ( x + y )`, `x + y` is guaranteed to be integer addition with no runtime entry check.
+* **Typed parameters are statically guaranteed:** Every parameter has a static type (annotated, contextual, default, or call-site inferred via `BIP008-I7`), and `TypeChecker` rejects mismatches before execution. Inside `fn (x: int, y: int) -> ( x + y )`, `x + y` is guaranteed to be integer addition with no runtime entry check.
 * **Java boundaries remain checked:** Calls entering Babble from Java interfaces (`Faces` / `RM003` direct Java bridges via `JavaTypes.checkParameters` & `checkNotNull`) and non-null / generic values exiting Java (`JavaTypes.checkNotNull`, generic `TypeVariable`/`WildcardType` returns and fields) are checked at runtime, so un-axiomatized Java calls, `e!`, and `as` casts drop `nothrow`.
 
 ### 3.3 Exact Verification vs. `axiom` Matrix
@@ -206,7 +206,7 @@ Because static checking faces fundamental computability bounds (Rice's theorem),
 | **`hermetic`** | **Yes** (fixed-point call graph; zero globals/I/O) | **Yes** (sound; compatible with `mut`) | Only for Java/FFI calls (`axiom hermetic mut on java.util.ArrayList.add`; `RM005` core collections are pre-registered) |
 | **`mut`** (params / `this`) + exclusivity | **Yes** (minimal mutated set on untyped fns + static shallow call-site exclusivity + `hermetic`; deep disjointness only via `unique mut` in `P2`) | **Yes** (sound; mutually exclusive with `pure`, compatible with `hermetic`) | Only for Java methods (`axiom mut on ...` or `axiom hermetic mut on ...`) |
 | **`borrow`** (params / `this`) | **Yes** (intra/inter-procedural escape analysis) | **Yes** (sound) | Only for Java methods (`axiom pure borrow on ...`) |
-| **`unique`** *(`BIP007-P2`)* (return & moved params) | **Yes** for `unique` local builders, core collections, & returns (deep ownership, §5.2) | **Yes** (definite-unassignment + no shared mutable object stored into the graph) | Needed when Java methods allocate/return isolated graphs (`axiom pure unique on ...`) |
+| **`unique`** *(`BIP007-I2`)* (return & moved params) | **Yes** for `unique` local builders, core collections, & returns (deep ownership, §5.2) | **Yes** (definite-unassignment + no shared mutable object stored into the graph) | Needed when Java methods allocate/return isolated graphs (`axiom pure unique on ...`) |
 | **`deterministic`** | **Yes** (fixed-point; forbids clocks/RNG/mutable globals) | **Yes** (sound) | Only for benign lazy memoization (`String.hashCode`) or Java |
 | **`nothrow`** | **Yes** (conservative: no `assert`/`suppose`, `e!`, failing `as` casts, narrowing conversions, or throwing Java calls) | **Yes** (conservative) | Needed when invariants prevent failure (e.g. bounds-checked Java indexing `list.get(i)` or validated `Integer.parseInt`) |
 | **`idempotent`** | Trivial forwarding only | Trivial forwarding / invariant overwrite only | **Yes** (`axiom pure deterministic idempotent on java.lang.Math.abs`, `axiom hermetic mut idempotent on java.util.HashSet.add`) |
@@ -220,16 +220,16 @@ Each property $p$ defines a simple boolean partial order: having $p$ is strictly
 
 $$\text{has } p \quad <:\quad \text{may lack } p$$
 
-For a function signature `fn (p1: T1, ..., mut borrow pk: Tk): R` (extended with `unique` in `BIP007-P2`) with effect set $E$:
+For a function signature `fn (p1: T1, ..., mut borrow pk: Tk): R` (extended with `unique` in `BIP007-I2`) with effect set $E$:
 
-* **Guarantee covariance (function-level effects, `borrow` params, and `BIP007-P2` `unique` returns):**
-  * `actual` satisfies `target` iff $E_{\text{target}} \subseteq E_{\text{actual}}$, `target.borrow(i) => actual.borrow(i)` (promising not to escape satisfies a caller allowing escape), and (in `BIP007-P2`) `target.uniqueReturn => actual.uniqueReturn` (`unique R <: R`).
+* **Guarantee covariance (function-level effects, `borrow` params, and `BIP007-I2` `unique` returns):**
+  * `actual` satisfies `target` iff $E_{\text{target}} \subseteq E_{\text{actual}}$, `target.borrow(i) => actual.borrow(i)` (promising not to escape satisfies a caller allowing escape), and (in `BIP007-I2`) `target.uniqueReturn => actual.uniqueReturn` (`unique R <: R`).
   * `fn pure deterministic nothrow (borrow x: Point): Path` `<:` `fn pure deterministic (x: Point): Path` `<:` `fn (x: Point): Path` (and `unique` return satisfies non-`unique` return in `P2`).
 * **Mutability & Ownership contravariance-of-permission:**
   * Because `pure` forbids all `mut` parameters and `mut` `this`, `pure` is strictly disjoint from `mut` (`pure` signatures never carry `mut`).
   * Across **all** `Type.Function` signatures (whether or not function-level effect modifiers are present), absence of `mut` on a parameter (or `this`) means that parameter (or `this`) is **not mutated**: `actual` may declare `mut` on parameter $i$ (or `this`) only if `target` also declares `mut` on parameter $i$ (or `this`). Adding an orthogonal modifier like `nothrow` to `fn (x: list of int): int` therefore never changes the meaning of absent `mut`:
     * `fn pure deterministic (x: list of int): int` `<:` `fn deterministic (mut x: list of int): int`, **not** the reverse! (Promising no mutation at all satisfies a caller slot that permits mutating `x` without global effects.)
-  * *(In `BIP007-P2`)* On parameters, demanding ownership (`unique p`) is *stricter* on the caller: a callee taking an ordinary non-`unique` `fn (p: T)` satisfies a slot expecting `fn (unique p: T)` (`fn pure (p: Vec) <: fn pure (unique p: Vec)`), **not** the reverse!
+  * *(In `BIP007-I2`)* On parameters, demanding ownership (`unique p`) is *stricter* on the caller: a callee taking an ordinary non-`unique` `fn (p: T)` satisfies a slot expecting `fn (unique p: T)` (`fn pure (p: Vec) <: fn pure (unique p: Vec)`), **not** the reverse!
 * **Unconstrained vs. Constrained Function Types:** An **unconstrained** function type `fn (x: T): R` (empty effect set, no `mut`/`borrow`—or `unique` in `P2`) accepts any non-`mut` `Type.Function` with arbitrary global/non-deterministic effects, while callers receive no optimization or aliasing guarantees; mutating parameter $i$ still requires `fn (mut x: T): R` uniformly across all `Type.Function`s. Under BIP008, `any` / `any?` is never assignable to any `Type.Function` (constrained or unconstrained), and `Type.Function` is non-nullable (`null` is only accepted by `(fn (x: T): R)?`). Inline lambdas and un-reassigned `def`s obtain their concrete `Type.Function` and `EffectSet` via bidirectional local type inference.
 
 ---
@@ -251,13 +251,13 @@ def hypot = fn pure deterministic (a: double, b: double): double -> (
     java.lang.Math.sqrt(a * a + b * b)
 )
 
-;; 2. Parameter & receiver mutability (`mut` — never combined with `pure`), `borrow`, and (`BIP007-P2`) `unique`:
+;; 2. Parameter & receiver mutability (`mut` — never combined with `pure`), `borrow`, and (`BIP007-I2`) `unique`:
 def appendAll = fn deterministic (mut dst: list of string, borrow src: list of string) -> (
     ... ;; `dst` is mutated; `src` is untouched; compiler infers `hermetic`!
-    ;; Plain `mut` does not guarantee deep disjointness: `dst` and `src` may share state. Use `unique mut` (`BIP007-P2`) for that (§8.5).
+    ;; Plain `mut` does not guarantee deep disjointness: `dst` and `src` may share state. Use `unique mut` (`BIP007-I2`) for that (§8.5).
 )
 
-;; `BIP007-P2` unique builder & FBIP (using RM005 core collections with built-in hermetic mut profiles — zero axiom boilerplate!):
+;; `BIP007-I2` unique builder & FBIP (using RM005 core collections with built-in hermetic mut profiles — zero axiom boilerplate!):
 def buildIndex = fn pure deterministic (n: int): unique map of (int, int) -> (
     def m = map of (int, int) ()
     ... ;; calling built-in `hermetic mut deterministic` `m.put(i, i * i)` on fresh local `m` stays `pure deterministic`!
@@ -286,25 +286,25 @@ axiom hermetic mut idempotent commutative on java.util.HashSet.add
 def debugLog = fn impure (msg: string) -> ( ... )
 impure on java.net.URL.equals
 
-;; 6. Function types & (`BIP007-P2`) ownership handoff (`move(...)` / `freeze(...)` / `discard(...)`):
+;; 6. Function types & (`BIP007-I2`) ownership handoff (`move(...)` / `freeze(...)` / `discard(...)`):
 def mapInts = fn (items: list of int, f: fn pure (x: int): int): list of int -> ( ... )
 def reduceInts = fn (items: list of int, combine: fn pure deterministic associative (a: int, b: int): int): int -> ( ... )
-def frozenIndex = freeze(buildIndex(1000))      ;; (`BIP007-P2`) zero-copy conversion; type `frozen map of (int, int)`
+def frozenIndex = freeze(buildIndex(1000))      ;; (`BIP007-I2`) zero-copy conversion; type `frozen map of (int, int)`
 def sortedCopy = fn (n: int): unique list of int -> (
-    def myList = makeList(n)                    ;; (`BIP007-P2`) unique local (ownership is tracked for locals only)
-    sortInPlace(move(myList))                   ;; (`BIP007-P2`) transfers ownership; `myList` unusable afterward
+    def myList = makeList(n)                    ;; (`BIP007-I2`) unique local (ownership is tracked for locals only)
+    sortInPlace(move(myList))                   ;; (`BIP007-I2`) transfers ownership; `myList` unusable afterward
 )
 ```
 
 **Grammar additions (`Babble.g4`) & canonical formatting (`Formatter`):**
-* **`BIP007-P1` (`RM002`, migrated to predicate-free LL(1)/LL(2) in `RM006` / `BIP012`):**
+* **`BIP007-I1` (`RM002`, migrated to predicate-free LL(1)/LL(2) in `RM006` / `BIP012`):**
   * Zero `@parser::members` and zero semantic predicates: all 13 effect keywords (`axiom`, `impure`, `pure`, `hermetic`, `mut`, `borrow`, `deterministic`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone`, `injective`) plus `fn` and `on` are real lexer tokens, exempted after `.`/`?.` in `memberName` (and in named call arguments `memberName ':' expression`).
   * `# functionLiteral`: `FN effectPrefix? fnParameters (':' type)? '->' NL* functionBlock=block`.
   * `paramModifier`: `MUT | BORROW` (used in `classParam`, `fnParam`, and `fnTypeParam`).
   * `# functionType`: `FN effectPrefix? fnTypeParameters (':' type)?` (note: `axiom` and `impure` are rejected inside function types—`axiom` is a definition-site mechanism, never part of a caller-visible type!).
   * `effectDeclaration`: `EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?` (targeting Java methods, constructors via `Class()`, or bare classes at declaration granularity per `BIP007-D4`; `def C = axiom ... on import("...")` uses `(effectClause ON)?` on `# defExpression`). Inline `axiom ( ... )` expression blocks are forbidden (`BIP007-D4`).
   * `Formatter` follows Babble's canonical style (`fn pure (mut x: T): R -> (...)`, `axiom pure on java.lang.Math`, and tight `()` on `Class()` targets).
-* **`BIP007-P2` additions (`BIP007-D5`, preserving zero semantic predicates & pure `SLL`):**
+* **`BIP007-I2` additions (`BIP007-D5`, preserving zero semantic predicates & pure `SLL`):**
   * Only **two** new lexer tokens: `UNIQUE: 'unique';` and `FROZEN: 'frozen';`, both added to `memberName` so `.unique` and `.frozen` remain valid member and named-argument names.
   * **`move(x)`, `freeze(expr)`, and `discard(expr)` are built-in functions** (regular `ID`s like `same`/`classof`, not reserved keywords)—requiring zero new expression grammar rules!
   * Extend `paramModifier: MUT | BORROW | UNIQUE;`.
@@ -320,21 +320,21 @@ def sortedCopy = fn (n: int): unique list of int -> (
 Inside any function whose checked or inferred effect includes **`pure`** (and across call sites checking `mut` / `borrow` / `unique`):
 
 1. **Local variables (`def x = ...`) may be reassigned freely** inside the function (`def i = 0; i = i + 1`). Local stack state is invisible outside the call.
-2. **Fresh local object & collection mutation (`unique`, `BIP007-P2`):**
-   * *In `BIP007-P1` (`RM002`):* Before `unique` ownership lands, mutating any object (even a freshly constructed local such as `def tmp = Counter(0); tmp.add(1)`) is disallowed inside `pure`/`hermetic` functions, while local `def` variable reassignments remain valid.
-   * *In `BIP007-P2` (`BIP007-D6`):* A local `def` is **`unique`** if its initializer (and any reassignment) creates a new instance via a `pure` constructor, a `unique`-returning call, an `object (...)` literal, or an `RM005` core collection constructor (`list`/`set`/`sortedset`/`map`/`sortedmap`) **whose arguments are all `unique` (moved in) or deeply immutable** (with `from:` copying deeply immutable elements and `comparator:` being `pure deterministic`), and it stays `unique` while everything stored into it is `unique` or deeply immutable (§3.2). Mutating a `unique` local via `hermetic mut` helpers or built-in core-collection mutators (`xs.add(1)`, `m.put(k, v)`) does **not** require `mut` and does **not** break `pure` or `deterministic`. Only `unique` locals can be moved, frozen, or returned as `unique`; objects read out of a `unique` local belong to its owned graph and may be mutated in place, but storing them anywhere else (or storing a `@PARAM` / `@EXTERNAL` value into the local) demotes the local to `@EXTERNAL`.
+2. **Fresh local object & collection mutation (`unique`, `BIP007-I2`):**
+   * *In `BIP007-I1` (`RM002`):* Before `unique` ownership lands, mutating any object (even a freshly constructed local such as `def tmp = Counter(0); tmp.add(1)`) is disallowed inside `pure`/`hermetic` functions, while local `def` variable reassignments remain valid.
+   * *In `BIP007-I2` (`BIP007-D6`):* A local `def` is **`unique`** if its initializer (and any reassignment) creates a new instance via a `pure` constructor, a `unique`-returning call, an `object (...)` literal, or an `RM005` core collection constructor (`list`/`set`/`sortedset`/`map`/`sortedmap`) **whose arguments are all `unique` (moved in) or deeply immutable** (with `from:` copying deeply immutable elements and `comparator:` being `pure deterministic`), and it stays `unique` while everything stored into it is `unique` or deeply immutable (§3.2). Mutating a `unique` local via `hermetic mut` helpers or built-in core-collection mutators (`xs.add(1)`, `m.put(k, v)`) does **not** require `mut` and does **not** break `pure` or `deterministic`. Only `unique` locals can be moved, frozen, or returned as `unique`; objects read out of a `unique` local belong to its owned graph and may be mutated in place, but storing them anywhere else (or storing a `@PARAM` / `@EXTERNAL` value into the local) demotes the local to `@EXTERNAL`.
 3. **Parameters and `this` without `mut` are strictly unmutated:**
    * `this.x = ...`, `param.x = ...`, and calling any `mut` method `param.mutMethod()` are **rejected** unless `mut` is declared on `this` or `param` (with `mut` inferred only on completely untyped functions having no effect modifiers, no parameter `: Type`, and no `: R` return type).
-   * Aliasing a non-`mut` parameter (`def alias = param; alias.x = 1`, or derived sub-references `def c = param.child; c.x = 1`, or `RM005` collection views like `m.values()` / `xs.subList(...)`) is rejected in `BIP007-P1` / `RM005` by local `@PARAM`/`@THIS` alias tracking in `EffectChecker`.
+   * Aliasing a non-`mut` parameter (`def alias = param; alias.x = 1`, or derived sub-references `def c = param.child; c.x = 1`, or `RM005` collection views like `m.values()` / `xs.subList(...)`) is rejected in `BIP007-I1` / `RM005` by local `@PARAM`/`@THIS` alias tracking in `EffectChecker`.
 4. **Call-Site `mut` Exclusivity (`BIP007-D9`):**
    * At any call passing an expression `arg` to a `mut` parameter (or calling a `mut` method `arg.m(...)`), `arg` cannot be the same object as any other argument (or `this`) passed to the same call.
    * Checked purely statically in `EffectChecker`: rejects same bindings, tracked local aliases (`def y = x; f(x, y)`), and identical member paths (`a.b.m(a.b)`), while permitting distinct locals/expressions (`f(xs.get(i), xs.get(j))`) and immutable `string` receivers (which never require `mut`). There is no runtime `Values.same(a, b)` exclusivity fallback (`BIP007-D9`).
-   * This check is shallow and gives **no deep non-aliasing guarantee** (§3.2). Deep disjointness comes only from `unique mut` parameters (`BIP007-P2`), which need no check: the argument must be a `unique` local, which cannot also appear as another argument, be captured, or be reachable from a global.
-5. **Borrow Escape (`BIP007-P1`) & Ownership Transfer (`BIP007-P2`):**
-   * Inside a function declaring `fn (borrow p: T)`, assigning `p` (or any mutable sub-reference of `p`) to fields of `this`, another parameter, an outer/global variable, a returning closure, or returning `p` directly is rejected at compile time (`BIP007-P1`).
-   * *(`BIP007-P2`):* Passing an argument to a `unique` parameter, passing it to `freeze(...)`, or returning a `unique` local consumes ownership via `move(expr)` (inserted implicitly when the compiler proves it is the variable's last use). Definite-unassignment analysis rejects any subsequent read or write to a moved variable. Passing it to a `unique borrow` parameter is an exclusive borrow instead: nothing is consumed. Only function-local bindings that no closure captures can be `unique` and moved; top-level, module, static and captured bindings are `@EXTERNAL`, and `move(...)` on them is rejected (`Cannot move x : not a local variable`).
+   * This check is shallow and gives **no deep non-aliasing guarantee** (§3.2). Deep disjointness comes only from `unique mut` parameters (`BIP007-I2`), which need no check: the argument must be a `unique` local, which cannot also appear as another argument, be captured, or be reachable from a global.
+5. **Borrow Escape (`BIP007-I1`) & Ownership Transfer (`BIP007-I2`):**
+   * Inside a function declaring `fn (borrow p: T)`, assigning `p` (or any mutable sub-reference of `p`) to fields of `this`, another parameter, an outer/global variable, a returning closure, or returning `p` directly is rejected at compile time (`BIP007-I1`).
+   * *(`BIP007-I2`):* Passing an argument to a `unique` parameter, passing it to `freeze(...)`, or returning a `unique` local consumes ownership via `move(expr)` (inserted implicitly when the compiler proves it is the variable's last use). Definite-unassignment analysis rejects any subsequent read or write to a moved variable. Passing it to a `unique borrow` parameter is an exclusive borrow instead: nothing is consumed. Only function-local bindings that no closure captures can be `unique` and moved; top-level, module, static and captured bindings are `@EXTERNAL`, and `move(...)` on them is rejected (`Cannot move x : not a local variable`).
 6. **Outer variables and global mutable singletons:**
-   * **Writing** any outer `def`, mutable `object` singleton field, or `static` field is forbidden in `pure` and `hermetic` (clears `hermetic`), except when a frame-local (`borrow`) helper closure reassigns an unescaped local `def` (`BIP007-P1`) or mutates a `unique` local (`BIP007-P2`) of its enclosing function `F` (§4.5).
+   * **Writing** any outer `def`, mutable `object` singleton field, or `static` field is forbidden in `pure` and `hermetic` (clears `hermetic`), except when a frame-local (`borrow`) helper closure reassigns an unescaped local `def` (`BIP007-I1`) or mutates a `unique` local (`BIP007-I2`) of its enclosing function `F` (§4.5).
    * **Reading** a reassigned outer `def`, non-`final` Java static field, or mutable outer singleton/field (even reached transitively through an outer `record`) performs no observable write: it stays valid in **`pure`**, but is forbidden in **`deterministic`**.
    * Reading immutable outer `def`s (never reassigned and deeply `record` / `entry` / `frozen` / scalar / `pure` function) is valid in both `pure` and `deterministic`.
 
@@ -375,7 +375,7 @@ Every function literal creates its own effect context (`inferred`, `verified`, o
 
 * **Constructing a less-constrained closure inside a `pure deterministic` function** (e.g., returning an `impure` logger closure `fn () -> ( println(msg) )`) is `pure deterministic` itself (building the closure has no side effects and captures immutable `msg`), **provided** the inner closure does not capture a `mut` mutation of the enclosing function's non-`mut` parameters or `this`.
 * **Calling** that closure inside the enclosing `pure deterministic` function requires its effect profile to satisfy the enclosing requirement (`actual <: enclosing`).
-* **Frame-local (`borrow`) helper closures:** When a closure literal defined inside function `F` never escapes `F` (it is only invoked directly inside `F` or passed to `borrow` parameters within `F`), any reads or reassignments of `F`'s otherwise-uncaptured local `def`s (`BIP007-P1`, plus mutations of `F`'s `unique` locals in `BIP007-P2`) performed by that helper closure are attributed to `F`'s own local frame rather than `@EXTERNAL` outer state—allowing `F` to use local helper closures (such as `countWhere` over local loop accumulators) and stay `pure deterministic`.
+* **Frame-local (`borrow`) helper closures:** When a closure literal defined inside function `F` never escapes `F` (it is only invoked directly inside `F` or passed to `borrow` parameters within `F`), any reads or reassignments of `F`'s otherwise-uncaptured local `def`s (`BIP007-I1`, plus mutations of `F`'s `unique` locals in `BIP007-I2`) performed by that helper closure are attributed to `F`'s own local frame rather than `@EXTERNAL` outer state—allowing `F` to use local helper closures (such as `countWhere` over local loop accumulators) and stay `pure deterministic`.
 * **Higher-order helpers & bounded call-site specialization:** Rather than introducing Koka-style effect-row variables into Babble's type signatures, `EffectChecker` evaluates higher-order Babble helpers whose effects depend on a parameter call `f(...)` (e.g., `def apply = fn (f, x) -> ( f(x) )`) via bounded call-site specialization for statically resolved concrete Babble functions and methods (intra-file definitions and statically imported module exports, excluding `impure` callables and abstract interface dispatches) using the caller-supplied `Type.Function` or contextual lambda arguments.
 
 ### 4.6 Built-ins, Operators, Core Types, and Numeric Semantics (`RM005` + `RM006`)
@@ -383,8 +383,8 @@ Every function literal creates its own effect context (`inferred`, `verified`, o
 | Built-in / Operator | Intrinsic Effect Profile | Notes |
 |---|---|---|
 | `same(a, b)`, `classof(v)`, `x is T` | `pure deterministic nothrow` (`borrow` params) | Pointer/class/type inspection only (`same` is also `commutative`; `x is T` takes a static `type` per `RM006` and establishes flow-sensitive `Narrowing`; `same` and `classof` accept `frozen T` and `unique` locals without consuming or unwrapping them, `BIP007-D9`). |
-| `move(x)`, `freeze(expr)` *(`BIP007-P2`, `BIP007-D5`)* | `pure deterministic nothrow` | Built-in functions (not keywords); zero-cost identity no-ops at runtime. `move(x)` transfers `unique` ownership of local `x`; `freeze(expr)` transitions a `unique` graph to `frozen T`. |
-| `discard(expr)` *(`BIP007-P2`, `BIP007-D8`)* | `pure deterministic nothrow` (`borrow` param), returns `void`/`null` | Built-in function accepting any type (including `any?`, `frozen T`, and `unique` locals without consuming or unwrapping them); explicitly opts out of the unused `pure nothrow` compile error. Zero-cost no-op at runtime. |
+| `move(x)`, `freeze(expr)` *(`BIP007-I2`, `BIP007-D5`)* | `pure deterministic nothrow` | Built-in functions (not keywords); zero-cost identity no-ops at runtime. `move(x)` transfers `unique` ownership of local `x`; `freeze(expr)` transitions a `unique` graph to `frozen T`. |
+| `discard(expr)` *(`BIP007-I2`, `BIP007-D8`)* | `pure deterministic nothrow` (`borrow` param), returns `void`/`null` | Built-in function accepting any type (including `any?`, `frozen T`, and `unique` locals without consuming or unwrapping them); explicitly opts out of the unused `pure nothrow` compile error. Zero-cost no-op at runtime. |
 | `e!` (`nonNullAssertion`, `RM005`) | `pure deterministic` | **Not `nothrow`** (throws on `null`, unless `Narrowing` already proved `e` non-null). |
 | `assert(cond, msg?)` / `suppose` | `pure deterministic` | **Not `nothrow`** (throws on false); arguments checked under enclosing mode. |
 | `print(...)`, `println(...)`, `import(...)` | Unconstrained (`impure`) | I/O / module loading side effects (static `import("...ba")` still resolves `ModuleInterface` types at compile time). |
@@ -399,7 +399,7 @@ Every function literal creates its own effect context (`inferred`, `verified`, o
 | `<`, `<=`, `>`, `>=` | `pure deterministic nothrow` on all 9 scalars (`byte`..`string`, incl. `char`); Java `Comparable` inherits `compareTo` profile (default `pure deterministic`) | Flip-duality (`a < b <=> b > a`) built into optimizer. |
 | `not a`, short-circuit `a and b`, `a or b` | `pure deterministic nothrow` (when `bool` operands are `pure deterministic nothrow`) | `a and b` / `a or b` only evaluate `b` conditionally; `b` is checked under flow-sensitive `Narrowing` (`!= null`, `is T`), establishing `nothrow` on guarded branches without allowing optimizers to reorder `b` ahead of guard `a` (`BIP007-D1`). |
 | Member selection `a.x` / `a?.x` | `pure deterministic nothrow` | Under BIP008, `a.x` is allowed only when `a` is statically non-nullable `T` (or narrowed via `!= null` / `is T` per `BIP007-D1`), and `a?.x` handles `T?` by short-circuiting to `null` (and `a?.m(...)` inherits `m`'s effects). |
-| Core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`, `RM005`) | Constructors: `hermetic deterministic` (`unique` in `P2` per `BIP007-D6`); Readers: `hermetic deterministic borrow`; Mutators: `hermetic mut deterministic` (`set.add`: + `idempotent commutative`, `map.put`: + `idempotent`); `entry`: `pure deterministic nothrow` | Built-in `BIP011-P5` profiles (`EffectChecker`); view methods (`subList`, `keySet`, `values`, `entrySet`) propagate receiver alias origin so mutating a view requires `mut` on the backing collection. |
+| Core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`, `RM005`) | Constructors: `hermetic deterministic` (`unique` in `P2` per `BIP007-D6`); Readers: `hermetic deterministic borrow`; Mutators: `hermetic mut deterministic` (`set.add`: + `idempotent commutative`, `map.put`: + `idempotent`); `entry`: `pure deterministic nothrow` | Built-in `BIP011-I5` profiles (`EffectChecker`); view methods (`subList`, `keySet`, `values`, `entrySet`) propagate receiver alias origin so mutating a view requires `mut` on the backing collection. |
 
 ---
 
@@ -409,25 +409,25 @@ Every function literal creates its own effect context (`inferred`, `verified`, o
 
 To minimize annotation burden, Babble maximizes inference across unannotated functions in the active compilation unit:
 
-1. **Call-Graph Construction:** Build a static call graph over all functions, methods, constructors, closures, and `record` bodies in `EffectChecker` (reading converged types and narrowed occurrences from `TypedProgram`, `RM004` / `BIP010`, alongside `BIP008`'s bidirectional local type inference, call-site parameter inference `BIP008-P7`, `of` generics instantiation, and flow-sensitive `is`/`!= null` `Narrowing`—where every expression `Type`, `ClassShape`, and static module `TypedModuleSummary` is statically known).
+1. **Call-Graph Construction:** Build a static call graph over all functions, methods, constructors, closures, and `record` bodies in `EffectChecker` (reading converged types and narrowed occurrences from `TypedProgram`, `RM004` / `BIP010`, alongside `BIP008`'s bidirectional local type inference, call-site parameter inference `BIP008-I7`, `of` generics instantiation, and flow-sensitive `is`/`!= null` `Narrowing`—where every expression `Type`, `ClassShape`, and static module `TypedModuleSummary` is statically known).
 2. **SCC Condensation (Bottom-Up Fixed Point):** Partition into Strongly Connected Components (handling direct and mutual recursion in `recurse` or mutually recursive functions).
 3. **Optimistic Initialization (per unannotated node):**
-   * *(`BIP007-P1`):* Start with `{hermetic, deterministic, nothrow}`, `mutParams = {}`, `borrowParams = allParams`, `mutThis = false`, `borrowThis = true`. (`pure` holds after convergence iff `hermetic && mutParams.isEmpty() && !mutThis`.)
-   * *(`BIP007-P2` additions):* `uniqueReturn = true` and `@TERMINATING`.
+   * *(`BIP007-I1`):* Start with `{hermetic, deterministic, nothrow}`, `mutParams = {}`, `borrowParams = allParams`, `mutThis = false`, `borrowThis = true`. (`pure` holds after convergence iff `hermetic && mutParams.isEmpty() && !mutThis`.)
+   * *(`BIP007-I2` additions):* `uniqueReturn = true` and `@TERMINATING`.
    * Functions explicitly marked `impure` start and stay at `{}` (`hermetic = false`, `borrowParams = {}`, `borrowThis = false`; and `uniqueReturn = false` in `P2`).
    * Functions marked `axiom` are initialized directly to their declared `axiom` `EffectSet` / parameter flags (`axiom pure ...` implies `hermetic`, and `axiom hermetic mut ...` sets `hermetic`) and excluded from downward weakening.
 4. **Transfer & Monotone Fixed-Point Iteration:**
    * **`mut` inference scope:** `mutParams` and `mutThis` are inferred **only** on completely untyped functions (no effect modifiers, no parameter `: Type`, and no `: R` return type). On any function carrying effect modifiers, any parameter type, or `: R`, `mutParams`/`mutThis` stay fixed to explicitly declared `mut` annotations, and mutating an unannotated parameter/`this` is rejected immediately as a verification error.
-   * **Field writes / calls to `mut` / unconstrained callees:** In `BIP007-P2`, if target is `unique`, keep `hermetic` and `mutParams` unchanged (provided the called `mut` method/helper or built-in core-collection mutator itself has `hermetic`!). In `BIP007-P1` (before `unique`), mutating any object inside a `pure`/`hermetic` function fails verification (or clears `hermetic` on an unannotated function unless targeting an inferred `mut` param/`this` of a completely untyped function). If target is `@PARAM(i)` or `@THIS`, record mutation of $i$ / `this` (preventing `pure`); if target is `@EXTERNAL` or an unconstrained/I/O Java method, clear `hermetic` (dropping `pure`), `deterministic`, and `nothrow`. Any callback invoked inside a verified `pure` or `deterministic` function must carry a constrained `Type.Function`—which `TypeChecker` enforces statically at all call sites (`any`/`any?` cannot be called or assigned to `Type.Function`, §3.4). Also check static shallow call-site **`mut` exclusivity** across arguments (`BIP007-D9`), and (`P2`) that every argument to a `unique` slot is a `unique` local or fresh `unique` expression.
+   * **Field writes / calls to `mut` / unconstrained callees:** In `BIP007-I2`, if target is `unique`, keep `hermetic` and `mutParams` unchanged (provided the called `mut` method/helper or built-in core-collection mutator itself has `hermetic`!). In `BIP007-I1` (before `unique`), mutating any object inside a `pure`/`hermetic` function fails verification (or clears `hermetic` on an unannotated function unless targeting an inferred `mut` param/`this` of a completely untyped function). If target is `@PARAM(i)` or `@THIS`, record mutation of $i$ / `this` (preventing `pure`); if target is `@EXTERNAL` or an unconstrained/I/O Java method, clear `hermetic` (dropping `pure`), `deterministic`, and `nothrow`. Any callback invoked inside a verified `pure` or `deterministic` function must carry a constrained `Type.Function`—which `TypeChecker` enforces statically at all call sites (`any`/`any?` cannot be called or assigned to `Type.Function`, §3.4). Also check static shallow call-site **`mut` exclusivity** across arguments (`BIP007-D9`), and (`P2`) that every argument to a `unique` slot is a `unique` local or fresh `unique` expression.
    * **Finalize `pure`:** After convergence, `pure` is set iff `hermetic && mutParams.isEmpty() && !mutThis` (so `pure` **always** implies `hermetic` and zero external mutation).
-   * **Escape & (`P2`) uniqueness transfer:** Storing `@PARAM(i)` (or derived sub-references / `RM005` collection views) into `this`, another parameter, a global, an escaping closure, or returning it removes $i$ from `borrowParams` (and similarly clears `borrowThis` when `@THIS` escapes). *(In `BIP007-P2`)* returning any expression that may alias `@EXTERNAL`, non-`unique` `@PARAM`, or `@THIS` drops `uniqueReturn`.
+   * **Escape & (`P2`) uniqueness transfer:** Storing `@PARAM(i)` (or derived sub-references / `RM005` collection views) into `this`, another parameter, a global, an escaping closure, or returning it removes $i$ from `borrowParams` (and similarly clears `borrowThis` when `@THIS` escapes). *(In `BIP007-I2`)* returning any expression that may alias `@EXTERNAL`, non-`unique` `@PARAM`, or `@THIS` drops `uniqueReturn`.
    * **Reads / non-determinism:** If expression reads a reassigned outer `def` (outside a frame-local `borrow` closure, §4.5), non-`final` static field, mutable singleton field, or calls a non-`deterministic` callee, drop `deterministic`.
    * **Exceptions (`BIP007-D1`):** If expression executes `assert`/`suppose`, a non-null assertion `e!` (not statically proven non-null), a narrowing scalar conversion (`int(d)`, `int("42")`), a runtime-checked `as` cast (not statically proven redundant), a Java boundary check (`JavaTypes.checkNotNull` or a generic `TypeVariable`/`WildcardType` return/field check unless covered by `axiom nothrow`), or calls a non-`nothrow` callee, drop `nothrow`. Guarded dereferences and branches narrowed by `Narrowing` (`!= null`, `is T`) establish `nothrow` on the guarded right-hand side (`BIP007-D1`).
-   * **Static parameter conformance:** Babble-to-Babble calls are statically type-checked with zero runtime `Types.check` overhead (`BIP008-P5`), while `Faces` and `RM003` direct Java bridges check `JavaTypes.checkParameters` / `checkNotNull` when Java calls into Babble.
+   * **Static parameter conformance:** Babble-to-Babble calls are statically type-checked with zero runtime `Types.check` overhead (`BIP008-I5`), while `Faces` and `RM003` direct Java bridges check `JavaTypes.checkParameters` / `checkNotNull` when Java calls into Babble.
    * **Compositional algebraic propagation:**
      * Composition $f(g(x))$ where both $f$ and $g$ are `monotone` $\implies$ `monotone`; same for `injective`.
      * Single-op wrapper `fn (a, b) -> ( op(a, b) )` inherits `commutative` / `associative` from `op` (and unary `idempotent`).
-   * **`@TERMINATING` *(`BIP007-P2`)*:** Dropped if the body contains any `while` loop, calls `recurse` or another function in the same cyclic SCC, or calls any non-`@TERMINATING` callee.
+   * **`@TERMINATING` *(`BIP007-I2`)*:** Dropped if the body contains any `while` loop, calls `recurse` or another function in the same cyclic SCC, or calls any non-`@TERMINATING` callee.
 5. **Verification Check (Verified Mode) & Module Export Contract (`BIP007-D2`):**
    * For every function with explicit non-`axiom` annotations, verify `inferred.satisfies(declared)` (including `declared.borrow ⊆ inferred.borrow`, `declared.borrowThis => inferred.borrowThis`, and in `P2` `declared.uniqueReturn => inferred.uniqueReturn`) and `inferred.mutSet ⊆ declared.mutSet`, plus definite-unassignment after `move(...)`/`freeze(...)` and unused `pure nothrow` expression checks (`P2`). Emit targeted diagnostics if any obligation fails—while retaining *extra* inferred properties strictly for intra-module optimization metadata (`ScopeAnalysis`; external callers rely only on the explicitly declared modifiers, §3.1).
    * Per **`BIP007-D2`**, unannotated `export def` exports its inferred `EffectSet` and inferred parameter flags across module boundaries via AST-detached `TypedModuleSummary` (`ModuleInterface`, `RM004`), whereas exports with explicit modifiers or `impure` expose only their declared contract.
@@ -440,12 +440,12 @@ To minimize annotation burden, Babble maximizes inference across unannotated fun
 > * Anders Møller & Michael I. Schwartzbach, [*Static Program Analysis*](https://cs.au.dk/~amoeller/spa/) (Aarhus University) — accessible textbook covering lattices, monotone frameworks, and worklist solvers.
 > * Gary A. Kildall (1973), *"A Unified Approach to Global Program Optimization"*, Proc. ACM POPL — foundational paper introducing lattice-based fixed-point dataflow analysis.
 
-### 5.2 Alias Tracking, Exclusivity, and (`BIP007-P2`) Deep Ownership (`unique`)
+### 5.2 Alias Tracking, Exclusivity, and (`BIP007-I2`) Deep Ownership (`unique`)
 
-`BIP007-P1` tracks local `@PARAM(i)` / `@THIS` aliases, derived sub-references (extended in `RM005` with core collection views), control-flow merge joins, `borrow` escape, and static call-site `mut` exclusivity; `BIP007-P2` adds `unique`, `move(...)`, `freeze(...)`, `discard(...)`, `@MOVED`, and `Type.Frozen`:
+`BIP007-I1` tracks local `@PARAM(i)` / `@THIS` aliases, derived sub-references (extended in `RM005` with core collection views), control-flow merge joins, `borrow` escape, and static call-site `mut` exclusivity; `BIP007-I2` adds `unique`, `move(...)`, `freeze(...)`, `discard(...)`, `@MOVED`, and `Type.Frozen`:
 
 ```babble
-;; Full inference illustration (`BIP007-P2` adds `: unique Stats` local builder mutation & unique return):
+;; Full inference illustration (`BIP007-I2` adds `: unique Stats` local builder mutation & unique return):
 ;; Note: RM005 already pre-registers `list.size` as `hermetic deterministic nothrow borrow` — no axiom needed!
 def Stats = class (def count: int = 0, def total: int = 0) (
     def add = fn mut deterministic nothrow (v: int) -> (
@@ -459,36 +459,36 @@ def buildStats = fn (xs: list of int) -> (
     s
 )
 ```
-Under `BIP007-P2`, `buildStats` has its return type `Stats` inferred by bidirectional local type inference, and automatically infers **`pure deterministic nothrow`**, **`borrow xs`** (`xs` is untouched and never escapes), AND **`unique` return** (`: unique Stats`)—because `s` was freshly constructed inside `buildStats`, `xs.size()` yields a primitive `int` rather than escaping `xs`, and zero aliases to `s` remain in `buildStats`.
+Under `BIP007-I2`, `buildStats` has its return type `Stats` inferred by bidirectional local type inference, and automatically infers **`pure deterministic nothrow`**, **`borrow xs`** (`xs` is untouched and never escapes), AND **`unique` return** (`: unique Stats`)—because `s` was freshly constructed inside `buildStats`, `xs.size()` yields a primitive `int` rather than escaping `xs`, and zero aliases to `s` remain in `buildStats`.
 
 Babble tracks these local points-to / ownership states per binding in `EffectChecker` (only for function-local bindings that no escaping closure captures; every other binding is `@EXTERNAL`):
-* **`unique` *(`BIP007-P2`, deeply owned)*:** Bound solely to a `pure` constructor, `object` literal, `RM005` core collection constructor (`list`/`set`/`sortedset`/`map`/`sortedmap`, `BIP007-D6`), `unique` return, or `unique` parameter whose arguments are `unique` (moved in) or deeply immutable, and everything stored into it so far was `unique` (moved in) or deeply immutable. Calling a `hermetic mut` helper/method (or built-in core-collection mutator) on it leaves `hermetic` and `mutParams` untouched (so the caller stays `pure`!). Only a `unique` binding may be passed to `move(...)`, a `unique` slot or `freeze(...)`, or returned as `unique`. Storing a `@PARAM`, `@EXTERNAL`, or `any`/`any?` value into it (at construction, via field write, or as an argument a Java method may retain) demotes it to `@EXTERNAL` (or `@PARAM`-tainted) for the rest of the function. *(In `BIP007-P1`, freshly allocated locals default to `@EXTERNAL` so alias tracking catches `@PARAM`/`@THIS` bypasses without allowing object mutation in `pure`/`hermetic` yet.)*
-* **`@PARAM(i)` / `@THIS` *(`BIP007-P1`)*:** Aliases parameter $i$ or `this`. Any mutation checks or taints $i$ / `this` for `mut` (forbidding hidden mutation bypasses like `def a = p; a.x = 1`); escaping it into `this`, another parameter, an outer variable, an escaping closure, or the return value clears `borrow(i)` (or `borrowThis`).
-* **Sub-reference derivation (`p.child`, `xs.get(0)`, `m.values()`) *(`BIP007-P1` / `RM005` / `P2`)*:** Reading a non-deeply-immutable field, element, or collection view from `@PARAM(i)` or `@THIS` inherits `@PARAM(i)` / `@THIS` on the derived value, so mutating or escaping `p.child` is tracked back to parameter $i$ / `this` (forbidding hidden mutation through aliases of non-`mut` parameters). *(In `BIP007-P2`)* reading a field from `unique` stays inside that owned graph (mutating it preserves `unique`, while storing it externally demotes the root to `@EXTERNAL`).
-* **`@FROZEN` *(`BIP007-P2`)*:** Any binding whose type is deeply immutable (`frozen T` from `freeze(expr)` in `P2`, or deep `record`, deep `entry of (K, V)`, all 9 core scalars, `null`, or unions/nullables thereof). Unlike the other states this one is carried by the type, so it holds for parameters, fields and top-level `def`s too.
-* **`@MOVED` *(`BIP007-P2`)*:** After `move(x)` or `freeze(x)` (including implicit last-use move), `x` transitions to `@MOVED`; definite-unassignment rejects any subsequent read or write to `x`.
-* **`@EXTERNAL` *(`BIP007-P1`)*:** Any reference stored to or loaded from top-level, module, static, or escaping-closure bindings, returned from an unconstrained call, or demoted from `unique` becomes `@EXTERNAL` (cannot be mutated in `pure`/`hermetic` or returned as `unique`).
+* **`unique` *(`BIP007-I2`, deeply owned)*:** Bound solely to a `pure` constructor, `object` literal, `RM005` core collection constructor (`list`/`set`/`sortedset`/`map`/`sortedmap`, `BIP007-D6`), `unique` return, or `unique` parameter whose arguments are `unique` (moved in) or deeply immutable, and everything stored into it so far was `unique` (moved in) or deeply immutable. Calling a `hermetic mut` helper/method (or built-in core-collection mutator) on it leaves `hermetic` and `mutParams` untouched (so the caller stays `pure`!). Only a `unique` binding may be passed to `move(...)`, a `unique` slot or `freeze(...)`, or returned as `unique`. Storing a `@PARAM`, `@EXTERNAL`, or `any`/`any?` value into it (at construction, via field write, or as an argument a Java method may retain) demotes it to `@EXTERNAL` (or `@PARAM`-tainted) for the rest of the function. *(In `BIP007-I1`, freshly allocated locals default to `@EXTERNAL` so alias tracking catches `@PARAM`/`@THIS` bypasses without allowing object mutation in `pure`/`hermetic` yet.)*
+* **`@PARAM(i)` / `@THIS` *(`BIP007-I1`)*:** Aliases parameter $i$ or `this`. Any mutation checks or taints $i$ / `this` for `mut` (forbidding hidden mutation bypasses like `def a = p; a.x = 1`); escaping it into `this`, another parameter, an outer variable, an escaping closure, or the return value clears `borrow(i)` (or `borrowThis`).
+* **Sub-reference derivation (`p.child`, `xs.get(0)`, `m.values()`) *(`BIP007-I1` / `RM005` / `P2`)*:** Reading a non-deeply-immutable field, element, or collection view from `@PARAM(i)` or `@THIS` inherits `@PARAM(i)` / `@THIS` on the derived value, so mutating or escaping `p.child` is tracked back to parameter $i$ / `this` (forbidding hidden mutation through aliases of non-`mut` parameters). *(In `BIP007-I2`)* reading a field from `unique` stays inside that owned graph (mutating it preserves `unique`, while storing it externally demotes the root to `@EXTERNAL`).
+* **`@FROZEN` *(`BIP007-I2`)*:** Any binding whose type is deeply immutable (`frozen T` from `freeze(expr)` in `P2`, or deep `record`, deep `entry of (K, V)`, all 9 core scalars, `null`, or unions/nullables thereof). Unlike the other states this one is carried by the type, so it holds for parameters, fields and top-level `def`s too.
+* **`@MOVED` *(`BIP007-I2`)*:** After `move(x)` or `freeze(x)` (including implicit last-use move), `x` transitions to `@MOVED`; definite-unassignment rejects any subsequent read or write to `x`.
+* **`@EXTERNAL` *(`BIP007-I1`)*:** Any reference stored to or loaded from top-level, module, static, or escaping-closure bindings, returned from an unconstrained call, or demoted from `unique` becomes `@EXTERNAL` (cannot be mutated in `pure`/`hermetic` or returned as `unique`).
 * **Control-flow merge join ($\sqcup$):** At `if`/`else` joins and loop back-edges, local alias/ownership states join monotonically:
-  * *(`BIP007-P1`)* `@PARAM(i)` $\sqcup$ `@PARAM(j)` = `@PARAM({i, j})` (subsequent mutation or escape taints all potentially aliased parameters); joining `@EXTERNAL` preserves `@PARAM(i)` tainting.
-  * *(`BIP007-P2` additions)* `unique` $\sqcup$ `unique` = `unique`; `@MOVED` $\sqcup$ *any state* = `@MOVED` (a binding moved on either branch cannot be used after the merge until reassigned); mixing `unique` with `@PARAM(i)` / `@EXTERNAL` yields `@EXTERNAL` while preserving `@PARAM(i)` tainting.
+  * *(`BIP007-I1`)* `@PARAM(i)` $\sqcup$ `@PARAM(j)` = `@PARAM({i, j})` (subsequent mutation or escape taints all potentially aliased parameters); joining `@EXTERNAL` preserves `@PARAM(i)` tainting.
+  * *(`BIP007-I2` additions)* `unique` $\sqcup$ `unique` = `unique`; `@MOVED` $\sqcup$ *any state* = `@MOVED` (a binding moved on either branch cannot be used after the merge until reassigned); mixing `unique` with `@PARAM(i)` / `@EXTERNAL` yields `@EXTERNAL` while preserving `@PARAM(i)` tainting.
 * **Call-site `mut` exclusivity (`BIP007-D9`):** At `callee(a0, a1, ...)`, every `mut` argument `ai` must be a different object from every other `aj` and `this`. Checked purely statically in `EffectChecker`: rejects same bindings, tracked local aliases (`def y = x; f(x, y)`), and identical member paths (`a.b.m(a.b)`), while allowing distinct expressions (`f(xs.get(i), xs.get(j))`) and immutable `string` receivers. There is no runtime `Values.same(a, b)` fallback; only a `unique` argument in a `unique mut` slot guarantees deep disjointness (§3.2).
 
-### 5.3 Source Diagnostics (`BIP007-P2`) & Future Optimizer Contracts *(Postponed Beyond BIP007)*
+### 5.3 Source Diagnostics (`BIP007-I2`) & Future Optimizer Contracts *(Postponed Beyond BIP007)*
 
-In **`BIP007-P1` (`RM002`)** and **`BIP007-P2`**, `EffectChecker` and `LoweringAnalyzer` compute and publish resolved `EffectSet`, `mut`/`borrow`, `unique`, and `@TERMINATING` metadata into `ScopeAnalysis`, `TypedModuleSummary`, and `AnalysisSession`.
+In **`BIP007-I1` (`RM002`)** and **`BIP007-I2`**, `EffectChecker` and `LoweringAnalyzer` compute and publish resolved `EffectSet`, `mut`/`borrow`, `unique`, and `@TERMINATING` metadata into `ScopeAnalysis`, `TypedModuleSummary`, and `AnalysisSession`.
 
-* **Unused `pure nothrow` source expressions (`BIP007-P2`, `BIP007-D8`):** When a `pure nothrow` expression (such as `s.trim()` or `a + b`) appears in a discarded statement position in source (`f(x); e`), its result is unused and it has no side effects—almost always a bug. In `BIP007-P2`, `EffectChecker` reports it as a compile-time error (`Unused pure expression`), while built-in **`discard(expr)`** (`pure deterministic nothrow`, `borrow` parameter, returns `void`/`null`) provides an explicit, self-documenting opt-out (`assert`/`suppose` and `e!` are not `nothrow` and remain valid in statement position).
+* **Unused `pure nothrow` source expressions (`BIP007-I2`, `BIP007-D8`):** When a `pure nothrow` expression (such as `s.trim()` or `a + b`) appears in a discarded statement position in source (`f(x); e`), its result is unused and it has no side effects—almost always a bug. In `BIP007-I2`, `EffectChecker` reports it as a compile-time error (`Unused pure expression`), while built-in **`discard(expr)`** (`pure deterministic nothrow`, `borrow` parameter, returns `void`/`null`) provides an explicit, self-documenting opt-out (`assert`/`suppose` and `e!` are not `nothrow` and remain valid in statement position).
 * **Bytecode & pipeline optimizer passes *(postponed to a follow-up optimizer BIP after `BIP007`)*:** `BIP007` delivers the complete static effect/ownership type system, compile-time enforcement, and published `ScopeAnalysis` metadata; the downstream optimizer passes that consume those contracts are deferred to a separate BIP after `BIP007` lands:
   1. **CSE, Memoization & LICM:** Reuse requires `pure deterministic` + deeply immutable result (never reusing `unique` mutable allocations); CSE additionally requires no intervening writes to arguments' reachable state (`commutative` matches `f(b, a)` with `f(a, b)`); memoization/folding require deeply immutable arguments; `idempotent` unary projections collapse `norm(norm(s))` $\to$ `norm(s)`.
   2. **No-Alias (`unique mut`) Local/Field Load Hoisting & Redundant-Load Elimination:** Keyed strictly on `unique mut` (never plain `mut`), keeping `src` fields in JVM locals and hoisting invariant reads across `unique mut dst` writes without runtime alias guards.
   3. **Predicate Push-Down & Push-Up:** Guard-safe filter swap (`pure nothrow`, respecting `BIP007-D1` `Narrowing` guard dependencies), pushing filters below `map`/`join` (`pure deterministic nothrow`, using `monotone` for range inversion and `injective` for equality/`distinct` push-down), and factoring common filters above `union`.
-  4. **Zero-Copy Builders (`freeze`) and FBIP Reuse:** `freeze(expr)` is already a zero-cost identity no-op in `BIP007-P2`; specializing `sort(move(xs))` / `xs.map(f)` for in-place reuse (FBIP) builds on `unique` + `move(...)` in the follow-up optimizer BIP.
+  4. **Zero-Copy Builders (`freeze`) and FBIP Reuse:** `freeze(expr)` is already a zero-cost identity no-op in `BIP007-I2`; specializing `sort(move(xs))` / `xs.map(f)` for in-place reuse (FBIP) builds on `unique` + `move(...)` in the follow-up optimizer BIP.
   5. **Stack Unboxing / Scalar Replacement (`borrow`):** Passing temporary `record`s or closure captures into `borrow` parameters in primitive JVM locals/registers across all 8 `RM005` primitive kinds.
   6. **Reassociation & Optimizer Dead-Expression Elimination:** Reassociating `pure deterministic nothrow associative` chains (`int`/`long` `+`/`*`, `string +`, skipping IEEE-754 `float`/`double`), and eliminating dead `pure nothrow @TERMINATING` expressions left behind by inlining or CSE.
 
-### 5.4 Property-Based Verification of `axiom`s *(`BIP007-P3`, Test / Debug Aid)*
+### 5.4 Property-Based Verification of `axiom`s *(`BIP007-I3`, Test / Debug Aid)*
 
-While `axiom` tells the compiler to skip compile-time proof, semantic axioms (`deterministic`, `idempotent`, `commutative`, `associative`, `monotone`, `injective`, `nothrow`) are ideal targets for **automated property-based testing** in a `babble.checkAxioms` test mode (`BIP007-P3`):
+While `axiom` tells the compiler to skip compile-time proof, semantic axioms (`deterministic`, `idempotent`, `commutative`, `associative`, `monotone`, `injective`, `nothrow`) are ideal targets for **automated property-based testing** in a `babble.checkAxioms` test mode (`BIP007-I3`):
 
 * **Input generators:** `checkAxioms` provides built-in boundary and pseudo-random generators for all 9 `RM005` core scalars (`byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`) and core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`) of generator-supported elements, and recursively constructs Babble `record` instances whose fields have generator-supported types; functions with unsupported parameter types either use a test-registered generator or skip fuzzing with a diagnostic.
 * For `axiom commutative`: sample pairs $(a, b)$ and assert `f(a, b) == f(b, a)` (or post-state equality on fresh `mut` receivers).
@@ -504,7 +504,7 @@ This turns unchecked mathematical assumptions into continuously fuzz-tested inva
 
 Java methods and classes default to **unconstrained** (`EffectSet.EMPTY`, conservative `mut` assumed on mutable receivers/args), **except**:
 1. **Standard value protocol (§4.3.2):** on Java classes, `equals` and `compareTo` default to `pure deterministic`, and so do `hashCode` and `toString` when overridden (while the identity-derived `Object.hashCode`/`Object.toString` default to `pure` only).
-2. **Built-in `RM005` (`BIP011-P5`) core-type profiles:** immutable **`string` (`java.lang.String`)** receivers never require `mut` and safe `String` methods (`length`, `isEmpty`, `trim`, `toLowerCase`, `startsWith`, `contains`, `indexOf`, etc.) carry built-in `pure deterministic` profiles (`nothrow` where bounds-free; `charAt`/`substring` drop `nothrow`); **`entry` (`Map.Entry`)** readers carry `pure deterministic nothrow`; and **`list`, `set`, `sortedset`, `map`, `sortedmap`** carry built-in `hermetic deterministic` constructor, `hermetic deterministic borrow` reader, and `hermetic mut deterministic` mutator profiles (plus `idempotent`/`commutative` on `set.add` and `idempotent` on `map.put`, and view sub-reference tracking).
+2. **Built-in `RM005` (`BIP011-I5`) core-type profiles:** immutable **`string` (`java.lang.String`)** receivers never require `mut` and safe `String` methods (`length`, `isEmpty`, `trim`, `toLowerCase`, `startsWith`, `contains`, `indexOf`, etc.) carry built-in `pure deterministic` profiles (`nothrow` where bounds-free; `charAt`/`substring` drop `nothrow`); **`entry` (`Map.Entry`)** readers carry `pure deterministic nothrow`; and **`list`, `set`, `sortedset`, `map`, `sortedmap`** carry built-in `hermetic deterministic` constructor, `hermetic deterministic borrow` reader, and `hermetic mut deterministic` mutator profiles (plus `idempotent`/`commutative` on `set.add` and `idempotent` on `map.put`, and view sub-reference tracking).
 3. All other JDK classes/methods (`Math.*`, `Files.*`, etc.) remain unconstrained until declared with `axiom ... on ...` / `export axiom ... on ...` or registered on the host engine. Any built-in default can be opted out via `impure on ...`.
 
 ### 6.1 In-Babble `axiom` and `impure` Declarations (`RM006` `on` Syntax)
@@ -540,7 +540,7 @@ impure on java.net.URL.hashCode
 
 ### 6.2 Host-Side Java Annotations & `BabbleScriptEngine` API
 
-Public package **`org.babblelang.effects`** defines the `Effect` enum (`PURE`, `HERMETIC`, `MUT`, `BORROW`, `DETERMINISTIC`, `NOTHROW`, `IDEMPOTENT`, `COMMUTATIVE`, `ASSOCIATIVE`, `MONOTONE`, `INJECTIVE`, `IMPURE`, adding `UNIQUE` / `@Unique` in `BIP007-P2`) and composable Java annotations (`@Pure`, `@Hermetic`, `@Mut`, `@Borrow`, `@Deterministic`, `@Nothrow`, `@Idempotent`, `@Commutative`, `@Associative`, `@Monotone`, `@Injective`, `@Impure`), keeping `org.babblelang.runtime` and `org.babblelang.engine.impl.natives` completely free of effect types (`RuntimeBoundaryTestCase`). Java libraries exposing APIs to Babble can annotate classes, constructors, or methods directly:
+Public package **`org.babblelang.effects`** defines the `Effect` enum (`PURE`, `HERMETIC`, `MUT`, `BORROW`, `DETERMINISTIC`, `NOTHROW`, `IDEMPOTENT`, `COMMUTATIVE`, `ASSOCIATIVE`, `MONOTONE`, `INJECTIVE`, `IMPURE`, adding `UNIQUE` / `@Unique` in `BIP007-I2`) and composable Java annotations (`@Pure`, `@Hermetic`, `@Mut`, `@Borrow`, `@Deterministic`, `@Nothrow`, `@Idempotent`, `@Commutative`, `@Associative`, `@Monotone`, `@Injective`, `@Impure`), keeping `org.babblelang.runtime` and `org.babblelang.engine.impl.natives` completely free of effect types (`RuntimeBoundaryTestCase`). Java libraries exposing APIs to Babble can annotate classes, constructors, or methods directly:
 
 ```java
 import org.babblelang.effects.*;
@@ -571,7 +571,7 @@ Compile-time resolution priority in `EffectChecker`:
 3. Java method / constructor annotations (`@Pure`, `@Deterministic`, ...), else
 4. File / module / session or engine bare-class override, else
 5. Java class annotations, else
-6. Built-in `RM005` (`BIP011-P5`) core-type profiles (`String`, `Map.Entry`, `List`/`Set`/`SortedSet`/`Map`/`SortedMap`) and default value protocol (`equals`, `compareTo`, and overridden `hashCode`/`toString` $\to$ `{PURE, DETERMINISTIC}`; `Object`'s own `hashCode`/`toString` $\to$ `{PURE}`), else
+6. Built-in `RM005` (`BIP011-I5`) core-type profiles (`String`, `Map.Entry`, `List`/`Set`/`SortedSet`/`Map`/`SortedMap`) and default value protocol (`equals`, `compareTo`, and overridden `hashCode`/`toString` $\to$ `{PURE, DETERMINISTIC}`; `Object`'s own `hashCode`/`toString` $\to$ `{PURE}`), else
 7. Unconstrained (`EffectSet.EMPTY`).
 
 ### 6.3 Java Callbacks and Interface Proxies (`Faces` / `RM003` Bridges)
@@ -589,7 +589,7 @@ Babble already depends on `org.ow2.asm:asm` (`pom.xml`), raising the question: c
   1. **Transitive `native` intrinsics:** `System.arraycopy` (`native`), `Object.getClass()` (`native`), and `Double.doubleToRawLongBits` (`native`) appear inside `String.substring`, `ArrayList`, `Arrays.copyOf`, and `BigDecimal`—tainting nearly the whole JDK without a small audited intrinsic seed table.
   2. **Internal local mutations & benign lazy caches:** `StringBuilder` inside `toString()`, `this.hash` caching in `String.hashCode()`, and `BigDecimal.stringCache` perform `PUTFIELD`/`*ASTORE`, requiring inter-procedural escape analysis for local buffers and explicit `axiom` for benign lazy memoization caches.
   3. **Algebraic & policy properties cannot come from bytecode:** Bytecode inspection can **never** infer that `Files.readString` is acceptable policy (`axiom pure`), nor in general prove `commutative` / `associative` / `idempotent` / `monotone` / `injective`.
-* **Verdict for Babble:** Keep explicit `axiom` + annotations + `BabbleScriptEngine` API (plus `RM005`'s built-in core-type profiles) as the primary mechanism; add an optional **ASM bytecode analyzer in `BIP007-P3`** (seeded with proven JVM `native` intrinsics like `System.arraycopy`) to **suggest `axiom` candidates** or auto-certify closed pure helpers.
+* **Verdict for Babble:** Keep explicit `axiom` + annotations + `BabbleScriptEngine` API (plus `RM005`'s built-in core-type profiles) as the primary mechanism; add an optional **ASM bytecode analyzer in `BIP007-I3`** (seeded with proven JVM `native` intrinsics like `System.arraycopy`) to **suggest `axiom` candidates** or auto-certify closed pure helpers.
 
 ---
 
@@ -599,9 +599,9 @@ Babble already depends on `org.ow2.asm:asm` (`pom.xml`), raising the question: c
 
 In `org.babblelang.analysis.Type` (integrated with `RM004`'s `TypeAlgebra`, `TypedProgram`, `LoweringAnalyzer`, and AST-detached `TypedModuleSummary`):
 
-* **`EffectSet`** (immutable bitmask / enum set over `{PURE, HERMETIC, DETERMINISTIC, NOTHROW, IDEMPOTENT, COMMUTATIVE, ASSOCIATIVE, MONOTONE, INJECTIVE}` + internal compiler flags `boolean mutThis`, `boolean borrowThis`, explicit `boolean impureOptOut`, and in `BIP007-P2` `boolean uniqueResult`).
-* **`Type.Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean readOnly)`** *(`+ boolean unique` in `BIP007-P2`)*: the single representation of per-parameter mutability, escape guarantee, `RM005` `borrow` covariance, and (`P2`) ownership (`fn (mut borrow dst: Buffer, borrow src: list of string)`).
-* **`Type.Frozen(Type of)` *(`BIP007-P2`, `BIP007-D7`)*:** The `frozen T` type produced by `freeze(...)`, integrated into `Type.anyMatch`/`mapTypes` and `TypeAlgebra`:
+* **`EffectSet`** (immutable bitmask / enum set over `{PURE, HERMETIC, DETERMINISTIC, NOTHROW, IDEMPOTENT, COMMUTATIVE, ASSOCIATIVE, MONOTONE, INJECTIVE}` + internal compiler flags `boolean mutThis`, `boolean borrowThis`, explicit `boolean impureOptOut`, and in `BIP007-I2` `boolean uniqueResult`).
+* **`Type.Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean readOnly)`** *(`+ boolean unique` in `BIP007-I2`)*: the single representation of per-parameter mutability, escape guarantee, `RM005` `borrow` covariance, and (`P2`) ownership (`fn (mut borrow dst: Buffer, borrow src: list of string)`).
+* **`Type.Frozen(Type of)` *(`BIP007-I2`, `BIP007-D7`)*:** The `frozen T` type produced by `freeze(...)`, integrated into `Type.anyMatch`/`mapTypes` and `TypeAlgebra`:
   * Simplifies to `of` **only** when `of` is one of the 9 core scalars (`byte`..`string`) or `Type.NULL`; distributes over `Type.Union` so `frozen (A | B)` becomes `frozen A | frozen B` and `frozen T?` simplifies to `(frozen T)?`.
   * **Never unwraps** for nominal/reference types (`class`, `record`, `interface`, Java classes, `any`): a deeply immutable `record` or `entry of (K, V)` is assignable *into* `Frozen(T)` / `Frozen(ANY)`, but `Frozen(T)` is **not** assignable to `ANY`, `ANY?`, or plain `T` (even when `T` is a deeply immutable `record`), and `ANY`/`ANY?` is not assignable to `Frozen(T)`.
   * **Covariant in generic type arguments:** `Frozen(C of A) <: Frozen(C of B)` whenever `A <: B` (or `Frozen(A) <: Frozen(B)`), safely extending `RM005`'s `borrow`/`record`/`entry` covariance.
@@ -619,10 +619,10 @@ Because Babble is statically typed (`bip008_static-typing.md`), `TypeChecker` / 
 * `Types.check` / `Types.matches` (retained only for `as` casts, `is` checks, Java boundaries, and `setMember`) require no `fx|` or `frozen` descriptors (`as` and `is` already reject function types and `is frozen T` statically, and `as` cannot unwrap `frozen T`).
 * `Callable`, `Function`, `CompiledFunction`, `CompiledMethod`, `JavaMethod`, `BabbleInstance`, `ScriptRuntime`, `Bootstrap`, `Calls`, `Faces`, and `Operators` carry no runtime `EffectSet` fields or effect-checking hooks.
 
-### 7.3 Back-End Integration (`BIP007-P1` & `BIP007-P2`)
+### 7.3 Back-End Integration (`BIP007-I1` & `BIP007-I2`)
 
-1. **`BIP007-P1` (`RM002`) — 100% front-end:** Neither `Interpreter` nor `CodeGenerator` was modified in `BIP007-P1`. `EffectChecker` records resolved `EffectSet` and `mut`/`borrow` profiles in `ScopeAnalysis` (and `TypedModuleSummary` / `AnalysisSession`).
-2. **`BIP007-P2` — Zero-cost `move`/`freeze`/`discard` & Published Metadata:** `Interpreter` and `CodeGenerator` evaluate `move(x)` and `freeze(expr)` as zero-cost identity no-ops (`expr`) and `discard(expr)` as evaluate-and-return-`null` (zero new runtime classes), while `LoweringAnalyzer` / `ScopeAnalysis` additionally publishes `unique` and `@TERMINATING` metadata for future optimizer passes (which live in a separate follow-up BIP after `BIP007`).
+1. **`BIP007-I1` (`RM002`) — 100% front-end:** Neither `Interpreter` nor `CodeGenerator` was modified in `BIP007-I1`. `EffectChecker` records resolved `EffectSet` and `mut`/`borrow` profiles in `ScopeAnalysis` (and `TypedModuleSummary` / `AnalysisSession`).
+2. **`BIP007-I2` — Zero-cost `move`/`freeze`/`discard` & Published Metadata:** `Interpreter` and `CodeGenerator` evaluate `move(x)` and `freeze(expr)` as zero-cost identity no-ops (`expr`) and `discard(expr)` as evaluate-and-return-`null` (zero new runtime classes), while `LoweringAnalyzer` / `ScopeAnalysis` additionally publishes `unique` and `@TERMINATING` metadata for future optimizer passes (which live in a separate follow-up BIP after `BIP007`).
 
 ---
 
@@ -669,7 +669,7 @@ def loadConfig = fn pure (p: string): string -> (
 )
 ```
 
-### 8.2 Argument & Receiver `mut`, Confined `hermetic`, and (`BIP007-P2`) `unique` Locals
+### 8.2 Argument & Receiver `mut`, Confined `hermetic`, and (`BIP007-I2`) `unique` Locals
 
 ```babble
 def Counter = class (def count: int = 0) (
@@ -678,14 +678,14 @@ def Counter = class (def count: int = 0) (
     def add  = fn mut deterministic nothrow (d: int) -> ( this.count = this.count + d )
 )
 
-;; `BIP007-P2` strictly `pure`: calling `tmp.add` on fresh `unique` local `tmp` requires `unique` ownership:
+;; `BIP007-I2` strictly `pure`: calling `tmp.add` on fresh `unique` local `tmp` requires `unique` ownership:
 def previewNext = fn pure deterministic (c: Counter, delta: int): int -> (
     def tmp = Counter(c.peek())   ;; unique local instance (argument `c.peek()` is a primitive `int`)
-    tmp.add(delta)                ;; OK in `BIP007-P2`: `Counter.add` is `hermetic` (disallowed in `P1`)
+    tmp.add(delta)                ;; OK in `BIP007-I2`: `Counter.add` is `hermetic` (disallowed in `P1`)
     tmp.peek()
 )
 
-;; `BIP007-P1` (`RM002`) confined `mut` helper (mutates ONLY `dst`, not `pure`):
+;; `BIP007-I1` (`RM002`) confined `mut` helper (mutates ONLY `dst`, not `pure`):
 def bumpBoth = fn deterministic (mut dst: Counter, src: Counter) -> (
     dst.add(src.peek())           ;; OK: `dst` is `mut`
     ;; src.add(1)                 ;; REJECTED: `src` is not `mut`!
@@ -734,12 +734,12 @@ def ensureAndTrack = fn axiom idempotent commutative (mut s: set of string, dir:
 forEachDir(collector, dirs, ensureAndTrack)
 ```
 
-### 8.5 Exclusivity, `unique` / `move(...)` / `freeze(...)` / `frozen` (`BIP007-P2`), and `borrow` (`BIP007-P1`)
+### 8.5 Exclusivity, `unique` / `move(...)` / `freeze(...)` / `frozen` (`BIP007-I2`), and `borrow` (`BIP007-I1`)
 
 ```babble
 def Vec = class (def data: list of double) ( ... )
 
-;; 1) (`BIP007-P2`) Deep disjointness (no-alias) through an exclusive borrow (`unique borrow mut`):
+;; 1) (`BIP007-I2`) Deep disjointness (no-alias) through an exclusive borrow (`unique borrow mut`):
 def addScaled = fn deterministic (mut borrow unique dst: Vec, borrow src: Vec, k: double) -> (
     ... ;; `dst` owns its whole graph: it shares nothing with `src`
 )
@@ -754,7 +754,7 @@ def scaleDemo = fn (src: Vec) -> (
 ;; With plain `fn (mut dst: Vec, src: Vec)` all of these calls except `(v, v)` would be accepted, and the
 ;; compiler assumes nothing about deep aliasing: two distinct Vecs may share one `data` list.
 
-;; 2) (`BIP007-P2`, `BIP007-D6`) Imperative local core-collection builder -> zero-copy `freeze(...)` (zero axiom boilerplate!):
+;; 2) (`BIP007-I2`, `BIP007-D6`) Imperative local core-collection builder -> zero-copy `freeze(...)` (zero axiom boilerplate!):
 def buildLookup = fn pure deterministic (n: int): unique map of (int, int) -> (
     def m = map of (int, int) ()                ;; RM005 core collection constructor returns `unique`
     def i: int = 0
@@ -771,7 +771,7 @@ def squareOf42 = readOnlyLookup.get(42)!        ;; `get` returns `int?`, unwrapp
 ;; readOnlyLookup.put(1, 2)                     ;; REJECTED statically: `put` is `mut` on `frozen map`
 ;; def leaked: any = readOnlyLookup             ;; REJECTED statically: `frozen T` cannot assign to `any`
 
-;; 3) (`BIP007-P2`, `BIP007-D7`) `frozen` preservation under `is` narrowing (mandatory test cases):
+;; 3) (`BIP007-I2`, `BIP007-D7`) `frozen` preservation under `is` narrowing (mandatory test cases):
 def MyRecord = record (a: int) ()
 def a: frozen any = MyRecord(5)
 ;; REJECTED: narrowing `a is MyRecord` yields `frozen MyRecord`, never losing `frozen` to plain `MyRecord`!
@@ -779,7 +779,7 @@ def a: frozen any = MyRecord(5)
 ;; ACCEPTED: `frozen MyRecord?` == `(frozen MyRecord)?`, matching the narrowed `frozen MyRecord`!
 def c: frozen MyRecord? = if a is MyRecord then ( a ) else ( null )
 
-;; 4) (`BIP007-P2`, `BIP007-D5`) Functional-but-in-place (FBIP) & definite-unassignment with `move(...)` (locals only):
+;; 4) (`BIP007-I2`, `BIP007-D5`) Functional-but-in-place (FBIP) & definite-unassignment with `move(...)` (locals only):
 def sortInPlace = fn deterministic (unique mut xs: list of int): unique list of int -> ( ... )
 def sortedSquares = fn (n: int): unique list of int -> (
     def a = makeSquares(n)          ;; `makeSquares` returns `unique list of int`: `a` is a unique local
@@ -790,7 +790,7 @@ def sortedSquares = fn (n: int): unique list of int -> (
 ;; def top = makeSquares(10)
 ;; sortInPlace(move(top))           ;; REJECTED: `top` is a top-level binding, visible to other code
 
-;; 5) `borrow` (`BIP007-P1` verification + `RM005` read-only covariance):
+;; 5) `borrow` (`BIP007-I1` verification + `RM005` read-only covariance):
 def distSq = fn pure deterministic nothrow (borrow p: Point, borrow q: Point): double -> (
     def dx = p.x - q.x
     def dy = p.y - q.y
@@ -811,21 +811,21 @@ def distSq = fn pure deterministic nothrow (borrow p: Point, borrow q: Point): d
 * **`BIP007-D5` (`RM006` alignment) — Minimal predicate-free `P2` syntax:** Preserve `Babble.g4`'s zero-`@parser::members`, zero-predicate, pure-`SLL` invariant by adding only **two** new lexer tokens (`UNIQUE`, `FROZEN`, both exempted in `memberName`), while keeping **`move(x)`**, **`freeze(expr)`**, and **`discard(expr)`** as built-in functions (not reserved keywords). `unique` appears only in `paramModifier` and on `fn` return clauses (`':' UNIQUE? type`); `FROZEN?` prefixes `nonParenNullableType` and `# parenType`.
 * **`BIP007-D6` (`RM005` alignment) — `unique` ownership on core collections & `entry`:** `RM005` core collection constructors (`list`, `set`, `sortedset`, `map`, `sortedmap`) return `unique` when initialized from `unique`/deeply-immutable elements (or `from:` of deeply-immutable elements, and `pure deterministic` `comparator:`); `entry of (K, V)` is deeply immutable iff both `K` and `V` are; and built-in `hermetic mut` core-collection mutators preserve `unique` when all inserted arguments are `unique` or deeply immutable.
 * **`BIP007-D7` (`RM005` + `RM006` alignment) — `frozen T` covariance, preservation & `is` narrowing:** `frozen` generic types are **covariant** in all type arguments (`frozen list of Dog <: frozen list of Animal`, `frozen Box of Dog <: frozen Box of Animal`). `frozen` simplifies only on the 9 core scalars and `null`, and distributes over unions/nullables (`frozen T?` == `(frozen T)?`). For all nominal/reference types (`class`, `record`, `interface`, Java classes, `any`), `frozen T` **never** unwraps back to plain `T`: `x is frozen T` is rejected statically, and narrowing `frozen any` (or `frozen (A | B)`) with `x is T` **always preserves `frozen`**, narrowing to `frozen T` (verified by the two `MyRecord` test cases in §8.5).
-* **`BIP007-D8` — Unused `pure nothrow` errors + built-in `discard(expr)`:** Keep discarded `pure nothrow` source expressions as a compile-time error in `BIP007-P2`, paired with built-in `discard(expr)` (`pure deterministic nothrow`, `borrow` parameter accepting any type including `any?`, `frozen T`, and `unique` locals without consuming or unwrapping them, returning `void`/`null`) as the explicit opt-out.
+* **`BIP007-D8` — Unused `pure nothrow` errors + built-in `discard(expr)`:** Keep discarded `pure nothrow` source expressions as a compile-time error in `BIP007-I2`, paired with built-in `discard(expr)` (`pure deterministic nothrow`, `borrow` parameter accepting any type including `any?`, `frozen T`, and `unique` locals without consuming or unwrapping them, returning `void`/`null`) as the explicit opt-out.
 * **`BIP007-D9` — Purely static `mut` exclusivity & `borrow`-polymorphic built-ins:** Drop the optional runtime `Values.same(a, b)` exclusivity fallback; plain `mut` exclusivity stays purely static in `EffectChecker`, while `unique mut` provides deep disjointness, preserving §7.2's strict zero-runtime-effect-machinery invariant. Built-ins `same(a, b)`, `classof(x)`, and `discard(x)` are `pure deterministic nothrow` with `borrow` parameters accepting any type including `frozen T` and `unique` locals without consuming or unwrapping them.
 * **`BIP007-D10` — Postpone bytecode & pipeline optimizer passes beyond `BIP007`:** `BIP007` is scoped strictly to the effect & ownership type system, its compile-time enforcement, metadata publication in `ScopeAnalysis`, and `P3` verification/analysis aids (`checkAxioms` + ASM suggester). All bytecode and pipeline optimizer passes consuming `EffectSet`/`borrow`/`unique`/`@TERMINATING` (CSE, constant folding, no-alias load hoisting, `borrow` scalar replacement, FBIP reuse, predicate reordering/push-down, dead-expression elimination, loop reassociation, `monotone`/`injective` rewrites) are postponed to a dedicated follow-up optimizer BIP after `BIP007`.
 
 ### 9.2 Phased Implementation Roadmap
 
-1. **`BIP007-P1` (`RM002`, extended in `RM005` & `RM006`) — Core Effect Model, SCC Fixed-Point Inference, Verification & `axiom` *(Implemented)*:**
+1. **`BIP007-I1` (`RM002`, extended in `RM005` & `RM006`) — Core Effect Model, SCC Fixed-Point Inference, Verification & `axiom` *(Implemented)*:**
    * Grammar & Formatting (`Babble.g4`, `Formatter`): initially landed in `RM002` with contextual predicates, then upgraded in `RM006` (`BIP012`) to zero-predicate LL(1)/LL(2) `SLL` grammar (`FN`, `ON`, and all 13 effect keywords as real lexer tokens exempted in `memberName`, `fn pure (mut x: T): R -> (...)`, `axiom ... on Target`).
-   * Type System, Inference & Verification (`EffectSet`, `Type.Parameter(..., mut, borrow, readOnly)`, `Type.Function`, `EffectChecker` + `RM004` `TypedProgram`): uniform absent `mut` across typed functions (`mut` inferred only on completely untyped functions); SCC bottom-up fixed-point inference and verification for `{pure, hermetic, mut, borrow, deterministic, nothrow}`; `@PARAM`/`@THIS` local alias and derived sub-reference tracking (extended in `RM005` with core collection views); static call-site `mut` exclusivity; compositional algebraic properties + signature applicability validation; frame-local `borrow` closure attribution; bounded call-site effect specialization; built-in `RM005` (`BIP011-P5`) effect profiles for all 9 scalars, `string`, `entry`, and core collections (`list`..`sortedmap`) alongside standard value protocol defaults; `record` constructor checks; effect-constrained `Type.Function` assignability; interface conformance (`actual <: required`); and covariance/contravariance subtyping.
+   * Type System, Inference & Verification (`EffectSet`, `Type.Parameter(..., mut, borrow, readOnly)`, `Type.Function`, `EffectChecker` + `RM004` `TypedProgram`): uniform absent `mut` across typed functions (`mut` inferred only on completely untyped functions); SCC bottom-up fixed-point inference and verification for `{pure, hermetic, mut, borrow, deterministic, nothrow}`; `@PARAM`/`@THIS` local alias and derived sub-reference tracking (extended in `RM005` with core collection views); static call-site `mut` exclusivity; compositional algebraic properties + signature applicability validation; frame-local `borrow` closure attribution; bounded call-site effect specialization; built-in `RM005` (`BIP011-I5`) effect profiles for all 9 scalars, `string`, `entry`, and core collections (`list`..`sortedmap`) alongside standard value protocol defaults; `record` constructor checks; effect-constrained `Type.Function` assignability; interface conformance (`actual <: required`); and covariance/contravariance subtyping.
    * Public Java API, Engine & Persistence (`org.babblelang.effects`, `BabbleScriptEngine`, `TypedModuleSummary`, `AnalysisSession`, `ScopeAnalysis`): public `Effect` enum and `@Pure`..`@Impure` annotations; order-independent pre-pass collection of `axiom`/`impure` declarations (`BIP007-D4`); compile-time per-engine registries (`allowAxioms(false)`, `assumeEffects`, `assumeConstructorEffects`, `markImpure`); AST-detached cross-module export (`BIP007-D2`, including `export axiom`/`export impure` tables) and `AnalysisSession` persistence; resolved `EffectSet`/`mut`/`borrow` metadata published in `ScopeAnalysis`.
-2. **`BIP007-P2` — Deep Ownership (`unique` / `frozen`), Built-ins (`move` / `freeze` / `discard`), `@Unique`, `@TERMINATING`, and Enforcement:**
+2. **`BIP007-I2` — Deep Ownership (`unique` / `frozen`), Built-ins (`move` / `freeze` / `discard`), `@Unique`, `@TERMINATING`, and Enforcement:**
    * Grammar & Formatting (`Babble.g4`, `Formatter`, `BIP007-D5`): add only `UNIQUE` and `FROZEN` lexer tokens (both exempted in `memberName`), extend `paramModifier` with `UNIQUE`, `fn` return clauses with `':' UNIQUE? type`, and `nonParenNullableType` / `# parenType` with `FROZEN?`, keeping `ParserGrammarTestCase` 0-predicate pure-`SLL` green.
    * Type System & Ownership Lattice (`Type.Frozen`, `Type.Parameter(..., unique)`, `EffectSet.uniqueResult`, `TypeAlgebra`, `EffectChecker`, `@Unique` in `org.babblelang.effects`): implement full `unique`/`@PARAM(i)`/`@THIS`/`@MOVED`/`@EXTERNAL` ownership lattice enabling mutation of fresh `unique` local objects and `RM005` core collections (`BIP007-D6`) inside `pure`/`hermetic` functions, sub-reference propagation, control-flow merge joins, definite-unassignment, implicit last-use `move(...)`, purely static `Type.Frozen` with generic covariance and strict `frozen` preservation under `is` narrowing (`BIP007-D7`, including the two `MyRecord` test cases in §8.5), `@TERMINATING` inference, unused `pure nothrow` compile errors paired with built-in `discard(expr)` (`BIP007-D8`), and `borrow`-polymorphic `same`/`classof`/`discard` accepting `frozen T` and `unique` locals (`BIP007-D9`).
    * Back-End & Metadata Publication: evaluate `move(x)` and `freeze(expr)` as zero-cost identity no-ops and `discard(expr)` as evaluate-and-return-`null` in both `Interpreter` and `CodeGenerator` (zero runtime effect machinery in `babble-runtime`, `RuntimeBoundaryTestCase` green); publish `unique` and `@TERMINATING` metadata alongside `EffectSet`/`borrow` in `LoweringAnalyzer` / `ScopeAnalysis` and `TypedModuleSummary` / `AnalysisSession` for future optimizer BIPs.
-3. **`BIP007-P3` — ASM Bytecode Suggester & `babble.checkAxioms` Fuzzing:**
+3. **`BIP007-I3` — ASM Bytecode Suggester & `babble.checkAxioms` Fuzzing:**
    * Add opt-in ASM bytecode analyzer (`ClassLoader` + escape analysis + seeded JVM `native` intrinsics) to suggest/auto-certify `pure`/`mut`/`deterministic`/`nothrow` on closed Java helpers.
    * Add property-based test harness (`babble.checkAxioms`) with built-in generators for all 9 `RM005` scalars, core collections (`list`..`entry`), and recursive `record`s to fuzz-test `axiom commutative`, `associative`, `idempotent`, and `deterministic` declarations in CI.
 
@@ -833,7 +833,7 @@ def distSq = fn pure deterministic nothrow (borrow p: Point, borrow q: Point): d
 
 ## 10. Future Directions
 
-* **Effect- & Ownership-Driven Bytecode & Pipeline Optimizers *(separate follow-up BIP after `BIP007`, `BIP007-D10`)*:** Consuming the `EffectSet`, `borrow`, `unique`, and `@TERMINATING` metadata published in `ScopeAnalysis` by `BIP007-P1`–`P2` across all 8 `RM005` unboxed primitives: CSE & constant folding (`pure deterministic` on deeply immutable args/results), deep no-alias load hoisting & redundant-load elimination (`unique mut`), `borrow` scalar replacement / stack unboxing of `record`s, FBIP in-place reuse (`unique` + `move(...)`), guard-safe predicate reordering & hoisting (`pure deterministic nothrow`, `BIP007-D1`), dead-expression elimination (`pure nothrow @TERMINATING`), `associative` loop reassociation, and `monotone`/`injective` pipeline rewrites.
+* **Effect- & Ownership-Driven Bytecode & Pipeline Optimizers *(separate follow-up BIP after `BIP007`, `BIP007-D10`)*:** Consuming the `EffectSet`, `borrow`, `unique`, and `@TERMINATING` metadata published in `ScopeAnalysis` by `BIP007-I1`–`I2` across all 8 `RM005` unboxed primitives: CSE & constant folding (`pure deterministic` on deeply immutable args/results), deep no-alias load hoisting & redundant-load elimination (`unique mut`), `borrow` scalar replacement / stack unboxing of `record`s, FBIP in-place reuse (`unique` + `move(...)`), guard-safe predicate reordering & hoisting (`pure deterministic nothrow`, `BIP007-D1`), dead-expression elimination (`pure nothrow @TERMINATING`), `associative` loop reassociation, and `monotone`/`injective` pipeline rewrites.
 * **Thread Safety & Optimized Parallelization:** Once thread-safety annotations (e.g., `threadsafe`) are added to the effect system, the existing effect and ownership guarantees in BIP007 will directly enable safe, optimized parallelization of work without locks or defensive copying:
   * **`parallelMap` / `parallelFilter`:** Evaluating `pure threadsafe` callbacks independently across worker threads, with shared inputs guaranteed race-free via deeply immutable types (`frozen T`, deep `record`, scalars) or exclusive `unique borrow` ownership.
   * **`parallelReduce`:** Splitting reductions into balanced parallel tree folds whenever the combiner is `pure deterministic threadsafe associative` (preserving partition order when non-commutative, or using arbitrary work-stealing when also `commutative`).

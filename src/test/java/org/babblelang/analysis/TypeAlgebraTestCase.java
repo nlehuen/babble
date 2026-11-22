@@ -8,7 +8,7 @@ import java.util.Set;
 
 /**
  * Focused unit tests for {@link Type#anyMatch}, {@link Type#mapTypes}, and {@link TypeAlgebra}
- * ({@code BIP010-P2}).
+ * ({@code BIP010-I2}).
  */
 public class TypeAlgebraTestCase {
     private static final TypeAlgebra ALGEBRA = new TypeAlgebra(new TypeAlgebra.Env() {

@@ -1,4 +1,4 @@
-;; Curated axioms for java.util.stream (BIP019-P6)
+;; Curated axioms for java.util.stream (BIP019-I6)
 
 axiom java.util.stream.BaseStream of (T, S): class nullmarked (
 )

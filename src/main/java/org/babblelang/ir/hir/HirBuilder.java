@@ -25,7 +25,7 @@ import java.util.Set;
 
 /**
  * Translates an ANTLR4 {@link BabbleParser.FileContext} plus its {@link ScopeAnalysis} and
- * {@link Resolution} side tables into a completely ANTLR-free {@link HirModule} (BIP014-P1, BIP014-D8).
+ * {@link Resolution} side tables into a completely ANTLR-free {@link HirModule} (BIP014-I1, BIP014-D8).
  *
  * <p>This is the single boundary where {@code ParserRuleContext} is inspected by the compiler
  * backend; all downstream optimization passes and bytecode emitters consume {@link HirModule} only.
@@ -1051,7 +1051,7 @@ public final class HirBuilder {
             );
         }
 
-        // 2. Array creation or array protocol operation (BIP020-P3)
+        // 2. Array creation or array protocol operation (BIP020-I3)
         ScopeAnalysis.ArrayCreationTarget arrCreate = scopes.arrayCreationTarget(ctx);
         if (arrCreate != null) {
             String compInternalName;
@@ -1142,7 +1142,7 @@ public final class HirBuilder {
             }
         }
 
-        // 4b. Overload set call (resolved directly or via union split, BIP021-P5/P6)
+        // 4b. Overload set call (resolved directly or via union split, BIP021-I5/I6)
         ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
         if (ovDispatch != null) {
             if (!ovDispatch.isSplit()) {

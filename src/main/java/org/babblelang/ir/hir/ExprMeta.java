@@ -5,7 +5,7 @@ import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.effects.Effect;
 
 /**
- * Per-expression static metadata carried on every {@link HirExpr} node (BIP014-P1).
+ * Per-expression static metadata carried on every {@link HirExpr} node (BIP014-I1).
  *
  * <p>Detaches downstream optimization passes and bytecode emission from ANTLR4
  * {@code ParserRuleContext} side tables in {@link ScopeAnalysis}.

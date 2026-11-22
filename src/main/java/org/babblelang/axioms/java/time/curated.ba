@@ -1,4 +1,4 @@
-;; Curated axioms for java.time (BIP019-P6)
+;; Curated axioms for java.time (BIP019-I6)
 
 axiom java.time.LocalDate: class nullmarked (
 )

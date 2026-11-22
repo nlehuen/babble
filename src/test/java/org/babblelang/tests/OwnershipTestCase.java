@@ -15,7 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Tests for RM007 (BIP007-P2) : deep ownership ({@code unique}, {@code move}, {@code freeze},
+ * Tests for RM007 (BIP007-I2) : deep ownership ({@code unique}, {@code move}, {@code freeze},
  * {@code frozen} / {@code Type.Frozen}, {@code @MOVED}, {@code @Unique}, {@code @TERMINATING},
  * unused {@code pure nothrow} diagnostics + {@code discard}, and {@code BIP007-D5}–{@code D9}).
  */

@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 022 |
 | **Date** | 2026-11-21 |
-| **Status** | Partially implemented (`BIP022-D1`–`D8` decided, resolving `BIP022-Q1`–`Q4` (§9) ; `BIP022-P1` implemented, §12 records what landed and how it departs from the design ; `BIP022-P2` not started) |
+| **Status** | Partially implemented (`BIP022-D1`–`D8` decided, resolving `BIP022-Q1`–`Q4` (§9) ; `BIP022-I1` implemented, §12 records what landed and how it departs from the design ; `BIP022-P2` not started) |
 | **Depends on** | the object model, interfaces and Java interface bridges ([bip002_object-model.md](bip002_object-model.md)), static typing, unions, narrowing and generics ([bip008_static-typing.md](bip008_static-typing.md)), the type checker's collaborators ([bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), Java nullability and generic invariance ([bip011_core-types.md](bip011_core-types.md)), the predicate-free grammar ([bip012_grammar-improvements.md](bip012_grammar-improvements.md)), bounds and overload sets ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)) |
 | **Scope** | `A & B` for interface types : the values that are both. Covers normalization, subtyping, members, `is` narrowing, runtime checks and JVM erasure, Java type variables with several bounds and intersection casts, bounds of type parameters, and the meets of overload sets — across `Babble.g4`, `TypeAlgebra`, `MemberTypes`, `Narrowing`, `JavaTypeBridge`, `LoweringAnalyzer`, `runtime.Types`, `Faces`, both backends, the formatter and `:type` |
 
@@ -181,8 +181,8 @@ LL(1), with no predicate (`ParserGrammarTestCase`) : `&` is not otherwise a toke
 
 ## 8. Phases
 
-1. **`BIP022-P1` — The type.** *(Implemented, §12.)* Syntax, normal form, subtyping, members, narrowing, runtime checks (`BIP022-D1`–`D6`). Fixes §2.1 (a). `BIP021-P3`'s bounds with `&` need it.
-2. **`BIP022-P2` — Java, dispatch and overload sets.** Java type variables with several bounds (an unbound one translates to `any?` today, not to its first bound) and intersection casts (`BIP022-D7`) ; static dispatch on intersection receivers (§12) ; bounds once `BIP021-P3` lands, and meets in overload sets once `BIP021-P5` does (`D8`).
+1. **`BIP022-I1` — The type.** *(Implemented, §12.)* Syntax, normal form, subtyping, members, narrowing, runtime checks (`BIP022-D1`–`D6`). Fixes §2.1 (a). `BIP021-I3`'s bounds with `&` need it.
+2. **`BIP022-P2` — Java, dispatch and overload sets.** Java type variables with several bounds (an unbound one translates to `any?` today, not to its first bound) and intersection casts (`BIP022-D7`) ; static dispatch on intersection receivers (§12) ; bounds once `BIP021-I3` lands, and meets in overload sets once `BIP021-I5` does (`D8`).
 
 ---
 
@@ -219,7 +219,7 @@ External (not fetched while drafting) :
 
 ---
 
-## 12. What landed in `BIP022-P1`
+## 12. What landed in `BIP022-I1`
 
 * **Grammar.** `type` stays one flat list of `nullableType`s, now separated by `|` or `&` (`AMP`), and `TypeAnnotations` groups the operands between two `|` into an intersection. That gives `&` its higher precedence without a new parser rule, so every caller of `type.nullableType()` is unchanged. `ParserGrammarTestCase` still finds no predicate.
 * **The type.** `Type.Intersection` and `Type.intersection(…)`, the normal form of `BIP022-D2` : nested intersections flattened, `any` and `java.lang.Object` dropped, duplicates removed, and an interface another operand extends removed, first by Babble nodes (`TypeAlgebra.isSubtype`) and then by Java classes, when it has no type arguments. Operands keep their source order.

@@ -1,4 +1,4 @@
-;; Overload sets, static ambiguity checking, union dispatch, and set types (BIP021-P5).
+;; Overload sets, static ambiguity checking, union dispatch, and set types (BIP021-I5).
 
 def show = overload (
     fn (n: int): string -> ("int:" + n),
@@ -58,7 +58,7 @@ def genShow = overload (
 assert(genShow(1) == "int:1")
 assert(genShow("x") == "any:x")
 
-;; Overloaded methods, operator methods, and static factories (BIP021-P6)
+;; Overloaded methods, operator methods, and static factories (BIP021-I6)
 def Vec2 = record (x: double, y: double) (
     def times = overload (
         fn (t: double): Vec2 -> (Vec2(this.x * t, this.y * t)),

@@ -4,7 +4,7 @@ import org.babblelang.analysis.Resolution;
 import org.babblelang.analysis.ScopeAnalysis;
 
 /**
- * ANTLR-free frame variable identity in {@link HirModule} (BIP014-P1).
+ * ANTLR-free frame variable identity in {@link HirModule} (BIP014-I1).
  *
  * <p>Replaces {@link Resolution.Variable} throughout the HIR, optimizer passes, and bytecode
  * emitter. Equality and hashing are keyed solely on {@link #id()}, so passes can clone or

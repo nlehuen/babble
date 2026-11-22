@@ -1,4 +1,4 @@
-;; Babble built-in prelude (BIP019-P7)
+;; Babble built-in prelude (BIP019-I7)
 
 axiom affiche: fn io (values: (any? | frozen any)..., to: java.lang.Appendable = ...): null
 axiom afficherc: fn io (values: (any? | frozen any)..., to: java.lang.Appendable = ...): null
