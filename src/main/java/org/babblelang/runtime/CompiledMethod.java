@@ -19,23 +19,29 @@ public final class CompiledMethod implements BabbleFunction {
     private final String[] params;
     private final int required;
     private final int optionalParamBits;
+    private final int restIndex;
     private final String name;
 
     public CompiledMethod(MethodBody body, MethodHandle direct, String[] params, int required, String name) {
-        this(body, direct, null, params, required, 0, name);
+        this(body, direct, null, params, required, 0, -1, name);
     }
 
     public CompiledMethod(MethodBody body, MethodHandle direct, MethodHandle spec, String[] params, int required, String name) {
-        this(body, direct, spec, params, required, 0, name);
+        this(body, direct, spec, params, required, 0, -1, name);
     }
 
     public CompiledMethod(MethodBody body, MethodHandle direct, MethodHandle spec, String[] params, int required, int optionalParamBits, String name) {
+        this(body, direct, spec, params, required, optionalParamBits, -1, name);
+    }
+
+    public CompiledMethod(MethodBody body, MethodHandle direct, MethodHandle spec, String[] params, int required, int optionalParamBits, int restIndex, String name) {
         this.body = body;
         this.direct = direct;
         this.spec = spec;
         this.params = params;
         this.required = required;
         this.optionalParamBits = optionalParamBits;
+        this.restIndex = restIndex;
         this.name = name;
     }
 
@@ -59,6 +65,11 @@ public final class CompiledMethod implements BabbleFunction {
         return optionalParamBits;
     }
 
+    /** Index of the variadic rest parameter, or {@code -1} if none. */
+    public int restIndex() {
+        return restIndex;
+    }
+
     public String[] params() {
         return params;
     }
@@ -70,7 +81,7 @@ public final class CompiledMethod implements BabbleFunction {
 
     @Override
     public int maxArity() {
-        return params.length;
+        return restIndex >= 0 ? Integer.MAX_VALUE : params.length;
     }
 
     @Override

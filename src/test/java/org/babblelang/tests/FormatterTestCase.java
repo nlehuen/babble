@@ -603,4 +603,29 @@ public class FormatterTestCase {
                 )
                 """);
     }
+
+    @Test
+    public void testBip021P4VariadicAndSpreadSyntax() throws Exception {
+        assertFormats("""
+                def join: fn (parts: string..., sep: string = ...): string = fn (parts: string..., sep: string = ", "): string -> (
+                    sep
+                )
+                def countNulls = fn (items: string?...): int -> (
+                    0
+                )
+                def xs = list("a", "b")
+                join(...xs, sep: "-")
+                join(parts: ...xs)
+                """, """
+                def join : fn ( parts : string ... , sep : string = ... ) : string = fn ( parts : string ... , sep : string = ", " ) : string -> (
+                    sep
+                )
+                def countNulls = fn ( items : string ?... ) : int -> (
+                    0
+                )
+                def xs = list ( "a" , "b" )
+                join ( ... xs , sep : "-" )
+                join ( parts : ... xs )
+                """);
+    }
 }

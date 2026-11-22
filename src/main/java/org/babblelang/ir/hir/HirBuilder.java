@@ -398,6 +398,7 @@ public final class HirBuilder {
                     params,
                     scopes.requiredParameters(literal),
                     scopes.keywordOnlyStart(literal),
+                    scopes.restIndex(literal),
                     scopes.functionReturnKind(literal),
                     scopes.numericWideningRank(literal.functionBlock),
                     scopes.callableEffects(literal),
@@ -951,6 +952,7 @@ public final class HirBuilder {
         List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
         String[] names = Interpreter.callNames(ctx);
         ScopeAnalysis.ArgumentBinding binding = scopes.argumentBinding(ctx);
+        ScopeAnalysis.SpreadAdapt[] spreadAdapts = scopes.callSpreadAdapts(ctx);
 
         // 1. Safe call recv?.m(args)
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector && selector.safe != null) {
@@ -960,7 +962,7 @@ public final class HirBuilder {
                     ScopeAnalysis.selectorName(selector),
                     selector.getStart().getLine(),
                     scopes.checkedType(selector),
-                    lowerCallArgs(params),
+                    lowerCallArgs(params, spreadAdapts),
                     binding,
                     (binding != null || names == null) ? scopes.babbleCallSignature(ctx) : null,
                     Interpreter.callSite(ctx, sourceName),
@@ -993,7 +995,7 @@ public final class HirBuilder {
                     compInternalName,
                     compIsJavaIface,
                     arrCreate.componentClass(),
-                    lowerPositionalArgs(params),
+                    lowerPositionalArgs(params, spreadAdapts),
                     meta
             );
         }
@@ -1007,7 +1009,7 @@ public final class HirBuilder {
                     arrOp.elemKind(),
                     arrOp.arrayClass(),
                     arrOp.componentClass(),
-                    lowerPositionalArgs(params),
+                    lowerPositionalArgs(params, spreadAdapts),
                     meta
             );
         }
@@ -1016,7 +1018,7 @@ public final class HirBuilder {
         BabbleParser.ExpressionContext directCallee = ctx.expression() instanceof BabbleParser.TypeApplyContext ta
                 ? ta.expression() : ctx.expression();
         if (directCallee instanceof BabbleParser.CoreCollectionContext cc) {
-            return new HirExpr.CoreCollectionCall(cc.coreCollectionKeyword().getText(), lowerCallArgs(params), meta);
+            return new HirExpr.CoreCollectionCall(cc.coreCollectionKeyword().getText(), lowerCallArgs(params, spreadAdapts), meta);
         }
 
         // 3. Super call super.m(args)
@@ -1036,7 +1038,7 @@ public final class HirBuilder {
                     ScopeAnalysis.selectorName(selector),
                     info,
                     lowerTypeRef(scopes.superTarget(superExpr), superExpr),
-                    lowerCallArgs(params),
+                    lowerCallArgs(params, spreadAdapts),
                     binding,
                     Interpreter.callSite(ctx, sourceName),
                     meta
@@ -1054,7 +1056,7 @@ public final class HirBuilder {
                         ? binding.paramCount() == count
                         : ((spec && params.size() == count) || (spread && params.size() <= count));
                 if (arityOk && (spec || spread)) {
-                    return new HirExpr.SelfRecurseCall(functionIds.get(currentFunction), lowerPositionalArgs(params), binding, meta);
+                    return new HirExpr.SelfRecurseCall(functionIds.get(currentFunction), lowerPositionalArgs(params, spreadAdapts), binding, meta);
                 }
             }
         }
@@ -1064,7 +1066,7 @@ public final class HirBuilder {
         if (targetFn != null && binding != null && binding.paramCount() == scopes.parameters(targetFn).length) {
             if (hasSpec(targetFn) || isSpread(targetFn)) {
                 return new HirExpr.DirectBabbleCall(lowerExpr(ctx.expression()), functionIds.get(targetFn),
-                        lowerPositionalArgs(params), binding, meta);
+                        lowerPositionalArgs(params, spreadAdapts), binding, meta);
             }
         }
 
@@ -1083,7 +1085,7 @@ public final class HirBuilder {
                             classIds.get(clsCtx),
                             member,
                             functionIds.get(methodLit),
-                            lowerCallArgs(params),
+                            lowerCallArgs(params, spreadAdapts),
                             binding,
                             Interpreter.callSite(ctx, sourceName),
                             meta
@@ -1107,7 +1109,7 @@ public final class HirBuilder {
                         ifaceCall.interfaceTypeId(),
                         ifaceCall.memberName(),
                         sig,
-                        lowerPositionalArgs(params),
+                        lowerPositionalArgs(params, spreadAdapts),
                         binding,
                         meta
                 );
@@ -1122,7 +1124,7 @@ public final class HirBuilder {
                     ctx.expression().getText(),
                     isPureStaticJavaChain(ctx.expression()),
                     javaCtor,
-                    lowerPositionalArgs(params),
+                    lowerPositionalArgs(params, spreadAdapts),
                     meta
             );
         }
@@ -1138,7 +1140,7 @@ public final class HirBuilder {
                     selector.getStart().getLine(),
                     javaCall.isStatic() && isPureStaticJavaChain(recvExpr),
                     javaCall,
-                    lowerPositionalArgs(params),
+                    lowerPositionalArgs(params, spreadAdapts),
                     meta
             );
         }
@@ -1146,7 +1148,7 @@ public final class HirBuilder {
         // 10. General dynamic call (including typedCall/typedCallOpt indy when babbleSig != null)
         return new HirExpr.DynamicCall(
                 lowerExpr(ctx.expression()),
-                lowerCallArgs(params),
+                lowerCallArgs(params, spreadAdapts),
                 binding,
                 (binding != null || names == null) ? scopes.babbleCallSignature(ctx) : null,
                 Interpreter.callSite(ctx, sourceName),
@@ -1154,24 +1156,38 @@ public final class HirBuilder {
         );
     }
 
-    private List<HirCallArg> lowerCallArgs(List<BabbleParser.CallParameterContext> params) {
+    private HirExpr wrapSpreadAdapt(HirExpr expr, ScopeAnalysis.SpreadAdapt[] adapts, int index, int line) {
+        if (adapts != null && index < adapts.length && adapts[index] != null
+                && adapts[index].kind() != ScopeAnalysis.SpreadKind.AS_IS) {
+            return new HirExpr.SpreadAdapt(expr, adapts[index],
+                    ExprMeta.of(line, ScopeAnalysis.PrimitiveKind.NONE));
+        }
+        return expr;
+    }
+
+    private List<HirCallArg> lowerCallArgs(List<BabbleParser.CallParameterContext> params,
+                                           ScopeAnalysis.SpreadAdapt[] adapts) {
         if (params.isEmpty()) {
             return List.of();
         }
         List<HirCallArg> result = new ArrayList<>(params.size());
-        for (BabbleParser.CallParameterContext p : params) {
-            result.add(new HirCallArg(ScopeAnalysis.callParamName(p), lowerExpr(p.expression())));
+        for (int i = 0; i < params.size(); i++) {
+            BabbleParser.CallParameterContext p = params.get(i);
+            HirExpr arg = wrapSpreadAdapt(lowerExpr(p.expression()), adapts, i, p.getStart().getLine());
+            result.add(new HirCallArg(ScopeAnalysis.callParamName(p), arg));
         }
         return result;
     }
 
-    private List<HirExpr> lowerPositionalArgs(List<BabbleParser.CallParameterContext> params) {
+    private List<HirExpr> lowerPositionalArgs(List<BabbleParser.CallParameterContext> params,
+                                              ScopeAnalysis.SpreadAdapt[] adapts) {
         if (params.isEmpty()) {
             return List.of();
         }
         List<HirExpr> result = new ArrayList<>(params.size());
-        for (BabbleParser.CallParameterContext p : params) {
-            result.add(lowerExpr(p.expression()));
+        for (int i = 0; i < params.size(); i++) {
+            BabbleParser.CallParameterContext p = params.get(i);
+            result.add(wrapSpreadAdapt(lowerExpr(p.expression()), adapts, i, p.getStart().getLine()));
         }
         return result;
     }

@@ -213,6 +213,10 @@ final class Faces {
             for (int i = 0; i < args.length; i++) {
                 args[i] = JavaTypes.checkParameter(Values.fromJava(args[i]), paramTypes[i]);
             }
+            if (sam.method.isVarArgs() && callable instanceof BabbleFunction bf
+                    && bf.restIndex() == args.length - 1 && args.length > 0 && args[args.length - 1] != null) {
+                args[args.length - 1] = Spreads.packedRest(ArgumentsView.fromArray(args[args.length - 1]));
+            }
             Object result = callable.call(rt, args, null, sam.site);
             return JavaTypes.convertResult(result, sam.returnType, sam.description, rt);
         }
@@ -320,6 +324,11 @@ final class Faces {
             BabbleFunction function = BabbleObjects.method(instance, method.getName());
             if (function != null && (!method.isDefault() || function.acceptsJavaDefaultOverload(method.getParameterTypes()))) {
                 Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), method.getParameterTypes());
+                if (method.isVarArgs() && function.restIndex() == babble.length - 1
+                        && babble.length > 0 && babble[babble.length - 1] != null) {
+                    babble = babble.clone();
+                    babble[babble.length - 1] = Spreads.packedRest(ArgumentsView.fromArray(babble[babble.length - 1]));
+                }
                 ScriptRuntime rt = BabbleObjects.runtime(instance);
                 Object result = function.invoke(instance, rt, babble, null, site(method.getName(), babble.length));
                 return JavaTypes.convertResult(result, method.getReturnType(),
@@ -353,6 +362,11 @@ final class Faces {
             }
             if (called.getName().equals(sam.method.getName()) && called.getParameterCount() == sam.parameterTypes.length) {
                 Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), sam.parameterTypes);
+                if (sam.method.isVarArgs() && callable instanceof BabbleFunction bf
+                        && bf.restIndex() == babble.length - 1 && babble.length > 0 && babble[babble.length - 1] != null) {
+                    babble = babble.clone();
+                    babble[babble.length - 1] = Spreads.packedRest(ArgumentsView.fromArray(babble[babble.length - 1]));
+                }
                 Object result = callable.call(rt, babble, null, sam.site);
                 return JavaTypes.convertResult(result, sam.returnType, sam.description, rt);
             }

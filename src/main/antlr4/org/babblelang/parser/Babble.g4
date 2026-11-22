@@ -123,13 +123,13 @@ fnParameters: '(' NL* fnParam (NL* ',' NL* fnParam)* (NL* ',' NL* kwSep=ELLIPSIS
             | '(' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnParam)* NL* ')'
             | '(' NL* ')';
 
-fnParam: paramModifier* ID (':' type)? ('=' NL* defaultValue=expression)?;
+fnParam: paramModifier* ID (':' type rest=(ELLIPSIS | Q_ELLIPSIS)?)? ('=' NL* defaultValue=expression)?;
 
 fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* (NL* ',' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnTypeParam)*)? NL* ')'
                 | '(' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnTypeParam)* NL* ')'
                 | '(' NL* ')';
 
-fnTypeParam: paramModifier* (ID ':')? type ('=' NL* optional=ELLIPSIS)?;
+fnTypeParam: paramModifier* (ID ':')? type rest=(ELLIPSIS | Q_ELLIPSIS)? ('=' NL* optional=ELLIPSIS)?;
 
 paramModifier: MUT | SHARED | UNIQUE;
 
@@ -144,7 +144,7 @@ typeArguments: '(' NL* type (NL* ',' NL* type)* NL* ')'
 callParameters: '(' NL* callParameter (NL* ',' NL* callParameter)* NL* ')'
               | '(' NL* ')';
 
-callParameter: (memberName ':')? expression;
+callParameter: (memberName ':')? spread=ELLIPSIS? expression;
 
 typeList: type (NL* ',' NL* type)*;
 
@@ -194,6 +194,7 @@ PLUS_ASSIGN: '+=';
 MINUS_ASSIGN: '-=';
 MUL_ASSIGN: '*=';
 DIV_ASSIGN: '/=';
+Q_ELLIPSIS: '?...';
 ELLIPSIS: '...';
 DOT: '.';
 SAFE_DOT: '?.';

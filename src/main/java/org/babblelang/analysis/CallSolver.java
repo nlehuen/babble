@@ -35,6 +35,8 @@ final class CallSolver {
     private final Map<ParserRuleContext, Method> resolvedMethods = new java.util.IdentityHashMap<>();
     private final Map<ParserRuleContext, Constructor<?>> resolvedConstructors = new java.util.IdentityHashMap<>();
     private final Set<ParserRuleContext> resolvedVarArgs = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    private final Map<ParserRuleContext, ScopeAnalysis.SpreadAdapt[]> resolvedSpreadAdapts = new java.util.IdentityHashMap<>();
+    private final Map<ParserRuleContext, ScopeAnalysis.PrimitiveKind> resolvedRestKinds = new java.util.IdentityHashMap<>();
 
     private record JavaCallMatch<E extends Executable>(List<E> applicable, boolean varArgs) {
     }
@@ -48,6 +50,8 @@ final class CallSolver {
         resolvedMethods.clear();
         resolvedConstructors.clear();
         resolvedVarArgs.clear();
+        resolvedSpreadAdapts.clear();
+        resolvedRestKinds.clear();
     }
 
     private void recordConstructor(Executable winner, boolean varArgs, ParserRuleContext ctx) {
@@ -78,6 +82,14 @@ final class CallSolver {
         return resolvedVarArgs.contains(call);
     }
 
+    ScopeAnalysis.SpreadAdapt[] resolvedSpreadAdapts(ParserRuleContext call) {
+        return resolvedSpreadAdapts.get(call);
+    }
+
+    ScopeAnalysis.PrimitiveKind resolvedRestKind(ParserRuleContext call) {
+        return resolvedRestKinds.get(call);
+    }
+
     /** The type of a call of {@code callee} ; {@code recordTarget} records the Java executable it resolves to (not for a union member). */
     Type call(Type callee, BabbleParser.CallContext ctx, Type expected, boolean recordTarget) {
         Type result = callInner(callee, ctx, expected, recordTarget);
@@ -96,17 +108,6 @@ final class CallSolver {
         List<BabbleParser.CallParameterContext> arguments = ctx.callParameters().callParameter();
         if (callee == Type.ERROR || callee == Type.NOTHING) {
             return Type.ERROR;
-        }
-        if (callee == Type.PRINT) {
-            Type appendable = new Type.JavaInstance(Appendable.class);
-            for (BabbleParser.CallParameterContext argument : arguments) {
-                if ("to".equals(ScopeAnalysis.callParamName(argument))) {
-                    checker.subsumes(argument.expression(), null, checker.check(argument.expression(), appendable), appendable);
-                } else {
-                    checker.check(argument.expression(), Type.NULLABLE_ANY);
-                }
-            }
-            return Type.NULL;
         }
         if (callee instanceof Type.Union union) {
             if (Type.containsNull(union)) {
@@ -208,7 +209,7 @@ final class CallSolver {
                     if (recordTarget) {
                         recordConstructor(winner, match.varArgs(), ctx);
                     }
-                    checkJavaArgumentWidening(winner, env, arguments, argumentTypes, match.varArgs());
+                    checkJavaArgumentWidening(winner, env, arguments, argumentTypes, match.varArgs(), ctx);
                 }
                 return new Type.JavaInstance(java, explicitTypeArgs);
             }
@@ -256,7 +257,7 @@ final class CallSolver {
                 for (int i = 0; i < bestParams.length; i++) {
                     bestEnv.put(bestParams[i], explicitTypeArgs.get(i));
                 }
-                checkJavaArgumentWidening(best, bestEnv, arguments, argumentTypes, match.varArgs());
+                checkJavaArgumentWidening(best, bestEnv, arguments, argumentTypes, match.varArgs(), ctx);
                 return JavaTypeBridge.javaMethodResult(best, bestEnv, checker.algebra());
             }
             return javaMethodCall(all, method.owner().getCanonicalName() + "." + method.name(),
@@ -440,8 +441,41 @@ final class CallSolver {
         }
         int[] matched = res.paramToArg();
         boolean[] checked = new boolean[arguments.size()];
+        ScopeAnalysis.SpreadAdapt[] adapts = null;
         for (int index = 0; index < parameters.size(); index++) {
             Type.Parameter parameter = parameters.get(index);
+            if (parameter.rest()) {
+                resolvedRestKinds.put(ctx, ScopeAnalysis.PrimitiveKind.of(parameter.type()));
+                boolean borrowReadOnly = frozenBorrowSafe && parameter.borrow() && !parameter.mut();
+                Type expectedElem = parameter.type();
+                if (forwardedEffectParams.contains(index) && expectedElem instanceof Type.Function cbType) {
+                    expectedElem = cbType.withEffects(cbType.effects().relaxedForForwardedCallback());
+                }
+                for (int argIdx : res.restArgs()) {
+                    checked[argIdx] = true;
+                    BabbleParser.CallParameterContext argCtx = arguments.get(argIdx);
+                    BabbleParser.ExpressionContext argument = argCtx.expression();
+                    if (ScopeAnalysis.isSpread(argCtx)) {
+                        Type actual = checker.check(argument, null);
+                        if (!TypeChecker.isUnresolved(actual)) {
+                            Type elem = extractSequenceElement(actual);
+                            if (elem == null) {
+                                checker.warn("Type error : expected iterable or array, got " + actual, argument);
+                            } else if (!TypeChecker.isUnresolved(elem) && !TypeChecker.isUnresolved(expectedElem)) {
+                                boolean ok = checker.algebra().relate(elem, expectedElem,
+                                        TypeAlgebra.RelateMode.SUBTYPE, null, borrowReadOnly, false);
+                                if (!ok) {
+                                    checker.warn("Type error : expected " + expectedElem + " elements, got " + elem, argument);
+                                }
+                            }
+                        }
+                    } else {
+                        Type actual = checker.check(argument, expectedElem);
+                        bindArgument(null, actual, expectedElem, borrowReadOnly, argument);
+                    }
+                }
+                continue;
+            }
             int found = matched[index];
             if (found < 0) {
                 if (!parameter.optional() && !bindingError) {
@@ -450,21 +484,160 @@ final class CallSolver {
                 continue;
             }
             checked[found] = true;
-            BabbleParser.ExpressionContext argument = arguments.get(found).expression();
+            BabbleParser.CallParameterContext argCtx = arguments.get(found);
+            BabbleParser.ExpressionContext argument = argCtx.expression();
             ParserRuleContext decl = declarations != null && index < declarations.size()
                     ? declarations.get(index) : null;
             Type expectedParam = parameter.type();
             if (forwardedEffectParams.contains(index) && expectedParam instanceof Type.Function cbType) {
                 expectedParam = cbType.withEffects(cbType.effects().relaxedForForwardedCallback());
             }
-            Type actual = checker.check(argument, expectedParam);
-            bindArgument(decl, actual, expectedParam, frozenBorrowSafe && parameter.borrow() && !parameter.mut(), argument);
+            if (ScopeAnalysis.isSpread(argCtx)) {
+                Type actual = checker.check(argument, null);
+                boolean borrowReadOnly = frozenBorrowSafe && parameter.borrow() && !parameter.mut();
+                ScopeAnalysis.SpreadAdapt adapt = checkSpreadIntoParam(
+                        argument, actual, parameter.name(), expectedParam,
+                        parameter.borrow(), parameter.mut(), borrowReadOnly);
+                if (adapt != null) {
+                    if (adapts == null) {
+                        adapts = new ScopeAnalysis.SpreadAdapt[arguments.size()];
+                    }
+                    adapts[found] = adapt;
+                }
+            } else {
+                Type actual = checker.check(argument, expectedParam);
+                bindArgument(decl, actual, expectedParam, frozenBorrowSafe && parameter.borrow() && !parameter.mut(), argument);
+            }
+        }
+        if (adapts != null) {
+            resolvedSpreadAdapts.put(ctx, adapts);
         }
         for (int i = 0; i < arguments.size(); i++) {
             if (!checked[i]) {
                 checker.synth(arguments.get(i).expression());
             }
         }
+    }
+
+    /** Element type of an iterable or array (never a bare {@code Iterator} or nullable sequence). */
+    Type extractSequenceElement(Type type) {
+        if (type == null || TypeChecker.isUnresolved(type) || Type.containsNull(type)) {
+            return null;
+        }
+        Type unwrapped = TypeAlgebra.unwrapFrozen(type);
+        if (unwrapped instanceof Type.Array arr) {
+            return arr.element();
+        }
+        return extractIterableElement(unwrapped);
+    }
+
+    /** Whether a parameter of type {@code target} accepts a spread argument ({@code BIP021-D7}). */
+    boolean isSequenceTarget(Type target) {
+        if (target == null || TypeChecker.isUnresolved(target)) {
+            return false;
+        }
+        Type base = TypeAlgebra.unwrapFrozen(Type.withoutNull(target));
+        if (base instanceof Type.Array) {
+            return true;
+        }
+        return checker.algebra().projectToJava(base, Iterable.class) != null;
+    }
+
+    /** Element type pattern of a sequence conversion target ({@code array}, {@code list}, or {@code Iterable}). */
+    Type sequenceTargetElement(Type target) {
+        if (target == null || TypeChecker.isUnresolved(target)) {
+            return null;
+        }
+        Type base = TypeAlgebra.unwrapFrozen(Type.withoutNull(target));
+        if (base instanceof Type.Array arr) {
+            return arr.element();
+        }
+        if (base instanceof Type.JavaInstance ji && ji.typeArguments().size() == 1
+                && (ji.type() == Iterable.class || ji.type() == List.class)) {
+            return ji.typeArguments().get(0);
+        }
+        return null;
+    }
+
+    /**
+     * Classifies the adaptation needed to spread {@code sourceType} into a non-rest parameter of
+     * type {@code targetParamType}, returning null if incompatible (without reporting errors).
+     */
+    ScopeAnalysis.SpreadAdapt classifySpread(Type sourceType, Type targetParamType,
+                                             boolean targetBorrowed, boolean targetMut,
+                                             boolean borrowReadOnly) {
+        if (TypeChecker.isUnresolved(sourceType) || TypeChecker.isUnresolved(targetParamType)) {
+            return null;
+        }
+        if (!isSequenceTarget(targetParamType)) {
+            return null;
+        }
+        Type sourceElem = extractSequenceElement(sourceType);
+        if (sourceElem == null) {
+            return null;
+        }
+        if (checker.algebra().relate(sourceType, targetParamType, TypeAlgebra.RelateMode.ASSIGNABLE,
+                null, borrowReadOnly, targetBorrowed && !targetMut)) {
+            return ScopeAnalysis.SpreadAdapt.AS_IS;
+        }
+        Type baseTarget = TypeAlgebra.unwrapFrozen(Type.withoutNull(targetParamType));
+        if (baseTarget instanceof Type.JavaInstance ji && ji.type() == Iterable.class && ji.typeArguments().size() == 1) {
+            Type targetElem = ji.typeArguments().get(0);
+            if (checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.SUBTYPE, null, borrowReadOnly, false)) {
+                return ScopeAnalysis.SpreadAdapt.TO_ITERABLE;
+            }
+            return null;
+        }
+        if (baseTarget instanceof Type.JavaInstance ji && ji.type() == List.class && ji.typeArguments().size() == 1) {
+            Type targetElem = ji.typeArguments().get(0);
+            if (checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.SUBTYPE, null, borrowReadOnly, false)) {
+                if (TypeAlgebra.unwrapFrozen(sourceType) instanceof Type.Array && targetBorrowed && !targetMut) {
+                    return ScopeAnalysis.SpreadAdapt.TO_LIST_BORROWED;
+                }
+                return ScopeAnalysis.SpreadAdapt.TO_LIST_COPY;
+            }
+            return null;
+        }
+        if (baseTarget instanceof Type.Array arr) {
+            Type targetElem = arr.element();
+            if (checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.ASSIGNABLE, null, false, false)) {
+                Class<?> arrCls = JavaTypeBridge.checkedArrayClass(arr);
+                Class<?> comp = arrCls != null ? arrCls.getComponentType() : Object.class;
+                return new ScopeAnalysis.SpreadAdapt(ScopeAnalysis.SpreadKind.TO_ARRAY, comp);
+            }
+            return null;
+        }
+        return null;
+    }
+
+    /** Validates a spread into a non-rest parameter, emitting {@code BIP021-D7} diagnostics on failure. */
+    private ScopeAnalysis.SpreadAdapt checkSpreadIntoParam(BabbleParser.ExpressionContext argument, Type actual,
+                                                           String paramName, Type expectedParam,
+                                                           boolean targetBorrowed, boolean targetMut,
+                                                           boolean borrowReadOnly) {
+        if (TypeChecker.isUnresolved(actual) || TypeChecker.isUnresolved(expectedParam)) {
+            return null;
+        }
+        if (!isSequenceTarget(expectedParam)) {
+            checker.warn("Spread into a parameter that takes no sequence : " + paramName, argument);
+            return null;
+        }
+        Type sourceElem = extractSequenceElement(actual);
+        if (sourceElem == null) {
+            checker.warn("Type error : expected iterable or array, got " + actual, argument);
+            return null;
+        }
+        ScopeAnalysis.SpreadAdapt adapt = classifySpread(actual, expectedParam, targetBorrowed, targetMut, borrowReadOnly);
+        if (adapt != null) {
+            return adapt;
+        }
+        Type targetElem = sequenceTargetElement(expectedParam);
+        if (targetElem != null) {
+            checker.warn("Type error : expected " + targetElem + " elements, got " + sourceElem, argument);
+        } else {
+            checker.subsumes(argument, actual, expectedParam);
+        }
+        return null;
     }
 
     private void bindArgument(ParserRuleContext decl, Type actual, Type expectedParam,
@@ -576,14 +749,15 @@ final class CallSolver {
                 }
                 Map<Type.TypeVar, Type> env = placeholderEnvWithHints(solving, store, retHints);
                 Type paramPattern = paramPatterns.get(i);
-                Type expectedArg = paramPattern != null ? checker.algebra().substitute(paramPattern, env) : null;
+                boolean spread = ScopeAnalysis.isSpread(arguments.get(i));
+                Type expectedArg = !spread && paramPattern != null ? checker.algebra().substitute(paramPattern, env) : null;
                 if (!needsDeferredLambdaTyping(argExprs.get(i), expectedArg)) {
                     Type actual = checker.check(argExprs.get(i), expectedArg);
                     argTypes[i] = actual;
                     if (paramPattern != null) {
                         boolean borrowReadOnly = frozenBorrowSafePattern
                                 && argParams[i] != null && argParams[i].borrow() && !argParams[i].mut();
-                        if (!checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly)
+                        if (!relateGenericArg(actual, paramPattern, argParams[i], spread, store, borrowReadOnly)
                                 && !TypeChecker.isUnresolved(actual)) {
                             argFailedRelate[i] = true;
                         }
@@ -597,13 +771,14 @@ final class CallSolver {
         for (int i = 0; i < arguments.size(); i++) {
             if (argTypes[i] == null) {
                 Type paramPattern = paramPatterns.get(i);
-                Type expectedArg = paramPattern != null ? checker.algebra().substitute(paramPattern, finalHintEnv) : null;
+                boolean spread = ScopeAnalysis.isSpread(arguments.get(i));
+                Type expectedArg = !spread && paramPattern != null ? checker.algebra().substitute(paramPattern, finalHintEnv) : null;
                 Type actual = checker.check(argExprs.get(i), expectedArg);
                 argTypes[i] = actual;
                 if (paramPattern != null) {
                     boolean borrowReadOnly = frozenBorrowSafePattern
                             && argParams[i] != null && argParams[i].borrow() && !argParams[i].mut();
-                    if (!checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly)
+                    if (!relateGenericArg(actual, paramPattern, argParams[i], spread, store, borrowReadOnly)
                             && !TypeChecker.isUnresolved(actual)) {
                         argFailedRelate[i] = true;
                     }
@@ -658,6 +833,28 @@ final class CallSolver {
         }
         bind(substitutedParams, declarations, arguments, ctx, frozenBorrowSafe, forwardedEffectParams);
         return substitutedResult;
+    }
+
+    private boolean relateGenericArg(Type actual, Type paramPattern, Type.Parameter param, boolean spread,
+                                     TypeAlgebra.ConstraintStore store, boolean borrowReadOnly) {
+        if (!spread) {
+            return checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly);
+        }
+        Type sourceElem = extractSequenceElement(actual);
+        if (sourceElem == null) {
+            return false;
+        }
+        if (param != null && param.rest()) {
+            return checker.algebra().relate(sourceElem, paramPattern, TypeAlgebra.RelateMode.SUBTYPE, store, borrowReadOnly);
+        }
+        Type targetElem = sequenceTargetElement(paramPattern);
+        if (targetElem != null) {
+            Type baseTarget = TypeAlgebra.unwrapFrozen(Type.withoutNull(paramPattern));
+            TypeAlgebra.RelateMode mode = baseTarget instanceof Type.Array
+                    ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
+            return checker.algebra().relate(sourceElem, targetElem, mode, store, borrowReadOnly);
+        }
+        return checker.algebra().relate(actual, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly);
     }
 
     private String findGenericBabbleArrayError(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
@@ -756,7 +953,7 @@ final class CallSolver {
         Executable winner = matching.isEmpty() ? null : matching.size() == 1 ? matching.get(0) : JavaTypeBridge.mostSpecific(matching, varArgs);
         if (classParams.length == 0) {
             if (winner != null) {
-                checkJavaArgumentWidening(winner, Map.of(), arguments, argumentTypes, varArgs);
+                checkJavaArgumentWidening(winner, Map.of(), arguments, argumentTypes, varArgs, ctx);
                 if (recordTarget) {
                     recordConstructor(winner, varArgs, ctx);
                 }
@@ -803,7 +1000,7 @@ final class CallSolver {
         }
         Map<TypeVariable<?>, Type> env = receiverEnv;
         if (best.getTypeParameters().length == 0) {
-            checkJavaArgumentWidening(best, receiverEnv, arguments, argumentTypes, varArgs);
+            checkJavaArgumentWidening(best, receiverEnv, arguments, argumentTypes, varArgs, ctx);
         } else {
             Method generic = best;
             env = solveJava(best, Arrays.asList(best.getTypeParameters()), receiverEnv,
@@ -854,6 +1051,9 @@ final class CallSolver {
         int fixed = executable.getParameterCount() - 1;
         List<Type> paramPatterns = new ArrayList<>(arguments.size());
         List<BabbleParser.ExpressionContext> argExprs = new ArrayList<>(arguments.size());
+        boolean spreadIntoVarArgs = executable.isVarArgs() && !varArgs
+                && arguments.size() == executable.getParameterCount()
+                && !arguments.isEmpty() && ScopeAnalysis.isSpread(arguments.get(arguments.size() - 1));
         for (int i = 0; i < arguments.size(); i++) {
             Type paramPat = varArgs
                     ? JavaTypeBridge.javaVarArgParamType(executable, i, patternEnv)
@@ -861,8 +1061,22 @@ final class CallSolver {
             paramPatterns.add(paramPat);
             argExprs.add(arguments.get(i).expression());
             int pIdx = varArgs ? Math.min(i, fixed) : i;
-            checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store,
-                    isJavaParamBorrow(executable, pIdx), !isJavaParamMut(executable, pIdx));
+            if (ScopeAnalysis.isSpread(arguments.get(i))) {
+                Type sourceElem = extractSequenceElement(argumentTypes.get(i));
+                Type patElem = sequenceTargetElement(paramPat);
+                if (sourceElem != null && patElem != null) {
+                    boolean isArr = executable.getParameterTypes()[pIdx].isArray();
+                    checker.algebra().relate(sourceElem, patElem,
+                            isArr ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE,
+                            store, false, false);
+                } else {
+                    checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store,
+                            isJavaParamBorrow(executable, pIdx), !isJavaParamMut(executable, pIdx));
+                }
+            } else {
+                checker.algebra().relate(argumentTypes.get(i), paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store,
+                        isJavaParamBorrow(executable, pIdx), !isJavaParamMut(executable, pIdx));
+            }
         }
         Map<Type.TypeVar, Type> retHints = collectReturnHints(resultPattern.apply(synthetic), expected, solving);
         Map<Type.TypeVar, Type> inferred = solveAll(solvingList, store, retHints, paramPatterns, argExprs);
@@ -883,12 +1097,12 @@ final class CallSolver {
             }
         }
         JavaTypeBridge.BadJavaArrayTypeArg badArrJava = JavaTypeBridge.checkJavaExecutableArrayTypeArgs(
-                executable, variables, solved, checker.algebra(), varArgs);
+                executable, variables, solved, checker.algebra(), varArgs || spreadIntoVarArgs);
         if (badArrJava != null) {
             checker.warn(badArrJava.message(), ctx);
             return null;
         }
-        checkJavaArgumentWidening(executable, solved, arguments, argumentTypes, varArgs);
+        checkJavaArgumentWidening(executable, solved, arguments, argumentTypes, varArgs, ctx);
         return solved;
     }
 
@@ -897,23 +1111,40 @@ final class CallSolver {
                                                              List<BabbleParser.CallParameterContext> arguments,
                                                              ParserRuleContext ctx, Type expected,
                                                              List<Type> outArgumentTypes) {
+        boolean anySpread = false;
+        for (BabbleParser.CallParameterContext arg : arguments) {
+            if (ScopeAnalysis.isSpread(arg)) {
+                anySpread = true;
+                break;
+            }
+        }
         List<E> fixedCandidates = new ArrayList<>();
         List<E> varArgCandidates = new ArrayList<>();
         for (E candidate : candidates) {
             if (candidate.getParameterCount() == arguments.size()) {
                 fixedCandidates.add(candidate);
             }
-            if (candidate.isVarArgs() && candidate.getParameterCount() > 0
+            if (!anySpread && candidate.isVarArgs() && candidate.getParameterCount() > 0
                     && arguments.size() >= candidate.getParameterCount() - 1) {
                 varArgCandidates.add(candidate);
             }
         }
-        boolean varArgs = fixedCandidates.isEmpty() && !varArgCandidates.isEmpty();
+        boolean varArgs = !anySpread && fixedCandidates.isEmpty() && !varArgCandidates.isEmpty();
         List<E> matching = new ArrayList<>(varArgs ? varArgCandidates : fixedCandidates);
         Type[] argTypes = new Type[arguments.size()];
         boolean[] deferred = new boolean[arguments.size()];
         for (int i = 0; i < arguments.size(); i++) {
-            BabbleParser.ExpressionContext argument = arguments.get(i).expression();
+            BabbleParser.CallParameterContext argCtx = arguments.get(i);
+            BabbleParser.ExpressionContext argument = argCtx.expression();
+            boolean spread = ScopeAnalysis.isSpread(argCtx);
+            if (spread) {
+                Type actual = checker.check(argument, null);
+                argTypes[i] = actual;
+                final int index = i;
+                matching.removeIf(candidate -> !applicableJavaSpread(candidate, index, actual, receiverEnv,
+                        isJavaParamBorrow(candidate, index), isJavaParamMut(candidate, index)));
+                continue;
+            }
             boolean isLambda = checker.unwrapFunctionLiteral(argument) != null;
             Type argExpected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, receiverEnv, varArgs);
             if (needsDeferredLambdaTyping(argument, argExpected)) {
@@ -935,7 +1166,7 @@ final class CallSolver {
                 continue;
             }
             BabbleParser.ExpressionContext argument = arguments.get(i).expression();
-            Map<TypeVariable<?>, Type> refinedEnv = refineJavaEnvFromArgs(matching, receiverEnv, argTypes, deferred, ctx, expected, varArgs);
+            Map<TypeVariable<?>, Type> refinedEnv = refineJavaEnvFromArgs(matching, receiverEnv, arguments, argTypes, deferred, ctx, expected, varArgs);
             boolean isLambda = checker.unwrapFunctionLiteral(argument) != null;
             Type argExpected = JavaTypeBridge.expectedGenericJavaArgumentType(matching, i, isLambda, refinedEnv, varArgs);
             Type actual = checker.check(argument, argExpected);
@@ -949,7 +1180,7 @@ final class CallSolver {
             });
         }
         // Phase 3 fallback (BIP021-D8): if fixed-arity phase 1-2 found nothing, try variable-arity candidates.
-        if (!varArgs && matching.isEmpty() && !varArgCandidates.isEmpty()) {
+        if (!anySpread && !varArgs && matching.isEmpty() && !varArgCandidates.isEmpty()) {
             List<E> vaMatching = new ArrayList<>(varArgCandidates);
             for (int i = 0; i < argTypes.length; i++) {
                 final int index = i;
@@ -970,19 +1201,123 @@ final class CallSolver {
             outArgumentTypes.add(t);
         }
         if (matching.isEmpty() && !candidates.isEmpty()) {
-            checker.warn("No applicable overload of " + description + " for "
-                    + outArgumentTypes.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")")), ctx);
+            String nonSeqParam = anySpread ? findNonSequenceJavaSpreadParam(fixedCandidates, arguments, argTypes) : null;
+            if (nonSeqParam != null) {
+                checker.warn("Spread into a parameter that takes no sequence : " + nonSeqParam, ctx);
+            } else {
+                checker.warn("No applicable overload of " + description + " for "
+                        + formatJavaArgTypes(arguments, outArgumentTypes), ctx);
+            }
         } else if (matching.size() > 1
                 && outArgumentTypes.stream().noneMatch(TypeChecker::isUnresolved)
                 && JavaTypeBridge.mostSpecific(matching, varArgs) == null) {
             checker.warn("Ambiguous call to " + description + " for "
-                    + outArgumentTypes.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")")), ctx);
+                    + formatJavaArgTypes(arguments, outArgumentTypes), ctx);
         }
         return new JavaCallMatch<>(matching, varArgs);
     }
 
+    private static String formatJavaArgTypes(List<BabbleParser.CallParameterContext> arguments, List<Type> argTypes) {
+        StringBuilder sb = new StringBuilder("(");
+        for (int i = 0; i < argTypes.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            if (i < arguments.size() && ScopeAnalysis.isSpread(arguments.get(i))) {
+                sb.append("...");
+            }
+            sb.append(argTypes.get(i));
+        }
+        sb.append(')');
+        return sb.toString();
+    }
+
+    private <E extends Executable> String findNonSequenceJavaSpreadParam(List<E> fixedCandidates,
+                                                                         List<BabbleParser.CallParameterContext> arguments,
+                                                                         Type[] argTypes) {
+        if (fixedCandidates.isEmpty()) {
+            return null;
+        }
+        for (int i = 0; i < arguments.size(); i++) {
+            if (!ScopeAnalysis.isSpread(arguments.get(i)) || extractSequenceElement(argTypes[i]) == null) {
+                continue;
+            }
+            boolean anySeq = false;
+            for (E c : fixedCandidates) {
+                Class<?> raw = c.getParameterTypes()[i];
+                if (raw.isArray() || Iterable.class.isAssignableFrom(raw)) {
+                    anySeq = true;
+                    break;
+                }
+            }
+            if (!anySeq) {
+                return fixedCandidates.get(0).getParameters()[i].getName();
+            }
+        }
+        return null;
+    }
+
+    private boolean applicableJavaSpread(Executable candidate, int index, Type actual,
+                                         Map<TypeVariable<?>, Type> receiverEnv,
+                                         boolean borrow, boolean mut) {
+        if (TypeChecker.isUnresolved(actual)) {
+            return true;
+        }
+        Type sourceElem = extractSequenceElement(actual);
+        if (sourceElem == null) {
+            return false;
+        }
+        Class<?> rawParam = candidate.getParameterTypes()[index];
+        if (!rawParam.isArray() && !Iterable.class.isAssignableFrom(rawParam)) {
+            return false;
+        }
+        Map<TypeVariable<?>, Type.TypeVar> tvToSyn = JavaTypeBridge.candidateSolvingVars(candidate);
+        Map<TypeVariable<?>, Type> patternEnv = new HashMap<>(receiverEnv);
+        patternEnv.putAll(tvToSyn);
+        Type paramPat = JavaTypeBridge.javaExecutableParamType(candidate, index, patternEnv);
+        if (!paramPat.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null)) {
+            return classifyJavaSpread(actual, paramPat, rawParam, borrow, mut) != null;
+        }
+        Set<Type.TypeVar> solving = Set.copyOf(tvToSyn.values());
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
+        Type patElem = sequenceTargetElement(paramPat);
+        if (patElem != null) {
+            return checker.algebra().relate(sourceElem, patElem,
+                    rawParam.isArray() ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE,
+                    store, false, false);
+        }
+        return checker.algebra().relate(actual, paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrow, !mut);
+    }
+
+    private ScopeAnalysis.SpreadAdapt classifyJavaSpread(Type sourceType, Type paramType, Class<?> rawParam,
+                                                         boolean borrow, boolean mut) {
+        if (TypeChecker.isUnresolved(sourceType) || TypeChecker.isUnresolved(paramType)) {
+            return null;
+        }
+        if (rawParam.isArray()) {
+            Type sourceElem = extractSequenceElement(sourceType);
+            if (sourceElem == null) {
+                return null;
+            }
+            Type baseParam = TypeAlgebra.unwrapFrozen(Type.withoutNull(paramType));
+            Type targetElem = baseParam instanceof Type.Array arr ? arr.element() : JavaTypeBridge.fromJava(rawParam.getComponentType());
+            if (!checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.ASSIGNABLE, null, false, false)) {
+                return null;
+            }
+            if (TypeAlgebra.unwrapFrozen(sourceType) instanceof Type.Array srcArr) {
+                Class<?> srcCls = JavaTypeBridge.checkedArrayClass(srcArr);
+                if (srcCls != null && rawParam.isAssignableFrom(srcCls)) {
+                    return ScopeAnalysis.SpreadAdapt.AS_IS;
+                }
+            }
+            return new ScopeAnalysis.SpreadAdapt(ScopeAnalysis.SpreadKind.TO_ARRAY, rawParam.getComponentType());
+        }
+        return classifySpread(sourceType, paramType, borrow, mut, borrow && !mut);
+    }
+
     private <E extends Executable> Map<TypeVariable<?>, Type> refineJavaEnvFromArgs(
-            List<E> matching, Map<TypeVariable<?>, Type> receiverEnv, Type[] argTypes, boolean[] deferred,
+            List<E> matching, Map<TypeVariable<?>, Type> receiverEnv,
+            List<BabbleParser.CallParameterContext> arguments, Type[] argTypes, boolean[] deferred,
             ParserRuleContext ctx, Type expected, boolean varArgs) {
         if (matching.size() != 1) {
             return receiverEnv;
@@ -1003,6 +1338,17 @@ final class CallSolver {
                         ? JavaTypeBridge.javaVarArgParamType(cand, i, patternEnv)
                         : JavaTypeBridge.javaExecutableParamType(cand, i, patternEnv);
                 int pIdx = varArgs ? Math.min(i, fixed) : i;
+                if (ScopeAnalysis.isSpread(arguments.get(i))) {
+                    Type sourceElem = extractSequenceElement(argTypes[i]);
+                    Type patElem = sequenceTargetElement(paramPat);
+                    if (sourceElem != null && patElem != null) {
+                        boolean isArr = cand.getParameterTypes()[pIdx].isArray();
+                        checker.algebra().relate(sourceElem, patElem,
+                                isArr ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE,
+                                store, false, false);
+                        continue;
+                    }
+                }
                 checker.algebra().relate(argTypes[i], paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store,
                         isJavaParamBorrow(cand, pIdx), !isJavaParamMut(cand, pIdx));
             }
@@ -1038,19 +1384,35 @@ final class CallSolver {
 
     private void checkJavaArgumentWidening(Executable candidate, Map<TypeVariable<?>, Type> env,
                                            List<BabbleParser.CallParameterContext> arguments, List<Type> argumentTypes,
-                                           boolean varArgs) {
+                                           boolean varArgs, ParserRuleContext ctx) {
+        ScopeAnalysis.SpreadAdapt[] adapts = null;
         for (int i = 0; i < arguments.size(); i++) {
             if (i < argumentTypes.size()) {
-                BabbleParser.ExpressionContext argExpr = arguments.get(i).expression();
+                BabbleParser.CallParameterContext argCtx = arguments.get(i);
+                BabbleParser.ExpressionContext argExpr = argCtx.expression();
                 Type argType = argumentTypes.get(i);
                 Type paramType = varArgs
                         ? JavaTypeBridge.javaVarArgParamType(candidate, i, env)
                         : JavaTypeBridge.javaExecutableParamType(candidate, i, env);
+                if (ScopeAnalysis.isSpread(argCtx)) {
+                    ScopeAnalysis.SpreadAdapt adapt = classifyJavaSpread(argType, paramType,
+                            candidate.getParameterTypes()[i], isJavaParamBorrow(candidate, i), isJavaParamMut(candidate, i));
+                    if (adapt != null) {
+                        if (adapts == null) {
+                            adapts = new ScopeAnalysis.SpreadAdapt[arguments.size()];
+                        }
+                        adapts[i] = adapt;
+                    }
+                    continue;
+                }
                 if (!Type.containsNull(paramType) && Type.containsNull(argType) && !TypeChecker.isUnresolved(argType)) {
                     checker.subsumes(argExpr, argType, paramType);
                 }
                 checker.coerce(argExpr, argType, paramType);
             }
+        }
+        if (adapts != null) {
+            resolvedSpreadAdapts.put(ctx, adapts);
         }
     }
 
@@ -1163,12 +1525,15 @@ final class CallSolver {
 
     record BindResult(int[] paramToArg, List<String> unknownNames, String outOfPosition,
                       String duplicate, int extraPositional, int positionalCount, int distinctNameCount,
-                      int keywordOnlyStart) {
+                      int keywordOnlyStart, int restParam, int[] restArgs) {
         boolean hasErrors(List<Type.Parameter> parameters) {
             if (!unknownNames.isEmpty() || outOfPosition != null || duplicate != null || extraPositional > 0) {
                 return true;
             }
             for (int i = 0; i < parameters.size(); i++) {
+                if (i == restParam) {
+                    continue;
+                }
                 if (paramToArg[i] < 0 && !parameters.get(i).optional()) {
                     return true;
                 }
@@ -1176,11 +1541,17 @@ final class CallSolver {
             return false;
         }
 
-        ScopeAnalysis.ArgumentBinding toArgumentBinding(int argCount) {
-            boolean reordered = false;
+        ScopeAnalysis.ArgumentBinding toArgumentBinding(List<BabbleParser.CallParameterContext> arguments,
+                                                        ScopeAnalysis.PrimitiveKind restElementKind,
+                                                        ScopeAnalysis.SpreadAdapt[] argAdapts) {
+            int argCount = arguments.size();
+            boolean reordered = restParam >= 0;
             int missingParamBits = 0;
             boolean seenOmitted = false;
             for (int p = 0; p < paramToArg.length; p++) {
+                if (p == restParam) {
+                    continue;
+                }
                 int a = paramToArg[p];
                 if (a < 0) {
                     seenOmitted = true;
@@ -1193,7 +1564,17 @@ final class CallSolver {
                     }
                 }
             }
-            return new ScopeAnalysis.ArgumentBinding(paramToArg, argCount, reordered, missingParamBits);
+            boolean[] restSpreads = null;
+            if (restParam >= 0) {
+                restSpreads = new boolean[restArgs.length];
+                for (int i = 0; i < restArgs.length; i++) {
+                    restSpreads[i] = ScopeAnalysis.isSpread(arguments.get(restArgs[i]));
+                }
+            }
+            return new ScopeAnalysis.ArgumentBinding(paramToArg, argCount, reordered, missingParamBits,
+                    restParam, restArgs, restSpreads,
+                    restElementKind != null ? restElementKind : ScopeAnalysis.PrimitiveKind.NONE,
+                    argAdapts);
         }
     }
 
@@ -1206,17 +1587,28 @@ final class CallSolver {
         return parameters.size();
     }
 
+    static int restParamIndex(List<Type.Parameter> parameters) {
+        for (int i = 0; i < parameters.size(); i++) {
+            if (parameters.get(i).rest()) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /**
-     * Binds call arguments to parameters under {@code BIP021-D23} (C#'s rule) and keyword-only
-     * parameters after {@code ...}.
+     * Binds call arguments to parameters under {@code BIP021-D23} (C#'s rule), rest parameters
+     * ({@code BIP021-D5}), and keyword-only parameters after {@code ...}.
      */
     static BindResult bindArguments(List<Type.Parameter> parameters, String[] names) {
         int n = parameters.size();
         int kwStart = keywordOnlyStart(parameters);
+        int restIdx = restParamIndex(parameters);
         int[] map = new int[n];
         Arrays.fill(map, -1);
         List<String> unknown = new ArrayList<>();
         Set<String> distinct = new LinkedHashSet<>();
+        List<Integer> restArgList = restIdx >= 0 ? new ArrayList<>() : null;
         String firstOutOfPos = null;
         String outOfPosError = null;
         String dupError = null;
@@ -1230,6 +1622,8 @@ final class CallSolver {
                     if (outOfPosError == null) {
                         outOfPosError = firstOutOfPos;
                     }
+                } else if (restIdx >= 0 && j >= restIdx) {
+                    restArgList.add(j);
                 } else if (j < kwStart) {
                     map[j] = j;
                 } else {
@@ -1244,7 +1638,7 @@ final class CallSolver {
                         break;
                     }
                 }
-                if (pIdx < 0) {
+                if (pIdx < 0 || pIdx == restIdx) {
                     if (added) {
                         unknown.add(name);
                     }
@@ -1262,23 +1656,40 @@ final class CallSolver {
                 }
             }
         }
-        return new BindResult(map, unknown, outOfPosError, dupError, extra, posCount, distinct.size(), kwStart);
+        int[] restArgs = restArgList == null ? null : restArgList.stream().mapToInt(Integer::intValue).toArray();
+        return new BindResult(map, unknown, outOfPosError, dupError, extra, posCount, distinct.size(), kwStart, restIdx, restArgs);
     }
 
     static ScopeAnalysis.ArgumentBinding computeArgumentBinding(List<Type.Parameter> parameters,
-                                                                List<BabbleParser.CallParameterContext> arguments) {
+                                                                List<BabbleParser.CallParameterContext> arguments,
+                                                                ScopeAnalysis.PrimitiveKind restElementKind,
+                                                                ScopeAnalysis.SpreadAdapt[] argAdapts) {
         BindResult res = bindArguments(parameters, argumentNames(arguments));
-        return res.hasErrors(parameters) ? null : res.toArgumentBinding(arguments.size());
+        if (res.hasErrors(parameters)) {
+            return null;
+        }
+        ScopeAnalysis.PrimitiveKind rk = restElementKind;
+        if (rk == null && res.restParam() >= 0) {
+            rk = ScopeAnalysis.PrimitiveKind.of(parameters.get(res.restParam()).type());
+        }
+        return res.toArgumentBinding(arguments, rk, argAdapts);
     }
 
     /** The parameter each argument binds to, or null. */
     static Type.Parameter[] mapArgumentsToParameters(List<Type.Parameter> parameters,
                                                      List<BabbleParser.CallParameterContext> arguments) {
         Type.Parameter[] mapping = new Type.Parameter[arguments.size()];
-        int[] matched = bindArguments(parameters, argumentNames(arguments)).paramToArg();
+        BindResult res = bindArguments(parameters, argumentNames(arguments));
+        int[] matched = res.paramToArg();
         for (int index = 0; index < matched.length; index++) {
             if (matched[index] >= 0) {
                 mapping[matched[index]] = parameters.get(index);
+            }
+        }
+        if (res.restParam() >= 0 && res.restArgs() != null) {
+            Type.Parameter restParam = parameters.get(res.restParam());
+            for (int argIdx : res.restArgs()) {
+                mapping[argIdx] = restParam;
             }
         }
         return mapping;

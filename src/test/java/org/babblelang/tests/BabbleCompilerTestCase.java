@@ -760,4 +760,19 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(ops.contains("CALL:java/lang/Comparable.compareTo"), ops.toString());
         Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:") || o.contains("JavaLinker")), ops.toString());
     }
+
+    @Test
+    public void testBip021P4PrimitiveRestArrayEmission() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def sumInts = fn (xs : int...) : int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )\n"
+                        + "def run = fn (a : int, b : int) : int -> ( sumInts(a, b, 3) )\n"
+                        + "run(10, 20)");
+        assertVerifies(script);
+        Assertions.assertEquals(33, script.eval(new SimpleBindings()));
+
+        List<String> ops = methodInstructions(script.getClassBytes(), "fn$1$run$spec");
+        Assertions.assertTrue(ops.contains("CALL:org/babblelang/runtime/ArgumentsView.ofInts"), ops.toString());
+        Assertions.assertTrue(ops.stream().anyMatch(o -> o.endsWith(".fn$0$sumInts$spec")), ops.toString());
+        Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:")), ops.toString());
+    }
 }

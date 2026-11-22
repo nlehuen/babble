@@ -22,6 +22,7 @@ public record HirFunction(
         List<HirParam> params,
         int requiredParams,
         int keywordOnlyStart,
+        int restIndex,
         ScopeAnalysis.PrimitiveKind returnKind,
         int bodyWideningRank,
         EffectSet effects,
@@ -103,19 +104,19 @@ public record HirFunction(
 
     public HirFunction withBody(List<HirExpr> newBody) {
         return new HirFunction(id, name, jvmMethodName, ownerClassId, memberName, namespaceScope,
-                declaredNames, declaredVars, capturedVars, params, requiredParams, keywordOnlyStart, returnKind,
+                declaredNames, declaredVars, capturedVars, params, requiredParams, keywordOnlyStart, restIndex, returnKind,
                 bodyWideningRank, effects, newBody, line);
     }
 
     public HirFunction withBodyAndDeclaredVars(List<HirExpr> newBody, List<HirVar> newDeclaredVars) {
         return new HirFunction(id, name, jvmMethodName, ownerClassId, memberName, namespaceScope,
-                declaredNames, newDeclaredVars, capturedVars, params, requiredParams, keywordOnlyStart, returnKind,
+                declaredNames, newDeclaredVars, capturedVars, params, requiredParams, keywordOnlyStart, restIndex, returnKind,
                 bodyWideningRank, effects, newBody, line);
     }
 
     public HirFunction withParamsAndBody(List<HirParam> newParams, List<HirExpr> newBody) {
         return new HirFunction(id, name, jvmMethodName, ownerClassId, memberName, namespaceScope,
-                declaredNames, declaredVars, capturedVars, newParams, requiredParams, keywordOnlyStart, returnKind,
+                declaredNames, declaredVars, capturedVars, newParams, requiredParams, keywordOnlyStart, restIndex, returnKind,
                 bodyWideningRank, effects, newBody, line);
     }
 }

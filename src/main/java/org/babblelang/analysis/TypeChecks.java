@@ -448,13 +448,14 @@ final class TypeChecks {
                     min = provider.minParams();
                     line = provider.line();
                 } else {
-                    max = analysis.parameters(function).length;
+                    max = analysis.restIndex(function) >= 0 ? Integer.MAX_VALUE : analysis.parameters(function).length;
                     min = analysis.requiredParameters(function);
                     line = function.getStart().getLine();
                 }
                 int passed = method.getParameterCount();
                 if (passed < min || passed > max) {
-                    String takes = min == max ? String.valueOf(min) : min + " to " + max;
+                    String takes = max == Integer.MAX_VALUE ? "at least " + min
+                            : (min == max ? String.valueOf(min) : min + " to " + max);
                     throw new AnalysisException(owner + "." + method.getName() + " takes " + takes + " arguments, but "
                             + JavaTypes.signature(method) + " passes " + passed, line);
                 }

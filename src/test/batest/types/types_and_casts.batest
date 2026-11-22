@@ -155,7 +155,7 @@ Type error : expected () : any?, got java.lang.System.gc
 {{{{{
 def bad : fn (x : int) = print
 }}}}}
-Type error : expected (x : int) : any?, got print
+Type error : expected (x : int) : any?, got io (values : (any | frozen any | null)..., to : java.lang.Appendable = ...) : null
 
 {{{{{
 def Self = class () ( def v = this )

@@ -214,6 +214,11 @@ public final class HirPrinter {
                 printExpr(sb, n.operand(), depth + 1);
                 sb.append(')');
             }
+            case HirExpr.SpreadAdapt s -> {
+                sb.append("(spread-adapt ").append(s.adapt().kind()).append(' ');
+                printExpr(sb, s.value(), depth + 1);
+                sb.append(')');
+            }
             case HirExpr.Block b -> {
                 sb.append("(block");
                 for (HirExpr s : b.statements()) {

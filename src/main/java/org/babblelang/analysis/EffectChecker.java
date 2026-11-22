@@ -1023,13 +1023,7 @@ final class EffectChecker {
         boolean[] mutParams;
         boolean[] borrowParams;
         boolean borrowRest;
-        if (from == Type.PRINT) {
-            effects = new EffectSet(EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
-                    false, true, false, false, false, false, true, false, false);
-            mutParams = new boolean[0];
-            borrowParams = new boolean[0];
-            borrowRest = true;
-        } else if (from instanceof Type.JavaMethod jm) {
+        if (from instanceof Type.JavaMethod jm) {
             Method exact = JavaTypeBridge.uniqueArityMethod(jm.owner(), jm.name(), target.parameters().size());
             JavaCallProfile profile = resolveJavaMethodProfile(jm.owner(), jm.name(), exact);
             effects = profile.effects();
@@ -4429,16 +4423,9 @@ final class EffectChecker {
             }
             Type calleeType = resolveCalleeType(calleeExpr);
 
-            // 1. Built-in `print` / `println` / `import` / scalar conversions
+            // 1. Built-in `import` / scalar conversions
             if (calleeExpr instanceof BabbleParser.CoreScalarRefContext) {
                 return evalCoreConversionCall(resType, argExprs);
-            }
-            if (calleeType == Type.PRINT) {
-                hermetic = false;
-                deterministic = false;
-                nothrow = false;
-                terminating = false;
-                return Origin.IMMUTABLE;
             }
             if (isImportCall(calleeExpr)) {
                 hermetic = false;
@@ -5504,17 +5491,26 @@ final class EffectChecker {
             for (int i = 0; i < args.size(); i++) {
                 int pIdx = checker.parameterIndexForArg(calleeParams, args, args.get(i));
                 Type argType = effectiveType(argExprs[i]);
+                Origin effectiveArgOrig = argOrigins[i];
+                if (ScopeAnalysis.isSpread(args.get(i))) {
+                    recordTargetRead(argOrigins[i], argType);
+                    ScopeAnalysis.SpreadAdapt adapt = checker.spreadAdapt(call, i);
+                    if (adapt != null && (adapt.kind() == ScopeAnalysis.SpreadKind.TO_LIST_COPY
+                            || adapt.kind() == ScopeAnalysis.SpreadKind.TO_ARRAY)) {
+                        effectiveArgOrig = Origin.ofUnique(argExprs[i], null, isDeeplyImmutable(argType));
+                    }
+                }
                 boolean mutP = pIdx >= 0 && pIdx < calleeMut.length && calleeMut[pIdx] && argType != Type.STRING;
                 boolean borrowP = pIdx >= 0 && pIdx < calleeBorrow.length && calleeBorrow[pIdx];
                 boolean uniqueP = pIdx >= 0 && pIdx < calleeUnique.length && calleeUnique[pIdx];
                 argIsExclusive[i] = mutP;
-                if (uniqueP && !argOrigins[i].moved) {
+                if (uniqueP && !effectiveArgOrig.moved) {
                     String pName = pIdx >= 0 && pIdx < calleeParams.size() ? calleeParams.get(pIdx).name() : ("#" + i);
-                    if (containsFrozen(argType)) {
+                    if (containsFrozen(argType) && effectiveArgOrig == argOrigins[i]) {
                         reportOnce("Argument for unique parameter " + pName + " cannot be frozen", argExprs[i]);
-                    } else if (!argOrigins[i].unique && argOrigins[i] != Origin.IMMUTABLE && !isDeeplyImmutable(argType) && argType != Type.ERROR) {
+                    } else if (!effectiveArgOrig.unique && effectiveArgOrig != Origin.IMMUTABLE && !isDeeplyImmutable(argType) && argType != Type.ERROR) {
                         reportOnce("Argument for unique parameter " + pName + " must be unique", argExprs[i]);
-                    } else if (!borrowP && argOrigins[i].unique && argOrigins[i].uniqueOwner instanceof ParserRuleContext decl) {
+                    } else if (!borrowP && effectiveArgOrig.unique && effectiveArgOrig.uniqueOwner instanceof ParserRuleContext decl) {
                         if (paramIndex.containsKey(decl) && borrowParams[paramIndex.get(decl)]) {
                             reportOnce("Cannot move borrowed parameter " + argExprs[i].getText(), argExprs[i]);
                         } else {
@@ -5523,18 +5519,18 @@ final class EffectChecker {
                     }
                 }
                 if (mutP) {
-                    recordTargetMutation(argOrigins[i], argExprs[i],
+                    recordTargetMutation(effectiveArgOrig, argExprs[i],
                             "mut parameter " + calleeParams.get(pIdx).name(), argExprs[i], false);
                 }
                 if (!borrowP) {
-                    if ((recvOrig.unique || recvOrig.localFresh) && effectiveMutRecv && !isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
-                        absorbElementIntoLocalContainer(recvOrig.uniqueOwner, argOrigins[i]);
+                    if ((recvOrig.unique || recvOrig.localFresh) && effectiveMutRecv && !isUnattachedUniqueOrImmutable(effectiveArgOrig, argType)) {
+                        absorbElementIntoLocalContainer(recvOrig.uniqueOwner, effectiveArgOrig);
                     }
-                    if (!uniqueP && (argOrigins[i].unique || argOrigins[i].localFresh) && argOrigins[i].uniqueOwner != null) {
-                        demoteUniqueOwner(argOrigins[i].uniqueOwner, Origin.IMMUTABLE);
+                    if (!uniqueP && (effectiveArgOrig.unique || effectiveArgOrig.localFresh) && effectiveArgOrig.uniqueOwner != null) {
+                        demoteUniqueOwner(effectiveArgOrig.uniqueOwner, Origin.IMMUTABLE);
                     }
                     if (!localFreshRecvOnly) {
-                        markStoredOrigin(argOrigins[i], "call to " + calleeExpr.getText(), argExprs[i]);
+                        markStoredOrigin(effectiveArgOrig, "call to " + calleeExpr.getText(), argExprs[i]);
                     }
                 }
             }

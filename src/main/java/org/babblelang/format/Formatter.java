@@ -58,6 +58,10 @@ public final class Formatter {
     private final boolean[] callParentheses;
     /** The "-" of a negation, which sticks to its operand : {@code -x}. */
     private final boolean[] unaryMinus;
+    /** The "..." / "?..." of a variadic parameter, which sticks to its type : {@code T...}. */
+    private final boolean[] restEllipsis;
+    /** The "..." of a spread call argument, which sticks to its operand : {@code ...e}. */
+    private final boolean[] spreadEllipsis;
     /** For each "(", the token whose line gives the indentation of what it encloses. */
     private final int[] anchors;
 
@@ -92,6 +96,8 @@ public final class Formatter {
         keptSemicolons = new boolean[tokens.size()];
         callParentheses = new boolean[tokens.size()];
         unaryMinus = new boolean[tokens.size()];
+        restEllipsis = new boolean[tokens.size()];
+        spreadEllipsis = new boolean[tokens.size()];
         anchors = new int[tokens.size()];
         lineOf = new Line[tokens.size()];
         if (file != null) {
@@ -169,6 +175,10 @@ public final class Formatter {
                 newlines[index] = newline(parent);
             } else if (token.getType() == BabbleLexer.MINUS) {
                 unaryMinus[index] = parent instanceof BabbleParser.NegateContext;
+            } else if (token.getType() == BabbleLexer.ELLIPSIS || token.getType() == BabbleLexer.Q_ELLIPSIS) {
+                restEllipsis[index] = (parent instanceof BabbleParser.FnParamContext fp && fp.rest == token)
+                        || (parent instanceof BabbleParser.FnTypeParamContext ftp && ftp.rest == token);
+                spreadEllipsis[index] = parent instanceof BabbleParser.CallParameterContext cp && cp.spread == token;
             } else if (token.getType() == OPEN) {
                 boolean isTypeApplyCall = parent instanceof BabbleParser.CallParametersContext
                         && parent.getParent() instanceof BabbleParser.CallContext call
@@ -396,6 +406,7 @@ public final class Formatter {
                 || type == BabbleLexer.COLON || type == BabbleLexer.DOT || before.getType() == BabbleLexer.DOT
                 || type == BabbleLexer.SAFE_DOT || before.getType() == BabbleLexer.SAFE_DOT
                 || type == BabbleLexer.QUESTION || type == BabbleLexer.BANG
+                || restEllipsis[token.getTokenIndex()] || spreadEllipsis[before.getTokenIndex()]
                 || before.getType() == BabbleLexer.MINUS && unaryMinus[before.getTokenIndex()] && type != BabbleLexer.MINUS) {
             return false;
         }

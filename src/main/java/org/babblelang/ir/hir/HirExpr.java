@@ -38,6 +38,7 @@ public sealed interface HirExpr permits
         HirExpr.Is,
         HirExpr.As,
         HirExpr.NonNull,
+        HirExpr.SpreadAdapt,
         HirExpr.Block,
         HirExpr.If,
         HirExpr.While,
@@ -312,6 +313,13 @@ public sealed interface HirExpr permits
     record NonNull(
             HirExpr operand,
             String expectedType,
+            ExprMeta meta
+    ) implements HirExpr {
+    }
+
+    record SpreadAdapt(
+            HirExpr value,
+            ScopeAnalysis.SpreadAdapt adapt,
             ExprMeta meta
     ) implements HirExpr {
     }

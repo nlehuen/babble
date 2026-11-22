@@ -296,35 +296,53 @@ sealed interface Type {
     Type NULLABLE_FROZEN_ANY = new Union(List.of(FROZEN_ANY, NULL));
 
     /** A parameter of a function type : its name is part of the type, since calls bind by name. */
-    record Parameter(String name, Type type, boolean optional, boolean keywordOnly,
+    record Parameter(String name, Type type, boolean optional, boolean keywordOnly, boolean rest,
                      boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
         Parameter(String name, Type type, boolean optional) {
-            this(name, type, optional, false, false, false, false, false);
+            this(name, type, optional, false, false, false, false, false, false);
         }
 
         Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow) {
-            this(name, type, optional, false, mut, borrow, false, false);
+            this(name, type, optional, false, false, mut, borrow, false, false);
         }
 
         Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitShared) {
-            this(name, type, optional, false, mut, borrow, explicitShared, false);
+            this(name, type, optional, false, false, mut, borrow, explicitShared, false);
         }
 
         Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
-            this(name, type, optional, false, mut, borrow, explicitShared, unique);
+            this(name, type, optional, false, false, mut, borrow, explicitShared, unique);
+        }
+
+        Parameter(String name, Type type, boolean optional, boolean keywordOnly,
+                  boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
+            this(name, type, optional, keywordOnly, false, mut, borrow, explicitShared, unique);
         }
 
         Parameter withType(Type newType) {
-            return new Parameter(name, newType, optional, keywordOnly, mut, borrow, explicitShared, unique);
+            return new Parameter(name, newType, optional, keywordOnly, rest, mut, borrow, explicitShared, unique);
         }
 
         Parameter withModifiers(boolean newMut, boolean newBorrow) {
-            return new Parameter(name, type, optional, keywordOnly, newMut, newBorrow && !explicitShared && !unique, explicitShared, unique);
+            return new Parameter(name, type, optional, keywordOnly, rest, newMut, newBorrow && !explicitShared && !unique, explicitShared, unique);
         }
 
         Parameter withModifiers(boolean newMut, boolean newBorrow, boolean newUnique) {
-            return new Parameter(name, type, optional, keywordOnly, newMut, newBorrow && !explicitShared && !newUnique,
+            return new Parameter(name, type, optional, keywordOnly, rest, newMut, newBorrow && !explicitShared && !newUnique,
                     explicitShared && !newUnique, newUnique);
+        }
+
+        private static String formatRestType(Type t) {
+            if (t instanceof Union u) {
+                if (u.members().size() == 2 && u.members().get(1) == NULL) {
+                    return t.toString();
+                }
+                return "(" + t + ")";
+            }
+            if (t instanceof Intersection || t instanceof Function || t instanceof Frozen) {
+                return "(" + t + ")";
+            }
+            return t.toString();
         }
 
         String format(boolean showInferredShared) {
@@ -333,7 +351,7 @@ sealed interface Type {
                     + (mut ? "mut " : "")
                     + (showShared ? "shared " : "")
                     + name
-                    + (type == ERROR ? "" : " : " + type)
+                    + (type == ERROR ? "" : " : " + (rest ? formatRestType(type) + "..." : type))
                     + (optional ? " = ..." : "");
         }
 
@@ -363,6 +381,16 @@ sealed interface Type {
         Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result,
                  EffectSet effects, Set<Integer> forwardedEffectParams) {
             this(typeParameters, parameters, result, effects, forwardedEffectParams, Set.of());
+        }
+
+        /** Index of the single rest parameter ({@code xs: T...}), or {@code -1} if none. */
+        int restIndex() {
+            for (int i = 0; i < parameters.size(); i++) {
+                if (parameters.get(i).rest()) {
+                    return i;
+                }
+            }
+            return -1;
         }
 
         /** This type with other captured callbacks (and the same everything else). */
@@ -473,14 +501,18 @@ sealed interface Type {
             String tp = formatTypeParams(typeParameters);
             StringBuilder params = new StringBuilder("(");
             boolean emittedKwSep = false;
+            boolean sawRest = false;
             for (int i = 0; i < parameters.size(); i++) {
                 if (i > 0) {
                     params.append(", ");
                 }
                 Parameter p = parameters.get(i);
-                if (p.keywordOnly() && !emittedKwSep) {
+                if (p.keywordOnly() && !emittedKwSep && !sawRest) {
                     params.append("..., ");
                     emittedKwSep = true;
+                }
+                if (p.rest()) {
+                    sawRest = true;
                 }
                 boolean showShared = i < expected.parameters().size() && expected.parameters().get(i).borrow();
                 params.append(p.format(showShared));
@@ -495,14 +527,18 @@ sealed interface Type {
             String tp = formatTypeParams(typeParameters);
             StringBuilder params = new StringBuilder("(");
             boolean emittedKwSep = false;
+            boolean sawRest = false;
             for (int i = 0; i < parameters.size(); i++) {
                 if (i > 0) {
                     params.append(", ");
                 }
                 Parameter p = parameters.get(i);
-                if (p.keywordOnly() && !emittedKwSep) {
+                if (p.keywordOnly() && !emittedKwSep && !sawRest) {
                     params.append("..., ");
                     emittedKwSep = true;
+                }
+                if (p.rest()) {
+                    sawRest = true;
                 }
                 params.append(p);
             }
@@ -653,16 +689,6 @@ sealed interface Type {
             return owner.getName() + "." + name;
         }
     }
-
-    /** {@code print}, {@code println}, {@code affiche}, {@code afficherc} : any number of {@code any?}, optional {@code to : Appendable}. */
-    record Print() implements Type {
-        @Override
-        public String toString() {
-            return "print";
-        }
-    }
-
-    Print PRINT = new Print();
 
     static Type nullable(Type type) {
         return union(type, NULL);
@@ -843,7 +869,6 @@ sealed interface Type {
             case Module ignored -> false;
             case JavaPackage ignored -> false;
             case JavaClassValue ignored -> false;
-            case Print ignored -> false;
         };
     }
 

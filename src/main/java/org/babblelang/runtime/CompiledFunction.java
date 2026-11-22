@@ -23,6 +23,7 @@ public final class CompiledFunction implements BabbleFunction {
     private final String[] params;
     private final int required;
     private final int optionalParamBits;
+    private final int restIndex;
     private final String name;
 
     /**
@@ -31,14 +32,18 @@ public final class CompiledFunction implements BabbleFunction {
      * @param captured the cells of the variables of enclosing methods the function uses
      */
     public CompiledFunction(FunctionBody body, MethodHandle direct, Namespace closure, Object[] captured, String[] params, int required, String name) {
-        this(body, direct, null, closure, captured, params, required, 0, name);
+        this(body, direct, null, closure, captured, params, required, 0, -1, name);
     }
 
     public CompiledFunction(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, String name) {
-        this(body, direct, spec, closure, captured, params, required, 0, name);
+        this(body, direct, spec, closure, captured, params, required, 0, -1, name);
     }
 
     public CompiledFunction(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, int optionalParamBits, String name) {
+        this(body, direct, spec, closure, captured, params, required, optionalParamBits, -1, name);
+    }
+
+    public CompiledFunction(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, int optionalParamBits, int restIndex, String name) {
         this.body = body;
         this.direct = direct;
         this.spec = spec;
@@ -47,22 +52,28 @@ public final class CompiledFunction implements BabbleFunction {
         this.params = params;
         this.required = required;
         this.optionalParamBits = optionalParamBits;
+        this.restIndex = restIndex;
         this.name = name;
     }
 
     /** What compiled code calls to create the value of a function literal. */
     public static CompiledFunction create(FunctionBody body, MethodHandle direct, Namespace closure, Object[] captured, String[] params, int required, String name) {
-        return new CompiledFunction(body, direct, null, closure, captured, params, required, 0, name);
+        return new CompiledFunction(body, direct, null, closure, captured, params, required, 0, -1, name);
     }
 
     /** What compiled code calls to create the value of a function literal with a specialized primitive entry point. */
     public static CompiledFunction create(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, String name) {
-        return new CompiledFunction(body, direct, spec, closure, captured, params, required, 0, name);
+        return new CompiledFunction(body, direct, spec, closure, captured, params, required, 0, -1, name);
     }
 
     /** What compiled code calls to create a function literal with a specialized entry point carrying an optional-argument mask. */
     public static CompiledFunction create(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, int optionalParamBits, String name) {
-        return new CompiledFunction(body, direct, spec, closure, captured, params, required, optionalParamBits, name);
+        return new CompiledFunction(body, direct, spec, closure, captured, params, required, optionalParamBits, -1, name);
+    }
+
+    /** What compiled code calls to create a variadic function literal ({@code BIP021-D5}). */
+    public static CompiledFunction create(FunctionBody body, MethodHandle direct, MethodHandle spec, Namespace closure, Object[] captured, String[] params, int required, int optionalParamBits, int restIndex, String name) {
+        return new CompiledFunction(body, direct, spec, closure, captured, params, required, optionalParamBits, restIndex, name);
     }
 
     /** The direct entry point, or null when the function has too many parameters for one. */
@@ -80,6 +91,11 @@ public final class CompiledFunction implements BabbleFunction {
         return optionalParamBits;
     }
 
+    /** Index of the variadic rest parameter, or {@code -1} if none. */
+    public int restIndex() {
+        return restIndex;
+    }
+
     public Object[] captured() {
         return captured;
     }
@@ -91,7 +107,7 @@ public final class CompiledFunction implements BabbleFunction {
 
     @Override
     public int maxArity() {
-        return params.length;
+        return restIndex >= 0 ? Integer.MAX_VALUE : params.length;
     }
 
     public Namespace closure() {

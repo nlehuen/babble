@@ -4,6 +4,7 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.ParseTreeProperty;
 import org.antlr.v4.runtime.tree.TerminalNode;
+import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
 
@@ -111,9 +112,13 @@ public final class ScopeAnalysis {
         }
     }
 
-    public record FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind, int optionalParamBits) {
+    public record FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind, int optionalParamBits, int restIndex) {
         public FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind) {
-            this(parameterKinds, returnKind, 0);
+            this(parameterKinds, returnKind, 0, -1);
+        }
+
+        public FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind, int optionalParamBits) {
+            this(parameterKinds, returnKind, optionalParamBits, -1);
         }
 
         public int optionalCount() {
@@ -129,16 +134,79 @@ public final class ScopeAnalysis {
         }
     }
 
+    /** How a spread call argument ({@code ...e}) is adapted to its target parameter ({@code BIP021-D7}). */
+    public enum SpreadKind {
+        NONE,
+        AS_IS,
+        TO_ITERABLE,
+        TO_LIST_BORROWED,
+        TO_LIST_COPY,
+        TO_ARRAY
+    }
+
+    /** Per-argument spread adaptation metadata ({@code BIP021-D7}). */
+    public record SpreadAdapt(SpreadKind kind, Class<?> arrayComponentType) {
+        public static final SpreadAdapt NONE = new SpreadAdapt(SpreadKind.NONE, null);
+        public static final SpreadAdapt AS_IS = new SpreadAdapt(SpreadKind.AS_IS, null);
+        public static final SpreadAdapt TO_ITERABLE = new SpreadAdapt(SpreadKind.TO_ITERABLE, null);
+        public static final SpreadAdapt TO_LIST_BORROWED = new SpreadAdapt(SpreadKind.TO_LIST_BORROWED, null);
+        public static final SpreadAdapt TO_LIST_COPY = new SpreadAdapt(SpreadKind.TO_LIST_COPY, null);
+
+        public static SpreadAdapt toArray(Class<?> componentType) {
+            return new SpreadAdapt(SpreadKind.TO_ARRAY, componentType);
+        }
+    }
+
     /**
-     * Static argument binding for a Babble call ({@code BIP021-D4}).
+     * Static argument binding for a Babble call ({@code BIP021-D4}, {@code BIP021-D5}, {@code BIP021-D7}).
      * {@code paramToArg[p]} is the source call-argument index {@code 0..argCount-1} supplying
-     * parameter {@code p}, or {@code -1} if parameter {@code p} is omitted.
-     * {@code missingParamBits} has bit {@code p} set when {@code p < 32 && paramToArg[p] < 0}.
+     * parameter {@code p}, or {@code -1} if parameter {@code p} is omitted (or is the rest parameter).
+     * {@code missingParamBits} has bit {@code p} set when {@code p < 32 && paramToArg[p] < 0 && p != restParam}.
      */
-    public record ArgumentBinding(int[] paramToArg, int argCount, boolean reordered, int missingParamBits) {
+    public record ArgumentBinding(int[] paramToArg, int argCount, boolean reordered, int missingParamBits,
+                                  int restParam, int[] restArgs, boolean[] restArgIsSpread,
+                                  PrimitiveKind restElementKind, SpreadAdapt[] argAdapts) {
+        private static final int[] NO_INTS = new int[0];
+        private static final boolean[] NO_BOOLS = new boolean[0];
+
+        public ArgumentBinding {
+            restArgs = restArgs != null ? restArgs : NO_INTS;
+            restArgIsSpread = restArgIsSpread != null ? restArgIsSpread : NO_BOOLS;
+            restElementKind = restElementKind != null ? restElementKind : PrimitiveKind.NONE;
+        }
+
+        public ArgumentBinding(int[] paramToArg, int argCount, boolean reordered, int missingParamBits) {
+            this(paramToArg, argCount, reordered, missingParamBits, -1, NO_INTS, NO_BOOLS, PrimitiveKind.NONE, null);
+        }
+
+        public boolean hasRest() {
+            return restParam >= 0;
+        }
+
+        public boolean hasSpreads() {
+            if (argAdapts != null) {
+                for (SpreadAdapt a : argAdapts) {
+                    if (a != null && a.kind() != SpreadKind.NONE) {
+                        return true;
+                    }
+                }
+            }
+            for (boolean s : restArgIsSpread) {
+                if (s) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public SpreadAdapt adaptForArg(int argIndex) {
+            return argAdapts != null && argIndex >= 0 && argIndex < argAdapts.length && argAdapts[argIndex] != null
+                    ? argAdapts[argIndex] : SpreadAdapt.NONE;
+        }
+
         public boolean hasOmitted() {
-            for (int a : paramToArg) {
-                if (a < 0) {
+            for (int p = 0; p < paramToArg.length; p++) {
+                if (p != restParam && paramToArg[p] < 0) {
                     return true;
                 }
             }
@@ -150,7 +218,7 @@ public final class ScopeAnalysis {
         }
 
         public boolean isIdentityPositional() {
-            return !reordered && !hasOmitted() && paramToArg.length == argCount;
+            return !reordered && !hasOmitted() && !hasRest() && !hasSpreads() && paramToArg.length == argCount;
         }
 
         /** Computes the callee's {@code $spec} optional-ordinal mask from {@code calleeOptionalParamBits}. */
@@ -159,7 +227,7 @@ public final class ScopeAnalysis {
             int optBit = 0;
             for (int p = 0; p < calleeParamCount; p++) {
                 if ((calleeOptionalParamBits & (1 << p)) != 0) {
-                    if (p >= paramToArg.length || paramToArg[p] < 0) {
+                    if (p >= paramToArg.length || (p != restParam && paramToArg[p] < 0)) {
                         mask |= (1 << optBit);
                     }
                     optBit++;
@@ -259,7 +327,9 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<String[]> parameters = new ParseTreeProperty<>();
     private final ParseTreeProperty<Integer> requiredParameters = new ParseTreeProperty<>();
     private final ParseTreeProperty<Integer> keywordOnlyStarts = new ParseTreeProperty<>();
+    private final ParseTreeProperty<Integer> restIndices = new ParseTreeProperty<>();
     private final ParseTreeProperty<ArgumentBinding> argumentBindings = new ParseTreeProperty<>();
+    private final ParseTreeProperty<SpreadAdapt[]> callSpreadAdapts = new ParseTreeProperty<>();
     private final ParseTreeProperty<ClassShape> shapes = new ParseTreeProperty<>();
     private final ParseTreeProperty<DefTarget> defTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<BabbleParser.TypeContext> superTargets = new ParseTreeProperty<>();
@@ -387,17 +457,26 @@ public final class ScopeAnalysis {
     }
 
     void setParameters(BabbleParser.FunctionLiteralContext function, String[] names, int required) {
-        setParameters(function, names, required, names.length);
+        setParameters(function, names, required, names.length, -1);
     }
 
     void setParameters(BabbleParser.FunctionLiteralContext function, String[] names, int required, int keywordOnlyStart) {
+        setParameters(function, names, required, keywordOnlyStart, -1);
+    }
+
+    void setParameters(BabbleParser.FunctionLiteralContext function, String[] names, int required, int keywordOnlyStart, int restIndex) {
         parameters.put(function, names);
         requiredParameters.put(function, required);
         keywordOnlyStarts.put(function, keywordOnlyStart);
+        restIndices.put(function, restIndex);
     }
 
     void setArgumentBinding(BabbleParser.CallContext call, ArgumentBinding binding) {
         argumentBindings.put(call, binding);
+    }
+
+    void setCallSpreadAdapts(BabbleParser.CallContext call, SpreadAdapt[] adapts) {
+        callSpreadAdapts.put(call, adapts);
     }
 
     void setShape(ParserRuleContext type, ClassShape shape) {
@@ -698,15 +777,26 @@ public final class ScopeAnalysis {
         return requiredParameters.get(function);
     }
 
-    /** The index of the first keyword-only parameter (after {@code ...}), or {@code parameters.length}. */
+    /** The index of the first keyword-only parameter (after {@code ...} or rest), or {@code parameters.length}. */
     public int keywordOnlyStart(BabbleParser.FunctionLiteralContext function) {
         Integer start = keywordOnlyStarts.get(function);
         return start != null ? start : parameters(function).length;
     }
 
+    /** The index of the variadic rest parameter, or {@code -1} if none. */
+    public int restIndex(BabbleParser.FunctionLiteralContext function) {
+        Integer idx = restIndices.get(function);
+        return idx != null ? idx : -1;
+    }
+
     /** Static argument binding for a Babble call ({@code BIP021-D4}), or {@code null}. */
     public ArgumentBinding argumentBinding(BabbleParser.CallContext call) {
         return argumentBindings.get(call);
+    }
+
+    /** Spread adaptations for a Java/non-Babble call ({@code BIP021-D7}), or {@code null}. */
+    public SpreadAdapt[] callSpreadAdapts(BabbleParser.CallContext call) {
+        return callSpreadAdapts.get(call);
     }
 
     /** The shape of a class, object or interface expression. */
@@ -840,8 +930,34 @@ public final class ScopeAnalysis {
         return ctx.fnParameters().fnParam();
     }
 
+    /** Index of the variadic rest parameter in a function parameter list, or {@code -1}. */
+    public static int restParamIndex(BabbleParser.FnParametersContext ctx) {
+        List<BabbleParser.FnParamContext> params = ctx.fnParam();
+        for (int i = 0; i < params.size(); i++) {
+            if (params.get(i).rest != null) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Index of the variadic rest parameter in a function-type parameter list, or {@code -1}. */
+    public static int restParamIndex(BabbleParser.FnTypeParametersContext ctx) {
+        List<BabbleParser.FnTypeParamContext> params = ctx.fnTypeParam();
+        for (int i = 0; i < params.size(); i++) {
+            if (params.get(i).rest != null) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     /** Index of the first keyword-only parameter in a function parameter list (or total count if none). */
     public static int keywordOnlyStart(BabbleParser.FnParametersContext ctx) {
+        int rest = restParamIndex(ctx);
+        if (rest >= 0) {
+            return rest + 1;
+        }
         int total = ctx.fnParam().size();
         return ctx.kwSep == null ? total : total - ctx.kwParam.size();
     }
@@ -857,8 +973,39 @@ public final class ScopeAnalysis {
 
     /** Index of the first keyword-only parameter in a function-type parameter list (or total count if none). */
     public static int keywordOnlyStart(BabbleParser.FnTypeParametersContext ctx) {
+        int rest = restParamIndex(ctx);
+        if (rest >= 0) {
+            return rest + 1;
+        }
         int total = ctx.fnTypeParam().size();
         return ctx.kwSep == null ? total : total - ctx.kwParam.size();
+    }
+
+    /** Whether a function or function-type parameter is variadic ({@code T...} / {@code T?...}). */
+    public static boolean isParamRest(ParserRuleContext param) {
+        if (param instanceof BabbleParser.FnParamContext fp) {
+            return fp.rest != null;
+        }
+        if (param instanceof BabbleParser.FnTypeParamContext ftp) {
+            return ftp.rest != null;
+        }
+        return false;
+    }
+
+    /** Whether a variadic parameter's rest token is {@code ?...} (making the element type nullable). */
+    public static boolean isParamRestNullable(ParserRuleContext param) {
+        if (param instanceof BabbleParser.FnParamContext fp) {
+            return fp.rest != null && fp.rest.getType() == BabbleLexer.Q_ELLIPSIS;
+        }
+        if (param instanceof BabbleParser.FnTypeParamContext ftp) {
+            return ftp.rest != null && ftp.rest.getType() == BabbleLexer.Q_ELLIPSIS;
+        }
+        return false;
+    }
+
+    /** Whether a call argument is a spread ({@code ...e}). */
+    public static boolean isSpread(BabbleParser.CallParameterContext arg) {
+        return arg != null && arg.spread != null;
     }
 
     /** Identifier terminals of a {@code typeParameters} clause (either bare {@code ID} or parenthesized {@code typeParam} list). */
