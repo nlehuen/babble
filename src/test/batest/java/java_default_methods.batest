@@ -18,6 +18,7 @@ def Impl = class (def v : int) implements Mid (
     def req = fn () : int -> ( this.v )
     def full = fn () : string -> ( super(Mid).midTag() )
 )
+def IntOp = type java.util.function.IntUnaryOperator
 
 {{{{{
 def p = EvenPred()
@@ -106,3 +107,25 @@ def Pair = class (def a : int, def b : int) ()
 def p = java.util.function.IntUnaryOperator(Pair)
 }}}}}
 IntUnaryOperator.applyAsInt takes 1 arguments, function takes 2
+
+{{{{{
+;; Overriding a Java interface default method with a matching Babble method
+def CustomOp = class () implements java.util.function.IntUnaryOperator (
+    def applyAsInt = fn (x : int) : int -> ( x + 1 )
+    def andThen = fn (after : IntOp) : IntOp -> ( after )
+)
+def op : IntOp = CustomOp()
+def dbl = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x * 2 ))
+assert(op.andThen(dbl).applyAsInt(5) == 10)
+}}}}}
+
+{{{{{
+;; Overriding a Java interface default method with a trailing rest parameter
+def RestOp = class () implements java.util.function.IntUnaryOperator (
+    def applyAsInt = fn (x : int) : int -> ( x + 1 )
+    def andThen = fn (after : IntOp, extra : any...) : IntOp -> ( after )
+)
+def op : IntOp = RestOp()
+def dbl = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x * 2 ))
+assert(op.andThen(dbl).applyAsInt(5) == 10)
+}}}}}

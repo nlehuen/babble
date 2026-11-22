@@ -452,3 +452,34 @@ def badAny = overload ( fn (a: any, b: int): int -> ( b ), fn (a: int, b: any): 
 badAny
 }}}}}
 Ambiguous overloads of badAny : badAny(int, int) fits fn (a : any, b : int) : int and fn (a : int, b : any) : int
+
+{{{{{
+;; Target selection and union split on a non-exact overload-set parameter
+def wide = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string): string -> ( "s:" + s ), fn (b: bool): string -> ( "b" ) )
+def use = fn (g: overload (fn (int): string, fn (string): string), x: int | string): string -> (
+    def fi: fn (int): string = g
+    fi(1) + "|" + g(x)
+)
+assert(use(wide, 2) == "i:1|i:2" and use(wide, "a") == "i:1|s:a")
+}}}}}
+
+{{{{{
+;; Union split on nullable int? dispatches int vs null across disjoint siblings
+def tagOpt = overload (
+    fn (n: int): string -> ( "i:" + n ),
+    fn (s: string?): string -> ( if s == null then ( "none" ) else ( "s:" + s ) )
+)
+def go = fn (v: int?): string -> ( tagOpt(v) )
+assert(go(7) == "i:7" and go(null) == "none")
+}}}}}
+
+{{{{{
+;; Union split with spread adaptation alongside a non-spread union argument
+def mix = overload (
+    fn (n: int, xs: list of int): string -> ( "i:" + n + ":" + xs.size() ),
+    fn (s: string, xs: array of int): string -> ( "s:" + s + ":" + xs.size() )
+)
+def go = fn (k: int | string, src: array of int): string -> ( mix(k, ...src) )
+def a = array.of(10, 20)
+assert(go(3, a) == "i:3:2" and go("hi", a) == "s:hi:2")
+}}}}}

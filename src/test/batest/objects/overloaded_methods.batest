@@ -237,3 +237,15 @@ def run = fn (b: Box, u: list of int | list of string): string -> ( b + u )
 run(Box(), list(1))
 }}}}}
 Cannot dispatch b.plus on list of int | list of string : its alternatives are not told apart at runtime
+
+{{{{{
+;; Overloaded operator splitting on a nullable operand exercises non-null check fallthrough on null
+def Tag = class () (
+    def plus = overload (
+        fn (n: int): string -> ( "i:" + n ),
+        fn (s: string?): string -> ( if s == null then ( "none" ) else ( "s:" + s ) )
+    )
+)
+def addOpt = fn (t: Tag, v: int?): string -> ( t + v )
+assert(addOpt(Tag(), 7) == "i:7" and addOpt(Tag(), null) == "none")
+}}}}}
