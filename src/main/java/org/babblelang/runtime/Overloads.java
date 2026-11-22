@@ -30,10 +30,6 @@ public final class Overloads {
     public record Resolved<E extends Executable>(E executable, boolean varArgs) {
     }
 
-    public static Method resolveMethod(Class<?> clazz, String name, Object[] arguments) {
-        return resolveMethodDetailed(clazz, name, arguments).executable();
-    }
-
     public static Resolved<Method> resolveMethodDetailed(Class<?> clazz, String name, Object[] arguments) {
         List<Method> candidates = new ArrayList<>();
         for (Method method : JavaTypes.methods(clazz, name)) {
@@ -45,10 +41,6 @@ public final class Overloads {
             }
         }
         return resolveDetailed(candidates, clazz.getCanonicalName() + "." + name, arguments);
-    }
-
-    public static Constructor<?> resolveConstructor(Class<?> clazz, Object[] arguments) {
-        return resolveConstructorDetailed(clazz, arguments).executable();
     }
 
     public static Resolved<Constructor<?>> resolveConstructorDetailed(Class<?> clazz, Object[] arguments) {
@@ -99,12 +91,6 @@ public final class Overloads {
             return (Entry<E>[]) new Entry[size];
         }
 
-        /** The overload resolved earlier for arguments of these kinds, or null. */
-        public E find(Object[] arguments) {
-            Resolved<E> r = findResolved(arguments);
-            return r != null ? r.executable() : null;
-        }
-
         public Resolved<E> findResolved(Object[] arguments) {
             for (Entry<E> entry : entries) {
                 if (matches(entry.kinds(), arguments)) {
@@ -112,10 +98,6 @@ public final class Overloads {
                 }
             }
             return null;
-        }
-
-        public synchronized void put(Object[] arguments, E executable) {
-            putResolved(arguments, new Resolved<>(executable, false));
         }
 
         public synchronized void putResolved(Object[] arguments, Resolved<E> resolved) {
@@ -232,7 +214,7 @@ public final class Overloads {
     private static boolean isVarArgsApplicable(Executable candidate, Object[] arguments) {
         Class<?>[] parameterTypes = candidate.getParameterTypes();
         int fixed = parameterTypes.length - 1;
-        if (fixed < 0 || arguments.length < fixed || !parameterTypes[fixed].isArray()) {
+        if (arguments.length < fixed) {
             return false;
         }
         for (int i = 0; i < fixed; i++) {

@@ -133,3 +133,60 @@ def ok = obj.toString()
 println(ok)
 }}}}}
 Not a scope : obj
+
+{{{{{
+;; Dynamic Java varargs dispatch via bound JavaMethod values (exercises Overloads.toJavaArguments & isVarArgsMoreSpecific)
+def demo = import("org.babblelang.tests").JavaClassDemo
+def fmt2 : fn io (f : string, a : string, b : int) : string = java.lang.String.format
+def fmt0 : fn io (f : string) : string = java.lang.String.format
+def pickStr : fn io (a : string, b : string) : string = demo.vaPick
+def pickObj : fn io (a : string, b : int) : string = demo.vaPick
+def sumDbl : fn io (a : double, b : double, c : double) : double = demo.vaSumDoubles
+println(fmt2("%s=%d", "n", 7))
+println(fmt0("plain"))
+println(pickStr("a", "b"))
+println(pickObj("a", 1))
+println(sumDbl(3, 4.5, 5))
+}}}}}
+n=7
+plain
+String...:2
+Object...:2
+12.5
+
+{{{{{
+;; Dynamic Java varargs edge cases: null element, 0 varargs, fixed-arity beats varargs, 0-arg primitive varargs
+def demo = import("org.babblelang.tests").JavaClassDemo
+def fmtNull : fn io (f : string, a : any?) : string = java.lang.String.format
+def pick0 : fn io () : string = demo.vaPick
+def pick1 : fn io (a : string) : string = demo.vaPick
+def sum0 : fn io () : double = demo.vaSumDoubles
+println(fmtNull("%s", null))
+println(pick0())
+println(pick1("hi"))
+println(sum0())
+}}}}}
+null
+String...:0
+fixed:hi
+0.0
+
+{{{{{
+;; Dynamic Java varargs with fixed prefix: Collections.addAll(Collection, T...)
+def xs = list of string ()
+def addAll : fn io (shared c : list of string, a : string, b : string) : bool = java.util.Collections.addAll
+addAll(xs, "x", "y")
+println(xs.size(), ":", xs.get(0), ":", xs.get(1))
+}}}}}
+2:x:y
+
+{{{{{
+;; Dynamic Java varargs failing with fewer args than fixed prefix (single overload: deterministic)
+def addBad : fn io () : bool = java.util.Collections.addAll
+addBad()
+}}}}}
+No applicable overload of java.util.Collections.addAll for () : candidates are (java.util.Collection, java.lang.Object[])
+
+
+
+
