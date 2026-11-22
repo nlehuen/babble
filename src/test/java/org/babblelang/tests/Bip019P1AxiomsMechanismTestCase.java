@@ -214,4 +214,50 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
         Assertions.assertFalse(empty.isDeeplyImmutable(java.util.Map.Entry.class));
         Assertions.assertTrue(empty.builtins().isEmpty());
     }
+
+    @Test
+    public void testBabbleNameAxiomsAndBuiltinsPrelude() throws Exception {
+        // 1. Standard builtins.ba provides int, assert, same, classof, etc.
+        BuiltinAxioms std = BuiltinAxioms.standard();
+        for (String name : java.util.List.of("assert", "suppose", "same", "classof",
+                "byte", "short", "int", "long", "float", "double", "bool", "char", "string")) {
+            Assertions.assertTrue(std.builtins().containsKey(name), "Missing built-in : " + name);
+        }
+
+        // 2. With BuiltinAxioms.EMPTY, ordinary built-ins are unknown (not callable).
+        BabbleScriptEngine emptyEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        emptyEngine.setBuiltinAxioms(BuiltinAxioms.EMPTY);
+        emptyEngine.enableBytecodeEffectAnalysis(false);
+        Assertions.assertThrows(TypeCheckException.class, () -> emptyEngine.eval("int(3.5)"));
+        Assertions.assertThrows(TypeCheckException.class, () -> emptyEngine.eval("assert(true)"));
+        Assertions.assertThrows(TypeCheckException.class, () -> emptyEngine.eval("same(1, 1)"));
+        Assertions.assertThrows(TypeCheckException.class, () -> emptyEngine.eval("classof(1)"));
+
+        // 3. A Babble-name axiom types a host binding, works inside blocks, and evaluates to null.
+        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        javax.script.Bindings bindings = engine.createBindings();
+        bindings.put("hostAdd", engine.eval("fn (a: int, b: int): int -> (a + b)"));
+        String script = """
+                def run = fn (): int -> (
+                    def r: any? = axiom hostAdd: fn nothrow (a: int, b: int): int
+                    assert(r == null)
+                    hostAdd(19, 23)
+                )
+                run()
+                """;
+        Assertions.assertEquals(42, engine.eval(script, bindings));
+
+        // 4. Reading a Babble-name axiom whose binding is missing fails at runtime with No such name.
+        javax.script.ScriptException missing = Assertions.assertThrows(javax.script.ScriptException.class,
+                () -> engine.eval("axiom ghostFn: fn (a: int): int\nghostFn(1)"));
+        Assertions.assertTrue(missing.getMessage().contains("No such name : ghostFn"), missing.getMessage());
+
+        // 5. Babble-name axioms cannot be exported and require a signature.
+        TypeCheckException noSig = Assertions.assertThrows(TypeCheckException.class,
+                () -> engine.eval("axiom ghostFn: fn pure"));
+        Assertions.assertTrue(noSig.getMessage().contains("requires a signature"), noSig.getMessage());
+        TypeCheckException exported = Assertions.assertThrows(TypeCheckException.class,
+                () -> engine.eval("export axiom ghostFn: fn (a: int): int"));
+        Assertions.assertTrue(exported.getMessage().contains("cannot be exported"), exported.getMessage());
+    }
 }

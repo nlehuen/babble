@@ -16,6 +16,9 @@ Every assumption the analysis, compiler, interpreter, and optimizer make about s
 
 ## Files
 
+### Built-in Prelude
+- `builtins.ba` — ordinary Babble built-ins (`assert`, `bool`, `byte`, `char`, `classof`, `double`, `float`, `int`, `long`, `same`, `short`, `string`, `suppose`)
+
 ### Curated Java Package Axioms
 - `java/io/curated.ba` — `StringWriter`
 - `java/lang/curated.ba` — protocol contracts (`Comparable`, `Iterable`, `Object`), `Class`, `String`, `StringBuilder`/`StringBuffer`, `CharSequence`, boxed wrappers, `Math`/`StrictMath`, `System`, `Runtime`, `ProcessBuilder`, `Thread`, `Throwable`

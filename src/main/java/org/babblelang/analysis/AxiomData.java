@@ -1273,4 +1273,225 @@ final class AxiomData {
         if (c != 0) return c;
         return Boolean.compare(a.hasSignature(), b.hasSignature());
     };
+
+    // ================================================================ Babble-Name Axioms (§2.3, BIP019-P7)
+
+    /** Whether {@code ctx} is an axiom about a single Babble name ({@code axiom foo: fn ...}). */
+    static boolean isBabbleNameAxiom(BabbleParser.AxiomExpressionContext ctx) {
+        return ctx != null && ctx.axiomType() != null && ctx.axiomType().FN() != null
+                && ctx.target != null && ctx.target.memberName().isEmpty();
+    }
+
+    /** Returns the Babble name of a single-segment axiom target (identifier or core scalar keyword). */
+    static String babbleName(BabbleParser.AxiomExpressionContext ctx) {
+        if (!isBabbleNameAxiom(ctx)) {
+            return null;
+        }
+        return ctx.target.ID() != null ? ctx.target.ID().getText() : ctx.target.coreScalarKeyword().getText();
+    }
+
+    /**
+     * Parses a Babble-name axiom ({@code axiom foo: fn ... (params): ret}) into a {@link Type.Function}
+     * using {@code typeResolver} to resolve each parameter/return {@link BabbleParser.TypeContext}.
+     */
+    static Type.Function parseBabbleAxiomFunction(BabbleParser.AxiomExpressionContext ctx,
+                                                  java.util.function.Function<BabbleParser.TypeContext, Type> typeResolver,
+                                                  ErrorSink errors) {
+        String name = babbleName(ctx);
+        if (name == null) {
+            return null;
+        }
+        if (ctx.EXPORT() != null) {
+            errors.report("Axiom about a Babble name cannot be exported : " + name, ctx);
+            return null;
+        }
+        BabbleParser.AxiomTypeContext typeCtx = ctx.axiomType();
+        if (typeCtx.fnTypeParameters() == null) {
+            errors.report("Axiom about a Babble name requires a signature : " + name, ctx);
+            return null;
+        }
+
+        boolean io = false;
+        boolean explicitVolatile = false;
+        boolean mutThis = false;
+        boolean sharedThis = false;
+        boolean uniqueRet = typeCtx.uniqueReturn != null;
+        EnumSet<Effect> explicit = EnumSet.noneOf(Effect.class);
+        if (typeCtx.axiomEffectPrefix() != null) {
+            for (BabbleParser.AxiomEffectWordContext w : typeCtx.axiomEffectPrefix().axiomEffectWord()) {
+                switch (w.getText()) {
+                    case "io" -> io = true;
+                    case "volatile" -> explicitVolatile = true;
+                    case "pure" -> {
+                    }
+                    case "mut" -> mutThis = true;
+                    case "shared" -> sharedThis = true;
+                    case "unique" -> uniqueRet = true;
+                    case "nothrow" -> explicit.add(Effect.NOTHROW);
+                    case "idempotent" -> explicit.add(Effect.IDEMPOTENT);
+                    case "commutative" -> explicit.add(Effect.COMMUTATIVE);
+                    case "associative" -> explicit.add(Effect.ASSOCIATIVE);
+                    case "monotone" -> explicit.add(Effect.MONOTONE);
+                    case "injective" -> explicit.add(Effect.INJECTIVE);
+                    case "view", "shallow", "fresh", "foldable" ->
+                            errors.report("Java member word '" + w.getText() + "' is not valid on a Babble name axiom : " + name, w);
+                    default -> errors.report("Unknown effect word in axiom : " + w.getText(), w);
+                }
+            }
+        }
+
+        List<Type.Parameter> params = new ArrayList<>();
+        boolean anyMutParam = false;
+        int index = 0;
+        for (BabbleParser.FnTypeParamContext p : typeCtx.fnTypeParameters().fnTypeParam()) {
+            Type pt = typeResolver.apply(p.type());
+            if (pt == null) {
+                pt = Type.ERROR;
+            }
+            boolean pMut = false;
+            boolean pShared = false;
+            boolean pUnique = false;
+            for (BabbleParser.ParamModifierContext mod : p.paramModifier()) {
+                switch (mod.getText()) {
+                    case "mut" -> pMut = true;
+                    case "shared" -> pShared = true;
+                    case "unique" -> pUnique = true;
+                    default -> {
+                    }
+                }
+            }
+            anyMutParam |= pMut;
+            boolean pBorrow = !pShared && !pUnique;
+            String pName = p.ID() != null ? p.ID().getText() : "p" + index;
+            boolean optional = p.ELLIPSIS() != null;
+            params.add(new Type.Parameter(pName, pt, optional, pMut, pBorrow, pShared, pUnique));
+            index++;
+        }
+
+        Type retType = typeCtx.type() != null ? typeResolver.apply(typeCtx.type()) : Type.NULLABLE_ANY;
+        if (retType == null) {
+            retType = Type.ERROR;
+        }
+
+        EffectSet effectSet;
+        if (io) {
+            effectSet = EffectSet.IO_DECLARED;
+        } else {
+            EnumSet<Effect> effs = EnumSet.copyOf(explicit);
+            effs.add(Effect.HERMETIC);
+            if (!explicitVolatile) {
+                effs.add(Effect.DETERMINISTIC);
+            }
+            if (!mutThis && !anyMutParam) {
+                effs.add(Effect.PURE);
+            }
+            effectSet = EffectSet.ofInferred(effs, mutThis, false, uniqueRet, true);
+            if (sharedThis) {
+                effectSet = new EffectSet(effectSet.effects(), effectSet.declared(), mutThis, false, true,
+                        uniqueRet, uniqueRet, true, false, explicitVolatile, false);
+            }
+        }
+        return new Type.Function(List.of(), params, retType, effectSet);
+    }
+
+    /** Standalone type resolver for {@code builtins.ba} (no {@link TypeChecker} required). */
+    static Type resolveStandaloneType(BabbleParser.TypeContext ctx, ErrorSink errors) {
+        if (ctx == null) {
+            return Type.NULLABLE_ANY;
+        }
+        List<BabbleParser.NullableTypeContext> parts = ctx.nullableType();
+        if (parts.size() == 1) {
+            return resolveStandaloneNullable(parts.get(0), errors);
+        }
+        // Group '&' tighter than '|' (same precedence as TypeAnnotations).
+        List<Type> unionMembers = new ArrayList<>();
+        List<Type> currentInter = new ArrayList<>();
+        currentInter.add(resolveStandaloneNullable(parts.get(0), errors));
+        for (int i = 1; i < parts.size(); i++) {
+            String op = ctx.getChild(2 * i - 1).getText();
+            Type rhs = resolveStandaloneNullable(parts.get(i), errors);
+            if ("&".equals(op)) {
+                currentInter.add(rhs);
+            } else {
+                unionMembers.add(currentInter.size() == 1 ? currentInter.get(0) : Type.intersection(currentInter));
+                currentInter = new ArrayList<>();
+                currentInter.add(rhs);
+            }
+        }
+        unionMembers.add(currentInter.size() == 1 ? currentInter.get(0) : Type.intersection(currentInter));
+        return unionMembers.size() == 1 ? unionMembers.get(0) : Type.union(unionMembers);
+    }
+
+    private static Type resolveStandaloneNullable(BabbleParser.NullableTypeContext ctx, ErrorSink errors) {
+        if (ctx instanceof BabbleParser.NonParenTypeContext nonParen) {
+            return resolveStandaloneNonParen(nonParen.nonParenNullableType(), errors);
+        }
+        BabbleParser.ParenTypeContext paren = (BabbleParser.ParenTypeContext) ctx;
+        Type base = resolveStandaloneType(paren.type(), errors);
+        if (paren.frozen != null) {
+            base = Type.frozen(base);
+        }
+        return paren.question != null ? Type.nullable(base) : base;
+    }
+
+    private static Type resolveStandaloneNonParen(BabbleParser.NonParenNullableTypeContext ctx, ErrorSink errors) {
+        if (ctx instanceof BabbleParser.NullTypeContext) {
+            return Type.NULL;
+        }
+        if (ctx instanceof BabbleParser.SimpleTypeContext simple) {
+            List<String> path = ScopeAnalysis.simpleTypePath(simple);
+            Type base = null;
+            if (path.size() == 1) {
+                String name = path.get(0);
+                base = switch (name) {
+                    case "byte" -> Type.BYTE;
+                    case "short" -> Type.SHORT;
+                    case "int" -> Type.INT;
+                    case "long" -> Type.LONG;
+                    case "float" -> Type.FLOAT;
+                    case "double" -> Type.DOUBLE;
+                    case "bool" -> Type.BOOL;
+                    case "char" -> Type.CHAR;
+                    case "string" -> Type.STRING;
+                    case "any" -> Type.ANY;
+                    case "void" -> Type.NULL;
+                    case "array" -> {
+                        Type elem = simple.nonParenNullableType() != null
+                                ? resolveStandaloneNonParen(simple.nonParenNullableType(), errors)
+                                : !simple.type().isEmpty()
+                                ? resolveStandaloneType(simple.type(0), errors)
+                                : Type.NULLABLE_ANY;
+                        yield new Type.Array(elem);
+                    }
+                    default -> null;
+                };
+            }
+            if (base == null) {
+                Class<?> cls = JavaTypeBridge.loadClass(String.join(".", path));
+                if (cls != null) {
+                    List<Type> args = new ArrayList<>();
+                    if (simple.OF() != null) {
+                        if (simple.nonParenNullableType() != null) {
+                            args.add(resolveStandaloneNonParen(simple.nonParenNullableType(), errors));
+                        } else {
+                            for (BabbleParser.TypeContext ta : simple.type()) {
+                                args.add(resolveStandaloneType(ta, errors));
+                            }
+                        }
+                    }
+                    base = args.isEmpty() ? new Type.JavaInstance(cls) : new Type.JavaInstance(cls, args);
+                }
+            }
+            if (base == null) {
+                errors.report("Unknown type in axiom : " + String.join(".", path), simple);
+                return Type.ERROR;
+            }
+            if (simple.frozen != null) {
+                base = Type.frozen(base);
+            }
+            return simple.question != null ? Type.nullable(base) : base;
+        }
+        errors.report("Unsupported type in builtins axiom : " + ctx.getText(), ctx);
+        return Type.ERROR;
+    }
 }

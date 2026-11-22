@@ -28,6 +28,8 @@ final class ScopeNode {
     final ParserRuleContext owner;
     /** Lexical names, in declaration order : DefExpressionContext or ParameterDeclarationContext. */
     final Map<String, ParserRuleContext> names = new LinkedHashMap<>();
+    /** Scoped Babble-name axioms ({@code axiom foo: fn ...}) applying to this scope and enclosed scopes (BIP019 §2.3). */
+    final Map<String, BabbleParser.AxiomExpressionContext> babbleAxioms = new LinkedHashMap<>();
     /** The names defined here, declared when the scope is entered (hoisting). */
     final List<String> declared = new ArrayList<>();
     /** For class, interface and static bodies : the type. */
