@@ -1,4 +1,6 @@
-;; BlockScopes, TypeChecks, BabbleInterface, BabbleInstance, BabbleType, and Supers coverage
+;; Interfaces, inheritance, Java interface bridges, and scope/type validation errors
+;; References : BIP002 (interfaces, classes, records, super), BIP005 (cross-module interfaces)
+;; Targets : BlockScopes, TypeChecks, BabbleInterface, BabbleInstance, BabbleType, Supers
 
 ========== iface_mod.ba ==========
 export def MI = interface (
@@ -10,51 +12,67 @@ export def PI = interface (
 )
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Module-exported, local, alias, imported Java package, and inner Java Map.Entry
+;; Module-exported and aliased interfaces on one class
 def m = import("iface_mod.ba")
-def jutil = import("java.util")
-def LocalI = interface (
-    def ping = fn () : int -> ( 7 )
-)
 def AliasMI = m.MI
-def Entry = java.util.Map.Entry
-
-def Multi = class (def n : int) implements AliasMI, m.PI, LocalI, java.lang.Runnable (
+def C = class (def n : int) implements AliasMI, m.PI (
     def tag = fn () : string -> ( "m" + this.n )
     def code = fn () : int -> ( this.n * 10 )
-    def run = fn io () -> ( println("run:" + this.tag()) )
 )
-def multi = Multi(3)
-def mi : m.MI = multi
-def pi : m.PI = multi
-def li : LocalI = multi
-println(mi.sharedTag(), ":", pi.code(), ":", li.ping())
-println(multi is m.MI, ":", multi is AliasMI, ":", multi is LocalI, ":", multi is java.lang.Runnable)
-def r : java.lang.Runnable = multi
-r.run()
+def c = C(3)
+def mi : m.MI = c
+def pi : m.PI = c
+assert(mi.sharedTag() == "mod:m3" and pi.code() == 30)
+assert(c is m.MI and c is AliasMI)
+}}}}}
 
-;; Babble interface extending a Java interface and calling super Java default via Supers
+{{{{{
+;; Local interface combined with a module-exported interface
+def m = import("iface_mod.ba")
+def LocalI = interface ( def ping = fn () : int -> ( 7 ) )
+def C = class (def n : int) implements m.PI, LocalI (
+    def code = fn () : int -> ( this.n * 10 )
+)
+def c = C(3)
+def li : LocalI = c
+assert(li.ping() == 7 and c.code() == 30 and c is LocalI)
+}}}}}
+
+{{{{{
+;; Java interface implementation, imported Java package, and nested Java Map.Entry resolution
+def jutil = import("java.util")
+def Entry = java.util.Map.Entry
+def Runner = class (def n : int) implements java.lang.Runnable (
+    def ran = ""
+    def run = fn mut () -> ( this.ran = "run:m" + this.n )
+)
+def runner = Runner(3)
+assert(runner is java.lang.Runnable)
+def r : java.lang.Runnable = runner
+r.run()
+assert(runner.ran == "run:m3")
+}}}}}
+
+{{{{{
+;; Babble interface extending a Java interface and calling a Java default via Supers
 def SubI = interface extends java.util.function.IntPredicate (
     def test = fn (x : int) : bool -> ( x > 0 )
     def alt = fn io shared (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )
 )
 def SubC = class () implements SubI ()
 def sub = SubC()
-println(sub is SubI, ":", sub is java.util.function.IntPredicate, ":", sub.test(5), ":", sub.alt(5))
+assert(sub is SubI and sub is java.util.function.IntPredicate)
+assert(sub.test(5) and not sub.alt(5))
+}}}}}
 
-;; Inherited interface default lookup across two levels (BabbleInterface.findDefault parent recursion)
+{{{{{
+;; Inherited interface default lookup across two levels (BabbleInterface.findDefault)
 def G0 = interface ( def deep = fn () : string -> ( "deep" ) )
 def G1 = interface extends G0 ()
 def G2 = interface extends G1 ()
 def GC = class () implements G2 ()
-println(GC().deep())
+assert(GC().deep() == "deep")
 }}}}}
-mod:m3:30:7
-true:true:true:true
-run:m3
-true:true:true:false
-deep
 
 {{{{{
 ;; Parameter modifier syntax errors in function literals (split fnParameters)
@@ -79,10 +97,9 @@ private only applies to members
 
 {{{{{
 def V = record (def x : int) ()
-println(V(3).x)
+assert(V(3).x == 3)
 }}}}}
 Warning : def is redundant on a value class parameter : x
-3
 
 {{{{{
 def V = record (def x : int) (
@@ -102,10 +119,9 @@ hashCode is generated for value classes
 def C = class (def x : int) (
     def equals = fn () : bool -> ( true )
 )
-println(C(1).equals())
+assert(C(1).equals())
 }}}}}
 Warning : equals has no effect on == : use a value class
-true
 
 {{{{{
 def I = interface (

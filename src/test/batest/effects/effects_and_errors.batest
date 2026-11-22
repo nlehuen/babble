@@ -1,37 +1,50 @@
-;; EffectChecker modifier validation, def-level axioms/io, import("pkg") targets, SAM propagation, and algebraic errors
+;; EffectChecker modifier validation, module axioms, Java target errors, algebraic violations, and closure escape errors
+;; References : BIP007, BIP016, BIP017, BIP019, EffectChecker
 
 ========== eff_mod.ba ==========
-export axiom pure nothrow on java.lang.Math.abs
-export axiom mut on java.util.List.add
+export axiom java.lang.Math.abs: fn pure nothrow
+export axiom java.util.List.add: fn mut
 export def abs2 = axiom pure nothrow on java.lang.Math.abs
+==========
+
+def Box = class (def v : int) (
+    def mutThis = fn mut () -> ( this.v += 1 )
+)
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Module-exported axioms, def-level axiom/io, import("java.lang") target, and Java inner class axiom
 def em = import("eff_mod.ba")
-def jmath = import("java.lang").Math
+def myAbs = axiom pure nothrow on java.lang.Math.abs
+def ext = io on java.lang.Integer.bitCount
+def compute = fn (x : int) : int -> ( em.abs2(x) + myAbs(-1) )
+assert(compute(-5) == 6)
+assert(ext(7) == 3)
+}}}}}
+
+{{{{{
+;; Deprecated syntax : import("pkg") and package-binding targets
 def jmathPkg = import("java.lang")
 axiom pure nothrow on import("java.lang").Math.max
 axiom pure nothrow on jmathPkg.StrictMath.min
-axiom pure on java.util.AbstractMap.SimpleEntry
-def myAbs = axiom pure nothrow on java.lang.Math.abs
-def ext = io on java.lang.System.currentTimeMillis
 def compute = fn (x : int, y : int) : int -> (
-    def p : java.util.AbstractMap.SimpleEntry of (int, int) = java.util.AbstractMap.SimpleEntry(x, y)
-    def ok = p.getKey() != null
-    java.lang.Math.max(em.abs2(x), jmathPkg.StrictMath.min(x, y)) + myAbs(-1) + (if ok then ( 0 ) else ( 1 ))
+    java.lang.Math.max(x, jmathPkg.StrictMath.min(x, y))
 )
-println(compute(-5, 3), ":", ext() > 0)
+assert(compute(-5, 3) == -5)
 }}}}}
 Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-6:true
 
 {{{{{
-;; Function modifier validation diagnostics
+;; Deprecated syntax : Java inner class axiom
+axiom pure on java.util.AbstractMap.SimpleEntry
+def mk = fn (x : int, y : int) : bool -> (
+    def p : java.util.AbstractMap.SimpleEntry of (int, int) = java.util.AbstractMap.SimpleEntry(x, y)
+    p.getKey() != null
+)
+assert(mk(-5, 3))
+}}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+
+{{{{{
 def f = fn pure () : int -> ( 1 )
 }}}}}
 pure is the default on functions : only use pure with axiom
@@ -88,12 +101,18 @@ axiom is not allowed in a function type
 
 {{{{{
 def f : fn io () : int = fn io () : int -> ( println("ok") ; 1 )
-println(f())
+assert(f() == 1)
 }}}}}
 ok
-1
 
 {{{{{
+;; pure + mut on parameter
+def f = fn axiom pure (mut x : int) : int -> ( 1 )
+}}}}}
+pure and mut are mutually exclusive : use mut (or volatile mut)
+
+{{{{{
+;; pure + mut on receiver (this)
 def C = class () (
     def m = fn axiom pure mut () : int -> ( 1 )
 )
@@ -101,51 +120,56 @@ def C = class () (
 pure and mut are mutually exclusive : use mut (or volatile mut)
 
 {{{{{
-;; Java target validation errors
+;; Deprecated syntax : .ba module is not a Java effect target
 axiom pure on import("eff_mod.ba").abs2
 }}}}}
 Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Java effect target cannot be a .ba module : eff_mod.ba
 
 {{{{{
+;; Deprecated syntax : unknown root identifier in effect target
 axiom pure on unknownPkg.Foo
 }}}}}
 Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Unknown identifier in effect declaration : unknownPkg
 
 {{{{{
+;; Deprecated syntax : missing Java method
 axiom pure on java.lang.Math.noSuchMethod
 }}}}}
 Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 No such Java method : noSuchMethod on java.lang.Math
 
 {{{{{
+;; Deprecated syntax : missing Java member class
 axiom pure on java.lang.Math.NoInner.foo
 }}}}}
 Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Unknown Java member class : NoInner on java.lang.Math
 
 {{{{{
+;; Deprecated syntax : missing export on imported module
 def em = import("eff_mod.ba")
 axiom pure on em.missing
 }}}}}
 Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Unknown export : missing in eff_mod.ba
 
 {{{{{
+;; Deprecated syntax : bare class axiom with mut
 def bad = axiom mut on java.lang.StringBuilder
 }}}}}
 Bare class axiom cannot declare mut : declare mut on specific methods instead
 
 {{{{{
+;; Deprecated syntax : constructor axiom with mut
 axiom mut on java.lang.StringBuilder()
 }}}}}
 Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Constructor axiom cannot declare mut
 
 {{{{{
+;; Deprecated syntax : axiom inside verified constrained function
 def f = fn () : int -> (
     axiom pure on java.lang.Math.abs
     1
@@ -155,16 +179,20 @@ Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Targe
 axiom declaration is not allowed inside a verified constrained function
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Valid algebraic properties & failure diagnostics + SAM callback propagation & shared escape
 def idemp = fn nothrow idempotent (x : int) : int -> ( x )
 def comm = fn nothrow commutative (a : double, b : double) : double -> ( a + b )
 def assoc = fn nothrow associative (a : int, b : int) : int -> ( a + b )
+assert(idemp(3) == 3)
+assert(comm(1.0, 2.0) == 3.0)
+assert(assoc(1, 2) == 3)
+}}}}}
+
+{{{{{
 def inj = fn nothrow injective (x : int) : int -> ( -x )
 def monoD = fn nothrow monotone (x : double) : double -> ( x * 2.0 )
-println(idemp(3), ":", comm(1.0, 2.0), ":", assoc(1, 2), ":", inj(4), ":", monoD(3.0))
+assert(inj(4) == -4)
+assert(monoD(3.0) == 6.0)
 }}}}}
-3:3.0:3:-4:6.0
 
 {{{{{
 def badComm = fn commutative (a : int, b : int) : int -> ( a - b )
@@ -187,7 +215,7 @@ def badInj = fn injective (x : int) : int -> ( x * 0 )
 Function badInj declared injective violates injective guarantee
 
 {{{{{
-;; SAM callback propagation: io lambda inside pure-by-default function violates pure
+;; SAM callback propagation : io lambda inside pure-by-default function violates pure
 def l : java.util.List of int = java.util.ArrayList()
 l.add(1)
 def p = fn (xs : java.util.List of int) -> (
@@ -197,23 +225,21 @@ def p = fn (xs : java.util.List of int) -> (
 Function p violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
-;; returning a closure capturing this is return-through-borrow of this, like returning this (BIP017-D6)
-def Box = class (def v : int) (
+;; Returning a closure capturing this is return-through-borrow of this (BIP017-D6)
+def C = class (def v : int) (
     def escape = fn () : fn () : int -> ( fn () -> ( this.v ) )
 )
-println(Box(4).escape()())
+assert(C(4).escape()() == 4)
 }}}}}
-4
 
 {{{{{
-def Box = class (def v : int) ()
 def sink : Box? = null
 def leak = fn io (x : Box) -> ( sink = x )
 }}}}}
 Borrowed parameter x escapes via outer variable sink : mark parameter as shared x
 
 {{{{{
-def Box = class (def v : int) (
+def C = class (def v : int) (
     def bad = fn () -> (
         def inner = fn mut () -> ( this.v += 1 )
         inner()
@@ -223,9 +249,6 @@ def Box = class (def v : int) (
 Inner closure mutates this : enclosing function is not declared mut
 
 {{{{{
-def C = class (def v : int) (
-    def mutThis = fn mut () -> ( this.v += 1 )
-)
-def g = fn (c : C) -> ( c.mutThis() )
+def g = fn (b : Box) -> ( b.mutThis() )
 }}}}}
-Cannot mutate parameter c (mut method c.mutThis) : mark parameter as mut c
+Cannot mutate parameter b (mut method b.mutThis) : mark parameter as mut b

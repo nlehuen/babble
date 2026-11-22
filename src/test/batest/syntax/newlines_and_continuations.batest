@@ -1,4 +1,5 @@
 ;; Significant newlines, semicolons, continuations, and unary minus precedence
+;; References : BIP012 (predicate-free LL(1)/LL(2) grammar, significant newlines), Babble.g4
 
 {{{{{
 def a = 1 +
@@ -8,9 +9,10 @@ def b =
   10
 def s = "x" +
   "y"
-println(a, ":", b, ":", s)
+assert(a == 7)
+assert(b == 10)
+assert(s == "xy")
 }}}}}
-7:10:xy
 
 {{{{{
 "x"
@@ -19,7 +21,6 @@ println(a, ":", b, ":", s)
 Syntax error : unexpected '+'
 
 {{{{{
-;; Dot and safe-dot continuation on next line
 def C = class (def x : int) ( def inc = fn () : C -> ( C(this.x + 1) ) )
 def v = C(1)
   .inc()
@@ -29,30 +30,30 @@ def n : C? = null
 def nv = n
   ?.inc()
   ?.x
-println(v, ":", nv)
+assert(v == 3)
+assert(nv == null)
 }}}}}
-3:null
 
 {{{{{
-;; Newline before unary minus separates two expressions; inline -a * b parses as (-a) * b
+;; Newline before unary minus separates two expressions; inline unary minus binds tighter than * and +
 def a = 5
 def b = 3
 def r = (
   discard(a)
   -b
 )
-def p = -a * b
-println(r, ":", p)
+assert(r == -3)
+assert(-a * b == -15)
+assert(-a + b == -2)
 }}}}}
--3:-15
 
 {{{{{
 ;; Semicolons and empty block with any? annotation evaluate to null
 def e : any? = ()
 def x = 1 ; def y = 2 ; ; def z = x + y
-println(e, ":", z)
+assert(e == null)
+assert(z == 3)
 }}}}}
-null:3
 
 {{{{{
 ;; Unannotated empty block cannot infer a concrete type
@@ -65,6 +66,5 @@ Missing type : e
 def f = fn (x : int) : int -> ( x + 1 )
 def r = f
 (10)
-println(r(10))
+assert(r(10) == 11)
 }}}}}
-11

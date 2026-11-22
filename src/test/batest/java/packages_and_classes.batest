@@ -1,36 +1,35 @@
 ;; Java package lookups, class construction, static fields/methods, inner classes, and missing members
+;; References : BIP001, BIP008, JavaPackage, JavaClass
 
 {{{{{
-;; Qualified class construction, static constants, and static methods
 def sb = java.lang.StringBuilder("hello")
 sb.append(" world")
-println(sb.toString(), ":", java.lang.Math.max(3, 7), ":", java.lang.Integer.MAX_VALUE)
+assert(sb.toString() == "hello world")
+assert(java.lang.Math.max(3, 7) == 7)
+assert(java.lang.Integer.MAX_VALUE == 2147483647)
 }}}}}
-hello world:7:2147483647
 
 {{{{{
-;; Assigning java package and class values to variables, and Java inner class via Map$Entry
 def Math = java.lang.Math
 def pair = java.util.Map.entry("k", 42)
-def asEntry : java.util.Map.Entry of (string, int) = pair
-println(Math.min(10, 4), ":", asEntry.getKey(), "=", asEntry.getValue())
+def asEntry: java.util.Map.Entry of (string, int) = pair
+assert(Math.min(10, 4) == 4)
+assert(asEntry.getKey() == "k")
+assert(asEntry.getValue() == 42)
 }}}}}
-4:k=42
 
 {{{{{
-;; Accessing non-existent static member or calling uncallable class/interface
-print(java.lang.Math.noSuchStatic)
+def x = java.lang.Math.noSuchStatic
 }}}}}
 No such name in java.lang.Math : noSuchStatic
 
 {{{{{
-;; Calling interface constructor fails overload lookup
-print(java.util.List())
+def xs = java.util.List()
 }}}}}
 No applicable overload of java.util.List for () : candidates are
 
 {{{{{
-;; Unknown top-level Java class
-print(java.lang.NoSuchClassHere())
+;; Unknown class name resolves as a JavaPackage, which is not callable
+def x = java.lang.NoSuchClassHere()
 }}}}}
 java.lang.NoSuchClassHere is not callable

@@ -1,19 +1,18 @@
-;; Block scoping, shadowing, variable hoisting, forward reference errors, and compound assignments
+;; Block scoping, shadowing, variable hoisting, forward reference errors, and block expressions
+;; References : BlockScopes, Resolver
 
 {{{{{
-;; Inner block has its own lexical scope and returns its last expression
 def x = 10
 def y = (
     def x = 20
     def z = x + 5
     z
 )
-println(x, ":", y)
+assert(x == 10)
+assert(y == 25)
 }}}}}
-10:25
 
 {{{{{
-;; Out-of-scope inner definition is not visible outside
 def y = (
     def inner = 42
     inner
@@ -23,14 +22,13 @@ print(inner)
 No such name : inner
 
 {{{{{
-;; Duplicate definition in same block
 def x = 1
 def x = 2
 }}}}}
 Name already defined : x
 
 {{{{{
-;; Variable read before definition in same block (hoisted slot throws Runtime error)
+;; Variable read before definition in same block (hoisted slot)
 def f = fn volatile () -> ( a )
 def g = fn () -> (
     def x = a
@@ -52,7 +50,7 @@ print(f())
 Name used before definition : a
 
 {{{{{
-;; Read/assign captured variable from closure before def runs
+;; Read captured variable from closure before def runs
 def maker = fn () -> (
     def readA = fn () : int -> ( a )
     def r = readA()
@@ -64,10 +62,12 @@ print(maker())
 Name used before definition : a
 
 {{{{{
-;; Sequential empty and single-statement blocks
+;; Empty, single-expression, and semicolon-separated blocks
 def a : any? = ( ; ; )
 def b = ( 7 )
 def c = ( discard(1) ; discard(2) ; 3 )
-println(a, ":", b, ":", c)
+assert(a == null)
+assert(b == 7)
+assert(c == 3)
 }}}}}
-null:7:3
+

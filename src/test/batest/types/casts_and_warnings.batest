@@ -1,40 +1,36 @@
-;; 'as' casts, runtime Cast errors, and static type warnings
+;; 'as' casts : valid runtime casts, nullable casts, and compile-time/runtime cast errors
+;; References : BIP008 (as casts, nullable casts)
+
+def dyn = fn (v : any) : any -> ( v )
+def dynNull = fn (v : any?) : any? -> ( v )
+def C = class (def x : int) ()
 
 {{{{{
-;; Valid casts at runtime: interface/class, boxed primitive widening/narrowing, any -> concrete
-def dyn = fn (v : any) : any -> ( v )
-def C = class (def x : int) ()
 def c = dyn(C(11)) as C
 def s = dyn("ok") as string
 def n = dyn(42) as int
 def d = dyn(2.5) as double
-println(c.x, ":", s, ":", n, ":", d)
+assert(c.x == 11)
+assert(s == "ok")
+assert(n == 42)
+assert(d == 2.5)
 }}}}}
-11:ok:42:2.5
 
 {{{{{
-;; Nullable cast allows null, non-null cast fails at runtime on null
-def dyn = fn (v : any?) : any? -> ( v )
-def ok = dyn(null) as string?
-println(ok)
+assert((dynNull(null) as string?) == null)
 }}}}}
-null
 
 {{{{{
-def dyn = fn (v : any?) : any? -> ( v )
-print(dyn(null) as string)
+def s = dynNull(null) as string
 }}}}}
 Type error : expected string, got null
 
 {{{{{
-;; Runtime failed 'as' cast with incompatible concrete value
-def dyn = fn (v : any) : any -> ( v )
-print(dyn("abc") as int)
+def n = dyn("abc") as int
 }}}}}
 Type error : expected int, got string
 
 {{{{{
-;; Statically impossible 'as' cast (unrelated concrete types)
-print("abc" as int)
+def n = "abc" as int
 }}}}}
 Type error : expected int, got string

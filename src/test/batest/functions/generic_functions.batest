@@ -1,4 +1,5 @@
-;; Generic function literals, bounded type parameters (including F-bounds & intersections), polymorphic function types, and BIP021-D17..D21
+;; Generic function literals, bounded type parameters (F-bounds & intersections), polymorphic function types, and generic interface methods
+;; References : BIP021 (D17..D21, §2.2), BIP022 (intersection bounds)
 
 ========== poly_mod.ba ==========
 export def HasName = interface (
@@ -21,14 +22,23 @@ export def PolyIface = interface (
 )
 ==========
 
+def Plain = class () ()
+def Shape = interface ( def area : fn () : double )
+def Named = interface ( def name : fn () : string )
+def biggest of (T : java.lang.Comparable of T) = fn (a : T, b : T) : T -> (
+    if a.compareTo(b) > 0 then ( a ) else ( b )
+)
+def both = fn (f : fn of T (t : T) : T) : string -> ( "" + f(1) + f("a") )
+
 {{{{{
-;; Generic function literals (fn of T) and polymorphic function values
 def id = fn of T (t : T) : T -> ( t )
 def swap = fn of (A, B) io (a : A, b : B) : string -> ( "" + b + ":" + a )
 def alias = id
-println(id(42), ":", id("hi"), ":", alias(true), ":", swap(1, "two"))
+assert(id(42) == 42)
+assert(id("hi") == "hi")
+assert(alias(true))
+assert(swap(1, "two") == "two:1")
 }}}}}
-42:hi:true:two:1
 
 {{{{{
 ;; Type parameters declared on both def and its function literal is an error (BIP021-D18)
@@ -43,123 +53,90 @@ def id of T : fn of T (t : T) : T = fn (t : T) : T -> ( t )
 Type parameters declared twice : id
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; F-bound: java.lang.Comparable of T on functions and classes (BIP021-D19)
-def biggest of (T : java.lang.Comparable of T) = fn (a : T, b : T) : T -> (
-    if a.compareTo(b) > 0 then ( a ) else ( b )
-)
 def Score = record (n : int) implements java.lang.Comparable of Score (
     def compareTo = fn (o : Score) : int -> ( this.n - o.n )
 )
+assert(biggest(3, 7) == 7)
+assert(biggest("pear", "apple") == "pear")
+assert(biggest(1.5, 0.5) == 1.5)
+assert(biggest(Score(2), Score(9)).n == 9)
+}}}}}
+
+{{{{{
 def PairMax of (T : java.lang.Comparable of T) = class (def a : T, def b : T) (
     def hi = fn () : T -> ( if this.a.compareTo(this.b) >= 0 then ( this.a ) else ( this.b ) )
 )
-println(biggest(3, 7))
-println(biggest("pear", "apple"))
-println(biggest(1.5, 0.5))
-println(biggest(Score(2), Score(9)).n)
-println(PairMax(10, 4).hi(), ":", PairMax("a", "z").hi())
+assert(PairMax(10, 4).hi() == 10)
+assert(PairMax("a", "z").hi() == "z")
 }}}}}
-7
-pear
-1.5
-9
-10:z
 
 {{{{{
-;; Bound violation on inferred call, explicit type application, and type annotation
-def Plain = class () ()
-def biggest of (T : java.lang.Comparable of T) = fn (a : T, b : T) : T -> (
-    if a.compareTo(b) > 0 then ( a ) else ( b )
-)
 biggest(Plain(), Plain())
 }}}}}
 Type error : type argument Plain does not satisfy bound java.lang.Comparable(Plain)
 
 {{{{{
-def Plain = class () ()
-def biggest of (T : java.lang.Comparable of T) = fn (a : T, b : T) : T -> (
-    if a.compareTo(b) > 0 then ( a ) else ( b )
-)
 def bad = biggest of Plain
 }}}}}
 Type error : type argument Plain does not satisfy bound java.lang.Comparable(Plain)
 
 {{{{{
-def Plain = class () ()
 def SortedBox of (T : java.lang.Comparable of T) = class (def v : T) ()
 def bad : SortedBox of Plain = SortedBox(Plain())
 }}}}}
 Type error : type argument Plain does not satisfy bound java.lang.Comparable(Plain)
 
 {{{{{
-;; Intersection bounds (BIP021-D19 + BIP022)
-def Shape = interface ( def area : fn () : double )
-def Named = interface ( def name : fn () : string )
 def Box = record (n : string, a : double) implements Shape, Named (
     def area = fn () : double -> ( this.a )
     def name = fn () : string -> ( this.n )
 )
 def tag of (T : Shape & Named) = fn (x : T) : string -> ( x.name() + "=" + x.area() )
-println(tag(Box("sq", 9.0)))
+assert(tag(Box("sq", 9.0)) == "sq=9.0")
 }}}}}
-sq=9.0
 
 {{{{{
-;; Intersection bound violation
-def Shape = interface ( def area : fn () : double )
-def Named = interface ( def name : fn () : string )
-def Plain = class () implements Shape ( def area = fn () : double -> ( 1.0 ) )
+def OnlyShape = class () implements Shape ( def area = fn () : double -> ( 1.0 ) )
 def tag of (T : Shape & Named) = fn (x : T) : string -> ( x.name() + "=" + x.area() )
-tag(Plain())
+tag(OnlyShape())
 }}}}}
-Type error : type argument Plain does not satisfy bound Shape & Named
+Type error : type argument OnlyShape does not satisfy bound Shape & Named
 
 {{{{{
-;; Polymorphic function type parameter + rigid lambda checking (BIP021-D20)
+;; Polymorphic function type parameter with named generic, explicit generic lambda, and unannotated rigid lambda
 def id of T = fn (t : T) : T -> ( t )
-def both = fn (f : fn of T (t : T) : T) : string -> ( "" + f(1) + f("a") )
-println(both(id))
-println(both(fn of U (u : U) : U -> ( u )))
-println(both(fn (t) -> ( t )))
+assert(both(id) == "1a")
+assert(both(fn of U (u : U) : U -> ( u )) == "1a")
+assert(both(fn (t) -> ( t )) == "1a")
 }}}}}
-1a
-1a
-1a
 
 {{{{{
-;; Monomorphic function rejected where polymorphic type is expected (BIP021-D20)
-def both = fn (f : fn of T (t : T) : T) : string -> ( "" + f(1) + f("a") )
 both(fn (t : int) : int -> ( t ))
 }}}}}
 Type error : expected fn of T (t : T) : T, got fn (t : int) : int
 
 {{{{{
 ;; Unannotated lambda checked with rigid type parameter rejects non-polymorphic body
-def both = fn (f : fn of T (t : T) : T) : string -> ( "" + f(1) + f("a") )
 both(fn (t) -> ( t + 1 ))
 }}}}}
 Not a number : t
 
 {{{{{
-;; Polymorphic <= polymorphic bound compatibility: unbounded satisfies bounded, bounded does NOT satisfy unbounded
-def Shape = interface ( def area : fn () : double )
+;; Unbounded polymorphic function satisfies bounded polymorphic function type
 def unb = fn of T (t : T) : T -> ( t )
 def bnd : fn of (U : Shape) (u : U) : U = unb
 def Sq = class () implements Shape ( def area = fn () : double -> ( 4.0 ) )
-println(bnd(Sq()).area())
+assert(bnd(Sq()).area() == 4.0)
 }}}}}
-4.0
 
 {{{{{
-def Shape = interface ( def area : fn () : double )
+;; Bounded polymorphic function does not satisfy unbounded polymorphic function type
 def bnd = fn of (T : Shape) (t : T) : T -> ( t )
 def unb : fn of U (u : U) : U = bnd
 }}}}}
 Type error : expected fn of U (u : U) : U, got fn of (T : Shape) (t : T) : T
 
 {{{{{
-;; BIP021 §2.2 (g): implementable generic interface methods
 def Mapper = interface (
     def id of T : fn (t : T) : T
     def wrap : fn of U (u : U) : U
@@ -169,38 +146,39 @@ def Impl = class () implements Mapper (
     def wrap = fn of B (b : B) : B -> ( b )
 )
 def m : Mapper = Impl()
-println(m.id(7), ":", m.id("ok"), ":", m.wrap(false))
+assert(m.id(7) == 7)
+assert(m.id("ok") == "ok")
+assert(not m.wrap(false))
 }}}}}
-7:ok:false
 
 {{{{{
-;; BIP021-D21: generics with optional parameters, defaults, and named arguments
 def withDef = fn of T (a : T, b : T = a) : T -> ( b )
 def withNull = fn of T (a : T, b : T? = null) : T? -> ( b )
-def pairStr = fn of (A, B) io (first : A, second : B) : string -> ( "" + first + "-" + second )
-println(withDef(3), ":", withDef(3, 9), ":", withDef(b: 8, a: 1))
-println(withNull("x"), ":", withNull("x", "y"))
-println(pairStr(second: 2, first: "one"))
+assert(withDef(3) == 3)
+assert(withDef(3, 9) == 9)
+assert(withDef(b: 8, a: 1) == 8)
+assert(withNull("x") == null)
+assert(withNull("x", "y") == "y")
 }}}}}
-3:9:8
-null:y
-one-2
 
 {{{{{
-;; BIP021-D21: invalid default for type variable T (null is not T)
+def pairStr = fn of (A, B) io (first : A, second : B) : string -> ( "" + first + "-" + second )
+assert(pairStr(second: 2, first: "one") == "one-2")
+}}}}}
+
+{{{{{
 def bad = fn of T (a : T, b : T = null) : T -> ( b )
 }}}}}
 Type error : expected T, got null
 
 {{{{{
-;; BIP021-D21: type variable determined only by omitted optional argument needs expected type (never uses bound)
+;; Type variable determined only by omitted optional argument needs expected type (never uses bound)
 def f = fn of (T : java.lang.Comparable of T) (x : T? = null) : T? -> ( x )
 f()
 }}}}}
 Missing type : cannot infer type arguments for f
 
 {{{{{
-;; Bounded Iterable in for-loop
 def countAll of (S : java.lang.Iterable of int) = fn (xs : S) : int -> (
     def total = 0
     for x in xs then (
@@ -208,35 +186,32 @@ def countAll of (S : java.lang.Iterable of int) = fn (xs : S) : int -> (
     )
     total
 )
-println(countAll(list.of(10, 20, 30)))
+assert(countAll(list.of(10, 20, 30)) == 60)
 }}}}}
-60
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Cross-module bounded generics, intersection bounds, and polymorphic function types
+def m = import("poly_mod.ba")
+def MyPoly = class () implements m.PolyIface (
+    def id of X = fn (x : X) : X -> ( x )
+)
+def p : m.PolyIface = MyPoly()
+assert(m.maxOf(5, 9) == 9)
+assert(m.maxOf("b", "a") == "b")
+assert(m.applyBoth(fn of T (t : T) : T -> ( t )) == "1|x")
+assert(p.id(123) == 123)
+assert(p.id("abc") == "abc")
+}}}}}
+
+{{{{{
 def m = import("poly_mod.ba")
 def Item = record (n : string, w : int) implements m.HasName, m.HasWeight (
     def name = fn () : string -> ( this.n )
     def weight = fn () : int -> ( this.w )
 )
-def MyPoly = class () implements m.PolyIface (
-    def id of X = fn (x : X) : X -> ( x )
-)
-def p : m.PolyIface = MyPoly()
-println(m.maxOf(5, 9), ":", m.maxOf("b", "a"))
-println(m.describe(Item("stone", 42)))
-println(m.applyBoth(fn of T (t : T) : T -> ( t )))
-println(p.id(123), ":", p.id("abc"))
+assert(m.describe(Item("stone", 42)) == "stone:42")
 }}}}}
-9:b
-stone:42
-1|x
-123:abc
 
 {{{{{
-;; Cross-module bound violation
-def Plain = class () ()
 def m = import("poly_mod.ba")
 m.maxOf(Plain(), Plain())
 }}}}}
@@ -249,26 +224,23 @@ def maxOf = fn of (T : java.lang.Comparable of T) (a : T, b : T) : T -> (
 )
 def id = fn of T (t : T) : T -> ( t )
 ----------
-println(maxOf(4, 9), ":", maxOf("x", "a"), ":", id(1), ":", id("ok"))
+assert(maxOf(4, 9) == 9)
+assert(maxOf("x", "a") == "x")
+assert(id(1) == 1)
+assert(id("ok") == "ok")
 }}}}}
-9:x:1:ok
 
 {{{{{
-;; Bounded Comparable generic across all 9 scalar types (exercises boxed primitive interface dispatch)
-def maxOf = fn of (T : java.lang.Comparable of T) (a : T, b : T) : T -> (
-    if a.compareTo(b) > 0 then ( a ) else ( b )
-)
-println(
-    maxOf(byte(2), byte(5)), ":",
-    maxOf(short(3), short(1)), ":",
-    maxOf(4, 9), ":",
-    maxOf(10L, 2L), ":",
-    maxOf(1.5f, 2.5f), ":",
-    maxOf(3.5, 1.5), ":",
-    maxOf(false, true), ":",
-    maxOf('a', 'z'), ":",
-    maxOf("cat", "ant")
-)
+;; Exercises boxed primitive interface dispatch across all 9 scalar types
+assert(biggest(byte(2), byte(5)) == byte(5))
+assert(biggest(short(3), short(1)) == short(3))
+assert(biggest(4, 9) == 9)
+assert(biggest(10L, 2L) == 10L)
+assert(biggest(1.5f, 2.5f) == 2.5f)
+assert(biggest(3.5, 1.5) == 3.5)
+assert(biggest(false, true))
+assert(biggest('a', 'z') == 'z')
+assert(biggest("cat", "ant") == "cat")
 }}}}}
-5:3:9:10:2.5:3.5:true:z:cat
+
 

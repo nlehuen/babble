@@ -1,4 +1,5 @@
 ;; Syntax error diagnostics
+;; References : BIP012 (predicate-free LL(1)/LL(2) grammar), Babble.g4
 
 {{{{{
 def = 1
@@ -11,6 +12,7 @@ def x =
 Syntax error : unexpected end of input
 
 {{{{{
+;; `true ( 1 )` parses as a call condition, so the missing `then` is reported at EOF
 if true ( 1 )
 }}}}}
 Syntax error : unexpected end of input

@@ -1,0 +1,329 @@
+;; Callable assignability, function intersection, inferrability, interface conformance, and member-before-def
+;; References : BIP002 (interfaces, super), BIP008 (inference), BIP016 (effects/mut/shared), BIP021 (defaults)
+;; Target classes : TypeChecker (nonFunctionCallableAssignable, intersectCompatibleFunctions, isInferrableCallable,
+;;   checkMissingTypes), TypeChecks (interface conformance, super defaults)
+
+def Box = class (def v : int) ()
+def I1 = interface ( def m : fn () : int )
+
+{{{{{
+def NotIface = class () ()
+def Bad = class () implements NotIface ()
+}}}}}
+implements needs a statically known interface
+
+{{{{{
+def Entry = class (def k : any, def v : any) implements java.util.Map.Entry of (any, any) (
+    def getKey = fn () -> ( this.k )
+    def getValue = fn () -> ( this.v )
+    def setValue = fn mut (shared x : any) -> ( def o = this.v ; this.v = x ; o )
+)
+def e = Entry("k", 42)
+assert(e.getKey() == "k" and e.setValue(99) == 42 and e.getValue() == 99)
+}}}}}
+
+{{{{{
+def I2 = interface ( def b : fn () : int )
+def C1 = class () implements I1, I2 (
+    def m = fn () : int -> ( 1 )
+    def b = fn () : int -> ( 2 )
+)
+def c = C1()
+assert(c.m() == 1 and c.b() == 2)
+}}}}}
+
+{{{{{
+def BadImpl = class () implements java.lang.Object ()
+}}}}}
+Babble classes can only implement Java interfaces
+
+{{{{{
+def BadExt = interface extends java.lang.Object ()
+}}}}}
+Babble interfaces can only extend Java interfaces
+
+{{{{{
+def BadBiFn = class () implements java.util.function.BiFunction of (any, any, any) (
+    def apply = fn (a : any) -> ( a )
+)
+}}}}}
+BadBiFn.apply takes 1 arguments, but BiFunction.apply(Object, Object) passes 2
+
+{{{{{
+def C = class () implements I1 (
+    def m = fn () : int -> ( super.m() )
+)
+}}}}}
+I1.m has no default
+
+{{{{{
+def C = class () implements I1 (
+    def m = fn () : int -> ( super.missing() )
+)
+}}}}}
+No default missing to call
+
+{{{{{
+def ID1 = interface ( def m = fn () : int -> ( 1 ) )
+def ID2 = interface ( def m = fn () : int -> ( 2 ) )
+def C = class () implements ID1 (
+    def m = fn () : int -> ( super(ID2).m() )
+)
+}}}}}
+ID2 is not implemented directly by C
+
+{{{{{
+def I = interface (
+    def foo = fn () -> ( this.missing )
+)
+}}}}}
+missing is not a member of I
+
+{{{{{
+def Container of T = interface ( def get : fn () : T )
+def BadContainer = class (def v : string) implements Container of int (
+    def get = fn () : string -> ( this.v )
+)
+}}}}}
+Type error : expected () : int, got () : string
+
+{{{{{
+def GetInt = interface ( def get : fn () : int )
+def DefStr = interface ( def get = fn () : string -> ( "hi" ) )
+def Bad = class () implements GetInt, DefStr ()
+}}}}}
+Type error : expected () : int, got () : string
+
+{{{{{
+def C = class () implements I1 (
+    private def m = fn () : int -> ( 1 )
+)
+}}}}}
+C.m is private and cannot implement I1.m
+
+{{{{{
+def I2 = interface extends I1 ()
+def C = class () implements I2 ()
+}}}}}
+C does not implement I1.m
+
+{{{{{
+def mutFn = fn (mut a : Box, b : Box) : int -> ( a.v = 1 ; b.v )
+def expectedFn : fn (a : Box, b : Box) : int = mutFn
+}}}}}
+Type error : expected (a : Box, b : Box) : int, got (mut a : Box, b : Box) : int
+
+{{{{{
+def p1 : fn () : null = println
+}}}}}
+Type error : expected () : null, got print
+
+{{{{{
+def p2 : fn (x : int) : null = println
+}}}}}
+Type error : expected (x : int) : null, got print
+
+{{{{{
+def p3 : fn (s : string) : null = println
+}}}}}
+Type error : expected (s : string) : null, got print
+
+{{{{{
+def p4 : fn (x : int) : any? = println
+}}}}}
+Type error : expected (x : int) : any?, got print
+
+{{{{{
+def bad : fn (v : string) : fn () = print
+}}}}}
+Type error : expected (v : string) : () : any?, got print
+
+{{{{{
+axiom java.lang.Integer.bitCount: fn pure
+def fBit : fn (x : int) : int = java.lang.Integer.bitCount
+assert(fBit(7) == 3)
+}}}}}
+
+{{{{{
+def badRand : fn () : double = java.lang.Math.random
+}}}}}
+Type error : expected () : double, got java.lang.Math.random
+
+{{{{{
+def Holder = class (def shared x : any) ()
+def badBorrow : fn (x : any) : Holder = Holder
+}}}}}
+Type error : expected (x : any) : Holder, got class Holder
+
+{{{{{
+def ctor : fn (v : int) : Box = Box
+def parse : fn io (s : string) : int = java.lang.Integer.parseInt
+def pr : fn io (v : string) : fn () = print
+assert(ctor(3).v == 3 and parse("4") == 4)
+pr("")
+}}}}}
+
+{{{{{
+def MutBox = class (mut p : java.util.ArrayList of int) (def ok : bool = p.add(1))
+def f : fn (p : java.util.ArrayList of int) : MutBox = MutBox
+}}}}}
+Type error : expected (p : java.util.ArrayList(int)) : MutBox, got class MutBox
+
+{{{{{
+def tests = import("org.babblelang.tests")
+def HF = tests.EffectsTestCase.HostFixtures
+def mkBox : fn (v : int) : Box = Box
+def fnPure : fn (x : int) : int = HF.pureCalc
+def pr : fn io (x : int) : any? = println
+assert(mkBox(3).v == 3 and fnPure(4) == 9)
+}}}}}
+
+{{{{{
+def tests = import("org.babblelang.tests")
+def fnBad : fn (x : int) : int = tests.EffectsTestCase.HostFixtures.annotatedIO
+}}}}}
+Type error : expected (x : int) : int, got org.babblelang.tests.EffectsTestCase$HostFixtures.annotatedIO
+
+{{{{{
+def fnPrint : fn io (s : string) : fn () = println
+def fnAppend : fn io (shared c : java.lang.CharSequence) : java.lang.StringBuilder = java.lang.StringBuilder().append
+def samFn : java.util.function.Function of (int, double) = java.util.function.Function(fn (x) -> ( x + 1 ))
+assert(samFn.apply(4) == 5.0)
+}}}}}
+
+{{{{{
+def sb = java.lang.StringBuilder()
+sb.append(null)
+}}}}}
+Ambiguous call to java.lang.StringBuilder.append for (null)
+
+{{{{{
+java.lang.Runnable(42)
+}}}}}
+No applicable overload of java.lang.Runnable for (java.lang.Integer) : candidates are
+
+{{{{{
+def pickFn = fn (flag : bool) -> (
+    if flag then ( fn (mut b : Box) : int -> ( b.v = 1 ; b.v ) )
+    else ( fn (b : Box) : int -> ( b.v ) )
+)
+def rf = fn (b : Box) : int -> ( b.v )
+rf = fn (mut b : Box) : int -> ( b.v = 2 ; b.v )
+def bx = Box(5)
+assert(pickFn(false)(bx) == 5 and rf(bx) == 2)
+}}}}}
+
+{{{{{
+def pickDiff = fn (flag : bool) -> (
+    if flag then ( fn (a : int) : int -> ( a ) ) else ( fn (b : int) : int -> ( b + 1 ) )
+)
+assert(pickDiff(true)(3) == 3 and pickDiff(false)(3) == 4)
+}}}}}
+
+{{{{{
+;; Escaping this from a class constructor disables call-site parameter inference
+def holder = object ( def c : any? = null )
+def Esc = class (x) (
+    def _ = ( holder.c = this )
+    def r : int = x + 1
+)
+}}}}}
+Missing type : x
+
+{{{{{
+def Wrap of T = class (def v : T) (
+    def inner = fn (x) -> (
+        def keep : T = this.v
+        x
+    )
+)
+assert(Wrap("ok").inner(42) == 42)
+}}}}}
+
+{{{{{
+def fact = fn (n : int) -> ( if n <= 1 then ( 1 ) else ( n * recurse(n - 1) ) )
+def early = fn (n : int) -> ( if n < 0 then ( return 0.5 ) ; n )
+def nullDef = fn (x = null) -> ( x )
+assert(fact(5) == 120)
+assert(early(-1) == 0.5 and early(3) == 3.0)
+assert(nullDef() == null and nullDef(9) == 9)
+}}}}}
+
+{{{{{
+def apply = fn (f : fn (x : int) : int, v : int) : int -> ( f(v) )
+def o = object ( def func = fn (x : int) -> ( x + 1 ) )
+assert(apply(fn (x) -> ( x * 2 ), 4) == 8 and o.func(5) == 6)
+}}}}}
+
+{{{{{
+def f : fn (c : bool) : double | string = fn (c) -> ( if c then ( 1 ) else ( "a" ) )
+assert(f(true) == 1.0 and f(false) == "a")
+}}}}}
+
+{{{{{
+def f = fn (x = 1) -> ( x + 1 )
+assert(f() == 2 and f(4) == 5)
+}}}}}
+
+{{{{{
+def g = fn (x = null) -> ( x )
+}}}}}
+Missing type : x
+
+{{{{{
+def x = null
+}}}}}
+Missing type : x
+
+{{{{{
+def f = fn (x) -> ( 1 )
+}}}}}
+Missing type : x
+
+{{{{{
+def recNoType = fn (n : int) -> ( recNoType(n - 1) )
+}}}}}
+Missing type : recNoType (recursive)
+
+{{{{{
+def bad = (fn (n : int) -> ( recurse(n - 1) ))(3)
+}}}}}
+Missing type : function (recursive)
+
+{{{{{
+def a = fn () -> ( b() )
+def b = fn () -> ( a() )
+a()
+}}}}}
+Missing type : a (recursive)
+
+{{{{{
+def rec = rec
+}}}}}
+Missing type : rec (recursive)
+
+{{{{{
+def x = x + 1
+}}}}}
+Missing type : x (recursive)
+
+{{{{{
+def Runner = class () (
+    def go = fn (mut b : InitBox) -> ( b.x = 1 )
+)
+def InitBox = class () (
+    Runner().go(this)
+    def x = 0
+)
+InitBox()
+}}}}}
+Member used before definition : x
+
+{{{{{
+def C = class () () static (
+    def readB = fn () : int -> ( this.b )
+    def a = this.readB()
+    def b = 1
+)
+}}}}}
+Member used before definition : b

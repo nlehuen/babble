@@ -1,28 +1,29 @@
-;; BIP011-P5 / BIP016: Built-In Core Effect Profiles (zero axiom boilerplate)
+;; Built-in core effect profiles : pure/nothrow scalars, string, entry, collections, mut/borrow, and views
+;; References : BIP011 (§8 core effect profiles), BIP016 (pure-by-default), BIP019 (builtin axioms)
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Pure deterministic nothrow scalars, total widening conversions, string total methods, and immutable entry
 def fScalar = fn nothrow (b : byte, c : char) : double -> (
     def i : int = int(b) + int(c)
     double(i) + 1.5
 )
+def fEntry = fn nothrow (k : string, v : int) : int -> (
+    def e = entry(k, v)
+    e.getKey().length() + e.getValue()
+)
+assert(fScalar(byte(2), 'A') == 68.5 and fEntry("hi", 5) == 7)
+}}}}}
+
+{{{{{
 def fStr = fn nothrow (s : string) : int -> (
     def t = s.trim().toUpperCase()
     if t.isEmpty() or t.isBlank() then ( 0 )
     else if t.startsWith("A") then ( t.length() + string(42).length() )
     else ( t.length() )
 )
-def fEntry = fn nothrow (k : string, v : int) : int -> (
-    def e = entry(k, v)
-    e.getKey().length() + e.getValue()
-)
-println(fScalar(byte(2), 'A'), ":", fStr("  abc "), ":", fEntry("hi", 5))
+assert(fStr("  abc ") == 5)
 }}}}}
-68.5:5:7
 
 {{{{{
-;; Non-nothrow scalar conversions, string index/regex methods, and e! cannot claim nothrow
 def badParse = fn nothrow (s : string) : int -> ( int(s) )
 }}}}}
 Function badParse declared nothrow violates nothrow guarantee
@@ -41,65 +42,57 @@ Function badBang declared nothrow violates nothrow guarantee
 def okParse = fn (s : string) : int -> ( int(s) )
 def okCharAt = fn (s : string) : char -> ( s.charAt(0) )
 def okBang = fn (x : int?) : int -> ( x! )
-println(okParse("42"), ":", okCharAt("xy"), ":", okBang(7))
+assert(okParse("42") == 42 and okCharAt("xy") == 'x' and okBang(7) == 7)
 }}}}}
-42:x:7
 
 {{{{{
-;; Core collections: pure deterministic with zero axioms
 def buildAndRead = fn () : int -> (
     def xs = list(10, 20, 30)
     def s = set("a", "b")
     def m = map(entry("k", 7))
     xs.size() + xs.get(1) + s.size() + (m.get("k")!)
 )
+assert(buildAndRead() == 32)
+}}}}}
+
+{{{{{
 def emptyNothrow = fn nothrow () : int -> (
     def xs = list of int ()
     def s = set of string ()
     def m = map of (string, int) ()
     xs.size() + s.size() + m.size()
 )
-println(buildAndRead(), ":", emptyNothrow())
+assert(emptyNothrow() == 0)
 }}}}}
-32:0
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Default-borrowed collection readers + covariance + list(from: xs) borrowing
-def sumSize = fn (xs : list of any) : int -> (
-    xs.size()
-)
-def cloneList = fn (xs : list of int) : list of int -> (
-    list of int (from: xs)
-)
+def sumSize = fn (xs : list of any) : int -> ( xs.size() )
+def cloneList = fn (xs : list of int) : list of int -> ( list of int (from: xs) )
+def nums = list(1, 2, 3)
+def cloned = cloneList(nums)
+assert(sumSize(nums) == 3 and cloned == list(1, 2, 3))
+}}}}}
+
+{{{{{
 def readMap = fn (m : map of (string, int), k : string) : int -> (
     if m.containsKey(k) then ( m.getOrDefault(k, 0) ) else ( 0 )
 )
-def nums = list(1, 2, 3)
-def cloned = cloneList(nums)
 def m = map(entry("a", 9))
-println(sumSize(nums), ":", cloned, ":", readMap(m, "a"), ":", readMap(m, "b"))
+assert(readMap(m, "a") == 9 and readMap(m, "b") == 0)
 }}}}}
-3:[1, 2, 3]:9:0
 
 {{{{{
-;; Mutators on mut collection parameters
 def appendAndSet = fn (mut xs : list of int, v : int) : int -> (
-    xs.add(v)
-    xs.set(0, 99)
-    xs.size()
+    xs.add(v); xs.set(0, 99); xs.size()
 )
-def putEntry = fn (mut m : map of (string, int), k : string, v : int) : int? -> (
-    m.put(k, v)
-)
+def putEntry = fn (mut m : map of (string, int), k : string, v : int) : int? -> ( m.put(k, v) )
 def xs = list(1, 2)
 def m = map of (string, int) ()
-println(appendAndSet(xs, 3), ":", xs, ":", putEntry(m, "x", 42), ":", m)
+assert(appendAndSet(xs, 3) == 3 and xs == list(99, 2, 3))
+assert(putEntry(m, "x", 42) == null and m.get("x") == 42)
 }}}}}
-3:[99, 2, 3]:null:{x=42}
 
 {{{{{
-;; Pure-by-default rejects external collection mutation (fresh local list is unique under BIP007-P2)
 def g = list(1, 2)
 def badPureList = fn () : list of int -> (
     g.add(3)
@@ -109,13 +102,11 @@ def badPureList = fn () : list of int -> (
 Function badPureList violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
-;; Non-mut parameter cannot be mutated via collection mutator
 def badMut = fn (xs : list of int) -> ( xs.add(1) )
 }}}}}
 Cannot mutate parameter xs (mut Java method xs.add) : mark parameter as mut xs
 
 {{{{{
-;; Collection view/iterator sub-reference tracking (subList, keySet)
 def mutSub = fn (mut xs : list of int) -> (
     def sub = xs.subList(0, 1)
     sub.add(99)
@@ -124,16 +115,12 @@ def mutKeySet = fn (mut m : map of (string, int)) -> (
     def ks = m.keySet()
     ks.remove("a")
 )
-def xs = list(1, 2)
-mutSub(xs)
-def m = map(entry("a", 1), entry("b", 2))
-mutKeySet(m)
-println(xs, ":", m)
+def xs = list(1, 2); mutSub(xs)
+def m = map(entry("a", 1), entry("b", 2)); mutKeySet(m)
+assert(xs == list(1, 99, 2) and m.size() == 1 and m.get("b") == 2)
 }}}}}
-[1, 99, 2]:{b=2}
 
 {{{{{
-;; Mutating a view of a default-borrowed/non-mut parameter is rejected
 def badSubMut = fn (xs : list of int) -> (
     def sub = xs.subList(0, 1)
     sub.add(99)
@@ -142,7 +129,6 @@ def badSubMut = fn (xs : list of int) -> (
 Cannot mutate parameter xs (mut Java method sub.add) : mark parameter as mut xs
 
 {{{{{
-;; Storing a view of a borrowed parameter into an outer binding is rejected as borrow escape
 def sink : (list of int)? = null
 def badSubEscape = fn io (xs : list of int) -> (
     sink = xs.subList(0, 1)
@@ -151,7 +137,6 @@ def badSubEscape = fn io (xs : list of int) -> (
 Borrowed parameter xs escapes via outer variable sink : mark parameter as shared xs
 
 {{{{{
-;; Mutating a keySet view of a default-borrowed map parameter is rejected
 def badKeySetMut = fn (m : map of (string, int)) -> (
     def ks = m.keySet()
     ks.remove("a")
@@ -160,7 +145,6 @@ def badKeySetMut = fn (m : map of (string, int)) -> (
 Cannot mutate parameter m (mut Java method ks.remove) : mark parameter as mut m
 
 {{{{{
-;; list.get(i) is not nothrow; list.size() is nothrow
 def badGet = fn nothrow (xs : list of int) : int -> ( xs.get(0) )
 }}}}}
 Function badGet declared nothrow violates nothrow guarantee

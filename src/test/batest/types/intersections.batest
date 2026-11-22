@@ -1,4 +1,6 @@
-;; Intersection types of interfaces (BIP022) : normal form, subtyping, members, narrowing, runtime checks
+;; Intersection types of interfaces : normal form, subtyping, members, narrowing, runtime checks, and errors
+;; References : BIP022 (P1, D1-D8)
+
 def Shape = interface ( def area: fn (): double )
 def Named = interface ( def name: fn (): string )
 def Label = interface ( def text: fn (): string )
@@ -17,104 +19,94 @@ def Sign = class () implements Shape, Label (
 )
 
 {{{{{
-;; A & B accepts a value that implements both, and is assignable to each
 def t: Shape & Named = Tile()
 def s: Shape = t
 def n: Named = t
-println(s.area(), ":", n.name(), ":", t.name(), ":", t.area())
+assert(s.area() == 1.5)
+assert(n.name() == "tile")
+assert(t.name() == "tile")
+assert(t.area() == 1.5)
 }}}}}
-1.5:tile:tile:1.5
 
 {{{{{
-;; A value that implements only one operand is not an A & B
 def t: Shape & Named = Disk()
 }}}}}
 Type error : expected Shape & Named, got Disk
 
 {{{{{
-;; is keeps what it knew : Shape is Named narrows to Shape & Named
+;; `is` retains known interface type : Shape narrowed by `is Named` becomes Shape & Named
 def s: Shape = Tile()
-if s is Named then ( println(s.name(), " ", s.area()) )
+def out = if s is Named then ( s.name() + ":" + s.area() ) else ( "" )
+assert(out == "tile:1.5")
 }}}}}
-tile 1.5
 
 {{{{{
 ;; Narrowing a union distributes over its members
 def pick = fn (): Shape | Label -> ( Note() )
 def x = pick()
-if x is Named then ( println(x.name()) )
+def out = if x is Named then ( x.name() ) else ( "" )
+assert(out == "n")
 }}}}}
-n
 
 {{{{{
-;; A union inside an intersection : Shape & (Named | Label) is a Shape, and a Named | Label
 def describe = fn (y: Named | Label): string -> ( if y is Named then ( y.name() ) else ( y.text() ) )
 def measure = fn (s: Shape): double -> ( s.area() )
 def run = fn (x: Shape & (Named | Label)): string -> ( describe(x) + ":" + measure(x) + ":" + x.area() )
-println(run(Tile()), " ", run(Sign()))
+assert(run(Tile()) == "tile:1.5:1.5")
+assert(run(Sign()) == "sign:2.0:2.0")
 }}}}}
-tile:1.5:1.5 sign:2.0:2.0
 
 {{{{{
-;; is narrows Shape & (Named | Label) to Shape & Named, and to Shape & Label otherwise
+;; `is` narrows Shape & (Named | Label) to Shape & Named in the `then` branch and Shape & Label in `else`
 def named = fn (z: Shape & Named): string -> ( z.name() + "/" + z.area() )
 def labelled = fn (z: Shape & Label): string -> ( z.text() + "/" + z.area() )
 def run = fn (x: Shape & (Named | Label)): string -> ( if x is Named then ( named(x) ) else ( labelled(x) ) )
-println(run(Tile()), " ", run(Sign()))
+assert(run(Tile()) == "tile/1.5")
+assert(run(Sign()) == "sign/2.0")
 }}}}}
-tile/1.5 sign/2.0
 
 {{{{{
-;; Without narrowing, Shape & (Named | Label) is not a Named
 def name = fn (n: Named): string -> ( n.name() )
 def run = fn (x: Shape & (Named | Label)): string -> ( name(x) )
 }}}}}
 Type error : expected Named, got Shape & (Named | Label)
 
 {{{{{
-;; is and as test every operand at runtime
 def a: any = Tile()
-println(Tile() is Shape & Named, ":", Disk() is Shape & Named, ":", (a as Shape & Named).name())
+assert(Tile() is Shape & Named)
+assert(not (Disk() is Shape & Named))
+assert((a as Shape & Named).name() == "tile")
 }}}}}
-true:false:tile
 
 {{{{{
-;; A failed cast to an intersection names it
 def a: any = Disk()
 print((a as Shape & Named).name())
 }}}}}
 Type error : expected Shape & Named, got Disk
 
 {{{{{
-;; Only interfaces intersect
 def d: Disk & Named = Disk()
 }}}}}
 Only interfaces intersect : Disk & Named
 
 {{{{{
-;; A primitive is not an interface either
 def d: Named & int = 1
 }}}}}
 Only interfaces intersect : Named & int
 
 {{{{{
-;; A nullable operand must be written as a nullable intersection
 def d: Shape & Named? = null
 }}}}}
 Nullable inside an intersection : Named? (write (Shape & Named)?)
 
 {{{{{
-;; A nullable intersection
 def m: (Shape & Named)? = null
-println(m == null)
+assert(m == null)
 m = Tile()
-println(m?.name())
+assert(m?.name() == "tile")
 }}}}}
-true
-tile
 
 {{{{{
-;; Members both operands declare with one type, and members only one of them declares
 def A = interface ( def name: fn (): string ; def a: fn (): int )
 def B = interface ( def name: fn (): string ; def b: fn (): int )
 def AB = class () implements A, B (
@@ -123,12 +115,10 @@ def AB = class () implements A, B (
     def b = fn (): int -> ( 2 )
 )
 def f = fn (x: A & B): string -> ( x.name() + ":" + x.a() + ":" + x.b() )
-println(f(AB()))
+assert(f(AB()) == "ab:1:2")
 }}}}}
-ab:1:2
 
 {{{{{
-;; Two operands declaring one member with unrelated types conflict
 def A = interface ( def m: fn (): int )
 def B = interface ( def m: fn (): string )
 def f = fn (x: A & B): string -> ( "" + x.m() )
@@ -136,31 +126,24 @@ def f = fn (x: A & B): string -> ( "" + x.m() )
 Conflicting member m in A & B
 
 {{{{{
-;; A name no operand declares is not a member
 def f = fn (x: Shape & Named): string -> ( x.title() )
 }}}}}
 No such member : title
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Normal form : order does not matter, implied operands and any / Object drop out
+;; Normal form : order is ignored, implied super-interfaces and any / Object drop out
 def Base = interface ( def id: fn (): int )
 def Tagged = interface extends Base ( def tag: fn (): string )
 def o = object implements Tagged, Named (
-    def id = fn (): int -> ( 7 )
-    def tag = fn (): string -> ( "t" )
-    def name = fn (): string -> ( "o" )
+    def id = fn () -> ( 7 ) ; def tag = fn () -> ( "t" ) ; def name = fn () -> ( "o" )
 )
 def a: Tagged & Base & any = o
 def b: Named & Tagged = o
 def c: Tagged & Named & java.lang.Object = b
-println(a.id(), ":", b.tag(), ":", c.name())
+assert(a.id() == 7 and b.tag() == "t" and c.name() == "o")
 }}}}}
-7:t:o
 
 {{{{{
-;; Java interfaces intersect, and a string is both a CharSequence and a Comparable
 def s: java.lang.CharSequence & java.lang.Comparable of string = "abc"
-println(s.length())
+assert(s.length() == 3)
 }}}}}
-3

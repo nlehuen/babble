@@ -1,145 +1,130 @@
-;; BIP020 array types, ArraySupport, BabbleObjects plain-class metadata, covariance, casts, effects, and generics
-
-========== arr_mod.ba ==========
-export def Ints = type array of int
-export def Grid of T = type array of (array of T)
-export def ModBag of T = class (def xs: array of T) ()
-export def sumInts = fn (xs: Ints): int -> (
-    def acc = 0
-    for x in xs then (acc += x)
-    acc
-)
-
-==========
-def arrMod = import("arr_mod.ba")
-def tests = import("org.babblelang.tests")
+;; Core array types : creation, indexing, mutation, equality, stringification, covariance, nullability, casts, and errors
+;; References : BIP020 (array types), BIP008 (nullable casts)
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; All 8 primitive arrays, reference arrays, creation, get/set/size, for, content equality/hash/string, cycle guard, NaN/-0.0
 def bs = (array of byte)(2) ; bs.set(0, 3) ; bs.set(1, -1)
 def ss = (array of short).of(10, 20)
 def ints = array(from: list(1, 2, 3))
 def ls = array.of(5L, 6L)
+assert(string(bs) == "[3, -1]")
+assert(ss.get(1) == 20)
+assert(string(ints) == "[1, 2, 3]")
+assert(ls.get(0) == 5L)
+assert(ints.equals(array.of(1, 2, 3)))
+assert(ints.hashCode() == array.of(1, 2, 3).hashCode())
+}}}}}
+
+{{{{{
+def ints = array(from: list(1, 2, 3))
 def fs = (array of float).of(1.5f, 2.5f)
 def ds = (array of double)(from: ints)
 def zs = (array of bool)(2) ; zs.set(1, true)
 def cs = array.of('x', 'y')
+assert(fs.get(0) + fs.get(1) == 4.0f)
+assert(string(ds) == "[1.0, 2.0, 3.0]")
+assert(zs.get(1))
+assert(string(cs) == "[x, y]")
+}}}}}
 
+{{{{{
 def cyc: array of any? = array(2)
 cyc.set(0, "self")
 cyc.set(1, cyc)
-
-def nestedObj: array of any? = array.of(null, array.of(1, 2), array.of("a", "b"))
-def nan = 0.0 / 0.0
-def fnan = 0.0f / 0.0f
-def R = record (tag: string, xs: frozen array of int) ()
-def r1 = R("k", freeze(array.of(1, 2)))
-def r2 = R("k", freeze(array.of(1, 2)))
-
-println(bs, ":", ss.get(1), ":", ints, ":", ls.get(0), ":", fs.get(0) + fs.get(1), ":", ds, ":", zs.get(1), ":", cs)
-println(cyc, ":", nestedObj)
-println(array.of(nan) == array.of(nan), ":", array.of(fnan) == array.of(fnan), ":", array.of(0.0) == array.of(-0.0), ":", array.of(0.0f) == array.of(-0.0f))
-println(ints.equals(array.of(1, 2, 3)), ":", ints.hashCode() == array.of(1, 2, 3).hashCode(), ":", r1 == r2, ":", arrMod.sumInts(ints))
+def nested: array of any? = array.of(null, array.of(1, 2), array.of("a", "b"))
+assert(string(cyc) == "[self, [...]]")
+assert(string(nested) == "[null, [1, 2], [a, b]]")
 }}}}}
-[3, -1]:20:[1, 2, 3]:5:4.0:[1.0, 2.0, 3.0]:true:[x, y]
-[self, [...]]:[null, [1, 2], [a, b]]
-true:true:false:false
-true:true:true:6
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Content equality & hashCode across all 8 primitive arrays and Object[] (same ref, equal, unequal length, unequal element, null)
+;; Array equality follows java.util.Arrays.equals : NaN == NaN, 0.0 != -0.0
+def nan = 0.0 / 0.0
+def fnan = 0.0f / 0.0f
+assert(array.of(nan) == array.of(nan))
+assert(array.of(fnan) == array.of(fnan))
+assert(array.of(0.0) != array.of(-0.0))
+assert(array.of(0.0f) != array.of(-0.0f))
+}}}}}
+
+{{{{{
 def b1 = (array of byte).of(1, 2) ; def b2 = (array of byte).of(1, 2) ; def b3 = (array of byte).of(1, 3)
 def s1 = (array of short).of(4, 5) ; def s2 = (array of short).of(4, 5)
 def l1 = array.of(7L, 8L) ; def l2 = array.of(7L, 8L)
-def f1 = array.of(1.25f, 2.5f) ; def f2 = array.of(1.25f, 2.5f)
-def d1 = array.of(1.5, 2.5) ; def d2 = array.of(1.5, 2.5)
-def z1 = array.of(true, false) ; def z2 = array.of(true, false)
-def c1 = array.of('a', 'b') ; def c2 = array.of('a', 'b')
-def o1 = array.of("x", "y") ; def o2 = array.of("x", "y") ; def o3 = array.of("x") ; def o4 = array.of("x", "z")
-def optArr: (array of string)? = null
-println(b1 == b2, ":", b1 == b3, ":", s1 == s2, ":", l1 == l2, ":", f1 == f2, ":", d1 == d2, ":", z1 == z2, ":", c1 == c2)
-println(o1 == o1, ":", o1 == o2, ":", o1 == o3, ":", o1 == o4, ":", o1 == optArr)
-println(b1.hashCode() == b2.hashCode(), ":", s1.hashCode() == s2.hashCode(), ":", l1.hashCode() == l2.hashCode(), ":", f1.hashCode() == f2.hashCode())
-println(d1.hashCode() == d2.hashCode(), ":", z1.hashCode() == z2.hashCode(), ":", c1.hashCode() == c2.hashCode(), ":", o1.hashCode() == o2.hashCode())
+assert(b1 == b2 and b1 != b3 and s1 == s2 and l1 == l2)
+assert(b1.hashCode() == b2.hashCode() and s1.hashCode() == s2.hashCode() and l1.hashCode() == l2.hashCode())
 }}}}}
-true:false:true:true:true:true:true:true
-true:true:false:false:false
-true:true:true:true
-true:true:true:true
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Babble-element arrays: default nullable allocation, from: list, from: array, custom Iterable, boxed numeric widening in from:
+def f1 = array.of(1.25f, 2.5f) ; def f2 = array.of(1.25f, 2.5f)
+def d1 = array.of(1.5, 2.5) ; def d2 = array.of(1.5, 2.5)
+assert(f1 == f2 and d1 == d2)
+assert(f1.hashCode() == f2.hashCode() and d1.hashCode() == d2.hashCode())
+}}}}}
+
+{{{{{
+def z1 = array.of(true, false) ; def z2 = array.of(true, false)
+def c1 = array.of('a', 'b') ; def c2 = array.of('a', 'b')
+assert(z1 == z2 and c1 == c2)
+assert(z1.hashCode() == z2.hashCode() and c1.hashCode() == c2.hashCode())
+}}}}}
+
+{{{{{
+def o1 = array.of("x", "y") ; def o2 = array.of("x", "y")
+def o3 = array.of("x") ; def o4 = array.of("x", "z")
+def optArr: (array of string)? = null
+assert(o1 == o1)
+assert(o1 == o2)
+assert(o1 != o3)
+assert(o1 != o4)
+assert(o1 != optArr)
+assert(o1.hashCode() == o2.hashCode())
+}}}}}
+
+{{{{{
 def Circle = record (r: int) ()
 def optCircles = (array of Circle?)(2)
 optCircles.set(1, Circle(9))
 def fromList = (array of Circle)(from: list(Circle(1), Circle(2)))
 def fromArr = (array of Circle)(from: fromList)
+assert(string(optCircles) == "[null, Circle(r: 9)]")
+assert(fromList == fromArr)
+}}}}}
+
+{{{{{
 def CountIter = class (def max: int) implements java.lang.Iterable of int (
     def iterator = fn shared (): java.util.Iterator of int -> (list(10, 20).iterator())
 )
-def fromIter = (array of int)(from: CountIter(2))
+assert(string((array of int)(from: CountIter(2))) == "[10, 20]")
+}}}}}
+
+{{{{{
 def bList = list(byte(1), byte(2))
 def wShort = (array of short?)(from: bList)
 def wInt = (array of int?)(from: bList)
 def wLong = (array of long?)(from: list(3, 4))
 def wFloat = (array of float?)(from: list(5, 6))
 def wDouble = (array of double?)(from: list(7, 8))
-println(optCircles, ":", fromList == fromArr, ":", fromIter)
-println(wShort.get(0), ":", wInt.get(1), ":", wLong.get(0), ":", wFloat.get(1), ":", wDouble.get(0))
+assert(wShort.get(0) == short(1) and wInt.get(1) == 2 and wLong.get(0) == 3L)
+assert(wFloat.get(1) == 6.0f and wDouble.get(0) == 7.0)
 }}}}}
-[null, Circle(r: 9)]:true:[10, 20]
-1:2:3:6.0:7.0
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Intersection-element arrays (BIP022 -> Object[]) & exported generic type aliases (BIP023)
-def Named = interface (def name: fn (): string)
-def Sized = interface (def len: fn (): int)
-def Item = class (def s: string) implements Named, Sized (
-    def name = fn (): string -> (this.s)
-    def len = fn (): int -> (this.s.length())
-)
-def both: array of (Named & Sized) = array.of(Item("abc"), Item("de"))
-def grid: arrMod.Grid of int = array.of(array.of(1, 2), array.of(3))
-println(both.get(0).name(), ":", both.get(1).len(), ":", grid)
-}}}}}
-abc:2:[[1, 2], [3]]
-
-{{{{{
-;; Nullable is narrowing & as casts with Unchecked cast warnings
+;; Non-null array element checks are erased to String[] at runtime and emit Unchecked cast warnings
 def raw1: any = array.of("hi", "there")
 def raw2: any = (array of string?)(2)
 raw2 as array of string?
 def c1 = raw1 as array of string
 def c2 = raw2 as array of string?
-println(raw1 is array of string, ":", raw2 is array of string, ":", raw2 is array of string?, ":", c1.get(0), ":", c2.size())
+assert(raw1 is array of string)
+assert(raw2 is array of string)
+assert(raw2 is array of string?)
+assert(c1.get(0) == "hi")
+assert(c2.size() == 2)
 }}}}}
 Warning : Unchecked cast : array of string
 Warning : Unchecked cast : array of string
 Warning : Unchecked cast : array of string
-true:true:true:hi:2
 
 {{{{{
-;; Ownership & effects : unique array creation, pure helper mutating local array, freeze, frozen indexing
-def buildSquares = fn (n: int): unique array of int -> (
-    def out = (array of int)(n)
-    def i = 0
-    while i < n then (
-        out.set(i, (i + 1) * (i + 1))
-        i += 1
-    )
-    move(out)
-)
-def sq = freeze(buildSquares(4))
-println(sq, ":", sq.get(2), ":", sq.size())
-}}}}}
-[1, 4, 9, 16]:9:4
-
-{{{{{
-;; Babble element arrays, exact-store covariance, ArrayStoreException parity
 def Shape = interface (def area: fn (): int)
 def Circle = class (def r: int) implements Shape (def area = fn (): int -> (this.r))
 def Square = class (def s: int) implements Shape (def area = fn (): int -> (this.s))
@@ -150,7 +135,6 @@ shapes.set(0, Square(4))
 java.lang.ArrayStoreException: Square
 
 {{{{{
-;; Nested Babble array store check parity
 def Circle = class (def r: int) ()
 def Square = class (def s: int) ()
 def mat = array.of(array.of(Circle(1)))
@@ -160,411 +144,31 @@ anyRows.set(0, array.of(Square(2)))
 java.lang.ArrayStoreException: array of Square
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Generic reference-array helper, explicit of T, generic class/record, Java generic interface bridge & ArrayExportable default preservation
-def first of T = fn io (a: array of T): T -> (a.get(0))
-def Box of T = class (def items: array of T) (
-    def head = fn io shared (): T -> (this.items.get(0))
-)
-def Upper = class () implements tests.JavaClassDemo.ArrayTransformer of string (
-    def transform = fn io (a: array of string): array of string -> (
-        array.of(a.get(0).toUpperCase(), a.get(1).toUpperCase())
-    )
-)
-def Exp = class () implements tests.JavaClassDemo.ArrayExportable of string (
-    def toArray = fn io (mut dst: array of string): array of string -> (
-        if dst.size() >= 2 then (
-            dst.set(0, "p")
-            dst.set(1, "q")
-            dst
-        ) else (
-            array.of("p", "q")
-        )
-    )
-)
-def ExpAny = class () implements tests.JavaClassDemo.ArrayExportable of string (
-    def toArray = fn io (mut dst: array of any?): array of any? -> (
-        dst.set(0, "p")
-        dst
-    )
-)
-def parts = "ab,cd".split(",")
-def box = (Box of string)(parts)
-def exp = Exp()
-def expJava: tests.JavaClassDemo.ArrayExportable of string = ExpAny()
-def sampleRes = tests.JavaClassDemo.echoArrayWithSample("fallback", null)
-def asListRes = java.util.Arrays.asList(array.of("m", "n"))
-println((first of string)(parts), ":", box.head(), ":", tests.JavaClassDemo.invokeArrayTransformer(Upper(), parts))
-println(tests.JavaClassDemo.invokeExportableStrings(exp), ":", expJava.toArray(), ":", sampleRes, ":", asListRes)
-}}}}}
-ab:ab:[AB, CD]
-[p, q]:2:fallback:[m, n]
-
-{{{{{
-;; LARGE: legacy test pending refactoring
-;; Core scalar conversions (ConvertFunction coverage across byte/short/int/long/float/double/bool/char)
-def u12: byte | char | string = "12"
-def uA: byte | char | string = 'A'
-def uB4: byte | char | string = byte(4)
-def u300: short | char | string = "300"
-def uB: short | char | string = 'B'
-def uS5: short | char | string = short(5)
-def u9000: long | char | string = "9000"
-def uC: long | char | string = 'C'
-def uL6: long | char | string = 6L
-def u15: float | string = "1.5"
-def uF25: float | string = 2.5f
-def uTrue: bool | string = "true"
-def uFalse: bool | string = false
-def u68: int | char = 68
-def uZ: int | char = 'Z'
-println(byte(u12), ":", byte(uA), ":", short(u300), ":", short(uB), ":", long(u9000), ":", long(uC), ":", float(u15), ":", bool(uTrue), ":", char(u68))
-println(byte(uB4), ":", short(uS5), ":", long(uL6), ":", float(uF25), ":", bool(uFalse), ":", char(uZ))
-}}}}}
-12:65:300:66:9000:67:1.5:true:D
-4:5:6:2.5:false:Z
-
-{{{{{
-;; JavaClassDemo inbound array bridge type check failure
-def Upper = class () implements tests.JavaClassDemo.ArrayTransformer of string (
-    def transform = fn io (a: array of string): array of string -> (a)
-)
-def badRaw: any = (array of int?).of(1, 2)
-tests.JavaClassDemo.invokeArrayTransformerRaw(Upper(), badRaw)
-}}}}}
-Type error : expected array of string, got array of int?
-
-{{{{{
-;; Primitive array rejected for generic function type parameter
-def first of T = fn io (a: array of T): T -> (a.get(0))
-first("abc".toCharArray())
-}}}}}
-Type error : expected array of T, got array of char
-
-{{{{{
-;; Explicit primitive type argument rejected on function with array of T
-def first of T = fn io (a: array of T): T -> (a.get(0))
-def f = first of int
-}}}}}
-Type error : type argument int cannot be a primitive in array of T
-
-{{{{{
-;; Explicit primitive type argument rejected on Babble class with array of T
-def Bag of T = class (def data: array of T) ()
-def B = Bag of int
-}}}}}
-Type error : type argument int cannot be a primitive in array of T
-
-{{{{{
-;; Explicit primitive type argument rejected on Java interface with T[]
-def Bad = class () implements tests.JavaClassDemo.ArrayTransformer of int (
-    def transform = fn (a: array of int): array of int -> (a)
-)
-}}}}}
-Type error : type argument int cannot be a primitive in array of E
-
-{{{{{
-;; Explicit primitive type argument rejected on Java method with T[]
-def xs = list(1, 2)
-xs.toArray of int
-}}}}}
-Type error : type argument int cannot be a primitive in array of T
-
-{{{{{
-;; Reifiable generic array creation rejected
-def make of T = fn (x: T): array of T -> (array.of(x))
-}}}}}
-Generic array creation : array of T
-
-{{{{{
-;; is with type parameter inside array rejected
-def check of T = fn (x: any): bool -> (x is array of T)
-}}}}}
-Cannot test type parameter with 'is' : array of T
-
-{{{{{
-;; .length rejected with hint to use size()
-array.of(1, 2).length
-}}}}}
-No such name in array of int : length (use size())
-
-{{{{{
-;; Non-null reference array without default element rejected
-(array of string)(2)
-}}}}}
-No default element : array of string has non-null elements
-
-{{{{{
-;; Negative array length throws NegativeArraySizeException
-(array of int)(-1)
-}}}}}
-java.lang.NegativeArraySizeException: -1
-
-{{{{{
-;; Out-of-bounds index throws ArrayIndexOutOfBoundsException
-array.of(1, 2).get(5)
-}}}}}
-java.lang.ArrayIndexOutOfBoundsException: Index 5 out of bounds for length 2
-
-{{{{{
-;; LARGE: legacy test pending refactoring
-;; java.base parametric nullness & effect profiles (BigInteger, Stream, Optional, NavigableMap/Set, Collections, Arrays, String, LocalDate)
-def bi = java.math.BigInteger.valueOf(12L)
-def bi2 = java.math.BigInteger.valueOf(5L)
-def biSum = bi.add(bi2).subtract(bi2).multiply(bi2).divide(bi2).remainder(bi2).mod(bi2).pow(2).abs().negate().negate()
-def biBits = bi.min(bi2).max(bi).gcd(bi2).xor(bi2).shiftLeft(1).shiftRight(1)
-
-def stList = java.util.stream.Stream.of(array.of("b", "a", "b", "c")).distinct().sorted().skip(1L).limit(2L).toList()
-def stArr = java.util.stream.IntStream.range(1, 4).boxed().toArray()
-
-def opt1 = java.util.Optional.of("ok")
-def opt2: java.util.Optional of string? = java.util.Optional.ofNullable(null)
-def opt3: java.util.Optional of string = java.util.Optional.empty()
-
-def tm = (java.util.TreeMap of (string, int))()
-tm.put("b", 2)
-tm.putIfAbsent("a", 1)
-tm.replace("b", 20)
-tm.putAll(map(entry("c", 3)))
-def tmSub = tm.headMap("c").tailMap("a").subMap("a", "c")
-
-def ts = (java.util.TreeSet of string)()
-ts.addAll(list("a", "b", "c"))
-ts.retainAll(list("a", "b", "c"))
-ts.removeAll(list("z"))
-def tsSub = ts.headSet("c").tailSet("a").subSet("a", "c")
-
-def c1: java.util.List of string = java.util.Collections.emptyList()
-def c2 = java.util.Collections.singletonList("x")
-def c3 = java.util.Collections.unmodifiableList(c2)
-def c4 = java.util.Collections.synchronizedList(c2)
-def c5 = java.util.Collections.nCopies(2, "y")
-def c6: java.util.Comparator of string = java.util.Collections.reverseOrder()
-
-def arrCopy = java.util.Arrays.copyOf(array.of(1, 2, 3), 2)
-def arrRange = java.util.Arrays.copyOfRange(array.of(1, 2, 3), 1, 3)
-def arrStr = java.util.Arrays.toString(arrCopy)
-def arrCnt = java.util.Arrays.stream(arrCopy).count()
-
-def s = "hello-world"
-def sChecks = s.startsWith("he") and s.endsWith("ld") and s.contains("-") and s.matches("hello.*") and s.equalsIgnoreCase("HELLO-WORLD")
-def sEdit = s.concat("!").replace("!", "?").replaceAll("\\?", "").replaceFirst("-", "_")
-def sCmp = s.compareTo("hello") > 0 and s.compareToIgnoreCase("HELLO") > 0 and s.indexOf("-") == 5 and s.lastIndexOf("o") == 7
-
-def ld = java.time.LocalDate.parse("2025-01-10").plusDays(2L).minusDays(1L).withDayOfMonth(15)
-def sb = java.lang.StringBuilder("hi").append("!").toString()
-def cb = java.nio.CharBuffer.wrap("ab").length()
-def tok = java.util.StringTokenizer("first second").nextToken()
-def hex = java.lang.Integer.toHexString(15) + ":" + java.lang.Integer.toBinaryString(2) + ":" + java.lang.Integer.toOctalString(8) + ":" + java.lang.Integer.toUnsignedString(9)
-
-println(biSum, ":", biBits, ":", stList, ":", stArr.size(), ":", opt1.get(), ":", opt2.orElse("d"), ":", opt3.isEmpty())
-println(tm.firstKey(), ":", tm.lastKey(), ":", tm.lowerKey("b"), ":", tm.floorKey("b"), ":", tm.ceilingKey("b"), ":", tm.higherKey("b"), ":", tm.getOrDefault("z", 9), ":", tmSub.size())
-println(ts.first(), ":", ts.last(), ":", ts.lower("b"), ":", ts.floor("b"), ":", ts.ceiling("b"), ":", ts.higher("b"), ":", tsSub.size(), ":", c1.size() + c3.size() + c4.size() + c5.size(), ":", c6 != null)
-println(arrStr, ":", arrRange, ":", arrCnt, ":", sChecks, ":", sEdit, ":", sCmp, ":", ld, ":", sb, ":", cb, ":", tok, ":", hex)
-}}}}}
-4:4:[b, c]:3:ok:d:true
-a:c:a:b:b:c:9:2
-a:c:a:b:b:c:2:4:true
-[1, 2]:[2, 3]:2:true:hello_world:true:2025-01-15:hi!:2:first:f:10:10:9
-
-{{{{{
-;; LARGE: legacy test pending refactoring
-;; CoreCollections (capacity, sortedset/sortedmap from list & custom Babble Comparable) + ConvertFunction numeric branches
-def Score = record (n: int) implements java.lang.Comparable of Score (
-    def compareTo = fn (other: Score): int -> (this.n - other.n)
-)
-def hs = (set of int)(capacity: 4) ; hs.add(1)
-def hm = (map of (string, int))(capacity: 4) ; hm.put("k", 2)
-def ss1 = (sortedset of int)(from: list(3, 1, 2))
-def ss2 = (sortedset of Score)(from: list(Score(20), Score(10)))
-def sm1 = (sortedmap of (string, int))(from: map(entry("b", 2), entry("a", 1)))
-def sm2 = (sortedmap of (Score, string))(from: map(entry(Score(2), "two"), entry(Score(1), "one")))
-
-def n10d: double | string = 10.0
-def n10l: long | string = 10L
-def n10s: short | string = short(10)
-def n10i: int | string = 10
-println(hs.size(), ":", hm.get("k"), ":", ss1.first(), ":", ss2.first(), ":", sm1.firstKey(), ":", sm2.firstKey())
-println(byte(n10d), ":", byte(n10l), ":", byte(n10s), ":", short(n10d), ":", short(n10l), ":", long(n10d), ":", float(n10i))
-}}}}}
-1:2:1:Score(n: 10):a:Score(n: 1)
-10:10:10:10:10:10:10.0
-
-{{{{{
-;; LARGE: legacy test pending refactoring
-;; for-loop union/frozen/iterator/custom-iterable targets, entry/sortedset/sortedmap comparators, and nested/Java array covariance
-def sumUnion = fn (seq: list of int | array of int): int -> (
-    def s = 0
-    for x in seq then (s += x)
-    s
-)
-def sumJavaUnion = fn (seq: list of int | set of int): int -> (
-    def s = 0
-    for x in seq then (s += x)
-    s
-)
-def frArr: frozen array of int = freeze(array.of(1, 2, 3))
-def frList: frozen list of int = freeze(list(4, 5))
-def frSum = 0
-for x in frArr then (frSum += x)
-for x in frList then (frSum += x)
-def rawIt = list(10, 20).iterator()
-for x in rawIt then (frSum += x)
-
-def MyIter = class (def i: int = 0) (
-    def hasNext = fn shared (): bool -> (this.i < 2)
-    def next = fn mut (): int -> (this.i += 1 ; this.i)
-)
-def MySeq = class () (
-    def iterator = fn (): MyIter -> (MyIter())
-)
-for x in MySeq() then (frSum += x)
-
-def e1 = entry(value: 9, key: "k")
-def e2 = (entry of (string, int))("m", 7)
-def revInt = java.util.Comparator(fn (a: int, b: int): int -> (b - a))
-def revStr = java.util.Comparator(fn (a: string, b: string): int -> (b.compareTo(a)))
-def ssCmp1 = (sortedset of int)(comparator: revInt) ; ssCmp1.add(1) ; ssCmp1.add(3)
-def ssCmp2 = (sortedset of int)(comparator: revInt, from: list(1, 3))
-def smCmp1 = (sortedmap of (string, int))(comparator: revStr) ; smCmp1.put("a", 1) ; smCmp1.put("z", 2)
-def smCmp2 = (sortedmap of (string, int))(comparator: revStr, from: map(entry("a", 1), entry("z", 2)))
-
 def Circle = record (r: int) implements java.lang.Comparable of Circle (
     def compareTo = fn (o: Circle): int -> (this.r - o.r)
 )
 def cmpArr: array of (java.lang.Comparable of Circle) = array.of(Circle(5))
 def cloneRef: java.lang.Cloneable = array.of(1, 2)
-
-println(sumUnion(array.of(1, 2)), ":", sumUnion(list(3, 4)), ":", sumJavaUnion(list(5, 6)), ":", frSum)
-println(e1.getKey(), ":", e2.getValue(), ":", ssCmp1.first(), ":", ssCmp2.first(), ":", smCmp1.firstKey(), ":", smCmp2.firstKey(), ":", cmpArr.size(), ":", cloneRef is array of int)
+assert(cmpArr.size() == 1)
+assert(cloneRef is array of int)
 }}}}}
-3:7:11:48
-k:7:3:3:z:z:1:true
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Extended java.base nullability & effect overlays (Stream ops, Comparator, java.util.function, System, Runtime, Reflection, Regex)
-def sEmpty: java.util.stream.Stream of string = java.util.stream.Stream.empty()
-def sGen = java.util.stream.Stream.generate(fn (): string -> ("g")).limit(1L)
-def sIter = java.util.stream.Stream.iterate("i", fn (x: string): string -> (x)).limit(1L)
-def sCat = java.util.stream.Stream.concat(sGen, sIter).unordered().sequential()
-def sFlat = sCat.flatMap(fn io (x: string): java.util.stream.Stream of string -> (java.util.stream.Stream.of(x))).takeWhile(fn (x: string): bool -> (x != "")).dropWhile(fn (x: string): bool -> (false)).findFirst()
-def iStats = java.util.stream.IntStream.rangeClosed(1, 3).asLongStream().asDoubleStream().summaryStatistics()
-def iAvg = java.util.stream.IntStream.range(1, 3).average()
-def iMin = java.util.stream.IntStream.range(2, 5).min()
-def iMax = java.util.stream.IntStream.range(2, 5).max()
-def ssport = java.util.stream.StreamSupport.stream(list("s").spliterator(), false).findAny()
-
-def natCmp: java.util.Comparator of string = java.util.Comparator.naturalOrder()
-def nfCmp = java.util.Comparator.nullsFirst(natCmp)
-def nlCmp = java.util.Comparator.nullsLast(natCmp)
-
-def pBase = java.util.function.Predicate(fn (x: string): bool -> (x.length() > 1))
-def pComb = pBase.negate().negate()
-def pEq: java.util.function.Predicate of string = java.util.function.Predicate.isEqual("ab")
-def fId: java.util.function.Function of (string, string) = java.util.function.Function.identity()
-def fChain = fId.andThen(fId).compose(fId)
-def minOp = java.util.function.BinaryOperator.minBy(natCmp)
-def maxOp = java.util.function.BinaryOperator.maxBy(natCmp)
-
-def sysSep = java.lang.System.lineSeparator().length() > 0
-def sysProp = java.lang.System.getProperty("babble.nonexistent.key", "fallback")
-def rtOk = java.lang.Runtime.getRuntime() != null
-def swBuf = java.io.StringWriter().getBuffer().length()
-def thName = java.lang.Thread.currentThread().getName().length() > 0
-def clsName = java.lang.Class.forName("java.lang.String").getSimpleName()
-def patOk = java.util.regex.Pattern.compile("a+").pattern()
-
-println(sEmpty.count(), ":", sFlat.orElse("?"), ":", iStats.getCount(), ":", iAvg.isPresent(), ":", iMin.getAsInt(), ":", iMax.getAsInt(), ":", ssport.orElse("?"))
-println(nfCmp.compare("a", "b") < 0, ":", nlCmp.compare("a", "b") < 0, ":", pComb.test("ab") and pEq.test("ab"), ":", fChain.apply("ok"), ":", minOp.apply("a", "b"), ":", maxOp.apply("a", "b"))
-println(sysSep, ":", sysProp, ":", rtOk, ":", swBuf, ":", thName, ":", clsName, ":", patOk)
+array.of(1, 2).length
 }}}}}
-0:g:3:true:2:4:s
-true:true:true:ok:a:b
-true:fallback:true:0:true:String:a+
+No such name in array of int : length (use size())
 
 {{{{{
-;; Imported generic Babble class & parent-interface array type-argument checks
-def B = arrMod.ModBag of int
+(array of string)(2)
 }}}}}
-Type error : type argument int cannot be a primitive in array of T
+No default element : array of string has non-null elements
 
 {{{{{
-def IArr of T = interface (def take: fn (xs: array of T): int)
-def IChild of U = interface extends IArr of U ()
-def Impl = class () implements IChild of int (
-    def take = fn (xs: array of int): int -> (xs.size())
-)
+(array of int)(-1)
 }}}}}
-Type error : type argument int cannot be a primitive in array of T
+java.lang.NegativeArraySizeException: -1
 
 {{{{{
-sortedmap(capacity: 4)
+array.of(1, 2).get(5)
 }}}}}
-No such parameter : capacity
-
-{{{{{
-entry(foo: 1, bar: 2)
-}}}}}
-No such parameter : foo
-
-{{{{{
-;; LARGE: legacy test pending refactoring
-;; CharSequence, System.getenv, Integer.getInteger, Long.getLong, LocalDate.of nullability & effect overlays
-def cs: java.lang.CharSequence = "abcdef"
-def sub = cs.subSequence(1, 4).toString()
-def envMap = java.lang.System.getenv()
-def envVal = java.lang.System.getenv("BABBLE_NONEXISTENT_ENV")
-def gi1 = java.lang.Integer.getInteger("babble.nonexistent.int")
-def gi2 = java.lang.Integer.getInteger("babble.nonexistent.int", 7)
-def gl1 = java.lang.Long.getLong("babble.nonexistent.long")
-def gl2 = java.lang.Long.getLong("babble.nonexistent.long", 9L)
-def dOf = java.time.LocalDate.of(2025, 3, 4)
-println(sub, ":", envMap != null, ":", envVal == null, ":", gi1 == null, ":", gi2, ":", gl1 == null, ":", gl2, ":", dOf)
-}}}}}
-bcd:true:true:true:7:true:9:2025-03-04
-
-{{{{{
-sortedset(capacity: 4)
-}}}}}
-No such parameter : capacity
-
-{{{{{
-list(comparator: null)
-}}}}}
-No such parameter : comparator
-
-{{{{{
-map(comparator: null)
-}}}}}
-No such parameter : comparator
-
-{{{{{
-sortedmap(from: 123)
-}}}}}
-Type error : expected map, got int
-
-{{{{{
-sortedset(from: 123)
-}}}}}
-Type error : expected java.lang.Iterable, got int
-
-{{{{{
-entry()
-}}}}}
-Missing parameter : key
-
-{{{{{
-entry(1)
-}}}}}
-Missing parameter : value
-
-{{{{{
-entry(1, 2, 3)
-}}}}}
-Too many parameters : 2 declared, 3 given
-
-{{{{{
-list(foo: 1)
-}}}}}
-No such parameter : foo
+java.lang.ArrayIndexOutOfBoundsException: Index 5 out of bounds for length 2

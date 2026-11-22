@@ -1,68 +1,109 @@
-;; Closures capturing IntCell, DoubleCell, BoolCell, Cell, nested scopes, and Namespace fallback
+;; Closures, mutable captures, and cell specializations
+;; References : BIP001 (closures), IntCell / DoubleCell / BoolCell / Cell, pushDefaultZero
 
 {{{{{
-;; Mutable captures across all 4 cell specializations: IntCell, DoubleCell, BoolCell, reference Cell
+;; Mutable captures across all 4 cell specializations with independent instances
 def makeCounter = fn () -> (
-    def i = 0
-    def d = 0.5
-    def b = false
-    def s = "x"
-    def step = fn io () : string -> (
-        i += 1
-        d += 1.25
-        b = not b
-        s += "y"
+    def i = 0 ; def d = 0.5 ; def b = false ; def s = "x"
+    fn io () : string -> (
+        i += 1 ; d += 1.25 ; b = not b ; s += "y"
         "" + i + ":" + d + ":" + b + ":" + s
     )
-    step
 )
-def c1 = makeCounter()
-def c2 = makeCounter()
-println(c1())
-println(c1())
-println(c2())
+def c1 = makeCounter() ; def c2 = makeCounter()
+assert(c1() == "1:1.75:true:xy")
+assert(c1() == "2:3.0:false:xyy")
+assert(c2() == "1:1.75:true:xy")
 }}}}}
-1:1.75:true:xy
-2:3.0:false:xyy
-1:1.75:true:xy
 
 {{{{{
 ;; Shared mutable capture between two sibling closures and enclosing block
-def sharedCapture = fn () : string -> (
+def sharedCapture = fn () -> (
     def count = 10
     def inc = fn (k : int) : int -> ( count += k ; count )
     def read = fn () : int -> ( count )
-    def a = inc(5)
-    def b = read()
+    assert(inc(5) == 15)
+    assert(read() == 15)
     count += 1
-    def c = read()
-    "" + a + ":" + b + ":" + c
+    assert(read() == 16)
 )
-println(sharedCapture())
+sharedCapture()
 }}}}}
-15:15:16
 
 {{{{{
-;; Multi-level capture (inner closure reads outer variable unused in middle closure)
+;; Multi-level capture where inner closure reads outer variable unused in middle closure
 def outer = fn (x : int) -> (
-    def mid = fn () -> (
-        fn () : int -> ( x + 100 )
-    )
+    def mid = fn () -> ( fn () : int -> ( x + 100 ) )
     mid()
 )
-def func = outer(7)
-println(func())
+assert(outer(7)() == 107)
 }}}}}
-107
 
 {{{{{
-;; Widening a captured int variable to double (uses DoubleCell instead of IntCell)
-def widenCapture = fn io () : string -> (
+;; Widening a captured int variable to double uses DoubleCell instead of IntCell
+def widenCapture = fn io () -> (
     def v = 1
     def read = fn () -> ( v )
     v = 2.5
-    "" + read() + ":" + classof(read())
+    assert(read() == 2.5)
+    assert("" + classof(read()) == "java.lang.Double")
 )
-println(widenCapture())
+widenCapture()
 }}}}}
-2.5:java.lang.Double
+
+{{{{{
+;; Forward capture read before definition : BoolCell
+def f = fn () : bool -> ( b )
+f()
+def b = true
+}}}}}
+Name used before definition : b
+
+{{{{{
+;; Forward capture read before definition : DoubleCell
+def f = fn () : double -> ( d )
+f()
+def d = 1.5
+}}}}}
+Name used before definition : d
+
+{{{{{
+;; Forward capture read before definition : reference Cell
+def f = fn () : string -> ( s )
+f()
+def s = "hi"
+}}}}}
+Name used before definition : s
+
+{{{{{
+;; Forward capture assign before definition : BoolCell
+def f = fn io () -> ( b = false )
+f()
+def b = true
+}}}}}
+Name used before definition : b
+
+{{{{{
+;; Forward capture assign before definition : DoubleCell
+def f = fn io () -> ( d = 2.5 )
+f()
+def d = 1.5
+}}}}}
+Name used before definition : d
+
+{{{{{
+;; Forward capture assign before definition : IntCell
+def f = fn io () -> ( x = 2 )
+f()
+def x = 1
+}}}}}
+Name used before definition : x
+
+{{{{{
+;; Uninitialized non-captured double and ref locals hoisted to scope block (pushDefaultZero)
+def cond = false
+if cond then ( def x = 1.0 ) else ( )
+def f = fn () : double -> ( if cond then ( y ) else ( 0.0 ) )
+assert(f() == 0.0)
+def y = 3.5
+}}}}}

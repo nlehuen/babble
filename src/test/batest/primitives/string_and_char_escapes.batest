@@ -1,0 +1,37 @@
+;; String/char literal escapes and core-type keyword handling in member names vs bindings
+;; References : BIP011 (core types and char/string literals), BIP012 (memberName keyword exemption)
+
+{{{{{
+;; Core-type keywords (such as set) remain valid as member names after '.'
+def xs : java.util.ArrayList of int = java.util.ArrayList()
+xs.add(1)
+xs.set(0, 7)
+assert(xs.get(0) == 7)
+}}}}}
+
+{{{{{
+def list = 1
+}}}}}
+Syntax error : unexpected 'list'
+
+{{{{{
+;; Extended string escapes : \t, \uXXXX, \', \", \\
+def s = "A\tB\u0043\'\"\\"
+assert(s.length() == 7)
+assert(s.charAt(0) == 'A')
+assert(int(s.charAt(1)) == 9)
+assert(s.charAt(2) == 'B')
+assert(s.charAt(3) == 'C')
+assert(int(s.charAt(4)) == 39)
+assert(int(s.charAt(5)) == 34)
+assert(int(s.charAt(6)) == 92)
+}}}}}
+
+{{{{{
+def a = 'A'
+def u = '\u0042'
+def q = '\''
+assert(a == 'A')
+assert(u == 'B')
+assert(int(q) == 39)
+}}}}}

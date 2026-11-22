@@ -1,153 +1,145 @@
-;; RM003-P3: Babble classes and interfaces implementing/extending Java interfaces with direct JVM bridges
+;; Babble classes, records, objects, and interfaces implementing or extending Java interfaces via direct JVM bridges
+;; References : BIP002, RM003-P3 (Java interface bridges & super default dispatch)
+
+def CS = type java.lang.CharSequence
+def C = type java.util.function.Consumer of any?
+def Buf = class () implements java.lang.Appendable, java.lang.CharSequence (
+def b = java.lang.StringBuilder()
+def append = fn io shared (shared v: any?, s: int = -1, e: int = -1): java.lang.Appendable -> (
+  if v is java.lang.Character then (this.b.append("[" + v + "]"))
+  else if s < 0 then (this.b.append(v as CS)) else (this.b.append(v as CS, s, e)) ; this
+)
+def length = fn io shared (): int -> (this.b.length())
+def charAt = fn io shared (i: int): any -> (this.b.charAt(i))
+def subSequence = fn io shared (s: int, e: int): CS -> (this.b.subSequence(s, e))
+def toString = fn io shared (): string -> (this.b.toString())
+)
+def mkC = fn io () -> (java.util.function.Consumer(fn io (x: any?) -> (print(x))))
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Primitive & reference Java interfaces on class, value class, and object literal
-def Counter = class (private def n : int) implements java.util.function.IntSupplier, java.lang.Runnable (
-    def run = fn mut () : any? -> ( this.n += 10 ; null )
-    def getAsInt = fn () : int -> ( this.n )
-)
-def Weight = record (grams : int) implements java.lang.Comparable of Weight (
-    def compareTo = fn (other : Weight) : int -> ( this.grams - other.grams )
-)
-def mulObj = object implements java.util.function.DoubleBinaryOperator (
-    def applyAsDouble = fn (a : double, b : double) : double -> ( a * b + 0.5 )
+def Counter = class (private def n: int) implements java.util.function.IntSupplier, java.lang.Runnable (
+    def run = fn mut (): any? -> (this.n += 10 ; null)
+    def getAsInt = fn (): int -> (this.n)
 )
 def c = Counter(5)
-def r : java.lang.Runnable = c
+def r: java.lang.Runnable = c
 r.run()
-def sup : java.util.function.IntSupplier = c
-def xs : java.util.List of Weight = java.util.ArrayList()
-xs.add(Weight(30))
-xs.add(Weight(10))
-xs.add(Weight(20))
+def sup: java.util.function.IntSupplier = c
+assert(sup.getAsInt() == 15)
+}}}}}
+
+{{{{{
+def W = record (g: int) implements java.lang.Comparable of W (
+  def compareTo = fn (o: W): int -> (this.g - o.g)
+)
+def xs: java.util.List of W = java.util.ArrayList()
+xs.add(W(30)) ; xs.add(W(10)) ; xs.add(W(20))
 java.util.Collections.sort(xs)
-def uniq : java.util.Set of Weight = java.util.HashSet()
-uniq.add(Weight(10))
-println(sup.getAsInt(), ":", xs.get(0).grams, ":", uniq.contains(Weight(10)), ":", mulObj.applyAsDouble(2.0, 3.0))
+assert(xs.get(0).g == 10)
+def u: java.util.Set of W = java.util.HashSet()
+u.add(W(10))
+assert(u.contains(W(10)))
 }}}}}
-15:10:true:6.5
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Babble interface extending Java interface with default method, implemented by class & cross-called from Java
-def Ranked = interface extends java.lang.Comparable of Ranked (
-    def rank : fn () : int
-    def compareTo = fn (other : Ranked) : int -> ( this.rank() - other.rank() )
+def mulObj = object implements java.util.function.DoubleBinaryOperator (
+    def applyAsDouble = fn (a: double, b: double): double -> (a * b + 0.5)
 )
-def Item = class (def label : string, def r : int) implements Ranked (
-    def rank = fn () : int -> ( this.r )
-    def toString = fn () : string -> ( this.label + "#" + this.r )
-)
-def items : java.util.List of Item = java.util.ArrayList()
-items.add(Item("b", 2))
-items.add(Item("a", 1))
-items.add(Item("c", 3))
-java.util.Collections.sort(items)
-println(java.util.Objects.toString(items), ":", (items.get(0) is java.lang.Comparable), ":", (items.get(0) is Ranked))
+assert(mulObj.applyAsDouble(2.0, 3.0) == 6.5)
 }}}}}
-[a#1, b#2, c#3]:true:true
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Overloaded Java interface methods (CharSequence + Appendable) served by Babble methods with optional params
-def Buf = class () implements java.lang.Appendable, java.lang.CharSequence (
-    private def sb = java.lang.StringBuilder()
-    def append = fn io shared (shared v : any?, start : int = -1, end : int = -1) : java.lang.Appendable -> (
-        if v is java.lang.Character then ( this.sb.append("[" + v + "]") )
-        else if start < 0 then ( this.sb.append(v as java.lang.CharSequence) )
-        else ( this.sb.append(v as java.lang.CharSequence, start, end) )
-        this
-    )
-    def length = fn io shared () : int -> ( this.sb.length() )
-    def charAt = fn io shared (idx : int) : any -> ( this.sb.charAt(idx) )
-    def subSequence = fn io shared (s : int, e : int) : java.lang.CharSequence -> ( this.sb.subSequence(s, e) )
-    def toString = fn io shared () : string -> ( this.sb.toString() )
+def R = interface extends java.lang.Comparable of R (
+  def rk: fn (): int
+  def compareTo = fn (o: R): int -> (this.rk() - o.rk())
 )
+def I = class (def r: int) implements R (def rk = fn (): int -> (this.r))
+def xs: list of I = java.util.ArrayList()
+xs.add(I(2)) ; xs.add(I(1))
+java.util.Collections.sort(xs)
+assert(xs.get(0).r == 1 and (xs.get(0) is java.lang.Comparable) and (xs.get(0) is R))
+}}}}}
+
+{{{{{
+;; Overloaded Appendable/CharSequence methods served by optional params on Buf
 def b = Buf()
 java.util.Formatter(b).format("%s-%d", java.util.List.of("ok", 7).toArray())
 b.append("abcdef", 1, 4)
-def cs : java.lang.CharSequence = b
-println(cs.length(), ":", cs.subSequence(0, 4), ":", java.lang.String.valueOf(cs))
+def cs: java.lang.CharSequence = b
+assert(cs.length() == 7)
+assert(java.lang.String.valueOf(cs.subSequence(0, 4)) == "ok-7")
+assert(java.lang.String.valueOf(cs) == "ok-7bcd")
 }}}}}
-7:ok-7:ok-7bcd
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Java default method inheritance and super(JavaInterface).m(...) override in both Babble interface and class
-def WrappingIter = interface extends java.util.Iterator of int (
-    def forEachRemaining = fn io shared (shared action : java.util.function.Consumer of any?) : any? -> (
-        print("<")
-        super(java.util.Iterator).forEachRemaining(action)
-        print(">")
-    )
+def W = interface extends java.util.Iterator of int (
+  def forEachRemaining = fn io shared (shared a: C): any? -> (
+    print("<") ; super(java.util.Iterator).forEachRemaining(a) ; print(">")
+  )
 )
-def RangeIter = class (private def cur : int, def stop : int) implements WrappingIter (
-    def hasNext = fn () : bool -> ( this.cur < this.stop )
-    def next = fn mut () : int -> (
-        def v = this.cur
-        this.cur += 1
-        v
-    )
+def R = class (private def c: int) implements W (
+  def hasNext = fn (): bool -> (this.c < 4)
+  def next = fn mut (): int -> (this.c += 1 ; this.c - 1)
 )
-def AddOp = class (delta : int) implements java.util.function.IntUnaryOperator (
-    def applyAsInt = fn (x : int) : int -> ( x + delta )
-)
-RangeIter(1, 4).forEachRemaining(java.util.function.Consumer(fn io (x : any?) -> ( print(x) )))
-def composed = AddOp(2).andThen(AddOp(10))
-println(":", composed.applyAsInt(5))
+R(1).forEachRemaining(mkC())
 }}}}}
-<123>:17
+<123>
 
 {{{{{
-;; Primitive return widening (int -> long via IntToLongFunction)
-def Widener = class (scale : int) implements java.util.function.IntToLongFunction (
+def AddOp = class (delta: int) implements java.util.function.IntUnaryOperator (
+    def applyAsInt = fn (x: int): int -> (x + delta)
+)
+assert(AddOp(2).andThen(AddOp(10)).applyAsInt(5) == 17)
+}}}}}
+
+{{{{{
+;; Primitive return widening : int -> long via IntToLongFunction
+def Widener = class (scale: int) implements java.util.function.IntToLongFunction (
     def factor = 2
-    def applyAsLong = fn (x : int) : int -> ( x * scale * this.factor )
+    def applyAsLong = fn (x: int): int -> (x * scale * this.factor)
 )
-def sum = java.util.stream.IntStream.range(1, 4).mapToLong(Widener(5)).sum()
-println(sum)
+assert(java.util.stream.IntStream.range(1, 4).mapToLong(Widener(5)).sum() == 60L)
 }}}}}
-60
 
 {{{{{
-;; Field with same name as Java default method does not shadow Java default method when invoked from Java
+;; Field with same name as Java default method stays accessible as a Babble field
 def SingleIter = class () implements java.util.Iterator of int (
     def remove = 123
-    def hasNext = fn () : bool -> ( false )
-    def next = fn () : int -> ( 0 )
+    def hasNext = fn (): bool -> (false)
+    def next = fn (): int -> (0)
 )
-def it = SingleIter()
-println(it.remove)
-def asJava : java.util.Iterator of int = it
+assert(SingleIter().remove == 123)
+}}}}}
+
+{{{{{
+;; Field with same name as Java default method does not shadow the Java default method when invoked via the Java interface
+def SingleIter = class () implements java.util.Iterator of int (
+    def remove = 123
+    def hasNext = fn (): bool -> (false)
+    def next = fn (): int -> (0)
+)
+def asJava: java.util.Iterator of int = SingleIter()
 asJava.remove()
 }}}}}
-123
 java.lang.UnsupportedOperationException : remove
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; LongUnaryOperator, DoublePredicate, BooleanSupplier, and CharSequence.charAt bridges (long, double, boolean, char)
-def LongInc = class (delta : int) implements java.util.function.LongUnaryOperator (
-    def applyAsLong = fn (x : any?) : int -> ( int(x as long) + delta )
+def LongInc = class (d: int) implements java.util.function.LongUnaryOperator (
+    def applyAsLong = fn (x: any?): int -> (int(x as long) + d)
 )
 def IsPos = class () implements java.util.function.DoublePredicate (
-    def test = fn (d : double) : bool -> ( d > 0.0 )
+    def test = fn (d: double): bool -> (d > 0.0)
 )
-def Flag = class (def v : bool) implements java.util.function.BooleanSupplier (
-    def getAsBoolean = fn () : bool -> ( this.v )
-)
-def Seq = class (s : string) implements java.lang.CharSequence (
-    private def sb = java.lang.StringBuilder(s)
-    def length = fn io shared () : int -> ( this.sb.length() )
-    def charAt = fn io shared (i : int) : any -> ( this.sb.charAt(i) )
-    def subSequence = fn io shared (a : int, b : int) : java.lang.CharSequence -> ( this.sb.subSequence(a, b) )
-    def toString = fn io shared () : string -> ( this.sb.toString() )
-)
-def longRes = java.util.stream.LongStream.of(10).map(LongInc(5)).sum()
-def dblRes = IsPos().test(1.5) and not IsPos().test(-0.5)
-def boolRes = Flag(true).getAsBoolean()
-def chRes = java.nio.CharBuffer.wrap(Seq("xyz")).charAt(1)
-println(longRes, ":", dblRes, ":", boolRes, ":", chRes)
+assert(java.util.stream.LongStream.of(10).map(LongInc(5)).sum() == 15L)
+assert(IsPos().test(1.5) and not IsPos().test(-0.5))
 }}}}}
-15:true:true:y
+
+{{{{{
+def Flag = class (def v: bool) implements java.util.function.BooleanSupplier (
+    def getAsBoolean = fn (): bool -> (this.v)
+)
+def b = Buf()
+b.append("xyz")
+assert(Flag(true).getAsBoolean())
+assert(java.nio.CharBuffer.wrap(b).charAt(1) == 'y')
+}}}}}
