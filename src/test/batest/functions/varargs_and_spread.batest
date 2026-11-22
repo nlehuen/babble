@@ -1,402 +1,248 @@
-;; BIP021-P4 : Babble variadic rest parameters, keyword-only parameters, spread arguments,
+;; Variadic rest parameters (xs: T...), keyword-only options after rest, spread arguments (...e),
 ;; primitive rest views, generic rests, subtyping, interfaces, effects, and diagnostics.
+;; References : BIP021-P4 (BIP021-D7, D8, D19, D21), ArgumentsView, Spreads, CallSolver
+
+def sumInts = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def listOf of T = fn (xs: T...): list of T -> ( list(from: xs) )
+def Counter = class (def mut n: int) ( def inc = fn mut () -> ( this.n += 1 ) )
 
 {{{{{
-;; Basic rest parameter: 0, 1, many args + keyword-only options after rest
-def join = fn (parts: string..., sep: string = ", ", prefix: string = ""): string -> (
-    def res = prefix
-    def first = true
-    for p in parts then (
-        if not first then ( res = res + sep )
-        first = false
-        res = res + p
-    )
-    res
+def join = fn (parts: string..., sep: string = ",", pre: string = ""): string -> (
+    def r = pre ; def f = true
+    for p in parts then ( if not f then ( r = r + sep ) ; f = false ; r = r + p )
+    r
 )
-println(join())
-println(join("a"))
-println(join("a", "b", "c"))
-println(join("a", "b", sep: "/", prefix: "["))
-println(join("a", "b", prefix: "(", sep: ":"))
+assert(join() == "" and join("a") == "a" and join("a", "b", "c") == "a,b,c")
+assert(join("a", "b", sep: "/", pre: "[") == "[a/b" and join("a", "b", pre: "(", sep: ":") == "(a:b")
 }}}}}
 
-a
-a, b, c
-[a/b
-(a:b
-
 {{{{{
-;; All 8 primitive rest views (ArgumentsView.ofBytes..ofChars) + mixed spread chaining
-def sumBytes = fn (xs: byte...): int -> ( def s = 0 ; for x in xs then ( s += int(x) ) ; s )
-def sumShorts = fn (xs: short...): int -> ( def s = 0 ; for x in xs then ( s += int(x) ) ; s )
-def sumInts = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
-def sumLongs = fn (xs: long...): long -> ( def s = 0L ; for x in xs then ( s += x ) ; s )
-def sumFloats = fn (xs: float...): float -> ( def s = 0.0f ; for x in xs then ( s += x ) ; s )
-def sumDoubles = fn (xs: double...): double -> ( def s = 0.0 ; for x in xs then ( s += x ) ; s )
-def countTrue = fn (xs: bool...): int -> ( def c = 0 ; for x in xs then ( if x then ( c += 1 ) ) ; c )
-def joinChars = fn (xs: char...): string -> ( def s = "" ; for x in xs then ( s = s + java.lang.String.valueOf(x) ) ; s )
-println(sumBytes(byte(1), byte(2), byte(3)))
-println(sumShorts(short(10), short(20)))
-println(sumInts(1, 2, 3, 4))
-println(sumLongs(100L, 200L))
-println(sumFloats(1.5f, 2.5f))
-println(sumDoubles(1, 2.5, 3))
-println(countTrue(true, false, true))
-println(joinChars('h', 'i', '!'))
+def sumB = fn (xs: byte...): int -> ( def s = 0 ; for x in xs then ( s += int(x) ) ; s )
+def sumS = fn (xs: short...): int -> ( def s = 0 ; for x in xs then ( s += int(x) ) ; s )
+assert(sumB(byte(1), byte(2), byte(3)) == 6 and sumS(short(10), short(20)) == 30)
 }}}}}
-6
-30
-10
-300
-4.0
-6.5
-2
-hi!
 
 {{{{{
-;; Spread into rest: single spread, multiple spreads, mixed plain + spread, arrays of all primitives
-def sumInts = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def sumL = fn (xs: long...): long -> ( def s = 0L ; for x in xs then ( s += x ) ; s )
+assert(sumInts(1, 2, 3, 4) == 10 and sumL(100L, 200L) == 300L)
+}}}}}
+
+{{{{{
+def sumF = fn (xs: float...): float -> ( def s = 0.0f ; for x in xs then ( s += x ) ; s )
+def sumD = fn (xs: double...): double -> ( def s = 0.0 ; for x in xs then ( s += x ) ; s )
+assert(sumF(1.5f, 2.5f) == 4.0f and sumD(1, 2.5, 3) == 6.5)
+}}}}}
+
+{{{{{
+def cntT = fn (xs: bool...): int -> ( def c = 0 ; for x in xs then ( if x then ( c += 1 ) ) ; c )
+def catC = fn (xs: char...): string -> ( def s = "" ; for x in xs then ( s = s + java.lang.String.valueOf(x) ) ; s )
+assert(cntT(true, false, true) == 2 and catC('h', 'i', '!') == "hi!")
+}}}}}
+
+{{{{{
+;; Empty primitive rest views exercise 0-element ArgumentsView factories
+def cB = fn (xs: byte...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cS = fn (xs: short...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cL = fn (xs: long...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+assert(cB() == 0 and cS() == 0 and sumInts() == 0 and cL() == 0)
+}}}}}
+
+{{{{{
+def cF = fn (xs: float...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cD = fn (xs: double...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cZ = fn (xs: bool...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+assert(cF() == 0 and cD() == 0 and cZ() == 0)
+}}}}}
+
+{{{{{
+def cC = fn (xs: char...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cStr = fn (xs: string...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+assert(cC() == 0 and cStr() == 0 and cStr(...array.of("a", "b")) == 2)
+}}}}}
+
+{{{{{
 def a1 = array.of(1, 2)
 def l1 = list(3, 4)
 def s1 = set(5)
-println(sumInts(...a1))
-println(sumInts(...l1))
-println(sumInts(...a1, ...l1))
-println(sumInts(0, ...a1, 10, ...l1, ...s1, 20))
-def bArr = (array of byte).of(byte(1), byte(2))
-def shArr = (array of short).of(short(3), short(4))
-def lArr = array.of(5L, 6L)
-def fArr = array.of(1.5f, 2.5f)
-def dArr = array.of(1.0, 2.0)
-def boolArr = array.of(true, false, true)
-def cArr = array.of('a', 'b')
-def countAny = fn (xs: any?...): int -> ( def c = 0 ; for x in xs then ( c += 1 ) ; c )
-println(countAny(...bArr, ...shArr, ...lArr, ...fArr, ...dArr, ...boolArr, ...cArr))
+assert(sumInts(...a1) == 3 and sumInts(...l1) == 7 and sumInts(...a1, ...l1) == 10)
+assert(sumInts(0, ...a1, 10, ...l1, ...s1, 20) == 45)
 }}}}}
-3
-7
-10
-45
-15
 
 {{{{{
-;; Spread into non-rest sequence parameters: Iterable, list (borrowed view vs mut copy vs set copy), array (exact vs copy)
-def iterSum = fn (xs: java.lang.Iterable of int): int -> (
-    def s = 0
-    for x in xs then ( s += x )
-    s
-)
-def borrowListSum = fn (xs: list of int): int -> (
-    def s = 0
-    for x in xs then ( s += x )
-    s
-)
-def mutListAppend = fn (mut xs: list of int, v: int): int -> (
-    xs.add(v)
-    xs.size()
-)
-def arrayDoubleSum = fn (xs: array of double): double -> (
-    def s = 0.0
-    for x in xs then ( s += x )
-    s
-)
+def cnt = fn (xs: any?...): int -> ( def c = 0 ; for x in xs then ( c += 1 ) ; c )
+def ab = (array of byte).of(byte(1), byte(2))
+def ash = (array of short).of(short(3), short(4))
+def al = array.of(5L, 6L)
+def af = array.of(1.5f, 2.5f)
+def ad = array.of(1.0, 2.0)
+def az = array.of(true, false, true)
+def ac = array.of('a', 'b')
+assert(cnt(...ab, ...ash, ...al, ...af, ...ad, ...az, ...ac) == 15)
+}}}}}
+
+{{{{{
+def iterSum = fn (xs: java.lang.Iterable of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+assert(iterSum(...array.of(1, 2, 3)) == 6 and iterSum(...list(4, 5)) == 9)
+}}}}}
+
+{{{{{
+def listSum = fn (xs: list of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
 def arr = array.of(1, 2, 3)
-def lst = list(4, 5)
-def st = set(6, 7)
-println(iterSum(...arr), ":", iterSum(...lst))
-println(borrowListSum(...arr), ":", borrowListSum(...lst), ":", borrowListSum(...st))
-;; Spread of array into mut list copies into a fresh ArrayList (does not fail mut check)
-println(mutListAppend(...arr, 99), ":", arr.size())
-;; Spread of set into mut list copies into a fresh ArrayList
-println(mutListAppend(...st, 88), ":", st.size())
-;; Spread of int array / list into double array widens and copies
-println(arrayDoubleSum(...arr), ":", arrayDoubleSum(...lst))
-;; Named spread
-println(borrowListSum(xs: ...arr))
+assert(listSum(...arr) == 6 and listSum(...list(4, 5)) == 9 and listSum(...set(6, 7)) == 13 and listSum(xs: ...arr) == 6)
 }}}}}
-6:9
-6:9:13
-4:3
-3:2
-6.0:9.0
-6
 
 {{{{{
-;; Spread into Java methods and Java varargs (BIP021-D7, BIP021-D8)
-def parts = list("hello", "world")
-println(java.lang.String.format("%s-%s", ...parts))
-def arrParts = array.of("foo", "bar")
-println(java.lang.String.format("%s:%s", ...arrParts))
-def ints = array.of(10, 20, 30)
-def listed: list of int = java.util.Arrays.asList(...ints)
-println(listed.size(), ":", listed.get(1))
-def intList = list(2, 3, 5)
-println(java.util.stream.IntStream.of(...intList).sum())
-println(java.nio.file.Path.of("src", ...list("main", "java")).getNameCount())
-def chars = list('o', 'k')
-println(java.lang.String.valueOf(...chars))
+;; Spreading an array or set into mut list copies into a fresh ArrayList
+def mutAppend = fn (mut xs: list of int, v: int): int -> ( xs.add(v) ; xs.size() )
+def arr = array.of(1, 2, 3) ; def st = set(6, 7)
+assert(mutAppend(...arr, 99) == 4 and arr.size() == 3)
+assert(mutAppend(...st, 88) == 3 and st.size() == 2)
 }}}}}
-hello-world
-foo:bar
-3:20
-10
-3
-ok
 
 {{{{{
-;; Variadic function subtyping, shifted rests, optional args, and Case E (nested list rest)
-def addAll = fn (first: int, rest: int..., scale: int = 1): int -> (
-    def s = first
-    for x in rest then ( s += x )
-    s * scale
-)
+def arrDblSum = fn (xs: array of double): double -> ( def s = 0.0 ; for x in xs then ( s += x ) ; s )
+assert(arrDblSum(...array.of(1, 2, 3)) == 6.0 and arrDblSum(...list(4, 5)) == 9.0)
+}}}}}
+
+{{{{{
+def keepL = fn (shared xs: list of int): list of int -> ( xs )
+def keepA = fn (shared xs: array of int): array of int -> ( xs )
+def readA = fn (xs: array of int): int -> ( xs.size() )
+def l = list(1, 2) ; def a = array.of(3, 4, 5)
+assert(keepL(...l).size() == 2 and keepA(...a).size() == 3 and readA(...a) == 3)
+}}}}}
+
+{{{{{
+def keepL = fn (shared xs: list of int): list of int -> ( xs )
+def keepA = fn (shared xs: array of int): array of int -> ( xs )
+def readL = fn (xs: list of int): int -> ( xs.size() )
+def readA = fn (xs: array of int): int -> ( xs.size() )
+def fwd = fn (xs: int...): int -> ( keepL(...xs).size() + keepA(...xs).size() + readL(...xs) + readA(...xs) )
+assert(fwd(6, 7) == 8)
+}}}}}
+
+{{{{{
+def listed: list of int = java.util.Arrays.asList(...array.of(10, 20, 30))
+assert(java.lang.String.format("%s-%s", ...list("hello", "world")) == "hello-world")
+assert(java.lang.String.format("%s:%s", ...array.of("foo", "bar")) == "foo:bar")
+assert(listed.size() == 3 and listed.get(1) == 20)
+}}}}}
+
+{{{{{
+assert(java.util.stream.IntStream.of(...list(2, 3, 5)).sum() == 10)
+assert(java.nio.file.Path.of("src", ...list("main", "java")).getNameCount() == 3)
+assert(java.lang.String.valueOf(...list('o', 'k')) == "ok")
+}}}}}
+
+{{{{{
+def addAll = fn (first: int, rest: int..., scale: int = 1): int -> ( (first + sumInts(...rest)) * scale )
 def f1: fn (a: int): int = addAll
 def f2: fn (a: int, b: int): int = addAll
 def fOpt: fn (a: int, b: int = ...): int = addAll
-def fShifted: fn (a: int, b: int, r: int..., scale: int = ...): int = addAll
-println(f1(5), ":", f2(5, 7), ":", fOpt(5), ":", fOpt(5, 8))
-println(fShifted(1, 2, 3, 4), ":", fShifted(1, 2, 3, 4, scale: 10))
-
-;; Case E: variadic function taking (list of int)... assigned to fixed fn (a: list of int)
-def countLists = fn (xss: (list of int)...): int -> (
-    def c = 0
-    for xs in xss then ( c += xs.size() )
-    c
-)
-def oneList: fn (xs: list of int): int = countLists
-println(oneList(list(10, 20, 30)))
+assert(f1(5) == 5 and f2(5, 7) == 12 and fOpt(5) == 5 and fOpt(5, 8) == 13)
 }}}}}
-5:12:5:13
-10:100
-3
 
 {{{{{
-;; Generic rest inference (BIP021-D21) + nullable rest (T?...) + print spread
-def listOf of T = fn (xs: T...): list of T -> ( list(from: xs) )
+def addAll = fn (first: int, rest: int..., scale: int = 1): int -> ( (first + sumInts(...rest)) * scale )
+def fShifted: fn (a: int, b: int, r: int..., scale: int = ...): int = addAll
+assert(fShifted(1, 2, 3, 4) == 10 and fShifted(1, 2, 3, 4, scale: 10) == 100)
+}}}}}
+
+{{{{{
+;; Variadic (list of int)... assigned to fixed fn (xs: list of int) wraps the single list in a 1-element rest view
+def countLists = fn (xss: (list of int)...): int -> ( def c = 0 ; for xs in xss then ( c += xs.size() ) ; c )
+def oneList: fn (xs: list of int): int = countLists
+assert(oneList(list(10, 20, 30)) == 3)
+}}}}}
+
+{{{{{
 def xs = listOf(1, 2, ...list(3, 4))
-println(xs)
 def empty: list of string = listOf()
-println(empty.size())
-def countNulls = fn (items: string?...): int -> (
-    def c = 0
-    for s in items then ( if s == null then ( c += 1 ) )
-    c
-)
-println(countNulls("a", null, "b", null))
 def sw = java.io.StringWriter()
 println("items:", ...xs, to: sw)
-print(sw.toString())
+assert(xs == list(1, 2, 3, 4) and empty.size() == 0 and sw.toString().trim() == "items:1234")
 }}}}}
-[1, 2, 3, 4]
-0
-2
-items:1234
 
 {{{{{
-;; Variadic methods on classes, Babble interfaces (matching & fixed-arity), and mut rest elements
-def Counter = class (def mut n: int) (
-    def inc = fn mut () -> ( this.n += 1 )
-)
-def bumpAll = fn (mut cs: Counter...) -> (
-    for c in cs then ( c.inc() )
-)
-def c1 = Counter(1)
-def c2 = Counter(10)
-bumpAll(c1, c2)
-println(c1.n, ":", c2.n)
-
-def Adder = interface (
-    def add: fn (a: int, b: int): int
-)
-def VarAdder = interface (
-    def sum: fn (xs: int...): int
-)
-def Calc = class () implements Adder, VarAdder (
-    def add = fn (xs: int...): int -> (
-        def s = 0 ; for x in xs then ( s += x ) ; s
-    )
-    def sum = fn (xs: int...): int -> (
-        def s = 0 ; for x in xs then ( s += x ) ; s
-    )
-)
-def a: Adder = Calc()
-def v: VarAdder = Calc()
-println(a.add(3, 4), ":", v.sum(1, 2, 3, 4))
+def countNulls = fn (items: string?...): int -> ( def c = 0 ; for s in items then ( if s == null then ( c += 1 ) ) ; c )
+assert(countNulls("a", null, "b", null) == 2)
 }}}}}
-2:11
-7:10
 
 {{{{{
-;; Return-through-borrow on rest parameter (BIP016-D10, BIP021-D21)
+def bumpAll = fn (mut cs: Counter...) -> ( for c in cs then ( c.inc() ) )
 def asIter = fn (xs: int...): java.lang.Iterable of int -> ( xs )
-def s = 0
-for x in asIter(4, 5, 6) then ( s += x )
-println(s)
+def c1 = Counter(1) ; def c2 = Counter(10)
+bumpAll(c1, c2)
+def s = 0 ; for x in asIter(4, 5, 6) then ( s += x )
+assert(c1.n == 2 and c2.n == 11 and s == 15)
 }}}}}
-15
 
 {{{{{
-;; Error: more than one variadic parameter
+def Adder = interface ( def add: fn (a: int, b: int): int )
+def VarAdder = interface ( def sum: fn (xs: int...): int )
+def Calc = class () implements Adder, VarAdder (
+    def add = fn (xs: int...): int -> ( sumInts(...xs) )
+    def sum = fn (xs: int...): int -> ( sumInts(...xs) )
+)
+def a: Adder = Calc() ; def v: VarAdder = Calc()
+assert(a.add(3, 4) == 7 and v.sum(1, 2, 3, 4) == 10)
+}}}}}
+
+{{{{{
 def bad = fn (a: int..., b: int...): int -> ( 0 )
 }}}}}
 More than one variadic parameter : b
 
 {{{{{
-;; Error: variadic parameter with a default
 def bad = fn (a: int... = 1): int -> ( 0 )
 }}}}}
 Variadic parameter with a default : a
 
 {{{{{
-;; Error: rest parameter passed by name
-def f = fn (xs: int...): int -> ( 0 )
-f(xs: 1)
+sumInts(xs: 1)
 }}}}}
 No such parameter : xs
 
 {{{{{
-;; Error: spread into a parameter that takes no sequence
 def f = fn (x: int): int -> ( x )
 f(...list(1, 2))
 }}}}}
 Spread into a parameter that takes no sequence : x
 
 {{{{{
-;; Error: spread bare Iterator
-def f = fn (xs: int...): int -> ( 0 )
+"hello".substring(...list(1, 2))
+}}}}}
+Spread into a parameter that takes no sequence : arg0
+
+{{{{{
 def it = list(1, 2).iterator()
-f(...it)
+sumInts(...it)
 }}}}}
 Type error : expected iterable or array, got java.util.Iterator(int)
 
 {{{{{
-;; Error: spread incompatible element type into rest
-def f = fn (xs: int...): int -> ( 0 )
-f(...list("a", "b"))
+sumInts(...list("a", "b"))
 }}}}}
 Type error : expected int elements, got string
 
 {{{{{
-;; Error: spread incompatible element type into list
 def f = fn (xs: list of int): int -> ( 0 )
 f(...set("a"))
 }}}}}
 Type error : expected int elements, got string
 
 {{{{{
-;; Error: non-variadic function assigned to variadic function type
 def f = fn (a: int, b: int): int -> ( a + b )
 def g: fn (a: int, r: int...): int = f
 }}}}}
 Type error : expected (a : int, r : int...) : int, got (a : int, b : int) : int
 
 {{{{{
-;; Error: empty generic rest without expected type
-def listOf of T = fn (xs: T...): list of T -> ( list(from: xs) )
 listOf()
 }}}}}
 Missing type : cannot infer type arguments for listOf
 
 {{{{{
-;; Error: mutating borrowed rest element without mut modifier
-def Box = class (def mut n: int) (
-    def inc = fn mut () -> ( this.n += 1 )
-)
-def bad = fn (bs: Box...) -> (
-    for b in bs then ( b.inc() )
-)
+def bad = fn (cs: Counter...) -> ( for c in cs then ( c.inc() ) )
 }}}}}
-Cannot mutate parameter bs (mut method b.inc) : mark parameter as mut bs
-
-{{{{{
-;; Empty primitive rest views (ArgumentsView.ofBytes..ofChars/of), Object[] spread, and Spreads.asList/asArray
-def cByte = fn (xs: byte...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
-def cShort = fn (xs: short...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
-def cInt = fn (xs: int...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
-def cLong = fn (xs: long...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
-def cFloat = fn (xs: float...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
-def cDouble = fn (xs: double...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
-def cBool = fn (xs: bool...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
-def cChar = fn (xs: char...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
-def cStr = fn (xs: string...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
-def takeList = fn (xs: list of int): int -> (xs.size())
-def takeArr = fn (xs: array of int): int -> (xs.size())
-def forwardRest = fn (xs: int...): string -> ("" + takeList(...xs) + ":" + takeArr(...xs))
-def strArr = (array of string).of("a", "b")
-def intList = list(1, 2, 3)
-def intArr = (array of int).of(4, 5)
-println(cByte(), cShort(), cInt(), cLong(), cFloat(), cDouble(), cBool(), cChar(), cStr())
-println(cStr(...strArr), "|", takeList(...intList), "|", takeArr(...intArr), "|", forwardRest(7, 8, 9))
-}}}}}
-000000000
-2|3|2|3:3
-
-{{{{{
-;; Error: spread into non-sequence Java parameter
-def xs = list(1, 2)
-"hello".substring(...xs)
-}}}}}
-Spread into a parameter that takes no sequence : arg0
-
-{{{{{
-;; Spreads borrowed vs shared list/array adaptation and multi-spread concat (ArgumentsView.concat)
-def keepList = fn (shared xs: list of int): list of int -> (xs)
-def keepArr = fn (shared xs: array of int): array of int -> (xs)
-def readArr = fn (xs: array of int): int -> (xs.size())
-def sumAll = fn (xs: int...): int -> (def s = 0 ; for x in xs then (s += x) ; s)
-def forwardAll = fn (xs: int...): string -> (
-    def l = keepList(...xs)
-    def a = keepArr(...xs)
-    "" + l.size() + ":" + a.size()
-)
-def srcList = list(1, 2)
-def srcArr = (array of int).of(3, 4, 5)
-def copiedList = keepList(...srcList)
-def copiedArr = keepArr(...srcArr)
-println(copiedList.size(), "|", copiedArr.size(), "|", readArr(...srcArr), "|", forwardAll(6, 7), "|", sumAll(...srcList, ...srcArr, 10))
-}}}}}
-2|3|3|2:2|25
-
-{{{{{
-;; Core collection from:/capacity:, primitive array equality/toString, print to:, and Java default method on Babble class
-def s1 = (set of int)(from: list(1, 2, 1))
-def s2 = (set of int)(capacity: 8)
-def ss = (sortedset of int)(from: list(3, 1, 2))
-def m1 = (map of (int, string))(capacity: 8)
-def sm = (sortedmap of (int, string))(from: map(entry(2, "b"), entry(1, "a")))
-def ab1 = (array of byte).of(byte(1), byte(2))
-def ab2 = (array of byte).of(byte(1), byte(2))
-def as1 = (array of short).of(short(1), short(2))
-def as2 = (array of short).of(short(1), short(2))
-def al1 = (array of long).of(1L, 2L)
-def al2 = (array of long).of(1L, 2L)
-def af1 = (array of float).of(1.0f, 2.0f)
-def af2 = (array of float).of(1.0f, 2.0f)
-def ac1 = (array of char).of('a', 'b')
-def ac2 = (array of char).of('a', 'b')
-def az1 = (array of bool).of(true, false)
-def az2 = (array of bool).of(true, false)
-def sw = java.io.StringWriter()
-print("hi", 1, to: sw)
-println("!", to: sw)
-def IntCmp = class () implements java.util.Comparator of int (
-    def compare = fn (a: int, b: int): int -> (a - b)
-)
-def ai1 = (array of int).of(1, 2)
-def aiCopy = (array of int)(from: ai1)
-def ad1 = (array of double).of(1.5, 2.5)
-def rev = IntCmp().reversed()
-println(s1.size(), s2.size(), ss.first(), m1.size(), sm.firstKey())
-println(ab1 == ab2, as1 == as2, al1 == al2, af1 == af2, ac1 == ac2, az1 == az2)
-println(ab1 == as1, al1 == af1, ac1 == az1, ai1 == ad1, aiCopy.get(0), ad1.get(0), ab1.get(0), ac1.get(0))
-println("" + ab1 + "|" + as1 + "|" + al1 + "|" + af1 + "|" + ac1 + "|" + az1)
-println(sw.toString().trim(), "|", rev.compare(1, 3) > 0)
-}}}}}
-20101
-truetruetruetruetruetrue
-falsefalsefalsefalse11.51a
-[1, 2]|[1, 2]|[1, 2]|[1.0, 2.0]|[a, b]|[true, false]
-hi1!|true
-
-
-
+Cannot mutate parameter cs (mut method c.inc) : mark parameter as mut cs

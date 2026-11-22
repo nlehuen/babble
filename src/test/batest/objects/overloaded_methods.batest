@@ -1,311 +1,239 @@
-;; BIP021-P6 : Overloaded methods, interface members, Java interface bridges, and operator methods.
+;; Overloaded methods, interface members, Java interface bridges, and operator methods.
+;; References : BIP021-P6 (BIP021-D16..D20), BIP002 §9.5, OverloadSet, CallSolver, HirEmitter
+
+def App = type java.lang.Appendable
+def CS = type java.lang.CharSequence?
+def Log = class () implements java.lang.Appendable (
+    private def b = java.lang.StringBuilder()
+    def append = overload (
+        fn io mut shared (c: char): App -> ( this.b.append(c) ; this ),
+        fn io mut shared (shared s: CS): App -> ( this.b.append("" + s) ; this ),
+        fn io mut shared (shared s: CS, i: int, j: int): App -> ( this.b.append("" + s, i, j) ; this )
+    )
+    def text = fn (): string -> ( this.b.toString() )
+)
+def Printer = interface (
+    def tag: fn (): string
+    def emit = overload ( fn (n: int): string -> ( this.tag() + "#" + n ), fn (s: string): string -> ( this.tag() + ":" + s ) )
+)
+def IA = interface ()
+def IB = interface ()
 
 {{{{{
-;; Overloaded class methods: multiple arities/types, `this` access, recursion, widening, and static factories
 def Calc = class (def base: int) (
     def add = overload (
-        fn (n: int): int -> (this.base + n),
-        fn (a: int, b: int): int -> (this.add(a) + b),
-        fn (d: double): double -> (this.base + d),
-        fn (s: string): string -> (s + ":" + this.base)
-    )
-) static (
-    def create = overload (
-        fn (): Calc -> (Calc(0)),
-        fn (n: int): Calc -> (Calc(n))
+        fn (n: int): int -> ( this.base + n ),
+        fn (a: int, b: int): int -> ( this.add(a) + b ),
+        fn (d: double): double -> ( this.base + d ),
+        fn (s: string): string -> ( s + ":" + this.base )
     )
 )
-def c0 = Calc.create()
-def c10 = Calc.create(10)
-println(c0.add(5), ",", c10.add(2, 3), ",", c10.add(2.5), ",", c10.add("v"))
+def c = Calc(10)
+assert(Calc(0).add(5) == 5 and c.add(2, 3) == 15 and c.add(2.5) == 12.5 and c.add("v") == "v:10")
 }}}}}
-5,15,12.5,v:10
 
 {{{{{
-;; Overloaded record methods: record equality, hashCode, and toString skip overloaded methods
-def Point = record (x: double, y: double) (
+def Calc = class (def base: int) () static (
+    def create = overload ( fn (): Calc -> ( Calc(0) ), fn (n: int): Calc -> ( Calc(n) ) )
+)
+assert(Calc.create().base == 0 and Calc.create(10).base == 10)
+}}}}}
+
+{{{{{
+def Pt = record (x: double, y: double) (
     def scale = overload (
-        fn (k: double): Point -> (Point(this.x * k, this.y * k)),
-        fn (kx: double, ky: double): Point -> (Point(this.x * kx, this.y * ky))
+        fn (k: double): Pt -> ( Pt(this.x * k, this.y * k) ),
+        fn (kx: double, ky: double): Pt -> ( Pt(this.x * kx, this.y * ky) )
     )
 )
-def p1 = Point(2.0, 3.0)
-def p2 = Point(2.0, 3.0)
-def p3 = p1.scale(2)
-def p4 = p1.scale(2.0, 4.0)
-println(p1 == p2, ",", p1, ",", p3, ",", p4)
+def p = Pt(2.0, 3.0)
+assert(p == Pt(2.0, 3.0) and "" + p == "Pt(x: 2.0, y: 3.0)" and p.scale(2) == Pt(4.0, 6.0) and p.scale(2.0, 4.0) == Pt(4.0, 12.0))
 }}}}}
-true,Point(x: 2.0, y: 3.0),Point(x: 4.0, y: 6.0),Point(x: 4.0, y: 12.0)
 
 {{{{{
-;; Error: cannot assign to an overloaded method
-def Box = class () (
-    def m = overload (
-        fn (x: int): int -> (x),
-        fn (s: string): string -> (s)
-    )
-)
+def Box = class () ( def m = overload ( fn (x: int): int -> ( x ), fn (s: string): string -> ( s ) ) )
 def b = Box()
 b.m = b.m
 }}}}}
 Cannot assign method : m
 
 {{{{{
-;; Overloaded object methods, bound method extraction, and target-type selection
 def fmt = object (
-    def prefix = "["
+    def pre = "["
     def wrap = overload (
-        fn (x: int): string -> (this.prefix + "i:" + x + "]"),
-        fn (s: string): string -> (this.prefix + "s:" + s + "]")
+        fn (x: int): string -> ( this.pre + "i:" + x + "]" ),
+        fn (s: string): string -> ( this.pre + "s:" + s + "]" )
     )
 )
 def boundSet = fmt.wrap
 def boundInt: fn (x: int): string = fmt.wrap
-println(fmt.wrap(7), ",", boundSet("ok"), ",", boundInt(9))
+assert(fmt.wrap(7) == "[i:7]" and boundSet("ok") == "[s:ok]" and boundInt(9) == "[i:9]")
 }}}}}
-[i:7],[s:ok],[i:9]
 
 {{{{{
-;; Overloaded Babble interface members: exact set, wider set, and single-function implementation
-def Formatter = interface (
-    def format: overload (
-        fn (x: int): string,
-        fn (s: string): string
-    )
-)
-def ExactFmt = class () implements Formatter (
-    def format = overload (
-        fn (x: int): string -> ("ei:" + x),
-        fn (s: string): string -> ("es:" + s)
-    )
-)
-def WiderFmt = class () implements Formatter (
-    def format = overload (
-        fn (x: int): string -> ("wi:" + x),
-        fn (s: string): string -> ("ws:" + s),
-        fn (d: double): string -> ("wd:" + d)
-    )
-)
-def SingleFmt = class () implements Formatter (
-    def format = fn (x: int | string): string -> ("u:" + x)
-)
-def useFmt = fn (f: Formatter): string -> (f.format(42) + "|" + f.format("hi"))
-println(useFmt(ExactFmt()), ";", useFmt(WiderFmt()), ";", useFmt(SingleFmt()))
+def Fmt = interface ( def f: overload (fn (x: int): string, fn (s: string): string) )
+def Exact = class () implements Fmt ( def f = overload ( fn (x: int): string -> ( "ei:" + x ), fn (s: string): string -> ( "es:" + s ) ) )
+def x: Fmt = Exact()
+assert(x.f(42) == "ei:42" and x.f("hi") == "es:hi")
 }}}}}
-ei:42|es:hi;wi:42|ws:hi;u:42|u:hi
 
 {{{{{
-;; Overloaded Babble interface default methods: inherited, overridden, and super
-def Printer = interface (
-    def tag: fn (): string
-    def emit = overload (
-        fn (n: int): string -> (this.tag() + "#" + n),
-        fn (s: string): string -> (this.tag() + ":" + s)
-    )
-)
-def DefaultPrinter = class () implements Printer (
-    def tag = fn (): string -> ("D")
-)
-def CustomPrinter = class () implements Printer (
-    def tag = fn (): string -> ("C")
-    def emit = overload (
-        fn (n: int): string -> ("[" + super.emit(n) + "]"),
-        fn (s: string): string -> ("{" + super.emit(s) + "}")
-    )
-)
-def usePrinter = fn (p: Printer): string -> (p.emit(1) + "," + p.emit("a"))
-println(usePrinter(DefaultPrinter()), ";", usePrinter(CustomPrinter()))
+def Fmt = interface ( def f: overload (fn (x: int): string, fn (s: string): string) )
+def Wider = class () implements Fmt ( def f = overload ( fn (x: int): string -> ( "wi:" + x ), fn (s: string): string -> ( "ws:" + s ), fn (d: double): string -> ( "wd:" + d ) ) )
+def x: Fmt = Wider()
+assert(x.f(42) == "wi:42" and x.f("hi") == "ws:hi")
 }}}}}
-D#1,D:a;[C#1],{C:a}
 
 {{{{{
-;; Java interface overload bridges: java.lang.Appendable implemented via overload (...)
-def Log = class () implements java.lang.Appendable (
-    private def buf = java.lang.StringBuilder()
-    def append = overload (
-        fn io mut shared (c: char): java.lang.Appendable -> (
-            this.buf.append(c)
-            this
-        ),
-        fn io mut shared (shared s: java.lang.CharSequence?): java.lang.Appendable -> (
-            if s != null then (this.buf.append(s)) else (this.buf.append("null"))
-            this
-        ),
-        fn io mut shared (shared s: java.lang.CharSequence?, start: int, end: int): java.lang.Appendable -> (
-            if s != null then (this.buf.append(s, start, end)) else (this.buf.append("null", start, end))
-            this
-        )
-    )
-    def text = fn (): string -> (this.buf.toString())
+def Fmt = interface ( def f: overload (fn (x: int): string, fn (s: string): string) )
+def Single = class () implements Fmt ( def f = fn (x: int | string): string -> ( "u:" + x ) )
+def x: Fmt = Single()
+assert(x.f(42) == "u:42" and x.f("hi") == "u:hi")
+}}}}}
+
+{{{{{
+def DefP = class () implements Printer ( def tag = fn (): string -> ( "D" ) )
+def p: Printer = DefP()
+assert(p.emit(1) == "D#1" and p.emit("a") == "D:a")
+}}}}}
+
+{{{{{
+def CustP = class () implements Printer (
+    def tag = fn (): string -> ( "C" )
+    def emit = overload ( fn (n: int): string -> ( "[" + super.emit(n) + "]" ), fn (s: string): string -> ( "{" + super.emit(s) + "}" ) )
 )
+def p: Printer = CustP()
+assert(p.emit(1) == "[C#1]" and p.emit("a") == "{C:a}")
+}}}}}
+
+{{{{{
 def log = Log()
-def app: java.lang.Appendable = log
+def app: App = log
 app.append('A')
 app.append("bcde", 1, 3)
 app.append("!")
-def f = java.util.Formatter(app)
-f.format("(%d)", 7)
-println(log.text())
+java.util.Formatter(app).format("(%d)", 7)
+assert(log.text() == "Acd!(7)")
 }}}}}
-Acd!(7)
 
 {{{{{
-;; Error: Java interface overload bridge missing an alternative (BIP021 §4.8)
-def Log = class () implements java.lang.Appendable (
-    def append = overload (
-        fn (c: char): java.lang.Appendable -> (this),
-        fn (s: java.lang.CharSequence?): java.lang.Appendable -> (this)
-    )
+def BadLog = class () implements java.lang.Appendable (
+    def append = overload ( fn (c: char): App -> ( this ), fn (s: CS): App -> ( this ) )
 )
-Log()
+BadLog()
 }}}}}
-Log.append has no alternative for java.lang.Appendable.append(java.lang.CharSequence, int, int)
+BadLog.append has no alternative for java.lang.Appendable.append(java.lang.CharSequence, int, int)
 
 {{{{{
-;; Overloaded operator methods: scalar and component-wise *, +, unary -, compound *=, widening, and union split
 def Vec2 = record (x: double, y: double) (
-    def neg = overload (
-        fn (): Vec2 -> (Vec2(-this.x, -this.y))
-    )
-    def plus = overload (
-        fn (v: Vec2): Vec2 -> (Vec2(this.x + v.x, this.y + v.y)),
-        fn (d: double): Vec2 -> (Vec2(this.x + d, this.y + d))
-    )
-    def times = overload (
-        fn (t: double): Vec2 -> (Vec2(this.x * t, this.y * t)),
-        fn (v: Vec2): Vec2 -> (Vec2(this.x * v.x, this.y * v.y))
-    )
+    def times = overload ( fn (t: double): Vec2 -> ( Vec2(this.x * t, this.y * t) ), fn (v: Vec2): Vec2 -> ( Vec2(this.x * v.x, this.y * v.y) ) )
+)
+def a = Vec2(2.0, 3.0) ; def b = Vec2(4.0, 5.0) ; def m = Vec2(1.0, 2.0) ; m *= 3 ; m *= Vec2(2.0, 5.0)
+assert(a * 2 == Vec2(4.0, 6.0) and a * b == Vec2(8.0, 15.0) and m == Vec2(6.0, 30.0))
+}}}}}
+
+{{{{{
+def Vec2 = record (x: double, y: double) (
+    def times = overload ( fn (t: double): Vec2 -> ( Vec2(this.x * t, this.y * t) ), fn (v: Vec2): Vec2 -> ( Vec2(this.x * v.x, this.y * v.y) ) )
+)
+def go = fn (v: Vec2, r: double | Vec2): Vec2 -> ( v * r )
+def a = Vec2(2.0, 3.0)
+assert(go(a, 3.0) == Vec2(6.0, 9.0) and go(a, Vec2(4.0, 5.0)) == Vec2(8.0, 15.0))
+}}}}}
+
+{{{{{
+def Vec2 = record (x: double, y: double) (
+    def neg = overload ( fn (): Vec2 -> ( Vec2(-this.x, -this.y) ) )
+    def plus = overload ( fn (v: Vec2): Vec2 -> ( Vec2(this.x + v.x, this.y + v.y) ), fn (d: double): Vec2 -> ( Vec2(this.x + d, this.y + d) ) )
 )
 def a = Vec2(2.0, 3.0)
-def b = Vec2(4.0, 5.0)
-def scaleOrMul = fn (v: Vec2, rhs: double | Vec2): Vec2 -> (v * rhs)
-def mutVec = Vec2(1.0, 2.0)
-mutVec *= 3
-mutVec *= Vec2(2.0, 5.0)
-println(a * 2, ";", a * b, ";", a + 1.5, ";", -a, ";", scaleOrMul(a, 3.0), ";", scaleOrMul(a, b), ";", mutVec)
+assert(a + 1.5 == Vec2(3.5, 4.5) and a + Vec2(1.0, 2.0) == Vec2(3.0, 5.0) and -a == Vec2(-2.0, -3.0))
 }}}}}
-Vec2(x: 4.0, y: 6.0);Vec2(x: 8.0, y: 15.0);Vec2(x: 3.5, y: 4.5);Vec2(x: -2.0, y: -3.0);Vec2(x: 6.0, y: 9.0);Vec2(x: 8.0, y: 15.0);Vec2(x: 6.0, y: 30.0)
 
 {{{{{
-;; Error: overloaded operator method with no applicable alternative
 def Vec2 = record (x: double, y: double) (
-    def times = overload (
-        fn (t: double): Vec2 -> (Vec2(this.x * t, this.y * t)),
-        fn (v: Vec2): Vec2 -> (Vec2(this.x * v.x, this.y * v.y))
-    )
+    def times = overload ( fn (t: double): Vec2 -> ( Vec2(this.x * t, this.y * t) ), fn (v: Vec2): Vec2 -> ( Vec2(this.x * v.x, this.y * v.y) ) )
 )
 Vec2(1.0, 2.0) * "nope"
 }}}}}
 No applicable overload of Vec2(1.0,2.0).times for (string) : candidates are (t : double), (v : Vec2)
 
 {{{{{
-;; Overloaded minus, div, compound -= and /=, and generic operator alternative
 def Num = record (v: double) (
-    def minus = overload (
-        fn (d: double): Num -> (Num(this.v - d)),
-        fn (o: Num): Num -> (Num(this.v - o.v))
-    )
-    def div = overload (
-        fn (d: double): Num -> (Num(this.v / d)),
-        fn (o: Num): Num -> (Num(this.v / o.v))
-    )
-    def plus = overload (
-        fn (n: int): Num -> (Num(this.v + n)),
-        fn of T io (x: T): string -> ("" + this.v + "+" + x)
-    )
+    def minus = overload ( fn (d: double): Num -> ( Num(this.v - d) ), fn (o: Num): Num -> ( Num(this.v - o.v) ) )
+)
+def a = Num(10.0) ; def u: double | Num = Num(2.0) ; def m = Num(20.0) ; m -= 5 ; m -= Num(3.0)
+assert(a - 3 == Num(7.0) and a - Num(2.0) == Num(8.0) and a - u == Num(8.0) and m == Num(12.0))
+}}}}}
+
+{{{{{
+def Num = record (v: double) (
+    def div = overload ( fn (d: double): Num -> ( Num(this.v / d) ), fn (o: Num): Num -> ( Num(this.v / o.v) ) )
+)
+def a = Num(10.0) ; def m = Num(12.0) ; m /= 2 ; m /= Num(3.0)
+assert(a / 4 == Num(2.5) and a / Num(2.0) == Num(5.0) and m == Num(2.0))
+}}}}}
+
+{{{{{
+def Num = record (v: double) (
+    def plus = overload ( fn (n: int): Num -> ( Num(this.v + n) ), fn of T io (x: T): string -> ( "" + this.v + "+" + x ) )
 )
 def a = Num(10.0)
-def b = Num(2.0)
-def m = Num(20.0)
-m -= 5
-m -= Num(3.0)
-m /= 2
-m /= Num(3.0)
-def u: double | Num = b
-println(a - 3, "|", a - b, "|", a / 4, "|", a / b, "|", a - u, "|", a + 1, "|", a + "ok", "|", m)
+assert(a + 1 == Num(11.0) and a + "ok" == "10.0+ok")
 }}}}}
-Num(v: 7.0)|Num(v: 8.0)|Num(v: 2.5)|Num(v: 5.0)|Num(v: 8.0)|Num(v: 11.0)|10.0+ok|Num(v: 2.0)
 
 {{{{{
-;; Overloaded operator on interface receiver and inherited overloaded interface default
-def OpI = interface (
-    def val: fn (): int
-    def plus = overload (
-        fn (n: int): int -> (this.val() + n),
-        fn (s: string): string -> ("" + this.val() + s)
-    )
+def I = interface (
+    def v: fn (): int
+    def plus = overload ( fn (n: int): int -> ( this.v() + n ), fn (s: string): string -> ( "" + this.v() + s ) )
 )
-def OpSub = interface extends OpI ()
-def OpImpl = class (def n: int) implements OpSub (
-    def val = fn (): int -> (this.n)
-)
-def runOp = fn (x: OpI, rhs: int | string): int | string -> (x + rhs)
-def o: OpSub = OpImpl(7)
-println(o + 3, "|", o + "!", "|", runOp(o, 5), "|", runOp(o, "?"))
+def S = interface extends I ()
+def C = class (def n: int) implements S ( def v = fn (): int -> ( this.n ) )
+def go = fn (x: I, r: int | string): int | string -> ( x + r )
+def o: S = C(7) ; assert(o + 3 == 10 and go(o, "?") == "7?")
 }}}}}
-10|7!|12|7?
 
 {{{{{
-;; Overloaded super.m with multiple widening/any?/rest alternatives (exercises OverloadSet.call dynamic dispatch)
-def SuperOv = interface (
-    def tag: fn (): string
-    def fmt = overload (
-        fn (n: int): string -> (this.tag() + ":i:" + n),
-        fn (d: double): string -> (this.tag() + ":d:" + d),
-        fn (s: string, xs: int...): string -> (def sum = 0 ; for x in xs then (sum += x) ; this.tag() + ":" + s + ":" + sum),
-        fn io (x: any?): string -> (this.tag() + ":a:" + x)
-    )
+;; Dynamic super.f dispatch across widening alternatives (OverloadSet.call)
+def S = interface ( def f = overload ( fn (n: int): string -> ( "i:" + n ), fn (d: double): string -> ( "d:" + d ) ) )
+def C = class () implements S (
+    def f = overload ( fn (n: int): string -> ( "[" + super.f(n) + "]" ), fn (d: double): string -> ( "[" + super.f(d) + "]" ) )
+    def run = fn (): string -> ( super.f(byte(2)) + "|" + super.f(1.5f) )
 )
-def SubOv = class () implements SuperOv (
-    def tag = fn (): string -> ("S")
-    def fmt = overload (
-        fn (n: int): string -> ("[" + super.fmt(n) + "]"),
-        fn (d: double): string -> ("[" + super.fmt(d) + "]"),
-        fn (s: string, xs: int...): string -> ("[" + super.fmt(s, ...xs) + "]"),
-        fn io (x: any?): string -> ("[" + super.fmt(x) + "]")
-    )
-    def runAll = fn io (): string -> (
-        super.fmt(byte(2)) + "|" + super.fmt(1.5f) + "|" + super.fmt("r", 1, 2, 3) + "|" + super.fmt(null) + "|" + super.fmt(true)
-    )
-)
-def sub = SubOv()
-println(sub.runAll())
-println(sub.fmt(4), "|", sub.fmt("k", 5, 6), "|", sub.fmt(null))
+assert(C().run() == "i:2|d:1.5")
 }}}}}
-S:i:2|S:d:1.5|S:r:6|S:a:null|S:a:true
-[S:i:4]|[S:k:11]|[S:a:null]
 
 {{{{{
-;; Overloaded operator on union of two interfaces with meet alternative, plus indistinguishable union error
-def IA = interface (def a: fn (): int)
-def IB = interface (def b: fn (): int)
-def CA = class () implements IA (def a = fn (): int -> (1))
-def CB = class () implements IB (def b = fn (): int -> (2))
-def CAB = class () implements IA, IB (def a = fn (): int -> (3) ; def b = fn (): int -> (4))
-def Mixer = class () (
-    def plus = overload (
-        fn (x: IA): string -> ("A:" + x.a()),
-        fn (x: IB): string -> ("B:" + x.b()),
-        fn (x: IA & IB): string -> ("AB:" + x.a() + "," + x.b())
-    )
+;; Dynamic super.f dispatch across any? and null alternatives (OverloadSet.call)
+def S = interface ( def f = overload ( fn (n: int): string -> ( "i:" + n ), fn io (x: any?): string -> ( "a:" + x ) ) )
+def C = class () implements S (
+    def f = overload ( fn (n: int): string -> ( "[" + super.f(n) + "]" ), fn io (x: any?): string -> ( "[" + super.f(x) + "]" ) )
+    def run = fn io (): string -> ( super.f(null) + "|" + super.f(true) )
 )
-def mix = fn (m: Mixer, rhs: IA | IB): string -> (m + rhs)
-def m = Mixer()
-println(mix(m, CA()), "|", mix(m, CB()), "|", mix(m, CAB()))
+assert(C().run() == "a:null|a:true")
 }}}}}
-A:1|B:2|AB:3,4
 
 {{{{{
-;; Error: overloaded operator with indistinguishable union argument
-def Box = class () (
-    def plus = overload (
-        fn (xs: list of int): string -> ("i"),
-        fn (xs: list of string): string -> ("s")
-    )
+;; Dynamic super.f dispatch forwarding a packed rest parameter via ...xs
+def S = interface ( def f = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string, xs: int...): string -> ( def t = 0 ; for x in xs then ( t += x ) ; s + ":" + t ) ) )
+def C = class () implements S (
+    def f = overload ( fn (n: int): string -> ( "[" + super.f(n) + "]" ), fn (s: string, xs: int...): string -> ( "[" + super.f(s, ...xs) + "]" ) )
 )
-def run = fn (b: Box, u: list of int | list of string): string -> (b + u)
+assert(C().f("k", 5, 6) == "[k:11]")
+}}}}}
+
+{{{{{
+def CA = class () implements IA ()
+def CB = class () implements IB ()
+def CAB = class () implements IA, IB ()
+def M = class () ( def plus = overload ( fn (x: IA): string -> ( "A" ), fn (x: IB): string -> ( "B" ), fn (x: IA & IB): string -> ( "AB" ) ) )
+def go = fn (m: M, r: IA | IB): string -> ( m + r )
+assert(go(M(), CA()) == "A" and go(M(), CB()) == "B" and go(M(), CAB()) == "AB")
+}}}}}
+
+{{{{{
+def Box = class () ( def plus = overload ( fn (xs: list of int): string -> ( "i" ), fn (xs: list of string): string -> ( "s" ) ) )
+def run = fn (b: Box, u: list of int | list of string): string -> ( b + u )
 run(Box(), list(1))
 }}}}}
 Cannot dispatch b.plus on list of int | list of string : its alternatives are not told apart at runtime
-
-
