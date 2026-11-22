@@ -778,7 +778,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 && call.callParameters().callParameter().size() == 1
                 && ScopeAnalysis.callParamName(call.callParameters().callParameter(0)) == null
                 && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
-            String name = org.babblelang.engine.impl.Interpreter.unescape(string.getText());
+            String name = org.babblelang.parser.StringLiterals.decode(string);
             return name.endsWith(".ba") ? name : null;
         }
         return null;

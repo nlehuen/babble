@@ -16,7 +16,6 @@ import org.babblelang.effects.Pure;
 import org.babblelang.effects.Shared;
 import org.babblelang.effects.Unique;
 import org.babblelang.effects.Volatile;
-import org.babblelang.engine.impl.Interpreter;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.JavaTypes;
@@ -1203,7 +1202,7 @@ final class EffectChecker {
                 && ("import".equals(sel.ID().getText()) || "importe".equals(sel.ID().getText()))
                 && call.callParameters().callParameter().size() == 1
                 && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext str) {
-            String name = Interpreter.unescape(str.getText());
+            String name = org.babblelang.parser.StringLiterals.decode(str);
             return name.endsWith(".ba") ? null : name;
         }
         return null;
@@ -1336,7 +1335,7 @@ final class EffectChecker {
                 checker.effectDiagnostic("Invalid target : shadowed " + first, reportAt);
                 return null;
             }
-            String pkg = Interpreter.unescape(targetCtx.STRING().getText());
+            String pkg = org.babblelang.parser.StringLiterals.decode(targetCtx.STRING().getSymbol());
             if (pkg.endsWith(".ba")) {
                 checker.effectDiagnostic("Java effect target cannot be a .ba module : " + pkg, reportAt);
                 return null;

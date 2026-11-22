@@ -220,11 +220,15 @@ public class ReplTestCase {
 
     @Test
     public void testIncompleteInputs() {
-        for (String complete : List.of("1 + 2", "def x", "def f = fn () -> ( 1 )\n", "if a then ( 1 )", "f(1,\n 2)", "def = 3", "1 + )", "a # b", "\"a\nb\"")) {
+        for (String complete : List.of("1 + 2", "def x", "def f = fn () -> ( 1 )\n", "if a then ( 1 )", "f(1,\n 2)", "def = 3", "1 + )", "a # b", "\"a\nb\"",
+                "\"abc", "println(\"a\n", "r\"abc", "\"\"\"abc", "r\"\"\"abc", "\"\"\"\n  \\q", "\"\"\"\n  a\n\tb",
+                "\"\"\"\n  a\\   \"\"\"", "\"\"\"\n  a\\q   ", "\"\"\"\n  a\\u12   ", "\"\"\"\n  \\q a\\   ")) {
             Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify(complete), complete);
         }
         for (String incomplete : List.of("1 +", "1 +\n", "def x =", "def f = fn (a,", "def f = fn () -> (", "def f = fn () -> (\n  1\n", "if a then", "if a then ( 1 ) else",
-                "f(", "class () (\n def a = 1\n", "a?.", "\"abc", "println(\"a\n")) {
+                "f(", "class () (\n def a = 1\n", "a?.",
+                "\"\"\"", "r\"\"\"", "\"\"\"   ", "\"\"\"\n  a", "r\"\"\"\n  a", "println(\"\"\"\n  a", "\"\"\"\n  a\\", "\"\"\"\n  a\\u12",
+                "\"\"\"\n  a\\   ", "\"\"\"\n  a\\\t ", "\"\"\"\n  a\\\\   ", "\"\"\"\n  a\\\\\\   ", "r\"\"\"\n  a\\   ")) {
             Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify(incomplete), incomplete);
         }
         for (String empty : List.of("", "\n", "  \n\n", ";; a comment\n", ";;( a\nlong comment ;;)\n", ";")) {
@@ -246,8 +250,11 @@ public class ReplTestCase {
 
     @Test
     public void testInputsSpanLines() throws Exception {
-        Assertions.assertEquals(List.of("function twice", "7", "3", "\"a", "b\""),
-                transcript("def twice = fn (f : fn (n : int) : int, v : int) : int -> (", "  f(f(v))", "", ")", "twice(fn (n : int) : int -> ( n + 1 ), 5)", "1 +", "  2", ";; nothing", "", "\"a", "b\""));
+        Assertions.assertEquals(List.of("function twice", "7", "3", "\"a", "b", "\"", "\"c\\\\d\""),
+                transcript("def twice = fn (f : fn (n : int) : int, v : int) : int -> (", "  f(f(v))", "", ")",
+                        "twice(fn (n : int) : int -> ( n + 1 ), 5)", "1 +", "  2", ";; nothing", "",
+                        "\"\"\"", "  a", "  b", "  \"\"\"",
+                        "r\"\"\"", "  c\\d\"\"\""));
     }
 
     @Test

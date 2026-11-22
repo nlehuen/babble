@@ -819,7 +819,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitString(BabbleParser.StringContext ctx) {
         last = ctx;
-        return unescape(ctx.STRING().getText());
+        return org.babblelang.parser.StringLiterals.decode(ctx);
     }
 
     @Override
@@ -856,46 +856,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
      * The value of a string literal, given its source text with the quotes.
      */
     public static String unescape(String literal) {
-        String body = literal.substring(1, literal.length() - 1);
-        if (body.indexOf('\\') < 0) {
-            return body;
-        }
-        StringBuilder out = new StringBuilder(body.length());
-        for (int i = 0; i < body.length(); i++) {
-            char c = body.charAt(i);
-            if (c == '\\' && i + 1 < body.length()) {
-                char next = body.charAt(++i);
-                switch (next) {
-                    case 'b' -> out.append('\b');
-                    case 't' -> out.append('\t');
-                    case 'n' -> out.append('\n');
-                    case 'f' -> out.append('\f');
-                    case 'r' -> out.append('\r');
-                    case '"' -> out.append('"');
-                    case '\'' -> out.append('\'');
-                    case '\\' -> out.append('\\');
-                    case '0' -> out.append('\0');
-                    case 'u' -> {
-                        if (i + 4 < body.length()) {
-                            out.append((char) Integer.parseInt(body.substring(i + 1, i + 5), 16));
-                            i += 4;
-                        } else {
-                            out.append('u');
-                        }
-                    }
-                    default -> out.append(next);
-                }
-            } else {
-                out.append(c);
-            }
-        }
-        return out.toString();
+        return org.babblelang.parser.StringLiterals.unescape(literal);
     }
 
     /** The value of a character literal, given its source text with the single quotes. */
     public static char unescapeChar(String literal) {
-        String decoded = unescape(literal);
-        return decoded.charAt(0);
+        return org.babblelang.parser.StringLiterals.decodeChar(literal);
     }
 
     @Override
