@@ -5,7 +5,7 @@
     narrowing in nothrow, algebraic properties, and host axioms.
 ;;)
 
-axiom pure nothrow on java.lang.Math
+axiom java.lang.Math.max: fn pure nothrow
 
 def Vec2 = record (x: double, y: double) (
     def dot = fn (other: Vec2): double -> (

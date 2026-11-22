@@ -22,6 +22,11 @@ def compute = fn (x : int, y : int) : int -> (
 )
 println(compute(-5, 3), ":", ext() > 0)
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 6:true
 
 {{{{{
@@ -98,27 +103,34 @@ pure and mut are mutually exclusive : use mut (or volatile mut)
 ;; Java target validation errors
 axiom pure on import("eff_mod.ba").abs2
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Java effect target cannot be a .ba module : eff_mod.ba
 
 {{{{{
 axiom pure on unknownPkg.Foo
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Unknown identifier in effect declaration : unknownPkg
 
 {{{{{
 axiom pure on java.lang.Math.noSuchMethod
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 No such Java method : noSuchMethod on java.lang.Math
 
 {{{{{
 axiom pure on java.lang.Math.NoInner.foo
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Unknown Java member class : NoInner on java.lang.Math
 
 {{{{{
 def em = import("eff_mod.ba")
 axiom pure on em.missing
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Unknown export : missing in eff_mod.ba
 
 {{{{{
@@ -129,6 +141,7 @@ Bare class axiom cannot declare mut : declare mut on specific methods instead
 {{{{{
 axiom mut on java.lang.StringBuilder()
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Constructor axiom cannot declare mut
 
 {{{{{
@@ -137,6 +150,7 @@ def f = fn () : int -> (
     1
 )
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 axiom declaration is not allowed inside a verified constrained function
 
 {{{{{

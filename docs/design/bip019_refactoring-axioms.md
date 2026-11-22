@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 019 |
 | **Date** | 2026-11-20 |
-| **Status** | Decided ; no phase implemented. A prototype of the former ordering was reverted ; what it taught is recorded where it applies (§3.2, §3.3, §4.3). |
+| **Status** | Implemented (`BIP019-P1`–`P8`, plus `BIP020-P5`). Every built-in assumption about Java classes, third-party nullability annotations, optimizer whitelists, and ordinary built-ins lives in `src/main/java/org/babblelang/axioms/`, enforced by `AxiomsTestCase`; the ASM value-lattice bytecode analyzer runs on by default. |
 | **Depends on** | function effects and `axiom` declarations ([bip007_effects.md](bip007_effects.md)), core types and the `java.base` nullness overlay ([bip011_core-types.md](bip011_core-types.md)), the HIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)), optional parameters and polymorphic function types ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)), and array types ([bip020_array-types.md](bip020_array-types.md)) |
 | **Scope** | Every assumption the interpreter, the compiler, the analysis and the optimizer make about specific Java or Babble functions and methods — effects, nullness, deep immutability, optimizer whitelists, built-in signatures — moves to one directory, `src/main/java/org/babblelang/axioms/`, as a small set of curated `.ba` axioms (and `.java` stubs only for what Babble cannot state) ; everything else about Java classes is inferred from their bytecode by the compiler, the curated axioms overriding what it infers ; reads of mutable state become part of the effect model |
 

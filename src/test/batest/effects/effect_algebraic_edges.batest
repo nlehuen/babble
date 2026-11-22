@@ -72,7 +72,7 @@ def Box = class (def v : int) (
 static block inside hermetic function violates hermetic guarantee
 
 {{{{{
-axiom volatile on java.lang.Math.random
+axiom java.lang.Math.random: fn volatile
 def makeBadStatic3 = fn () -> (
     def C = class () () static ( def y = java.lang.Math.random() )
     ()
@@ -90,22 +90,26 @@ export only applies to the top-level definitions of a file
 def import = 1
 axiom pure on import("java.lang").Math
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Invalid target : shadowed import
 
 {{{{{
 axiom pure on foo("java.lang").Math
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Invalid target : expected import("...") or Java class path
 
 {{{{{
 axiom pure on java.lang
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Invalid effect declaration target : expected a Java class, constructor, or method
 
 {{{{{
 def p = object ( def a = 1 )
 axiom pure on p.a
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 Invalid effect declaration target : p.a
 
 {{{{{
@@ -119,6 +123,8 @@ axiom pure on java.util.Map.Entry
 def sb = java.lang.StringBuilder()
 println(sb.toString())
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 
 
 {{{{{
@@ -495,4 +501,11 @@ axiom pure on tests.EffectsTestCase.HostFixtures.pureCalc
 axiom pure on tests.EffectsTestCase.MutableHolder.bump
 println(tests.EffectsTestCase.HostFixtures.pureCalc(3))
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 7

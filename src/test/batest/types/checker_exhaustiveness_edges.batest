@@ -29,7 +29,7 @@ def badHerm = fn () -> ( g = 3 )
 Function badHerm violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
-axiom volatile on java.lang.Math.random
+axiom java.lang.Math.random: fn volatile
 def badDet = fn () -> ( java.lang.Math.random() )
 }}}}}
 Function badDet violates deterministic guarantee : mark function as volatile (or io)
@@ -60,9 +60,9 @@ Function badRegDet violates deterministic guarantee : mark function as volatile 
 
 {{{{{
 ;; EffectChecker.propagateSamCallbackEffects: pure vs io lambda & Consumer class
-axiom pure on java.util.Collections.singletonList
-axiom pure on java.lang.Iterable.forEach
-axiom pure on java.util.List.size
+axiom java.util.Collections.singletonList: fn pure
+axiom java.lang.Iterable.forEach: fn pure
+axiom java.util.List.size: fn pure
 def GoodCons = class () implements java.util.function.Consumer of java.lang.Object (
     def accept = fn (x : java.lang.Object) -> ( () )
 )
@@ -78,9 +78,9 @@ println(okSam())
 1
 
 {{{{{
-axiom pure on java.util.ArrayList()
-axiom mut on java.util.ArrayList.add
-axiom pure on java.util.ArrayList.forEach
+axiom java.util.ArrayList.new: fn pure
+axiom java.util.ArrayList.add: fn mut
+axiom java.util.ArrayList.forEach: fn pure
 def badSamLambda = fn () -> (
     def xs : java.util.ArrayList of java.lang.Object = java.util.ArrayList()
     xs.add(1)
@@ -90,9 +90,9 @@ def badSamLambda = fn () -> (
 Function badSamLambda violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
-axiom pure on java.util.ArrayList()
-axiom mut on java.util.ArrayList.add
-axiom pure on java.util.ArrayList.forEach
+axiom java.util.ArrayList.new: fn pure
+axiom java.util.ArrayList.add: fn mut
+axiom java.util.ArrayList.forEach: fn pure
 def BadCons = class () implements java.util.function.Consumer of java.lang.Object (
     def accept = fn io (x : java.lang.Object) -> ( println(x) )
 )
@@ -120,7 +120,7 @@ Exclusivity error : mut target b aliases argument b
 
 {{{{{
 ;; EffectChecker relationalProps, binaryWrapperProps, isUnaryIdempotentWrapper, isMutCommutativeBody
-axiom pure idempotent on java.nio.file.Path.normalize
+axiom java.nio.file.Path.normalize: fn pure idempotent
 def badMonoJ = fn (f : fn monotone (s : java.lang.StringBuilder) : int) : int -> ( 1 )
 def addD = fn (a : double, b : double) : double -> ( a + b )
 def addI = fn (a : int, b : int) : int -> ( a + b )
@@ -446,7 +446,7 @@ def p2 : fn (x : int) : null = println
 Type error : expected (x : int) : null, got print
 
 {{{{{
-axiom pure on java.lang.Integer.bitCount
+axiom java.lang.Integer.bitCount: fn pure
 def fBit : fn (x : int) : int = java.lang.Integer.bitCount
 println(fBit(7))
 }}}}}

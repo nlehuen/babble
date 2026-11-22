@@ -1116,10 +1116,13 @@ final class EffectChecker {
                     continue;
                 }
                 boolean conflict = false;
+                AxiomData.Builder selfCheck = new AxiomData.Builder();
                 for (AxiomData.MemberAxiom m : parsed.classAxiom().members()) {
-                    if (localBuilder.hasMemberConflict(m)) {
+                    if (localBuilder.hasMemberConflict(m) || selfCheck.hasMemberConflict(m)) {
                         sink.report("Duplicate axiom for member : " + m.ownerClass().getName() + "." + m.name(), ctx);
                         conflict = true;
+                    } else {
+                        selfCheck.addMemberAxiom(m);
                     }
                 }
                 if (conflict) {
@@ -2362,6 +2365,15 @@ final class EffectChecker {
     // ================================================================ 8. Verification Pass
 
     void verify(BabbleParser.FileContext file) {
+        // 0. Warn on deprecated `axiom ... on ...` / `io on ...` syntax (BIP019 §3.2).
+        for (BlockScopes.PendingEffectDecl pending : pass.effectDeclarations) {
+            BabbleParser.EffectDeclarationContext ctx = pending.ctx();
+            boolean isIo = ctx.effectClause() != null && ctx.effectClause().IO() != null;
+            checker.effectWarning(isIo
+                    ? "Deprecated syntax : 'io on ...' is deprecated, use 'axiom Target: fn io' instead"
+                    : "Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead", ctx);
+        }
+
         // 1. Validate algebraic modifier applicability across all FunctionTypeContext nodes in file.
         validateAllFunctionTypes(file);
 
@@ -2380,6 +2392,9 @@ final class EffectChecker {
     }
 
     private void validateAllFunctionTypes(ParseTree tree) {
+        if (tree instanceof BabbleParser.AxiomExpressionContext) {
+            return;
+        }
         if (tree instanceof BabbleParser.FunctionTypeContext ft) {
             Type t = checker.annotationTypeOf(ft);
             if (t instanceof Type.Function fn) {
@@ -3826,6 +3841,8 @@ final class EffectChecker {
                 return;
             }
             if (stmt instanceof BabbleParser.DefExpressionContext
+                    || stmt instanceof BabbleParser.AxiomExpressionContext
+                    || stmt instanceof BabbleParser.TypeAliasExpressionContext
                     || stmt instanceof BabbleParser.AssignExpressionContext
                     || stmt instanceof BabbleParser.ReturnExpressionContext
                     || stmt instanceof BabbleParser.WhileExpressionContext

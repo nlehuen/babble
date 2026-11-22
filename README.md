@@ -487,14 +487,14 @@ Typed functions that mutate `this` or a parameter declare `mut` explicitly, and 
 that a `mut` argument does not alias another argument :
 
 ```
-axiom pure deterministic nothrow on java.lang.Math
+axiom java.lang.Math.sqrt: fn nothrow foldable (a: double): double
 
-def hypot = pure deterministic nothrow fn (x: double, y: double): double -> (
+def hypot = fn nothrow (x: double, y: double): double -> (
     java.lang.Math.sqrt(x * x + y * y)
 )
 
 def Counter = class (def value: int = 0) (
-    def addFrom = hermetic mut fn (borrow other: Counter) -> (
+    def addFrom = fn mut (other: Counter) -> (
         this.value += other.value
     )
 )
@@ -503,10 +503,15 @@ a.addFrom(b)
 ;; a.addFrom(a)   ;; Error : Exclusivity error : mut target a aliases argument a
 ```
 
-`axiom` and `impure` declare trusted or conservative contracts on Java classes, constructors
-(`Class()`), and methods, or Java hosts can annotate APIs with `@Pure`, `@Mut`, `@Borrow`,
-`@Deterministic`, `@Nothrow`, and `@Impure` from `org.babblelang.effects` (or configure an engine
-with `assumeEffects` / `allowAxioms(false)`). See [BIP007](docs/design/bip007_effects.md).
+`axiom Target: fn ...` and `axiom Target: class ( ... )` declare trusted contracts on Java classes,
+methods, constructors, or Babble host bindings; built-in assumptions about JDK classes, third-party
+nullability annotations, optimizer folding, and ordinary built-ins live in
+`src/main/java/org/babblelang/axioms/` while everything else is inferred from JVM bytecode on the
+fly (`java -jar target/babble-1.0-SNAPSHOT.jar -axioms java.util.ArrayList` dumps what the compiler
+assumes or infers). Java hosts can also annotate APIs with `@Pure`, `@Mut`, `@Shared`, `@Volatile`,
+`@Nothrow`, and `@IO` from `org.babblelang.effects` (or configure an engine with `assumeEffects` /
+`allowAxioms(false)`). See [BIP007](docs/design/bip007_effects.md) and
+[BIP019](docs/design/bip019_refactoring-axioms.md).
 
 ### Interactive mode
 

@@ -292,16 +292,6 @@ final class AxiomData {
             membersByOwner.computeIfAbsent(member.ownerClass(), k -> new ArrayList<>()).add(member);
         }
 
-        void addAll(AxiomTable table) {
-            if (table == null || table.isEmpty()) {
-                return;
-            }
-            classAxioms.putAll(table.classAxioms());
-            for (Map.Entry<Class<?>, List<MemberAxiom>> e : table.membersByOwner().entrySet()) {
-                membersByOwner.computeIfAbsent(e.getKey(), k -> new ArrayList<>()).addAll(e.getValue());
-            }
-        }
-
         boolean hasClassAxiom(Class<?> cls) {
             return classAxioms.containsKey(cls);
         }
@@ -544,10 +534,6 @@ final class AxiomData {
         boolean isJava() {
             return classAxiom != null || memberAxiom != null;
         }
-
-        boolean isBabble() {
-            return babbleName != null;
-        }
     }
 
     /**
@@ -655,7 +641,7 @@ final class AxiomData {
         }
     }
 
-    private static MemberAxiom parseFnAxiom(BabbleParser.AxiomTypeContext typeCtx,
+    static MemberAxiom parseFnAxiom(BabbleParser.AxiomTypeContext typeCtx,
                                             Class<?> ownerClass,
                                             String memberName,
                                             MemberKind kind,
@@ -809,7 +795,7 @@ final class AxiomData {
                 view, shallow, fresh, foldable, nothrow, true, readParams, curated);
     }
 
-    private static Map<String, String> buildClassTypeVars(BabbleParser.TypeParametersContext tpCtx,
+    static Map<String, String> buildClassTypeVars(BabbleParser.TypeParametersContext tpCtx,
                                                           Class<?> targetClass,
                                                           ErrorSink errors) {
         if (tpCtx == null) {
@@ -933,68 +919,7 @@ final class AxiomData {
             }
             return inner;
         }
-        BabbleParser.NonParenNullableTypeContext primary = ((BabbleParser.NonParenTypeContext) ctx).nonParenNullableType();
-        if (primary instanceof BabbleParser.NullTypeContext) {
-            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.NULLABLE, false);
-        }
-        if (primary instanceof BabbleParser.FunctionTypeContext) {
-            return new TypeErasure("Lorg/babblelang/runtime/Callable;", JavaNullability.Nullness.NON_NULL, false);
-        }
-        BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
-        boolean nullable = simple.question != null;
-        List<String> path = ScopeAnalysis.simpleTypePath(simple);
-        if (path.size() == 1) {
-            String single = path.get(0);
-            if (typeVars.containsKey(single)) {
-                String desc = typeVars.get(single);
-                JavaNullability.Nullness nullness = nullable
-                        ? JavaNullability.Nullness.NULLABLE
-                        : JavaNullability.Nullness.PARAMETRIC;
-                return new TypeErasure(desc, nullness, !nullable);
-            }
-            if ("array".equals(single)) {
-                TypeErasure elem = eraseArrayElement(simple, typeVars, classResolver, errors);
-                String arrDesc = "[" + elem.descriptor();
-                JavaNullability.Nullness nullness = nullable
-                        ? JavaNullability.Nullness.NULLABLE
-                        : JavaNullability.Nullness.NON_NULL;
-                return new TypeErasure(arrDesc, nullness, false);
-            }
-            String builtinDesc = switch (single) {
-                case "byte" -> nullable ? "Ljava/lang/Byte;" : "B";
-                case "short" -> nullable ? "Ljava/lang/Short;" : "S";
-                case "int" -> nullable ? "Ljava/lang/Integer;" : "I";
-                case "long" -> nullable ? "Ljava/lang/Long;" : "J";
-                case "float" -> nullable ? "Ljava/lang/Float;" : "F";
-                case "double" -> nullable ? "Ljava/lang/Double;" : "D";
-                case "bool" -> nullable ? "Ljava/lang/Boolean;" : "Z";
-                case "char" -> nullable ? "Ljava/lang/Character;" : "C";
-                case "string" -> "Ljava/lang/String;";
-                case "any" -> "Ljava/lang/Object;";
-                case "void" -> "V";
-                case "list" -> "Ljava/util/List;";
-                case "set" -> "Ljava/util/Set;";
-                case "sortedset" -> "Ljava/util/SortedSet;";
-                case "map" -> "Ljava/util/Map;";
-                case "sortedmap" -> "Ljava/util/SortedMap;";
-                case "entry" -> "Ljava/util/Map$Entry;";
-                default -> null;
-            };
-            if (builtinDesc != null) {
-                // Validate type arguments if any.
-                validateNestedTypeArgs(simple, typeVars, classResolver, errors);
-                return new TypeErasure(builtinDesc,
-                        nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL, false);
-            }
-        }
-        Class<?> cls = resolveClass(path, classResolver);
-        if (cls == null) {
-            errors.report("Unknown type : " + String.join(".", path), simple);
-            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
-        }
-        validateNestedTypeArgs(simple, typeVars, classResolver, errors);
-        return new TypeErasure(jvmDescriptor(cls),
-                nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL, false);
+        return eraseNonParen(((BabbleParser.NonParenTypeContext) ctx).nonParenNullableType(), typeVars, classResolver, errors);
     }
 
     private static TypeErasure eraseArrayElement(BabbleParser.SimpleTypeContext simple,
@@ -1109,170 +1034,6 @@ final class AxiomData {
             default -> desc;
         };
     }
-
-    // ================================================================ Canonical Order Checking (§3.4)
-
-    /**
-     * Checks canonical order of a parsed {@code curated.ba} file (§3.4) and returns a list of
-     * violation messages (empty if canonical).
-     */
-    static List<String> checkCanonicalOrder(BabbleParser.FileContext file, String expectedPackage) {
-        List<String> violations = new ArrayList<>();
-        String prevClassBinary = null;
-        boolean prevWasClassAxiom = false;
-        String prevMemberName = null;
-        List<String> prevMemberParams = null;
-
-        for (BabbleParser.ExpressionContext expr : file.expression()) {
-            if (!(expr instanceof BabbleParser.AxiomExpressionContext ax)) {
-                violations.add("Non-axiom expression in curated.ba at line " + expr.getStart().getLine());
-                continue;
-            }
-            List<String> path = targetPathOf(ax.target);
-            boolean isClass = ax.axiomType().CLASS() != null;
-            List<String> clsPath = isClass ? path : path.subList(0, path.size() - 1);
-            Class<?> cls = JavaTypeBridge.loadClass(String.join(".", clsPath));
-            if (cls == null) {
-                violations.add("Unknown class " + String.join(".", clsPath) + " at line " + ax.getStart().getLine());
-                continue;
-            }
-            if (expectedPackage != null && !expectedPackage.equals(cls.getPackageName())) {
-                violations.add("Class " + cls.getName() + " does not belong to package " + expectedPackage);
-            }
-            String binary = cls.getName();
-            String memberName = isClass ? null : path.get(path.size() - 1);
-            List<String> memberParams = List.of();
-            if (!isClass) {
-                List<String> errs = new ArrayList<>();
-                ParsedAxiom parsed = parse(ax, null, true, (m, at) -> errs.add(m));
-                if (parsed != null && parsed.memberAxiom() != null) {
-                    memberParams = parsed.memberAxiom().paramDescriptors();
-                }
-            }
-
-            if (prevClassBinary != null) {
-                int cmp = binary.compareTo(prevClassBinary);
-                if (cmp < 0) {
-                    violations.add("Axiom for " + binary + " must appear before " + prevClassBinary);
-                } else if (cmp == 0) {
-                    if (isClass && !prevWasClassAxiom) {
-                        violations.add("Class axiom for " + binary + " must appear before its member axioms");
-                    } else if (!isClass && !prevWasClassAxiom) {
-                        int mCmp = compareMemberOrder(memberName, memberParams, prevMemberName, prevMemberParams);
-                        if (mCmp < 0) {
-                            violations.add("Member axiom " + binary + "." + memberName + " is out of order after " + prevMemberName);
-                        }
-                    }
-                }
-            }
-            prevClassBinary = binary;
-            prevWasClassAxiom = isClass;
-            prevMemberName = memberName;
-            prevMemberParams = memberParams;
-
-            if (isClass) {
-                checkClassWordOrder(ax.axiomType(), binary, violations);
-                List<BabbleParser.AxiomMembersContext> sections = ax.axiomType().axiomMembers();
-                Map<String, String> classTypeVars = buildClassTypeVars(ax.typeParameters(), cls, (m, at) -> {});
-                for (BabbleParser.AxiomMembersContext sec : sections) {
-                    checkMemberSectionOrder(sec, cls, classTypeVars, violations);
-                }
-            } else {
-                checkEffectWordOrder(ax.axiomType(), binary + "." + memberName, violations);
-            }
-        }
-        return violations;
-    }
-
-    private static void checkClassWordOrder(BabbleParser.AxiomTypeContext typeCtx, String binary, List<String> violations) {
-        int prevRank = -1;
-        for (org.antlr.v4.runtime.Token w : typeCtx.classWords) {
-            int rank = CLASS_WORD_ORDER.indexOf(w.getText());
-            if (rank < 0) {
-                violations.add("Unknown class word '" + w.getText() + "' on " + binary);
-            } else if (rank <= prevRank) {
-                violations.add("Class word '" + w.getText() + "' out of canonical order on " + binary);
-            } else {
-                prevRank = rank;
-            }
-        }
-    }
-
-    private static void checkEffectWordOrder(BabbleParser.AxiomTypeContext typeCtx, String label, List<String> violations) {
-        BabbleParser.AxiomEffectPrefixContext prefix = typeCtx.axiomEffectPrefix();
-        if (prefix == null) {
-            return;
-        }
-        int prevRank = -1;
-        for (BabbleParser.AxiomEffectWordContext w : prefix.axiomEffectWord()) {
-            int rank = EFFECT_WORD_ORDER.indexOf(w.getText());
-            if (rank < 0) {
-                violations.add("Unknown effect word '" + w.getText() + "' on " + label);
-            } else if (rank <= prevRank) {
-                violations.add("Effect word '" + w.getText() + "' out of canonical order on " + label);
-            } else {
-                prevRank = rank;
-            }
-        }
-    }
-
-    private static void checkMemberSectionOrder(BabbleParser.AxiomMembersContext section,
-                                                Class<?> cls,
-                                                Map<String, String> classTypeVars,
-                                                List<String> violations) {
-        String prevName = null;
-        List<String> prevParams = null;
-        boolean prevHasSig = false;
-        for (BabbleParser.AxiomMemberContext mCtx : section.axiomMember()) {
-            String name = mCtx.memberName() != null ? mCtx.memberName().getText() : "*";
-            checkEffectWordOrder(mCtx.axiomType(), cls.getName() + "." + name, violations);
-            MemberAxiom parsed = parseFnAxiom(mCtx.axiomType(), cls, name, MemberKind.ANY, false, classTypeVars, null, true, (m, at) -> {});
-            boolean hasSig = parsed != null && parsed.hasSignature();
-            List<String> params = parsed != null ? parsed.paramDescriptors() : List.of();
-            if (prevName != null) {
-                int cmp = compareMemberOrder(name, params, prevName, prevParams);
-                if (cmp < 0 || (cmp == 0 && !hasSig && prevHasSig)) {
-                    violations.add("Member " + cls.getName() + "." + name + params + " out of canonical order after " + prevName + prevParams);
-                }
-            }
-            prevName = name;
-            prevParams = params;
-            prevHasSig = hasSig;
-        }
-    }
-
-    static int compareMemberOrder(String nameA, List<String> paramsA, String nameB, List<String> paramsB) {
-        int rA = memberNameRank(nameA);
-        int rB = memberNameRank(nameB);
-        if (rA != rB) {
-            return Integer.compare(rA, rB);
-        }
-        int nameCmp = nameA.compareTo(nameB);
-        if (nameCmp != 0) {
-            return nameCmp;
-        }
-        int min = Math.min(paramsA.size(), paramsB.size());
-        for (int i = 0; i < min; i++) {
-            int c = paramsA.get(i).compareTo(paramsB.get(i));
-            if (c != 0) {
-                return c;
-            }
-        }
-        return Integer.compare(paramsA.size(), paramsB.size());
-    }
-
-    private static int memberNameRank(String name) {
-        if ("*".equals(name)) return 0;
-        if ("new".equals(name)) return 1;
-        return 2;
-    }
-
-    /** Comparator for sorting {@link MemberAxiom}s in canonical §3.4 order. */
-    static final Comparator<MemberAxiom> CANONICAL_MEMBER_COMPARATOR = (a, b) -> {
-        int c = compareMemberOrder(a.name(), a.paramDescriptors(), b.name(), b.paramDescriptors());
-        if (c != 0) return c;
-        return Boolean.compare(a.hasSignature(), b.hasSignature());
-    };
 
     // ================================================================ Babble-Name Axioms (§2.3, BIP019-P7)
 

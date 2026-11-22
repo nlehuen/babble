@@ -446,14 +446,21 @@ public class FormatterTestCase {
     @Test
     public void testEveryScript() throws Exception {
         List<Path> scripts;
-        try (Stream<Path> tests = Files.walk(Path.of("src/test/babble")); Stream<Path> examples = Files.walk(Path.of("examples"))) {
-            scripts = Stream.concat(tests, examples).filter(path -> path.toString().endsWith(".ba")).sorted().toList();
+        try (Stream<Path> tests = Files.walk(Path.of("src/test/babble"));
+             Stream<Path> examples = Files.walk(Path.of("examples"));
+             Stream<Path> axioms = Files.walk(Path.of("src/main/java/org/babblelang/axioms"))) {
+            scripts = Stream.concat(Stream.concat(tests, examples), axioms)
+                    .filter(path -> path.toString().endsWith(".ba")).sorted().toList();
         }
         Assertions.assertFalse(scripts.isEmpty());
         for (Path script : scripts) {
-            String formatted = Formatter.format(Files.readString(script), script.toString());
+            String original = Files.readString(script);
+            String formatted = Formatter.format(original, script.toString());
             Assertions.assertEquals(formatted, Formatter.format(formatted, script.toString()), script.toString());
             Assertions.assertTrue(formatted.lines().noneMatch(line -> line.endsWith(" ") || line.contains("\t")), script.toString());
+            if (script.startsWith(Path.of("src/main/java/org/babblelang/axioms"))) {
+                Assertions.assertEquals(original, formatted, "Axiom file is not formatter-clean : " + script);
+            }
         }
     }
 

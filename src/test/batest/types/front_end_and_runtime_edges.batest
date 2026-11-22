@@ -181,7 +181,7 @@ static block inside pure function violates pure guarantee
 
 {{{{{
 ;; EffectChecker static block inside deterministic function
-axiom volatile on java.lang.System.nanoTime
+axiom java.lang.System.nanoTime: fn volatile
 def fDet = fn () -> (
     def C = class () () static ( java.lang.System.nanoTime() )
     ()
@@ -218,6 +218,7 @@ Cannot cast to a function type
 ;; axiom without effect modifier fails cleanly
 axiom on java.lang.Math.abs
 }}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 axiom requires at least one effect modifier
 
 {{{{{

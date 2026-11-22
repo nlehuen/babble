@@ -46,10 +46,6 @@ true:true:true:true:true:true:false:true:true:true:24:24:2.0:2.0:true:7:9:4.0:5.
 
 {{{{{
 ;; ConstFoldPass: whitelisted Math (sqrt/abs/min/max on int/long/float/double) & String (trim/length/isEmpty) + non-folding floorDiv
-axiom pure nothrow on java.lang.Math.sqrt
-axiom pure nothrow on java.lang.Math.abs
-axiom pure nothrow on java.lang.Math.min
-axiom pure nothrow on java.lang.Math.max
 def foldedJava = fn io (): string -> (
     def s = "  babble  ".trim()
     def l = "abcd".length()
@@ -67,9 +63,7 @@ babble:4:true:3.0:7:9:2.5:2:3
 
 {{{{{
 ;; AlgebraicSimplifyPass: boolean identities, int + long identities & reassociation, string reassociation, idempotence, IEEE-754 preservation
-axiom pure nothrow on java.lang.Math.abs
-axiom pure nothrow on java.lang.Math.floor
-axiom pure nothrow idempotent on java.lang.Character.toLowerCase
+axiom java.lang.Character.toLowerCase: fn pure nothrow idempotent
 def clamp = fn axiom pure nothrow idempotent (x: int): int -> (if x < 0 then (0) else (x))
 def bigClamp = fn axiom pure nothrow idempotent (x: int): int -> (
     def a = x ; def b = a ; def c = b ; def d = c ; def e = d ; def f = e ; def g = f ; def h = g
@@ -119,9 +113,6 @@ false:false:true:true:false:false:true:true:false:6:14:0:33:-4:4:0:-22:hiab:3:3:
 
 {{{{{
 ;; HirLicmPass & HirPurity: while + for loops hoisting pure invariant calls, math/record fields, array.size, logic, if, block; rejecting impure/throwing
-axiom pure nothrow on java.lang.Math.sin
-axiom pure nothrow on java.lang.Math.cos
-axiom pure nothrow on java.lang.Math.hypot
 def Vec = record (x: double, y: double) (
     def len = fn nothrow (): double -> (java.lang.Math.hypot(this.x, this.y))
 )
@@ -226,8 +217,6 @@ Type error : expected int, got null
 
 {{{{{
 ;; HirPurity + HirLicmPass: hoist across widening ranks 1..5, As, Block, Unary/Binary/DIV, Logic, ThisRef, DirectBabbleCall via fn var, array.size()
-axiom pure nothrow on java.lang.Math.sin
-axiom pure nothrow on java.lang.Math.toRadians
 def Box = class (def x: double, def name: string) (
     def run = fn io (n: int, b: byte, flag: bool, mutFlag: bool, xs: array of int): double -> (
         def acc = 0.0
@@ -259,8 +248,6 @@ println(java.lang.Math.round(Box(1.0, "  hi  ").run(2, byte(2), true, true, arra
 
 {{{{{
 ;; HirPurity.collectModifiedVars + InlinePass.alphaRename across loops/AST forms + ConstFoldPass javaRetKind/convertConstToKind
-axiom pure nothrow on java.lang.Math.round
-axiom pure nothrow on java.lang.Math.toDegrees
 def Base = interface (def tag = fn (): int -> (1))
 def Holder = class (def v: int) implements Base (
     def tag = fn (): int -> (super.tag() + this.v)
@@ -349,8 +336,6 @@ println(testConversions())
 
 {{{{{
 ;; Record-based HirLicmPass (hoistFromWhile + hoistFromFor + ThisRef + ThisFieldGet + DirectBabbleCall + effectiveKind 1..5)
-axiom pure nothrow on java.lang.Math.sin
-axiom pure nothrow on java.lang.Math.cos
 def idByte = fn nothrow (x: byte): byte -> (x)
 def idInt = fn nothrow (x: int): int -> (x)
 def idFloat = fn nothrow (x: float): float -> (x)
@@ -390,9 +375,6 @@ println(java.lang.Math.round(RecVec(byte(2), 3, 1.0, true, "hi", freeze(array.of
 
 {{{{{
 ;; HirPurity.collectModifiedVars directly inside a loop + ConstFoldPass (unary negate/if-prune/convertConstToKind) + InlinePass (alphaRename)
-axiom pure nothrow on java.lang.Math.abs
-axiom pure nothrow on java.lang.Math.min
-axiom pure nothrow on java.lang.Math.floorDiv
 def Iface = interface (
     def ifaceVal = fn (x: int): int -> (x + 1)
 )
@@ -461,9 +443,8 @@ println(exerciseAll(2))
 
 {{{{{
 ;; Non-inlineable (>25 HIR nodes) pure functions so InlinePass preserves DirectBabbleCall for HirLicmPass & HirPurity
-axiom pure nothrow on java.lang.Math.sin
-axiom pure nothrow on java.lang.Integer.bitCount
-axiom pure nothrow on java.util.Objects.nonNull
+axiom java.lang.Integer.bitCount: fn pure nothrow
+axiom java.util.Objects.nonNull: fn pure nothrow
 def bigByte = fn nothrow (x: byte): byte -> (
     def a = x ; def b = a ; def c = b ; def d = c ; def e = d ; def f = e ; def g = f ; def h = g
     def i = h ; def j = i ; def k = j ; def l = k ; def m = l ; def n = m ; n
@@ -567,8 +548,6 @@ println(java.lang.Math.round(HoistRec(byte(2), 3, 1.5f, 1.0, true).run(2, 4) * 1
 
 {{{{{
 ;; ConstFoldPass (if-prune widening/convertConstToKind, logic non-bool RHS, string fold) + AlgebraicSimplifyPass + InlinePass
-axiom pure nothrow on java.lang.Math.min
-axiom pure nothrow on java.lang.Math.max
 def tick = 0
 def bump = fn io (): int -> (tick += 1 ; tick)
 def widenSinkD = fn (v: double): double -> (v + 0.5)
