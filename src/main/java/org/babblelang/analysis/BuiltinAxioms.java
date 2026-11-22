@@ -178,6 +178,22 @@ public final class BuiltinAxioms {
         return null;
     }
 
+    /** Curated array-element nullness for a Java method/constructor array parameter, or {@code null} if unspecified. */
+    JavaNullability.Nullness parameterElementNullness(Executable exec, int index) {
+        if (isEmpty() || exec == null || index < 0) {
+            return null;
+        }
+        AxiomData.MemberAxiom ax = exec instanceof Method m
+                ? methodAxiom(m.getDeclaringClass(), m.getName(), m)
+                : exec instanceof Constructor<?> c
+                ? constructorAxiom(c.getDeclaringClass(), c)
+                : null;
+        if (ax != null && ax.hasSignature() && index < ax.paramElementNullness().length) {
+            return ax.paramElementNullness()[index];
+        }
+        return null;
+    }
+
     /** Whether a Java executable's declaring class is {@code nullmarked} by a curated axiom. */
     public boolean nullMarked(Executable exec) {
         return exec != null && nullMarked(exec.getDeclaringClass());
