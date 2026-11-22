@@ -1,194 +1,164 @@
-;; Overloaded Java methods, varargs dispatch, numeric widening in Java calls, and overload errors
+;; Overloaded Java methods, varargs dispatch, numeric widening, and overload errors
+;; References : BIP008, BIP020, BIP021-D8 (Java varargs Phase 3), Overloads, JavaLinker
+
+def Demo = import("org.babblelang.tests").JavaClassDemo
 
 {{{{{
-;; Static overload selection by type and arity (String.valueOf, Math.abs, StringBuilder.append)
 def sb = java.lang.StringBuilder()
 sb.append(true).append(":").append(42).append(":").append(1.5)
-println(sb.toString())
-println(java.lang.Math.abs(-5), ":", java.lang.Math.abs(-2.5))
-println(java.lang.String.valueOf(true), ":", java.lang.String.valueOf(99))
+assert(sb.toString() == "true:42:1.5")
+assert(java.lang.Math.abs(-5) == 5)
+assert(java.lang.Math.abs(-2.5) == 2.5)
+assert(java.lang.String.valueOf(true) == "true")
+assert(java.lang.String.valueOf(99) == "99")
 }}}}}
-true:42:1.5
-5:2.5
-true:99
 
 {{{{{
-;; Fixed-arity Java overloads (List.of 0/3 args) and passing an array to a varargs parameter
-def empty : java.util.List of string = java.util.List.of()
+def empty: java.util.List of string = java.util.List.of()
 def three = java.util.List.of("a", "b", "c")
 def fromArr = java.util.Arrays.asList(java.util.List.of("x", "y").toArray())
-println(empty.size(), ":", three.size(), ":", three.get(1), ":", fromArr.size(), ":", fromArr.get(0))
+assert(empty.size() == 0)
+assert(three.size() == 3)
+assert(three.get(1) == "b")
+assert(fromArr.size() == 2)
+assert(fromArr.get(0) == "x")
 }}}}}
-0:3:b:2:x
 
 {{{{{
-;; Varargs methods expand trailing arguments in Phase 3 (BIP021-D8)
-println(java.util.Arrays.asList("only"))
-println(java.util.Arrays.asList("a", "b", "c"))
-println(java.util.Arrays.asList(1, 2, 3))
-def empty : java.util.List of string = java.util.Arrays.asList()
-println(empty.size())
+assert(java.util.Arrays.asList("only").toString() == "[only]")
+assert(java.util.Arrays.asList("a", "b", "c").toString() == "[a, b, c]")
+assert(java.util.Arrays.asList(1, 2, 3).toString() == "[1, 2, 3]")
+def empty: java.util.List of string = java.util.Arrays.asList()
+assert(empty.size() == 0)
 }}}}}
-[only]
-[a, b, c]
-[1, 2, 3]
-0
 
 {{{{{
-;; Empty generic varargs without expected type cannot infer type argument
-println(java.util.Arrays.asList().size())
+def n = java.util.Arrays.asList().size()
 }}}}}
 Missing type : cannot infer type arguments for java.util.Arrays.asList
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Standard JDK varargs: String.format, List.of (11+ args), Path.of, IntStream.of, EnumSet.of
-println(java.lang.String.format("%s=%d", "x", 42))
-println(java.lang.String.format("%s:%s", null, "ok"))
-println(java.lang.String.format("plain"))
+assert(java.lang.String.format("%s=%d", "x", 42) == "x=42")
+assert(java.lang.String.format("%s:%s", null, "ok") == "null:ok")
+assert(java.lang.String.format("plain") == "plain")
 def big = java.util.List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)
-println(big.size(), ":", big.get(11))
-println(java.nio.file.Path.of("a", "b", "c").toString())
-println(java.nio.file.Path.of("solo").toString())
-println(java.util.stream.IntStream.of(10, 20, 30).sum())
-println(java.util.stream.IntStream.of().sum())
+assert(big.size() == 12)
+assert(big.get(11) == 12)
+}}}}}
+
+{{{{{
+def p = java.nio.file.Path.of("a", "b", "c")
+assert(p.getNameCount() == 3)
+assert(p.getName(0).toString() == "a")
+assert(p.getName(2).toString() == "c")
+assert(java.nio.file.Path.of("solo").toString() == "solo")
+assert(java.util.stream.IntStream.of(10, 20, 30).sum() == 60)
+assert(java.util.stream.IntStream.of().sum() == 0)
+}}}}}
+
+{{{{{
+def Day = java.time.DayOfWeek
 def days = java.util.EnumSet.of(
-    java.time.DayOfWeek.MONDAY,
-    java.time.DayOfWeek.TUESDAY,
-    java.time.DayOfWeek.WEDNESDAY,
-    java.time.DayOfWeek.THURSDAY,
-    java.time.DayOfWeek.FRIDAY,
-    java.time.DayOfWeek.SATURDAY
+    Day.MONDAY, Day.TUESDAY, Day.WEDNESDAY,
+    Day.THURSDAY, Day.FRIDAY, Day.SATURDAY
 )
-println(days.size(), ":", days.contains(java.time.DayOfWeek.SATURDAY))
+assert(days.size() == 6)
+assert(days.contains(Day.SATURDAY))
 }}}}}
-x=42
-null:ok
-plain
-12:12
-a/b/c
-solo
-60
-0
-6:true
 
 {{{{{
-;; Fixed-arity phase 1-2 beats varargs phase 3; primitive array to Object... wraps as 1 element (JLS)
+;; JLS : primitive array passed to Object... wraps as 1 element; reference array passes directly
 def ints = array.of(1, 2, 3)
-def wrapped : java.util.List of array of int = java.util.Arrays.asList(ints)
-println(wrapped.size(), ":", wrapped.get(0).size())
+def wrapped: java.util.List of array of int = java.util.Arrays.asList(ints)
+assert(wrapped.size() == 1)
+assert(wrapped.get(0).size() == 3)
 def strs = array.of("p", "q")
-def direct : java.util.List of string = java.util.Arrays.asList(strs)
-println(direct.size(), ":", direct.get(1))
+def direct: java.util.List of string = java.util.Arrays.asList(strs)
+assert(direct.size() == 2)
+assert(direct.get(1) == "q")
 }}}}}
-1:3
-2:q
 
 {{{{{
-;; Varargs constructor, primitive widening in varargs, specificity (String... beats Object...), fixed beats varargs, SAM varargs
-def demo = import("org.babblelang.tests").JavaClassDemo
-println(demo.VarArgsCtor("empty").summary)
-println(demo.VarArgsCtor("nums", 1, 2, 3).summary)
-println(demo.vaPick("one"))
-println(demo.vaPick("a", "b"))
-println(demo.vaPick("a", 2))
-println(demo.vaPick())
-println(demo.vaSumDoubles(1, 2.5, 3))
-println(demo.vaRunAll(fn (x : int) : int -> ( x + 1 ), fn (x : int) : int -> ( x * 10 )))
+assert(Demo.VarArgsCtor("empty").summary == "empty:")
+assert(Demo.VarArgsCtor("nums", 1, 2, 3).summary == "nums:1,2,3")
+assert(Demo.vaPick("one") == "fixed:one")
+assert(Demo.vaPick("a", "b") == "String...:2")
+assert(Demo.vaPick("a", 2) == "Object...:2")
+assert(Demo.vaPick() == "String...:0")
 }}}}}
-empty:
-nums:1,2,3
-fixed:one
-String...:2
-Object...:2
-String...:0
-6.5
-20
 
 {{{{{
-;; JLS §15.12.2.5 ambiguous varargs overloads: vaAmbig(int, int...) vs vaAmbig(int...)
-def demo = import("org.babblelang.tests").JavaClassDemo
-demo.vaAmbig(1, 2)
+assert(Demo.vaSumDoubles(1, 2.5, 3) == 6.5)
+def total = Demo.vaRunAll(
+    fn (x: int): int -> ( x + 1 ),
+    fn (x: int): int -> ( x * 10 )
+)
+assert(total == 20)
+}}}}}
+
+{{{{{
+;; JLS §15.12.2.5 : vaAmbig(int, int...) vs vaAmbig(int...)
+Demo.vaAmbig(1, 2)
 }}}}}
 Ambiguous call to org.babblelang.tests.JavaClassDemo.vaAmbig for (int, int)
 
 {{{{{
-;; Ambiguous overloaded call with null argument
 def sb = java.lang.StringBuilder()
 sb.append(null)
 }}}}}
 Ambiguous call to java.lang.StringBuilder.append for (null)
 
 {{{{{
-;; No matching overload for given argument types
-print(java.lang.Integer.parseInt(true))
+def n = java.lang.Integer.parseInt(true)
 }}}}}
 No applicable overload of java.lang.Integer.parseInt for (bool)
 
 {{{{{
-;; Calling overloaded Java method on any receiver (JavaLinker runtime overload selection)
-def dyn = fn (v : any) : any -> ( v )
-def sb : java.lang.StringBuilder = java.lang.StringBuilder("x")
-def obj = dyn(sb)
+;; BIP008 : member access on an any-typed Java receiver is rejected statically
+def dyn = fn (v: any): any -> ( v )
+def obj = dyn(java.lang.StringBuilder("x"))
 def ok = obj.toString()
-println(ok)
 }}}}}
 Not a scope : obj
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Dynamic Java varargs dispatch via bound JavaMethod values (exercises Overloads.toJavaArguments & isVarArgsMoreSpecific)
-def demo = import("org.babblelang.tests").JavaClassDemo
-def fmt2 : fn io (f : string, a : string, b : int) : string = java.lang.String.format
-def fmt0 : fn io (f : string) : string = java.lang.String.format
-def pickStr : fn io (a : string, b : string) : string = demo.vaPick
-def pickObj : fn io (a : string, b : int) : string = demo.vaPick
-def sumDbl : fn io (a : double, b : double, c : double) : double = demo.vaSumDoubles
-println(fmt2("%s=%d", "n", 7))
-println(fmt0("plain"))
-println(pickStr("a", "b"))
-println(pickObj("a", 1))
-println(sumDbl(3, 4.5, 5))
+def fmt2: fn io (f: string, a: string, b: int): string = java.lang.String.format
+def fmt0: fn io (f: string): string = java.lang.String.format
+assert(fmt2("%s=%d", "n", 7) == "n=7")
+assert(fmt0("plain") == "plain")
 }}}}}
-n=7
-plain
-String...:2
-Object...:2
-12.5
 
 {{{{{
-;; Dynamic Java varargs edge cases: null element, 0 varargs, fixed-arity beats varargs, 0-arg primitive varargs
-def demo = import("org.babblelang.tests").JavaClassDemo
-def fmtNull : fn io (f : string, a : any?) : string = java.lang.String.format
-def pick0 : fn io () : string = demo.vaPick
-def pick1 : fn io (a : string) : string = demo.vaPick
-def sum0 : fn io () : double = demo.vaSumDoubles
-println(fmtNull("%s", null))
-println(pick0())
-println(pick1("hi"))
-println(sum0())
+def pickStr: fn io (a: string, b: string): string = Demo.vaPick
+def pickObj: fn io (a: string, b: int): string = Demo.vaPick
+def sumDbl: fn io (a: double, b: double, c: double): double = Demo.vaSumDoubles
+assert(pickStr("a", "b") == "String...:2")
+assert(pickObj("a", 1) == "Object...:2")
+assert(sumDbl(3, 4.5, 5) == 12.5)
 }}}}}
-null
-String...:0
-fixed:hi
-0.0
 
 {{{{{
-;; Dynamic Java varargs with fixed prefix: Collections.addAll(Collection, T...)
+def fmtNull: fn io (f: string, a: any?): string = java.lang.String.format
+def pick0: fn io (): string = Demo.vaPick
+def pick1: fn io (a: string): string = Demo.vaPick
+def sum0: fn io (): double = Demo.vaSumDoubles
+assert(fmtNull("%s", null) == "null")
+assert(pick0() == "String...:0")
+assert(pick1("hi") == "fixed:hi")
+assert(sum0() == 0.0)
+}}}}}
+
+{{{{{
 def xs = list of string ()
-def addAll : fn io (shared c : list of string, a : string, b : string) : bool = java.util.Collections.addAll
+def addAll: fn io (shared c: list of string, a: string, b: string): bool = java.util.Collections.addAll
 addAll(xs, "x", "y")
-println(xs.size(), ":", xs.get(0), ":", xs.get(1))
+assert(xs.size() == 2)
+assert(xs.get(0) == "x")
+assert(xs.get(1) == "y")
 }}}}}
-2:x:y
 
 {{{{{
-;; Dynamic Java varargs failing with fewer args than fixed prefix (single overload: deterministic)
-def addBad : fn io () : bool = java.util.Collections.addAll
+def addBad: fn io (): bool = java.util.Collections.addAll
 addBad()
 }}}}}
 No applicable overload of java.util.Collections.addAll for () : candidates are (java.util.Collection, java.lang.Object[])
-
-
-
-

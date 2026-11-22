@@ -1,24 +1,26 @@
-;; RM007 (BIP007-P2 / BIP016): unique, move, freeze, frozen, discard, and BIP016-D10 return-through-borrow parity tests
+;; Ownership, frozen values, unused-pure checks, and return-through-borrow
+;; References : BIP007 (BIP007-P2, BIP007-D7), BIP016 (BIP016-D10)
+
+def MyRecord = record (a: int) ()
+def Box = class (def n: int) ()
+def id of T = fn (x: T): T -> ( x )
 
 {{{{{
-;; Mandatory BIP007-D7 narrowing test (negative): narrowing frozen any via `is MyRecord` must NOT lose frozen
-def MyRecord = record (a: int) ()
+;; BIP007-D7 : narrowing frozen any via `is MyRecord` must not lose frozen
 def a: frozen any = MyRecord(5)
 def b: MyRecord? = if a is MyRecord then ( a ) else ( null )
 }}}}}
 Type error : expected MyRecord?, got frozen MyRecord
 
 {{{{{
-;; Mandatory BIP007-D7 narrowing test (positive): narrowing frozen any via `is MyRecord` preserves frozen
-def MyRecord = record (a: int) ()
+;; BIP007-D7 : narrowing frozen any via `is MyRecord` preserves frozen
 def a: frozen any = MyRecord(5)
 def c: frozen MyRecord? = if a is MyRecord then ( a ) else ( null )
-println(if c != null then ( c.a ) else ( 0 ))
+assert(c != null and c.a == 5)
 }}}}}
-5
 
 {{{{{
-;; Unique local builder mutated inside pure function and frozen for read-only sharing
+;; Unique local builder mutated inside a pure function and frozen for read-only sharing
 def Counter = class (def n: int = 0) (
     def inc = fn mut nothrow () -> ( this.n = this.n + 1 )
     def value = fn nothrow (): int -> ( this.n )
@@ -29,24 +31,19 @@ def build = fn (): frozen Counter -> (
     c.inc()
     freeze(c)
 )
-def fc = build()
-println(fc.value())
+assert(build().value() == 2)
 }}}}}
-2
 
 {{{{{
-;; Use after move rejected statically
-def Box = class (def x: int) ()
 def f = fn (): int -> (
     def b = Box(1)
     def c = move(b)
-    b.x + c.x
+    b.n + c.n
 )
 }}}}}
 Use of moved variable b
 
 {{{{{
-;; Unused pure nothrow expression rejected; discard() opts out cleanly
 def f = fn (x: int): int -> (
     x + 1
     x
@@ -59,28 +56,23 @@ def f = fn nothrow (x: int): int -> (
     discard(x + 1)
     x * 2
 )
-println(f(21))
+assert(f(21) == 42)
 }}}}}
-42
 
 {{{{{
-;; BIP016-D10: id and min return borrowed parameters without requiring shared
-def Box = class (def n: int) ()
-def id of T = fn (x: T): T -> ( x )
+;; BIP016-D10 : id and minBy return borrowed parameters without requiring shared
 def minBy of T = fn (a: T, b: T, cmp: fn (x: T, y: T): int): T -> (
     if cmp(a, b) <= 0 then ( a ) else ( b )
 )
 def smallest = fn (a: Box, b: Box): Box -> (
     minBy(a, b, fn (x: Box, y: Box): int -> ( x.n - y.n ))
 )
-println(id(Box(9)).n, ":", smallest(Box(7), Box(3)).n)
+assert(id(Box(9)).n == 9)
+assert(smallest(Box(7), Box(3)).n == 3)
 }}}}}
-9:3
 
 {{{{{
-;; BIP016-D10 soundness: returning a unique local through id demotes uniqueness so freeze fails
-def Box = class (def n: int) ()
-def id of T = fn (x: T): T -> ( x )
+;; BIP016-D10 soundness : returning a unique local through id demotes uniqueness so freeze fails
 def bad = fn (): frozen Box -> (
     def u = Box(1)
     def alias = id(u)

@@ -1,4 +1,5 @@
-;; if / then / else / else if chains, type joins, and truthiness
+;; if / then / else / else if chains, branch type joins, nullable if-without-else, and any? truthiness
+;; References : BIP008 (unions, nullables), BIP012 (factored ifExpr)
 
 {{{{{
 def grade = fn (n : int) : string -> (
@@ -12,49 +13,54 @@ def grade = fn (n : int) : string -> (
         "F"
     )
 )
-println(grade(95), ":", grade(83), ":", grade(71), ":", grade(40))
+assert(grade(95) == "A")
+assert(grade(83) == "B")
+assert(grade(71) == "C")
+assert(grade(40) == "F")
 }}}}}
-A:B:C:F
 
 {{{{{
-;; Precedence of else-if tail: "if ... else if ... + 1" applies to the chain
 def classify = fn (x : int) : int -> (
     (if x < 0 then ( 10 ) else if x == 0 then ( 20 ) else ( 30 )) + 1
 )
-println(classify(-1), ":", classify(0), ":", classify(5))
+assert(classify(-1) == 11)
+assert(classify(0) == 21)
+assert(classify(5) == 31)
 }}}}}
-11:21:31
 
 {{{{{
-;; if without else yields nullable type (T?) when used as a value
 def maybe = fn (flag : bool) : int? -> (
     if flag then ( 42 )
 )
-println(maybe(true), ":", maybe(false))
+assert(maybe(true) == 42)
+assert(maybe(false) == null)
 }}}}}
-42:null
 
 {{{{{
-;; Numeric widening join across branches: int and double join to double
 def mix = fn (flag : bool) : double -> (
     if flag then ( 1 ) else ( 2.5 )
 )
-println(mix(true), ":", classof(mix(true)), ":", mix(false))
+assert(mix(true) == 1.0)
+assert(string(classof(mix(true))) == "java.lang.Double")
+assert(mix(false) == 2.5)
 }}}}}
-1.0:java.lang.Double:2.5
 
 {{{{{
-;; Dynamic truthiness on int, double, null, string in if condition
-def dyn = fn (v : any?) : any? -> ( v )
-def t = fn (v : any?) : string -> ( if v then ( "T" ) else ( "F" ) )
-println(t(dyn(0)), t(dyn(1)), t(dyn(0.0)), t(dyn(-0.5)), t(dyn(null)), t(dyn("ok")))
+;; Truthiness of any? values : 0, 0.0, and null are falsy; non-zero numbers and strings are truthy
+def box = fn (v : any?) : any? -> ( v )
+def truthy = fn (v : any?) : bool -> ( if v then ( true ) else ( false ) )
+assert(not truthy(box(0)))
+assert(truthy(box(1)))
+assert(not truthy(box(0.0)))
+assert(truthy(box(-0.5)))
+assert(not truthy(box(null)))
+assert(truthy(box("ok")))
 }}}}}
-FTFTFT
 
 {{{{{
-;; Dynamic condition evaluated after boolean test error when unreachable? Always evaluates test
 def f = fn (x : int) -> ( if x == 1 then ( 10 ) else ( "ten" ) )
 def r : int | string = f(1)
-println(r, ":", f(2))
+assert(r == 10)
+assert(f(2) == "ten")
 }}}}}
-10:ten
+

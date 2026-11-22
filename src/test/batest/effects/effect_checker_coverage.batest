@@ -1,0 +1,344 @@
+;; EffectChecker and EffectSet coverage : purity, determinism, nothrow, toString profiles,
+;; SAM callback propagation, mut exclusivity, algebraic property inference/validation,
+;; EffectSet.intersect/satisfies, static blocks in constrained functions, and legacy axiom syntax.
+;; References : BIP007, BIP016, BIP019, EffectChecker, EffectSet
+
+========== ce_mod_a.ba ==========
+export def ModCustom = class (def x: int) (
+    def toString = fn (): string -> ( "M:" + this.x )
+)
+
+==========
+def Reg = class (def v: int) ()
+def Box = class (def v: int) ()
+
+{{{{{
+def g = 1
+g = 2
+def badHerm = fn () -> ( g = 3 )
+}}}}}
+Function badHerm violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+axiom java.lang.Math.random: fn volatile
+def badDet = fn () -> ( java.lang.Math.random() )
+}}}}}
+Function badDet violates deterministic guarantee : mark function as volatile (or io)
+
+{{{{{
+def badNothrow = fn io () -> ( java.lang.Integer.parseInt("1") )
+def badNothrow2 = fn nothrow (s: string): int -> ( int(s) )
+}}}}}
+Function badNothrow2 declared nothrow violates nothrow guarantee
+
+{{{{{
+def ma = import("ce_mod_a.ba")
+def useRegOk = fn volatile (r: Reg): string -> ( "r=" + r )
+def useModOk = fn (m: ma.ModCustom): string -> ( "m=" + m )
+def uStr = fn (v: int | string): string -> ( "" + v )
+assert(useModOk(ma.ModCustom(7)) == "m=M:7")
+assert(uStr(5) == "5")
+assert(uStr("ok") == "ok")
+}}}}}
+
+{{{{{
+def useJavaOk = fn (p: java.awt.Point): string -> ( "p=" + p.x )
+def useJavaStr = fn volatile (p: java.awt.Point): string -> ( "p=" + p )
+def pt = java.awt.Point(1, 2)
+assert(useJavaOk(pt) == "p=1")
+assert(useJavaStr(pt) == "p=java.awt.Point[x=1,y=2]")
+}}}}}
+
+{{{{{
+def badRegDet = fn (r: Reg): string -> ( "r=" + r )
+}}}}}
+Function badRegDet violates deterministic guarantee : mark function as volatile (or io)
+
+{{{{{
+axiom java.util.Collections.singletonList: fn pure
+axiom java.lang.Iterable.forEach: fn pure
+axiom java.util.List.size: fn pure
+def okSam = fn (): int -> (
+    def item: java.lang.Object = 1
+    def xs: java.util.List of java.lang.Object = java.util.Collections.singletonList(item)
+    xs.forEach(fn (x) -> ( def y = x ))
+    xs.size()
+)
+assert(okSam() == 1)
+}}}}}
+
+{{{{{
+axiom java.util.Collections.singletonList: fn pure
+axiom java.lang.Iterable.forEach: fn pure
+def GoodCons = class () implements java.util.function.Consumer of any (
+    def accept = fn (x: any) -> ( () )
+)
+def okSam = fn (): int -> (
+    def item: any = 1
+    java.util.Collections.singletonList(item).forEach(GoodCons())
+    1
+)
+assert(okSam() == 1)
+}}}}}
+
+{{{{{
+axiom java.util.ArrayList.new: fn pure
+axiom java.util.ArrayList.add: fn mut
+axiom java.util.ArrayList.forEach: fn pure
+def badSamLambda = fn () -> (
+    def xs: java.util.ArrayList of any = java.util.ArrayList()
+    xs.add(1)
+    xs.forEach(fn (x) -> ( println(x) ))
+)
+}}}}}
+Function badSamLambda violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+axiom java.util.ArrayList.new: fn pure
+axiom java.util.ArrayList.add: fn mut
+axiom java.util.ArrayList.forEach: fn pure
+def BadCons = class () implements java.util.function.Consumer of any (
+    def accept = fn io (x: any) -> ( println(x) )
+)
+def badSamClass = fn () -> (
+    def xs: java.util.ArrayList of any = java.util.ArrayList()
+    xs.add(1)
+    xs.forEach(BadCons())
+)
+}}}}}
+Function badSamClass violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+def SwapBox = class (def v: int) (
+    def swapWith = fn mut (mut other: SwapBox) -> (
+        def t = this.v
+        this.v = other.v
+        other.v = t
+    )
+)
+def b = SwapBox(1)
+b.swapWith(b)
+}}}}}
+Exclusivity error : mut target b aliases argument b
+
+{{{{{
+;; StringBuilder implements Comparable in Java 11+, exercising the Java ordered-type branch
+def monoJ = fn (f: fn monotone (s: java.lang.StringBuilder): int): int -> ( 1 )
+def w1 = fn (x: double): double -> ( 1.0 + x )
+def w2 = fn (x: int): string -> ( "" + x + "!" )
+def w3 = fn (x: double): string -> ( "d=" + x )
+def m1: fn monotone (x: double): double = w1
+def j1: fn injective (x: int): string = w2
+assert(m1(2.0) == 3.0)
+assert(j1(4) == "4!")
+assert(w3(1.5) == "d=1.5")
+}}}}}
+
+{{{{{
+def addI = fn (a: int, b: int): int -> ( a + b )
+def impBin = fn io (a: int, b: int): int -> ( println(a); a + b )
+def w4 = fn (x: int, y: int): int -> ( addI(a: x, b: y) )
+def w5 = fn io (x: int, y: int): int -> ( impBin(x, y) )
+assert(w4(2, 3) == 5)
+}}}}}
+
+{{{{{
+def sCat: fn associative (a: string, b: string): string = fn (a: string, b: string): string -> ( a + b )
+def dAdd: fn commutative (a: double, b: double): double = fn (a: double, b: double): double -> ( a + b )
+assert(sCat("a", "b") == "ab")
+assert(dAdd(1.5, 2.5) == 4.0)
+}}}}}
+
+{{{{{
+def badSub: fn commutative (a: int, b: int): int = fn (a: int, b: int): int -> ( a - b )
+}}}}}
+Type error : expected commutative (a : int, b : int) : int, got (a : int, b : int) : int
+
+{{{{{
+axiom java.nio.file.Path.normalize: fn pure idempotent
+def normWrap = fn (p: java.nio.file.Path): java.nio.file.Path -> ( p.normalize() )
+def pIdem: fn idempotent (p: java.nio.file.Path): java.nio.file.Path = normWrap
+assert(pIdem(java.nio.file.Path.of("a")).toString() == "a")
+}}}}}
+
+{{{{{
+def cleanOp = fn idempotent (s: string): string -> ( s )
+def cleanWrap = fn (s: string): string -> ( cleanOp(s) )
+def sIdem: fn idempotent (s: string): string = cleanWrap
+assert(sIdem("ok") == "ok")
+}}}}}
+
+{{{{{
+def MBox = class (def v: int) (
+    def addL = fn mut commutative (d: int): int -> ( this.v = this.v + d )
+    def addR = fn mut commutative (d: int): int -> ( this.v = d + this.v )
+)
+def mb = MBox(0)
+def mc1: fn commutative mut (d: int): int = mb.addL
+def mc2: fn commutative mut (d: int): int = mb.addR
+assert(mc1(1) == 1)
+assert(mc2(2) == 3)
+}}}}}
+
+{{{{{
+def MBox = class (def v: int) (
+    def addPlus = fn mut commutative (d: int): int -> ( this.v += d )
+)
+def mb = MBox(0)
+def mc3: fn commutative mut (d: int): int = mb.addPlus
+assert(mc3(4) == 4)
+}}}}}
+
+{{{{{
+def nDet = class () () static (
+    def s = Box(1)
+)
+def badStaticRead = fn (): int -> ( nDet.s.v )
+}}}}}
+Function badStaticRead violates deterministic guarantee : mark function as volatile (or io)
+
+{{{{{
+def negF: fn monotone (x: double): double = fn (x: double): double -> ( -(-x) )
+def dblSum: fn monotone (x: double): double = fn (x: double): double -> ( x + x )
+def oddMul: fn injective (x: int): int = fn (x: int): int -> ( x * 3 )
+def loc = 1
+loc += 2
+assert(negF(2.5) == 2.5)
+assert(dblSum(1.5) == 3.0)
+assert(oddMul(4) == 12)
+assert(loc == 3)
+}}}}}
+
+{{{{{
+def sLeft: fn injective (x: string): string = fn (x: string): string -> ( x + "!" )
+def sRight: fn injective (x: int): string = fn (x: int): string -> ( "!" + x )
+assert(sLeft("ok") == "ok!")
+assert(sRight(4) == "!4")
+}}}}}
+
+{{{{{
+def badAssocDom = fn (f: fn associative (a: int, b: double): double): int -> ( 1 )
+}}}}}
+associative requires a pure binary (T, T) : T signature
+
+{{{{{
+def badAssocRet: fn associative (a: int, b: int): double = fn (a: int, b: int): double -> ( a + b )
+}}}}}
+associative requires a pure binary (T, T) : T signature
+
+{{{{{
+def badCommDom = fn (f: fn commutative (a: int, b: double): double): int -> ( 1 )
+}}}}}
+commutative without mut requires a pure binary (T, T) : R signature
+
+{{{{{
+def badCommParam: fn commutative (a: int, b: string): int = fn (a: int, b: string): int -> ( a )
+}}}}}
+commutative without mut requires a pure binary (T, T) : R signature
+
+{{{{{
+def badCommMutOne = fn (f: fn commutative (mut a: Box): null): int -> ( 1 )
+}}}}}
+mut commutative requires a value parameter on the mutated target
+
+{{{{{
+def badIdemRet = fn (f: fn idempotent (a: int): string): int -> ( 1 )
+}}}}}
+idempotent without mut requires a pure unary (T) : T signature or an effectful axiom
+
+{{{{{
+def badIdemArity: fn idempotent (a: int, b: int): int = fn (a: int, b: int): int -> ( a + b )
+}}}}}
+idempotent without mut requires a pure unary (T) : T signature or an effectful axiom
+
+{{{{{
+;; bool is non-null so accepted by signature check; null return triggers the error
+def injBool = fn (f: fn injective (x: int): bool): int -> ( 1 )
+def badInjNull = fn (f: fn injective (x: int): null): int -> ( 1 )
+}}}}}
+injective requires at least one parameter, no mut, and a non-null return type
+
+{{{{{
+def badMonoAny: fn monotone (x: any): any = fn (x: any): any -> ( x )
+}}}}}
+monotone requires ordered parameter and return types without mut
+
+{{{{{
+def C = class (def v: int) (
+    def mMut = fn mut (): int -> ( this.v = 1; this.v )
+    def mPure = fn (): int -> ( this.v )
+    def pick = fn shared (flag: bool) -> (
+        if flag then ( this.mMut ) else ( this.mPure )
+    )
+)
+def obj = C(5)
+assert(obj.pick(false)() == 5)
+assert(obj.pick(true)() == 1)
+}}}}}
+
+{{{{{
+def C = class (def v: int) (
+    def make = fn shared (): fn (): int -> ( fn () -> ( this.v ) )
+)
+def obj = C(4)
+def func: fn (): fn (): int = obj.make
+}}}}}
+Type error : expected () : () : int, got shared () : () : int
+
+{{{{{
+def SBox = class (def v: int) (
+    def fHerm = fn volatile mut () -> (
+        def C = class () () static ( println("side") )
+        this.v += 1
+        ()
+    )
+)
+}}}}}
+static block inside hermetic function violates hermetic guarantee
+
+{{{{{
+def fPure = fn () -> (
+    def C = class () () static ( println("side") )
+    ()
+)
+}}}}}
+static block inside pure function violates pure guarantee
+
+{{{{{
+axiom java.lang.System.nanoTime: fn volatile
+def fDet = fn () -> (
+    def C = class () () static ( java.lang.System.nanoTime() )
+    ()
+)
+}}}}}
+static block inside deterministic function violates deterministic guarantee
+
+{{{{{
+def f = fn (): int -> (
+    axiom pure on java.lang.Math.abs
+    1
+)
+}}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+axiom declaration is not allowed inside a verified constrained function
+
+{{{{{
+def y = 1
+def x = axiom on y
+}}}}}
+Invalid axiom target : expected a Java class, Java method, or function
+
+{{{{{
+io on java.lang.System.nanoTime
+def f = fn io (): int -> ( 1 )
+def t = java.lang.System.nanoTime()
+assert(f() == 1)
+assert(t == t)
+}}}}}
+Warning : Deprecated syntax : 'io on ...' is deprecated, use 'axiom Target: fn io' instead
+
+{{{{{
+axiom on java.lang.Math.abs
+}}}}}
+Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
+axiom requires at least one effect modifier

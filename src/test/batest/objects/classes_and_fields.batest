@@ -1,8 +1,6 @@
-;; Classes, constructor params, unboxed fields, private members, static blocks, forward reads, and package-backed classes
+;; Classes, constructor parameters, unboxed fields, private members, static blocks, and forward reads
+;; References : BIP002 (classes, static blocks), BIP001 (unboxed fields, $defined bitmask)
 
-{{{{{
-;; LARGE: legacy test pending refactoring
-;; Basic class with constructor parameter fields, local-only constructor param, body fields, methods, static block
 def Counter = class (def label : string, seed : int = 0) (
     private def count = seed
     def step = fn mut (delta : int = 1) : int -> (
@@ -14,26 +12,40 @@ def Counter = class (def label : string, seed : int = 0) (
     def initial = 10
     def create = fn (name : string) : Counter -> ( this(name, this.initial) )
 )
-def c = Counter.create("hits")
-c.step()
-c.step(5)
-println(c.describe())
-}}}}}
-hits=16
+
+def Box = class () (
+    private def secret = 99
+    def get = fn () : int -> ( this.secret )
+)
 
 {{{{{
-;; Unboxed int/double/bool fields + forward member read before definition ($defined bitmask)
+def c = Counter("hits")
+assert(c.step() == 1)
+assert(c.step(5) == 6)
+assert(c.describe() == "hits=6")
+}}}}}
+
+{{{{{
+def c = Counter.create("hits")
+assert(Counter.initial == 10)
+assert(c.step() == 11)
+assert(c.step(5) == 16)
+assert(c.describe() == "hits=16")
+}}}}}
+
+{{{{{
 def Vec = class (def i : int, def d : double, def b : bool) (
     def sum = fn () : double -> ( this.i + this.d )
     def toggle = fn mut () : bool -> ( this.b = not this.b ; this.b )
 )
 def v = Vec(3, 1.5, true)
-println(v.sum(), ":", v.toggle(), ":", v.b)
+assert(v.sum() == 4.5)
+assert(not v.toggle())
+assert(not v.b)
 }}}}}
-4.5:false:false
 
 {{{{{
-;; Forward read of instance member in constructor body fails cleanly with Member used before definition
+;; Forward read of instance member in constructor body ($defined bitmask)
 def Bad = class () (
     def a = this.b
     def b = 1
@@ -43,37 +55,24 @@ def x = Bad()
 Member used before definition : b
 
 {{{{{
-;; Private member access from outside is rejected
-def Box = class () (
-    private def secret = 99
-    def get = fn () : int -> ( this.secret )
-)
 def b = Box()
 print(b.secret)
 }}}}}
 secret is private
 
 {{{{{
-;; Accessing non-existent member and assigning to a method
-def Box = class () (
-    def get = fn () : int -> ( 1 )
-)
 def b = Box()
 print(b.missing)
 }}}}}
 No such member : missing
 
 {{{{{
-def Box = class () (
-    def get = fn () : int -> ( 1 )
-)
 def b = Box()
 b.get = b.get
 }}}}}
 Cannot assign method : get
 
 {{{{{
-;; 'this' outside of a class, interface, or object fails
 print(this)
 }}}}}
 this outside of a class

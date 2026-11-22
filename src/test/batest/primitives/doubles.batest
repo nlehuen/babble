@@ -1,12 +1,21 @@
 ;; Double literals, scientific notation, NaN, signed zero, infinities, and mixed arithmetic
+;; References : BIP011 (core scalar types), Operators.compareNumbers
+;; Runtime arithmetic inputs go through mutable-state helpers so -O1 cannot constant-fold them away.
+
+def _d = 0.0
+def _i = 0
+def rtD = fn io (x : double) : double -> ( _d = x ; _d )
+def rtI = fn io (x : int) : int -> ( _i = x ; _i )
 
 {{{{{
 def a = 0.5
 def b = 1.25E2
 def c = -2.5
-println(a, ":", b, ":", a + b + c, ":", classof(b))
+assert(a == 0.5)
+assert(b == 125.0)
+assert(rtD(a) + rtD(b) + rtD(c) == 123.0)
+assert(string(classof(b)) == "java.lang.Double")
 }}}}}
-0.5:125.0:123.0:java.lang.Double
 
 {{{{{
 def a = .5
@@ -14,29 +23,50 @@ def a = .5
 Syntax error : unexpected '.'
 
 {{{{{
-def nz = -0.0
-def pz = 0.0
-def nan = 0.0 / 0.0
-def inf = 1.0 / 0.0
-def ninf = -1.0 / 0.0
-;; Operators.compareNumbers uses Double.compare (-0.0 < +0.0, NaN == NaN, NaN > everything)
-println(nz == pz, ":", nz < pz, ":", pz < nz, ":", 1.0 / nz, ":", inf, ":", ninf)
-println(nan == nan, ":", nan != nan, ":", nan < 1.0, ":", nan > 1.0, ":", nan <= 1.0, ":", nan >= 1.0)
+;; Operators.compareNumbers uses Double.compare (-0.0 < +0.0)
+def nz = rtD(-0.0)
+def pz = rtD(0.0)
+def inf = rtD(1.0) / pz
+def ninf = rtD(-1.0) / pz
+assert(not (nz == pz))
+assert(nz < pz)
+assert(not (pz < nz))
+assert(string(rtD(1.0) / nz) == "-Infinity")
+assert(string(inf) == "Infinity")
+assert(string(ninf) == "-Infinity")
 }}}}}
-false:true:false:-Infinity:Infinity:-Infinity
-true:false:false:true:false:true
+
+{{{{{
+;; Operators.compareNumbers uses Double.compare (NaN == NaN, NaN > everything)
+def nan = rtD(0.0) / rtD(0.0)
+assert(java.lang.Double.isNaN(nan))
+assert(nan == nan)
+assert(not (nan != nan))
+assert(not (nan < 1.0))
+assert(nan > 1.0)
+assert(not (nan <= 1.0))
+assert(nan >= 1.0)
+}}}}}
 
 {{{{{
 ;; Mixed int and double arithmetic always promotes to double
-println(classof(1 + 2.0), ":", classof(2.0 - 1), ":", classof(3 * 1.5), ":", classof(5.0 / 2))
-println(1 < 1.5, ":", 2 == 2.0, ":", 2.0 != 2, ":", 1.5 <= 2, ":", 2.5 >= 2)
+assert(string(classof(rtI(1) + rtD(2.0))) == "java.lang.Double")
+assert(string(classof(rtD(2.0) - rtI(1))) == "java.lang.Double")
+assert(string(classof(rtI(3) * rtD(1.5))) == "java.lang.Double")
+assert(string(classof(rtD(5.0) / rtI(2))) == "java.lang.Double")
 }}}}}
-java.lang.Double:java.lang.Double:java.lang.Double:java.lang.Double
-true:true:false:true:true
 
 {{{{{
-def x = 1.5
-x += 2 ; x -= 0.5 ; x *= 3 ; x /= 2
-println(x)
+;; Mixed int and double comparisons
+assert(rtI(1) < rtD(1.5))
+assert(rtI(2) == rtD(2.0))
+assert(not (rtD(2.0) != rtI(2)))
+assert(rtD(1.5) <= rtI(2))
+assert(rtD(2.5) >= rtI(2))
 }}}}}
-4.5
+
+{{{{{
+def x = rtD(1.5)
+x += rtI(2) ; x -= rtD(0.5) ; x *= rtI(3) ; x /= rtI(2)
+assert(x == 4.5)
+}}}}}

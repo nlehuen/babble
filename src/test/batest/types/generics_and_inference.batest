@@ -1,56 +1,65 @@
-;; Generics, type inference, widening hints, Java generic bounds, recursive signatures, and unions
+;; Generic inference, widening hints, Java SAMs/bounds, generic interface inheritance, and polymorphic values
+;; References : BIP008 (generic inference, widening, unions), BIP021 (D20 polymorphic function values)
+;; Note : core generic declarations, standalone `of`, covariance, and cast errors are in types/generics.batest
+
+def id of T = fn (x: T): T -> ( x )
+def Box of T = class (def v: T) ()
 
 {{{{{
-;; Generic Babble function value instantiation (to function type & Java SAM) and inference failure
-def id of T = fn (x : T) : T -> ( x )
-def intId : fn (x : int) : int = id
-def strId : fn (x : string) : string = id
+def intId: fn (x: int): int = id
+def strId: fn (x: string): string = id
 def s = java.util.stream.IntStream.range(1, 4).map(id).sum()
 def o = java.util.Optional.of(5).map(id).get()
-println(intId(4), ":", strId("ok"), ":", s, ":", o)
+assert(intId(4) == 4)
+assert(strId("ok") == "ok")
+assert(s == 6)
+assert(o == 5)
 }}}}}
-4:ok:6:5
 
 {{{{{
 ;; Generic function stored as a polymorphic value (BIP021-D20)
-def id of T = fn (x : T) : T -> ( x )
 def k = id
-println(k(4), ":", k("ok"))
+assert(k(4) == 4)
+assert(k("ok") == "ok")
 }}}}}
-4:ok
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Deferred lambda arg + return-type hint fallback + widening hints across union/func/class/Java
-def id of T = fn (x : T) : T -> ( x )
-def apply of (A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
-def d1 : double = id(1)
-def u1 : int | double = id(2)
+;; Return-type and widening hints across primitives, unions, classes, and multi-param generics
+def mkPair of (A, B) = fn (a: A, b: B): A -> ( a )
+def d1: double = id(1)
+def u1: int | double = id(2)
+def b1: Box of double = Box(3)
+def p: double = mkPair(2, "z")
+assert(d1 == 1.0 and string(classof(d1)) == "java.lang.Double")
+assert(u1 == 2)
+assert(b1.v == 3.0 and string(classof(b1.v)) == "java.lang.Double")
+assert(p == 2.0 and string(classof(p)) == "java.lang.Double")
+}}}}}
+
+{{{{{
+;; Deferred lambda parameter inference in Babble generic HOF and Java Optional.map
+def apply of (A, B) = fn (x: A, f: fn (a: A): B): B -> ( f(x) )
 def r = apply(3, fn (x) -> ( x * 2.5 ))
-def Box of T = class (def v : T) ()
-def opt : java.util.Optional of int = java.util.Optional.of(5)
+def opt: java.util.Optional of int = java.util.Optional.of(5)
 def opt2 = opt.map(fn (x) -> ( x + 1 ))
-def b1 : Box of double = Box(3)
-def mkPair of (A, B) = fn (a : A, b : B) : A -> ( a )
-def p : double = mkPair(2, "z")
-println(d1, ":", u1, ":", r, ":", opt2.get(), ":", b1.v, ":", p)
+assert(r == 7.5)
+assert(opt2.get() == 6)
 }}}}}
-1.0:2:7.5:6:3.0:2.0
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Generic Java SAM target typing (deferred lambda) + Collections.sort / List.replaceAll
 def lenOpt = java.util.Optional.of("abc").map(fn (s) -> ( java.lang.StringBuilder(s).length() )).get()
-def func : java.util.function.Function of (string, int) = fn (s) -> ( java.lang.StringBuilder(s).length() )
-def xs : java.util.List of string = java.util.ArrayList()
-xs.add("bb")
-xs.add("a")
-xs.add("ccc")
-java.util.Collections.sort(xs, fn (a, b) -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
-xs.replaceAll(fn (s) -> ( s + ":" + java.util.Optional.of(s).map(func).get() ))
-println(lenOpt, ":", xs.get(0), ",", xs.get(1), ",", xs.get(2))
+def func: java.util.function.Function of (string, int) = fn (s) -> ( java.lang.StringBuilder(s).length() )
+assert(lenOpt == 3)
+assert(func.apply("hello") == 5)
 }}}}}
-3:a:1,bb:2,ccc:3
+
+{{{{{
+def xs: java.util.List of string = java.util.ArrayList()
+xs.add("bb") ; xs.add("a") ; xs.add("ccc")
+java.util.Collections.sort(xs, fn (a, b) -> ( java.lang.StringBuilder(a).length() - java.lang.StringBuilder(b).length() ))
+xs.replaceAll(fn (s) -> ( s + ":" + java.lang.StringBuilder(s).length() ))
+assert(xs.get(0) == "a:1" and xs.get(1) == "bb:2" and xs.get(2) == "ccc:3")
+}}}}}
 
 {{{{{
 def func = java.util.function.Function(fn (s) -> ( s ))
@@ -58,65 +67,49 @@ def func = java.util.function.Function(fn (s) -> ( s ))
 Missing type : cannot infer type arguments for java.util.function.Function
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Generic interface extending generic interface with default substitution
-def BaseI of A = interface (
-    def get : fn () : A
-    def pair = fn io shared () : java.util.List of A -> (
-        def out : java.util.List of A = java.util.ArrayList()
-        out.add(this.get())
-        out
-    )
+def Base of A = interface (
+    def get: fn (): A
+    def pair = fn io shared (): list of A -> ( list of A (this.get()) )
 )
-def SubI of B = interface extends BaseI of B (
-    def get2 = fn () : B -> ( this.get() )
-)
-def Impl of C = class (def item : C) implements SubI of C (
-    def get = fn () : C -> ( this.item )
-)
-def i : SubI of string = Impl("hi")
-println(i.get(), ":", i.get2(), ":", i.pair().get(0))
+def Sub of B = interface extends Base of B ( def get2 = fn () -> ( this.get() ) )
+def Impl of C = class (def v: C) implements Sub of C ( def get = fn () -> ( this.v ) )
+def i: Sub of string = Impl("hi")
+assert(i.get() == "hi" and i.get2() == "hi" and i.pair().get(0) == "hi")
 }}}}}
-hi:hi:hi
 
 {{{{{
-;; Parameterized & module/package/Java type path and bound errors
-def x : int of int = 1
+def x: int of int = 1
 }}}}}
 Wrong number of type arguments : expected 0, got 1
 
 {{{{{
-def Box of T = class (def v : T) ()
-def b : Box of (int, string) = Box(1)
+def b: Box of (int, string) = Box(1)
 }}}}}
 Wrong number of type arguments : expected 1, got 2
 
 {{{{{
-def l : java.util.List = java.util.ArrayList()
+def l: java.util.List = java.util.ArrayList()
 }}}}}
 Missing type arguments : java.util.List
 
 {{{{{
-def l : java.util.List of (int, string) = java.util.ArrayList()
+def l: java.util.List of (int, string) = java.util.ArrayList()
 }}}}}
 Wrong number of type arguments : expected 1, got 2
 
 {{{{{
-def e : (java.util.EnumSet of string)? = null
+def e: (java.util.EnumSet of string)? = null
 }}}}}
 Type error : type argument string does not satisfy bound E of java.util.EnumSet
 
 {{{{{
-;; Imported Java package in type annotation
 def ju = import("java.util")
-def xs : ju.List of string = ju.ArrayList()
+def xs: ju.List of string = ju.ArrayList()
 xs.add("ok")
-println(xs.get(0))
+assert(xs.get(0) == "ok")
 }}}}}
-ok
 
 {{{{{
-;; Cannot infer type arguments for generic Java static method / constructor
 def o = java.util.Optional.empty()
 }}}}}
 Missing type : cannot infer type arguments for java.util.Optional.empty
@@ -127,20 +120,17 @@ def l = java.util.ArrayList()
 Missing type : cannot infer type arguments for java.util.ArrayList
 
 {{{{{
-;; Recursive expression cycle without declared return type
-def f = fn (n : int) -> ( f(n - 1) )
+def f = fn (n: int) -> ( f(n - 1) )
 }}}}}
 Missing type : f (recursive)
 
 {{{{{
-def f = fn (n : int) : int -> ( if n <= 0 then ( 1 ) else ( n * recurse(n - 1) ) )
-println(f(4))
+def f = fn (n: int): int -> ( if n <= 0 then ( 1 ) else ( n * recurse(n - 1) ) )
+assert(f(4) == 24)
 }}}}}
-24
 
 {{{{{
-;; Return type errors & empty block against expected return type
-def f = fn (flag : bool) : int -> (
+def f = fn (flag: bool): int -> (
     if flag then ( return 1 )
     return "no"
 )
@@ -148,44 +138,41 @@ def f = fn (flag : bool) : int -> (
 Type error : expected int, got string
 
 {{{{{
-def f = fn () : int -> ( )
+def f = fn (): int -> ( )
 }}}}}
 Type error : expected int, got null
 
 {{{{{
-;; Unary minus on union int|double and nullable union, plus union of functions call
-def negU = fn (flag : bool) : int | double -> (
-    def v : int | double = if flag then ( 3 ) else ( 2.5 )
+def negU = fn (flag: bool): int | double -> (
+    def v: int | double = if flag then ( 3 ) else ( 2.5 )
     -v
 )
-def f1 = fn (x : int) : int -> ( x + 1 )
-def f2 = fn (x : int) : double -> ( x * 0.5 )
-def pick = fn (flag : bool) -> (
+def f1 = fn (x: int): int -> ( x + 1 )
+def f2 = fn (x: int): double -> ( x * 0.5 )
+def pick = fn (flag: bool) -> (
     def func = if flag then ( f1 ) else ( f2 )
     func(4)
 )
-println(negU(true), ":", negU(false), ":", pick(true), ":", pick(false))
+assert(negU(true) == -3 and negU(false) == -2.5)
+assert(pick(true) == 5 and pick(false) == 2.0)
 }}}}}
--3:-2.5:5:2.0
 
 {{{{{
-;; Calling union containing null fails TypeChecker
-def f : (fn (x : int) : int)? = null
+def f: (fn (x: int): int)? = null
 f(1)
 }}}}}
 f is not callable
 
 {{{{{
-;; Widening notes ("because of the assignment" and "because of the call")
 def x = 1
-def takeInt = fn (n : int) -> ( n )
+def takeInt = fn (n: int) -> ( n )
 takeInt(x)
 x = 1.5
 }}}}}
 Type error : expected int, got double (x is double because of the assignment)
 
 {{{{{
-def takeInt = fn (n : int) -> ( n )
+def takeInt = fn (n: int) -> ( n )
 def f = fn (x) -> (
     discard(takeInt(x))
     x
@@ -196,26 +183,23 @@ f(1.5)
 Type error : expected int, got double (x is double because of the call)
 
 {{{{{
-;; Java generic bound check rejects non-Comparable Babble class in Collections.max
-def Box = class (def x : int) ()
-def xs : java.util.List of Box = java.util.ArrayList()
-xs.add(Box(1))
+def Item = class (def x: int) ()
+def xs: java.util.List of Item = java.util.ArrayList()
+xs.add(Item(1))
 println(java.util.Collections.max(xs))
 }}}}}
-Type error : type argument Box does not satisfy bound T of java.util.Collections.max
+Type error : type argument Item does not satisfy bound T of java.util.Collections.max
 
 {{{{{
 ;; Generic union rollback (ConstraintStore.reset) and class-to-SAM assignability
-def Box of T = record (v : T) ()
-def Pair = record (v : int) ()
-def wrap of T = fn (x : T) : Box of T -> ( Box(x) )
-def u : string | Box of int = wrap(42)
-def func : java.util.function.Function of (int, Pair) = Pair
-def a = 1
-a = 2.5
-def b = null
-b = "ok"
-def uv = if u is Box then ( u.v ) else ( 0 )
-println(uv, ":", func.apply(7).v, ":", a, ":", b)
+def ValBox of T = record (v: T) ()
+def Pair = record (v: int) ()
+def wrap of T = fn (x: T): ValBox of T -> ( ValBox(x) )
+def u: string | ValBox of int = wrap(42)
+def func: java.util.function.Function of (int, Pair) = Pair
+def uv = if u is ValBox then ( u.v ) else ( 0 )
+def a = 1 ; a = 2.5
+def b = null ; b = "ok"
+assert(uv == 42 and func.apply(7).v == 7)
+assert(a == 2.5 and b == "ok")
 }}}}}
-42:7:2.5:ok

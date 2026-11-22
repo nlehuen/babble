@@ -1,17 +1,21 @@
-;; RM002 / BIP016 effect system: pure-by-default, io, volatile, mut, shared, algebraic markers, axioms, and violations
+;; Core effect system : pure-by-default, algebraic markers, mut/borrow parameters, exclusivity, and BIP019 axioms
+;; References : BIP007, BIP016, BIP019, EffectChecker
+
+def Box = class (def value : int) (
+    def addTo = fn mut (k : int) : int -> ( this.value += k ; this.value )
+    def read = fn () : int -> ( this.value )
+)
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Explicit nothrow / idempotent / commutative / associative / monotone / injective (pure + deterministic by default)
 def inc = fn nothrow monotone (x : double) : double -> ( x + 1.0 )
 def add = fn nothrow commutative associative (a : int, b : int) : int -> ( a + b )
 def oddScale = fn nothrow injective (x : int) : int -> ( x * 3 )
 def keep = fn idempotent (x : int) : int -> ( x )
 def herm = fn (x : int) : int -> ( x * 2 )
-def sum3 = fn (a : int, b : int, c : int) : int -> ( add(oddScale(a), b) + keep(c) )
-println(inc(1.5), ":", sum3(1, 2, 3), ":", herm(5))
+assert(inc(1.5) == 2.5)
+assert(add(oddScale(1), 2) + keep(3) == 8)
+assert(herm(5) == 10)
 }}}}}
-2.5:8:10
 
 {{{{{
 ;; Wrapping 32-bit int addition cannot satisfy monotone guarantee
@@ -20,56 +24,37 @@ def badMono = fn monotone (x : int) : int -> ( x + 1 )
 Function badMono declared monotone violates monotone guarantee
 
 {{{{{
-;; Parameter mut and default-borrowed modifiers on functions and methods
-def Box = class (def value : int) (
-    def addTo = fn mut (k : int) : int -> ( this.value += k ; this.value )
-    def read = fn () : int -> ( this.value )
-)
-def bumpBox = fn (mut b : Box, delta : int) : int -> (
-    b.addTo(delta)
-)
-def inspectBox = fn (b : Box) : int -> (
-    b.read()
-)
+def bumpBox = fn (mut b : Box, delta : int) : int -> ( b.addTo(delta) )
+def inspectBox = fn (b : Box) : int -> ( b.read() )
 def box = Box(10)
-println(bumpBox(box, 5), ":", inspectBox(box))
+assert(bumpBox(box, 5) == 15)
+assert(inspectBox(box) == 15)
 }}}}}
-15:15
 
 {{{{{
-;; Axiom declarations for Java methods
 axiom java.lang.Math.abs: fn pure nothrow
 axiom java.util.List.add: fn mut
 axiom java.util.List.size: fn pure
 def compute = fn (x : int) : int -> ( java.lang.Math.abs(x) )
 def l : java.util.List of int = java.util.ArrayList()
 l.add(-7)
-println(compute(-7), ":", l.size())
+assert(compute(-7) == 7)
+assert(l.size() == 1)
 }}}}}
-7:1
 
 {{{{{
-;; Violation: mutating non-mut parameter inside function fails EffectChecker
-def Box = class (def v : int) (
-    def putVal = fn mut (x : int) : int -> ( this.v = x ; this.v )
-)
-def bad = fn (b : Box) -> ( b.putVal(1) )
+def bad = fn (b : Box) -> ( b.addTo(1) )
 }}}}}
-Cannot mutate parameter b (mut method b.putVal) : mark parameter as mut b
+Cannot mutate parameter b (mut method b.addTo) : mark parameter as mut b
 
 {{{{{
-;; Violation: aliasing same variable to two mut parameters in a single call
-def Box = class (def v : int) (
-    def add = fn mut (k : int) : int -> ( this.v += k ; this.v )
-)
-def swapAdd = fn (mut a : Box, mut b : Box) -> ( a.add(b.v) )
+def swapAdd = fn (mut a : Box, mut b : Box) -> ( a.addTo(b.value) )
 def x = Box(3)
 swapAdd(x, x)
 }}}}}
 Exclusivity error : mut target x aliases argument x
 
 {{{{{
-;; Violation: external mutation inside pure-by-default function rejected
 def g = 0
 def badPure = fn () : int -> ( g += 1 ; g )
 }}}}}

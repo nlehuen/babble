@@ -1,4 +1,5 @@
-;; Module error paths: missing modules, cycles, non-constant import path, export outside top level
+;; Module error paths : missing modules, cycles, non-string import path, export outside top level, Java package import
+;; References : BIP005 (modules & imports)
 
 ========== cycle_a.ba ==========
 def b = import("cycle_b.ba")
@@ -25,9 +26,8 @@ Cannot import missing.ba : no such module
 {{{{{
 ;; Mutual module imports where helper reads export from non-cyclic dep chain work
 def a = import("mut_a.ba")
-println(a.tag())
+assert(a.tag() == "b:a")
 }}}}}
-b:a
 
 {{{{{
 ;; Cycle reading unannotated export before definition reports cycle error
@@ -36,13 +36,11 @@ def a = import("cycle_a.ba")
 Missing type : x (import cycle with cycle_a.ba)
 
 {{{{{
-;; Importing Java package name with string literal succeeds as JavaPackage; non-string fails
 def n = import(1)
 }}}}}
 Type error : expected string, got int
 
 {{{{{
-;; Export modifier is illegal inside nested block or function
 def f = fn () -> (
     export def bad = 1
 )
@@ -54,6 +52,6 @@ export only applies to the top-level definitions of a file : bad
 def util = import("java.util")
 def xs : java.util.List of string = util.ArrayList()
 xs.add("hi")
-println(xs.size(), ":", xs.get(0))
+assert(xs.size() == 1)
+assert(xs.get(0) == "hi")
 }}}}}
-1:hi

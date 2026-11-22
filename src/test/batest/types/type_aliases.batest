@@ -1,4 +1,5 @@
-;; Type aliases (BIP023) : def Name = type T names a type, generic over the def's type parameters
+;; Type aliases : `def Name = type T`, generic aliases, module exports, nullability, and errors
+;; References : BIP023 (D1-D7 transparent type aliases, `type` memberName)
 
 ========== shapes.ba ==========
 export def Shape = interface ( def area: fn (): double )
@@ -14,6 +15,7 @@ export def Tile = class () implements Shape, Named (
 def Shape = interface ( def area: fn (): double )
 def Named = interface ( def name: fn (): string )
 def Label = interface ( def text: fn (): string )
+def ShapeWithText = type Shape & (Named | Label)
 def Tile = class () implements Shape, Named (
     def area = fn (): double -> ( 1.5 )
     def name = fn (): string -> ( "tile" )
@@ -25,117 +27,105 @@ def Sign = class () implements Shape, Label (
 def Disk = class () implements Shape ( def area = fn (): double -> ( 3.0 ) )
 
 {{{{{
-;; An alias stands for its type, unions and intersections included
-def ShapeWithText = type Shape & (Named | Label)
 def describe = fn (x: ShapeWithText): string -> ( if x is Named then ( x.name() ) else ( x.text() ) )
-println(describe(Tile()), " ", describe(Sign()))
+assert(describe(Tile()) == "tile")
+assert(describe(Sign()) == "sign")
 }}}}}
-tile sign
 
 {{{{{
-;; An alias in nullable, is and as positions
-def ShapeWithText = type Shape & (Named | Label)
 def maybe: ShapeWithText? = null
 def a: any = Sign()
-println(maybe == null, " ", a is ShapeWithText, " ", (a as ShapeWithText).area())
+assert(maybe == null)
+assert(a is ShapeWithText)
+assert((a as ShapeWithText).area() == 2.0)
 }}}}}
-true true 2.0
 
 {{{{{
-;; is with an alias and with its nullable : null is only a T?
-def ShapeWithText = type Shape & (Named | Label)
+;; `is T?` accepts null while `is T` does not
 def maybe: ShapeWithText? = null
-println(maybe is ShapeWithText, " ", maybe is ShapeWithText?)
+assert(not (maybe is ShapeWithText))
+assert(maybe is ShapeWithText?)
 maybe = Tile()
-println(maybe is ShapeWithText, " ", maybe is ShapeWithText?)
+assert(maybe is ShapeWithText)
+assert(maybe is ShapeWithText?)
 }}}}}
-false true
-true true
 
 {{{{{
-;; is on a nullable : a T? test accepts null, a T test does not
 def d: Disk? = null
-println(d is Shape?, " ", d is Shape, " ", d is Named?, " ", d is Label?)
+assert(d is Shape?)
+assert(not (d is Shape))
+assert(d is Named?)
+assert(d is Label?)
 d = Disk()
-println(d is Shape?, " ", d is Shape, " ", d is Named?, " ", d is Label?)
+assert(d is Shape?)
+assert(d is Shape)
+assert(not (d is Named?))
+assert(not (d is Label?))
 }}}}}
-true false true true
-true true false false
 
 {{{{{
-;; A generic alias takes its def's type parameters
 def Pair of (A, B) = type entry of (A, B)
 def p: Pair of (string, int) = entry("a", 1)
-println(p.getKey(), p.getValue() + 1)
+assert(p.getKey() == "a")
+assert(p.getValue() + 1 == 2)
 }}}}}
-a2
 
 {{{{{
-;; An alias of an alias, and of a union of scalars
 def Num = type int | double
 def Again = type Num
 def twice = fn (n: Again): Num -> ( if n is int then ( n * 2 ) else ( n * 2.0 ) )
-println(twice(2), " ", twice(1.5))
+assert(twice(2) == 4)
+assert(twice(1.5) == 3.0)
 }}}}}
-4 3.0
 
 {{{{{
-;; An exported alias, used through its module
 def shapes = import("shapes.ba")
 def f = fn (x: shapes.ShapeWithName): string -> ( x.name() + ":" + x.area() )
 def b: shapes.Box of int = list.of(1, 2)
-println(f(shapes.Tile()), " ", b.size())
+assert(f(shapes.Tile()) == "tile:1.5")
+assert(b.size() == 2)
 }}}}}
-tile:1.5 2
 
 {{{{{
-;; An alias is not a value
 def T = type Shape & Named
 println(T)
 }}}}}
 A type alias is not a value : T
 
 {{{{{
-;; A type alias is only the value of a def
 def f = fn () -> ( type int )
 }}}}}
 A type alias is the value of a def : type int
 
 {{{{{
-;; A type alias takes no annotation of its own
 def T: int = type int
 }}}}}
 A type alias takes no annotation : T
 
 {{{{{
-;; An alias that names itself
 def L = type (int | L)?
 }}}}}
 Recursive type alias : L
 
 {{{{{
-;; A generic alias needs its type arguments
 def Box of A = type list of A
 def x: Box = list.of(1)
 }}}}}
 Missing type arguments : Box
 
 {{{{{
-;; ... as many as it has type parameters
 def Box of A = type list of A
 def x: Box of (int, string) = list.of(1)
 }}}}}
 Wrong number of type arguments : expected 1, got 2
 
 {{{{{
-;; A plain alias takes none
 def T = type int
 def x: T of int = 1
 }}}}}
 Wrong number of type arguments : expected 0, got 1
 
 {{{{{
-;; type stays a member name after a dot (a Java method here)
-println(java.lang.ProcessBuilder.Redirect.INHERIT.type())
+;; `type` remains a valid member name after `.`
+assert(string(java.lang.ProcessBuilder.Redirect.INHERIT.type()) == "INHERIT")
 }}}}}
-INHERIT

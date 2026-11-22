@@ -1,0 +1,30 @@
+;; Postfix non-null assertion (e!) : narrowing T? to T, runtime null checks, and effect checking
+;; References : BIP011 (§6.1 non-null assertion), BIP008 (nullables), BIP016 (nothrow)
+
+{{{{{
+def s : string? = "hello"
+def n : int? = 41
+assert(s! + "!" == "hello!")
+assert(n! + 1 == 42)
+}}}}}
+
+{{{{{
+def s : string? = null
+s!
+}}}}}
+Type error : expected string, got null
+
+{{{{{
+;; Compile-time error : null literal cannot be asserted non-null
+def x = null!
+}}}}}
+Type error : expected any, got null
+
+{{{{{
+;; Non-null assertion can throw at runtime and therefore violates nothrow
+def f = fn nothrow (s : string?) : string -> (
+    s!
+)
+assert(f("ok") == "ok")
+}}}}}
+Function f declared nothrow violates nothrow guarantee

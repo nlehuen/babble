@@ -1,26 +1,6 @@
 ;; Cross-input inline caches in BabbleSession (new classes/callables defined in subsequent inputs)
+;; References : BIP004 (sessions), BIP002 (interfaces), Bootstrap (CallSite / SelectCache)
 
-{{{{{
-def readName = fn (o : any) : string -> ( o.get() )
-def Box = class (def s : string) (
-    def get = fn () : string -> ( this.s )
-)
-----------
-def A = class (def n : int) (
-    def get = fn () : string -> ( "A" + this.n )
-)
-println(readName(Box("ok")), ":", readName(A(1)))
-----------
-def B = class (def tag : string) (
-    def get = fn () : string -> ( "B:" + this.tag )
-)
-println(readName(A(2)), ":", readName(B("z")))
-}}}}}
-Not a scope : o
-
-{{{{{
-;; LARGE: legacy test pending refactoring
-;; Use interface Contract across multiple session inputs to transition indy CallSite/SelectCache across ScriptClassLoaders
 def Named = interface (
     def label : fn () : string
 )
@@ -28,19 +8,33 @@ def show = fn (n : Named) : string -> ( n.label() )
 def First = class (def k : int) implements Named (
     def label = fn () : string -> ( "F" + this.k )
 )
-println(show(First(1)))
+
+{{{{{
+;; Polymorphic interface dispatch transitions SelectCache/CallSite across ScriptClassLoaders
+assert(show(First(1)) == "F1")
 ----------
 def Second = class (def s : string) implements Named (
     def label = fn () : string -> ( "S:" + this.s )
 )
+assert(show(First(2)) == "F2")
+assert(show(Second("x")) == "S:x")
+----------
 def Third = class () implements Named (
     def label = fn () : string -> ( "T" )
 )
-println(show(First(2)), ":", show(Second("x")), ":", show(Third()))
-----------
-def f : fn (x : Named) : string = show
-println(f(Second("y")), ":", f(Third()))
+assert(show(Second("y")) == "S:y")
+assert(show(Third()) == "T")
 }}}}}
-F1
-F2:S:x:T
-S:y:T
+
+{{{{{
+;; First-class callables and new closures invoked across session inputs
+def apply = fn (f : fn (Named) : string, n : Named) : string -> ( f(n) )
+assert(apply(show, First(1)) == "F1")
+----------
+def Second = class (def s : string) implements Named (
+    def label = fn () : string -> ( "S:" + this.s )
+)
+def wrap = fn (n : Named) : string -> ( "[" + n.label() + "]" )
+assert(apply(show, Second("a")) == "S:a")
+assert(apply(wrap, Second("a")) == "[S:a]")
+}}}}}

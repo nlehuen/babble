@@ -1,16 +1,22 @@
-;; Built-in conversions: int(), double(), classof(), dynamic ConvertFunction errors
+;; Built-in conversions : int(), double(), classof(), and boundary/arity errors
+;; References : BIP011 (core scalar types), BIP008 (strict typing & any), Values
 
 def dyn = fn (v : any) : any -> ( v )
 def dynOpt = fn (v : any?) : any? -> ( v )
 
 {{{{{
-println(int(3), ":", int(2.9), ":", int(-2.9), ":", int("42"), ":", int("-7"))
-println(double(3), ":", double(1.5), ":", double("3.25"))
-println(classof(1), ":", classof(1.0), ":", classof(true), ":", classof("x"), ":", classof(null))
+assert(int(3) == 3 and int(2.9) == 2 and int(-2.9) == -2)
+assert(int("42") == 42 and int("-7") == -7)
+assert(double(3) == 3.0 and double(1.5) == 1.5 and double("3.25") == 3.25)
 }}}}}
-3:2:-2:42:-7
-3.0:1.5:3.25
-java.lang.Integer:java.lang.Double:java.lang.Boolean:java.lang.String:null
+
+{{{{{
+assert("" + classof(1) == "java.lang.Integer")
+assert("" + classof(1.0) == "java.lang.Double")
+assert("" + classof(true) == "java.lang.Boolean")
+assert("" + classof("x") == "java.lang.String")
+assert(classof(null) == null)
+}}}}}
 
 {{{{{
 print(int("nope"))
@@ -36,6 +42,18 @@ Out of the int range : 0.0/0.0 = NaN
 print(int(dyn(true)))
 }}}}}
 Not a number : dyn(true)
+
+{{{{{
+def bad : any = true
+print(int(bad))
+}}}}}
+Not a number : bad
+
+{{{{{
+def bad : any = "xyz"
+print(double(bad))
+}}}}}
+Not a double : "xyz"
 
 {{{{{
 print(double(dynOpt(null)))

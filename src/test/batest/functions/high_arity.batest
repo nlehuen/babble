@@ -1,7 +1,8 @@
-;; High-arity function (>200 parameters) exercising CodeGenerator Object[] array-adapter fallback
+;; High-arity functions (>200 parameters and >200 positional arguments)
+;; References : BIP001, CodeGenerator Object[] array-adapter fallback
 
 {{{{{
-;; LARGE: exercises >200-parameter Object[] array-adapter fallback
+;; LARGE: >200-parameter function definition exercises Object[] array-adapter fallback
 def big = fn (
     p001 : int = 1, p002 : int = 1, p003 : int = 1, p004 : int = 1, p005 : int = 1,
     p006 : int = 1, p007 : int = 1, p008 : int = 1, p009 : int = 1, p010 : int = 1,
@@ -45,6 +46,64 @@ def big = fn (
     p196 : int = 1, p197 : int = 1, p198 : int = 1, p199 : int = 1, p200 : int = 1,
     p201 : int = 1, p202 : int = 1, p203 : int = 1, p204 : int = 1, p205 : int = 1
 ) : int -> ( p001 + p100 + p205 )
-println(big(), ":", big(p205: 40, p001: 10))
+assert(big() == 3)
+assert(big(p205: 40, p001: 10) == 51)
 }}}}}
-3:51
+
+{{{{{
+;; LARGE: >200-argument positional call exercises Object[] array-adapter fallback
+def sum205 = fn (
+    a001 : int = 0, a002 : int = 0, a003 : int = 0, a004 : int = 0, a005 : int = 0,
+    a006 : int = 0, a007 : int = 0, a008 : int = 0, a009 : int = 0, a010 : int = 0,
+    a011 : int = 0, a012 : int = 0, a013 : int = 0, a014 : int = 0, a015 : int = 0,
+    a016 : int = 0, a017 : int = 0, a018 : int = 0, a019 : int = 0, a020 : int = 0,
+    a021 : int = 0, a022 : int = 0, a023 : int = 0, a024 : int = 0, a025 : int = 0,
+    a026 : int = 0, a027 : int = 0, a028 : int = 0, a029 : int = 0, a030 : int = 0,
+    a031 : int = 0, a032 : int = 0, a033 : int = 0, a034 : int = 0, a035 : int = 0,
+    a036 : int = 0, a037 : int = 0, a038 : int = 0, a039 : int = 0, a040 : int = 0,
+    a041 : int = 0, a042 : int = 0, a043 : int = 0, a044 : int = 0, a045 : int = 0,
+    a046 : int = 0, a047 : int = 0, a048 : int = 0, a049 : int = 0, a050 : int = 0,
+    a051 : int = 0, a052 : int = 0, a053 : int = 0, a054 : int = 0, a055 : int = 0,
+    a056 : int = 0, a057 : int = 0, a058 : int = 0, a059 : int = 0, a060 : int = 0,
+    a061 : int = 0, a062 : int = 0, a063 : int = 0, a064 : int = 0, a065 : int = 0,
+    a066 : int = 0, a067 : int = 0, a068 : int = 0, a069 : int = 0, a070 : int = 0,
+    a071 : int = 0, a072 : int = 0, a073 : int = 0, a074 : int = 0, a075 : int = 0,
+    a076 : int = 0, a077 : int = 0, a078 : int = 0, a079 : int = 0, a080 : int = 0,
+    a081 : int = 0, a082 : int = 0, a083 : int = 0, a084 : int = 0, a085 : int = 0,
+    a086 : int = 0, a087 : int = 0, a088 : int = 0, a089 : int = 0, a090 : int = 0,
+    a091 : int = 0, a092 : int = 0, a093 : int = 0, a094 : int = 0, a095 : int = 0,
+    a096 : int = 0, a097 : int = 0, a098 : int = 0, a099 : int = 0, a100 : int = 0,
+    a101 : int = 0, a102 : int = 0, a103 : int = 0, a104 : int = 0, a105 : int = 0,
+    a106 : int = 0, a107 : int = 0, a108 : int = 0, a109 : int = 0, a110 : int = 0,
+    a111 : int = 0, a112 : int = 0, a113 : int = 0, a114 : int = 0, a115 : int = 0,
+    a116 : int = 0, a117 : int = 0, a118 : int = 0, a119 : int = 0, a120 : int = 0,
+    a121 : int = 0, a122 : int = 0, a123 : int = 0, a124 : int = 0, a125 : int = 0,
+    a126 : int = 0, a127 : int = 0, a128 : int = 0, a129 : int = 0, a130 : int = 0,
+    a131 : int = 0, a132 : int = 0, a133 : int = 0, a134 : int = 0, a135 : int = 0,
+    a136 : int = 0, a137 : int = 0, a138 : int = 0, a139 : int = 0, a140 : int = 0,
+    a141 : int = 0, a142 : int = 0, a143 : int = 0, a144 : int = 0, a145 : int = 0,
+    a146 : int = 0, a147 : int = 0, a148 : int = 0, a149 : int = 0, a150 : int = 0,
+    a151 : int = 0, a152 : int = 0, a153 : int = 0, a154 : int = 0, a155 : int = 0,
+    a156 : int = 0, a157 : int = 0, a158 : int = 0, a159 : int = 0, a160 : int = 0,
+    a161 : int = 0, a162 : int = 0, a163 : int = 0, a164 : int = 0, a165 : int = 0,
+    a166 : int = 0, a167 : int = 0, a168 : int = 0, a169 : int = 0, a170 : int = 0,
+    a171 : int = 0, a172 : int = 0, a173 : int = 0, a174 : int = 0, a175 : int = 0,
+    a176 : int = 0, a177 : int = 0, a178 : int = 0, a179 : int = 0, a180 : int = 0,
+    a181 : int = 0, a182 : int = 0, a183 : int = 0, a184 : int = 0, a185 : int = 0,
+    a186 : int = 0, a187 : int = 0, a188 : int = 0, a189 : int = 0, a190 : int = 0,
+    a191 : int = 0, a192 : int = 0, a193 : int = 0, a194 : int = 0, a195 : int = 0,
+    a196 : int = 0, a197 : int = 0, a198 : int = 0, a199 : int = 0, a200 : int = 0,
+    a201 : int = 0, a202 : int = 0, a203 : int = 0, a204 : int = 0, a205 : int = 0
+) : int -> ( a001 + a100 + a201 + a205 )
+assert(sum205(
+    1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+    3,0,0,0,4
+) == 10)
+}}}}}

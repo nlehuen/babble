@@ -1,36 +1,32 @@
-;; Unwrapped Java exceptions (BIP009-D7), null handling on Java boundaries, and generic boundary checks
+;; Unwrapped Java exceptions and nullable returns on Java generic boundaries
+;; References : BIP009-D7 (`JavaTypes` invocation unwrapping), BIP011 (Java nullability)
 
 {{{{{
-;; Method throwing NumberFormatException is unwrapped without InvocationTargetException wrapper
-println(java.lang.Integer.parseInt("not_an_int"))
+def n = java.lang.Integer.parseInt("not_an_int")
 }}}}}
 java.lang.NumberFormatException : For input string: "not_an_int"
 
 {{{{{
-;; Method throwing IndexOutOfBoundsException is unwrapped
-def l : java.util.List of int = java.util.ArrayList()
-println(l.get(0))
+def xs: java.util.List of int = java.util.ArrayList()
+def first = xs.get(0)
 }}}}}
 java.lang.IndexOutOfBoundsException : Index 0 out of bounds for length 0
 
 {{{{{
-;; Method throwing ArithmeticException is unwrapped
-println(java.lang.Math.floorDiv(1, 0))
+def q = java.lang.Math.floorDiv(1, 0)
 }}}}}
 java.lang.ArithmeticException : / by zero
 
 {{{{{
-;; Constructor throwing IllegalArgumentException is unwrapped
-def xs : java.util.List of int = java.util.ArrayList(-1)
+def xs: java.util.List of int = java.util.ArrayList(-1)
 }}}}}
 java.lang.IllegalArgumentException : Illegal Capacity: -1
 
 {{{{{
-;; Java generic element type mismatch on read/write and nullable return from Map.get
-def m : java.util.Map of (string, int) = java.util.HashMap()
+def m: java.util.Map of (string, int) = java.util.HashMap()
 m.put("a", 10)
-def v1 : int? = m.get("a")
-def v2 : int? = m.get("missing")
-println(v1, ":", v2)
+def v1: int? = m.get("a")
+def v2: int? = m.get("missing")
+assert(v1 == 10)
+assert(v2 == null)
 }}}}}
-10:null

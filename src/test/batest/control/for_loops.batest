@@ -1,50 +1,54 @@
-;; BIP013: for loops, multi-tier iterables/iterators, parameterized static factories, break [expr], continue, and BIP016 effects
+;; For loops, multi-tier iterables/iterators, parameterized static factories, break/continue, narrowing, and loop effects
+;; References : BIP013 (iterators and for loops), BIP016 (effect checks)
+
+;; Shared custom iterable fixture for loop-variable type narrowing cases
+def Item = interface ( def k : fn () : int )
+def Sub = class (def r : double) implements Item ( def k = fn () : int -> ( 1 ) )
+def Other = class () implements Item ( def k = fn () : int -> ( 2 ) )
+def ItemIter = class (private def i : int) (
+    def hasNext = fn () : bool -> ( this.i < 2 )
+    def next = fn mut () : Item -> ( this.i += 1 ; if this.i == 1 then ( Other() ) else ( Sub(2.5) ) )
+)
+def Items = class () ( def iterator = fn () : ItemIter -> ( ItemIter(0) ) )
 
 {{{{{
-;; Motivating example: (list of int).of(1, 2, 3) + for loop
 def foo = (list of int).of(1, 2, 3)
 def sum = 0
 for value in foo then (
     sum += value
 )
-println(sum)
+assert(sum == 6)
 }}}}}
-6
 
 {{{{{
-;; Inferred list.of and empty (list of int).of()
 def a = list.of(10, 20, 30)
 def b = (list of int).of()
 def s = 0
 for x in a then ( s += x )
 def r = for x in b then ( x )
-println(s, ":", r)
+assert(s == 60)
+assert(r == null)
 }}}}}
-60:null
 
 {{{{{
-;; Parameterized static factory on general Java generic class
 def xs = (java.util.List of int).of(2, 4, 6)
 def total = 0
 for v in xs then ( total += v )
-println(total)
+assert(total == 12)
 }}}}}
-12
 
 {{{{{
-;; Set and Map views
 def s = (set of string).of("hi", "there")
 def len = 0
 for w in s then ( len += w.length() )
 def m = (map of (string, int)).of("a", 3, "b", 4)
 def msum = 0
 for e in m.entrySet() then ( msum += e.getValue() )
-println(len, ":", msum)
+assert(len == 7)
+assert(msum == 7)
 }}}}}
-7:7
 
 {{{{{
-;; Primitive array (char[]) and reference array (string[])
 def cs = "abcd".toCharArray()
 def n = 0
 for c in cs then (
@@ -57,45 +61,42 @@ for p in parts then (
     if p == "z" then ( break )
     out = out + p
 )
-println(n, ":", out)
+assert(n == 3)
+assert(out == "xy")
 }}}}}
-3:xy
 
 {{{{{
-;; Bare java.util.Iterator
 def it = list(1, 2, 3, 4).iterator()
 def acc = 0
 for v in it then ( acc += v )
-println(acc)
+assert(acc == 10)
 }}}}}
-10
 
 {{{{{
-;; Babble custom iterable (duck-typed iterator()/hasNext()/next() with unboxed int)
-def CounterIter = class (n: int) (
-    def i: int = 0
-    def hasNext = fn (): bool -> ( this.i < n )
-    def next = fn mut (): int -> (
+;; Duck-typed custom iterable with unboxed int next()
+def CounterIter = class (n : int) (
+    def i : int = 0
+    def hasNext = fn () : bool -> ( this.i < n )
+    def next = fn mut () : int -> (
         def cur = this.i
         this.i += 1
         cur
     )
 )
-def Counter = record (n: int) (
-    def iterator = fn (): CounterIter -> ( CounterIter(this.n) )
+def Counter = record (n : int) (
+    def iterator = fn () : CounterIter -> ( CounterIter(this.n) )
 )
 def s = 0
 for v in Counter(5) then ( s += v )
-println(s)
+assert(s == 10)
 }}}}}
-10
 
 {{{{{
-;; Babble custom iterator directly (hasNext()/next() without iterator())
-def Countdown = class (n: int) (
-    def cur: int = n
-    def hasNext = fn (): bool -> ( this.cur > 0 )
-    def next = fn mut (): int -> (
+;; Duck-typed custom iterator used directly without iterator()
+def Countdown = class (n : int) (
+    def cur : int = n
+    def hasNext = fn () : bool -> ( this.cur > 0 )
+    def next = fn mut () : int -> (
         def v = this.cur
         this.cur -= 1
         v
@@ -103,39 +104,36 @@ def Countdown = class (n: int) (
 )
 def acc = 0
 for v in Countdown(4) then ( acc = acc * 10 + v )
-println(acc)
+assert(acc == 4321)
 }}}}}
-4321
 
 {{{{{
-;; Closure-safe per-iteration binding
-def fns = list of (fn (): int) ()
+;; Per-iteration binding is fresh for closures
+def fns = list of (fn () : int) ()
 for v in (list of int).of(10, 20, 30) then (
-    fns.add(fn (): int -> ( v ))
+    fns.add(fn () : int -> ( v ))
 )
-println(fns.get(0)(), ",", fns.get(1)(), ",", fns.get(2)())
+assert(fns.get(0)() == 10)
+assert(fns.get(1)() == 20)
+assert(fns.get(2)() == 30)
 }}}}}
-10,20,30
 
 {{{{{
-;; Shadowing outer variable in iterable: for x in x
+;; Loop variable may shadow outer iterable name
 def x = (list of int).of(1, 2, 3)
 def sum = 0
 for x in x then ( sum += x )
-println(sum, ":", x.size())
+assert(sum == 6)
+assert(x.size() == 3)
 }}}}}
-6:3
 
 {{{{{
-;; Explicit loop variable type annotation with int -> double widening
 def sum = 0.0
-for x: double in (list of int).of(1, 2, 3) then ( sum += x )
-println(sum)
+for x : double in (list of int).of(1, 2, 3) then ( sum += x )
+assert(sum == 6.0)
 }}}}}
-6.0
 
 {{{{{
-;; Expression value of for loop: last iteration value, bare break yields null, break expr yields expr
 def r1 = for v in (list of int).of(1, 2, 3) then ( v * 2 )
 def r2 = for v in (list of int).of(1, 2, 3) then (
     if v == 2 then ( break )
@@ -145,12 +143,12 @@ def r3 = for v in (list of int).of(1, 2, 3) then (
     if v == 2 then ( break 99 )
     v * 2
 )
-println(r1, ":", r2, ":", r3)
+assert(r1 == 6)
+assert(r2 == null)
+assert(r3 == 99)
 }}}}}
-6:null:99
 
 {{{{{
-;; break expr and continue in while loop + numeric widening on break
 def i = 0
 def sum = 0
 while i < 6 then (
@@ -163,12 +161,11 @@ def w = while true then (
     if true then ( break 2.5 )
     1
 )
-println(sum, ":", w)
+assert(sum == 7)
+assert(w == 2.5)
 }}}}}
-7:2.5
 
 {{{{{
-;; Nested loops: break and continue target only innermost loop
 def total = 0
 for i in (list of int).of(1, 2, 3) then (
     for j in (list of int).of(10, 20, 30) then (
@@ -177,50 +174,44 @@ for i in (list of int).of(1, 2, 3) then (
         total += i * j
     )
 )
-println(total)
+assert(total == 60)
 }}}}}
-60
 
 {{{{{
-;; Pure function iterating over list and array, plus frozen list
-def sumFrozen = fn (xs: frozen list of int): int -> (
+def sumFrozen = fn (xs : frozen list of int) : int -> (
     def s = 0
     for v in xs then ( s += v )
     s
 )
 def f = freeze(list(3, 4, 5))
-println(sumFrozen(f))
+assert(sumFrozen(f) == 12)
 }}}}}
-12
 
 {{{{{
-;; memberName compatibility: System.in
-println(java.lang.System.in != null)
+;; memberName compatibility : `in` remains valid after `.`
+assert(java.lang.System.in != null)
 }}}}}
-true
 
 {{{{{
-;; Error: nullable iterable rejected statically
-def xs: (list of int)? = null
+def xs : (list of int)? = null
 for v in xs then ( println(v) )
 }}}}}
 Type error : cannot iterate over nullable type list(int)?
 
 {{{{{
-;; Error: string is not directly iterable (BIP013-D4)
+;; string is not directly iterable (BIP013-D4)
 for c in "hello" then ( println(c) )
 }}}}}
 Not iterable : string
 
 {{{{{
-;; Error: map is not directly iterable (BIP013-D5)
+;; map is not directly iterable (BIP013-D5)
 def m = (map of (string, int)).of("a", 1)
 for e in m then ( println(e) )
 }}}}}
 Not iterable : map(string, int)
 
 {{{{{
-;; Error: read-only loop variable cannot be assigned (BIP013-D6)
 for v in (list of int).of(1, 2) then (
     v = 3
 )
@@ -228,7 +219,6 @@ for v in (list of int).of(1, 2) then (
 Cannot assign to loop variable : v
 
 {{{{{
-;; Error: duplicate def of loop variable in forBlock
 for v in (list of int).of(1, 2) then (
     def v = 3
 )
@@ -236,19 +226,17 @@ for v in (list of int).of(1, 2) then (
 Name already defined : v
 
 {{{{{
-;; Error: break outside of a loop
 break
 }}}}}
 break outside of a loop
 
 {{{{{
-;; Error: continue outside of a loop
 continue
 }}}}}
 continue outside of a loop
 
 {{{{{
-;; Error: break cannot cross a function boundary inside a loop
+;; break cannot cross a function boundary inside a loop
 for v in (list of int).of(1, 2) then (
     def f = fn () -> ( break )
     f()
@@ -257,8 +245,8 @@ for v in (list of int).of(1, 2) then (
 break outside of a loop
 
 {{{{{
-;; Error: mutating a collection while iterating over it in a pure/hermetic function (BIP013-D8)
-def bad = fn (mut xs: list of int) -> (
+;; Mutating a collection while iterating over it in a pure/hermetic function (BIP013-D8)
+def bad = fn (mut xs : list of int) -> (
     for v in xs then (
         xs.add(v)
     )
@@ -267,36 +255,23 @@ def bad = fn (mut xs: list of int) -> (
 Cannot mutate collection while iterating over it
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; is narrows a for loop's variable, a fresh read-only binding per iteration, also across and
-def A = interface ( def k: fn (): int )
-def B = class (def r: double) implements A ( def k = fn (): int -> (1) )
-def D = class () implements A ( def k = fn (): int -> (2) )
-def Cur = class (private def i: int) (
-    def hasNext = fn (): bool -> (this.i < 2)
-    def next = fn mut (): A -> (this.i += 1; if this.i == 1 then (D()) else (B(2.5)))
+;; is narrows a for-loop variable (fresh read-only binding per iteration), also across and
+def rs = list of double ()
+def ks = list of int ()
+for h in Items() then (
+    if h is Sub and h.r > 1.0 then ( rs.add(h.r) )
+    if not (h is Sub) then ( ks.add(h.k()) )
 )
-def C = class () ( def iterator = fn (): Cur -> (Cur(0)) )
-for h in C() then (
-    if h is B and h.r > 1.0 then (println(h.r))
-    if not (h is B) then (println(h.k()))
-)
+assert(rs == list.of(2.5))
+assert(ks == list.of(2))
 }}}}}
-2
-2.5
 
 {{{{{
-;; Negative: the narrowing of a for loop's variable ends with its if
-def A = interface ( def k: fn (): int )
-def B = class (def r: double) implements A ( def k = fn (): int -> (1) )
-def Cur = class (private def i: int) (
-    def hasNext = fn (): bool -> (this.i < 1)
-    def next = fn mut (): A -> (this.i += 1; B(2.5))
-)
-def C = class () ( def iterator = fn (): Cur -> (Cur(0)) )
-for h in C() then (
-    if h is B then (println(h.k()))
-    println(h.r)
+;; Narrowing of a for-loop variable ends with its if
+for h in Items() then (
+    if h is Sub then ( assert(h.k() == 1) )
+    discard(h.r)
 )
 }}}}}
 No such member : r
+

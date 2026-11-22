@@ -1,21 +1,21 @@
 ;; Sequential BabbleSession inputs (----------): state persistence, shadowing, functions, and errors across inputs
+;; References : BIP004 (sessions & REPL)
 
 {{{{{
 def x = 10
 def acc = 0
 ----------
 def inc = fn io (k : int) : int -> ( acc += k ; acc )
-println(x, ":", inc(5))
+assert(x == 10)
+assert(inc(5) == 5)
 ----------
 def x = "shadowed"
-println(x, ":", inc(3))
+assert(x == "shadowed")
+assert(inc(3) == 8)
 ----------
 acc = 100
-println(inc(1))
+assert(inc(1) == 101)
 }}}}}
-10:5
-shadowed:8
-101
 
 {{{{{
 ;; Cross-input assignment cannot widen type already committed in previous input
@@ -31,24 +31,24 @@ def v = 1
 def readOld = fn () : int -> ( v + 10 )
 ----------
 def v = 2.5
-println(v, ":", classof(v), ":", readOld())
+assert(v == 2.5)
+assert(string(classof(v)) == "java.lang.Double")
+assert(readOld() == 11)
 }}}}}
-2.5:java.lang.Double:11
 
 {{{{{
 ;; Unknown name referenced in later session input fails statically
 def x = 1
 ----------
-println(missingName)
+print(missingName)
 }}}}}
 No such name : missingName
 
 {{{{{
-;; Session rollback/isolation after error in intermediate input keeps previous definitions intact
+;; Runtime error in a later session input aborts the session with that input's diagnostic
 def keep = 42
 ----------
-print(noSuchVar)
-----------
-println(keep + 1)
+assert(keep == 42)
+assert(keep == 0, "later input failed")
 }}}}}
-No such name : noSuchVar
+later input failed

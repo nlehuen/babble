@@ -1,57 +1,55 @@
-;; BIP011-P3: Java nullability alignment, JDK java.base overlay, @NotNull, and defensive checks
+;; Java nullability alignment : unannotated returns, JDK java.base axioms, @NotNull, and boundary checks
+;; References : BIP011 (§6.1-6.4, BIP011-D6..D7), BIP019 (curated java.base nullability axioms)
+
+def Demo = import("org.babblelang.tests").JavaClassDemo
 
 {{{{{
-;; Unannotated Java returns/fields are nullable (T?); e! asserts non-null at runtime
-def Demo = import("org.babblelang.tests").JavaClassDemo
+;; Unannotated Java returns are T?; System.getProperty 2-arg overload is non-null via axioms
 def maybeInt : int? = Demo.boxedInt(false)
 def maybeOk : int? = Demo.boxedInt(true)
 def mustInt : int = maybeOk!
 def prop : string? = java.lang.System.getProperty("babble.nonexistent.p3.key")
 def defProp : string = java.lang.System.getProperty("babble.nonexistent.p3.key", "fallback")
-println(maybeInt, ":", mustInt, ":", prop, ":", defProp)
+assert(maybeInt == null and mustInt == 42 and prop == null and defProp == "fallback")
 }}}}}
-null:42:null:fallback
 
 {{{{{
-;; e! on null Java return raises Type error : expected int, got null
-def Demo = import("org.babblelang.tests").JavaClassDemo
 Demo.boxedInt(false)!
 }}}}}
 Type error : expected int, got null
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; JDK java.base overlay: List.get(i) is T, Map.get(k) is V?, Map.getOrDefault(k, d) is V, Optional.get() is T
 def xs : java.util.List of string = java.util.ArrayList()
 xs.add("alpha")
 def first : string = xs.get(0)
+def opt : java.util.Optional of string = java.util.Optional.of("ok")
+def optVal : string = opt.get()
+assert(first == "alpha" and first.startsWith("al") and optVal == "ok")
+}}}}}
+
+{{{{{
 def m : java.util.Map of (string, int) = java.util.HashMap()
 m.put("a", 7)
 def hit : int? = m.get("a")
 def miss : int? = m.get("b")
 def defaulted : int = m.getOrDefault("b", 99)
-def opt : java.util.Optional of string = java.util.Optional.of("ok")
-def optVal : string = opt.get()
-println(first, ":", hit, ":", miss, ":", defaulted, ":", optVal, ":", first.startsWith("al"))
+assert(hit == 7 and miss == null and defaulted == 99)
 }}}}}
-alpha:7:null:99:ok:true
 
 {{{{{
-;; @NotNull Java field/method and String.startsWith rejecting string?
 def s : string? = null
 "hello".startsWith(s)
 }}}}}
 Type error : expected string, got string?
 
 {{{{{
-;; List.of rejects nullable arguments statically
 def s : string? = "a"
 java.util.List.of(s)
 }}}}}
 Type error : expected string, got string?
 
 {{{{{
-;; Defensive runtime check on raw-polluted List(int) catching null element
+;; Defensive runtime check catches null element in raw-polluted List of int
 def xs : java.util.List of int = java.util.ArrayList()
 def raw = xs as java.util.List
 raw.add(null)
@@ -60,7 +58,7 @@ xs.get(0)
 Type error : expected int, got null
 
 {{{{{
-;; Defensive runtime check on raw-polluted List(int) catching wrong element type
+;; Defensive runtime check catches wrong element type in raw-polluted List of int
 def xs : java.util.List of int = java.util.ArrayList()
 def raw = xs as java.util.List
 raw.add("oops")

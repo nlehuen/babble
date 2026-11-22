@@ -1,18 +1,18 @@
-;; Singleton object expressions: member access, mutation, and scope errors
+;; Singleton object expressions : member access, mutation, privacy, and scope errors
+;; References : BIP002 (singleton objects)
 
 {{{{{
-;; Singleton object expression with private state and methods
 def counter = object (
     private def n = 0
     def inc = fn mut (k : int = 1) : int -> ( this.n += k ; this.n )
     def read = fn () : int -> ( this.n )
 )
-println(counter.inc(), ":", counter.inc(4), ":", counter.read())
+assert(counter.inc() == 1)
+assert(counter.inc(4) == 5)
+assert(counter.read() == 5)
 }}}}}
-1:5:5
 
 {{{{{
-;; Private member on object is inaccessible outside
 def o = object (
     private def hidden = 1
 )
@@ -21,7 +21,6 @@ print(o.hidden)
 hidden is private
 
 {{{{{
-;; Non-assignable primitives fail scope check
 def dyn = fn (v : any) : any -> ( v )
 dyn(1).x = 2
 }}}}}
@@ -33,6 +32,6 @@ def package = 42
 def box = object (
     def package = "ok"
 )
-println(package, ":", box.package)
+assert(package == 42)
+assert(box.package == "ok")
 }}}}}
-42:ok

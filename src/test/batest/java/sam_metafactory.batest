@@ -1,91 +1,132 @@
-;; RM003-P4: Cached LambdaMetafactory SAM adapters, FLAG_BRIDGES, primitive conversions, and Proxy fallbacks
+;; Cached LambdaMetafactory SAM adapters, FLAG_BRIDGES, primitive conversions, and Proxy fallbacks
+;; References : BIP002 §13, RM003 (proxy-free Java SAM adapters), Faces
+
+def Demo = import("org.babblelang.tests").JavaClassDemo
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Standard SAMs use cached LambdaMetafactory (non-Proxy, shared generated class per SAM)
-def Demo = import("org.babblelang.tests").JavaClassDemo
 def log = ""
 def r1 = java.lang.Runnable(fn () -> ( log += "a" ))
 def r2 = java.lang.Runnable(fn () -> ( log += "b" ))
 r1.run()
 r2.run()
-def f1 = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x + 2 ))
-def f2 = java.util.function.IntUnaryOperator(fn (x : int) : int -> ( x * 3 ))
-def cmp = java.util.Comparator(fn (a : int, b : int) : int -> ( a - b ))
-println(log, ":", Demo.isProxy(r1), ":", r1.getClass() == r2.getClass(), ":", Demo.isProxy(f1), ":", f1.getClass() == f2.getClass(), ":", f1.andThen(f2).applyAsInt(4), ":", cmp.reversed().compare(2, 5) > 0)
+assert(log == "ab")
+assert(not Demo.isProxy(r1))
+assert(r1.getClass() == r2.getClass())
 }}}}}
-ab:false:true:false:true:18:true
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Generic SAMs with erased superinterface bridges (altMetafactory FLAG_BRIDGES)
-def Demo = import("org.babblelang.tests").JavaClassDemo
-def sc = Demo.StringCriterion(fn (s : string) : bool -> ( s == "ok!" or s == "ok?" ))
-def cs = Demo.CovariantSupplier(fn () : string -> ( "bridged" ))
-println(Demo.isProxy(sc), ":", sc.test("ok!"), ":", sc.negate().test("ok!"), ":", Demo.invokeErasedPredicate(sc, "ok?"), ":", Demo.invokeErasedPredicate(sc, "no"), ":", Demo.isProxy(cs), ":", cs.get(), ":", Demo.invokeErasedSupplier(cs))
+def IntOp = java.util.function.IntUnaryOperator
+def f1 = IntOp(fn (x: int): int -> ( x + 2 ))
+def f2 = IntOp(fn (x: int): int -> ( x * 3 ))
+def cmp = java.util.Comparator(fn (a: int, b: int): int -> ( a - b ))
+assert(not Demo.isProxy(f1))
+assert(f1.getClass() == f2.getClass())
+assert(f1.andThen(f2).applyAsInt(4) == 18)
+assert(cmp.reversed().compare(2, 5) > 0)
 }}}}}
-false:true:false:true:false:false:bridged:bridged
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Primitive return conversions/widenings, BoundMethod SAM, BabbleClass constructor SAM, and nested SAM return
-def Demo = import("org.babblelang.tests").JavaClassDemo
-def nineChar = java.lang.Character.forDigit(9, 10)
-def ch = Demo.CharSupplier(fn volatile () : any? -> ( nineChar ))
-def by = Demo.ByteUnary(fn (b : any?) : any? -> ( b ))
-def sh = Demo.ShortUnary(fn io (s : any?) : any? -> ( java.lang.Byte.valueOf("7") ))
-def fl = Demo.FloatUnary(fn (f : any?) : any? -> ( 5 ))
-def lg = java.util.function.IntToLongFunction(fn (n : int) : any? -> ( n + 10 ))
+;; Generic SAM with erased Predicate superinterface bridge (altMetafactory FLAG_BRIDGES)
+def sc = Demo.StringCriterion(fn (s: string): bool -> ( s == "ok!" or s == "ok?" ))
+assert(not Demo.isProxy(sc))
+assert(sc.test("ok!"))
+assert(not sc.negate().test("ok!"))
+assert(Demo.invokeErasedPredicate(sc, "ok?"))
+assert(not Demo.invokeErasedPredicate(sc, "no"))
+}}}}}
 
-def Adder = class (def base : int) (
-    def add = fn (x : int) : int -> ( this.base + x )
+{{{{{
+def cs = Demo.CovariantSupplier(fn (): string -> ( "bridged" ))
+assert(not Demo.isProxy(cs))
+assert(cs.get() == "bridged")
+assert(Demo.invokeErasedSupplier(cs) == "bridged")
+}}}}}
+
+{{{{{
+def nine = java.lang.Character.forDigit(9, 10)
+def ch = Demo.CharSupplier(fn volatile (): any? -> ( nine ))
+def by = Demo.ByteUnary(fn (b: any?): any? -> ( b ))
+assert(not Demo.isProxy(ch))
+assert(ch.getAsChar() == nine)
+assert(by.apply(java.lang.Byte.valueOf("3")) == 3)
+}}}}}
+
+{{{{{
+def sh = Demo.ShortUnary(fn io (s: any?): any? -> ( java.lang.Byte.valueOf("7") ))
+def fl = Demo.FloatUnary(fn (f: any?): any? -> ( 5 ))
+def lg = java.util.function.IntToLongFunction(fn (n: int): any? -> ( n + 10 ))
+assert(sh.apply(java.lang.Short.valueOf("1")) == 7)
+assert(fl.apply(java.lang.Float.parseFloat("1.5")) == 5.0)
+assert(lg.applyAsLong(5) == 15)
+}}}}}
+
+{{{{{
+def Adder = class (def base: int) (
+    def add = fn (x: int): int -> ( this.base + x )
 )
 def boundOp = java.util.function.IntUnaryOperator(Adder(100).add)
-def Pair = record (a : int, b : int) ()
-def pairMaker : java.util.function.BiFunction of (int, int, Pair) = java.util.function.BiFunction(Pair)
-def p = pairMaker.apply(3, 4)
-
-def nested = java.util.function.Supplier(fn () : java.lang.Runnable -> ( fn () -> () ))
-def innerRun = nested.get()
-println(Demo.isProxy(ch), ":", ch.getAsChar() == nineChar, ":", by.apply(java.lang.Byte.valueOf("3")), ":", sh.apply(java.lang.Short.valueOf("1")), ":", fl.apply(java.lang.Float.parseFloat("1.5")), ":", lg.applyAsLong(5), ":", Demo.isProxy(boundOp), ":", boundOp.applyAsInt(23), ":", Demo.isProxy(pairMaker), ":", p, ":", Demo.isProxy(innerRun))
+assert(not Demo.isProxy(boundOp))
+assert(boundOp.applyAsInt(23) == 123)
 }}}}}
-false:true:3:7:5.0:15:false:123:false:Pair(a: 3, b: 4):false
 
 {{{{{
-;; LARGE: legacy test pending refactoring
-;; Arity 16 uses LambdaMetafactory; arity 17 and package-private SAM fall back to Proxy
-def Demo = import("org.babblelang.tests").JavaClassDemo
-def s16 = Demo.Arity16Sam(fn (a0 : int, a1 : int, a2 : int, a3 : int, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int) : int -> (
-    a0 + a1 + a2 + a3 + a4 + a5 + a6 + a7 + a8 + a9 + a10 + a11 + a12 + a13 + a14 + a15
-))
-def s17 = Demo.Arity17Sam(fn (a0 : int, a1 : double, a2 : java.io.File, a3 : string, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int, a16 : int) : double -> (
-    a0 + a1 + (if a3 == "abcd" then ( 4 ) else ( 0 )) + a16
-))
-def hiddenRes = Demo.invokeHiddenSam(fn (x : int) : int -> ( x * 3 ), 7)
-def s17Obj : any = s17
-println(Demo.isProxy(s16), ":", s16.apply(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16), ":", Demo.isProxy(s17), ":", s17.apply(2, 1.5, java.io.File("."), "abcd", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10), ":", s17.tag(), ":", java.util.Objects.toString(s17Obj), ":", hiddenRes)
+def Pair = record (a: int, b: int) ()
+def mk: java.util.function.BiFunction of (int, int, Pair) = java.util.function.BiFunction(Pair)
+assert(not Demo.isProxy(mk))
+assert(mk.apply(3, 4) == Pair(3, 4))
+def nested = java.util.function.Supplier(fn (): java.lang.Runnable -> ( fn () -> () ))
+assert(not Demo.isProxy(nested.get()))
 }}}}}
-false:136:true:17.5:17:function as Arity17Sam:21
 
 {{{{{
-;; Boxed null parameter entering LambdaMetafactory SAM still raises Babble Type error
-def Demo = import("org.babblelang.tests").JavaClassDemo
-def op = Demo.BoxedIntUnaryOperator(fn (x : int) : int -> ( x + 1 ))
-assert(Demo.isProxy(op) == false)
+;; Arity 16 is the maximum handled by LambdaMetafactory
+def s16 = Demo.Arity16Sam(fn (
+    a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int,
+    i: int, j: int, k: int, l: int, m: int, n: int, o: int, p: int
+): int -> ( a + b + c + d + e + f + g + h + i + j + k + l + m + n + o + p ))
+assert(not Demo.isProxy(s16))
+assert(s16.apply(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16) == 136)
+}}}}}
+
+{{{{{
+;; Arity > 16 falls back from LambdaMetafactory to Proxy
+def s17 = Demo.Arity17Sam(fn (
+    a: int, b: double, c: java.io.File, d: string, e: int, f: int, g: int, h: int,
+    i: int, j: int, k: int, l: int, m: int, n: int, o: int, p: int, q: int
+): double -> ( a + b + (if d == "abcd" then ( 4 ) else ( 0 )) + q ))
+assert(Demo.isProxy(s17))
+assert(s17.apply(2, 1.5, java.io.File("."), "abcd", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10) == 17.5)
+}}}}}
+
+{{{{{
+def s17 = Demo.Arity17Sam(fn (
+    a: int, b: double, c: java.io.File, d: string, e: int, f: int, g: int, h: int,
+    i: int, j: int, k: int, l: int, m: int, n: int, o: int, p: int, q: int
+): double -> ( 0.0 ))
+def obj: any = s17
+assert(s17.tag() == 17)
+assert(java.util.Objects.toString(obj) == "function as Arity17Sam")
+}}}}}
+
+{{{{{
+;; Package-private SAM falls back from LambdaMetafactory to Proxy
+assert(Demo.invokeHiddenSam(fn (x: int): int -> ( x * 3 ), 7) == 21)
+}}}}}
+
+{{{{{
+def op = Demo.BoxedIntUnaryOperator(fn (x: int): int -> ( x + 1 ))
+assert(not Demo.isProxy(op))
 Demo.invokeUnaryBoxed(op, Demo.boxedInt(false))
 }}}}}
 Type error : expected int, got null
 
 {{{{{
-;; Wrong dynamic return value from LambdaMetafactory SAM raises Babble Type error
-def bad = java.util.function.IntUnaryOperator(fn (x : int) : any? -> ( "wrong" ))
+def bad = java.util.function.IntUnaryOperator(fn (x: int): any? -> ( "wrong" ))
 bad.applyAsInt(1)
 }}}}}
 Type error : IntUnaryOperator.applyAsInt must return int, got String
 
 {{{{{
-;; Upfront arity mismatch on specialized SAM
-def Demo = import("org.babblelang.tests").JavaClassDemo
-Demo.StringCriterion(fn (a : string, b : string) : bool -> ( a == b ))
+Demo.StringCriterion(fn (a: string, b: string): bool -> ( a == b ))
 }}}}}
 StringCriterion.test takes 1 arguments, function takes 2

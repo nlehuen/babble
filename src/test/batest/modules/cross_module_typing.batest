@@ -1,0 +1,189 @@
+;; Cross-module typing : exports, interfaces, super default calls, nested module imports
+;; (LogicalPaths leading slash), unannotated/generic exports, imported Java packages,
+;; import cycles, and duplicate nominal class IDs across modules.
+;; References : BIP005, BIP008, TypeChecker, TypeChecks
+
+========== tc_exp.ba ==========
+export def IExp = interface (
+    def ping: fn (): int
+    def defm = fn (): int -> ( 9 )
+)
+export def InnerC = class () ()
+export def INested = interface (
+    def pong: fn (): int
+)
+
+========== ce_mod_a.ba ==========
+export def Dup = class (def k: int) ()
+export def ExportCls = class (def n: int) (
+    private def priv = fn (a: int) -> ( a + this.n )
+    def pub = fn (a: int): int -> ( this.priv(a) )
+)
+export def x = 10
+
+========== ce_mod_b.ba ==========
+export def Dup = class (def k: int) ()
+export def y = 20
+
+========== cyc_a.ba ==========
+def b = import("cyc_b.ba")
+export def x = b.y + 1
+
+========== cyc_b.ba ==========
+def a = import("cyc_a.ba")
+export def y = a.x + 1
+
+========== mod_tc_infer.ba ==========
+export def inc = fn (x: int) -> ( x + 1 )
+export def Box of T = class (def v: T) ()
+export def id of T = fn (x: T): T -> ( x )
+export def optDef = fn (x = 7) -> ( x )
+export def lang = import("java.lang")
+
+========== ec_mod.ba ==========
+export def exportedNum = 42
+export def exportedPair = java.util.AbstractMap.SimpleEntry("k", 7)
+
+========== fe_mod_b.ba ==========
+export def IB = interface (
+    def id: fn (): int
+)
+export def DupB = class (def v: int) ()
+
+========== fe_mod_a.ba ==========
+export def sub = import("fe_mod_b.ba")
+export def IA = interface (
+    def get: fn (): int
+)
+
+==========
+def dyn = fn (v: any?): any? -> ( v )
+
+{{{{{
+def m = import("tc_exp.ba")
+def ILocal = interface ( def val: fn (): int )
+def Impl = class () implements m.IExp, ILocal, m.INested (
+    def ping = fn (): int -> ( 1 )
+    def val = fn (): int -> ( 2 )
+    def pong = fn (): int -> ( 3 )
+)
+def im = Impl()
+assert(im.ping() == 1 and im.val() == 2 and im.pong() == 3)
+assert(im is m.IExp and im is ILocal)
+}}}}}
+
+{{{{{
+def m = import("tc_exp.ba")
+def Impl = class () implements m.IExp (
+    def ping = fn (): int -> ( 1 )
+    def callSuper = fn (): int -> ( super(m.IExp).defm() )
+)
+assert(Impl().callSuper() == 9)
+}}}}}
+
+{{{{{
+def m = import("tc_exp.ba")
+def Bad = class () implements m.IExp (
+    def ping = fn (): int -> ( super(m.IExp).ping() )
+)
+}}}}}
+IExp.ping has no default
+
+{{{{{
+def m = import("ce_mod_a.ba")
+def e3: int = m
+}}}}}
+Type error : expected int, got module ce_mod_a.ba
+
+{{{{{
+def m = import("ce_mod_a.ba")
+m?.x
+}}}}}
+Not nullable : m
+
+{{{{{
+def m = import("ce_mod_a.ba")
+m.x = 20
+}}}}}
+Cannot assign to an export : x
+
+{{{{{
+def m = import("ce_mod_a.ba")
+m.missingExport
+}}}}}
+No such export : missingExport in ce_mod_a.ba
+
+{{{{{
+def m = import("ce_mod_a.ba")
+def ec = m.ExportCls(5)
+def out = 0
+def r = object implements java.lang.Runnable (
+    def run = fn io () -> ( out = ec.pub(3) )
+)
+r.run()
+assert(out == 8)
+}}}}}
+
+{{{{{
+def m1 = import("ce_mod_a.ba")
+def m2 = import("ce_mod_b.ba")
+def a: any = m2.Dup(3)
+def bad: m1.Dup = a as m1.Dup
+}}}}}
+Type error : expected Dup, got Dup (expected ce_mod_a.ba#Dup, got ce_mod_b.ba#Dup)
+
+{{{{{
+def a = import("cyc_a.ba")
+a.x
+}}}}}
+Missing type : x (import cycle with cyc_a.ba)
+
+{{{{{
+def m1 = import("ce_mod_a.ba")
+def m2 = import("ce_mod_b.ba")
+dyn(m1.Dup(1)) as m2.Dup
+}}}}}
+Type error : expected Dup, got Dup (expected ce_mod_b.ba#Dup, got ce_mod_a.ba#Dup)
+
+{{{{{
+def m = import("mod_tc_infer.ba")
+def b: m.Box of int = m.Box(9)
+def f: fn (v: int): int = m.id
+assert(m.inc(4) == 5)
+assert(m.optDef() == 7)
+assert(m.id("ok") == "ok")
+assert(b.v == 9)
+assert(f(8) == 8)
+}}}}}
+
+{{{{{
+def lang = import("java.lang")
+def MyRun = class (def mut ran: bool) implements lang.Runnable (
+    def run = fn mut () -> ( this.ran = true )
+)
+def r = MyRun(false)
+r.run()
+def sb: lang.StringBuilder = lang.StringBuilder("hi")
+def it: java.util.Iterator of int = java.util.Collections.emptyIterator()
+assert(r.ran and sb.toString() == "hi" and not it.hasNext())
+}}}}}
+
+{{{{{
+def m = import("ec_mod.ba")
+assert(m.exportedNum == 42)
+assert(m.exportedPair.getValue() == 7)
+}}}}}
+
+{{{{{
+def I = interface ( def f: fn (): int )
+def ma = import("/fe_mod_a.ba")
+def C2 = class (def n: int) implements I, ma.sub.IB, java.lang.Runnable (
+    def f = fn (): int -> ( this.n )
+    def id = fn (): int -> ( this.n * 2 )
+    def run = fn () -> ( () )
+)
+def c2 = C2(4)
+c2.run()
+assert(c2.f() == 4)
+assert(c2.id() == 8)
+}}}}}
