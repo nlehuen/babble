@@ -1,0 +1,81 @@
+;; Self tail calls run in constant stack space, each call a fresh activation, and code that
+;; never ends and cannot throw must say so with forever.
+;; References : BIP024 (D1 self calls only, D3 tail position, D5 fresh activations,
+;; D7 recursion without a base case, D8 loops without an exit, D9 forever),
+;; analysis.TailCalls, Function.invoke (interpreter), HirEmitter.emitSelfTailCall.
+
+;; Deep enough to overflow the stack in every mode without the optimization.
+def deep = 1000000
+
+{{{{{
+;; The default value is evaluated again for each activation : the last one has n == 0.
+def f = fn (n: int, seen: int = n * 10): int -> (if n == 0 then (seen) else (recurse(n - 1)))
+assert(f(deep) == 0)
+assert(f(0, 7) == 7)
+}}}}}
+
+{{{{{
+def sum = fn (n: int, acc: int): int -> (if n == 0 then (acc) else (sum(acc: acc + 1, n: n - 1)))
+assert(sum(deep, 0) == deep)
+}}}}}
+
+{{{{{
+;; Each activation has its own def : the closure keeps the one of the activation that made it.
+def f = fn (n: int, prev: fn (): int): int -> (
+    def mine = n
+    if n == 0 then (prev()) else (recurse(n - 1, fn (): int -> (mine)))
+)
+assert(f(3, fn (): int -> (99)) == 1)
+}}}}}
+
+{{{{{
+def o = object (
+    def down = fn (n: int): int -> (if n == 0 then (42) else (this.down(n - 1)))
+)
+assert(o.down(deep) == 42)
+}}}}}
+
+{{{{{
+;; An error in an optimized loop reports the activation that failed.
+def f = fn (n: int): int -> (
+    assert(n > 0, "reached " + n)
+    recurse(n - 1)
+)
+f(deep)
+}}}}}
+reached 0
+
+{{{{{
+;; Mutual recursion is not optimized (D1).
+def isEven = fn (n: int): bool -> (if n == 0 then (true) else (isOdd(n - 1)))
+def isOdd = fn (n: int): bool -> (if n == 0 then (false) else (isEven(n - 1)))
+isEven(deep)
+}}}}}
+Stack overflow
+
+{{{{{
+def f = fn (n: int): int -> (if n > 0 then (recurse(n + 1)) else (f(1)))
+}}}}}
+Recursion without a base case : f. If this is intended, wrap the expression with forever
+
+{{{{{
+def f = fn (n: int): int -> (if n > 0 then (recurse(n + 1)) else (forever f(1)))
+def g = fn (n: int): int -> (forever recurse(n + 1))
+}}}}}
+
+{{{{{
+;; continue does not leave the loop, and break only leaves the inner one.
+def x = 0
+while true then (
+    x += 1
+    while true then (break)
+    continue
+)
+}}}}}
+Loop without an exit : while true. If this is intended, wrap the expression with forever
+
+{{{{{
+;; forever is the expression itself.
+def v = forever (1 + 2)
+assert(v == 3)
+}}}}}
