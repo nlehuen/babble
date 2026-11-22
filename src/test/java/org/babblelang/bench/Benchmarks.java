@@ -34,6 +34,8 @@ public final class Benchmarks {
                 "def fib = fn (n : int) : int -> ( if n < 2 then ( n ) else ( fib(n - 1) + fib(n - 2) ) ) ; fib(25)");
         scripts.put("while loop : locals and while",
                 "def loop = fn (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(300000)");
+        scripts.put("tail-recursive sum : self tail calls (BIP024)",
+                "def sum = fn (n : int, acc : int) : int -> ( if n == 0 then ( acc ) else ( sum(n - 1, acc + n) ) ) ; sum(300000, 0)");
         scripts.put("Counter.ba closure : captured variables",
                 "def counter = fn () -> ( def c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; def i = 0\n"
                         + "while i < 200000 then ( c() ; i = i + 1 ) ; c()");
