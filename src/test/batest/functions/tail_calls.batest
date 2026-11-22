@@ -79,3 +79,38 @@ Loop without an exit : while true. If this is intended, wrap the expression with
 def v = forever (1 + 2)
 assert(v == 3)
 }}}}}
+
+{{{{{
+;; More than 8 parameters, reordered by name : the arguments go through an array.
+def many = fn (n: int, a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int): int -> (
+    if n == 0 then (a + h) else (recurse(h: h, g: g, f: f, e: e, d: d, c: c, b: b, a: a, n: n - 1))
+)
+assert(many(deep, 1, 2, 3, 4, 5, 6, 7, 8) == 9)
+}}}}}
+
+{{{{{
+;; An omitted optional parameter of an unboxed signature : its mask is passed again, so the
+;; tail call takes the default step of 1 even after a first call with 3.
+def f = fn (n: int, step: int = 1): int -> (if n <= 0 then (n) else (recurse(n - step)))
+assert(f(deep) == 0)
+assert(f(deep, 3) == 0)
+assert(f(2, 3) == -1)
+}}}}}
+
+{{{{{
+;; forever may sit on a returned value, an else if branch, or a loop in parentheses.
+def a = fn (n: int): int -> (if n > 0 then (return forever recurse(n - 1)) else (a(1)))
+def b = fn (n: int): int -> (if n > 0 then (b(n)) else if n < 0 then (forever b(n)) else (b(1)))
+def c = fn (): int -> (
+    def i = 0
+    forever (while (true) then (i += 1))
+    i
+)
+}}}}}
+
+{{{{{
+;; An interface method may be overridden : its call to itself is neither optimized nor reported.
+def I = interface (
+    def m = fn (n: int): int -> (this.m(n + 1))
+)
+}}}}}
