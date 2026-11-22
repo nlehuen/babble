@@ -389,6 +389,33 @@ public class OptimizerTestCase {
         Assertions.assertTrue(errText.contains("hir-after"), errText);
     }
 
+    @Test
+    public void testInlineResolvedOverloadAlternative() throws Exception {
+        String source = "def f = overload (\n"
+                + "  fn (x : int) : int -> ( x * 2 + 1 ),\n"
+                + "  fn (s : string) : int -> ( s.length() )\n"
+                + ")\n"
+                + "def calc = fn (n : int) : int -> ( f(n) )\n"
+                + "calc(20)";
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 1);
+        CompiledScript cs = engine.compile(source);
+        Assertions.assertEquals(41, cs.eval(new SimpleBindings()));
+        byte[] bytes = ((org.babblelang.compiler.CompiledBabbleScript) cs).getClassBytes();
+        ClassNode cn = new ClassNode();
+        new ClassReader(bytes).accept(cn, 0);
+        MethodNode calc = cn.methods.stream().filter(m -> m.name.equals("fn$2$calc$spec")).findFirst().orElseThrow();
+        List<String> calls = new ArrayList<>();
+        for (var insn = calc.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode mi) {
+                calls.add(mi.owner + "." + mi.name);
+            }
+        }
+        Assertions.assertTrue(calls.stream().noneMatch(c -> c.endsWith("$spec")),
+                "Expected resolved overload alternative to be inlined into calc$spec, got calls: " + calls);
+    }
+
     // ------------------------------------------------------------------ Helpers
 
     private static String runJar(Path jar) throws Exception {

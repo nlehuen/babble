@@ -193,7 +193,10 @@ public final class Formatter {
                         && !(block.getParent() instanceof BabbleParser.BlockExpressionContext)
                         ? block.getParent().getStart().getTokenIndex()
                         : parent instanceof BabbleParser.AxiomTypeContext axType
-                        ? axType.getParent().getStart().getTokenIndex() : index;
+                        ? axType.getParent().getStart().getTokenIndex()
+                        : (parent instanceof BabbleParser.OverloadExpressionContext
+                                || parent instanceof BabbleParser.OverloadTypeContext)
+                        ? ((ParserRuleContext) parent).getStart().getTokenIndex() : index;
             }
             return;
         }
@@ -223,7 +226,9 @@ public final class Formatter {
                 || parent instanceof BabbleParser.SuperExpressionContext || parent instanceof BabbleParser.ParenTypeContext
                 || parent instanceof BabbleParser.SimpleTypeContext
                 || parent instanceof BabbleParser.TypeParametersContext || parent instanceof BabbleParser.TypeArgumentsContext
-                || parent instanceof BabbleParser.CallingClauseContext) {
+                || parent instanceof BabbleParser.CallingClauseContext
+                || parent instanceof BabbleParser.OverloadExpressionContext
+                || parent instanceof BabbleParser.OverloadTypeContext) {
             return IN_LIST;
         }
         // In these, a newline can only come before a block, "else" or "static".

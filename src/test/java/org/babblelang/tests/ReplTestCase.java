@@ -453,4 +453,13 @@ public class ReplTestCase {
         Assertions.assertTrue(lines.stream().anyMatch(l -> l.equals("fn (parts : string..., sep : string = ...) : string")), lines.toString());
         Assertions.assertTrue(lines.stream().anyMatch(l -> l.contains("values : (any | frozen any | null)...") && l.contains("to : java.lang.Appendable = ...")), lines.toString());
     }
+
+    @Test
+    public void testTypeCommandShowsOverloadSets() throws Exception {
+        List<String> lines = transcript(
+                "def show = overload (fn (n : int) : string -> ( \"\" + n ), fn (s : string) : string -> ( s ))",
+                ":type show");
+        Assertions.assertTrue(lines.stream().anyMatch(l -> l.equals("overload (fn (n : int) : string, fn (s : string) : string)")),
+                lines.toString());
+    }
 }

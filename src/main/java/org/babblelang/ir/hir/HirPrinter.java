@@ -330,6 +330,22 @@ public final class HirPrinter {
                 printCallArgs(sb, c.args(), depth + 1);
                 sb.append(')');
             }
+            case HirExpr.MakeOverloadSet m -> {
+                sb.append("(overload");
+                printArgs(sb, m.operands(), depth + 1);
+                sb.append(')');
+            }
+            case HirExpr.OverloadSelect s -> {
+                sb.append("(overload-select #").append(s.index()).append(' ');
+                printExpr(sb, s.set(), depth + 1);
+                sb.append(')');
+            }
+            case HirExpr.OverloadDispatch d -> {
+                sb.append("(overload-dispatch ");
+                printExpr(sb, d.callee(), depth + 1);
+                printArgs(sb, d.args(), depth + 1);
+                sb.append(')');
+            }
             case HirExpr.FunctionRef f -> sb.append("(fn-ref #").append(f.functionId()).append(')');
             case HirExpr.ClassExpr c -> sb.append("(class-ref #").append(c.classId()).append(')');
             case HirExpr.InterfaceExpr i -> sb.append("(iface-ref #").append(i.interfaceId()).append(')');

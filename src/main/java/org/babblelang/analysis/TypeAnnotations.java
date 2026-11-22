@@ -345,6 +345,33 @@ final class TypeAnnotations {
                     function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY,
                     effs, forwarded, resolveCapturedCallings(function.effectPrefix(), fnParams).keySet());
         }
+        if (primary instanceof BabbleParser.OverloadTypeContext overload) {
+            List<Type.Function> alts = new ArrayList<>();
+            boolean failed = false;
+            for (BabbleParser.TypeContext operand : overload.type()) {
+                Type t = annotation(operand, scope, allowRaw);
+                if (t == Type.ERROR) {
+                    failed = true;
+                } else if (t instanceof Type.Function fn) {
+                    alts.add(fn);
+                } else if (t instanceof Type.Overloaded nested) {
+                    alts.addAll(nested.alternatives());
+                } else {
+                    checker.warn("Type error : expected function type, got " + t, operand);
+                    failed = true;
+                }
+            }
+            if (failed) {
+                return Type.ERROR;
+            }
+            String setName = overloadTypeOwnerName(overload);
+            String ambig = OverloadSolver.checkWellFormed(checker.algebra(), setName, alts);
+            if (ambig != null) {
+                checker.warn(ambig, overload);
+                return Type.ERROR;
+            }
+            return new Type.Overloaded(alts);
+        }
         if (primary instanceof BabbleParser.NullTypeContext) {
             return Type.NULL;
         }
@@ -484,7 +511,39 @@ final class TypeAnnotations {
         if (p instanceof BabbleParser.TypeContext) {
             p = p.getParent();
         }
+        if (p instanceof BabbleParser.OverloadTypeContext) {
+            p = p.getParent();
+            if (p instanceof BabbleParser.NonParenTypeContext) {
+                p = p.getParent();
+            }
+            if (p instanceof BabbleParser.TypeContext) {
+                p = p.getParent();
+            }
+        }
         return p instanceof BabbleParser.DefExpressionContext def && def.value == null;
+    }
+
+    private static String overloadTypeOwnerName(BabbleParser.OverloadTypeContext overload) {
+        ParserRuleContext p = overload.getParent();
+        if (p instanceof BabbleParser.NonParenTypeContext) {
+            p = p.getParent();
+        }
+        if (p instanceof BabbleParser.TypeContext) {
+            p = p.getParent();
+        }
+        if (p instanceof BabbleParser.DefExpressionContext def) {
+            return def.name.getText();
+        }
+        if (p instanceof BabbleParser.FnParamContext fp) {
+            return fp.ID().getText();
+        }
+        if (p instanceof BabbleParser.ClassParamContext cp) {
+            return cp.ID().getText();
+        }
+        if (p instanceof BabbleParser.FnTypeParamContext ftp && ftp.ID() != null) {
+            return ftp.ID().getText();
+        }
+        return "overload";
     }
 
     private List<Type.Parameter> functionTypeParameters(BabbleParser.FnTypeParametersContext declaration, ScopeNode scope) {

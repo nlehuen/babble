@@ -17,12 +17,14 @@ final class TypeDisplay {
         return switch (type) {
             case Type.Union union -> union(union);
             case Type.Intersection intersection -> intersection.members().stream()
-                    .map(m -> m instanceof Type.Function || m instanceof Type.Union ? "(" + display(m) + ")" : display(m))
+                    .map(m -> m instanceof Type.Function || m instanceof Type.Overloaded || m instanceof Type.Union ? "(" + display(m) + ")" : display(m))
                     .collect(Collectors.joining(" & "));
             case Type.Frozen frozen -> "frozen " + (simpleOrGeneric(frozen.of()) ? display(frozen.of()) : "(" + display(frozen.of()) + ")");
             case Type.Array array -> "array" + of(List.of(array.element()));
             case Type.ArrayOfFactory af -> af.element() == null ? "array.of" : "(array" + of(List.of(af.element())) + ").of";
             case Type.Function function -> function(function);
+            case Type.Overloaded overloaded -> "overload (" + overloaded.alternatives().stream()
+                    .map(TypeDisplay::function).collect(Collectors.joining(", ")) + ")";
             case Type.Instance instance -> instance.node().name + of(instance.typeArguments());
             case Type.ClassValue value -> (value.node().isInterface() ? "interface " : "class ") + value.node().name + of(value.typeArguments());
             case Type.CoreCollection collection -> collection.kind() + of(collection.typeArguments());

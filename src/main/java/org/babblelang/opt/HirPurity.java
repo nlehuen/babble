@@ -115,6 +115,8 @@ public final class HirPurity {
                     && (i.elseBranch() == null || isPureNothrowTerminating(i.elseBranch(), module, visitingFns));
             case HirExpr.As a -> a.targetDescriptor() == null && isPureNothrowTerminating(a.left(), module, visitingFns);
             case HirExpr.TypeApply t -> isPureNothrowTerminating(t.inner(), module, visitingFns);
+            case HirExpr.MakeOverloadSet m -> allPureNothrowTerminating(m.operands(), module, visitingFns);
+            case HirExpr.OverloadSelect s -> s.exactSet() && isPureNothrowTerminating(s.set(), module, visitingFns);
             case HirExpr.DirectBabbleCall c -> {
                 boolean calleeOk = isPureNothrowTerminating(c.callee(), module, visitingFns)
                         || (c.callee() instanceof HirExpr.NameRead nr
@@ -391,6 +393,14 @@ public final class HirPurity {
             case HirExpr.DynamicCall c -> {
                 collectModifiedVars(c.callee(), out);
                 collectCallArgsModified(c.args(), out);
+            }
+            case HirExpr.MakeOverloadSet m -> {
+                for (HirExpr o : m.operands()) collectModifiedVars(o, out);
+            }
+            case HirExpr.OverloadSelect s -> collectModifiedVars(s.set(), out);
+            case HirExpr.OverloadDispatch d -> {
+                collectModifiedVars(d.callee(), out);
+                for (HirExpr a : d.args()) collectModifiedVars(a, out);
             }
             case HirExpr.Const c -> { }
             case HirExpr.IntParseFallback f -> { }

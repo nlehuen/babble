@@ -353,6 +353,14 @@ final class TypeAlgebra {
                     if (sub instanceof Type.Function fn) {
                         return samFunctionRelates(fn, java, store, active);
                     }
+                    if (sub instanceof Type.Overloaded ov) {
+                        for (Type.Function alt : ov.alternatives()) {
+                            if (samFunctionRelates(alt, java, store, active)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
                     if (isCallable(sub)) {
                         Type.Function sam = env.samFunctionType(java);
                         return sam == null || callableSatisfies(sub, sam);
@@ -414,7 +422,44 @@ final class TypeAlgebra {
                 if (sub instanceof Type.Function fn) {
                     return functionRelates(fn, target, store, active, env.checkingEffects());
                 }
+                if (sub instanceof Type.Overloaded ov) {
+                    for (Type.Function alt : ov.alternatives()) {
+                        if (functionRelates(alt, target, store, active, env.checkingEffects())) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }
                 return callableSatisfies(sub, target);
+            }
+            if (sup instanceof Type.Overloaded target) {
+                if (mode == RelateMode.RUNTIME_EXACT) {
+                    return false;
+                }
+                if (sub instanceof Type.Overloaded ov) {
+                    for (Type.Function req : target.alternatives()) {
+                        boolean matched = false;
+                        for (Type.Function alt : ov.alternatives()) {
+                            if (functionRelates(alt, req, store, active, env.checkingEffects())) {
+                                matched = true;
+                                break;
+                            }
+                        }
+                        if (!matched) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                if (sub instanceof Type.Function fn) {
+                    for (Type.Function req : target.alternatives()) {
+                        if (!functionRelates(fn, req, store, active, env.checkingEffects())) {
+                            return false;
+                        }
+                    }
+                    return true;
+                }
+                return false;
             }
             return false;
         } finally {
@@ -534,7 +579,7 @@ final class TypeAlgebra {
      * equal arity and compatible bounds; polymorphic &lt;= monomorphic by instantiation satisfying
      * every bound; monomorphic is never &lt;= polymorphic.
      */
-    private boolean functionRelates(Type.Function from, Type.Function to, ConstraintStore store,
+    boolean functionRelates(Type.Function from, Type.Function to, ConstraintStore store,
                                     Set<RelationKey> active, boolean withEffects) {
         int fromRest = from.restIndex();
         int toRest = to.restIndex();
@@ -858,6 +903,10 @@ final class TypeAlgebra {
         }
         if (b instanceof Type.Frozen bf) {
             return overlapsErased(a, bf.of());
+        }
+        if ((a instanceof Type.Function || a instanceof Type.Overloaded)
+                && (b instanceof Type.Function || b instanceof Type.Overloaded)) {
+            return true;
         }
         if (a instanceof Type.TypeVar || b instanceof Type.TypeVar || a == Type.ANY || b == Type.ANY) {
             return true;
@@ -1223,12 +1272,12 @@ final class TypeAlgebra {
 
     // ---------------------------------------------------------------- structural predicates
 
-    /** Whether a value of this type can be called : functions, Java methods, and classes. */
+    /** Whether a value of this type can be called : functions, overload sets, Java methods, and classes. */
     static boolean isCallable(Type type) {
         if (type instanceof Type.Union union) {
             return union.members().stream().allMatch(TypeAlgebra::isCallable);
         }
-        return type instanceof Type.Function || type instanceof Type.JavaMethod
+        return type instanceof Type.Function || type instanceof Type.Overloaded || type instanceof Type.JavaMethod
                 || type instanceof Type.ClassValue value && !value.node().isInterface();
     }
 
@@ -1291,7 +1340,7 @@ final class TypeAlgebra {
     }
 
     static boolean containsFunction(Type type) {
-        if (type instanceof Type.Function) {
+        if (type instanceof Type.Function || type instanceof Type.Overloaded) {
             return true;
         }
         return type instanceof Type.Union union && union.members().stream().anyMatch(TypeAlgebra::containsFunction);
@@ -1405,6 +1454,15 @@ final class TypeAlgebra {
                     }
                 }
                 yield scanPrimitiveArraySubstitution(fn.result(), env);
+            }
+            case Type.Overloaded ov -> {
+                for (Type.Function alt : ov.alternatives()) {
+                    BadArraySubstitution found = scanPrimitiveArraySubstitution(alt, env);
+                    if (found != null) {
+                        yield found;
+                    }
+                }
+                yield null;
             }
             case Type.Instance inst -> {
                 for (Type a : inst.typeArguments()) {

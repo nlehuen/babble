@@ -20,7 +20,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | AND | OR | NOT;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT;
 
 effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
 
@@ -63,6 +63,7 @@ expression:
                 (NL* STATIC NL* staticBlock=block)?           # interfaceExpression
           | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block   # objectExpression
           | FN (OF typeParameters)? effectPrefix? fnParameters (':' uniqueReturn=UNIQUE? type)? '->' NL* functionBlock=block  # functionLiteral
+          | OVERLOAD '(' NL* expression (NL* ',' NL* expression)* NL* ')'   # overloadExpression
           | THIS                                              # thisExpression
           | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
           // A newline may come before the dot : a chain of calls can go on the next lines.
@@ -159,6 +160,7 @@ nonParenNullableType: frozen=FROZEN? typeName ( OF ( '(' NL* type (NL* ',' NL* t
                                                    | nonParenNullableType )
                                               | question='?'? )                       # simpleType
                     | FN (OF typeParameters)? effectPrefix? fnTypeParameters (':' uniqueReturn=UNIQUE? type)? # functionType
+                    | OVERLOAD '(' NL* type (NL* ',' NL* type)* NL* ')'               # overloadType
                     | NULL                                                            # nullType
                     ;
 
@@ -236,6 +238,7 @@ PRIVATE: 'private';
 STATIC: 'static';
 EXPORT: 'export';
 FN: 'fn';
+OVERLOAD: 'overload';
 OF: 'of';
 ON: 'on';
 CALLING: 'calling';

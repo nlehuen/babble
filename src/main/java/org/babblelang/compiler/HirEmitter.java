@@ -61,6 +61,8 @@ final class HirEmitter {
     static final String BINDER = RUNTIME + "Arguments$Binder";
     static final String ARGUMENTS_VIEW = RUNTIME + "ArgumentsView";
     static final String SPREADS = RUNTIME + "Spreads";
+    static final String OVERLOAD_SET = RUNTIME + "OverloadSet";
+    static final String BABBLE_EXCEPTION = RUNTIME + "BabbleException";
     static final String FRAMES = RUNTIME + "Frames";
     static final String CELL = RUNTIME + "Cell";
     static final String BYTE_CELL = RUNTIME + "ByteCell";
@@ -359,6 +361,9 @@ final class HirEmitter {
             case HirExpr.JavaMethodCall c -> 1 + countNodes(c.receiver()) + countList(c.args());
             case HirExpr.SafeCall c -> 1 + countNodes(c.receiver()) + countCallArgs(c.args());
             case HirExpr.DynamicCall c -> 1 + countNodes(c.callee()) + countCallArgs(c.args());
+            case HirExpr.MakeOverloadSet m -> 1 + countList(m.operands());
+            case HirExpr.OverloadSelect s -> 1 + countNodes(s.set());
+            case HirExpr.OverloadDispatch d -> 1 + countNodes(d.callee()) + countList(d.args()) + d.branches().size() * 2;
         };
     }
 
@@ -1147,6 +1152,9 @@ final class HirEmitter {
             case HirExpr.JavaMethodCall c -> emitJavaMethodCall(c);
             case HirExpr.SafeCall c -> emitSafeCall(c);
             case HirExpr.DynamicCall c -> emitDynamicCall(c);
+            case HirExpr.MakeOverloadSet m -> emitMakeOverloadSet(m);
+            case HirExpr.OverloadSelect s -> emitOverloadSelect(s);
+            case HirExpr.OverloadDispatch d -> emitOverloadDispatch(d);
             case HirExpr.FunctionRef f -> emitFunctionRef(f);
             case HirExpr.ClassExpr c -> emitClassExpr(c);
             case HirExpr.InterfaceExpr i -> emitInterfaceExpr(i);
@@ -3931,6 +3939,299 @@ final class HirEmitter {
             }
         }
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+    }
+
+    private void emitSpreadAdaptOnStack(ScopeAnalysis.SpreadAdapt adapt) {
+        if (adapt == null) {
+            return;
+        }
+        switch (adapt.kind()) {
+            case NONE, AS_IS -> {
+            }
+            case TO_ITERABLE -> mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asIterable",
+                    "(Ljava/lang/Object;)Ljava/lang/Iterable;", false);
+            case TO_LIST_BORROWED -> {
+                mv.visitInsn(ICONST_1);
+                mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asList", "(Ljava/lang/Object;Z)Ljava/util/List;", false);
+            }
+            case TO_LIST_COPY -> {
+                mv.visitInsn(ICONST_0);
+                mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asList", "(Ljava/lang/Object;Z)Ljava/util/List;", false);
+            }
+            case TO_ARRAY -> {
+                pushClassConstant(mv, adapt.arrayComponentType());
+                mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asArray",
+                        "(Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;", false);
+            }
+        }
+    }
+
+    private void emitMakeOverloadSet(HirExpr.MakeOverloadSet m) {
+        List<HirExpr> ops = m.operands();
+        List<ScopeAnalysis.OverloadAltMetaInfo> metas = m.metas();
+        // 1. Object[] operands
+        ConstantPool.pushInt(mv, ops.size());
+        mv.visitTypeInsn(ANEWARRAY, OBJECT);
+        for (int i = 0; i < ops.size(); i++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, i);
+            emitBoxed(ops.get(i));
+            mv.visitInsn(AASTORE);
+        }
+        // 2. String[] sigKeys
+        ConstantPool.pushInt(mv, metas.size());
+        mv.visitTypeInsn(ANEWARRAY, STRING);
+        for (int i = 0; i < metas.size(); i++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, i);
+            mv.visitLdcInsn(metas.get(i).signatureKey());
+            mv.visitInsn(AASTORE);
+        }
+        // 3. String[] displays
+        ConstantPool.pushInt(mv, metas.size());
+        mv.visitTypeInsn(ANEWARRAY, STRING);
+        for (int i = 0; i < metas.size(); i++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, i);
+            mv.visitLdcInsn(metas.get(i).display());
+            mv.visitInsn(AASTORE);
+        }
+        // 4. int[] minArities
+        ConstantPool.pushInt(mv, metas.size());
+        mv.visitIntInsn(NEWARRAY, T_INT);
+        for (int i = 0; i < metas.size(); i++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, i);
+            ConstantPool.pushInt(mv, metas.get(i).minArity());
+            mv.visitInsn(IASTORE);
+        }
+        // 5. int[] maxArities
+        ConstantPool.pushInt(mv, metas.size());
+        mv.visitIntInsn(NEWARRAY, T_INT);
+        for (int i = 0; i < metas.size(); i++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, i);
+            ConstantPool.pushInt(mv, metas.get(i).maxArity());
+            mv.visitInsn(IASTORE);
+        }
+        // 6. int[] restIndices
+        ConstantPool.pushInt(mv, metas.size());
+        mv.visitIntInsn(NEWARRAY, T_INT);
+        for (int i = 0; i < metas.size(); i++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, i);
+            ConstantPool.pushInt(mv, metas.get(i).restIndex());
+            mv.visitInsn(IASTORE);
+        }
+        // 7. String[][] paramDescriptors
+        ConstantPool.pushInt(mv, metas.size());
+        mv.visitTypeInsn(ANEWARRAY, "[L" + STRING + ";");
+        for (int i = 0; i < metas.size(); i++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, i);
+            String[] descs = metas.get(i).paramDescriptors();
+            ConstantPool.pushInt(mv, descs.length);
+            mv.visitTypeInsn(ANEWARRAY, STRING);
+            for (int j = 0; j < descs.length; j++) {
+                mv.visitInsn(DUP);
+                ConstantPool.pushInt(mv, j);
+                mv.visitLdcInsn(descs[j] != null ? descs[j] : "");
+                mv.visitInsn(AASTORE);
+            }
+            mv.visitInsn(AASTORE);
+        }
+        line(m.meta().line());
+        mv.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "create",
+                "([Ljava/lang/Object;[Ljava/lang/String;[Ljava/lang/String;[I[I[I[[Ljava/lang/String;)L" + OVERLOAD_SET + ";",
+                false);
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+    }
+
+    private void emitOverloadSelect(HirExpr.OverloadSelect s) {
+        emitBoxed(s.set());
+        emitOverloadSelectOnStack(s.index(), s.signatureKey(), s.exactSet());
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+    }
+
+    private void emitOverloadSelectOnStack(int index, String signatureKey, boolean exactSet) {
+        if (exactSet) {
+            ConstantPool.pushInt(mv, index);
+            mv.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "memberOf",
+                    "(Ljava/lang/Object;I)L" + CALLABLE + ";", false);
+        } else {
+            mv.visitLdcInsn(signatureKey);
+            mv.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "selectFrom",
+                    "(Ljava/lang/Object;Ljava/lang/String;)L" + CALLABLE + ";", false);
+        }
+    }
+
+    private void emitOverloadDispatch(HirExpr.OverloadDispatch d) {
+        int savedNextLocal = nextLocal;
+        int ln = d.meta().line();
+        int calleeLocal = nextLocal++;
+        emitBoxed(d.callee());
+        mv.visitVarInsn(ASTORE, calleeLocal);
+
+        List<HirExpr> args = d.args();
+        int[] argLocals = new int[args.size()];
+        ScopeAnalysis.PrimitiveKind[] argKinds = new ScopeAnalysis.PrimitiveKind[args.size()];
+        for (int i = 0; i < args.size(); i++) {
+            argLocals[i] = nextLocal++;
+            argKinds[i] = ScopeAnalysis.PrimitiveKind.NONE;
+            emitBoxed(args.get(i));
+            mv.visitVarInsn(ASTORE, argLocals[i]);
+        }
+
+        ScopeAnalysis.PrimitiveKind joinKind = d.meta().kind();
+        Label endLabel = new Label();
+        String siteField = constantPool.callSiteField(d.callSite());
+
+        for (HirExpr.OverloadBranch branch : d.branches()) {
+            Label nextBranch = new Label();
+            for (ScopeAnalysis.OverloadSplitCheck chk : branch.checks()) {
+                int slot = argLocals[chk.argIndex()];
+                if (chk.isNull()) {
+                    mv.visitVarInsn(ALOAD, slot);
+                    mv.visitJumpInsn(IFNONNULL, nextBranch);
+                } else {
+                    mv.visitVarInsn(ALOAD, slot);
+                    mv.visitJumpInsn(IFNULL, nextBranch);
+                    for (String desc : chk.descriptors()) {
+                        mv.visitVarInsn(ALOAD, slot);
+                        mv.visitLdcInsn(desc);
+                        mv.visitMethodInsn(INVOKESTATIC, TYPES, "matches", "(Ljava/lang/Object;Ljava/lang/String;)Z", false);
+                        mv.visitJumpInsn(IFEQ, nextBranch);
+                    }
+                }
+            }
+
+            ScopeAnalysis.ArgumentBinding binding = branch.binding();
+            if (branch.directFunctionId() >= 0) {
+                HirFunction fn = module.function(branch.directFunctionId());
+                ensureFunctionScheduled(fn);
+                int count = fn.params().size();
+                mv.visitVarInsn(ALOAD, calleeLocal);
+                emitOverloadSelectOnStack(branch.altIndex(), branch.signatureKey(), branch.exactSet());
+                mv.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
+                mv.visitFieldInsn(GETSTATIC, RUNTIME + "Undefined", "UNBOUND", "L" + RUNTIME + "Undefined;");
+                mv.visitVarInsn(ALOAD, rtLocal);
+                if (fn.hasSpec()) {
+                    ScopeAnalysis.PrimitiveKind[] paramKinds = paramKindsOf(fn);
+                    for (int p = 0; p < count; p++) {
+                        if (binding != null && p == binding.restParam()) {
+                            emitPackedRestFromTemps(binding, argLocals, argKinds, false);
+                        } else {
+                            int a = binding != null ? binding.paramToArg()[p] : p;
+                            if (a >= 0) {
+                                mv.visitVarInsn(ALOAD, argLocals[a]);
+                                if (binding != null) {
+                                    emitSpreadAdaptOnStack(binding.adaptForArg(a));
+                                }
+                                if (paramKinds[p].isPrimitive()) {
+                                    unbox(paramKinds[p]);
+                                }
+                            } else {
+                                emitDefaultValueOn(mv, paramKinds[p]);
+                            }
+                        }
+                    }
+                    if (fn.hasOptionalMask()) {
+                        ConstantPool.pushInt(mv, binding != null ? binding.specMaskFor(fn.optionalParamBits(), count) : 0);
+                    }
+                    line(ln);
+                    mv.visitMethodInsn(INVOKESTATIC, className, fn.jvmMethodName() + "$spec", functionSpecDescriptor(fn), false);
+                    convertStack(fn.returnKind(), joinKind);
+                } else {
+                    mv.visitInsn(ACONST_NULL);
+                    for (int p = 0; p < count; p++) {
+                        if (binding != null && p == binding.restParam()) {
+                            emitPackedRestFromTemps(binding, argLocals, argKinds, false);
+                        } else {
+                            int a = binding != null ? binding.paramToArg()[p] : p;
+                            if (a >= 0) {
+                                mv.visitVarInsn(ALOAD, argLocals[a]);
+                                if (binding != null) {
+                                    emitSpreadAdaptOnStack(binding.adaptForArg(a));
+                                }
+                            } else {
+                                mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
+                            }
+                        }
+                    }
+                    line(ln);
+                    mv.visitMethodInsn(INVOKESTATIC, className, fn.jvmMethodName(), functionDirectDescriptor(fn), false);
+                    convertStack(ScopeAnalysis.PrimitiveKind.NONE, joinKind);
+                }
+            } else {
+                mv.visitVarInsn(ALOAD, calleeLocal);
+                emitOverloadSelectOnStack(branch.altIndex(), branch.signatureKey(), branch.exactSet());
+                mv.visitVarInsn(ALOAD, rtLocal);
+                emitBoundArgsArrayFromTemps(binding, argLocals, argKinds);
+                mv.visitInsn(ACONST_NULL);
+                mv.visitFieldInsn(GETSTATIC, className, siteField, "L" + CALL_SITE + ";");
+                line(ln);
+                mv.visitMethodInsn(INVOKEINTERFACE, CALLABLE, "call",
+                        "(L" + SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", true);
+                convertStack(ScopeAnalysis.PrimitiveKind.NONE, joinKind);
+            }
+            mv.visitJumpInsn(GOTO, endLabel);
+            mv.visitLabel(nextBranch);
+        }
+
+        // Unreachable when static split is exhaustive; keeps JVM stack frames valid.
+        mv.visitTypeInsn(NEW, BABBLE_EXCEPTION);
+        mv.visitInsn(DUP);
+        mv.visitLdcInsn("No applicable overload of " + d.calleeText());
+        mv.visitMethodInsn(INVOKESPECIAL, BABBLE_EXCEPTION, "<init>", "(Ljava/lang/String;)V", false);
+        mv.visitInsn(ATHROW);
+
+        mv.visitLabel(endLabel);
+        nextLocal = savedNextLocal;
+        stackKind = joinKind;
+        finishCallCheck(d.meta());
+    }
+
+    private void emitBoundArgsArrayFromTemps(ScopeAnalysis.ArgumentBinding binding, int[] argLocals,
+                                             ScopeAnalysis.PrimitiveKind[] argKinds) {
+        if (binding == null) {
+            ConstantPool.pushInt(mv, argLocals.length);
+            mv.visitTypeInsn(ANEWARRAY, OBJECT);
+            for (int i = 0; i < argLocals.length; i++) {
+                mv.visitInsn(DUP);
+                ConstantPool.pushInt(mv, i);
+                mv.visitVarInsn(ALOAD, argLocals[i]);
+                mv.visitInsn(AASTORE);
+            }
+            return;
+        }
+        int[] map = binding.paramToArg();
+        int restParam = binding.restParam();
+        int effective = map.length;
+        while (effective > 0 && effective - 1 != restParam && map[effective - 1] < 0) {
+            effective--;
+        }
+        if (effective == 0) {
+            mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "NONE", "[Ljava/lang/Object;");
+            return;
+        }
+        ConstantPool.pushInt(mv, effective);
+        mv.visitTypeInsn(ANEWARRAY, OBJECT);
+        for (int p = 0; p < effective; p++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, p);
+            if (p == restParam) {
+                emitPackedRestFromTemps(binding, argLocals, argKinds, true);
+            } else {
+                int a = map[p];
+                if (a >= 0) {
+                    mv.visitVarInsn(ALOAD, argLocals[a]);
+                    emitSpreadAdaptOnStack(binding.adaptForArg(a));
+                } else {
+                    mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
+                }
+            }
+            mv.visitInsn(AASTORE);
+        }
     }
 
     private static void pushClassConstant(MethodVisitor m, Class<?> cls) {

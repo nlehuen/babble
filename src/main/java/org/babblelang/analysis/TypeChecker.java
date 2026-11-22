@@ -143,6 +143,38 @@ final class TypeChecker {
     private final Set<TypeNode> exportedTypeNodes = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
 
+    /** One branch of a statically verified union-split overload call (BIP021-D11 #4). */
+    record ResolvedSplitBranch(List<ScopeAnalysis.OverloadSplitCheck> checks, int altIndex,
+                               Type.Function altType, boolean exactSet,
+                               BabbleParser.FunctionLiteralContext directTarget, Type resultType,
+                               ScopeAnalysis.SpreadAdapt[] spreadAdapts, ScopeAnalysis.PrimitiveKind restKind) {
+    }
+
+    /** Resolution result for a call to an overload set (single alternative or union split). */
+    record ResolvedOverloadCall(int altIndex, Type.Function altType, boolean exactSet,
+                                BabbleParser.FunctionLiteralContext directTarget, Type resultType,
+                                List<ResolvedSplitBranch> splitBranches) {
+        boolean isSplit() {
+            return splitBranches != null && !splitBranches.isEmpty();
+        }
+    }
+
+    private final Map<BabbleParser.OverloadExpressionContext, List<BabbleParser.FunctionLiteralContext>> overloadAltLiterals = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, ScopeAnalysis.OverloadSelection> overloadSelections = new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, ResolvedOverloadCall> resolvedOverloadCalls = new IdentityHashMap<>();
+
+    Map<ParserRuleContext, ScopeAnalysis.OverloadSelection> overloadSelections() {
+        return overloadSelections;
+    }
+
+    Map<BabbleParser.CallContext, ResolvedOverloadCall> resolvedOverloadCalls() {
+        return resolvedOverloadCalls;
+    }
+
+    void recordResolvedOverloadCall(BabbleParser.CallContext ctx, ResolvedOverloadCall call) {
+        resolvedOverloadCalls.put(ctx, call);
+    }
+
     private final CallSolver callSolver = new CallSolver(this);
     private final SlotInference slots = new SlotInference(this);
     private final TypeAnnotations annotator = new TypeAnnotations(this);
@@ -509,6 +541,9 @@ final class TypeChecker {
         p7Params.clear();
         functionLiterals.clear();
         failedDefs.clear();
+        overloadAltLiterals.clear();
+        overloadSelections.clear();
+        resolvedOverloadCalls.clear();
         callSolver.reset();
     }
 
@@ -1010,7 +1045,8 @@ final class TypeChecker {
         slots.read(SlotInference.DEFS, declaration);
         if (inferredDefs.containsKey(declaration)
                 && !(declaration instanceof BabbleParser.DefExpressionContext def
-                && !reassigned.contains(def) && unwrapFunctionLiteral(def.value) != null)) {
+                && !reassigned.contains(def) && (unwrapFunctionLiteral(def.value) != null
+                || def.value instanceof BabbleParser.OverloadExpressionContext))) {
             return inferredDefs.get(declaration);
         }
         if (!inProgress.add(declaration)) {
@@ -1023,6 +1059,12 @@ final class TypeChecker {
                     Type litCached = types.get(literal);
                     if (litCached != null) {
                         return litCached;
+                    }
+                }
+                if (def.value instanceof BabbleParser.OverloadExpressionContext ov) {
+                    Type ovCached = types.get(ov);
+                    if (ovCached != null) {
+                        return ovCached;
                     }
                 }
                 warn("Missing type : " + def.name.getText() + " (recursive)", def);
@@ -1597,6 +1639,79 @@ final class TypeChecker {
         if (site != null && targetRank >= 0) {
             widened.merge(site, targetRank, Math::max);
         }
+        if (site != null && actual instanceof Type.Overloaded ov && target != null) {
+            Type targetBase = Type.withoutNull(target);
+            int idx = -1;
+            if (targetBase instanceof Type.Function targetFn) {
+                idx = OverloadSolver.selectAlternativeForFunction(algebra, ov, targetFn, checkingEffects);
+            } else if (targetBase instanceof Type.JavaInstance ji && org.babblelang.runtime.JavaTypes.isFunctionalInterface(ji.type())) {
+                idx = OverloadSolver.selectAlternativeForSam(algebra, ov, ji);
+            }
+            if (idx >= 0) {
+                Type.Function chosen = ov.alternatives().get(idx);
+                ParserRuleContext exprSite = site instanceof BabbleParser.DefExpressionContext def && def.value != null
+                        ? def.value
+                        : site instanceof BabbleParser.AssignExpressionContext assign && assign.value != null
+                        ? assign.value
+                        : site instanceof BabbleParser.ReturnExpressionContext ret && ret.expression() != null
+                        ? ret.expression()
+                        : site;
+                boolean exactSet = isExactOverloadSetExpr(exprSite);
+                overloadSelections.put(exprSite, new ScopeAnalysis.OverloadSelection(
+                        idx, OverloadSolver.signatureKey(chosen), exactSet));
+            }
+        }
+    }
+
+    /**
+     * Whether {@code expr} is statically known to evaluate to the exact overload set of its static
+     * type (rather than a wider runtime set passed through a set-typed parameter or interface member).
+     */
+    boolean isExactOverloadSetExpr(ParserRuleContext expr) {
+        while (expr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+            expr = b.block().expression(0);
+        }
+        if (expr instanceof BabbleParser.OverloadExpressionContext) {
+            return true;
+        }
+        if (expr instanceof BabbleParser.SelectorContext sel) {
+            if (sel.expression() == null) {
+                ScopeNode scope = occurrenceScopes.get(sel);
+                Object resolved = scope != null ? resolveName(sel, sel.ID().getText(), scope) : null;
+                if (resolved instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
+                    return def.type() == null && def.value instanceof BabbleParser.OverloadExpressionContext;
+                }
+                return false;
+            }
+            Type recv = types.get(sel.expression());
+            if (recv instanceof Type.Module) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Resolves the flattened list of local {@link BabbleParser.FunctionLiteralContext} alternatives
+     * for an immutable local overload set expression (entries may be {@code null} for non-literal
+     * or imported alternatives), or {@code null} if {@code expr} is not a known local overload set.
+     */
+    List<BabbleParser.FunctionLiteralContext> resolveOverloadLiterals(ParserRuleContext expr) {
+        while (expr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+            expr = b.block().expression(0);
+        }
+        if (expr instanceof BabbleParser.OverloadExpressionContext ov) {
+            return overloadAltLiterals.get(ov);
+        }
+        if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
+            ScopeNode scope = occurrenceScopes.get(sel);
+            Object resolved = scope != null ? resolveName(sel, sel.ID().getText(), scope) : null;
+            if (resolved instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)
+                    && def.value instanceof BabbleParser.OverloadExpressionContext ov && inFile(ov)) {
+                return overloadAltLiterals.get(ov);
+            }
+        }
+        return null;
     }
 
     /** A value flowing into an unannotated def or member : recorded in its slot, and coerced to the slot's type. */
@@ -1776,6 +1891,7 @@ final class TypeChecker {
                 case BabbleParser.AsExpressionContext c -> visitAsExpression(c, expected, role);
                 case BabbleParser.BooleanOpContext c -> visitBooleanOp(c, expected, role);
                 case BabbleParser.FunctionLiteralContext c -> visitFunctionLiteral(c, expected, role);
+                case BabbleParser.OverloadExpressionContext c -> visitOverloadExpression(c, expected, role);
                 case BabbleParser.AssignExpressionContext c -> visitAssignExpression(c, expected, role);
                 case BabbleParser.NullContext c -> visitNull(c, expected, role);
                 case BabbleParser.BooleanContext c -> visitBoolean(c, expected, role);
@@ -2474,6 +2590,95 @@ final class TypeChecker {
                 }
             }
             return sig;
+        }
+
+        private Type visitOverloadExpression(BabbleParser.OverloadExpressionContext ctx, Type expected, Role role) {
+            String ownerName = overloadExprOwnerName(ctx);
+            List<Type.Function> alts = new ArrayList<>();
+            List<BabbleParser.FunctionLiteralContext> flatLiterals = new ArrayList<>();
+            List<BabbleParser.FunctionLiteralContext> pendingBodies = new ArrayList<>();
+            boolean failed = false;
+            for (BabbleParser.ExpressionContext op : ctx.expression()) {
+                if (op instanceof BabbleParser.FunctionLiteralContext lit) {
+                    if (inFile(lit)) {
+                        functions.add(lit);
+                    }
+                    boolean litMissing = false;
+                    for (BabbleParser.FnParamContext param : lit.fnParameters().fnParam()) {
+                        if (param.type() == null) {
+                            warn("Missing type : " + param.ID().getText(), param);
+                            litMissing = true;
+                        }
+                    }
+                    if (lit.type() == null) {
+                        warn("Missing type : return type of overload alternative", lit);
+                        litMissing = true;
+                    }
+                    if (litMissing) {
+                        failed = true;
+                        continue;
+                    }
+                    Type.Function sig = signature(lit, null);
+                    types.put(lit, sig);
+                    alts.add(sig);
+                    flatLiterals.add(inFile(lit) ? lit : null);
+                    pendingBodies.add(lit);
+                } else {
+                    Type t = synth(op);
+                    if (t == Type.ERROR) {
+                        failed = true;
+                    } else if (t instanceof Type.Function fn) {
+                        alts.add(fn);
+                        BabbleParser.FunctionLiteralContext lit = functionLiterals.get(fn);
+                        flatLiterals.add(lit != null && inFile(lit) ? lit : null);
+                    } else if (t instanceof Type.Overloaded nested) {
+                        alts.addAll(nested.alternatives());
+                        List<BabbleParser.FunctionLiteralContext> nestedLits = resolveOverloadLiterals(op);
+                        if (nestedLits != null && nestedLits.size() == nested.alternatives().size()) {
+                            flatLiterals.addAll(nestedLits);
+                        } else {
+                            for (int i = 0; i < nested.alternatives().size(); i++) {
+                                flatLiterals.add(null);
+                            }
+                        }
+                    } else {
+                        warn("Type error : expected function, got " + t, op);
+                        failed = true;
+                    }
+                }
+            }
+            Type result = Type.ERROR;
+            if (!failed) {
+                String ambig = OverloadSolver.checkWellFormed(algebra, ownerName, alts);
+                if (ambig != null) {
+                    warn(ambig, ctx);
+                } else {
+                    Type.Overloaded ovType = new Type.Overloaded(alts);
+                    types.put(ctx, ovType);
+                    overloadAltLiterals.put(ctx, Collections.unmodifiableList(flatLiterals));
+                    result = ovType;
+                }
+            }
+            // Type literal bodies after registering the overload set type so recursive calls to the set resolve.
+            for (BabbleParser.FunctionLiteralContext lit : pendingBodies) {
+                if (lit.functionBlock != null && !types.containsKey(lit.functionBlock)) {
+                    TypeEnv saved = env;
+                    env = saved.enterCallable(reassigned);
+                    try {
+                        check(lit.functionBlock, expectedReturnType(lit));
+                    } finally {
+                        env = saved;
+                    }
+                }
+            }
+            return result;
+        }
+
+        private String overloadExprOwnerName(BabbleParser.OverloadExpressionContext ctx) {
+            if (ctx.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == ctx) {
+                return def.name.getText();
+            }
+            return "overload";
         }
 
         private LValue resolveLValue(BabbleParser.AssignExpressionContext ctx, boolean readCurrent) {

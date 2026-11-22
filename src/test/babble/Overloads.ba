@@ -1,0 +1,61 @@
+;; Overload sets, static ambiguity checking, union dispatch, and set types (BIP021-P5).
+
+def show = overload (
+    fn (n: int): string -> ("int:" + n),
+    fn (d: double): string -> ("double:" + d),
+    fn (s: string): string -> ("string:" + s),
+    fn (xs: list of int): string -> ("list:" + xs.size())
+)
+assert(show(42) == "int:42")
+assert(show(2.5) == "double:2.5")
+assert(show("hi") == "string:hi")
+assert(show(list(1, 2, 3)) == "list:3")
+
+def describe = overload (
+    show,
+    fn (b: bool): string -> (if b then ("yes") else ("no"))
+)
+assert(describe(7) == "int:7")
+assert(describe(true) == "yes")
+
+;; Numeric widening ranks: byte -> int -> long -> double
+def widen = overload (
+    fn (x: long): string -> ("long"),
+    fn (x: double): string -> ("double")
+)
+assert(widen(byte(1)) == "long")
+assert(widen(42) == "long")
+assert(widen(1.5f) == "double")
+
+;; Union and nullable splits
+def fmtOpt = overload (
+    fn (n: null): string -> ("none"),
+    fn (n: int): string -> ("i:" + n),
+    fn (s: string): string -> ("s:" + s)
+)
+def runOpt = fn (v: int?): string -> (fmtOpt(v))
+def runUnion = fn (v: int | string): string -> (fmtOpt(v))
+assert(runOpt(null) == "none")
+assert(runOpt(5) == "i:5")
+assert(runUnion(9) == "i:9")
+assert(runUnion("ok") == "s:ok")
+
+;; Set types and target-type selection
+def onlyInt: fn (n: int): string = show
+assert(onlyInt(3) == "int:3")
+
+def applySet = fn (f: overload (fn (n: int): string, fn (s: string): string)): string -> (
+    f(1) + "|" + f("a")
+)
+assert(applySet(describe) == "int:1|string:a")
+assert(applySet(fn (x: int | string): string -> ("g:" + x)) == "g:1|g:a")
+
+;; Generic fallback
+def genShow = overload (
+    fn (n: int): string -> ("int:" + n),
+    fn of T io (t: T): string -> ("any:" + t)
+)
+assert(genShow(1) == "int:1")
+assert(genShow("x") == "any:x")
+
+true

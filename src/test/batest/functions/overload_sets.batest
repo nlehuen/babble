@@ -1,0 +1,366 @@
+;; BIP021-P5 : Overload sets — static ambiguity checking, most-specific resolution,
+;; numeric widening ranks, union/nullable/intersection splits, set types, target selection,
+;; generics, lambdas, spreads, effects, modules, and sessions.
+
+========== ov_shapes.ba ==========
+export def Circle = record (r: double) ()
+export def area = overload (
+    fn (c: Circle): double -> ( 3.0 * c.r * c.r ),
+    fn (n: int): double -> ( double(n) )
+)
+
+{{{{{
+;; Basic overload set, flattening/extension, recursive set call, and static dispatch
+def show = overload (
+    fn (n: int): string -> ( "int:" + n ),
+    fn (d: double): string -> ( "double:" + d ),
+    fn (s: string): string -> ( "string:" + s ),
+    fn (xs: list of int): string -> ( "list:" + xs.size() )
+)
+def describe = overload (
+    show,
+    fn (b: bool): string -> ( if b then ( "yes" ) else ( "no" ) )
+)
+println(show(42))
+println(show(3.5))
+println(show("hi"))
+println(show(list(1, 2, 3)))
+println(describe(7), "|", describe(true), "|", describe("ok"))
+
+;; Recursive self-call inside an overload set and recurse for same alternative
+def render = overload (
+    fn (n: int): string -> ( if n <= 0 then ( "0" ) else ( "n=" + recurse(n - 1) ) ),
+    fn (xs: list of int): string -> (
+        if xs.size() == 0 then ( "[]" ) else ( "[" + render(xs.get(0)) + "]" )
+    )
+)
+println(render(2))
+println(render(list(1)))
+}}}}}
+int:42
+double:3.5
+string:hi
+list:3
+int:7|yes|string:ok
+n=n=0
+[n=0]
+
+{{{{{
+;; Java-style nearest numeric widening ranks (byte < short < int < long < float < double)
+def pickNum = overload (
+    fn (x: long): string -> ( "long:" + x ),
+    fn (x: double): string -> ( "double:" + x )
+)
+def pickExact = overload (
+    fn (x: int): string -> ( "int:" + x ),
+    fn (x: long): string -> ( "long:" + x ),
+    fn (x: double): string -> ( "double:" + x )
+)
+println(pickNum(byte(1)), "|", pickNum(short(2)), "|", pickNum(3), "|", pickNum(4.5f), "|", pickNum(5.5))
+println(pickExact(byte(1)), "|", pickExact(2), "|", pickExact(3L), "|", pickExact(4.5))
+}}}}}
+long:1|long:2|long:3|double:4.5|double:5.5
+int:1|int:2|long:3|double:4.5
+
+{{{{{
+;; Static dispatch on interface type vs union split on Circle | Square and Shape | Named
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def Circle = record (r: double) implements Shape (
+    def area = fn (): double -> ( 3.0 * this.r * this.r )
+)
+def Square = record (s: double) implements Shape (
+    def area = fn (): double -> ( this.s * this.s )
+)
+def Label = record (n: string) implements Named (
+    def name = fn (): string -> ( this.n )
+)
+def NamedCircle = record (r: double, n: string) implements Shape, Named (
+    def area = fn (): double -> ( 3.0 * this.r * this.r )
+    def name = fn (): string -> ( this.n )
+)
+
+def tag = overload (
+    fn (c: Circle): string -> ( "circle" ),
+    fn (s: Shape): string -> ( "shape" )
+)
+def staticShape: Shape = Circle(2.0)
+;; Static dispatch: staticShape has static type Shape, so Shape alternative runs!
+println(tag(Circle(2.0)), "|", tag(staticShape))
+
+;; Union split on disjoint classes Circle | Square
+def area = overload (
+    fn (c: Circle): double -> ( c.area() ),
+    fn (sq: Square): double -> ( sq.area() )
+)
+def getArea = fn (s: Circle | Square): double -> ( area(s) )
+println(getArea(Circle(2.0)), "|", getArea(Square(3.0)))
+
+;; Union split on interfaces with intersection meet Shape & Named tested first!
+def showItem = overload (
+    fn (s: Shape): string -> ( "S:" + s.area() ),
+    fn (n: Named): string -> ( "N:" + n.name() ),
+    fn (b: Shape & Named): string -> ( "SN:" + b.name() + ":" + b.area() )
+)
+def showAny = fn (x: Shape | Named): string -> ( showItem(x) )
+println(showAny(Circle(2.0)))
+println(showAny(Label("hi")))
+println(showAny(NamedCircle(2.0, "c")))
+}}}}}
+circle|shape
+12.0|9.0
+S:12.0
+N:hi
+SN:c:12.0
+
+{{{{{
+;; Nullable union split (int? -> null vs int) and union of distinct generics? No: int | string
+def fmtOpt = overload (
+    fn (n: null): string -> ( "none" ),
+    fn (n: int): string -> ( "int:" + n ),
+    fn (s: string): string -> ( "str:" + s )
+)
+def go = fn (v: int?): string -> ( fmtOpt(v) )
+def go2 = fn (v: int | string): string -> ( fmtOpt(v) )
+println(go(null), "|", go(9))
+println(go2(5), "|", go2("ok"))
+}}}}}
+none|int:9
+int:5|str:ok
+
+{{{{{
+;; Overload set types (BIP021-D12): set <= fn, fn <= set, set <= set, set-typed params, SAM selection
+def fmt = overload (
+    fn (n: int): string -> ( "i:" + n ),
+    fn (s: string): string -> ( "s:" + s ),
+    fn (b: bool): string -> ( "b:" + b )
+)
+;; Target-type selection: set <= fn
+def fmtInt: fn (x: int): string = fmt
+println(fmtInt(42))
+
+;; Passing a wider runtime set into a narrower set-typed parameter
+def usePair = fn (f: overload (fn (x: int): string, fn (x: string): string)): string -> (
+    f(1) + "/" + f("a")
+)
+println(usePair(fmt))
+
+;; A single general function satisfies an overload set type
+def general = fn (x: int | string): string -> ( "gen:" + x )
+println(usePair(general))
+
+;; Target-type selection into Java SAM (List.sort with Comparator)
+def cmp = overload (
+    fn (a: int, b: int): int -> ( b - a ),
+    fn (a: string, b: string): int -> ( a.compareTo(b) )
+)
+def nums = list(3, 1, 2)
+nums.sort(cmp)
+def words = list("pear", "apple", "fig")
+words.sort(cmp)
+println(nums)
+println(words)
+}}}}}
+i:42
+i:1/s:a
+gen:1/gen:a
+[3, 2, 1]
+[apple, fig, pear]
+
+{{{{{
+;; Generic alternative fallback (BIP021-D21) + meet alternative resolving 2D widening ambiguity
+def show = overload (
+    fn (n: int): string -> ( "int:" + n ),
+    fn of T io (t: T): string -> ( "gen:" + t )
+)
+println(show(10), "|", show("hi"), "|", show(true))
+
+;; 2D widening resolved by explicit meet (int, int)
+def mix = overload (
+    fn (a: int, b: double): string -> ( "id" ),
+    fn (a: double, b: int): string -> ( "di" ),
+    fn (a: int, b: int): string -> ( "ii" )
+)
+println(mix(1, 2), "|", mix(1, 2.0), "|", mix(1.0, 2))
+}}}}}
+int:10|gen:hi|gen:true
+ii|id|di
+
+{{{{{
+;; Untyped lambda resolved from other argument + spread adaptation ranking (AS_IS > view > copy)
+def apply = overload (
+    fn (x: int, f: fn (n: int): int): int -> ( f(x) ),
+    fn (s: string, f: fn (t: string): int): int -> ( f(s) )
+)
+println(apply(5, fn (n) -> ( n * 2 )), "|", apply("hello", fn (t) -> ( t.length() )))
+
+def consume = overload (
+    fn (xs: list of int): string -> ( "list:" + xs.size() ),
+    fn (xs: array of int): string -> ( "array:" + xs.size() )
+)
+println(consume(...list(1, 2)), "|", consume(...array.of(3, 4, 5)))
+}}}}}
+10|5
+list:2|array:3
+
+{{{{{
+;; Effects follow the chosen alternative (BIP021-D15)
+def action = overload (
+    fn (n: int): int -> ( n + 1 ),
+    fn io (s: string): int -> ( println("io:" + s) ; s.length() )
+)
+def pureCaller = fn (x: int): int -> ( action(x) )
+println(pureCaller(41))
+println(action("hi"))
+}}}}}
+42
+io:hi
+2
+
+{{{{{
+;; Error: calling io alternative from pure function is rejected
+def action = overload (
+    fn (n: int): int -> ( n + 1 ),
+    fn io (s: string): int -> ( println(s) ; s.length() )
+)
+def bad = fn (s: string): int -> ( action(s) )
+}}}}}
+Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+;; Error: exhaustive ambiguity check — 2D numeric widening without meet
+def f = overload (
+    fn (a: int, b: double): int -> ( 1 ),
+    fn (a: double, b: int): int -> ( 2 )
+)
+}}}}}
+Ambiguous overloads of f : f(int, int) fits fn (a : int, b : double) : int and fn (a : double, b : int) : int
+
+{{{{{
+;; Error: exhaustive ambiguity check — default reaches another alternative's arity
+def f = overload (
+    fn (a: int): int -> ( 1 ),
+    fn (a: int, b: int = 0): int -> ( 2 )
+)
+}}}}}
+Ambiguous overloads of f : f(int) fits fn (a : int) : int and fn (a : int, b : int = ...) : int
+
+{{{{{
+;; Error: exhaustive ambiguity check — rest reaches another alternative's arity
+def f = overload (
+    fn (a: int): int -> ( 1 ),
+    fn (xs: int...): int -> ( 2 )
+)
+}}}}}
+Ambiguous overloads of f : f(int) fits fn (a : int) : int and fn (xs : int...) : int
+
+{{{{{
+;; Error: exhaustive ambiguity check — two unrelated interfaces without Shape & Named meet
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def f = overload (
+    fn (s: Shape): string -> ( "s" ),
+    fn (n: Named): string -> ( "n" )
+)
+}}}}}
+Ambiguous overloads of f : f(Shape & Named) fits fn (s : Shape) : string and fn (n : Named) : string
+
+{{{{{
+;; Error: runtime-erased union split rejected (list of int | list of string)
+def f = overload (
+    fn (xs: list of int): string -> ( "ints" ),
+    fn (xs: list of string): string -> ( "strs" )
+)
+def g = fn (xs: list of int | list of string): string -> ( f(xs) )
+}}}}}
+Cannot dispatch f on list of int | list of string : its alternatives are not told apart at runtime
+
+{{{{{
+;; Error: type arguments applied to an overload set (BIP021-D21)
+def f = overload (
+    fn (n: int): int -> ( n ),
+    fn of T (t: T): T -> ( t )
+)
+f of string
+}}}}}
+Cannot apply type arguments to an overload set : f
+
+{{{{{
+;; Error: untyped parameter in overload alternative (BIP021-D9)
+def f = overload (
+    fn (x): int -> ( 1 ),
+    fn (s: string): int -> ( 2 )
+)
+}}}}}
+Missing type : x
+
+{{{{{
+;; Error: untyped lambda ambiguous between alternatives differing only by lambda param
+def run = overload (
+    fn (f: fn (x: int): int): int -> ( f(1) ),
+    fn (f: fn (x: string): string): string -> ( f("a") )
+)
+run(fn (x) -> ( 1 ))
+}}}}}
+Missing type : x
+
+{{{{{
+;; Error: spread tie (set of int needs copy for both list of int and array of int)
+def f = overload (
+    fn (xs: list of int): int -> ( xs.size() ),
+    fn (xs: array of int): int -> ( xs.size() )
+)
+f(...set(1, 2))
+}}}}}
+Ambiguous call to f for (...set of int) : candidates are (xs : list of int), (xs : array of int)
+
+{{{{{
+;; Error: no applicable overload
+def Circle = record (r: double) ()
+def Square = record (s: double) ()
+def Triangle = record (b: double) ()
+def area = overload (
+    fn (c: Circle): double -> ( c.r ),
+    fn (s: Square): double -> ( s.s )
+)
+area(Triangle(1.0))
+}}}}}
+No applicable overload of area for (Triangle) : candidates are (c : Circle), (s : Square)
+
+{{{{{
+;; Modules: export overload set and extend by rebinding (BIP021-D14)
+def shapes = import("ov_shapes.ba")
+def Square = record (s: double) ()
+def area = overload (
+    shapes.area,
+    fn (sq: Square): double -> ( sq.s * sq.s )
+)
+println(shapes.area(shapes.Circle(2.0)))
+println(area(shapes.Circle(2.0)), "|", area(5), "|", area(Square(4.0)))
+}}}}}
+12.0
+12.0|5.0|16.0
+
+{{{{{
+;; Sessions: extend overload set across inputs by rebinding (BIP021-D14)
+def f = overload (
+    fn (n: int): string -> ( "int:" + n ),
+    fn (s: string): string -> ( "str:" + s )
+)
+println(f(1), "|", f("a"))
+----------
+def f2 = overload (
+    f,
+    fn (b: bool): string -> ( "bool:" + b )
+)
+println(f2(2), "|", f2("b"), "|", f2(true))
+----------
+def f = overload (
+    f2,
+    fn (d: double): string -> ( "dbl:" + d )
+)
+println(f(3), "|", f(1.5), "|", f(false))
+}}}}}
+int:1|str:a
+int:2|str:b|bool:true
+int:3|dbl:1.5|bool:false

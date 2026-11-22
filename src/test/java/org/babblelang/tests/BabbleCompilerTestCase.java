@@ -775,4 +775,20 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(ops.stream().anyMatch(o -> o.endsWith(".fn$0$sumInts$spec")), ops.toString());
         Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:")), ops.toString());
     }
+
+    @Test
+    public void testBip021P5ResolvedOverloadDirectCallNoIndy() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def bump = overload (\n"
+                        + "  fn (x : int) : int -> ( x + 1 ),\n"
+                        + "  fn (s : string) : int -> ( s.length() )\n"
+                        + ")\n"
+                        + "def run = fn (a : int) : int -> ( bump(a) + bump(\"hi\") )\n"
+                        + "run(40)");
+        assertVerifies(script);
+        Assertions.assertEquals(43, script.eval(new SimpleBindings()));
+
+        List<String> ops = methodInstructions(script.getClassBytes(), "fn$2$run$spec");
+        Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:")), ops.toString());
+    }
 }
