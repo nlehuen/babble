@@ -62,7 +62,7 @@ expression:
           | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block
                 (NL* STATIC NL* staticBlock=block)?           # interfaceExpression
           | OBJECT (IMPLEMENTS typeList)? NL* createBlock=block   # objectExpression
-          | FN effectPrefix? fnParameters (':' uniqueReturn=UNIQUE? type)? '->' NL* functionBlock=block  # functionLiteral
+          | FN (OF typeParameters)? effectPrefix? fnParameters (':' uniqueReturn=UNIQUE? type)? '->' NL* functionBlock=block  # functionLiteral
           | THIS                                              # thisExpression
           | SUPER ('(' NL* qualifier=type NL* ')')?           # superExpression
           // A newline may come before the dot : a chain of calls can go on the next lines.
@@ -134,7 +134,9 @@ fnTypeParam: paramModifier* (ID ':')? type ('=' NL* optional=ELLIPSIS)?;
 paramModifier: MUT | SHARED | UNIQUE;
 
 typeParameters: ID
-              | '(' NL* ID (NL* ',' NL* ID)* NL* ')';
+              | '(' NL* typeParam (NL* ',' NL* typeParam)* NL* ')';
+
+typeParam: ID (':' type)?;
 
 typeArguments: '(' NL* type (NL* ',' NL* type)* NL* ')'
              | nonParenNullableType;
@@ -156,7 +158,7 @@ nullableType: nonParenNullableType                                              
 nonParenNullableType: frozen=FROZEN? typeName ( OF ( '(' NL* type (NL* ',' NL* type)* NL* ')' question='?'?
                                                    | nonParenNullableType )
                                               | question='?'? )                       # simpleType
-                    | FN effectPrefix? fnTypeParameters (':' uniqueReturn=UNIQUE? type)? # functionType
+                    | FN (OF typeParameters)? effectPrefix? fnTypeParameters (':' uniqueReturn=UNIQUE? type)? # functionType
                     | NULL                                                            # nullType
                     ;
 

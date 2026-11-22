@@ -12,10 +12,12 @@ println(intId(4), ":", strId("ok"), ":", s, ":", o)
 4:ok:6:5
 
 {{{{{
+;; Generic function stored as a polymorphic value (BIP021-D20)
 def id of T = fn (x : T) : T -> ( x )
-def bad = id
+def k = id
+println(k(4), ":", k("ok"))
 }}}}}
-Missing type : cannot infer type arguments for id
+4:ok
 
 {{{{{
 ;; Deferred lambda arg + return-type hint fallback + widening hints across union/func/class/Java

@@ -745,4 +745,19 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(ops.contains("CALL:java/lang/String.format"), ops.toString());
         Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:") || o.contains("Overloads")), ops.toString());
     }
+
+    @Test
+    public void testBip021P3BoundedTypeVarInterfaceLowering() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def biggest = fn of (T : java.lang.Comparable of T) (a : T, b : T) : T -> (\n"
+                        + "  if a.compareTo(b) > 0 then ( a ) else ( b )\n"
+                        + ")\n"
+                        + "biggest(3, 7)");
+        assertVerifies(script);
+        Assertions.assertEquals(7, script.eval(new SimpleBindings()));
+
+        List<String> ops = methodInstructions(script.getClassBytes(), "fn$0$biggest");
+        Assertions.assertTrue(ops.contains("CALL:java/lang/Comparable.compareTo"), ops.toString());
+        Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:") || o.contains("JavaLinker")), ops.toString());
+    }
 }

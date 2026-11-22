@@ -37,7 +37,17 @@ public final class Members {
             // As Java calls return them : not wrapped, but their methods are as callable.
             return JavaObject.member(target, name);
         }
+        if (isBoxedPrimitive(target) && JavaClass.of(target.getClass()).isDeclared(name)) {
+            return JavaObject.member(target, name);
+        }
         throw new BabbleException("Not a scope : " + targetText);
+    }
+
+    private static boolean isBoxedPrimitive(Object target) {
+        return target instanceof Byte || target instanceof Short
+                || target instanceof Integer || target instanceof Long
+                || target instanceof Float || target instanceof Double
+                || target instanceof Boolean || target instanceof Character;
     }
 
     /**
@@ -45,12 +55,7 @@ public final class Members {
      * memberless values: null, the 8 primitive scalars, and callables (BIP011-D5).
      */
     private static boolean isJavaObject(Object target) {
-        return target != null
-                && !(target instanceof Byte) && !(target instanceof Short)
-                && !(target instanceof Integer) && !(target instanceof Long)
-                && !(target instanceof Float) && !(target instanceof Double)
-                && !(target instanceof Boolean) && !(target instanceof Character)
-                && !(target instanceof Callable);
+        return target != null && !isBoxedPrimitive(target) && !(target instanceof Callable);
     }
 
     /** {@code this.name} */

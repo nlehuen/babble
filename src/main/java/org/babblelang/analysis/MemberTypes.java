@@ -63,6 +63,13 @@ final class MemberTypes {
             }
             return Type.union(memberTypes);
         }
+        if (receiver instanceof Type.TypeVar tv) {
+            if (tv.bound() != null && tv.bound() != Type.ERROR) {
+                return member(tv.bound(), name, own, at, receiverText);
+            }
+            checker.warn("Not a scope : " + receiverText, at);
+            return Type.ERROR;
+        }
         if (receiver instanceof Type.Intersection intersection) {
             return intersectionMember(intersection, name, own, at, receiverText);
         }
@@ -258,6 +265,9 @@ final class MemberTypes {
 
     /** What {@code receiver.name = value} must assign : the member's declared or closed type, or null if inferred locally. */
     Type assignedMemberType(Type receiver, String name, boolean own, ParserRuleContext at) {
+        while (receiver instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+            receiver = tv.bound();
+        }
         if (receiver instanceof Type.Frozen) {
             checker.warn("Cannot assign to field of frozen value", at);
             return null;
@@ -321,6 +331,9 @@ final class MemberTypes {
     }
 
     static TypeNode.Member assignedBabbleMember(Type receiver, String name, boolean own) {
+        while (receiver instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+            receiver = tv.bound();
+        }
         TypeNode.Member member = null;
         if (receiver instanceof Type.Instance instance) {
             member = findMember(instance.node(), name);

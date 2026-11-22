@@ -91,7 +91,7 @@ final class TypeNode {
         this.scope = scope;
         this.parentTypes = parentTypes;
         if (ctx.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == ctx && def.typeParameters() != null) {
-            this.typeParameters = def.typeParameters().ID().stream().map(Object::toString).toList();
+            this.typeParameters = ScopeAnalysis.typeParamIds(def.typeParameters()).stream().map(Object::toString).toList();
         } else {
             this.typeParameters = List.of();
         }

@@ -1172,7 +1172,7 @@ public class TypeCheckerTestCase {
                 + "def badPrimArg : int of string = 1\n"
                 + "def badTvArg of T = fn (x : T of int) -> ( x )\n"
                 + "def uninferredJava = java.util.ArrayList()\n"
-                + "def uninferredFn = id\n"
+                + "def polyFn = id\n"
                 + "def bi : Box of int = Box(1)\n"
                 + "def bd : Box of double = bi\n"
                 + "def anyVal : any = bi\n"
@@ -1193,7 +1193,6 @@ public class TypeCheckerTestCase {
                 "6:18 Wrong number of type arguments : expected 0, got 1",
                 "7:29 Wrong number of type arguments : expected 0, got 1",
                 "8:22 Missing type : cannot infer type arguments for java.util.ArrayList",
-                "9:20 Missing type : cannot infer type arguments for id",
                 "11:26 Type error : expected Box(double), got Box(int)",
                 "13:27 Cannot cast to parameterized type : Box of int",
                 "14:42 Cannot cast to type parameter : T",
@@ -1415,6 +1414,38 @@ public class TypeCheckerTestCase {
                 "6:1 Parameter given twice : a",
                 "8:1 Too many parameters : 1 declared, 2 given",
                 "9:1 Missing parameter : b");
+    }
+
+    @Test
+    public void testBip021P3GenericFunctionsAndBounds() {
+        assertDiagnostics("def Plain = class () ()\n"
+                        + "def biggest of (T : java.lang.Comparable of T) = fn (a : T, b : T) : T -> ( if a.compareTo(b) > 0 then ( a ) else ( b ) )\n"
+                        + "biggest(3, 7)\n"
+                        + "biggest(\"a\", \"b\")\n"
+                        + "biggest(Plain(), Plain())\n"
+                        + "def Shape = interface ( def area : fn () : double )\n"
+                        + "def Named = interface ( def name : fn () : string )\n"
+                        + "def OnlyShape = class () implements Shape ( def area = fn () : double -> ( 1.0 ) )\n"
+                        + "def show of (T : Shape & Named) = fn (x : T) : string -> ( x.name() + \":\" + x.area() )\n"
+                        + "show(OnlyShape())\n"
+                        + "def both = fn (f : fn of T (t : T) : T) : string -> ( \"\" + f(1) + f(\"a\") )\n"
+                        + "both(fn (t : int) : int -> ( t ))\n"
+                        + "both(fn (t) -> ( t + 1 ))\n"
+                        + "def badDefault = fn of T (a : T, b : T = null) : T -> ( b )\n"
+                        + "def optGen = fn of T (x : T? = null) : T? -> ( x )\n"
+                        + "optGen()\n"
+                        + "def okOptGen : int? = optGen()",
+                "5:1 Type error : type argument Plain does not satisfy bound java.lang.Comparable(Plain)",
+                "10:1 Type error : type argument OnlyShape does not satisfy bound Shape & Named",
+                "12:6 Type error : expected fn of T (t : T) : T, got fn (t : int) : int",
+                "13:18 Not a number : t",
+                "14:42 Type error : expected T, got null",
+                "16:1 Missing type : cannot infer type arguments for optGen");
+
+        org.babblelang.analysis.AnalysisException twice = Assertions.assertThrows(
+                org.babblelang.analysis.AnalysisException.class,
+                () -> diagnostics("def f of T = fn of T (t : T) : T -> ( t )"));
+        Assertions.assertTrue(twice.getMessage().contains("Type parameters declared twice : f"), twice.getMessage());
     }
 
     @Test

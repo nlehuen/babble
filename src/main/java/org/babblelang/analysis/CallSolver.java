@@ -268,23 +268,25 @@ final class CallSolver {
 
 
     /**
-     * Instantiates an unapplied generic function value {@code fn} against {@code expected}.
+     * Instantiates an unapplied generic function value {@code fn} against a monomorphic function or
+     * Java SAM {@code expected}, or preserves {@code fn} polymorphically otherwise ({@code BIP021-D20}).
      */
     Type instantiateFunctionValue(Type.Function fn, BabbleParser.SelectorContext ctx, Type expected) {
-        if (expected == null) {
-            checker.warn("Missing type : cannot infer type arguments for " + ScopeAnalysis.selectorName(ctx), ctx);
-            return Type.ERROR;
+        if (expected == null || expected == Type.ERROR || expected == Type.ANY || expected == Type.NULLABLE_ANY) {
+            return fn;
         }
         Type target = Type.withoutNull(expected);
         Type.Function expectedFn = null;
         if (target instanceof Type.Function f) {
+            if (!f.typeParameters().isEmpty()) {
+                return fn;
+            }
             expectedFn = f;
         } else if (target instanceof Type.JavaInstance ji && JavaTypes.isFunctionalInterface(ji.type())) {
             expectedFn = JavaTypeBridge.samFunctionType(ji, checker.effectChecker());
         }
-        if (expectedFn == null || !expectedFn.typeParameters().isEmpty()) {
-            checker.warn("Missing type : cannot infer type arguments for " + ScopeAnalysis.selectorName(ctx), ctx);
-            return Type.ERROR;
+        if (expectedFn == null) {
+            return fn;
         }
         Set<Type.TypeVar> solving = Set.copyOf(fn.typeParameters());
         Type.Function unparameterized = new Type.Function(List.of(), fn.parameters(), fn.result(), fn.effects(),
@@ -295,17 +297,39 @@ final class CallSolver {
         }
         TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, false);
         if (!checker.algebra().relate(unparameterized, expectedFn, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
-            return unparameterized;
+            return fn;
         }
         Map<Type.TypeVar, Type> inferred = solveAll(fn.typeParameters(), store, Map.of(), List.of(), List.of());
         if (inferred == null) {
             checker.warn("Missing type : cannot infer type arguments for " + ScopeAnalysis.selectorName(ctx), ctx);
             return Type.ERROR;
         }
+        if (!checkBabbleBounds(fn.typeParameters(), inferred, ctx, null)) {
+            return Type.ERROR;
+        }
         if (checker.algebra().findPrimitiveArraySubstitution(unparameterized, inferred) != null) {
             return unparameterized;
         }
         return checker.algebra().substitute(unparameterized, inferred);
+    }
+
+    /** Verifies every declared upper bound on {@code vars} against {@code env} (BIP021-D19). */
+    private boolean checkBabbleBounds(List<Type.TypeVar> vars, Map<Type.TypeVar, Type> env,
+                                      ParserRuleContext ctx, BabbleParser.TypeArgumentsContext typeArgsCtx) {
+        for (int i = 0; i < vars.size(); i++) {
+            Type.TypeVar tv = vars.get(i);
+            if (tv.bound() != null && tv.bound() != Type.ERROR) {
+                Type arg = env.get(tv);
+                Type subBound = checker.algebra().substitute(tv.bound(), env);
+                if (arg != null && !TypeChecker.isUnresolved(arg) && subBound != Type.ERROR
+                        && !checker.algebra().assignable(arg, subBound)) {
+                    ParserRuleContext errNode = typeArgsCtx != null ? TypeAnnotations.typeArgumentNode(typeArgsCtx, i) : ctx;
+                    checker.warn("Type error : type argument " + arg + " does not satisfy bound " + subBound, errNode);
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /**
@@ -611,6 +635,9 @@ final class CallSolver {
                     checker.warn("Missing type : cannot infer type arguments for " + description, ctx);
                 }
             }
+            return Type.ERROR;
+        }
+        if (!checkBabbleBounds(solvingList, inferred, ctx, null)) {
             return Type.ERROR;
         }
         String badArrayMsg = findGenericBabbleArrayError(solvingList, parameters, resultPattern, ctorNode, inferred);
@@ -1987,6 +2014,9 @@ final class CallSolver {
             for (int i = 0; i < explicitTypeArgs.size(); i++) {
                 env.put(fn.typeParameters().get(i), explicitTypeArgs.get(i));
             }
+            if (!checkBabbleBounds(fn.typeParameters(), env, ctx, ctx.typeArguments())) {
+                return Type.ERROR;
+            }
             TypeAlgebra.BadArraySubstitution badFnArr = null;
             for (Type.Parameter p : fn.parameters()) {
                 badFnArr = checker.algebra().findPrimitiveArraySubstitution(p.type(), env);
@@ -2025,6 +2055,13 @@ final class CallSolver {
             if (classVars.size() != explicitTypeArgs.size()) {
                 checker.warn("Wrong number of type arguments : expected " + classVars.size()
                         + ", got " + explicitTypeArgs.size(), ctx.typeArguments());
+                return Type.ERROR;
+            }
+            Map<Type.TypeVar, Type> classEnv = new HashMap<>();
+            for (int i = 0; i < explicitTypeArgs.size(); i++) {
+                classEnv.put(classVars.get(i), explicitTypeArgs.get(i));
+            }
+            if (!checkBabbleBounds(classVars, classEnv, ctx, ctx.typeArguments())) {
                 return Type.ERROR;
             }
             JavaTypeBridge.BadJavaArrayTypeArg badClsArr = checker.annotator().checkBabbleNodeArrayTypeArgs(node, explicitTypeArgs);

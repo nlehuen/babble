@@ -45,6 +45,27 @@ final class TypeDisplay {
 
     private static String function(Type.Function function) {
         StringBuilder text = new StringBuilder("fn ");
+        List<Type.TypeVar> tparams = function.typeParameters();
+        if (!tparams.isEmpty()) {
+            text.append("of ");
+            if (tparams.size() == 1 && tparams.get(0).bound() == null) {
+                text.append(tparams.get(0).name());
+            } else {
+                text.append('(');
+                for (int i = 0; i < tparams.size(); i++) {
+                    if (i > 0) {
+                        text.append(", ");
+                    }
+                    Type.TypeVar tv = tparams.get(i);
+                    text.append(tv.name());
+                    if (tv.bound() != null) {
+                        text.append(" : ").append(display(tv.bound()));
+                    }
+                }
+                text.append(')');
+            }
+            text.append(' ');
+        }
         String prefix = function.effects().formatDeclaredPrefix().strip();
         if (!prefix.isEmpty()) {
             text.append(prefix).append(' ');
@@ -54,10 +75,6 @@ final class TypeDisplay {
             if (!names.isEmpty()) {
                 text.append("calling ").append(names.size() == 1 ? names.get(0) : "(" + String.join(", ", names) + ")").append(' ');
             }
-        }
-        if (!function.typeParameters().isEmpty()) {
-            text.append("of ").append(function.typeParameters().size() == 1 ? function.typeParameters().get(0).name()
-                    : function.typeParameters().stream().map(Type.TypeVar::name).collect(Collectors.joining(", ", "(", ")"))).append(' ');
         }
         text.append('(');
         boolean emittedKwSep = false;
