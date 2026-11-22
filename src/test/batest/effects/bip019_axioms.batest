@@ -36,6 +36,7 @@ println(s, ":", s.length(), ":", s.isEmpty())
 ab:2:false
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Axiom signature type erasure across primitives, nullables, collections, arrays, unions, intersections, fn types, generics
 axiom java.util.List of E: class (
     def size: fn pure nothrow (): int
@@ -97,6 +98,7 @@ println(java.util.Arrays.toString(ys), ":", java.util.Objects.isNull(null), ":",
 [1, 2]:true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Parameter modifiers (mut, shared, unique), algebraic & member words (view, shallow, fresh, foldable)
 axiom java.lang.Math: class () static (
     def abs: fn pure nothrow idempotent foldable (a: int): int
@@ -235,6 +237,7 @@ axiom java.util.Arrays.toString: fn pure (a: NoSuchType): string
 Unknown type : NoSuchType
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Babble-name axioms: valid forms, modifiers, optional params, and block scoping
 def outer = fn (x: int): int -> (x + 1)
 (
@@ -338,6 +341,7 @@ println(empty.size(), ":", it.hasNext(), ":", pair.getKey(), ":", pair.getValue(
 0:false:k:7
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Optimizer -O1 with curated foldable/idempotent + HirPurity.allArgsPrimitiveOrImmutable in loops
 def Point = record (x: int, y: int) ()
 def Cell = class (def v: int) ()
@@ -364,6 +368,7 @@ println(run(3))
 51:3.0:hi
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Boxed primitive erasure ((T)? and T | null), intersection erasure, null-only, and non-null multi-union
 axiom java.util.Objects: class () static (
     def toString: fn pure nothrow (o: (byte)?): string
@@ -508,6 +513,7 @@ println(px(java.awt.Point(4, 9)))
 4
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; BIP019-P2: reads of frozen / localFresh / parameter / this / external mutable state & demoteAlias
 def Node = class (def v: int) (
     def get = fn (): int -> (this.v)
@@ -592,6 +598,7 @@ println(fmtInt(42))
 42
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Unique return syntax, mut/unique Java params, bounded/extra type vars, non-null paren, array of null, nullable array
 axiom java.lang.Enum of E: class ()
 axiom java.lang.String of X: class ()
@@ -666,6 +673,7 @@ axiom java.lang.Math.abs: fn pure mut
 pure cannot be combined with mut or volatile in axiom : java.lang.Math.abs
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Descendant contract specificity: class axiom vs interface axiom & subinterface vs superinterface
 axiom java.lang.Object.toString: fn pure
 axiom java.lang.CharSequence.toString: fn volatile

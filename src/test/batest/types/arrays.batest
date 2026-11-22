@@ -15,6 +15,7 @@ def arrMod = import("arr_mod.ba")
 def tests = import("org.babblelang.tests")
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; All 8 primitive arrays, reference arrays, creation, get/set/size, for, content equality/hash/string, cycle guard, NaN/-0.0
 def bs = (array of byte)(2) ; bs.set(0, 3) ; bs.set(1, -1)
 def ss = (array of short).of(10, 20)
@@ -47,6 +48,7 @@ true:true:false:false
 true:true:true:6
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Content equality & hashCode across all 8 primitive arrays and Object[] (same ref, equal, unequal length, unequal element, null)
 def b1 = (array of byte).of(1, 2) ; def b2 = (array of byte).of(1, 2) ; def b3 = (array of byte).of(1, 3)
 def s1 = (array of short).of(4, 5) ; def s2 = (array of short).of(4, 5)
@@ -68,6 +70,7 @@ true:true:true:true
 true:true:true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Babble-element arrays: default nullable allocation, from: list, from: array, custom Iterable, boxed numeric widening in from:
 def Circle = record (r: int) ()
 def optCircles = (array of Circle?)(2)
@@ -91,6 +94,7 @@ println(wShort.get(0), ":", wInt.get(1), ":", wLong.get(0), ":", wFloat.get(1), 
 1:2:3:6.0:7.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Intersection-element arrays (BIP022 -> Object[]) & exported generic type aliases (BIP023)
 def Named = interface (def name: fn (): string)
 def Sized = interface (def len: fn (): int)
@@ -156,6 +160,7 @@ anyRows.set(0, array.of(Square(2)))
 java.lang.ArrayStoreException: array of Square
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Generic reference-array helper, explicit of T, generic class/record, Java generic interface bridge & ArrayExportable default preservation
 def first of T = fn io (a: array of T): T -> (a.get(0))
 def Box of T = class (def items: array of T) (
@@ -196,6 +201,7 @@ ab:ab:[AB, CD]
 [p, q]:2:fallback:[m, n]
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Core scalar conversions (ConvertFunction coverage across byte/short/int/long/float/double/bool/char)
 def u12: byte | char | string = "12"
 def uA: byte | char | string = 'A'
@@ -301,6 +307,7 @@ array.of(1, 2).get(5)
 java.lang.ArrayIndexOutOfBoundsException: Index 5 out of bounds for length 2
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; java.base parametric nullness & effect profiles (BigInteger, Stream, Optional, NavigableMap/Set, Collections, Arrays, String, LocalDate)
 def bi = java.math.BigInteger.valueOf(12L)
 def bi2 = java.math.BigInteger.valueOf(5L)
@@ -361,6 +368,7 @@ a:c:a:b:b:c:2:4:true
 [1, 2]:[2, 3]:2:true:hello_world:true:2025-01-15:hi!:2:first:f:10:10:9
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; CoreCollections (capacity, sortedset/sortedmap from list & custom Babble Comparable) + ConvertFunction numeric branches
 def Score = record (n: int) implements java.lang.Comparable of Score (
     def compareTo = fn (other: Score): int -> (this.n - other.n)
@@ -383,6 +391,7 @@ println(byte(n10d), ":", byte(n10l), ":", byte(n10s), ":", short(n10d), ":", sho
 10:10:10:10:10:10:10.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; for-loop union/frozen/iterator/custom-iterable targets, entry/sortedset/sortedmap comparators, and nested/Java array covariance
 def sumUnion = fn (seq: list of int | array of int): int -> (
     def s = 0
@@ -433,6 +442,7 @@ println(e1.getKey(), ":", e2.getValue(), ":", ssCmp1.first(), ":", ssCmp2.first(
 k:7:3:3:z:z:1:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Extended java.base nullability & effect overlays (Stream ops, Comparator, java.util.function, System, Runtime, Reflection, Regex)
 def sEmpty: java.util.stream.Stream of string = java.util.stream.Stream.empty()
 def sGen = java.util.stream.Stream.generate(fn (): string -> ("g")).limit(1L)
@@ -499,6 +509,7 @@ entry(foo: 1, bar: 2)
 No such parameter : foo
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; CharSequence, System.getenv, Integer.getInteger, Long.getLong, LocalDate.of nullability & effect overlays
 def cs: java.lang.CharSequence = "abcdef"
 def sub = cs.subSequence(1, 4).toString()

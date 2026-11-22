@@ -43,6 +43,7 @@ def id of T : fn of T (t : T) : T = fn (t : T) : T -> ( t )
 Type parameters declared twice : id
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; F-bound: java.lang.Comparable of T on functions and classes (BIP021-D19)
 def biggest of (T : java.lang.Comparable of T) = fn (a : T, b : T) : T -> (
     if a.compareTo(b) > 0 then ( a ) else ( b )
@@ -212,6 +213,7 @@ println(countAll(list.of(10, 20, 30)))
 60
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Cross-module bounded generics, intersection bounds, and polymorphic function types
 def m = import("poly_mod.ba")
 def Item = record (n : string, w : int) implements m.HasName, m.HasWeight (

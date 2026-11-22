@@ -40,6 +40,7 @@ println(f != null, ":", optVal == null)
 true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; BabbleInterface.extendsType, BabbleClass.implementsType, BabbleInstance.equals, BabbleInterface.findDefault, value class toString
 def IParent = interface (
     def p = fn () : int -> ( 42 )
@@ -77,6 +78,7 @@ println(mc.compare(p1, p2) < 0, ":", mc.makeRev().compare(p1, p2) > 0)
 true:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaTypes.checkParameter across Double, Boolean, String, JavaInstance; Overloads OBJECT_CLASS_KIND
 def dPred = java.util.function.DoublePredicate(fn (d : double) : bool -> ( d > 0.0 ))
 def bPred = java.util.function.Predicate(fn (b : bool) : bool -> ( b ))
@@ -127,6 +129,7 @@ def func : fn () : fn () : int = obj.make
 Type error : expected () : () : int, got shared () : () : int
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; TypeChecks.exportedModule and LogicalPaths leading slash
 def I = interface ( def f : fn () : int )
 def C = class (def x : int) implements I (
@@ -190,6 +193,7 @@ def fDet = fn () -> (
 static block inside deterministic function violates deterministic guarantee
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; EffectChecker relationalProps negate, double +, int odd *, string concat left/right, compound assign on local var
 def negF : fn monotone (x : double) : double = fn (x : double) : double -> ( -(-x) )
 def dblSum : fn monotone (x : double) : double = fn (x : double) : double -> ( x + x )

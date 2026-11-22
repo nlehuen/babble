@@ -11,6 +11,7 @@ export def INested = interface (
 )
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; visitIfExpression & visitWhileExpression: unused incompatible branches, missing else, double widening, union join
 def pickIf = fn (flag : bool) : string -> (
     discard(if flag then ( 1 ) else ( "ok" ))
@@ -46,6 +47,7 @@ badWhileExp(0)
 Type error : expected int, got null
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; visitBlock early-return flow narrowing guards (whenTrue and whenFalse)
 def guardNull = fn (x : int?) : int -> (
     if x == null then ( return -1 )
@@ -118,6 +120,7 @@ def bad : int | string = 1
 Not a number : bad
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Java arrays, Object[] assignability, cast/is on Java & Babble interfaces, TypeVar assignability, stream deferred lambda
 def parts = java.util.regex.Pattern.compile(",").split("a,b,c")
 def takeArr = fn (arr : list of string) : int -> ( arr.size() )
@@ -147,6 +150,7 @@ def badList : java.util.List of string = java.util.ArrayList(java.util.List.of(1
 Type error : expected list(string), got java.util.ArrayList(int)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Cross-module interface, super default call, and TypeChecks errors
 def m = import("tc_exp.ba")
 def ILocal = interface (

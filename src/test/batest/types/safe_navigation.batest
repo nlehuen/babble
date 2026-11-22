@@ -1,6 +1,7 @@
 ;; Safe navigation operator (?.), chaining, method calls, short-circuit arguments, and errors
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 def Node = class (def value : int, def next : Node? = null) (
     def add = fn (k : int) : Node -> ( Node(this.value + k, this.next) )
     def read = fn () : int -> ( this.value )

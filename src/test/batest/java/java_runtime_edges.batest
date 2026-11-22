@@ -82,6 +82,7 @@ im.invoke(ip, badArgs.toArray())
 java.lang.IllegalArgumentException : object is not an instance of declaring class
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; JavaLinker selectCache + BoundJavaMethod calls + BabbleInstance/callable Object args
 def sb = java.lang.StringBuilder("hello")
 def getLen : fn io () : int = sb.length
@@ -165,6 +166,7 @@ Esc()
 Member used before definition : v
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Megamorphic TypedCallCache fallback (>4 distinct functions at one typed call site)
 def f0 = fn (x : int) : int -> ( x + 0 )
 def f1 = fn (x : int) : int -> ( x + 1 )
@@ -189,6 +191,7 @@ println(sum)
 75
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; FaceHandler Object methods (equals, hashCode, toString) on Java interface proxy
 def Task = class (id : int) implements java.lang.Runnable (
     def run = fn () -> ( )
@@ -300,6 +303,7 @@ dyn(1) < dyn(2)
 Not comparable : dyn(1) and dyn(2)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; FaceHandler Java interface default methods (IntPredicate.negate, IntUnaryOperator.compose) & FunctionHandler Object methods
 def P = class () implements java.util.function.IntPredicate (
     def test = fn (x : int) : bool -> ( x > 0 )

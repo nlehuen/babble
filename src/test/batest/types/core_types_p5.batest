@@ -1,6 +1,7 @@
 ;; BIP011-P5 / BIP016: Built-In Core Effect Profiles (zero axiom boilerplate)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Pure deterministic nothrow scalars, total widening conversions, string total methods, and immutable entry
 def fScalar = fn nothrow (b : byte, c : char) : double -> (
     def i : int = int(b) + int(c)
@@ -63,6 +64,7 @@ println(buildAndRead(), ":", emptyNothrow())
 32:0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Default-borrowed collection readers + covariance + list(from: xs) borrowing
 def sumSize = fn (xs : list of any) : int -> (
     xs.size()

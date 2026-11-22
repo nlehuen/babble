@@ -6,6 +6,7 @@ export axiom mut on java.util.List.add
 export def abs2 = axiom pure nothrow on java.lang.Math.abs
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Module-exported axioms, def-level axiom/io, import("java.lang") target, and Java inner class axiom
 def em = import("eff_mod.ba")
 def jmath = import("java.lang").Math
@@ -154,6 +155,7 @@ Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Targe
 axiom declaration is not allowed inside a verified constrained function
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Valid algebraic properties & failure diagnostics + SAM callback propagation & shared escape
 def idemp = fn nothrow idempotent (x : int) : int -> ( x )
 def comm = fn nothrow commutative (a : double, b : double) : double -> ( a + b )

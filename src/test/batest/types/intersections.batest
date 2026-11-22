@@ -142,6 +142,7 @@ def f = fn (x: Shape & Named): string -> ( x.title() )
 No such member : title
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Normal form : order does not matter, implied operands and any / Object drop out
 def Base = interface ( def id: fn (): int )
 def Tagged = interface extends Base ( def tag: fn (): string )

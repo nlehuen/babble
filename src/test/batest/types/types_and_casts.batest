@@ -1,6 +1,7 @@
 ;; Casts, warnings, narrowing invalidation, callable class assignments, selector escapes, and array/Java field errors
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Redundant casts, runtime casts, array/interface/Java casts
 def I1 = interface ( def a : fn () : int )
 def I2 = interface ( def b : fn () : string )
@@ -66,6 +67,7 @@ println(bad)
 Type error : expected string, got int
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Flow-sensitive narrowing: is double, is bool, is any, and, or, early return, and kill on reassign
 def checkAll = fn (x : any?, flag : bool) : string -> (
     def r1 = if x is double then ( "d:" + (x + 1.0) )

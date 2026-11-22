@@ -1,6 +1,7 @@
 ;; Flow-sensitive type narrowing with 'is', 'not (x is T)', short-circuit 'and'/'or', and early return guards
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 def Point = class (def x : int) ()
 def Pair = class (def x : int, def y : int) ()
 
@@ -20,6 +21,7 @@ println(describe(Point(3)), "|", describe(Pair(4, 5)), "|", describe("ok"), "|",
 pt:3|pair:9|str:ok|null
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Logical-path narrowing with short-circuit 'and' / 'or' and negated guard with early return
 def Point = class (def x : int) ()
 def checkAnd = fn (p : any?) : bool -> ( p is Point and p.x > 0 )
@@ -57,6 +59,7 @@ def bad = fn (p : any) -> (
 Not a scope : p
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Narrowing evicted on while-loop reassignment and branch kill, preserved when unrelated var reassigned
 def Point = class (def x : int) ()
 def testWhileEvict = fn (p : Point?) : int -> (
@@ -105,6 +108,7 @@ def bad = fn (p : Point?) : int -> (
 Not a scope : cur
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; canMatchAtRuntime & isRuntimeSubtype across interfaces, Java classes, unions, and any
 def I1 = interface ( def a = fn () : int -> ( 1 ) )
 def I2 = interface ( def b = fn () : int -> ( 2 ) )

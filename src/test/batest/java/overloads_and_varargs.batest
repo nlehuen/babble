@@ -41,6 +41,7 @@ println(java.util.Arrays.asList().size())
 Missing type : cannot infer type arguments for java.util.Arrays.asList
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Standard JDK varargs: String.format, List.of (11+ args), Path.of, IntStream.of, EnumSet.of
 println(java.lang.String.format("%s=%d", "x", 42))
 println(java.lang.String.format("%s:%s", null, "ok"))
@@ -135,6 +136,7 @@ println(ok)
 Not a scope : obj
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Dynamic Java varargs dispatch via bound JavaMethod values (exercises Overloads.toJavaArguments & isVarArgsMoreSpecific)
 def demo = import("org.babblelang.tests").JavaClassDemo
 def fmt2 : fn io (f : string, a : string, b : int) : string = java.lang.String.format

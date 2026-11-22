@@ -171,6 +171,7 @@ def badInjType = fn (f : fn injective (x : int) : null) : int -> ( 1 )
 injective requires at least one parameter, no mut, and a non-null return type
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Compositional algebraic inference: relationalProps, binaryWrapperProps, isUnaryIdempotentWrapper, mut idempotent/commutative
 def V = record (x : int) (
     def get = fn () : int -> ( this.x )
@@ -255,6 +256,7 @@ def BadV3 = record (x : int) (
 value class BadV3 constructor must be deterministic
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; toStringProfile, equalityProfile, comparisonProfile, inline object inside pure, redundant cast
 def V = record (x : int) ()
 def R = class (def x : int) ()
@@ -290,6 +292,7 @@ def badObj = fn () -> (
 Function badObj violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Frame-local borrow closures reading/writing enclosing unescaped locals with fn calling f
 def Box = class (def v : int) ()
 def applyZero = fn calling f (f : fn () : int) : int -> ( f() )
@@ -312,6 +315,7 @@ println(pureWithFrame(10), ":", specCaller(5))
 15:6
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Closures: a returned closure capturing this aliases the receiver (BIP017-D6), so the caller storing it escapes
 def Box = class (def v : int) (
     def okMut = fn mut shared () : fn mut () : int -> (
@@ -392,6 +396,7 @@ def badInj = fn injective (x : int) : null -> ( null )
 Function badInj declared injective violates injective guarantee
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; relationalProps for int (injective) and double (monotone) arithmetic
 def iNeg = fn injective (x : int) : int -> ( -x )
 def iAdd = fn injective (x : int) : int -> ( 1 + (x - 2) )
@@ -416,6 +421,7 @@ println(countPure())
 Function countPure violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Java effect annotations (@Pure, @Volatile, @Mut, @Shared, @Nothrow, @Idempotent, @Commutative, @Associative, @Monotone, @Injective)
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
@@ -456,6 +462,7 @@ def bad = fn (x : int) : int -> ( tests.EffectsTestCase.HostFixtures.annotatedIO
 Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; relationalProps: const, negate const, double mul negative, string concat, monotone/injective call, int->double, x+x
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
@@ -476,6 +483,7 @@ println(cInt(1), ":", cNeg(1), ":", dMulPos(2.0), ":", dMulNeg(2.0), ":", dMulNe
 42:-42.0:4.0:-4.0:-6.0:k=3:ok!:aa:4.0:10.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; binaryWrapperProps: string +, double +, ==, <>, swapped params
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures

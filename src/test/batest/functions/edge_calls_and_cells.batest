@@ -59,6 +59,7 @@ def y = 3.5
 0.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Non-primitive ($direct-only, hasSpec == false) function, recursion, optional params, and Bootstrap TypedCallCache paths
 def join = fn (a : string, b : string = "!") : string -> ( a + b )
 def repeat = fn (s : string, n : int = 2) : string -> ( if n <= 0 then ( "" ) else ( s + recurse(s, n - 1) ) )
@@ -94,6 +95,7 @@ hi!:yo?:aa:zxx
 15
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Dynamic bound method call through TypedCallCache (IS_BOUND_FUNCTION / IS_BOUND_METHOD / incompatible spec)
 def C = class (def base : int) (
     def fInt = fn (x : int) : int -> ( this.base + x )
@@ -120,6 +122,7 @@ println(applyTyped(g1, 1), ":", applyTyped(g2, 2))
 11:22
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Positional call with > 200 arguments exercises Object[] array-adapter path at call site
 def sum205 = fn (
     a001 : int = 0, a002 : int = 0, a003 : int = 0, a004 : int = 0, a005 : int = 0,

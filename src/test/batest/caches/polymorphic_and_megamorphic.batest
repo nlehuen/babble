@@ -1,6 +1,7 @@
 ;; Polymorphic (2-4 shapes) and megamorphic (5+ shapes) inline caches in loops (Bootstrap & JavaLinker)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; 6 Babble classes + singleton object implementing Shape -> megamorphic SelectCache & CallSite (> 4 cache depth)
 def Shape = interface (
     def val : fn () : int
@@ -34,6 +35,7 @@ println(total)
 213
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Megamorphic callable dispatch across 6 different closures
 def f0 = fn (x : int) : int -> ( x + 1 )
 def f1 = fn (x : int) : int -> ( x + 2 )
@@ -56,6 +58,7 @@ println(sum)
 112
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Polymorphic and megamorphic Java overload/method calls on distinct Java receiver classes
 def c1 : java.util.Collection of int = java.util.ArrayList()
 def c2 : java.util.Collection of int = java.util.LinkedList()

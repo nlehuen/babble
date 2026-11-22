@@ -20,6 +20,7 @@ println(k(4), ":", k("ok"))
 4:ok
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Deferred lambda arg + return-type hint fallback + widening hints across union/func/class/Java
 def id of T = fn (x : T) : T -> ( x )
 def apply of (A, B) = fn (x : A, f : fn (a : A) : B) : B -> ( f(x) )
@@ -37,6 +38,7 @@ println(d1, ":", u1, ":", r, ":", opt2.get(), ":", b1.v, ":", p)
 1.0:2:7.5:6:3.0:2.0
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Generic Java SAM target typing (deferred lambda) + Collections.sort / List.replaceAll
 def lenOpt = java.util.Optional.of("abc").map(fn (s) -> ( java.lang.StringBuilder(s).length() )).get()
 def func : java.util.function.Function of (string, int) = fn (s) -> ( java.lang.StringBuilder(s).length() )
@@ -56,6 +58,7 @@ def func = java.util.function.Function(fn (s) -> ( s ))
 Missing type : cannot infer type arguments for java.util.function.Function
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Generic interface extending generic interface with default substitution
 def BaseI of A = interface (
     def get : fn () : A

@@ -1,6 +1,7 @@
 ;; Operator overloading (plus, minus, times, div, neg), compound assignments, and operator errors
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Value class overloading +, -, *, /, unary -, and compound +=, -=, *=, /=
 def Vec = record (x : double, y : double) (
     def plus = fn (o : Vec) : Vec -> ( Vec(this.x + o.x, this.y + o.y) )

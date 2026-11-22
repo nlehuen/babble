@@ -166,6 +166,7 @@ println(f(c: 300, a: 5))
 315
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Boxed fallback for > 32 optional parameters (exceeds 32-bit $spec mask)
 def big = fn (
     p0 : int = 1, p1 : int = 1, p2 : int = 1, p3 : int = 1, p4 : int = 1,

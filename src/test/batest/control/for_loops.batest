@@ -267,6 +267,7 @@ def bad = fn (mut xs: list of int) -> (
 Cannot mutate collection while iterating over it
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; is narrows a for loop's variable, a fresh read-only binding per iteration, also across and
 def A = interface ( def k: fn (): int )
 def B = class (def r: double) implements A ( def k = fn (): int -> (1) )

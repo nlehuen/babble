@@ -1,6 +1,7 @@
 ;; RM003-P4: Cached LambdaMetafactory SAM adapters, FLAG_BRIDGES, primitive conversions, and Proxy fallbacks
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Standard SAMs use cached LambdaMetafactory (non-Proxy, shared generated class per SAM)
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def log = ""
@@ -16,6 +17,7 @@ println(log, ":", Demo.isProxy(r1), ":", r1.getClass() == r2.getClass(), ":", De
 ab:false:true:false:true:18:true
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Generic SAMs with erased superinterface bridges (altMetafactory FLAG_BRIDGES)
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def sc = Demo.StringCriterion(fn (s : string) : bool -> ( s == "ok!" or s == "ok?" ))
@@ -25,6 +27,7 @@ println(Demo.isProxy(sc), ":", sc.test("ok!"), ":", sc.negate().test("ok!"), ":"
 false:true:false:true:false:false:bridged:bridged
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Primitive return conversions/widenings, BoundMethod SAM, BabbleClass constructor SAM, and nested SAM return
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def nineChar = java.lang.Character.forDigit(9, 10)
@@ -49,6 +52,7 @@ println(Demo.isProxy(ch), ":", ch.getAsChar() == nineChar, ":", by.apply(java.la
 false:true:3:7:5.0:15:false:123:false:Pair(a: 3, b: 4):false
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; Arity 16 uses LambdaMetafactory; arity 17 and package-private SAM fall back to Proxy
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def s16 = Demo.Arity16Sam(fn (a0 : int, a1 : int, a2 : int, a3 : int, a4 : int, a5 : int, a6 : int, a7 : int, a8 : int, a9 : int, a10 : int, a11 : int, a12 : int, a13 : int, a14 : int, a15 : int) : int -> (

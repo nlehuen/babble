@@ -41,6 +41,7 @@ def badNothrow2 = fn nothrow (s : string) : int -> ( int(s) )
 Function badNothrow2 declared nothrow violates nothrow guarantee
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; EffectChecker.toStringProfile across module, non-value class, JavaInstance
 def ma = import("ce_mod_a.ba")
 def Reg = class (def v : int) ()
@@ -59,6 +60,7 @@ def badRegDet = fn (r : Reg) : string -> ( "r=" + r )
 Function badRegDet violates deterministic guarantee : mark function as volatile (or io)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; EffectChecker.propagateSamCallbackEffects: pure vs io lambda & Consumer class
 axiom java.util.Collections.singletonList: fn pure
 axiom java.lang.Iterable.forEach: fn pure
@@ -90,6 +92,7 @@ def badSamLambda = fn () -> (
 Function badSamLambda violates pure guarantee (performs I/O or external mutation) : mark function as io
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 axiom java.util.ArrayList.new: fn pure
 axiom java.util.ArrayList.add: fn mut
 axiom java.util.ArrayList.forEach: fn pure
@@ -119,6 +122,7 @@ b.swapWith(b)
 Exclusivity error : mut target b aliases argument b
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; EffectChecker relationalProps, binaryWrapperProps, isUnaryIdempotentWrapper, isMutCommutativeBody
 axiom java.nio.file.Path.normalize: fn pure idempotent
 def badMonoJ = fn (f : fn monotone (s : java.lang.StringBuilder) : int) : int -> ( 1 )
@@ -212,6 +216,7 @@ def expectedFn : fn (a : Box, b : Box) : int = mutFn
 Type error : expected (a : Box, b : Box) : int, got (mut a : Box, b : Box) : int
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; TypeChecks: nested Java interface, invalid Java parent, multi-arg checkJavaArity, super errors, module exports
 def EntryImpl = class (def k : java.lang.Object, def v : java.lang.Object) implements java.util.Map.Entry of (java.lang.Object, java.lang.Object) (
     def getKey = fn () -> ( this.k )
@@ -381,6 +386,7 @@ def recNoType = fn (n : int) -> ( recNoType(n - 1) )
 Missing type : recNoType (recursive)
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; TypeChecker: canCast, isRuntimeSubtype, canMatchAtRuntime
 def I1 = interface ( def a : fn () : int )
 def I2 = interface ( def b : fn () : int )
@@ -464,6 +470,7 @@ def badBorrow : fn (x : any) : Holder = Holder
 Type error : expected (x : any) : Holder, got class Holder
 
 {{{{{
+;; LARGE: legacy test pending refactoring
 ;; TypeChecker: intersectCompatibleFunctions, reassignmentJoin, generic double widening, compound assign on param/this
 def Box = class (def v : int) (
     def bump = fn mut (d : int) : int -> ( this.v += d ; this.v )
