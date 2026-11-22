@@ -916,6 +916,8 @@ def Log = class () implements java.lang.Appendable (
   Appendable.append(CharSequence, int, int) passes 3`.
 * Overloads with the same arity (`append(char)` and `append(CharSequence)`) are told apart
   inside the method, with `is`: `if s is java.lang.Character then …`.
+* **With `BIP021-P6`**, a class may also implement an overloaded Java interface method with an
+  `overload (...)` member (`def append = overload (fn (c: char): java.lang.Appendable -> ..., fn (s: java.lang.CharSequence?): java.lang.Appendable -> ..., fn (s: java.lang.CharSequence?, start: int, end: int): java.lang.Appendable -> ...)`). Each Java overload selects its matching alternative statically (reporting `Log.append has no alternative for ...` if none fits), and compiled bridge methods dispatch straight to the chosen alternative's `m$<member>$<k>$spec` entry point; unmatched Java `default` methods remain inherited. Single-function implementations remain supported as above.
 
 **Java default methods** of the implemented interfaces are inherited as members:
 
