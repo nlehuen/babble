@@ -75,3 +75,45 @@ assert(implied.id() == 7)
 ;; Java interfaces intersect too
 def text: java.lang.CharSequence & java.lang.Comparable of string = "abc"
 assert(text.length() == 3)
+assert(text.compareTo("abb") > 0)
+
+;; Java multi-bound TypeVariable (Collections.max)
+def nums: java.util.List of int = list.of(3, 9, 4)
+assert(java.util.Collections.max(nums)! + 1 == 10)
+
+;; Eager Java SAM+markers adapter materialization (Runnable & Serializable)
+def ran = 0
+def runner: java.lang.Runnable & java.io.Serializable = fn io () -> (ran = ran + 1)
+assert(runner is java.lang.Runnable & java.io.Serializable)
+runner.run()
+assert(ran == 1)
+assert(not (Tile() is Shape & java.io.Serializable))
+
+;; Covariant Babble intersection member dispatch
+def CovBase = interface (
+    def get: fn (): any?
+)
+def CovSub = interface (
+    def get: fn (): int
+)
+def CovImpl = class () implements CovBase, CovSub (
+    def get = fn (): int -> (41)
+)
+def useCov = fn (x: CovBase & CovSub): int -> (x.get() + 1)
+assert(useCov(CovImpl()) == 42)
+
+;; Generic bound with intersection
+def biggest of (T: java.lang.Comparable of T & java.io.Serializable) = fn (a: T, b: T): T -> (
+    if a.compareTo(b) > 0 then (a) else (b)
+)
+assert(biggest("alpha", "zeta") == "zeta")
+
+;; Overload set meet and union runtime split (Shape & Named tested before Shape / Named)
+def tag = overload (
+    fn (s: Shape): string -> ("shape:" + s.area()),
+    fn (n: Named): string -> ("named:" + n.name()),
+    fn (x: Shape & Named): string -> ("both:" + x.name())
+)
+def pickSN = fn (b: bool): Shape | Named -> (if b then (Tile()) else (Note()))
+assert(tag(pickSN(true)) == "both:tile")
+assert(tag(pickSN(false)) == "named:n")

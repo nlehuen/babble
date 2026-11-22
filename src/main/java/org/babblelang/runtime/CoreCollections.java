@@ -283,11 +283,11 @@ public final class CoreCollections {
         }
         if (count == 1 && "from".equals(n0)) {
             return switch (kind) {
-                case "list" -> listFrom((Iterable<?>) args[0]);
-                case "set" -> setFrom((Iterable<?>) args[0]);
-                case "sortedset" -> sortedSetFrom((Iterable<?>) args[0], null, rt);
-                case "map" -> mapFrom((Map<?, ?>) args[0]);
-                case "sortedmap" -> sortedMapFrom((Map<?, ?>) args[0], null, rt);
+                case "list" -> listFrom(toIterable(args[0]));
+                case "set" -> setFrom(toIterable(args[0]));
+                case "sortedset" -> sortedSetFrom(toIterable(args[0]), null, rt);
+                case "map" -> mapFrom(toMap(args[0]));
+                case "sortedmap" -> sortedMapFrom(toMap(args[0]), null, rt);
                 default -> throw new BabbleException("Unknown parameter from for " + kind);
             };
         }
@@ -295,8 +295,8 @@ public final class CoreCollections {
             Object from = "from".equals(n0) ? args[0] : args[1];
             Object comp = "comparator".equals(n0) ? args[0] : args[1];
             return switch (kind) {
-                case "sortedset" -> sortedSetFrom((Iterable<?>) from, comp, rt);
-                case "sortedmap" -> sortedMapFrom((Map<?, ?>) from, comp, rt);
+                case "sortedset" -> sortedSetFrom(toIterable(from), comp, rt);
+                case "sortedmap" -> sortedMapFrom(toMap(from), comp, rt);
                 default -> throw new BabbleException("Unknown parameters for " + kind);
             };
         }
@@ -308,6 +308,22 @@ public final class CoreCollections {
             case "sortedmap" -> sortedMapOf(args);
             default -> throw new BabbleException("Unknown collection : " + kind);
         };
+    }
+
+    private static Iterable<?> toIterable(Object obj) {
+        Object u = Values.unwrap(obj);
+        if (BabbleObjects.isInstance(u)) {
+            u = BabbleObjects.face(u);
+        }
+        return (Iterable<?>) u;
+    }
+
+    private static Map<?, ?> toMap(Object obj) {
+        Object u = Values.unwrap(obj);
+        if (BabbleObjects.isInstance(u)) {
+            u = BabbleObjects.face(u);
+        }
+        return (Map<?, ?>) u;
     }
 
     @SuppressWarnings("unchecked")

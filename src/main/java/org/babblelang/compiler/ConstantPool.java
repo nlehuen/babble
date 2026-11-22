@@ -41,6 +41,7 @@ final class ConstantPool {
     private final String sourceName;
     private final List<Entry> entries = new ArrayList<>();
     private final Map<List<String>, String> stringArrays = new HashMap<>();
+    private final Map<List<Class<?>>, String> classArrays = new HashMap<>();
     private final Map<String, String> typeFields = new HashMap<>();
 
     ConstantPool(String className, String sourceName) {
@@ -61,6 +62,24 @@ final class ConstantPool {
     String stringArrayField(String[] values) {
         return stringArrays.computeIfAbsent(Arrays.asList(values), key ->
                 add("NAMES", "[Ljava/lang/String;", estimateSize(values), m -> pushStringArray(m, values)));
+    }
+
+    String classArrayField(Class<?>[] classes) {
+        return classArrays.computeIfAbsent(Arrays.asList(classes), key ->
+                add("CLASSES", "[Ljava/lang/Class;", 8 + classes.length * 8, m -> pushClassArray(m, classes)));
+    }
+
+    private static void pushClassArray(MethodVisitor mv, Class<?>[] classes) {
+        pushInt(mv, classes.length);
+        mv.visitTypeInsn(ANEWARRAY, "java/lang/Class");
+        for (int i = 0; i < classes.length; i++) {
+            if (classes[i] != null) {
+                mv.visitInsn(DUP);
+                pushInt(mv, i);
+                mv.visitLdcInsn(org.objectweb.asm.Type.getType(classes[i]));
+                mv.visitInsn(AASTORE);
+            }
+        }
     }
 
     String opSiteField(String left, String right) {

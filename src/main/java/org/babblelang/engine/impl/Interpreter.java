@@ -95,7 +95,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
      */
     Object evaluateDefault(Namespace scope, BabbleParser.ExpressionContext expression) {
         ParserRuleContext call = last;
-        Object value = evaluateIn(scope, expression);
+        Object value = widen(expression, evaluateIn(scope, expression));
         last = call;
         return value;
     }
@@ -277,6 +277,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         Object value = visit(ctx.left);
         last = ctx;
+        ScopeAnalysis.JavaSamTarget sam = scopes.asSamTarget(ctx);
+        if (sam != null) {
+            value = Values.toJavaSam(value, sam.samInterface(), sam.markers(), runtime);
+        }
         return Types.check(value, scopes.checkedType(ctx));
     }
 
@@ -613,6 +617,16 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object iterable = visit(ctx.iterable);
         Object rawIter = Values.unwrap(iterable);
         ScopeAnalysis.ForLoopTarget target = scopes.forLoopTarget(ctx);
+        if (BabbleObjects.isInstance(rawIter)
+                && (target == null
+                || target.kind() == ScopeAnalysis.ForKind.JAVA_ITERABLE
+                || target.kind() == ScopeAnalysis.ForKind.JAVA_ITERATOR
+                || target.kind() == ScopeAnalysis.ForKind.DYNAMIC_UNION)) {
+            Object face = BabbleObjects.face(rawIter);
+            if (face instanceof java.lang.Iterable<?> || face instanceof java.util.Iterator<?>) {
+                rawIter = face;
+            }
+        }
         String loopVar = ctx.name.getText();
         String[] blockDeclared = scopes.declared(ctx.forBlock);
 
@@ -655,6 +669,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             iterObj = iterFn.call(runtime, new Object[0], null, new CallSite(sourceName, ctx.getStart().getLine(), "iterator", new String[0]));
         }
         Object unwrappedIter = Values.unwrap(iterObj);
+        if (BabbleObjects.isInstance(unwrappedIter)
+                && target != null && target.kind() == ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE) {
+            unwrappedIter = BabbleObjects.face(unwrappedIter);
+        }
         if (unwrappedIter instanceof java.util.Iterator<?> it) {
             while (it.hasNext()) {
                 Object elem = Values.fromJava(it.next());
@@ -690,7 +708,14 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (target != null && target.elemCheck() != null) {
             Types.check(elem, target.elemCheck());
         }
-        elem = widen(ctx, elem);
+        ScopeAnalysis.JavaSamTarget elemSam = scopes.forElemSamTarget(ctx);
+        if (elemSam != null) {
+            elem = Values.toJavaSam(elem, elemSam.samInterface(), elemSam.markers(), runtime);
+        }
+        int elemRank = scopes.numericWideningRank(ctx);
+        if (elemRank >= 0) {
+            elem = Values.widenNumeric(elem, elemRank);
+        }
         Namespace before = namespace;
         namespace = namespace.child(blockDeclared);
         namespace.define(loopVar, false).set(elem);
@@ -1111,7 +1136,15 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     private Object widen(ParserRuleContext ctx, Object value) {
         int rank = scopes.numericWideningRank(ctx);
-        return rank >= 0 ? Values.widenNumeric(value, rank) : value;
+        if (rank >= 0) {
+            value = Values.widenNumeric(value, rank);
+        }
+        return adaptJavaSam(ctx, value);
+    }
+
+    private Object adaptJavaSam(ParserRuleContext ctx, Object value) {
+        ScopeAnalysis.JavaSamTarget sam = scopes.javaSamTarget(ctx);
+        return sam != null ? Values.toJavaSam(value, sam.samInterface(), sam.markers(), runtime) : value;
     }
 
     private Object[] arguments(BabbleParser.CallContext ctx) {
@@ -1129,13 +1162,27 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return args;
     }
 
-    private static Object adaptSpread(Object value, ScopeAnalysis.SpreadAdapt adapt) {
+    private Object adaptSpread(Object value, ScopeAnalysis.SpreadAdapt adapt) {
+        ScopeAnalysis.JavaSamTarget sam = adapt.elementSamTarget();
+        Class<?> samCls = sam != null ? sam.samInterface() : null;
+        Class<?>[] markers = sam != null ? sam.markers() : null;
         return switch (adapt.kind()) {
             case NONE, AS_IS -> value;
-            case TO_ITERABLE -> org.babblelang.runtime.Spreads.asIterable(value);
-            case TO_LIST_BORROWED -> org.babblelang.runtime.Spreads.asList(value, true);
-            case TO_LIST_COPY -> org.babblelang.runtime.Spreads.asList(value, false);
-            case TO_ARRAY -> org.babblelang.runtime.Spreads.asArray(value, adapt.arrayComponentType());
+            case TO_ITERABLE -> samCls != null
+                    ? org.babblelang.runtime.Spreads.asIterable(value, samCls, markers, runtime)
+                    : org.babblelang.runtime.Spreads.asIterable(value);
+            case TO_LIST_BORROWED -> samCls != null
+                    ? org.babblelang.runtime.Spreads.asList(value, false, samCls, markers, runtime)
+                    : org.babblelang.runtime.Spreads.asList(value, true);
+            case TO_LIST_COPY -> samCls != null
+                    ? org.babblelang.runtime.Spreads.asList(value, false, samCls, markers, runtime)
+                    : org.babblelang.runtime.Spreads.asList(value, false);
+            case TO_ARRAY -> samCls != null
+                    ? org.babblelang.runtime.Spreads.asArray(value, adapt.arrayComponentType(), samCls, markers, runtime)
+                    : org.babblelang.runtime.Spreads.asArray(value, adapt.arrayComponentType(), runtime);
+            case TO_SAM -> samCls != null
+                    ? Values.toJavaSam(value, samCls, markers, runtime)
+                    : value;
         };
     }
 

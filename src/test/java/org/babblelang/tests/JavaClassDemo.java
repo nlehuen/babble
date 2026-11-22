@@ -398,4 +398,105 @@ public class JavaClassDemo {
     public static int invokeVarArgsSink(VarArgsSink sink, int... xs) {
         return sink.sum(xs);
     }
+
+    // BIP022-I2 multi-bound TypeVariables, SAM+markers, and Java interface conflicts/covariance.
+    public static <T extends Number & Comparable<T>> double sumAsDoubles(T a, T b) {
+        return a.doubleValue() + b.doubleValue();
+    }
+
+    public static <T extends Runnable & java.io.Serializable> boolean runSerializable(T r) {
+        r.run();
+        return r instanceof Runnable && r instanceof java.io.Serializable && !isProxy(r);
+    }
+
+    public static <T extends java.io.Serializable & Runnable> boolean runSerializableSwapped(T r) {
+        r.run();
+        return r instanceof Runnable && r instanceof java.io.Serializable && !isProxy(r);
+    }
+
+    public static <T extends Comparable<? super T>> T maxPair(T a, T b) {
+        return a.compareTo(b) >= 0 ? a : b;
+    }
+
+    public static <T extends java.util.function.Consumer<String> & java.io.Serializable> String acceptSerializable(T c, String s) {
+        c.accept(s);
+        return s + ":" + !isProxy(c);
+    }
+
+    public interface LeftObj {
+        Object tag();
+    }
+
+    public interface RightStr {
+        String tag();
+    }
+
+    public interface LeftInt {
+        int val();
+    }
+
+    public interface RightStrVal {
+        String val();
+    }
+
+    public interface MarkerWithDefault {
+        default int markerTag() {
+            return 77;
+        }
+    }
+
+    public interface SameSigRunnable {
+        void run();
+    }
+
+    public static <T extends Runnable & SameSigRunnable> void runSameSigGeneric(T r) {
+        r.run();
+    }
+
+    interface HiddenMarkerSam extends Runnable {
+    }
+
+    @org.babblelang.effects.Pure
+    public static boolean isSerializableRunnable(Object x) {
+        return x instanceof Runnable && x instanceof java.io.Serializable && !isProxy(x);
+    }
+
+    public static <T extends HiddenIntSam & java.io.Serializable> int invokeHiddenSerializable(T sam, int x) {
+        if (!(sam instanceof java.io.Serializable) || !isProxy(sam)) {
+            throw new IllegalStateException("Expected Serializable Proxy fallback for package-private SAM");
+        }
+        return sam.apply(x);
+    }
+
+    public static boolean runHiddenMarker(HiddenMarkerSam r) {
+        r.run();
+        return isProxy(r);
+    }
+
+    @SafeVarargs
+    public static <T extends Runnable & java.io.Serializable> int runSerVarargs(T... rs) {
+        for (T r : rs) {
+            if (!(r instanceof java.io.Serializable)) {
+                throw new ClassCastException("Not Serializable");
+            }
+            r.run();
+        }
+        return rs.length;
+    }
+
+    public static <T extends Runnable & java.io.Serializable> int runSerArray(T[] rs) {
+        return runSerVarargs(rs);
+    }
+
+    @SafeVarargs
+    public static <T extends HiddenIntSam & java.io.Serializable> int sumHiddenSer(T... xs) {
+        int s = 0;
+        for (T x : xs) {
+            if (!(x instanceof java.io.Serializable)) {
+                throw new ClassCastException("Not Serializable");
+            }
+            s += x.apply(10);
+        }
+        return s;
+    }
 }

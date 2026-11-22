@@ -28,7 +28,7 @@ public class Function implements BabbleFunction {
     public Object invoke(Object thiz, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         // A self tail call (BIP024) ends an activation with the arguments of the next one.
         while (true) {
-            Object result = activate(thiz, args, names);
+            Object result = activate(thiz, rt, args, names);
             if (!(result instanceof TailCall next)) {
                 return result;
             }
@@ -38,7 +38,7 @@ public class Function implements BabbleFunction {
     }
 
     /** One activation of the function : a fresh frame, its parameters bound, and its body run. */
-    private Object activate(Object thiz, Object[] args, String[] names) {
+    private Object activate(Object thiz, ScriptRuntime rt, Object[] args, String[] names) {
         Namespace namespace = Frames.enter(closure, recurseTarget(thiz), thiz, interpreter.scopes().declared(definition));
         String[] parameters = interpreter.scopes().parameters(definition);
         int restIdx = interpreter.scopes().restIndex(definition);
@@ -58,6 +58,10 @@ public class Function implements BabbleFunction {
             if (paramRank >= 0) {
                 value = Values.widenNumeric(value, paramRank);
             }
+            ScopeAnalysis.JavaSamTarget paramSam = interpreter.scopes().javaSamTarget(paramDecl);
+            if (paramSam != null) {
+                value = Values.toJavaSam(value, paramSam.samInterface(), paramSam.markers(), rt);
+            }
             value = org.babblelang.runtime.Types.check(value, interpreter.scopes().checkedType(paramDecl));
             namespace.defineParameter(parameters[i], value);
         }
@@ -74,6 +78,10 @@ public class Function implements BabbleFunction {
         int blockRank = interpreter.scopes().numericWideningRank(definition.functionBlock);
         if (blockRank >= 0) {
             result = Values.widenNumeric(result, blockRank);
+        }
+        ScopeAnalysis.JavaSamTarget blockSam = interpreter.scopes().javaSamTarget(definition.functionBlock);
+        if (blockSam != null) {
+            result = Values.toJavaSam(result, blockSam.samInterface(), blockSam.markers(), rt);
         }
         return result;
     }

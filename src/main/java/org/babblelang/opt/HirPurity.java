@@ -113,7 +113,8 @@ public final class HirPurity {
             case HirExpr.If i -> isPureNothrowTerminating(i.cond(), module, visitingFns)
                     && isPureNothrowTerminating(i.thenBranch(), module, visitingFns)
                     && (i.elseBranch() == null || isPureNothrowTerminating(i.elseBranch(), module, visitingFns));
-            case HirExpr.As a -> a.targetDescriptor() == null && isPureNothrowTerminating(a.left(), module, visitingFns);
+            case HirExpr.As a -> a.targetDescriptor() == null && a.samTarget() == null
+                    && isPureNothrowTerminating(a.left(), module, visitingFns);
             case HirExpr.TypeApply t -> isPureNothrowTerminating(t.inner(), module, visitingFns);
             case HirExpr.MakeOverloadSet m -> allPureNothrowTerminating(m.operands(), module, visitingFns);
             case HirExpr.OverloadSelect s -> s.exactSet() && isPureNothrowTerminating(s.set(), module, visitingFns);
@@ -234,7 +235,7 @@ public final class HirPurity {
             case HirExpr.If i -> isDeterministic(i.cond(), module, visitingFns)
                     && isDeterministic(i.thenBranch(), module, visitingFns)
                     && (i.elseBranch() == null || isDeterministic(i.elseBranch(), module, visitingFns));
-            case HirExpr.As a -> isDeterministic(a.left(), module, visitingFns);
+            case HirExpr.As a -> a.samTarget() == null && isDeterministic(a.left(), module, visitingFns);
             case HirExpr.TypeApply t -> isDeterministic(t.inner(), module, visitingFns);
             case HirExpr.ThisFieldGet g -> isDeterministic(g.receiver(), module, visitingFns);
             case HirExpr.ArrayOp op -> op.kind() == ScopeAnalysis.ArrayOpKind.SIZE
@@ -339,6 +340,7 @@ public final class HirPurity {
             case HirExpr.As a -> collectModifiedVars(a.left(), out);
             case HirExpr.NonNull n -> collectModifiedVars(n.operand(), out);
             case HirExpr.SpreadAdapt s -> collectModifiedVars(s.value(), out);
+            case HirExpr.JavaSamAdapt j -> collectModifiedVars(j.value(), out);
             case HirExpr.TypeApply t -> collectModifiedVars(t.inner(), out);
             case HirExpr.Block b -> {
                 for (HirVar v : b.declaredVars()) out.add(v.id());

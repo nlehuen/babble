@@ -8,8 +8,11 @@ import java.lang.invoke.MethodType;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The adapters Java sees : the face of an interpreted Babble instance whose class
@@ -33,10 +36,19 @@ final class Faces {
         }
     }
 
+    private static final Class<?>[] NO_MARKERS = new Class<?>[0];
+
     private static final ClassValue<SamFactory> SAM_FACTORIES = new ClassValue<>() {
         @Override
         protected SamFactory computeValue(Class<?> type) {
-            return buildSamFactory(type);
+            return buildSamFactory(type, NO_MARKERS);
+        }
+    };
+
+    private static final ClassValue<ConcurrentHashMap<List<Class<?>>, SamFactory>> MARKER_SAM_FACTORIES = new ClassValue<>() {
+        @Override
+        protected ConcurrentHashMap<List<Class<?>>, SamFactory> computeValue(Class<?> type) {
+            return new ConcurrentHashMap<>();
         }
     };
 
@@ -53,7 +65,19 @@ final class Faces {
      * now, where the mistake is made, rather than when Java calls it.
      */
     static Object function(Callable callable, Class<?> type, ScriptRuntime rt) {
-        SamFactory sam = SAM_FACTORIES.get(type);
+        return function(callable, type, NO_MARKERS, rt);
+    }
+
+    /**
+     * Converts a Babble callable to a Java functional interface implementing additional
+     * marker (or override-equivalent) interfaces.
+     */
+    static Object function(Callable callable, Class<?> type, Class<?>[] markers, ScriptRuntime rt) {
+        List<Class<?>> normalizedMarkers = normalizeMarkers(type, markers);
+        SamFactory sam = normalizedMarkers.isEmpty()
+                ? SAM_FACTORIES.get(type)
+                : MARKER_SAM_FACTORIES.get(type).computeIfAbsent(normalizedMarkers,
+                        m -> buildSamFactory(type, m.toArray(Class<?>[]::new)));
         int[] arity = Values.arity(callable);
         int passed = sam.parameterTypes.length;
         if (arity != null && (passed < arity[0] || passed > arity[1])) {
@@ -69,11 +93,34 @@ final class Faces {
                 throw new IllegalStateException(t);
             }
         }
-        return Proxy.newProxyInstance(loader(new Class<?>[]{type}), new Class<?>[]{type},
+        Class<?>[] proxyInterfaces;
+        if (normalizedMarkers.isEmpty()) {
+            proxyInterfaces = new Class<?>[]{type};
+        } else {
+            proxyInterfaces = new Class<?>[1 + normalizedMarkers.size()];
+            proxyInterfaces[0] = type;
+            for (int i = 0; i < normalizedMarkers.size(); i++) {
+                proxyInterfaces[i + 1] = normalizedMarkers.get(i);
+            }
+        }
+        return Proxy.newProxyInstance(loader(proxyInterfaces), proxyInterfaces,
                 new FunctionHandler(callable, sam, rt));
     }
 
-    private static SamFactory buildSamFactory(Class<?> type) {
+    private static List<Class<?>> normalizeMarkers(Class<?> samType, Class<?>[] markers) {
+        if (markers == null || markers.length == 0) {
+            return List.of();
+        }
+        Set<Class<?>> unique = new LinkedHashSet<>();
+        for (Class<?> marker : markers) {
+            if (marker != null && marker.isInterface() && marker != samType && !marker.isAssignableFrom(samType)) {
+                unique.add(marker);
+            }
+        }
+        return unique.isEmpty() ? List.of() : List.copyOf(unique);
+    }
+
+    private static SamFactory buildSamFactory(Class<?> type, Class<?>[] markers) {
         Method method = JavaTypes.functionalMethod(type);
         if (method == null) {
             throw new IllegalArgumentException("Not a functional interface: " + type.getName());
@@ -82,11 +129,11 @@ final class Faces {
         Class<?> returnType = method.getReturnType();
         String description = type.getSimpleName() + "." + method.getName();
         CallSite callSite = site(description, parameterTypes.length);
-        MethodHandle factory = buildMetafactoryHandle(type, method, parameterTypes, returnType);
+        MethodHandle factory = buildMetafactoryHandle(type, markers, method, parameterTypes, returnType);
         return new SamFactory(method, parameterTypes, returnType, description, callSite, factory);
     }
 
-    private static MethodHandle buildMetafactoryHandle(Class<?> type, Method method,
+    private static MethodHandle buildMetafactoryHandle(Class<?> type, Class<?>[] markers, Method method,
                                                        Class<?>[] parameterTypes, Class<?> returnType) {
         int arity = parameterTypes.length;
         if (arity > MAX_SAM_ARITY || !isVisibleFromFaces(type) || !isVisibleFromFaces(returnType)) {
@@ -97,35 +144,53 @@ final class Faces {
                 return null;
             }
         }
+        for (Class<?> marker : markers) {
+            if (!isVisibleFromFaces(marker)) {
+                return null;
+            }
+        }
         MethodType samMethodType = MethodType.methodType(returnType, parameterTypes);
         Set<MethodType> bridges = new LinkedHashSet<>();
-        for (Method m : JavaTypes.abstractMethods(type)) {
-            MethodType mt = MethodType.methodType(m.getReturnType(), m.getParameterTypes());
-            if (!mt.equals(samMethodType)) {
-                if (!isMethodTypeVisibleFromFaces(mt)) {
-                    return null;
-                }
-                bridges.add(mt);
+        if (!collectBridgeMethodTypes(type, samMethodType, bridges)) {
+            return null;
+        }
+        for (Class<?> marker : markers) {
+            if (!collectBridgeMethodTypes(marker, samMethodType, bridges)) {
+                return null;
             }
         }
         MethodType invokedType = MethodType.methodType(type, SamInvoker.class);
         MethodHandle implMethod = INVOKER_HANDLES[arity];
         try {
             java.lang.invoke.CallSite cs;
-            if (bridges.isEmpty()) {
+            if (bridges.isEmpty() && markers.length == 0) {
                 cs = LambdaMetafactory.metafactory(
                         LOOKUP, method.getName(), invokedType,
                         samMethodType, implMethod, samMethodType);
             } else {
-                Object[] altArgs = new Object[5 + bridges.size()];
+                // FLAG_MARKERS must precede FLAG_BRIDGES in altArgs; never set FLAG_SERIALIZABLE
+                // so Babble closures are not tied to JDK SerializedLambda serialization.
+                int flags = (markers.length > 0 ? LambdaMetafactory.FLAG_MARKERS : 0)
+                        | (!bridges.isEmpty() ? LambdaMetafactory.FLAG_BRIDGES : 0);
+                int extra = (markers.length > 0 ? 1 + markers.length : 0)
+                        + (!bridges.isEmpty() ? 1 + bridges.size() : 0);
+                Object[] altArgs = new Object[4 + extra];
                 altArgs[0] = samMethodType;
                 altArgs[1] = implMethod;
                 altArgs[2] = samMethodType;
-                altArgs[3] = LambdaMetafactory.FLAG_BRIDGES;
-                altArgs[4] = bridges.size();
-                int idx = 5;
-                for (MethodType bt : bridges) {
-                    altArgs[idx++] = bt;
+                altArgs[3] = flags;
+                int idx = 4;
+                if (markers.length > 0) {
+                    altArgs[idx++] = markers.length;
+                    for (Class<?> marker : markers) {
+                        altArgs[idx++] = marker;
+                    }
+                }
+                if (!bridges.isEmpty()) {
+                    altArgs[idx++] = bridges.size();
+                    for (MethodType bt : bridges) {
+                        altArgs[idx++] = bt;
+                    }
                 }
                 cs = LambdaMetafactory.altMetafactory(
                         LOOKUP, method.getName(), invokedType, altArgs);
@@ -134,6 +199,19 @@ final class Faces {
         } catch (LambdaConversionException | LinkageError e) {
             return null;
         }
+    }
+
+    private static boolean collectBridgeMethodTypes(Class<?> iface, MethodType samMethodType, Set<MethodType> bridges) {
+        for (Method m : JavaTypes.abstractMethods(iface)) {
+            MethodType mt = MethodType.methodType(m.getReturnType(), m.getParameterTypes());
+            if (!mt.equals(samMethodType)) {
+                if (!isMethodTypeVisibleFromFaces(mt)) {
+                    return false;
+                }
+                bridges.add(mt);
+            }
+        }
+        return true;
     }
 
     private static boolean isMethodTypeVisibleFromFaces(MethodType mt) {
@@ -167,11 +245,30 @@ final class Faces {
 
     private static ClassLoader loader(Class<?>[] interfaces) {
         for (Class<?> type : interfaces) {
+            ClassLoader cl = type.getClassLoader();
+            if (cl != null && canLoadAll(cl, interfaces)) {
+                return cl;
+            }
+        }
+        for (Class<?> type : interfaces) {
             if (type.getClassLoader() != null) {
                 return type.getClassLoader();
             }
         }
         return Faces.class.getClassLoader();
+    }
+
+    private static boolean canLoadAll(ClassLoader cl, Class<?>[] interfaces) {
+        for (Class<?> c : interfaces) {
+            try {
+                if (Class.forName(c.getName(), false, cl) != c) {
+                    return false;
+                }
+            } catch (ClassNotFoundException | LinkageError e) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static CallSite site(String description, int arguments) {

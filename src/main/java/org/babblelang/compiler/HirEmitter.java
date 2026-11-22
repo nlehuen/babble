@@ -347,6 +347,7 @@ final class HirEmitter {
             case HirExpr.As a -> 1 + countNodes(a.left());
             case HirExpr.NonNull n -> 1 + countNodes(n.operand());
             case HirExpr.SpreadAdapt s -> 1 + countNodes(s.value());
+            case HirExpr.JavaSamAdapt j -> 1 + countNodes(j.value());
             case HirExpr.TypeApply t -> 1 + countNodes(t.inner());
             case HirExpr.Break b -> 1 + countNodes(b.value());
             case HirExpr.Return r -> 1 + countNodes(r.value());
@@ -717,6 +718,11 @@ final class HirEmitter {
                 mv.visitLabel(haveValue);
                 optBit++;
             }
+            if (param.samTarget() != null && pk == ScopeAnalysis.PrimitiveKind.NONE) {
+                loadLocal(pk, paramSlots[i]);
+                emitToJavaSamOnStack(param.samTarget(), param.line());
+                storeLocal(pk, paramSlots[i]);
+            }
             HirVar variable = param.var();
             if (variable != null) {
                 loadLocal(pk, paramSlots[i]);
@@ -835,6 +841,11 @@ final class HirEmitter {
             if (param.wideningRank() >= 0) {
                 mv.visitVarInsn(ALOAD, value);
                 emitWidenBoxed(mv, param.wideningRank());
+                mv.visitVarInsn(ASTORE, value);
+            }
+            if (param.samTarget() != null) {
+                mv.visitVarInsn(ALOAD, value);
+                emitToJavaSamOnStack(param.samTarget(), param.line());
                 mv.visitVarInsn(ASTORE, value);
             }
             int member = shape != null ? param.memberIndex() : -1;
@@ -1142,6 +1153,7 @@ final class HirEmitter {
             case HirExpr.As a -> emitAsExpr(a);
             case HirExpr.NonNull n -> emitNonNull(n);
             case HirExpr.SpreadAdapt s -> emitSpreadAdapt(s);
+            case HirExpr.JavaSamAdapt j -> emitJavaSamAdapt(j);
             case HirExpr.Block b -> emitBlock(b);
             case HirExpr.If i -> emitIf(i);
             case HirExpr.While w -> emitWhile(w);
@@ -2486,6 +2498,46 @@ final class HirEmitter {
             stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
             return;
         }
+        if (!i.intersectionTargets().isEmpty()) {
+            List<String> jvms = new ArrayList<>(i.intersectionTargets().size());
+            boolean unwrap = false;
+            for (ScopeAnalysis.IsTarget target : i.intersectionTargets()) {
+                String jvm = resolveIsTargetJvm(target);
+                if (jvm == null) {
+                    jvms.clear();
+                    break;
+                }
+                if (target.jvmInternalName() != null) {
+                    unwrap = true;
+                }
+                jvms.add(jvm);
+            }
+            if (!jvms.isEmpty()) {
+                if (unwrap) {
+                    mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                }
+                line(ln);
+                if (jvms.size() == 1) {
+                    mv.visitTypeInsn(INSTANCEOF, jvms.get(0));
+                } else {
+                    Label fail = new Label();
+                    Label done = new Label();
+                    for (int k = 0; k < jvms.size() - 1; k++) {
+                        mv.visitInsn(DUP);
+                        mv.visitTypeInsn(INSTANCEOF, jvms.get(k));
+                        mv.visitJumpInsn(IFEQ, fail);
+                    }
+                    mv.visitTypeInsn(INSTANCEOF, jvms.get(jvms.size() - 1));
+                    mv.visitJumpInsn(GOTO, done);
+                    mv.visitLabel(fail);
+                    mv.visitInsn(POP);
+                    mv.visitInsn(ICONST_0);
+                    mv.visitLabel(done);
+                }
+                stackKind = ScopeAnalysis.PrimitiveKind.BOOL;
+                return;
+            }
+        }
         if (i.descriptor() == null) {
             mv.visitInsn(POP);
             mv.visitInsn(ICONST_1);
@@ -2511,11 +2563,18 @@ final class HirEmitter {
     }
 
     private void emitAsExpr(HirExpr.As a) {
-        if (a.targetDescriptor() == null) {
+        if (a.targetDescriptor() == null && a.samTarget() == null) {
             emitAndWiden(a.left());
             return;
         }
         emitBoxed(a.left());
+        if (a.samTarget() != null) {
+            emitToJavaSamOnStack(a.samTarget(), a.meta().line());
+        }
+        if (a.targetDescriptor() == null) {
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+            return;
+        }
         String targetJvm = resolveIsTargetJvm(a.target());
         if (targetJvm != null) {
             Label slow = new Label();
@@ -2535,6 +2594,58 @@ final class HirEmitter {
         line(a.meta().line());
         checkType(a.targetDescriptor());
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+    }
+
+    private void emitJavaSamAdapt(HirExpr.JavaSamAdapt j) {
+        emitBoxed(j.value());
+        emitToJavaSamOnStack(j.target(), j.meta().line());
+        stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+    }
+
+    private void emitToJavaSamOnStack(ScopeAnalysis.JavaSamTarget target, int ln) {
+        if (target == null) {
+            return;
+        }
+        Class<?> sam = target.samInterface();
+        Class<?>[] markers = target.markers();
+        boolean accessible = org.babblelang.runtime.JavaTypes.isAccessible(sam);
+        if (accessible) {
+            for (Class<?> marker : markers) {
+                if (!org.babblelang.runtime.JavaTypes.isAccessible(marker)) {
+                    accessible = false;
+                    break;
+                }
+            }
+        }
+        if (accessible) {
+            mv.visitLdcInsn(org.objectweb.asm.Type.getType(sam));
+            if (markers.length == 0) {
+                mv.visitInsn(ACONST_NULL);
+            } else {
+                String field = constantPool.classArrayField(markers);
+                mv.visitFieldInsn(GETSTATIC, className, field, "[Ljava/lang/Class;");
+            }
+            mv.visitVarInsn(ALOAD, rtLocal);
+            line(ln);
+            mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJavaSam",
+                    "(Ljava/lang/Object;Ljava/lang/Class;[Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+        } else {
+            mv.visitLdcInsn(sam.getName());
+            if (markers.length == 0) {
+                mv.visitInsn(ACONST_NULL);
+            } else {
+                String[] names = new String[markers.length];
+                for (int i = 0; i < markers.length; i++) {
+                    names[i] = markers[i].getName();
+                }
+                String field = constantPool.stringArrayField(names);
+                mv.visitFieldInsn(GETSTATIC, className, field, "[Ljava/lang/String;");
+            }
+            mv.visitVarInsn(ALOAD, rtLocal);
+            line(ln);
+            mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJavaSamByName",
+                    "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/String;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+        }
     }
 
     private void emitNonNull(HirExpr.NonNull n) {
@@ -2840,6 +2951,11 @@ final class HirEmitter {
             convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
             line(f.meta().line());
             checkType(target.elemCheck());
+            stackKind = ScopeAnalysis.PrimitiveKind.NONE;
+        }
+        if (f.elemSamTarget() != null) {
+            convertStack(stackKind, ScopeAnalysis.PrimitiveKind.NONE);
+            emitToJavaSamOnStack(f.elemSamTarget(), f.meta().line());
             stackKind = ScopeAnalysis.PrimitiveKind.NONE;
         }
         widenStackRank(f.meta().wideningRank());
@@ -3776,7 +3892,7 @@ final class HirEmitter {
         }
         for (int p = 0; p < targetKinds.length; p++) {
             if (p == restParam) {
-                emitPackedRestFromTemps(binding, tempLocals, argKinds, false);
+                emitPackedRestFromTemps(binding, tempLocals, argKinds, false, false);
                 continue;
             }
             int a = p < map.length ? map[p] : -1;
@@ -3823,7 +3939,7 @@ final class HirEmitter {
         }
         for (int p = 0; p < count; p++) {
             if (p == restParam) {
-                emitPackedRestFromTemps(binding, tempLocals, argKinds, wrapPackedRest);
+                emitPackedRestFromTemps(binding, tempLocals, argKinds, wrapPackedRest, false);
                 continue;
             }
             int a = p < map.length ? map[p] : -1;
@@ -3873,7 +3989,7 @@ final class HirEmitter {
             mv.visitInsn(DUP);
             ConstantPool.pushInt(mv, p);
             if (p == restParam) {
-                emitPackedRestFromTemps(binding, tempLocals, argKinds, true);
+                emitPackedRestFromTemps(binding, tempLocals, argKinds, true, false);
             } else {
                 int a = map[p];
                 if (a >= 0) {
@@ -3887,7 +4003,8 @@ final class HirEmitter {
     }
 
     private void emitPackedRestFromTemps(ScopeAnalysis.ArgumentBinding binding, int[] tempLocals,
-                                         ScopeAnalysis.PrimitiveKind[] argKinds, boolean wrapPackedRest) {
+                                         ScopeAnalysis.PrimitiveKind[] argKinds, boolean wrapPackedRest,
+                                         boolean applyArgAdapts) {
         int[] restArgs = binding.restArgs();
         boolean[] isSpread = binding.restArgIsSpread();
         int n = restArgs.length;
@@ -3895,6 +4012,9 @@ final class HirEmitter {
             mv.visitFieldInsn(GETSTATIC, ARGUMENTS_VIEW, "EMPTY", "L" + ARGUMENTS_VIEW + ";");
         } else if (n == 1 && isSpread[0]) {
             mv.visitVarInsn(ALOAD, tempLocals[restArgs[0]]);
+            if (applyArgAdapts) {
+                emitSpreadAdaptOnStack(binding.adaptForArg(restArgs[0]));
+            }
             mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asIterable", "(Ljava/lang/Object;)Ljava/lang/Iterable;", false);
         } else if (!anyTrue(isSpread)) {
             ScopeAnalysis.PrimitiveKind rk = binding.restElementKind();
@@ -3917,6 +4037,9 @@ final class HirEmitter {
                     ConstantPool.pushInt(mv, k);
                     loadLocal(argKinds[restArgs[k]], tempLocals[restArgs[k]]);
                     box(argKinds[restArgs[k]]);
+                    if (applyArgAdapts) {
+                        emitSpreadAdaptOnStack(binding.adaptForArg(restArgs[k]));
+                    }
                     mv.visitInsn(AASTORE);
                 }
                 mv.visitMethodInsn(INVOKESTATIC, ARGUMENTS_VIEW, "of",
@@ -3930,6 +4053,9 @@ final class HirEmitter {
                 ConstantPool.pushInt(mv, k);
                 loadLocal(argKinds[restArgs[k]], tempLocals[restArgs[k]]);
                 box(argKinds[restArgs[k]]);
+                if (applyArgAdapts) {
+                    emitSpreadAdaptOnStack(binding.adaptForArg(restArgs[k]));
+                }
                 mv.visitInsn(AASTORE);
             }
             ConstantPool.pushInt(mv, n);
@@ -4006,26 +4132,7 @@ final class HirEmitter {
 
     private void emitSpreadAdapt(HirExpr.SpreadAdapt expr) {
         emitBoxed(expr.value());
-        ScopeAnalysis.SpreadAdapt adapt = expr.adapt();
-        switch (adapt.kind()) {
-            case NONE, AS_IS -> {
-            }
-            case TO_ITERABLE -> mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asIterable",
-                    "(Ljava/lang/Object;)Ljava/lang/Iterable;", false);
-            case TO_LIST_BORROWED -> {
-                mv.visitInsn(ICONST_1);
-                mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asList", "(Ljava/lang/Object;Z)Ljava/util/List;", false);
-            }
-            case TO_LIST_COPY -> {
-                mv.visitInsn(ICONST_0);
-                mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asList", "(Ljava/lang/Object;Z)Ljava/util/List;", false);
-            }
-            case TO_ARRAY -> {
-                pushClassConstant(mv, adapt.arrayComponentType());
-                mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asArray",
-                        "(Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;", false);
-            }
-        }
+        emitSpreadAdaptOnStack(expr.adapt());
         stackKind = ScopeAnalysis.PrimitiveKind.NONE;
     }
 
@@ -4033,24 +4140,112 @@ final class HirEmitter {
         if (adapt == null) {
             return;
         }
+        ScopeAnalysis.JavaSamTarget elemSam = adapt.elementSamTarget();
         switch (adapt.kind()) {
             case NONE, AS_IS -> {
             }
-            case TO_ITERABLE -> mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asIterable",
-                    "(Ljava/lang/Object;)Ljava/lang/Iterable;", false);
-            case TO_LIST_BORROWED -> {
-                mv.visitInsn(ICONST_1);
-                mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asList", "(Ljava/lang/Object;Z)Ljava/util/List;", false);
+            case TO_ITERABLE -> {
+                if (elemSam == null) {
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asIterable",
+                            "(Ljava/lang/Object;)Ljava/lang/Iterable;", false);
+                } else if (isSamTargetAccessible(elemSam)) {
+                    pushSamTargetArgs(elemSam);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asIterable",
+                            "(Ljava/lang/Object;Ljava/lang/Class;[Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Iterable;", false);
+                } else {
+                    pushSamTargetNames(elemSam);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asIterableByName",
+                            "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/String;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Iterable;", false);
+                }
             }
-            case TO_LIST_COPY -> {
-                mv.visitInsn(ICONST_0);
-                mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asList", "(Ljava/lang/Object;Z)Ljava/util/List;", false);
+            case TO_LIST_BORROWED, TO_LIST_COPY -> {
+                if (elemSam == null) {
+                    mv.visitInsn(adapt.kind() == ScopeAnalysis.SpreadKind.TO_LIST_BORROWED ? ICONST_1 : ICONST_0);
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asList", "(Ljava/lang/Object;Z)Ljava/util/List;", false);
+                } else if (isSamTargetAccessible(elemSam)) {
+                    mv.visitInsn(ICONST_0);
+                    pushSamTargetArgs(elemSam);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asList",
+                            "(Ljava/lang/Object;ZLjava/lang/Class;[Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/util/List;", false);
+                } else {
+                    mv.visitInsn(ICONST_0);
+                    pushSamTargetNames(elemSam);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asListByName",
+                            "(Ljava/lang/Object;ZLjava/lang/String;[Ljava/lang/String;L" + SCRIPT_RUNTIME + ";)Ljava/util/List;", false);
+                }
             }
             case TO_ARRAY -> {
-                pushClassConstant(mv, adapt.arrayComponentType());
-                mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asArray",
-                        "(Ljava/lang/Object;Ljava/lang/Class;)Ljava/lang/Object;", false);
+                Class<?> comp = adapt.arrayComponentType() != null ? adapt.arrayComponentType() : Object.class;
+                if (elemSam == null) {
+                    pushClassConstant(mv, comp);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asArray",
+                            "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+                } else if (isSamTargetAccessible(elemSam) && (comp.isPrimitive() || org.babblelang.runtime.JavaTypes.isAccessible(comp))) {
+                    pushClassConstant(mv, comp);
+                    pushSamTargetArgs(elemSam);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asArray",
+                            "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/Class;[Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+                } else if (comp.isPrimitive() || org.babblelang.runtime.JavaTypes.isAccessible(comp)) {
+                    pushClassConstant(mv, comp);
+                    pushSamTargetNames(elemSam);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asArrayByName",
+                            "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;[Ljava/lang/String;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+                } else {
+                    mv.visitLdcInsn(comp.getName());
+                    pushSamTargetNames(elemSam);
+                    mv.visitVarInsn(ALOAD, rtLocal);
+                    mv.visitMethodInsn(INVOKESTATIC, SPREADS, "asArrayByNames",
+                            "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+                }
             }
+            case TO_SAM -> {
+                if (elemSam != null) {
+                    emitToJavaSamOnStack(elemSam, -1);
+                }
+            }
+        }
+    }
+
+    private static boolean isSamTargetAccessible(ScopeAnalysis.JavaSamTarget target) {
+        if (!org.babblelang.runtime.JavaTypes.isAccessible(target.samInterface())) {
+            return false;
+        }
+        for (Class<?> marker : target.markers()) {
+            if (!org.babblelang.runtime.JavaTypes.isAccessible(marker)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void pushSamTargetArgs(ScopeAnalysis.JavaSamTarget target) {
+        mv.visitLdcInsn(org.objectweb.asm.Type.getType(target.samInterface()));
+        Class<?>[] markers = target.markers();
+        if (markers.length == 0) {
+            mv.visitInsn(ACONST_NULL);
+        } else {
+            mv.visitFieldInsn(GETSTATIC, className, constantPool.classArrayField(markers), "[Ljava/lang/Class;");
+        }
+    }
+
+    private void pushSamTargetNames(ScopeAnalysis.JavaSamTarget target) {
+        mv.visitLdcInsn(target.samInterface().getName());
+        Class<?>[] markers = target.markers();
+        if (markers.length == 0) {
+            mv.visitInsn(ACONST_NULL);
+        } else {
+            String[] names = new String[markers.length];
+            for (int i = 0; i < markers.length; i++) {
+                names[i] = markers[i].getName();
+            }
+            mv.visitFieldInsn(GETSTATIC, className, constantPool.stringArrayField(names), "[Ljava/lang/String;");
         }
     }
 
@@ -4207,7 +4402,7 @@ final class HirEmitter {
                     ScopeAnalysis.PrimitiveKind[] paramKinds = paramKindsOf(fn);
                     for (int p = 0; p < count; p++) {
                         if (binding != null && p == binding.restParam()) {
-                            emitPackedRestFromTemps(binding, argLocals, argKinds, false);
+                            emitPackedRestFromTemps(binding, argLocals, argKinds, false, true);
                         } else {
                             int a = binding != null ? binding.paramToArg()[p] : p;
                             if (a >= 0) {
@@ -4233,7 +4428,7 @@ final class HirEmitter {
                     mv.visitInsn(ACONST_NULL);
                     for (int p = 0; p < count; p++) {
                         if (binding != null && p == binding.restParam()) {
-                            emitPackedRestFromTemps(binding, argLocals, argKinds, false);
+                            emitPackedRestFromTemps(binding, argLocals, argKinds, false, true);
                         } else {
                             int a = binding != null ? binding.paramToArg()[p] : p;
                             if (a >= 0) {
@@ -4308,7 +4503,7 @@ final class HirEmitter {
             mv.visitInsn(DUP);
             ConstantPool.pushInt(mv, p);
             if (p == restParam) {
-                emitPackedRestFromTemps(binding, argLocals, argKinds, true);
+                emitPackedRestFromTemps(binding, argLocals, argKinds, true, true);
             } else {
                 int a = map[p];
                 if (a >= 0) {

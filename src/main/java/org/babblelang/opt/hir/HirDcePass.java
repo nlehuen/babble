@@ -173,7 +173,8 @@ public final class HirDcePass implements HirPass {
             HirExpr ni = dceExpr(f.iterable(), usedVars, module, rewrites);
             List<HirExpr> nb = dceStatements(f.body(), usedVars, module, rewrites);
             return (ni == f.iterable() && nb == f.body()) ? f
-                    : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb, f.bodyWideningRank(), f.meta());
+                    : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb,
+                            f.bodyWideningRank(), f.elemSamTarget(), f.meta());
         }
         HirExpr cur = HirRewriter.rewriteChildren(expr, child -> dceExpr(child, usedVars, module, rewrites));
 

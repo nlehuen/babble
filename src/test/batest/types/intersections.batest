@@ -146,4 +146,29 @@ assert(a.id() == 7 and b.tag() == "t" and c.name() == "o")
 {{{{{
 def s: java.lang.CharSequence & java.lang.Comparable of string = "abc"
 assert(s.length() == 3)
+assert(s.compareTo("abb") > 0)
+}}}}}
+
+{{{{{
+;; Second-operand Java method dispatch on primitive-backed intersection
+def c: java.io.Serializable & java.lang.Comparable of int = 5
+assert(c.compareTo(3) > 0)
+}}}}}
+
+{{{{{
+;; Covariant Babble intersection member picks the most specific subtype regardless of operand order
+def A = interface ( def m: fn (): any? )
+def B = interface ( def m: fn (): int )
+def C = class () implements A, B ( def m = fn (): int -> ( 41 ) )
+def f1 = fn (x: A & B): int -> ( x.m() + 1 )
+def f2 = fn (x: B & A): int -> ( x.m() + 1 )
+assert(f1(C()) == 42 and f2(C()) == 42)
+}}}}}
+
+{{{{{
+;; Generic container and bounded type parameter with intersection
+def xs: list of (Shape & Named) = (list of (Shape & Named)).of(Tile())
+assert(xs.get(0).name() == "tile" and xs.get(0).area() == 1.5)
+def show of (T: Shape & Named) = fn (x: T): string -> ( x.name() + ":" + x.area() )
+assert(show(Tile()) == "tile:1.5")
 }}}}}

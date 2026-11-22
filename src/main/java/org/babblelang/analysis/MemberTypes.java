@@ -7,6 +7,7 @@ import org.babblelang.parser.BabbleParser;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Set;
 import java.util.IdentityHashMap;
@@ -218,6 +219,7 @@ final class MemberTypes {
             return member(distributed, name, own, at, receiverText);
         }
         Type found = null;
+        Type foundSig = null;
         for (Type operand : intersection.members()) {
             if (!hasMember(operand, name)) {
                 continue;
@@ -226,12 +228,17 @@ final class MemberTypes {
             if (type == Type.ERROR) {
                 return Type.ERROR;
             }
-            if (found == null || found instanceof Type.JavaMethod && type instanceof Type.JavaMethod) {
-                found = found == null ? type : found;
-            } else if (!type.equals(found)) {
-                if (checker.algebra().assignable(type, found)) {
-                    found = type;
-                } else if (!checker.algebra().assignable(found, type)) {
+            Type typeSig = memberSignatureType(type);
+            if (found == null) {
+                found = type;
+                foundSig = typeSig;
+            } else if (!typeSig.equals(foundSig)) {
+                if (checker.algebra().assignable(typeSig, foundSig)) {
+                    if (!checker.algebra().assignable(foundSig, typeSig)) {
+                        found = type;
+                        foundSig = typeSig;
+                    }
+                } else if (!checker.algebra().assignable(foundSig, typeSig)) {
                     checker.warn("Conflicting member " + name + " in " + intersection, at);
                     return Type.ERROR;
                 }
@@ -242,6 +249,45 @@ final class MemberTypes {
             return Type.ERROR;
         }
         return found;
+    }
+
+    private Type memberSignatureType(Type type) {
+        if (!(type instanceof Type.JavaMethod jm)) {
+            return type;
+        }
+        List<java.lang.reflect.Method> methods = org.babblelang.runtime.JavaTypes.methods(jm.owner(), jm.name());
+        if (methods.isEmpty()) {
+            return type;
+        }
+        Map<java.lang.reflect.TypeVariable<?>, Type> classEnv = JavaTypeBridge.javaTypeEnv(jm.owner(), jm.typeArguments());
+        List<Type.Function> fns = new ArrayList<>(methods.size());
+        EffectChecker ec = checker.effectChecker();
+        for (java.lang.reflect.Method m : methods) {
+            java.lang.reflect.TypeVariable<?>[] mTps = m.getTypeParameters();
+            Map<java.lang.reflect.TypeVariable<?>, Type> env = new HashMap<>(classEnv);
+            List<Type.TypeVar> typeVars = new ArrayList<>(mTps.length);
+            for (int i = 0; i < mTps.length; i++) {
+                Type.TypeVar tv = new Type.TypeVar(null, mTps[i].getName(), i);
+                typeVars.add(tv);
+                env.put(mTps[i], tv);
+            }
+            for (int i = 0; i < mTps.length; i++) {
+                Type bound = JavaTypeBridge.translateTypeVarBounds(mTps[i], env);
+                if (bound != Type.NULLABLE_ANY) {
+                    typeVars.get(i).setBound(bound);
+                }
+            }
+            java.lang.reflect.Type[] gParams = m.getGenericParameterTypes();
+            List<Type.Parameter> params = new ArrayList<>(gParams.length);
+            for (int i = 0; i < gParams.length; i++) {
+                Type pType = JavaTypeBridge.javaExecutableParamType(m, i, env);
+                params.add(new Type.Parameter("p" + i, pType, false));
+            }
+            Type retType = JavaTypeBridge.javaMethodResult(m, env, checker.algebra());
+            Type.Function fn = new Type.Function(typeVars, params, retType);
+            fns.add(ec != null ? ec.applySamJavaEffects(m, fn) : fn);
+        }
+        return fns.size() == 1 ? fns.get(0) : new Type.Overloaded(fns);
     }
 
     /** Whether an operand of an intersection has a member, without reporting anything. */

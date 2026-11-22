@@ -724,4 +724,57 @@ public class OwnershipTestCase {
                 )
                 """);
     }
+
+    @Test
+    public void testSpreadAndCallReturnOwnershipSoundness() throws Exception {
+        // TO_LIST_COPY / TO_ARRAY spread of mutable elements must demote uniqueOwner on escape/return.
+        assertHasError("""
+                def MutA = class (def v: int) ( def inc = fn mut () -> ( this.v += 1 ) )
+                def idM = fn (xs: list of MutA): list of MutA -> ( xs )
+                def exploit2 = fn io (): frozen array of MutA -> (
+                    def ma = array.of(MutA(10))
+                    def l = idM(...ma)
+                    def fma = freeze(ma)
+                    l.get(0).inc()
+                    fma
+                )
+                """, "Cannot freeze expression");
+        assertHasError("""
+                def MutA = class (def v: int) ( def inc = fn mut () -> ( this.v += 1 ) )
+                def sink: (list of MutA)? = null
+                def leak = fn io (shared xs: list of MutA) -> ( sink = xs )
+                def exploit3 = fn io (): frozen array of MutA -> (
+                    def ma = array.of(MutA(10))
+                    leak(...ma)
+                    freeze(ma)
+                )
+                """, "Cannot freeze expression");
+
+        // Positive counterparts: deeply immutable copied spreads and union-split spreads still pass!
+        String ok = """
+                def idL = fn (xs: list of int): list of int -> ( xs )
+                def takeU = fn (unique xs: list of int): int -> ( xs.set(0, 77); xs.get(0) )
+                def Shape = interface ( def area: fn (): int )
+                def Named = interface ( def name: fn (): string )
+                def Box = class (v: int) implements Shape, Named (
+                    def area = fn (): int -> ( v )
+                    def name = fn (): string -> ( "box" )
+                )
+                def fSplit = overload (
+                    fn (s: Shape, xs: list of int): int -> ( s.area() + xs.size() ),
+                    fn (n: Named, unique xs: list of int): int -> ( n.name().length() + xs.size() ),
+                    fn (sn: Shape & Named, unique xs: list of int): int -> ( sn.area() + sn.name().length() + xs.size() )
+                )
+                def fa: frozen array of int = freeze(array.of(10, 20))
+                def run = fn (xs: int...): int -> (
+                    def l = idL(...xs)
+                    l.add(99)
+                    def u: Shape | Named = Box(10)
+                    l.size() * 100 + takeU(...fa) + fa.get(0) + fSplit(u, ...fa)
+                )
+                run(1, 2)
+                """;
+        assertClean(ok);
+        Assertions.assertEquals(300 + 77 + 10 + 12, evalBothModes(ok));
+    }
 }

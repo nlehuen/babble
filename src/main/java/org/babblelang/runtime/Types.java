@@ -106,8 +106,7 @@ public final class Types {
             }
             BabbleClass cls = BabbleObjects.babbleClass(java);
             return javaClass.isInstance(java)
-                    || cls != null && cls.isJava(javaClass)
-                    || Values.isBabbleCallable(java) && JavaTypes.isFunctionalInterface(javaClass);
+                    || cls != null && cls.isJava(javaClass);
         }
 
         @Override
@@ -216,6 +215,9 @@ public final class Types {
 
         @Override
         boolean accepts(Object value) {
+            if (Values.isBabbleCallable(Values.unwrap(value))) {
+                return false;
+            }
             for (Type member : members) {
                 if (!member.accepts(value)) {
                     return false;

@@ -141,19 +141,45 @@ public final class ScopeAnalysis {
         TO_ITERABLE,
         TO_LIST_BORROWED,
         TO_LIST_COPY,
-        TO_ARRAY
+        TO_ARRAY,
+        TO_SAM
     }
 
-    /** Per-argument spread adaptation metadata ({@code BIP021-D7}). */
-    public record SpreadAdapt(SpreadKind kind, Class<?> arrayComponentType) {
-        public static final SpreadAdapt NONE = new SpreadAdapt(SpreadKind.NONE, null);
-        public static final SpreadAdapt AS_IS = new SpreadAdapt(SpreadKind.AS_IS, null);
-        public static final SpreadAdapt TO_ITERABLE = new SpreadAdapt(SpreadKind.TO_ITERABLE, null);
-        public static final SpreadAdapt TO_LIST_BORROWED = new SpreadAdapt(SpreadKind.TO_LIST_BORROWED, null);
-        public static final SpreadAdapt TO_LIST_COPY = new SpreadAdapt(SpreadKind.TO_LIST_COPY, null);
+    /** Per-argument spread adaptation metadata ({@code BIP021-D7}, {@code BIP022-D7}). */
+    public record SpreadAdapt(SpreadKind kind, Class<?> arrayComponentType, JavaSamTarget elementSamTarget) {
+        public static final SpreadAdapt NONE = new SpreadAdapt(SpreadKind.NONE, null, null);
+        public static final SpreadAdapt AS_IS = new SpreadAdapt(SpreadKind.AS_IS, null, null);
+        public static final SpreadAdapt TO_ITERABLE = new SpreadAdapt(SpreadKind.TO_ITERABLE, null, null);
+        public static final SpreadAdapt TO_LIST_BORROWED = new SpreadAdapt(SpreadKind.TO_LIST_BORROWED, null, null);
+        public static final SpreadAdapt TO_LIST_COPY = new SpreadAdapt(SpreadKind.TO_LIST_COPY, null, null);
+
+        public SpreadAdapt(SpreadKind kind, Class<?> arrayComponentType) {
+            this(kind, arrayComponentType, null);
+        }
 
         public static SpreadAdapt toArray(Class<?> componentType) {
-            return new SpreadAdapt(SpreadKind.TO_ARRAY, componentType);
+            return new SpreadAdapt(SpreadKind.TO_ARRAY, componentType, null);
+        }
+
+        public static SpreadAdapt toArray(Class<?> componentType, JavaSamTarget elementSamTarget) {
+            return new SpreadAdapt(SpreadKind.TO_ARRAY, componentType, elementSamTarget);
+        }
+
+        public static SpreadAdapt toList(boolean borrowed, JavaSamTarget elementSamTarget) {
+            if (elementSamTarget == null) {
+                return borrowed ? TO_LIST_BORROWED : TO_LIST_COPY;
+            }
+            return new SpreadAdapt(borrowed ? SpreadKind.TO_LIST_BORROWED : SpreadKind.TO_LIST_COPY, null, elementSamTarget);
+        }
+
+        public static SpreadAdapt toIterable(JavaSamTarget elementSamTarget) {
+            return elementSamTarget == null ? TO_ITERABLE
+                    : new SpreadAdapt(SpreadKind.TO_ITERABLE, null, elementSamTarget);
+        }
+
+        public static SpreadAdapt toSam(JavaSamTarget elementSamTarget) {
+            return elementSamTarget == null ? NONE
+                    : new SpreadAdapt(SpreadKind.TO_SAM, null, elementSamTarget);
         }
     }
 
@@ -275,6 +301,31 @@ public final class ScopeAnalysis {
         }
     }
 
+    /** Java SAM interface (plus optional marker interfaces) for eager callable conversion ({@code BIP022-D7}). */
+    public record JavaSamTarget(Class<?> samInterface, Class<?>[] markers) {
+        private static final Class<?>[] NO_MARKERS = new Class<?>[0];
+
+        public JavaSamTarget {
+            markers = markers == null || markers.length == 0 ? NO_MARKERS : markers.clone();
+        }
+
+        public JavaSamTarget(Class<?> samInterface) {
+            this(samInterface, NO_MARKERS);
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return o instanceof JavaSamTarget other
+                    && samInterface == other.samInterface
+                    && java.util.Arrays.equals(markers, other.markers);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * java.util.Objects.hashCode(samInterface) + java.util.Arrays.hashCode(markers);
+        }
+    }
+
     public record InterfaceCallTarget(String interfaceTypeId, String memberName, FunctionSignature signature, boolean guaranteedCallable) {
     }
 
@@ -382,7 +433,11 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<BabbleParser.TypeContext> superTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<SuperTargetInfo> superTargetInfos = new ParseTreeProperty<>();
     private final ParseTreeProperty<IsTarget> isTargets = new ParseTreeProperty<>();
+    private final ParseTreeProperty<List<IsTarget>> isIntersectionTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<IsTarget> asTargets = new ParseTreeProperty<>();
+    private final Map<ParserRuleContext, JavaSamTarget> javaSamTargets = new java.util.IdentityHashMap<>();
+    private final Map<BabbleParser.ForExpressionContext, JavaSamTarget> forElemSamTargets = new java.util.IdentityHashMap<>();
+    private final Map<ParserRuleContext, JavaSamTarget> asSamTargets = new java.util.IdentityHashMap<>();
     private final ParseTreeProperty<InterfaceCallTarget> interfaceCallTargets = new ParseTreeProperty<>();
     private final List<Warning> warnings = new ArrayList<>();
     private final List<Warning> typeDiagnostics = new ArrayList<>();
@@ -550,8 +605,40 @@ public final class ScopeAnalysis {
         isTargets.put(ctx, target);
     }
 
+    void setIsIntersectionTargets(BabbleParser.IsExpressionContext ctx, List<IsTarget> targets) {
+        if (targets == null || targets.isEmpty()) {
+            isIntersectionTargets.removeFrom(ctx);
+        } else {
+            isIntersectionTargets.put(ctx, List.copyOf(targets));
+        }
+    }
+
     void setAsTarget(BabbleParser.AsExpressionContext ctx, IsTarget target) {
         asTargets.put(ctx, target);
+    }
+
+    void setJavaSamTarget(ParserRuleContext ctx, JavaSamTarget target) {
+        if (target == null) {
+            javaSamTargets.remove(ctx);
+        } else {
+            javaSamTargets.put(ctx, target);
+        }
+    }
+
+    void setForElemSamTarget(BabbleParser.ForExpressionContext ctx, JavaSamTarget target) {
+        if (target == null) {
+            forElemSamTargets.remove(ctx);
+        } else {
+            forElemSamTargets.put(ctx, target);
+        }
+    }
+
+    void setAsSamTarget(ParserRuleContext ctx, JavaSamTarget target) {
+        if (target == null) {
+            asSamTargets.remove(ctx);
+        } else {
+            asSamTargets.put(ctx, target);
+        }
     }
 
     void setInterfaceCallTarget(BabbleParser.CallContext ctx, InterfaceCallTarget target) {
@@ -916,8 +1003,25 @@ public final class ScopeAnalysis {
         return isTargets.get(ctx);
     }
 
+    public List<IsTarget> isIntersectionTargets(BabbleParser.IsExpressionContext ctx) {
+        List<IsTarget> targets = isIntersectionTargets.get(ctx);
+        return targets != null ? targets : List.of();
+    }
+
     public IsTarget asTarget(BabbleParser.AsExpressionContext ctx) {
         return asTargets.get(ctx);
+    }
+
+    public JavaSamTarget javaSamTarget(ParserRuleContext ctx) {
+        return javaSamTargets.get(ctx);
+    }
+
+    public JavaSamTarget forElemSamTarget(BabbleParser.ForExpressionContext ctx) {
+        return forElemSamTargets.get(ctx);
+    }
+
+    public JavaSamTarget asSamTarget(ParserRuleContext ctx) {
+        return asSamTargets.get(ctx);
     }
 
     public InterfaceCallTarget interfaceCallTarget(BabbleParser.CallContext ctx) {

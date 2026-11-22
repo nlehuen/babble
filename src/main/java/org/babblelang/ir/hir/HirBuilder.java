@@ -308,11 +308,19 @@ public final class HirBuilder {
 
     private int findCompiledMethodOwnerClassId(BabbleParser.FunctionLiteralContext literal) {
         BabbleParser.DefExpressionContext def = owningMemberDef(literal);
-        if (def == null || scopes.defTarget(def).kind() != ScopeAnalysis.DefKind.MEMBER) {
+        if (def == null) {
+            return -1;
+        }
+        ScopeAnalysis.DefTarget dt = scopes.defTarget(def);
+        if (dt.kind() != ScopeAnalysis.DefKind.MEMBER) {
             return -1;
         }
         for (ParserRuleContext p = def.getParent(); p != null; p = p.getParent()) {
             if (p instanceof BabbleParser.ClassExpressionContext || p instanceof BabbleParser.ObjectExpressionContext) {
+                ClassShape shape = scopes.shape(p);
+                if (shape != null && !shape.isMethod(dt.index())) {
+                    return -1;
+                }
                 if (compiledClassJvmNames.containsKey(p)) {
                     return classIds.get(p);
                 }
@@ -397,12 +405,17 @@ public final class HirBuilder {
                         scopes.checkedType(p),
                         -1,
                         defVal != null ? lowerExpr(defVal) : null,
+                        scopes.javaSamTarget(p),
                         p.getStart().getLine()
                 ));
             }
             List<HirExpr> body = new ArrayList<>(literal.functionBlock.expression().size());
             for (BabbleParser.ExpressionContext e : literal.functionBlock.expression()) {
                 body.add(lowerExpr(e));
+            }
+            if (!body.isEmpty()) {
+                int last = body.size() - 1;
+                body.set(last, wrapJavaSam(body.get(last), literal.functionBlock));
             }
             // Note: for a compiled class method, capturedVars are the enclosing class's captured vars!
             List<HirVar> captured;
@@ -492,6 +505,10 @@ public final class HirBuilder {
             Map<String, List<Integer>> overloadMethodFnIds = new LinkedHashMap<>();
             for (BabbleParser.ExpressionContext expr : bodyBlock.expression()) {
                 if (expr instanceof BabbleParser.DefExpressionContext def) {
+                    ScopeAnalysis.DefTarget dt = scopes.defTarget(def);
+                    if (dt.kind() != ScopeAnalysis.DefKind.MEMBER || !shape.isMethod(dt.index())) {
+                        continue;
+                    }
                     if (def.value instanceof BabbleParser.FunctionLiteralContext lit) {
                         methodFnIds.put(def.name.getText(), functionIds.get(lit));
                     } else if (def.value instanceof BabbleParser.OverloadExpressionContext ov) {
@@ -515,6 +532,7 @@ public final class HirBuilder {
                         scopes.checkedType(p),
                         shape.parameterMember(i),
                         defVal != null ? lowerExpr(defVal) : null,
+                        scopes.javaSamTarget(p),
                         p.getStart().getLine()
                 ));
             }
@@ -666,10 +684,27 @@ public final class HirBuilder {
         HirExpr expr = lowerExprCore(ctx);
         ScopeAnalysis.OverloadSelection sel = scopes.overloadSelection(ctx);
         if (sel != null) {
-            return new HirExpr.OverloadSelect(expr, sel.index(), sel.signatureKey(), sel.exactSet(),
+            expr = new HirExpr.OverloadSelect(expr, sel.index(), sel.signatureKey(), sel.exactSet(),
                     ExprMeta.of(ctx.getStart().getLine(), ScopeAnalysis.PrimitiveKind.NONE));
         }
-        return expr;
+        if (ctx instanceof BabbleParser.DefExpressionContext
+                || ctx instanceof BabbleParser.AssignExpressionContext
+                || ctx instanceof BabbleParser.ReturnExpressionContext) {
+            return expr;
+        }
+        return wrapJavaSam(expr, ctx);
+    }
+
+    private HirExpr wrapJavaSam(HirExpr expr, ParserRuleContext ctx) {
+        if (expr == null) {
+            return null;
+        }
+        ScopeAnalysis.JavaSamTarget sam = scopes.javaSamTarget(ctx);
+        if (sam == null) {
+            return expr;
+        }
+        int ln = expr.meta().line() > 0 ? expr.meta().line() : ctx.getStart().getLine();
+        return new HirExpr.JavaSamAdapt(expr, sam, ExprMeta.of(ln, ScopeAnalysis.PrimitiveKind.NONE));
     }
 
     private HirExpr lowerExprCore(BabbleParser.ExpressionContext ctx) {
@@ -788,7 +823,7 @@ public final class HirBuilder {
         }
         if (ctx instanceof BabbleParser.IsExpressionContext isCtx) {
             return new HirExpr.Is(lowerExpr(isCtx.left), scopes.isBuiltin(isCtx), scopes.isTarget(isCtx),
-                    scopes.checkedType(isCtx), metaOf(isCtx));
+                    scopes.isIntersectionTargets(isCtx), scopes.checkedType(isCtx), metaOf(isCtx));
         }
         if (ctx instanceof BabbleParser.TypeAliasExpressionContext alias) {
             // A type alias (BIP023) only stands for a type : its def's value, which nothing can read, is null.
@@ -799,7 +834,8 @@ public final class HirBuilder {
             return new HirExpr.Const(null, metaOf(axiom).withKind(ScopeAnalysis.PrimitiveKind.NONE));
         }
         if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
-            return new HirExpr.As(lowerExpr(asCtx.left), scopes.asTarget(asCtx), scopes.checkedType(asCtx), metaOf(asCtx));
+            return new HirExpr.As(lowerExpr(asCtx.left), scopes.asTarget(asCtx), scopes.asSamTarget(asCtx),
+                    scopes.checkedType(asCtx), metaOf(asCtx));
         }
         if (ctx instanceof BabbleParser.BlockExpressionContext blkExpr) {
             return lowerBlock(blkExpr.block(), blkExpr);
@@ -815,6 +851,10 @@ public final class HirBuilder {
             for (BabbleParser.ExpressionContext e : f.forBlock.expression()) {
                 body.add(lowerExpr(e));
             }
+            if (!body.isEmpty()) {
+                int last = body.size() - 1;
+                body.set(last, wrapJavaSam(body.get(last), f.forBlock));
+            }
             return new HirExpr.For(
                     lowerExpr(f.iterable),
                     scopes.forLoopTarget(f),
@@ -822,6 +862,7 @@ public final class HirBuilder {
                     hirVars(resolution.declared(f.forBlock)),
                     body,
                     scopes.numericWideningRank(f.forBlock),
+                    scopes.forElemSamTarget(f),
                     metaOf(f)
             );
         }
@@ -832,7 +873,7 @@ public final class HirBuilder {
             return new HirExpr.Continue(metaOf(c));
         }
         if (ctx instanceof BabbleParser.ReturnExpressionContext r) {
-            return new HirExpr.Return(lowerExpr(r.expression()), metaOf(r));
+            return new HirExpr.Return(wrapJavaSam(lowerExpr(r.expression()), r), metaOf(r));
         }
         if (ctx instanceof BabbleParser.ForeverExpressionContext f) {
             // An acknowledgement for the analysis only (BIP024) : the expression itself.
@@ -843,7 +884,7 @@ public final class HirBuilder {
                     def.name.getText(),
                     scopes.defTarget(def),
                     hirVar(resolution.variable(def)),
-                    def.value != null ? lowerExpr(def.value) : null,
+                    def.value != null ? wrapJavaSam(lowerExpr(def.value), def) : null,
                     metaOf(def)
             );
         }
@@ -910,7 +951,7 @@ public final class HirBuilder {
         }
     }
 
-    private HirExpr.Block lowerBlock(BabbleParser.BlockContext block, BabbleParser.BlockExpressionContext outer) {
+    private HirExpr lowerBlock(BabbleParser.BlockContext block, BabbleParser.BlockExpressionContext outer) {
         List<HirExpr> stmts = new ArrayList<>(block.expression().size());
         for (BabbleParser.ExpressionContext e : block.expression()) {
             stmts.add(lowerExpr(e));
@@ -922,10 +963,10 @@ public final class HirBuilder {
             return new HirExpr.Block(stmts, opensNs, declNames, declVars,
                     scopes.numericWideningRank(block), metaOf(outer));
         }
-        return new HirExpr.Block(stmts, opensNs, declNames, declVars, -1, metaOf(block));
+        return wrapJavaSam(new HirExpr.Block(stmts, opensNs, declNames, declVars, -1, metaOf(block)), block);
     }
 
-    private HirExpr.If lowerIfExpr(BabbleParser.IfExprContext ctx, BabbleParser.IfExpressionContext outer) {
+    private HirExpr lowerIfExpr(BabbleParser.IfExprContext ctx, BabbleParser.IfExpressionContext outer) {
         HirExpr cond = lowerExpr(ctx.test);
         HirExpr thenBr = lowerBlock(ctx.thenBlock, null);
         HirExpr elseBr = null;
@@ -949,7 +990,8 @@ public final class HirBuilder {
                 scopes.expressionKind(ctx).isPrimitive() || scopes.isExpressionDeeplyImmutable(metaCtx),
                 scopes.isExpressionString(metaCtx)
         );
-        return new HirExpr.If(cond, thenBr, elseBr, meta);
+        HirExpr.If ifNode = new HirExpr.If(cond, thenBr, elseBr, meta);
+        return outer == null ? wrapJavaSam(ifNode, ctx) : ifNode;
     }
 
     private HirExpr lowerSelector(BabbleParser.SelectorContext ctx) {
@@ -988,7 +1030,7 @@ public final class HirBuilder {
         BabbleParser.ExpressionContext recv = ScopeAnalysis.assignReceiver(ctx);
         String targetText = Interpreter.targetText(ctx);
         String valueText = ctx.value.getText();
-        HirExpr value = lowerExpr(ctx.value);
+        HirExpr value = wrapJavaSam(lowerExpr(ctx.value), ctx);
         ExprMeta meta = metaOf(ctx);
 
         if (recv == null) {

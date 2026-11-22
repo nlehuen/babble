@@ -83,6 +83,11 @@ final class LoweringAnalyzer {
                         pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(null, null,
                                 checked.getName().replace('.', '/')));
                     }
+                } else if (isTarget instanceof Type.Intersection inter) {
+                    List<ScopeAnalysis.IsTarget> targets = intersectionIsTargets(inter);
+                    if (!targets.isEmpty()) {
+                        pass.analysis.setIsIntersectionTargets(isCtx, targets);
+                    }
                 }
             }
             if (entry.getKey() instanceof BabbleParser.AsExpressionContext asCtx && checker.inFile(asCtx)) {
@@ -184,12 +189,43 @@ final class LoweringAnalyzer {
                 pass.analysis.setOverloadSelection(entry.getKey(), entry.getValue());
             }
         }
+        for (Map.Entry<ParserRuleContext, ScopeAnalysis.JavaSamTarget> entry : checker.samTargets().entrySet()) {
+            if (checker.inFile(entry.getKey())) {
+                pass.analysis.setJavaSamTarget(entry.getKey(), entry.getValue());
+            }
+        }
+        for (Map.Entry<BabbleParser.ForExpressionContext, ScopeAnalysis.JavaSamTarget> entry : checker.forElemSamTargets().entrySet()) {
+            if (checker.inFile(entry.getKey())) {
+                pass.analysis.setForElemSamTarget(entry.getKey(), entry.getValue());
+            }
+        }
+        for (Map.Entry<BabbleParser.AsExpressionContext, ScopeAnalysis.JavaSamTarget> entry : checker.asSamTargets().entrySet()) {
+            if (checker.inFile(entry.getKey())) {
+                pass.analysis.setAsSamTarget(entry.getKey(), entry.getValue());
+            }
+        }
         publishDefinitelyDefined(pass, checker);
         deriveTargets(file);
         publishTypeHierarchies(pass, checker);
         if (pass.analysis.moduleInterface() != null) {
             pass.analysis.moduleInterface().setTypeHierarchies(pass.analysis.typeHierarchies());
         }
+    }
+
+    private static List<ScopeAnalysis.IsTarget> intersectionIsTargets(Type.Intersection inter) {
+        List<ScopeAnalysis.IsTarget> targets = new ArrayList<>(inter.members().size());
+        for (Type member : inter.members()) {
+            if (member instanceof Type.Instance inst && inst.node().isInterface()
+                    && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
+                targets.add(new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
+            } else if (member instanceof Type.JavaInstance ji && ji.type().isInterface()
+                    && JavaTypeBridge.isBytecodeAccessible(ji.type())) {
+                targets.add(new ScopeAnalysis.IsTarget(null, null, ji.type().getName().replace('.', '/')));
+            } else {
+                return List.of();
+            }
+        }
+        return targets;
     }
 
     private static ScopeAnalysis.OverloadAltMetaInfo buildOverloadAltMeta(Type.Function alt) {
@@ -271,6 +307,16 @@ final class LoweringAnalyzer {
             member = JavaTypeBridge.javaMember(instance.type(), instance.typeArguments(), name, false, algebra);
         } else if (receiver instanceof Type.Array array) {
             member = JavaTypeBridge.javaMember(JavaTypeBridge.checkedArrayClass(array), List.of(), name, false, algebra);
+        } else if (receiver instanceof Type.Intersection inter) {
+            for (Type m : inter.members()) {
+                if (m instanceof Type.JavaInstance ji) {
+                    JavaTypeBridge.JavaMember jm = JavaTypeBridge.javaMember(ji.type(), ji.typeArguments(), name, false, algebra);
+                    if (jm.error() == null && jm.fieldTarget() != null) {
+                        return jm.fieldTarget();
+                    }
+                }
+            }
+            return null;
         } else {
             return null;
         }
@@ -758,21 +804,46 @@ final class LoweringAnalyzer {
                 new ScopeAnalysis.InterfaceCallTarget(found.iface().id, found.member().name, sig, true));
     }
 
+    private record FoundInterfaceWithType(FoundInterfaceMember found, Type substitutedType) {
+    }
+
     private FoundInterfaceMember findDeclaringInterfaceOnType(Type recv, String memberName) {
+        FoundInterfaceWithType best = findBestInterfaceMember(recv, memberName);
+        return best != null ? best.found() : null;
+    }
+
+    private FoundInterfaceWithType findBestInterfaceMember(Type recv, String memberName) {
         while (recv instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
             recv = tv.bound();
         }
         recv = TypeAlgebra.unwrapFrozen(recv);
         if (recv instanceof Type.Instance recvInst && recvInst.node().isInterface()) {
-            return findDeclaringInterfaceMember(recvInst.node(), memberName);
+            FoundInterfaceMember found = findDeclaringInterfaceMember(recvInst.node(), memberName);
+            if (found == null) {
+                return null;
+            }
+            Type projected = checker.algebra().projectToBabble(recvInst, found.iface());
+            Map<Type.TypeVar, Type> env = projected instanceof Type.Instance p
+                    ? checker.algebra().instanceEnv(p) : Map.of();
+            Type subType = checker.algebra().substitute(checker.memberType(found.iface(), found.member()), env);
+            return new FoundInterfaceWithType(found, subType);
         }
         if (recv instanceof Type.Intersection inter) {
+            FoundInterfaceWithType best = null;
             for (Type member : inter.members()) {
-                FoundInterfaceMember found = findDeclaringInterfaceOnType(member, memberName);
-                if (found != null) {
-                    return found;
+                FoundInterfaceWithType cand = findBestInterfaceMember(member, memberName);
+                if (cand == null) {
+                    continue;
+                }
+                if (best == null) {
+                    best = cand;
+                } else if (!cand.substitutedType().equals(best.substitutedType())
+                        && checker.algebra().assignable(cand.substitutedType(), best.substitutedType())
+                        && !checker.algebra().assignable(best.substitutedType(), cand.substitutedType())) {
+                    best = cand;
                 }
             }
+            return best;
         }
         return null;
     }
@@ -953,6 +1024,12 @@ final class LoweringAnalyzer {
                     putType(pass.typeNodes.get(cls).memberTypes, ScopeAnalysis.paramId(parameter).getText(), descriptor);
                 }
             }
+            if (type != null && pass.analysis.javaSamTarget(parameter) == null) {
+                ScopeAnalysis.JavaSamTarget samTarget = uniqueSamTargetForParam(type);
+                if (samTarget != null) {
+                    pass.analysis.setJavaSamTarget(parameter, samTarget);
+                }
+            }
         } else if (tree instanceof BabbleParser.FunctionLiteralContext function && function.type() != null) {
             pass.analysis.setCheckedType(function, descriptor(checker.annotator().annotation(function.type(), checker.scopeOf(function))));
         } else if (tree instanceof BabbleParser.DefExpressionContext def) {
@@ -991,6 +1068,29 @@ final class LoweringAnalyzer {
                 }
             }
         }
+    }
+
+    private static ScopeAnalysis.JavaSamTarget uniqueSamTargetForParam(Type type) {
+        if (JavaTypeBridge.resolveJavaSam(type) instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
+            return valid.toTarget();
+        }
+        if (Type.withoutNull(type) instanceof Type.Union u) {
+            JavaTypeBridge.JavaSamResolution.Valid match = null;
+            for (Type member : u.members()) {
+                Type mb = Type.withoutNull(member);
+                if (mb instanceof Type.Function || mb instanceof Type.Overloaded || mb == Type.ANY) {
+                    return null;
+                }
+                if (JavaTypeBridge.resolveJavaSam(member) instanceof JavaTypeBridge.JavaSamResolution.Valid v) {
+                    if (match != null && !match.equals(v)) {
+                        return null;
+                    }
+                    match = v;
+                }
+            }
+            return match != null ? match.toTarget() : null;
+        }
+        return null;
     }
 
     private static void putType(Map<String, String> types, String name, String descriptor) {

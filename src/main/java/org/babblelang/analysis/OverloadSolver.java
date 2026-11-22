@@ -119,15 +119,34 @@ final class OverloadSolver {
     }
 
     private static boolean acceptsWitness(TypeAlgebra algebra, Type.Function fn, List<Type> fnParams, List<Type> witness) {
+        return acceptsWitness(algebra, fn, fnParams, witness, false);
+    }
+
+    private static boolean acceptsWitness(TypeAlgebra algebra, Type.Function fn, List<Type> fnParams,
+                                          List<Type> witness, boolean borrowAware) {
         if (fn.typeParameters().isEmpty()) {
+            boolean frozenBorrowSafe = borrowAware
+                    && (fn.effects().uniqueResult() || algebra.isDeeplyImmutable(fn.result()));
             for (int i = 0; i < fnParams.size(); i++) {
-                if (!paramAccepts(algebra, fnParams.get(i), witness.get(i))) {
+                boolean borrowReadOnly = false;
+                if (frozenBorrowSafe) {
+                    Type.Parameter param = parameterAtPos(fn, i);
+                    borrowReadOnly = param != null && param.borrow() && !param.mut();
+                }
+                if (!paramAccepts(algebra, fnParams.get(i), witness.get(i), borrowReadOnly)) {
                     return false;
                 }
             }
             return true;
         }
-        return genericAccepts(algebra, fn, fnParams, witness);
+        return genericAccepts(algebra, fn, fnParams, witness, borrowAware);
+    }
+
+    private static Type.Parameter parameterAtPos(Type.Function fn, int argIndex) {
+        int restIdx = fn.restIndex();
+        int pIdx = (restIdx >= 0 && argIndex >= restIdx) ? restIdx : argIndex;
+        List<Type.Parameter> params = fn.parameters();
+        return pIdx >= 0 && pIdx < params.size() ? params.get(pIdx) : null;
     }
 
     private static List<CallShape> commonShapes(Type.Function a, Type.Function b) {
@@ -375,12 +394,12 @@ final class OverloadSolver {
             }
             return true;
         }
-        return genericAccepts(algebra, general, genParams, specParams);
+        return genericAccepts(algebra, general, genParams, specParams, false);
     }
 
     /** Whether a generic alternative {@code general} can be instantiated to accept {@code argTypes}. */
     private static boolean genericAccepts(TypeAlgebra algebra, Type.Function general,
-                                          List<Type> genParams, List<Type> argTypes) {
+                                          List<Type> genParams, List<Type> argTypes, boolean borrowAware) {
         // Rename general's type vars fresh so they never collide with argTypes' own type vars.
         Map<Type.TypeVar, Type> freshMap = new HashMap<>();
         List<Type.TypeVar> freshVars = new ArrayList<>(general.typeParameters().size());
@@ -405,7 +424,12 @@ final class OverloadSolver {
         for (int i = 0; i < genParams.size(); i++) {
             Type pattern = algebra.substitute(genParams.get(i), finalMap);
             Type arg = argTypes.get(i);
-            if (!algebra.relate(arg, pattern, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
+            boolean borrowReadOnly = false;
+            if (borrowAware) {
+                Type.Parameter param = parameterAtPos(general, i);
+                borrowReadOnly = param != null && param.borrow() && !param.mut();
+            }
+            if (!algebra.relate(arg, pattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly, false)) {
                 return false;
             }
         }
@@ -422,10 +446,20 @@ final class OverloadSolver {
                 }
             }
         }
+        Type instResult = borrowAware
+                ? algebra.substitute(algebra.substitute(general.result(), finalMap), solved)
+                : null;
+        boolean frozenBorrowSafe = borrowAware
+                && (general.effects().uniqueResult() || algebra.isDeeplyImmutable(instResult));
         // Verify each substituted parameter accepts the corresponding arg type.
         for (int i = 0; i < genParams.size(); i++) {
             Type instParam = algebra.substitute(algebra.substitute(genParams.get(i), finalMap), solved);
-            if (!paramAccepts(algebra, instParam, argTypes.get(i))) {
+            boolean borrowReadOnly = false;
+            if (frozenBorrowSafe) {
+                Type.Parameter param = parameterAtPos(general, i);
+                borrowReadOnly = param != null && param.borrow() && !param.mut();
+            }
+            if (!paramAccepts(algebra, instParam, argTypes.get(i), borrowReadOnly)) {
                 return false;
             }
         }
@@ -451,10 +485,16 @@ final class OverloadSolver {
 
     /** Whether a parameter of type {@code paramType} accepts an argument of type {@code argType} (subtype or widening). */
     static boolean paramAccepts(TypeAlgebra algebra, Type paramType, Type argType) {
+        return paramAccepts(algebra, paramType, argType, false);
+    }
+
+    static boolean paramAccepts(TypeAlgebra algebra, Type paramType, Type argType, boolean borrowCovariant) {
         if (paramType.equals(argType)) {
             return true;
         }
-        if (algebra.assignable(argType, paramType)) {
+        if (borrowCovariant
+                ? algebra.relate(argType, paramType, TypeAlgebra.RelateMode.ASSIGNABLE, null, true, false)
+                : algebra.assignable(argType, paramType)) {
             return true;
         }
         // Numeric widening along byte < short < int < long < float < double (BIP011-D4).
@@ -722,8 +762,11 @@ final class OverloadSolver {
             return b;
         }
         // Two interfaces (or intersections of interfaces) meet at their intersection A & B (BIP022).
-        if (isInterfaceLike(a) && isInterfaceLike(b)) {
-            return Type.intersection(a, b);
+        Type baseA = TypeAlgebra.unwrapFrozen(a);
+        Type baseB = TypeAlgebra.unwrapFrozen(b);
+        if (isInterfaceLike(baseA) && isInterfaceLike(baseB)) {
+            Type inter = Type.intersection(baseA, baseB);
+            return (a instanceof Type.Frozen || b instanceof Type.Frozen) ? Type.frozen(inter) : inter;
         }
         return a;
     }
@@ -742,13 +785,14 @@ final class OverloadSolver {
     }
 
     static boolean isInterfaceLike(Type t) {
-        if (t instanceof Type.Instance i) {
+        Type u = TypeAlgebra.unwrapFrozen(t);
+        if (u instanceof Type.Instance i) {
             return i.node().isInterface();
         }
-        if (t instanceof Type.JavaInstance j) {
+        if (u instanceof Type.JavaInstance j) {
             return j.type().isInterface();
         }
-        return t instanceof Type.Intersection;
+        return u instanceof Type.Intersection;
     }
 
     // ---------------------------------------------------------------- target-type selection & signature key (BIP021-D12)
@@ -870,7 +914,7 @@ final class OverloadSolver {
         for (int i = 0; i < alts.size(); i++) {
             Type.Function alt = alts.get(i);
             List<Type> eff = effectiveParamTypes(alt, shape);
-            if (eff != null && acceptsWitness(algebra, alt, eff, argTypes)) {
+            if (eff != null && acceptsWitness(algebra, alt, eff, argTypes, true)) {
                 matchedIdx.add(i);
                 matchedEff.add(eff);
             }

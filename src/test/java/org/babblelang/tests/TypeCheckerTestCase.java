@@ -994,6 +994,135 @@ public class TypeCheckerTestCase {
     }
 
     @Test
+    public void testIntersectionJavaAndFunctionalErrors() {
+        assertDiagnostics("def Demo = import(\"org.babblelang.tests\").JavaClassDemo\n"
+                        + "def Shape = interface ( def area : fn () : double )\n"
+                        + "def Named = interface ( def name : fn () : string )\n"
+                        + "def badSam1 : java.lang.Runnable & java.lang.AutoCloseable = fn () -> ()\n"
+                        + "def badSam2 : Shape & java.lang.Runnable = fn () -> ()\n"
+                        + "def badJava = fn (x : Demo.LeftInt & Demo.RightStrVal) : any? -> ( x.val() )\n"
+                        + "def A = interface ( def tag : fn () : int )\n"
+                        + "def badMix = fn (x : A & Demo.RightStr) : any? -> ( x.tag() )\n"
+                        + "def f = overload ( fn (s : Shape) : int -> ( 1 ), fn (n : Named) : int -> ( 2 ) )\n"
+                        + "def Tile = class () implements Shape, Named ( def area = fn () : double -> ( 1.0 ) ; def name = fn () : string -> ( \"t\" ) )\n"
+                        + "def both : Shape & Named = Tile()\n"
+                        + "f(both)",
+                "4:62 Not a functional interface : java.lang.Runnable & java.lang.AutoCloseable",
+                "5:44 Not a functional interface : Shape & java.lang.Runnable",
+                "6:68 Conflicting member val in org.babblelang.tests.JavaClassDemo$LeftInt & org.babblelang.tests.JavaClassDemo$RightStrVal",
+                "8:53 Conflicting member tag in A & org.babblelang.tests.JavaClassDemo$RightStr",
+                "9:9 Ambiguous overloads of f : f(Shape & Named) fits fn (s : Shape) : int and fn (n : Named) : int");
+
+        assertDiagnostics("def Demo = import(\"org.babblelang.tests\").JavaClassDemo\n"
+                        + "def I = interface ( def ir : java.lang.Runnable & java.io.Serializable = fn () -> () )\n"
+                        + "def badEff = fn () -> ( Demo.runSameSigGeneric(fn io () -> ( println(\"x\") )) )",
+                "2:30 An interface default must have a function type : ir",
+                "3:14 Function badEff violates pure guarantee (performs I/O or external mutation) : mark function as io");
+
+        assertDiagnostics("def Base = interface ( def f = fn () : int -> ( 1 ) )\n"
+                        + "def Sub = class () implements Base ( def run : java.lang.Runnable = fn () -> ( super.f() ) )\n"
+                        + "def C = class () implements java.lang.Runnable ( def run : java.lang.Runnable = fn () -> () )\n"
+                        + "def M = class () implements Base ( def m : (fn (int) : int) | java.lang.Runnable = fn () -> ( super.f() ) )\n"
+                        + "def N1 = class () implements Base ( def r : java.lang.Runnable = fn () -> ( def g = fn () : int -> ( super.f() ) ; () ) )\n"
+                        + "def N2 = record () implements Base ( def r : java.lang.Runnable = fn () -> ( def g = fn () : int -> ( super.f() ) ; () ) )\n"
+                        + "def N3 = class () implements Base ( def r : (fn (int) : int) | java.lang.Runnable = fn () -> ( def g = fn () : int -> ( super.f() ) ; () ) )\n"
+                        + "def Ok = class () implements Base ( def r : java.lang.Runnable = fn () -> ( def Inner = class () implements Base ( def g = fn () : int -> ( super.f() ) ) ; () ) )",
+                "2:80 super outside of a method",
+                "3:9 C does not implement java.lang.Runnable.run",
+                "4:95 super outside of a method",
+                "5:102 super outside of a method",
+                "6:103 super outside of a method",
+                "7:121 super outside of a method");
+
+        assertDiagnostics("def A = interface ( def a : fn () : int )\n"
+                        + "def RA = record () implements A ( def a = fn () : int -> ( 1 ) )\n"
+                        + "def Box = class (def item : A) ()\n"
+                        + "def BoxG of T = class (def xs : list of T) ()\n"
+                        + "def OpMut = class () ( def plus = overload ( fn (mut x : A) : int -> ( 1 ), fn (x : int) : int -> ( 2 ) ) )\n"
+                        + "def OpAlias = class () ( def plus = overload ( fn (x : A) : Box -> ( Box(x) ), fn (x : int) : Box -> ( Box(RA()) ) ) )\n"
+                        + "def OpGen = class () ( def plus = overload ( fn of T (x : list of T) : int -> ( x.size() ), fn (x : int) : int -> ( x ) ) )\n"
+                        + "def OpGenT = class () ( def plus = overload ( fn of T (x : list of T) : T -> ( x.get(0) ), fn (x : int) : int -> ( x ) ) )\n"
+                        + "def fBox = overload ( fn (x : A) : Box -> ( Box(x) ), fn (x : int) : Box -> ( Box(RA()) ) )\n"
+                        + "def fGenBox = overload ( fn of T (xs : list of T) : BoxG of T -> ( BoxG(xs) ), fn (x : int) : int -> ( x ) )\n"
+                        + "def fSpread = overload ( fn (k : int, xs : A...) : Box -> ( def b = Box(RA()) ; for a in xs then ( b = Box(a) ) ; b ), fn (k : string, xs : A...) : Box -> ( Box(RA()) ) )\n"
+                        + "def fa : frozen A = RA()\n"
+                        + "def ua : frozen A | int = fa\n"
+                        + "def fl : frozen list of int = freeze(list.of(1, 2))\n"
+                        + "def ul : frozen list of int | int = fl\n"
+                        + "def uli : list of int | int = list.of(3)\n"
+                        + "def faArr : frozen array of A = freeze(array.of(RA() as A))\n"
+                        + "def uks : int | string = 1\n"
+                        + "def bad1 = OpMut() + fa\n"
+                        + "def bad2 = OpAlias() + fa\n"
+                        + "def bad3 = fBox(ua)\n"
+                        + "def bad4 = fGenBox(ul)\n"
+                        + "def bad5 = fSpread(uks, ...faArr)\n"
+                        + "def ok1 : int = OpGen() + fl\n"
+                        + "def ok2 : int = OpGenT() + ul\n"
+                        + "def ok3 : int = OpGenT() + uli\n"
+                        + "def fMutList = overload ( fn (k : int, xs : list of A) : list of A -> ( xs ), fn (k : string, xs : list of A) : int -> ( 0 ) )\n"
+                        + "def fGenList = overload ( fn of T (k : int, xs : list of T) : list of T -> ( xs ), fn of T (k : string, xs : list of T) : int -> ( 0 ) )\n"
+                        + "def faList : frozen list of RA = freeze(list(RA()))\n"
+                        + "def bad6 = fMutList(uks, ...faList)\n"
+                        + "def ok4 = fGenList(uks, ...faList)",
+                "19:12 No applicable overload of OpMut().plus for (frozen A) : candidates are (mut x : A), (x : int)",
+                "20:12 No applicable overload of OpAlias().plus for (frozen A) : candidates are (x : A), (x : int)",
+                "21:12 No applicable overload of fBox for (frozen A | int) : candidates are (x : A), (x : int)",
+                "22:12 No applicable overload of fGenBox for (frozen list of int | int) : candidates are (xs : list of T), (x : int)",
+                "23:12 No applicable overload of fSpread for (int | string, ...frozen array of A) : candidates are (k : int, xs : A...), (k : string, xs : A...)",
+                "30:12 No applicable overload of fMutList for (int | string, ...frozen list of RA) : candidates are (k : int, xs : list of A), (k : string, xs : list of A)");
+
+        assertDiagnostics("def OpU = class () ( def plus = overload ( fn of (T, U) (x : T) : U? -> ( null ) ) )\n"
+                        + "def badU = OpU() + 1",
+                "2:12 Missing type : cannot infer type arguments for OpU().plus");
+
+        assertDiagnostics("def OpNeg = class () ( def neg = overload ( fn of T () : T? -> ( null ), fn (x : int) : int -> ( -x ) ) )\n"
+                        + "def OpNegL = class () ( def neg = overload ( fn of T () : list of T -> ( list.of() ), fn (x : int) : int -> ( -x ) ) )\n"
+                        + "def OpSingleNeg = class () ( def neg = fn of T () : T? -> ( null ) )\n"
+                        + "def OpSinglePlus = class () ( def plus = fn of T (x : T) : T -> ( x ) )\n"
+                        + "def badN1 = -OpNeg()\n"
+                        + "def badN2 = -OpNegL()\n"
+                        + "def badN3 = -OpSingleNeg()\n"
+                        + "def okP : int = OpSinglePlus() + 42",
+                "5:13 Missing type : cannot infer type arguments for OpNeg().neg",
+                "6:13 Missing type : cannot infer type arguments for OpNegL().neg",
+                "7:13 Missing type : cannot infer type arguments for OpSingleNeg().neg");
+
+        assertDiagnostics("def Shape = interface ( def area : fn () : int )\n"
+                        + "def Named = interface ( def name : fn () : string )\n"
+                        + "def Box = class () implements Shape, Named ( def area = fn () : int -> ( 1 ) ; def name = fn () : string -> ( \"b\" ) )\n"
+                        + "def g = overload ( fn (xs : list of int, s : Shape) : int -> ( xs.size() ), fn (xs : array of int, n : Named) : int -> ( xs.size() ) )\n"
+                        + "def u : Shape | Named = Box()\n"
+                        + "def fs = set.of(1, 2)\n"
+                        + "def badAmbig = g(...fs, u)",
+                "7:16 Cannot dispatch g on Shape | Named : its alternatives are not told apart at runtime");
+
+        assertDiagnostics("def MutA = class (def mut v : int) ( def inc = fn mut () -> ( this.v += 1 ) )\n"
+                        + "def leakIter = fn (shared xs : java.lang.Iterable of MutA) : java.lang.Iterable of MutA -> ( xs )\n"
+                        + "def fl : frozen list of MutA = freeze(list(MutA(1)))\n"
+                        + "def badIter = leakIter(...fl)\n"
+                        + "def idM = fn (xs : list of MutA) : list of MutA -> ( xs )\n"
+                        + "def badMut = fn (xs : MutA...) : int -> ( def l = idM(...xs) ; l.get(0).inc() ; 0 )\n"
+                        + "def idI = fn (xs : list of int) : list of int -> ( xs )\n"
+                        + "def okMut = fn (xs : int...) : int -> ( def l = idI(...xs) ; l.add(99) ; l.size() )\n"
+                        + "def takeU = fn (unique xs : list of MutA) : list of MutA -> ( xs )\n"
+                        + "def ma = array.of(MutA(1))\n"
+                        + "def badU = takeU(...ma)",
+                "4:27 Type error : expected MutA elements, got frozen MutA",
+                "6:64 Cannot mutate parameter xs (mut method l.get(0).inc) : mark parameter as mut xs",
+                "11:21 Argument for unique parameter xs must be unique");
+
+        assertDiagnostics("def takeRestSer = fn io (shared xs : (java.lang.Runnable & java.io.Serializable)...) : string -> ( \"\" )\n"
+                        + "def takeBorrowed = fn (xs : (java.lang.Runnable & java.io.Serializable)...) : string -> ( \"\" )\n"
+                        + "def fns = list(fn io () -> ())\n"
+                        + "def ffns = freeze(list(fn io () -> ()))\n"
+                        + "def ok1 = takeRestSer(...fns)\n"
+                        + "def ok2 = takeBorrowed(...ffns)\n"
+                        + "def bad1 = takeRestSer(...ffns)",
+                "7:27 Type error : expected java.lang.Runnable & java.io.Serializable elements, got frozen (io () : null)");
+    }
+
+    @Test
     public void testP6aUnionAndNullableTypes() {
         // Normalization, T?, null type, any vs any?, non-nullability of plain types.
         assertDiagnostics("def a : int | null = null\n"
