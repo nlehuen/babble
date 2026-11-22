@@ -5,7 +5,7 @@ import org.babblelang.ir.hir.HirFunction;
 import java.util.Map;
 
 /**
- * Execution options and AOT cross-module context for {@link PassManager} (BIP014-P2, BIP014-D2).
+ * Execution options and AOT cross-module context for {@link PassManager} (BIP014-I2, BIP014-D2).
  */
 public record PassContext(
         int optLevel,

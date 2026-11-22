@@ -1044,7 +1044,7 @@ final class AxiomData {
         };
     }
 
-    // ================================================================ Babble-Name Axioms (§2.3, BIP019-P7)
+    // ================================================================ Babble-Name Axioms (§2.3, BIP019-I7)
 
     /** Whether {@code ctx} is an axiom about a single Babble name ({@code axiom foo: fn ...}). */
     static boolean isBabbleNameAxiom(BabbleParser.AxiomExpressionContext ctx) {

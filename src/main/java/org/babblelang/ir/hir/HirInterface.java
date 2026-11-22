@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Compiled {@code interface} declaration in {@link HirModule} (BIP014-P1).
+ * Compiled {@code interface} declaration in {@link HirModule} (BIP014-I1).
  */
 public record HirInterface(
         int id,

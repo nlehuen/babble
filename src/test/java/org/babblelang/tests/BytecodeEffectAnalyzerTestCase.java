@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Method;
 
 /**
- * Tests for RM007 (BIP007-P3) : opt-in ASM {@link BytecodeEffectAnalyzer}.
+ * Tests for RM007 (BIP007-I3) : opt-in ASM {@link BytecodeEffectAnalyzer}.
  */
 public class BytecodeEffectAnalyzerTestCase {
 

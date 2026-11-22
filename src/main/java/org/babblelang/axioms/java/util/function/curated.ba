@@ -1,4 +1,4 @@
-;; Curated axioms for java.util.function (BIP019-P6)
+;; Curated axioms for java.util.function (BIP019-I6)
 
 axiom java.util.function.BiConsumer of (T, U): class nullmarked (
 )

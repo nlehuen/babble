@@ -24,7 +24,7 @@ import java.util.TreeMap;
 import static org.objectweb.asm.Opcodes.*;
 
 /**
- * ANTLR-free JVM class generator for a compiled {@link HirClass} (compiler phase 2, detached in BIP014-P1).
+ * ANTLR-free JVM class generator for a compiled {@link HirClass} (compiler phase 2, detached in BIP014-I1).
  */
 final class ClassGen {
     private final HirEmitter emitter;

@@ -1,5 +1,5 @@
 ;; Small-function inlining, alpha-renaming, inline-guard scans, and dead-code elimination (DCE)
-;; References : BIP014-P2, org.babblelang.opt.hir.InlinePass, org.babblelang.opt.hir.HirDcePass
+;; References : BIP014-I2, org.babblelang.opt.hir.InlinePass, org.babblelang.opt.hir.HirDcePass
 
 def addMul = fn (a: int, b: int): int -> (
     def s = a + b

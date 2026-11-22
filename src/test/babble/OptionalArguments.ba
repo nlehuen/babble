@@ -1,4 +1,4 @@
-;; Sound optional parameters (= ...), static named argument binding, and keyword-only parameters (BIP021-P1).
+;; Sound optional parameters (= ...), static named argument binding, and keyword-only parameters (BIP021-I1).
 
 ;; Optional parameter in function types and direct calls
 def add = fn (a: int, b: int = 10, c: int = a + b): int -> (

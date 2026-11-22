@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.function.BiConsumer;
 
 /**
- * Bounded fixed-point Nanopass driver over {@link HirModule} (BIP014-P2, §6.5).
+ * Bounded fixed-point Nanopass driver over {@link HirModule} (BIP014-I2, §6.5).
  *
  * <p>At {@code -O0}, returns the input module unchanged. At {@code -O1} (and {@code -O2} until
  * Tier 2 SSA MIR lands), iterates the HIR Nanopass pipeline up to {@value #MAX_ITERATIONS} rounds,

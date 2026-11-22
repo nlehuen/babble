@@ -27,7 +27,7 @@ import java.util.Set;
 
 /**
  * {@code O1} — Constant Folding, Intra-Function Constant Propagation, Constant Branch Pruning,
- * and Whitelisted Pure-JDK Call Folding (BIP014-P2, BIP014-D4).
+ * and Whitelisted Pure-JDK Call Folding (BIP014-I2, BIP014-D4).
  */
 public final class ConstFoldPass implements HirPass {
     private static final int MAX_FOLDED_STRING_LENGTH = 4096;

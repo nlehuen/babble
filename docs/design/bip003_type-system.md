@@ -4,10 +4,10 @@
 |---|---|
 | **BIP** | 003 |
 | **Date** | 2026-10-24 |
-| **Status** | Gradual rules, `dynamic`, and internal `BIP003-D9` checks replaced by [bip008_static-typing.md](bip008_static-typing.md) (`BIP008-P1`–`BIP008-P7` implemented : strict checking, call-site parameter inference, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax) ; runtime checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
+| **Status** | Gradual rules, `dynamic`, and internal `BIP003-D9` checks replaced by [bip008_static-typing.md](bip008_static-typing.md) (`BIP008-I1`–`BIP008-I7` implemented : strict checking, call-site parameter inference, union types `A | B`, nullable types `T?`, Java and Babble generics with `(...)` syntax) ; runtime checks remain only at `as` casts, Java boundaries (including Java generic `TypeVariable`/`WildcardType` returns and fields), and member writes from Java (`org.babblelang.runtime.Types`, `JavaTypes`). |
 | **Depends on** | [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §10 (where the checker sits, `BIP001-Q1`–`BIP001-Q9`), [bip002_object-model.md](bip002_object-model.md) §8 (classes and interfaces are types) |
 | **Unblocks** | Typed code generation (`bip001_bytecode-compiler.md` §10.5) |
-| **Replaced by** | [bip008_static-typing.md](bip008_static-typing.md) (`BIP008-P1`–`BIP008-P7` implemented : `any` / `any?`, unions, `T?`, generics, `as`, call-site parameter inference, strict checking, internal `BIP003-D9` checks removed). |
+| **Replaced by** | [bip008_static-typing.md](bip008_static-typing.md) (`BIP008-I1`–`BIP008-I7` implemented : `any` / `any?`, unions, `T?`, generics, `as`, call-site parameter inference, strict checking, internal `BIP003-D9` checks removed). |
 
 ## 1. Summary
 
@@ -150,9 +150,9 @@ The value of an `if` is the join of its branches: the same type, `double` for `i
 `double`, a nullable type for `null` and that type, and `dynamic` otherwise. A `while` loop's
 value is the join of its body's value and `null`.
 
-## 5. Runtime checks (`BIP003-D9`, resolving `BIP001-Q9`, updated in `BIP008-P5`–`BIP008-P6b`)
+## 5. Runtime checks (`BIP003-D9`, resolving `BIP001-Q9`, updated in `BIP008-I5`–`BIP008-I6b`)
 
-With strict static typing ([bip008_static-typing.md](bip008_static-typing.md) `BIP008-P1`–`BIP008-P6b`), `Types.check` is no longer emitted at
+With strict static typing ([bip008_static-typing.md](bip008_static-typing.md) `BIP008-I1`–`BIP008-I6b`), `Types.check` is no longer emitted at
 Babble-to-Babble parameter, return, `def`, or assignment boundaries : the static checker proves
 those types, and `int`→`double`/`double?` widening uses `Values.toDouble` where `widensToDouble`
 marks a widening point.

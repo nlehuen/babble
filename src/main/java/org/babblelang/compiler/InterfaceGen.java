@@ -17,7 +17,7 @@ import java.util.Set;
 import static org.objectweb.asm.Opcodes.*;
 
 /**
- * ANTLR-free JVM interface generator for a {@link HirInterface} (RM003-P2, detached in BIP014-P1).
+ * ANTLR-free JVM interface generator for a {@link HirInterface} (RM003-P2, detached in BIP014-I1).
  */
 final class InterfaceGen {
     private final HirEmitter emitter;

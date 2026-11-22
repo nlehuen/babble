@@ -27,7 +27,7 @@ import java.util.function.Function;
 
 /**
  * Property-based axiom fuzzing for {@code axiom}-declared Babble functions
- * ({@code docs/design/bip007_effects.md §5.4}, {@code BIP007-P3}).
+ * ({@code docs/design/bip007_effects.md §5.4}, {@code BIP007-I3}).
  *
  * <p>Activated via {@code babble.checkAxioms=true} (engine attribute or system property) or
  * invoked programmatically via {@link #check(ScopeAnalysis, BabbleParser.FileContext, ScriptRuntime)}.

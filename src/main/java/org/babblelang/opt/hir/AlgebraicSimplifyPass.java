@@ -13,7 +13,7 @@ import java.util.List;
 
 /**
  * {@code O2}/{@code O3} — Algebraic Identities, {@code idempotent} Collapse, and
- * {@code associative}/{@code commutative} Canonicalization (BIP014-P2).
+ * {@code associative}/{@code commutative} Canonicalization (BIP014-I2).
  *
  * <p>Strictly enforces IEEE-754 discipline: never applies {@code x * 0.0 -> 0.0},
  * {@code x + 0.0 -> x}, {@code x == x -> true}, or floating-point reassociation.

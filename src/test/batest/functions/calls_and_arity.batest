@@ -44,7 +44,7 @@ print(callAny(dyn(42)))
 func is not callable
 
 {{{{{
-;; BIP008-P7 call-site parameter inference widens int call to double
+;; BIP008-I7 call-site parameter inference widens int call to double
 def mul2 = fn (x) -> ( x * 2 )
 assert(mul2(3) == 6.0)
 assert("" + classof(mul2(3)) == "java.lang.Double")

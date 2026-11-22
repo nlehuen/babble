@@ -1,5 +1,5 @@
 ;; Overloaded methods, interface members, Java interface bridges, and operator methods.
-;; References : BIP021-P6 (BIP021-D16..D20), BIP002 §9.5, OverloadSet, CallSolver, HirEmitter
+;; References : BIP021-I6 (BIP021-D16..D20), BIP002 §9.5, OverloadSet, CallSolver, HirEmitter
 
 def App = type java.lang.Appendable
 def CS = type java.lang.CharSequence?

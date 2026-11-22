@@ -191,7 +191,7 @@ if dynList is java.util.List then (
 )
 assert((dynList as java.util.List).get(1) == 5)
 
-;; ---------------------------------------------------------------- BIP021-P3 : fn of T, bounds, polymorphic types
+;; ---------------------------------------------------------------- BIP021-I3 : fn of T, bounds, polymorphic types
 
 ;; Generic function literals and polymorphic function values
 def idLit = fn of T (t: T): T -> (t)

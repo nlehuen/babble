@@ -5,7 +5,7 @@ import org.babblelang.analysis.ScopeAnalysis;
 import java.util.List;
 
 /**
- * Human-readable deterministic textual printer for {@link HirModule} (BIP014-P1).
+ * Human-readable deterministic textual printer for {@link HirModule} (BIP014-I1).
  *
  * <p>Used by {@code -Dbabble.dumpIr} and golden IR assertions in {@code OptimizerTestCase}.
  */

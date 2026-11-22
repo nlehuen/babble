@@ -17,7 +17,7 @@ import static org.objectweb.asm.Opcodes.*;
 /**
  * Manages the static constant fields ({@code CallSite}, {@code OpSite}, {@code ClassShape},
  * {@code Types.Type}, parameter-name arrays, and {@code CompiledMethod} holders) emitted on a
- * generated script class and initialized in chunked {@code <clinit>} helper methods (BIP014-P0).
+ * generated script class and initialized in chunked {@code <clinit>} helper methods (BIP014-I0).
  */
 final class ConstantPool {
     private static final String STRING = "java/lang/String";

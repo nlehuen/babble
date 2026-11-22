@@ -6,13 +6,13 @@
 | **Date** | 2026-11-19 |
 | **Status** | Draft (Exploratory / Neutral Options Analysis; Open Questions `BIP015-Q1`–`Q8`) |
 | **Depends on** | Bytecode compiler ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), interactive mode ([bip004_repl.md](bip004_repl.md)), module sources & AOT runtime boundary ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)), `.batest` differential & coverage harness ([bip009_test-coverage.md](bip009_test-coverage.md)), modular type-checker architecture (`RM004`, [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), predicate-free LL(1)/LL(2) grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)), compiler optimization passes & `HIR` (`BIP014-D1`–`D7`, [bip014_optimization-passes.md](bip014_optimization-passes.md)) |
-| **Scope** | Non-committal architectural evaluation of keeping vs. replacing ANTLR4 (`antlr4-maven-plugin` and `antlr4-runtime`) across six concrete options — including an audit of ANTLR4 4.13.2 vs. newer releases and forks — comparing pros and cons across the Babble **Interpreter** vs. **Compiler** (both pre-`BIP014` and post-`BIP014-P1`), `Formatter` trivia fidelity, future IDE/LSP error resilience (`BIP004` §8), and future Babble macros (`BIP014-D4`) |
+| **Scope** | Non-committal architectural evaluation of keeping vs. replacing ANTLR4 (`antlr4-maven-plugin` and `antlr4-runtime`) across six concrete options — including an audit of ANTLR4 4.13.2 vs. newer releases and forks — comparing pros and cons across the Babble **Interpreter** vs. **Compiler** (both pre-`BIP014` and post-`BIP014-I1`), `Formatter` trivia fidelity, future IDE/LSP error resilience (`BIP004` §8), and future Babble macros (`BIP014-D4`) |
 
 ---
 
 ## 1. Purpose & Non-Committal Scope
 
-Following `BIP012` (`RM006`) and `BIP007-P2` (`RM007`), [`Babble.g4`](../../src/main/antlr4/org/babblelang/parser/Babble.g4) is now a **242-line, zero-predicate, LL(1)/LL(2) grammar** that parses every `.ba` and `.batest` source in the repository in pure `PredictionMode.SLL` with zero `LL` fallback (verified by [`ParserGrammarTestCase`](../../src/test/java/org/babblelang/tests/ParserGrammarTestCase.java)). In parallel, `BIP014` (`BIP014-D1`–`D7` decided) plans to introduce a Babble-owned, Java 21 sealed-record High-Level Typed IR (`org.babblelang.ir.hir`) in `BIP014-P1` that detaches the compiler backend from ANTLR4's parse tree.
+Following `BIP012` (`RM006`) and `BIP007-I2` (`RM007`), [`Babble.g4`](../../src/main/antlr4/org/babblelang/parser/Babble.g4) is now a **242-line, zero-predicate, LL(1)/LL(2) grammar** that parses every `.ba` and `.batest` source in the repository in pure `PredictionMode.SLL` with zero `LL` fallback (verified by [`ParserGrammarTestCase`](../../src/test/java/org/babblelang/tests/ParserGrammarTestCase.java)). In parallel, `BIP014` (`BIP014-D1`–`D7` decided) plans to introduce a Babble-owned, Java 21 sealed-record High-Level Typed IR (`org.babblelang.ir.hir`) in `BIP014-I1` that detaches the compiler backend from ANTLR4's parse tree.
 
 Together, `BIP012` and `BIP014` reopen a foundational front-end question: **should Babble keep ANTLR4, isolate it behind a Babble-owned AST, or remove the dependency on ANTLR4 altogether?**
 
@@ -26,7 +26,7 @@ This document **intentionally does not commit to an option yet**. Its goal is to
    * **Option 4:** Tree-sitter (incremental GLR C runtime via Java FFM bindings).
    * **Option 5:** PEG library or generator (Parboiled, Mouse, PetitParser, Autumn, or custom `pegen`-style generator).
    * **Option 6:** Hand-written lexer + recursive-descent & Pratt parser producing a Java 21 sealed-record AST.
-3. A side-by-side analysis of the **asymmetric impact on the Babble Interpreter vs. the Babble Compiler**, evaluated across **both timelines**: **pre-`BIP014`** (monolithic `CodeGenerator.java`) and **post-`BIP014-P1`** (`HIR` + `HirBuilder` + `HirEmitter`/`MirEmitter`) (§6).
+3. A side-by-side analysis of the **asymmetric impact on the Babble Interpreter vs. the Babble Compiler**, evaluated across **both timelines**: **pre-`BIP014`** (monolithic `CodeGenerator.java`) and **post-`BIP014-I1`** (`HIR` + `HirBuilder` + `HirEmitter`/`MirEmitter`) (§6).
 4. Dedicated comparisons across three high-leverage front-end dimensions (§7):
    * `Formatter` trivia preservation & round-trip fidelity (`Formatter.java`),
    * Future IDE / LSP support & error-resilient parsing (`BIP004` §8),
@@ -54,9 +54,9 @@ A static scan of `src/main/java` and `src/test/java` finds ANTLR4 and generated 
 |---|---|---|
 | **Engine & REPL** | [`BabbleScriptEngine.java`](../../src/main/java/org/babblelang/engine/BabbleScriptEngine.java) (788 lines), [`BabbleSession.java`](../../src/main/java/org/babblelang/engine/BabbleSession.java) (117 lines) | Two-stage `PredictionMode.SLL` → `LL` parsing with `BailErrorStrategy`, `CommonTokenStream`, `CharStreams`. `BabbleSession.classify` detects incomplete REPL inputs via `ParseFailure.atEnd()` plus a second `BabbleLexer` pass filtering `HIDDEN`-channel comments, `NL`, and `;`. |
 | **Formatter** | [`Formatter.java`](../../src/main/java/org/babblelang/format/Formatter.java) (472 lines) | Consumes the full token list including `HIDDEN`-channel `COMMENT` and `MULTILINECOMMENT` tokens; walks `BabbleParser.FileContext` to classify every `NL`, `;`, `(`, and unary `-`; re-parses formatted output to verify parse-tree equivalence. |
-| **Static Analysis (`BIP010`)** | `BlockScopes`, `Resolver`, `TypeChecker`, `EffectChecker`, `CallSolver`, `LoweringAnalyzer`, `TypeAnnotations`, `MemberTypes`, `OperatorTypes`, `Narrowing`, `SlotInference`, `StaticRefs`, `ScopeAnalysis`, `TypedProgram`, `TypedModuleSummary`, `AnalysisSession` (~16 files) | Walks `BabbleParser.*Context` directly. Stores over 25 side tables (`IdentityHashMap<ParserRuleContext, ...>` and `ParseTreeProperty<...>`) keyed on ANTLR4 CST node identity. *(Note: `BIP010-P4` already removed the ANTLR visitor pattern from `TypeChecker` in favor of explicit `typeOf(ctx, expected, role)` dispatch.)* |
+| **Static Analysis (`BIP010`)** | `BlockScopes`, `Resolver`, `TypeChecker`, `EffectChecker`, `CallSolver`, `LoweringAnalyzer`, `TypeAnnotations`, `MemberTypes`, `OperatorTypes`, `Narrowing`, `SlotInference`, `StaticRefs`, `ScopeAnalysis`, `TypedProgram`, `TypedModuleSummary`, `AnalysisSession` (~16 files) | Walks `BabbleParser.*Context` directly. Stores over 25 side tables (`IdentityHashMap<ParserRuleContext, ...>` and `ParseTreeProperty<...>`) keyed on ANTLR4 CST node identity. *(Note: `BIP010-I4` already removed the ANTLR visitor pattern from `TypeChecker` in favor of explicit `typeOf(ctx, expected, role)` dispatch.)* |
 | **Interpreter** | [`Interpreter.java`](../../src/main/java/org/babblelang/engine/impl/Interpreter.java) (827 lines), `BabbleCompiledScript`, `Function` | Extends `BabbleBaseVisitor<Object>`. Evaluates scripts by **walking ANTLR4 CST nodes at runtime**, caching `OpSite` / `CallSite` / `String[]` in `ParseTreeProperty<...>` and tracking `last` (`ParserRuleContext`) for runtime error line reporting. |
-| **Compiler (pre-`BIP014`)** | [`CodeGenerator.java`](../../src/main/java/org/babblelang/compiler/CodeGenerator.java) (5,996 lines), `BabbleCompiler` | Walks `BabbleParser.*Context` **once** at compile time to emit ASM bytecode. Emitted `.class` files retain zero ANTLR4 or parse-tree references. *(Post-`BIP014-P1`, this coupling shrinks to `HirBuilder` alone.)* |
+| **Compiler (pre-`BIP014`)** | [`CodeGenerator.java`](../../src/main/java/org/babblelang/compiler/CodeGenerator.java) (5,996 lines), `BabbleCompiler` | Walks `BabbleParser.*Context` **once** at compile time to emit ASM bytecode. Emitted `.class` files retain zero ANTLR4 or parse-tree references. *(Post-`BIP014-I1`, this coupling shrinks to `HirBuilder` alone.)* |
 | **Tests** | `ParserGrammarTestCase`, `ResolverTestCase`, `TypeCheckerTestCase`, `EffectsTestCase`, `ScriptTestCase`, `InterpreterNamespaceTest`, `Rm003P1AnalysisTestCase`, `BatestCoverageReporter` | Direct SLL/predicate grammar invariants and AST/scope unit tests. |
 
 ### 2.3 Grammar Simplicity After `BIP012` (`RM006`)
@@ -89,7 +89,7 @@ A natural first question before replacing ANTLR4 is whether a newer release of A
 
 ### Option 1 — Status Quo: Keep ANTLR4 4.13.2 (Direct CST)
 
-Keep `Babble.g4`, `antlr4-maven-plugin:4.13.2`, and `antlr4-runtime:4.13.2`, continuing to have `analysis`, `Formatter`, `Interpreter`, and `CodeGenerator` (or `HirBuilder` post-`BIP014-P1`) consume `BabbleParser.*Context` directly.
+Keep `Babble.g4`, `antlr4-maven-plugin:4.13.2`, and `antlr4-runtime:4.13.2`, continuing to have `analysis`, `Formatter`, `Interpreter`, and `CodeGenerator` (or `HirBuilder` post-`BIP014-I1`) consume `BabbleParser.*Context` directly.
 
 * **Pros:**
   * **Zero migration cost** (~41 files untouched); preserves full engineering velocity for `BIP013`, `BIP014`, and upcoming syntax ergonomics.
@@ -183,7 +183,7 @@ Write a self-contained pure-Java lexer (`BabbleLexer`), recursive-descent parser
   * **Full control over diagnostics, error recovery & REPL classification:** Context-aware error messages, optional multi-error recovery (`[Kla23]`), and single-pass `BabbleSession.classify`.
   * **Optimal for GraalVM Native Image (`BIP006` §9):** Plain static Java with zero ATN/reflection machinery.
 * **Cons:**
-  * **Full migration cost (~41 files pre-`BIP014`, fewer post-`BIP014-P1`).**
+  * **Full migration cost (~41 files pre-`BIP014`, fewer post-`BIP014-I1`).**
   * **Manual parser maintenance:** Grammar changes are code edits rather than editing a 242-line `.g4` file; precedence, `NL` rules, and LL(2) lookahead must be disciplined by unit tests (and optionally a kept-in-sync EBNF doc).
   * **Parser code enters the coverage/testing surface:** Unlike generated `BabbleParser.java` (currently excluded from `-Pbatest` JaCoCo), hand-written lexer/parser code must be owned, fuzzed, and tested for edge cases (malformed escapes, deep nesting / stack overflow, EOF handling).
 
@@ -200,13 +200,13 @@ Write a self-contained pure-Java lexer (`BabbleLexer`), recursive-descent parser
 | **Cold-start & memory** | ATN load + growing DFA cache | ATN load + double tree alloc | Fast, low memory | Native init + FFM marshaling | Packrat $O(N \cdot |R|)$ / combinators | **Fastest, lowest memory** |
 | **Static exhaustiveness (`javac`)** | No (visitor fall-through) | **Yes** (sealed records) | Only if custom AST written | No | Only if custom AST written | **Yes** (sealed records) |
 | **Syntax diagnostics** | Generic (`BailErrorStrategy`) | Generic (`BailErrorStrategy`) | Moderate | Good for IDE, weak for compiler | Weak (backtracking obscures site) | **Full control** |
-| **Migration blast radius** | **Zero** | High (~41 files / fewer post-`BIP014-P1`) | High | Very high (+ native packaging) | High | High (~41 files / fewer post-`BIP014-P1`) |
+| **Migration blast radius** | **Zero** | High (~41 files / fewer post-`BIP014-I1`) | High | Very high (+ native packaging) | High | High (~41 files / fewer post-`BIP014-I1`) |
 
 ---
 
-## 6. Asymmetric Impact: Interpreter vs. Compiler (Pre-`BIP014` vs. Post-`BIP014-P1`)
+## 6. Asymmetric Impact: Interpreter vs. Compiler (Pre-`BIP014` vs. Post-`BIP014-I1`)
 
-Because Babble runs both a parse-tree [`Interpreter`](../../src/main/java/org/babblelang/engine/impl/Interpreter.java) (reference oracle) and a bytecode [`CodeGenerator`](../../src/main/java/org/babblelang/compiler/CodeGenerator.java) (default execution mode), **and** because `BIP014-P1` already plans to introduce `org.babblelang.ir.hir` (`HIR`), the impact of removing ANTLR4 differs sharply by backend and by sequencing.
+Because Babble runs both a parse-tree [`Interpreter`](../../src/main/java/org/babblelang/engine/impl/Interpreter.java) (reference oracle) and a bytecode [`CodeGenerator`](../../src/main/java/org/babblelang/compiler/CodeGenerator.java) (default execution mode), **and** because `BIP014-I1` already plans to introduce `org.babblelang.ir.hir` (`HIR`), the impact of removing ANTLR4 differs sharply by backend and by sequencing.
 
 ### 6.1 Impact on the Babble Interpreter
 
@@ -226,7 +226,7 @@ Today, [`Interpreter.java`](../../src/main/java/org/babblelang/engine/impl/Inter
   * **Option 6 additionally enables a zero-dependency embedded interpreter** (no `antlr4-runtime` and no ASM required when running in `Mode.INTERPRET`).
 * **Interaction with `BIP014` (`HIR`) and the Reference Oracle Invariant:**
   * `BIP014` §3.3 specifies that `Interpreter` remains deliberately simple and unoptimized as Babble's reference semantics for `BIP009` differential testing.
-  * Post-`BIP014-P1`, one might ask: *could `Interpreter` simply interpret unoptimized `-O0` `HIR` instead of introducing a separate `org.babblelang.ast`?*
+  * Post-`BIP014-I1`, one might ask: *could `Interpreter` simply interpret unoptimized `-O0` `HIR` instead of introducing a separate `org.babblelang.ast`?*
   * **Trade-off:** Interpreting `-O0` `HIR` avoids maintaining a second tree representation, **but weakens differential testing** — any lowering bug in `HirBuilder` (e.g., wrong `PrimitiveKind`, bad desugaring, or missed narrowing) would then affect *both* `Interpreter` and `CodeGenerator`, hiding divergences from `DifferentialTestCase` and `.batest`. Keeping `Interpreter` on `org.babblelang.ast` (independent of `HirBuilder`) preserves full two-path oracle independence.
 
 ### 6.2 Impact on the Babble Compiler
@@ -235,17 +235,17 @@ Today, [`Interpreter.java`](../../src/main/java/org/babblelang/engine/impl/Inter
 * **At compile time (`babblec` and JIT `Mode.COMPILE`):**
   * **Cold-start & memory:** Options 3 and 6 eliminate ANTLR4's ATN loading and static `PredictionContextCache`/DFA memory growth across long-lived `BabbleScriptEngine` instances.
   * **Packaging:** Option 6 (and 3) leaves OW2 ASM as the **sole** non-JDK dependency of `babble.jar`, simplifying distribution and future GraalVM Native Image builds of `babblec` (`BIP006` §9).
-  * **Codegen & analysis ergonomics:** Strongly dependent on whether `BIP015` runs **before** or **after** `BIP014-P1` (see §6.3).
+  * **Codegen & analysis ergonomics:** Strongly dependent on whether `BIP015` runs **before** or **after** `BIP014-I1` (see §6.3).
 
-### 6.3 Side-by-Side Timeline Comparison: Pre-`BIP014` vs. Post-`BIP014-P1`
+### 6.3 Side-by-Side Timeline Comparison: Pre-`BIP014` vs. Post-`BIP014-I1`
 
-| Dimension | Timeline A: `BIP015` **Before** `BIP014-P1` | Timeline B: `BIP015` **After** `BIP014-P1` |
+| Dimension | Timeline A: `BIP015` **Before** `BIP014-I1` | Timeline B: `BIP015` **After** `BIP014-I1` |
 |---|---|---|
 | **Compiler files coupled to ANTLR4** | **`CodeGenerator.java` (5,996 lines)** + `BabbleCompiler` | **Only `HirBuilder`** (the entire mid-end `org.babblelang.opt.*`, `HirEmitter`, `MirEmitter`, `ClassGen`, `InterfaceGen`, `ConstantPool` are already 100% detached from ANTLR4!) |
 | **Total migration blast radius** | ~41 files (including rewriting all 5,996 lines of `CodeGenerator.java` from `BabbleParser.*Context` to AST) | ~25–30 files (`Formatter`, `BabbleSession`, `analysis`, `Interpreter`, `HirBuilder`, tests) — **avoids touching `CodeGenerator` / `HirEmitter` twice** |
-| **Impact on `BIP014-P1` (`HirBuilder`)** | `HirBuilder` is written directly against the clean sealed-record AST (no CST noise, exhaustive `switch`) | `HirBuilder` is written first against `BabbleParser.*Context`, then migrated once to the new AST |
-| **Value of Option 2 (ANTLR4 + AST)** | Higher before `BIP014-P1` (protects `CodeGenerator`) | Lower after `BIP014-P1` (compiler backend is *already* isolated behind `HIR`; only `analysis` and `Interpreter` still see CST) |
-| **Impact on `BIP013` / syntax velocity** | Delays `BIP014` and language features until parser/AST migration finishes | Lets `BIP013` and `BIP014-P0`–`P2` land first on the working `SLL` ANTLR4 grammar, then shrinks `BIP015`'s compiler touch-points to `HirBuilder` |
+| **Impact on `BIP014-I1` (`HirBuilder`)** | `HirBuilder` is written directly against the clean sealed-record AST (no CST noise, exhaustive `switch`) | `HirBuilder` is written first against `BabbleParser.*Context`, then migrated once to the new AST |
+| **Value of Option 2 (ANTLR4 + AST)** | Higher before `BIP014-I1` (protects `CodeGenerator`) | Lower after `BIP014-I1` (compiler backend is *already* isolated behind `HIR`; only `analysis` and `Interpreter` still see CST) |
+| **Impact on `BIP013` / syntax velocity** | Delays `BIP014` and language features until parser/AST migration finishes | Lets `BIP013` and `BIP014-I0`–`I2` land first on the working `SLL` ANTLR4 grammar, then shrinks `BIP015`'s compiler touch-points to `HirBuilder` |
 
 ---
 
@@ -290,10 +290,10 @@ Today, [`Interpreter.java`](../../src/main/java/org/babblelang/engine/impl/Inter
 Rather than prescribing a choice now, this proposal frames the decision around eight open questions. Settling them into `BIP015-D1`–`D8` will determine whether Babble stays on ANTLR4 or transitions to another option.
 
 * **`BIP015-Q1` (Primary Option Selection):** Which of Options 1–6 best fits Babble's long-term priorities (dependency minimalism, interpreter speed, compiler/front-end exhaustiveness, LSP/macro readiness, vs. near-term feature velocity)?
-* **`BIP015-Q2` (Sequencing with `BIP014`):** If an AST or parser migration (Options 2–6) is chosen, should it execute **before `BIP014-P1`** (so `HirBuilder` is written once against the new AST, at the cost of migrating `CodeGenerator.java` or deferring `BIP014`) or **after `BIP014-P1`** (shrinking the compiler touch-point from 5,996 lines of `CodeGenerator` to `HirBuilder` alone)?
+* **`BIP015-Q2` (Sequencing with `BIP014`):** If an AST or parser migration (Options 2–6) is chosen, should it execute **before `BIP014-I1`** (so `HirBuilder` is written once against the new AST, at the cost of migrating `CodeGenerator.java` or deferring `BIP014`) or **after `BIP014-I1`** (shrinking the compiler touch-point from 5,996 lines of `CodeGenerator` to `HirBuilder` alone)?
 * **`BIP015-Q3` (Sequencing with `BIP013` & upcoming syntax):** Should any parser/AST transition happen *before* adding `BIP013` (`for`/`in`) and destructuring/indexing syntax, or *after* those grammar additions settle?
 * **`BIP015-Q4` (Tree Model for `Formatter` & Future LSP):** If moving to a Babble-owned tree (Options 2 or 6), is a typed sealed-record AST carrying token-index `SourceSpan`s sufficient for `Formatter` and future LSP/macros, or should Babble adopt a lossless green/red CST architecture (`[Kla23]`)?
-* **`BIP015-Q5` (`Interpreter` Representation Post-`BIP014-P1`):** If both `org.babblelang.ast` and `BIP014`'s `HIR` exist, should `Interpreter` walk `org.babblelang.ast` (preserving full differential-testing independence from `HirBuilder`) or interpret `-O0` `HIR`?
+* **`BIP015-Q5` (`Interpreter` Representation Post-`BIP014-I1`):** If both `org.babblelang.ast` and `BIP014`'s `HIR` exist, should `Interpreter` walk `org.babblelang.ast` (preserving full differential-testing independence from `HirBuilder`) or interpret `-O0` `HIR`?
 * **`BIP015-Q6` (Side-Table Indexing):** Should a Babble-owned AST assign dense sequential `int id`s so `ScopeAnalysis` and `Interpreter` can replace `IdentityHashMap` / `ParseTreeProperty` with O(1) arrays, or retain `IdentityHashMap` initially to minimize diff size?
 * **`BIP015-Q7` (Syntax Error Compatibility vs. Resilience):** Should any new parser preserve exact fail-fast `ParseFailure` wording for 100% `.batest` compatibility first, or immediately introduce richer contextual diagnostics and multi-error recovery (updating syntax-error `.batest` goldens)?
 * **`BIP015-Q8` (Coverage Gate & Reference Grammar Doc):** If ANTLR4 is removed (Options 3, 5, or 6), should `org.babblelang.parser` / `org.babblelang.ast` be added to `BIP009`'s `-Pbatest` JaCoCo `>= 75%` branch gate (removing the `org.babblelang.parser.*` exclusion in [`pom.xml`](../../pom.xml)), and should a canonical EBNF grammar reference be maintained in `docs/`?

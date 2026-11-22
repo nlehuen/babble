@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 016 |
 | **Date** | 2026-11-19 |
-| **Status** | **Implemented** (`BIP016-Q1`–`Q7` → `BIP016-D1`–`D10` decided and implemented across `BIP016-P1`–`P4`; verified across 1,658 dual-mode tests, pure `SLL`, `-format -check`, and byte-for-byte Argon `scene.ppm` parity) |
+| **Status** | **Implemented** (`BIP016-Q1`–`Q7` → `BIP016-D1`–`D10` decided and implemented across `BIP016-I1`–`I4`; verified across 1,658 dual-mode tests, pure `SLL`, `-format -check`, and byte-for-byte Argon `scene.ppm` parity) |
 | **Depends on** | Function effects and algebraic properties (`RM002` / `RM007`, [bip007_effects.md](bip007_effects.md)), core scalar & collection types (`RM005`, [bip011_core-types.md](bip011_core-types.md)), predicate-free LL(1)/LL(2) grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)), compiler optimization passes ([bip014_optimization-passes.md](bip014_optimization-passes.md)) |
 | **Scope** | Surface ergonomics of Babble's effect and ownership annotations: empirical audit of `examples/raytracer-argon/`, separating **internal orthogonal compiler traits** (`@UPPERCASE`) from a **closed opt-out surface vocabulary** (`BIP016-D1`, `D7`), making **`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}` the unmarked default on typed `fn`s, `export`s, `interface`s, and function types** (`BIP016-D3`, `D4`), inferring `@NOTHROW` & `@TERMINATING` with opt-in `nothrow` (`BIP016-D2`), unifying `{@UNIQUE, @SHARED, @BORROWED}` + `frozen T` onto one ownership axis orthogonal to effects (`volatile` / `io`) and mutability (`@CONST` / `mut`) (`BIP016-D5`), higher-order specialization (`BIP016-D6`), `axiom pure` & `org.babblelang.effects` alignment (`BIP016-D8`), companion `EffectChecker` precision fixes + single-pass migration (`BIP016-D9`), and **return-through borrow** so `id`, `min`, and getters never require `shared` while closing both `unique`/`freeze` and `frozen` soundness holes (`BIP016-D10`) |
 
@@ -53,7 +53,7 @@ def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult? -> (
 )
 ```
 
-This proposal documents the complete Argon empirical data (§2), re-evaluates `BIP007` through the two-layer trait/annotation model and `@NOTHROW` optimizer audit (§3), surveys prior art across ten languages and academic effect systems (§4), compares four concrete consolidation designs (§5), specifies the final consolidated semantics, ownership state machine, return-through-borrow design (`BIP016-D10`), and Argon impact (§6), records all settled decisions `BIP016-D1`–`D10` (resolving `BIP016-Q1`–`Q7`) plus the completed implementation phases `BIP016-P1`–`P4` (§7), and provides a verified bibliography (§8).
+This proposal documents the complete Argon empirical data (§2), re-evaluates `BIP007` through the two-layer trait/annotation model and `@NOTHROW` optimizer audit (§3), surveys prior art across ten languages and academic effect systems (§4), compares four concrete consolidation designs (§5), specifies the final consolidated semantics, ownership state machine, return-through-borrow design (`BIP016-D10`), and Argon impact (§6), records all settled decisions `BIP016-D1`–`D10` (resolving `BIP016-Q1`–`Q7`) plus the completed implementation phases `BIP016-I1`–`I4` (§7), and provides a verified bibliography (§8).
 
 ---
 
@@ -349,7 +349,7 @@ Complete ownership transition & compile-error matrix:
 
 * **Value / argument capability order:** **`@UNIQUE`** $<:$ **`@SHARED`** $<:$ **`@BORROWED`** (and **`frozen T`** $<:$ **`@CONST @BORROWED T`** when the return type cannot leak a non-frozen alias; see below)
 * **Function parameter subtyping (contravariant):** **`fn (x: T)`** $<:$ **`fn (shared x: T)`** $<:$ **`fn (unique x: T)`** *(matching `BIP007` §3.4: a callee promising not to retain `x` satisfies one that may retain `x`, which satisfies one demanding ownership of `x`)*.
-* **Impact on `BIP007-P2`:** Making `{unique, shared, @BORROWED}` strictly mutually exclusive eliminates `unique shared` completely and collapses Layer 1's 3 per-slot booleans into **2 per-slot axes** (mutability + 3-state ownership), retiring explicit `unique borrow` (`@UNIQUE + @BORROWED`, 0 uses in Argon; single-target read-only and `hermetic mut` calls already preserve `unique` across `@BORROWED`).
+* **Impact on `BIP007-I2`:** Making `{unique, shared, @BORROWED}` strictly mutually exclusive eliminates `unique shared` completely and collapses Layer 1's 3 per-slot booleans into **2 per-slot axes** (mutability + 3-state ownership), retiring explicit `unique borrow` (`@UNIQUE + @BORROWED`, 0 uses in Argon; single-target read-only and `hermetic mut` calls already preserve `unique` across `@BORROWED`).
 
 #### Return-Through Borrow: Making `id` and `min` Work Without `shared` (`BIP016-D10`)
 
@@ -462,7 +462,7 @@ Because consolidation is strictly a **Layer 2 front-end mapping** into Layer 1's
 
 ---
 
-## 7. Settled Decisions (`BIP016-D1`–`D10`) & Implementation Summary (`BIP016-P1`–`P4`)
+## 7. Settled Decisions (`BIP016-D1`–`D10`) & Implementation Summary (`BIP016-I1`–`I4`)
 
 ### 7.1 Settled Decisions (`BIP016-Q1`–`Q7` → `BIP016-D1`–`D10`)
 
@@ -493,12 +493,12 @@ All design questions have been resolved into ten binding design decisions:
   1. `CallableSummary` tracks exact return provenance (`returnParams`, `returnThis`, `returnExternal`, `ctorStoredParams`) across concrete functions/constructors (and conservatively treats mutable non-`unique` returns of abstract interfaces/function types as potentially aliasing borrowed arguments and `this`), propagating alias origins to the caller and demoting `@UNIQUE` locals flowing into non-discarded mutable non-`unique` returns (preserving `freeze`, `unique`, and `mut` exclusivity soundness).
   2. `CallSolver` and `TypeAlgebra.functionRelates` gate `frozen T <: @CONST @BORROWED T` widening on `uniqueResult || isDeeplyImmutable(result)` so monomorphic return-through-borrow functions cannot silently unfreeze a `frozen` argument (while generic `id(fb)` / `min(fb1, fb2, cmp)` infer `T = frozen Box` directly and return `frozen Box`).
 
-### 7.2 Implementation Status (`BIP016-P1`–`P4` — Completed)
+### 7.2 Implementation Status (`BIP016-I1`–`I4` — Completed)
 
-* **`BIP016-P1` — Grammar, Formatter & Java Host API (`Babble.g4`, `Formatter`, `org.babblelang.effects`):** **Implemented.** Updated `Babble.g4` (`IO`, `VOLATILE`, `SHARED` added; `HERMETIC`, `DETERMINISTIC`, `BORROW`, `IMPURE` retired; `PURE` restricted to `axiom`; all tokens in `memberName`, 0 predicates, pure `PredictionMode.SLL`), `org.babblelang.effects` (`Effect`, `@Pure`, `@Volatile`, `@Shared`, `@IO`), `BabbleScriptEngine.markIO`, and `BytecodeEffectAnalyzer.suggestAxiom`.
-* **`BIP016-P2` — `EffectChecker`, `Type.Parameter`, `EffectSet`, `CallSolver` & `TypeAlgebra`:** **Implemented.** Pure-by-default (`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`), completely untyped inline-lambda inference (`BIP016-D3`), unified 3-state ownership axis (`BIP016-D4`/`D5`), bounded `fn io` HOF specialization (`BIP016-D6`), both Argon precision fixes (`BIP016-D9`), and return-through-borrow provenance + frozen-safe return gate (`BIP016-D10`).
-* **`BIP016-P3` — Single-Pass Codebase & Test Migration:** **Implemented.** Migrated `examples/raytracer-argon/` (`439 → 28` tokens, **−93.6%**, only **1** `shared` token), `examples/raytracer-fable/`, `src/test/babble/`, all Java JUnit suites, and all 68 `.batest` suites (`940` cases), including comprehensive tests for `BIP016-D1`–`D10` (`EffectsTestCase`, `OwnershipTestCase`, `effects/*.batest`).
-* **`BIP016-P4` — Dual-Mode Verification & Docs Alignment:** **Verified.** Full dual-mode `mvn -B test` (`1,658` tests, 0 failures, 0 errors across `interpret` + `compile` with `babble.verify=true`), `ParserGrammarTestCase` (pure `SLL`), `RuntimeBoundaryTestCase` (0 lines changed in `org.babblelang.runtime`), `-format -check` clean across `src/test/babble` and `examples/`, and byte-for-byte identical `examples/raytracer-argon/scene.ppm` (`1,021,340` bytes via `babblec` AOT jar); aligned `docs/design/bip007_effects.md`, `examples/raytracer-argon/README.md`, and `docs/design/README.md`.
+* **`BIP016-I1` — Grammar, Formatter & Java Host API (`Babble.g4`, `Formatter`, `org.babblelang.effects`):** **Implemented.** Updated `Babble.g4` (`IO`, `VOLATILE`, `SHARED` added; `HERMETIC`, `DETERMINISTIC`, `BORROW`, `IMPURE` retired; `PURE` restricted to `axiom`; all tokens in `memberName`, 0 predicates, pure `PredictionMode.SLL`), `org.babblelang.effects` (`Effect`, `@Pure`, `@Volatile`, `@Shared`, `@IO`), `BabbleScriptEngine.markIO`, and `BytecodeEffectAnalyzer.suggestAxiom`.
+* **`BIP016-I2` — `EffectChecker`, `Type.Parameter`, `EffectSet`, `CallSolver` & `TypeAlgebra`:** **Implemented.** Pure-by-default (`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`), completely untyped inline-lambda inference (`BIP016-D3`), unified 3-state ownership axis (`BIP016-D4`/`D5`), bounded `fn io` HOF specialization (`BIP016-D6`), both Argon precision fixes (`BIP016-D9`), and return-through-borrow provenance + frozen-safe return gate (`BIP016-D10`).
+* **`BIP016-I3` — Single-Pass Codebase & Test Migration:** **Implemented.** Migrated `examples/raytracer-argon/` (`439 → 28` tokens, **−93.6%**, only **1** `shared` token), `examples/raytracer-fable/`, `src/test/babble/`, all Java JUnit suites, and all 68 `.batest` suites (`940` cases), including comprehensive tests for `BIP016-D1`–`D10` (`EffectsTestCase`, `OwnershipTestCase`, `effects/*.batest`).
+* **`BIP016-I4` — Dual-Mode Verification & Docs Alignment:** **Verified.** Full dual-mode `mvn -B test` (`1,658` tests, 0 failures, 0 errors across `interpret` + `compile` with `babble.verify=true`), `ParserGrammarTestCase` (pure `SLL`), `RuntimeBoundaryTestCase` (0 lines changed in `org.babblelang.runtime`), `-format -check` clean across `src/test/babble` and `examples/`, and byte-for-byte identical `examples/raytracer-argon/scene.ppm` (`1,021,340` bytes via `babblec` AOT jar); aligned `docs/design/bip007_effects.md`, `examples/raytracer-argon/README.md`, and `docs/design/README.md`.
 
 ---
 

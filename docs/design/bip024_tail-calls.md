@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 024 |
 | **Date** | 2026-11-22 |
-| **Status** | Implemented (`BIP024-D1`–`D9` decided and implemented, `BIP024-P1`–`P3` ; §7 lists what landed) |
+| **Status** | Implemented (`BIP024-D1`–`D9` decided and implemented, `BIP024-I1`–`I3` ; §7 lists what landed) |
 | **Depends on** | the analysis passes and `LoweringAnalyzer` ([bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), static argument binding ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)), the `HIR` compiler ([bip014_optimization-passes.md](bip014_optimization-passes.md)) |
 | **Scope** | a call of a function to itself in tail position runs in constant stack space, in the interpreter and in compiled code at every optimization level ; across `analysis.TailCalls`, `ScopeAnalysis`, the `Interpreter`'s `Function`, `HirBuilder`, the `HIR` passes and `HirEmitter` |
 
@@ -46,7 +46,7 @@ Babble already has `recurse`, a name for the running function, so it is closest 
   * `return e` in *statement position* puts `e` in tail position. A statement of the function's block is in statement position, and so is a statement of a block in tail or statement position, including the branches of an `if` and the bodies of `while` and `for` loops. Nothing else is : not a `def`'s value, an argument, an operand, a `break` value, nor the operands of `and`, `or`, `not`, `as`, `is` or `!`.
 
   Statement position guarantees that compiled code has nothing on the operand stack when it jumps, the invariant loop heads already keep.
-* **`BIP024-D4` — Statically bound, unchanged values.** The call binds its arguments at compile time (`BIP021-D4`), or passes as many positional arguments as there are parameters ; and nothing between the call and the function's result checks its value at runtime or widens it (no `checkedType`, no numeric widening on the call, or on any block, branch or `return` in between). The widening of the function's own result still applies, to the value of the last activation. A function with a rest parameter (`xs: T...`) and a call with a spread argument (`...e`, both `BIP021-P4`) are left out.
+* **`BIP024-D4` — Statically bound, unchanged values.** The call binds its arguments at compile time (`BIP021-D4`), or passes as many positional arguments as there are parameters ; and nothing between the call and the function's result checks its value at runtime or widens it (no `checkedType`, no numeric widening on the call, or on any block, branch or `return` in between). The widening of the function's own result still applies, to the value of the last activation. A function with a rest parameter (`xs: T...`) and a call with a spread argument (`...e`, both `BIP021-I4`) are left out.
 * **`BIP024-D5` — A fresh activation per call.** Each tail call starts a new activation as a call would : a new frame, the names the body defines declared again (`Name used before definition` until their `def` runs), new cells for captured variables, and the default values of omitted optional parameters evaluated again. A closure created by one activation keeps that activation's parameters. All arguments are evaluated before any parameter changes.
 * **`BIP024-D6` — Frames are gone.** An optimized activation leaves no frame : Java stack traces show one frame for the whole loop. Babble errors give the line of the innermost frame, so their messages do not change. A tail recursion that never ends now runs, like `while true`, where it used to fail with `Stack overflow` : a test that wants that error needs a recursion out of tail position, such as `1 + recurse(n + 1)`.
 * **`BIP024-D7` — Recursion without a base case.** A function whose block always ends in a self tail call (through block expressions, `return`, `forever`, and `if` branches, each `if` with an `else`), with no other `return`, and that cannot throw (`nothrow` as inferred by `BIP007`) can never end : it is an error at its tail expression, `Recursion without a base case : r. If this is intended, wrap the expression with forever`. `fn (n: int): int -> (recurse(n + 1))` is one. A function that may throw is not reported, as it may end with an error : `fn io () -> (handle(accept()) ; recurse())` is a server loop, and `println` may throw.
@@ -78,18 +78,18 @@ FOREVER: 'forever' ;
 
 ## 6. Phases
 
-* **`BIP024-P1` — Analysis and interpreter.** `TailCalls`, `ScopeAnalysis.isSelfTailCall`, `TailCall` and the loop in `Function.invoke`.
-* **`BIP024-P2` — Compiler.** `HirExpr.SelfTailCall`, the passes, `HirVerifier`, `HirPrinter`, and the loop heads in `HirEmitter`.
-* **`BIP024-P3` — Tests and documents.** `src/test/babble/TailCalls.ba` (every mode), a `.batest` file, golden tests of the marked calls, bytecode and optimizer tests, a benchmark, the README.
+* **`BIP024-I1` — Analysis and interpreter.** `TailCalls`, `ScopeAnalysis.isSelfTailCall`, `TailCall` and the loop in `Function.invoke`.
+* **`BIP024-I2` — Compiler.** `HirExpr.SelfTailCall`, the passes, `HirVerifier`, `HirPrinter`, and the loop heads in `HirEmitter`.
+* **`BIP024-I3` — Tests and documents.** `src/test/babble/TailCalls.ba` (every mode), a `.batest` file, golden tests of the marked calls, bytecode and optimizer tests, a benchmark, the README.
 
 ---
 
 ## 7. What landed
 
-* `BIP024-P1` : `analysis.TailCalls`, `ScopeAnalysis.isSelfTailCall`, the interpreter's `TailCall` and its loop in `Function.invoke`.
-* `BIP024-P2` : `HirExpr.SelfTailCall` (`HirBuilder` lowers every marked call to it, whatever the function's entry points), `HirRewriter`, `HirPrinter` (`tail-call #N`), `HirVerifier` (only in a function), `HirPurity` (impure, so never moved), `InlinePass` (never inlines a function holding one), and `HirEmitter`'s loop heads : the jump goes back to the method's first instruction, before the frame is entered. `src/test/babble/TailCalls.ba` runs a million activations of each kind in every mode. The tests that provoked `Stack overflow` with `recurse(n + 1)` use `1 + recurse(n + 1)`.
+* `BIP024-I1` : `analysis.TailCalls`, `ScopeAnalysis.isSelfTailCall`, the interpreter's `TailCall` and its loop in `Function.invoke`.
+* `BIP024-I2` : `HirExpr.SelfTailCall` (`HirBuilder` lowers every marked call to it, whatever the function's entry points), `HirRewriter`, `HirPrinter` (`tail-call #N`), `HirVerifier` (only in a function), `HirPurity` (impure, so never moved), `InlinePass` (never inlines a function holding one), and `HirEmitter`'s loop heads : the jump goes back to the method's first instruction, before the frame is entered. `src/test/babble/TailCalls.ba` runs a million activations of each kind in every mode. The tests that provoked `Stack overflow` with `recurse(n + 1)` use `1 + recurse(n + 1)`.
 * `BIP024-D7`–`D9` : `Recursion without a base case`, `Loop without an exit`, and the `forever` keyword (grammar, both backends, `TypeChecker`, `EffectChecker`), with golden tests in `TypeCheckerTestCase`, `DifferentialTestCase` snippets, and `forever` in `TailCalls.ba`.
-* `BIP024-P3` : `TailCallsTestCase` (golden lists of the marked calls, tail positions or not, self calls only), `functions/tail_calls.batest` (defaults and declarations per activation, named arguments, objects, an error inside an optimized loop, mutual recursion still overflowing, the `forever` errors), `BabbleCompilerTestCase` (each entry point of a tail-recursive function jumps back and never calls itself), `OptimizerTestCase` (lowered at `-O0`, never inlined), the README tour, and a benchmark : a 300,000-deep tail-recursive sum takes 0.06 ms compiled, as the equivalent `while` loop, and `fib(25)` is unchanged. `examples/raytracer-argon/scene.ppm` renders byte for byte.
+* `BIP024-I3` : `TailCallsTestCase` (golden lists of the marked calls, tail positions or not, self calls only), `functions/tail_calls.batest` (defaults and declarations per activation, named arguments, objects, an error inside an optimized loop, mutual recursion still overflowing, the `forever` errors), `BabbleCompilerTestCase` (each entry point of a tail-recursive function jumps back and never calls itself), `OptimizerTestCase` (lowered at `-O0`, never inlined), the README tour, and a benchmark : a 300,000-deep tail-recursive sum takes 0.06 ms compiled, as the equivalent `while` loop, and `fib(25)` is unchanged. `examples/raytracer-argon/scene.ppm` renders byte for byte.
 
 ---
 

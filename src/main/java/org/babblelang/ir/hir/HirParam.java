@@ -3,7 +3,7 @@ package org.babblelang.ir.hir;
 import org.babblelang.analysis.ScopeAnalysis;
 
 /**
- * Parameter declaration of a {@link HirFunction} or {@link HirClass} constructor (BIP014-P1).
+ * Parameter declaration of a {@link HirFunction} or {@link HirClass} constructor (BIP014-I1).
  */
 public record HirParam(
         String name,

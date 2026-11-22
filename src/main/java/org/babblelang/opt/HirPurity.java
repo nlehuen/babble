@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Shared {@code BIP007}/{@code BIP016}-gated soundness queries over {@link HirExpr} (BIP014-P2).
+ * Shared {@code BIP007}/{@code BIP016}-gated soundness queries over {@link HirExpr} (BIP014-I2).
  *
  * <p>Every query here is conservatively sound: returning {@code false} merely skips an
  * optimization, while returning {@code true} guarantees observable equivalence with the

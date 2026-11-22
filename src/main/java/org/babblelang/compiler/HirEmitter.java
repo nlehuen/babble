@@ -40,7 +40,7 @@ import java.util.Set;
 import static org.objectweb.asm.Opcodes.*;
 
 /**
- * ANTLR-free JVM bytecode emitter consuming a {@link HirModule} (BIP014-P1, BIP014-D8).
+ * ANTLR-free JVM bytecode emitter consuming a {@link HirModule} (BIP014-I1, BIP014-D8).
  *
  * <p>Emits the script class, compiled plain classes ({@link ClassGen}),
  * JVM interfaces ({@link InterfaceGen}), and chunked constant-pool initialization

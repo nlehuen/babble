@@ -184,7 +184,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     /**
      * Opt-in ASM bytecode static effect analysis for unannotated closed Java helper methods
-     * ({@code BIP007-P3}, default {@code false}).
+     * ({@code BIP007-I3}, default {@code false}).
      */
     public BabbleScriptEngine enableBytecodeEffectAnalysis(boolean enable) {
         synchronized (moduleLock) {

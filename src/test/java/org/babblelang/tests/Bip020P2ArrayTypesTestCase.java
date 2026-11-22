@@ -21,7 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Tests for BIP020-P2 : the type {@code array of T}, JVM representation, aliases,
+ * Tests for BIP020-I2 : the type {@code array of T}, JVM representation, aliases,
  * intersections, variance, Java parameter waiver, {@code is}/{@code as} and warnings.
  */
 public class Bip020P2ArrayTypesTestCase {

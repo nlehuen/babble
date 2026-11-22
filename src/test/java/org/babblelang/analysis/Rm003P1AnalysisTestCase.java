@@ -400,7 +400,7 @@ public class Rm003P1AnalysisTestCase {
         Assertions.assertArrayEquals(new ScopeAnalysis.PrimitiveKind[]{ScopeAnalysis.PrimitiveKind.NONE}, c3.signature().parameterKinds());
         Assertions.assertEquals(ScopeAnalysis.PrimitiveKind.NONE, c3.signature().returnKind());
 
-        // 4: b.opt(1) optional omitted -> lowered via InterfaceCallTarget with optionalParamBits (BIP021-P1)
+        // 4: b.opt(1) optional omitted -> lowered via InterfaceCallTarget with optionalParamBits (BIP021-I1)
         ScopeAnalysis.InterfaceCallTarget c4 = analysis.interfaceCallTarget(allCalls.get(4));
         Assertions.assertNotNull(c4);
         Assertions.assertEquals(box.id(), c4.interfaceTypeId());
@@ -408,7 +408,7 @@ public class Rm003P1AnalysisTestCase {
         Assertions.assertEquals(2, c4.signature().optionalParamBits());
         Assertions.assertEquals(2, analysis.argumentBinding(allCalls.get(4)).missingParamBits());
 
-        // 5: b.opt(a: 1, b: 2) named args -> lowered via InterfaceCallTarget (BIP021-P1)
+        // 5: b.opt(a: 1, b: 2) named args -> lowered via InterfaceCallTarget (BIP021-I1)
         ScopeAnalysis.InterfaceCallTarget c5 = analysis.interfaceCallTarget(allCalls.get(5));
         Assertions.assertNotNull(c5);
         Assertions.assertEquals(box.id(), c5.interfaceTypeId());

@@ -1,4 +1,4 @@
-;; Curated axioms for java.lang (BIP019-P4, P5, P6)
+;; Curated axioms for java.lang (BIP019-I4, I5, I6)
 
 axiom java.lang.Boolean: class nullmarked (
 )

@@ -17,7 +17,7 @@ import java.lang.reflect.Proxy;
 import java.util.List;
 
 /**
- * Tests for BIP020-P4 : generic array reference-binding and reifiability rules (§2.3, §2.6)
+ * Tests for BIP020-I4 : generic array reference-binding and reifiability rules (§2.3, §2.6)
  * across Babble and Java type variables, plus RM003 bridges for generic Java interface array methods (§2.8).
  */
 public class Bip020P4ArrayGenericsTestCase {

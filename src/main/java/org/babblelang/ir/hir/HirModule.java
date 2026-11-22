@@ -9,7 +9,7 @@ import java.util.Map;
 
 /**
  * Self-contained, ANTLR-free High-Level Typed IR ({@code HIR}) of a compiled Babble module or script
- * (BIP014-P1, BIP014-D8).
+ * (BIP014-I1, BIP014-D8).
  */
 public record HirModule(
         String className,

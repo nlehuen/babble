@@ -17,7 +17,7 @@ import java.util.function.UnaryOperator;
 
 /**
  * Copy-on-write structural rewriter over immutable {@link HirExpr} and {@link HirModule} trees
- * (BIP014-P2).
+ * (BIP014-I2).
  *
  * <p>Only allocates new record instances along rewritten paths; unchanged subtrees are shared by
  * reference.

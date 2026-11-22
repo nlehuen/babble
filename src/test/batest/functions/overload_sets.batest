@@ -1,7 +1,7 @@
 ;; Overload sets : static ambiguity checking, most-specific resolution, numeric widening ranks,
 ;; union/nullable/intersection splits, set types, target selection, generics, lambdas, spreads,
 ;; effects, modules, and sessions.
-;; References : BIP021-P5 (BIP021-D9..D16, D21), OverloadSolver, OverloadSet, CallSolver
+;; References : BIP021-I5 (BIP021-D9..D16, D21), OverloadSolver, OverloadSet, CallSolver
 
 ========== ov_shapes.ba ==========
 export def Circle = record (r: double) ()

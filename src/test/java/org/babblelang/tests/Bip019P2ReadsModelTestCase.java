@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests for {@code BIP019-P2} (reads of mutable state, {@code docs/design/bip019_refactoring-axioms.md} §4).
+ * Tests for {@code BIP019-I2} (reads of mutable state, {@code docs/design/bip019_refactoring-axioms.md} §4).
  */
 public class Bip019P2ReadsModelTestCase extends BabbleTestBase {
 

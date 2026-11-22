@@ -5,7 +5,7 @@ import org.babblelang.analysis.ScopeAnalysis;
 import java.util.List;
 
 /**
- * Structural and semantic invariant verifier for {@link HirModule} (BIP014-P1).
+ * Structural and semantic invariant verifier for {@link HirModule} (BIP014-I1).
  *
  * <p>Runs automatically whenever {@code babble.verify=true} (including all Maven compiled test
  * suites) after HIR construction and after every optimization pass.

@@ -1,4 +1,4 @@
-;; Curated axioms for java.io (BIP019-P6)
+;; Curated axioms for java.io (BIP019-I6)
 
 axiom java.io.StringWriter: class (
     def getBuffer: fn io (): java.lang.StringBuffer

@@ -25,7 +25,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * {@code O8} — Small-Function Inlining (BIP014-P2, BIP014-D2, BIP014-D5).
+ * {@code O8} — Small-Function Inlining (BIP014-I2, BIP014-D2, BIP014-D5).
  *
  * <p>Inlines small ({@code <= 25} HIR nodes), non-recursive, capture-free {@code DirectBabbleCall}s
  * intra-module (and exported small functions cross-module under {@code babblec} AOT only),
