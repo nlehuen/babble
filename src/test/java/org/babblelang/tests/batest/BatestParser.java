@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * Line-oriented parser for {@code .batest} files (BIP009-D1, BIP009-D3).
@@ -196,7 +197,23 @@ public final class BatestParser {
                     + " chars, comments excluded) : split it or add ';; LARGE: <reason>'");
         }
         String expected = String.join("\n", outcomeLines).strip();
+        checkRegexLines(sourceName, openLine + codeLines.size() + 2, outcomeLines);
         return new BatestFile.BatestCase(index, openLine, List.copyOf(inputs), hasSplitter, expected);
+    }
+
+    /** Rejects an invalid regular expression in an expected line, naming its line ({@code firstLine} is the first outcome line's). */
+    private static void checkRegexLines(String sourceName, int firstLine, List<String> outcomeLines) {
+        for (int i = 0; i < outcomeLines.size(); i++) {
+            String line = outcomeLines.get(i).strip();
+            if (line.startsWith(BatestFile.BatestCase.REGEX_PREFIX)) {
+                try {
+                    Pattern.compile(line.substring(BatestFile.BatestCase.REGEX_PREFIX.length()));
+                } catch (PatternSyntaxException e) {
+                    throw new IllegalArgumentException(sourceName + ":" + (firstLine + i)
+                            + ": invalid regular expression in expected outcome : " + e.getDescription());
+                }
+            }
+        }
     }
 
     private static boolean checkLargeDirective(String line, String sourceName, int lineNum) {

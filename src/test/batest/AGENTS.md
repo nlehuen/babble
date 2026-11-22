@@ -164,6 +164,12 @@ Why this is strictly better :
   - `{{{{{` / `}}}}}` (5+ braces on their own line) open and close a case's code block; text after `}}}}}` up to the next `{{{{{` or EOF is the expected outcome (trimmed; empty for silent passing cases).
   - `========== path.ba ==========` in the preamble declares a virtual module loaded via `MapModuleSource`; `==========` returns to the main preamble. Even without virtual modules, an empty `MapModuleSource` is active so missing imports fail portably.
   - `----------` (7+ hyphens on its own line) inside a case splits it into sequential `BabbleSession` inputs.
+  - An expected line starting with `~~ ` is a Java regular expression that the whole corresponding output line must match (the other lines compare literally, and the line counts must agree). Use it only for text that varies with the JDK version, such as a JDK exception's message, never to loosen a Babble message :
+
+    ```
+    }}}}}
+    ~~ java\.lang\.ArrayIndexOutOfBoundsException: .*\b5\b.*
+    ```
 - **Preamble semantics** :
   - Normal cases concatenate `preamble + "\n" + caseCode` into a fresh, isolated compilation unit and `ScriptRuntime` (so call-site inference and intra-file lowering work normally, and cases cannot leak state).
   - Session (`----------`) cases evaluate a non-empty, non-comment-only preamble as input 0 of a fresh `BabbleSession`, then each section sequentially (each input commits and freezes inferred types).
