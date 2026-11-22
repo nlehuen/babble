@@ -1,0 +1,15 @@
+;; Babble built-in prelude (BIP019-P7)
+
+axiom assert: fn (c: bool, message: any? = ...): bool
+axiom bool: fn (value: bool | string): bool
+axiom byte: fn (value: byte | short | int | long | float | double | java.lang.Number | char | string): byte
+axiom char: fn (value: char | byte | short | int | long | string): char
+axiom classof: fn nothrow (v: any? | frozen any): any?
+axiom double: fn (value: any): double
+axiom float: fn (value: byte | short | int | long | float | double | java.lang.Number | string): float
+axiom int: fn (value: any): int
+axiom long: fn (value: byte | short | int | long | float | double | java.lang.Number | char | string): long
+axiom same: fn nothrow commutative (a: any? | frozen any, b: any? | frozen any): bool
+axiom short: fn (value: byte | short | int | long | float | double | java.lang.Number | char | string): short
+axiom string: fn (value: any?): string
+axiom suppose: fn (c: bool, message: any? = ...): bool

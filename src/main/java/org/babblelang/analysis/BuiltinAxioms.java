@@ -43,18 +43,20 @@ public final class BuiltinAxioms {
     static final String AXIOMS_RESOURCE_ROOT = "org/babblelang/axioms/";
 
     /** Empty axiom set: knows nothing about Java classes, nullness, folding, or built-ins. */
-    public static final BuiltinAxioms EMPTY = new BuiltinAxioms(false, AxiomData.AxiomTable.EMPTY);
+    public static final BuiltinAxioms EMPTY = new BuiltinAxioms(false, AxiomData.AxiomTable.EMPTY, Map.of());
 
-    private static final BuiltinAxioms STANDARD = new BuiltinAxioms(true, null);
+    private static final BuiltinAxioms STANDARD = new BuiltinAxioms(true, null, null);
 
     private static final ThreadLocal<BuiltinAxioms> ACTIVE = new ThreadLocal<>();
 
     private final boolean loadFromClasspath;
     private final AxiomData.AxiomTable fixedTable;
+    private final Map<String, Type.Function> fixedBuiltins;
     private final Map<String, AxiomData.AxiomTable> packageCache = new ConcurrentHashMap<>();
     private final Map<Class<?>, Boolean> nullMarkedCache = new ConcurrentHashMap<>();
     private final Map<Class<?>, Boolean> immutableCache = new ConcurrentHashMap<>();
     private volatile Map<String, Type.Function> builtinsCache;
+    private volatile Set<Type.Function> builtinFnSet;
     private volatile AnnotationStubs annotationStubs;
 
     private record AnnotationStubs(
@@ -62,9 +64,10 @@ public final class BuiltinAxioms {
             Map<String, JavaNullability.Nullness> scopeNullness) {
     }
 
-    private BuiltinAxioms(boolean loadFromClasspath, AxiomData.AxiomTable fixedTable) {
+    private BuiltinAxioms(boolean loadFromClasspath, AxiomData.AxiomTable fixedTable, Map<String, Type.Function> fixedBuiltins) {
         this.loadFromClasspath = loadFromClasspath;
         this.fixedTable = fixedTable;
+        this.fixedBuiltins = fixedBuiltins;
     }
 
     /** The standard immutable built-in axioms loaded lazily from {@code org/babblelang/axioms/}. */
@@ -110,12 +113,15 @@ public final class BuiltinAxioms {
 
     /** Builds a standalone {@link BuiltinAxioms} from Babble axiom source text (for tests). */
     public static BuiltinAxioms fromSource(String source, String sourceName) {
-        AxiomData.AxiomTable table = parseAxiomFile(source, sourceName, true);
-        return new BuiltinAxioms(false, table);
+        Map<String, Type.Function> builtins = new LinkedHashMap<>();
+        AxiomData.AxiomTable table = parseAxiomFile(source, sourceName, true, builtins);
+        return new BuiltinAxioms(false, table, Collections.unmodifiableMap(builtins));
     }
 
     public boolean isEmpty() {
-        return this == EMPTY || (!loadFromClasspath && (fixedTable == null || fixedTable.isEmpty()));
+        return this == EMPTY || (!loadFromClasspath
+                && (fixedTable == null || fixedTable.isEmpty())
+                && (fixedBuiltins == null || fixedBuiltins.isEmpty()));
     }
 
     // ================================================================ Queries (§2.4)
@@ -240,18 +246,49 @@ public final class BuiltinAxioms {
         return ax != null && ax.effects().has(Effect.IDEMPOTENT);
     }
 
-    /** Built-in Babble function signatures from {@code builtins.ba} (empty until BIP019-P7 or when {@link #EMPTY}). */
+    /** Built-in Babble function signatures from {@code builtins.ba} (empty when {@link #EMPTY}). */
     public Map<String, Type.Function> builtins() {
-        if (isEmpty()) {
+        if (this == EMPTY) {
             return Map.of();
+        }
+        if (!loadFromClasspath) {
+            return fixedBuiltins != null ? fixedBuiltins : Map.of();
         }
         Map<String, Type.Function> cached = builtinsCache;
         if (cached != null) {
             return cached;
         }
-        // Populated in BIP019-P7 when builtins.ba is added.
-        builtinsCache = Map.of();
-        return builtinsCache;
+        String resourcePath = AXIOMS_RESOURCE_ROOT + "builtins.ba";
+        ClassLoader cl = BuiltinAxioms.class.getClassLoader();
+        Map<String, Type.Function> loaded = new LinkedHashMap<>();
+        try (InputStream in = cl != null ? cl.getResourceAsStream(resourcePath) : ClassLoader.getSystemResourceAsStream(resourcePath)) {
+            if (in != null) {
+                String source = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                parseAxiomFile(source, resourcePath, true, loaded);
+            }
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to read built-in axioms resource " + resourcePath, e);
+        }
+        Map<String, Type.Function> unmod = Collections.unmodifiableMap(loaded);
+        Set<Type.Function> idSet = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        idSet.addAll(unmod.values());
+        builtinFnSet = idSet;
+        builtinsCache = unmod;
+        return unmod;
+    }
+
+    /** Whether {@code fn} is a built-in function type loaded from {@code builtins.ba}. */
+    boolean isBuiltinFunction(Type.Function fn) {
+        if (fn == null || this == EMPTY) {
+            return false;
+        }
+        if (!loadFromClasspath) {
+            return fixedBuiltins != null && fixedBuiltins.containsValue(fn);
+        }
+        if (builtinFnSet == null) {
+            builtins();
+        }
+        return builtinFnSet != null && builtinFnSet.contains(fn);
     }
 
     // ================================================================ Lazy Package Loading (§3.4)
@@ -290,13 +327,14 @@ public final class BuiltinAxioms {
                 return AxiomData.AxiomTable.EMPTY;
             }
             String source = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            return parseAxiomFile(source, resourcePath, true);
+            return parseAxiomFile(source, resourcePath, true, null);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to read curated axioms resource " + resourcePath, e);
         }
     }
 
-    static AxiomData.AxiomTable parseAxiomFile(String source, String sourceName, boolean curated) {
+    static AxiomData.AxiomTable parseAxiomFile(String source, String sourceName, boolean curated,
+                                               Map<String, Type.Function> babbleBuiltinsOut) {
         BabbleParser.FileContext file;
         try {
             file = BabbleScriptEngine.parseSource(source, sourceName);
@@ -312,6 +350,18 @@ public final class BuiltinAxioms {
         for (BabbleParser.ExpressionContext expr : file.expression()) {
             if (!(expr instanceof BabbleParser.AxiomExpressionContext ax)) {
                 sink.report("Expected axiom declaration", expr);
+                continue;
+            }
+            if (AxiomData.isBabbleNameAxiom(ax)) {
+                String bName = AxiomData.babbleName(ax);
+                Type.Function fn = AxiomData.parseBabbleAxiomFunction(ax, t -> AxiomData.resolveStandaloneType(t, sink), sink);
+                if (fn != null && babbleBuiltinsOut != null) {
+                    if (babbleBuiltinsOut.containsKey(bName)) {
+                        sink.report("Duplicate built-in axiom : " + bName, ax);
+                    } else {
+                        babbleBuiltinsOut.put(bName, fn);
+                    }
+                }
                 continue;
             }
             AxiomData.ParsedAxiom parsed = AxiomData.parse(ax, null, curated, sink);

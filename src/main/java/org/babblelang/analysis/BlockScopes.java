@@ -420,6 +420,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         if (ctx.EXPORT() != null && scope.kind != ScopeNode.Kind.FILE) {
             throw error("export only applies to the top-level definitions of a file", ctx.EXPORT().getSymbol());
         }
+        if (AxiomData.isBabbleNameAxiom(ctx)) {
+            scope.babbleAxioms.put(AxiomData.babbleName(ctx), ctx);
+        }
         axiomExpressions.add(new PendingAxiomExpr(ctx, scope));
         return null;
     }

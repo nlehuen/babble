@@ -1210,9 +1210,6 @@ final class EffectChecker {
         for (PendingAxiomDiag diag : pendingAxiomDiags) {
             checker.effectDiagnostic(diag.message(), diag.at());
         }
-        for (BlockScopes.PendingAxiomExpr pending : pass.axiomExpressions) {
-            checkDeclarationPlacement(pending.scope(), "axiom", pending.ctx());
-        }
 
         // 1. Standalone effectDeclarations recorded by BlockScopes.
         for (BlockScopes.PendingEffectDecl pending : pass.effectDeclarations) {

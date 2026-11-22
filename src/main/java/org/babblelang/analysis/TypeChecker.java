@@ -894,6 +894,37 @@ final class TypeChecker {
         throw new IllegalStateException("No scope for " + ctx.getText());
     }
 
+    private final Map<BabbleParser.AxiomExpressionContext, Type.Function> babbleAxiomTypes = new IdentityHashMap<>();
+
+    /** Resolves a scoped Babble-name axiom ({@code axiom foo: fn ...}) in {@code scope} or an enclosing scope. */
+    Type.Function resolveBabbleAxiom(String name, ScopeNode scope) {
+        for (ScopeNode s = scope; s != null; s = s.parent) {
+            BabbleParser.AxiomExpressionContext ax = s.babbleAxioms.get(name);
+            if (ax != null) {
+                return parseBabbleAxiom(ax, s, false);
+            }
+            if (s.names.containsKey(name)) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private Type.Function parseBabbleAxiom(BabbleParser.AxiomExpressionContext ctx, ScopeNode scope, boolean reportErrors) {
+        if (!AxiomData.isBabbleNameAxiom(ctx)) {
+            return null;
+        }
+        if (!reportErrors && babbleAxiomTypes.containsKey(ctx)) {
+            return babbleAxiomTypes.get(ctx);
+        }
+        AxiomData.ErrorSink sink = reportErrors ? this::warn : (msg, at) -> {};
+        Type.Function fn = AxiomData.parseBabbleAxiomFunction(ctx, t -> annotator.annotation(t, scope), sink);
+        if (fn != null) {
+            babbleAxiomTypes.put(ctx, fn);
+        }
+        return fn;
+    }
+
     /**
      * What a name refers to from a scope : a def or parameter declaration, or null for a
      * name the analysis doesn't know (the script's bindings and the implicits).
@@ -1658,7 +1689,12 @@ final class TypeChecker {
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
                 case BabbleParser.TypeAliasExpressionContext c -> visitTypeAlias(c);
-                case BabbleParser.AxiomExpressionContext c -> Type.NULL;
+                case BabbleParser.AxiomExpressionContext c -> {
+                    if (AxiomData.isBabbleNameAxiom(c) && checkingEffects) {
+                        parseBabbleAxiom(c, scopeOf(c), true);
+                    }
+                    yield Type.NULL;
+                }
                 case BabbleParser.ForExpressionContext c -> visitForExpression(c, expected, role);
                 case BabbleParser.ClassExpressionContext c -> visitClassExpression(c, expected, role);
                 case BabbleParser.InterfaceExpressionContext c -> visitInterfaceExpression(c, expected, role);
@@ -2075,6 +2111,10 @@ final class TypeChecker {
                     Type narrowed = narrowing.narrowedType(declaration);
                     return narrowed != null ? narrowed : typeOfDeclaration(declaration);
                 }
+                Type.Function babbleAx = resolveBabbleAxiom(name, occurrenceScopes.get(ctx));
+                if (babbleAx != null) {
+                    return babbleAx;
+                }
                 return operators.implicitType(name);
             }
             if (receiver instanceof BabbleParser.SuperExpressionContext superExpr) {
@@ -2291,7 +2331,9 @@ final class TypeChecker {
         }
 
         private Type visitCoreScalarRef(BabbleParser.CoreScalarRefContext ctx, Type expected, Role role) {
-            return operators.implicitType(ctx.coreScalarKeyword().getText());
+            String name = ctx.coreScalarKeyword().getText();
+            Type.Function babbleAx = resolveBabbleAxiom(name, scopeOf(ctx));
+            return babbleAx != null ? babbleAx : operators.implicitType(name);
         }
 
         private Type visitCoreCollection(BabbleParser.CoreCollectionContext ctx, Type expected, Role role) {
