@@ -649,10 +649,15 @@ final class JavaTypeBridge {
         } else if (compGeneric instanceof TypeVariable<?>) {
             compNullness = JavaNullability.Nullness.PARAMETRIC;
         } else {
-            JavaNullability.Nullness paramNullness = JavaNullability.parameterNullness(exec, fixed);
-            compNullness = paramNullness == JavaNullability.Nullness.NULLABLE
-                    ? JavaNullability.Nullness.NULLABLE
-                    : (nullMarked ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.UNSPECIFIED);
+            JavaNullability.Nullness elemNullness = JavaNullability.parameterElementNullness(exec, fixed);
+            if (elemNullness != null && elemNullness != JavaNullability.Nullness.UNSPECIFIED) {
+                compNullness = elemNullness;
+            } else {
+                JavaNullability.Nullness paramNullness = JavaNullability.parameterNullness(exec, fixed);
+                compNullness = paramNullness == JavaNullability.Nullness.NULLABLE
+                        ? JavaNullability.Nullness.NULLABLE
+                        : (nullMarked ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.UNSPECIFIED);
+            }
         }
         return fromJavaType(compGeneric, compAnn, env, false, true, compNullness, nullMarked);
     }

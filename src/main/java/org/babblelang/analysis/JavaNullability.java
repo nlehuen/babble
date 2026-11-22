@@ -133,6 +133,25 @@ final class JavaNullability {
         return isNullMarked(exec) ? Nullness.NON_NULL : Nullness.UNSPECIFIED;
     }
 
+    /** Array-element nullness of a Java executable's array parameter from local or curated axioms, or {@code null}. */
+    static Nullness parameterElementNullness(Executable exec, int index) {
+        if (exec == null || index < 0 || index >= exec.getParameterCount()) {
+            return null;
+        }
+        AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
+        if (local != null && !local.isEmpty()) {
+            AxiomData.MemberAxiom ax = exec instanceof Method m
+                    ? AxiomData.lookupMethod(m.getDeclaringClass(), m.getName(), m, local::directMembers)
+                    : exec instanceof Constructor<?> c
+                    ? AxiomData.lookupConstructor(c.getDeclaringClass(), c, local::directMembers)
+                    : null;
+            if (ax != null && ax.hasSignature() && index < ax.paramElementNullness().length) {
+                return ax.paramElementNullness()[index];
+            }
+        }
+        return BuiltinAxioms.current().parameterElementNullness(exec, index);
+    }
+
     /** Nullness of a Java field's value (static-final constant inspection / annotations / {@code @NullMarked}). */
     static Nullness fieldNullness(Field field) {
         if (field.getType().isPrimitive()) {

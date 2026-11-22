@@ -61,6 +61,7 @@ final class AxiomData {
             List<String> paramDescriptors,
             String returnDescriptor,
             JavaNullability.Nullness[] paramNullness,
+            JavaNullability.Nullness[] paramElementNullness,
             JavaNullability.Nullness returnNullness,
             EffectSet effects,
             boolean mutReceiver,
@@ -708,7 +709,7 @@ final class AxiomData {
 
         Map<String, String> allTypeVars = new LinkedHashMap<>(classTypeVars);
         if (typeCtx.typeParameters() != null) {
-            for (TerminalNode id : typeCtx.typeParameters().ID()) {
+            for (TerminalNode id : ScopeAnalysis.typeParamIds(typeCtx.typeParameters())) {
                 allTypeVars.put(id.getText(), "Ljava/lang/Object;");
             }
         }
@@ -716,6 +717,7 @@ final class AxiomData {
         boolean hasSignature = fnParams != null;
         List<String> paramDescriptors = List.of();
         JavaNullability.Nullness[] paramNullness = new JavaNullability.Nullness[0];
+        JavaNullability.Nullness[] paramElementNullness = new JavaNullability.Nullness[0];
         boolean[] mutParams = new boolean[0];
         boolean[] borrowParams = new boolean[0];
         boolean[] uniqueParams = new boolean[0];
@@ -729,6 +731,7 @@ final class AxiomData {
             int n = params.size();
             List<String> descs = new ArrayList<>(n);
             paramNullness = new JavaNullability.Nullness[n];
+            paramElementNullness = new JavaNullability.Nullness[n];
             mutParams = new boolean[n];
             borrowParams = new boolean[n];
             uniqueParams = new boolean[n];
@@ -754,6 +757,7 @@ final class AxiomData {
                 TypeErasure te = eraseType(p.type(), allTypeVars, classResolver, errors);
                 descs.add(te.descriptor());
                 paramNullness[i] = te.nullness();
+                paramElementNullness[i] = te.elementNullness();
             }
             paramDescriptors = List.copyOf(descs);
             if (typeCtx.type() != null) {
@@ -789,7 +793,7 @@ final class AxiomData {
         Arrays.fill(readParams, true);
         return new MemberAxiom(
                 ownerClass, memberName, kind, exact, hasSignature,
-                paramDescriptors, returnDescriptor, paramNullness, returnNullness,
+                paramDescriptors, returnDescriptor, paramNullness, paramElementNullness, returnNullness,
                 effectSet, mutReceiver, !sharedReceiver, sharedReceiver,
                 mutParams, borrowParams, uniqueParams, sharedParams,
                 view, shallow, fresh, foldable, nothrow, true, readParams, curated);
@@ -803,7 +807,7 @@ final class AxiomData {
         }
         Map<String, String> vars = new LinkedHashMap<>();
         TypeVariable<?>[] reflected = targetClass.getTypeParameters();
-        List<TerminalNode> ids = tpCtx.ID();
+        List<TerminalNode> ids = ScopeAnalysis.typeParamIds(tpCtx);
         for (int i = 0; i < ids.size(); i++) {
             String name = ids.get(i).getText();
             String boundDesc = "Ljava/lang/Object;";
@@ -851,7 +855,11 @@ final class AxiomData {
 
     // ================================================================ Type Erasure & Nullness
 
-    record TypeErasure(String descriptor, JavaNullability.Nullness nullness, boolean isTypeVar) {
+    record TypeErasure(String descriptor, JavaNullability.Nullness nullness, boolean isTypeVar,
+                       JavaNullability.Nullness elementNullness) {
+        TypeErasure(String descriptor, JavaNullability.Nullness nullness, boolean isTypeVar) {
+            this(descriptor, nullness, isTypeVar, null);
+        }
     }
 
     static TypeErasure eraseType(BabbleParser.TypeContext typeCtx,
@@ -898,7 +906,7 @@ final class AxiomData {
         if (nonNullMembers.size() == 1) {
             TypeErasure only = nonNullMembers.get(0);
             if (hasNull) {
-                return new TypeErasure(boxDescriptor(only.descriptor()), JavaNullability.Nullness.NULLABLE, false);
+                return new TypeErasure(boxDescriptor(only.descriptor()), JavaNullability.Nullness.NULLABLE, false, only.elementNullness());
             }
             return only;
         }
@@ -915,7 +923,7 @@ final class AxiomData {
         if (ctx instanceof BabbleParser.ParenTypeContext paren) {
             TypeErasure inner = eraseType(paren.type(), typeVars, classResolver, errors);
             if (paren.question != null) {
-                return new TypeErasure(boxDescriptor(inner.descriptor()), JavaNullability.Nullness.NULLABLE, false);
+                return new TypeErasure(boxDescriptor(inner.descriptor()), JavaNullability.Nullness.NULLABLE, false, inner.elementNullness());
             }
             return inner;
         }
@@ -963,7 +971,8 @@ final class AxiomData {
             if ("array".equals(single)) {
                 TypeErasure elem = eraseArrayElement(simple, typeVars, classResolver, errors);
                 return new TypeErasure("[" + elem.descriptor(),
-                        nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL, false);
+                        nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL,
+                        false, elem.nullness());
             }
             String builtinDesc = switch (single) {
                 case "byte" -> nullable ? "Ljava/lang/Byte;" : "B";
@@ -1103,6 +1112,7 @@ final class AxiomData {
 
         List<Type.Parameter> params = new ArrayList<>();
         boolean anyMutParam = false;
+        int kwStart = ScopeAnalysis.keywordOnlyStart(typeCtx.fnTypeParameters());
         int index = 0;
         for (BabbleParser.FnTypeParamContext p : typeCtx.fnTypeParameters().fnTypeParam()) {
             Type pt = typeResolver.apply(p.type());
@@ -1125,7 +1135,8 @@ final class AxiomData {
             boolean pBorrow = !pShared && !pUnique;
             String pName = p.ID() != null ? p.ID().getText() : "p" + index;
             boolean optional = p.ELLIPSIS() != null;
-            params.add(new Type.Parameter(pName, pt, optional, pMut, pBorrow, pShared, pUnique));
+            boolean keywordOnly = index >= kwStart;
+            params.add(new Type.Parameter(pName, pt, optional, keywordOnly, pMut, pBorrow, pShared, pUnique));
             index++;
         }
 
