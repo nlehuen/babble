@@ -39,6 +39,7 @@ public sealed interface HirExpr permits
         HirExpr.As,
         HirExpr.NonNull,
         HirExpr.SpreadAdapt,
+        HirExpr.JavaSamAdapt,
         HirExpr.Block,
         HirExpr.If,
         HirExpr.While,
@@ -301,17 +302,29 @@ public sealed interface HirExpr permits
             HirExpr left,
             String builtin,
             ScopeAnalysis.IsTarget target,
+            List<ScopeAnalysis.IsTarget> intersectionTargets,
             String descriptor,
             ExprMeta meta
     ) implements HirExpr {
+        public Is {
+            intersectionTargets = intersectionTargets == null ? List.of() : List.copyOf(intersectionTargets);
+        }
+
+        public Is(HirExpr left, String builtin, ScopeAnalysis.IsTarget target, String descriptor, ExprMeta meta) {
+            this(left, builtin, target, List.of(), descriptor, meta);
+        }
     }
 
     record As(
             HirExpr left,
             ScopeAnalysis.IsTarget target,
+            ScopeAnalysis.JavaSamTarget samTarget,
             String targetDescriptor,
             ExprMeta meta
     ) implements HirExpr {
+        public As(HirExpr left, ScopeAnalysis.IsTarget target, String targetDescriptor, ExprMeta meta) {
+            this(left, target, null, targetDescriptor, meta);
+        }
     }
 
     record NonNull(
@@ -324,6 +337,14 @@ public sealed interface HirExpr permits
     record SpreadAdapt(
             HirExpr value,
             ScopeAnalysis.SpreadAdapt adapt,
+            ExprMeta meta
+    ) implements HirExpr {
+    }
+
+    /** Java-interop SAM / SAM+markers adapter conversion ({@code BIP022-D7}). */
+    record JavaSamAdapt(
+            HirExpr value,
+            ScopeAnalysis.JavaSamTarget target,
             ExprMeta meta
     ) implements HirExpr {
     }
@@ -375,6 +396,7 @@ public sealed interface HirExpr permits
             List<HirVar> bodyDeclaredVars,
             List<HirExpr> body,
             int bodyWideningRank,
+            ScopeAnalysis.JavaSamTarget elemSamTarget,
             ExprMeta meta
     ) implements HirExpr {
         public For {

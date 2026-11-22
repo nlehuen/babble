@@ -119,11 +119,11 @@ public final class HirRewriter {
             }
             case HirExpr.Is i -> {
                 HirExpr nl = transform.apply(i.left());
-                yield nl == i.left() ? i : new HirExpr.Is(nl, i.builtin(), i.target(), i.descriptor(), i.meta());
+                yield nl == i.left() ? i : new HirExpr.Is(nl, i.builtin(), i.target(), i.intersectionTargets(), i.descriptor(), i.meta());
             }
             case HirExpr.As a -> {
                 HirExpr nl = transform.apply(a.left());
-                yield nl == a.left() ? a : new HirExpr.As(nl, a.target(), a.targetDescriptor(), a.meta());
+                yield nl == a.left() ? a : new HirExpr.As(nl, a.target(), a.samTarget(), a.targetDescriptor(), a.meta());
             }
             case HirExpr.NonNull n -> {
                 HirExpr no = transform.apply(n.operand());
@@ -132,6 +132,10 @@ public final class HirRewriter {
             case HirExpr.SpreadAdapt s -> {
                 HirExpr nv = transform.apply(s.value());
                 yield nv == s.value() ? s : new HirExpr.SpreadAdapt(nv, s.adapt(), s.meta());
+            }
+            case HirExpr.JavaSamAdapt j -> {
+                HirExpr nv = transform.apply(j.value());
+                yield nv == j.value() ? j : new HirExpr.JavaSamAdapt(nv, j.target(), j.meta());
             }
             case HirExpr.TypeApply t -> {
                 HirExpr ni = transform.apply(t.inner());
@@ -158,7 +162,8 @@ public final class HirRewriter {
                 HirExpr ni = transform.apply(f.iterable());
                 List<HirExpr> nb = rewriteList(f.body(), transform);
                 yield (ni == f.iterable() && nb == f.body()) ? f
-                        : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb, f.bodyWideningRank(), f.meta());
+                        : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb,
+                                f.bodyWideningRank(), f.elemSamTarget(), f.meta());
             }
             case HirExpr.Break b -> {
                 HirExpr nv = b.value() != null ? transform.apply(b.value()) : null;

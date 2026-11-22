@@ -31,14 +31,23 @@ assert(found.size() >= 0)
 }}}}}
 
 {{{{{
-;; Subtlety : `def ip : IntPredicate = fn ...` stays a raw Babble function at runtime
-;; until passed to a typed IntPredicate Java parameter or explicit `IntPredicate(fn ...)`.
-;; Method.invoke takes Object, so `ip` is not adapted and fails the declaring-class check.
+;; BIP022-D7 : `def ip : IntPredicate = fn ...` eagerly adapts `ip` to an `IntPredicate` instance,
+;; so reflective `Method.invoke(ip, ["bad"])` reaches parameter validation rather than declaring-class check.
 def ip : java.util.function.IntPredicate = fn (x : int) -> ( x > 0 )
 def cls = java.lang.Class.forName("java.util.function.IntPredicate")
 def im = java.util.Arrays.stream(cls.getDeclaredMethods()).filter(fn (m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
 def badArgs : java.util.List of any = java.util.List.of of any ("bad")
 im.invoke(ip, badArgs.toArray())
+}}}}}
+java.lang.IllegalArgumentException : argument type mismatch
+
+{{{{{
+;; An unadapted Babble function without a Java SAM target still fails the declaring-class check.
+def rawFn = fn (x : int) -> ( x > 0 )
+def cls = java.lang.Class.forName("java.util.function.IntPredicate")
+def im = java.util.Arrays.stream(cls.getDeclaredMethods()).filter(fn (m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
+def badArgs : java.util.List of any = java.util.List.of of any ("bad")
+im.invoke(rawFn, badArgs.toArray())
 }}}}}
 java.lang.IllegalArgumentException : object is not an instance of declaring class
 

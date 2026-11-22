@@ -6,12 +6,14 @@ import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
+import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.Operators;
 
 import static org.babblelang.analysis.TypeAlgebra.canBeNull;
 import static org.babblelang.analysis.TypeAlgebra.containsFunction;
 import static org.babblelang.analysis.TypeAlgebra.needsDoubleWidening;
 
+import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -162,9 +164,26 @@ final class TypeChecker {
     private final Map<BabbleParser.OverloadExpressionContext, List<BabbleParser.FunctionLiteralContext>> overloadAltLiterals = new IdentityHashMap<>();
     private final Map<ParserRuleContext, ScopeAnalysis.OverloadSelection> overloadSelections = new IdentityHashMap<>();
     private final Map<ParserRuleContext, ResolvedOverloadCall> resolvedOverloadCalls = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, ScopeAnalysis.JavaSamTarget> samTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.ForExpressionContext, ScopeAnalysis.JavaSamTarget> forElemSamTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.AsExpressionContext, ScopeAnalysis.JavaSamTarget> asSamTargets = new IdentityHashMap<>();
+    private final List<Diagnostic> demoteDiagnostics = new ArrayList<>();
+    private boolean needsReResolve;
 
     Map<ParserRuleContext, ScopeAnalysis.OverloadSelection> overloadSelections() {
         return overloadSelections;
+    }
+
+    Map<ParserRuleContext, ScopeAnalysis.JavaSamTarget> samTargets() {
+        return samTargets;
+    }
+
+    Map<BabbleParser.ForExpressionContext, ScopeAnalysis.JavaSamTarget> forElemSamTargets() {
+        return forElemSamTargets;
+    }
+
+    Map<BabbleParser.AsExpressionContext, ScopeAnalysis.JavaSamTarget> asSamTargets() {
+        return asSamTargets;
     }
 
     Map<ParserRuleContext, ResolvedOverloadCall> resolvedOverloadCalls() {
@@ -473,9 +492,14 @@ final class TypeChecker {
             }
         }
         new ReturnFinder().visit(file);
+        this.demoteDiagnostics.clear();
+        this.needsReResolve = false;
         this.checkingEffects = false;
         this.effectChecker = new EffectChecker(pass, new TypedProgram(this));
         JavaNullability.runWithContext(effectChecker.localAxioms(), pass.hostEffects.bytecodeEffectAnalysis(), () -> {
+            if (demoteSamMemberFields()) {
+                pass.analysis.setResolution(new Resolver(pass).run());
+            }
             slots.rank(file);
             slots.converge(file);
             effectChecker.inferAll(file);
@@ -483,7 +507,14 @@ final class TypeChecker {
             slots.converge(file);
             this.checkingEffects = true;
             resetPass(true);
+            diagnostics.addAll(demoteDiagnostics);
+            demoteDiagnostics.clear();
             walk(file);
+            diagnostics.addAll(demoteDiagnostics);
+            demoteDiagnostics.clear();
+            if (needsReResolve) {
+                pass.analysis.setResolution(new Resolver(pass).run());
+            }
             publishResultType(file);
             for (BabbleParser.FunctionLiteralContext function : functions) {
                 checkResult(function);
@@ -545,6 +576,9 @@ final class TypeChecker {
         overloadAltLiterals.clear();
         overloadSelections.clear();
         resolvedOverloadCalls.clear();
+        samTargets.clear();
+        forElemSamTargets.clear();
+        asSamTargets.clear();
         callSolver.reset();
     }
 
@@ -729,7 +763,9 @@ final class TypeChecker {
                 && ScopeAnalysis.paramDefault(parameter) != null && ScopeAnalysis.paramType(parameter) != null) {
             Type declared = annotator.annotation(ScopeAnalysis.paramType(parameter), scopeOf(parameter));
             BabbleParser.ExpressionContext defVal = ScopeAnalysis.paramDefault(parameter);
-            subsumes(defVal, null, check(defVal, declared), declared);
+            Type actual = check(defVal, declared);
+            subsumes(defVal, null, actual, declared);
+            coerceSam(defVal, actual, declared);
         }
         if (tree instanceof BabbleParser.AssignExpressionContext assign) {
             BabbleParser.ExpressionContext receiver = ScopeAnalysis.assignReceiver(assign);
@@ -1374,9 +1410,12 @@ final class TypeChecker {
                     Type actual = check(parameter.defaultValue, expected);
                     if (expected != null && expected != Type.ERROR) {
                         subsumes(parameter.defaultValue, null, actual, expected);
+                        coerceSam(parameter.defaultValue, actual, expected);
                     }
                 } else if (expected != null && expected != Type.ERROR) {
-                    subsumes(parameter.defaultValue, null, types.get(parameter.defaultValue), expected);
+                    Type actual = types.get(parameter.defaultValue);
+                    subsumes(parameter.defaultValue, null, actual, expected);
+                    coerceSam(parameter.defaultValue, actual, expected);
                 }
             }
         }
@@ -1396,8 +1435,8 @@ final class TypeChecker {
         if (base instanceof Type.Function fn) {
             expectedParamTypes = fn.parameters().stream().map(Type.Parameter::type).toList();
             expectedResult = fn.result();
-        } else if (base instanceof Type.JavaInstance java) {
-            Type.Function sam = JavaTypeBridge.samFunctionType(java, effectChecker);
+        } else if (JavaTypeBridge.resolveJavaSam(base) instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
+            Type.Function sam = JavaTypeBridge.samFunctionType(valid.samType(), effectChecker);
             if (sam != null) {
                 expectedParamTypes = sam.parameters().stream().map(Type.Parameter::type).toList();
                 expectedResult = sam.result();
@@ -1556,6 +1595,13 @@ final class TypeChecker {
             contextualReturnTypes.remove(ctx);
             contextualTypeParams.remove(ctx);
             widened.remove(ctx);
+            samTargets.remove(ctx);
+            if (ctx instanceof BabbleParser.ForExpressionContext forCtx) {
+                forElemSamTargets.remove(forCtx);
+            }
+            if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
+                asSamTargets.remove(asCtx);
+            }
             resolvedLiterals.remove(ctx);
             if (ctx instanceof BabbleParser.DefExpressionContext || ScopeAnalysis.isParamDecl(ctx)) {
                 declarationTypes.remove(ctx);
@@ -1645,8 +1691,8 @@ final class TypeChecker {
             int idx = -1;
             if (targetBase instanceof Type.Function targetFn) {
                 idx = OverloadSolver.selectAlternativeForFunction(algebra, ov, targetFn, checkingEffects);
-            } else if (targetBase instanceof Type.JavaInstance ji && org.babblelang.runtime.JavaTypes.isFunctionalInterface(ji.type())) {
-                idx = OverloadSolver.selectAlternativeForSam(algebra, ov, ji);
+            } else if (JavaTypeBridge.resolveJavaSam(targetBase) instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
+                idx = OverloadSolver.selectAlternativeForSam(algebra, ov, valid.samType());
             }
             if (idx >= 0) {
                 Type.Function chosen = ov.alternatives().get(idx);
@@ -1662,6 +1708,264 @@ final class TypeChecker {
                         idx, OverloadSolver.signatureKey(chosen), exactSet));
             }
         }
+        coerceSam(site, actual, target);
+    }
+
+    void coerceSam(ParserRuleContext site, Type actual, Type target) {
+        if (site == null || !TypeAlgebra.mayContainBabbleCallable(actual)) {
+            return;
+        }
+        JavaTypeBridge.JavaSamResolution.Valid valid = resolveSamTargetForFlow(actual, target);
+        if (valid != null) {
+            samTargets.put(site, valid.toTarget());
+        }
+    }
+
+    private static List<Type> callableAlternatives(Type type) {
+        List<Type> result = new ArrayList<>();
+        for (Type alt : TypeAlgebra.alternatives(type)) {
+            Type unwrapped = TypeAlgebra.unwrapFrozen(alt);
+            if (TypeAlgebra.isCallable(unwrapped) || unwrapped == Type.ANY) {
+                result.add(alt);
+            }
+        }
+        return result;
+    }
+
+    private JavaTypeBridge.JavaSamResolution.Valid resolveSamTargetForFlow(Type actual, Type target) {
+        if (target == null || target == Type.ERROR || target == Type.NOTHING) {
+            return null;
+        }
+        JavaTypeBridge.JavaSamResolution direct = JavaTypeBridge.resolveJavaSam(target);
+        if (direct instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
+            return valid;
+        }
+        if (Type.withoutNull(target) instanceof Type.Union u) {
+            List<Type> callableAlts = callableAlternatives(actual);
+            if (callableAlts.isEmpty()) {
+                return null;
+            }
+            for (Type member : u.members()) {
+                Type mb = Type.withoutNull(member);
+                if (mb instanceof Type.Function || mb instanceof Type.Overloaded || mb == Type.ANY) {
+                    for (Type c : callableAlts) {
+                        if (algebra.assignable(c, member)) {
+                            return null;
+                        }
+                    }
+                }
+            }
+            JavaTypeBridge.JavaSamResolution.Valid match = null;
+            for (Type member : u.members()) {
+                if (JavaTypeBridge.resolveJavaSam(member) instanceof JavaTypeBridge.JavaSamResolution.Valid v) {
+                    boolean matchesAny = false;
+                    for (Type c : callableAlts) {
+                        if (TypeAlgebra.unwrapFrozen(c) == Type.ANY || algebra.assignable(c, member)) {
+                            matchesAny = true;
+                            break;
+                        }
+                    }
+                    if (matchesAny) {
+                        if (match != null && !match.equals(v)) {
+                            return null;
+                        }
+                        match = v;
+                    }
+                }
+            }
+            return match;
+        }
+        return null;
+    }
+
+    private JavaTypeBridge.JavaSamResolution.Valid resolveSamTargetForAs(Type source, Type target) {
+        if (target == null || target == Type.ERROR || target == Type.NOTHING
+                || !TypeAlgebra.mayContainBabbleCallable(source)) {
+            return null;
+        }
+        JavaTypeBridge.JavaSamResolution direct = JavaTypeBridge.resolveJavaSam(target);
+        if (direct instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
+            return valid;
+        }
+        if (Type.withoutNull(target) instanceof Type.Union u) {
+            for (Type member : u.members()) {
+                if (Type.withoutNull(member) == Type.ANY) {
+                    return null;
+                }
+            }
+            List<Type> callableAlts = callableAlternatives(source);
+            if (callableAlts.isEmpty()) {
+                return null;
+            }
+            JavaTypeBridge.JavaSamResolution.Valid match = null;
+            for (Type member : u.members()) {
+                if (JavaTypeBridge.resolveJavaSam(member) instanceof JavaTypeBridge.JavaSamResolution.Valid v) {
+                    boolean matchesAny = false;
+                    for (Type c : callableAlts) {
+                        if (TypeAlgebra.unwrapFrozen(c) == Type.ANY || algebra.assignable(c, member)) {
+                            matchesAny = true;
+                            break;
+                        }
+                    }
+                    if (matchesAny) {
+                        if (match != null && !match.equals(v)) {
+                            return null;
+                        }
+                        match = v;
+                    }
+                }
+            }
+            return match;
+        }
+        return null;
+    }
+
+    private boolean demoteSamMemberFields() {
+        boolean demotedAny = false;
+        for (TypeNode node : pass.types) {
+            if (node.ctx == null || !inFile(node.ctx)) {
+                continue;
+            }
+            boolean nodeDemoted = false;
+            if (!node.isInterface()) {
+                for (TypeNode.Member member : node.members.values()) {
+                    if (maybeDemoteSamMember(node, member, false)) {
+                        demotedAny = true;
+                        nodeDemoted = true;
+                    }
+                }
+            }
+            for (TypeNode.Member member : node.statics.values()) {
+                if (maybeDemoteSamMember(node, member, true)) {
+                    demotedAny = true;
+                    nodeDemoted = true;
+                }
+            }
+            if (nodeDemoted) {
+                pass.analysis.setShape(node.ctx, node.shape());
+            }
+        }
+        return demotedAny;
+    }
+
+    private boolean maybeDemoteSamMember(TypeNode owner, TypeNode.Member member, boolean isStatic) {
+        if (!member.isMethod() || !(member.declaration instanceof BabbleParser.DefExpressionContext def)
+                || def.type() == null) {
+            return false;
+        }
+        Type declared = annotator.declaredType(def);
+        if (!isSamAdapterFieldType(declared)) {
+            return false;
+        }
+        demoteMemberToField(owner, member, def, isStatic);
+        return true;
+    }
+
+    private boolean isSamAdapterFieldType(Type declared) {
+        if (declared == null || declared == Type.ERROR || declared == Type.NOTHING) {
+            return false;
+        }
+        JavaTypeBridge.JavaSamResolution res = JavaTypeBridge.resolveJavaSam(declared);
+        if (res instanceof JavaTypeBridge.JavaSamResolution.Valid
+                || res instanceof JavaTypeBridge.JavaSamResolution.NotFunctional) {
+            return true;
+        }
+        if (Type.withoutNull(declared) instanceof Type.Union u) {
+            boolean hasSam = false;
+            for (Type member : u.members()) {
+                Type mb = Type.withoutNull(member);
+                if (mb instanceof Type.Function || mb instanceof Type.Overloaded || mb == Type.ANY) {
+                    return false;
+                }
+                if (JavaTypeBridge.resolveJavaSam(member) instanceof JavaTypeBridge.JavaSamResolution.Valid) {
+                    hasSam = true;
+                }
+            }
+            return hasSam;
+        }
+        return false;
+    }
+
+    private void demoteMemberToField(TypeNode owner, TypeNode.Member member, BabbleParser.DefExpressionContext def,
+                                     boolean isStatic) {
+        List<BabbleParser.FunctionLiteralContext> lits = new ArrayList<>();
+        if (member.function != null) {
+            lits.add(member.function);
+        }
+        lits.addAll(member.overloadFunctions);
+        for (BabbleParser.FunctionLiteralContext lit : lits) {
+            ScopeNode fnScope = scopeOf(lit);
+            if (fnScope != null) {
+                fnScope.memberOf = null;
+                fnScope.staticMethod = false;
+                for (BlockScopes.PendingSuper pending : pass.supers) {
+                    if (isScopeInside(pending.scope(), fnScope)) {
+                        demoteDiagnostics.add(new Diagnostic(
+                                pending.ctx().getStart().getLine(),
+                                pending.ctx().getStart().getCharPositionInLine() + 1,
+                                "super outside of a method"));
+                    }
+                }
+            }
+        }
+        member.demoteSamField();
+        if (!isStatic) {
+            Set<Class<?>> javaParents = new LinkedHashSet<>();
+            collectJavaParents(owner, javaParents, Collections.newSetFromMap(new IdentityHashMap<>()));
+            for (Class<?> jc : javaParents) {
+                for (Method m : JavaTypes.abstractMethods(jc)) {
+                    if (m.getName().equals(member.name)
+                            && !hasBabbleDefault(owner, member.name, Collections.newSetFromMap(new IdentityHashMap<>()))) {
+                        int line = owner.ctx != null ? owner.ctx.getStart().getLine() : def.getStart().getLine();
+                        int col = owner.ctx != null ? owner.ctx.getStart().getCharPositionInLine() + 1 : 1;
+                        demoteDiagnostics.add(new Diagnostic(line, col,
+                                owner.name + " does not implement " + jc.getName() + "." + member.name));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean isScopeInside(ScopeNode inner, ScopeNode target) {
+        for (ScopeNode s = inner; s != null; s = s.parent) {
+            if (s == target) {
+                return true;
+            }
+            if (s.kind == ScopeNode.Kind.CLASS_BODY
+                    || s.kind == ScopeNode.Kind.INTERFACE_BODY
+                    || s.kind == ScopeNode.Kind.STATIC_BODY) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private static void collectJavaParents(TypeNode node, Set<Class<?>> out, Set<TypeNode> seen) {
+        if (!seen.add(node)) {
+            return;
+        }
+        for (Object parent : node.parents) {
+            if (parent instanceof Class<?> jc) {
+                out.add(jc);
+            } else if (parent instanceof TypeNode pn) {
+                collectJavaParents(pn, out, seen);
+            }
+        }
+    }
+
+    private static boolean hasBabbleDefault(TypeNode owner, String memberName, Set<TypeNode> seen) {
+        for (Object parent : owner.parents) {
+            if (parent instanceof TypeNode pn && seen.add(pn)) {
+                if (pn.defaults != null && pn.defaults.containsKey(memberName)) {
+                    return true;
+                }
+                if (hasBabbleDefault(pn, memberName, seen)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
@@ -1754,7 +2058,10 @@ final class TypeChecker {
     }
 
     void reportTypeMismatch(Type actual, Type expected, ParserRuleContext at) {
-        if (actual instanceof Type.Function aFn && expected instanceof Type.Function eFn
+        if (TypeAlgebra.isCallable(actual)
+                && JavaTypeBridge.resolveJavaSam(expected) instanceof JavaTypeBridge.JavaSamResolution.NotFunctional nf) {
+            warn("Not a functional interface : " + nf.intersection(), at);
+        } else if (actual instanceof Type.Function aFn && expected instanceof Type.Function eFn
                 && (algebra.assignableIgnoringEffects(aFn, eFn)
                         || !eFn.typeParameters().isEmpty() || !aFn.typeParameters().isEmpty())) {
             warn("Type error : expected " + eFn.describeAgainst(eFn) + ", got " + aFn.describeAgainst(eFn), at);
@@ -2004,7 +2311,33 @@ final class TypeChecker {
             }
             ParserRuleContext errorSite = ctx.value != null ? ctx.value : ctx;
             if (declared != null) {
+                if (kind == ScopeAnalysis.DefKind.DEFAULT && declared != Type.ERROR
+                        && ((ctx.value instanceof BabbleParser.FunctionLiteralContext && !(declared instanceof Type.Function))
+                        || (ctx.value instanceof BabbleParser.OverloadExpressionContext && !(declared instanceof Type.Overloaded)))) {
+                    if (algebra.assignable(value, declared)) {
+                        warn("An interface default must have a function type : " + ctx.name.getText(), ctx.type());
+                    } else {
+                        subsumes(errorSite, ctx, value, declared);
+                    }
+                    samTargets.remove(ctx);
+                    return Type.ERROR;
+                }
                 subsumes(errorSite, ctx, value, declared);
+                if ((kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC)
+                        && samTargets.containsKey(ctx)) {
+                    ScopeNode bodyScope = scopeOf(ctx);
+                    if (bodyScope != null && bodyScope.type != null) {
+                        boolean isStatic = kind == ScopeAnalysis.DefKind.STATIC;
+                        TypeNode.Member member = isStatic
+                                ? bodyScope.type.statics.get(ctx.name.getText())
+                                : bodyScope.type.members.get(ctx.name.getText());
+                        if (member != null && member.isMethod()) {
+                            demoteMemberToField(bodyScope.type, member, ctx, isStatic);
+                            pass.analysis.setShape(bodyScope.type.ctx, bodyScope.type.shape());
+                            needsReResolve = true;
+                        }
+                    }
+                }
             } else {
                 flowInto(ctx, kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC, value, errorSite, ctx);
             }
@@ -2041,7 +2374,19 @@ final class TypeChecker {
             if (ctx.type() != null) {
                 Type declared = annotator.annotation(ctx.type(), scopeOf(ctx));
                 if (declared != Type.ERROR) {
-                    subsumes(ctx.type(), ctx, elemType, declared);
+                    if (elemType != Type.ERROR && !algebra.assignable(elemType, declared)) {
+                        reportTypeMismatch(elemType, declared, ctx.type());
+                    }
+                    int targetRank = TypeAlgebra.numericWideningTargetRank(elemType, declared);
+                    if (targetRank >= 0) {
+                        widened.merge(ctx, targetRank, Math::max);
+                    }
+                    if (TypeAlgebra.mayContainBabbleCallable(elemType)) {
+                        JavaTypeBridge.JavaSamResolution.Valid valid = resolveSamTargetForFlow(elemType, declared);
+                        if (valid != null) {
+                            forElemSamTargets.put(ctx, valid.toTarget());
+                        }
+                    }
                     loopVarType = declared;
                 } else {
                     loopVarType = Type.ERROR;
@@ -2575,11 +2920,17 @@ final class TypeChecker {
                 return target;
             }
             if (!algebra.canCast(source, target)) {
-                warn("Type error : expected " + target + ", got " + source, ctx.left);
-            } else if (algebra.alwaysIs(source, target)) {
-                analysisWarn("Redundant cast : " + target, ctx);
-            } else if (isUncheckedArrayCheck(source, target)) {
-                analysisWarn("Unchecked cast : " + target, ctx);
+                reportTypeMismatch(source, target, ctx.left);
+            } else {
+                if (algebra.alwaysIs(source, target)) {
+                    analysisWarn("Redundant cast : " + target, ctx);
+                } else if (isUncheckedArrayCheck(source, target)) {
+                    analysisWarn("Unchecked cast : " + target, ctx);
+                }
+                JavaTypeBridge.JavaSamResolution.Valid valid = resolveSamTargetForAs(source, target);
+                if (valid != null) {
+                    asSamTargets.put(ctx, valid.toTarget());
+                }
             }
             pass.analysis.setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
             return target;
@@ -3090,6 +3441,7 @@ final class TypeChecker {
                 Type actual = check(parameter.defaultValue, type != Type.ERROR ? type : null);
                 if (type != Type.ERROR) {
                     subsumes(parameter.defaultValue, null, actual, type);
+                    coerceSam(parameter.defaultValue, actual, type);
                 }
             }
             EffectChecker.ParamMods pm = effectChecker != null

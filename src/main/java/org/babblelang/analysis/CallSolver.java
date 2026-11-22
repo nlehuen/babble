@@ -6,6 +6,7 @@ import org.babblelang.runtime.JavaTypes;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
+import java.lang.reflect.GenericArrayType;
 import java.lang.reflect.Method;
 import java.lang.reflect.TypeVariable;
 import java.lang.reflect.WildcardType;
@@ -17,6 +18,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
@@ -286,8 +288,8 @@ final class CallSolver {
                 return fn;
             }
             expectedFn = f;
-        } else if (target instanceof Type.JavaInstance ji && JavaTypes.isFunctionalInterface(ji.type())) {
-            expectedFn = JavaTypeBridge.samFunctionType(ji, checker.effectChecker());
+        } else if (JavaTypeBridge.resolveJavaSam(target) instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
+            expectedFn = JavaTypeBridge.samFunctionType(valid.samType(), checker.effectChecker());
         }
         if (expectedFn == null) {
             return fn;
@@ -334,6 +336,24 @@ final class CallSolver {
             }
         }
         return true;
+    }
+
+    /**
+     * When a solved type variable with a Java SAM / SAM+markers bound holds a type that may contain
+     * a Babble callable (directly, frozen, or inside a union/nullable), promotes it to the
+     * substituted SAM bound (preserving non-nullness when {@code arg} is non-null).
+     */
+    private Type promoteCallableToSamBound(Type arg, Type rawBound, Map<Type.TypeVar, Type> env) {
+        if (arg == null || rawBound == null || rawBound == Type.ERROR || !TypeAlgebra.mayContainBabbleCallable(arg)) {
+            return arg;
+        }
+        Type subBound = checker.algebra().substitute(rawBound, env);
+        Type targetBound = Type.containsNull(arg) ? subBound : Type.withoutNull(subBound);
+        if (JavaTypeBridge.resolveJavaSam(targetBound) instanceof JavaTypeBridge.JavaSamResolution.Valid
+                && checker.algebra().assignable(arg, targetBound)) {
+            return targetBound;
+        }
+        return arg;
     }
 
     /**
@@ -465,10 +485,19 @@ final class CallSolver {
                             if (elem == null) {
                                 checker.warn("Type error : expected iterable or array, got " + actual, argument);
                             } else if (!TypeChecker.isUnresolved(elem) && !TypeChecker.isUnresolved(expectedElem)) {
+                                ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(expectedElem);
+                                boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(elem);
+                                TypeAlgebra.RelateMode mode = needsSamAdapt
+                                        ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
                                 boolean ok = checker.algebra().relate(elem, expectedElem,
-                                        TypeAlgebra.RelateMode.SUBTYPE, null, borrowReadOnly, false);
+                                        mode, null, borrowReadOnly, false);
                                 if (!ok) {
                                     checker.warn("Type error : expected " + expectedElem + " elements, got " + elem, argument);
+                                } else if (needsSamAdapt) {
+                                    if (adapts == null) {
+                                        adapts = new ScopeAnalysis.SpreadAdapt[arguments.size()];
+                                    }
+                                    adapts[argIdx] = ScopeAnalysis.SpreadAdapt.toIterable(elemSam);
                                 }
                             }
                         }
@@ -527,11 +556,10 @@ final class CallSolver {
         if (type == null || TypeChecker.isUnresolved(type) || Type.containsNull(type)) {
             return null;
         }
+        boolean frozen = type instanceof Type.Frozen;
         Type unwrapped = TypeAlgebra.unwrapFrozen(type);
-        if (unwrapped instanceof Type.Array arr) {
-            return arr.element();
-        }
-        return extractIterableElement(unwrapped);
+        Type elem = unwrapped instanceof Type.Array arr ? arr.element() : extractIterableElement(unwrapped);
+        return frozen && elem != null ? Type.frozen(elem) : elem;
     }
 
     /** Whether a parameter of type {@code target} accepts a spread argument ({@code BIP021-D7}). */
@@ -562,6 +590,13 @@ final class CallSolver {
         return null;
     }
 
+    private static ScopeAnalysis.JavaSamTarget samTargetForElement(Type elemType) {
+        if (JavaTypeBridge.resolveJavaSam(elemType) instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
+            return valid.toTarget();
+        }
+        return null;
+    }
+
     /**
      * Classifies the adaptation needed to spread {@code sourceType} into a non-rest parameter of
      * type {@code targetParamType}, returning null if incompatible (without reporting errors).
@@ -579,34 +614,38 @@ final class CallSolver {
         if (sourceElem == null) {
             return null;
         }
-        if (checker.algebra().relate(sourceType, targetParamType, TypeAlgebra.RelateMode.ASSIGNABLE,
+        Type targetElem = sequenceTargetElement(targetParamType);
+        ScopeAnalysis.JavaSamTarget elemSam = targetElem != null ? samTargetForElement(targetElem) : null;
+        boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(sourceElem);
+        if (!needsSamAdapt && checker.algebra().relate(sourceType, targetParamType, TypeAlgebra.RelateMode.ASSIGNABLE,
                 null, borrowReadOnly, targetBorrowed && !targetMut)) {
             return ScopeAnalysis.SpreadAdapt.AS_IS;
         }
         Type baseTarget = TypeAlgebra.unwrapFrozen(Type.withoutNull(targetParamType));
         if (baseTarget instanceof Type.JavaInstance ji && ji.type() == Iterable.class && ji.typeArguments().size() == 1) {
-            Type targetElem = ji.typeArguments().get(0);
             if (checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.SUBTYPE, null, borrowReadOnly, false)) {
-                return ScopeAnalysis.SpreadAdapt.TO_ITERABLE;
+                if (sourceType instanceof Type.Frozen && !borrowReadOnly
+                        && !(Type.withoutNull(targetParamType) instanceof Type.Frozen)) {
+                    return ScopeAnalysis.SpreadAdapt.toList(false, needsSamAdapt ? elemSam : null);
+                }
+                return ScopeAnalysis.SpreadAdapt.toIterable(needsSamAdapt ? elemSam : null);
             }
             return null;
         }
         if (baseTarget instanceof Type.JavaInstance ji && ji.type() == List.class && ji.typeArguments().size() == 1) {
-            Type targetElem = ji.typeArguments().get(0);
             if (checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.SUBTYPE, null, borrowReadOnly, false)) {
-                if (TypeAlgebra.unwrapFrozen(sourceType) instanceof Type.Array && targetBorrowed && !targetMut) {
+                if (!needsSamAdapt && TypeAlgebra.unwrapFrozen(sourceType) instanceof Type.Array && borrowReadOnly) {
                     return ScopeAnalysis.SpreadAdapt.TO_LIST_BORROWED;
                 }
-                return ScopeAnalysis.SpreadAdapt.TO_LIST_COPY;
+                return ScopeAnalysis.SpreadAdapt.toList(false, needsSamAdapt ? elemSam : null);
             }
             return null;
         }
         if (baseTarget instanceof Type.Array arr) {
-            Type targetElem = arr.element();
             if (checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.ASSIGNABLE, null, false, false)) {
                 Class<?> arrCls = JavaTypeBridge.checkedArrayClass(arr);
                 Class<?> comp = arrCls != null ? arrCls.getComponentType() : Object.class;
-                return new ScopeAnalysis.SpreadAdapt(ScopeAnalysis.SpreadKind.TO_ARRAY, comp);
+                return ScopeAnalysis.SpreadAdapt.toArray(comp, needsSamAdapt ? elemSam : null);
             }
             return null;
         }
@@ -689,17 +728,59 @@ final class CallSolver {
         int given = argument == null ? 0 : 1;
         if (given < parameters.size() && !parameters.get(given).optional()) {
             checker.warn("Missing parameter : " + parameters.get(given).name(), at);
-        } else if (given > parameters.size()) {
+            return function.result();
+        }
+        if (given > parameters.size()) {
             checker.warn("Too many parameters : " + parameters.size() + " declared, " + given + " given", at);
-        } else if (argument != null) {
-            Type expectedParam = parameters.get(0).type();
+            return function.result();
+        }
+        Type resultType = function.result();
+        Type expectedParam = argument != null ? parameters.get(0).type() : null;
+        if (!function.typeParameters().isEmpty()) {
+            Map<Type.TypeVar, Type> env = new java.util.LinkedHashMap<>();
+            if (argument != null) {
+                TypeAlgebra.ConstraintStore store = checker.algebra().store(Set.copyOf(function.typeParameters()), true);
+                boolean borrowReadOnly = parameters.get(0).borrow() && !parameters.get(0).mut();
+                checker.algebra().relate(argumentType, expectedParam, TypeAlgebra.RelateMode.ASSIGNABLE,
+                        store, borrowReadOnly, false);
+                for (Type.TypeVar tv : function.typeParameters()) {
+                    Type sol = store.solution(tv);
+                    if (sol != null && sol != Type.ERROR) {
+                        env.put(tv, sol);
+                    }
+                }
+                for (Type.TypeVar tv : function.typeParameters()) {
+                    Type arg = env.get(tv);
+                    Type promoted = promoteCallableToSamBound(arg, tv.bound(), env);
+                    if (promoted != arg) {
+                        env.put(tv, promoted);
+                    }
+                }
+                if (!checkBabbleBounds(function.typeParameters(), env, at, null)) {
+                    return Type.ERROR;
+                }
+                String badArrayMsg = findGenericBabbleArrayError(function.typeParameters(), parameters, resultType, null, env);
+                if (badArrayMsg != null) {
+                    checker.warn(badArrayMsg, at);
+                    return Type.ERROR;
+                }
+                expectedParam = checker.algebra().substitute(expectedParam, env);
+                resultType = checker.algebra().substitute(resultType, env);
+            }
+            Set<Type.TypeVar> ownVars = Set.copyOf(function.typeParameters());
+            if (resultType.anyMatch(t -> t instanceof Type.TypeVar tv && ownVars.contains(tv))) {
+                checker.warn("Missing type : cannot infer type arguments for " + receiverText + "." + method, at);
+                return Type.ERROR;
+            }
+        }
+        if (argument != null) {
             List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
             ParserRuleContext decl = decls != null && !decls.isEmpty() ? decls.get(0) : null;
-            boolean frozenBorrowSafe = function.effects().uniqueResult() || checker.isDeeplyImmutable(function.result());
+            boolean frozenBorrowSafe = function.effects().uniqueResult() || checker.isDeeplyImmutable(resultType);
             bindArgument(decl, argumentType, expectedParam,
                     frozenBorrowSafe && parameters.get(0).borrow() && !parameters.get(0).mut(), argument);
         }
-        return function.result();
+        return resultType;
     }
 
     private Type overloadedOperatorCall(Type receiver, String method, Type.Overloaded set,
@@ -725,11 +806,13 @@ final class CallSolver {
         if (chosen >= 0) {
             Type.Function alt = set.alternatives().get(chosen);
             Type resultType = alt.result();
-            if (argument != null) {
-                Type expectedParam = alt.parameters().get(0).type();
-                if (!alt.typeParameters().isEmpty()) {
+            Type expectedParam = argument != null ? alt.parameters().get(0).type() : null;
+            if (!alt.typeParameters().isEmpty()) {
+                if (argument != null) {
                     TypeAlgebra.ConstraintStore store = checker.algebra().store(Set.copyOf(alt.typeParameters()), true);
-                    checker.algebra().relate(argumentType, expectedParam, TypeAlgebra.RelateMode.ASSIGNABLE, store, false, false);
+                    boolean borrowReadOnly = alt.parameters().get(0).borrow() && !alt.parameters().get(0).mut();
+                    checker.algebra().relate(argumentType, expectedParam, TypeAlgebra.RelateMode.ASSIGNABLE,
+                            store, borrowReadOnly, false);
                     Map<Type.TypeVar, Type> env = new java.util.LinkedHashMap<>();
                     for (Type.TypeVar tv : alt.typeParameters()) {
                         Type sol = store.solution(tv);
@@ -737,9 +820,23 @@ final class CallSolver {
                             env.put(tv, sol);
                         }
                     }
+                    for (Type.TypeVar tv : alt.typeParameters()) {
+                        Type arg = env.get(tv);
+                        Type promoted = promoteCallableToSamBound(arg, tv.bound(), env);
+                        if (promoted != arg) {
+                            env.put(tv, promoted);
+                        }
+                    }
                     expectedParam = checker.algebra().substitute(expectedParam, env);
                     resultType = checker.algebra().substitute(resultType, env);
                 }
+                Set<Type.TypeVar> ownVars = Set.copyOf(alt.typeParameters());
+                if (resultType.anyMatch(t -> t instanceof Type.TypeVar tv && ownVars.contains(tv))) {
+                    checker.warn("Missing type : cannot infer type arguments for " + receiverText + "." + method, at);
+                    return Type.ERROR;
+                }
+            }
+            if (argument != null) {
                 List<? extends ParserRuleContext> decls = checker.parameterDecls(alt);
                 ParserRuleContext decl = decls != null && !decls.isEmpty() ? decls.get(0) : null;
                 boolean frozenBorrowSafe = alt.effects().uniqueResult() || checker.isDeeplyImmutable(resultType);
@@ -754,19 +851,25 @@ final class CallSolver {
         }
         if (argument != null && argumentType instanceof Type.Union union) {
             List<Type> components = new ArrayList<>(union.members());
-            for (int i = 0; i < components.size(); i++) {
-                Type a = components.get(i);
-                for (int j = i + 1; j < components.size(); j++) {
-                    Type b = components.get(j);
-                    if (OverloadSolver.isInterfaceLike(a) && OverloadSolver.isInterfaceLike(b)) {
-                        Type meet = OverloadSolver.staticMeet(checker.algebra(), a, b);
-                        if (meet != null && !components.contains(meet)) {
-                            components.add(meet);
+            boolean addedMeet;
+            do {
+                addedMeet = false;
+                for (int i = 0; i < components.size(); i++) {
+                    Type a = components.get(i);
+                    for (int j = i + 1; j < components.size(); j++) {
+                        Type b = components.get(j);
+                        if (OverloadSolver.isInterfaceLike(a) && OverloadSolver.isInterfaceLike(b)) {
+                            Type meet = canonicalizeIntersection(OverloadSolver.staticMeet(checker.algebra(), a, b));
+                            if (meet != null && !containsSplitType(components, meet)) {
+                                components.add(meet);
+                                addedMeet = true;
+                            }
                         }
                     }
                 }
-            }
+            } while (addedMeet);
             List<Integer> compAlts = new ArrayList<>(components.size());
+            List<Type> compResults = new ArrayList<>(components.size());
             boolean allResolved = true;
             for (Type comp : components) {
                 int idx = OverloadSolver.selectAlternativeForPositionalArgs(checker.algebra(), set, List.of(comp));
@@ -774,7 +877,14 @@ final class CallSolver {
                     allResolved = false;
                     break;
                 }
+                Type.Function alt = set.alternatives().get(idx);
+                Type branchResult = instantiateOperatorBranchResult(alt, comp);
+                if (branchResult == null) {
+                    allResolved = false;
+                    break;
+                }
                 compAlts.add(idx);
+                compResults.add(branchResult);
             }
             if (allResolved) {
                 boolean distinguishable = true;
@@ -785,7 +895,7 @@ final class CallSolver {
                             Type cb = components.get(j);
                             boolean ordered = checker.algebra().subtype(ca, cb) || checker.algebra().subtype(cb, ca)
                                     || (isRuntimeInterfaceLike(ca) && isRuntimeInterfaceLike(cb)
-                                        && components.contains(Type.intersection(ca, cb)));
+                                        && containsSplitType(components, canonicalInterfaceMeet(ca, cb)));
                             if (!ordered && !OverloadSolver.runtimeDistinguishable(checker.algebra(), ca, cb)) {
                                 distinguishable = false;
                                 break;
@@ -798,33 +908,76 @@ final class CallSolver {
                             + " : its alternatives are not told apart at runtime", at);
                     return Type.ERROR;
                 }
-                // Order most-specific component first.
-                List<Integer> order = new ArrayList<>(components.size());
-                for (int i = 0; i < components.size(); i++) {
-                    order.add(i);
+                // Order most-specific component first via topological sort over strict subtype DAG.
+                int n = components.size();
+                List<List<Integer>> adj = new ArrayList<>(n);
+                int[] indegree = new int[n];
+                for (int i = 0; i < n; i++) {
+                    adj.add(new ArrayList<>());
                 }
-                order.sort((a, b) -> {
+                for (int i = 0; i < n; i++) {
+                    Type ti = components.get(i);
+                    for (int j = 0; j < n; j++) {
+                        if (i == j) {
+                            continue;
+                        }
+                        Type tj = components.get(j);
+                        if (checker.algebra().subtype(ti, tj) && !checker.algebra().subtype(tj, ti)) {
+                            adj.get(i).add(j);
+                            indegree[j]++;
+                        }
+                    }
+                }
+                PriorityQueue<Integer> ready = new PriorityQueue<>((a, b) -> {
                     Type ta = components.get(a);
                     Type tb = components.get(b);
-                    boolean aSubB = checker.algebra().subtype(ta, tb);
-                    boolean bSubA = checker.algebra().subtype(tb, ta);
-                    if (aSubB && !bSubA) return -1;
-                    if (bSubA && !aSubB) return 1;
+                    if (ta == Type.NULL && tb != Type.NULL) return -1;
+                    if (tb == Type.NULL && ta != Type.NULL) return 1;
+                    int da = OverloadSolver.runtimeTestDescriptors(ta).size();
+                    int db = OverloadSolver.runtimeTestDescriptors(tb).size();
+                    if (da != db) return Integer.compare(db, da);
                     return Integer.compare(a, b);
                 });
+                for (int i = 0; i < n; i++) {
+                    if (indegree[i] == 0) {
+                        ready.add(i);
+                    }
+                }
+                List<Integer> order = new ArrayList<>(n);
+                while (!ready.isEmpty()) {
+                    int u = ready.poll();
+                    order.add(u);
+                    for (int v : adj.get(u)) {
+                        if (--indegree[v] == 0) {
+                            ready.add(v);
+                        }
+                    }
+                }
+                if (order.size() < n) {
+                    boolean[] emitted = new boolean[n];
+                    for (int idx : order) {
+                        emitted[idx] = true;
+                    }
+                    for (int i = 0; i < n; i++) {
+                        if (!emitted[i]) {
+                            order.add(i);
+                        }
+                    }
+                }
                 List<TypeChecker.ResolvedSplitBranch> branches = new ArrayList<>(order.size());
                 List<Type> results = new ArrayList<>(order.size());
                 for (int idx : order) {
                     Type comp = components.get(idx);
                     int altIdx = compAlts.get(idx);
                     Type.Function alt = set.alternatives().get(altIdx);
+                    Type branchResult = compResults.get(idx);
                     List<String> descs = OverloadSolver.runtimeTestDescriptors(comp);
                     ScopeAnalysis.OverloadSplitCheck check = new ScopeAnalysis.OverloadSplitCheck(0, descs, comp == Type.NULL);
                     BabbleParser.FunctionLiteralContext directTarget = (altLiterals != null && altIdx < altLiterals.size())
                             ? altLiterals.get(altIdx) : null;
                     branches.add(new TypeChecker.ResolvedSplitBranch(List.of(check), altIdx, alt, exactSet,
-                            directTarget, alt.result(), null, null));
-                    results.add(alt.result());
+                            directTarget, branchResult, null, null));
+                    results.add(branchResult);
                 }
                 Type joined = Type.union(results);
                 checker.recordResolvedOverloadCall(at, new TypeChecker.ResolvedOverloadCall(
@@ -836,6 +989,29 @@ final class CallSolver {
         checker.warn("No applicable overload of " + receiverText + "." + method + " for (" + argStr
                 + ") : candidates are " + OverloadSolver.formatCandidates(set.alternatives()), at);
         return Type.ERROR;
+    }
+
+    private Type instantiateOperatorBranchResult(Type.Function alt, Type comp) {
+        if (alt.typeParameters().isEmpty()) {
+            return alt.result();
+        }
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(Set.copyOf(alt.typeParameters()), true);
+        Type expectedParam = alt.parameters().get(0).type();
+        boolean borrowReadOnly = alt.parameters().get(0).borrow() && !alt.parameters().get(0).mut();
+        checker.algebra().relate(comp, expectedParam, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly, false);
+        Map<Type.TypeVar, Type> env = new java.util.LinkedHashMap<>();
+        for (Type.TypeVar tv : alt.typeParameters()) {
+            Type sol = store.solution(tv);
+            if (sol != null && sol != Type.ERROR) {
+                env.put(tv, sol);
+            }
+        }
+        Type substituted = checker.algebra().substitute(alt.result(), env);
+        Set<Type.TypeVar> ownVars = Set.copyOf(alt.typeParameters());
+        if (substituted.anyMatch(t -> t instanceof Type.TypeVar tv && ownVars.contains(tv))) {
+            return null;
+        }
+        return substituted;
     }
 
     Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
@@ -954,6 +1130,13 @@ final class CallSolver {
             }
             return Type.ERROR;
         }
+        for (Type.TypeVar tv : solvingList) {
+            Type arg = inferred.get(tv);
+            Type promoted = promoteCallableToSamBound(arg, tv.bound(), inferred);
+            if (promoted != arg) {
+                inferred.put(tv, promoted);
+            }
+        }
         if (!checkBabbleBounds(solvingList, inferred, ctx, null)) {
             return Type.ERROR;
         }
@@ -987,7 +1170,11 @@ final class CallSolver {
             return false;
         }
         if (param != null && param.rest()) {
-            return checker.algebra().relate(sourceElem, paramPattern, TypeAlgebra.RelateMode.SUBTYPE, store, borrowReadOnly);
+            ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(paramPattern);
+            boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(sourceElem);
+            TypeAlgebra.RelateMode mode = needsSamAdapt
+                    ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
+            return checker.algebra().relate(sourceElem, paramPattern, mode, store, borrowReadOnly);
         }
         Type targetElem = sequenceTargetElement(paramPattern);
         if (targetElem != null) {
@@ -1028,7 +1215,9 @@ final class CallSolver {
         TypeVariable<?>[] typeParams = java.getTypeParameters();
         if (typeParams.length == 0) {
             Type expectedSam = new Type.JavaInstance(java);
-            if (TypeAlgebra.isCallable(checker.check(argExpr, expectedSam))) {
+            Type actualArg = checker.check(argExpr, expectedSam);
+            if (TypeAlgebra.isCallable(actualArg)) {
+                checker.coerce(argExpr, actualArg, expectedSam);
                 return expectedSam;
             }
             return javaConstructorCall(java, ctx.callParameters().callParameter(), ctx, expected, true);
@@ -1081,6 +1270,7 @@ final class CallSolver {
         if (actualArg instanceof Type.Function actualFn) {
             checker.subsumes(argExpr, null, actualFn, result);
         }
+        checker.coerceSam(argExpr, actualArg, result);
         return result;
     }
 
@@ -1232,6 +1422,24 @@ final class CallSolver {
         synthetic.forEach((tp, tv) -> solved.put(tp, inferred.get(tv)));
         for (TypeVariable<?> tp : variables) {
             Type resolved = solved.get(tp);
+            if (resolved != null && TypeAlgebra.mayContainBabbleCallable(resolved)) {
+                Type bound = JavaTypeBridge.translateTypeVarBounds(tp, solved);
+                Type targetBound = Type.containsNull(resolved) ? bound : Type.withoutNull(bound);
+                JavaTypeBridge.JavaSamResolution samRes = JavaTypeBridge.resolveJavaSam(targetBound);
+                if (samRes instanceof JavaTypeBridge.JavaSamResolution.Valid) {
+                    if (checker.algebra().assignable(resolved, targetBound)) {
+                        solved.put(tp, targetBound);
+                        resolved = targetBound;
+                    } else if (TypeAlgebra.isCallable(resolved)) {
+                        checker.reportTypeMismatch(resolved, targetBound, ctx);
+                        return null;
+                    }
+                } else if (samRes instanceof JavaTypeBridge.JavaSamResolution.NotFunctional
+                        && TypeAlgebra.isCallable(resolved)) {
+                    checker.reportTypeMismatch(resolved, targetBound, ctx);
+                    return null;
+                }
+            }
             if (!JavaTypeBridge.satisfiesJavaBounds(resolved, tp, solved, checker.algebra())) {
                 checker.warn("Type error : type argument " + resolved + " does not satisfy bound " + tp.getName()
                         + " of " + description, ctx);
@@ -1418,7 +1626,8 @@ final class CallSolver {
         patternEnv.putAll(tvToSyn);
         Type paramPat = JavaTypeBridge.javaExecutableParamType(candidate, index, patternEnv);
         if (!paramPat.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null)) {
-            return classifyJavaSpread(actual, paramPat, rawParam, borrow, mut) != null;
+            java.lang.reflect.Type genericParam = candidate.getGenericParameterTypes()[index];
+            return classifyJavaSpread(actual, paramPat, rawParam, genericParam, borrow, mut) != null;
         }
         Set<Type.TypeVar> solving = Set.copyOf(tvToSyn.values());
         TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, true);
@@ -1432,6 +1641,7 @@ final class CallSolver {
     }
 
     private ScopeAnalysis.SpreadAdapt classifyJavaSpread(Type sourceType, Type paramType, Class<?> rawParam,
+                                                         java.lang.reflect.Type genericParam,
                                                          boolean borrow, boolean mut) {
         if (TypeChecker.isUnresolved(sourceType) || TypeChecker.isUnresolved(paramType)) {
             return null;
@@ -1446,13 +1656,28 @@ final class CallSolver {
             if (!checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.ASSIGNABLE, null, false, false)) {
                 return null;
             }
-            if (TypeAlgebra.unwrapFrozen(sourceType) instanceof Type.Array srcArr) {
+            ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(targetElem);
+            if (elemSam == null && genericParam != null) {
+                java.lang.reflect.Type compGen = null;
+                if (genericParam instanceof GenericArrayType gat) {
+                    compGen = gat.getGenericComponentType();
+                } else if (genericParam instanceof Class<?> c && c.isArray()) {
+                    compGen = c.getComponentType();
+                }
+                if (compGen instanceof TypeVariable<?> tv) {
+                    elemSam = samTargetForElement(JavaTypeBridge.translateTypeVarBounds(tv, Map.of()));
+                } else if (compGen != null) {
+                    elemSam = samTargetForElement(JavaTypeBridge.fromJavaType(compGen, Map.of(), false, true));
+                }
+            }
+            boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(sourceElem);
+            if (!needsSamAdapt && !(sourceType instanceof Type.Frozen) && sourceType instanceof Type.Array srcArr) {
                 Class<?> srcCls = JavaTypeBridge.checkedArrayClass(srcArr);
                 if (srcCls != null && rawParam.isAssignableFrom(srcCls)) {
                     return ScopeAnalysis.SpreadAdapt.AS_IS;
                 }
             }
-            return new ScopeAnalysis.SpreadAdapt(ScopeAnalysis.SpreadKind.TO_ARRAY, rawParam.getComponentType());
+            return ScopeAnalysis.SpreadAdapt.toArray(rawParam.getComponentType(), needsSamAdapt ? elemSam : null);
         }
         return classifySpread(sourceType, paramType, borrow, mut, borrow && !mut);
     }
@@ -1537,8 +1762,10 @@ final class CallSolver {
                         ? JavaTypeBridge.javaVarArgParamType(candidate, i, env)
                         : JavaTypeBridge.javaExecutableParamType(candidate, i, env);
                 if (ScopeAnalysis.isSpread(argCtx)) {
+                    int pIdx = varArgs ? Math.min(i, candidate.getParameterCount() - 1) : i;
                     ScopeAnalysis.SpreadAdapt adapt = classifyJavaSpread(argType, paramType,
-                            candidate.getParameterTypes()[i], isJavaParamBorrow(candidate, i), isJavaParamMut(candidate, i));
+                            candidate.getParameterTypes()[pIdx], candidate.getGenericParameterTypes()[pIdx],
+                            isJavaParamBorrow(candidate, pIdx), isJavaParamMut(candidate, pIdx));
                     if (adapt != null) {
                         if (adapts == null) {
                             adapts = new ScopeAnalysis.SpreadAdapt[arguments.size()];
@@ -1890,8 +2117,8 @@ final class CallSolver {
             }
             return false;
         }
-        if (expectedBase instanceof Type.JavaInstance ji && JavaTypes.isFunctionalInterface(ji.type())) {
-            Type.Function sam = JavaTypeBridge.samFunctionType(ji, checker.effectChecker());
+        if (JavaTypeBridge.resolveJavaSam(expectedBase) instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
+            Type.Function sam = JavaTypeBridge.samFunctionType(valid.samType(), checker.effectChecker());
             if (sam != null) {
                 return paramInputHasSyntheticTypeVar(sam);
             }
@@ -2865,6 +3092,7 @@ final class CallSolver {
         List<Type> effectiveParams = new ArrayList<>(argCount);
 
         if (alt.typeParameters().isEmpty()) {
+            boolean frozenBorrowSafe = alt.effects().uniqueResult() || checker.isDeeplyImmutable(alt.result());
             for (int i = 0; i < argCount; i++) {
                 int pIdx = paramIndexForArg(bind, i);
                 if (pIdx < 0) {
@@ -2881,23 +3109,48 @@ final class CallSolver {
                     effectiveParams.add(Type.ANY);
                     continue;
                 }
+                boolean borrowReadOnly = frozenBorrowSafe && param.borrow() && !param.mut();
                 if (param.rest()) {
                     if (ScopeAnalysis.isSpread(arguments.get(i))) {
                         Type seqElem = extractSequenceElement(argTypes[i]);
-                        if (seqElem == null || !OverloadSolver.paramAccepts(checker.algebra(), paramType, seqElem)) {
+                        if (seqElem == null) {
                             return null;
                         }
-                        int rank = isIterableDirectly(argTypes[i]) ? 0 : 1;
+                        ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(paramType);
+                        boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(seqElem);
+                        TypeAlgebra.RelateMode mode = needsSamAdapt
+                                ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
+                        if (!checker.algebra().relate(seqElem, paramType, mode, null, borrowReadOnly, false)) {
+                            return null;
+                        }
+                        if (needsSamAdapt) {
+                            if (adapts == null) {
+                                adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                            }
+                            adapts[i] = ScopeAnalysis.SpreadAdapt.toIterable(elemSam);
+                        }
+                        int rank = !needsSamAdapt && isIterableDirectly(argTypes[i]) ? 0 : 1;
                         maxSpreadRank = Math.max(maxSpreadRank, rank);
                     } else {
-                        if (!OverloadSolver.paramAccepts(checker.algebra(), paramType, argTypes[i])) {
+                        ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(paramType);
+                        boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(argTypes[i]);
+                        TypeAlgebra.RelateMode mode = needsSamAdapt
+                                ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
+                        if (!checker.algebra().relate(argTypes[i], paramType, mode, null, borrowReadOnly, false)
+                                && (needsSamAdapt || !OverloadSolver.paramAccepts(checker.algebra(), paramType, argTypes[i], borrowReadOnly))) {
                             return null;
+                        }
+                        if (needsSamAdapt) {
+                            if (adapts == null) {
+                                adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                            }
+                            adapts[i] = ScopeAnalysis.SpreadAdapt.toSam(elemSam);
                         }
                     }
                     effectiveParams.add(paramType);
                 } else if (ScopeAnalysis.isSpread(arguments.get(i))) {
                     ScopeAnalysis.SpreadAdapt adapt = classifySpread(argTypes[i], paramType,
-                            param.borrow(), param.mut(), param.borrow() && !param.mut());
+                            param.borrow(), param.mut(), borrowReadOnly);
                     if (adapt == null) {
                         return null;
                     }
@@ -2908,11 +3161,17 @@ final class CallSolver {
                     maxSpreadRank = Math.max(maxSpreadRank, spreadRank(adapt.kind()));
                     effectiveParams.add(paramType);
                 } else {
-                    boolean borrowReadOnly = param.borrow() && !param.mut();
                     boolean ok = checker.algebra().relate(argTypes[i], paramType, TypeAlgebra.RelateMode.ASSIGNABLE,
-                            null, borrowReadOnly, param.borrow() && !param.mut());
-                    if (!ok && !OverloadSolver.paramAccepts(checker.algebra(), paramType, argTypes[i])) {
+                            null, borrowReadOnly, false);
+                    if (!ok && !OverloadSolver.paramAccepts(checker.algebra(), paramType, argTypes[i], borrowReadOnly)) {
                         return null;
+                    }
+                    ScopeAnalysis.JavaSamTarget argSam = samTargetForElement(paramType);
+                    if (argSam != null && TypeAlgebra.mayContainBabbleCallable(argTypes[i])) {
+                        if (adapts == null) {
+                            adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                        }
+                        adapts[i] = ScopeAnalysis.SpreadAdapt.toSam(argSam);
                     }
                     effectiveParams.add(paramType);
                 }
@@ -2938,15 +3197,24 @@ final class CallSolver {
                 effectiveParams.add(Type.ANY);
                 continue;
             }
+            boolean borrowCollect = param.borrow() && !param.mut();
             if (param.rest()) {
                 if (ScopeAnalysis.isSpread(arguments.get(i))) {
                     Type seqElem = extractSequenceElement(argTypes[i]);
-                    if (seqElem == null || !checker.algebra().relate(seqElem, pattern, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
+                    if (seqElem == null) {
                         return null;
                     }
-                    int rank = isIterableDirectly(argTypes[i]) ? 0 : 1;
+                    ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(pattern);
+                    boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(seqElem);
+                    TypeAlgebra.RelateMode mode = needsSamAdapt
+                            ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
+                    if (!checker.algebra().relate(seqElem, pattern, mode, store, borrowCollect, false)) {
+                        return null;
+                    }
+                    int rank = !needsSamAdapt && isIterableDirectly(argTypes[i]) ? 0 : 1;
                     maxSpreadRank = Math.max(maxSpreadRank, rank);
-                } else if (!checker.algebra().relate(argTypes[i], pattern, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
+                } else if (!checker.algebra().relate(argTypes[i], pattern,
+                        TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowCollect, false)) {
                     return null;
                 }
                 effectiveParams.add(pattern);
@@ -2954,20 +3222,27 @@ final class CallSolver {
                 Type seqElem = extractSequenceElement(argTypes[i]);
                 Type targetElem = sequenceTargetElement(pattern);
                 if (seqElem == null || targetElem == null
-                        || !checker.algebra().relate(seqElem, targetElem, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
+                        || !checker.algebra().relate(seqElem, targetElem, TypeAlgebra.RelateMode.ASSIGNABLE,
+                        store, borrowCollect, false)) {
                     return null;
                 }
                 effectiveParams.add(pattern);
             } else {
-                boolean borrowReadOnly = param.borrow() && !param.mut();
                 if (!checker.algebra().relate(argTypes[i], pattern, TypeAlgebra.RelateMode.ASSIGNABLE,
-                        store, borrowReadOnly, param.borrow() && !param.mut())) {
+                        store, borrowCollect, false)) {
                     return null;
                 }
                 effectiveParams.add(pattern);
             }
         }
         Map<Type.TypeVar, Type> solved = OverloadSolver.solveConstraints(store, alt.typeParameters());
+        for (Type.TypeVar tv : alt.typeParameters()) {
+            Type arg = solved.get(tv);
+            Type promoted = promoteCallableToSamBound(arg, tv.bound(), solved);
+            if (promoted != arg) {
+                solved.put(tv, promoted);
+            }
+        }
         for (Type.TypeVar tv : alt.typeParameters()) {
             Type inferred = solved.get(tv);
             if (inferred == null || inferred == Type.NOTHING) {
@@ -2988,14 +3263,57 @@ final class CallSolver {
         if (checker.algebra().findPrimitiveArraySubstitution(alt.result(), solved) != null) {
             return null;
         }
-        // Re-verify spread adaptation with instantiated parameter types.
+        Type instResult = checker.algebra().substitute(alt.result(), solved);
+        boolean frozenBorrowSafe = alt.effects().uniqueResult() || checker.isDeeplyImmutable(instResult);
+        // Re-verify all arguments (including frozen borrow safety and spread adaptation) against instantiated parameter types.
         for (int i = 0; i < argCount; i++) {
+            if (untypedLambda[i]) {
+                continue;
+            }
             int pIdx = paramIndexForArg(bind, i);
             Type.Parameter param = params.get(pIdx);
-            if (!param.rest() && ScopeAnalysis.isSpread(arguments.get(i))) {
-                Type instParam = checker.algebra().substitute(param.type(), solved);
+            Type instParam = checker.algebra().substitute(param.type(), solved);
+            boolean borrowReadOnly = frozenBorrowSafe && param.borrow() && !param.mut();
+            if (param.rest()) {
+                if (ScopeAnalysis.isSpread(arguments.get(i))) {
+                    Type seqElem = extractSequenceElement(argTypes[i]);
+                    if (seqElem == null) {
+                        return null;
+                    }
+                    ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(instParam);
+                    boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(seqElem);
+                    TypeAlgebra.RelateMode mode = needsSamAdapt
+                            ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
+                    if (!checker.algebra().relate(seqElem, instParam, mode, null, borrowReadOnly, false)) {
+                        return null;
+                    }
+                    if (needsSamAdapt) {
+                        if (adapts == null) {
+                            adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                        }
+                        adapts[i] = ScopeAnalysis.SpreadAdapt.toIterable(elemSam);
+                    }
+                    int rank = !needsSamAdapt && isIterableDirectly(argTypes[i]) ? 0 : 1;
+                    maxSpreadRank = Math.max(maxSpreadRank, rank);
+                } else {
+                    ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(instParam);
+                    boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(argTypes[i]);
+                    TypeAlgebra.RelateMode mode = needsSamAdapt
+                            ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
+                    if (!checker.algebra().relate(argTypes[i], instParam, mode, null, borrowReadOnly, false)
+                            && (needsSamAdapt || !OverloadSolver.paramAccepts(checker.algebra(), instParam, argTypes[i], borrowReadOnly))) {
+                        return null;
+                    }
+                    if (needsSamAdapt) {
+                        if (adapts == null) {
+                            adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                        }
+                        adapts[i] = ScopeAnalysis.SpreadAdapt.toSam(elemSam);
+                    }
+                }
+            } else if (ScopeAnalysis.isSpread(arguments.get(i))) {
                 ScopeAnalysis.SpreadAdapt adapt = classifySpread(argTypes[i], instParam,
-                        param.borrow(), param.mut(), param.borrow() && !param.mut());
+                        param.borrow(), param.mut(), borrowReadOnly);
                 if (adapt == null) {
                     return null;
                 }
@@ -3004,6 +3322,19 @@ final class CallSolver {
                 }
                 adapts[i] = adapt;
                 maxSpreadRank = Math.max(maxSpreadRank, spreadRank(adapt.kind()));
+            } else {
+                boolean ok = checker.algebra().relate(argTypes[i], instParam, TypeAlgebra.RelateMode.ASSIGNABLE,
+                        null, borrowReadOnly, false);
+                if (!ok && !OverloadSolver.paramAccepts(checker.algebra(), instParam, argTypes[i], borrowReadOnly)) {
+                    return null;
+                }
+                ScopeAnalysis.JavaSamTarget argSam = samTargetForElement(instParam);
+                if (argSam != null && TypeAlgebra.mayContainBabbleCallable(argTypes[i])) {
+                    if (adapts == null) {
+                        adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                    }
+                    adapts[i] = ScopeAnalysis.SpreadAdapt.toSam(argSam);
+                }
             }
         }
         return new OverloadCandidate(index, alt, bind, effectiveParams, maxSpreadRank, solved, adapts);
@@ -3025,7 +3356,9 @@ final class CallSolver {
                 for (Type m : members) {
                     Type[] copy = base.clone();
                     copy[idx] = m;
-                    next.add(copy);
+                    if (!containsCombo(next, copy)) {
+                        next.add(copy);
+                    }
                 }
             }
             combos = next;
@@ -3056,12 +3389,12 @@ final class CallSolver {
                     for (int pos : unionArgIndices) {
                         Type ca = combos.get(i)[pos];
                         Type cb = combos.get(j)[pos];
-                        if (ca.equals(cb) || OverloadSolver.runtimeDistinguishable(checker.algebra(), ca, cb)) {
+                        if (sameSplitType(ca, cb) || OverloadSolver.runtimeDistinguishable(checker.algebra(), ca, cb)) {
                             continue;
                         }
                         if (isRuntimeInterfaceLike(ca) && isRuntimeInterfaceLike(cb)) {
-                            Type meet = Type.intersection(ca, cb);
-                            if (!meet.equals(ca) && !meet.equals(cb)) {
+                            Type meet = canonicalInterfaceMeet(ca, cb);
+                            if (!sameSplitType(meet, ca) && !sameSplitType(meet, cb)) {
                                 Type[] meetCombo = combos.get(i).clone();
                                 meetCombo[pos] = meet;
                                 if (!containsCombo(combos, meetCombo)) {
@@ -3089,7 +3422,7 @@ final class CallSolver {
                 for (int pos : unionArgIndices) {
                     Type ca = combos.get(i)[pos];
                     Type cb = combos.get(j)[pos];
-                    if (ca.equals(cb)) {
+                    if (sameSplitType(ca, cb)) {
                         continue;
                     }
                     if (OverloadSolver.runtimeDistinguishable(checker.algebra(), ca, cb)) {
@@ -3098,7 +3431,7 @@ final class CallSolver {
                     }
                     // Two unrelated interfaces are distinguishable once their intersection meet is also in combos.
                     if (isRuntimeInterfaceLike(ca) && isRuntimeInterfaceLike(cb)) {
-                        Type meet = Type.intersection(ca, cb);
+                        Type meet = canonicalInterfaceMeet(ca, cb);
                         Type[] meetCombo = combos.get(i).clone();
                         meetCombo[pos] = meet;
                         if (containsCombo(combos, meetCombo)) {
@@ -3116,13 +3449,95 @@ final class CallSolver {
             }
         }
 
-        // Order branches most-specific-first so runtime instanceof checks dispatch to intersections / subtypes first.
-        List<Integer> order = new ArrayList<>(combos.size());
-        for (int i = 0; i < combos.size(); i++) {
-            order.add(i);
+        // Order branches most-specific-first via topological sort over the componentwise strict subtype DAG
+        // so runtime instanceof checks dispatch to intersections / subtypes before supertypes.
+        int nCombos = combos.size();
+        List<List<Integer>> adj = new ArrayList<>(nCombos);
+        int[] indegree = new int[nCombos];
+        for (int i = 0; i < nCombos; i++) {
+            adj.add(new ArrayList<>());
+        }
+        for (int i = 0; i < nCombos; i++) {
+            Type[] ca = combos.get(i);
+            for (int j = 0; j < nCombos; j++) {
+                if (i == j) {
+                    continue;
+                }
+                Type[] cb = combos.get(j);
+                boolean allSub = true;
+                boolean strictSub = false;
+                for (int pos : unionArgIndices) {
+                    if (sameSplitType(ca[pos], cb[pos])) {
+                        continue;
+                    }
+                    if (!checker.algebra().subtype(ca[pos], cb[pos])) {
+                        allSub = false;
+                        break;
+                    }
+                    if (!checker.algebra().subtype(cb[pos], ca[pos])) {
+                        strictSub = true;
+                    }
+                }
+                if (allSub && strictSub) {
+                    adj.get(i).add(j);
+                    indegree[j]++;
+                }
+            }
         }
         List<Type[]> finalCombos = combos;
-        order.sort((aIdx, bIdx) -> compareSplitCombos(finalCombos.get(aIdx), finalCombos.get(bIdx), unionArgIndices));
+        PriorityQueue<Integer> ready = new PriorityQueue<>((aIdx, bIdx) -> {
+            Type[] ca = finalCombos.get(aIdx);
+            Type[] cb = finalCombos.get(bIdx);
+            int nullA = 0;
+            int nullB = 0;
+            int descA = 0;
+            int descB = 0;
+            for (int pos : unionArgIndices) {
+                if (ca[pos] == Type.NULL) {
+                    nullA++;
+                } else {
+                    descA += OverloadSolver.runtimeTestDescriptors(ca[pos]).size();
+                }
+                if (cb[pos] == Type.NULL) {
+                    nullB++;
+                } else {
+                    descB += OverloadSolver.runtimeTestDescriptors(cb[pos]).size();
+                }
+            }
+            if (nullA != nullB) {
+                return Integer.compare(nullB, nullA);
+            }
+            if (descA != descB) {
+                return Integer.compare(descB, descA);
+            }
+            return Integer.compare(aIdx, bIdx);
+        });
+        for (int i = 0; i < nCombos; i++) {
+            if (indegree[i] == 0) {
+                ready.add(i);
+            }
+        }
+        List<Integer> order = new ArrayList<>(nCombos);
+        while (!ready.isEmpty()) {
+            int u = ready.poll();
+            order.add(u);
+            for (int v : adj.get(u)) {
+                if (--indegree[v] == 0) {
+                    ready.add(v);
+                }
+            }
+        }
+        if (order.size() < nCombos) {
+            boolean[] emitted = new boolean[nCombos];
+            for (int idx : order) {
+                emitted[idx] = true;
+            }
+            for (int i = 0; i < nCombos; i++) {
+                if (!emitted[i]) {
+                    order.add(i);
+                }
+            }
+        }
 
         List<TypeChecker.ResolvedSplitBranch> branches = new ArrayList<>(order.size());
         List<Type> branchResults = new ArrayList<>(order.size());
@@ -3163,39 +3578,6 @@ final class CallSolver {
         return joinedResult;
     }
 
-    private int compareSplitCombos(Type[] a, Type[] b, List<Integer> unionArgIndices) {
-        int aScore = 0;
-        int bScore = 0;
-        for (int pos : unionArgIndices) {
-            Type ta = a[pos];
-            Type tb = b[pos];
-            if (ta.equals(tb)) {
-                continue;
-            }
-            if (ta == Type.NULL) {
-                aScore += 100;
-            } else if (tb == Type.NULL) {
-                bScore += 100;
-            } else {
-                boolean aSubB = checker.algebra().assignable(ta, tb);
-                boolean bSubA = checker.algebra().assignable(tb, ta);
-                if (aSubB && !bSubA) {
-                    aScore += 10;
-                } else if (bSubA && !aSubB) {
-                    bScore += 10;
-                } else {
-                    int da = OverloadSolver.runtimeTestDescriptors(ta).size();
-                    int db = OverloadSolver.runtimeTestDescriptors(tb).size();
-                    if (da != db) {
-                        aScore += da;
-                        bScore += db;
-                    }
-                }
-            }
-        }
-        return Integer.compare(bScore, aScore);
-    }
-
     private static int paramIndexForArg(BindResult bind, int argIndex) {
         int[] p2a = bind.paramToArg();
         for (int p = 0; p < p2a.length; p++) {
@@ -3215,7 +3597,7 @@ final class CallSolver {
 
     private static int spreadRank(ScopeAnalysis.SpreadKind kind) {
         return switch (kind) {
-            case NONE, AS_IS -> 0;
+            case NONE, AS_IS, TO_SAM -> 0;
             case TO_ITERABLE, TO_LIST_BORROWED -> 1;
             case TO_LIST_COPY, TO_ARRAY -> 2;
         };
@@ -3264,6 +3646,66 @@ final class CallSolver {
         return sb.toString();
     }
 
+    private static Type canonicalInterfaceMeet(Type a, Type b) {
+        Type inter = canonicalizeIntersection(Type.intersection(TypeAlgebra.unwrapFrozen(a), TypeAlgebra.unwrapFrozen(b)));
+        return (a instanceof Type.Frozen || b instanceof Type.Frozen) ? Type.frozen(inter) : inter;
+    }
+
+    private static Type canonicalizeIntersection(Type t) {
+        if (t instanceof Type.Frozen f) {
+            Type inner = canonicalizeIntersection(f.of());
+            return inner == f.of() ? t : Type.frozen(inner);
+        }
+        if (!(t instanceof Type.Intersection inter)) {
+            return t;
+        }
+        List<Type> sorted = new ArrayList<>(inter.members());
+        sorted.sort(Comparator.comparing(Type::toString)
+                .thenComparingInt(m -> m instanceof Type.Instance inst ? System.identityHashCode(inst.node())
+                        : (m instanceof Type.JavaInstance ji ? System.identityHashCode(ji.type()) : 0)));
+        return new Type.Intersection(List.copyOf(sorted));
+    }
+
+    private static boolean sameSplitType(Type a, Type b) {
+        if (a.equals(b)) {
+            return true;
+        }
+        if (a instanceof Type.Frozen fa && b instanceof Type.Frozen fb) {
+            return sameSplitType(fa.of(), fb.of());
+        }
+        if (a instanceof Type.Intersection ia && b instanceof Type.Intersection ib) {
+            List<Type> ma = ia.members();
+            List<Type> mb = ib.members();
+            return ma.size() == mb.size() && allMembersMatch(ma, mb) && allMembersMatch(mb, ma);
+        }
+        return false;
+    }
+
+    private static boolean allMembersMatch(List<Type> src, List<Type> dst) {
+        for (Type a : src) {
+            boolean found = false;
+            for (Type b : dst) {
+                if (sameSplitType(a, b)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean containsSplitType(List<Type> list, Type target) {
+        for (Type existing : list) {
+            if (sameSplitType(existing, target)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isRuntimeInterfaceLike(Type t) {
         Type u = TypeAlgebra.unwrapFrozen(t);
         if (u instanceof Type.Instance i) {
@@ -3277,8 +3719,17 @@ final class CallSolver {
 
     private static boolean containsCombo(List<Type[]> combos, Type[] candidate) {
         for (Type[] existing : combos) {
-            if (Arrays.equals(existing, candidate)) {
-                return true;
+            if (existing.length == candidate.length) {
+                boolean match = true;
+                for (int i = 0; i < existing.length; i++) {
+                    if (!sameSplitType(existing[i], candidate[i])) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    return true;
+                }
             }
         }
         return false;

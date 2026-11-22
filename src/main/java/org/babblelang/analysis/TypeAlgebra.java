@@ -170,6 +170,10 @@ final class TypeAlgebra {
         this.env = env;
     }
 
+    boolean isDeeplyImmutable(Type type) {
+        return env.isDeeplyImmutable(type);
+    }
+
     /** A constraint store solving {@code solving} ; {@code allowNumericWidening} joins {@code int} and {@code double} lower bounds. */
     ConstraintStore store(Set<Type.TypeVar> solving, boolean allowNumericWidening) {
         return new ConstraintStore(solving, allowNumericWidening);
@@ -201,7 +205,38 @@ final class TypeAlgebra {
     boolean alwaysIs(Type from, Type to) {
         return from != Type.ERROR && to != Type.ERROR && from != Type.NOTHING && from != Type.NULL
                 && !needsNumericWidening(from, to)
+                && !needsSamConversion(from, to)
                 && assignable(from, to);
+    }
+
+    static boolean mayContainBabbleCallable(Type type) {
+        if (type == null || type == Type.ERROR || type == Type.NOTHING) {
+            return false;
+        }
+        if (isCallable(type) || type == Type.ANY) {
+            return true;
+        }
+        if (type instanceof Type.Union union) {
+            return union.members().stream().anyMatch(TypeAlgebra::mayContainBabbleCallable);
+        }
+        if (type instanceof Type.Frozen frozen) {
+            return mayContainBabbleCallable(frozen.of());
+        }
+        return false;
+    }
+
+    private static boolean needsSamConversion(Type from, Type to) {
+        if (!mayContainBabbleCallable(from)) {
+            return false;
+        }
+        if (JavaTypeBridge.resolveJavaSam(to) instanceof JavaTypeBridge.JavaSamResolution.Valid) {
+            return true;
+        }
+        if (Type.withoutNull(to) instanceof Type.Union union) {
+            return union.members().stream()
+                    .anyMatch(m -> JavaTypeBridge.resolveJavaSam(m) instanceof JavaTypeBridge.JavaSamResolution.Valid);
+        }
+        return false;
     }
 
     /** Function assignability by parameters and result only, ignoring effects, {@code mut} and {@code borrow}. */
@@ -271,8 +306,18 @@ final class TypeAlgebra {
                 }
                 return true;
             }
-            // Right intersection : a value of every member (BIP022-D3)
+            // Right intersection : a value of every member (BIP022-D3), or a Babble callable -> SAM + markers (BIP022-D7)
             if (sup instanceof Type.Intersection intersection) {
+                Type callableSub = sub instanceof Type.Frozen subf && borrowCovariant ? subf.of() : sub;
+                if (isCallable(callableSub)) {
+                    if (mode == RelateMode.RUNTIME_EXACT) {
+                        return false;
+                    }
+                    if (JavaTypeBridge.resolveJavaSam(intersection) instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
+                        return relate(callableSub, valid.samType(), mode, store, active, borrowCovariant, waiveArrayNullness);
+                    }
+                    return false;
+                }
                 for (Type member : intersection.members()) {
                     if (!relate(sub, member, mode, store, active, borrowCovariant, waiveArrayNullness)) {
                         return false;
@@ -973,6 +1018,10 @@ final class TypeAlgebra {
             return intersection.members().stream().allMatch(member -> canCast(member, to));
         }
         if (to instanceof Type.Intersection intersection) {
+            if (isCallable(from)) {
+                return JavaTypeBridge.resolveJavaSam(intersection) instanceof JavaTypeBridge.JavaSamResolution.Valid
+                        && assignable(from, intersection);
+            }
             return intersection.members().stream().allMatch(member -> canCast(from, member));
         }
         if (from == Type.NULL || to == Type.NULL) {
@@ -1231,6 +1280,18 @@ final class TypeAlgebra {
     Type projectToJava(Type source, Class<?> targetClass) {
         if (targetClass == Object.class) {
             return Type.ANY;
+        }
+        if (source instanceof Type.Frozen) {
+            return projectToJava(unwrapFrozen(source), targetClass);
+        }
+        if (source instanceof Type.Intersection inter) {
+            for (Type member : inter.members()) {
+                Type projected = projectToJava(member, targetClass);
+                if (projected != null) {
+                    return projected;
+                }
+            }
+            return null;
         }
         if (source instanceof Type.JavaInstance ji) {
             if (ji.type() == targetClass) {

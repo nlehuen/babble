@@ -159,6 +159,35 @@ public final class Values {
         return value;
     }
 
+    /** Eagerly adapts a Babble callable to a Java functional interface plus optional marker interfaces. */
+    public static Object toJavaSam(Object value, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
+        if (value != null && isBabbleCallable(value)) {
+            return Faces.function((Callable) value, samInterface, markers, rt);
+        }
+        return value;
+    }
+
+    /** Name-based {@link #toJavaSam} for non-public Java interfaces where {@code LDC} cannot reference the class. */
+    public static Object toJavaSamByName(Object value, String samName, String[] markerNames, ScriptRuntime rt) {
+        if (value == null || !isBabbleCallable(value)) {
+            return value;
+        }
+        ClassLoader cl = Values.class.getClassLoader();
+        try {
+            Class<?> sam = Class.forName(samName, false, cl);
+            Class<?>[] markers = null;
+            if (markerNames != null && markerNames.length > 0) {
+                markers = new Class<?>[markerNames.length];
+                for (int i = 0; i < markerNames.length; i++) {
+                    markers[i] = Class.forName(markerNames[i], false, cl);
+                }
+            }
+            return Faces.function((Callable) value, sam, markers, rt);
+        } catch (ClassNotFoundException e) {
+            throw new IllegalArgumentException("Unknown Java interface : " + samName, e);
+        }
+    }
+
     /** Unwraps a {@link JavaValue} wrapper to its underlying Java object, if wrapped. */
     public static Object unwrap(Object value) {
         return value instanceof JavaValue wrapper ? wrapper.javaValue() : value;

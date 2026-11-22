@@ -55,8 +55,13 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
      */
     @Override
     public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
-        if (clazz.isInterface() && args.length == 1 && Values.isBabbleCallable(args[0]) && JavaTypes.isFunctionalInterface(clazz)) {
-            return Values.toJava(args[0], clazz, rt);
+        if (clazz.isInterface() && args.length == 1 && JavaTypes.isFunctionalInterface(clazz)) {
+            if (clazz.isInstance(args[0])) {
+                return args[0];
+            }
+            if (Values.isBabbleCallable(args[0])) {
+                return Values.toJava(args[0], clazz, rt);
+            }
         }
         Overloads.Resolved<Constructor<?>> resolved = constructors.findResolved(args);
         if (resolved == null) {

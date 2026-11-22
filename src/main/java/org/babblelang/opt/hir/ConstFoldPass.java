@@ -178,7 +178,8 @@ public final class ConstFoldPass implements HirPass {
             HirExpr ni = foldExpr(f.iterable(), env, assigned, rewrites);
             List<HirExpr> nb = foldStatements(f.body(), new HashMap<>(env), assigned, rewrites);
             return (ni == f.iterable() && nb == f.body()) ? f
-                    : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb, f.bodyWideningRank(), f.meta());
+                    : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb,
+                            f.bodyWideningRank(), f.elemSamTarget(), f.meta());
         }
 
         // Propagate known non-reassigned constant local variables

@@ -210,6 +210,24 @@ public final class InlinePass implements HirPass {
                     return;
                 }
             }
+            case HirExpr.JavaSamAdapt j -> {
+                if (!isSamTargetCrossModuleAccessible(j.target())) {
+                    ok[0] = false;
+                    return;
+                }
+            }
+            case HirExpr.As a -> {
+                if (a.samTarget() != null && !isSamTargetCrossModuleAccessible(a.samTarget())) {
+                    ok[0] = false;
+                    return;
+                }
+            }
+            case HirExpr.For f -> {
+                if (f.elemSamTarget() != null && !isSamTargetCrossModuleAccessible(f.elemSamTarget())) {
+                    ok[0] = false;
+                    return;
+                }
+            }
             default -> {
             }
         }
@@ -217,6 +235,18 @@ public final class InlinePass implements HirPass {
             scanCrossModuleSelfContained(child, ok);
             return child;
         });
+    }
+
+    private static boolean isSamTargetCrossModuleAccessible(ScopeAnalysis.JavaSamTarget target) {
+        if (target == null || !org.babblelang.runtime.JavaTypes.isAccessible(target.samInterface())) {
+            return false;
+        }
+        for (Class<?> m : target.markers()) {
+            if (!org.babblelang.runtime.JavaTypes.isAccessible(m)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -231,9 +261,9 @@ public final class InlinePass implements HirPass {
         if (fn.body().isEmpty()) {
             return false;
         }
-        // Reject parameters that are cells or namespace-bound
+        // Reject parameters that are cells, namespace-bound, or require Java SAM entry adaptation
         for (HirParam p : fn.params()) {
-            if (p.var() == null || p.var().cell()) {
+            if (p.var() == null || p.var().cell() || p.samTarget() != null) {
                 return false;
             }
         }
@@ -593,7 +623,8 @@ public final class InlinePass implements HirPass {
                 for (HirExpr s : f.body()) {
                     nb.add(alphaRename(s, innerMap, substExprs, ownerMethodId, nextVarId));
                 }
-                yield new HirExpr.For(ni, f.target(), freshLoop, freshDecls, nb, f.bodyWideningRank(), f.meta());
+                yield new HirExpr.For(ni, f.target(), freshLoop, freshDecls, nb, f.bodyWideningRank(),
+                        f.elemSamTarget(), f.meta());
             }
             default -> HirRewriter.rewriteChildren(expr, child -> alphaRename(child, varMap, substExprs, ownerMethodId, nextVarId));
         };

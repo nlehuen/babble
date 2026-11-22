@@ -271,13 +271,14 @@ final class TailCalls {
         if (!callsItself(function, call) || !bindsStatically(function, call)) {
             return false;
         }
-        // Nothing between the call and the function's result may check or widen the value (BIP024-D4).
+        // Nothing between the call and the function's result may check, widen, or adapt the value (BIP024-D4).
         for (ParserRuleContext node = call; node != null && node != function.functionBlock; node = node.getParent()) {
-            if (analysis.numericWideningRank(node) >= 0 || analysis.checkedType(node) != null) {
+            if (analysis.numericWideningRank(node) >= 0 || analysis.checkedType(node) != null
+                    || analysis.javaSamTarget(node) != null) {
                 return false;
             }
         }
-        return true;
+        return analysis.javaSamTarget(function.functionBlock) == null;
     }
 
     private boolean callsItself(BabbleParser.FunctionLiteralContext function, BabbleParser.CallContext call) {

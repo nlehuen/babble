@@ -553,6 +553,12 @@ public class BabbleCompilerTestCase {
                     }
 
                     @Override
+                    public void visitTypeInsn(int opcode, String type) {
+                        if (opcode == Opcodes.INSTANCEOF) ops.add("INSTANCEOF");
+                        else if (opcode == Opcodes.CHECKCAST) ops.add("CHECKCAST");
+                    }
+
+                    @Override
                     public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor, boolean isInterface) {
                         ops.add("CALL:" + owner + "." + methodName);
                     }
@@ -890,5 +896,58 @@ public class BabbleCompilerTestCase {
         String fact = methods.keySet().stream().filter(n -> n.endsWith("$fact$spec")).findFirst().orElseThrow();
         Assertions.assertFalse(methods.get(fact).getKey(), fact);
         Assertions.assertTrue(methods.get(fact).getValue().contains(fact), methods.get(fact).getValue().toString());
+    }
+
+    @Test
+    public void testBip022IntersectionLoweringAndSamMarkers() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def Shape = interface ( def area : fn () : double )\n"
+                        + "def Named = interface ( def name : fn () : string )\n"
+                        + "def Label = interface ( def text : fn () : string )\n"
+                        + "def Tile = class () implements Shape, Named ( def area = fn () : double -> ( 1.5 ) ; def name = fn () : string -> ( \"tile\" ) )\n"
+                        + "def A = interface ( def m : fn () : any? )\n"
+                        + "def B = interface ( def m : fn () : int )\n"
+                        + "def C = class () implements A, B ( def m = fn () : int -> ( 41 ) )\n"
+                        + "def isBabble = fn (x : any) : bool -> ( x is Shape & Named )\n"
+                        + "def isMixed = fn (x : any) : bool -> ( x is Shape & java.io.Serializable )\n"
+                        + "def isUnionFallBack = fn (x : any) : bool -> ( x is Shape & (Named | Label) )\n"
+                        + "def isLocalFallBack = fn (x : any) : bool -> ( def L = interface ( def k : int ) ; x is L & Shape )\n"
+                        + "def secondOp = fn (x : Shape & Named) : string -> ( x.name() )\n"
+                        + "def javaSecond = fn (x : java.io.Serializable & java.lang.Comparable of int) : int -> ( x.compareTo(1) )\n"
+                        + "def covCall = fn (x : A & B) : int -> ( x.m() )\n"
+                        + "def r : java.lang.Runnable & java.io.Serializable = fn () -> ()\n"
+                        + "def Demo = import(\"org.babblelang.tests\").JavaClassDemo\n"
+                        + "assert(isBabble(Tile()) and not isMixed(Tile()) and isUnionFallBack(Tile()) and not isLocalFallBack(Tile()))\n"
+                        + "assert(secondOp(Tile()) == \"tile\" and javaSecond(5) > 0 and covCall(C()) == 41)\n"
+                        + "Demo.isSerializableRunnable(r)");
+        assertVerifies(script);
+        Assertions.assertEquals(Boolean.TRUE, script.eval(new SimpleBindings()));
+
+        List<String> babbleOps = methodInstructions(script.getClassBytes(), "fn$0$isBabble$spec");
+        Assertions.assertEquals(2, babbleOps.stream().filter("INSTANCEOF"::equals).count(), babbleOps.toString());
+        Assertions.assertTrue(babbleOps.stream().noneMatch(o -> o.contains("Types.matches") || o.contains("Values.unwrap")), babbleOps.toString());
+
+        List<String> mixedOps = methodInstructions(script.getClassBytes(), "fn$1$isMixed$spec");
+        Assertions.assertEquals(2, mixedOps.stream().filter("INSTANCEOF"::equals).count(), mixedOps.toString());
+        Assertions.assertEquals(1, mixedOps.stream().filter("CALL:org/babblelang/runtime/Values.unwrap"::equals).count(), mixedOps.toString());
+        Assertions.assertTrue(mixedOps.stream().noneMatch(o -> o.contains("Types.matches")), mixedOps.toString());
+
+        List<String> unionOps = methodInstructions(script.getClassBytes(), "fn$2$isUnionFallBack$spec");
+        Assertions.assertTrue(unionOps.stream().anyMatch(o -> o.endsWith("Types.matches")), unionOps.toString());
+
+        List<String> localOps = methodInstructions(script.getClassBytes(), "fn$3$isLocalFallBack$spec");
+        Assertions.assertTrue(localOps.stream().anyMatch(o -> o.endsWith("Types.matches")), localOps.toString());
+
+        List<String> secondOps = methodInstructions(script.getClassBytes(), "fn$4$secondOp");
+        Assertions.assertTrue(secondOps.stream().anyMatch("CHECKCAST"::equals), secondOps.toString());
+        Assertions.assertTrue(secondOps.stream().anyMatch(o -> o.endsWith(".bm$name")), secondOps.toString());
+
+        List<String> javaSecondOps = methodInstructions(script.getClassBytes(), "fn$5$javaSecond$spec");
+        Assertions.assertTrue(javaSecondOps.stream().anyMatch("CHECKCAST"::equals), javaSecondOps.toString());
+        Assertions.assertTrue(javaSecondOps.stream().anyMatch(o -> o.equals("CALL:java/lang/Comparable.compareTo")), javaSecondOps.toString());
+
+        List<String> covOps = methodInstructions(script.getClassBytes(), "fn$6$covCall$spec");
+        Assertions.assertTrue(covOps.stream().anyMatch(o -> o.endsWith(".bm$m")), covOps.toString());
+        Assertions.assertTrue(covOps.stream().noneMatch(o -> o.startsWith("INDY:")), covOps.toString());
     }
 }

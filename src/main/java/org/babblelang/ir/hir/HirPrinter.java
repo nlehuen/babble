@@ -202,7 +202,19 @@ public final class HirPrinter {
             case HirExpr.Is i -> {
                 sb.append("(is ");
                 printExpr(sb, i.left(), depth + 1);
-                sb.append(' ').append(i.builtin() != null ? i.builtin() : (i.target() != null ? i.target().typeId() : i.descriptor())).append(')');
+                sb.append(' ');
+                if (i.builtin() != null) {
+                    sb.append(i.builtin());
+                } else if (!i.intersectionTargets().isEmpty()) {
+                    for (int k = 0; k < i.intersectionTargets().size(); k++) {
+                        if (k > 0) sb.append('&');
+                        ScopeAnalysis.IsTarget t = i.intersectionTargets().get(k);
+                        sb.append(t.jvmInternalName() != null ? t.jvmInternalName() : t.typeId());
+                    }
+                } else {
+                    sb.append(i.target() != null ? i.target().typeId() : i.descriptor());
+                }
+                sb.append(')');
             }
             case HirExpr.As a -> {
                 sb.append("(as ");
@@ -217,6 +229,15 @@ public final class HirPrinter {
             case HirExpr.SpreadAdapt s -> {
                 sb.append("(spread-adapt ").append(s.adapt().kind()).append(' ');
                 printExpr(sb, s.value(), depth + 1);
+                sb.append(')');
+            }
+            case HirExpr.JavaSamAdapt j -> {
+                sb.append("(java-sam ").append(j.target().samInterface().getSimpleName());
+                for (Class<?> m : j.target().markers()) {
+                    sb.append('&').append(m.getSimpleName());
+                }
+                sb.append(' ');
+                printExpr(sb, j.value(), depth + 1);
                 sb.append(')');
             }
             case HirExpr.Block b -> {

@@ -16,10 +16,10 @@ import java.util.concurrent.atomic.AtomicLong;
 final class TypeNode {
     static final class Member {
         final String name;
-        final int flags;
+        int flags;
         final int index;
-        final boolean hasFunction;
-        final boolean isOverload;
+        boolean hasFunction;
+        boolean isOverload;
         ParserRuleContext declaration;
         /** The function literal of a method or default, or null. */
         BabbleParser.FunctionLiteralContext function;
@@ -40,6 +40,14 @@ final class TypeNode {
             this.declaration = declaration;
             this.function = function;
             this.overloadFunctions = overloadFunctions != null ? List.copyOf(overloadFunctions) : List.of();
+        }
+
+        void demoteSamField() {
+            this.flags &= ~ClassShape.METHOD;
+            this.hasFunction = false;
+            this.isOverload = false;
+            this.function = null;
+            this.overloadFunctions = List.of();
         }
 
         boolean isMethod() {

@@ -113,7 +113,7 @@ public final class HirLicmPass implements HirPass {
         List<HirExpr> blockStmts = new ArrayList<>(hoistedDefs.size() + 1);
         blockStmts.addAll(hoistedDefs);
         blockStmts.add(new HirExpr.For(f.iterable(), f.target(), f.loopVar(), f.bodyDeclaredVars(),
-                newBody, f.bodyWideningRank(), f.meta()));
+                newBody, f.bodyWideningRank(), f.elemSamTarget(), f.meta()));
         return new HirExpr.Block(blockStmts, false, new String[0], hoistedVars, -1, f.meta());
     }
 
@@ -259,7 +259,7 @@ public final class HirLicmPass implements HirPass {
                 return;
             }
             case HirExpr.As a -> {
-                if (a.targetDescriptor() != null) {
+                if (a.targetDescriptor() != null || a.samTarget() != null) {
                     ok[0] = false;
                     return;
                 }

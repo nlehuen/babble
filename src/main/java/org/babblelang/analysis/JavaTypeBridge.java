@@ -177,6 +177,7 @@ final class JavaTypeBridge {
         ArrayDeque<Class<?>> queue = new ArrayDeque<>();
         Set<Class<?>> visited = new HashSet<>();
         Set<WildcardType> activeWildcards = Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<TypeVariable<?>> activeTypeVars = new HashSet<>();
         queue.add(cls);
         visited.add(cls);
         while (!queue.isEmpty()) {
@@ -192,7 +193,7 @@ final class JavaTypeBridge {
                     java.lang.reflect.Type[] rawArgs = pt.getActualTypeArguments();
                     for (int i = 0; i < Math.min(rawParams.length, rawArgs.length); i++) {
                         env.putIfAbsent(rawParams[i], fromJavaType(rawArgs[i], null, env, false, false,
-                                JavaNullability.Nullness.UNSPECIFIED, true, activeWildcards));
+                                JavaNullability.Nullness.UNSPECIFIED, true, activeWildcards, activeTypeVars));
                     }
                     if (visited.add(raw)) {
                         queue.add(raw);
@@ -208,14 +209,14 @@ final class JavaTypeBridge {
                              boolean widenTopTypeVar, boolean forParam) {
         return fromJavaType(type, null, env, widenTopTypeVar, forParam,
                 JavaNullability.Nullness.UNSPECIFIED, false,
-                Collections.newSetFromMap(new IdentityHashMap<>()));
+                Collections.newSetFromMap(new IdentityHashMap<>()), new HashSet<>());
     }
 
     static Type fromJavaType(java.lang.reflect.Type type, AnnotatedType annType, Map<TypeVariable<?>, Type> env,
                              boolean widenTopTypeVar, boolean forParam,
                              JavaNullability.Nullness topNullness, boolean nullMarked) {
         return fromJavaType(type, annType, env, widenTopTypeVar, forParam, topNullness, nullMarked,
-                Collections.newSetFromMap(new IdentityHashMap<>()));
+                Collections.newSetFromMap(new IdentityHashMap<>()), new HashSet<>());
     }
 
     private static JavaNullability.Nullness effectiveNullness(JavaNullability.Nullness explicit,
@@ -230,22 +231,62 @@ final class JavaTypeBridge {
         return nullMarked ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.UNSPECIFIED;
     }
 
-    private static Type fromJavaType(java.lang.reflect.Type type, Map<TypeVariable<?>, Type> env,
-                                     boolean widenTopTypeVar, boolean forParam,
-                                     Set<WildcardType> activeWildcards) {
-        return fromJavaType(type, null, env, widenTopTypeVar, forParam,
-                JavaNullability.Nullness.UNSPECIFIED, false, activeWildcards);
+    static Type translateTypeVarBounds(TypeVariable<?> tv, Map<TypeVariable<?>, Type> env) {
+        return translateTypeVarBounds(tv, env, true,
+                Collections.newSetFromMap(new IdentityHashMap<>()), new HashSet<>());
+    }
+
+    private static Type translateTypeVarBounds(TypeVariable<?> tv, Map<TypeVariable<?>, Type> env,
+                                               boolean nullMarked, Set<WildcardType> activeWildcards,
+                                               Set<TypeVariable<?>> activeTypeVars) {
+        if (!activeTypeVars.add(tv)) {
+            return Type.NULLABLE_ANY;
+        }
+        try {
+            java.lang.reflect.Type[] bounds = tv.getBounds();
+            List<Type> translated = new ArrayList<>(bounds.length);
+            for (java.lang.reflect.Type bound : bounds) {
+                if (bound == Object.class) {
+                    continue;
+                }
+                Type bt = fromJavaType(bound, null, env, false, false,
+                        JavaNullability.Nullness.NON_NULL, nullMarked, activeWildcards, activeTypeVars);
+                Type base = Type.withoutNull(bt);
+                if (base == Type.ANY) {
+                    continue;
+                }
+                if (!isInterfaceIntersectable(base)) {
+                    if (translated.isEmpty()) {
+                        return bt;
+                    }
+                    continue;
+                }
+                translated.add(base);
+            }
+            if (translated.isEmpty()) {
+                return Type.NULLABLE_ANY;
+            }
+            return translated.size() == 1 ? translated.get(0) : Type.intersection(translated);
+        } finally {
+            activeTypeVars.remove(tv);
+        }
+    }
+
+    private static boolean isInterfaceIntersectable(Type base) {
+        return (base instanceof Type.JavaInstance ji && ji.type().isInterface())
+                || base instanceof Type.Intersection
+                || (base instanceof Type.Instance inst && inst.node().isInterface());
     }
 
     private static Type fromJavaType(java.lang.reflect.Type type, AnnotatedType annType, Map<TypeVariable<?>, Type> env,
                                      boolean widenTopTypeVar, boolean forParam,
                                      JavaNullability.Nullness topNullness, boolean nullMarked,
-                                     Set<WildcardType> activeWildcards) {
+                                     Set<WildcardType> activeWildcards, Set<TypeVariable<?>> activeTypeVars) {
         JavaNullability.Nullness eff = effectiveNullness(topNullness, annType, nullMarked);
         if (type instanceof TypeVariable<?> tv) {
             Type resolved = env.get(tv);
             if (resolved == null) {
-                resolved = Type.NULLABLE_ANY;
+                resolved = translateTypeVarBounds(tv, env, nullMarked, activeWildcards, activeTypeVars);
             }
             if (topNullness == JavaNullability.Nullness.PARAMETRIC) {
                 return resolved;
@@ -276,10 +317,10 @@ final class JavaTypeBridge {
                 Type resolved;
                 if (forParam && wt.getLowerBounds().length > 0) {
                     resolved = fromJavaType(wt.getLowerBounds()[0], null, env, false, false,
-                            JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards);
+                            JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards, activeTypeVars);
                 } else if (wt.getUpperBounds().length > 0 && wt.getUpperBounds()[0] != Object.class) {
                     resolved = fromJavaType(wt.getUpperBounds()[0], null, env, false, false,
-                            JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards);
+                            JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards, activeTypeVars);
                 } else {
                     resolved = Type.NULLABLE_ANY;
                 }
@@ -302,7 +343,7 @@ final class JavaTypeBridge {
             for (int i = 0; i < rawArgs.length; i++) {
                 AnnotatedType argAnn = annArgs != null && i < annArgs.length ? annArgs[i] : null;
                 args.add(fromJavaType(rawArgs[i], argAnn, env, false, forParam,
-                        JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards));
+                        JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards, activeTypeVars));
             }
             Type base = raw.getTypeParameters().length == args.size()
                     ? new Type.JavaInstance(raw, args)
@@ -312,7 +353,7 @@ final class JavaTypeBridge {
         if (type instanceof GenericArrayType gat) {
             AnnotatedType compAnn = annType instanceof AnnotatedArrayType aat ? aat.getAnnotatedGenericComponentType() : null;
             Type component = fromJavaType(gat.getGenericComponentType(), compAnn, env, false, false,
-                    JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards);
+                    JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards, activeTypeVars);
             Type arr = new Type.Array(component);
             return eff == JavaNullability.Nullness.NON_NULL ? arr : Type.nullable(arr);
         }
@@ -327,7 +368,7 @@ final class JavaTypeBridge {
                     comp = Type.nullable(fromJava(compCls));
                 } else {
                     comp = fromJavaType(compCls, compAnn, env, false, false,
-                            JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards);
+                            JavaNullability.Nullness.UNSPECIFIED, nullMarked, activeWildcards, activeTypeVars);
                 }
                 Type arr = new Type.Array(comp);
                 return eff == JavaNullability.Nullness.NON_NULL ? arr : Type.nullable(arr);
@@ -697,6 +738,118 @@ final class JavaTypeBridge {
         return null;
     }
 
+    sealed interface JavaSamResolution permits JavaSamResolution.Valid, JavaSamResolution.NotFunctional, JavaSamResolution.None {
+        record Valid(Type.JavaInstance samType, Method samMethod, List<Class<?>> markers) implements JavaSamResolution {
+            ScopeAnalysis.JavaSamTarget toTarget() {
+                return new ScopeAnalysis.JavaSamTarget(samType.type(), markers.toArray(Class<?>[]::new));
+            }
+        }
+
+        record NotFunctional(Type.Intersection intersection) implements JavaSamResolution {
+        }
+
+        record None() implements JavaSamResolution {
+        }
+
+        JavaSamResolution NONE = new None();
+    }
+
+    static JavaSamResolution resolveJavaSam(Type type) {
+        if (type == null || type == Type.ERROR || type == Type.NOTHING) {
+            return JavaSamResolution.NONE;
+        }
+        Type base = TypeAlgebra.unwrapFrozen(Type.withoutNull(type));
+        if (base instanceof Type.JavaInstance ji) {
+            Method m = JavaTypes.functionalMethod(ji.type());
+            return m != null ? new JavaSamResolution.Valid(ji, m, List.of()) : JavaSamResolution.NONE;
+        }
+        if (!(base instanceof Type.Intersection inter)) {
+            return JavaSamResolution.NONE;
+        }
+        int abstractCount = 0;
+        boolean allJava = true;
+        Type.JavaInstance primary = null;
+        Method primaryMethod = null;
+        List<Class<?>> extraInterfaces = new ArrayList<>();
+        for (Type member : inter.members()) {
+            if (member instanceof Type.JavaInstance ji && ji.type().isInterface()) {
+                List<Method> abs = JavaTypes.abstractMethods(ji.type());
+                if (abs.isEmpty()) {
+                    extraInterfaces.add(ji.type());
+                    continue;
+                }
+                Method m = JavaTypes.functionalMethod(ji.type());
+                if (m == null) {
+                    abstractCount += abs.size();
+                    if (abstractCount >= 2) {
+                        return new JavaSamResolution.NotFunctional(inter);
+                    }
+                    allJava = false;
+                    continue;
+                }
+                if (primary == null) {
+                    primary = ji;
+                    primaryMethod = m;
+                    abstractCount++;
+                } else if (sameSamSignature(primaryMethod, m)) {
+                    extraInterfaces.add(ji.type());
+                } else {
+                    abstractCount++;
+                    return new JavaSamResolution.NotFunctional(inter);
+                }
+            } else if (member instanceof Type.Instance inst && inst.node().isInterface()) {
+                allJava = false;
+                abstractCount += countBabbleInterfaceAbstractMethods(inst.node(), Collections.newSetFromMap(new IdentityHashMap<>()));
+                if (abstractCount >= 2) {
+                    return new JavaSamResolution.NotFunctional(inter);
+                }
+            } else {
+                allJava = false;
+            }
+        }
+        if (abstractCount >= 2) {
+            return new JavaSamResolution.NotFunctional(inter);
+        }
+        if (allJava && primary != null) {
+            return new JavaSamResolution.Valid(primary, primaryMethod, List.copyOf(extraInterfaces));
+        }
+        return JavaSamResolution.NONE;
+    }
+
+    static boolean sameSamSignature(Method a, Method b) {
+        return a.getName().equals(b.getName())
+                && Arrays.equals(a.getParameterTypes(), b.getParameterTypes())
+                && a.getReturnType().equals(b.getReturnType());
+    }
+
+    private static int countBabbleInterfaceAbstractMethods(TypeNode node, Set<TypeNode> visited) {
+        if (!visited.add(node)) {
+            return 0;
+        }
+        int count = 0;
+        for (TypeNode.Member m : node.members.values()) {
+            if (!m.hasFunction) {
+                TypeChecks.Provider def = node.defaults != null ? node.defaults.get(m.name) : null;
+                if (def == null || !def.hasFunction()) {
+                    count++;
+                }
+            }
+        }
+        for (Object parent : node.parents) {
+            if (parent instanceof TypeNode pNode && pNode.isInterface()) {
+                count += countBabbleInterfaceAbstractMethods(pNode, visited);
+            } else if (parent instanceof Class<?> javaParent) {
+                for (Method jm : JavaTypes.abstractMethods(javaParent)) {
+                    TypeChecks.Provider def = node.defaults != null ? node.defaults.get(jm.getName()) : null;
+                    if (def == null || !def.hasFunction()) {
+                        count++;
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
     static Type.Function samFunctionType(Type.JavaInstance java, EffectChecker effectChecker) {
         Method sam = JavaTypes.functionalMethod(java.type());
         if (sam == null) {
@@ -990,9 +1143,27 @@ final class JavaTypeBridge {
         for (E candidate : candidates) {
             Map<TypeVariable<?>, Type> env = new HashMap<>(receiverEnv);
             candidateSolvingVars(candidate).forEach(env::putIfAbsent);
-            paramTypes.add(varArgs
+            Type paramType = varArgs
                     ? javaVarArgParamType(candidate, index, env)
-                    : javaExecutableParamType(candidate, index, env));
+                    : javaExecutableParamType(candidate, index, env);
+            if (isLambdaArg && Type.withoutNull(paramType) instanceof Type.TypeVar) {
+                int fixed = candidate.getParameterCount() - 1;
+                java.lang.reflect.Type genericParam = varArgs && index >= fixed
+                        ? (candidate.getGenericParameterTypes()[fixed] instanceof GenericArrayType gat
+                                ? gat.getGenericComponentType()
+                                : Object.class)
+                        : candidate.getGenericParameterTypes()[index];
+                if (genericParam instanceof TypeVariable<?> tv && !receiverEnv.containsKey(tv)) {
+                    Map<TypeVariable<?>, Type> boundEnv = new HashMap<>(env);
+                    boundEnv.remove(tv);
+                    Type bound = translateTypeVarBounds(tv, boundEnv, true,
+                            Collections.newSetFromMap(new IdentityHashMap<>()), new HashSet<>());
+                    if (resolveJavaSam(bound) instanceof JavaSamResolution.Valid) {
+                        paramType = bound;
+                    }
+                }
+            }
+            paramTypes.add(paramType);
         }
         if (paramTypes.size() == 1) {
             return paramTypes.iterator().next();
@@ -1001,7 +1172,7 @@ final class JavaTypeBridge {
             Type samType = null;
             for (Type candidateType : paramTypes) {
                 Type base = Type.withoutNull(candidateType);
-                if (base instanceof Type.JavaInstance ji && JavaTypes.isFunctionalInterface(ji.type())) {
+                if (resolveJavaSam(base) instanceof JavaSamResolution.Valid) {
                     if (samType != null && !samType.equals(base)) {
                         return null;
                     }
@@ -1032,12 +1203,6 @@ final class JavaTypeBridge {
         Class<?> rawParam = inVarTail
                 ? candidate.getParameterTypes()[fixed].getComponentType()
                 : candidate.getParameterTypes()[index];
-        if (!applicable(rawParam, argument, algebra)) {
-            return false;
-        }
-        if (TypeChecker.isUnresolved(argument)) {
-            return true;
-        }
         java.lang.reflect.Type genericParam;
         if (inVarTail) {
             java.lang.reflect.Type vp = candidate.getGenericParameterTypes()[fixed];
@@ -1045,6 +1210,43 @@ final class JavaTypeBridge {
                     : (vp instanceof Class<?> c && c.isArray() ? c.getComponentType() : Object.class);
         } else {
             genericParam = candidate.getGenericParameterTypes()[index];
+        }
+        if (genericParam instanceof TypeVariable<?> tv && TypeAlgebra.isCallable(argument)) {
+            Type boundPattern;
+            if (receiverEnv.containsKey(tv)) {
+                boundPattern = receiverEnv.get(tv);
+            } else {
+                Map<TypeVariable<?>, Type> tvEnv = new HashMap<>(receiverEnv);
+                candidateSolvingVars(candidate).forEach((k, v) -> {
+                    if (k != tv) {
+                        tvEnv.putIfAbsent(k, v);
+                    }
+                });
+                boundPattern = translateTypeVarBounds(tv, tvEnv, true,
+                        Collections.newSetFromMap(new IdentityHashMap<>()), new HashSet<>());
+            }
+            Type baseBound = Type.withoutNull(boundPattern);
+            if (baseBound == Type.ANY) {
+                return true;
+            }
+            if (resolveJavaSam(baseBound) instanceof JavaSamResolution.Valid valid) {
+                if (!baseBound.anyMatch(t -> t instanceof Type.TypeVar)) {
+                    Type.Function sam = samFunctionType(valid.samType(), null);
+                    if (sam != null && !matchesCallableSamArity(argument, sam)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            if (!receiverEnv.containsKey(tv)) {
+                return false;
+            }
+        }
+        if (!applicable(rawParam, argument, algebra)) {
+            return false;
+        }
+        if (TypeChecker.isUnresolved(argument)) {
+            return true;
         }
         if (genericParam instanceof Class<?> && !rawParam.isArray()) {
             return true;
@@ -1067,25 +1269,30 @@ final class JavaTypeBridge {
             return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null, borrowParam, !mutParam);
         }
         Type unwrappedPattern = Type.withoutNull(paramPattern);
-        if (unwrappedPattern instanceof Type.JavaInstance pJava && JavaTypes.isFunctionalInterface(pJava.type())) {
-            Type.Function sam = samFunctionType(pJava, null);
+        if (resolveJavaSam(unwrappedPattern) instanceof JavaSamResolution.Valid valid) {
+            Type.Function sam = samFunctionType(valid.samType(), null);
             if (sam != null) {
-                if (argument instanceof Type.Function aFn) {
-                    return matchesSamArity(aFn, sam);
-                }
-                if (argument instanceof Type.Overloaded aOv) {
-                    for (Type.Function alt : aOv.alternatives()) {
-                        if (matchesSamArity(alt, sam)) {
-                            return true;
-                        }
-                    }
-                    return false;
-                }
+                return matchesCallableSamArity(argument, sam);
             }
         }
         Set<Type.TypeVar> solving = Set.copyOf(tvToSyn.values());
         TypeAlgebra.ConstraintStore store = algebra.store(solving, true);
         return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowParam, !mutParam);
+    }
+
+    private static boolean matchesCallableSamArity(Type argument, Type.Function sam) {
+        if (argument instanceof Type.Function aFn) {
+            return matchesSamArity(aFn, sam);
+        }
+        if (argument instanceof Type.Overloaded aOv) {
+            for (Type.Function alt : aOv.alternatives()) {
+                if (matchesSamArity(alt, sam)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return true;
     }
 
     private static boolean matchesSamArity(Type.Function aFn, Type.Function sam) {

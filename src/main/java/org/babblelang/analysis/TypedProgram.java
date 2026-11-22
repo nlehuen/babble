@@ -192,6 +192,10 @@ final class TypedProgram {
         return adapts != null && argIndex >= 0 && argIndex < adapts.length ? adapts[argIndex] : null;
     }
 
+    Type extractSequenceElement(Type type) {
+        return checker.callSolver().extractSequenceElement(type);
+    }
+
     // ---------------------------------------------------------------- other files
 
     EffectChecker.CallableSummary remoteConstructorSummary(TypeNode node) {
