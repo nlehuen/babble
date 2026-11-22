@@ -1022,6 +1022,15 @@ public final class HirBuilder {
         ScopeAnalysis.ArgumentBinding binding = scopes.argumentBinding(ctx);
         ScopeAnalysis.SpreadAdapt[] spreadAdapts = scopes.callSpreadAdapts(ctx);
 
+        // 0. Self tail call : a jump back to the start of the function (BIP024)
+        if (scopes.isSelfTailCall(ctx)) {
+            if (currentFunction == null) {
+                throw new IllegalStateException("Self tail call outside of a function at line " + ctx.getStart().getLine());
+            }
+            // The analysis never marks a call with spread arguments (BIP024-D4).
+            return new HirExpr.SelfTailCall(functionIds.get(currentFunction), lowerCallArgs(params, null), binding, meta);
+        }
+
         // 1. Safe call recv?.m(args)
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector && selector.safe != null) {
             return new HirExpr.SafeCall(

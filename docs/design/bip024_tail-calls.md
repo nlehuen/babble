@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 024 |
 | **Date** | 2026-11-22 |
-| **Status** | Partially implemented (`BIP024-D1`–`D6` decided; `BIP024-P1` implemented, `BIP024-P2`–`P3` in progress ; §6 lists what landed) |
+| **Status** | Partially implemented (`BIP024-D1`–`D6` decided; `BIP024-P1`–`P2` implemented, `BIP024-P3` in progress ; §6 lists what landed) |
 | **Depends on** | the analysis passes and `LoweringAnalyzer` ([bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), static argument binding ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)), the `HIR` compiler ([bip014_optimization-passes.md](bip014_optimization-passes.md)) |
 | **Scope** | a call of a function to itself in tail position runs in constant stack space, in the interpreter and in compiled code at every optimization level ; across `analysis.TailCalls`, `ScopeAnalysis`, the `Interpreter`'s `Function`, `HirBuilder`, the `HIR` passes and `HirEmitter` |
 
@@ -39,7 +39,7 @@ Babble already has `recurse`, a name for the running function, so it is closest 
 ## 3. Decisions
 
 * **`BIP024-D1` — Self tail calls only.** A call is optimized when it calls the running function itself : `recurse(...)` ; a call of the function's own `def` by name, when that `def` is never reassigned and its value is the function literal (`LoweringAnalyzer`'s static Babble call target) ; or `this.m(...)` in method `m` of a class, record or object, whose methods are never overridden. Not interface methods (`this.m(...)` in a default method may run an override), not mutual recursion, not calls of first-class values : those need a trampoline, which would slow down every call.
-* **`BIP024-D2` — Automatic, at every optimization level.** There is no `tailrec` keyword. Since the optimization decides which programs run out of stack, it is a lowering of the compiler, not an `-O1` pass, so that `interpret`, `-O0` and `-O1` keep running the same programs.
+* **`BIP024-D2` — Semantics, not an optimization.** There is no `tailrec` keyword. Since self tail calls decide which programs run out of stack, they are part of the language, like a loop : the interpreter has them, and the compiler lowers them in `HirBuilder` and `HirEmitter`, at `-O0` already, rather than in an optimizer pass. No optimization level turns them on or off, so `interpret`, `-O0`, `-O1` and `-O2` run the same programs.
 * **`BIP024-D3` — Tail position is syntactic.** In a function's block :
   * the last expression of the block is in tail position ;
   * so is the last expression of a block expression in tail position, and so are the branches of an `if` (and `else if`) in tail position ;
@@ -48,7 +48,7 @@ Babble already has `recurse`, a name for the running function, so it is closest 
   Statement position guarantees that compiled code has nothing on the operand stack when it jumps, the invariant loop heads already keep.
 * **`BIP024-D4` — Statically bound, unchanged values.** The call binds its arguments at compile time (`BIP021-D4`), or passes as many positional arguments as there are parameters ; and nothing between the call and the function's result checks its value at runtime or widens it (no `checkedType`, no numeric widening on the call, or on any block, branch or `return` in between). The widening of the function's own result still applies, to the value of the last activation.
 * **`BIP024-D5` — A fresh activation per call.** Each tail call starts a new activation as a call would : a new frame, the names the body defines declared again (`Name used before definition` until their `def` runs), new cells for captured variables, and the default values of omitted optional parameters evaluated again. A closure created by one activation keeps that activation's parameters. All arguments are evaluated before any parameter changes.
-* **`BIP024-D6` — Frames are gone.** An optimized activation leaves no frame : Java stack traces show one frame for the whole loop. Babble errors give the line of the innermost frame, so their messages do not change.
+* **`BIP024-D6` — Frames are gone.** An optimized activation leaves no frame : Java stack traces show one frame for the whole loop. Babble errors give the line of the innermost frame, so their messages do not change. A tail recursion that never ends now runs forever, like `while true`, where it used to fail with `Stack overflow` : a test that wants that error needs a recursion out of tail position, such as `1 + recurse(n + 1)`.
 
 ---
 
@@ -71,3 +71,4 @@ Babble already has `recurse`, a name for the running function, so it is closest 
 ## 6. What landed
 
 * `BIP024-P1` : `analysis.TailCalls`, `ScopeAnalysis.isSelfTailCall`, the interpreter's `TailCall` and its loop in `Function.invoke`.
+* `BIP024-P2` : `HirExpr.SelfTailCall` (`HirBuilder` lowers every marked call to it, whatever the function's entry points), `HirRewriter`, `HirPrinter` (`tail-call #N`), `HirVerifier` (only in a function), `HirPurity` (impure, so never moved), `InlinePass` (never inlines a function holding one), and `HirEmitter`'s loop heads : the jump goes back to the method's first instruction, before the frame is entered. `src/test/babble/TailCalls.ba` runs a million activations of each kind in every mode. The tests that provoked `Stack overflow` with `recurse(n + 1)` use `1 + recurse(n + 1)`.

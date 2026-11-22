@@ -366,6 +366,7 @@ public final class HirPurity {
             case HirExpr.SelfRecurseCall c -> {
                 for (HirExpr a : c.args()) collectModifiedVars(a, out);
             }
+            case HirExpr.SelfTailCall c -> collectCallArgsModified(c.args(), out);
             case HirExpr.DirectBabbleCall c -> {
                 collectModifiedVars(c.callee(), out);
                 for (HirExpr a : c.args()) collectModifiedVars(a, out);

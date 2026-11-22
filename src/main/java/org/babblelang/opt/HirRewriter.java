@@ -181,6 +181,10 @@ public final class HirRewriter {
                 List<HirExpr> na = rewriteList(c.args(), transform);
                 yield na == c.args() ? c : new HirExpr.SelfRecurseCall(c.functionId(), na, c.binding(), c.meta());
             }
+            case HirExpr.SelfTailCall c -> {
+                List<HirCallArg> na = rewriteCallArgs(c.args(), transform);
+                yield na == c.args() ? c : new HirExpr.SelfTailCall(c.functionId(), na, c.binding(), c.meta());
+            }
             case HirExpr.DirectBabbleCall c -> {
                 HirExpr nc = transform.apply(c.callee());
                 List<HirExpr> na = rewriteList(c.args(), transform);

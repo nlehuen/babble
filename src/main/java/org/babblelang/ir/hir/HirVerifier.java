@@ -186,6 +186,14 @@ public final class HirVerifier {
                 }
                 verifyStatements(module, c.args(), inFunction, loopDepth);
             }
+            case HirExpr.SelfTailCall c -> {
+                // HirEmitter checks that it is in the body of function functionId.
+                if (!inFunction || module.function(c.functionId()) == null) {
+                    throw new IllegalStateException("HirVerifier : SelfTailCall outside of its function #" + c.functionId()
+                            + " at line " + meta.line());
+                }
+                verifyCallArgs(module, c.args(), inFunction, loopDepth);
+            }
             case HirExpr.DirectBabbleCall c -> {
                 if (module.function(c.targetFunctionId()) == null) {
                     throw new IllegalStateException("HirVerifier : unknown DirectBabbleCall targetFunctionId " + c.targetFunctionId());
