@@ -35,3 +35,15 @@ assert(a == 'A')
 assert(u == 'B')
 assert(int(q) == 39)
 }}}}}
+
+{{{{{
+;; Control-character escapes in string and char literals : \b, \n, \f, \r, \0
+def s = "\b\n\f\r\0"
+assert(s.length() == 5)
+assert(int(s.charAt(0)) == 8)
+assert(int(s.charAt(1)) == 10)
+assert(int(s.charAt(2)) == 12)
+assert(int(s.charAt(3)) == 13)
+assert(int(s.charAt(4)) == 0)
+assert(int('\b') == 8 and int('\n') == 10 and int('\f') == 12 and int('\r') == 13 and int('\0') == 0)
+}}}}}

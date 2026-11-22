@@ -28,3 +28,10 @@ def f = fn nothrow (s : string?) : string -> (
 assert(f("ok") == "ok")
 }}}}}
 Function f declared nothrow violates nothrow guarantee
+
+{{{{{
+;; Redundant non-null assertion on a non-nullable value warns and evaluates to the value
+def n : int = 42
+assert(n! == 42)
+}}}}}
+Warning : Redundant non-null assertion : int

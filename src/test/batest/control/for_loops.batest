@@ -275,3 +275,31 @@ for h in Items() then (
 }}}}}
 No such member : r
 
+{{{{{
+;; Babble custom iterable returning a Java Iterator (BABBLE_TO_JAVA_ITERABLE) : normal, continue, and break
+def Bag = class (def xs : list of int) (
+    def iterator = fn () : java.util.Iterator of int -> ( this.xs.iterator() )
+)
+def all = 0
+for v in Bag(list(1, 2, 3)) then ( all += v )
+def stopped = for v in Bag(list(1, 2, 3, 4)) then (
+    if v == 2 then ( continue )
+    if v == 3 then ( break v * 10 )
+    v
+)
+assert(all == 6 and stopped == 30)
+}}}}}
+
+{{{{{
+;; Custom Babble iterable supports continue and break with a value
+def skipped = 0
+for h in Items() then (
+    if h.k() == 2 then ( continue )
+    skipped += h.k()
+)
+def hit = for h in Items() then (
+    if h.k() == 2 then ( break 77 )
+    0
+)
+assert(skipped == 1 and hit == 77)
+}}}}}
