@@ -979,6 +979,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             last = ctx;
             return Types.check(callable.call(runtime, args, callNames.get(ctx), site), scopes.checkedType(ctx));
         }
+        if (scopes.isSelfTailCall(ctx)) {
+            // The callee is the running function itself (recurse, its own def, or this.m) : BIP024.
+            Object[] args = bindStaticArguments(ctx, arguments(ctx));
+            last = ctx;
+            return new TailCall(args, effectiveCallNames(ctx));
+        }
         Object callee = visit(ctx.expression());
         last = ctx;
         CallSite site = callSite(ctx);

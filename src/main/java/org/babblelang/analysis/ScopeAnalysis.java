@@ -409,6 +409,7 @@ public final class ScopeAnalysis {
     private final Map<BabbleParser.OverloadExpressionContext, List<OverloadAltMetaInfo>> overloadMetas = new java.util.IdentityHashMap<>();
     private final Map<ParserRuleContext, OverloadSelection> overloadSelections = new java.util.IdentityHashMap<>();
     private final Map<ParserRuleContext, OverloadDispatchTarget> overloadDispatches = new java.util.IdentityHashMap<>();
+    private final java.util.Set<BabbleParser.CallContext> selfTailCalls = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private final Map<String, TypeHierarchyInfo> typeHierarchies = new java.util.LinkedHashMap<>();
     private AnalysisSession session;
     private List<ModuleInterface> importedModules = List.of();
@@ -677,6 +678,18 @@ public final class ScopeAnalysis {
 
     void setBabbleCallFunction(ParserRuleContext ctx, BabbleParser.FunctionLiteralContext function) {
         babbleCallFunctions.put(ctx, function);
+    }
+
+    void setSelfTailCall(BabbleParser.CallContext call) {
+        selfTailCalls.add(call);
+    }
+
+    /**
+     * Whether a call is a self tail call (docs/design/bip024_tail-calls.md) : both backends
+     * run it as a jump back to the start of the calling function instead of a nested call.
+     */
+    public boolean isSelfTailCall(BabbleParser.CallContext call) {
+        return selfTailCalls.contains(call);
     }
 
     void setBabbleCallSignature(ParserRuleContext ctx, FunctionSignature signature) {

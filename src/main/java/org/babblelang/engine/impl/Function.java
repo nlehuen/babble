@@ -26,6 +26,19 @@ public class Function implements BabbleFunction {
 
     @Override
     public Object invoke(Object thiz, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        // A self tail call (BIP024) ends an activation with the arguments of the next one.
+        while (true) {
+            Object result = activate(thiz, args, names);
+            if (!(result instanceof TailCall next)) {
+                return result;
+            }
+            args = next.args();
+            names = next.names();
+        }
+    }
+
+    /** One activation of the function : a fresh frame, its parameters bound, and its body run. */
+    private Object activate(Object thiz, Object[] args, String[] names) {
         Namespace namespace = Frames.enter(closure, recurseTarget(thiz), thiz, interpreter.scopes().declared(definition));
         String[] parameters = interpreter.scopes().parameters(definition);
         int restIdx = interpreter.scopes().restIndex(definition);
@@ -54,6 +67,9 @@ public class Function implements BabbleFunction {
             result = interpreter.evaluateIn(namespace, definition.functionBlock);
         } catch (ReturnException re) {
             return re.getValue();
+        }
+        if (result instanceof TailCall) {
+            return result;
         }
         int blockRank = interpreter.scopes().numericWideningRank(definition.functionBlock);
         if (blockRank >= 0) {
