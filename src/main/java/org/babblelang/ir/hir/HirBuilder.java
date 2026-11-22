@@ -622,6 +622,16 @@ public final class HirBuilder {
     }
 
     private HirExpr lowerExpr(BabbleParser.ExpressionContext ctx) {
+        HirExpr expr = lowerExprCore(ctx);
+        ScopeAnalysis.OverloadSelection sel = scopes.overloadSelection(ctx);
+        if (sel != null) {
+            return new HirExpr.OverloadSelect(expr, sel.index(), sel.signatureKey(), sel.exactSet(),
+                    ExprMeta.of(ctx.getStart().getLine(), ScopeAnalysis.PrimitiveKind.NONE));
+        }
+        return expr;
+    }
+
+    private HirExpr lowerExprCore(BabbleParser.ExpressionContext ctx) {
         if (ctx instanceof BabbleParser.NullContext) {
             return new HirExpr.Const(null, metaOf(ctx).withKind(ScopeAnalysis.PrimitiveKind.NONE));
         }
@@ -794,6 +804,14 @@ public final class HirBuilder {
         }
         if (ctx instanceof BabbleParser.FunctionLiteralContext fn) {
             return new HirExpr.FunctionRef(functionIds.get(fn), metaOf(fn, scopes.callableEffects(fn)));
+        }
+        if (ctx instanceof BabbleParser.OverloadExpressionContext ov) {
+            List<HirExpr> operands = new ArrayList<>(ov.expression().size());
+            for (BabbleParser.ExpressionContext op : ov.expression()) {
+                operands.add(lowerExpr(op));
+            }
+            List<ScopeAnalysis.OverloadAltMetaInfo> metas = scopes.overloadMetas(ov);
+            return new HirExpr.MakeOverloadSet(operands, metas != null ? metas : List.of(), metaOf(ov));
         }
         if (ctx instanceof BabbleParser.ClassExpressionContext cls) {
             return new HirExpr.ClassExpr(classIds.get(cls), metaOf(cls));
@@ -1059,6 +1077,58 @@ public final class HirBuilder {
                     return new HirExpr.SelfRecurseCall(functionIds.get(currentFunction), lowerPositionalArgs(params, spreadAdapts), binding, meta);
                 }
             }
+        }
+
+        // 4b. Overload set call (resolved directly or via union split, BIP021-P5)
+        ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
+        if (ovDispatch != null) {
+            if (!ovDispatch.isSplit()) {
+                ScopeAnalysis.OverloadCallTarget target = ovDispatch.direct();
+                HirExpr selectedCallee = new HirExpr.OverloadSelect(
+                        lowerExpr(ctx.expression()),
+                        target.altIndex(),
+                        target.signatureKey(),
+                        target.exactSet(),
+                        ExprMeta.of(ctx.getStart().getLine(), ScopeAnalysis.PrimitiveKind.NONE));
+                BabbleParser.FunctionLiteralContext directFn = target.directTarget();
+                if (directFn != null && target.binding() != null
+                        && target.binding().paramCount() == scopes.parameters(directFn).length
+                        && (hasSpec(directFn) || isSpread(directFn))) {
+                    return new HirExpr.DirectBabbleCall(
+                            selectedCallee,
+                            functionIds.get(directFn),
+                            lowerPositionalArgs(params, spreadAdapts),
+                            target.binding(),
+                            meta);
+                }
+                return new HirExpr.DynamicCall(
+                        selectedCallee,
+                        lowerCallArgs(params, spreadAdapts),
+                        target.binding(),
+                        target.signature(),
+                        Interpreter.callSite(ctx, sourceName),
+                        meta);
+            }
+            List<HirExpr.OverloadBranch> hirBranches = new ArrayList<>(ovDispatch.splitBranches().size());
+            for (ScopeAnalysis.OverloadSplitBranch b : ovDispatch.splitBranches()) {
+                ScopeAnalysis.OverloadCallTarget bt = b.target();
+                int directFnId = -1;
+                if (bt.directTarget() != null && bt.binding() != null
+                        && bt.binding().paramCount() == scopes.parameters(bt.directTarget()).length
+                        && (hasSpec(bt.directTarget()) || isSpread(bt.directTarget()))) {
+                    directFnId = functionIds.get(bt.directTarget());
+                }
+                hirBranches.add(new HirExpr.OverloadBranch(
+                        b.checks(), directFnId, bt.altIndex(), bt.signatureKey(), bt.exactSet(),
+                        bt.signature(), bt.binding(), b.resultKind()));
+            }
+            return new HirExpr.OverloadDispatch(
+                    lowerExpr(ctx.expression()),
+                    ctx.expression().getText(),
+                    Interpreter.callSite(ctx, sourceName),
+                    lowerPositionalArgs(params, null),
+                    hirBranches,
+                    meta);
         }
 
         // 5. Direct free Babble function call

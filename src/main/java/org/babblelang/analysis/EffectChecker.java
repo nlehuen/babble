@@ -3420,7 +3420,7 @@ final class EffectChecker {
         if (isDeeplyImmutable(type)) {
             return true;
         }
-        if (type instanceof Type.Function || type instanceof Type.ClassValue
+        if (type instanceof Type.Function || type instanceof Type.Overloaded || type instanceof Type.ClassValue
                 || type instanceof Type.JavaClassValue || type instanceof Type.JavaPackage
                 || type instanceof Type.JavaMethod || type instanceof Type.Module) {
             return true;
@@ -4028,6 +4028,12 @@ final class EffectChecker {
                 Type dst = checker.rawTypeOf(nna);
                 return isDeeplyImmutable(dst) ? Origin.IMMUTABLE : orig;
             }
+            if (ctx instanceof BabbleParser.OverloadExpressionContext ov) {
+                for (BabbleParser.ExpressionContext op : ov.expression()) {
+                    eval(op);
+                }
+                return Origin.IMMUTABLE;
+            }
             if (ctx instanceof BabbleParser.TypeApplyContext ta) {
                 return eval(ta.expression());
             }
@@ -4563,7 +4569,25 @@ final class EffectChecker {
                 return deriveCallReturnOrigin(call, resType, selfSum, hasRecv, selfRecv, argOrigins, fParams, args);
             }
 
-            // 6. Babble function / method / union of functions
+            // 6. Babble function / method / overload set / union of functions
+            if (calleeType instanceof Type.Overloaded) {
+                TypeChecker.ResolvedOverloadCall resolved = call instanceof BabbleParser.CallContext cc
+                        ? checker.resolvedOverloadCalls().get(cc) : null;
+                if (resolved != null) {
+                    if (!resolved.isSplit() && resolved.altType() != null) {
+                        return applyBabbleCallableType(call, calleeExpr, resolved.altType(),
+                                receiverExpr, recvOrig, args, argExprs, argOrigins, resType);
+                    }
+                    if (resolved.isSplit()) {
+                        List<Type> branchFns = new ArrayList<>(resolved.splitBranches().size());
+                        for (TypeChecker.ResolvedSplitBranch b : resolved.splitBranches()) {
+                            branchFns.add(b.altType());
+                        }
+                        return applyBabbleCallableType(call, calleeExpr, Type.union(branchFns),
+                                receiverExpr, recvOrig, args, argExprs, argOrigins, resType);
+                    }
+                }
+            }
             if (calleeType instanceof Type.Function || calleeType instanceof Type.Union) {
                 return applyBabbleCallableType(call, calleeExpr, calleeType, receiverExpr, recvOrig, args, argExprs, argOrigins, resType);
             }

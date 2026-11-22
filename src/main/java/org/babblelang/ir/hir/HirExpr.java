@@ -56,6 +56,9 @@ public sealed interface HirExpr permits
         HirExpr.JavaMethodCall,
         HirExpr.SafeCall,
         HirExpr.DynamicCall,
+        HirExpr.MakeOverloadSet,
+        HirExpr.OverloadSelect,
+        HirExpr.OverloadDispatch,
         HirExpr.FunctionRef,
         HirExpr.ClassExpr,
         HirExpr.InterfaceExpr,
@@ -524,6 +527,57 @@ public sealed interface HirExpr permits
     ) implements HirExpr {
         public DynamicCall {
             args = List.copyOf(args);
+        }
+    }
+
+    // ---------------------------------------------------------------- overload sets (BIP021-P5)
+
+    record MakeOverloadSet(
+            List<HirExpr> operands,
+            List<ScopeAnalysis.OverloadAltMetaInfo> metas,
+            ExprMeta meta
+    ) implements HirExpr {
+        public MakeOverloadSet {
+            operands = List.copyOf(operands);
+            metas = List.copyOf(metas);
+        }
+    }
+
+    record OverloadSelect(
+            HirExpr set,
+            int index,
+            String signatureKey,
+            boolean exactSet,
+            ExprMeta meta
+    ) implements HirExpr {
+    }
+
+    record OverloadBranch(
+            List<ScopeAnalysis.OverloadSplitCheck> checks,
+            int directFunctionId,
+            int altIndex,
+            String signatureKey,
+            boolean exactSet,
+            ScopeAnalysis.FunctionSignature signature,
+            ScopeAnalysis.ArgumentBinding binding,
+            ScopeAnalysis.PrimitiveKind resultKind
+    ) {
+        public OverloadBranch {
+            checks = List.copyOf(checks);
+        }
+    }
+
+    record OverloadDispatch(
+            HirExpr callee,
+            String calleeText,
+            CallSite callSite,
+            List<HirExpr> args,
+            List<OverloadBranch> branches,
+            ExprMeta meta
+    ) implements HirExpr {
+        public OverloadDispatch {
+            args = List.copyOf(args);
+            branches = List.copyOf(branches);
         }
     }
 

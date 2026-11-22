@@ -550,6 +550,36 @@ sealed interface Type {
         }
     }
 
+    /**
+     * An overload set type {@code overload (fn ..., fn ...)} (BIP021-D12) : flattened list of
+     * {@link Function} alternatives, validated for static unambiguity (BIP021-D10) where built.
+     */
+    record Overloaded(List<Function> alternatives) implements Type {
+        public Overloaded {
+            alternatives = List.copyOf(alternatives);
+        }
+
+        @Override
+        public String toString() {
+            return "overload (" + alternatives.stream()
+                    .map(alt -> alt.typeParameters().isEmpty() ? "fn " + alt : alt.toString())
+                    .collect(Collectors.joining(", ")) + ")";
+        }
+    }
+
+    /** Flattens function and overload-set types into a single {@link Overloaded} type. */
+    static Overloaded overloaded(Collection<? extends Type> items) {
+        List<Function> flat = new ArrayList<>();
+        for (Type item : items) {
+            if (item instanceof Overloaded set) {
+                flat.addAll(set.alternatives());
+            } else if (item instanceof Function fn) {
+                flat.add(fn);
+            }
+        }
+        return new Overloaded(flat);
+    }
+
     /** An instance of a class, object literal or interface : nominal. */
     record Instance(TypeNode node, List<Type> typeArguments) implements Type {
         Instance(TypeNode node) {
@@ -829,6 +859,14 @@ sealed interface Type {
                 }
                 yield fn.result().anyMatch(predicate);
             }
+            case Overloaded ov -> {
+                for (Function alt : ov.alternatives()) {
+                    if (alt.anyMatch(predicate)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
             case Instance inst -> {
                 for (Type a : inst.typeArguments()) {
                     if (a.anyMatch(predicate)) {
@@ -934,6 +972,25 @@ sealed interface Type {
                         ? new Function(fn.typeParameters(), out != null ? out : src, res, fn.effects(),
                                 fn.forwardedEffectParams(), fn.capturedCallings())
                         : fn;
+            }
+            case Overloaded ov -> {
+                List<Function> src = ov.alternatives();
+                List<Function> out = null;
+                for (int i = 0; i < src.size(); i++) {
+                    Function orig = src.get(i);
+                    Type mapped = orig.mapTypes(mapper);
+                    Function mappedFn = mapped instanceof Function mf ? mf : orig;
+                    if (out != null) {
+                        out.add(mappedFn);
+                    } else if (mappedFn != orig) {
+                        out = new ArrayList<>(src.size());
+                        for (int j = 0; j < i; j++) {
+                            out.add(src.get(j));
+                        }
+                        out.add(mappedFn);
+                    }
+                }
+                yield out != null ? new Overloaded(out) : ov;
             }
             case Instance inst -> {
                 List<Type> mapped = mapList(inst.typeArguments(), mapper);

@@ -20,6 +20,10 @@ final class TypedProgram {
         this.checker = checker;
     }
 
+    java.util.Map<BabbleParser.CallContext, TypeChecker.ResolvedOverloadCall> resolvedOverloadCalls() {
+        return checker.resolvedOverloadCalls();
+    }
+
     // ---------------------------------------------------------------- names and scopes
 
     ScopeNode scopeOf(ParserRuleContext ctx) {

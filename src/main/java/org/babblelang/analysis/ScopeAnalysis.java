@@ -263,6 +263,38 @@ public final class ScopeAnalysis {
     public record InterfaceCallTarget(String interfaceTypeId, String memberName, FunctionSignature signature, boolean guaranteedCallable) {
     }
 
+    /** Per-alternative runtime metadata for {@code overload (...)} construction (BIP021-D16). */
+    public record OverloadAltMetaInfo(String signatureKey, String display, int minArity, int maxArity,
+                                      int restIndex, String[] paramDescriptors) {
+    }
+
+    /** Coercion from an overload set expression to a single alternative (BIP021-D12). */
+    public record OverloadSelection(int index, String signatureKey, boolean exactSet) {
+    }
+
+    /** One statically resolved alternative of an overload set call (BIP021-D11, BIP021-D16). */
+    public record OverloadCallTarget(int altIndex, String signatureKey, boolean exactSet,
+                                     BabbleParser.FunctionLiteralContext directTarget,
+                                     FunctionSignature signature, ArgumentBinding binding) {
+    }
+
+    /** One runtime type check at a union-split argument position (BIP021-D11 #4). */
+    public record OverloadSplitCheck(int argIndex, List<String> descriptors, boolean isNull) {
+    }
+
+    /** One branch in a union-split overload dispatch, ordered most-specific-first. */
+    public record OverloadSplitBranch(List<OverloadSplitCheck> checks, OverloadCallTarget target,
+                                      PrimitiveKind resultKind) {
+    }
+
+    /** Call-site lowering target for calls to an overload set (resolved directly or via union split). */
+    public record OverloadDispatchTarget(OverloadCallTarget direct, List<OverloadSplitBranch> splitBranches,
+                                         PrimitiveKind resultKind) {
+        public boolean isSplit() {
+            return splitBranches != null && !splitBranches.isEmpty();
+        }
+    }
+
     public enum ForKind {
         ARRAY,
         JAVA_ITERABLE,
@@ -359,6 +391,9 @@ public final class ScopeAnalysis {
     private final ParseTreeProperty<ModuleExportTarget> moduleExportTargets = new ParseTreeProperty<>();
     private final ParseTreeProperty<BabbleParser.FunctionLiteralContext> babbleCallFunctions = new ParseTreeProperty<>();
     private final ParseTreeProperty<FunctionSignature> babbleCallSignatures = new ParseTreeProperty<>();
+    private final Map<BabbleParser.OverloadExpressionContext, List<OverloadAltMetaInfo>> overloadMetas = new java.util.IdentityHashMap<>();
+    private final Map<ParserRuleContext, OverloadSelection> overloadSelections = new java.util.IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, OverloadDispatchTarget> overloadDispatches = new java.util.IdentityHashMap<>();
     private final Map<String, TypeHierarchyInfo> typeHierarchies = new java.util.LinkedHashMap<>();
     private AnalysisSession session;
     private List<ModuleInterface> importedModules = List.of();
@@ -631,6 +666,34 @@ public final class ScopeAnalysis {
 
     void setBabbleCallSignature(ParserRuleContext ctx, FunctionSignature signature) {
         babbleCallSignatures.put(ctx, signature);
+    }
+
+    void setOverloadMetas(BabbleParser.OverloadExpressionContext ctx, List<OverloadAltMetaInfo> metas) {
+        overloadMetas.put(ctx, List.copyOf(metas));
+    }
+
+    public List<OverloadAltMetaInfo> overloadMetas(BabbleParser.OverloadExpressionContext ctx) {
+        return overloadMetas.get(ctx);
+    }
+
+    void setOverloadSelection(ParserRuleContext ctx, OverloadSelection selection) {
+        if (selection == null) {
+            overloadSelections.remove(ctx);
+        } else {
+            overloadSelections.put(ctx, selection);
+        }
+    }
+
+    public OverloadSelection overloadSelection(ParserRuleContext ctx) {
+        return overloadSelections.get(ctx);
+    }
+
+    void setOverloadDispatch(BabbleParser.CallContext ctx, OverloadDispatchTarget target) {
+        overloadDispatches.put(ctx, target);
+    }
+
+    public OverloadDispatchTarget overloadDispatch(BabbleParser.CallContext ctx) {
+        return overloadDispatches.get(ctx);
     }
 
     /**

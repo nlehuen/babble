@@ -843,9 +843,48 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     @Override
+    public Object visit(org.antlr.v4.runtime.tree.ParseTree tree) {
+        Object value = super.visit(tree);
+        if (tree instanceof ParserRuleContext prc) {
+            ScopeAnalysis.OverloadSelection sel = scopes.overloadSelection(prc);
+            if (sel != null) {
+                value = sel.exactSet()
+                        ? org.babblelang.runtime.OverloadSet.memberOf(value, sel.index())
+                        : org.babblelang.runtime.OverloadSet.selectFrom(value, sel.signatureKey());
+            }
+        }
+        return value;
+    }
+
+    @Override
     public Object visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
         last = ctx;
         return new Function(ctx, namespace, this);
+    }
+
+    @Override
+    public Object visitOverloadExpression(BabbleParser.OverloadExpressionContext ctx) {
+        last = ctx;
+        List<BabbleParser.ExpressionContext> exprs = ctx.expression();
+        Object[] operands = new Object[exprs.size()];
+        for (int i = 0; i < exprs.size(); i++) {
+            operands[i] = visit(exprs.get(i));
+        }
+        List<ScopeAnalysis.OverloadAltMetaInfo> metaInfos = scopes.overloadMetas(ctx);
+        org.babblelang.runtime.OverloadSet.AltMeta[] metas;
+        if (metaInfos != null) {
+            metas = new org.babblelang.runtime.OverloadSet.AltMeta[metaInfos.size()];
+            for (int i = 0; i < metaInfos.size(); i++) {
+                ScopeAnalysis.OverloadAltMetaInfo info = metaInfos.get(i);
+                metas[i] = new org.babblelang.runtime.OverloadSet.AltMeta(
+                        info.signatureKey(), info.display(), info.minArity(), info.maxArity(),
+                        info.restIndex(), info.paramDescriptors());
+            }
+        } else {
+            metas = new org.babblelang.runtime.OverloadSet.AltMeta[0];
+        }
+        last = ctx;
+        return org.babblelang.runtime.OverloadSet.of(operands, metas);
     }
 
     @Override
@@ -873,6 +912,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                         : ArraySupport.from(arrCreate.componentClass(), args[0], runtime);
             };
             return Types.check(created, scopes.checkedType(ctx));
+        }
+        ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
+        if (ovDispatch != null) {
+            return invokeOverloadDispatch(ctx, ovDispatch);
         }
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpression) {
@@ -921,6 +964,65 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return Types.check(callable.call(runtime, args, effectiveCallNames(ctx), site), scopes.checkedType(ctx));
     }
 
+    private Object invokeOverloadDispatch(BabbleParser.CallContext ctx, ScopeAnalysis.OverloadDispatchTarget dispatch) {
+        Object callee = visit(ctx.expression());
+        Object[] rawArgs = arguments(ctx);
+        last = ctx;
+        CallSite site = callSite(ctx);
+        if (!dispatch.isSplit()) {
+            ScopeAnalysis.OverloadCallTarget target = dispatch.direct();
+            org.babblelang.runtime.Callable chosen = target.exactSet()
+                    ? org.babblelang.runtime.OverloadSet.memberOf(callee, target.altIndex())
+                    : org.babblelang.runtime.OverloadSet.selectFrom(callee, target.signatureKey());
+            Object[] args = bindArgumentsWith(target.binding(), rawArgs);
+            last = ctx;
+            return Types.check(chosen.call(runtime, args, null, site), scopes.checkedType(ctx));
+        }
+        for (ScopeAnalysis.OverloadSplitBranch branch : dispatch.splitBranches()) {
+            if (matchesSplitChecks(branch.checks(), rawArgs)) {
+                ScopeAnalysis.OverloadCallTarget target = branch.target();
+                org.babblelang.runtime.Callable chosen = target.exactSet()
+                        ? org.babblelang.runtime.OverloadSet.memberOf(callee, target.altIndex())
+                        : org.babblelang.runtime.OverloadSet.selectFrom(callee, target.signatureKey());
+                Object[] adapted = rawArgs;
+                if (target.binding() != null && target.binding().argAdapts() != null) {
+                    adapted = rawArgs.clone();
+                    for (int i = 0; i < adapted.length; i++) {
+                        ScopeAnalysis.SpreadAdapt a = target.binding().adaptForArg(i);
+                        if (a != null && a.kind() != ScopeAnalysis.SpreadKind.NONE) {
+                            adapted[i] = adaptSpread(adapted[i], a);
+                        }
+                    }
+                }
+                Object[] args = bindArgumentsWith(target.binding(), adapted);
+                last = ctx;
+                return Types.check(chosen.call(runtime, args, null, site), scopes.checkedType(ctx));
+            }
+        }
+        throw new BabbleException("No applicable overload of " + ctx.expression().getText());
+    }
+
+    private static boolean matchesSplitChecks(List<ScopeAnalysis.OverloadSplitCheck> checks, Object[] rawArgs) {
+        for (ScopeAnalysis.OverloadSplitCheck chk : checks) {
+            Object v = rawArgs[chk.argIndex()];
+            if (chk.isNull()) {
+                if (v != null) {
+                    return false;
+                }
+            } else {
+                if (v == null) {
+                    return false;
+                }
+                for (String desc : chk.descriptors()) {
+                    if (!Types.matches(v, desc)) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
     /** {@code super.m(args)} : the default method the analysis resolved, called on {@code this}. */
     private Object superCall(BabbleParser.CallContext ctx, BabbleParser.SelectorContext selector, BabbleParser.SuperExpressionContext superExpression) {
         Object thiz = namespace.lookup("this");
@@ -932,7 +1034,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     private Object[] bindStaticArguments(BabbleParser.CallContext ctx, Object[] rawArgs) {
-        ScopeAnalysis.ArgumentBinding binding = scopes.argumentBinding(ctx);
+        return bindArgumentsWith(scopes.argumentBinding(ctx), rawArgs);
+    }
+
+    private Object[] bindArgumentsWith(ScopeAnalysis.ArgumentBinding binding, Object[] rawArgs) {
         if (binding == null) {
             return rawArgs;
         }

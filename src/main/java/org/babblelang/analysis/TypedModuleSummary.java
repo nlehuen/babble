@@ -233,6 +233,18 @@ final class TypedModuleSummary {
                     }
                 }
             }
+            for (Type expType : exports.values()) {
+                if (expType instanceof Type.Overloaded ov) {
+                    for (Type.Function alt : ov.alternatives()) {
+                        if (!callableTemplates.containsKey(alt)) {
+                            TypedModuleSummary.CallableEffectTemplate importedTpl = checker.imported().callableTemplate(alt);
+                            if (importedTpl != null) {
+                                callableTemplates.put(alt, importedTpl);
+                            }
+                        }
+                    }
+                }
+            }
         }
         return new TypedModuleSummary(
                 exports,

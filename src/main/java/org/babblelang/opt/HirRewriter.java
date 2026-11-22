@@ -223,6 +223,20 @@ public final class HirRewriter {
                 yield (nc == c.callee() && na == c.args()) ? c
                         : new HirExpr.DynamicCall(nc, na, c.binding(), c.babbleSig(), c.callSite(), c.meta());
             }
+            case HirExpr.MakeOverloadSet m -> {
+                List<HirExpr> no = rewriteList(m.operands(), transform);
+                yield no == m.operands() ? m : new HirExpr.MakeOverloadSet(no, m.metas(), m.meta());
+            }
+            case HirExpr.OverloadSelect s -> {
+                HirExpr ns = transform.apply(s.set());
+                yield ns == s.set() ? s : new HirExpr.OverloadSelect(ns, s.index(), s.signatureKey(), s.exactSet(), s.meta());
+            }
+            case HirExpr.OverloadDispatch d -> {
+                HirExpr nc = transform.apply(d.callee());
+                List<HirExpr> na = rewriteList(d.args(), transform);
+                yield (nc == d.callee() && na == d.args()) ? d
+                        : new HirExpr.OverloadDispatch(nc, d.calleeText(), d.callSite(), na, d.branches(), d.meta());
+            }
         };
     }
 

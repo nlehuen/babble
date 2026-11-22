@@ -9,6 +9,7 @@ import org.babblelang.runtime.JavaTypes;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -162,12 +163,45 @@ final class LoweringAnalyzer {
                 pass.analysis.setFunctionReturnKind(fn, ScopeAnalysis.PrimitiveKind.of(tf.result()));
             }
         }
+        for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
+            if (entry.getKey() instanceof BabbleParser.OverloadExpressionContext ov
+                    && checker.inFile(ov) && entry.getValue() instanceof Type.Overloaded overloaded) {
+                List<ScopeAnalysis.OverloadAltMetaInfo> metas = new ArrayList<>(overloaded.alternatives().size());
+                for (Type.Function alt : overloaded.alternatives()) {
+                    metas.add(buildOverloadAltMeta(alt));
+                }
+                pass.analysis.setOverloadMetas(ov, metas);
+            }
+        }
+        for (Map.Entry<ParserRuleContext, ScopeAnalysis.OverloadSelection> entry : checker.overloadSelections().entrySet()) {
+            if (checker.inFile(entry.getKey())) {
+                pass.analysis.setOverloadSelection(entry.getKey(), entry.getValue());
+            }
+        }
         publishDefinitelyDefined(pass, checker);
         deriveTargets(file);
         publishTypeHierarchies(pass, checker);
         if (pass.analysis.moduleInterface() != null) {
             pass.analysis.moduleInterface().setTypeHierarchies(pass.analysis.typeHierarchies());
         }
+    }
+
+    private static ScopeAnalysis.OverloadAltMetaInfo buildOverloadAltMeta(Type.Function alt) {
+        int minArity = 0;
+        for (Type.Parameter p : alt.parameters()) {
+            if (!p.optional() && !p.rest()) {
+                minArity++;
+            }
+        }
+        int restIdx = alt.restIndex();
+        int maxArity = restIdx >= 0 ? Integer.MAX_VALUE : alt.parameters().size();
+        return new ScopeAnalysis.OverloadAltMetaInfo(
+                OverloadSolver.signatureKey(alt),
+                OverloadSolver.formatAlternative(alt),
+                minArity,
+                maxArity,
+                restIdx,
+                OverloadSolver.paramDescriptors(alt));
     }
 
     // ---------------------------------------------------------------- static dispatch targets (RM001, RM003)
@@ -264,6 +298,10 @@ final class LoweringAnalyzer {
         }
         Type rawCallee = types.get(call.expression());
         Type callee = safe && rawCallee != null ? Type.withoutNull(rawCallee) : rawCallee;
+        if (!safe && callee instanceof Type.Overloaded) {
+            deriveOverloadCall(arguments, spreadAdapts, call);
+            return;
+        }
         ScopeAnalysis.ArgumentBinding binding = deriveArgumentBinding(callee, arguments, call, spreadAdapts);
         if (binding != null) {
             pass.analysis.setArgumentBinding(call, binding);
@@ -277,6 +315,63 @@ final class LoweringAnalyzer {
         } else if (types.get(call) != Type.ERROR) {
             deriveInterfaceCall(arguments, binding, call);
         }
+    }
+
+    private void deriveOverloadCall(List<BabbleParser.CallParameterContext> arguments,
+                                    ScopeAnalysis.SpreadAdapt[] spreadAdapts,
+                                    BabbleParser.CallContext call) {
+        TypeChecker.ResolvedOverloadCall resolved = checker.resolvedOverloadCalls().get(call);
+        if (resolved == null) {
+            return;
+        }
+        ScopeAnalysis.PrimitiveKind callResultKind = ScopeAnalysis.PrimitiveKind.of(resolved.resultType());
+        if (!resolved.isSplit()) {
+            Type.Function alt = resolved.altType();
+            ScopeAnalysis.PrimitiveKind restKind = checker.callSolver().resolvedRestKind(call);
+            ScopeAnalysis.ArgumentBinding binding = CallSolver.computeArgumentBinding(
+                    alt.parameters(), arguments, restKind, spreadAdapts);
+            if (binding != null) {
+                pass.analysis.setArgumentBinding(call, binding);
+            }
+            BabbleParser.FunctionLiteralContext directTarget = resolved.directTarget();
+            // Direct target is valid when the literal is in this file and has non-generic signature
+            // (generic local literals can also be called directly via boxed directTarget!).
+            ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+            if (directTarget != null && checker.inFile(directTarget) && alt.typeParameters().isEmpty() && binding != null) {
+                // Also record babbleCallFunction & babbleCallSignature so HirBuilder lowers to DirectBabbleCall!
+                pass.analysis.setBabbleCallFunction(call, directTarget);
+                pass.analysis.setBabbleCallSignature(call, sig);
+            }
+            ScopeAnalysis.OverloadCallTarget target = new ScopeAnalysis.OverloadCallTarget(
+                    resolved.altIndex(),
+                    OverloadSolver.signatureKey(alt),
+                    resolved.exactSet(),
+                    directTarget != null && checker.inFile(directTarget) ? directTarget : null,
+                    sig,
+                    binding);
+            pass.analysis.setOverloadDispatch(call, new ScopeAnalysis.OverloadDispatchTarget(target, null, callResultKind));
+            return;
+        }
+
+        List<ScopeAnalysis.OverloadSplitBranch> branches = new ArrayList<>(resolved.splitBranches().size());
+        for (TypeChecker.ResolvedSplitBranch rb : resolved.splitBranches()) {
+            Type.Function alt = rb.altType();
+            ScopeAnalysis.ArgumentBinding binding = CallSolver.computeArgumentBinding(
+                    alt.parameters(), arguments, rb.restKind(), rb.spreadAdapts());
+            ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+            BabbleParser.FunctionLiteralContext directTarget = rb.directTarget() != null && checker.inFile(rb.directTarget())
+                    ? rb.directTarget() : null;
+            ScopeAnalysis.OverloadCallTarget target = new ScopeAnalysis.OverloadCallTarget(
+                    rb.altIndex(),
+                    OverloadSolver.signatureKey(alt),
+                    rb.exactSet(),
+                    directTarget,
+                    sig,
+                    binding);
+            branches.add(new ScopeAnalysis.OverloadSplitBranch(
+                    rb.checks(), target, ScopeAnalysis.PrimitiveKind.of(rb.resultType())));
+        }
+        pass.analysis.setOverloadDispatch(call, new ScopeAnalysis.OverloadDispatchTarget(null, List.copyOf(branches), callResultKind));
     }
 
     private ScopeAnalysis.ArgumentBinding deriveArgumentBinding(Type callee,
@@ -878,7 +973,7 @@ final class LoweringAnalyzer {
             }
             return "inter|" + intersection + "|" + payload;
         }
-        if (type instanceof Type.Function) {
+        if (type instanceof Type.Function || type instanceof Type.Overloaded) {
             return "fn|" + type + "|";
         }
         if (type instanceof Type.Instance instance) {
@@ -891,6 +986,10 @@ final class LoweringAnalyzer {
             return "java|" + array + "|" + JavaTypeBridge.checkedArrayClass(array).getName();
         }
         return null;
+    }
+
+    static ScopeAnalysis.PrimitiveKind primitiveKind(Type type) {
+        return ScopeAnalysis.PrimitiveKind.of(type);
     }
 
     private static void publishTypeHierarchies(BlockScopes pass, TypeChecker checker) {

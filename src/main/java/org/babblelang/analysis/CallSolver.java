@@ -136,6 +136,9 @@ final class CallSolver {
         if (callee instanceof Type.ArrayOfFactory af) {
             return arrayOfCall(af, ctx, expected);
         }
+        if (callee instanceof Type.Overloaded overloaded) {
+            return overloadedCall(overloaded, arguments, ctx, expected);
+        }
         if (callee instanceof Type.Function function) {
             List<? extends ParserRuleContext> decls = checker.parameterDecls(function);
             boolean frozenBorrowSafe = function.effects().uniqueResult() || checker.isDeeplyImmutable(function.result());
@@ -2398,6 +2401,10 @@ final class CallSolver {
         if (badTypeArg || target == Type.ERROR || target == Type.NOTHING) {
             return Type.ERROR;
         }
+        if (target instanceof Type.Overloaded) {
+            checker.warn("Cannot apply type arguments to an overload set : " + ctx.expression().getText(), ctx.typeArguments());
+            return Type.ERROR;
+        }
         if (target instanceof Type.CoreCollection cc) {
             if (!cc.typeArguments().isEmpty()) {
                 checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
@@ -2536,6 +2543,606 @@ final class CallSolver {
         }
         checker.warn(ctx.expression().getText() + " is not generic", ctx.typeArguments());
         return Type.ERROR;
+    }
+
+    // ---------------------------------------------------------------- overload set calls (BIP021-D11)
+
+    private record OverloadCandidate(int index, Type.Function alt, BindResult bind,
+                                     List<Type> effectiveParams, int maxSpreadRank,
+                                     Map<Type.TypeVar, Type> genericEnv,
+                                     ScopeAnalysis.SpreadAdapt[] spreadAdapts) {
+    }
+
+    private enum ResolutionKind { UNIQUE, NONE, AMBIGUOUS_SPREAD, AMBIGUOUS_LAMBDA }
+
+    private record SingleResolution(ResolutionKind kind, OverloadCandidate winner,
+                                    List<OverloadCandidate> tied, BabbleParser.FnParamContext untypedParam) {
+    }
+
+    private Type overloadedCall(Type.Overloaded set, List<BabbleParser.CallParameterContext> arguments,
+                                BabbleParser.CallContext ctx, Type expected) {
+        String callName = ctx.expression().getText();
+        int n = arguments.size();
+        String[] argNames = new String[n];
+        boolean[] untypedLambda = new boolean[n];
+        Type[] argTypes = new Type[n];
+        boolean anyError = false;
+        for (int i = 0; i < n; i++) {
+            BabbleParser.CallParameterContext cp = arguments.get(i);
+            argNames[i] = ScopeAnalysis.callParamName(cp);
+            if (!ScopeAnalysis.isSpread(cp)
+                    && cp.expression() instanceof BabbleParser.FunctionLiteralContext lit
+                    && hasUntypedParam(lit)) {
+                untypedLambda[i] = true;
+            } else {
+                argTypes[i] = checker.synth(cp.expression());
+                if (argTypes[i] == Type.ERROR) {
+                    anyError = true;
+                }
+            }
+        }
+        if (anyError) {
+            for (int i = 0; i < n; i++) {
+                if (untypedLambda[i]) {
+                    checker.synth(arguments.get(i).expression());
+                }
+            }
+            return Type.ERROR;
+        }
+
+        boolean exactSet = checker.isExactOverloadSetExpr(ctx.expression());
+        List<BabbleParser.FunctionLiteralContext> localLits = checker.resolveOverloadLiterals(ctx.expression());
+
+        SingleResolution res = resolveOverloadSingle(set, arguments, argNames, argTypes, untypedLambda);
+        if (res.kind() == ResolutionKind.UNIQUE) {
+            OverloadCandidate win = res.winner();
+            Type result = call(win.alt(), ctx, expected, false);
+            BabbleParser.FunctionLiteralContext directLit = localLits != null && win.index() < localLits.size()
+                    ? localLits.get(win.index()) : null;
+            checker.recordResolvedOverloadCall(ctx, new TypeChecker.ResolvedOverloadCall(
+                    win.index(), win.alt(), exactSet, directLit, result, null));
+            return result;
+        }
+        if (res.kind() == ResolutionKind.AMBIGUOUS_LAMBDA) {
+            checker.warn("Missing type : " + res.untypedParam().ID().getText(), res.untypedParam());
+            return Type.ERROR;
+        }
+        if (res.kind() == ResolutionKind.AMBIGUOUS_SPREAD) {
+            checker.warn("Ambiguous call to " + callName + " for (" + formatOverloadArgs(arguments, argTypes, untypedLambda)
+                    + ") : candidates are " + OverloadSolver.formatCandidates(
+                            res.tied().stream().map(OverloadCandidate::alt).toList()), ctx);
+            return Type.ERROR;
+        }
+
+        // No single alternative accepted the arguments whole : try union / nullable splits (BIP021-D11 #4).
+        List<Integer> unionArgIndices = new ArrayList<>();
+        int productSize = 1;
+        for (int i = 0; i < n; i++) {
+            if (!untypedLambda[i] && !ScopeAnalysis.isSpread(arguments.get(i)) && argTypes[i] instanceof Type.Union u) {
+                unionArgIndices.add(i);
+                productSize *= u.members().size();
+                if (productSize > 64) {
+                    break;
+                }
+            }
+        }
+        if (!unionArgIndices.isEmpty() && productSize <= 64) {
+            Type splitResult = tryOverloadUnionSplit(set, callName, arguments, argNames, argTypes,
+                    untypedLambda, unionArgIndices, exactSet, localLits, ctx, expected);
+            if (splitResult != null) {
+                return splitResult;
+            }
+        }
+
+        // No applicable overload : synth any untyped lambdas for clean state and report diagnostic.
+        for (int i = 0; i < n; i++) {
+            if (untypedLambda[i]) {
+                checker.synth(arguments.get(i).expression());
+            }
+        }
+        checker.warn("No applicable overload of " + callName + " for (" + formatOverloadArgs(arguments, argTypes, untypedLambda)
+                + ") : candidates are " + OverloadSolver.formatCandidates(set.alternatives()), ctx);
+        return Type.ERROR;
+    }
+
+    private SingleResolution resolveOverloadSingle(Type.Overloaded set,
+                                                   List<BabbleParser.CallParameterContext> arguments,
+                                                   String[] argNames, Type[] argTypes,
+                                                   boolean[] untypedLambda) {
+        List<OverloadCandidate> applicable = new ArrayList<>();
+        List<Type.Function> alts = set.alternatives();
+        for (int i = 0; i < alts.size(); i++) {
+            OverloadCandidate cand = matchOverloadAlternative(i, alts.get(i), arguments, argNames, argTypes, untypedLambda);
+            if (cand != null) {
+                applicable.add(cand);
+            }
+        }
+        if (applicable.isEmpty()) {
+            return new SingleResolution(ResolutionKind.NONE, null, List.of(), null);
+        }
+        if (applicable.size() == 1) {
+            return new SingleResolution(ResolutionKind.UNIQUE, applicable.get(0), List.of(), null);
+        }
+        // Filter by minimum spread adaptation rank (BIP021-D7: AS_IS < view < copy).
+        int bestSpreadRank = Integer.MAX_VALUE;
+        for (OverloadCandidate c : applicable) {
+            bestSpreadRank = Math.min(bestSpreadRank, c.maxSpreadRank());
+        }
+        List<OverloadCandidate> bestSpread = new ArrayList<>();
+        for (OverloadCandidate c : applicable) {
+            if (c.maxSpreadRank() == bestSpreadRank) {
+                bestSpread.add(c);
+            }
+        }
+        if (bestSpread.size() == 1) {
+            return new SingleResolution(ResolutionKind.UNIQUE, bestSpread.get(0), List.of(), null);
+        }
+        // Find the unique most-specific candidate on non-lambda parameters.
+        List<OverloadCandidate> minimal = new ArrayList<>();
+        for (OverloadCandidate cand : bestSpread) {
+            boolean beaten = false;
+            for (OverloadCandidate other : bestSpread) {
+                if (other == cand) {
+                    continue;
+                }
+                if (OverloadSolver.compareAlternatives(checker.algebra(),
+                        other.alt(), other.effectiveParams(),
+                        cand.alt(), cand.effectiveParams()) == OverloadSolver.Order.FIRST_BETTER) {
+                    beaten = true;
+                    break;
+                }
+            }
+            if (!beaten) {
+                minimal.add(cand);
+            }
+        }
+        if (minimal.size() == 1) {
+            return new SingleResolution(ResolutionKind.UNIQUE, minimal.get(0), List.of(), null);
+        }
+        // Check if an untyped lambda caused the ambiguity (BIP021-D11 #6).
+        for (int i = 0; i < untypedLambda.length; i++) {
+            if (untypedLambda[i] && arguments.get(i).expression() instanceof BabbleParser.FunctionLiteralContext lit) {
+                BabbleParser.FnParamContext firstUntyped = firstUntypedParam(lit);
+                if (firstUntyped != null) {
+                    return new SingleResolution(ResolutionKind.AMBIGUOUS_LAMBDA, null, minimal, firstUntyped);
+                }
+            }
+        }
+        return new SingleResolution(ResolutionKind.AMBIGUOUS_SPREAD, null, minimal, null);
+    }
+
+    private OverloadCandidate matchOverloadAlternative(int index, Type.Function alt,
+                                                       List<BabbleParser.CallParameterContext> arguments,
+                                                       String[] argNames, Type[] argTypes,
+                                                       boolean[] untypedLambda) {
+        List<Type.Parameter> params = alt.parameters();
+        BindResult bind = bindArguments(params, argNames);
+        if (bind.hasErrors(params)) {
+            return null;
+        }
+        int argCount = arguments.size();
+        ScopeAnalysis.SpreadAdapt[] adapts = null;
+        int maxSpreadRank = 0;
+        List<Type> effectiveParams = new ArrayList<>(argCount);
+
+        if (alt.typeParameters().isEmpty()) {
+            for (int i = 0; i < argCount; i++) {
+                int pIdx = paramIndexForArg(bind, i);
+                if (pIdx < 0) {
+                    return null;
+                }
+                Type.Parameter param = params.get(pIdx);
+                Type paramType = param.type();
+                if (untypedLambda[i]) {
+                    if (!(paramType instanceof Type.Function pf)
+                            || !untypedLambdaMatchesShape((BabbleParser.FunctionLiteralContext) arguments.get(i).expression(), pf)) {
+                        return null;
+                    }
+                    // Exclude untyped lambda position from specificity comparison by using ANY placeholder.
+                    effectiveParams.add(Type.ANY);
+                    continue;
+                }
+                if (param.rest()) {
+                    if (ScopeAnalysis.isSpread(arguments.get(i))) {
+                        Type seqElem = extractSequenceElement(argTypes[i]);
+                        if (seqElem == null || !OverloadSolver.paramAccepts(checker.algebra(), paramType, seqElem)) {
+                            return null;
+                        }
+                        int rank = isIterableDirectly(argTypes[i]) ? 0 : 1;
+                        maxSpreadRank = Math.max(maxSpreadRank, rank);
+                    } else {
+                        if (!OverloadSolver.paramAccepts(checker.algebra(), paramType, argTypes[i])) {
+                            return null;
+                        }
+                    }
+                    effectiveParams.add(paramType);
+                } else if (ScopeAnalysis.isSpread(arguments.get(i))) {
+                    ScopeAnalysis.SpreadAdapt adapt = classifySpread(argTypes[i], paramType,
+                            param.borrow(), param.mut(), param.borrow() && !param.mut());
+                    if (adapt == null) {
+                        return null;
+                    }
+                    if (adapts == null) {
+                        adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                    }
+                    adapts[i] = adapt;
+                    maxSpreadRank = Math.max(maxSpreadRank, spreadRank(adapt.kind()));
+                    effectiveParams.add(paramType);
+                } else {
+                    boolean borrowReadOnly = param.borrow() && !param.mut();
+                    boolean ok = checker.algebra().relate(argTypes[i], paramType, TypeAlgebra.RelateMode.ASSIGNABLE,
+                            null, borrowReadOnly, param.borrow() && !param.mut());
+                    if (!ok && !OverloadSolver.paramAccepts(checker.algebra(), paramType, argTypes[i])) {
+                        return null;
+                    }
+                    effectiveParams.add(paramType);
+                }
+            }
+            return new OverloadCandidate(index, alt, bind, effectiveParams, maxSpreadRank, Map.of(), adapts);
+        }
+
+        // Generic alternative (BIP021-D21): solve type vars against non-lambda arguments and check bounds.
+        Set<Type.TypeVar> solving = new LinkedHashSet<>(alt.typeParameters());
+        TypeAlgebra.ConstraintStore store = checker.algebra().store(solving, false);
+        for (int i = 0; i < argCount; i++) {
+            int pIdx = paramIndexForArg(bind, i);
+            if (pIdx < 0) {
+                return null;
+            }
+            Type.Parameter param = params.get(pIdx);
+            Type pattern = param.type();
+            if (untypedLambda[i]) {
+                if (!(pattern instanceof Type.Function pf)
+                        || !untypedLambdaMatchesShape((BabbleParser.FunctionLiteralContext) arguments.get(i).expression(), pf)) {
+                    return null;
+                }
+                effectiveParams.add(Type.ANY);
+                continue;
+            }
+            if (param.rest()) {
+                if (ScopeAnalysis.isSpread(arguments.get(i))) {
+                    Type seqElem = extractSequenceElement(argTypes[i]);
+                    if (seqElem == null || !checker.algebra().relate(seqElem, pattern, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
+                        return null;
+                    }
+                    int rank = isIterableDirectly(argTypes[i]) ? 0 : 1;
+                    maxSpreadRank = Math.max(maxSpreadRank, rank);
+                } else if (!checker.algebra().relate(argTypes[i], pattern, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
+                    return null;
+                }
+                effectiveParams.add(pattern);
+            } else if (ScopeAnalysis.isSpread(arguments.get(i))) {
+                Type seqElem = extractSequenceElement(argTypes[i]);
+                Type targetElem = sequenceTargetElement(pattern);
+                if (seqElem == null || targetElem == null
+                        || !checker.algebra().relate(seqElem, targetElem, TypeAlgebra.RelateMode.ASSIGNABLE, store)) {
+                    return null;
+                }
+                effectiveParams.add(pattern);
+            } else {
+                boolean borrowReadOnly = param.borrow() && !param.mut();
+                if (!checker.algebra().relate(argTypes[i], pattern, TypeAlgebra.RelateMode.ASSIGNABLE,
+                        store, borrowReadOnly, param.borrow() && !param.mut())) {
+                    return null;
+                }
+                effectiveParams.add(pattern);
+            }
+        }
+        Map<Type.TypeVar, Type> solved = OverloadSolver.solveConstraints(store, alt.typeParameters());
+        for (Type.TypeVar tv : alt.typeParameters()) {
+            Type inferred = solved.get(tv);
+            if (inferred == null || inferred == Type.NOTHING) {
+                continue;
+            }
+            if (tv.bound() != null) {
+                Type bound = checker.algebra().substitute(tv.bound(), solved);
+                if (!checker.algebra().assignable(inferred, bound)) {
+                    return null;
+                }
+            }
+        }
+        for (Type.Parameter p : params) {
+            if (checker.algebra().findPrimitiveArraySubstitution(p.type(), solved) != null) {
+                return null;
+            }
+        }
+        if (checker.algebra().findPrimitiveArraySubstitution(alt.result(), solved) != null) {
+            return null;
+        }
+        // Re-verify spread adaptation with instantiated parameter types.
+        for (int i = 0; i < argCount; i++) {
+            int pIdx = paramIndexForArg(bind, i);
+            Type.Parameter param = params.get(pIdx);
+            if (!param.rest() && ScopeAnalysis.isSpread(arguments.get(i))) {
+                Type instParam = checker.algebra().substitute(param.type(), solved);
+                ScopeAnalysis.SpreadAdapt adapt = classifySpread(argTypes[i], instParam,
+                        param.borrow(), param.mut(), param.borrow() && !param.mut());
+                if (adapt == null) {
+                    return null;
+                }
+                if (adapts == null) {
+                    adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                }
+                adapts[i] = adapt;
+                maxSpreadRank = Math.max(maxSpreadRank, spreadRank(adapt.kind()));
+            }
+        }
+        return new OverloadCandidate(index, alt, bind, effectiveParams, maxSpreadRank, solved, adapts);
+    }
+
+    private Type tryOverloadUnionSplit(Type.Overloaded set, String callName,
+                                       List<BabbleParser.CallParameterContext> arguments,
+                                       String[] argNames, Type[] argTypes, boolean[] untypedLambda,
+                                       List<Integer> unionArgIndices, boolean exactSet,
+                                       List<BabbleParser.FunctionLiteralContext> localLits,
+                                       BabbleParser.CallContext ctx, Type expected) {
+        // Build Cartesian product of union argument components.
+        List<Type[]> combos = new ArrayList<>();
+        combos.add(argTypes.clone());
+        for (int idx : unionArgIndices) {
+            List<Type> members = Type.membersOf(argTypes[idx]);
+            List<Type[]> next = new ArrayList<>(combos.size() * members.size());
+            for (Type[] base : combos) {
+                for (Type m : members) {
+                    Type[] copy = base.clone();
+                    copy[idx] = m;
+                    next.add(copy);
+                }
+            }
+            combos = next;
+        }
+
+        // Resolve each component tuple.
+        List<OverloadCandidate> winners = new ArrayList<>(combos.size());
+        for (Type[] combo : combos) {
+            SingleResolution r = resolveOverloadSingle(set, arguments, argNames, combo, untypedLambda);
+            if (r.kind() != ResolutionKind.UNIQUE) {
+                return null;
+            }
+            winners.add(r.winner());
+        }
+
+        // If two components at a split position are distinct interfaces (e.g. Shape and Named),
+        // a runtime value may implement both : include their intersection meet (Shape & Named)
+        // so it is tested first in the dispatch chain (BIP021-D11 #4, BIP022).
+        boolean addedMeet;
+        do {
+            addedMeet = false;
+            int currentSize = combos.size();
+            for (int i = 0; i < currentSize && combos.size() <= 64; i++) {
+                for (int j = i + 1; j < currentSize && combos.size() <= 64; j++) {
+                    if (winners.get(i).index() == winners.get(j).index()) {
+                        continue;
+                    }
+                    for (int pos : unionArgIndices) {
+                        Type ca = combos.get(i)[pos];
+                        Type cb = combos.get(j)[pos];
+                        if (ca.equals(cb) || OverloadSolver.runtimeDistinguishable(checker.algebra(), ca, cb)) {
+                            continue;
+                        }
+                        if (isRuntimeInterfaceLike(ca) && isRuntimeInterfaceLike(cb)) {
+                            Type meet = Type.intersection(ca, cb);
+                            if (!meet.equals(ca) && !meet.equals(cb)) {
+                                Type[] meetCombo = combos.get(i).clone();
+                                meetCombo[pos] = meet;
+                                if (!containsCombo(combos, meetCombo)) {
+                                    SingleResolution mr = resolveOverloadSingle(set, arguments, argNames, meetCombo, untypedLambda);
+                                    if (mr.kind() == ResolutionKind.UNIQUE) {
+                                        combos.add(meetCombo);
+                                        winners.add(mr.winner());
+                                        addedMeet = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } while (addedMeet);
+
+        // Verify runtime distinguishability for every pair selecting distinct alternatives (BIP021-D11 #4).
+        for (int i = 0; i < combos.size(); i++) {
+            for (int j = i + 1; j < combos.size(); j++) {
+                if (winners.get(i).index() == winners.get(j).index()) {
+                    continue;
+                }
+                boolean distinguishable = false;
+                for (int pos : unionArgIndices) {
+                    Type ca = combos.get(i)[pos];
+                    Type cb = combos.get(j)[pos];
+                    if (ca.equals(cb)) {
+                        continue;
+                    }
+                    if (OverloadSolver.runtimeDistinguishable(checker.algebra(), ca, cb)) {
+                        distinguishable = true;
+                        break;
+                    }
+                    // Two unrelated interfaces are distinguishable once their intersection meet is also in combos.
+                    if (isRuntimeInterfaceLike(ca) && isRuntimeInterfaceLike(cb)) {
+                        Type meet = Type.intersection(ca, cb);
+                        Type[] meetCombo = combos.get(i).clone();
+                        meetCombo[pos] = meet;
+                        if (containsCombo(combos, meetCombo)) {
+                            distinguishable = true;
+                            break;
+                        }
+                    }
+                }
+                if (!distinguishable) {
+                    Type firstUnion = argTypes[unionArgIndices.get(0)];
+                    checker.warn("Cannot dispatch " + callName + " on " + TypeDisplay.display(firstUnion)
+                            + " : its alternatives are not told apart at runtime", ctx);
+                    return Type.ERROR;
+                }
+            }
+        }
+
+        // Order branches most-specific-first so runtime instanceof checks dispatch to intersections / subtypes first.
+        List<Integer> order = new ArrayList<>(combos.size());
+        for (int i = 0; i < combos.size(); i++) {
+            order.add(i);
+        }
+        List<Type[]> finalCombos = combos;
+        order.sort((aIdx, bIdx) -> compareSplitCombos(finalCombos.get(aIdx), finalCombos.get(bIdx), unionArgIndices));
+
+        List<TypeChecker.ResolvedSplitBranch> branches = new ArrayList<>(order.size());
+        List<Type> branchResults = new ArrayList<>(order.size());
+        for (int ci : order) {
+            Type[] combo = combos.get(ci);
+            OverloadCandidate win = winners.get(ci);
+            List<ScopeAnalysis.OverloadSplitCheck> checks = new ArrayList<>(unionArgIndices.size());
+            for (int pos : unionArgIndices) {
+                Type comp = combo[pos];
+                if (comp == Type.NULL) {
+                    checks.add(new ScopeAnalysis.OverloadSplitCheck(pos, List.of(), true));
+                } else {
+                    checks.add(new ScopeAnalysis.OverloadSplitCheck(pos, OverloadSolver.runtimeTestDescriptors(comp), false));
+                }
+            }
+            Type branchResult = win.genericEnv().isEmpty()
+                    ? win.alt().result()
+                    : checker.algebra().substitute(win.alt().result(), win.genericEnv());
+            branchResults.add(branchResult);
+            BabbleParser.FunctionLiteralContext directLit = localLits != null && win.index() < localLits.size()
+                    ? localLits.get(win.index()) : null;
+            ScopeAnalysis.PrimitiveKind restKind = ScopeAnalysis.PrimitiveKind.NONE;
+            int restIdx = win.alt().restIndex();
+            if (restIdx >= 0) {
+                Type elemType = win.genericEnv().isEmpty()
+                        ? win.alt().parameters().get(restIdx).type()
+                        : checker.algebra().substitute(win.alt().parameters().get(restIdx).type(), win.genericEnv());
+                restKind = LoweringAnalyzer.primitiveKind(elemType);
+            }
+            branches.add(new TypeChecker.ResolvedSplitBranch(
+                    List.copyOf(checks), win.index(), win.alt(), exactSet, directLit,
+                    branchResult, win.spreadAdapts(), restKind));
+        }
+
+        Type joinedResult = Type.union(branchResults);
+        checker.recordResolvedOverloadCall(ctx, new TypeChecker.ResolvedOverloadCall(
+                -1, null, exactSet, null, joinedResult, List.copyOf(branches)));
+        return joinedResult;
+    }
+
+    private int compareSplitCombos(Type[] a, Type[] b, List<Integer> unionArgIndices) {
+        int aScore = 0;
+        int bScore = 0;
+        for (int pos : unionArgIndices) {
+            Type ta = a[pos];
+            Type tb = b[pos];
+            if (ta.equals(tb)) {
+                continue;
+            }
+            if (ta == Type.NULL) {
+                aScore += 100;
+            } else if (tb == Type.NULL) {
+                bScore += 100;
+            } else {
+                boolean aSubB = checker.algebra().assignable(ta, tb);
+                boolean bSubA = checker.algebra().assignable(tb, ta);
+                if (aSubB && !bSubA) {
+                    aScore += 10;
+                } else if (bSubA && !aSubB) {
+                    bScore += 10;
+                } else {
+                    int da = OverloadSolver.runtimeTestDescriptors(ta).size();
+                    int db = OverloadSolver.runtimeTestDescriptors(tb).size();
+                    if (da != db) {
+                        aScore += da;
+                        bScore += db;
+                    }
+                }
+            }
+        }
+        return Integer.compare(bScore, aScore);
+    }
+
+    private static int paramIndexForArg(BindResult bind, int argIndex) {
+        int[] p2a = bind.paramToArg();
+        for (int p = 0; p < p2a.length; p++) {
+            if (p2a[p] == argIndex) {
+                return p;
+            }
+        }
+        if (bind.restParam() >= 0) {
+            for (int r : bind.restArgs()) {
+                if (r == argIndex) {
+                    return bind.restParam();
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int spreadRank(ScopeAnalysis.SpreadKind kind) {
+        return switch (kind) {
+            case NONE, AS_IS -> 0;
+            case TO_ITERABLE, TO_LIST_BORROWED -> 1;
+            case TO_LIST_COPY, TO_ARRAY -> 2;
+        };
+    }
+
+    private boolean isIterableDirectly(Type t) {
+        Type base = TypeAlgebra.unwrapFrozen(Type.withoutNull(t));
+        return base instanceof Type.JavaInstance ji && Iterable.class.isAssignableFrom(ji.type());
+    }
+
+    private static boolean hasUntypedParam(BabbleParser.FunctionLiteralContext lit) {
+        return firstUntypedParam(lit) != null;
+    }
+
+    private static BabbleParser.FnParamContext firstUntypedParam(BabbleParser.FunctionLiteralContext lit) {
+        for (BabbleParser.FnParamContext p : lit.fnParameters().fnParam()) {
+            if (p.type() == null) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    private static boolean untypedLambdaMatchesShape(BabbleParser.FunctionLiteralContext lit, Type.Function expected) {
+        int litParams = lit.fnParameters().fnParam().size();
+        int expParams = expected.parameters().size();
+        return litParams == expParams;
+    }
+
+    private static String formatOverloadArgs(List<BabbleParser.CallParameterContext> arguments,
+                                             Type[] argTypes, boolean[] untypedLambda) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < arguments.size(); i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            String name = ScopeAnalysis.callParamName(arguments.get(i));
+            if (name != null) {
+                sb.append(name).append(": ");
+            }
+            if (ScopeAnalysis.isSpread(arguments.get(i))) {
+                sb.append("...");
+            }
+            sb.append(untypedLambda[i] ? "fn (...)" : TypeDisplay.display(argTypes[i]));
+        }
+        return sb.toString();
+    }
+
+    private static boolean isRuntimeInterfaceLike(Type t) {
+        Type u = TypeAlgebra.unwrapFrozen(t);
+        if (u instanceof Type.Instance i) {
+            return i.node().isInterface();
+        }
+        if (u instanceof Type.JavaInstance j) {
+            return j.type().isInterface();
+        }
+        return u instanceof Type.Intersection;
+    }
+
+    private static boolean containsCombo(List<Type[]> combos, Type[] candidate) {
+        for (Type[] existing : combos) {
+            if (Arrays.equals(existing, candidate)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

@@ -628,4 +628,19 @@ public class FormatterTestCase {
                 join ( parts : ... xs )
                 """);
     }
+
+    @Test
+    public void testBip021P5OverloadSyntax() throws Exception {
+        assertFormats("""
+                def f: overload (fn (a: int): int, fn (s: string): int) = overload (
+                    fn (a: int): int -> (a + 1),
+                    fn (s: string): int -> (s.length())
+                )
+                """, """
+                def f : overload ( fn ( a : int ) : int , fn ( s : string ) : int ) = overload (
+                fn ( a : int ) : int -> ( a + 1 ) ,
+                fn ( s : string ) : int -> ( s . length ( ) )
+                )
+                """);
+    }
 }

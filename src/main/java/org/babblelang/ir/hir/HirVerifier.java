@@ -223,6 +223,17 @@ public final class HirVerifier {
                 verifyExpr(module, c.callee(), inFunction, loopDepth);
                 verifyCallArgs(module, c.args(), inFunction, loopDepth);
             }
+            case HirExpr.MakeOverloadSet m -> verifyStatements(module, m.operands(), inFunction, loopDepth);
+            case HirExpr.OverloadSelect s -> verifyExpr(module, s.set(), inFunction, loopDepth);
+            case HirExpr.OverloadDispatch d -> {
+                verifyExpr(module, d.callee(), inFunction, loopDepth);
+                verifyStatements(module, d.args(), inFunction, loopDepth);
+                for (HirExpr.OverloadBranch b : d.branches()) {
+                    if (b.directFunctionId() >= 0 && module.function(b.directFunctionId()) == null) {
+                        throw new IllegalStateException("HirVerifier : unknown OverloadBranch directFunctionId " + b.directFunctionId());
+                    }
+                }
+            }
             case HirExpr.FunctionRef f -> {
                 if (module.function(f.functionId()) == null) {
                     throw new IllegalStateException("HirVerifier : unknown FunctionRef functionId " + f.functionId());

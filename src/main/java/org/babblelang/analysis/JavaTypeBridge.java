@@ -1057,7 +1057,8 @@ final class JavaTypeBridge {
                 : javaExecutableParamType(candidate, index, env);
         if (!paramPattern.anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null)) {
             if (genericParam instanceof ParameterizedType pt && hasWildcard(pt)
-                    && !(Type.withoutNull(argument) instanceof Type.Function)) {
+                    && !(Type.withoutNull(argument) instanceof Type.Function)
+                    && !(Type.withoutNull(argument) instanceof Type.Overloaded)) {
                 if (!Type.containsNull(paramPattern) && Type.containsNull(argument)) {
                     return false;
                 }
@@ -1066,26 +1067,39 @@ final class JavaTypeBridge {
             return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, null, borrowParam, !mutParam);
         }
         Type unwrappedPattern = Type.withoutNull(paramPattern);
-        if (argument instanceof Type.Function aFn && unwrappedPattern instanceof Type.JavaInstance pJava
-                && JavaTypes.isFunctionalInterface(pJava.type())) {
+        if (unwrappedPattern instanceof Type.JavaInstance pJava && JavaTypes.isFunctionalInterface(pJava.type())) {
             Type.Function sam = samFunctionType(pJava, null);
             if (sam != null) {
-                int aRest = aFn.restIndex();
-                if (aRest < 0 && aFn.parameters().size() < sam.parameters().size()) {
+                if (argument instanceof Type.Function aFn) {
+                    return matchesSamArity(aFn, sam);
+                }
+                if (argument instanceof Type.Overloaded aOv) {
+                    for (Type.Function alt : aOv.alternatives()) {
+                        if (matchesSamArity(alt, sam)) {
+                            return true;
+                        }
+                    }
                     return false;
                 }
-                for (int i = sam.parameters().size(); i < aFn.parameters().size(); i++) {
-                    Type.Parameter p = aFn.parameters().get(i);
-                    if (!p.optional() && !p.rest()) {
-                        return false;
-                    }
-                }
-                return true;
             }
         }
         Set<Type.TypeVar> solving = Set.copyOf(tvToSyn.values());
         TypeAlgebra.ConstraintStore store = algebra.store(solving, true);
         return algebra.relate(argument, paramPattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowParam, !mutParam);
+    }
+
+    private static boolean matchesSamArity(Type.Function aFn, Type.Function sam) {
+        int aRest = aFn.restIndex();
+        if (aRest < 0 && aFn.parameters().size() < sam.parameters().size()) {
+            return false;
+        }
+        for (int i = sam.parameters().size(); i < aFn.parameters().size(); i++) {
+            Type.Parameter p = aFn.parameters().get(i);
+            if (!p.optional() && !p.rest()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean hasWildcard(ParameterizedType pt) {
