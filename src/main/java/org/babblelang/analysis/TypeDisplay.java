@@ -78,15 +78,19 @@ final class TypeDisplay {
         }
         text.append('(');
         boolean emittedKwSep = false;
+        boolean sawRest = false;
         List<Type.Parameter> params = function.parameters();
         for (int i = 0; i < params.size(); i++) {
             if (i > 0) {
                 text.append(", ");
             }
             Type.Parameter p = params.get(i);
-            if (p.keywordOnly() && !emittedKwSep) {
+            if (p.keywordOnly() && !emittedKwSep && !sawRest) {
                 text.append("..., ");
                 emittedKwSep = true;
+            }
+            if (p.rest()) {
+                sawRest = true;
             }
             text.append(parameter(p));
         }
@@ -98,11 +102,23 @@ final class TypeDisplay {
     }
 
     private static String parameter(Type.Parameter parameter) {
+        String typeStr = "";
+        if (parameter.type() != Type.ERROR) {
+            if (parameter.rest()) {
+                Type t = parameter.type();
+                String rendered = display(t);
+                boolean needsParens = (t instanceof Type.Union u && !(u.members().size() == 2 && u.members().get(1) == Type.NULL))
+                        || t instanceof Type.Intersection || t instanceof Type.Function || t instanceof Type.Frozen;
+                typeStr = " : " + (needsParens ? "(" + rendered + ")" : rendered) + "...";
+            } else {
+                typeStr = " : " + display(parameter.type());
+            }
+        }
         return (parameter.unique() ? "unique " : "")
                 + (parameter.mut() ? "mut " : "")
                 + (!parameter.unique() && parameter.explicitShared() ? "shared " : "")
                 + parameter.name()
-                + (parameter.type() == Type.ERROR ? "" : " : " + display(parameter.type()))
+                + typeStr
                 + (parameter.optional() ? " = ..." : "");
     }
 

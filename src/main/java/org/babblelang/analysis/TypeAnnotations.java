@@ -493,6 +493,10 @@ final class TypeAnnotations {
         int index = 0;
         for (BabbleParser.FnTypeParamContext parameter : declaration.fnTypeParam()) {
             Type type = annotation(parameter.type(), scope);
+            boolean rest = parameter.rest != null;
+            if (rest && ScopeAnalysis.isParamRestNullable(parameter) && type != Type.ERROR) {
+                type = Type.nullable(type);
+            }
             EffectChecker.ParamMods pm = checker.effectChecker != null
                     ? checker.effectChecker.parseParamMods(parameter, checker.checkingEffects())
                     : EffectChecker.ParamMods.NONE;
@@ -500,7 +504,7 @@ final class TypeAnnotations {
             boolean optional = parameter.optional != null;
             boolean keywordOnly = index >= kwStart;
             boolean borrow = checker.effectChecker != null && !pm.shared() && !pm.unique();
-            result.add(new Type.Parameter(name, type, optional, keywordOnly,
+            result.add(new Type.Parameter(name, type, optional, keywordOnly, rest,
                     pm.mut(), borrow, pm.shared(), pm.unique()));
             index++;
         }

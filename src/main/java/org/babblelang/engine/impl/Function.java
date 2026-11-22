@@ -28,7 +28,8 @@ public class Function implements BabbleFunction {
     public Object invoke(Object thiz, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         Namespace namespace = Frames.enter(closure, recurseTarget(thiz), thiz, interpreter.scopes().declared(definition));
         String[] parameters = interpreter.scopes().parameters(definition);
-        Arguments.Binder binder = Arguments.binder(parameters, interpreter.scopes().keywordOnlyStart(definition), args, names);
+        int restIdx = interpreter.scopes().restIndex(definition);
+        Arguments.Binder binder = Arguments.binder(parameters, interpreter.scopes().keywordOnlyStart(definition), restIdx, args, names);
         for (int i = 0; i < parameters.length; i++) {
             Object value = binder.take(i);
             if (value == Arguments.MISSING) {
@@ -68,7 +69,13 @@ public class Function implements BabbleFunction {
 
     @Override
     public int maxArity() {
-        return interpreter.scopes().parameters(definition).length;
+        return interpreter.scopes().restIndex(definition) >= 0
+                ? Integer.MAX_VALUE : interpreter.scopes().parameters(definition).length;
+    }
+
+    @Override
+    public int restIndex() {
+        return interpreter.scopes().restIndex(definition);
     }
 
     @Override
@@ -76,7 +83,9 @@ public class Function implements BabbleFunction {
         if (!BabbleFunction.super.acceptsJavaDefaultOverload(javaParams)) {
             return false;
         }
-        for (int i = 0; i < javaParams.length; i++) {
+        int restIdx = restIndex();
+        int limit = restIdx >= 0 ? Math.min(javaParams.length, restIdx) : javaParams.length;
+        for (int i = 0; i < limit; i++) {
             String desc = interpreter.scopes().checkedType(definition.fnParameters().fnParam(i));
             if (!org.babblelang.runtime.Types.canAcceptJavaParamClass(desc, javaParams[i])) {
                 return false;

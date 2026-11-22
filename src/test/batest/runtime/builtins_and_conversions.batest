@@ -43,8 +43,8 @@ assert(out.toString() == "ok")
 }}}}}
 
 {{{{{
-;; QUESTIONABLE : assigning print to a typed fn strips named args via BIP021 static binding, so to: 123 prints hi123 instead of failing with a Writer/PrintStream error (and Type.PRINT accepts mismatched return type fn ())
-def pr : fn io (s : string, shared to : any?) : fn () = print
+;; Positional parameters in pr feed print's values... rest parameter; static binding resolves to: to pr's 2nd positional parameter
+def pr : fn io (s : string, to : any?) : null = print
 pr("hi", to: 123)
 }}}}}
 hi123

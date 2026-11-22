@@ -142,6 +142,7 @@ public final class HirVerifier {
             case HirExpr.Is i -> verifyExpr(module, i.left(), inFunction, loopDepth);
             case HirExpr.As a -> verifyExpr(module, a.left(), inFunction, loopDepth);
             case HirExpr.NonNull n -> verifyExpr(module, n.operand(), inFunction, loopDepth);
+            case HirExpr.SpreadAdapt s -> verifyExpr(module, s.value(), inFunction, loopDepth);
             case HirExpr.Block b -> verifyStatements(module, b.statements(), inFunction, loopDepth);
             case HirExpr.If i -> {
                 verifyExpr(module, i.cond(), inFunction, loopDepth);

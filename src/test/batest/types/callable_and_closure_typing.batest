@@ -116,27 +116,27 @@ Type error : expected (a : Box, b : Box) : int, got (mut a : Box, b : Box) : int
 {{{{{
 def p1 : fn () : null = println
 }}}}}
-Type error : expected () : null, got print
+Type error : expected () : null, got io (values : (any | frozen any | null)..., to : java.lang.Appendable = ...) : null
 
 {{{{{
 def p2 : fn (x : int) : null = println
 }}}}}
-Type error : expected (x : int) : null, got print
+Type error : expected (x : int) : null, got io (values : (any | frozen any | null)..., to : java.lang.Appendable = ...) : null
 
 {{{{{
 def p3 : fn (s : string) : null = println
 }}}}}
-Type error : expected (s : string) : null, got print
+Type error : expected (s : string) : null, got io (values : (any | frozen any | null)..., to : java.lang.Appendable = ...) : null
 
 {{{{{
 def p4 : fn (x : int) : any? = println
 }}}}}
-Type error : expected (x : int) : any?, got print
+Type error : expected (x : int) : any?, got io (values : (any | frozen any | null)..., to : java.lang.Appendable = ...) : null
 
 {{{{{
-def bad : fn (v : string) : fn () = print
+def bad : fn (v : string) : null = print
 }}}}}
-Type error : expected (v : string) : () : any?, got print
+Type error : expected (v : string) : null, got io (values : (any | frozen any | null)..., to : java.lang.Appendable = ...) : null
 
 {{{{{
 axiom java.lang.Integer.bitCount: fn pure
@@ -158,7 +158,7 @@ Type error : expected (x : any) : Holder, got class Holder
 {{{{{
 def ctor : fn (v : int) : Box = Box
 def parse : fn io (s : string) : int = java.lang.Integer.parseInt
-def pr : fn io (v : string) : fn () = print
+def pr : fn io (v : string) : null = print
 assert(ctor(3).v == 3 and parse("4") == 4)
 pr("")
 }}}}}
@@ -185,7 +185,7 @@ def fnBad : fn (x : int) : int = tests.EffectsTestCase.HostFixtures.annotatedIO
 Type error : expected (x : int) : int, got org.babblelang.tests.EffectsTestCase$HostFixtures.annotatedIO
 
 {{{{{
-def fnPrint : fn io (s : string) : fn () = println
+def fnPrint : fn io (s : string) : null = println
 def fnAppend : fn io (shared c : java.lang.CharSequence) : java.lang.StringBuilder = java.lang.StringBuilder().append
 def samFn : java.util.function.Function of (int, double) = java.util.function.Function(fn (x) -> ( x + 1 ))
 assert(samFn.apply(4) == 5.0)

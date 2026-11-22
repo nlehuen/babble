@@ -1,0 +1,309 @@
+;; BIP021-P4 : Babble variadic rest parameters, keyword-only parameters, spread arguments,
+;; primitive rest views, generic rests, subtyping, interfaces, effects, and diagnostics.
+
+{{{{{
+;; Basic rest parameter: 0, 1, many args + keyword-only options after rest
+def join = fn (parts: string..., sep: string = ", ", prefix: string = ""): string -> (
+    def res = prefix
+    def first = true
+    for p in parts then (
+        if not first then ( res = res + sep )
+        first = false
+        res = res + p
+    )
+    res
+)
+println(join())
+println(join("a"))
+println(join("a", "b", "c"))
+println(join("a", "b", sep: "/", prefix: "["))
+println(join("a", "b", prefix: "(", sep: ":"))
+}}}}}
+
+a
+a, b, c
+[a/b
+(a:b
+
+{{{{{
+;; All 8 primitive rest views (ArgumentsView.ofBytes..ofChars) + mixed spread chaining
+def sumBytes = fn (xs: byte...): int -> ( def s = 0 ; for x in xs then ( s += int(x) ) ; s )
+def sumShorts = fn (xs: short...): int -> ( def s = 0 ; for x in xs then ( s += int(x) ) ; s )
+def sumInts = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def sumLongs = fn (xs: long...): long -> ( def s = 0L ; for x in xs then ( s += x ) ; s )
+def sumFloats = fn (xs: float...): float -> ( def s = 0.0f ; for x in xs then ( s += x ) ; s )
+def sumDoubles = fn (xs: double...): double -> ( def s = 0.0 ; for x in xs then ( s += x ) ; s )
+def countTrue = fn (xs: bool...): int -> ( def c = 0 ; for x in xs then ( if x then ( c += 1 ) ) ; c )
+def joinChars = fn (xs: char...): string -> ( def s = "" ; for x in xs then ( s = s + java.lang.String.valueOf(x) ) ; s )
+println(sumBytes(byte(1), byte(2), byte(3)))
+println(sumShorts(short(10), short(20)))
+println(sumInts(1, 2, 3, 4))
+println(sumLongs(100L, 200L))
+println(sumFloats(1.5f, 2.5f))
+println(sumDoubles(1, 2.5, 3))
+println(countTrue(true, false, true))
+println(joinChars('h', 'i', '!'))
+}}}}}
+6
+30
+10
+300
+4.0
+6.5
+2
+hi!
+
+{{{{{
+;; Spread into rest: single spread, multiple spreads, mixed plain + spread, arrays of all primitives
+def sumInts = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def a1 = array.of(1, 2)
+def l1 = list(3, 4)
+def s1 = set(5)
+println(sumInts(...a1))
+println(sumInts(...l1))
+println(sumInts(...a1, ...l1))
+println(sumInts(0, ...a1, 10, ...l1, ...s1, 20))
+def bArr = (array of byte).of(byte(1), byte(2))
+def shArr = (array of short).of(short(3), short(4))
+def lArr = array.of(5L, 6L)
+def fArr = array.of(1.5f, 2.5f)
+def dArr = array.of(1.0, 2.0)
+def boolArr = array.of(true, false, true)
+def cArr = array.of('a', 'b')
+def countAny = fn (xs: any?...): int -> ( def c = 0 ; for x in xs then ( c += 1 ) ; c )
+println(countAny(...bArr, ...shArr, ...lArr, ...fArr, ...dArr, ...boolArr, ...cArr))
+}}}}}
+3
+7
+10
+45
+15
+
+{{{{{
+;; Spread into non-rest sequence parameters: Iterable, list (borrowed view vs mut copy vs set copy), array (exact vs copy)
+def iterSum = fn (xs: java.lang.Iterable of int): int -> (
+    def s = 0
+    for x in xs then ( s += x )
+    s
+)
+def borrowListSum = fn (xs: list of int): int -> (
+    def s = 0
+    for x in xs then ( s += x )
+    s
+)
+def mutListAppend = fn (mut xs: list of int, v: int): int -> (
+    xs.add(v)
+    xs.size()
+)
+def arrayDoubleSum = fn (xs: array of double): double -> (
+    def s = 0.0
+    for x in xs then ( s += x )
+    s
+)
+def arr = array.of(1, 2, 3)
+def lst = list(4, 5)
+def st = set(6, 7)
+println(iterSum(...arr), ":", iterSum(...lst))
+println(borrowListSum(...arr), ":", borrowListSum(...lst), ":", borrowListSum(...st))
+;; Spread of array into mut list copies into a fresh ArrayList (does not fail mut check)
+println(mutListAppend(...arr, 99), ":", arr.size())
+;; Spread of set into mut list copies into a fresh ArrayList
+println(mutListAppend(...st, 88), ":", st.size())
+;; Spread of int array / list into double array widens and copies
+println(arrayDoubleSum(...arr), ":", arrayDoubleSum(...lst))
+;; Named spread
+println(borrowListSum(xs: ...arr))
+}}}}}
+6:9
+6:9:13
+4:3
+3:2
+6.0:9.0
+6
+
+{{{{{
+;; Spread into Java methods and Java varargs (BIP021-D7, BIP021-D8)
+def parts = list("hello", "world")
+println(java.lang.String.format("%s-%s", ...parts))
+def arrParts = array.of("foo", "bar")
+println(java.lang.String.format("%s:%s", ...arrParts))
+def ints = array.of(10, 20, 30)
+def listed: list of int = java.util.Arrays.asList(...ints)
+println(listed.size(), ":", listed.get(1))
+def intList = list(2, 3, 5)
+println(java.util.stream.IntStream.of(...intList).sum())
+println(java.nio.file.Path.of("src", ...list("main", "java")).getNameCount())
+def chars = list('o', 'k')
+println(java.lang.String.valueOf(...chars))
+}}}}}
+hello-world
+foo:bar
+3:20
+10
+3
+ok
+
+{{{{{
+;; Variadic function subtyping, shifted rests, optional args, and Case E (nested list rest)
+def addAll = fn (first: int, rest: int..., scale: int = 1): int -> (
+    def s = first
+    for x in rest then ( s += x )
+    s * scale
+)
+def f1: fn (a: int): int = addAll
+def f2: fn (a: int, b: int): int = addAll
+def fOpt: fn (a: int, b: int = ...): int = addAll
+def fShifted: fn (a: int, b: int, r: int..., scale: int = ...): int = addAll
+println(f1(5), ":", f2(5, 7), ":", fOpt(5), ":", fOpt(5, 8))
+println(fShifted(1, 2, 3, 4), ":", fShifted(1, 2, 3, 4, scale: 10))
+
+;; Case E: variadic function taking (list of int)... assigned to fixed fn (a: list of int)
+def countLists = fn (xss: (list of int)...): int -> (
+    def c = 0
+    for xs in xss then ( c += xs.size() )
+    c
+)
+def oneList: fn (xs: list of int): int = countLists
+println(oneList(list(10, 20, 30)))
+}}}}}
+5:12:5:13
+10:100
+3
+
+{{{{{
+;; Generic rest inference (BIP021-D21) + nullable rest (T?...) + print spread
+def listOf of T = fn (xs: T...): list of T -> ( list(from: xs) )
+def xs = listOf(1, 2, ...list(3, 4))
+println(xs)
+def empty: list of string = listOf()
+println(empty.size())
+def countNulls = fn (items: string?...): int -> (
+    def c = 0
+    for s in items then ( if s == null then ( c += 1 ) )
+    c
+)
+println(countNulls("a", null, "b", null))
+def sw = java.io.StringWriter()
+println("items:", ...xs, to: sw)
+print(sw.toString())
+}}}}}
+[1, 2, 3, 4]
+0
+2
+items:1234
+
+{{{{{
+;; Variadic methods on classes, Babble interfaces (matching & fixed-arity), and mut rest elements
+def Counter = class (def mut n: int) (
+    def inc = fn mut () -> ( this.n += 1 )
+)
+def bumpAll = fn (mut cs: Counter...) -> (
+    for c in cs then ( c.inc() )
+)
+def c1 = Counter(1)
+def c2 = Counter(10)
+bumpAll(c1, c2)
+println(c1.n, ":", c2.n)
+
+def Adder = interface (
+    def add: fn (a: int, b: int): int
+)
+def VarAdder = interface (
+    def sum: fn (xs: int...): int
+)
+def Calc = class () implements Adder, VarAdder (
+    def add = fn (xs: int...): int -> (
+        def s = 0 ; for x in xs then ( s += x ) ; s
+    )
+    def sum = fn (xs: int...): int -> (
+        def s = 0 ; for x in xs then ( s += x ) ; s
+    )
+)
+def a: Adder = Calc()
+def v: VarAdder = Calc()
+println(a.add(3, 4), ":", v.sum(1, 2, 3, 4))
+}}}}}
+2:11
+7:10
+
+{{{{{
+;; Return-through-borrow on rest parameter (BIP016-D10, BIP021-D21)
+def asIter = fn (xs: int...): java.lang.Iterable of int -> ( xs )
+def s = 0
+for x in asIter(4, 5, 6) then ( s += x )
+println(s)
+}}}}}
+15
+
+{{{{{
+;; Error: more than one variadic parameter
+def bad = fn (a: int..., b: int...): int -> ( 0 )
+}}}}}
+More than one variadic parameter : b
+
+{{{{{
+;; Error: variadic parameter with a default
+def bad = fn (a: int... = 1): int -> ( 0 )
+}}}}}
+Variadic parameter with a default : a
+
+{{{{{
+;; Error: rest parameter passed by name
+def f = fn (xs: int...): int -> ( 0 )
+f(xs: 1)
+}}}}}
+No such parameter : xs
+
+{{{{{
+;; Error: spread into a parameter that takes no sequence
+def f = fn (x: int): int -> ( x )
+f(...list(1, 2))
+}}}}}
+Spread into a parameter that takes no sequence : x
+
+{{{{{
+;; Error: spread bare Iterator
+def f = fn (xs: int...): int -> ( 0 )
+def it = list(1, 2).iterator()
+f(...it)
+}}}}}
+Type error : expected iterable or array, got java.util.Iterator(int)
+
+{{{{{
+;; Error: spread incompatible element type into rest
+def f = fn (xs: int...): int -> ( 0 )
+f(...list("a", "b"))
+}}}}}
+Type error : expected int elements, got string
+
+{{{{{
+;; Error: spread incompatible element type into list
+def f = fn (xs: list of int): int -> ( 0 )
+f(...set("a"))
+}}}}}
+Type error : expected int elements, got string
+
+{{{{{
+;; Error: non-variadic function assigned to variadic function type
+def f = fn (a: int, b: int): int -> ( a + b )
+def g: fn (a: int, r: int...): int = f
+}}}}}
+Type error : expected (a : int, r : int...) : int, got (a : int, b : int) : int
+
+{{{{{
+;; Error: empty generic rest without expected type
+def listOf of T = fn (xs: T...): list of T -> ( list(from: xs) )
+listOf()
+}}}}}
+Missing type : cannot infer type arguments for listOf
+
+{{{{{
+;; Error: mutating borrowed rest element without mut modifier
+def Box = class (def mut n: int) (
+    def inc = fn mut () -> ( this.n += 1 )
+)
+def bad = fn (bs: Box...) -> (
+    for b in bs then ( b.inc() )
+)
+}}}}}
+Cannot mutate parameter bs (mut method b.inc) : mark parameter as mut bs

@@ -181,7 +181,7 @@ final class ClassGen {
                 m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
                 m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_METHOD);
                 m.visitVarInsn(ALOAD, 1);
-                if (fn.hasSpec() && ifaceCount <= fnCount && HirEmitter.allOptionalFrom(fn, ifaceCount)) {
+                if (fn.hasSpec() && fn.restIndex() == sig.restIndex() && ifaceCount <= fnCount && HirEmitter.allOptionalFrom(fn, ifaceCount)) {
                     List<HirParam> params = fn.params();
                     for (int i = 0; i < ifaceCount; i++) {
                         HirParam param = params.get(i);
@@ -194,7 +194,7 @@ final class ClassGen {
                     m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName) + "$spec", HirEmitter.methodSpecDescriptor(fn), false);
                     HirEmitter.emitAdaptKind(m, fn.returnKind(), sig.returnKind());
                     m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
-                } else if (fn.isSpread() && ifaceCount <= fnCount) {
+                } else if (fn.isSpread() && fn.restIndex() == sig.restIndex() && ifaceCount <= fnCount) {
                     m.visitInsn(ACONST_NULL);
                     for (int i = 0; i < ifaceCount; i++) {
                         HirEmitter.emitLoadBridgeArgBoxed(m, sig, paramSlots, i);
@@ -208,6 +208,15 @@ final class ClassGen {
                 } else {
                     String siteField = emitter.constantPool.syntheticCallSiteField(shape.name() + "." + memberName, ifaceCount);
                     HirEmitter.packBridgeArgsArray(m, sig, paramSlots);
+                    if (sig.restIndex() >= 0 && sig.restIndex() < ifaceCount) {
+                        m.visitInsn(DUP);
+                        ConstantPool.pushInt(m, sig.restIndex());
+                        m.visitInsn(DUP2);
+                        m.visitInsn(AALOAD);
+                        m.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
+                        m.visitMethodInsn(INVOKESTATIC, HirEmitter.SPREADS, "packedRest", "(Ljava/lang/Iterable;)Ljava/lang/Object;", false);
+                        m.visitInsn(AASTORE);
+                    }
                     m.visitInsn(ACONST_NULL);
                     m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
                     m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(memberName) + (fn.isSpread() ? "$call" : ""), HirEmitter.METHOD_DESCRIPTOR, false);
@@ -358,7 +367,7 @@ final class ClassGen {
             m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
             m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_METHOD);
             m.visitVarInsn(ALOAD, rtSlot);
-            if (fn.hasSpec() && paramTypes.length <= fnCount && HirEmitter.allOptionalFrom(fn, paramTypes.length)) {
+            if (fn.hasSpec() && fn.restIndex() < 0 && paramTypes.length <= fnCount && HirEmitter.allOptionalFrom(fn, paramTypes.length)) {
                 List<HirParam> params = fn.params();
                 for (int i = 0; i < paramTypes.length; i++) {
                     HirParam param = params.get(i);
@@ -372,7 +381,7 @@ final class ClassGen {
                 }
                 m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + "$spec", HirEmitter.methodSpecDescriptor(fn), false);
                 HirEmitter.emitReturnToJava(m, fn.returnKind(), retType, descText, rtSlot);
-            } else if (fn.isSpread() && paramTypes.length <= fnCount) {
+            } else if (fn.isSpread() && fn.restIndex() < 0 && paramTypes.length <= fnCount) {
                 List<HirParam> params = fn.params();
                 m.visitInsn(ACONST_NULL);
                 for (int i = 0; i < paramTypes.length; i++) {
@@ -386,6 +395,24 @@ final class ClassGen {
             } else {
                 String siteField = emitter.constantPool.javaCallSiteField(mName, paramTypes.length);
                 HirEmitter.emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
+                if (jm.isVarArgs() && fn.restIndex() == paramTypes.length - 1 && paramTypes.length > 0) {
+                    int lastIdx = paramTypes.length - 1;
+                    Label skipWrap = new Label();
+                    m.visitInsn(DUP);
+                    ConstantPool.pushInt(m, lastIdx);
+                    m.visitInsn(AALOAD);
+                    m.visitJumpInsn(IFNULL, skipWrap);
+                    m.visitInsn(DUP);
+                    ConstantPool.pushInt(m, lastIdx);
+                    m.visitInsn(DUP2);
+                    m.visitInsn(AALOAD);
+                    m.visitMethodInsn(INVOKESTATIC, HirEmitter.ARGUMENTS_VIEW, "fromArray",
+                            "(Ljava/lang/Object;)L" + HirEmitter.ARGUMENTS_VIEW + ";", false);
+                    m.visitMethodInsn(INVOKESTATIC, HirEmitter.SPREADS, "packedRest",
+                            "(Ljava/lang/Iterable;)Ljava/lang/Object;", false);
+                    m.visitInsn(AASTORE);
+                    m.visitLabel(skipWrap);
+                }
                 m.visitInsn(ACONST_NULL);
                 m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
                 m.visitMethodInsn(INVOKEVIRTUAL, name, methodName(mName) + (fn.isSpread() ? "$call" : ""), HirEmitter.METHOD_DESCRIPTOR, false);

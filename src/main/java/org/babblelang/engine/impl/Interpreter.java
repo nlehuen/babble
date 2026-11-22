@@ -937,8 +937,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             return rawArgs;
         }
         int[] map = binding.paramToArg();
+        int restParam = binding.restParam();
         int effective = map.length;
-        while (effective > 0 && map[effective - 1] < 0) {
+        while (effective > 0 && effective - 1 != restParam && map[effective - 1] < 0) {
             effective--;
         }
         if (effective == 0) {
@@ -946,8 +947,18 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
         Object[] pos = new Object[effective];
         for (int p = 0; p < effective; p++) {
-            int a = map[p];
-            pos[p] = a >= 0 ? rawArgs[a] : Arguments.MISSING;
+            if (p == restParam) {
+                int[] restArgs = binding.restArgs();
+                Object[] parts = new Object[restArgs.length];
+                for (int k = 0; k < restArgs.length; k++) {
+                    parts[k] = rawArgs[restArgs[k]];
+                }
+                pos[p] = org.babblelang.runtime.Spreads.packedRest(
+                        org.babblelang.runtime.Spreads.packRest(parts, binding.restArgIsSpread()));
+            } else {
+                int a = map[p];
+                pos[p] = a >= 0 ? rawArgs[a] : Arguments.MISSING;
+            }
         }
         return pos;
     }
@@ -963,13 +974,27 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     private Object[] arguments(BabbleParser.CallContext ctx) {
         List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
+        ScopeAnalysis.SpreadAdapt[] adapts = scopes.callSpreadAdapts(ctx);
         Object[] args = parameters.isEmpty() ? Arguments.NONE : new Object[parameters.size()];
         for (int i = 0; i < args.length; i++) {
             BabbleParser.ExpressionContext expression = parameters.get(i).expression();
-            Object value = visit(expression);
-            args[i] = widen(expression, value);
+            Object value = widen(expression, visit(expression));
+            if (adapts != null && i < adapts.length && adapts[i] != null) {
+                value = adaptSpread(value, adapts[i]);
+            }
+            args[i] = value;
         }
         return args;
+    }
+
+    private static Object adaptSpread(Object value, ScopeAnalysis.SpreadAdapt adapt) {
+        return switch (adapt.kind()) {
+            case NONE, AS_IS -> value;
+            case TO_ITERABLE -> org.babblelang.runtime.Spreads.asIterable(value);
+            case TO_LIST_BORROWED -> org.babblelang.runtime.Spreads.asList(value, true);
+            case TO_LIST_COPY -> org.babblelang.runtime.Spreads.asList(value, false);
+            case TO_ARRAY -> org.babblelang.runtime.Spreads.asArray(value, adapt.arrayComponentType());
+        };
     }
 
     private CallSite callSite(BabbleParser.CallContext ctx) {

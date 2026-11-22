@@ -443,4 +443,14 @@ public class ReplTestCase {
         Assertions.assertTrue(lines.stream().anyMatch(l -> l.equals("fn of T (t : T) : T")), lines.toString());
         Assertions.assertTrue(lines.stream().anyMatch(l -> l.equals("fn of (T : Shape & Named) (x : T) : string")), lines.toString());
     }
+
+    @Test
+    public void testTypeCommandShowsVariadicAndPrint() throws Exception {
+        List<String> lines = transcript(
+                "def join = fn (parts : string..., sep : string = \", \") : string -> ( sep )",
+                ":type join",
+                ":type println");
+        Assertions.assertTrue(lines.stream().anyMatch(l -> l.equals("fn (parts : string..., sep : string = ...) : string")), lines.toString());
+        Assertions.assertTrue(lines.stream().anyMatch(l -> l.contains("values : (any | frozen any | null)...") && l.contains("to : java.lang.Appendable = ...")), lines.toString());
+    }
 }

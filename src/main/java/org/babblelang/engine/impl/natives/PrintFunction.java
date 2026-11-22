@@ -22,6 +22,21 @@ public class PrintFunction implements Callable {
 
     @Override
     public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        if (names == null && args.length >= 1 && args[0] instanceof org.babblelang.runtime.ArgumentsView.PackedRest pr) {
+            boolean redirected = args.length > 1 && args[1] != org.babblelang.runtime.Arguments.MISSING;
+            Appendable out = resolveOutput(rt, redirected, redirected ? args[1] : null);
+            try {
+                for (Object v : pr.iterable()) {
+                    out.append(ArraySupport.format(v));
+                }
+                if (newLine) {
+                    out.append(System.lineSeparator());
+                }
+            } catch (IOException e) {
+                throw new BabbleException(e);
+            }
+            return null;
+        }
         Object to = null;
         boolean redirected = false;
         if (names != null) {
@@ -32,14 +47,7 @@ public class PrintFunction implements Callable {
                 }
             }
         }
-        Appendable out;
-        if (!redirected) {
-            out = rt.writer();
-        } else if (Values.unwrap(to) instanceof Appendable appendable) {
-            out = appendable;
-        } else {
-            throw new BabbleException("print to: expects a Writer or PrintStream");
-        }
+        Appendable out = resolveOutput(rt, redirected, to);
 
         // TODO : support printf
         try {
@@ -56,5 +64,15 @@ public class PrintFunction implements Callable {
         }
 
         return null;
+    }
+
+    private static Appendable resolveOutput(ScriptRuntime rt, boolean redirected, Object to) {
+        if (!redirected) {
+            return rt.writer();
+        }
+        if (Values.unwrap(to) instanceof Appendable appendable) {
+            return appendable;
+        }
+        throw new BabbleException("print to: expects a Writer or PrintStream");
     }
 }

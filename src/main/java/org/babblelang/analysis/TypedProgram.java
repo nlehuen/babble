@@ -183,6 +183,11 @@ final class TypedProgram {
         return parameters.indexOf(mapped[argPos]);
     }
 
+    ScopeAnalysis.SpreadAdapt spreadAdapt(ParserRuleContext call, int argIndex) {
+        ScopeAnalysis.SpreadAdapt[] adapts = checker.callSolver().resolvedSpreadAdapts(call);
+        return adapts != null && argIndex >= 0 && argIndex < adapts.length ? adapts[argIndex] : null;
+    }
+
     // ---------------------------------------------------------------- other files
 
     EffectChecker.CallableSummary remoteConstructorSummary(TypeNode node) {

@@ -33,11 +33,15 @@ public final class Arguments {
     }
 
     public static Binder binder(String[] parameters, Object[] args, String[] names) {
-        return new Binder(parameters, parameters.length, args, names);
+        return new Binder(parameters, parameters.length, -1, args, names);
     }
 
     public static Binder binder(String[] parameters, int keywordOnlyStart, Object[] args, String[] names) {
-        return new Binder(parameters, keywordOnlyStart, args, names);
+        return new Binder(parameters, keywordOnlyStart, -1, args, names);
+    }
+
+    public static Binder binder(String[] parameters, int keywordOnlyStart, int restIndex, Object[] args, String[] names) {
+        return new Binder(parameters, keywordOnlyStart, restIndex, args, names);
     }
 
     /** The error of a parameter without a default that no argument matched. */
@@ -64,26 +68,48 @@ public final class Arguments {
 
     public static final class Binder {
         private final String[] parameters;
+        private final int restIndex;
+        private final int packedRestAt;
         private final Object[] args;
         private final String[] names;
         private final int[] matched;
+        private final Iterable<?> restValue;
         private final BabbleException tooManyError;
 
-        private Binder(String[] parameters, int keywordOnlyStart, Object[] args, String[] names) {
+        private Binder(String[] parameters, int keywordOnlyStart, int restIndex, Object[] args, String[] names) {
             this.parameters = parameters;
+            this.restIndex = restIndex;
             int kwStart = Math.min(keywordOnlyStart, parameters.length);
             this.args = args;
             this.names = names;
             if (names == null) {
                 this.matched = null;
                 this.tooManyError = null;
+                if (restIndex >= 0) {
+                    int packed = -1;
+                    for (int i = restIndex; i < args.length; i++) {
+                        if (args[i] instanceof ArgumentsView.PackedRest) {
+                            packed = i;
+                            break;
+                        }
+                    }
+                    this.packedRestAt = packed;
+                    this.restValue = packed >= 0
+                            ? Spreads.collectRest(args, restIndex, packed + 1)
+                            : Spreads.collectRest(args, restIndex);
+                } else {
+                    this.packedRestAt = -1;
+                    this.restValue = null;
+                }
                 return;
             }
+            this.packedRestAt = -1;
             int[] map = new int[parameters.length];
             java.util.Arrays.fill(map, -1);
             List<String> paramList = java.util.Arrays.asList(parameters);
             Set<String> unknown = new LinkedHashSet<>();
             Set<String> distinct = new LinkedHashSet<>();
+            List<Object> restItems = restIndex >= 0 ? new java.util.ArrayList<>() : null;
             String firstOutOfPos = null;
             String outOfPosError = null;
             String dupError = null;
@@ -97,6 +123,8 @@ public final class Arguments {
                         if (outOfPosError == null) {
                             outOfPosError = firstOutOfPos;
                         }
+                    } else if (restIndex >= 0 && j >= restIndex) {
+                        restItems.add(args[j]);
                     } else if (j < kwStart) {
                         map[j] = j;
                     } else {
@@ -106,7 +134,7 @@ public final class Arguments {
                 }
                 distinct.add(name);
                 int pIdx = paramList.indexOf(name);
-                if (pIdx < 0) {
+                if (pIdx < 0 || pIdx == restIndex) {
                     unknown.add(name);
                     continue;
                 }
@@ -131,6 +159,7 @@ public final class Arguments {
                 throw new BabbleException("Parameter given twice : " + dupError);
             }
             this.matched = map;
+            this.restValue = restItems != null ? Spreads.collectRest(restItems.toArray(), 0) : null;
             this.tooManyError = extra > 0
                     ? (kwStart < parameters.length
                             ? tooMany(kwStart, posCount)
@@ -143,7 +172,17 @@ public final class Arguments {
          * {@link Arguments#MISSING}.
          */
         public Object take(int index) {
+            if (index == restIndex) {
+                return restValue;
+            }
             if (names == null) {
+                if (restIndex >= 0 && index > restIndex) {
+                    if (packedRestAt < 0) {
+                        return MISSING;
+                    }
+                    int shifted = packedRestAt + (index - restIndex);
+                    return shifted < args.length ? args[shifted] : MISSING;
+                }
                 return index < args.length ? args[index] : MISSING;
             }
             int found = matched[index];
@@ -159,7 +198,7 @@ public final class Arguments {
          */
         public void rejectLeftovers() {
             if (names == null) {
-                if (args.length > parameters.length) {
+                if (restIndex < 0 && args.length > parameters.length) {
                     throw tooMany(parameters.length, args.length);
                 }
                 return;

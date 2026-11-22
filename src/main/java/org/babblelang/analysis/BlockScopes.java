@@ -291,6 +291,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 List<String> parameters = new ArrayList<>();
                 int required = 0;
                 int kwStart = ScopeAnalysis.keywordOnlyStart(ctx.fnParameters());
+                int restIndex = -1;
                 boolean seenOptional = false;
                 List<BabbleParser.FnParamContext> fnParams = ctx.fnParameters().fnParam();
                 for (int i = 0; i < fnParams.size(); i++) {
@@ -300,7 +301,15 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                     if (parameter.type() != null) {
                         visit(parameter.type());
                     }
-                    if (parameter.defaultValue != null) {
+                    if (parameter.rest != null) {
+                        if (restIndex >= 0 || ctx.fnParameters().kwSep != null) {
+                            throw error("More than one variadic parameter : " + parameter.ID().getText(), parameter.ID().getSymbol());
+                        }
+                        if (parameter.defaultValue != null) {
+                            throw error("Variadic parameter with a default : " + parameter.ID().getText(), parameter.ID().getSymbol());
+                        }
+                        restIndex = i;
+                    } else if (parameter.defaultValue != null) {
                         if (i < kwStart) {
                             seenOptional = true;
                         }
@@ -315,7 +324,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 if (ctx.type() != null) {
                     visit(ctx.type());
                 }
-                analysis.setParameters(ctx, parameters.toArray(new String[0]), required, kwStart);
+                analysis.setParameters(ctx, parameters.toArray(new String[0]), required, kwStart, restIndex);
                 visitChildren(ctx.functionBlock);
             });
         });
@@ -341,17 +350,26 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitFnTypeParameters(BabbleParser.FnTypeParametersContext ctx) {
         int kwStart = ScopeAnalysis.keywordOnlyStart(ctx);
+        int restIndex = -1;
         boolean seenOptional = false;
         List<BabbleParser.FnTypeParamContext> params = ctx.fnTypeParam();
         for (int i = 0; i < params.size(); i++) {
             BabbleParser.FnTypeParamContext parameter = params.get(i);
-            if (parameter.optional != null) {
+            String name = parameter.ID() != null ? parameter.ID().getText() : "p" + i;
+            Token tok = parameter.ID() != null ? parameter.ID().getSymbol() : parameter.getStart();
+            if (parameter.rest != null) {
+                if (restIndex >= 0 || ctx.kwSep != null) {
+                    throw error("More than one variadic parameter : " + name, tok);
+                }
+                if (parameter.optional != null) {
+                    throw error("Variadic parameter with a default : " + name, tok);
+                }
+                restIndex = i;
+            } else if (parameter.optional != null) {
                 if (i < kwStart) {
                     seenOptional = true;
                 }
             } else if (i < kwStart && seenOptional) {
-                String name = parameter.ID() != null ? parameter.ID().getText() : "p" + i;
-                Token tok = parameter.ID() != null ? parameter.ID().getSymbol() : parameter.getStart();
                 throw error("Required parameter after an optional one : " + name, tok);
             }
             visit(parameter.type());

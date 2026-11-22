@@ -129,6 +129,10 @@ public final class HirRewriter {
                 HirExpr no = transform.apply(n.operand());
                 yield no == n.operand() ? n : new HirExpr.NonNull(no, n.expectedType(), n.meta());
             }
+            case HirExpr.SpreadAdapt s -> {
+                HirExpr nv = transform.apply(s.value());
+                yield nv == s.value() ? s : new HirExpr.SpreadAdapt(nv, s.adapt(), s.meta());
+            }
             case HirExpr.TypeApply t -> {
                 HirExpr ni = transform.apply(t.inner());
                 yield ni == t.inner() ? t : new HirExpr.TypeApply(ni, t.meta());

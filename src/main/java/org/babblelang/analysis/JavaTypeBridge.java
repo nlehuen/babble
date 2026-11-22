@@ -1070,11 +1070,13 @@ final class JavaTypeBridge {
                 && JavaTypes.isFunctionalInterface(pJava.type())) {
             Type.Function sam = samFunctionType(pJava, null);
             if (sam != null) {
-                if (aFn.parameters().size() < sam.parameters().size()) {
+                int aRest = aFn.restIndex();
+                if (aRest < 0 && aFn.parameters().size() < sam.parameters().size()) {
                     return false;
                 }
                 for (int i = sam.parameters().size(); i < aFn.parameters().size(); i++) {
-                    if (!aFn.parameters().get(i).optional()) {
+                    Type.Parameter p = aFn.parameters().get(i);
+                    if (!p.optional() && !p.rest()) {
                         return false;
                     }
                 }
@@ -1212,7 +1214,7 @@ final class JavaTypeBridge {
         if (type == null || TypeChecker.isUnresolved(type) || type == Type.ANY || type instanceof Type.TypeVar) {
             return true;
         }
-        if (rejectCallables && (type instanceof Type.JavaMethod || type == Type.PRINT)) {
+        if (rejectCallables && type instanceof Type.JavaMethod) {
             return true;
         }
         if (type instanceof Type.Union union) {

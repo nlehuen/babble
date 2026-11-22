@@ -336,6 +336,7 @@ public final class HirPurity {
             case HirExpr.Is i -> collectModifiedVars(i.left(), out);
             case HirExpr.As a -> collectModifiedVars(a.left(), out);
             case HirExpr.NonNull n -> collectModifiedVars(n.operand(), out);
+            case HirExpr.SpreadAdapt s -> collectModifiedVars(s.value(), out);
             case HirExpr.TypeApply t -> collectModifiedVars(t.inner(), out);
             case HirExpr.Block b -> {
                 for (HirVar v : b.declaredVars()) out.add(v.id());

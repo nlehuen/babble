@@ -1119,6 +1119,10 @@ final class AxiomData {
             if (pt == null) {
                 pt = Type.ERROR;
             }
+            boolean rest = p.rest != null;
+            if (rest && ScopeAnalysis.isParamRestNullable(p) && pt != Type.ERROR) {
+                pt = Type.nullable(pt);
+            }
             boolean pMut = false;
             boolean pShared = false;
             boolean pUnique = false;
@@ -1134,9 +1138,9 @@ final class AxiomData {
             anyMutParam |= pMut;
             boolean pBorrow = !pShared && !pUnique;
             String pName = p.ID() != null ? p.ID().getText() : "p" + index;
-            boolean optional = p.ELLIPSIS() != null;
+            boolean optional = p.optional != null;
             boolean keywordOnly = index >= kwStart;
-            params.add(new Type.Parameter(pName, pt, optional, keywordOnly, pMut, pBorrow, pShared, pUnique));
+            params.add(new Type.Parameter(pName, pt, optional, keywordOnly, rest, pMut, pBorrow, pShared, pUnique));
             index++;
         }
 
@@ -1147,7 +1151,8 @@ final class AxiomData {
 
         EffectSet effectSet;
         if (io) {
-            effectSet = EffectSet.IO_DECLARED;
+            effectSet = new EffectSet(EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
+                    mutThis, !sharedThis, sharedThis, uniqueRet, uniqueRet, false, true, false, true);
         } else {
             EnumSet<Effect> effs = EnumSet.copyOf(explicit);
             effs.add(Effect.HERMETIC);

@@ -980,6 +980,12 @@ final class TypeChecker {
         }
         if (ScopeAnalysis.isParamDecl(declaration) && ScopeAnalysis.paramType(declaration) != null) {
             Type declared = annotator.annotation(ScopeAnalysis.paramType(declaration), scopeOf(declaration));
+            if (ScopeAnalysis.isParamRest(declaration) && declared != Type.ERROR) {
+                if (ScopeAnalysis.isParamRestNullable(declaration)) {
+                    declared = Type.nullable(declared);
+                }
+                declared = new Type.JavaInstance(Iterable.class, List.of(declared));
+            }
             declarationTypes.put(declaration, declared);
             return declared;
         }
@@ -1290,7 +1296,8 @@ final class TypeChecker {
         List<Type.Parameter> result = new ArrayList<>(decls.size());
         for (int i = 0; i < decls.size(); i++) {
             BabbleParser.FnParamContext parameter = decls.get(i);
-            Type type = parameterType(parameter, scope);
+            boolean rest = ScopeAnalysis.isParamRest(parameter);
+            Type type = rest ? restElementType(parameter, scope) : parameterType(parameter, scope);
             EffectChecker.ParamMods pm = effectChecker != null
                     ? effectChecker.parseParamMods(parameter, checkingEffects && inFile(literal))
                     : EffectChecker.ParamMods.NONE;
@@ -1300,9 +1307,17 @@ final class TypeChecker {
                     : (effectChecker != null && !untyped && !pm.shared() && !pm.unique());
             boolean unique = summary != null && i < summary.uniqueParams().length ? summary.uniqueParams()[i] : pm.unique();
             result.add(new Type.Parameter(parameter.ID().getText(), type, parameter.defaultValue != null,
-                    i >= kwStart, mut, borrow, pm.shared(), unique));
+                    i >= kwStart, rest, mut, borrow, pm.shared(), unique));
         }
         return result;
+    }
+
+    private Type restElementType(BabbleParser.FnParamContext parameter, ScopeNode scope) {
+        Type elem = annotator.annotation(parameter.type(), scope);
+        if (elem != Type.ERROR && ScopeAnalysis.isParamRestNullable(parameter)) {
+            elem = Type.nullable(elem);
+        }
+        return elem;
     }
 
     private void typeDefaultValues(BabbleParser.FunctionLiteralContext literal) {
@@ -1350,15 +1365,22 @@ final class TypeChecker {
         }
         List<BabbleParser.FnParamContext> params = literal.fnParameters().fnParam();
         int required = 0;
+        boolean hasRest = false;
         for (BabbleParser.FnParamContext param : params) {
-            if (param.defaultValue == null) {
+            if (param.rest != null) {
+                hasRest = true;
+            } else if (param.defaultValue == null) {
                 required++;
             }
         }
         boolean appliedAny = false;
-        if (required <= expectedParamTypes.size() && params.size() >= expectedParamTypes.size()) {
-            for (int i = 0; i < expectedParamTypes.size(); i++) {
+        if (required <= expectedParamTypes.size() && (hasRest || params.size() >= expectedParamTypes.size())) {
+            int limit = Math.min(params.size(), expectedParamTypes.size());
+            for (int i = 0; i < limit; i++) {
                 BabbleParser.FnParamContext param = params.get(i);
+                if (param.rest != null) {
+                    break;
+                }
                 if (param.type() == null && !declarationTypes.containsKey(param)) {
                     Type paramType = expectedParamTypes.get(i);
                     if (paramType != null && paramType != Type.ERROR && !paramType.hasSyntheticTypeVar()) {

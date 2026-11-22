@@ -388,4 +388,14 @@ public class JavaClassDemo {
         }
         return v;
     }
+
+    // BIP021-P4 Java varargs interface bridge helper.
+    @FunctionalInterface
+    public interface VarArgsSink {
+        int sum(int... xs);
+    }
+
+    public static int invokeVarArgsSink(VarArgsSink sink, int... xs) {
+        return sink.sum(xs);
+    }
 }

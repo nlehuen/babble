@@ -169,14 +169,14 @@ public final class Bootstrap {
 
     /** The guard of a fast path for this callee, or null if none applies. */
     private static MethodHandle callTest(Callable callee, int arguments) {
-        if (callee instanceof CompiledFunction f && f.direct() != null && arguments <= f.maxArity()) {
+        if (callee instanceof CompiledFunction f && f.direct() != null && f.restIndex() < 0 && arguments <= f.maxArity()) {
             return IS_FUNCTION.bindTo(f.direct());
         }
         if (callee instanceof BoundMethod bound) {
-            if (bound.function() instanceof CompiledFunction f && f.direct() != null && arguments <= f.maxArity()) {
+            if (bound.function() instanceof CompiledFunction f && f.direct() != null && f.restIndex() < 0 && arguments <= f.maxArity()) {
                 return IS_BOUND_FUNCTION.bindTo(f.direct());
             }
-            if (bound.function() instanceof CompiledMethod m && m.direct() != null && arguments <= m.maxArity()) {
+            if (bound.function() instanceof CompiledMethod m && m.direct() != null && m.restIndex() < 0 && arguments <= m.maxArity()) {
                 return IS_BOUND_METHOD.bindTo(m);
             }
         }
@@ -283,7 +283,7 @@ public final class Bootstrap {
             int arguments = arguments();
             MethodHandle test = null;
             MethodHandle fast = null;
-            if (callee instanceof CompiledFunction f && f.spec() != null) {
+            if (callee instanceof CompiledFunction f && f.spec() != null && f.restIndex() < 0) {
                 MethodHandle adapted = adaptSpec(f.spec(), f.optionalParamBits(), type(), missingBits);
                 if (adapted != null) {
                     test = IS_FUNCTION_SPEC.bindTo(f.spec());
@@ -291,7 +291,7 @@ public final class Bootstrap {
                     fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
                 }
             } else if (callee instanceof BoundMethod bound) {
-                if (bound.function() instanceof CompiledMethod m && m.spec() != null) {
+                if (bound.function() instanceof CompiledMethod m && m.spec() != null && m.restIndex() < 0) {
                     MethodHandle adapted = adaptSpec(m.spec(), m.optionalParamBits(), type(), missingBits);
                     if (adapted != null) {
                         test = IS_BOUND_METHOD.bindTo(m);
@@ -300,7 +300,7 @@ public final class Bootstrap {
                         h = MethodHandles.filterArguments(h, 0, RECEIVER);
                         fast = MethodHandles.dropArguments(h, 2, CallSite.class).asType(type());
                     }
-                } else if (bound.function() instanceof CompiledFunction f && f.spec() != null) {
+                } else if (bound.function() instanceof CompiledFunction f && f.spec() != null && f.restIndex() < 0) {
                     MethodHandle adapted = adaptSpec(f.spec(), f.optionalParamBits(), type(), missingBits);
                     if (adapted != null) {
                         test = IS_BOUND_FUNCTION_SPEC.bindTo(f.spec());

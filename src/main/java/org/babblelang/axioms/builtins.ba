@@ -1,5 +1,7 @@
 ;; Babble built-in prelude (BIP019-P7)
 
+axiom affiche: fn io (values: (any? | frozen any)..., to: java.lang.Appendable = ...): null
+axiom afficherc: fn io (values: (any? | frozen any)..., to: java.lang.Appendable = ...): null
 axiom assert: fn (c: bool, message: any? = ...): bool
 axiom bool: fn (value: bool | string): bool
 axiom byte: fn (value: byte | short | int | long | float | double | java.lang.Number | char | string): byte
@@ -9,6 +11,8 @@ axiom double: fn (value: any): double
 axiom float: fn (value: byte | short | int | long | float | double | java.lang.Number | string): float
 axiom int: fn (value: any): int
 axiom long: fn (value: byte | short | int | long | float | double | java.lang.Number | char | string): long
+axiom print: fn io (values: (any? | frozen any)..., to: java.lang.Appendable = ...): null
+axiom println: fn io (values: (any? | frozen any)..., to: java.lang.Appendable = ...): null
 axiom same: fn nothrow commutative (a: any? | frozen any, b: any? | frozen any): bool
 axiom short: fn (value: byte | short | int | long | float | double | java.lang.Number | char | string): short
 axiom string: fn (value: any?): string

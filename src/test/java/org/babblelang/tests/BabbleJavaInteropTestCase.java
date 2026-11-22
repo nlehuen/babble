@@ -224,4 +224,15 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
         }
         Assertions.assertEquals(9, interpret(DEMO + "Demo.setStaticBoxedInt(9) ; def v = Demo.staticBoxedInt! ; Demo.setStaticBoxedInt(null) ; v"));
     }
+
+    @Test
+    public void testJavaVarArgsInterfaceBridge() throws Exception {
+        String code = "def tests = import(\"org.babblelang.tests\")\n"
+                + "def Impl = class () implements tests.JavaClassDemo.VarArgsSink (\n"
+                + "  def sum = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )\n"
+                + ")\n"
+                + "def sam = tests.JavaClassDemo.VarArgsSink(fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s ))\n"
+                + "tests.JavaClassDemo.invokeVarArgsSink(Impl(), 1, 2, 3) + tests.JavaClassDemo.invokeVarArgsSink(sam, 10, 20)";
+        Assertions.assertEquals(36, interpret(code));
+    }
 }

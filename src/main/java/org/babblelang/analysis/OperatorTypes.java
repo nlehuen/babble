@@ -175,13 +175,12 @@ final class OperatorTypes {
 
     /**
      * A name the analysis doesn't declare : a root Java package, special forms
-     * ({@code print}, {@code move}, {@code freeze}, {@code discard}, {@code import}, {@code STDOUT}, {@code args}),
+     * ({@code move}, {@code freeze}, {@code discard}, {@code import}, {@code STDOUT}, {@code args}),
      * ordinary built-ins from {@code builtins.ba}, and {@code any} host bindings.
      */
     Type implicitType(String name) {
         return switch (name) {
             case "java", "javax" -> new Type.JavaPackage(name);
-            case "print", "println", "affiche", "afficherc" -> Type.PRINT;
             case "move" -> MOVE_FUNCTION;
             case "freeze" -> FREEZE_FUNCTION;
             case "discard" -> DISCARD_FUNCTION;

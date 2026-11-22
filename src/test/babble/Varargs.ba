@@ -50,4 +50,84 @@ assert(workDays.size() == 6 and workDays.contains(java.time.DayOfWeek.MONDAY))
 def fmt: fn (s: string, a: int, b: string): string = java.lang.String.format
 assert(fmt("%d:%s", 9, "ok") == "9:ok")
 
+;; Babble variadic rest parameters, keyword-only params, and spreads (BIP021-P4 / BIP021-D5..D7)
+def join = fn (parts: string..., sep: string = ", "): string -> (
+    def res = ""
+    def first = true
+    for p in parts then (
+        if not first then (res = res + sep)
+        first = false
+        res = res + p
+    )
+    res
+)
+assert(join() == "")
+assert(join("only") == "only")
+assert(join("a", "b", "c") == "a, b, c")
+assert(join("a", "b", "c", sep: " / ") == "a / b / c")
+
+def names = list("alpha", "beta")
+assert(join(...names) == "alpha, beta")
+assert(join("start", ...names, "end", sep: "-") == "start-alpha-beta-end")
+
+def sumInts = fn (xs: int...): int -> (
+    def total = 0
+    for x in xs then (total += x)
+    total
+)
+assert(sumInts() == 0)
+assert(sumInts(10) == 10)
+assert(sumInts(1, 2, 3, 4) == 10)
+assert(sumInts(...intArr, 4, ...list(5, 6)) == 21)
+
+;; Generic rest inference (BIP021-D21)
+def listOf of T = fn (xs: T...): list of T -> (list(from: xs))
+def nums = listOf(1, 2, 3)
+assert(nums.size() == 3 and nums.get(1) == 2)
+def mixed = listOf(1, "a")
+assert(mixed.size() == 2 and mixed.get(0) == 1 and mixed.get(1) == "a")
+def emptyStrs: list of string = listOf()
+assert(emptyStrs.size() == 0)
+
+;; Spread into non-rest sequence parameters (list, array, Iterable)
+def totalList = fn (xs: list of int): int -> (
+    def s = 0
+    for x in xs then (s += x)
+    s
+)
+assert(totalList(...intArr) == 6)
+assert(totalList(...java.util.Set.of(10, 20)) == 30)
+
+def sumArray = fn (xs: array of int): int -> (
+    def s = 0
+    for x in xs then (s += x)
+    s
+)
+assert(sumArray(...intArr) == 6)
+assert(sumArray(...list(4, 5, 6)) == 15)
+
+;; Spread into Java varargs
+def parts = list("x", "y")
+assert(java.lang.String.format("%s-%s", ...parts) == "x-y")
+def asListed: list of int = java.util.Arrays.asList(...intArr)
+assert(asListed.size() == 3 and asListed.get(0) == 1 and asListed.get(2) == 3)
+assert(java.util.stream.IntStream.of(...list(2, 3, 5)).sum() == 10)
+
+;; Nullable rest elements (T?...) and print spread
+def countNulls = fn (xs: int?...): int -> (
+    def c = 0
+    for x in xs then (if x == null then (c += 1))
+    c
+)
+assert(countNulls(1, null, 2, null) == 2)
+
+def sw = java.io.StringWriter()
+print("v=", ...list(1, 2, 3), to: sw)
+assert(sw.toString() == "v=123")
+
+;; Variadic subtyping (BIP021-D5)
+def f0: fn (): int = sumInts
+def f2: fn (a: int, b: int): int = sumInts
+assert(f0() == 0 and f2(7, 8) == 15)
+
 true

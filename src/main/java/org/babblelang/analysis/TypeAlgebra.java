@@ -536,7 +536,9 @@ final class TypeAlgebra {
      */
     private boolean functionRelates(Type.Function from, Type.Function to, ConstraintStore store,
                                     Set<RelationKey> active, boolean withEffects) {
-        if (from.parameters().size() < to.parameters().size()) {
+        int fromRest = from.restIndex();
+        int toRest = to.restIndex();
+        if (fromRest < 0 && from.parameters().size() < to.parameters().size()) {
             return false;
         }
         boolean fromPoly = !from.typeParameters().isEmpty();
@@ -599,34 +601,96 @@ final class TypeAlgebra {
             return functionRelates(instantiated, to, store, active, withEffects);
         }
         boolean frozenBorrowSafe = from.effects().uniqueResult() || env.isDeeplyImmutable(from.result());
-        for (int i = 0; i < from.parameters().size(); i++) {
-            Type.Parameter fp = from.parameters().get(i);
-            boolean borrowReadOnly = frozenBorrowSafe && fp.borrow() && !fp.mut();
-            if (i < to.parameters().size()) {
-                Type.Parameter tp = to.parameters().get(i);
-                // BIP021-D3 : a required parameter cannot satisfy an optional one,
-                // and a keyword-only parameter cannot satisfy a positional one.
-                if (tp.optional() && !fp.optional()) {
-                    return false;
-                }
-                if (!tp.keywordOnly() && fp.keywordOnly()) {
-                    return false;
-                }
-                Type toParamType = tp.type();
-                Type fromParamType = fp.type();
-                if (withEffects) {
-                    if (to.forwardedEffectParams().contains(i) && toParamType instanceof Type.Function tf) {
-                        toParamType = tf.withEffects(tf.effects().relaxedForForwardedCallback());
-                    }
-                    if (from.forwardedEffectParams().contains(i) && fromParamType instanceof Type.Function ff) {
-                        fromParamType = ff.withEffects(ff.effects().relaxedForForwardedCallback());
-                    }
-                }
-                if (!relate(toParamType, fromParamType, RelateMode.ASSIGNABLE, store, active, borrowReadOnly, false)) {
-                    return false;
-                }
-            } else if (!fp.optional()) {
+        if (toRest >= 0) {
+            if (fromRest < 0 || fromRest > toRest) {
                 return false;
+            }
+            int fromKw = from.parameters().size() - (fromRest + 1);
+            int toKw = to.parameters().size() - (toRest + 1);
+            if (fromKw < toKw) {
+                return false;
+            }
+            for (int i = 0; i <= toRest; i++) {
+                int fi = Math.min(i, fromRest);
+                Type.Parameter fp = from.parameters().get(fi);
+                Type.Parameter tp = to.parameters().get(i);
+                if (i < fromRest) {
+                    if (tp.optional() && !fp.optional()) {
+                        return false;
+                    }
+                    if (!tp.keywordOnly() && fp.keywordOnly()) {
+                        return false;
+                    }
+                }
+                if (!paramRelates(from, fi, fp, to, i, tp, frozenBorrowSafe, store, active, withEffects)) {
+                    return false;
+                }
+            }
+            for (int k = 0; k < fromKw; k++) {
+                int fi = fromRest + 1 + k;
+                Type.Parameter fp = from.parameters().get(fi);
+                if (k < toKw) {
+                    int ti = toRest + 1 + k;
+                    Type.Parameter tp = to.parameters().get(ti);
+                    if (tp.optional() && !fp.optional()) {
+                        return false;
+                    }
+                    if (!paramRelates(from, fi, fp, to, ti, tp, frozenBorrowSafe, store, active, withEffects)) {
+                        return false;
+                    }
+                } else if (!fp.optional()) {
+                    return false;
+                }
+            }
+        } else if (fromRest >= 0) {
+            // Non-variadic target satisfied by variadic source (BIP021-D5):
+            // target must not have keyword-only params (no PackedRest sentinel on non-variadic calls).
+            for (Type.Parameter tp : to.parameters()) {
+                if (tp.keywordOnly()) {
+                    return false;
+                }
+            }
+            int toPos = to.parameters().size();
+            for (int i = 0; i < toPos; i++) {
+                int fi = Math.min(i, fromRest);
+                Type.Parameter fp = from.parameters().get(fi);
+                Type.Parameter tp = to.parameters().get(i);
+                if (i < fromRest && tp.optional() && !fp.optional()) {
+                    return false;
+                }
+                if (!paramRelates(from, fi, fp, to, i, tp, frozenBorrowSafe, store, active, withEffects)) {
+                    return false;
+                }
+            }
+            for (int i = toPos; i < fromRest; i++) {
+                if (!from.parameters().get(i).optional()) {
+                    return false;
+                }
+            }
+            for (int i = fromRest + 1; i < from.parameters().size(); i++) {
+                if (!from.parameters().get(i).optional()) {
+                    return false;
+                }
+            }
+        } else {
+            for (int i = 0; i < from.parameters().size(); i++) {
+                Type.Parameter fp = from.parameters().get(i);
+                if (i < to.parameters().size()) {
+                    Type.Parameter tp = to.parameters().get(i);
+                    // BIP021-D3 : a required parameter cannot satisfy an optional one,
+                    // and a keyword-only parameter cannot satisfy a positional one.
+                    if (tp.optional() && !fp.optional()) {
+                        return false;
+                    }
+                    if (!tp.keywordOnly() && fp.keywordOnly()) {
+                        return false;
+                    }
+                    if (!paramRelates(from, i, fp, to, i, tp, frozenBorrowSafe, store, active, withEffects)) {
+                        return false;
+                    }
+                } else if (!fp.optional()) {
+                    return false;
+                }
             }
         }
         if (!relate(from.result(), to.result(), RelateMode.SUBTYPE, store, active, false, false)) {
@@ -650,12 +714,29 @@ final class TypeAlgebra {
         if (!to.capturedCallings().containsAll(from.capturedCallings())) {
             return false;
         }
-        for (int i = 0; i < to.parameters().size(); i++) {
-            Type.Parameter fp = from.parameters().get(i);
-            Type.Parameter tp = to.parameters().get(i);
-            if (fp.mut() && !tp.mut() || tp.borrow() && !fp.borrow() || fp.unique() && !tp.unique()) {
-                return false;
+        return true;
+    }
+
+    private boolean paramRelates(Type.Function from, int fi, Type.Parameter fp,
+                                 Type.Function to, int ti, Type.Parameter tp,
+                                 boolean frozenBorrowSafe, ConstraintStore store,
+                                 Set<RelationKey> active, boolean withEffects) {
+        boolean borrowReadOnly = frozenBorrowSafe && fp.borrow() && !fp.mut();
+        Type toParamType = tp.type();
+        Type fromParamType = fp.type();
+        if (withEffects) {
+            if (to.forwardedEffectParams().contains(ti) && toParamType instanceof Type.Function tf) {
+                toParamType = tf.withEffects(tf.effects().relaxedForForwardedCallback());
             }
+            if (from.forwardedEffectParams().contains(fi) && fromParamType instanceof Type.Function ff) {
+                fromParamType = ff.withEffects(ff.effects().relaxedForForwardedCallback());
+            }
+        }
+        if (!relate(toParamType, fromParamType, RelateMode.ASSIGNABLE, store, active, borrowReadOnly, false)) {
+            return false;
+        }
+        if (withEffects && (fp.mut() && !tp.mut() || tp.borrow() && !fp.borrow() || fp.unique() && !tp.unique())) {
+            return false;
         }
         return true;
     }
@@ -1142,14 +1223,13 @@ final class TypeAlgebra {
 
     // ---------------------------------------------------------------- structural predicates
 
-    /** Whether a value of this type can be called : functions, Java methods, classes, and print. */
+    /** Whether a value of this type can be called : functions, Java methods, and classes. */
     static boolean isCallable(Type type) {
         if (type instanceof Type.Union union) {
             return union.members().stream().allMatch(TypeAlgebra::isCallable);
         }
         return type instanceof Type.Function || type instanceof Type.JavaMethod
-                || type instanceof Type.ClassValue value && !value.node().isInterface()
-                || type == Type.PRINT;
+                || type instanceof Type.ClassValue value && !value.node().isInterface();
     }
 
     /**

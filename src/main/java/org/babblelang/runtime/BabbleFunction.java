@@ -21,6 +21,11 @@ public interface BabbleFunction extends Callable {
         return -1;
     }
 
+    /** The index of the rest parameter ({@code xs: T...}), or -1 if none. */
+    default int restIndex() {
+        return -1;
+    }
+
     /**
      * Whether this Babble method can implement/override a Java {@code default} interface overload
      * with parameter types {@code javaParams} (or whether Java's {@code default} overload should be kept).
