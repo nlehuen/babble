@@ -90,6 +90,7 @@ final class TypeChecker {
     private final Map<ParserRuleContext, String> callChecks = new IdentityHashMap<>();
     private final Typer typer = new Typer();
     private final Map<BabbleParser.FunctionLiteralContext, Type> contextualReturnTypes = new IdentityHashMap<>();
+    private final Map<BabbleParser.FunctionLiteralContext, List<Type.TypeVar>> contextualTypeParams = new IdentityHashMap<>();
     record ForIterableInfo(
             ScopeAnalysis.ForKind kind,
             Class<?> arrayClass,
@@ -498,6 +499,7 @@ final class TypeChecker {
         resolvedLiterals.clear();
         callChecks.clear();
         contextualReturnTypes.clear();
+        contextualTypeParams.clear();
         inferenceStack.clear();
         inferringResult.clear();
         recursiveFunctions.clear();
@@ -1126,14 +1128,23 @@ final class TypeChecker {
         } else {
             result = inferFunctionResult(literal);
         }
+        List<Type.TypeVar> tparams = effectiveTypeParams(literal);
         return recordFunctionLiteral(
-                new Type.Function(annotator.typeVarsOf(owningDef(literal)), params, result, literalEffectSet(literal),
+                new Type.Function(tparams, params, result, literalEffectSet(literal),
                         TypeAnnotations.resolveForwardedParams(literal.effectPrefix(), params),
                         TypeAnnotations.resolveCapturedCallings(literal.effectPrefix(), params).keySet()), literal);
     }
 
+    private List<Type.TypeVar> effectiveTypeParams(BabbleParser.FunctionLiteralContext literal) {
+        List<Type.TypeVar> declared = annotator.typeVarsOf(literal);
+        if (!declared.isEmpty()) {
+            return declared;
+        }
+        return contextualTypeParams.getOrDefault(literal, List.of());
+    }
+
     private Type.Function recursiveSignature(BabbleParser.FunctionLiteralContext literal) {
-        List<Type.TypeVar> tparams = annotator.typeVarsOf(owningDef(literal));
+        List<Type.TypeVar> tparams = effectiveTypeParams(literal);
         List<Type.Parameter> params = functionParameters(literal);
         EffectSet effs = literalEffectSet(literal);
         Set<Integer> forwarded = TypeAnnotations.resolveForwardedParams(literal.effectPrefix(), params);
@@ -1344,6 +1355,7 @@ final class TypeChecker {
                 required++;
             }
         }
+        boolean appliedAny = false;
         if (required <= expectedParamTypes.size() && params.size() >= expectedParamTypes.size()) {
             for (int i = 0; i < expectedParamTypes.size(); i++) {
                 BabbleParser.FnParamContext param = params.get(i);
@@ -1351,6 +1363,7 @@ final class TypeChecker {
                     Type paramType = expectedParamTypes.get(i);
                     if (paramType != null && paramType != Type.ERROR && !paramType.hasSyntheticTypeVar()) {
                         declarationTypes.put(param, paramType);
+                        appliedAny = true;
                     }
                 }
             }
@@ -1359,6 +1372,11 @@ final class TypeChecker {
                 && expectedResult != Type.NULL && !isUnresolved(expectedResult)
                 && !expectedResult.hasSyntheticTypeVar()) {
             contextualReturnTypes.putIfAbsent(literal, expectedResult);
+            appliedAny = true;
+        }
+        if (appliedAny && base instanceof Type.Function fn && !fn.typeParameters().isEmpty()
+                && literal.typeParameters() == null && annotator.typeVarsOf(owningDef(literal)).isEmpty()) {
+            contextualTypeParams.putIfAbsent(literal, fn.typeParameters());
         }
     }
 
@@ -1471,6 +1489,7 @@ final class TypeChecker {
         if (tree instanceof ParserRuleContext ctx) {
             types.remove(ctx);
             contextualReturnTypes.remove(ctx);
+            contextualTypeParams.remove(ctx);
             widened.remove(ctx);
             resolvedLiterals.remove(ctx);
             if (ctx instanceof BabbleParser.DefExpressionContext || ScopeAnalysis.isParamDecl(ctx)) {
@@ -1492,7 +1511,20 @@ final class TypeChecker {
     boolean isGenericFunctionSelector(BabbleParser.SelectorContext selector) {
         if (selector.expression() == null) {
             Object resolved = resolveName(selector, selector.ID().getText(), occurrenceScopes.get(selector));
-            return resolved instanceof BabbleParser.DefExpressionContext def && def.typeParameters() != null;
+            if (resolved instanceof BabbleParser.DefExpressionContext def) {
+                if (def.typeParameters() != null) {
+                    return true;
+                }
+                BabbleParser.FunctionLiteralContext lit = unwrapFunctionLiteral(def.value);
+                if (lit != null && lit.typeParameters() != null) {
+                    return true;
+                }
+            }
+            if (resolved instanceof ParserRuleContext decl) {
+                Type declType = annotator.declaredType(decl);
+                return declType instanceof Type.Function fn && !fn.typeParameters().isEmpty();
+            }
+            return false;
         }
         if (selector.expression() instanceof BabbleParser.SelectorContext) {
             Type t = typer.selectUninstantiated(selector);
@@ -1560,7 +1592,8 @@ final class TypeChecker {
 
     void reportTypeMismatch(Type actual, Type expected, ParserRuleContext at) {
         if (actual instanceof Type.Function aFn && expected instanceof Type.Function eFn
-                && algebra.assignableIgnoringEffects(aFn, eFn)) {
+                && (algebra.assignableIgnoringEffects(aFn, eFn)
+                        || !eFn.typeParameters().isEmpty() || !aFn.typeParameters().isEmpty())) {
             warn("Type error : expected " + eFn.describeAgainst(eFn) + ", got " + aFn.describeAgainst(eFn), at);
         } else {
             warn("Type error : expected " + expected + ", got " + actual, at);
@@ -1928,6 +1961,18 @@ final class TypeChecker {
         private ForIterableInfo resolveNonNullIterable(Type iterType, BabbleParser.ForExpressionContext ctx) {
             boolean frozenIterable = iterType instanceof Type.Frozen;
             Type unwrapped = frozenIterable ? ((Type.Frozen) iterType).of() : iterType;
+            if (unwrapped instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+                return resolveNonNullIterable(frozenIterable ? Type.frozen(tv.bound()) : tv.bound(), ctx);
+            }
+            if (unwrapped instanceof Type.Intersection intersection) {
+                for (Type member : intersection.members()) {
+                    ForIterableInfo sub = resolveNonNullIterable(frozenIterable ? Type.frozen(member) : member, ctx);
+                    if (sub != null) {
+                        return sub;
+                    }
+                }
+                return null;
+            }
             if (unwrapped instanceof Type.Union union) {
                 Type joinedElem = null;
                 ScopeAnalysis.ForKind commonKind = null;

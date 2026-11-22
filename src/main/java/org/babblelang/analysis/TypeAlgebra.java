@@ -280,9 +280,13 @@ final class TypeAlgebra {
                 }
                 return true;
             }
-            // Unconstrained TypeVar top-guard
+            // TypeVar upper-bound & top-guard (BIP021-D19)
             if (sub instanceof Type.TypeVar tv) {
                 if (tv.owner() == null && store != null) {
+                    return true;
+                }
+                if (tv.bound() != null && tv.bound() != Type.ERROR
+                        && relate(tv.bound(), sup, mode, store, active, borrowCovariant, waiveArrayNullness)) {
                     return true;
                 }
                 return sup.equals(Type.NULLABLE_ANY)
@@ -508,9 +512,6 @@ final class TypeAlgebra {
 
     private boolean samFunctionRelates(Type.Function from, Type.JavaInstance java,
                                        ConstraintStore store, Set<RelationKey> active) {
-        if (!from.typeParameters().isEmpty()) {
-            return false;
-        }
         Method samMethod = JavaTypes.functionalMethod(java.type());
         Type.Function sam = samMethod != null ? env.samFunctionType(java) : null;
         if (sam == null) {
@@ -528,12 +529,74 @@ final class TypeAlgebra {
      * {@code withEffects}, its effects must also satisfy the other's, and it may not mutate a
      * parameter the other doesn't, nor keep one the other only borrows. Parameter names aren't
      * compared : a callback is normally called by position.
+     * <p>
+     * Polymorphic functions ({@code BIP021-D20}): polymorphic &lt;= polymorphic by renaming of
+     * equal arity and compatible bounds; polymorphic &lt;= monomorphic by instantiation satisfying
+     * every bound; monomorphic is never &lt;= polymorphic.
      */
     private boolean functionRelates(Type.Function from, Type.Function to, ConstraintStore store,
                                     Set<RelationKey> active, boolean withEffects) {
-        if (!from.typeParameters().isEmpty() || !to.typeParameters().isEmpty()
-                || from.parameters().size() < to.parameters().size()) {
+        if (from.parameters().size() < to.parameters().size()) {
             return false;
+        }
+        boolean fromPoly = !from.typeParameters().isEmpty();
+        boolean toPoly = !to.typeParameters().isEmpty();
+        if (!fromPoly && toPoly) {
+            return false;
+        }
+        if (fromPoly && toPoly) {
+            List<Type.TypeVar> fVars = from.typeParameters();
+            List<Type.TypeVar> tVars = to.typeParameters();
+            if (fVars.size() != tVars.size()) {
+                return false;
+            }
+            Map<Type.TypeVar, Type> rename = new HashMap<>(fVars.size());
+            for (int i = 0; i < fVars.size(); i++) {
+                rename.put(fVars.get(i), tVars.get(i));
+            }
+            for (int i = 0; i < fVars.size(); i++) {
+                Type fBound = fVars.get(i).bound();
+                if (fBound != null && fBound != Type.ERROR) {
+                    Type renamedFBound = substitute(fBound, rename);
+                    Type tBound = tVars.get(i).effectiveBound();
+                    if (!relate(tBound, renamedFBound, RelateMode.ASSIGNABLE, null, active, false, false)) {
+                        return false;
+                    }
+                }
+            }
+            Type.Function renamedFrom = stripTypeParams(from, rename);
+            Type.Function strippedTo = stripTypeParams(to, Map.of());
+            return functionRelates(renamedFrom, strippedTo, store, active, withEffects);
+        }
+        if (fromPoly) {
+            // Polymorphic from <= monomorphic to by instantiation (BIP021-D20).
+            List<Type.TypeVar> fVars = from.typeParameters();
+            Type.Function monoFrom = stripTypeParams(from, Map.of());
+            ConstraintStore instStore = store(Set.copyOf(fVars), false);
+            if (!functionRelates(monoFrom, to, instStore, active, false)) {
+                return false;
+            }
+            Map<Type.TypeVar, Type> solved = new HashMap<>(fVars.size());
+            for (Type.TypeVar tv : fVars) {
+                Type sol = instStore.solution(tv);
+                if (sol == null || sol == Type.ERROR) {
+                    return false;
+                }
+                solved.put(tv, sol);
+            }
+            for (Type.TypeVar tv : fVars) {
+                if (tv.bound() != null && tv.bound() != Type.ERROR) {
+                    Type subBound = substitute(tv.bound(), solved);
+                    if (!relate(solved.get(tv), subBound, RelateMode.ASSIGNABLE, null, active, false, false)) {
+                        return false;
+                    }
+                }
+            }
+            if (findPrimitiveArraySubstitution(monoFrom, solved) != null) {
+                return false;
+            }
+            Type.Function instantiated = stripTypeParams(from, solved);
+            return functionRelates(instantiated, to, store, active, withEffects);
         }
         boolean frozenBorrowSafe = from.effects().uniqueResult() || env.isDeeplyImmutable(from.result());
         for (int i = 0; i < from.parameters().size(); i++) {
@@ -595,6 +658,20 @@ final class TypeAlgebra {
             }
         }
         return true;
+    }
+
+    private Type.Function stripTypeParams(Type.Function fn, Map<Type.TypeVar, Type> mapping) {
+        List<Type.Parameter> params = fn.parameters();
+        if (!mapping.isEmpty()) {
+            List<Type.Parameter> sub = new ArrayList<>(params.size());
+            for (Type.Parameter p : params) {
+                sub.add(p.withType(substitute(p.type(), mapping)));
+            }
+            params = sub;
+        }
+        Type res = mapping.isEmpty() ? fn.result() : substitute(fn.result(), mapping);
+        return new Type.Function(List.of(), params, res, fn.effects(),
+                fn.forwardedEffectParams(), fn.capturedCallings());
     }
 
     static Type unwrapFrozen(Type t) {

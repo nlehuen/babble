@@ -190,3 +190,79 @@ if dynList is java.util.List then (
     assert(dynList.size() == 2)
 )
 assert((dynList as java.util.List).get(1) == 5)
+
+;; ---------------------------------------------------------------- BIP021-P3 : fn of T, bounds, polymorphic types
+
+;; Generic function literals and polymorphic function values
+def idLit = fn of T (t: T): T -> (t)
+assert(idLit(7) == 7)
+assert(idLit("seven") == "seven")
+
+def k = id
+assert(k(10) == 10)
+assert(k("ten") == "ten")
+def kInt: fn (x: int): int = k
+assert(kInt(11) == 11)
+
+;; Higher-order polymorphic function types (BIP021-D20)
+def both = fn (f: fn of T (t: T): T): string -> ("" + f(1) + f("a"))
+assert(both(id) == "1a")
+assert(both(fn of T (t: T): T -> (t)) == "1a")
+assert(both(fn (t) -> (t)) == "1a")
+
+;; F-bounded type parameters (BIP021-D19)
+def biggest of (T: java.lang.Comparable of T) = fn (a: T, b: T): T -> (
+    if a.compareTo(b) > 0 then (a) else (b)
+)
+assert(biggest(3, 7) == 7)
+assert(biggest("pear", "apple") == "pear")
+assert(biggest(Score(10), Score(25)) == Score(25))
+
+;; Bounded generic classes and intersection bounds (BIP021-D19 + BIP022)
+def HasArea = interface (
+    def area: fn (): double
+)
+def HasLabel = interface (
+    def label: fn (): string
+)
+def Badge = record (tag: string, size: double) implements HasArea, HasLabel (
+    def area = fn (): double -> (this.size)
+    def label = fn (): string -> (this.tag)
+)
+def describeBounded = fn of (T: HasArea & HasLabel) (item: T): string -> (
+    item.label() + "=" + item.area()
+)
+assert(describeBounded(Badge("box", 4.5)) == "box=4.5")
+
+def SortedHolder of (T: java.lang.Comparable of T) = class (def a: T, def b: T) (
+    def max = fn (): T -> (
+        if this.a.compareTo(this.b) >= 0 then (this.a) else (this.b)
+    )
+)
+assert(SortedHolder(12, 8).max() == 12)
+assert(SortedHolder("cat", "dog").max() == "dog")
+
+;; Implementable generic interface methods (BIP021 §2.2 (g))
+def PolyMapper = interface (
+    def echo of T: fn (t: T): T
+    def mirror: fn of U (u: U): U
+)
+def PolyImpl = class () implements PolyMapper (
+    def echo of X = fn (x: X): X -> (x)
+    def mirror = fn of Y (y: Y): Y -> (y)
+)
+def pm: PolyMapper = PolyImpl()
+assert(pm.echo(42) == 42)
+assert(pm.echo("hi") == "hi")
+assert(pm.mirror(true) == true)
+
+;; Generics with defaults and named arguments (BIP021-D21)
+def pickOrSame = fn of T (a: T, b: T = a): T -> (b)
+assert(pickOrSame(5) == 5)
+assert(pickOrSame(b: 9, a: 5) == 9)
+def optOrNull = fn of T (x: T? = null): T? -> (x)
+def emptyOpt: int? = optOrNull()
+assert(emptyOpt == null)
+assert(optOrNull(3) == 3)
+
+true

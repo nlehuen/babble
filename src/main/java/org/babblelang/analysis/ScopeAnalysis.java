@@ -861,6 +861,31 @@ public final class ScopeAnalysis {
         return ctx.kwSep == null ? total : total - ctx.kwParam.size();
     }
 
+    /** Identifier terminals of a {@code typeParameters} clause (either bare {@code ID} or parenthesized {@code typeParam} list). */
+    public static List<TerminalNode> typeParamIds(BabbleParser.TypeParametersContext ctx) {
+        if (ctx == null) {
+            return List.of();
+        }
+        if (ctx.ID() != null) {
+            return List.of(ctx.ID());
+        }
+        List<BabbleParser.TypeParamContext> params = ctx.typeParam();
+        List<TerminalNode> ids = new ArrayList<>(params.size());
+        for (BabbleParser.TypeParamContext tp : params) {
+            ids.add(tp.ID());
+        }
+        return ids;
+    }
+
+    /** Optional upper-bound type context of the {@code index}-th parameter in {@code typeParameters}, or null. */
+    public static BabbleParser.TypeContext typeParamBound(BabbleParser.TypeParametersContext ctx, int index) {
+        if (ctx == null || ctx.ID() != null) {
+            return null;
+        }
+        List<BabbleParser.TypeParamContext> params = ctx.typeParam();
+        return index >= 0 && index < params.size() ? params.get(index).type() : null;
+    }
+
     /** Identifier terminal of a class, function, or function-type parameter. */
     public static TerminalNode paramId(ParserRuleContext param) {
         if (param instanceof BabbleParser.ClassParamContext cp) {

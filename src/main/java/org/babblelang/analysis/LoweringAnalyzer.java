@@ -466,10 +466,21 @@ final class LoweringAnalyzer {
             return;
         }
         Type receiverType = types.get(sel.expression());
-        if (!(receiverType instanceof Type.JavaClassValue
+        while (receiverType instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+            receiverType = tv.bound();
+        }
+        receiverType = TypeAlgebra.unwrapFrozen(receiverType);
+        boolean isJavaLike = receiverType instanceof Type.JavaClassValue
                 || receiverType instanceof Type.JavaInstance
                 || receiverType instanceof Type.Array
-                || receiverType == Type.STRING)) {
+                || receiverType == Type.STRING;
+        if (!isJavaLike && receiverType instanceof Type.Intersection inter) {
+            isJavaLike = inter.members().stream().anyMatch(m -> m instanceof Type.JavaInstance
+                    || m instanceof Type.Instance inst && TypeAlgebra.implementsJava(inst.node(), best.getDeclaringClass()));
+        } else if (!isJavaLike && receiverType instanceof Type.Instance inst) {
+            isJavaLike = TypeAlgebra.implementsJava(inst.node(), best.getDeclaringClass());
+        }
+        if (!isJavaLike) {
             return;
         }
         Method accessible = JavaTypes.accessible(best);
@@ -556,10 +567,8 @@ final class LoweringAnalyzer {
         if (sel.safe != null || sel.expression() == null || sel.expression() instanceof BabbleParser.SuperExpressionContext) {
             return;
         }
-        if (!(types.get(sel.expression()) instanceof Type.Instance recvInst) || !recvInst.node().isInterface()) {
-            return;
-        }
-        FoundInterfaceMember found = findDeclaringInterfaceMember(recvInst.node(), ScopeAnalysis.selectorName(sel));
+        String memberName = ScopeAnalysis.selectorName(sel);
+        FoundInterfaceMember found = findDeclaringInterfaceOnType(types.get(sel.expression()), memberName);
         if (found == null) {
             return;
         }
@@ -576,6 +585,25 @@ final class LoweringAnalyzer {
         }
         pass.analysis.setInterfaceCallTarget(ctx,
                 new ScopeAnalysis.InterfaceCallTarget(found.iface().id, found.member().name, sig, true));
+    }
+
+    private FoundInterfaceMember findDeclaringInterfaceOnType(Type recv, String memberName) {
+        while (recv instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+            recv = tv.bound();
+        }
+        recv = TypeAlgebra.unwrapFrozen(recv);
+        if (recv instanceof Type.Instance recvInst && recvInst.node().isInterface()) {
+            return findDeclaringInterfaceMember(recvInst.node(), memberName);
+        }
+        if (recv instanceof Type.Intersection inter) {
+            for (Type member : inter.members()) {
+                FoundInterfaceMember found = findDeclaringInterfaceOnType(member, memberName);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private void publishForLoopTarget(BabbleParser.ForExpressionContext forExpr,

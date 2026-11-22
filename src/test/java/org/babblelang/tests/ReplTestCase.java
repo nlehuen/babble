@@ -430,4 +430,17 @@ public class ReplTestCase {
         Assertions.assertTrue(lines.stream().anyMatch(l -> l.contains("b : int = ...") && l.contains("..., c : string = ...")),
                 lines.toString());
     }
+
+    @Test
+    public void testTypeCommandShowsPolymorphicAndBoundedFunctions() throws Exception {
+        List<String> lines = transcript(
+                "def id = fn of T (t : T) : T -> ( t )",
+                "def Shape = interface ( def area : fn () : double )",
+                "def Named = interface ( def name : fn () : string )",
+                "def show = fn of (T : Shape & Named) (x : T) : string -> ( x.name() )",
+                ":type id",
+                ":type show");
+        Assertions.assertTrue(lines.stream().anyMatch(l -> l.equals("fn of T (t : T) : T")), lines.toString());
+        Assertions.assertTrue(lines.stream().anyMatch(l -> l.equals("fn of (T : Shape & Named) (x : T) : string")), lines.toString());
+    }
 }

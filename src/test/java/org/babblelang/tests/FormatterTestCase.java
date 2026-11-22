@@ -578,4 +578,29 @@ public class FormatterTestCase {
                 def C = class ( def x : int = 0 , ... , def y : int ) ( )
                 """);
     }
+
+    @Test
+    public void testBip021P3GenericLiteralsAndBounds() throws Exception {
+        assertFormats("""
+                def id = fn of T (t: T): T -> (
+                    t
+                )
+                def biggest of (T: java.lang.Comparable of T) = fn (a: T, b: T): T -> (
+                    if a.compareTo(b) > 0 then (a) else (b)
+                )
+                def f: fn of (T: Shape & Named) (x: T): string = fn of (T: Shape & Named) (x: T): string -> (
+                    x.name()
+                )
+                """, """
+                def id = fn  of  T ( t : T ) : T -> (
+                    t
+                )
+                def biggest  of ( T : java . lang . Comparable  of  T ) = fn ( a : T , b : T ) : T -> (
+                    if a . compareTo ( b ) > 0 then ( a ) else ( b )
+                )
+                def f : fn  of ( T : Shape & Named ) ( x : T ) : string = fn  of ( T : Shape & Named ) ( x : T ) : string -> (
+                    x . name ( )
+                )
+                """);
+    }
 }

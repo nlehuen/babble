@@ -201,7 +201,7 @@ public class Bip020P4ArrayGenericsTestCase {
                 def f: fn io (a: array of int): int = first
                 """;
         assertDiagnostics(badFnValueInstantiation,
-                "Type error : expected io (a : array of int) : int, got io (a : array of T) : T");
+                "Type error : expected io (a : array of int) : int, got fn of T io (a : array of T) : T");
 
         String badSneakyUnionCollapse = """
                 def sneaky of (T, U) = fn io (a: array of (T | U), x: T, y: U): T | U -> (a.get(0))

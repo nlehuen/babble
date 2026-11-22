@@ -199,8 +199,62 @@ sealed interface Type {
         }
     }
 
-    /** A Babble generic type parameter declared on a class, interface or function def. */
-    record TypeVar(SymbolId owner, String name, int index) implements Type {
+    /** A Babble generic type parameter declared on a class, interface, type alias, function def/literal, or function type. */
+    final class TypeVar implements Type {
+        private final SymbolId owner;
+        private final String name;
+        private final int index;
+        private volatile Type bound;
+
+        TypeVar(SymbolId owner, String name, int index) {
+            this(owner, name, index, null);
+        }
+
+        TypeVar(SymbolId owner, String name, int index, Type bound) {
+            this.owner = owner;
+            this.name = name;
+            this.index = index;
+            this.bound = bound;
+        }
+
+        SymbolId owner() {
+            return owner;
+        }
+
+        String name() {
+            return name;
+        }
+
+        int index() {
+            return index;
+        }
+
+        /** Declared upper bound, or null when unbounded (effective bound {@link Type#NULLABLE_ANY}). */
+        Type bound() {
+            return bound;
+        }
+
+        Type effectiveBound() {
+            return bound != null ? bound : NULLABLE_ANY;
+        }
+
+        void setBound(Type bound) {
+            this.bound = bound;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            return this == o || (o instanceof TypeVar other
+                    && index == other.index
+                    && java.util.Objects.equals(owner, other.owner)
+                    && java.util.Objects.equals(name, other.name));
+        }
+
+        @Override
+        public int hashCode() {
+            return java.util.Objects.hash(owner, name, index);
+        }
+
         @Override
         public String toString() {
             return name;
@@ -376,6 +430,28 @@ sealed interface Type {
                     : "calling (" + String.join(", ", names) + ") ";
         }
 
+        private static String formatTypeParams(List<TypeVar> typeParameters) {
+            if (typeParameters.isEmpty()) {
+                return "";
+            }
+            if (typeParameters.size() == 1 && typeParameters.get(0).bound() == null) {
+                return "of " + typeParameters.get(0).name() + " ";
+            }
+            StringBuilder sb = new StringBuilder("of (");
+            for (int i = 0; i < typeParameters.size(); i++) {
+                if (i > 0) {
+                    sb.append(", ");
+                }
+                TypeVar tv = typeParameters.get(i);
+                sb.append(tv.name());
+                if (tv.bound() != null) {
+                    sb.append(" : ").append(tv.bound());
+                }
+            }
+            sb.append(") ");
+            return sb.toString();
+        }
+
         /** Formats this function type highlighting guarantees relevant to {@code expected}. */
         String describeAgainst(Function expected) {
             java.util.EnumSet<org.babblelang.effects.Effect> shown = EffectSet.copySet(effects.declared());
@@ -393,8 +469,8 @@ sealed interface Type {
                     || (expected.effects().uniqueResult() && effects.uniqueResult());
             String prefix = EffectSet.formatSurface(shown, showIO, showVolatile, effects.mutThis(), showSharedThis)
                     + formatCallingClause();
-            String tp = typeParameters.isEmpty() ? ""
-                    : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
+            boolean showFn = !expected.typeParameters().isEmpty() || !typeParameters.isEmpty();
+            String tp = formatTypeParams(typeParameters);
             StringBuilder params = new StringBuilder("(");
             boolean emittedKwSep = false;
             for (int i = 0; i < parameters.size(); i++) {
@@ -410,14 +486,13 @@ sealed interface Type {
                 params.append(p.format(showShared));
             }
             params.append(")");
-            return prefix + tp + params
+            return (showFn ? "fn " : "") + tp + prefix + params
                     + (result == ERROR ? "" : " : " + (showUniqueReturn ? "unique " : "") + result);
         }
 
         @Override
         public String toString() {
-            String tp = typeParameters.isEmpty() ? ""
-                    : typeParameters.stream().map(TypeVar::name).collect(Collectors.joining(", ", "(", ") "));
+            String tp = formatTypeParams(typeParameters);
             StringBuilder params = new StringBuilder("(");
             boolean emittedKwSep = false;
             for (int i = 0; i < parameters.size(); i++) {
@@ -432,7 +507,8 @@ sealed interface Type {
                 params.append(p);
             }
             params.append(")");
-            return effects.formatDeclaredPrefix() + formatCallingClause() + tp
+            return (typeParameters.isEmpty() ? "" : "fn ") + tp
+                    + effects.formatDeclaredPrefix() + formatCallingClause()
                     + params
                     + (result == ERROR ? "" : " : " + (effects.explicitUniqueResult() ? "unique " : "") + result);
         }

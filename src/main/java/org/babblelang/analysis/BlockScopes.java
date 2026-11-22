@@ -285,6 +285,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             inScope(ScopeNode.Kind.FUNCTION, ctx, null, () -> {
                 current().memberOf = owner;
                 current().staticMethod = isStatic;
+                if (ctx.typeParameters() != null) {
+                    visit(ctx.typeParameters());
+                }
                 List<String> parameters = new ArrayList<>();
                 int required = 0;
                 int kwStart = ScopeAnalysis.keywordOnlyStart(ctx.fnParameters());
@@ -316,6 +319,22 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 visitChildren(ctx.functionBlock);
             });
         });
+        return null;
+    }
+
+    @Override
+    public Void visitTypeParameters(BabbleParser.TypeParametersContext ctx) {
+        Set<String> typeParameterNames = new HashSet<>();
+        for (org.antlr.v4.runtime.tree.TerminalNode id : ScopeAnalysis.typeParamIds(ctx)) {
+            if (!typeParameterNames.add(id.getText())) {
+                throw error("Name already defined : " + id.getText(), id.getSymbol());
+            }
+        }
+        for (BabbleParser.TypeParamContext tp : ctx.typeParam()) {
+            if (tp.type() != null) {
+                visit(tp.type());
+            }
+        }
         return null;
     }
 
@@ -503,11 +522,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         int flags = (function != null ? ClassShape.METHOD : 0) | (isPrivate ? ClassShape.PRIVATE : 0);
 
         if (ctx.typeParameters() != null) {
-            Set<String> typeParameterNames = new HashSet<>();
-            for (org.antlr.v4.runtime.tree.TerminalNode id : ctx.typeParameters().ID()) {
-                if (!typeParameterNames.add(id.getText())) {
-                    throw error("Name already defined : " + id.getText(), id.getSymbol());
-                }
+            visit(ctx.typeParameters());
+            if (function != null && function.typeParameters() != null) {
+                throw error("Type parameters declared twice : " + ctx.name.getText(), function.typeParameters());
             }
             if (scope.kind != ScopeNode.Kind.INTERFACE_BODY
                     && !(ctx.value instanceof BabbleParser.FunctionLiteralContext
