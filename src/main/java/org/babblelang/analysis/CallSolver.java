@@ -732,9 +732,9 @@ final class CallSolver {
                     checker.algebra().relate(argumentType, expectedParam, TypeAlgebra.RelateMode.ASSIGNABLE, store, false, false);
                     Map<Type.TypeVar, Type> env = new java.util.LinkedHashMap<>();
                     for (Type.TypeVar tv : alt.typeParameters()) {
-                        List<Type> uppers = store.uppers(tv);
-                        if (!uppers.isEmpty()) {
-                            env.put(tv, Type.union(uppers));
+                        Type sol = store.solution(tv);
+                        if (sol != null && sol != Type.ERROR) {
+                            env.put(tv, sol);
                         }
                     }
                     expectedParam = checker.algebra().substitute(expectedParam, env);
@@ -783,7 +783,9 @@ final class CallSolver {
                         if (!compAlts.get(i).equals(compAlts.get(j))) {
                             Type ca = components.get(i);
                             Type cb = components.get(j);
-                            boolean ordered = checker.algebra().subtype(ca, cb) || checker.algebra().subtype(cb, ca);
+                            boolean ordered = checker.algebra().subtype(ca, cb) || checker.algebra().subtype(cb, ca)
+                                    || (isRuntimeInterfaceLike(ca) && isRuntimeInterfaceLike(cb)
+                                        && components.contains(Type.intersection(ca, cb)));
                             if (!ordered && !OverloadSolver.runtimeDistinguishable(checker.algebra(), ca, cb)) {
                                 distinguishable = false;
                                 break;

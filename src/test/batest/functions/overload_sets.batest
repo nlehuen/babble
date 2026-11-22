@@ -364,3 +364,277 @@ println(f(3), "|", f(1.5), "|", f(false))
 int:1|str:a
 int:2|str:b|bool:true
 int:3|dbl:1.5|bool:false
+
+{{{{{
+;; OverloadSet toString, set-type select fallback (widening, any, CharSequence, union, cache hit), and Java SAM conversion
+def wideSet = overload (
+    fn (d: double): string -> ("d:" + d),
+    fn io (c: java.lang.CharSequence): string -> ("cs:" + c),
+    fn (u: bool | null): string -> ("bn:" + u)
+)
+def anySet = overload (
+    fn io (x: any): string -> ("any:" + x),
+    fn (n: null): string -> ("null")
+)
+def callInt = fn io (g: overload (fn io (n: int): string, fn io (s: string): string)): string -> (
+    g(3) + "|" + g(4) + "|" + g("hi") + "|" + g("yo")
+)
+def callNullBool = fn io (g: overload (fn io (b: bool): string, fn io (n: null): string)): string -> (
+    g(true) + "|" + g(null)
+)
+def fnOv = overload (
+    fn (s: string): int -> (s.length()),
+    fn (n: int): int -> (n * 10)
+)
+def names = list("aa", "b", "ccc")
+names.sort(fn (a: string, b: string): int -> (fnOv(a) - fnOv(b)))
+def mapper: java.util.function.Function of (string, int) = fnOv
+println(wideSet)
+println(callInt(wideSet))
+println(callInt(anySet))
+println(callNullBool(wideSet))
+println(callNullBool(anySet))
+println(mapper.apply("hello"), "|", names.get(0))
+}}}}}
+overload (fn (d : double) : string, fn io (c : java.lang.CharSequence) : string, fn (u : bool?) : string)
+d:3.0|d:4.0|cs:hi|cs:yo
+any:3|any:4|any:hi|any:yo
+bn:true|bn:null
+any:true|null
+5|b
+
+{{{{{
+;; Static overlap/meet coverage: arrays, functions, frozen, Babble/Java interfaces, covariant Iterable/Entry, bounded generics, keyword-only, and rest
+def A = interface (def a: fn (): int)
+def B = interface (def b: fn (): int)
+def OnlyA = class () implements A (def a = fn (): int -> (1))
+def OnlyB = class () implements B (def b = fn (): int -> (2))
+def BothAB = class () implements A, B (def a = fn (): int -> (3) ; def b = fn (): int -> (4))
+def ovIface = overload (
+    fn (x: A): string -> ("A:" + x.a()),
+    fn (x: B): string -> ("B:" + x.b()),
+    fn (x: A & B): string -> ("AB:" + x.a() + "," + x.b())
+)
+def ovArrFn = overload (
+    fn (xs: array of int): string -> ("ai:" + xs.size()),
+    fn (xs: array of double): string -> ("ad:" + xs.size()),
+    fn (xs: array of string): string -> ("as:" + xs.size()),
+    fn (f: fn (x: int): int): string -> ("f1:" + f(5)),
+    fn (f: fn (x: int, y: int): int): string -> ("f2:" + f(2, 3))
+)
+def ovLists = overload (
+    fn (xs: list of int): string -> ("li:" + xs.size()),
+    fn (xs: list of string): string -> ("ls:" + xs.size())
+)
+def ovJava = overload (
+    fn io (shared c: java.lang.CharSequence): string -> ("cs:" + c.length()),
+    fn (s: string): string -> ("s:" + s)
+)
+def ovEntry = overload (
+    fn (e: entry of (int, string)): string -> ("ei:" + e.getKey()),
+    fn (e: entry of (string, int)): string -> ("es:" + e.getKey())
+)
+def ovFrozen = overload (
+    fn (xs: frozen list of int): string -> ("fl:" + xs.size()),
+    fn (n: int): string -> ("i:" + n)
+)
+def ovKw = overload (
+    fn (a: int, ..., tag: string = "x"): string -> ("k1:" + a + ":" + tag),
+    fn (a: string, ..., tag: string = "y"): string -> ("k2:" + a + ":" + tag)
+)
+def ovRest = overload (
+    fn (head: int, xs: int...): string -> ("ri"),
+    fn (head: string, xs: string...): string -> ("rs")
+)
+def ovBound = overload (
+    fn (a: int, b: int): string -> ("bi:" + (a + b)),
+    fn of (T: java.lang.Comparable of T) (a: T, b: T): string -> ("bc:" + a.compareTo(b))
+)
+println(ovIface(OnlyA()), "|", ovIface(OnlyB()), "|", ovIface(BothAB()))
+println(ovArrFn((array of int).of(1, 2)), "|", ovArrFn((array of double).of(1.0)), "|", ovArrFn((array of string).of("a")), "|", ovArrFn(fn (x: int): int -> (x + 1)), "|", ovArrFn(fn (x: int, y: int): int -> (x + y)))
+println(ovLists(list(1, 2)), "|", ovLists(list("a")), "|", ovEntry(entry(7, "k")), "|", ovJava(java.lang.StringBuilder("abc")), "|", ovJava("ok"))
+println(ovFrozen(freeze(list(1, 2, 3))), "|", ovFrozen(9))
+println(ovKw(1), "|", ovKw(1, tag: "z"), "|", ovKw("a", tag: "w"))
+println(ovRest(1, 2), "|", ovRest("a", "b"))
+println(ovBound(2, 3), "|", ovBound("a", "b"))
+}}}}}
+A:1|B:2|AB:3,4
+ai:2|ad:1|as:1|f1:6|f2:5
+li:2|ls:1|ei:7|cs:3|s:ok
+fl:3|i:9
+k1:1:x|k1:1:z|k2:a:w
+ri|rs
+bi:5|bc:-1
+
+{{{{{
+;; Error: ambiguous keyword-only optional overload pair
+def badKw = overload (
+    fn (a: int, ..., b: double = 1.0, c: int = 2): double -> (a + b + c),
+    fn (a: double, ..., b: int = 3, c: int = 4): double -> (a + b + c)
+)
+badKw(1, b: 2)
+}}}}}
+Ambiguous overloads of badKw : badKw(int, b: int) fits fn (a : int, ..., b : double = ..., c : int = ...) : double and fn (a : double, ..., b : int = ..., c : int = ...) : double
+
+{{{{{
+;; Error: ambiguous rest overload pair with overlapping elements
+def badRest = overload (
+    fn (xs: int...): int -> (1),
+    fn (a: int, xs: double...): int -> (2)
+)
+badRest(1)
+}}}}}
+Ambiguous overloads of badRest : badRest(int) fits fn (xs : int...) : int and fn (a : int, xs : double...) : int
+
+{{{{{
+;; Error: ambiguous Babble interface vs Java interface overload without meet
+def Tag = interface (def tag: fn (): string)
+def badBJ = overload (
+    fn (x: Tag): string -> ("tag"),
+    fn (x: java.lang.CharSequence): string -> ("cs")
+)
+badBJ
+}}}}}
+Ambiguous overloads of badBJ : badBJ(Tag & java.lang.CharSequence) fits fn (x : Tag) : string and fn (x : java.lang.CharSequence) : string
+
+{{{{{
+;; Error: ambiguous Java interface vs Java non-final class without meet
+def badJJ = overload (
+    fn (x: java.lang.CharSequence): string -> ("cs"),
+    fn (x: java.lang.Comparable of string): string -> ("cmp")
+)
+badJJ
+}}}}}
+Ambiguous overloads of badJJ : badJJ(java.lang.CharSequence & java.lang.Comparable of string) fits fn (x : java.lang.CharSequence) : string and fn (x : java.lang.Comparable(string)) : string
+
+{{{{{
+;; Multi-candidate select specificity, named/default/rest/spread/untyped-lambda calls, and Java/Babble hierarchy overlaps
+def numChain = overload (
+    fn (n: int): string -> ("int:" + n),
+    fn (d: double): string -> ("dbl:" + d),
+    fn io (x: any): string -> ("any:" + x)
+)
+def callByte = fn io (g: overload (fn io (b: byte): string, fn io (f: float): string, fn io (s: string): string)): string -> (
+    g(byte(1)) + "|" + g(1.5f) + "|" + g("ok")
+)
+def singleFn = fn io (x: any?): string -> ("one:" + x)
+def namedOv = overload (
+    fn (a: int, b: int = 10): string -> ("ab:" + a + "," + b),
+    fn (s: string, xs: int...): string -> (def t = 0 ; for x in xs then (t += x) ; s + ":" + t),
+    fn (f: fn (x: int): int): string -> ("fn:" + f(4))
+)
+def CompCls = class (def n: int) implements java.lang.Comparable of CompCls (
+    def compareTo = fn (o: CompCls): int -> (this.n - o.n)
+)
+def ovComp = overload (
+    fn (c: CompCls): string -> ("cls:" + c.n),
+    fn (c: java.lang.Comparable of CompCls): string -> ("cmp")
+)
+def ovColls = overload (
+    fn (xs: java.util.ArrayList of int): string -> ("al:" + xs.size()),
+    fn (xs: list of int): string -> ("l:" + xs.size()),
+    fn (xs: java.lang.Iterable of int): string -> ("it")
+)
+def ovArrCov = overload (
+    fn (xs: array of string): string -> ("as:" + xs.size()),
+    fn (xs: array of java.lang.CharSequence): string -> ("acs:" + xs.size())
+)
+def al: java.util.ArrayList of int = java.util.ArrayList()
+al.add(1)
+def li: list of int = al
+def it: java.lang.Iterable of int = al
+def csArr: array of java.lang.CharSequence = (array of java.lang.CharSequence).of(java.lang.StringBuilder("a"))
+println(callByte(numChain))
+println(callByte(singleFn))
+println(namedOv(b: 2, a: 1), "|", namedOv(5), "|", namedOv("sum", 1, 2, 3), "|", namedOv("sp", ...list(4, 5)), "|", namedOv(fn (x) -> (x * 3)))
+println(ovComp(CompCls(7)), "|", ovColls(al), "|", ovColls(li), "|", ovColls(it), "|", ovArrCov((array of string).of("a", "b")), "|", ovArrCov(csArr))
+}}}}}
+int:1|dbl:1.5|any:ok
+one:1|one:1.5|one:ok
+ab:1,2|ab:5,10|sum:6|sp:9|fn:12
+cls:7|al:1|l:1|it|as:2|acs:1
+
+{{{{{
+;; Error: overlapping incomparable function-type alternatives in overload set
+def badFnOv = overload (
+    fn (f: fn (x: int, y: double): int): int -> (f(1, 2.0)),
+    fn (f: fn (x: double, y: int): int): int -> (f(1.0, 2))
+)
+badFnOv
+}}}}}
+Ambiguous overloads of badFnOv : badFnOv(fn (x : int, y : double) : int) fits fn (f : (x : int, y : double) : int) : int and fn (f : (x : double, y : int) : int) : int
+
+{{{{{
+;; Single-function value satisfying overload set type, nullable/any/generic splits, and meet witnesses
+def genFallback = overload (
+    fn (n: null): string -> ("null"),
+    fn (n: int): string -> ("int:" + n),
+    fn of T io (x: T): string -> ("gen:" + x)
+)
+def runGenSplit = fn io (x: int | string | null): string -> (genFallback(x))
+def exactSetFn: overload (fn (n: int): string, fn (s: string): string) = fn (x: int | string): string -> ("both:" + x)
+println(runGenSplit(null), "|", runGenSplit(5), "|", runGenSplit("hi"))
+println(exactSetFn(1), "|", exactSetFn("a"))
+}}}}}
+gen:null|gen:5|gen:hi
+both:1|both:a
+
+{{{{{
+;; Error: ambiguous null vs nullable int?
+def badNull = overload (
+    fn (a: int?, b: int): int -> (b),
+    fn (a: int, b: int?): int -> (a)
+)
+badNull
+}}}}}
+Ambiguous overloads of badNull : badNull(int, int) fits fn (a : int?, b : int) : int and fn (a : int, b : int?) : int
+
+{{{{{
+;; Error: ambiguous any vs bounded type variable
+def badAnyTv = overload (
+    fn (a: any, b: int): int -> (b),
+    fn (a: int, b: any): int -> (a)
+)
+badAnyTv
+}}}}}
+Ambiguous overloads of badAnyTv : badAnyTv(int, int) fits fn (a : any, b : int) : int and fn (a : int, b : any) : int
+
+{{{{{
+;; Set-type selection with union/intersection descriptors, boxed-primitive Comparable calls, record array hashCode, and static member mutation
+def IA = interface (def a: fn (): int)
+def IB = interface (def b: fn (): int)
+def CAB = class () implements IA, IB (def a = fn (): int -> (1) ; def b = fn (): int -> (2))
+def unionSet = overload (
+    fn (x: int | string): string -> ("u:" + x),
+    fn (x: IA): string -> ("a:" + x.a())
+)
+def interSet = overload (
+    fn (x: IA & IB): string -> ("ab:" + x.a() + "," + x.b()),
+    fn (x: int): string -> ("i:" + x)
+)
+def callUnionSet = fn (g: overload (fn (x: int | string): string, fn (x: IA & IB): string)): string -> (
+    g(1) + "|" + g("s") + "|" + g(CAB())
+)
+def callInterSet = fn (g: overload (fn (x: IA & IB): string, fn (x: int): string)): string -> (
+    g(CAB()) + "|" + g(9)
+)
+def cmp of (T: java.lang.Comparable of T) = fn (a: T, b: T): int -> (a.compareTo(b))
+def ArrRec = record (xs: array of int) ()
+def StaticBox = class () () static (
+    def count = 0
+)
+def r1 = ArrRec((array of int).of(1, 2))
+def r2 = ArrRec((array of int).of(1, 2))
+StaticBox.count = StaticBox.count + 1
+StaticBox.count = StaticBox.count + 1
+println(callUnionSet(unionSet), ";", callInterSet(interSet))
+println(cmp(byte(1), byte(2)), cmp(short(2), short(2)), cmp(long(3), long(2)), cmp(1.0f, 2.0f), cmp(true, false), cmp('a', 'b'))
+println(set(r1).contains(r2), "|", StaticBox.count)
+}}}}}
+u:1|u:s|a:1;ab:1,2|i:9
+-101-11-1
+true|2
+
+
+
+

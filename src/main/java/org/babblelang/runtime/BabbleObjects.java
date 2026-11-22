@@ -249,14 +249,9 @@ public final class BabbleObjects {
             return null;
         }
         BabbleClass babbleClass = babbleClass(instance, info);
-        ClassShape shape = babbleClass.shape();
-        int index = shape.memberIndex(name);
+        int index = babbleClass.shape().memberIndex(name);
         if (index >= 0) {
-            if (!shape.isMethod(index)) {
-                return null;
-            }
-            Object v = field(info, instance, index);
-            return (v instanceof BabbleFunction || v instanceof OverloadSet) ? v : null;
+            return babbleClass.shape().isMethod(index) ? field(info, instance, index) : null;
         }
         return babbleClass.defaultMethod(name);
     }

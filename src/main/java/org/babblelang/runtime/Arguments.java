@@ -107,12 +107,8 @@ public final class Arguments {
             int[] map = new int[parameters.length];
             java.util.Arrays.fill(map, -1);
             List<String> paramList = java.util.Arrays.asList(parameters);
-            Set<String> unknown = new LinkedHashSet<>();
-            Set<String> distinct = new LinkedHashSet<>();
             List<Object> restItems = restIndex >= 0 ? new java.util.ArrayList<>() : null;
             String firstOutOfPos = null;
-            String outOfPosError = null;
-            String dupError = null;
             int extra = 0;
             int posCount = 0;
             for (int j = 0; j < args.length; j++) {
@@ -120,10 +116,9 @@ public final class Arguments {
                 if (name == null) {
                     posCount++;
                     if (firstOutOfPos != null) {
-                        if (outOfPosError == null) {
-                            outOfPosError = firstOutOfPos;
-                        }
-                    } else if (restIndex >= 0 && j >= restIndex) {
+                        throw new BabbleException("Named argument out of position : " + firstOutOfPos);
+                    }
+                    if (restIndex >= 0 && j >= restIndex) {
                         restItems.add(args[j]);
                     } else if (j < kwStart) {
                         map[j] = j;
@@ -132,39 +127,21 @@ public final class Arguments {
                     }
                     continue;
                 }
-                distinct.add(name);
                 int pIdx = paramList.indexOf(name);
                 if (pIdx < 0 || pIdx == restIndex) {
-                    unknown.add(name);
-                    continue;
+                    throw new BabbleException("No such parameter : " + name);
                 }
                 if (map[pIdx] >= 0) {
-                    if (dupError == null) {
-                        dupError = name;
-                    }
-                } else {
-                    map[pIdx] = j;
+                    throw new BabbleException("Parameter given twice : " + name);
                 }
+                map[pIdx] = j;
                 if (firstOutOfPos == null && (pIdx != j || pIdx >= kwStart)) {
                     firstOutOfPos = name;
                 }
             }
-            if (!unknown.isEmpty()) {
-                throw new BabbleException("No such parameter : " + String.join(", ", unknown));
-            }
-            if (outOfPosError != null) {
-                throw new BabbleException("Named argument out of position : " + outOfPosError);
-            }
-            if (dupError != null) {
-                throw new BabbleException("Parameter given twice : " + dupError);
-            }
             this.matched = map;
             this.restValue = restItems != null ? Spreads.collectRest(restItems.toArray(), 0) : null;
-            this.tooManyError = extra > 0
-                    ? (kwStart < parameters.length
-                            ? tooMany(kwStart, posCount)
-                            : tooMany(parameters.length, posCount + distinct.size()))
-                    : null;
+            this.tooManyError = extra > 0 ? tooMany(Math.min(kwStart, parameters.length), posCount) : null;
         }
 
         /**

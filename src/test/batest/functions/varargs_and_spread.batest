@@ -307,3 +307,96 @@ def bad = fn (bs: Box...) -> (
 )
 }}}}}
 Cannot mutate parameter bs (mut method b.inc) : mark parameter as mut bs
+
+{{{{{
+;; Empty primitive rest views (ArgumentsView.ofBytes..ofChars/of), Object[] spread, and Spreads.asList/asArray
+def cByte = fn (xs: byte...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
+def cShort = fn (xs: short...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
+def cInt = fn (xs: int...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
+def cLong = fn (xs: long...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
+def cFloat = fn (xs: float...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
+def cDouble = fn (xs: double...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
+def cBool = fn (xs: bool...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
+def cChar = fn (xs: char...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
+def cStr = fn (xs: string...): int -> (def n = 0 ; for x in xs then (n += 1) ; n)
+def takeList = fn (xs: list of int): int -> (xs.size())
+def takeArr = fn (xs: array of int): int -> (xs.size())
+def forwardRest = fn (xs: int...): string -> ("" + takeList(...xs) + ":" + takeArr(...xs))
+def strArr = (array of string).of("a", "b")
+def intList = list(1, 2, 3)
+def intArr = (array of int).of(4, 5)
+println(cByte(), cShort(), cInt(), cLong(), cFloat(), cDouble(), cBool(), cChar(), cStr())
+println(cStr(...strArr), "|", takeList(...intList), "|", takeArr(...intArr), "|", forwardRest(7, 8, 9))
+}}}}}
+000000000
+2|3|2|3:3
+
+{{{{{
+;; Error: spread into non-sequence Java parameter
+def xs = list(1, 2)
+"hello".substring(...xs)
+}}}}}
+Spread into a parameter that takes no sequence : arg0
+
+{{{{{
+;; Spreads borrowed vs shared list/array adaptation and multi-spread concat (ArgumentsView.concat)
+def keepList = fn (shared xs: list of int): list of int -> (xs)
+def keepArr = fn (shared xs: array of int): array of int -> (xs)
+def readArr = fn (xs: array of int): int -> (xs.size())
+def sumAll = fn (xs: int...): int -> (def s = 0 ; for x in xs then (s += x) ; s)
+def forwardAll = fn (xs: int...): string -> (
+    def l = keepList(...xs)
+    def a = keepArr(...xs)
+    "" + l.size() + ":" + a.size()
+)
+def srcList = list(1, 2)
+def srcArr = (array of int).of(3, 4, 5)
+def copiedList = keepList(...srcList)
+def copiedArr = keepArr(...srcArr)
+println(copiedList.size(), "|", copiedArr.size(), "|", readArr(...srcArr), "|", forwardAll(6, 7), "|", sumAll(...srcList, ...srcArr, 10))
+}}}}}
+2|3|3|2:2|25
+
+{{{{{
+;; Core collection from:/capacity:, primitive array equality/toString, print to:, and Java default method on Babble class
+def s1 = (set of int)(from: list(1, 2, 1))
+def s2 = (set of int)(capacity: 8)
+def ss = (sortedset of int)(from: list(3, 1, 2))
+def m1 = (map of (int, string))(capacity: 8)
+def sm = (sortedmap of (int, string))(from: map(entry(2, "b"), entry(1, "a")))
+def ab1 = (array of byte).of(byte(1), byte(2))
+def ab2 = (array of byte).of(byte(1), byte(2))
+def as1 = (array of short).of(short(1), short(2))
+def as2 = (array of short).of(short(1), short(2))
+def al1 = (array of long).of(1L, 2L)
+def al2 = (array of long).of(1L, 2L)
+def af1 = (array of float).of(1.0f, 2.0f)
+def af2 = (array of float).of(1.0f, 2.0f)
+def ac1 = (array of char).of('a', 'b')
+def ac2 = (array of char).of('a', 'b')
+def az1 = (array of bool).of(true, false)
+def az2 = (array of bool).of(true, false)
+def sw = java.io.StringWriter()
+print("hi", 1, to: sw)
+println("!", to: sw)
+def IntCmp = class () implements java.util.Comparator of int (
+    def compare = fn (a: int, b: int): int -> (a - b)
+)
+def ai1 = (array of int).of(1, 2)
+def aiCopy = (array of int)(from: ai1)
+def ad1 = (array of double).of(1.5, 2.5)
+def rev = IntCmp().reversed()
+println(s1.size(), s2.size(), ss.first(), m1.size(), sm.firstKey())
+println(ab1 == ab2, as1 == as2, al1 == al2, af1 == af2, ac1 == ac2, az1 == az2)
+println(ab1 == as1, al1 == af1, ac1 == az1, ai1 == ad1, aiCopy.get(0), ad1.get(0), ab1.get(0), ac1.get(0))
+println("" + ab1 + "|" + as1 + "|" + al1 + "|" + af1 + "|" + ac1 + "|" + az1)
+println(sw.toString().trim(), "|", rev.compare(1, 3) > 0)
+}}}}}
+20101
+truetruetruetruetruetrue
+falsefalsefalsefalse11.51a
+[1, 2]|[1, 2]|[1, 2]|[1.0, 2.0]|[a, b]|[true, false]
+hi1!|true
+
+
+
