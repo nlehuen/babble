@@ -499,6 +499,7 @@ final class TypeChecker {
                 pass.analysis.typeDiagnostic(diagnostic.message(), diagnostic.line(), diagnostic.column());
             }
             LoweringAnalyzer.publish(pass, file, this);
+            TailCalls.publish(pass.analysis, file);
             this.builtSummary = TypedModuleSummary.build(pass, this, new StaticRefs(pass, this));
         });
     }
