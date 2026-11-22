@@ -50,6 +50,7 @@ public class DifferentialTestCase {
                 "\"a\" + null",
                 "1 + \"a\"",
                 "1 <\n \"x\"",
+                "def r = fn (n : int) : int -> ( recurse(n + 1) ) ; r(1)",
                 "def x = 99999999999 ; x",
                 "1 == 1.0 and not ( 1 != 1.0 )",
                 "def i = 0 ; while i < 10 then ( i = i + 1 ) ; null",
