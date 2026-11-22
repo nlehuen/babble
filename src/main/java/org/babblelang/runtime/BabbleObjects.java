@@ -125,7 +125,8 @@ public final class BabbleObjects {
         if (index >= 0) {
             return shape.isMethod(index) && field(info, instance, index) instanceof BabbleFunction function ? function : null;
         }
-        return babbleClass.defaultMethod(name);
+        Callable def = babbleClass.defaultMethod(name);
+        return def instanceof BabbleFunction bf ? bf : null;
     }
 
     /** Whether {@code value} is an instance of a Babble class, record, or object (either mode). */
@@ -173,9 +174,12 @@ public final class BabbleObjects {
         ClassShape shape = babbleClass.shape();
         int index = shape.memberIndex(name);
         if (index < 0) {
-            BabbleFunction inherited = babbleClass.defaultMethod(name);
+            Callable inherited = babbleClass.defaultMethod(name);
             if (inherited != null) {
-                return new BoundMethod(inherited, instance);
+                if (inherited instanceof OverloadSet ov) {
+                    return ov.bind(instance);
+                }
+                return new BoundMethod((BabbleFunction) inherited, instance);
             }
             if (!babbleClass.javaDefaultMethods(name).isEmpty()) {
                 return new JavaDefaultCall(instance, babbleClass.javaDefaultMethods(name), babbleClass.name() + "." + name);
@@ -190,6 +194,9 @@ public final class BabbleObjects {
             throw Members.usedBeforeDefinition(name);
         }
         if (shape.isMethod(index)) {
+            if (value instanceof OverloadSet ov) {
+                return ov.bind(instance);
+            }
             return new BoundMethod((BabbleFunction) value, instance);
         }
         return value;
@@ -229,11 +236,29 @@ public final class BabbleObjects {
     }
 
     static BabbleFunction method(Object instance, String name) {
+        Object m = methodOrOverload(instance, name);
+        return m instanceof BabbleFunction bf ? bf : null;
+    }
+
+    static Object methodOrOverload(Object instance, String name) {
         if (instance instanceof InterpretedInstance interpreted) {
-            return interpreted.method(name);
+            return interpreted.methodOrOverload(name);
         }
         CompiledInfo info = compiledInfo(instance);
-        return info != null ? method(instance, info, babbleClass(instance, info), name) : null;
+        if (info == null) {
+            return null;
+        }
+        BabbleClass babbleClass = babbleClass(instance, info);
+        ClassShape shape = babbleClass.shape();
+        int index = shape.memberIndex(name);
+        if (index >= 0) {
+            if (!shape.isMethod(index)) {
+                return null;
+            }
+            Object v = field(info, instance, index);
+            return (v instanceof BabbleFunction || v instanceof OverloadSet) ? v : null;
+        }
+        return babbleClass.defaultMethod(name);
     }
 
     /** Whether a compiled primitive member has been defined. */

@@ -791,4 +791,34 @@ public class BabbleCompilerTestCase {
         List<String> ops = methodInstructions(script.getClassBytes(), "fn$2$run$spec");
         Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:")), ops.toString());
     }
+
+    @Test
+    public void testBip021P6OverloadedMethodsAndInterfacesNoIndy() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def I = interface (\n"
+                        + "  def f : overload (fn (x : int) : int, fn (s : string) : int)\n"
+                        + ")\n"
+                        + "def C = class (def k : int) implements I (\n"
+                        + "  def f = overload (\n"
+                        + "    fn (x : int) : int -> ( this.k + x ),\n"
+                        + "    fn (s : string) : int -> ( this.k + s.length() )\n"
+                        + "  )\n"
+                        + ")\n"
+                        + "def callClass = fn (c : C) : int -> ( c.f(10) + c.f(\"hi\") )\n"
+                        + "def callIface = fn (i : I) : int -> ( i.f(10) + i.f(\"hi\") )\n"
+                        + "def c = C(5)\n"
+                        + "callClass(c) * 100 + callIface(c)");
+        assertVerifies(script);
+        Assertions.assertEquals(2222, script.eval(new SimpleBindings()));
+
+        List<String> clsOps = methodInstructions(script.getClassBytes(), "fn$0$callClass$spec");
+        Assertions.assertTrue(clsOps.stream().anyMatch(o -> o.endsWith(".m$f$0$spec")), clsOps.toString());
+        Assertions.assertTrue(clsOps.stream().anyMatch(o -> o.endsWith(".m$f$1$spec")), clsOps.toString());
+        Assertions.assertTrue(clsOps.stream().noneMatch(o -> o.startsWith("INDY:")), clsOps.toString());
+
+        List<String> ifaceOps = methodInstructions(script.getClassBytes(), "fn$1$callIface$spec");
+        Assertions.assertTrue(ifaceOps.stream().anyMatch(o -> o.endsWith(".bm$f$0")), ifaceOps.toString());
+        Assertions.assertTrue(ifaceOps.stream().anyMatch(o -> o.endsWith(".bm$f$1")), ifaceOps.toString());
+        Assertions.assertTrue(ifaceOps.stream().noneMatch(o -> o.startsWith("INDY:")), ifaceOps.toString());
+    }
 }

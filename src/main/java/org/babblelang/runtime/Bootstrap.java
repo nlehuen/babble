@@ -601,6 +601,10 @@ public final class Bootstrap {
 
     /** The value of a method member, selected through an instance : bound to it. */
     private static Object method(Object value, Object receiver, String name) {
-        return new BoundMethod((BabbleFunction) Classes.member(value, name), receiver);
+        Object member = Classes.member(value, name);
+        if (member instanceof OverloadSet ov) {
+            return ov.bind(receiver);
+        }
+        return new BoundMethod((BabbleFunction) member, receiver);
     }
 }

@@ -1,0 +1,199 @@
+;; BIP021-P6 : Overloaded methods, interface members, Java interface bridges, and operator methods.
+
+{{{{{
+;; Overloaded class methods: multiple arities/types, `this` access, recursion, widening, and static factories
+def Calc = class (def base: int) (
+    def add = overload (
+        fn (n: int): int -> (this.base + n),
+        fn (a: int, b: int): int -> (this.add(a) + b),
+        fn (d: double): double -> (this.base + d),
+        fn (s: string): string -> (s + ":" + this.base)
+    )
+) static (
+    def create = overload (
+        fn (): Calc -> (Calc(0)),
+        fn (n: int): Calc -> (Calc(n))
+    )
+)
+def c0 = Calc.create()
+def c10 = Calc.create(10)
+println(c0.add(5), ",", c10.add(2, 3), ",", c10.add(2.5), ",", c10.add("v"))
+}}}}}
+5,15,12.5,v:10
+
+{{{{{
+;; Overloaded record methods: record equality, hashCode, and toString skip overloaded methods
+def Point = record (x: double, y: double) (
+    def scale = overload (
+        fn (k: double): Point -> (Point(this.x * k, this.y * k)),
+        fn (kx: double, ky: double): Point -> (Point(this.x * kx, this.y * ky))
+    )
+)
+def p1 = Point(2.0, 3.0)
+def p2 = Point(2.0, 3.0)
+def p3 = p1.scale(2)
+def p4 = p1.scale(2.0, 4.0)
+println(p1 == p2, ",", p1, ",", p3, ",", p4)
+}}}}}
+true,Point(x: 2.0, y: 3.0),Point(x: 4.0, y: 6.0),Point(x: 4.0, y: 12.0)
+
+{{{{{
+;; Error: cannot assign to an overloaded method
+def Box = class () (
+    def m = overload (
+        fn (x: int): int -> (x),
+        fn (s: string): string -> (s)
+    )
+)
+def b = Box()
+b.m = b.m
+}}}}}
+Cannot assign method : m
+
+{{{{{
+;; Overloaded object methods, bound method extraction, and target-type selection
+def fmt = object (
+    def prefix = "["
+    def wrap = overload (
+        fn (x: int): string -> (this.prefix + "i:" + x + "]"),
+        fn (s: string): string -> (this.prefix + "s:" + s + "]")
+    )
+)
+def boundSet = fmt.wrap
+def boundInt: fn (x: int): string = fmt.wrap
+println(fmt.wrap(7), ",", boundSet("ok"), ",", boundInt(9))
+}}}}}
+[i:7],[s:ok],[i:9]
+
+{{{{{
+;; Overloaded Babble interface members: exact set, wider set, and single-function implementation
+def Formatter = interface (
+    def format: overload (
+        fn (x: int): string,
+        fn (s: string): string
+    )
+)
+def ExactFmt = class () implements Formatter (
+    def format = overload (
+        fn (x: int): string -> ("ei:" + x),
+        fn (s: string): string -> ("es:" + s)
+    )
+)
+def WiderFmt = class () implements Formatter (
+    def format = overload (
+        fn (x: int): string -> ("wi:" + x),
+        fn (s: string): string -> ("ws:" + s),
+        fn (d: double): string -> ("wd:" + d)
+    )
+)
+def SingleFmt = class () implements Formatter (
+    def format = fn (x: int | string): string -> ("u:" + x)
+)
+def useFmt = fn (f: Formatter): string -> (f.format(42) + "|" + f.format("hi"))
+println(useFmt(ExactFmt()), ";", useFmt(WiderFmt()), ";", useFmt(SingleFmt()))
+}}}}}
+ei:42|es:hi;wi:42|ws:hi;u:42|u:hi
+
+{{{{{
+;; Overloaded Babble interface default methods: inherited, overridden, and super
+def Printer = interface (
+    def tag: fn (): string
+    def emit = overload (
+        fn (n: int): string -> (this.tag() + "#" + n),
+        fn (s: string): string -> (this.tag() + ":" + s)
+    )
+)
+def DefaultPrinter = class () implements Printer (
+    def tag = fn (): string -> ("D")
+)
+def CustomPrinter = class () implements Printer (
+    def tag = fn (): string -> ("C")
+    def emit = overload (
+        fn (n: int): string -> ("[" + super.emit(n) + "]"),
+        fn (s: string): string -> ("{" + super.emit(s) + "}")
+    )
+)
+def usePrinter = fn (p: Printer): string -> (p.emit(1) + "," + p.emit("a"))
+println(usePrinter(DefaultPrinter()), ";", usePrinter(CustomPrinter()))
+}}}}}
+D#1,D:a;[C#1],{C:a}
+
+{{{{{
+;; Java interface overload bridges: java.lang.Appendable implemented via overload (...)
+def Log = class () implements java.lang.Appendable (
+    private def buf = java.lang.StringBuilder()
+    def append = overload (
+        fn io mut shared (c: char): java.lang.Appendable -> (
+            this.buf.append(c)
+            this
+        ),
+        fn io mut shared (shared s: java.lang.CharSequence?): java.lang.Appendable -> (
+            if s != null then (this.buf.append(s)) else (this.buf.append("null"))
+            this
+        ),
+        fn io mut shared (shared s: java.lang.CharSequence?, start: int, end: int): java.lang.Appendable -> (
+            if s != null then (this.buf.append(s, start, end)) else (this.buf.append("null", start, end))
+            this
+        )
+    )
+    def text = fn (): string -> (this.buf.toString())
+)
+def log = Log()
+def app: java.lang.Appendable = log
+app.append('A')
+app.append("bcde", 1, 3)
+app.append("!")
+def f = java.util.Formatter(app)
+f.format("(%d)", 7)
+println(log.text())
+}}}}}
+Acd!(7)
+
+{{{{{
+;; Error: Java interface overload bridge missing an alternative (BIP021 §4.8)
+def Log = class () implements java.lang.Appendable (
+    def append = overload (
+        fn (c: char): java.lang.Appendable -> (this),
+        fn (s: java.lang.CharSequence?): java.lang.Appendable -> (this)
+    )
+)
+Log()
+}}}}}
+Log.append has no alternative for java.lang.Appendable.append(java.lang.CharSequence, int, int)
+
+{{{{{
+;; Overloaded operator methods: scalar and component-wise *, +, unary -, compound *=, widening, and union split
+def Vec2 = record (x: double, y: double) (
+    def neg = overload (
+        fn (): Vec2 -> (Vec2(-this.x, -this.y))
+    )
+    def plus = overload (
+        fn (v: Vec2): Vec2 -> (Vec2(this.x + v.x, this.y + v.y)),
+        fn (d: double): Vec2 -> (Vec2(this.x + d, this.y + d))
+    )
+    def times = overload (
+        fn (t: double): Vec2 -> (Vec2(this.x * t, this.y * t)),
+        fn (v: Vec2): Vec2 -> (Vec2(this.x * v.x, this.y * v.y))
+    )
+)
+def a = Vec2(2.0, 3.0)
+def b = Vec2(4.0, 5.0)
+def scaleOrMul = fn (v: Vec2, rhs: double | Vec2): Vec2 -> (v * rhs)
+def mutVec = Vec2(1.0, 2.0)
+mutVec *= 3
+mutVec *= Vec2(2.0, 5.0)
+println(a * 2, ";", a * b, ";", a + 1.5, ";", -a, ";", scaleOrMul(a, 3.0), ";", scaleOrMul(a, b), ";", mutVec)
+}}}}}
+Vec2(x: 4.0, y: 6.0);Vec2(x: 8.0, y: 15.0);Vec2(x: 3.5, y: 4.5);Vec2(x: -2.0, y: -3.0);Vec2(x: 6.0, y: 9.0);Vec2(x: 8.0, y: 15.0);Vec2(x: 6.0, y: 30.0)
+
+{{{{{
+;; Error: overloaded operator method with no applicable alternative
+def Vec2 = record (x: double, y: double) (
+    def times = overload (
+        fn (t: double): Vec2 -> (Vec2(this.x * t, this.y * t)),
+        fn (v: Vec2): Vec2 -> (Vec2(this.x * v.x, this.y * v.y))
+    )
+)
+Vec2(1.0, 2.0) * "nope"
+}}}}}
+No applicable overload of Vec2(1.0,2.0).times for (string) : candidates are (t : double), (v : Vec2)

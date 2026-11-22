@@ -233,13 +233,46 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     private static TypeNode.Member addMember(Map<String, TypeNode.Member> members, Token name, int flags,
                                              ParserRuleContext declaration, BabbleParser.FunctionLiteralContext function) {
+        return addMember(members, name, flags, declaration, function, false, List.of());
+    }
+
+    private static TypeNode.Member addMember(Map<String, TypeNode.Member> members, Token name, int flags,
+                                             ParserRuleContext declaration, BabbleParser.FunctionLiteralContext function,
+                                             boolean isOverload, List<BabbleParser.FunctionLiteralContext> overloadFunctions) {
         String text = name.getText();
         if (members.containsKey(text)) {
             throw error("Member already defined : " + text, name);
         }
-        TypeNode.Member member = new TypeNode.Member(text, flags, members.size(), declaration, function);
+        TypeNode.Member member = new TypeNode.Member(text, flags, members.size(), declaration, function, isOverload, overloadFunctions);
         members.put(text, member);
         return member;
+    }
+
+    /** Returns the enclosing {@code def m = ...} when {@code fn} is its direct RHS or inside its {@code overload (...)}. */
+    private static BabbleParser.DefExpressionContext owningMemberDef(BabbleParser.FunctionLiteralContext fn) {
+        ParserRuleContext cur = fn;
+        while (cur.getParent() instanceof BabbleParser.OverloadExpressionContext ov) {
+            cur = ov;
+        }
+        return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur ? def : null;
+    }
+
+    /** Collects direct function literal operands of an {@code overload (...)}; returns true if every operand is a function literal. */
+    private static boolean collectOverloadFunctions(BabbleParser.OverloadExpressionContext ov,
+                                                    List<BabbleParser.FunctionLiteralContext> out) {
+        boolean allLiterals = true;
+        for (BabbleParser.ExpressionContext op : ov.expression()) {
+            if (op instanceof BabbleParser.FunctionLiteralContext lit) {
+                out.add(lit);
+            } else if (op instanceof BabbleParser.OverloadExpressionContext nested) {
+                if (!collectOverloadFunctions(nested, out)) {
+                    allLiterals = false;
+                }
+            } else {
+                allLiterals = false;
+            }
+        }
+        return allLiterals;
     }
 
     private static String typeName(ParserRuleContext ctx, String anonymous) {
@@ -270,7 +303,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     public Void visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
         TypeNode memberOf = null;
         boolean staticMethod = false;
-        if (ctx.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == ctx) {
+        if (owningMemberDef(ctx) != null) {
             ScopeNode scope = current();
             if (scope.kind == ScopeNode.Kind.CLASS_BODY || scope.kind == ScopeNode.Kind.INTERFACE_BODY) {
                 memberOf = scope.type;
@@ -537,7 +570,15 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         export(ctx.EXPORT(), ctx.name);
         boolean isPrivate = ctx.PRIVATE() != null;
         BabbleParser.FunctionLiteralContext function = ctx.value instanceof BabbleParser.FunctionLiteralContext literal ? literal : null;
-        int flags = (function != null ? ClassShape.METHOD : 0) | (isPrivate ? ClassShape.PRIVATE : 0);
+        BabbleParser.OverloadExpressionContext overload = ctx.value instanceof BabbleParser.OverloadExpressionContext ov ? ov : null;
+        List<BabbleParser.FunctionLiteralContext> overloadFns = List.of();
+        boolean allOverloadLiterals = false;
+        if (overload != null) {
+            List<BabbleParser.FunctionLiteralContext> collected = new ArrayList<>();
+            allOverloadLiterals = collectOverloadFunctions(overload, collected);
+            overloadFns = collected;
+        }
+        int flags = ((function != null || overload != null) ? ClassShape.METHOD : 0) | (isPrivate ? ClassShape.PRIVATE : 0);
 
         if (ctx.typeParameters() != null) {
             visit(ctx.typeParameters());
@@ -555,23 +596,23 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
         switch (scope.kind) {
             case CLASS_BODY -> {
-                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, function);
+                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, function, overload != null, overloadFns);
                 analysis.setDefTarget(ctx, new ScopeAnalysis.DefTarget(ScopeAnalysis.DefKind.MEMBER, member.index));
             }
             case STATIC_BODY -> {
-                TypeNode.Member member = addMember(scope.type.statics, ctx.name, flags, ctx, function);
+                TypeNode.Member member = addMember(scope.type.statics, ctx.name, flags, ctx, function, overload != null, overloadFns);
                 analysis.setDefTarget(ctx, new ScopeAnalysis.DefTarget(ScopeAnalysis.DefKind.STATIC, member.index));
             }
             case INTERFACE_BODY -> {
                 if (isPrivate) {
                     throw error("Interface members cannot be private : " + ctx.name.getText(), ctx.PRIVATE().getSymbol());
                 }
-                if (ctx.value != null && function == null) {
+                if (ctx.value != null && function == null && !(overload != null && allOverloadLiterals)) {
                     throw error("An interface default must be a function literal : " + ctx.name.getText(), ctx.name);
                 }
-                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, function);
+                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, function, overload != null, overloadFns);
                 analysis.setDefTarget(ctx, new ScopeAnalysis.DefTarget(
-                        function != null ? ScopeAnalysis.DefKind.DEFAULT : ScopeAnalysis.DefKind.REQUIRED, member.index));
+                        (function != null || overload != null) ? ScopeAnalysis.DefKind.DEFAULT : ScopeAnalysis.DefKind.REQUIRED, member.index));
             }
             default -> {
                 if (isPrivate) {

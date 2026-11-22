@@ -81,7 +81,7 @@ export def Camera = class (
         if rec <> null then (
             def s: Scatter? = (rec.material as Material).scatter(r, rec, rng)
             if s == null then (return Vec3(0.0, 0.0, 0.0))
-            return s.attenuation.mul(this.rayColor(s.scattered, depth - 1, world, rng))
+            return s.attenuation * this.rayColor(s.scattered, depth - 1, world, rng)
         )
 
         ;; the sky

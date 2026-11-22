@@ -25,9 +25,14 @@ import java.util.Set;
 final class TypeChecks {
     /** A default method : a Babble one, or a Java one. Two providers are the same default when owner and name match. */
     record Provider(Object owner, String name, BabbleParser.FunctionLiteralContext function,
-                    boolean hasFunction, int minParams, int maxParams, int line) {
+                    boolean hasFunction, int minParams, int maxParams, int line, boolean isOverload) {
         Provider(Object owner, String name, BabbleParser.FunctionLiteralContext function) {
-            this(owner, name, function, function != null, 0, 0, function != null ? function.getStart().getLine() : 0);
+            this(owner, name, function, function != null, 0, 0, function != null ? function.getStart().getLine() : 0, false);
+        }
+
+        Provider(Object owner, String name, BabbleParser.FunctionLiteralContext function,
+                 boolean hasFunction, int minParams, int maxParams, int line) {
+            this(owner, name, function, hasFunction, minParams, maxParams, line, false);
         }
 
         String ownerName() {
@@ -297,6 +302,9 @@ final class TypeChecks {
                 int max = analysis.parameters(member.function).length;
                 int min = analysis.requiredParameters(member.function);
                 result.put(member.name, new Provider(iface, member.name, member.function, true, min, max, member.function.getStart().getLine()));
+            } else if (member.isOverload) {
+                result.put(member.name, new Provider(iface, member.name, null, true, 0, Integer.MAX_VALUE,
+                        member.declaration.getStart().getLine(), true));
             }
         }
         iface.resolving = false;
@@ -355,7 +363,7 @@ final class TypeChecks {
         }
         if (parent instanceof TypeNode node) {
             for (TypeNode.Member member : node.members.values()) {
-                if (member.function == null) {
+                if (!member.hasFunction) {
                     result.add(new Requirement(node, member.name, null));
                 }
             }
@@ -413,26 +421,38 @@ final class TypeChecks {
         }
 
         Map<String, BabbleParser.FunctionLiteralContext> methods = new LinkedHashMap<>();
+        Set<String> overloadedMethods = new HashSet<>();
         for (TypeNode.Member member : type.members.values()) {
             if (member.function != null) {
                 methods.put(member.name, member.function);
+            } else if (member.isOverload) {
+                overloadedMethods.add(member.name);
             }
         }
-        checkJavaArity(type, defaults, methods);
+        checkJavaArity(type, defaults, methods, overloadedMethods);
     }
 
     /**
      * The Babble method that answers a Java method must accept every overload's arity :
      * its required parameters can't outnumber the shortest's, and its parameters can't be
-     * fewer than the longest's.
+     * fewer than the longest's. Overloaded Babble methods are checked with full static types
+     * in {@link MemberTypes} (BIP021-D13).
      */
     private void checkJavaArity(TypeNode type, Map<String, Provider> defaults, Map<String, BabbleParser.FunctionLiteralContext> methods) {
+        checkJavaArity(type, defaults, methods, Set.of());
+    }
+
+    private void checkJavaArity(TypeNode type, Map<String, Provider> defaults,
+                                Map<String, BabbleParser.FunctionLiteralContext> methods, Set<String> overloadedMethods) {
         Set<Class<?>> java = new LinkedHashSet<>();
         for (Object parent : type.parents) {
             javaInterfaces(parent, java);
         }
         for (Class<?> javaInterface : java) {
             for (Method method : JavaTypes.abstractMethods(javaInterface)) {
+                if (overloadedMethods.contains(method.getName())) {
+                    continue;
+                }
                 BabbleParser.FunctionLiteralContext function = methods.get(method.getName());
                 String owner = type.name;
                 int max;
@@ -440,7 +460,7 @@ final class TypeChecks {
                 int line;
                 if (function == null) {
                     Provider provider = defaults.get(method.getName());
-                    if (provider == null || !provider.hasFunction()) {
+                    if (provider == null || !provider.hasFunction() || provider.isOverload()) {
                         continue;
                     }
                     owner = provider.ownerName();

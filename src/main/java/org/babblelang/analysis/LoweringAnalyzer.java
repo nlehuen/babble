@@ -141,7 +141,7 @@ final class LoweringAnalyzer {
                 continue;
             }
             for (TypeNode.Member member : typeNode.members.values()) {
-                if (member.declaration == null || !checker.inFile(member.declaration) || member.function != null) {
+                if (member.declaration == null || !checker.inFile(member.declaration) || member.hasFunction) {
                     continue;
                 }
                 Type t = checker.annotator().declaredType(member.declaration);
@@ -156,6 +156,12 @@ final class LoweringAnalyzer {
                 if (t != null) {
                     pass.analysis.setDeclarationKind(member.declaration, ScopeAnalysis.PrimitiveKind.of(t));
                 }
+            }
+        }
+        for (Map.Entry<ParserRuleContext, TypeChecker.ResolvedOverloadCall> ovEntry : checker.resolvedOverloadCalls().entrySet()) {
+            ParserRuleContext site = ovEntry.getKey();
+            if (!(site instanceof BabbleParser.CallContext) && checker.inFile(site)) {
+                publishOperatorOverloadDispatch(site, ovEntry.getValue());
             }
         }
         for (BabbleParser.FunctionLiteralContext fn : checker.functions()) {
@@ -334,13 +340,36 @@ final class LoweringAnalyzer {
                 pass.analysis.setArgumentBinding(call, binding);
             }
             BabbleParser.FunctionLiteralContext directTarget = resolved.directTarget();
-            // Direct target is valid when the literal is in this file and has non-generic signature
-            // (generic local literals can also be called directly via boxed directTarget!).
             ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
-            if (directTarget != null && checker.inFile(directTarget) && alt.typeParameters().isEmpty() && binding != null) {
-                // Also record babbleCallFunction & babbleCallSignature so HirBuilder lowers to DirectBabbleCall!
+            if (directTarget != null && checker.inFile(directTarget) && alt.typeParameters().isEmpty() && binding != null
+                    && checker.scopeOf(directTarget).memberOf == null) {
+                // Free local function alternative: record babbleCallFunction & babbleCallSignature for DirectBabbleCall.
                 pass.analysis.setBabbleCallFunction(call, directTarget);
                 pass.analysis.setBabbleCallSignature(call, sig);
+            }
+            // Overloaded Babble interface call -> INVOKEINTERFACE bm$<member>$<k> (BIP021-D13).
+            if (binding != null && checker.inFile(call)
+                    && call.expression() instanceof BabbleParser.SelectorContext sel
+                    && sel.safe == null && sel.expression() != null
+                    && !(sel.expression() instanceof BabbleParser.SuperExpressionContext)) {
+                String memberName = ScopeAnalysis.selectorName(sel);
+                Type recvType = types.get(sel.expression());
+                FoundInterfaceMember found = findDeclaringInterfaceOnType(recvType, memberName);
+                if (found != null) {
+                    Type mt = checker.memberType(found.iface(), found.member());
+                    if (mt instanceof Type.Overloaded ifaceOv) {
+                        int ifaceAltIdx = (recvType instanceof Type.Instance ri && ri.node() == found.iface())
+                                ? resolved.altIndex()
+                                : OverloadSolver.selectAlternativeForFunction(checker.algebra(), ifaceOv, alt, false);
+                        if (ifaceAltIdx >= 0 && ifaceAltIdx < ifaceOv.alternatives().size()) {
+                            ScopeAnalysis.FunctionSignature ifaceSig = uninstantiatedSignature(ifaceOv.alternatives().get(ifaceAltIdx));
+                            if (ifaceSig != null && binding.paramCount() == ifaceSig.parameterKinds().length) {
+                                pass.analysis.setInterfaceCallTarget(call, new ScopeAnalysis.InterfaceCallTarget(
+                                        found.iface().id, found.member().name + "$" + ifaceAltIdx, ifaceSig, true));
+                            }
+                        }
+                    }
+                }
             }
             ScopeAnalysis.OverloadCallTarget target = new ScopeAnalysis.OverloadCallTarget(
                     resolved.altIndex(),
@@ -372,6 +401,42 @@ final class LoweringAnalyzer {
                     rb.checks(), target, ScopeAnalysis.PrimitiveKind.of(rb.resultType())));
         }
         pass.analysis.setOverloadDispatch(call, new ScopeAnalysis.OverloadDispatchTarget(null, List.copyOf(branches), callResultKind));
+    }
+
+    private void publishOperatorOverloadDispatch(ParserRuleContext site, TypeChecker.ResolvedOverloadCall resolved) {
+        ScopeAnalysis.PrimitiveKind callResultKind = ScopeAnalysis.PrimitiveKind.of(resolved.resultType());
+        if (!resolved.isSplit()) {
+            Type.Function alt = resolved.altType();
+            ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+            BabbleParser.FunctionLiteralContext directTarget = resolved.directTarget() != null && checker.inFile(resolved.directTarget())
+                    ? resolved.directTarget() : null;
+            ScopeAnalysis.OverloadCallTarget target = new ScopeAnalysis.OverloadCallTarget(
+                    resolved.altIndex(),
+                    OverloadSolver.signatureKey(alt),
+                    resolved.exactSet(),
+                    directTarget,
+                    sig,
+                    null);
+            pass.analysis.setOverloadDispatch(site, new ScopeAnalysis.OverloadDispatchTarget(target, null, callResultKind));
+            return;
+        }
+        List<ScopeAnalysis.OverloadSplitBranch> branches = new ArrayList<>(resolved.splitBranches().size());
+        for (TypeChecker.ResolvedSplitBranch rb : resolved.splitBranches()) {
+            Type.Function alt = rb.altType();
+            ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+            BabbleParser.FunctionLiteralContext directTarget = rb.directTarget() != null && checker.inFile(rb.directTarget())
+                    ? rb.directTarget() : null;
+            ScopeAnalysis.OverloadCallTarget target = new ScopeAnalysis.OverloadCallTarget(
+                    rb.altIndex(),
+                    OverloadSolver.signatureKey(alt),
+                    rb.exactSet(),
+                    directTarget,
+                    sig,
+                    null);
+            branches.add(new ScopeAnalysis.OverloadSplitBranch(
+                    rb.checks(), target, ScopeAnalysis.PrimitiveKind.of(rb.resultType())));
+        }
+        pass.analysis.setOverloadDispatch(site, new ScopeAnalysis.OverloadDispatchTarget(null, List.copyOf(branches), callResultKind));
     }
 
     private ScopeAnalysis.ArgumentBinding deriveArgumentBinding(Type callee,
@@ -1023,15 +1088,14 @@ final class LoweringAnalyzer {
         collectAncestorInterfaces(node, allBabbleInterfaceIds, allJavaInterfaces, visitedNodes);
 
         Map<String, ScopeAnalysis.MemberSpec> interfaceMembers = new LinkedHashMap<>();
+        Map<String, Integer> javaBridgeOverloads = new LinkedHashMap<>();
+        Map<String, Integer> babbleBridgeOverloads = new LinkedHashMap<>();
         if (node.isInterface()) {
             for (TypeNode.Member member : node.members.values()) {
                 boolean hasDefault = member.hasFunction;
                 boolean required = !hasDefault;
                 Type mt = checker.memberType(node, member);
-                boolean callable = mt instanceof Type.Function;
-                ScopeAnalysis.FunctionSignature sig = callable ? uninstantiatedSignature((Type.Function) mt) : null;
-                interfaceMembers.put(member.name,
-                        new ScopeAnalysis.MemberSpec(member.name, hasDefault, required, callable, sig));
+                interfaceMembers.put(member.name, buildMemberSpec(member.name, hasDefault, required, mt));
             }
         } else {
             Map<String, OwnerMember> collected = new LinkedHashMap<>();
@@ -1049,16 +1113,92 @@ final class LoweringAnalyzer {
                     }
                 }
             }
+            List<Type.TypeVar> vars = checker.annotator().typeVarsOf(node);
+            Type.Instance selfInst = vars.isEmpty()
+                    ? new Type.Instance(node)
+                    : new Type.Instance(node, List.copyOf(vars));
             for (OwnerMember om : collected.values()) {
                 TypeNode.Member member = om.member();
                 TypeChecks.Provider provider = allInterfaceDefaults.get(member.name);
                 boolean hasDefault = member.hasFunction || (provider != null && provider.owner() instanceof TypeNode);
                 boolean required = !hasDefault;
                 Type mt = checker.memberType(om.owner(), member);
-                boolean callable = mt instanceof Type.Function;
-                ScopeAnalysis.FunctionSignature sig = callable ? uninstantiatedSignature((Type.Function) mt) : null;
-                interfaceMembers.put(member.name,
-                        new ScopeAnalysis.MemberSpec(member.name, hasDefault, required, callable, sig));
+                interfaceMembers.put(member.name, buildMemberSpec(member.name, hasDefault, required, mt));
+
+                // Map each ancestor interface member alternative to this class's overloaded method alternative.
+                TypeNode.Member ownImpl = node.members.get(member.name);
+                if (ownImpl != null && !ownImpl.isPrivate() && checker.memberType(node, ownImpl) instanceof Type.Overloaded implOv) {
+                    Type projected = checker.algebra().projectToBabble(selfInst, om.owner());
+                    Map<Type.TypeVar, Type> ifaceEnv = projected instanceof Type.Instance proj
+                            ? checker.algebra().instanceEnv(proj) : Map.of();
+                    Type reqType = checker.algebra().substitute(mt, ifaceEnv);
+                    if (reqType instanceof Type.Function reqFn) {
+                        int chosen = OverloadSolver.selectAlternativeForFunction(checker.algebra(), implOv, reqFn, false);
+                        if (chosen >= 0) {
+                            babbleBridgeOverloads.put(member.name, chosen);
+                        }
+                    } else if (reqType instanceof Type.Overloaded reqOv) {
+                        List<Type.Function> reqAlts = reqOv.alternatives();
+                        for (int k = 0; k < reqAlts.size(); k++) {
+                            int chosen = OverloadSolver.selectAlternativeForFunction(checker.algebra(), implOv, reqAlts.get(k), false);
+                            if (chosen >= 0) {
+                                babbleBridgeOverloads.put(member.name + "$" + k, chosen);
+                            }
+                        }
+                    }
+                }
+            }
+            for (Class<?> jc : allJavaInterfaces) {
+                Type projected = checker.algebra().projectToJava(selfInst, jc);
+                Map<java.lang.reflect.TypeVariable<?>, Type> javaEnv = projected instanceof Type.JavaInstance ji
+                        ? JavaTypeBridge.javaTypeEnv(jc, ji.typeArguments()) : Map.of();
+                for (Method jm : jc.getMethods()) {
+                    if (Modifier.isStatic(jm.getModifiers()) || JavaTypes.isObjectMethod(jm)) {
+                        continue;
+                    }
+                    String key = jm.getName() + "#" + org.objectweb.asm.Type.getMethodDescriptor(jm);
+                    if (javaBridgeOverloads.containsKey(key)) {
+                        continue;
+                    }
+                    Type implType = null;
+                    TypeNode.Member ownImpl = node.members.get(jm.getName());
+                    if (ownImpl != null && !ownImpl.isPrivate()) {
+                        implType = checker.memberType(node, ownImpl);
+                    } else {
+                        TypeChecks.Provider provider = allInterfaceDefaults.get(jm.getName());
+                        if (provider != null && provider.owner() instanceof TypeNode owner) {
+                            TypeNode.Member defMember = owner.members.get(jm.getName());
+                            if (defMember != null) {
+                                Type projectedOwner = checker.algebra().projectToBabble(selfInst, owner);
+                                Map<Type.TypeVar, Type> ownerEnv = projectedOwner instanceof Type.Instance proj
+                                        ? checker.algebra().instanceEnv(proj) : Map.of();
+                                implType = checker.algebra().substitute(checker.memberType(owner, defMember), ownerEnv);
+                            }
+                        }
+                    }
+                    if (!(implType instanceof Type.Overloaded ov)) {
+                        continue;
+                    }
+                    int paramCount = jm.getParameterCount();
+                    List<Type> javaParamTypes = new ArrayList<>(paramCount);
+                    List<Type> fallbackParamTypes = new ArrayList<>(paramCount);
+                    boolean hasFallbackDiff = false;
+                    for (int i = 0; i < paramCount; i++) {
+                        Type pt = JavaTypeBridge.javaExecutableParamType(jm, i, javaEnv);
+                        javaParamTypes.add(pt);
+                        if (JavaNullability.parameterNullness(jm, i) == JavaNullability.Nullness.UNSPECIFIED && Type.containsNull(pt)) {
+                            fallbackParamTypes.add(Type.withoutNull(pt));
+                            hasFallbackDiff = true;
+                        } else {
+                            fallbackParamTypes.add(pt);
+                        }
+                    }
+                    int chosen = OverloadSolver.selectAlternativeForJavaMethod(
+                            checker.algebra(), ov, jm, javaParamTypes, hasFallbackDiff ? fallbackParamTypes : null);
+                    if (chosen >= 0) {
+                        javaBridgeOverloads.put(key, chosen);
+                    }
+                }
             }
         }
         return new ScopeAnalysis.TypeHierarchyInfo(
@@ -1068,7 +1208,30 @@ final class LoweringAnalyzer {
                 directParents,
                 Collections.unmodifiableSet(allBabbleInterfaceIds),
                 Collections.unmodifiableSet(allJavaInterfaces),
-                Collections.unmodifiableMap(interfaceMembers));
+                Collections.unmodifiableMap(interfaceMembers),
+                Collections.unmodifiableMap(javaBridgeOverloads),
+                Collections.unmodifiableMap(babbleBridgeOverloads));
+    }
+
+    private static ScopeAnalysis.MemberSpec buildMemberSpec(String name, boolean hasDefault, boolean required, Type mt) {
+        if (mt instanceof Type.Function fn) {
+            return new ScopeAnalysis.MemberSpec(name, hasDefault, required, true, uninstantiatedSignature(fn));
+        }
+        if (mt instanceof Type.Overloaded ov) {
+            List<ScopeAnalysis.FunctionSignature> sigs = new ArrayList<>(ov.alternatives().size());
+            List<String> keys = new ArrayList<>(ov.alternatives().size());
+            for (Type.Function alt : ov.alternatives()) {
+                ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+                if (sig == null) {
+                    return new ScopeAnalysis.MemberSpec(name, hasDefault, required, false, null);
+                }
+                sigs.add(sig);
+                keys.add(OverloadSolver.signatureKey(alt));
+            }
+            return new ScopeAnalysis.MemberSpec(name, hasDefault, required, false, null,
+                    List.copyOf(sigs), List.copyOf(keys));
+        }
+        return new ScopeAnalysis.MemberSpec(name, hasDefault, required, false, null);
     }
 
     private static void collectAncestorInterfaces(TypeNode node, Set<String> babbleIds, Set<Class<?>> javaIfaces,

@@ -444,8 +444,10 @@ public sealed interface HirExpr permits
 
     record DirectThisMethodCall(
             HirExpr receiver,
+            String receiverText,
             int classId,
             String memberName,
+            int overloadAltIndex,
             int targetFunctionId,
             List<HirCallArg> args,
             ScopeAnalysis.ArgumentBinding binding,
@@ -454,6 +456,12 @@ public sealed interface HirExpr permits
     ) implements HirExpr {
         public DirectThisMethodCall {
             args = List.copyOf(args);
+        }
+
+        public DirectThisMethodCall(HirExpr receiver, int classId, String memberName, int targetFunctionId,
+                                    List<HirCallArg> args, ScopeAnalysis.ArgumentBinding binding,
+                                    CallSite callSite, ExprMeta meta) {
+            this(receiver, null, classId, memberName, -1, targetFunctionId, args, binding, callSite, meta);
         }
     }
 

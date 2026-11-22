@@ -141,6 +141,69 @@ public final class OverloadSet implements Callable {
         throw new BabbleException("Not a function : " + target);
     }
 
+    /** Returns a new {@link OverloadSet} whose {@link BabbleFunction} alternatives are bound to {@code receiver}. */
+    public OverloadSet bind(Object receiver) {
+        Callable[] bound = new Callable[alternatives.length];
+        for (int i = 0; i < alternatives.length; i++) {
+            Callable alt = alternatives[i];
+            bound[i] = alt instanceof BabbleFunction bf ? new BoundMethod(bf, receiver) : alt;
+        }
+        return new OverloadSet(bound, metas);
+    }
+
+    /**
+     * Selects the most specific alternative matching a Java interface method's parameter types,
+     * or {@code null} if none matches (used by {@link Faces} for interpreted Java interface proxies).
+     */
+    public Callable selectForJavaMethod(java.lang.reflect.Method jm) {
+        Class<?>[] params = jm.getParameterTypes();
+        String[] descs = new String[params.length];
+        for (int i = 0; i < params.length; i++) {
+            descs[i] = javaClassToDescriptor(params[i]);
+        }
+        int best = -1;
+        for (int i = 0; i < metas.length; i++) {
+            AltMeta m = metas[i];
+            if (jm.isVarArgs() && m.restIndex == params.length - 1 && params.length > 0 && params[params.length - 1].isArray()) {
+                // Varargs Java method matches a Babble rest method at the same prefix.
+                boolean prefixOk = true;
+                for (int j = 0; j < params.length - 1; j++) {
+                    if (!descriptorAccepts(paramDescAt(m, j), descs[j])) {
+                        prefixOk = false;
+                        break;
+                    }
+                }
+                if (prefixOk && descriptorAccepts(paramDescAt(m, m.restIndex), javaClassToDescriptor(params[params.length - 1].getComponentType()))) {
+                    if (best < 0 || isMoreSpecificMeta(m, metas[best], params.length)) {
+                        best = i;
+                    }
+                }
+                continue;
+            }
+            if (!acceptsDescriptors(m, descs)) {
+                continue;
+            }
+            if (best < 0 || isMoreSpecificMeta(m, metas[best], params.length)) {
+                best = i;
+            }
+        }
+        return best >= 0 ? alternatives[best] : null;
+    }
+
+    private static String javaClassToDescriptor(Class<?> cls) {
+        if (cls == byte.class || cls == Byte.class) return "byte|byte|";
+        if (cls == short.class || cls == Short.class) return "short|short|";
+        if (cls == int.class || cls == Integer.class) return "int|int|";
+        if (cls == long.class || cls == Long.class) return "long|long|";
+        if (cls == float.class || cls == Float.class) return "float|float|";
+        if (cls == double.class || cls == Double.class) return "double|double|";
+        if (cls == boolean.class || cls == Boolean.class) return "bool|bool|";
+        if (cls == char.class || cls == Character.class) return "char|char|";
+        if (cls == String.class) return "string|string|";
+        if (cls == Object.class) return "";
+        return "java|" + cls.getName() + "|" + cls.getName();
+    }
+
     /** Number of flattened alternatives in this set. */
     public int size() {
         return alternatives.length;
@@ -348,6 +411,54 @@ public final class OverloadSet implements Callable {
         }
         String pTag = descriptorTag(paramDesc);
         String aTag = descriptorTag(argDesc);
+        if ("union".equals(aTag)) {
+            String payload = descriptorPayload(argDesc);
+            if (payload.isEmpty()) {
+                return false;
+            }
+            for (String enc : payload.split(",", -1)) {
+                if (!descriptorAccepts(paramDesc, Types.decodeComponent(enc))) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if ("union".equals(pTag)) {
+            String payload = descriptorPayload(paramDesc);
+            if (payload.isEmpty()) {
+                return false;
+            }
+            for (String enc : payload.split(",", -1)) {
+                if (descriptorAccepts(Types.decodeComponent(enc), argDesc)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if ("inter".equals(pTag)) {
+            String payload = descriptorPayload(paramDesc);
+            if (payload.isEmpty()) {
+                return false;
+            }
+            for (String enc : payload.split(",", -1)) {
+                if (!descriptorAccepts(Types.decodeComponent(enc), argDesc)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if ("inter".equals(aTag)) {
+            String payload = descriptorPayload(argDesc);
+            if (payload.isEmpty()) {
+                return false;
+            }
+            for (String enc : payload.split(",", -1)) {
+                if (descriptorAccepts(paramDesc, Types.decodeComponent(enc))) {
+                    return true;
+                }
+            }
+            return false;
+        }
         if ("any".equals(pTag)) {
             return !"null".equals(aTag) && !argDesc.isEmpty();
         }

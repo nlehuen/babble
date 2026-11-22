@@ -45,6 +45,9 @@ public abstract class BabbleType implements HasMembers {
             throw Members.usedBeforeDefinition(name);
         }
         if (shape.isStaticMethod(index)) {
+            if (value instanceof OverloadSet ov) {
+                return ov.bind(this);
+            }
             return new BoundMethod((BabbleFunction) value, this);
         }
         return value;

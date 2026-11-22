@@ -17,12 +17,13 @@ export def Vec3 = record (x: double, y: double, z: double) (
         Vec3(this.x - v.x, this.y - v.y, this.z - v.z)
     )
 
-    def mul = fn (v: Vec3): Vec3 -> (
-        Vec3(this.x * v.x, this.y * v.y, this.z * v.z)
-    )
-
-    def times = fn (t: double): Vec3 -> (
-        Vec3(this.x * t, this.y * t, this.z * t)
+    def times = overload (
+        fn (t: double): Vec3 -> (
+            Vec3(this.x * t, this.y * t, this.z * t)
+        ),
+        fn (v: Vec3): Vec3 -> (
+            Vec3(this.x * v.x, this.y * v.y, this.z * v.z)
+        )
     )
 
     def div = fn (t: double): Vec3 -> (

@@ -42,9 +42,12 @@ public final class InterpretedInstance implements HasMembers {
         ClassShape shape = babbleClass.shape();
         int index = shape.memberIndex(name);
         if (index < 0) {
-            BabbleFunction inherited = babbleClass.defaultMethod(name);
+            Callable inherited = babbleClass.defaultMethod(name);
             if (inherited != null) {
-                return new BoundMethod(inherited, this);
+                if (inherited instanceof OverloadSet ov) {
+                    return ov.bind(this);
+                }
+                return new BoundMethod((BabbleFunction) inherited, this);
             }
             if (!babbleClass.javaDefaultMethods(name).isEmpty()) {
                 return new JavaDefaultCall(this, babbleClass.javaDefaultMethods(name), babbleClass.name() + "." + name);
@@ -59,6 +62,9 @@ public final class InterpretedInstance implements HasMembers {
             throw Members.usedBeforeDefinition(name);
         }
         if (shape.isMethod(index)) {
+            if (value instanceof OverloadSet ov) {
+                return ov.bind(this);
+            }
             return new BoundMethod((BabbleFunction) value, this);
         }
         return value;
@@ -94,10 +100,19 @@ public final class InterpretedInstance implements HasMembers {
      * or null. Private methods are included : this is for the instance's own use.
      */
     BabbleFunction method(String name) {
+        Object m = methodOrOverload(name);
+        return m instanceof BabbleFunction bf ? bf : null;
+    }
+
+    Object methodOrOverload(String name) {
         ClassShape shape = babbleClass.shape();
         int index = shape.memberIndex(name);
         if (index >= 0) {
-            return shape.isMethod(index) && values[index] instanceof BabbleFunction function ? function : null;
+            if (!shape.isMethod(index)) {
+                return null;
+            }
+            Object v = values[index];
+            return (v instanceof BabbleFunction || v instanceof OverloadSet) ? v : null;
         }
         return babbleClass.defaultMethod(name);
     }

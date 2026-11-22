@@ -16,6 +16,7 @@ public record HirInterface(
         String jvmName,
         List<String> extendedJvmInterfaces,
         Map<String, Integer> defaultFunctionIds,
+        Map<String, List<Integer>> defaultOverloadFunctionIds,
         List<HirTypeRef> extendedTypes,
         List<HirExpr> body,
         HirStaticBlock staticBlock,
@@ -24,12 +25,17 @@ public record HirInterface(
     public HirInterface {
         extendedJvmInterfaces = List.copyOf(extendedJvmInterfaces);
         defaultFunctionIds = Collections.unmodifiableMap(new LinkedHashMap<>(defaultFunctionIds));
+        Map<String, List<Integer>> ovCopy = new LinkedHashMap<>();
+        if (defaultOverloadFunctionIds != null) {
+            defaultOverloadFunctionIds.forEach((k, v) -> ovCopy.put(k, List.copyOf(v)));
+        }
+        defaultOverloadFunctionIds = Collections.unmodifiableMap(ovCopy);
         extendedTypes = List.copyOf(extendedTypes);
         body = List.copyOf(body);
     }
 
     public HirInterface withBodyAndStatic(List<HirExpr> newBody, HirStaticBlock newStatic) {
         return new HirInterface(id, shape, jvmName, extendedJvmInterfaces, defaultFunctionIds,
-                extendedTypes, newBody, newStatic, line);
+                defaultOverloadFunctionIds, extendedTypes, newBody, newStatic, line);
     }
 }

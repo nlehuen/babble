@@ -240,7 +240,7 @@ public final class Types {
         return component.replace("%", "%25").replace(",", "%2C").replace("|", "%7C");
     }
 
-    private static String decodeComponent(String component) {
+    static String decodeComponent(String component) {
         StringBuilder result = new StringBuilder(component.length());
         for (int i = 0; i < component.length(); i++) {
             char c = component.charAt(i);

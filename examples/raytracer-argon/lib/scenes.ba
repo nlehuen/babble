@@ -43,7 +43,7 @@ export def Scenes = object (
 
                 if chooseMat < 0.8 then (
                     ;; Diffuse
-                    def albedo: Vec3 = Vec3.random(rng).mul(Vec3.random(rng))
+                    def albedo: Vec3 = Vec3.random(rng) * Vec3.random(rng)
                     world.add(Sphere(center, 0.2, Lambertian(albedo)))
                 ) else if chooseMat < 0.95 then (
                     ;; Metal

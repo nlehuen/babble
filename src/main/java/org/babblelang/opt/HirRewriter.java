@@ -191,7 +191,8 @@ public final class HirRewriter {
                 HirExpr nr = transform.apply(c.receiver());
                 List<HirCallArg> na = rewriteCallArgs(c.args(), transform);
                 yield (nr == c.receiver() && na == c.args()) ? c
-                        : new HirExpr.DirectThisMethodCall(nr, c.classId(), c.memberName(), c.targetFunctionId(), na, c.binding(), c.callSite(), c.meta());
+                        : new HirExpr.DirectThisMethodCall(nr, c.receiverText(), c.classId(), c.memberName(), c.overloadAltIndex(),
+                        c.targetFunctionId(), na, c.binding(), c.callSite(), c.meta());
             }
             case HirExpr.InterfaceCall c -> {
                 HirExpr nr = transform.apply(c.receiver());

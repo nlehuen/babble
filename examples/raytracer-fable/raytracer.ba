@@ -57,7 +57,7 @@ while a < 11 then (
         if (center - Vec3(4.0, 0.2, 0.0)).length() > 0.9 then (
             if chooseMat < 0.8 then (
                 ;; diffuse
-                def albedo = Vec3.random(rng).mul(Vec3.random(rng))
+                def albedo = Vec3.random(rng) * Vec3.random(rng)
                 world.add(Sphere(center, 0.2, Lambertian(albedo)))
             ) else if chooseMat < 0.95 then (
                 ;; metal

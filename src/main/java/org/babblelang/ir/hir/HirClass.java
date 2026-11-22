@@ -26,6 +26,7 @@ public record HirClass(
         int[] primDefBits,
         int primDefCount,
         Map<String, Integer> methodFunctionIds,
+        Map<String, List<Integer>> overloadMethodFunctionIds,
         List<HirTypeRef> implementedTypes,
         List<HirExpr> body,
         HirStaticBlock staticBlock,
@@ -40,6 +41,11 @@ public record HirClass(
         memberKinds = memberKinds != null ? memberKinds.clone() : new ScopeAnalysis.PrimitiveKind[0];
         primDefBits = primDefBits != null ? primDefBits.clone() : new int[0];
         methodFunctionIds = Collections.unmodifiableMap(new LinkedHashMap<>(methodFunctionIds));
+        Map<String, List<Integer>> ovCopy = new LinkedHashMap<>();
+        if (overloadMethodFunctionIds != null) {
+            overloadMethodFunctionIds.forEach((k, v) -> ovCopy.put(k, List.copyOf(v)));
+        }
+        overloadMethodFunctionIds = Collections.unmodifiableMap(ovCopy);
         implementedTypes = List.copyOf(implementedTypes);
         body = List.copyOf(body);
     }
@@ -56,6 +62,6 @@ public record HirClass(
     public HirClass withBodyAndStatic(List<HirParam> newParams, List<HirExpr> newBody, HirStaticBlock newStatic) {
         return new HirClass(id, isObject, shape, jvmName, implementedJvmInterfaces, javaInterfaces,
                 declaredVars, capturedVars, newParams, memberKinds, primDefBits, primDefCount, methodFunctionIds,
-                implementedTypes, newBody, newStatic, line);
+                overloadMethodFunctionIds, implementedTypes, newBody, newStatic, line);
     }
 }

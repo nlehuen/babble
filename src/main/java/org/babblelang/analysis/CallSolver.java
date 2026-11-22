@@ -676,6 +676,9 @@ final class CallSolver {
     Type operatorCall(Type receiver, String method, ParserRuleContext argument, Type argumentType,
                       ParserRuleContext at, String receiverText) {
         Type callee = checker.members().member(receiver, method, false, at, receiverText);
+        if (callee instanceof Type.Overloaded set) {
+            return overloadedOperatorCall(receiver, method, set, argument, argumentType, at, receiverText);
+        }
         if (!(callee instanceof Type.Function function)) {
             if (!TypeChecker.isUnresolved(callee) && !TypeAlgebra.isCallable(callee)) {
                 checker.warn(receiverText + "." + method + " is not callable", at);
@@ -697,6 +700,140 @@ final class CallSolver {
                     frozenBorrowSafe && parameters.get(0).borrow() && !parameters.get(0).mut(), argument);
         }
         return function.result();
+    }
+
+    private Type overloadedOperatorCall(Type receiver, String method, Type.Overloaded set,
+                                        ParserRuleContext argument, Type argumentType,
+                                        ParserRuleContext at, String receiverText) {
+        if (argument != null && TypeChecker.isUnresolved(argumentType)) {
+            return Type.ERROR;
+        }
+        boolean exactSet = false;
+        List<BabbleParser.FunctionLiteralContext> altLiterals = null;
+        if (receiver instanceof Type.Instance inst && !inst.node().isInterface()) {
+            TypeNode.Member member = inst.node().members.get(method);
+            if (member != null && member.declaration instanceof BabbleParser.DefExpressionContext def
+                    && def.value instanceof BabbleParser.OverloadExpressionContext ov) {
+                exactSet = def.type() == null;
+                if (checker.inFile(ov)) {
+                    altLiterals = checker.resolveOverloadLiterals(ov);
+                }
+            }
+        }
+        List<Type> argTypes = argument == null ? List.of() : List.of(argumentType);
+        int chosen = OverloadSolver.selectAlternativeForPositionalArgs(checker.algebra(), set, argTypes);
+        if (chosen >= 0) {
+            Type.Function alt = set.alternatives().get(chosen);
+            Type resultType = alt.result();
+            if (argument != null) {
+                Type expectedParam = alt.parameters().get(0).type();
+                if (!alt.typeParameters().isEmpty()) {
+                    TypeAlgebra.ConstraintStore store = checker.algebra().store(Set.copyOf(alt.typeParameters()), true);
+                    checker.algebra().relate(argumentType, expectedParam, TypeAlgebra.RelateMode.ASSIGNABLE, store, false, false);
+                    Map<Type.TypeVar, Type> env = new java.util.LinkedHashMap<>();
+                    for (Type.TypeVar tv : alt.typeParameters()) {
+                        List<Type> uppers = store.uppers(tv);
+                        if (!uppers.isEmpty()) {
+                            env.put(tv, Type.union(uppers));
+                        }
+                    }
+                    expectedParam = checker.algebra().substitute(expectedParam, env);
+                    resultType = checker.algebra().substitute(resultType, env);
+                }
+                List<? extends ParserRuleContext> decls = checker.parameterDecls(alt);
+                ParserRuleContext decl = decls != null && !decls.isEmpty() ? decls.get(0) : null;
+                boolean frozenBorrowSafe = alt.effects().uniqueResult() || checker.isDeeplyImmutable(resultType);
+                bindArgument(decl, argumentType, expectedParam,
+                        frozenBorrowSafe && alt.parameters().get(0).borrow() && !alt.parameters().get(0).mut(), argument);
+            }
+            BabbleParser.FunctionLiteralContext directTarget = (altLiterals != null && chosen < altLiterals.size())
+                    ? altLiterals.get(chosen) : null;
+            checker.recordResolvedOverloadCall(at, new TypeChecker.ResolvedOverloadCall(
+                    chosen, alt, exactSet, directTarget, resultType, null));
+            return resultType;
+        }
+        if (argument != null && argumentType instanceof Type.Union union) {
+            List<Type> components = new ArrayList<>(union.members());
+            for (int i = 0; i < components.size(); i++) {
+                Type a = components.get(i);
+                for (int j = i + 1; j < components.size(); j++) {
+                    Type b = components.get(j);
+                    if (OverloadSolver.isInterfaceLike(a) && OverloadSolver.isInterfaceLike(b)) {
+                        Type meet = OverloadSolver.staticMeet(checker.algebra(), a, b);
+                        if (meet != null && !components.contains(meet)) {
+                            components.add(meet);
+                        }
+                    }
+                }
+            }
+            List<Integer> compAlts = new ArrayList<>(components.size());
+            boolean allResolved = true;
+            for (Type comp : components) {
+                int idx = OverloadSolver.selectAlternativeForPositionalArgs(checker.algebra(), set, List.of(comp));
+                if (idx < 0) {
+                    allResolved = false;
+                    break;
+                }
+                compAlts.add(idx);
+            }
+            if (allResolved) {
+                boolean distinguishable = true;
+                for (int i = 0; i < components.size() && distinguishable; i++) {
+                    for (int j = i + 1; j < components.size(); j++) {
+                        if (!compAlts.get(i).equals(compAlts.get(j))) {
+                            Type ca = components.get(i);
+                            Type cb = components.get(j);
+                            boolean ordered = checker.algebra().subtype(ca, cb) || checker.algebra().subtype(cb, ca);
+                            if (!ordered && !OverloadSolver.runtimeDistinguishable(checker.algebra(), ca, cb)) {
+                                distinguishable = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (!distinguishable) {
+                    checker.warn("Cannot dispatch " + receiverText + "." + method + " on " + TypeDisplay.display(argumentType)
+                            + " : its alternatives are not told apart at runtime", at);
+                    return Type.ERROR;
+                }
+                // Order most-specific component first.
+                List<Integer> order = new ArrayList<>(components.size());
+                for (int i = 0; i < components.size(); i++) {
+                    order.add(i);
+                }
+                order.sort((a, b) -> {
+                    Type ta = components.get(a);
+                    Type tb = components.get(b);
+                    boolean aSubB = checker.algebra().subtype(ta, tb);
+                    boolean bSubA = checker.algebra().subtype(tb, ta);
+                    if (aSubB && !bSubA) return -1;
+                    if (bSubA && !aSubB) return 1;
+                    return Integer.compare(a, b);
+                });
+                List<TypeChecker.ResolvedSplitBranch> branches = new ArrayList<>(order.size());
+                List<Type> results = new ArrayList<>(order.size());
+                for (int idx : order) {
+                    Type comp = components.get(idx);
+                    int altIdx = compAlts.get(idx);
+                    Type.Function alt = set.alternatives().get(altIdx);
+                    List<String> descs = OverloadSolver.runtimeTestDescriptors(comp);
+                    ScopeAnalysis.OverloadSplitCheck check = new ScopeAnalysis.OverloadSplitCheck(0, descs, comp == Type.NULL);
+                    BabbleParser.FunctionLiteralContext directTarget = (altLiterals != null && altIdx < altLiterals.size())
+                            ? altLiterals.get(altIdx) : null;
+                    branches.add(new TypeChecker.ResolvedSplitBranch(List.of(check), altIdx, alt, exactSet,
+                            directTarget, alt.result(), null, null));
+                    results.add(alt.result());
+                }
+                Type joined = Type.union(results);
+                checker.recordResolvedOverloadCall(at, new TypeChecker.ResolvedOverloadCall(
+                        -1, null, exactSet, null, joined, branches));
+                return joined;
+            }
+        }
+        String argStr = argument == null ? "" : TypeDisplay.display(argumentType);
+        checker.warn("No applicable overload of " + receiverText + "." + method + " for (" + argStr
+                + ") : candidates are " + OverloadSolver.formatCandidates(set.alternatives()), at);
+        return Type.ERROR;
     }
 
     Type genericBabbleCall(List<Type.TypeVar> solvingList, List<Type.Parameter> parameters,
