@@ -1330,13 +1330,15 @@ final class JavaTypeBridge {
                 if (other == candidate) {
                     continue;
                 }
-                boolean more = varArgs ? isVarArgsMoreSpecific(candidate, other) : isMoreSpecific(candidate, other);
+                boolean more = varArgs
+                        ? org.babblelang.runtime.Overloads.isVarArgsMoreSpecific(candidate, other)
+                        : org.babblelang.runtime.Overloads.isMoreSpecific(candidate, other);
                 if (!more) {
                     beatsAll = false;
                     break;
                 }
                 if (varArgs) {
-                    boolean reverse = isVarArgsMoreSpecific(other, candidate);
+                    boolean reverse = org.babblelang.runtime.Overloads.isVarArgsMoreSpecific(other, candidate);
                     boolean sameParams = Arrays.equals(candidate.getParameterTypes(), other.getParameterTypes());
                     if (reverse && !sameParams) {
                         beatsAll = false;
@@ -1349,42 +1351,6 @@ final class JavaTypeBridge {
             }
         }
         return null;
-    }
-
-    private static boolean isTypeMoreSpecific(Class<?> candidateType, Class<?> otherType) {
-        Class<?> from = JavaTypes.box(candidateType);
-        Class<?> to = JavaTypes.box(otherType);
-        return to.isAssignableFrom(from) || JavaTypes.isWidening(from, to);
-    }
-
-    private static boolean isMoreSpecific(Executable candidate, Executable other) {
-        Class<?>[] candidateTypes = candidate.getParameterTypes();
-        Class<?>[] otherTypes = other.getParameterTypes();
-        for (int i = 0; i < candidateTypes.length; i++) {
-            if (!isTypeMoreSpecific(candidateTypes[i], otherTypes[i])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /** JLS §15.12.2.5 variable-arity specificity comparison between two varargs executables. */
-    private static boolean isVarArgsMoreSpecific(Executable candidate, Executable other) {
-        Class<?>[] cTypes = candidate.getParameterTypes();
-        Class<?>[] oTypes = other.getParameterTypes();
-        int m = cTypes.length;
-        int n = oTypes.length;
-        Class<?> cComp = cTypes[m - 1].getComponentType();
-        Class<?> oComp = oTypes[n - 1].getComponentType();
-        int max = Math.max(m, n);
-        for (int i = 0; i < max; i++) {
-            Class<?> from = i < m - 1 ? cTypes[i] : cComp;
-            Class<?> to = i < n - 1 ? oTypes[i] : oComp;
-            if (!isTypeMoreSpecific(from, to)) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /** Whether an argument of a static type can be passed to a Java parameter (as {@code Overloads} decides at runtime). */

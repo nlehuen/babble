@@ -499,7 +499,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     /** {@code a.method(b)}, or {@code a.method()} without an argument, for an operator. */
     private Object operatorCall(Object a, String method, String receiver, String argument, Object b, ParserRuleContext ctx) {
-        CallSite site = operatorSite(ctx, receiver, method, argument, sourceName);
+        CallSite site = org.babblelang.analysis.SyntaxText.operatorSite(ctx, receiver, method, argument, sourceName);
         Object member = Members.select(a, method, receiver);
         Object[] rawArgs = argument == null ? Arguments.NONE : new Object[]{b};
         ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
@@ -530,32 +530,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     /**
-     * The call an operator on a Babble instance makes, for its messages : {@code a + b} is
-     * {@code a.plus(b)}, given the source texts of the receiver and the argument (null for
-     * {@code -a}, {@code a.neg()}).
-     */
-    public static CallSite operatorSite(ParserRuleContext ctx, String receiver, String method, String argument, String sourceName) {
-        String[] argTexts = argument == null ? new String[0] : new String[]{argument};
-        return new CallSite(sourceName, ctx.getStart().getLine(), receiver + "." + method, argTexts);
-    }
-
-    /**
-     * The source text of an assignment's target : {@code x}, or {@code obj.x}, which is the
-     * left operand of the operator a compound assignment applies.
-     */
-    public static String targetText(BabbleParser.AssignExpressionContext ctx) {
-        String name = ScopeAnalysis.assignName(ctx);
-        BabbleParser.ExpressionContext receiver = ScopeAnalysis.assignReceiver(ctx);
-        return receiver == null ? name : receiver.getText() + "." + name;
-    }
-
-    /**
      * {@code x op= v} : {@code x op v}, given the target's current value. An operator method on
      * a Babble instance, as for {@code a + b}.
      */
     private Object compound(BabbleParser.AssignExpressionContext ctx, String operator, Object current, Object value) {
         last = ctx;
-        String target = targetText(ctx);
+        String target = org.babblelang.analysis.SyntaxText.targetText(ctx);
         String method = Operators.method(operator);
         if (BabbleObjects.isInstance(current)) {
             return operatorCall(current, method, target, ctx.value.getText(), value, ctx);
@@ -813,7 +793,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitCharLiteral(BabbleParser.CharLiteralContext ctx) {
         last = ctx;
-        return unescapeChar(ctx.CHAR_LIT().getText());
+        return org.babblelang.parser.StringLiterals.decodeChar(ctx.CHAR_LIT().getText());
     }
 
     @Override
@@ -857,11 +837,6 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
      */
     public static String unescape(String literal) {
         return org.babblelang.parser.StringLiterals.unescape(literal);
-    }
-
-    /** The value of a character literal, given its source text with the single quotes. */
-    public static char unescapeChar(String literal) {
-        return org.babblelang.parser.StringLiterals.decodeChar(literal);
     }
 
     @Override
@@ -1155,41 +1130,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     private CallSite callSite(BabbleParser.CallContext ctx) {
         CallSite site = callSites.get(ctx);
         if (site == null) {
-            site = callSite(ctx, sourceName);
+            site = org.babblelang.analysis.SyntaxText.callSite(ctx, sourceName);
             callSites.put(ctx, site);
-            callNames.put(ctx, callNames(ctx));
+            callNames.put(ctx, org.babblelang.analysis.SyntaxText.callNames(ctx));
         }
         return site;
-    }
-
-    /**
-     * The static description of a call, as both modes build it.
-     */
-    public static CallSite callSite(BabbleParser.CallContext ctx, String sourceName) {
-        List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
-        String[] argTexts = new String[parameters.size()];
-        for (int i = 0; i < argTexts.length; i++) {
-            argTexts[i] = parameters.get(i).expression().getText();
-        }
-        return new CallSite(sourceName, ctx.getStart().getLine(), ctx.expression().getText(), argTexts);
-    }
-
-    /**
-     * The names of a call's arguments, parallel to them, or null when none is named.
-     */
-    public static String[] callNames(BabbleParser.CallContext ctx) {
-        List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
-        String[] names = null;
-        for (int i = 0; i < parameters.size(); i++) {
-            String name = org.babblelang.analysis.ScopeAnalysis.callParamName(parameters.get(i));
-            if (name != null) {
-                if (names == null) {
-                    names = new String[parameters.size()];
-                }
-                names[i] = name;
-            }
-        }
-        return names;
     }
 
     @Override
