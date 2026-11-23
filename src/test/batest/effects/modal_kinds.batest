@@ -1,7 +1,7 @@
 ;; Deep immutability by mode crossing : one cached modal kind per record, shared by the type
 ;; checker and the effect checker. A record crosses what its fields' types cross ; a generic
 ;; record, or a Java class the axioms call immutable (Map.Entry), what its type arguments cross.
-;; References : BIP027-P5 (ModalKindTable, docs/design/bip027_tackling-complexity-in-the-compiler.md §3.3), BIP016, BIP019
+;; References : BIP027-I5 (ModalKindTable, docs/design/bip027_tackling-complexity-in-the-compiler.md §3.3), BIP016, BIP019
 
 def Box = class (def v : int) ()
 def Pair of (A, B) = record (a : A, b : B) ()

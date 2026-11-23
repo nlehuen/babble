@@ -509,6 +509,8 @@ Java methods and classes default to **unconstrained** (`EffectSet.EMPTY`, conser
 
 ### 6.1 In-Babble `axiom` and `impure` Declarations (`RM006` `on` Syntax)
 
+> **Retired.** The `axiom ... on Target` / `io on Target` / `def x = axiom ... on Target` spelling below was deprecated by `BIP019` in favor of `axiom Target: fn ...` and `axiom Target: class ( ... )` ([BIP019](bip019_refactoring-axioms.md) §3.2), and removed from the grammar in `BIP027-I5` (`BIP027-D6`, [BIP027](bip027_tackling-complexity-in-the-compiler.md)). The examples are kept as the historical design.
+
 ```babble
 ;; Method-level axioms:
 axiom pure deterministic nothrow on java.lang.Math.sqrt
@@ -539,6 +541,8 @@ impure on java.net.URL.hashCode
 * **`export` contracts & `export axiom` in `ModuleInterface` (`BIP007-D2`):** Per `BIP007-D2`, an unannotated `export def` exports its inferred `EffectSet` and parameter flags in `TypedModuleSummary` (`ModuleInterface`), while exports with explicit effect modifiers or `impure` expose only their declared contract. Separately, `export axiom ... on <target>` / `export impure on <target>` do not introduce a runtime value binding; instead, `ModuleInterface` carries an exported axiom table mapping `(Class<?>, memberName | "<init>" | "*") -> EffectSet`, which `EffectChecker` imports into the caller's `ScopeAnalysis` on static `import("...ba")`.
 
 ### 6.2 Host-Side Java Annotations & `BabbleScriptEngine` API
+
+> Since `BIP027-I5` (`BIP027-D6`), the engine's `assumeEffects` / `assumeConstructorEffects` / `markIO` registrations are lowered into an axiom table (`HostEffects.Registry`) : a method registration is a named member axiom applying to the method's overrides, a constructor registration a `new` axiom, and a class registration an `exact` wildcard on the class itself. They keep their place in the §6.1 priority order, after the program's own axioms.
 
 Public package **`org.babblelang.effects`** defines the `Effect` enum (`PURE`, `HERMETIC`, `MUT`, `BORROW`, `DETERMINISTIC`, `NOTHROW`, `IDEMPOTENT`, `COMMUTATIVE`, `ASSOCIATIVE`, `MONOTONE`, `INJECTIVE`, `IMPURE`, adding `UNIQUE` / `@Unique` in `BIP007-I2`) and composable Java annotations (`@Pure`, `@Hermetic`, `@Mut`, `@Borrow`, `@Deterministic`, `@Nothrow`, `@Idempotent`, `@Commutative`, `@Associative`, `@Monotone`, `@Injective`, `@Impure`), keeping `org.babblelang.runtime` and `org.babblelang.engine.impl.natives` completely free of effect types (`RuntimeBoundaryTestCase`). Java libraries exposing APIs to Babble can annotate classes, constructors, or methods directly:
 

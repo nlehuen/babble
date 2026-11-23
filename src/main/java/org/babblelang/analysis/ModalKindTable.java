@@ -11,7 +11,7 @@ import java.util.Set;
 import java.util.function.Predicate;
 
 /**
- * Modal kinds of types by mode crossing ({@code BIP027-P5}, docs/design/bip027_tackling-complexity-in-the-compiler.md
+ * Modal kinds of types by mode crossing ({@code BIP027-I5}, docs/design/bip027_tackling-complexity-in-the-compiler.md
  * §3.3, after Peters et al., <i>Mode Crossing</i>, ICFP 2026) : the one place that decides whether
  * a value of a type is deeply immutable, for the type checker and the effect checker alike.
  *

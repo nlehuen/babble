@@ -85,7 +85,7 @@ final class EffectChecker {
                     new boolean[mutParams.length], false);
         }
 
-        /** Where this callable sits on the purity lattice it shares with Java call profiles (BIP027-P5). */
+        /** Where this callable sits on the purity lattice it shares with Java call profiles (BIP027-I5). */
         Purity purity() {
             return Purity.of(effects, mutParams);
         }
@@ -178,7 +178,7 @@ final class EffectChecker {
                     false, false, false, true, allTrue(mutParams.length));
         }
 
-        /** Where this Java callee sits on the purity lattice it shares with Babble callable summaries (BIP027-P5). */
+        /** Where this Java callee sits on the purity lattice it shares with Babble callable summaries (BIP027-I5). */
         Purity purity() {
             return Purity.of(effects, mutParams);
         }

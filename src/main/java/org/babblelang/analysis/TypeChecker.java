@@ -250,7 +250,7 @@ final class TypeChecker {
         }
     });
 
-    /** Deep immutability, by mode crossing (BIP027-P5) : what the effect checker also asks. */
+    /** Deep immutability, by mode crossing (BIP027-I5) : what the effect checker also asks. */
     private final ModalKindTable modalKinds = new ModalKindTable(
             cls -> effectChecker != null
                     ? effectChecker.isJavaClassDeeplyImmutable(cls)
