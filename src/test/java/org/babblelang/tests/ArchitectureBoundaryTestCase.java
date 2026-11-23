@@ -47,7 +47,8 @@ public class ArchitectureBoundaryTestCase {
      * in P2, {@code EffectChecker} in P3).
      */
     private static final List<String> SIZE_CAPPED_SOURCES = List.of(
-            "src/main/java/org/babblelang/analysis/CallSolver.java"
+            "src/main/java/org/babblelang/analysis/CallSolver.java",
+            "src/main/java/org/babblelang/compiler/HirEmitter.java"
     );
 
     private static Path classesDirectory() throws URISyntaxException {

@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.babblelang.compiler.JvmPrimitives.*;
 import static org.objectweb.asm.Opcodes.*;
 
 /**
@@ -37,7 +38,7 @@ final class InterfaceGen {
         this.writer = new ScriptClassWriter(emitter.runtimeLoader, emitter.className,
                 emitter.generatedClassParents, emitter.generatedInterfaceParents);
         this.writer.visit(V21, ACC_PUBLIC | ACC_INTERFACE | ACC_ABSTRACT | ACC_SYNTHETIC,
-                name, null, HirEmitter.OBJECT, extended.length == 0 ? null : extended);
+                name, null, OBJECT, extended.length == 0 ? null : extended);
         this.writer.visitSource(emitter.sourceName, null);
     }
 
@@ -56,27 +57,8 @@ final class InterfaceGen {
     }
 
     String superHelper(String directParentJvm, String memberName, LoweringTargets.FunctionSignature sig) {
-        String desc = HirEmitter.bridgeDescriptor(sig);
-        String key = directParentJvm + "." + memberName + desc;
-        return superHelpers.computeIfAbsent(key, k -> {
-            String helperName = "$super$" + emitter.nextSuperHelper();
-            MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, helperName, desc, null, null);
-            m.visitCode();
-            int[] paramSlots = HirEmitter.bridgeParamSlots(sig);
-            m.visitVarInsn(ALOAD, 0);
-            m.visitVarInsn(ALOAD, 1);
-            for (int i = 0; i < sig.parameterKinds().length; i++) {
-                HirEmitter.loadKindOn(m, sig.parameterKinds()[i], paramSlots[i]);
-            }
-            if (sig.hasOptionalMask()) {
-                m.visitVarInsn(ILOAD, HirEmitter.bridgeMaskSlot(sig));
-            }
-            m.visitMethodInsn(INVOKESPECIAL, directParentJvm, HirEmitter.bridgeMethodName(memberName), desc, true);
-            m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
-            m.visitMaxs(0, 0);
-            m.visitEnd();
-            return helperName;
-        });
+        return emitter.bridges.superHelper(writer, superHelpers, ACC_PUBLIC | ACC_SYNTHETIC,
+                directParentJvm, memberName, sig);
     }
 
     void emitBody() {
@@ -88,8 +70,8 @@ final class InterfaceGen {
         for (LoweringTargets.MemberSpec spec : hierarchy.interfaceMembers().values()) {
             if (spec.callable() && spec.declaredSignature() != null) {
                 LoweringTargets.FunctionSignature sig = spec.declaredSignature();
-                String mName = HirEmitter.bridgeMethodName(spec.name());
-                String desc = HirEmitter.bridgeDescriptor(sig);
+                String mName = bridgeMethodName(spec.name());
+                String desc = bridgeDescriptor(sig);
                 emitted.add(mName + desc);
                 if (!spec.hasDefault()) {
                     writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, mName, desc, null, null).visitEnd();
@@ -104,8 +86,8 @@ final class InterfaceGen {
                 List<LoweringTargets.FunctionSignature> sigs = spec.overloadSignatures();
                 for (int k = 0; k < sigs.size(); k++) {
                     LoweringTargets.FunctionSignature sig = sigs.get(k);
-                    String mName = HirEmitter.bridgeMethodName(spec.name() + "$" + k);
-                    String desc = HirEmitter.bridgeDescriptor(sig);
+                    String mName = bridgeMethodName(spec.name() + "$" + k);
+                    String desc = bridgeDescriptor(sig);
                     emitted.add(mName + desc);
                     if (!spec.hasDefault()) {
                         writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, mName, desc, null, null).visitEnd();
@@ -121,9 +103,9 @@ final class InterfaceGen {
             }
         }
 
-        Map<String, HirEmitter.AncestorMethod> ancestors = emitter.collectAncestorMethods(hierarchy);
-        for (HirEmitter.AncestorMethod anc : ancestors.values()) {
-            String mName = HirEmitter.bridgeMethodName(anc.bridgeKey());
+        Map<String, BridgeHelpers.AncestorMethod> ancestors = emitter.bridges.collectAncestorMethods(hierarchy);
+        for (BridgeHelpers.AncestorMethod anc : ancestors.values()) {
+            String mName = bridgeMethodName(anc.bridgeKey());
             if (emitted.contains(mName + anc.descriptor())) {
                 continue;
             }
@@ -146,23 +128,23 @@ final class InterfaceGen {
                     m.visitCode();
                     LoweringTargets.FunctionSignature ownSig = ownSpec.callable() ? ownSpec.declaredSignature() : null;
                     if (ownSig != null && ownSig.parameterKinds().length == anc.signature().parameterKinds().length) {
-                        int[] paramSlots = HirEmitter.bridgeParamSlots(anc.signature());
+                        int[] paramSlots = bridgeParamSlots(anc.signature());
                         m.visitVarInsn(ALOAD, 0);
                         m.visitVarInsn(ALOAD, 1);
                         for (int i = 0; i < anc.signature().parameterKinds().length; i++) {
-                            HirEmitter.emitAdaptBridgeArg(m, anc.signature(), paramSlots, i, ownSig.parameterKinds()[i], -1);
+                            emitAdaptBridgeArg(m, anc.signature(), paramSlots, i, ownSig.parameterKinds()[i], -1);
                         }
                         if (ownSig.hasOptionalMask()) {
                             if (anc.signature().hasOptionalMask()) {
-                                m.visitVarInsn(ILOAD, HirEmitter.bridgeMaskSlot(anc.signature()));
+                                m.visitVarInsn(ILOAD, bridgeMaskSlot(anc.signature()));
                             } else {
                                 m.visitInsn(ICONST_0);
                             }
                         }
-                        m.visitMethodInsn(INVOKEINTERFACE, name, HirEmitter.bridgeMethodName(anc.memberName()),
-                                HirEmitter.bridgeDescriptor(ownSig), true);
-                        HirEmitter.emitAdaptKind(m, ownSig.returnKind(), anc.signature().returnKind());
-                        m.visitInsn(HirEmitter.returnInsn(anc.signature().returnKind()));
+                        m.visitMethodInsn(INVOKEINTERFACE, name, bridgeMethodName(anc.memberName()),
+                                bridgeDescriptor(ownSig), true);
+                        emitAdaptKind(m, ownSig.returnKind(), anc.signature().returnKind());
+                        m.visitInsn(returnInsn(anc.signature().returnKind()));
                     } else {
                         emitOwnDefaultInvoke(m, shape.memberIndex(anc.memberName()), anc.memberName(), -1,
                                 defaultFunction(anc.memberName()), anc.signature());
@@ -171,7 +153,7 @@ final class InterfaceGen {
                     m.visitEnd();
                 }
             } else {
-                HirEmitter.InheritedDefault def = emitter.findInheritedDefault(hierarchy, anc.memberName());
+                BridgeHelpers.InheritedDefault def = emitter.bridges.findInheritedDefault(hierarchy, anc.memberName());
                 if (def == null) {
                     continue;
                 }
@@ -184,13 +166,13 @@ final class InterfaceGen {
                         && anc.overloadIndex() >= 0 && anc.overloadIndex() < def.providerSpec().overloadSignatures().size()) {
                     provSig = def.providerSpec().overloadSignatures().get(anc.overloadIndex());
                 }
-                String provDesc = provSig != null ? HirEmitter.bridgeDescriptor(provSig) : null;
-                int parentsWithSig = emitter.countDirectParentsWithMethod(hierarchy, anc.bridgeKey(), anc.descriptor());
+                String provDesc = provSig != null ? bridgeDescriptor(provSig) : null;
+                int parentsWithSig = emitter.bridges.countDirectParentsWithMethod(hierarchy, anc.bridgeKey(), anc.descriptor());
                 if (parentsWithSig >= 2 || !anc.descriptor().equals(provDesc)) {
                     emitted.add(mName + anc.descriptor());
                     MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, mName, anc.descriptor(), null, null);
                     m.visitCode();
-                    emitter.emitInheritedDefaultInvoke(m, def, directParentJvm, anc.memberName(), anc.bridgeKey(),
+                    emitter.bridges.emitInheritedDefaultInvoke(m, def, directParentJvm, anc.memberName(), anc.bridgeKey(),
                             anc.signatureKey(), anc.descriptor(), anc.signature());
                     m.visitMaxs(0, 0);
                     m.visitEnd();
@@ -201,7 +183,7 @@ final class InterfaceGen {
 
     private void emitOwnDefaultInvoke(MethodVisitor m, int memberIndex, String memberName, int overloadAltIndex,
                                       HirFunction fn, LoweringTargets.FunctionSignature sig) {
-        int[] paramSlots = HirEmitter.bridgeParamSlots(sig);
+        int[] paramSlots = bridgeParamSlots(sig);
         int ifaceCount = sig.parameterKinds().length;
         int fnCount = fn != null ? fn.params().size() : -1;
         if (fn != null) {
@@ -213,60 +195,60 @@ final class InterfaceGen {
         ConstantPool.pushInt(m, memberIndex);
         if (overloadAltIndex >= 0) {
             ConstantPool.pushInt(m, overloadAltIndex);
-            m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "interfaceDefaultAlt",
-                    "(Ljava/lang/Object;Ljava/lang/String;II)L" + HirEmitter.RUNTIME + "BabbleFunction;", false);
+            m.visitMethodInsn(INVOKESTATIC, CLASSES, "interfaceDefaultAlt",
+                    "(Ljava/lang/Object;Ljava/lang/String;II)L" + RUNTIME + "BabbleFunction;", false);
         } else {
-            m.visitMethodInsn(INVOKESTATIC, HirEmitter.CLASSES, "interfaceDefault",
-                    "(Ljava/lang/Object;Ljava/lang/String;I)L" + HirEmitter.RUNTIME + "BabbleFunction;", false);
+            m.visitMethodInsn(INVOKESTATIC, CLASSES, "interfaceDefault",
+                    "(Ljava/lang/Object;Ljava/lang/String;I)L" + RUNTIME + "BabbleFunction;", false);
         }
 
         if (fn != null && !fn.isCompiledClassMethod() && fn.hasSpec()
-                && ifaceCount <= fnCount && HirEmitter.allOptionalFrom(fn, ifaceCount)) {
+                && ifaceCount <= fnCount && allOptionalFrom(fn, ifaceCount)) {
             List<HirParam> params = fn.params();
-            m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_FUNCTION);
+            m.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
             m.visitVarInsn(ALOAD, 0);
             m.visitVarInsn(ALOAD, 1);
             for (int i = 0; i < ifaceCount; i++) {
                 HirParam param = params.get(i);
-                HirEmitter.emitAdaptBridgeArg(m, sig, paramSlots, i, param.kind(), param.wideningRank());
+                emitAdaptBridgeArg(m, sig, paramSlots, i, param.kind(), param.wideningRank());
             }
             for (int i = ifaceCount; i < fnCount; i++) {
-                HirEmitter.emitDefaultValueOn(m, params.get(i).kind());
+                emitDefaultValueOn(m, params.get(i).kind());
             }
-            HirEmitter.emitRemapBridgeMask(m, sig, fn, ifaceCount);
+            emitRemapBridgeMask(m, sig, fn, ifaceCount);
             m.visitMethodInsn(INVOKESTATIC, emitter.className, fn.jvmMethodName() + "$spec",
-                    HirEmitter.functionSpecDescriptor(fn), false);
-            HirEmitter.emitAdaptKind(m, fn.returnKind(), sig.returnKind());
-            m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
+                    functionSpecDescriptor(fn), false);
+            emitAdaptKind(m, fn.returnKind(), sig.returnKind());
+            m.visitInsn(returnInsn(sig.returnKind()));
             return;
         }
         if (fn != null && !fn.isCompiledClassMethod() && fn.isSpread() && ifaceCount <= fnCount) {
-            m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_FUNCTION);
+            m.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
             m.visitVarInsn(ALOAD, 0);
             m.visitVarInsn(ALOAD, 1);
             m.visitInsn(ACONST_NULL);
             for (int i = 0; i < ifaceCount; i++) {
-                HirEmitter.emitLoadBridgeArgBoxed(m, sig, paramSlots, i);
+                emitLoadBridgeArgBoxed(m, sig, paramSlots, i);
             }
             for (int i = ifaceCount; i < fnCount; i++) {
-                m.visitFieldInsn(GETSTATIC, HirEmitter.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
+                m.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
             }
             m.visitMethodInsn(INVOKESTATIC, emitter.className, fn.jvmMethodName(),
-                    HirEmitter.functionDirectDescriptor(fn), false);
-            HirEmitter.emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
-            m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
+                    functionDirectDescriptor(fn), false);
+            emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
+            m.visitInsn(returnInsn(sig.returnKind()));
             return;
         }
         String siteField = emitter.constantPool.syntheticCallSiteField(shape.name() + "." + memberName, ifaceCount);
-        m.visitTypeInsn(CHECKCAST, HirEmitter.COMPILED_FUNCTION);
+        m.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
         m.visitVarInsn(ALOAD, 0);
         m.visitVarInsn(ALOAD, 1);
-        HirEmitter.packBridgeArgsArray(m, sig, paramSlots);
+        packBridgeArgsArray(m, sig, paramSlots);
         m.visitInsn(ACONST_NULL);
-        m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
-        m.visitMethodInsn(INVOKEVIRTUAL, HirEmitter.COMPILED_FUNCTION, "invoke",
-                "(Ljava/lang/Object;L" + HirEmitter.SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + HirEmitter.CALL_SITE + ";)Ljava/lang/Object;", false);
-        HirEmitter.emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
-        m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
+        m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
+        m.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "invoke",
+                "(Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", false);
+        emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
+        m.visitInsn(returnInsn(sig.returnKind()));
     }
 }
