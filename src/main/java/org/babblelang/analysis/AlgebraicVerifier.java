@@ -16,7 +16,7 @@ import java.util.function.BiPredicate;
  * ANTLR-free algebraic signature validation, bounded E-graph equational law verification
  * ({@code idempotent}, {@code commutative}, {@code associative}), and partial-derivative
  * sign &amp; bijectivity analysis ({@code monotone}, {@code injective})
- * ({@code BIP027-P6}, {@code BIP027-D1}).
+ * ({@code BIP027-I6}, {@code BIP027-D1}).
  *
  * <p>Reuses {@link EGraph} and {@link AlgebraicRules#verifierRules()} directly so the
  * optimizer and effect verifier share one single source of truth for integral, boolean,

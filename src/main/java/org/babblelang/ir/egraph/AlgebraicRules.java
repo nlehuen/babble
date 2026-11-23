@@ -46,7 +46,7 @@ public final class AlgebraicRules {
         return OPTIMIZER_RULES;
     }
 
-    /** Extended equivalence rules for algebraic law verification ({@code EffectChecker} in BIP027-P6). */
+    /** Extended equivalence rules for algebraic law verification ({@code EffectChecker} in BIP027-I6). */
     public static List<EGraph.RewriteRule> verifierRules() {
         return VERIFIER_RULES;
     }
@@ -251,7 +251,7 @@ public final class AlgebraicRules {
         }
     }
 
-    // ---------------------------------------------------------------- extended verifier rules (BIP027-P6)
+    // ---------------------------------------------------------------- extended verifier rules (BIP027-I6)
 
     private static void floatingCommutativityRules(EGraph g, int id, ENode n, EGraph.MatchRecorder out) {
         if (!n.isFloating()) {
