@@ -13,6 +13,7 @@ public final class EffectMetadata {
     private final Map<ParserRuleContext, EffectSet> callableEffects = new HashMap<>();
     private final Map<ParserRuleContext, Type> callableTypes = new HashMap<>();
     private final Map<BabbleParser.CallContext, EffectSet> callEffects = new HashMap<>();
+    private final Map<BabbleParser.ForExpressionContext, EffectSet> forEffects = new HashMap<>();
 
     EffectMetadata() {
     }
@@ -43,5 +44,14 @@ public final class EffectMetadata {
     /** The resolved effect summary of a call site. */
     public EffectSet callEffects(BabbleParser.CallContext call) {
         return callEffects.getOrDefault(call, EffectSet.EMPTY);
+    }
+
+    void setForEffects(BabbleParser.ForExpressionContext loop, EffectSet effects) {
+        forEffects.put(loop, effects);
+    }
+
+    /** The resolved effect summary of a {@code for} loop (e.g. curated finite-collection {@code @TERMINATING}). */
+    public EffectSet forEffects(BabbleParser.ForExpressionContext loop) {
+        return forEffects.getOrDefault(loop, EffectSet.EMPTY);
     }
 }

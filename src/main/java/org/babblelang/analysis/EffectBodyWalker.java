@@ -1192,11 +1192,13 @@ final class EffectBodyWalker {
         TypeChecker.ForIterableInfo info = ec.checker.forIterableInfo(ctx);
         boolean trackConcurrentMut = false;
         boolean curatedFinite = false;
+        boolean isArrayLoop = false;
         if (info != null) {
             recordTargetRead(iterOrig, iterType);
             switch (info.kind()) {
                 case ARRAY -> {
                     // Indexed array loop : @HERMETIC @NOTHROW, terminates; mutable read recorded above.
+                    isArrayLoop = true;
                 }
                 case JAVA_ITERABLE -> {
                     boolean curatedNothrow = false;
@@ -1289,7 +1291,11 @@ final class EffectBodyWalker {
             activeForIterables.add(activeLoop);
         }
         boolean outerHermetic = hermetic;
+        boolean outerNothrow = nothrow;
+        boolean outerTerminating = terminating;
         hermetic = true;
+        nothrow = true;
+        terminating = true;
         Reachability.Origin bodyOrig = Reachability.Origin.IMMUTABLE;
         try {
             int iter = 0;
@@ -1308,13 +1314,32 @@ final class EffectBodyWalker {
             }
         } finally {
             boolean bodyHermetic = hermetic;
+            boolean bodyNothrow = nothrow;
+            boolean bodyTerminating = terminating;
             hermetic = outerHermetic && bodyHermetic;
+            nothrow = outerNothrow && bodyNothrow;
+            terminating = outerTerminating && bodyTerminating;
+            boolean loopMutated = activeLoop != null && activeLoop.mutated;
             if (activeLoop != null) {
                 activeForIterables.remove(activeForIterables.size() - 1);
-                if (curatedFinite && (activeLoop.mutated || !bodyHermetic)) {
+                if (curatedFinite && (loopMutated || !bodyHermetic)) {
                     terminating = false;
                     nothrow = false;
                 }
+            }
+            if (emitDiagnostics) {
+                boolean loopFinite = isArrayLoop || (curatedFinite && !loopMutated && bodyHermetic);
+                boolean loopNothrowOk = loopFinite && bodyNothrow && (isArrayLoop || outerNothrow);
+                EnumSet<Effect> fx = EnumSet.noneOf(Effect.class);
+                if (bodyHermetic) {
+                    fx.add(Effect.PURE);
+                    fx.add(Effect.HERMETIC);
+                }
+                if (loopNothrowOk) {
+                    fx.add(Effect.NOTHROW);
+                }
+                ec.pass.analysis.effects().setForEffects(ctx,
+                        EffectSet.ofInferred(fx, false, false, false, loopFinite && bodyTerminating));
             }
             loopBreakOrigins.pop();
         }

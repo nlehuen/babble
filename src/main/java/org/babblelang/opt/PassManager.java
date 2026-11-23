@@ -25,8 +25,8 @@ public final class PassManager {
 
     private static final List<HirPass> O1_PASSES = List.of(
             new HirEGraphSimplifyPass(),
-            new HirDcePass(),
             new InlinePass(),
+            new HirDcePass(),
             new HirLicmPass()
     );
 

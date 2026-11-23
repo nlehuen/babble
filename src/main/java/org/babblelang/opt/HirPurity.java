@@ -110,7 +110,7 @@ public final class HirPurity {
             }
             case HirExpr.Logic l -> isPureNothrowTerminating(l.left(), module, visitingFns)
                     && isPureNothrowTerminating(l.right(), module, visitingFns);
-            case HirExpr.Block b -> !b.opensNamespaceScope() && allPureNothrowTerminating(b.statements(), module, visitingFns);
+            case HirExpr.Block b -> !b.opensNamespaceScope() && isPureLocalBlock(b, module, visitingFns);
             case HirExpr.If i -> isPureNothrowTerminating(i.cond(), module, visitingFns)
                     && isPureNothrowTerminating(i.thenBranch(), module, visitingFns)
                     && (i.elseBranch() == null || isPureNothrowTerminating(i.elseBranch(), module, visitingFns));
@@ -161,6 +161,64 @@ public final class HirPurity {
             }
             default -> false;
         };
+    }
+
+    private static boolean isPureLocalBlock(HirExpr.Block b, HirModule module, Set<Integer> visitingFns) {
+        if (b.declaredVars().isEmpty()) {
+            return allPureNothrowTerminating(b.statements(), module, visitingFns);
+        }
+        Set<Integer> localIds = new HashSet<>();
+        for (HirVar v : b.declaredVars()) {
+            if (!v.cell()) {
+                localIds.add(v.id());
+            }
+        }
+        return allPureWithLocals(b.statements(), localIds, module, visitingFns);
+    }
+
+    private static boolean allPureWithLocals(List<HirExpr> stmts, Set<Integer> localIds, HirModule module, Set<Integer> visitingFns) {
+        for (HirExpr s : stmts) {
+            if (!isPureStmtWithLocals(s, localIds, module, visitingFns)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isPureStmtWithLocals(HirExpr s, Set<Integer> localIds, HirModule module, Set<Integer> visitingFns) {
+        if (s instanceof HirExpr.Def d && d.var() != null && localIds.contains(d.var().id())) {
+            return d.value() == null || isPureNothrowTerminating(d.value(), module, visitingFns);
+        }
+        if (s instanceof HirExpr.VarAssign a && localIds.contains(a.var().id())) {
+            return isPureNothrowTerminating(a.value(), module, visitingFns);
+        }
+        if (s instanceof HirExpr.Block inner && !inner.opensNamespaceScope()) {
+            Set<Integer> extended = localIds;
+            if (!inner.declaredVars().isEmpty()) {
+                extended = new HashSet<>(localIds);
+                for (HirVar v : inner.declaredVars()) {
+                    if (!v.cell()) {
+                        extended.add(v.id());
+                    }
+                }
+            }
+            return allPureWithLocals(inner.statements(), extended, module, visitingFns);
+        }
+        if (s instanceof HirExpr.For f) {
+            EffectSet fx = f.meta().effects();
+            if (!fx.isPure() || !fx.isNothrow() || !fx.terminating()
+                    || !isPureNothrowTerminating(f.iterable(), module, visitingFns)) {
+                return false;
+            }
+            Set<Integer> extended = new HashSet<>(localIds);
+            for (HirVar v : f.bodyDeclaredVars()) {
+                if (!v.cell()) {
+                    extended.add(v.id());
+                }
+            }
+            return allPureWithLocals(f.body(), extended, module, visitingFns);
+        }
+        return isPureNothrowTerminating(s, module, visitingFns);
     }
 
     private static boolean allArgsPrimitiveOrImmutable(List<HirExpr> args) {
@@ -295,135 +353,26 @@ public final class HirPurity {
         if (expr == null) {
             return;
         }
-        switch (expr) {
-            case HirExpr.VarAssign a -> {
-                out.add(a.var().id());
-                collectModifiedVars(a.value(), out);
+        if (expr instanceof HirExpr.VarAssign a) {
+            out.add(a.var().id());
+        } else if (expr instanceof HirExpr.Def d && d.var() != null) {
+            out.add(d.var().id());
+        } else if (expr instanceof HirExpr.Block b) {
+            for (HirVar v : b.declaredVars()) {
+                out.add(v.id());
             }
-            case HirExpr.Def d -> {
-                if (d.var() != null) out.add(d.var().id());
-                collectModifiedVars(d.value(), out);
+        } else if (expr instanceof HirExpr.For f) {
+            if (f.loopVar() != null) {
+                out.add(f.loopVar().id());
             }
-            case HirExpr.NameAssign a -> collectModifiedVars(a.value(), out);
-            case HirExpr.ThisFieldAssign a -> {
-                collectModifiedVars(a.receiver(), out);
-                collectModifiedVars(a.value(), out);
+            for (HirVar v : f.bodyDeclaredVars()) {
+                out.add(v.id());
             }
-            case HirExpr.JavaFieldAssign a -> {
-                collectModifiedVars(a.receiver(), out);
-                collectModifiedVars(a.value(), out);
-            }
-            case HirExpr.DynamicFieldAssign a -> {
-                collectModifiedVars(a.receiver(), out);
-                collectModifiedVars(a.value(), out);
-            }
-            case HirExpr.ThisFieldGet g -> collectModifiedVars(g.receiver(), out);
-            case HirExpr.JavaFieldGet g -> collectModifiedVars(g.receiver(), out);
-            case HirExpr.ArrayCreate c -> {
-                for (HirExpr a : c.args()) collectModifiedVars(a, out);
-            }
-            case HirExpr.ArrayOp op -> {
-                collectModifiedVars(op.receiver(), out);
-                for (HirExpr a : op.args()) collectModifiedVars(a, out);
-            }
-            case HirExpr.ModuleExportGet g -> collectModifiedVars(g.receiver(), out);
-            case HirExpr.DynamicSelect s -> collectModifiedVars(s.receiver(), out);
-            case HirExpr.Unary u -> collectModifiedVars(u.operand(), out);
-            case HirExpr.Binary b -> {
-                collectModifiedVars(b.left(), out);
-                collectModifiedVars(b.right(), out);
-            }
-            case HirExpr.Logic l -> {
-                collectModifiedVars(l.left(), out);
-                collectModifiedVars(l.right(), out);
-            }
-            case HirExpr.Is i -> collectModifiedVars(i.left(), out);
-            case HirExpr.As a -> collectModifiedVars(a.left(), out);
-            case HirExpr.NonNull n -> collectModifiedVars(n.operand(), out);
-            case HirExpr.SpreadAdapt s -> collectModifiedVars(s.value(), out);
-            case HirExpr.JavaSamAdapt j -> collectModifiedVars(j.value(), out);
-            case HirExpr.TypeApply t -> collectModifiedVars(t.inner(), out);
-            case HirExpr.Block b -> {
-                for (HirVar v : b.declaredVars()) out.add(v.id());
-                for (HirExpr s : b.statements()) collectModifiedVars(s, out);
-            }
-            case HirExpr.If i -> {
-                collectModifiedVars(i.cond(), out);
-                collectModifiedVars(i.thenBranch(), out);
-                collectModifiedVars(i.elseBranch(), out);
-            }
-            case HirExpr.While w -> {
-                collectModifiedVars(w.cond(), out);
-                collectModifiedVars(w.body(), out);
-            }
-            case HirExpr.For f -> {
-                collectModifiedVars(f.iterable(), out);
-                if (f.loopVar() != null) out.add(f.loopVar().id());
-                for (HirVar v : f.bodyDeclaredVars()) out.add(v.id());
-                for (HirExpr s : f.body()) collectModifiedVars(s, out);
-            }
-            case HirExpr.Break b -> collectModifiedVars(b.value(), out);
-            case HirExpr.Return r -> collectModifiedVars(r.value(), out);
-            case HirExpr.CoreCollectionCall c -> collectCallArgsModified(c.args(), out);
-            case HirExpr.SuperCall c -> collectCallArgsModified(c.args(), out);
-            case HirExpr.SelfRecurseCall c -> {
-                for (HirExpr a : c.args()) collectModifiedVars(a, out);
-            }
-            case HirExpr.SelfTailCall c -> collectCallArgsModified(c.args(), out);
-            case HirExpr.DirectBabbleCall c -> {
-                collectModifiedVars(c.callee(), out);
-                for (HirExpr a : c.args()) collectModifiedVars(a, out);
-            }
-            case HirExpr.DirectThisMethodCall c -> {
-                collectModifiedVars(c.receiver(), out);
-                collectCallArgsModified(c.args(), out);
-            }
-            case HirExpr.InterfaceCall c -> {
-                collectModifiedVars(c.receiver(), out);
-                for (HirExpr a : c.args()) collectModifiedVars(a, out);
-            }
-            case HirExpr.JavaConstructorCall c -> {
-                collectModifiedVars(c.callee(), out);
-                for (HirExpr a : c.args()) collectModifiedVars(a, out);
-            }
-            case HirExpr.JavaMethodCall c -> {
-                collectModifiedVars(c.receiver(), out);
-                for (HirExpr a : c.args()) collectModifiedVars(a, out);
-            }
-            case HirExpr.SafeCall c -> {
-                collectModifiedVars(c.receiver(), out);
-                collectCallArgsModified(c.args(), out);
-            }
-            case HirExpr.DynamicCall c -> {
-                collectModifiedVars(c.callee(), out);
-                collectCallArgsModified(c.args(), out);
-            }
-            case HirExpr.MakeOverloadSet m -> {
-                for (HirExpr o : m.operands()) collectModifiedVars(o, out);
-            }
-            case HirExpr.OverloadSelect s -> collectModifiedVars(s.set(), out);
-            case HirExpr.OverloadDispatch d -> {
-                collectModifiedVars(d.callee(), out);
-                for (HirExpr a : d.args()) collectModifiedVars(a, out);
-            }
-            case HirExpr.Const c -> { }
-            case HirExpr.IntParseFallback f -> { }
-            case HirExpr.CoreCollectionRef r -> { }
-            case HirExpr.VarRead v -> { }
-            case HirExpr.NameRead n -> { }
-            case HirExpr.ThisRef t -> { }
-            case HirExpr.RecurseRef r -> { }
-            case HirExpr.Continue c -> { }
-            case HirExpr.FunctionRef f -> { }
-            case HirExpr.ClassExpr c -> { }
-            case HirExpr.InterfaceExpr i -> { }
         }
-    }
-
-    private static void collectCallArgsModified(List<HirCallArg> args, Set<Integer> out) {
-        for (HirCallArg a : args) {
-            collectModifiedVars(a.value(), out);
-        }
+        HirRewriter.rewriteChildren(expr, child -> {
+            collectModifiedVars(child, out);
+            return child;
+        });
     }
 
     public static boolean isDefinitelyInitializedTopLevelFn(String name, HirModule module) {
