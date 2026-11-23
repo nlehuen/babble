@@ -1,6 +1,7 @@
 package org.babblelang.compiler;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirFunction;
 import org.babblelang.ir.hir.HirParam;
@@ -35,7 +36,7 @@ final class ClassGen {
     final List<Class<?>> javaInterfaces;
     final ClassWriter writer;
     final List<HirVar> hiddenCells = new ArrayList<>();
-    final ScopeAnalysis.PrimitiveKind[] memberKinds;
+    final PrimitiveKind[] memberKinds;
     final int[] primDefBits;
     final int primDefCount;
     final Map<String, String> superHelpers = new HashMap<>();
@@ -87,7 +88,7 @@ final class ClassGen {
         return fn;
     }
 
-    String superHelper(String directParentJvm, String memberName, ScopeAnalysis.FunctionSignature sig) {
+    String superHelper(String directParentJvm, String memberName, LoweringTargets.FunctionSignature sig) {
         String desc = HirEmitter.bridgeDescriptor(sig);
         String key = directParentJvm + "." + memberName + desc;
         return superHelpers.computeIfAbsent(key, k -> {
@@ -172,14 +173,14 @@ final class ClassGen {
     }
 
     void emitInterfaceBridges() {
-        ScopeAnalysis.TypeHierarchyInfo hierarchy = emitter.module.typeHierarchy(shape.id());
+        LoweringTargets.TypeHierarchyInfo hierarchy = emitter.module.typeHierarchy(shape.id());
         if (hierarchy == null) {
             return;
         }
         Map<String, HirEmitter.AncestorMethod> ancestors = emitter.collectAncestorMethods(hierarchy);
         for (HirEmitter.AncestorMethod anc : ancestors.values()) {
             String memberName = anc.memberName();
-            ScopeAnalysis.FunctionSignature sig = anc.signature();
+            LoweringTargets.FunctionSignature sig = anc.signature();
             int[] paramSlots = HirEmitter.bridgeParamSlots(sig);
             int ifaceCount = sig.parameterKinds().length;
             MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC,
@@ -229,7 +230,7 @@ final class ClassGen {
                             m.visitFieldInsn(GETSTATIC, HirEmitter.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
                         }
                         m.visitMethodInsn(INVOKEVIRTUAL, name, jvmMethod, HirEmitter.methodDirectDescriptor(fn), false);
-                        HirEmitter.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
+                        HirEmitter.emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
                         m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
                     } else {
                         String siteField = emitter.constantPool.syntheticCallSiteField(shape.name() + "." + memberName, ifaceCount);
@@ -246,7 +247,7 @@ final class ClassGen {
                         m.visitInsn(ACONST_NULL);
                         m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
                         m.visitMethodInsn(INVOKEVIRTUAL, name, jvmMethod + (fn.isSpread() ? "$call" : ""), HirEmitter.METHOD_DESCRIPTOR, false);
-                        HirEmitter.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
+                        HirEmitter.emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
                         m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
                     }
                 } else {
@@ -268,7 +269,7 @@ final class ClassGen {
     }
 
     private void emitBridgeDynamicFallback(MethodVisitor m, String memberName, Integer altIdx, String sigKey,
-                                           ScopeAnalysis.FunctionSignature sig, int[] paramSlots, int ifaceCount) {
+                                           LoweringTargets.FunctionSignature sig, int[] paramSlots, int ifaceCount) {
         String siteField = emitter.constantPool.syntheticCallSiteField(shape.name() + "." + memberName, ifaceCount);
         m.visitVarInsn(ALOAD, 0);
         m.visitLdcInsn(memberName);
@@ -292,11 +293,11 @@ final class ClassGen {
         m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
         m.visitMethodInsn(INVOKEINTERFACE, HirEmitter.CALLABLE, "call",
                 "(L" + HirEmitter.SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + HirEmitter.CALL_SITE + ";)Ljava/lang/Object;", true);
-        HirEmitter.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
+        HirEmitter.emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
         m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
     }
 
-    private void emitJavaInterfaceBridges(ScopeAnalysis.TypeHierarchyInfo hierarchy,
+    private void emitJavaInterfaceBridges(LoweringTargets.TypeHierarchyInfo hierarchy,
                                           Map<String, HirEmitter.AncestorMethod> babbleAncestors) {
         TreeMap<String, List<Method>> grouped = new TreeMap<>();
         for (Class<?> jc : javaInterfaces) {
@@ -447,13 +448,13 @@ final class ClassGen {
                     List<HirParam> params = fn.params();
                     m.visitInsn(ACONST_NULL);
                     for (int i = 0; i < paramTypes.length; i++) {
-                        HirEmitter.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], ScopeAnalysis.PrimitiveKind.NONE, -1, params.get(i).checkedType());
+                        HirEmitter.emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], PrimitiveKind.NONE, -1, params.get(i).checkedType());
                     }
                     for (int i = paramTypes.length; i < fnCount; i++) {
                         m.visitFieldInsn(GETSTATIC, HirEmitter.ARGUMENTS, "MISSING", "Ljava/lang/Object;");
                     }
                     m.visitMethodInsn(INVOKEVIRTUAL, name, jvmMethod, HirEmitter.methodDirectDescriptor(fn), false);
-                    HirEmitter.emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
+                    HirEmitter.emitReturnToJava(m, PrimitiveKind.NONE, retType, descText, rtSlot);
                 } else {
                     String siteField = emitter.constantPool.javaCallSiteField(mName, paramTypes.length);
                     HirEmitter.emitPackJavaBridgeArgs(m, paramTypes, javaParamSlots);
@@ -478,7 +479,7 @@ final class ClassGen {
                     m.visitInsn(ACONST_NULL);
                     m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
                     m.visitMethodInsn(INVOKEVIRTUAL, name, jvmMethod + (fn.isSpread() ? "$call" : ""), HirEmitter.METHOD_DESCRIPTOR, false);
-                    HirEmitter.emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
+                    HirEmitter.emitReturnToJava(m, PrimitiveKind.NONE, retType, descText, rtSlot);
                 }
                 m.visitMaxs(0, 0);
                 m.visitEnd();
@@ -489,7 +490,7 @@ final class ClassGen {
         if (!ownMethod && inheritedBabbleDefault != null && babbleAnc != null
                 && !inheritedBabbleDefault.providerSpec().isOverloaded()
                 && babbleAnc.signature().parameterKinds().length == paramTypes.length) {
-            ScopeAnalysis.FunctionSignature ancSig = babbleAnc.signature();
+            LoweringTargets.FunctionSignature ancSig = babbleAnc.signature();
             m.visitVarInsn(ALOAD, 0);
             m.visitVarInsn(ALOAD, rtSlot);
             for (int i = 0; i < paramTypes.length; i++) {
@@ -524,7 +525,7 @@ final class ClassGen {
         m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
         m.visitMethodInsn(INVOKEINTERFACE, HirEmitter.CALLABLE, "call",
                 "(L" + HirEmitter.SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + HirEmitter.CALL_SITE + ";)Ljava/lang/Object;", true);
-        HirEmitter.emitReturnToJava(m, ScopeAnalysis.PrimitiveKind.NONE, retType, descText, rtSlot);
+        HirEmitter.emitReturnToJava(m, PrimitiveKind.NONE, retType, descText, rtSlot);
         m.visitMaxs(0, 0);
         m.visitEnd();
     }
@@ -616,7 +617,7 @@ final class ClassGen {
             m.visitTableSwitchInsn(0, cases.length - 1, fallback, cases);
             for (int i = 0; i < cases.length; i++) {
                 m.visitLabel(cases[i]);
-                ScopeAnalysis.PrimitiveKind mk = memberKinds[i];
+                PrimitiveKind mk = memberKinds[i];
                 String desc = HirEmitter.jvmDescriptor(mk);
                 if (set) {
                     m.visitVarInsn(ALOAD, 0);
@@ -753,7 +754,7 @@ final class ClassGen {
                 continue;
             }
             String member = shape.member(i);
-            ScopeAnalysis.PrimitiveKind mk = memberKinds[i];
+            PrimitiveKind mk = memberKinds[i];
             String desc = HirEmitter.jvmDescriptor(mk);
             m.visitVarInsn(ALOAD, 0);
             m.visitFieldInsn(GETFIELD, name, member, desc);
@@ -807,7 +808,7 @@ final class ClassGen {
                 m.visitInsn(IADD);
                 continue;
             }
-            ScopeAnalysis.PrimitiveKind mk = memberKinds[i];
+            PrimitiveKind mk = memberKinds[i];
             m.visitVarInsn(ALOAD, 0);
             m.visitFieldInsn(GETFIELD, name, shape.member(i), HirEmitter.jvmDescriptor(mk));
             switch (mk) {

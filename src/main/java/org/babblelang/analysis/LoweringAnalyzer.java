@@ -54,50 +54,50 @@ final class LoweringAnalyzer {
         Map<ParserRuleContext, Integer> widened = checker.widened();
         recordChecksTree(file, pass, checker, declarationTypes, inferredDefs, inferredMembers, widened);
         for (Map.Entry<ParserRuleContext, Integer> entry : widened.entrySet()) {
-            pass.analysis.widenNumeric(entry.getKey(), entry.getValue());
+            pass.analysis.lowering().widenNumeric(entry.getKey(), entry.getValue());
         }
         for (Map.Entry<ParserRuleContext, Object> entry : checker.resolvedLiterals().entrySet()) {
-            pass.analysis.setResolvedLiteral(entry.getKey(), entry.getValue());
+            pass.analysis.lowering().setResolvedLiteral(entry.getKey(), entry.getValue());
         }
         for (Map.Entry<ParserRuleContext, String> entry : checker.callChecks().entrySet()) {
-            pass.analysis.setCheckedType(entry.getKey(), entry.getValue());
+            pass.analysis.lowering().setCheckedType(entry.getKey(), entry.getValue());
         }
         for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
             if (checker.inFile(entry.getKey())) {
-                pass.analysis.setExpressionKind(entry.getKey(), ScopeAnalysis.PrimitiveKind.of(entry.getValue()));
+                pass.analysis.lowering().setExpressionKind(entry.getKey(), PrimitiveKind.of(entry.getValue()));
                 if (checker.isDeeplyImmutable(entry.getValue())) {
-                    pass.analysis.markExpressionDeeplyImmutable(entry.getKey());
+                    pass.analysis.lowering().markExpressionDeeplyImmutable(entry.getKey());
                 }
                 if (entry.getValue() == Type.STRING) {
-                    pass.analysis.markExpressionString(entry.getKey());
+                    pass.analysis.lowering().markExpressionString(entry.getKey());
                 }
             }
             if (entry.getKey() instanceof BabbleParser.IsExpressionContext isCtx && checker.inFile(isCtx)) {
                 Type isTarget = checker.isTargetType(isCtx);
                 if (isTarget instanceof Type.Instance inst
                         && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
-                    pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
+                    pass.analysis.lowering().setIsTarget(isCtx, new LoweringTargets.IsTarget(inst.node().id, inst.node().kind));
                 } else if (isTarget instanceof Type.Array array) {
                     Class<?> checked = JavaTypeBridge.checkedArrayClass(array);
                     if (JavaTypeBridge.isBytecodeAccessible(checked)) {
-                        pass.analysis.setIsTarget(isCtx, new ScopeAnalysis.IsTarget(null, null,
+                        pass.analysis.lowering().setIsTarget(isCtx, new LoweringTargets.IsTarget(null, null,
                                 checked.getName().replace('.', '/')));
                     }
                 } else if (isTarget instanceof Type.Intersection inter) {
-                    List<ScopeAnalysis.IsTarget> targets = intersectionIsTargets(inter);
+                    List<LoweringTargets.IsTarget> targets = intersectionIsTargets(inter);
                     if (!targets.isEmpty()) {
-                        pass.analysis.setIsIntersectionTargets(isCtx, targets);
+                        pass.analysis.lowering().setIsIntersectionTargets(isCtx, targets);
                     }
                 }
             }
             if (entry.getKey() instanceof BabbleParser.AsExpressionContext asCtx && checker.inFile(asCtx)) {
                 if (entry.getValue() instanceof Type.Instance inst
                         && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
-                    pass.analysis.setAsTarget(asCtx, new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
+                    pass.analysis.lowering().setAsTarget(asCtx, new LoweringTargets.IsTarget(inst.node().id, inst.node().kind));
                 } else if (entry.getValue() instanceof Type.Array array) {
                     Class<?> checked = JavaTypeBridge.checkedArrayClass(array);
                     if (JavaTypeBridge.isBytecodeAccessible(checked)) {
-                        pass.analysis.setAsTarget(asCtx, new ScopeAnalysis.IsTarget(null, null,
+                        pass.analysis.lowering().setAsTarget(asCtx, new LoweringTargets.IsTarget(null, null,
                                 checked.getName().replace('.', '/')));
                     }
                 }
@@ -110,12 +110,12 @@ final class LoweringAnalyzer {
             if (decl instanceof BabbleParser.DefExpressionContext def) {
                 Type t = checker.annotator().declaredType(def);
                 if (t == null) {
-                    ScopeAnalysis.DefKind defKind = pass.analysis.defTarget(def).kind();
-                    t = (defKind == ScopeAnalysis.DefKind.MEMBER || defKind == ScopeAnalysis.DefKind.STATIC)
+                    LoweringTargets.DefKind defKind = pass.analysis.lowering().defTarget(def).kind();
+                    t = (defKind == LoweringTargets.DefKind.MEMBER || defKind == LoweringTargets.DefKind.STATIC)
                             ? inferredMembers.get(def) : inferredDefs.get(def);
                 }
                 if (t != null) {
-                    pass.analysis.setDeclarationKind(def, ScopeAnalysis.PrimitiveKind.of(t));
+                    pass.analysis.lowering().setDeclarationKind(def, PrimitiveKind.of(t));
                 }
             } else if (ScopeAnalysis.isParamDecl(decl)) {
                 Type t = declarationTypes.get(decl);
@@ -127,12 +127,12 @@ final class LoweringAnalyzer {
                     t = inferredParams.get(decl);
                 }
                 if (t != null) {
-                    pass.analysis.setDeclarationKind(decl, ScopeAnalysis.PrimitiveKind.of(t));
+                    pass.analysis.lowering().setDeclarationKind(decl, PrimitiveKind.of(t));
                 }
             } else if (decl instanceof BabbleParser.ForExpressionContext forExpr) {
                 Type t = declarationTypes.get(forExpr);
                 if (t != null) {
-                    pass.analysis.setDeclarationKind(forExpr, ScopeAnalysis.PrimitiveKind.of(t));
+                    pass.analysis.lowering().setDeclarationKind(forExpr, PrimitiveKind.of(t));
                 }
             }
         }
@@ -159,7 +159,7 @@ final class LoweringAnalyzer {
                     t = inferredMembers.get(def);
                 }
                 if (t != null) {
-                    pass.analysis.setDeclarationKind(member.declaration, ScopeAnalysis.PrimitiveKind.of(t));
+                    pass.analysis.lowering().setDeclarationKind(member.declaration, PrimitiveKind.of(t));
                 }
             }
         }
@@ -171,56 +171,56 @@ final class LoweringAnalyzer {
         }
         for (BabbleParser.FunctionLiteralContext fn : checker.functions()) {
             if (types.get(fn) instanceof Type.Function tf) {
-                pass.analysis.setFunctionReturnKind(fn, ScopeAnalysis.PrimitiveKind.of(tf.result()));
+                pass.analysis.lowering().setFunctionReturnKind(fn, PrimitiveKind.of(tf.result()));
             }
         }
         for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
             if (entry.getKey() instanceof BabbleParser.OverloadExpressionContext ov
                     && checker.inFile(ov) && entry.getValue() instanceof Type.Overloaded overloaded) {
-                List<ScopeAnalysis.OverloadAltMetaInfo> metas = new ArrayList<>(overloaded.alternatives().size());
+                List<LoweringTargets.OverloadAltMetaInfo> metas = new ArrayList<>(overloaded.alternatives().size());
                 for (Type.Function alt : overloaded.alternatives()) {
                     metas.add(buildOverloadAltMeta(alt));
                 }
-                pass.analysis.setOverloadMetas(ov, metas);
+                pass.analysis.calls().setOverloadMetas(ov, metas);
             }
         }
-        for (Map.Entry<ParserRuleContext, ScopeAnalysis.OverloadSelection> entry : checker.overloadSelections().entrySet()) {
+        for (Map.Entry<ParserRuleContext, LoweringTargets.OverloadSelection> entry : checker.overloadSelections().entrySet()) {
             if (checker.inFile(entry.getKey())) {
-                pass.analysis.setOverloadSelection(entry.getKey(), entry.getValue());
+                pass.analysis.calls().setOverloadSelection(entry.getKey(), entry.getValue());
             }
         }
-        for (Map.Entry<ParserRuleContext, ScopeAnalysis.JavaSamTarget> entry : checker.samTargets().entrySet()) {
+        for (Map.Entry<ParserRuleContext, LoweringTargets.JavaSamTarget> entry : checker.samTargets().entrySet()) {
             if (checker.inFile(entry.getKey())) {
-                pass.analysis.setJavaSamTarget(entry.getKey(), entry.getValue());
+                pass.analysis.lowering().setJavaSamTarget(entry.getKey(), entry.getValue());
             }
         }
-        for (Map.Entry<BabbleParser.ForExpressionContext, ScopeAnalysis.JavaSamTarget> entry : checker.forElemSamTargets().entrySet()) {
+        for (Map.Entry<BabbleParser.ForExpressionContext, LoweringTargets.JavaSamTarget> entry : checker.forElemSamTargets().entrySet()) {
             if (checker.inFile(entry.getKey())) {
-                pass.analysis.setForElemSamTarget(entry.getKey(), entry.getValue());
+                pass.analysis.lowering().setForElemSamTarget(entry.getKey(), entry.getValue());
             }
         }
-        for (Map.Entry<BabbleParser.AsExpressionContext, ScopeAnalysis.JavaSamTarget> entry : checker.asSamTargets().entrySet()) {
+        for (Map.Entry<BabbleParser.AsExpressionContext, LoweringTargets.JavaSamTarget> entry : checker.asSamTargets().entrySet()) {
             if (checker.inFile(entry.getKey())) {
-                pass.analysis.setAsSamTarget(entry.getKey(), entry.getValue());
+                pass.analysis.lowering().setAsSamTarget(entry.getKey(), entry.getValue());
             }
         }
         publishDefinitelyDefined(pass, checker);
         deriveTargets(file);
         publishTypeHierarchies(pass, checker);
         if (pass.analysis.moduleInterface() != null) {
-            pass.analysis.moduleInterface().setTypeHierarchies(pass.analysis.typeHierarchies());
+            pass.analysis.moduleInterface().setTypeHierarchies(pass.analysis.hierarchy().typeHierarchies());
         }
     }
 
-    private static List<ScopeAnalysis.IsTarget> intersectionIsTargets(Type.Intersection inter) {
-        List<ScopeAnalysis.IsTarget> targets = new ArrayList<>(inter.members().size());
+    private static List<LoweringTargets.IsTarget> intersectionIsTargets(Type.Intersection inter) {
+        List<LoweringTargets.IsTarget> targets = new ArrayList<>(inter.members().size());
         for (Type member : inter.members()) {
             if (member instanceof Type.Instance inst && inst.node().isInterface()
                     && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
-                targets.add(new ScopeAnalysis.IsTarget(inst.node().id, inst.node().kind));
+                targets.add(new LoweringTargets.IsTarget(inst.node().id, inst.node().kind));
             } else if (member instanceof Type.JavaInstance ji && ji.type().isInterface()
                     && JavaTypeBridge.isBytecodeAccessible(ji.type())) {
-                targets.add(new ScopeAnalysis.IsTarget(null, null, ji.type().getName().replace('.', '/')));
+                targets.add(new LoweringTargets.IsTarget(null, null, ji.type().getName().replace('.', '/')));
             } else {
                 return List.of();
             }
@@ -228,7 +228,7 @@ final class LoweringAnalyzer {
         return targets;
     }
 
-    private static ScopeAnalysis.OverloadAltMetaInfo buildOverloadAltMeta(Type.Function alt) {
+    private static LoweringTargets.OverloadAltMetaInfo buildOverloadAltMeta(Type.Function alt) {
         int minArity = 0;
         for (Type.Parameter p : alt.parameters()) {
             if (!p.optional() && !p.rest()) {
@@ -237,7 +237,7 @@ final class LoweringAnalyzer {
         }
         int restIdx = alt.restIndex();
         int maxArity = restIdx >= 0 ? Integer.MAX_VALUE : alt.parameters().size();
-        return new ScopeAnalysis.OverloadAltMetaInfo(
+        return new LoweringTargets.OverloadAltMetaInfo(
                 OverloadSolver.signatureKey(alt),
                 OverloadSolver.formatAlternative(alt),
                 minArity,
@@ -254,9 +254,9 @@ final class LoweringAnalyzer {
             deriveSelection(selector);
         } else if (tree instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) != null
                 && JavaTypeBridge.assignedField(types.get(ScopeAnalysis.assignReceiver(assign)), ScopeAnalysis.assignName(assign)) instanceof JavaTypeBridge.AssignedField field) {
-            ScopeAnalysis.JavaFieldTarget target = field.target(types.get(assign));
+            LoweringTargets.JavaFieldTarget target = field.target(types.get(assign));
             if (target != null) {
-                pass.analysis.setJavaFieldTarget(assign, target);
+                pass.analysis.lowering().setJavaFieldTarget(assign, target);
             }
         } else if (tree instanceof BabbleParser.CallContext call && checker.inFile(call)) {
             deriveCall(call);
@@ -285,18 +285,18 @@ final class LoweringAnalyzer {
         if (receiver instanceof Type.Module module) {
             int index = module.module().exportIndex(name);
             if (module.module().summary() != null && module.module().exports().contains(name) && index >= 0) {
-                pass.analysis.setModuleExportTarget(selector, new ScopeAnalysis.ModuleExportTarget(index, name, module.module().name()));
+                pass.analysis.lowering().setModuleExportTarget(selector, new LoweringTargets.ModuleExportTarget(index, name, module.module().name()));
             }
         } else {
-            ScopeAnalysis.JavaFieldTarget target = fieldReadTarget(receiver, name, checker.algebra());
+            LoweringTargets.JavaFieldTarget target = fieldReadTarget(receiver, name, checker.algebra());
             if (target != null) {
-                pass.analysis.setJavaFieldTarget(selector, target);
+                pass.analysis.lowering().setJavaFieldTarget(selector, target);
             }
         }
     }
 
     /** The static target of reading the Java field {@code receiver.name}, or null when it isn't one. */
-    static ScopeAnalysis.JavaFieldTarget fieldReadTarget(Type receiver, String name, TypeAlgebra algebra) {
+    static LoweringTargets.JavaFieldTarget fieldReadTarget(Type receiver, String name, TypeAlgebra algebra) {
         JavaTypeBridge.JavaMember member;
         if (receiver instanceof Type.JavaClassValue value) {
             if (JavaTypeBridge.publicMemberClass(value.type(), name) != null) {
@@ -333,9 +333,9 @@ final class LoweringAnalyzer {
             return;
         }
         Method method = checker.callSolver().resolvedMethod(call);
-        ScopeAnalysis.SpreadAdapt[] spreadAdapts = checker.callSolver().resolvedSpreadAdapts(call);
+        LoweringTargets.SpreadAdapt[] spreadAdapts = checker.callSolver().resolvedSpreadAdapts(call);
         if (spreadAdapts != null) {
-            pass.analysis.setCallSpreadAdapts(call, spreadAdapts);
+            pass.analysis.calls().setCallSpreadAdapts(call, spreadAdapts);
         }
         boolean javaVarArgs = checker.callSolver().isResolvedVarArgs(call);
         if (method != null && !safe) {
@@ -354,9 +354,9 @@ final class LoweringAnalyzer {
             deriveOverloadCall(arguments, spreadAdapts, call);
             return;
         }
-        ScopeAnalysis.ArgumentBinding binding = deriveArgumentBinding(callee, arguments, call, spreadAdapts);
+        LoweringTargets.ArgumentBinding binding = deriveArgumentBinding(callee, arguments, call, spreadAdapts);
         if (binding != null) {
-            pass.analysis.setArgumentBinding(call, binding);
+            pass.analysis.calls().setArgumentBinding(call, binding);
         }
         if (safe || !(callee instanceof Type.Function function)) {
             return;
@@ -370,28 +370,28 @@ final class LoweringAnalyzer {
     }
 
     private void deriveOverloadCall(List<BabbleParser.CallParameterContext> arguments,
-                                    ScopeAnalysis.SpreadAdapt[] spreadAdapts,
+                                    LoweringTargets.SpreadAdapt[] spreadAdapts,
                                     BabbleParser.CallContext call) {
         TypeChecker.ResolvedOverloadCall resolved = checker.resolvedOverloadCalls().get(call);
         if (resolved == null) {
             return;
         }
-        ScopeAnalysis.PrimitiveKind callResultKind = ScopeAnalysis.PrimitiveKind.of(resolved.resultType());
+        PrimitiveKind callResultKind = PrimitiveKind.of(resolved.resultType());
         if (!resolved.isSplit()) {
             Type.Function alt = resolved.altType();
-            ScopeAnalysis.PrimitiveKind restKind = checker.callSolver().resolvedRestKind(call);
-            ScopeAnalysis.ArgumentBinding binding = CallSolver.computeArgumentBinding(
+            PrimitiveKind restKind = checker.callSolver().resolvedRestKind(call);
+            LoweringTargets.ArgumentBinding binding = CallSolver.computeArgumentBinding(
                     alt.parameters(), arguments, restKind, spreadAdapts);
             if (binding != null) {
-                pass.analysis.setArgumentBinding(call, binding);
+                pass.analysis.calls().setArgumentBinding(call, binding);
             }
             BabbleParser.FunctionLiteralContext directTarget = resolved.directTarget();
-            ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+            LoweringTargets.FunctionSignature sig = uninstantiatedSignature(alt);
             if (directTarget != null && checker.inFile(directTarget) && alt.typeParameters().isEmpty() && binding != null
                     && checker.scopeOf(directTarget).memberOf == null) {
                 // Free local function alternative: record babbleCallFunction & babbleCallSignature for DirectBabbleCall.
-                pass.analysis.setBabbleCallFunction(call, directTarget);
-                pass.analysis.setBabbleCallSignature(call, sig);
+                pass.analysis.calls().setBabbleCallFunction(call, directTarget);
+                pass.analysis.calls().setBabbleCallSignature(call, sig);
             }
             // Overloaded Babble interface call -> INVOKEINTERFACE bm$<member>$<k> (BIP021-D13).
             if (binding != null && checker.inFile(call)
@@ -408,88 +408,88 @@ final class LoweringAnalyzer {
                                 ? resolved.altIndex()
                                 : OverloadSolver.selectAlternativeForFunction(checker.algebra(), ifaceOv, alt, false);
                         if (ifaceAltIdx >= 0 && ifaceAltIdx < ifaceOv.alternatives().size()) {
-                            ScopeAnalysis.FunctionSignature ifaceSig = uninstantiatedSignature(ifaceOv.alternatives().get(ifaceAltIdx));
+                            LoweringTargets.FunctionSignature ifaceSig = uninstantiatedSignature(ifaceOv.alternatives().get(ifaceAltIdx));
                             if (ifaceSig != null && binding.paramCount() == ifaceSig.parameterKinds().length) {
-                                pass.analysis.setInterfaceCallTarget(call, new ScopeAnalysis.InterfaceCallTarget(
+                                pass.analysis.lowering().setInterfaceCallTarget(call, new LoweringTargets.InterfaceCallTarget(
                                         found.iface().id, found.member().name + "$" + ifaceAltIdx, ifaceSig, true));
                             }
                         }
                     }
                 }
             }
-            ScopeAnalysis.OverloadCallTarget target = new ScopeAnalysis.OverloadCallTarget(
+            CallMetadata.OverloadCallTarget target = new CallMetadata.OverloadCallTarget(
                     resolved.altIndex(),
                     OverloadSolver.signatureKey(alt),
                     resolved.exactSet(),
                     directTarget != null && checker.inFile(directTarget) ? directTarget : null,
                     sig,
                     binding);
-            pass.analysis.setOverloadDispatch(call, new ScopeAnalysis.OverloadDispatchTarget(target, null, callResultKind));
+            pass.analysis.calls().setOverloadDispatch(call, new CallMetadata.OverloadDispatchTarget(target, null, callResultKind));
             return;
         }
 
-        List<ScopeAnalysis.OverloadSplitBranch> branches = new ArrayList<>(resolved.splitBranches().size());
+        List<CallMetadata.OverloadSplitBranch> branches = new ArrayList<>(resolved.splitBranches().size());
         for (TypeChecker.ResolvedSplitBranch rb : resolved.splitBranches()) {
             Type.Function alt = rb.altType();
-            ScopeAnalysis.ArgumentBinding binding = CallSolver.computeArgumentBinding(
+            LoweringTargets.ArgumentBinding binding = CallSolver.computeArgumentBinding(
                     alt.parameters(), arguments, rb.restKind(), rb.spreadAdapts());
-            ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+            LoweringTargets.FunctionSignature sig = uninstantiatedSignature(alt);
             BabbleParser.FunctionLiteralContext directTarget = rb.directTarget() != null && checker.inFile(rb.directTarget())
                     ? rb.directTarget() : null;
-            ScopeAnalysis.OverloadCallTarget target = new ScopeAnalysis.OverloadCallTarget(
+            CallMetadata.OverloadCallTarget target = new CallMetadata.OverloadCallTarget(
                     rb.altIndex(),
                     OverloadSolver.signatureKey(alt),
                     rb.exactSet(),
                     directTarget,
                     sig,
                     binding);
-            branches.add(new ScopeAnalysis.OverloadSplitBranch(
-                    rb.checks(), target, ScopeAnalysis.PrimitiveKind.of(rb.resultType())));
+            branches.add(new CallMetadata.OverloadSplitBranch(
+                    rb.checks(), target, PrimitiveKind.of(rb.resultType())));
         }
-        pass.analysis.setOverloadDispatch(call, new ScopeAnalysis.OverloadDispatchTarget(null, List.copyOf(branches), callResultKind));
+        pass.analysis.calls().setOverloadDispatch(call, new CallMetadata.OverloadDispatchTarget(null, List.copyOf(branches), callResultKind));
     }
 
     private void publishOperatorOverloadDispatch(ParserRuleContext site, TypeChecker.ResolvedOverloadCall resolved) {
-        ScopeAnalysis.PrimitiveKind callResultKind = ScopeAnalysis.PrimitiveKind.of(resolved.resultType());
+        PrimitiveKind callResultKind = PrimitiveKind.of(resolved.resultType());
         if (!resolved.isSplit()) {
             Type.Function alt = resolved.altType();
-            ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+            LoweringTargets.FunctionSignature sig = uninstantiatedSignature(alt);
             BabbleParser.FunctionLiteralContext directTarget = resolved.directTarget() != null && checker.inFile(resolved.directTarget())
                     ? resolved.directTarget() : null;
-            ScopeAnalysis.OverloadCallTarget target = new ScopeAnalysis.OverloadCallTarget(
+            CallMetadata.OverloadCallTarget target = new CallMetadata.OverloadCallTarget(
                     resolved.altIndex(),
                     OverloadSolver.signatureKey(alt),
                     resolved.exactSet(),
                     directTarget,
                     sig,
                     null);
-            pass.analysis.setOverloadDispatch(site, new ScopeAnalysis.OverloadDispatchTarget(target, null, callResultKind));
+            pass.analysis.calls().setOverloadDispatch(site, new CallMetadata.OverloadDispatchTarget(target, null, callResultKind));
             return;
         }
-        List<ScopeAnalysis.OverloadSplitBranch> branches = new ArrayList<>(resolved.splitBranches().size());
+        List<CallMetadata.OverloadSplitBranch> branches = new ArrayList<>(resolved.splitBranches().size());
         for (TypeChecker.ResolvedSplitBranch rb : resolved.splitBranches()) {
             Type.Function alt = rb.altType();
-            ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+            LoweringTargets.FunctionSignature sig = uninstantiatedSignature(alt);
             BabbleParser.FunctionLiteralContext directTarget = rb.directTarget() != null && checker.inFile(rb.directTarget())
                     ? rb.directTarget() : null;
-            ScopeAnalysis.OverloadCallTarget target = new ScopeAnalysis.OverloadCallTarget(
+            CallMetadata.OverloadCallTarget target = new CallMetadata.OverloadCallTarget(
                     rb.altIndex(),
                     OverloadSolver.signatureKey(alt),
                     rb.exactSet(),
                     directTarget,
                     sig,
                     null);
-            branches.add(new ScopeAnalysis.OverloadSplitBranch(
-                    rb.checks(), target, ScopeAnalysis.PrimitiveKind.of(rb.resultType())));
+            branches.add(new CallMetadata.OverloadSplitBranch(
+                    rb.checks(), target, PrimitiveKind.of(rb.resultType())));
         }
-        pass.analysis.setOverloadDispatch(site, new ScopeAnalysis.OverloadDispatchTarget(null, List.copyOf(branches), callResultKind));
+        pass.analysis.calls().setOverloadDispatch(site, new CallMetadata.OverloadDispatchTarget(null, List.copyOf(branches), callResultKind));
     }
 
-    private ScopeAnalysis.ArgumentBinding deriveArgumentBinding(Type callee,
+    private LoweringTargets.ArgumentBinding deriveArgumentBinding(Type callee,
                                                                 List<BabbleParser.CallParameterContext> arguments,
                                                                 BabbleParser.CallContext call,
-                                                                ScopeAnalysis.SpreadAdapt[] spreadAdapts) {
-        ScopeAnalysis.PrimitiveKind restKind = checker.callSolver().resolvedRestKind(call);
+                                                                LoweringTargets.SpreadAdapt[] spreadAdapts) {
+        PrimitiveKind restKind = checker.callSolver().resolvedRestKind(call);
         if (callee instanceof Type.Function fn) {
             return CallSolver.computeArgumentBinding(fn.parameters(), arguments, restKind, spreadAdapts);
         }
@@ -498,9 +498,9 @@ final class LoweringAnalyzer {
             return params != null ? CallSolver.computeArgumentBinding(params, arguments, restKind, spreadAdapts) : null;
         }
         if (callee instanceof Type.Union union) {
-            ScopeAnalysis.ArgumentBinding agreed = null;
+            LoweringTargets.ArgumentBinding agreed = null;
             for (Type member : union.members()) {
-                ScopeAnalysis.ArgumentBinding b = deriveArgumentBinding(member, arguments, call, spreadAdapts);
+                LoweringTargets.ArgumentBinding b = deriveArgumentBinding(member, arguments, call, spreadAdapts);
                 if (b == null) {
                     return null;
                 }
@@ -521,16 +521,16 @@ final class LoweringAnalyzer {
             return false;
         }
         Type calleeType = types.get(call.expression());
-        ScopeAnalysis.ArrayCreationKind kind;
+        LoweringTargets.ArrayCreationKind kind;
         if (calleeType instanceof Type.CoreCollection cc && "array".equals(cc.kind())) {
             if (arguments.size() != 1) {
                 return false;
             }
             String name0 = ScopeAnalysis.callParamName(arguments.get(0));
             if ("from".equals(name0)) {
-                kind = ScopeAnalysis.ArrayCreationKind.FROM;
+                kind = LoweringTargets.ArrayCreationKind.FROM;
             } else if (name0 == null) {
-                kind = ScopeAnalysis.ArrayCreationKind.SIZE;
+                kind = LoweringTargets.ArrayCreationKind.SIZE;
             } else {
                 return false;
             }
@@ -540,12 +540,12 @@ final class LoweringAnalyzer {
                     return false;
                 }
             }
-            kind = ScopeAnalysis.ArrayCreationKind.OF;
+            kind = LoweringTargets.ArrayCreationKind.OF;
         } else {
             return false;
         }
 
-        ScopeAnalysis.PrimitiveKind elemKind = ScopeAnalysis.PrimitiveKind.of(resultArr.element());
+        PrimitiveKind elemKind = PrimitiveKind.of(resultArr.element());
         Class<?> componentClass = null;
         String babbleTypeId = null;
         String babbleDisplayName = null;
@@ -577,7 +577,7 @@ final class LoweringAnalyzer {
             }
         }
 
-        pass.analysis.setArrayCreationTarget(call, new ScopeAnalysis.ArrayCreationTarget(
+        pass.analysis.lowering().setArrayCreationTarget(call, new LoweringTargets.ArrayCreationTarget(
                 kind, elemKind, componentClass, babbleTypeId, babbleDisplayName, babbleConformIds, nestedDims));
         return true;
     }
@@ -599,21 +599,21 @@ final class LoweringAnalyzer {
             }
         }
         String name = ScopeAnalysis.selectorName(sel);
-        ScopeAnalysis.ArrayOpKind kind = switch (name) {
-            case "size" -> arguments.isEmpty() ? ScopeAnalysis.ArrayOpKind.SIZE : null;
-            case "get" -> arguments.size() == 1 ? ScopeAnalysis.ArrayOpKind.GET : null;
-            case "set" -> arguments.size() == 2 ? ScopeAnalysis.ArrayOpKind.SET : null;
-            case "equals" -> arguments.size() == 1 ? ScopeAnalysis.ArrayOpKind.EQUALS : null;
-            case "hashCode" -> arguments.isEmpty() ? ScopeAnalysis.ArrayOpKind.HASH_CODE : null;
-            case "toString" -> arguments.isEmpty() ? ScopeAnalysis.ArrayOpKind.TO_STRING : null;
+        LoweringTargets.ArrayOpKind kind = switch (name) {
+            case "size" -> arguments.isEmpty() ? LoweringTargets.ArrayOpKind.SIZE : null;
+            case "get" -> arguments.size() == 1 ? LoweringTargets.ArrayOpKind.GET : null;
+            case "set" -> arguments.size() == 2 ? LoweringTargets.ArrayOpKind.SET : null;
+            case "equals" -> arguments.size() == 1 ? LoweringTargets.ArrayOpKind.EQUALS : null;
+            case "hashCode" -> arguments.isEmpty() ? LoweringTargets.ArrayOpKind.HASH_CODE : null;
+            case "toString" -> arguments.isEmpty() ? LoweringTargets.ArrayOpKind.TO_STRING : null;
             default -> null;
         };
         if (kind == null) {
             return false;
         }
         Class<?> arrCls = JavaTypeBridge.checkedArrayClass(arr);
-        pass.analysis.setArrayOpTarget(call, new ScopeAnalysis.ArrayOpTarget(
-                kind, ScopeAnalysis.PrimitiveKind.of(arr.element()), arrCls, arrCls.getComponentType()));
+        pass.analysis.lowering().setArrayOpTarget(call, new LoweringTargets.ArrayOpTarget(
+                kind, PrimitiveKind.of(arr.element()), arrCls, arrCls.getComponentType()));
         return true;
     }
 
@@ -667,7 +667,7 @@ final class LoweringAnalyzer {
         Class<?> java = ctor.getDeclaringClass();
         if (Modifier.isPublic(ctor.getModifiers()) && Modifier.isPublic(java.getModifiers())
                 && JavaTypes.isAccessible(java) && staticallyApplicable(ctor.getParameterTypes(), varArgs, arguments)) {
-            pass.analysis.setJavaConstructorTarget(call, new ScopeAnalysis.JavaConstructorTarget(ctor, varArgs));
+            pass.analysis.lowering().setJavaConstructorTarget(call, new LoweringTargets.JavaConstructorTarget(ctor, varArgs));
         }
     }
 
@@ -711,27 +711,27 @@ final class LoweringAnalyzer {
             return;
         }
         boolean unwrapReceiver = !isStatic && receiverType != Type.STRING;
-        pass.analysis.setJavaCallTarget(call, new ScopeAnalysis.JavaCallTarget(accessible, isStatic, unwrapReceiver, varArgs));
+        pass.analysis.lowering().setJavaCallTarget(call, new LoweringTargets.JavaCallTarget(accessible, isStatic, unwrapReceiver, varArgs));
     }
 
     /** A call of a known Babble function : its literal, for a direct call, and its primitive signature ({@code RM001}, {@code BIP021-D3/D4}). */
     private void deriveBabbleCall(Type.Function function, List<BabbleParser.CallParameterContext> arguments,
-                                  ScopeAnalysis.ArgumentBinding binding, BabbleParser.CallContext ctx) {
+                                  LoweringTargets.ArgumentBinding binding, BabbleParser.CallContext ctx) {
         if (binding == null) {
             return;
         }
         List<Type.Parameter> params = function.parameters();
         int paramCount = params.size();
-        ScopeAnalysis.PrimitiveKind[] paramKinds = new ScopeAnalysis.PrimitiveKind[paramCount];
+        PrimitiveKind[] paramKinds = new PrimitiveKind[paramCount];
         boolean hasPrimitive = false;
         int slots = 0;
         int optionalParamBits = 0;
         int optionalCount = 0;
         for (int i = 0; i < paramCount; i++) {
             Type.Parameter p = params.get(i);
-            ScopeAnalysis.PrimitiveKind kind = p.rest()
-                    ? ScopeAnalysis.PrimitiveKind.NONE
-                    : ScopeAnalysis.PrimitiveKind.of(p.type());
+            PrimitiveKind kind = p.rest()
+                    ? PrimitiveKind.NONE
+                    : PrimitiveKind.of(p.type());
             paramKinds[i] = kind;
             slots += kind.slots();
             if (kind.isPrimitive()) {
@@ -744,7 +744,7 @@ final class LoweringAnalyzer {
                 }
             }
         }
-        ScopeAnalysis.PrimitiveKind returnKind = ScopeAnalysis.PrimitiveKind.of(function.result());
+        PrimitiveKind returnKind = PrimitiveKind.of(function.result());
         if (returnKind.isPrimitive()) {
             hasPrimitive = true;
         }
@@ -756,12 +756,12 @@ final class LoweringAnalyzer {
                     calleeExpr = b.block().expression(0);
                 }
                 if (calleeExpr == lit) {
-                    pass.analysis.setBabbleCallFunction(ctx, lit);
+                    pass.analysis.calls().setBabbleCallFunction(ctx, lit);
                 } else if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
                     Object resolved = TypeChecker.resolveName(sel, sel.ID().getText(), checker.occurrenceScope(sel));
                     if (resolved instanceof BabbleParser.DefExpressionContext def
                             && checker.inFile(def) && !checker.isReassigned(def) && TypeChecker.unwrapFunctionLiteral(def.value) == lit) {
-                        pass.analysis.setBabbleCallFunction(ctx, lit);
+                        pass.analysis.calls().setBabbleCallFunction(ctx, lit);
                     }
                 }
             }
@@ -770,14 +770,14 @@ final class LoweringAnalyzer {
                     && optionalCount <= 32
                     && (!binding.hasOmitted() || paramCount <= 32);
             if (canUseTypedIndy) {
-                pass.analysis.setBabbleCallSignature(ctx, new ScopeAnalysis.FunctionSignature(paramKinds, returnKind, optionalParamBits));
+                pass.analysis.calls().setBabbleCallSignature(ctx, new LoweringTargets.FunctionSignature(paramKinds, returnKind, optionalParamBits));
             }
         }
     }
 
     /** A call of a member of a Babble interface : its {@code INVOKEINTERFACE} target ({@code RM003}, {@code BIP021-D3/D4}). */
     private void deriveInterfaceCall(List<BabbleParser.CallParameterContext> arguments,
-                                     ScopeAnalysis.ArgumentBinding binding, BabbleParser.CallContext ctx) {
+                                     LoweringTargets.ArgumentBinding binding, BabbleParser.CallContext ctx) {
         if (binding == null || !checker.inFile(ctx) || !(ctx.expression() instanceof BabbleParser.SelectorContext sel)) {
             return;
         }
@@ -796,12 +796,12 @@ final class LoweringAnalyzer {
         if (binding.paramCount() != uninstFn.parameters().size()) {
             return;
         }
-        ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(uninstFn);
+        LoweringTargets.FunctionSignature sig = uninstantiatedSignature(uninstFn);
         if (sig == null) {
             return;
         }
-        pass.analysis.setInterfaceCallTarget(ctx,
-                new ScopeAnalysis.InterfaceCallTarget(found.iface().id, found.member().name, sig, true));
+        pass.analysis.lowering().setInterfaceCallTarget(ctx,
+                new LoweringTargets.InterfaceCallTarget(found.iface().id, found.member().name, sig, true));
     }
 
     private record FoundInterfaceWithType(FoundInterfaceMember found, Type substitutedType) {
@@ -856,35 +856,35 @@ final class LoweringAnalyzer {
             return;
         }
         Type loopVarType = declarationTypes.get(forExpr);
-        ScopeAnalysis.PrimitiveKind elemKind = loopVarType != null
-                ? ScopeAnalysis.PrimitiveKind.of(loopVarType) : ScopeAnalysis.PrimitiveKind.NONE;
+        PrimitiveKind elemKind = loopVarType != null
+                ? PrimitiveKind.of(loopVarType) : PrimitiveKind.NONE;
         int elemWidenRank = widened.getOrDefault(forExpr, 0);
         String elemCheck = null;
-        if (info.kind() == ScopeAnalysis.ForKind.JAVA_ITERABLE
-                || info.kind() == ScopeAnalysis.ForKind.JAVA_ITERATOR
-                || info.kind() == ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE
-                || info.kind() == ScopeAnalysis.ForKind.DYNAMIC_UNION
-                || (info.kind() == ScopeAnalysis.ForKind.ARRAY && info.arrayClass() != null
+        if (info.kind() == LoweringTargets.ForKind.JAVA_ITERABLE
+                || info.kind() == LoweringTargets.ForKind.JAVA_ITERATOR
+                || info.kind() == LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE
+                || info.kind() == LoweringTargets.ForKind.DYNAMIC_UNION
+                || (info.kind() == LoweringTargets.ForKind.ARRAY && info.arrayClass() != null
                         && !info.arrayClass().getComponentType().isPrimitive())) {
             Type rawElem = info.elemType();
             if (rawElem != null && rawElem != Type.NULLABLE_ANY && rawElem != Type.ERROR) {
                 elemCheck = descriptor(rawElem);
             }
         }
-        ScopeAnalysis.InterfaceCallTarget iterIface = deriveZeroArgInterfaceTarget(info.babbleIterable(), "iterator");
-        ScopeAnalysis.InterfaceCallTarget hasNextIface = deriveZeroArgInterfaceTarget(info.babbleIterator(), "hasNext");
-        ScopeAnalysis.InterfaceCallTarget nextIface = deriveZeroArgInterfaceTarget(info.babbleIterator(), "next");
-        ScopeAnalysis.FunctionSignature hasNextSig = info.hasNextFn() != null
-                ? new ScopeAnalysis.FunctionSignature(new ScopeAnalysis.PrimitiveKind[0], ScopeAnalysis.PrimitiveKind.BOOL) : null;
-        ScopeAnalysis.FunctionSignature nextSig = info.nextFn() != null
-                ? new ScopeAnalysis.FunctionSignature(new ScopeAnalysis.PrimitiveKind[0],
-                        ScopeAnalysis.PrimitiveKind.of(info.nextFn().result())) : null;
-        pass.analysis.setForLoopTarget(forExpr, new ScopeAnalysis.ForLoopTarget(
+        LoweringTargets.InterfaceCallTarget iterIface = deriveZeroArgInterfaceTarget(info.babbleIterable(), "iterator");
+        LoweringTargets.InterfaceCallTarget hasNextIface = deriveZeroArgInterfaceTarget(info.babbleIterator(), "hasNext");
+        LoweringTargets.InterfaceCallTarget nextIface = deriveZeroArgInterfaceTarget(info.babbleIterator(), "next");
+        LoweringTargets.FunctionSignature hasNextSig = info.hasNextFn() != null
+                ? new LoweringTargets.FunctionSignature(new PrimitiveKind[0], PrimitiveKind.BOOL) : null;
+        LoweringTargets.FunctionSignature nextSig = info.nextFn() != null
+                ? new LoweringTargets.FunctionSignature(new PrimitiveKind[0],
+                        PrimitiveKind.of(info.nextFn().result())) : null;
+        pass.analysis.lowering().setForLoopTarget(forExpr, new LoweringTargets.ForLoopTarget(
                 info.kind(), info.arrayClass(), elemKind, elemCheck, elemWidenRank,
                 iterIface, hasNextSig, hasNextIface, nextSig, nextIface));
     }
 
-    private ScopeAnalysis.InterfaceCallTarget deriveZeroArgInterfaceTarget(Type.Instance inst, String memberName) {
+    private LoweringTargets.InterfaceCallTarget deriveZeroArgInterfaceTarget(Type.Instance inst, String memberName) {
         if (inst == null || !inst.node().isInterface()) {
             return null;
         }
@@ -896,11 +896,11 @@ final class LoweringAnalyzer {
         if (!(mt instanceof Type.Function uninstFn) || !uninstFn.parameters().isEmpty()) {
             return null;
         }
-        ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(uninstFn);
+        LoweringTargets.FunctionSignature sig = uninstantiatedSignature(uninstFn);
         if (sig == null) {
             return null;
         }
-        return new ScopeAnalysis.InterfaceCallTarget(found.iface().id, found.member().name, sig, true);
+        return new LoweringTargets.InterfaceCallTarget(found.iface().id, found.member().name, sig, true);
     }
 
     private record FoundInterfaceMember(TypeNode iface, TypeNode.Member member) {
@@ -962,7 +962,7 @@ final class LoweringAnalyzer {
             if (decl instanceof BabbleParser.DefExpressionContext def && checker.inFile(def)) {
                 Resolution.Variable v = resolution.variable(def);
                 if (v != null && !unsafe.contains(v)) {
-                    pass.analysis.markDefinitelyDefined(def);
+                    pass.analysis.lowering().markDefinitelyDefined(def);
                 }
             }
         }
@@ -1004,7 +1004,7 @@ final class LoweringAnalyzer {
             if (ScopeAnalysis.isParamRest(parameter)) {
                 Type restType = declarationTypes.get(parameter);
                 if (restType != null) {
-                    pass.analysis.setCheckedType(parameter, descriptor(restType));
+                    pass.analysis.lowering().setCheckedType(parameter, descriptor(restType));
                 }
                 return;
             }
@@ -1018,40 +1018,40 @@ final class LoweringAnalyzer {
             }
             if (paramType != null || targetRank > 0) {
                 String descriptor = descriptor(type);
-                pass.analysis.setCheckedType(parameter, descriptor);
+                pass.analysis.lowering().setCheckedType(parameter, descriptor);
                 if (parameter.getParent().getParent() instanceof BabbleParser.ClassExpressionContext cls
                         && (ScopeAnalysis.paramIsDef(parameter) || pass.typeNodes.get(cls).kind == ClassShape.Kind.VALUE_CLASS)) {
                     putType(pass.typeNodes.get(cls).memberTypes, ScopeAnalysis.paramId(parameter).getText(), descriptor);
                 }
             }
-            if (type != null && pass.analysis.javaSamTarget(parameter) == null) {
-                ScopeAnalysis.JavaSamTarget samTarget = uniqueSamTargetForParam(type);
+            if (type != null && pass.analysis.lowering().javaSamTarget(parameter) == null) {
+                LoweringTargets.JavaSamTarget samTarget = uniqueSamTargetForParam(type);
                 if (samTarget != null) {
-                    pass.analysis.setJavaSamTarget(parameter, samTarget);
+                    pass.analysis.lowering().setJavaSamTarget(parameter, samTarget);
                 }
             }
         } else if (tree instanceof BabbleParser.FunctionLiteralContext function && function.type() != null) {
-            pass.analysis.setCheckedType(function, descriptor(checker.annotator().annotation(function.type(), checker.scopeOf(function))));
+            pass.analysis.lowering().setCheckedType(function, descriptor(checker.annotator().annotation(function.type(), checker.scopeOf(function))));
         } else if (tree instanceof BabbleParser.DefExpressionContext def) {
-            ScopeAnalysis.DefKind kind = pass.analysis.defTarget(def).kind();
-            if (kind == ScopeAnalysis.DefKind.DEFAULT || kind == ScopeAnalysis.DefKind.REQUIRED) {
+            LoweringTargets.DefKind kind = pass.analysis.lowering().defTarget(def).kind();
+            if (kind == LoweringTargets.DefKind.DEFAULT || kind == LoweringTargets.DefKind.REQUIRED) {
                 return;
             }
             String descriptor = null;
             if (def.type() != null) {
                 descriptor = descriptor(checker.annotator().annotation(def.type(), checker.scopeOf(def)));
             } else {
-                Type inferred = (kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC)
+                Type inferred = (kind == LoweringTargets.DefKind.MEMBER || kind == LoweringTargets.DefKind.STATIC)
                         ? inferredMembers.get(def) : inferredDefs.get(def);
                 if (inferred != null && TypeAlgebra.singleNumericRank(inferred) > 0) {
                     descriptor = descriptor(inferred);
                 }
             }
             if (descriptor != null) {
-                pass.analysis.setCheckedType(def, descriptor);
-                if (kind == ScopeAnalysis.DefKind.MEMBER) {
+                pass.analysis.lowering().setCheckedType(def, descriptor);
+                if (kind == LoweringTargets.DefKind.MEMBER) {
                     putType(checker.scopeOf(def).type.memberTypes, def.name.getText(), descriptor);
-                } else if (kind == ScopeAnalysis.DefKind.STATIC) {
+                } else if (kind == LoweringTargets.DefKind.STATIC) {
                     putType(checker.scopeOf(def).type.staticTypes, def.name.getText(), descriptor);
                 }
             }
@@ -1060,17 +1060,17 @@ final class LoweringAnalyzer {
                 && checker.resolveName(assign, ScopeAnalysis.assignName(assign), checker.occurrenceScopeOf(assign)) instanceof ParserRuleContext declaration) {
             Type declared = checker.annotator().declaredType(declaration);
             if (declared != null) {
-                pass.analysis.setCheckedType(assign, descriptor(declared));
+                pass.analysis.lowering().setCheckedType(assign, descriptor(declared));
             } else {
                 Type inferred = checker.typeOfDeclaration(declaration);
                 if (inferred != null && TypeAlgebra.singleNumericRank(inferred) > 0) {
-                    pass.analysis.setCheckedType(assign, descriptor(inferred));
+                    pass.analysis.lowering().setCheckedType(assign, descriptor(inferred));
                 }
             }
         }
     }
 
-    private static ScopeAnalysis.JavaSamTarget uniqueSamTargetForParam(Type type) {
+    private static LoweringTargets.JavaSamTarget uniqueSamTargetForParam(Type type) {
         if (JavaTypeBridge.resolveJavaSam(type) instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
             return valid.toTarget();
         }
@@ -1153,33 +1153,33 @@ final class LoweringAnalyzer {
         return null;
     }
 
-    static ScopeAnalysis.PrimitiveKind primitiveKind(Type type) {
-        return ScopeAnalysis.PrimitiveKind.of(type);
+    static PrimitiveKind primitiveKind(Type type) {
+        return PrimitiveKind.of(type);
     }
 
     private static void publishTypeHierarchies(BlockScopes pass, TypeChecker checker) {
         for (TypeNode node : pass.types) {
             if (checker.inFile(node.ctx) && node.isInterface()) {
-                pass.analysis.setTypeHierarchy(node.id, buildTypeHierarchyInfo(node, checker));
+                pass.analysis.hierarchy().setTypeHierarchy(node.id, buildTypeHierarchyInfo(node, checker));
             }
         }
         for (TypeNode node : pass.types) {
             if (checker.inFile(node.ctx) && !node.isInterface()) {
-                pass.analysis.setTypeHierarchy(node.id, buildTypeHierarchyInfo(node, checker));
+                pass.analysis.hierarchy().setTypeHierarchy(node.id, buildTypeHierarchyInfo(node, checker));
             }
         }
     }
 
-    private static ScopeAnalysis.TypeHierarchyInfo buildTypeHierarchyInfo(TypeNode node, TypeChecker checker) {
-        Set<ScopeAnalysis.ParentRef> seenDirect = new LinkedHashSet<>();
+    private static LoweringTargets.TypeHierarchyInfo buildTypeHierarchyInfo(TypeNode node, TypeChecker checker) {
+        Set<LoweringTargets.ParentRef> seenDirect = new LinkedHashSet<>();
         for (Object parent : node.parents) {
             if (parent instanceof TypeNode tn) {
-                seenDirect.add(new ScopeAnalysis.ParentRef(tn.id, null));
+                seenDirect.add(new LoweringTargets.ParentRef(tn.id, null));
             } else if (parent instanceof Class<?> jc) {
-                seenDirect.add(new ScopeAnalysis.ParentRef(null, jc));
+                seenDirect.add(new LoweringTargets.ParentRef(null, jc));
             }
         }
-        List<ScopeAnalysis.ParentRef> directParents = List.copyOf(seenDirect);
+        List<LoweringTargets.ParentRef> directParents = List.copyOf(seenDirect);
 
         Set<String> allBabbleInterfaceIds = new LinkedHashSet<>();
         Set<Class<?>> allJavaInterfaces = new LinkedHashSet<>();
@@ -1187,7 +1187,7 @@ final class LoweringAnalyzer {
         visitedNodes.add(node);
         collectAncestorInterfaces(node, allBabbleInterfaceIds, allJavaInterfaces, visitedNodes);
 
-        Map<String, ScopeAnalysis.MemberSpec> interfaceMembers = new LinkedHashMap<>();
+        Map<String, LoweringTargets.MemberSpec> interfaceMembers = new LinkedHashMap<>();
         Map<String, Integer> javaBridgeOverloads = new LinkedHashMap<>();
         Map<String, Integer> babbleBridgeOverloads = new LinkedHashMap<>();
         if (node.isInterface()) {
@@ -1301,7 +1301,7 @@ final class LoweringAnalyzer {
                 }
             }
         }
-        return new ScopeAnalysis.TypeHierarchyInfo(
+        return new LoweringTargets.TypeHierarchyInfo(
                 node.id,
                 node.kind,
                 node.name,
@@ -1313,25 +1313,25 @@ final class LoweringAnalyzer {
                 Collections.unmodifiableMap(babbleBridgeOverloads));
     }
 
-    private static ScopeAnalysis.MemberSpec buildMemberSpec(String name, boolean hasDefault, boolean required, Type mt) {
+    private static LoweringTargets.MemberSpec buildMemberSpec(String name, boolean hasDefault, boolean required, Type mt) {
         if (mt instanceof Type.Function fn) {
-            return new ScopeAnalysis.MemberSpec(name, hasDefault, required, true, uninstantiatedSignature(fn));
+            return new LoweringTargets.MemberSpec(name, hasDefault, required, true, uninstantiatedSignature(fn));
         }
         if (mt instanceof Type.Overloaded ov) {
-            List<ScopeAnalysis.FunctionSignature> sigs = new ArrayList<>(ov.alternatives().size());
+            List<LoweringTargets.FunctionSignature> sigs = new ArrayList<>(ov.alternatives().size());
             List<String> keys = new ArrayList<>(ov.alternatives().size());
             for (Type.Function alt : ov.alternatives()) {
-                ScopeAnalysis.FunctionSignature sig = uninstantiatedSignature(alt);
+                LoweringTargets.FunctionSignature sig = uninstantiatedSignature(alt);
                 if (sig == null) {
-                    return new ScopeAnalysis.MemberSpec(name, hasDefault, required, false, null);
+                    return new LoweringTargets.MemberSpec(name, hasDefault, required, false, null);
                 }
                 sigs.add(sig);
                 keys.add(OverloadSolver.signatureKey(alt));
             }
-            return new ScopeAnalysis.MemberSpec(name, hasDefault, required, false, null,
+            return new LoweringTargets.MemberSpec(name, hasDefault, required, false, null,
                     List.copyOf(sigs), List.copyOf(keys));
         }
-        return new ScopeAnalysis.MemberSpec(name, hasDefault, required, false, null);
+        return new LoweringTargets.MemberSpec(name, hasDefault, required, false, null);
     }
 
     private static void collectAncestorInterfaces(TypeNode node, Set<String> babbleIds, Set<Class<?>> javaIfaces,
@@ -1374,7 +1374,7 @@ final class LoweringAnalyzer {
         }
     }
 
-    static ScopeAnalysis.FunctionSignature uninstantiatedSignature(Type.Function fn) {
+    static LoweringTargets.FunctionSignature uninstantiatedSignature(Type.Function fn) {
         if (fn == null) {
             return null;
         }
@@ -1382,15 +1382,15 @@ final class LoweringAnalyzer {
         if (params.size() > 200) {
             return null;
         }
-        ScopeAnalysis.PrimitiveKind[] paramKinds = new ScopeAnalysis.PrimitiveKind[params.size()];
+        PrimitiveKind[] paramKinds = new PrimitiveKind[params.size()];
         int slots = 2;
         int optionalParamBits = 0;
         for (int i = 0; i < params.size(); i++) {
             Type.Parameter p = params.get(i);
             Type pt = p.type();
-            ScopeAnalysis.PrimitiveKind pk = (p.rest() || pt instanceof Type.TypeVar)
-                    ? ScopeAnalysis.PrimitiveKind.NONE
-                    : ScopeAnalysis.PrimitiveKind.of(pt);
+            PrimitiveKind pk = (p.rest() || pt instanceof Type.TypeVar)
+                    ? PrimitiveKind.NONE
+                    : PrimitiveKind.of(pt);
             paramKinds[i] = pk;
             slots += pk.slots();
             if (p.optional()) {
@@ -1407,9 +1407,9 @@ final class LoweringAnalyzer {
             return null;
         }
         Type rt = fn.result();
-        ScopeAnalysis.PrimitiveKind rk = rt instanceof Type.TypeVar
-                ? ScopeAnalysis.PrimitiveKind.NONE
-                : ScopeAnalysis.PrimitiveKind.of(rt);
-        return new ScopeAnalysis.FunctionSignature(paramKinds, rk, optionalParamBits, fn.restIndex());
+        PrimitiveKind rk = rt instanceof Type.TypeVar
+                ? PrimitiveKind.NONE
+                : PrimitiveKind.of(rt);
+        return new LoweringTargets.FunctionSignature(paramKinds, rk, optionalParamBits, fn.restIndex());
     }
 }

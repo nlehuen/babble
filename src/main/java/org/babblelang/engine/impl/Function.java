@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl;
 
+import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.runtime.Namespace;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.runtime.Arguments;
@@ -40,9 +41,9 @@ public class Function implements BabbleFunction {
     /** One activation of the function : a fresh frame, its parameters bound, and its body run. */
     private Object activate(Object thiz, ScriptRuntime rt, Object[] args, String[] names) {
         Namespace namespace = Frames.enter(closure, recurseTarget(thiz), thiz, interpreter.scopes().declared(definition));
-        String[] parameters = interpreter.scopes().parameters(definition);
-        int restIdx = interpreter.scopes().restIndex(definition);
-        Arguments.Binder binder = Arguments.binder(parameters, interpreter.scopes().keywordOnlyStart(definition), restIdx, args, names);
+        String[] parameters = interpreter.scopes().calls().parameters(definition);
+        int restIdx = interpreter.scopes().calls().restIndex(definition);
+        Arguments.Binder binder = Arguments.binder(parameters, interpreter.scopes().calls().keywordOnlyStart(definition), restIdx, args, names);
         for (int i = 0; i < parameters.length; i++) {
             Object value = binder.take(i);
             if (value == Arguments.MISSING) {
@@ -54,15 +55,15 @@ public class Function implements BabbleFunction {
                 value = interpreter.evaluateDefault(namespace, defaultValue);
             }
             BabbleParser.FnParamContext paramDecl = definition.fnParameters().fnParam(i);
-            int paramRank = interpreter.scopes().numericWideningRank(paramDecl);
+            int paramRank = interpreter.scopes().lowering().numericWideningRank(paramDecl);
             if (paramRank >= 0) {
                 value = Values.widenNumeric(value, paramRank);
             }
-            ScopeAnalysis.JavaSamTarget paramSam = interpreter.scopes().javaSamTarget(paramDecl);
+            LoweringTargets.JavaSamTarget paramSam = interpreter.scopes().lowering().javaSamTarget(paramDecl);
             if (paramSam != null) {
                 value = Values.toJavaSam(value, paramSam.samInterface(), paramSam.markers(), rt);
             }
-            value = org.babblelang.runtime.Types.check(value, interpreter.scopes().checkedType(paramDecl));
+            value = org.babblelang.runtime.Types.check(value, interpreter.scopes().lowering().checkedType(paramDecl));
             namespace.defineParameter(parameters[i], value);
         }
         binder.rejectLeftovers();
@@ -75,11 +76,11 @@ public class Function implements BabbleFunction {
         if (result instanceof TailCall) {
             return result;
         }
-        int blockRank = interpreter.scopes().numericWideningRank(definition.functionBlock);
+        int blockRank = interpreter.scopes().lowering().numericWideningRank(definition.functionBlock);
         if (blockRank >= 0) {
             result = Values.widenNumeric(result, blockRank);
         }
-        ScopeAnalysis.JavaSamTarget blockSam = interpreter.scopes().javaSamTarget(definition.functionBlock);
+        LoweringTargets.JavaSamTarget blockSam = interpreter.scopes().lowering().javaSamTarget(definition.functionBlock);
         if (blockSam != null) {
             result = Values.toJavaSam(result, blockSam.samInterface(), blockSam.markers(), rt);
         }
@@ -88,18 +89,18 @@ public class Function implements BabbleFunction {
 
     @Override
     public int minArity() {
-        return interpreter.scopes().requiredParameters(definition);
+        return interpreter.scopes().calls().requiredParameters(definition);
     }
 
     @Override
     public int maxArity() {
-        return interpreter.scopes().restIndex(definition) >= 0
-                ? Integer.MAX_VALUE : interpreter.scopes().parameters(definition).length;
+        return interpreter.scopes().calls().restIndex(definition) >= 0
+                ? Integer.MAX_VALUE : interpreter.scopes().calls().parameters(definition).length;
     }
 
     @Override
     public int restIndex() {
-        return interpreter.scopes().restIndex(definition);
+        return interpreter.scopes().calls().restIndex(definition);
     }
 
     @Override
@@ -110,7 +111,7 @@ public class Function implements BabbleFunction {
         int restIdx = restIndex();
         int limit = restIdx >= 0 ? Math.min(javaParams.length, restIdx) : javaParams.length;
         for (int i = 0; i < limit; i++) {
-            String desc = interpreter.scopes().checkedType(definition.fnParameters().fnParam(i));
+            String desc = interpreter.scopes().lowering().checkedType(definition.fnParameters().fnParam(i));
             if (!org.babblelang.runtime.Types.canAcceptJavaParamClass(desc, javaParams[i])) {
                 return false;
             }

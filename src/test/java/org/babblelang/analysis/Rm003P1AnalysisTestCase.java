@@ -17,9 +17,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Unit tests for RM003 Phase 1 analysis metadata: {@link ScopeAnalysis.TypeHierarchyInfo},
- * {@link ScopeAnalysis.SuperTargetInfo}, {@link ScopeAnalysis.IsTarget}, and
- * {@link ScopeAnalysis.InterfaceCallTarget}.
+ * Unit tests for RM003 Phase 1 analysis metadata: {@link LoweringTargets.TypeHierarchyInfo},
+ * {@link LoweringTargets.SuperTargetInfo}, {@link LoweringTargets.IsTarget}, and
+ * {@link LoweringTargets.InterfaceCallTarget}.
  */
 public class Rm003P1AnalysisTestCase {
 
@@ -140,11 +140,11 @@ public class Rm003P1AnalysisTestCase {
         ScopeAnalysis analysis = BlockScopes.analyze(file);
         Assertions.assertEquals(List.of(), analysis.typeDiagnostics());
 
-        ScopeAnalysis.TypeHierarchyInfo base = findByName(analysis, "Base");
-        ScopeAnalysis.TypeHierarchyInfo box = findByName(analysis, "Box");
-        ScopeAnalysis.TypeHierarchyInfo huge = findByName(analysis, "Huge");
-        ScopeAnalysis.TypeHierarchyInfo sub = findByName(analysis, "Sub");
-        ScopeAnalysis.TypeHierarchyInfo impl = findByName(analysis, "Impl");
+        LoweringTargets.TypeHierarchyInfo base = findByName(analysis, "Base");
+        LoweringTargets.TypeHierarchyInfo box = findByName(analysis, "Box");
+        LoweringTargets.TypeHierarchyInfo huge = findByName(analysis, "Huge");
+        LoweringTargets.TypeHierarchyInfo sub = findByName(analysis, "Sub");
+        LoweringTargets.TypeHierarchyInfo impl = findByName(analysis, "Impl");
 
         // Interfaces list own members and strict transitive closure (excluding self).
         Assertions.assertEquals(ClassShape.Kind.INTERFACE, base.kind());
@@ -152,35 +152,35 @@ public class Rm003P1AnalysisTestCase {
         Assertions.assertEquals(Set.of(), base.allBabbleInterfaceIds());
         Assertions.assertEquals(Set.of(), base.allJavaInterfaces());
 
-        ScopeAnalysis.MemberSpec reqSpec = base.interfaceMembers().get("req");
+        LoweringTargets.MemberSpec reqSpec = base.interfaceMembers().get("req");
         Assertions.assertFalse(reqSpec.hasDefault());
         Assertions.assertTrue(reqSpec.required());
         Assertions.assertTrue(reqSpec.callable());
-        Assertions.assertArrayEquals(new ScopeAnalysis.PrimitiveKind[]{ScopeAnalysis.PrimitiveKind.INT},
+        Assertions.assertArrayEquals(new PrimitiveKind[]{PrimitiveKind.INT},
                 reqSpec.declaredSignature().parameterKinds());
-        Assertions.assertEquals(ScopeAnalysis.PrimitiveKind.INT, reqSpec.declaredSignature().returnKind());
+        Assertions.assertEquals(PrimitiveKind.INT, reqSpec.declaredSignature().returnKind());
 
-        ScopeAnalysis.MemberSpec propSpec = base.interfaceMembers().get("prop");
+        LoweringTargets.MemberSpec propSpec = base.interfaceMembers().get("prop");
         Assertions.assertFalse(propSpec.hasDefault());
         Assertions.assertTrue(propSpec.required());
         Assertions.assertFalse(propSpec.callable());
         Assertions.assertNull(propSpec.declaredSignature());
 
-        ScopeAnalysis.MemberSpec defMethodSpec = base.interfaceMembers().get("defMethod");
+        LoweringTargets.MemberSpec defMethodSpec = base.interfaceMembers().get("defMethod");
         Assertions.assertTrue(defMethodSpec.hasDefault());
         Assertions.assertFalse(defMethodSpec.required());
         Assertions.assertTrue(defMethodSpec.callable());
 
         // TypeVar erases to PrimitiveKind.NONE.
-        ScopeAnalysis.MemberSpec boxPut = box.interfaceMembers().get("put");
+        LoweringTargets.MemberSpec boxPut = box.interfaceMembers().get("put");
         Assertions.assertTrue(boxPut.callable());
-        Assertions.assertArrayEquals(new ScopeAnalysis.PrimitiveKind[]{ScopeAnalysis.PrimitiveKind.NONE},
+        Assertions.assertArrayEquals(new PrimitiveKind[]{PrimitiveKind.NONE},
                 boxPut.declaredSignature().parameterKinds());
-        Assertions.assertEquals(ScopeAnalysis.PrimitiveKind.NONE, boxPut.declaredSignature().returnKind());
-        Assertions.assertEquals(ScopeAnalysis.PrimitiveKind.NONE, box.interfaceMembers().get("get").declaredSignature().returnKind());
+        Assertions.assertEquals(PrimitiveKind.NONE, boxPut.declaredSignature().returnKind());
+        Assertions.assertEquals(PrimitiveKind.NONE, box.interfaceMembers().get("get").declaredSignature().returnKind());
 
         // >200 slots leaves declaredSignature null while preserving callable=true.
-        ScopeAnalysis.MemberSpec bigSpec = huge.interfaceMembers().get("big");
+        LoweringTargets.MemberSpec bigSpec = huge.interfaceMembers().get("big");
         Assertions.assertTrue(bigSpec.callable());
         Assertions.assertNull(bigSpec.declaredSignature());
 
@@ -207,9 +207,9 @@ public class Rm003P1AnalysisTestCase {
                 .put("main.ba", "def mid = import(\"mid.ba\")\ndef C = class () implements mid.MidI ( def m = fn () : int -> ( 2 ) )\n");
 
         ScopeAnalysis mainAnalysis = analyzeWithModules(src, "main.ba");
-        Assertions.assertNotNull(mainAnalysis.typeHierarchy("base.ba#RootI"));
-        Assertions.assertNotNull(mainAnalysis.typeHierarchy("mid.ba#MidI"));
-        ScopeAnalysis.TypeHierarchyInfo c = findByName(mainAnalysis, "C");
+        Assertions.assertNotNull(mainAnalysis.hierarchy().typeHierarchy("base.ba#RootI"));
+        Assertions.assertNotNull(mainAnalysis.hierarchy().typeHierarchy("mid.ba#MidI"));
+        LoweringTargets.TypeHierarchyInfo c = findByName(mainAnalysis, "C");
         Assertions.assertEquals(Set.of("mid.ba#MidI", "base.ba#RootI"), c.allBabbleInterfaceIds());
         Assertions.assertTrue(c.interfaceMembers().get("r").hasDefault());
         Assertions.assertTrue(c.interfaceMembers().get("m").required());
@@ -219,14 +219,14 @@ public class Rm003P1AnalysisTestCase {
         ScopeAnalysis first = BlockScopes.analyze(BabbleScriptEngine.parseSource(
                 "def RI = interface ( def v : int )", "repl1.ba"), session);
         Assertions.assertEquals(List.of(), first.typeDiagnostics());
-        ScopeAnalysis.TypeHierarchyInfo ri = findByName(first, "RI");
+        LoweringTargets.TypeHierarchyInfo ri = findByName(first, "RI");
         session.commit(first);
 
         ScopeAnalysis second = BlockScopes.analyze(BabbleScriptEngine.parseSource(
                 "def RC = class () implements RI ( def v = 7 )", "repl2.ba"), session);
         Assertions.assertEquals(List.of(), second.typeDiagnostics());
-        Assertions.assertSame(ri, second.typeHierarchy(ri.id()));
-        ScopeAnalysis.TypeHierarchyInfo rc = findByName(second, "RC");
+        Assertions.assertSame(ri, second.hierarchy().typeHierarchy(ri.id()));
+        LoweringTargets.TypeHierarchyInfo rc = findByName(second, "RC");
         Assertions.assertEquals(Set.of(ri.id()), rc.allBabbleInterfaceIds());
         Assertions.assertTrue(rc.interfaceMembers().get("v").required());
     }
@@ -250,27 +250,27 @@ public class Rm003P1AnalysisTestCase {
         ScopeAnalysis analysis = BlockScopes.analyze(file);
         Assertions.assertEquals(List.of(), analysis.typeDiagnostics());
 
-        ScopeAnalysis.TypeHierarchyInfo root = findByName(analysis, "Root");
-        ScopeAnalysis.TypeHierarchyInfo mid = findByName(analysis, "Mid");
-        ScopeAnalysis.TypeHierarchyInfo other = findByName(analysis, "Other");
-        ScopeAnalysis.TypeHierarchyInfo sub = findByName(analysis, "Sub");
-        ScopeAnalysis.TypeHierarchyInfo cls = findByName(analysis, "C");
-        ScopeAnalysis.TypeHierarchyInfo comp = findByName(analysis, "Comp");
+        LoweringTargets.TypeHierarchyInfo root = findByName(analysis, "Root");
+        LoweringTargets.TypeHierarchyInfo mid = findByName(analysis, "Mid");
+        LoweringTargets.TypeHierarchyInfo other = findByName(analysis, "Other");
+        LoweringTargets.TypeHierarchyInfo sub = findByName(analysis, "Sub");
+        LoweringTargets.TypeHierarchyInfo cls = findByName(analysis, "C");
+        LoweringTargets.TypeHierarchyInfo comp = findByName(analysis, "Comp");
 
         List<BabbleParser.SuperExpressionContext> superExprs = supers(file);
         Assertions.assertEquals(4, superExprs.size());
 
-        ScopeAnalysis.SuperTargetInfo subSuper = analysis.superTargetInfo(superExprs.get(0));
-        Assertions.assertEquals(new ScopeAnalysis.SuperTargetInfo(sub.id(), true, mid.id(), null, root.id(), null, "f"), subSuper);
+        LoweringTargets.SuperTargetInfo subSuper = analysis.hierarchy().superTargetInfo(superExprs.get(0));
+        Assertions.assertEquals(new LoweringTargets.SuperTargetInfo(sub.id(), true, mid.id(), null, root.id(), null, "f"), subSuper);
 
-        ScopeAnalysis.SuperTargetInfo cMid = analysis.superTargetInfo(superExprs.get(1));
-        Assertions.assertEquals(new ScopeAnalysis.SuperTargetInfo(cls.id(), false, mid.id(), null, root.id(), null, "f"), cMid);
+        LoweringTargets.SuperTargetInfo cMid = analysis.hierarchy().superTargetInfo(superExprs.get(1));
+        Assertions.assertEquals(new LoweringTargets.SuperTargetInfo(cls.id(), false, mid.id(), null, root.id(), null, "f"), cMid);
 
-        ScopeAnalysis.SuperTargetInfo cOther = analysis.superTargetInfo(superExprs.get(2));
-        Assertions.assertEquals(new ScopeAnalysis.SuperTargetInfo(cls.id(), false, other.id(), null, other.id(), null, "f"), cOther);
+        LoweringTargets.SuperTargetInfo cOther = analysis.hierarchy().superTargetInfo(superExprs.get(2));
+        Assertions.assertEquals(new LoweringTargets.SuperTargetInfo(cls.id(), false, other.id(), null, other.id(), null, "f"), cOther);
 
-        ScopeAnalysis.SuperTargetInfo javaSuper = analysis.superTargetInfo(superExprs.get(3));
-        Assertions.assertEquals(new ScopeAnalysis.SuperTargetInfo(comp.id(), false, null, java.util.Comparator.class,
+        LoweringTargets.SuperTargetInfo javaSuper = analysis.hierarchy().superTargetInfo(superExprs.get(3));
+        Assertions.assertEquals(new LoweringTargets.SuperTargetInfo(comp.id(), false, null, java.util.Comparator.class,
                 null, java.util.Comparator.class, "reversed"), javaSuper);
     }
 
@@ -305,15 +305,15 @@ public class Rm003P1AnalysisTestCase {
         List<BabbleParser.IsExpressionContext> isList = isExpressions(parsedMain);
         Assertions.assertEquals(8, isList.size());
 
-        Assertions.assertNotNull(analysis.isTarget(isList.get(0)));
-        Assertions.assertEquals(ClassShape.Kind.CLASS, analysis.isTarget(isList.get(0)).kind());
-        Assertions.assertEquals(analysis.isTarget(isList.get(0)).typeId(), analysis.isTarget(isList.get(1)).typeId());
-        Assertions.assertEquals(ClassShape.Kind.INTERFACE, analysis.isTarget(isList.get(2)).kind());
-        Assertions.assertEquals("mod.ba#Exp", analysis.isTarget(isList.get(3)).typeId());
-        Assertions.assertEquals("mod.ba#Priv", analysis.isTarget(isList.get(4)).typeId());
+        Assertions.assertNotNull(analysis.lowering().isTarget(isList.get(0)));
+        Assertions.assertEquals(ClassShape.Kind.CLASS, analysis.lowering().isTarget(isList.get(0)).kind());
+        Assertions.assertEquals(analysis.lowering().isTarget(isList.get(0)).typeId(), analysis.lowering().isTarget(isList.get(1)).typeId());
+        Assertions.assertEquals(ClassShape.Kind.INTERFACE, analysis.lowering().isTarget(isList.get(2)).kind());
+        Assertions.assertEquals("mod.ba#Exp", analysis.lowering().isTarget(isList.get(3)).typeId());
+        Assertions.assertEquals("mod.ba#Priv", analysis.lowering().isTarget(isList.get(4)).typeId());
 
         for (int i = 5; i < 8; i++) {
-            Assertions.assertNull(analysis.isTarget(isList.get(i)), "Expected null IsTarget at index " + i);
+            Assertions.assertNull(analysis.lowering().isTarget(isList.get(i)), "Expected null IsTarget at index " + i);
         }
 
         // Cross-REPL reassignment invalidates static type alias & IsTarget
@@ -329,7 +329,7 @@ public class Rm003P1AnalysisTestCase {
         Assertions.assertEquals(1, r3.typeDiagnostics().size());
         Assertions.assertEquals("Unknown type : RA", r3.typeDiagnostics().get(0).message());
         List<BabbleParser.IsExpressionContext> r3IsList = isExpressions((BabbleParser.FileContext) r3.pass().fileScope.owner);
-        Assertions.assertNull(r3.isTarget(r3IsList.get(1)));
+        Assertions.assertNull(r3.lowering().isTarget(r3IsList.get(1)));
     }
 
     @Test
@@ -364,66 +364,66 @@ public class Rm003P1AnalysisTestCase {
         ScopeAnalysis analysis = analyzeSingle(source);
         Assertions.assertEquals(List.of(), analysis.typeDiagnostics(), analysis.typeDiagnostics().toString());
         BabbleParser.FileContext file = (BabbleParser.FileContext) analysis.pass().fileScope.owner;
-        ScopeAnalysis.TypeHierarchyInfo base = findByName(analysis, "Base");
-        ScopeAnalysis.TypeHierarchyInfo box = findByName(analysis, "Box");
+        LoweringTargets.TypeHierarchyInfo base = findByName(analysis, "Base");
+        LoweringTargets.TypeHierarchyInfo box = findByName(analysis, "Box");
 
         List<BabbleParser.CallContext> allCalls = calls(file);
         Assertions.assertEquals(10, allCalls.size());
 
         // 0: this.baseFn(a) inside Base.defSelf
-        ScopeAnalysis.InterfaceCallTarget c0 = analysis.interfaceCallTarget(allCalls.get(0));
+        LoweringTargets.InterfaceCallTarget c0 = analysis.lowering().interfaceCallTarget(allCalls.get(0));
         Assertions.assertNotNull(c0);
         Assertions.assertEquals(base.id(), c0.interfaceTypeId());
         Assertions.assertEquals("baseFn", c0.memberName());
-        Assertions.assertArrayEquals(new ScopeAnalysis.PrimitiveKind[]{ScopeAnalysis.PrimitiveKind.INT}, c0.signature().parameterKinds());
-        Assertions.assertEquals(ScopeAnalysis.PrimitiveKind.INT, c0.signature().returnKind());
+        Assertions.assertArrayEquals(new PrimitiveKind[]{PrimitiveKind.INT}, c0.signature().parameterKinds());
+        Assertions.assertEquals(PrimitiveKind.INT, c0.signature().returnKind());
         Assertions.assertTrue(c0.guaranteedCallable());
 
         // 1: b.baseFn(1) declared on Base (not Box)
-        ScopeAnalysis.InterfaceCallTarget c1 = analysis.interfaceCallTarget(allCalls.get(1));
+        LoweringTargets.InterfaceCallTarget c1 = analysis.lowering().interfaceCallTarget(allCalls.get(1));
         Assertions.assertNotNull(c1);
         Assertions.assertEquals(base.id(), c1.interfaceTypeId());
         Assertions.assertEquals("baseFn", c1.memberName());
 
         // 2: b.get() on Box(int) uses uninstantiated TypeVar -> NONE
-        ScopeAnalysis.InterfaceCallTarget c2 = analysis.interfaceCallTarget(allCalls.get(2));
+        LoweringTargets.InterfaceCallTarget c2 = analysis.lowering().interfaceCallTarget(allCalls.get(2));
         Assertions.assertNotNull(c2);
         Assertions.assertEquals(box.id(), c2.interfaceTypeId());
         Assertions.assertEquals("get", c2.memberName());
-        Assertions.assertEquals(ScopeAnalysis.PrimitiveKind.NONE, c2.signature().returnKind());
+        Assertions.assertEquals(PrimitiveKind.NONE, c2.signature().returnKind());
 
         // 3: b.id(42) generic interface method uses TypeVar -> NONE parameter & return
-        ScopeAnalysis.InterfaceCallTarget c3 = analysis.interfaceCallTarget(allCalls.get(3));
+        LoweringTargets.InterfaceCallTarget c3 = analysis.lowering().interfaceCallTarget(allCalls.get(3));
         Assertions.assertNotNull(c3);
         Assertions.assertEquals(box.id(), c3.interfaceTypeId());
         Assertions.assertEquals("id", c3.memberName());
-        Assertions.assertArrayEquals(new ScopeAnalysis.PrimitiveKind[]{ScopeAnalysis.PrimitiveKind.NONE}, c3.signature().parameterKinds());
-        Assertions.assertEquals(ScopeAnalysis.PrimitiveKind.NONE, c3.signature().returnKind());
+        Assertions.assertArrayEquals(new PrimitiveKind[]{PrimitiveKind.NONE}, c3.signature().parameterKinds());
+        Assertions.assertEquals(PrimitiveKind.NONE, c3.signature().returnKind());
 
         // 4: b.opt(1) optional omitted -> lowered via InterfaceCallTarget with optionalParamBits (BIP021-I1)
-        ScopeAnalysis.InterfaceCallTarget c4 = analysis.interfaceCallTarget(allCalls.get(4));
+        LoweringTargets.InterfaceCallTarget c4 = analysis.lowering().interfaceCallTarget(allCalls.get(4));
         Assertions.assertNotNull(c4);
         Assertions.assertEquals(box.id(), c4.interfaceTypeId());
         Assertions.assertEquals("opt", c4.memberName());
         Assertions.assertEquals(2, c4.signature().optionalParamBits());
-        Assertions.assertEquals(2, analysis.argumentBinding(allCalls.get(4)).missingParamBits());
+        Assertions.assertEquals(2, analysis.calls().argumentBinding(allCalls.get(4)).missingParamBits());
 
         // 5: b.opt(a: 1, b: 2) named args -> lowered via InterfaceCallTarget (BIP021-I1)
-        ScopeAnalysis.InterfaceCallTarget c5 = analysis.interfaceCallTarget(allCalls.get(5));
+        LoweringTargets.InterfaceCallTarget c5 = analysis.lowering().interfaceCallTarget(allCalls.get(5));
         Assertions.assertNotNull(c5);
         Assertions.assertEquals(box.id(), c5.interfaceTypeId());
         Assertions.assertEquals("opt", c5.memberName());
         Assertions.assertEquals(2, c5.signature().optionalParamBits());
-        Assertions.assertEquals(0, analysis.argumentBinding(allCalls.get(5)).missingParamBits());
+        Assertions.assertEquals(0, analysis.calls().argumentBinding(allCalls.get(5)).missingParamBits());
 
         // 6..9: all excluded
         for (int i = 6; i < 10; i++) {
-            Assertions.assertNull(analysis.interfaceCallTarget(allCalls.get(i)), "Expected null InterfaceCallTarget at call " + i);
+            Assertions.assertNull(analysis.lowering().interfaceCallTarget(allCalls.get(i)), "Expected null InterfaceCallTarget at call " + i);
         }
     }
 
-    private static ScopeAnalysis.TypeHierarchyInfo findByName(ScopeAnalysis analysis, String name) {
-        return analysis.typeHierarchies().values().stream()
+    private static LoweringTargets.TypeHierarchyInfo findByName(ScopeAnalysis analysis, String name) {
+        return analysis.hierarchy().typeHierarchies().values().stream()
                 .filter(info -> name.equals(info.name()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("Missing type hierarchy for " + name));

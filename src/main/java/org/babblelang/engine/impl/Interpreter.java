@@ -1,5 +1,7 @@
 package org.babblelang.engine.impl;
 
+import org.babblelang.analysis.CallMetadata;
+import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.runtime.Namespace;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.tree.ParseTreeProperty;
@@ -130,7 +132,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitClassExpression(BabbleParser.ClassExpressionContext ctx) {
         last = ctx;
         Object[] interfaces = types(ctx.typeList());
-        BabbleClass babbleClass = Classes.newClass(scopes.shape(ctx), namespace, new InterpretedClassBody(ctx), interfaces);
+        BabbleClass babbleClass = Classes.newClass(scopes.hierarchy().shape(ctx), namespace, new InterpretedClassBody(ctx), interfaces);
         if (ctx.staticBlock != null) {
             runIn(Classes.staticScope(namespace, babbleClass), ctx.staticBlock.expression());
         }
@@ -143,7 +145,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
         last = ctx;
         Object[] interfaces = types(ctx.typeList());
-        Object object = BabbleClass.object(scopes.shape(ctx), namespace, new InterpretedClassBody(ctx), interfaces, runtime);
+        Object object = BabbleClass.object(scopes.hierarchy().shape(ctx), namespace, new InterpretedClassBody(ctx), interfaces, runtime);
         last = ctx;
         return object;
     }
@@ -151,7 +153,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitInterfaceExpression(BabbleParser.InterfaceExpressionContext ctx) {
         last = ctx;
-        BabbleInterface babbleInterface = Classes.newInterface(scopes.shape(ctx), types(ctx.typeList()));
+        BabbleInterface babbleInterface = Classes.newInterface(scopes.hierarchy().shape(ctx), types(ctx.typeList()));
         runIn(Classes.interfaceScope(namespace, babbleInterface), ctx.interfaceBlock.expression());
         if (ctx.staticBlock != null) {
             runIn(Classes.staticScope(namespace, babbleInterface), ctx.staticBlock.expression());
@@ -249,13 +251,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitIsExpression(BabbleParser.IsExpressionContext ctx) {
         last = ctx;
         Object value = visit(ctx.left);
-        String builtin = scopes.isBuiltin(ctx);
+        String builtin = scopes.lowering().isBuiltin(ctx);
         if (builtin != null) {
             last = ctx;
             return Values.isBuiltin(value, builtin);
         }
         last = ctx;
-        return Types.matches(value, scopes.checkedType(ctx));
+        return Types.matches(value, scopes.lowering().checkedType(ctx));
     }
 
     /** A type alias (BIP023) only stands for a type : its def's value, which nothing can read, is null. */
@@ -277,11 +279,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         Object value = visit(ctx.left);
         last = ctx;
-        ScopeAnalysis.JavaSamTarget sam = scopes.asSamTarget(ctx);
+        LoweringTargets.JavaSamTarget sam = scopes.lowering().asSamTarget(ctx);
         if (sam != null) {
             value = Values.toJavaSam(value, sam.samInterface(), sam.markers(), runtime);
         }
-        return Types.check(value, scopes.checkedType(ctx));
+        return Types.check(value, scopes.lowering().checkedType(ctx));
     }
 
     @Override
@@ -300,7 +302,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
         last = ctx;
         value = widen(ctx, value);
-        ScopeAnalysis.DefTarget target = scopes.defTarget(ctx);
+        LoweringTargets.DefTarget target = scopes.lowering().defTarget(ctx);
         return switch (target.kind()) {
             case LEXICAL -> namespace.initialize(id, value);
             case MEMBER -> Classes.initMember(namespace, target.index(), value);
@@ -399,7 +401,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             }
             Object result = Members.select(value, name, expression.getText());
             last = ctx;
-            return Types.check(result, scopes.checkedType(ctx));
+            return Types.check(result, scopes.lowering().checkedType(ctx));
         }
         Object result;
         if (expression instanceof BabbleParser.ThisExpressionContext) {
@@ -410,7 +412,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             result = Members.select(value, name, expression.getText());
         }
         last = ctx;
-        return Types.check(result, scopes.checkedType(ctx));
+        return Types.check(result, scopes.lowering().checkedType(ctx));
     }
 
     @Override
@@ -479,7 +481,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
 
     @Override
     public Object visitNegate(BabbleParser.NegateContext ctx) {
-        Object resolved = scopes.resolvedLiteral(ctx);
+        Object resolved = scopes.lowering().resolvedLiteral(ctx);
         if (resolved != null) {
             last = ctx;
             return resolved;
@@ -502,19 +504,19 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         CallSite site = org.babblelang.analysis.SyntaxText.operatorSite(ctx, receiver, method, argument, sourceName);
         Object member = Members.select(a, method, receiver);
         Object[] rawArgs = argument == null ? Arguments.NONE : new Object[]{b};
-        ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
+        CallMetadata.OverloadDispatchTarget ovDispatch = scopes.calls().overloadDispatch(ctx);
         if (ovDispatch != null) {
             if (!ovDispatch.isSplit()) {
-                ScopeAnalysis.OverloadCallTarget target = ovDispatch.direct();
+                CallMetadata.OverloadCallTarget target = ovDispatch.direct();
                 Callable chosen = target.exactSet()
                         ? org.babblelang.runtime.OverloadSet.memberOf(member, target.altIndex())
                         : org.babblelang.runtime.OverloadSet.selectFrom(member, target.signatureKey());
                 last = ctx;
                 return chosen.call(runtime, rawArgs, null, site);
             }
-            for (ScopeAnalysis.OverloadSplitBranch branch : ovDispatch.splitBranches()) {
+            for (CallMetadata.OverloadSplitBranch branch : ovDispatch.splitBranches()) {
                 if (matchesSplitChecks(branch.checks(), rawArgs)) {
-                    ScopeAnalysis.OverloadCallTarget target = branch.target();
+                    CallMetadata.OverloadCallTarget target = branch.target();
                     Callable chosen = target.exactSet()
                             ? org.babblelang.runtime.OverloadSet.memberOf(member, target.altIndex())
                             : org.babblelang.runtime.OverloadSet.selectFrom(member, target.signatureKey());
@@ -596,12 +598,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         Object iterable = visit(ctx.iterable);
         Object rawIter = Values.unwrap(iterable);
-        ScopeAnalysis.ForLoopTarget target = scopes.forLoopTarget(ctx);
+        LoweringTargets.ForLoopTarget target = scopes.lowering().forLoopTarget(ctx);
         if (BabbleObjects.isInstance(rawIter)
                 && (target == null
-                || target.kind() == ScopeAnalysis.ForKind.JAVA_ITERABLE
-                || target.kind() == ScopeAnalysis.ForKind.JAVA_ITERATOR
-                || target.kind() == ScopeAnalysis.ForKind.DYNAMIC_UNION)) {
+                || target.kind() == LoweringTargets.ForKind.JAVA_ITERABLE
+                || target.kind() == LoweringTargets.ForKind.JAVA_ITERATOR
+                || target.kind() == LoweringTargets.ForKind.DYNAMIC_UNION)) {
             Object face = BabbleObjects.face(rawIter);
             if (face instanceof java.lang.Iterable<?> || face instanceof java.util.Iterator<?>) {
                 rawIter = face;
@@ -641,8 +643,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             return result;
         }
         // Babble custom iterable or iterator (Tier 3)
-        boolean isIterable = target != null && (target.kind() == ScopeAnalysis.ForKind.BABBLE_ITERABLE
-                || target.kind() == ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE);
+        boolean isIterable = target != null && (target.kind() == LoweringTargets.ForKind.BABBLE_ITERABLE
+                || target.kind() == LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE);
         Object iterObj = iterable;
         if (isIterable) {
             Callable iterFn = (Callable) Members.select(iterable, "iterator", "iterator");
@@ -650,7 +652,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
         Object unwrappedIter = Values.unwrap(iterObj);
         if (BabbleObjects.isInstance(unwrappedIter)
-                && target != null && target.kind() == ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE) {
+                && target != null && target.kind() == LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE) {
             unwrappedIter = BabbleObjects.face(unwrappedIter);
         }
         if (unwrappedIter instanceof java.util.Iterator<?> it) {
@@ -683,16 +685,16 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return result;
     }
 
-    private Object runForIteration(BabbleParser.ForExpressionContext ctx, ScopeAnalysis.ForLoopTarget target,
+    private Object runForIteration(BabbleParser.ForExpressionContext ctx, LoweringTargets.ForLoopTarget target,
                                    String loopVar, String[] blockDeclared, Object elem) {
         if (target != null && target.elemCheck() != null) {
             Types.check(elem, target.elemCheck());
         }
-        ScopeAnalysis.JavaSamTarget elemSam = scopes.forElemSamTarget(ctx);
+        LoweringTargets.JavaSamTarget elemSam = scopes.lowering().forElemSamTarget(ctx);
         if (elemSam != null) {
             elem = Values.toJavaSam(elem, elemSam.samInterface(), elemSam.markers(), runtime);
         }
-        int elemRank = scopes.numericWideningRank(ctx);
+        int elemRank = scopes.lowering().numericWideningRank(ctx);
         if (elemRank >= 0) {
             elem = Values.widenNumeric(elem, elemRank);
         }
@@ -751,7 +753,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitLongLiteral(BabbleParser.LongLiteralContext ctx) {
         last = ctx;
-        Object resolved = scopes.resolvedLiteral(ctx);
+        Object resolved = scopes.lowering().resolvedLiteral(ctx);
         if (resolved != null) {
             return resolved;
         }
@@ -762,7 +764,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitInteger(BabbleParser.IntegerContext ctx) {
         last = ctx;
-        Object resolved = scopes.resolvedLiteral(ctx);
+        Object resolved = scopes.lowering().resolvedLiteral(ctx);
         if (resolved != null) {
             return resolved;
         }
@@ -772,7 +774,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitFloatLiteral(BabbleParser.FloatLiteralContext ctx) {
         last = ctx;
-        Object resolved = scopes.resolvedLiteral(ctx);
+        Object resolved = scopes.lowering().resolvedLiteral(ctx);
         if (resolved != null) {
             return resolved;
         }
@@ -783,7 +785,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitDouble(BabbleParser.DoubleContext ctx) {
         last = ctx;
-        Object resolved = scopes.resolvedLiteral(ctx);
+        Object resolved = scopes.lowering().resolvedLiteral(ctx);
         if (resolved != null) {
             return resolved;
         }
@@ -807,7 +809,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         last = ctx;
         Object value = visit(ctx.expression());
         last = ctx;
-        String expected = scopes.nonNullAssertionTarget(ctx);
+        String expected = scopes.lowering().nonNullAssertionTarget(ctx);
         if (expected != null) {
             return org.babblelang.runtime.JavaTypes.checkNotNull(value, expected);
         }
@@ -843,7 +845,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visit(org.antlr.v4.runtime.tree.ParseTree tree) {
         Object value = super.visit(tree);
         if (tree instanceof ParserRuleContext prc) {
-            ScopeAnalysis.OverloadSelection sel = scopes.overloadSelection(prc);
+            LoweringTargets.OverloadSelection sel = scopes.calls().overloadSelection(prc);
             if (sel != null) {
                 value = sel.exactSet()
                         ? org.babblelang.runtime.OverloadSet.memberOf(value, sel.index())
@@ -867,12 +869,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         for (int i = 0; i < exprs.size(); i++) {
             operands[i] = visit(exprs.get(i));
         }
-        List<ScopeAnalysis.OverloadAltMetaInfo> metaInfos = scopes.overloadMetas(ctx);
+        List<LoweringTargets.OverloadAltMetaInfo> metaInfos = scopes.calls().overloadMetas(ctx);
         org.babblelang.runtime.OverloadSet.AltMeta[] metas;
         if (metaInfos != null) {
             metas = new org.babblelang.runtime.OverloadSet.AltMeta[metaInfos.size()];
             for (int i = 0; i < metaInfos.size(); i++) {
-                ScopeAnalysis.OverloadAltMetaInfo info = metaInfos.get(i);
+                LoweringTargets.OverloadAltMetaInfo info = metaInfos.get(i);
                 metas[i] = new org.babblelang.runtime.OverloadSet.AltMeta(
                         info.signatureKey(), info.display(), info.minArity(), info.maxArity(),
                         info.restIndex(), info.paramDescriptors());
@@ -887,7 +889,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     @Override
     public Object visitCall(BabbleParser.CallContext ctx) {
         last = ctx;
-        ScopeAnalysis.ArrayCreationTarget arrCreate = scopes.arrayCreationTarget(ctx);
+        LoweringTargets.ArrayCreationTarget arrCreate = scopes.lowering().arrayCreationTarget(ctx);
         if (arrCreate != null) {
             Object[] args = arguments(ctx);
             last = ctx;
@@ -908,13 +910,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                                 arrCreate.babbleConformIds(), arrCreate.nestedDims(), args[0], runtime)
                         : ArraySupport.from(arrCreate.componentClass(), args[0], runtime);
             };
-            return Types.check(created, scopes.checkedType(ctx));
+            return Types.check(created, scopes.lowering().checkedType(ctx));
         }
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpression) {
-            return Types.check(superCall(ctx, selector, superExpression), scopes.checkedType(ctx));
+            return Types.check(superCall(ctx, selector, superExpression), scopes.lowering().checkedType(ctx));
         }
-        ScopeAnalysis.OverloadDispatchTarget ovDispatch = scopes.overloadDispatch(ctx);
+        CallMetadata.OverloadDispatchTarget ovDispatch = scopes.calls().overloadDispatch(ctx);
         if (ovDispatch != null) {
             return invokeOverloadDispatch(ctx, ovDispatch);
         }
@@ -926,15 +928,15 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 return null;
             }
             Object callee = Types.check(Members.select(receiver, ScopeAnalysis.selectorName(selector), receiverExpr.getText()),
-                    scopes.checkedType(selector));
+                    scopes.lowering().checkedType(selector));
             last = ctx;
             CallSite site = callSite(ctx);
             var callable = Calls.callable(callee, site);
             Object[] args = bindStaticArguments(ctx, arguments(ctx));
             last = ctx;
-            return Types.check(callable.call(runtime, args, effectiveCallNames(ctx), site), scopes.checkedType(ctx));
+            return Types.check(callable.call(runtime, args, effectiveCallNames(ctx), site), scopes.lowering().checkedType(ctx));
         }
-        ScopeAnalysis.JavaCallTarget javaCall = scopes.javaCallTarget(ctx);
+        LoweringTargets.JavaCallTarget javaCall = scopes.lowering().javaCallTarget(ctx);
         if (javaCall != null && !javaCall.isStatic() && javaCall.unwrapReceiver()
                 && javaCall.method().getDeclaringClass().isInterface()
                 && ctx.expression() instanceof BabbleParser.SelectorContext selector
@@ -944,15 +946,15 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             last = selector;
             Object target = Values.toJava(receiver, javaCall.method().getDeclaringClass(), runtime);
             Object callee = Types.check(Members.select(target, ScopeAnalysis.selectorName(selector), receiverExpr.getText()),
-                    scopes.checkedType(selector));
+                    scopes.lowering().checkedType(selector));
             last = ctx;
             CallSite site = callSite(ctx);
             var callable = Calls.callable(callee, site);
             Object[] args = arguments(ctx);
             last = ctx;
-            return Types.check(callable.call(runtime, args, callNames.get(ctx), site), scopes.checkedType(ctx));
+            return Types.check(callable.call(runtime, args, callNames.get(ctx), site), scopes.lowering().checkedType(ctx));
         }
-        if (scopes.isSelfTailCall(ctx)) {
+        if (scopes.calls().isSelfTailCall(ctx)) {
             // The callee is the running function itself (recurse, its own def, or this.m) : BIP024.
             Object[] args = bindStaticArguments(ctx, arguments(ctx));
             last = ctx;
@@ -964,26 +966,26 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         var callable = Calls.callable(callee, site);
         Object[] args = bindStaticArguments(ctx, arguments(ctx));
         last = ctx;
-        return Types.check(callable.call(runtime, args, effectiveCallNames(ctx), site), scopes.checkedType(ctx));
+        return Types.check(callable.call(runtime, args, effectiveCallNames(ctx), site), scopes.lowering().checkedType(ctx));
     }
 
-    private Object invokeOverloadDispatch(BabbleParser.CallContext ctx, ScopeAnalysis.OverloadDispatchTarget dispatch) {
+    private Object invokeOverloadDispatch(BabbleParser.CallContext ctx, CallMetadata.OverloadDispatchTarget dispatch) {
         Object callee = visit(ctx.expression());
         Object[] rawArgs = arguments(ctx);
         last = ctx;
         CallSite site = callSite(ctx);
         if (!dispatch.isSplit()) {
-            ScopeAnalysis.OverloadCallTarget target = dispatch.direct();
+            CallMetadata.OverloadCallTarget target = dispatch.direct();
             org.babblelang.runtime.Callable chosen = target.exactSet()
                     ? org.babblelang.runtime.OverloadSet.memberOf(callee, target.altIndex())
                     : org.babblelang.runtime.OverloadSet.selectFrom(callee, target.signatureKey());
             Object[] args = bindArgumentsWith(target.binding(), rawArgs);
             last = ctx;
-            return Types.check(chosen.call(runtime, args, null, site), scopes.checkedType(ctx));
+            return Types.check(chosen.call(runtime, args, null, site), scopes.lowering().checkedType(ctx));
         }
-        for (ScopeAnalysis.OverloadSplitBranch branch : dispatch.splitBranches()) {
+        for (CallMetadata.OverloadSplitBranch branch : dispatch.splitBranches()) {
             if (matchesSplitChecks(branch.checks(), rawArgs)) {
-                ScopeAnalysis.OverloadCallTarget target = branch.target();
+                CallMetadata.OverloadCallTarget target = branch.target();
                 org.babblelang.runtime.Callable chosen = target.exactSet()
                         ? org.babblelang.runtime.OverloadSet.memberOf(callee, target.altIndex())
                         : org.babblelang.runtime.OverloadSet.selectFrom(callee, target.signatureKey());
@@ -991,22 +993,22 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 if (target.binding() != null && target.binding().argAdapts() != null) {
                     adapted = rawArgs.clone();
                     for (int i = 0; i < adapted.length; i++) {
-                        ScopeAnalysis.SpreadAdapt a = target.binding().adaptForArg(i);
-                        if (a != null && a.kind() != ScopeAnalysis.SpreadKind.NONE) {
+                        LoweringTargets.SpreadAdapt a = target.binding().adaptForArg(i);
+                        if (a != null && a.kind() != LoweringTargets.SpreadKind.NONE) {
                             adapted[i] = adaptSpread(adapted[i], a);
                         }
                     }
                 }
                 Object[] args = bindArgumentsWith(target.binding(), adapted);
                 last = ctx;
-                return Types.check(chosen.call(runtime, args, null, site), scopes.checkedType(ctx));
+                return Types.check(chosen.call(runtime, args, null, site), scopes.lowering().checkedType(ctx));
             }
         }
         throw new BabbleException("No applicable overload of " + ctx.expression().getText());
     }
 
-    private static boolean matchesSplitChecks(List<ScopeAnalysis.OverloadSplitCheck> checks, Object[] rawArgs) {
-        for (ScopeAnalysis.OverloadSplitCheck chk : checks) {
+    private static boolean matchesSplitChecks(List<LoweringTargets.OverloadSplitCheck> checks, Object[] rawArgs) {
+        for (LoweringTargets.OverloadSplitCheck chk : checks) {
             Object v = rawArgs[chk.argIndex()];
             if (chk.isNull()) {
                 if (v != null) {
@@ -1029,7 +1031,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     /** {@code super.m(args)} : the default method the analysis resolved, called on {@code this}. */
     private Object superCall(BabbleParser.CallContext ctx, BabbleParser.SelectorContext selector, BabbleParser.SuperExpressionContext superExpression) {
         Object thiz = namespace.lookup("this");
-        Object type = Classes.type(type(scopes.superTarget(superExpression)), superExpression.getText());
+        Object type = Classes.type(type(scopes.hierarchy().superTarget(superExpression)), superExpression.getText());
         CallSite site = callSite(ctx);
         Object[] args = bindStaticArguments(ctx, arguments(ctx));
         last = ctx;
@@ -1037,10 +1039,10 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     private Object[] bindStaticArguments(BabbleParser.CallContext ctx, Object[] rawArgs) {
-        return bindArgumentsWith(scopes.argumentBinding(ctx), rawArgs);
+        return bindArgumentsWith(scopes.calls().argumentBinding(ctx), rawArgs);
     }
 
-    private Object[] bindArgumentsWith(ScopeAnalysis.ArgumentBinding binding, Object[] rawArgs) {
+    private Object[] bindArgumentsWith(LoweringTargets.ArgumentBinding binding, Object[] rawArgs) {
         if (binding == null) {
             return rawArgs;
         }
@@ -1072,11 +1074,11 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     private String[] effectiveCallNames(BabbleParser.CallContext ctx) {
-        return scopes.argumentBinding(ctx) != null ? null : callNames.get(ctx);
+        return scopes.calls().argumentBinding(ctx) != null ? null : callNames.get(ctx);
     }
 
     private Object widen(ParserRuleContext ctx, Object value) {
-        int rank = scopes.numericWideningRank(ctx);
+        int rank = scopes.lowering().numericWideningRank(ctx);
         if (rank >= 0) {
             value = Values.widenNumeric(value, rank);
         }
@@ -1084,13 +1086,13 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     }
 
     private Object adaptJavaSam(ParserRuleContext ctx, Object value) {
-        ScopeAnalysis.JavaSamTarget sam = scopes.javaSamTarget(ctx);
+        LoweringTargets.JavaSamTarget sam = scopes.lowering().javaSamTarget(ctx);
         return sam != null ? Values.toJavaSam(value, sam.samInterface(), sam.markers(), runtime) : value;
     }
 
     private Object[] arguments(BabbleParser.CallContext ctx) {
         List<BabbleParser.CallParameterContext> parameters = ctx.callParameters().callParameter();
-        ScopeAnalysis.SpreadAdapt[] adapts = scopes.callSpreadAdapts(ctx);
+        LoweringTargets.SpreadAdapt[] adapts = scopes.calls().callSpreadAdapts(ctx);
         Object[] args = parameters.isEmpty() ? Arguments.NONE : new Object[parameters.size()];
         for (int i = 0; i < args.length; i++) {
             BabbleParser.ExpressionContext expression = parameters.get(i).expression();
@@ -1103,8 +1105,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return args;
     }
 
-    private Object adaptSpread(Object value, ScopeAnalysis.SpreadAdapt adapt) {
-        ScopeAnalysis.JavaSamTarget sam = adapt.elementSamTarget();
+    private Object adaptSpread(Object value, LoweringTargets.SpreadAdapt adapt) {
+        LoweringTargets.JavaSamTarget sam = adapt.elementSamTarget();
         Class<?> samCls = sam != null ? sam.samInterface() : null;
         Class<?>[] markers = sam != null ? sam.markers() : null;
         return switch (adapt.kind()) {

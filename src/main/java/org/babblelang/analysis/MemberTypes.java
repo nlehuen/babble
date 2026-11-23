@@ -674,7 +674,7 @@ final class MemberTypes {
         }
         if (unwrapped instanceof Type.Union union) {
             Type joinedElem = null;
-            ScopeAnalysis.ForKind commonKind = null;
+            LoweringTargets.ForKind commonKind = null;
             boolean sameKind = true;
             for (Type member : union.members()) {
                 Type effMember = frozenIterable ? Type.frozen(member) : member;
@@ -692,26 +692,26 @@ final class MemberTypes {
                     sameKind = false;
                 }
             }
-            ScopeAnalysis.ForKind kind = (sameKind && (commonKind == ScopeAnalysis.ForKind.JAVA_ITERABLE
-                    || commonKind == ScopeAnalysis.ForKind.JAVA_ITERATOR))
-                    ? commonKind : ScopeAnalysis.ForKind.DYNAMIC_UNION;
+            LoweringTargets.ForKind kind = (sameKind && (commonKind == LoweringTargets.ForKind.JAVA_ITERABLE
+                    || commonKind == LoweringTargets.ForKind.JAVA_ITERATOR))
+                    ? commonKind : LoweringTargets.ForKind.DYNAMIC_UNION;
             return new TypeChecker.ForIterableInfo(kind, null, joinedElem != null ? joinedElem : Type.NULLABLE_ANY,
                     null, null, null, null, null);
         }
         if (unwrapped instanceof Type.Array arr) {
             Type elem = frozenIterable ? Type.frozen(arr.element()) : arr.element();
-            return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.ARRAY, JavaTypeBridge.checkedArrayClass(arr), elem,
+            return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.ARRAY, JavaTypeBridge.checkedArrayClass(arr), elem,
                     null, null, null, null, null);
         }
         if (unwrapped instanceof Type.JavaInstance ji) {
             if (java.lang.Iterable.class.isAssignableFrom(ji.type())) {
                 Type elem = javaIteratorElement(ji, java.lang.Iterable.class, frozenIterable);
-                return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.JAVA_ITERABLE, null, elem,
+                return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.JAVA_ITERABLE, null, elem,
                         null, null, null, null, null);
             }
             if (java.util.Iterator.class.isAssignableFrom(ji.type())) {
                 Type elem = javaIteratorElement(ji, java.util.Iterator.class, frozenIterable);
-                return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.JAVA_ITERATOR, null, elem,
+                return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.JAVA_ITERATOR, null, elem,
                         null, null, null, null, null);
             }
             return null;
@@ -724,7 +724,7 @@ final class MemberTypes {
                     Type unwrappedIter = iterRes instanceof Type.Frozen f ? f.of() : iterRes;
                     if (unwrappedIter instanceof Type.JavaInstance ji && java.util.Iterator.class.isAssignableFrom(ji.type())) {
                         Type elem = javaIteratorElement(ji, java.util.Iterator.class, frozenIterable);
-                        return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE, null, elem,
+                        return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE, null, elem,
                                 inst, null, iterFn, null, null);
                     }
                     if (unwrappedIter instanceof Type.Instance iterInst) {
@@ -732,7 +732,7 @@ final class MemberTypes {
                         Type.Function nextFn = resolveBabbleZeroArgMethod(iterInst, "next");
                         if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
                             Type elem = frozenIterable ? Type.frozen(nextFn.result()) : nextFn.result();
-                            return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_ITERABLE, null, elem,
+                            return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.BABBLE_ITERABLE, null, elem,
                                     inst, iterInst, iterFn, hasNextFn, nextFn);
                         }
                     }
@@ -742,7 +742,7 @@ final class MemberTypes {
             Type.Function nextFn = resolveBabbleZeroArgMethod(inst, "next");
             if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
                 Type elem = frozenIterable ? Type.frozen(nextFn.result()) : nextFn.result();
-                return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_ITERATOR, null, elem,
+                return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.BABBLE_ITERATOR, null, elem,
                         null, inst, null, hasNextFn, nextFn);
             }
             return null;

@@ -1,7 +1,7 @@
 package org.babblelang.opt.hir;
 
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
-import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
@@ -186,7 +186,7 @@ public final class HirDcePass implements HirPass {
                 && dc.meta().checkedType() == null
                 && HirPurity.isPureNothrowTerminating(dc.args().get(0).value(), module)) {
             rewrites[0]++;
-            return new HirExpr.Const(null, dc.meta().withKind(ScopeAnalysis.PrimitiveKind.NONE).withWideningRank(-1));
+            return new HirExpr.Const(null, dc.meta().withKind(PrimitiveKind.NONE).withWideningRank(-1));
         }
 
         return cur;

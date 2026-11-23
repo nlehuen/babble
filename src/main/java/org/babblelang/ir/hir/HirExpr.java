@@ -1,6 +1,7 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.runtime.CallSite;
 
 import java.util.List;
@@ -144,7 +145,7 @@ public sealed interface HirExpr permits
 
     record Def(
             String name,
-            ScopeAnalysis.DefTarget target,
+            LoweringTargets.DefTarget target,
             HirVar var,
             HirExpr value,
             ExprMeta meta
@@ -188,7 +189,7 @@ public sealed interface HirExpr permits
             HirExpr receiver,
             String receiverText,
             boolean pureStaticReceiver,
-            ScopeAnalysis.JavaFieldTarget target,
+            LoweringTargets.JavaFieldTarget target,
             String operator,
             HirExpr value,
             String targetText,
@@ -224,14 +225,14 @@ public sealed interface HirExpr permits
             HirExpr receiver,
             String receiverText,
             boolean pureStaticReceiver,
-            ScopeAnalysis.JavaFieldTarget target,
+            LoweringTargets.JavaFieldTarget target,
             ExprMeta meta
     ) implements HirExpr {
     }
 
     record ArrayCreate(
-            ScopeAnalysis.ArrayCreationKind kind,
-            ScopeAnalysis.PrimitiveKind elemKind,
+            LoweringTargets.ArrayCreationKind kind,
+            PrimitiveKind elemKind,
             String componentInternalName,
             boolean componentIsJavaInterface,
             Class<?> componentClass,
@@ -241,10 +242,10 @@ public sealed interface HirExpr permits
     }
 
     record ArrayOp(
-            ScopeAnalysis.ArrayOpKind kind,
+            LoweringTargets.ArrayOpKind kind,
             HirExpr receiver,
             String receiverText,
-            ScopeAnalysis.PrimitiveKind elemKind,
+            PrimitiveKind elemKind,
             Class<?> arrayClass,
             Class<?> componentClass,
             List<HirExpr> args,
@@ -254,7 +255,7 @@ public sealed interface HirExpr permits
 
     record ModuleExportGet(
             HirExpr receiver,
-            ScopeAnalysis.ModuleExportTarget target,
+            LoweringTargets.ModuleExportTarget target,
             ExprMeta meta
     ) implements HirExpr {
     }
@@ -301,8 +302,8 @@ public sealed interface HirExpr permits
     record Is(
             HirExpr left,
             String builtin,
-            ScopeAnalysis.IsTarget target,
-            List<ScopeAnalysis.IsTarget> intersectionTargets,
+            LoweringTargets.IsTarget target,
+            List<LoweringTargets.IsTarget> intersectionTargets,
             String descriptor,
             ExprMeta meta
     ) implements HirExpr {
@@ -310,19 +311,19 @@ public sealed interface HirExpr permits
             intersectionTargets = intersectionTargets == null ? List.of() : List.copyOf(intersectionTargets);
         }
 
-        public Is(HirExpr left, String builtin, ScopeAnalysis.IsTarget target, String descriptor, ExprMeta meta) {
+        public Is(HirExpr left, String builtin, LoweringTargets.IsTarget target, String descriptor, ExprMeta meta) {
             this(left, builtin, target, List.of(), descriptor, meta);
         }
     }
 
     record As(
             HirExpr left,
-            ScopeAnalysis.IsTarget target,
-            ScopeAnalysis.JavaSamTarget samTarget,
+            LoweringTargets.IsTarget target,
+            LoweringTargets.JavaSamTarget samTarget,
             String targetDescriptor,
             ExprMeta meta
     ) implements HirExpr {
-        public As(HirExpr left, ScopeAnalysis.IsTarget target, String targetDescriptor, ExprMeta meta) {
+        public As(HirExpr left, LoweringTargets.IsTarget target, String targetDescriptor, ExprMeta meta) {
             this(left, target, null, targetDescriptor, meta);
         }
     }
@@ -336,7 +337,7 @@ public sealed interface HirExpr permits
 
     record SpreadAdapt(
             HirExpr value,
-            ScopeAnalysis.SpreadAdapt adapt,
+            LoweringTargets.SpreadAdapt adapt,
             ExprMeta meta
     ) implements HirExpr {
     }
@@ -344,7 +345,7 @@ public sealed interface HirExpr permits
     /** Java-interop SAM / SAM+markers adapter conversion ({@code BIP022-D7}). */
     record JavaSamAdapt(
             HirExpr value,
-            ScopeAnalysis.JavaSamTarget target,
+            LoweringTargets.JavaSamTarget target,
             ExprMeta meta
     ) implements HirExpr {
     }
@@ -391,12 +392,12 @@ public sealed interface HirExpr permits
 
     record For(
             HirExpr iterable,
-            ScopeAnalysis.ForLoopTarget target,
+            LoweringTargets.ForLoopTarget target,
             HirVar loopVar,
             List<HirVar> bodyDeclaredVars,
             List<HirExpr> body,
             int bodyWideningRank,
-            ScopeAnalysis.JavaSamTarget elemSamTarget,
+            LoweringTargets.JavaSamTarget elemSamTarget,
             ExprMeta meta
     ) implements HirExpr {
         public For {
@@ -430,10 +431,10 @@ public sealed interface HirExpr permits
             HirVar thisVar,
             int ownerClassId,
             String memberName,
-            ScopeAnalysis.SuperTargetInfo targetInfo,
+            LoweringTargets.SuperTargetInfo targetInfo,
             HirTypeRef superTypeRef,
             List<HirCallArg> args,
-            ScopeAnalysis.ArgumentBinding binding,
+            LoweringTargets.ArgumentBinding binding,
             CallSite callSite,
             ExprMeta meta
     ) implements HirExpr {
@@ -445,7 +446,7 @@ public sealed interface HirExpr permits
     record SelfRecurseCall(
             int functionId,
             List<HirExpr> args,
-            ScopeAnalysis.ArgumentBinding binding,
+            LoweringTargets.ArgumentBinding binding,
             ExprMeta meta
     ) implements HirExpr {
         public SelfRecurseCall {
@@ -461,7 +462,7 @@ public sealed interface HirExpr permits
     record SelfTailCall(
             int functionId,
             List<HirCallArg> args,
-            ScopeAnalysis.ArgumentBinding binding,
+            LoweringTargets.ArgumentBinding binding,
             ExprMeta meta
     ) implements HirExpr {
         public SelfTailCall {
@@ -473,7 +474,7 @@ public sealed interface HirExpr permits
             HirExpr callee,
             int targetFunctionId,
             List<HirExpr> args,
-            ScopeAnalysis.ArgumentBinding binding,
+            LoweringTargets.ArgumentBinding binding,
             ExprMeta meta
     ) implements HirExpr {
         public DirectBabbleCall {
@@ -489,7 +490,7 @@ public sealed interface HirExpr permits
             int overloadAltIndex,
             int targetFunctionId,
             List<HirCallArg> args,
-            ScopeAnalysis.ArgumentBinding binding,
+            LoweringTargets.ArgumentBinding binding,
             CallSite callSite,
             ExprMeta meta
     ) implements HirExpr {
@@ -498,7 +499,7 @@ public sealed interface HirExpr permits
         }
 
         public DirectThisMethodCall(HirExpr receiver, int classId, String memberName, int targetFunctionId,
-                                    List<HirCallArg> args, ScopeAnalysis.ArgumentBinding binding,
+                                    List<HirCallArg> args, LoweringTargets.ArgumentBinding binding,
                                     CallSite callSite, ExprMeta meta) {
             this(receiver, null, classId, memberName, -1, targetFunctionId, args, binding, callSite, meta);
         }
@@ -510,9 +511,9 @@ public sealed interface HirExpr permits
             int selectorLine,
             String interfaceTypeId,
             String memberName,
-            ScopeAnalysis.FunctionSignature signature,
+            LoweringTargets.FunctionSignature signature,
             List<HirExpr> args,
-            ScopeAnalysis.ArgumentBinding binding,
+            LoweringTargets.ArgumentBinding binding,
             ExprMeta meta
     ) implements HirExpr {
         public InterfaceCall {
@@ -524,7 +525,7 @@ public sealed interface HirExpr permits
             HirExpr callee,
             String calleeText,
             boolean pureStaticCallee,
-            ScopeAnalysis.JavaConstructorTarget target,
+            LoweringTargets.JavaConstructorTarget target,
             List<HirExpr> args,
             ExprMeta meta
     ) implements HirExpr {
@@ -538,7 +539,7 @@ public sealed interface HirExpr permits
             String receiverText,
             int selectorLine,
             boolean pureStaticReceiver,
-            ScopeAnalysis.JavaCallTarget target,
+            LoweringTargets.JavaCallTarget target,
             List<HirExpr> args,
             ExprMeta meta
     ) implements HirExpr {
@@ -554,8 +555,8 @@ public sealed interface HirExpr permits
             int selectorLine,
             String selectorCheckedType,
             List<HirCallArg> args,
-            ScopeAnalysis.ArgumentBinding binding,
-            ScopeAnalysis.FunctionSignature babbleSig,
+            LoweringTargets.ArgumentBinding binding,
+            LoweringTargets.FunctionSignature babbleSig,
             CallSite callSite,
             ExprMeta meta
     ) implements HirExpr {
@@ -567,8 +568,8 @@ public sealed interface HirExpr permits
     record DynamicCall(
             HirExpr callee,
             List<HirCallArg> args,
-            ScopeAnalysis.ArgumentBinding binding,
-            ScopeAnalysis.FunctionSignature babbleSig,
+            LoweringTargets.ArgumentBinding binding,
+            LoweringTargets.FunctionSignature babbleSig,
             CallSite callSite,
             ExprMeta meta
     ) implements HirExpr {
@@ -581,7 +582,7 @@ public sealed interface HirExpr permits
 
     record MakeOverloadSet(
             List<HirExpr> operands,
-            List<ScopeAnalysis.OverloadAltMetaInfo> metas,
+            List<LoweringTargets.OverloadAltMetaInfo> metas,
             ExprMeta meta
     ) implements HirExpr {
         public MakeOverloadSet {
@@ -600,14 +601,14 @@ public sealed interface HirExpr permits
     }
 
     record OverloadBranch(
-            List<ScopeAnalysis.OverloadSplitCheck> checks,
+            List<LoweringTargets.OverloadSplitCheck> checks,
             int directFunctionId,
             int altIndex,
             String signatureKey,
             boolean exactSet,
-            ScopeAnalysis.FunctionSignature signature,
-            ScopeAnalysis.ArgumentBinding binding,
-            ScopeAnalysis.PrimitiveKind resultKind
+            LoweringTargets.FunctionSignature signature,
+            LoweringTargets.ArgumentBinding binding,
+            PrimitiveKind resultKind
     ) {
         public OverloadBranch {
             checks = List.copyOf(checks);

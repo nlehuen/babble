@@ -1,6 +1,7 @@
 package org.babblelang.compiler;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.HirFunction;
 import org.babblelang.ir.hir.HirInterface;
 import org.babblelang.ir.hir.HirParam;
@@ -54,7 +55,7 @@ final class InterfaceGen {
         return fnId >= 0 ? emitter.module.function(fnId) : null;
     }
 
-    String superHelper(String directParentJvm, String memberName, ScopeAnalysis.FunctionSignature sig) {
+    String superHelper(String directParentJvm, String memberName, LoweringTargets.FunctionSignature sig) {
         String desc = HirEmitter.bridgeDescriptor(sig);
         String key = directParentJvm + "." + memberName + desc;
         return superHelpers.computeIfAbsent(key, k -> {
@@ -79,14 +80,14 @@ final class InterfaceGen {
     }
 
     void emitBody() {
-        ScopeAnalysis.TypeHierarchyInfo hierarchy = emitter.module.typeHierarchy(shape.id());
+        LoweringTargets.TypeHierarchyInfo hierarchy = emitter.module.typeHierarchy(shape.id());
         if (hierarchy == null) {
             return;
         }
         Set<String> emitted = new HashSet<>();
-        for (ScopeAnalysis.MemberSpec spec : hierarchy.interfaceMembers().values()) {
+        for (LoweringTargets.MemberSpec spec : hierarchy.interfaceMembers().values()) {
             if (spec.callable() && spec.declaredSignature() != null) {
-                ScopeAnalysis.FunctionSignature sig = spec.declaredSignature();
+                LoweringTargets.FunctionSignature sig = spec.declaredSignature();
                 String mName = HirEmitter.bridgeMethodName(spec.name());
                 String desc = HirEmitter.bridgeDescriptor(sig);
                 emitted.add(mName + desc);
@@ -100,9 +101,9 @@ final class InterfaceGen {
                     m.visitEnd();
                 }
             } else if (spec.isOverloaded()) {
-                List<ScopeAnalysis.FunctionSignature> sigs = spec.overloadSignatures();
+                List<LoweringTargets.FunctionSignature> sigs = spec.overloadSignatures();
                 for (int k = 0; k < sigs.size(); k++) {
-                    ScopeAnalysis.FunctionSignature sig = sigs.get(k);
+                    LoweringTargets.FunctionSignature sig = sigs.get(k);
                     String mName = HirEmitter.bridgeMethodName(spec.name() + "$" + k);
                     String desc = HirEmitter.bridgeDescriptor(sig);
                     emitted.add(mName + desc);
@@ -126,7 +127,7 @@ final class InterfaceGen {
             if (emitted.contains(mName + anc.descriptor())) {
                 continue;
             }
-            ScopeAnalysis.MemberSpec ownSpec = hierarchy.interfaceMembers().get(anc.memberName());
+            LoweringTargets.MemberSpec ownSpec = hierarchy.interfaceMembers().get(anc.memberName());
             if (ownSpec != null) {
                 emitted.add(mName + anc.descriptor());
                 if (!ownSpec.hasDefault()) {
@@ -143,7 +144,7 @@ final class InterfaceGen {
                 } else {
                     MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, mName, anc.descriptor(), null, null);
                     m.visitCode();
-                    ScopeAnalysis.FunctionSignature ownSig = ownSpec.callable() ? ownSpec.declaredSignature() : null;
+                    LoweringTargets.FunctionSignature ownSig = ownSpec.callable() ? ownSpec.declaredSignature() : null;
                     if (ownSig != null && ownSig.parameterKinds().length == anc.signature().parameterKinds().length) {
                         int[] paramSlots = HirEmitter.bridgeParamSlots(anc.signature());
                         m.visitVarInsn(ALOAD, 0);
@@ -178,7 +179,7 @@ final class InterfaceGen {
                 if (directParentJvm == null) {
                     continue;
                 }
-                ScopeAnalysis.FunctionSignature provSig = def.providerSpec().callable() ? def.providerSpec().declaredSignature() : null;
+                LoweringTargets.FunctionSignature provSig = def.providerSpec().callable() ? def.providerSpec().declaredSignature() : null;
                 if (provSig == null && def.providerSpec().isOverloaded()
                         && anc.overloadIndex() >= 0 && anc.overloadIndex() < def.providerSpec().overloadSignatures().size()) {
                     provSig = def.providerSpec().overloadSignatures().get(anc.overloadIndex());
@@ -199,7 +200,7 @@ final class InterfaceGen {
     }
 
     private void emitOwnDefaultInvoke(MethodVisitor m, int memberIndex, String memberName, int overloadAltIndex,
-                                      HirFunction fn, ScopeAnalysis.FunctionSignature sig) {
+                                      HirFunction fn, LoweringTargets.FunctionSignature sig) {
         int[] paramSlots = HirEmitter.bridgeParamSlots(sig);
         int ifaceCount = sig.parameterKinds().length;
         int fnCount = fn != null ? fn.params().size() : -1;
@@ -252,7 +253,7 @@ final class InterfaceGen {
             }
             m.visitMethodInsn(INVOKESTATIC, emitter.className, fn.jvmMethodName(),
                     HirEmitter.functionDirectDescriptor(fn), false);
-            HirEmitter.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
+            HirEmitter.emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
             m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
             return;
         }
@@ -265,7 +266,7 @@ final class InterfaceGen {
         m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + HirEmitter.CALL_SITE + ";");
         m.visitMethodInsn(INVOKEVIRTUAL, HirEmitter.COMPILED_FUNCTION, "invoke",
                 "(Ljava/lang/Object;L" + HirEmitter.SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + HirEmitter.CALL_SITE + ";)Ljava/lang/Object;", false);
-        HirEmitter.emitAdaptKind(m, ScopeAnalysis.PrimitiveKind.NONE, sig.returnKind());
+        HirEmitter.emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
         m.visitInsn(HirEmitter.returnInsn(sig.returnKind()));
     }
 }

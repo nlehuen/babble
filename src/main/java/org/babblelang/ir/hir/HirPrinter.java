@@ -1,6 +1,7 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
 
 import java.util.List;
 
@@ -208,7 +209,7 @@ public final class HirPrinter {
                 } else if (!i.intersectionTargets().isEmpty()) {
                     for (int k = 0; k < i.intersectionTargets().size(); k++) {
                         if (k > 0) sb.append('&');
-                        ScopeAnalysis.IsTarget t = i.intersectionTargets().get(k);
+                        LoweringTargets.IsTarget t = i.intersectionTargets().get(k);
                         sb.append(t.jvmInternalName() != null ? t.jvmInternalName() : t.typeId());
                     }
                 } else {
@@ -400,7 +401,7 @@ public final class HirPrinter {
         }
     }
 
-    private static String kindTag(ScopeAnalysis.PrimitiveKind kind) {
+    private static String kindTag(PrimitiveKind kind) {
         return switch (kind) {
             case BYTE -> "byte";
             case SHORT -> "short";

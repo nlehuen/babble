@@ -1,7 +1,7 @@
 package org.babblelang.ir.hir;
 
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.EffectSet;
-import org.babblelang.analysis.ScopeAnalysis;
 
 import java.util.List;
 
@@ -23,7 +23,7 @@ public record HirFunction(
         int requiredParams,
         int keywordOnlyStart,
         int restIndex,
-        ScopeAnalysis.PrimitiveKind returnKind,
+        PrimitiveKind returnKind,
         int bodyWideningRank,
         EffectSet effects,
         List<HirExpr> body,
@@ -36,7 +36,7 @@ public record HirFunction(
         declaredVars = List.copyOf(declaredVars);
         capturedVars = List.copyOf(capturedVars);
         params = List.copyOf(params);
-        returnKind = returnKind != null ? returnKind : ScopeAnalysis.PrimitiveKind.NONE;
+        returnKind = returnKind != null ? returnKind : PrimitiveKind.NONE;
         effects = effects != null ? effects : EffectSet.EMPTY;
         body = List.copyOf(body);
     }

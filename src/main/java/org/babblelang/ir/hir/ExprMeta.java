@@ -1,5 +1,6 @@
 package org.babblelang.ir.hir;
 
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.effects.Effect;
@@ -12,7 +13,7 @@ import org.babblelang.effects.Effect;
  */
 public record ExprMeta(
         int line,
-        ScopeAnalysis.PrimitiveKind kind,
+        PrimitiveKind kind,
         int wideningRank,
         String checkedType,
         EffectSet effects,
@@ -20,16 +21,16 @@ public record ExprMeta(
         boolean stringType
 ) {
     public ExprMeta {
-        kind = kind != null ? kind : ScopeAnalysis.PrimitiveKind.NONE;
+        kind = kind != null ? kind : PrimitiveKind.NONE;
         effects = effects != null ? effects : EffectSet.EMPTY;
     }
 
-    public static ExprMeta of(int line, ScopeAnalysis.PrimitiveKind kind) {
+    public static ExprMeta of(int line, PrimitiveKind kind) {
         boolean imm = kind != null && kind.isPrimitive();
         return new ExprMeta(line, kind, -1, null, EffectSet.EMPTY, imm, false);
     }
 
-    public static ExprMeta of(int line, ScopeAnalysis.PrimitiveKind kind, boolean deeplyImmutable, boolean stringType) {
+    public static ExprMeta of(int line, PrimitiveKind kind, boolean deeplyImmutable, boolean stringType) {
         return new ExprMeta(line, kind, -1, null, EffectSet.EMPTY, deeplyImmutable, stringType);
     }
 
@@ -37,7 +38,7 @@ public record ExprMeta(
         return new ExprMeta(newLine, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType);
     }
 
-    public ExprMeta withKind(ScopeAnalysis.PrimitiveKind newKind) {
+    public ExprMeta withKind(PrimitiveKind newKind) {
         return new ExprMeta(line, newKind, wideningRank, checkedType, effects, deeplyImmutable, stringType);
     }
 

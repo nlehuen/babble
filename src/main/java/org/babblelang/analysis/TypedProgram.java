@@ -151,7 +151,7 @@ final class TypedProgram {
     }
 
     /** The Java field a selection reads, when it has a static target. */
-    ScopeAnalysis.JavaFieldTarget javaFieldTargetOf(BabbleParser.SelectorContext sel) {
+    LoweringTargets.JavaFieldTarget javaFieldTargetOf(BabbleParser.SelectorContext sel) {
         return sel.expression() == null || sel.safe != null ? null
                 : LoweringAnalyzer.fieldReadTarget(checker.types().get(sel.expression()), ScopeAnalysis.selectorName(sel), checker.algebra());
     }
@@ -187,8 +187,8 @@ final class TypedProgram {
         return parameters.indexOf(mapped[argPos]);
     }
 
-    ScopeAnalysis.SpreadAdapt spreadAdapt(ParserRuleContext call, int argIndex) {
-        ScopeAnalysis.SpreadAdapt[] adapts = checker.callSolver().resolvedSpreadAdapts(call);
+    LoweringTargets.SpreadAdapt spreadAdapt(ParserRuleContext call, int argIndex) {
+        LoweringTargets.SpreadAdapt[] adapts = checker.callSolver().resolvedSpreadAdapts(call);
         return adapts != null && argIndex >= 0 && argIndex < adapts.length ? adapts[argIndex] : null;
     }
 

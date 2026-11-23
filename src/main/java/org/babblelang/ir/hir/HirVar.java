@@ -1,7 +1,7 @@
 package org.babblelang.ir.hir;
 
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
-import org.babblelang.analysis.ScopeAnalysis;
 
 /**
  * ANTLR-free frame variable identity in {@link HirModule} (BIP014-I1).
@@ -15,14 +15,14 @@ public record HirVar(
         String name,
         Resolution.Variable.Kind kind,
         int ownerMethodId,
-        ScopeAnalysis.PrimitiveKind primitiveKind,
+        PrimitiveKind primitiveKind,
         boolean cell,
         boolean used,
         boolean mayBeUndefined,
         boolean definitelyDefined
 ) {
     public HirVar {
-        primitiveKind = primitiveKind != null ? primitiveKind : ScopeAnalysis.PrimitiveKind.NONE;
+        primitiveKind = primitiveKind != null ? primitiveKind : PrimitiveKind.NONE;
     }
 
     /** Synthetic hidden field name on a compiled class for a constructor-captured cell. */

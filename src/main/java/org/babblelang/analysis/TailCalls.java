@@ -57,7 +57,7 @@ final class TailCalls {
     }
 
     private void function(BabbleParser.FunctionLiteralContext function) {
-        if (isInterfaceMember(function) || analysis.parameters(function) == null) {
+        if (isInterfaceMember(function) || analysis.calls().parameters(function) == null) {
             return;
         }
         block(function, function.functionBlock, true);
@@ -93,7 +93,7 @@ final class TailCalls {
     /** Whether an expression in tail position always ends in a self tail call (BIP024-D7). */
     private boolean alwaysRecurses(BabbleParser.ExpressionContext expression) {
         return switch (expression) {
-            case BabbleParser.CallContext call -> analysis.isSelfTailCall(call);
+            case BabbleParser.CallContext call -> analysis.calls().isSelfTailCall(call);
             case BabbleParser.BlockExpressionContext b -> {
                 BabbleParser.ExpressionContext last = lastExpression(b.block());
                 yield last != null && alwaysRecurses(last);
@@ -250,7 +250,7 @@ final class TailCalls {
             case BabbleParser.ForeverExpressionContext f -> statement(function, f.expression(), tail);
             case BabbleParser.CallContext call -> {
                 if (tail && isSelfTailCall(function, call)) {
-                    analysis.setSelfTailCall(call);
+                    analysis.calls().setSelfTailCall(call);
                 }
             }
             default -> {
@@ -273,12 +273,12 @@ final class TailCalls {
         }
         // Nothing between the call and the function's result may check, widen, or adapt the value (BIP024-D4).
         for (ParserRuleContext node = call; node != null && node != function.functionBlock; node = node.getParent()) {
-            if (analysis.numericWideningRank(node) >= 0 || analysis.checkedType(node) != null
-                    || analysis.javaSamTarget(node) != null) {
+            if (analysis.lowering().numericWideningRank(node) >= 0 || analysis.lowering().checkedType(node) != null
+                    || analysis.lowering().javaSamTarget(node) != null) {
                 return false;
             }
         }
-        return analysis.javaSamTarget(function.functionBlock) == null;
+        return analysis.lowering().javaSamTarget(function.functionBlock) == null;
     }
 
     private boolean callsItself(BabbleParser.FunctionLiteralContext function, BabbleParser.CallContext call) {
@@ -286,7 +286,7 @@ final class TailCalls {
         if (callee instanceof BabbleParser.RecurseContext) {
             return true;
         }
-        if (analysis.babbleCallFunction(call) == function) {
+        if (analysis.calls().babbleCallFunction(call) == function) {
             return true;
         }
         if (callee instanceof BabbleParser.SelectorContext selector && selector.safe == null
@@ -303,10 +303,10 @@ final class TailCalls {
      */
     private boolean bindsStatically(BabbleParser.FunctionLiteralContext function, BabbleParser.CallContext call) {
         var arguments = call.callParameters().callParameter();
-        if (analysis.restIndex(function) >= 0 || arguments.stream().anyMatch(a -> a.spread != null)) {
+        if (analysis.calls().restIndex(function) >= 0 || arguments.stream().anyMatch(a -> a.spread != null)) {
             return false;
         }
-        if (analysis.argumentBinding(call) != null) {
+        if (analysis.calls().argumentBinding(call) != null) {
             return true;
         }
         for (BabbleParser.CallParameterContext argument : arguments) {
@@ -314,7 +314,7 @@ final class TailCalls {
                 return false;
             }
         }
-        return arguments.size() == analysis.parameters(function).length;
+        return arguments.size() == analysis.calls().parameters(function).length;
     }
 
     /** The {@code def} of a method of a class or object whose value is this function, or null. */

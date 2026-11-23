@@ -1,6 +1,7 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
 
 /**
  * Parameter declaration of a {@link HirFunction} or {@link HirClass} constructor (BIP014-I1).
@@ -8,22 +9,22 @@ import org.babblelang.analysis.ScopeAnalysis;
 public record HirParam(
         String name,
         HirVar var,
-        ScopeAnalysis.PrimitiveKind kind,
+        PrimitiveKind kind,
         int wideningRank,
         String checkedType,
         int memberIndex,
         HirExpr defaultValue,
-        ScopeAnalysis.JavaSamTarget samTarget,
+        LoweringTargets.JavaSamTarget samTarget,
         int line
 ) {
     public HirParam {
-        kind = kind != null ? kind : ScopeAnalysis.PrimitiveKind.NONE;
+        kind = kind != null ? kind : PrimitiveKind.NONE;
     }
 
     public HirParam(
             String name,
             HirVar var,
-            ScopeAnalysis.PrimitiveKind kind,
+            PrimitiveKind kind,
             int wideningRank,
             String checkedType,
             int memberIndex,
