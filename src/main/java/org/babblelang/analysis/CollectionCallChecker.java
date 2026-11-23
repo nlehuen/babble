@@ -12,7 +12,7 @@ import java.util.SortedMap;
 import java.util.SortedSet;
 
 /**
- * Core collection and array factory call typing extracted from {@link CallSolver} (BIP027-P1):
+ * Core collection and array factory call typing extracted from {@link CallSolver} (BIP027-I1):
  * {@code array}, {@code array.of}, {@code entry}, {@code list}, {@code set}, {@code sortedset},
  * {@code map}, and {@code sortedmap}, with unified container factory checking.
  */

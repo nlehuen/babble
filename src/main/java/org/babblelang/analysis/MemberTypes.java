@@ -656,7 +656,7 @@ final class MemberTypes {
         }
     }
 
-    /** Resolves a non-null iterable/iterator type to its lowering protocol and element type (BIP013, BIP027-P1). */
+    /** Resolves a non-null iterable/iterator type to its lowering protocol and element type (BIP013, BIP027-I1). */
     TypeChecker.ForIterableInfo resolveNonNullIterable(Type iterType) {
         boolean frozenIterable = iterType instanceof Type.Frozen;
         Type unwrapped = frozenIterable ? ((Type.Frozen) iterType).of() : iterType;

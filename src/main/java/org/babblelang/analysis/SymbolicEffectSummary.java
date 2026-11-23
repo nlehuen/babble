@@ -10,7 +10,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * ANTLR-free single-pass symbolic higher-order effect summary ({@code BIP027-P4}, §3.2).
+ * ANTLR-free single-pass symbolic higher-order effect summary ({@code BIP027-I4}, §3.2).
  *
  * <p>Records the residual base effects of a callable {@code F(p_0, ..., p_{n-1})} excluding
  * invocations of its callback parameters, the bitmask {@code calledCallbacks} ({@code C_called})

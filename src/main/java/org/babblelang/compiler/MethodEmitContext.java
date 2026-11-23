@@ -15,7 +15,7 @@ import java.util.Map;
 /**
  * Per-method bytecode emission state passed across {@link HirEmitter} and its
  * specialized sub-emitters, replacing the 23 mutable per-method cursor fields
- * formerly stored directly on {@link HirEmitter} (BIP027-P2).
+ * formerly stored directly on {@link HirEmitter} (BIP027-I2).
  */
 final class MethodEmitContext {
     record LoopTarget(Label breakLabel, Label continueLabel, int resultSlot) {

@@ -39,7 +39,7 @@ import java.util.function.Supplier;
 
 /**
  * ANTLR-free 7-tier Java effect resolver, reflection bridge, and built-in type effect
- * profiles extracted from {@link EffectChecker} ({@code BIP027-P3}).
+ * profiles extracted from {@link EffectChecker} ({@code BIP027-I3}).
  *
  * <p>All {@code java.lang.reflect.*} access for effect checking lives here, and redundant-axiom
  * reporting state is scoped to this resolver instance rather than held in a JVM-global static set.

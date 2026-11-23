@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * Source-text and {@link CallSite} formatting helpers shared by the analysis passes,
- * the {@code Interpreter}, and {@code HirBuilder} (BIP027-P1).
+ * the {@code Interpreter}, and {@code HirBuilder} (BIP027-I1).
  */
 public final class SyntaxText {
     private SyntaxText() {

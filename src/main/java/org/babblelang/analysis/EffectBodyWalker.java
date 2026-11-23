@@ -27,7 +27,7 @@ import java.util.Set;
 
 /**
  * Intra-procedural ANTLR body walker and flow-sensitive alias/effect state extracted from
- * {@link EffectChecker} ({@code BIP027-P3}). Delegates call-site analysis to
+ * {@link EffectChecker} ({@code BIP027-I3}). Delegates call-site analysis to
  * {@link CallEffectAnalyzer}.
  */
 final class EffectBodyWalker {
@@ -49,7 +49,7 @@ final class EffectBodyWalker {
     final Set<BabbleParser.FunctionLiteralContext> frameChain;
     final boolean emitDiagnostics;
 
-    /** True during single-pass inference of a non-locked function body to build SymbolicEffectSummary (BIP027-P4). */
+    /** True during single-pass inference of a non-locked function body to build SymbolicEffectSummary (BIP027-I4). */
     final boolean trackSymbolic;
     final BitSet calledCallbacks = new BitSet();
     final long[][] symParamFlow;

@@ -39,7 +39,7 @@ import static org.objectweb.asm.Opcodes.*;
  * frame variables and cells, and delegates expression families to {@link AssignAndMemberEmitter},
  * {@link ControlAndOpEmitter}, {@link CallEmitter}, {@link BridgeHelpers}, {@link ClassGen},
  * {@link InterfaceGen}, and {@link ConstantPool} using per-method state in
- * {@link MethodEmitContext} (BIP027-P2).
+ * {@link MethodEmitContext} (BIP027-I2).
  */
 final class HirEmitter {
     static final int SELF = 0;

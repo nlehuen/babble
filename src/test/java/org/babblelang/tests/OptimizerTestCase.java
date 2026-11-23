@@ -43,7 +43,7 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /**
- * Soundness, golden-IR, and 3-way parity tests for the {@code BIP014} / {@code BIP027-P2} HIR
+ * Soundness, golden-IR, and 3-way parity tests for the {@code BIP014} / {@code BIP027-I2} HIR
  * optimizer ({@code HirEGraphSimplifyPass}, {@code InlinePass}, {@code HirDcePass},
  * {@code HirLicmPass}, and {@code babblec} AOT cross-module inlining).
  */

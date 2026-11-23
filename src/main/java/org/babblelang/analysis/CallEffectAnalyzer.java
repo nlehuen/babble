@@ -20,7 +20,7 @@ import java.util.Set;
 
 /**
  * Call-site effect propagation, static {@code mut} exclusivity checking, and bounded
- * higher-order specialization extracted from {@link EffectChecker} ({@code BIP027-P3}).
+ * higher-order specialization extracted from {@link EffectChecker} ({@code BIP027-I3}).
  */
 final class CallEffectAnalyzer {
     private final EffectChecker ec;
@@ -1097,7 +1097,7 @@ final class CallEffectAnalyzer {
             return new EffectChecker.CallableSummary(pureModForward, mp, bp, up);
         }
 
-        // Single-pass symbolic callback parameter invocation (BIP027-P4): record C_called & Flow[i][m],
+        // Single-pass symbolic callback parameter invocation (BIP027-I4): record C_called & Flow[i][m],
         // keeping residual effects clean of the callback's pessimistic default type.
         int cbParamIdx = w.resolveParamCallbackIndex(calleeExpr);
         if (cbParamIdx >= 0) {

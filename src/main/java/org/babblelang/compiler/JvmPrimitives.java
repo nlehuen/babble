@@ -20,7 +20,7 @@ import static org.objectweb.asm.Opcodes.*;
  * Centralized JVM internal names, invokedynamic bootstrap handles, primitive/descriptor
  * mappings, box/unbox/widening/adaptation opcodes, and interface/Java bridge helpers
  * shared across {@link HirEmitter}, {@link ClassGen}, {@link InterfaceGen}, and the
- * specialized emitters (BIP027-P2).
+ * specialized emitters (BIP027-I2).
  */
 final class JvmPrimitives {
     private JvmPrimitives() {

@@ -22,7 +22,7 @@ final class TypedModuleSummary {
 
     /**
      * AST-free higher-order effect specialization template for an exported or
-     * session-committed callable, backed by {@link SymbolicEffectSummary} ({@code BIP027-P4}).
+     * session-committed callable, backed by {@link SymbolicEffectSummary} ({@code BIP027-I4}).
      */
     record CallableEffectTemplate(SymbolicEffectSummary summary) {
         EffectChecker.CallableSummary base() {

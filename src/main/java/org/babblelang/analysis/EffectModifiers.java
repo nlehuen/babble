@@ -14,7 +14,7 @@ import java.util.Set;
 
 /**
  * ANTLR syntax adapter for effect prefixes, parameter modifiers, {@code calling(...)} clauses,
- * and {@code axiom} / {@code io} declarations extracted from {@link EffectChecker} ({@code BIP027-P3}).
+ * and {@code axiom} / {@code io} declarations extracted from {@link EffectChecker} ({@code BIP027-I3}).
  */
 final class EffectModifiers {
     enum ParseContext {

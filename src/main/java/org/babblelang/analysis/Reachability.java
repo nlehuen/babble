@@ -9,7 +9,7 @@ import java.util.Set;
 
 /**
  * ANTLR-free reachability, alias provenance, and path-identity domain for static
- * {@code mut} / {@code borrow} / {@code unique} / exclusivity checking ({@code BIP027-P3}).
+ * {@code mut} / {@code borrow} / {@code unique} / exclusivity checking ({@code BIP027-I3}).
  */
 final class Reachability {
     private Reachability() {
@@ -317,7 +317,7 @@ final class Reachability {
         }
     }
 
-    /** Depth bound {@code k = 3} for access-path widening ({@code BIP027-P4}, §3.1). */
+    /** Depth bound {@code k = 3} for access-path widening ({@code BIP027-I4}, §3.1). */
     static final int MAX_PATH_DEPTH = 3;
 
     record PathKey(Object root, List<String> segments, boolean truncated) {

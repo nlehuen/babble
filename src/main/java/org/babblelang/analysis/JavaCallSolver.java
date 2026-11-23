@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 
 /**
  * Java reflection method, constructor, generic SAM, and varargs/spread call solver
- * extracted from {@link CallSolver} (BIP027-P1).
+ * extracted from {@link CallSolver} (BIP027-I1).
  */
 final class JavaCallSolver {
     record JavaCallMatch<E extends Executable>(List<E> applicable, boolean varArgs) {

@@ -327,7 +327,7 @@ public final class HirRewriter {
     }
 
     /**
-     * General copy-on-write module rewriter used across HIR optimization passes (BIP027-P2),
+     * General copy-on-write module rewriter used across HIR optimization passes (BIP027-I2),
      * avoiding duplicated traversal of top-level statements, functions, classes, interfaces,
      * and static blocks.
      */
