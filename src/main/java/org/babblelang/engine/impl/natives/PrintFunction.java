@@ -5,6 +5,7 @@ import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.ScriptRuntime;
+import org.babblelang.runtime.Throwables;
 import org.babblelang.runtime.Values;
 
 import java.io.IOException;
@@ -33,7 +34,7 @@ public class PrintFunction implements Callable {
                     out.append(System.lineSeparator());
                 }
             } catch (IOException e) {
-                throw new BabbleException(e);
+                throw Throwables.sneakyThrow(e);
             }
             return null;
         }
@@ -60,7 +61,7 @@ public class PrintFunction implements Callable {
                 out.append(System.lineSeparator());
             }
         } catch (IOException e) {
-            throw new BabbleException(e);
+            throw Throwables.sneakyThrow(e);
         }
 
         return null;

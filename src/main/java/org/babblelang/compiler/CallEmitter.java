@@ -590,29 +590,6 @@ final class CallEmitter {
         return argLocals;
     }
 
-    private void emitWrappedJavaInvoke(int ln, Runnable invokeBody) {
-        MethodEmitContext mc = ctx();
-        MethodVisitor mv = mc.mv;
-        Label tryStart = new Label();
-        Label tryEnd = new Label();
-        Label catchHandler = new Label();
-        Label done = new Label();
-        mv.visitTryCatchBlock(tryStart, tryEnd, catchHandler, "java/lang/Throwable");
-        mv.visitLabel(tryStart);
-        mc.line(ln);
-        invokeBody.run();
-        mv.visitLabel(tryEnd);
-        mv.visitJumpInsn(GOTO, done);
-        mv.visitLabel(catchHandler);
-        int caught = mc.newLocal();
-        mv.visitVarInsn(ASTORE, caught);
-        mc.line(ln);
-        mv.visitVarInsn(ALOAD, caught);
-        mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "wrapInvocationException", "(Ljava/lang/Throwable;)L" + RUNTIME + "BabbleException;", false);
-        mv.visitInsn(ATHROW);
-        mv.visitLabel(done);
-    }
-
     void emitJavaConstructorCall(HirExpr.JavaConstructorCall c) {
         MethodEmitContext mc = ctx();
         MethodVisitor mv = mc.mv;
@@ -625,15 +602,14 @@ final class CallEmitter {
         Class<?>[] paramTypes = ctor.getParameterTypes();
         int[] argLocals = emitJavaArgsToLocals(c.args(), paramTypes, c.target().varArgs(), ln);
         String internalClass = Type.getInternalName(ctor.getDeclaringClass());
-        emitWrappedJavaInvoke(ln, () -> {
-            mv.visitTypeInsn(NEW, internalClass);
-            mv.visitInsn(DUP);
-            for (int i = 0; i < paramTypes.length; i++) {
-                emitter.loadJavaLocal(paramTypes[i], argLocals[i]);
-            }
-            mv.visitMethodInsn(INVOKESPECIAL, internalClass, "<init>", Type.getConstructorDescriptor(ctor), false);
-            mv.visitMethodInsn(INVOKESTATIC, JAVA_OBJECT, "of", "(Ljava/lang/Object;)L" + JAVA_OBJECT + ";", false);
-        });
+        mc.line(ln);
+        mv.visitTypeInsn(NEW, internalClass);
+        mv.visitInsn(DUP);
+        for (int i = 0; i < paramTypes.length; i++) {
+            emitter.loadJavaLocal(paramTypes[i], argLocals[i]);
+        }
+        mv.visitMethodInsn(INVOKESPECIAL, internalClass, "<init>", Type.getConstructorDescriptor(ctor), false);
+        mv.visitMethodInsn(INVOKESTATIC, JAVA_OBJECT, "of", "(Ljava/lang/Object;)L" + JAVA_OBJECT + ";", false);
         mc.stackKind = PrimitiveKind.NONE;
         finishCallCheck(c.meta());
     }
@@ -659,18 +635,16 @@ final class CallEmitter {
         Class<?>[] paramTypes = method.getParameterTypes();
         int[] argLocals = emitJavaArgsToLocals(c.args(), paramTypes, target.varArgs(), ln);
         boolean itf = method.getDeclaringClass().isInterface();
-        int finalRecvLocal = recvLocal;
-        emitWrappedJavaInvoke(ln, () -> {
-            if (!target.isStatic()) {
-                mv.visitVarInsn(ALOAD, finalRecvLocal);
-            }
-            for (int i = 0; i < paramTypes.length; i++) {
-                emitter.loadJavaLocal(paramTypes[i], argLocals[i]);
-            }
-            mv.visitMethodInsn(target.isStatic() ? INVOKESTATIC : (itf ? INVOKEINTERFACE : INVOKEVIRTUAL),
-                    owner, method.getName(), Type.getMethodDescriptor(method), itf);
-            emitter.emitJavaValueToBabbleStack(method.getReturnType());
-        });
+        mc.line(ln);
+        if (!target.isStatic()) {
+            mv.visitVarInsn(ALOAD, recvLocal);
+        }
+        for (int i = 0; i < paramTypes.length; i++) {
+            emitter.loadJavaLocal(paramTypes[i], argLocals[i]);
+        }
+        mv.visitMethodInsn(target.isStatic() ? INVOKESTATIC : (itf ? INVOKEINTERFACE : INVOKEVIRTUAL),
+                owner, method.getName(), Type.getMethodDescriptor(method), itf);
+        emitter.emitJavaValueToBabbleStack(method.getReturnType());
         finishCallCheck(c.meta());
     }
 

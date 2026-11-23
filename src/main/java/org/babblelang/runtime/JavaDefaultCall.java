@@ -57,7 +57,7 @@ final class JavaDefaultCall implements Callable {
                 result = mh.invokeWithArguments(callArgs);
             }
         } catch (Throwable t) {
-            throw JavaTypes.wrapInvocationException(t);
+            throw Throwables.unwrapReflection(t);
         }
         return Values.fromJava(result);
     }

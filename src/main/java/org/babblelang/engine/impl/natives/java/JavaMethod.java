@@ -2,9 +2,9 @@ package org.babblelang.engine.impl.natives.java;
 
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
-import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.Overloads;
 import org.babblelang.runtime.ScriptRuntime;
+import org.babblelang.runtime.Throwables;
 import org.babblelang.runtime.Values;
 
 import java.lang.reflect.Method;
@@ -38,7 +38,7 @@ class JavaMethod implements Callable {
         try {
             result = resolved.executable().invoke(thiz, java);
         } catch (Throwable t) {
-            throw JavaTypes.wrapInvocationException(t);
+            throw Throwables.unwrapReflection(t);
         }
         return Values.fromJava(result);
     }

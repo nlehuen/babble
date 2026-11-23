@@ -9,6 +9,7 @@ import org.babblelang.runtime.JavaType;
 import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.Overloads;
 import org.babblelang.runtime.ScriptRuntime;
+import org.babblelang.runtime.Throwables;
 import org.babblelang.runtime.Types;
 import org.babblelang.runtime.Values;
 
@@ -72,7 +73,7 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
         try {
             return new JavaObject(this, resolved.executable().newInstance(java));
         } catch (Throwable t) {
-            throw JavaTypes.wrapInvocationException(t);
+            throw Throwables.unwrapReflection(t);
         }
     }
 
