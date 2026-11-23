@@ -657,10 +657,10 @@ final class JavaCallSolver {
             return null;
         }
         if (exec instanceof java.lang.reflect.Constructor<?> ctor) {
-            return ec.resolveJavaConstructorProfile(ctor.getDeclaringClass(), ctor);
+            return ec.javaResolver().resolveJavaConstructorProfile(ctor.getDeclaringClass(), ctor);
         }
         if (exec instanceof Method m) {
-            return ec.resolveJavaMethodProfile(m.getDeclaringClass(), m.getName(), m);
+            return ec.javaResolver().resolveJavaMethodProfile(m.getDeclaringClass(), m.getName(), m);
         }
         return null;
     }

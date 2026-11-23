@@ -1,0 +1,706 @@
+package org.babblelang.analysis;
+
+import org.babblelang.effects.Associative;
+import org.babblelang.effects.Commutative;
+import org.babblelang.effects.Effect;
+import org.babblelang.effects.IO;
+import org.babblelang.effects.Idempotent;
+import org.babblelang.effects.Injective;
+import org.babblelang.effects.Monotone;
+import org.babblelang.effects.Mut;
+import org.babblelang.effects.Nothrow;
+import org.babblelang.effects.Pure;
+import org.babblelang.effects.Shared;
+import org.babblelang.effects.Unique;
+import org.babblelang.effects.Volatile;
+import org.babblelang.runtime.ClassShape;
+
+import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Executable;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.lang.reflect.Parameter;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Supplier;
+
+/**
+ * ANTLR-free 7-tier Java effect resolver, reflection bridge, and built-in type effect
+ * profiles extracted from {@link EffectChecker} ({@code BIP027-P3}).
+ *
+ * <p>All {@code java.lang.reflect.*} access for effect checking lives here, and redundant-axiom
+ * reporting state is scoped to this resolver instance rather than held in a JVM-global static set.
+ */
+final class JavaEffectResolver {
+    private final HostEffects hostEffects;
+    private final TypedProgram checker;
+    private final Supplier<AxiomData.AxiomTable> localAxioms;
+    private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> localJavaEffects;
+    private final Function<TypeNode.Member, EffectChecker.CallableSummary> memberSummaryLookup;
+    private final Set<String> reportedRedundantAxioms = new HashSet<>();
+
+    JavaEffectResolver(HostEffects hostEffects,
+                       TypedProgram checker,
+                       Supplier<AxiomData.AxiomTable> localAxioms,
+                       Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> localJavaEffects,
+                       Function<TypeNode.Member, EffectChecker.CallableSummary> memberSummaryLookup) {
+        this.hostEffects = hostEffects;
+        this.checker = checker;
+        this.localAxioms = localAxioms;
+        this.localJavaEffects = localJavaEffects;
+        this.memberSummaryLookup = memberSummaryLookup;
+    }
+
+    EffectChecker.JavaCallProfile resolveJavaMethodProfile(Class<?> owner, String methodName, Method exactMethod) {
+        AxiomData.AxiomTable axioms = localAxioms.get();
+        // Tier 1: File / module / session method override (BIP019 structured axioms first, then legacy effectDeclarations).
+        if (!axioms.isEmpty()) {
+            AxiomData.MemberAxiom localAx = AxiomData.lookupMethod(owner, methodName, exactMethod, axioms::directMembers);
+            if (localAx != null) {
+                return localAx.toProfile(exactMethod);
+            }
+        }
+        HostEffects.OverrideEntry localMethod = lookupHierarchyMethod(localJavaEffects, owner, methodName);
+        if (localMethod != null) {
+            return profileFromOverride(localMethod, exactMethod, localMethod.effects().contains(Effect.NOTHROW));
+        }
+        // Tier 2: Engine method override.
+        HostEffects.OverrideEntry hostMethod = lookupHierarchyMethod(hostEffects.overrides(), owner, methodName);
+        if (hostMethod != null) {
+            return profileFromOverride(hostMethod, exactMethod, hostMethod.effects().contains(Effect.NOTHROW));
+        }
+        // Tier 3: Java method annotations (@Pure, @Hermetic, @Mut, ...).
+        if (exactMethod != null && hasAnyEffectAnnotation(exactMethod)) {
+            return profileFromAnnotations(exactMethod, exactMethod.getDeclaringClass(), false);
+        }
+        // Tier 4: File / module / session or engine bare-class override.
+        Class<?> declOwner = exactMethod != null ? exactMethod.getDeclaringClass() : owner;
+        HostEffects.OverrideEntry localClass = localJavaEffects.get(HostEffects.JavaTarget.ofClass(owner));
+        if (localClass == null && declOwner != owner) {
+            localClass = localJavaEffects.get(HostEffects.JavaTarget.ofClass(declOwner));
+        }
+        if (localClass != null) {
+            return profileFromOverride(localClass, exactMethod, localClass.effects().contains(Effect.NOTHROW));
+        }
+        HostEffects.OverrideEntry hostClass = hostEffects.lookup(HostEffects.JavaTarget.ofClass(owner));
+        if (hostClass == null && declOwner != owner) {
+            hostClass = hostEffects.lookup(HostEffects.JavaTarget.ofClass(declOwner));
+        }
+        if (hostClass != null) {
+            return profileFromOverride(hostClass, exactMethod, hostClass.effects().contains(Effect.NOTHROW));
+        }
+        // Tier 5: Java class-level annotations on owner / declaring class.
+        if (hasClassEffectAnnotation(owner)) {
+            return profileFromAnnotations(exactMethod, owner, true);
+        }
+        if (declOwner != owner && hasClassEffectAnnotation(declOwner)) {
+            return profileFromAnnotations(exactMethod, declOwner, true);
+        }
+        // Tier 6: Curated axioms (BIP019).
+        AxiomData.MemberAxiom curatedAx = hostEffects.builtinAxioms().methodAxiom(owner, methodName, exactMethod);
+        if (curatedAx != null) {
+            if (exactMethod != null && Boolean.getBoolean("babble.axioms.report")) {
+                reportRedundantCuratedAxiom(exactMethod, curatedAx);
+            }
+            return curatedAx.toProfile(exactMethod);
+        }
+        // Tier 7: ASM bytecode static analysis (on by default, BIP019 §5).
+        if (exactMethod != null && hostEffects.bytecodeEffectAnalysis()) {
+            BytecodeEffectAnalyzer.Result analyzed = BytecodeEffectAnalyzer.analyze(exactMethod, hostEffects.builtinAxioms());
+            if (!analyzed.effects().isUnconstrained()) {
+                return analyzed.toProfile(exactMethod);
+            }
+        }
+        // Tier 8: Unconstrained default.
+        int paramCount = exactMethod != null ? exactMethod.getParameterCount() : 0;
+        return new EffectChecker.JavaCallProfile(EffectSet.EMPTY, false, false, new boolean[paramCount], new boolean[paramCount], false);
+    }
+
+    EffectChecker.JavaCallProfile resolveJavaConstructorProfile(Class<?> owner, Constructor<?> exactCtor) {
+        AxiomData.AxiomTable axioms = localAxioms.get();
+        // Tier 1: File / module / session constructor override (BIP019 structured axioms first, then legacy).
+        if (!axioms.isEmpty()) {
+            AxiomData.MemberAxiom localAx = AxiomData.lookupConstructor(owner, exactCtor, axioms::directMembers);
+            if (localAx != null) {
+                return localAx.toProfile(exactCtor);
+            }
+        }
+        HostEffects.OverrideEntry localCtor = localJavaEffects.get(HostEffects.JavaTarget.ofConstructor(owner));
+        if (localCtor != null) {
+            return profileFromOverride(localCtor, exactCtor, localCtor.effects().contains(Effect.NOTHROW));
+        }
+        // Tier 2: Engine constructor override.
+        HostEffects.OverrideEntry hostCtor = hostEffects.lookup(HostEffects.JavaTarget.ofConstructor(owner));
+        if (hostCtor != null) {
+            return profileFromOverride(hostCtor, exactCtor, hostCtor.effects().contains(Effect.NOTHROW));
+        }
+        // Tier 3: Java constructor annotations.
+        if (exactCtor != null && hasAnyEffectAnnotation(exactCtor)) {
+            return profileFromAnnotations(exactCtor, owner, false);
+        }
+        // Tier 4: Bare-class override.
+        HostEffects.OverrideEntry localClass = localJavaEffects.get(HostEffects.JavaTarget.ofClass(owner));
+        if (localClass != null) {
+            return profileFromOverride(localClass, exactCtor, localClass.effects().contains(Effect.NOTHROW));
+        }
+        HostEffects.OverrideEntry hostClass = hostEffects.lookup(HostEffects.JavaTarget.ofClass(owner));
+        if (hostClass != null) {
+            return profileFromOverride(hostClass, exactCtor, hostClass.effects().contains(Effect.NOTHROW));
+        }
+        // Tier 5: Java class-level annotations.
+        if (hasClassEffectAnnotation(owner)) {
+            return profileFromAnnotations(exactCtor, owner, true);
+        }
+        // Tier 6: Curated axioms (BIP019).
+        AxiomData.MemberAxiom curatedAx = hostEffects.builtinAxioms().constructorAxiom(owner, exactCtor);
+        if (curatedAx != null) {
+            if (exactCtor != null && Boolean.getBoolean("babble.axioms.report")) {
+                reportRedundantCuratedAxiom(exactCtor, curatedAx);
+            }
+            return curatedAx.toProfile(exactCtor);
+        }
+        int paramCount = exactCtor != null ? exactCtor.getParameterCount() : 0;
+        // Tier 7: ASM bytecode static analysis of constructors (on by default, BIP019 §5).
+        if (exactCtor != null && hostEffects.bytecodeEffectAnalysis()) {
+            BytecodeEffectAnalyzer.Result analyzed = BytecodeEffectAnalyzer.analyze(exactCtor, hostEffects.builtinAxioms());
+            if (!analyzed.effects().isUnconstrained()) {
+                return analyzed.toProfile(exactCtor);
+            }
+        }
+        // Tier 8: Unconstrained default.
+        return new EffectChecker.JavaCallProfile(EffectSet.EMPTY, false, false, new boolean[paramCount], new boolean[paramCount], false);
+    }
+
+    private void reportRedundantCuratedAxiom(Executable exec, AxiomData.MemberAxiom curated) {
+        String key = exec.getDeclaringClass().getName() + "." + (exec instanceof Constructor<?> ? "new" : exec.getName())
+                + Arrays.toString(exec.getParameterTypes());
+        if (!reportedRedundantAxioms.add(key)) {
+            return;
+        }
+        BytecodeEffectAnalyzer.Result inferred = BytecodeEffectAnalyzer.analyzeRaw(exec, hostEffects.builtinAxioms());
+        if (BytecodeEffectAnalyzer.isAtLeastAsStrongAs(inferred, curated, exec)) {
+            System.err.println("Axiom report : " + key + " curated axiom can be inferred as is or stronger");
+        }
+    }
+
+    EffectChecker.JavaCallProfile resolveJavaMethodForCallableSatisfies(Type.JavaMethod jm, int arity) {
+        Method exact = JavaTypeBridge.uniqueArityMethod(jm.owner(), jm.name(), arity);
+        return resolveJavaMethodProfile(jm.owner(), jm.name(), exact);
+    }
+
+    boolean isJavaClassDeeplyImmutable(Class<?> cls) {
+        if (cls == null) {
+            return false;
+        }
+        AxiomData.AxiomTable axioms = localAxioms.get();
+        if (!axioms.isEmpty()
+                && AxiomData.lookupClassFlag(cls, axioms::directClassAxiom, AxiomData.ClassAxiom::immutable)) {
+            return true;
+        }
+        return hostEffects.builtinAxioms().isDeeplyImmutable(cls);
+    }
+
+    boolean isDeeplyImmutable(Type type) {
+        if (type instanceof Type.JavaInstance ji) {
+            return isJavaClassDeeplyImmutable(ji.type());
+        }
+        return isDeeplyImmutable(type, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private boolean isDeeplyImmutable(Type type, Set<TypeNode> visiting) {
+        if (type == null || type == Type.ERROR || type == Type.NOTHING) {
+            return true;
+        }
+        if (Type.isCoreScalar(type) || type == Type.NULL) {
+            return true;
+        }
+        if (type instanceof Type.Frozen) {
+            return true;
+        }
+        if (type instanceof Type.JavaInstance ji) {
+            return isJavaClassDeeplyImmutable(ji.type());
+        }
+        if (type instanceof Type.Union u) {
+            return u.members().stream().allMatch(m -> isDeeplyImmutable(m, visiting));
+        }
+        if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.OBJECT) {
+            for (TypeNode.Member m : inst.node().members.values()) {
+                if (!m.hasFunction) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+            if (!visiting.add(inst.node())) {
+                return true;
+            }
+            for (TypeNode.Member m : inst.node().members.values()) {
+                if (!m.hasFunction) {
+                    Type mt = checker.instanceMemberTypeForEffects(inst, m);
+                    if (mt == null || !isDeeplyImmutable(mt, visiting)) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    boolean isImmutableConstantValue(Type type) {
+        if (isDeeplyImmutable(type)) {
+            return true;
+        }
+        return type instanceof Type.Function || type instanceof Type.Overloaded || type instanceof Type.ClassValue
+                || type instanceof Type.JavaClassValue || type instanceof Type.JavaPackage
+                || type instanceof Type.JavaMethod || type instanceof Type.Module;
+    }
+
+    Type.Function applySamJavaEffects(Method samMethod, Type.Function rawSam) {
+        EffectChecker.JavaCallProfile profile = resolveJavaMethodProfile(samMethod.getDeclaringClass(), samMethod.getName(), samMethod);
+        if (profile.effects().isUnconstrained() && !anyTrue(profile.mutParams()) && !anyTrue(profile.borrowParams()) && !anyTrue(profile.uniqueParams())) {
+            return rawSam;
+        }
+        if (!profile.effects().hasExplicitAnnotations() && !anyTrue(profile.mutParams()) && !anyTrue(profile.borrowParams()) && !anyTrue(profile.uniqueParams())) {
+            return rawSam;
+        }
+        List<Type.Parameter> updated = new ArrayList<>(rawSam.parameters().size());
+        for (int i = 0; i < rawSam.parameters().size(); i++) {
+            Type.Parameter p = rawSam.parameters().get(i);
+            boolean mut = i < profile.mutParams().length && profile.mutParams()[i];
+            boolean borrow = i < profile.borrowParams().length && profile.borrowParams()[i];
+            boolean unique = i < profile.uniqueParams().length && profile.uniqueParams()[i];
+            updated.add(new Type.Parameter(p.name(), p.type(), p.optional(), p.keywordOnly(), mut, borrow, !borrow && !unique, unique));
+        }
+        EffectSet fnEffects = new EffectSet(profile.effects().effects(), profile.effects().declared(),
+                false, false, false,
+                profile.effects().uniqueResult(), profile.effects().explicitUniqueResult(),
+                profile.effects().terminating(), profile.effects().isIO(), profile.effects().explicitVolatile(), false);
+        return new Type.Function(rawSam.typeParameters(), updated, rawSam.result(), fnEffects);
+    }
+
+    /** Profile of converting {@code type} to string in {@code string + x} (bip007_effects.md §4.3, §4.6). */
+    EffectSet toStringProfile(Type type) {
+        if (type instanceof Type.Frozen f) {
+            return toStringProfile(f.of());
+        }
+        if (type == null || type == Type.ERROR) {
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+        }
+        if (Type.isCoreScalar(type) || type == Type.NULL) {
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+        }
+        if (type instanceof Type.Union u) {
+            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+            for (Type m : u.members()) {
+                acc = acc.intersect(toStringProfile(m));
+            }
+            return acc;
+        }
+        if (type instanceof Type.Instance inst) {
+            TypeNode node = inst.node();
+            TypeNode.Member custom = checker.findMemberOnNode(node, "toString");
+            if (custom != null && custom.hasFunction) {
+                EffectChecker.CallableSummary cs = memberSummaryLookup.apply(custom);
+                if (cs != null) {
+                    return cs.effects();
+                }
+                Type mt = checker.memberTypeForEffects(node, custom);
+                if (mt instanceof Type.Function tf) {
+                    return tf.effects();
+                }
+            }
+            if (node.kind == ClassShape.Kind.VALUE_CLASS) {
+                EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+                for (TypeNode.Member m : node.members.values()) {
+                    if (!m.hasFunction) {
+                        Type mt = checker.instanceMemberTypeForEffects(inst, m);
+                        if (mt == null) {
+                            return EffectSet.EMPTY;
+                        }
+                        acc = acc.intersect(toStringProfile(mt));
+                    }
+                }
+                return acc;
+            }
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true, false, true);
+        }
+        if (type instanceof Type.JavaInstance ji) {
+            return resolveJavaMethodProfile(ji.type(), "toString", lookupPublicMethod(ji.type(), "toString")).effects();
+        }
+        if (type instanceof Type.Array arr) {
+            return toStringProfile(arr.element());
+        }
+        return EffectSet.EMPTY;
+    }
+
+    EffectSet equalityProfile(Type left, Type right) {
+        return singleEqualityProfile(left).intersect(singleEqualityProfile(right));
+    }
+
+    EffectSet singleEqualityProfile(Type type) {
+        if (type instanceof Type.Frozen f) {
+            return singleEqualityProfile(f.of());
+        }
+        if (type == null || type == Type.ERROR || Type.isCoreScalar(type) || type == Type.NULL
+                || type instanceof Type.Function || type instanceof Type.ClassValue
+                || type instanceof Type.JavaClassValue) {
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+        }
+        if (type instanceof Type.Union u) {
+            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+            for (Type m : u.members()) {
+                acc = acc.intersect(singleEqualityProfile(m));
+            }
+            return acc;
+        }
+        if (type instanceof Type.Instance inst) {
+            if (inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+                EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+                for (TypeNode.Member m : inst.node().members.values()) {
+                    if (!m.hasFunction) {
+                        Type mt = checker.instanceMemberTypeForEffects(inst, m);
+                        if (mt != null) {
+                            acc = acc.intersect(singleEqualityProfile(mt));
+                        }
+                    }
+                }
+                return acc;
+            }
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+        }
+        if (type instanceof Type.JavaInstance ji) {
+            return resolveJavaMethodProfile(ji.type(), "equals", lookupPublicMethod(ji.type(), "equals", Object.class)).effects();
+        }
+        if (type instanceof Type.Array arr) {
+            return singleEqualityProfile(arr.element());
+        }
+        return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
+    }
+
+    EffectSet comparisonProfile(Type left, Type right) {
+        if (left instanceof Type.Union lu) {
+            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+            for (Type m : lu.members()) {
+                acc = acc.intersect(comparisonProfile(m, right));
+            }
+            return acc;
+        }
+        if (right instanceof Type.Union ru) {
+            EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+            for (Type m : ru.members()) {
+                acc = acc.intersect(comparisonProfile(left, m));
+            }
+            return acc;
+        }
+        if (Type.isCoreScalar(left) && Type.isCoreScalar(right)) {
+            return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+        }
+        if (left instanceof Type.JavaInstance ji) {
+            Method cmp = lookupPublicMethod(ji.type(), "compareTo", ji.type());
+            if (cmp == null) {
+                cmp = lookupPublicMethod(ji.type(), "compareTo", Object.class);
+            }
+            return resolveJavaMethodProfile(ji.type(), "compareTo", cmp).effects();
+        }
+        return EffectSet.EMPTY;
+    }
+
+    static Method lookupPublicMethod(Class<?> cls, String name, Class<?>... params) {
+        if (cls == null) {
+            return null;
+        }
+        try {
+            return cls.getMethod(name, params);
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+    }
+
+    static Field findJavaField(Class<?> cls, String name) {
+        try {
+            return cls.getField(name);
+        } catch (NoSuchFieldException e) {
+            return null;
+        }
+    }
+
+    static Set<Class<?>> collectJavaSupertypes(TypeNode node) {
+        Set<Class<?>> result = new LinkedHashSet<>();
+        result.add(Object.class);
+        collectJavaSupertypesInto(node, result, Collections.newSetFromMap(new IdentityHashMap<>()));
+        return result;
+    }
+
+    private static void collectJavaSupertypesInto(TypeNode node, Set<Class<?>> out, Set<TypeNode> visited) {
+        if (node == null || !visited.add(node)) {
+            return;
+        }
+        for (Object parent : node.parents) {
+            if (parent instanceof Class<?> cls) {
+                out.add(cls);
+            } else if (parent instanceof TypeNode tn) {
+                collectJavaSupertypesInto(tn, out, visited);
+            }
+        }
+    }
+
+    static boolean hasJavaMethodWithArity(Class<?> owner, String name, int arity) {
+        for (Method m : owner.getMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == arity) {
+                return true;
+            }
+        }
+        for (Method m : owner.getDeclaredMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == arity) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static boolean isCollectionFactoryMethod(Class<?> owner, String methodName) {
+        if (owner == null || methodName == null) {
+            return false;
+        }
+        if (owner == java.util.List.class || owner == java.util.Set.class || owner == java.util.Map.class) {
+            return "of".equals(methodName) || "copyOf".equals(methodName);
+        }
+        if (owner == java.util.Arrays.class) {
+            return "asList".equals(methodName);
+        }
+        if (owner == java.util.Collections.class) {
+            return "nCopies".equals(methodName) || "singletonList".equals(methodName)
+                    || "singleton".equals(methodName) || "singletonMap".equals(methodName)
+                    || "emptyList".equals(methodName) || "emptySet".equals(methodName)
+                    || "emptyMap".equals(methodName);
+        }
+        return false;
+    }
+
+    private static HostEffects.OverrideEntry lookupHierarchyMethod(
+            Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> table, Class<?> owner, String methodName) {
+        if (table.isEmpty() || owner == null) {
+            return null;
+        }
+        HostEffects.OverrideEntry direct = table.get(HostEffects.JavaTarget.ofMethod(owner, methodName));
+        if (direct != null) {
+            return direct;
+        }
+        for (Class<?> c = owner.getSuperclass(); c != null; c = c.getSuperclass()) {
+            HostEffects.OverrideEntry found = table.get(HostEffects.JavaTarget.ofMethod(c, methodName));
+            if (found != null) {
+                return found;
+            }
+        }
+        Deque<Class<?>> queue = new ArrayDeque<>(List.of(owner.getInterfaces()));
+        Set<Class<?>> visited = new HashSet<>();
+        while (!queue.isEmpty()) {
+            Class<?> iface = queue.poll();
+            if (!visited.add(iface)) {
+                continue;
+            }
+            HostEffects.OverrideEntry found = table.get(HostEffects.JavaTarget.ofMethod(iface, methodName));
+            if (found != null) {
+                return found;
+            }
+            Collections.addAll(queue, iface.getInterfaces());
+        }
+        return null;
+    }
+
+    private static EffectChecker.JavaCallProfile profileFromOverride(HostEffects.OverrideEntry entry,
+                                                                     Executable exec,
+                                                                     boolean explicitNothrow) {
+        int paramCount = exec != null ? exec.getParameterCount() : 0;
+        boolean[] mutParams = new boolean[paramCount];
+        boolean[] borrowParams = new boolean[paramCount];
+        if (entry.io()) {
+            return new EffectChecker.JavaCallProfile(EffectSet.IO_DECLARED, false, false, mutParams, borrowParams, false);
+        }
+        boolean isStaticOrCtor = exec instanceof Constructor<?> || (exec != null && Modifier.isStatic(exec.getModifiers()));
+        boolean mutReceiver = !isStaticOrCtor && entry.mutReceiver() && exec.getDeclaringClass() != String.class;
+        if (isStaticOrCtor && !(exec instanceof Constructor<?>) && entry.mutReceiver() && paramCount > 0) {
+            mutParams[0] = true;
+        }
+        boolean borrowAll = entry.borrowReceiver();
+        if (borrowAll) {
+            for (int i = 0; i < paramCount; i++) {
+                borrowParams[i] = true;
+            }
+        }
+        boolean[] uniqueParams = new boolean[paramCount];
+        if (exec != null) {
+            Parameter[] params = exec.getParameters();
+            for (int i = 0; i < params.length; i++) {
+                if (params[i].isAnnotationPresent(Mut.class) && params[i].getType() != String.class) {
+                    mutParams[i] = true;
+                }
+                if (params[i].isAnnotationPresent(Shared.class)) {
+                    borrowParams[i] = false;
+                }
+                if (params[i].isAnnotationPresent(Unique.class)) {
+                    uniqueParams[i] = true;
+                    borrowParams[i] = false;
+                }
+            }
+        }
+        EffectSet set = EffectSet.ofDeclared(entry.effects(), mutReceiver, isStaticOrCtor || borrowAll,
+                !isStaticOrCtor && !borrowAll, entry.uniqueResult(), false, entry.volatileEffect(), true);
+        return new EffectChecker.JavaCallProfile(set, mutReceiver, !isStaticOrCtor && borrowAll, mutParams, borrowParams, uniqueParams, explicitNothrow);
+    }
+
+    private static boolean allParamsPrimitiveOrString(Executable exec) {
+        for (Class<?> pt : exec.getParameterTypes()) {
+            if (!pt.isPrimitive() && pt != String.class) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasAnyEffectAnnotation(Executable exec) {
+        if (hasElementEffectAnnotation(exec)) {
+            return true;
+        }
+        for (Parameter p : exec.getParameters()) {
+            if (p.isAnnotationPresent(Mut.class) || p.isAnnotationPresent(Shared.class) || p.isAnnotationPresent(Unique.class)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasClassEffectAnnotation(Class<?> cls) {
+        return cls != null && hasElementEffectAnnotation(cls);
+    }
+
+    private static boolean hasElementEffectAnnotation(AnnotatedElement el) {
+        return el.isAnnotationPresent(Pure.class)
+                || el.isAnnotationPresent(Volatile.class)
+                || el.isAnnotationPresent(Mut.class)
+                || el.isAnnotationPresent(Shared.class)
+                || el.isAnnotationPresent(Unique.class)
+                || el.isAnnotationPresent(Nothrow.class)
+                || el.isAnnotationPresent(Idempotent.class)
+                || el.isAnnotationPresent(Commutative.class)
+                || el.isAnnotationPresent(Associative.class)
+                || el.isAnnotationPresent(Monotone.class)
+                || el.isAnnotationPresent(Injective.class)
+                || el.isAnnotationPresent(IO.class);
+    }
+
+    private static EffectChecker.JavaCallProfile profileFromAnnotations(Executable exec, Class<?> classSource, boolean classLevelOnly) {
+        int paramCount = exec != null ? exec.getParameterCount() : 0;
+        boolean[] mutParams = new boolean[paramCount];
+        boolean[] borrowParams = new boolean[paramCount];
+        boolean[] uniqueParams = new boolean[paramCount];
+        AnnotatedElement primary = (!classLevelOnly && exec != null) ? exec : classSource;
+        if (primary.isAnnotationPresent(IO.class)) {
+            return new EffectChecker.JavaCallProfile(EffectSet.IO_DECLARED, false, false, mutParams, borrowParams, uniqueParams, false);
+        }
+        EnumSet<Effect> effects = EnumSet.noneOf(Effect.class);
+        collectAnnotationsInto(classSource, effects);
+        if (!classLevelOnly && exec != null) {
+            collectAnnotationsInto(exec, effects);
+        }
+        boolean isStaticOrCtor = exec instanceof Constructor<?> || (exec != null && Modifier.isStatic(exec.getModifiers()));
+        boolean mutReceiver = !classLevelOnly && exec instanceof Method && !isStaticOrCtor
+                && exec.isAnnotationPresent(Mut.class) && exec.getDeclaringClass() != String.class;
+        boolean explicitVolatile = (!classLevelOnly && exec != null && exec.isAnnotationPresent(Volatile.class))
+                || (classSource != null && classSource.isAnnotationPresent(Volatile.class)
+                    && (classLevelOnly || exec == null || !exec.isAnnotationPresent(Pure.class)));
+        boolean explicitShared = (!classLevelOnly && exec != null && exec.isAnnotationPresent(Shared.class))
+                || (classSource != null && classSource.isAnnotationPresent(Shared.class));
+        boolean uniqueResult = !classLevelOnly && exec != null && (exec.isAnnotationPresent(Unique.class)
+                || (exec instanceof Constructor<?> && effects.contains(Effect.HERMETIC) && allParamsPrimitiveOrString(exec)));
+        if (exec != null) {
+            Parameter[] params = exec.getParameters();
+            for (int i = 0; i < params.length; i++) {
+                if (params[i].isAnnotationPresent(Mut.class) && params[i].getType() != String.class) {
+                    mutParams[i] = true;
+                }
+                if (params[i].isAnnotationPresent(Unique.class)) {
+                    uniqueParams[i] = true;
+                    borrowParams[i] = false;
+                } else {
+                    borrowParams[i] = !params[i].isAnnotationPresent(Shared.class) && !explicitShared;
+                }
+            }
+        }
+        if (explicitVolatile) {
+            effects.add(Effect.HERMETIC);
+            effects.remove(Effect.DETERMINISTIC);
+            if (!mutReceiver && !anyTrue(mutParams)) {
+                effects.add(Effect.PURE);
+            }
+        } else if ((mutReceiver || anyTrue(mutParams)) && !effects.contains(Effect.HERMETIC)) {
+            effects.add(Effect.HERMETIC);
+            effects.add(Effect.DETERMINISTIC);
+        }
+        if (mutReceiver || anyTrue(mutParams)) {
+            effects.remove(Effect.PURE);
+        }
+        boolean borrowReceiver = !isStaticOrCtor && !explicitShared;
+        boolean explicitNothrow = effects.contains(Effect.NOTHROW);
+        EffectSet set = EffectSet.ofDeclared(effects, mutReceiver, isStaticOrCtor || !explicitShared, !isStaticOrCtor && explicitShared,
+                uniqueResult, false, explicitVolatile, true);
+        return new EffectChecker.JavaCallProfile(set, mutReceiver, borrowReceiver, mutParams, borrowParams, uniqueParams, explicitNothrow);
+    }
+
+    private static void collectAnnotationsInto(AnnotatedElement el, EnumSet<Effect> out) {
+        if (el == null || el.isAnnotationPresent(IO.class)) {
+            return;
+        }
+        if (el.isAnnotationPresent(Pure.class)) {
+            out.add(Effect.PURE);
+            out.add(Effect.HERMETIC);
+            out.add(Effect.DETERMINISTIC);
+        }
+        if (el.isAnnotationPresent(Volatile.class)) {
+            out.add(Effect.HERMETIC);
+            out.remove(Effect.DETERMINISTIC);
+        }
+        if (el.isAnnotationPresent(Nothrow.class)) {
+            out.add(Effect.NOTHROW);
+        }
+        if (el.isAnnotationPresent(Idempotent.class)) {
+            out.add(Effect.IDEMPOTENT);
+        }
+        if (el.isAnnotationPresent(Commutative.class)) {
+            out.add(Effect.COMMUTATIVE);
+        }
+        if (el.isAnnotationPresent(Associative.class)) {
+            out.add(Effect.ASSOCIATIVE);
+        }
+        if (el.isAnnotationPresent(Monotone.class)) {
+            out.add(Effect.MONOTONE);
+        }
+        if (el.isAnnotationPresent(Injective.class)) {
+            out.add(Effect.INJECTIVE);
+        }
+    }
+
+    private static boolean anyTrue(boolean[] arr) {
+        for (boolean b : arr) {
+            if (b) {
+                return true;
+            }
+        }
+        return false;
+    }
+}

@@ -285,7 +285,7 @@ final class MemberTypes {
             }
             Type retType = JavaTypeBridge.javaMethodResult(m, env, checker.algebra());
             Type.Function fn = new Type.Function(typeVars, params, retType);
-            fns.add(ec != null ? ec.applySamJavaEffects(m, fn) : fn);
+            fns.add(ec != null ? ec.javaResolver().applySamJavaEffects(m, fn) : fn);
         }
         return fns.size() == 1 ? fns.get(0) : new Type.Overloaded(fns);
     }
