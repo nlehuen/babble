@@ -300,7 +300,7 @@ Three distinct categories of `Throwable` can fly past a `try` block on the JVM:
 
 | Category | Examples | Caught by `catch e: T` (explicit `T`)? | Caught by untyped `catch e then (...)` / `catch then (...)`? | Runs `finally`? |
 |---|---|---|---|---|
-| **Interpreter control-flow signals** | `ReturnException`, `BreakException`, `ContinueException` | **NEVER** (even `catch e: java.lang.Throwable`) | **NEVER** | **YES** (for `finally` blocks between jump and target) |
+| **Interpreter control-flow signals** | `ControlFlowSignal` (`ReturnException`, `BreakException`, `ContinueException`, see §7.3) | **NEVER** (even `catch e: java.lang.Throwable`) | **NEVER** | **YES** (for `finally` blocks between jump and target) |
 | **Normal exceptions** | `java.lang.Exception`, `RuntimeException`, `IOException`, `BabbleException`, Babble `ThrownException` | Yes, if runtime value matches `T` | **YES** | **YES** |
 | **JVM `Error`s** | `OutOfMemoryError`, `StackOverflowError`, `LinkageError`, `AssertionError` | Yes **only** if `T` explicitly accepts `Error` (e.g., `java.lang.Error`, `java.lang.StackOverflowError`, `java.lang.Throwable`) | **NO** (recommended — see `BIP028-Q4`) | **YES** (standard JVM `catch-all` `finally`) |
 
@@ -590,6 +590,10 @@ Because JVM class files ≥ Java 6 prohibit `JSR`/`RET` (Babble targets Java 21 
 
 ### 7.3 Interpreter parity (`Interpreter.java`)
 
+[`ReturnException`](../../src/main/java/org/babblelang/engine/impl/ReturnException.java), `Interpreter.BreakException`, and `Interpreter.ContinueException` are unified under a single package-private zero-stacktrace base class `abstract class ControlFlowSignal extends RuntimeException` (constructing via `super(null, null, false, false)`).
+
+*Why `ControlFlowSignal` rather than a return-value sentinel:* Unlike `BIP024`'s `TailCall` (which is restricted to tail position), `return`, `break`, and `continue` are expressions that can appear in any subexpression position (`1 + return 42`, `f(a, if done then (break 99) else (b))`). Propagating a return-value sentinel through the tree-walking `BabbleBaseVisitor` would require `if (v instanceof Control) return v;` guards at all 39 `visit(...)` sites in `Interpreter.java` (making future expression additions fragile and adding ~80–100 rarely-taken branches to the `-Pbatest` `Interpreter` JaCoCo gate). A single `ControlFlowSignal` base class keeps `visitTryExpression` to one bypass clause, lets Java's own `finally` unwind automatically, and leaves an eventual shift away from control-flow exceptions to a future flat `HIR` interpreter (if `BIP015` / thread-safe `Interpreter` replaces the ANTLR tree-walker).
+
 [`Interpreter.visitThrowExpression`](../../src/main/java/org/babblelang/engine/impl/Interpreter.java) and `visitTryExpression` mirror the compiled semantics directly:
 * `visitThrowExpression`: evaluates `ctx.expression()`, invokes `Throwables.toThrowable(val)`, and throws via `Throwables.sneakyThrow`.
 * `visitTryExpression`:
@@ -599,7 +603,7 @@ Because JVM class files ≥ Java 6 prohibit `JSR`/`RET` (Babble targets Java 21 
   Object result = null;
   try {
       result = runBlock(ctx.tryBlock);
-  } catch (ReturnException | BreakException | ContinueException control) {
+  } catch (ControlFlowSignal control) {
       throw control;   // bypasses all catch clauses; finally still runs!
   } catch (Throwable t) {
       failingAt = last;
@@ -708,7 +712,7 @@ Notice what works out of the box here:
   * Update `Formatter` (`try (`, `) catch ... then (`, `) finally (`, `throw `) and `Completions` / `BabbleSession.classify`.
   * Implement static checks across `BlockScopes` (scopes, read-only catch variable, forbidding `return`/`break`/`continue` escaping `finally`), `Resolver` (catch local / capture cell), `TypeChecker` & `Narrowing` (`Type.NOTHING` for `throw`, `join` & numeric widening for `try`, catch-type validity, multi-catch unions, unreachable-catch diagnostics, narrowing & definite-init resets), `TailCalls` (`BIP024` tail-position & `forever` rules), `EffectBodyWalker` / `EffectChecker` (`nothrow` restoration, purity, `@MOVED`/`unique` joins, `throw` escape provenance, `finally` unused-pure checks), `curated.ba` `Throwable` axioms, and `LoweringAnalyzer` (target descriptors & JVM catch class names).
 * **`BIP028-P3` — `Interpreter`, `HIR`, `HirEmitter` & Nanopass optimizer.**
-  * Implement `visitThrowExpression` and `visitTryExpression` in `Interpreter` (protecting `ReturnException`/`BreakException`/`ContinueException`, restoring `last` across normal `finally` on uncaught exceptions).
+  * Unify `ReturnException`, `BreakException`, and `ContinueException` under a package-private `ControlFlowSignal` base class, and implement `visitThrowExpression` and `visitTryExpression` in `Interpreter` (bypassing `catch` on `ControlFlowSignal`, restoring `last` across normal `finally` on uncaught exceptions).
   * Add `HirExpr.Throw`, `HirExpr.Try`, and `HirCatch`; update `HirBuilder` (including empty-operand-stack temp spilling for `Try` inside compound expressions), `HirVerifier`, `HirPrinter`, and `HirRewriter`.
   * Implement `emitThrow` and `emitTry` in `ControlAndOpEmitter` / `MethodEmitContext` (`activeFinallies`, `try`-range splitting on `return`/`break`/`continue`, native JVM `visitTryCatchBlock` + `ThrownException` dispatch, nested-`finally` outlining guard), verified by `CheckClassAdapter`.
   * Update `HirPurity`, `HirEGraphSimplifyPass`, `HirDcePass` (dead code after `Throw` and dead-catch elimination when `tryBody` is pure+nothrow+terminating), `HirLicmPass`, and `InlinePass`.
