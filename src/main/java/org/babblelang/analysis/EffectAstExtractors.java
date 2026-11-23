@@ -724,4 +724,661 @@ final class EffectAstExtractors {
         }
         return null;
     }
+
+    // ---------------------------------------------------------------- polynomial SCP extraction (BIP027-P6)
+
+    /**
+     * Attempts to certify termination of a cyclic WTO component via Ben-Amram &amp; Lee's
+     * polynomial-time Size-Change Termination ({@link SizeChangeTermination}) over guarded
+     * integer decreases and acyclic {@code record} structural descent.
+     *
+     * <p>Conservatively returns {@code false} if any callable in {@code component} is not a
+     * non-interface function literal, has a rest parameter, or can be invoked indirectly/dynamically
+     * within the component.
+     */
+    boolean certifyComponentTermination(List<ParserRuleContext> component) {
+        int n = component.size();
+        if (n == 0) {
+            return true;
+        }
+        Map<BabbleParser.FunctionLiteralContext, Integer> compIds = new IdentityHashMap<>();
+        BabbleParser.FunctionLiteralContext[] fns = new BabbleParser.FunctionLiteralContext[n];
+        int[] arities = new int[n];
+        for (int i = 0; i < n; i++) {
+            if (!(component.get(i) instanceof BabbleParser.FunctionLiteralContext fn)) {
+                return false;
+            }
+            if (ec.modifiers.isInterfaceDefault(fn) || ec.pass.analysis.calls().restIndex(fn) >= 0) {
+                return false;
+            }
+            compIds.put(fn, i);
+            fns[i] = fn;
+            arities[i] = fn.fnParameters().fnParam().size();
+        }
+
+        List<SizeChangeTermination.CallGraph> graphs = new ArrayList<>();
+        for (int id = 0; id < n; id++) {
+            BabbleParser.FunctionLiteralContext fn = fns[id];
+            ScpWalker walker = new ScpWalker(fn, id, compIds, graphs);
+            if (!walker.walkFunction()) {
+                return false;
+            }
+        }
+        return SizeChangeTermination.isTerminating(arities, graphs);
+    }
+
+    private record ParamDesc(int paramIdx, SizeChangeTermination.Relation rel, boolean isInt, boolean isRecord) {
+    }
+
+    private record ScpPathEnv(Map<Integer, Long> lowerBounds, Map<ParserRuleContext, ParamDesc> locals) {
+        ScpPathEnv copy() {
+            return new ScpPathEnv(new java.util.HashMap<>(lowerBounds), new IdentityHashMap<>(locals));
+        }
+
+        ScpPathEnv withLowerBound(int paramIdx, long bound) {
+            Long prev = lowerBounds.get(paramIdx);
+            if (prev != null && prev >= bound) {
+                return this;
+            }
+            ScpPathEnv next = copy();
+            next.lowerBounds.put(paramIdx, bound);
+            return next;
+        }
+    }
+
+    private final class ScpWalker {
+        private final BabbleParser.FunctionLiteralContext owner;
+        private final int ownerId;
+        private final Map<BabbleParser.FunctionLiteralContext, Integer> compIds;
+        private final List<SizeChangeTermination.CallGraph> outGraphs;
+        private final Map<ParserRuleContext, Integer> trackedIntParams = new IdentityHashMap<>();
+        private final Map<ParserRuleContext, Integer> trackedRecordParams = new IdentityHashMap<>();
+
+        ScpWalker(BabbleParser.FunctionLiteralContext owner, int ownerId,
+                  Map<BabbleParser.FunctionLiteralContext, Integer> compIds,
+                  List<SizeChangeTermination.CallGraph> outGraphs) {
+            this.owner = owner;
+            this.ownerId = ownerId;
+            this.compIds = compIds;
+            this.outGraphs = outGraphs;
+            List<BabbleParser.FnParamContext> params = owner.fnParameters().fnParam();
+            for (int i = 0; i < params.size(); i++) {
+                BabbleParser.FnParamContext p = params.get(i);
+                if (ec.checker.isReassigned(p)) {
+                    continue;
+                }
+                Type pt = ec.checker.typeOfDeclarationForEffects(p);
+                if (isIntegerType(pt)) {
+                    trackedIntParams.put(p, i);
+                } else if (isRecordType(pt)) {
+                    trackedRecordParams.put(p, i);
+                }
+            }
+        }
+
+        boolean walkFunction() {
+            ScpPathEnv env = new ScpPathEnv(new java.util.HashMap<>(), new IdentityHashMap<>());
+            for (BabbleParser.FnParamContext p : owner.fnParameters().fnParam()) {
+                if (p.defaultValue != null && !walkExpr(p.defaultValue, env)) {
+                    return false;
+                }
+            }
+            return walkBlock(owner.functionBlock, env);
+        }
+
+        private boolean walkBlock(BabbleParser.BlockContext block, ScpPathEnv env) {
+            if (block == null) {
+                return true;
+            }
+            ScpPathEnv cur = env.copy();
+            for (BabbleParser.ExpressionContext stmt : block.expression()) {
+                BabbleParser.ExpressionContext u = EffectBodyWalker.unwrapParens(stmt);
+                if (u instanceof BabbleParser.DefExpressionContext def) {
+                    if (def.value != null && !walkExpr(def.value, cur)) {
+                        return false;
+                    }
+                    if (def.value != null && !ec.checker.isReassigned(def)) {
+                        ParamDesc desc = describeArg(def.value, cur);
+                        if (desc != null) {
+                            cur.locals().put(def, desc);
+                        }
+                    }
+                    continue;
+                }
+                if (u instanceof BabbleParser.IfExpressionContext ie) {
+                    BabbleParser.IfExprContext ifCtx = ie.ifExpr();
+                    if (!walkIf(ifCtx, cur)) {
+                        return false;
+                    }
+                    // Early-return guard refinement for subsequent statements in the block.
+                    if (ifCtx.elseBlock == null && ifCtx.elseIf == null && alwaysExitsBlock(ifCtx.thenBlock)) {
+                        cur = assume(ifCtx.test, false, cur);
+                    } else if (ifCtx.elseBlock != null && alwaysExitsBlock(ifCtx.elseBlock) && !alwaysExitsBlock(ifCtx.thenBlock)) {
+                        cur = assume(ifCtx.test, true, cur);
+                    }
+                    continue;
+                }
+                if (!walkExpr(u, cur)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private boolean walkIf(BabbleParser.IfExprContext ifCtx, ScpPathEnv env) {
+            if (!walkExpr(ifCtx.test, env)) {
+                return false;
+            }
+            ScpPathEnv thenEnv = assume(ifCtx.test, true, env);
+            if (!walkBlock(ifCtx.thenBlock, thenEnv)) {
+                return false;
+            }
+            ScpPathEnv elseEnv = assume(ifCtx.test, false, env);
+            if (ifCtx.elseIf != null) {
+                return walkIf(ifCtx.elseIf, elseEnv);
+            }
+            if (ifCtx.elseBlock != null) {
+                return walkBlock(ifCtx.elseBlock, elseEnv);
+            }
+            return true;
+        }
+
+        private boolean walkExpr(ParserRuleContext raw, ScpPathEnv env) {
+            if (raw == null) {
+                return true;
+            }
+            ParserRuleContext ctx = raw instanceof BabbleParser.ExpressionContext e
+                    ? EffectBodyWalker.unwrapParens(e) : raw;
+            if (ctx instanceof BabbleParser.BlockContext b) {
+                return walkBlock(b, env);
+            }
+            if (ctx instanceof BabbleParser.BlockExpressionContext be) {
+                return walkBlock(be.block(), env);
+            }
+            if (ctx instanceof BabbleParser.ForeverExpressionContext) {
+                return false;
+            }
+            if (ctx instanceof BabbleParser.RecurseContext) {
+                // Bare non-called `recurse` escapes as a first-class value.
+                return false;
+            }
+            if (ctx instanceof BabbleParser.FunctionLiteralContext inner) {
+                return !treeReferencesComponent(inner);
+            }
+            if (ctx instanceof BabbleParser.ClassExpressionContext || ctx instanceof BabbleParser.InterfaceExpressionContext) {
+                return true;
+            }
+            if (ctx instanceof BabbleParser.IfExpressionContext ie) {
+                return walkIf(ie.ifExpr(), env);
+            }
+            if (ctx instanceof BabbleParser.BooleanOpContext bo) {
+                if (!walkExpr(bo.left, env)) {
+                    return false;
+                }
+                boolean isAnd = "and".equals(bo.op.getText());
+                return walkExpr(bo.right, assume(bo.left, isAnd, env));
+            }
+            if (ctx instanceof BabbleParser.CallContext call) {
+                return walkCall(call, env);
+            }
+            if (ctx instanceof BabbleParser.SelectorContext sel) {
+                if (sel.expression() != null && !walkExpr(sel.expression(), env)) {
+                    return false;
+                }
+                // Passing a component function as a value (not directly invoked) could escape into a HOF.
+                return !selectorTargetsComponent(sel);
+            }
+            if (ctx instanceof BabbleParser.BinaryOpContext bin) {
+                if (!walkExpr(bin.left, env) || !walkExpr(bin.right, env)) {
+                    return false;
+                }
+                if ("+".equals(bin.op.getText()) && ec.checker.rawTypeOf(bin) == Type.STRING) {
+                    if (typeToStringInComponent(ec.checker.rawTypeOf(bin.left))
+                            || typeToStringInComponent(ec.checker.rawTypeOf(bin.right))) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            for (int i = 0; i < ctx.getChildCount(); i++) {
+                if (ctx.getChild(i) instanceof ParserRuleContext child && !walkExpr(child, env)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private boolean walkCall(BabbleParser.CallContext call, ScpPathEnv env) {
+            List<BabbleParser.CallParameterContext> callParams = call.callParameters().callParameter();
+            for (BabbleParser.CallParameterContext ap : callParams) {
+                if (!walkExpr(ap.expression(), env)) {
+                    return false;
+                }
+            }
+            BabbleParser.ExpressionContext calleeExpr = EffectBodyWalker.unwrapParens(call.expression());
+            if (calleeExpr instanceof BabbleParser.TypeApplyContext ta) {
+                calleeExpr = EffectBodyWalker.unwrapParens(ta.expression());
+            }
+
+            // 1. Direct `recurse(...)`
+            if (calleeExpr instanceof BabbleParser.RecurseContext) {
+                return recordDirectCall(owner, ownerId, callParams, env);
+            }
+
+            // 2. Direct single-target call to a member of this component
+            BabbleParser.FunctionLiteralContext directTarget = resolveDirectComponentCallee(calleeExpr);
+            if (directTarget != null) {
+                if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
+                    if (!walkExpr(sel.expression(), env)) {
+                        return false;
+                    }
+                }
+                return recordDirectCall(directTarget, compIds.get(directTarget), callParams, env);
+            }
+
+            // 3. Walk non-direct callee expression; reject if its type could dynamically reach the component.
+            if (!walkExpr(call.expression(), env)) {
+                return false;
+            }
+            Type calleeType = ec.checker.rawTypeOf(call.expression());
+            if (typeReachesComponent(calleeType)) {
+                return false;
+            }
+            return true;
+        }
+
+        private boolean recordDirectCall(BabbleParser.FunctionLiteralContext targetFn, int targetId,
+                                         List<BabbleParser.CallParameterContext> callParams, ScpPathEnv env) {
+            for (BabbleParser.CallParameterContext ap : callParams) {
+                if (ap.spread != null) {
+                    return false;
+                }
+            }
+            Type targetRaw = ec.checker.rawTypeOf(targetFn);
+            List<Type.Parameter> targetParams = targetRaw instanceof Type.Function tf ? tf.parameters() : List.of();
+            List<SizeChangeTermination.Edge> edges = new ArrayList<>();
+            for (BabbleParser.CallParameterContext ap : callParams) {
+                int dstIdx = ec.checker.parameterIndexForArg(targetParams, callParams, ap);
+                if (dstIdx < 0) {
+                    continue;
+                }
+                ParamDesc desc = describeArg(ap.expression(), env);
+                if (desc != null) {
+                    edges.add(new SizeChangeTermination.Edge(desc.paramIdx(), dstIdx, desc.rel()));
+                }
+            }
+            outGraphs.add(SizeChangeTermination.CallGraph.of(ownerId, targetId, edges));
+            return true;
+        }
+
+        private ParamDesc describeArg(BabbleParser.ExpressionContext raw, ScpPathEnv env) {
+            BabbleParser.ExpressionContext expr = EffectBodyWalker.unwrapParens(raw);
+            // 1. Bare variable: tracked parameter or local alias/descent
+            if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
+                Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+                if (resolved instanceof ParserRuleContext decl) {
+                    ParamDesc local = env.locals().get(decl);
+                    if (local != null) {
+                        return local;
+                    }
+                    Integer intIdx = trackedIntParams.get(decl);
+                    if (intIdx != null) {
+                        return new ParamDesc(intIdx, SizeChangeTermination.Relation.SAME, true, false);
+                    }
+                    Integer recIdx = trackedRecordParams.get(decl);
+                    if (recIdx != null) {
+                        return new ParamDesc(recIdx, SizeChangeTermination.Relation.SAME, false, true);
+                    }
+                }
+                return null;
+            }
+            // 2. Acyclic record field structural descent: `xs.next`, `t.left.right`
+            if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
+                ParamDesc base = describeArg(sel.expression(), env);
+                if (base != null && base.isRecord()) {
+                    Type recvType = ec.checker.rawTypeOf(sel.expression());
+                    if (isRecordFieldAccess(recvType, ScopeAnalysis.selectorName(sel))) {
+                        Type resType = ec.checker.rawTypeOf(sel);
+                        return new ParamDesc(base.paramIdx(), SizeChangeTermination.Relation.DOWN,
+                                isIntegerType(resType), isRecordType(resType));
+                    }
+                }
+                return null;
+            }
+            // 3. Guarded integer subtraction / negative addition: `n - k`, `n + (-k)`, `a - b`
+            if (expr instanceof BabbleParser.BinaryOpContext bin) {
+                String op = bin.op.getText();
+                if ("-".equals(op) || "+".equals(op)) {
+                    ParamDesc left = describeArg(bin.left, env);
+                    if (left != null && left.isInt() && left.rel() == SizeChangeTermination.Relation.SAME) {
+                        Long lb = env.lowerBounds().get(left.paramIdx());
+                        if (lb != null && lb >= 0) {
+                            Long c = evalIntConst(bin.right);
+                            if (c != null) {
+                                long delta = "-".equals(op) ? c : -c;
+                                if (delta >= 1 && delta <= Integer.MAX_VALUE) {
+                                    return new ParamDesc(left.paramIdx(), SizeChangeTermination.Relation.DOWN, true, false);
+                                }
+                                if (delta == 0) {
+                                    return left;
+                                }
+                            } else if ("-".equals(op)) {
+                                ParamDesc right = describeArg(bin.right, env);
+                                if (right != null && right.isInt() && right.rel() == SizeChangeTermination.Relation.SAME) {
+                                    Long rlb = env.lowerBounds().get(right.paramIdx());
+                                    if (rlb != null && rlb >= 1) {
+                                        return new ParamDesc(left.paramIdx(), SizeChangeTermination.Relation.DOWN, true, false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return null;
+            }
+            // 4. Guarded integer halving / floorDiv / floorMod: `int(n / 2)`, `Math.floorDiv(n, 2)`, `Math.floorMod(a, b)`
+            if (expr instanceof BabbleParser.CallContext call) {
+                List<BabbleParser.CallParameterContext> args = call.callParameters().callParameter();
+                if (call.expression() instanceof BabbleParser.CoreScalarRefContext && args.size() == 1) {
+                    Type dst = ec.checker.rawTypeOf(call);
+                    if (dst == Type.INT || dst == Type.LONG) {
+                        BabbleParser.ExpressionContext inner = EffectBodyWalker.unwrapParens(args.get(0).expression());
+                        if (inner instanceof BabbleParser.BinaryOpContext bin && "/".equals(bin.op.getText())) {
+                            return describeDivDecrease(bin.left, bin.right, env);
+                        }
+                    }
+                }
+                Method rm = ec.checker.resolvedJavaMethodOf(call);
+                if (rm != null && rm.getDeclaringClass() == Math.class && args.size() == 2) {
+                    if ("floorDiv".equals(rm.getName())) {
+                        return describeDivDecrease(args.get(0).expression(), args.get(1).expression(), env);
+                    }
+                    if ("floorMod".equals(rm.getName())) {
+                        ParamDesc mod = describeArg(args.get(1).expression(), env);
+                        if (mod != null && mod.isInt() && mod.rel() == SizeChangeTermination.Relation.SAME) {
+                            Long lb = env.lowerBounds().get(mod.paramIdx());
+                            if (lb != null && lb >= 1) {
+                                return new ParamDesc(mod.paramIdx(), SizeChangeTermination.Relation.DOWN, true, false);
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        private ParamDesc describeDivDecrease(BabbleParser.ExpressionContext numExpr,
+                                              BabbleParser.ExpressionContext denExpr,
+                                              ScpPathEnv env) {
+            ParamDesc num = describeArg(numExpr, env);
+            Long denom = evalIntConst(denExpr);
+            if (num == null || !num.isInt() || num.rel() != SizeChangeTermination.Relation.SAME || denom == null) {
+                return null;
+            }
+            Long lb = env.lowerBounds().get(num.paramIdx());
+            if (lb == null || lb < 0) {
+                return null;
+            }
+            if (denom >= 2 && lb >= 1) {
+                return new ParamDesc(num.paramIdx(), SizeChangeTermination.Relation.DOWN, true, false);
+            }
+            if (denom >= 1) {
+                return num;
+            }
+            return null;
+        }
+
+        private ScpPathEnv assume(BabbleParser.ExpressionContext raw, boolean truth, ScpPathEnv env) {
+            BabbleParser.ExpressionContext cond = EffectBodyWalker.unwrapParens(raw);
+            if (cond instanceof BabbleParser.BooleanNotContext notCtx) {
+                return assume(notCtx.expression(), !truth, env);
+            }
+            if (cond instanceof BabbleParser.BooleanOpContext bo) {
+                boolean isAnd = "and".equals(bo.op.getText());
+                if (isAnd && truth) {
+                    return assume(bo.right, true, assume(bo.left, true, env));
+                }
+                if (!isAnd && !truth) {
+                    return assume(bo.right, false, assume(bo.left, false, env));
+                }
+                return env;
+            }
+            if (cond instanceof BabbleParser.BinaryOpContext bin) {
+                String op = bin.op.getText();
+                if (!truth) {
+                    op = negateComparisonOp(op);
+                    if (op == null) {
+                        return env;
+                    }
+                }
+                ParamDesc lp = describeArg(bin.left, env);
+                ParamDesc rp = describeArg(bin.right, env);
+                Long lc = evalIntConst(bin.left);
+                Long rc = evalIntConst(bin.right);
+                if (lp != null && lp.isInt() && lp.rel() == SizeChangeTermination.Relation.SAME && rc != null) {
+                    return refineBound(env, lp.paramIdx(), op, rc);
+                }
+                if (rp != null && rp.isInt() && rp.rel() == SizeChangeTermination.Relation.SAME && lc != null) {
+                    String flipped = flipComparisonOp(op);
+                    if (flipped != null) {
+                        return refineBound(env, rp.paramIdx(), flipped, lc);
+                    }
+                }
+                if (lp != null && lp.isInt() && lp.rel() == SizeChangeTermination.Relation.SAME
+                        && rp != null && rp.isInt() && rp.rel() == SizeChangeTermination.Relation.SAME) {
+                    Long rlb = env.lowerBounds().get(rp.paramIdx());
+                    if (rlb != null) {
+                        if (">".equals(op) && rlb < Long.MAX_VALUE) {
+                            return env.withLowerBound(lp.paramIdx(), rlb + 1);
+                        }
+                        if (">=".equals(op)) {
+                            return env.withLowerBound(lp.paramIdx(), rlb);
+                        }
+                    }
+                    Long llb = env.lowerBounds().get(lp.paramIdx());
+                    if (llb != null) {
+                        if ("<".equals(op) && llb < Long.MAX_VALUE) {
+                            return env.withLowerBound(rp.paramIdx(), llb + 1);
+                        }
+                        if ("<=".equals(op)) {
+                            return env.withLowerBound(rp.paramIdx(), llb);
+                        }
+                    }
+                }
+            }
+            return env;
+        }
+
+        private ScpPathEnv refineBound(ScpPathEnv env, int paramIdx, String op, long c) {
+            return switch (op) {
+                case ">" -> c < Long.MAX_VALUE ? env.withLowerBound(paramIdx, c + 1) : env;
+                case ">=", "==" -> env.withLowerBound(paramIdx, c);
+                case "!=", "<>" -> {
+                    Long cur = env.lowerBounds().get(paramIdx);
+                    yield (cur != null && cur == c && c < Long.MAX_VALUE) ? env.withLowerBound(paramIdx, c + 1) : env;
+                }
+                default -> env;
+            };
+        }
+
+        private BabbleParser.FunctionLiteralContext resolveDirectComponentCallee(BabbleParser.ExpressionContext calleeExpr) {
+            if (calleeExpr instanceof BabbleParser.SelectorContext sel) {
+                if (sel.expression() == null) {
+                    Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+                    if (resolved instanceof BabbleParser.DefExpressionContext def
+                            && !ec.checker.isReassigned(def)
+                            && def.value instanceof BabbleParser.FunctionLiteralContext lit
+                            && compIds.containsKey(lit)) {
+                        return lit;
+                    }
+                } else if (EffectBodyWalker.unwrapParens(sel.expression()) instanceof BabbleParser.ThisExpressionContext) {
+                    Type recv = ec.checker.rawTypeOf(sel.expression());
+                    if (recv instanceof Type.Instance inst && !inst.node().isInterface()) {
+                        TypeNode.Member mem = inst.node().members.get(ScopeAnalysis.selectorName(sel));
+                        if (mem != null && mem.function != null && compIds.containsKey(mem.function)) {
+                            return mem.function;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        private boolean selectorTargetsComponent(BabbleParser.SelectorContext sel) {
+            if (sel.expression() == null) {
+                Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+                if (resolved instanceof BabbleParser.DefExpressionContext def
+                        && def.value instanceof BabbleParser.FunctionLiteralContext lit
+                        && compIds.containsKey(lit)) {
+                    return true;
+                }
+            }
+            return typeReachesComponent(ec.checker.rawTypeOf(sel));
+        }
+
+        private boolean typeReachesComponent(Type type) {
+            if (type == null) {
+                return false;
+            }
+            for (Type m : Type.membersOf(type)) {
+                if (m instanceof Type.Function fn) {
+                    BabbleParser.FunctionLiteralContext lit = ec.checker.literalOf(fn);
+                    if (lit != null && compIds.containsKey(lit)) {
+                        return true;
+                    }
+                } else if (m instanceof Type.Overloaded ov) {
+                    for (Type.Function fn : ov.alternatives()) {
+                        BabbleParser.FunctionLiteralContext lit = ec.checker.literalOf(fn);
+                        if (lit != null && compIds.containsKey(lit)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        private boolean typeToStringInComponent(Type type) {
+            if (type == null) {
+                return false;
+            }
+            for (Type m : Type.membersOf(type)) {
+                if (m instanceof Type.Instance inst) {
+                    TypeNode.Member ts = ec.checker.findMemberOnNode(inst.node(), "toString");
+                    if (ts != null && ts.function != null && compIds.containsKey(ts.function)) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private boolean treeReferencesComponent(org.antlr.v4.runtime.tree.ParseTree tree) {
+            if (tree instanceof BabbleParser.RecurseContext) {
+                return true;
+            }
+            if (tree instanceof BabbleParser.SelectorContext sel && selectorTargetsComponent(sel)) {
+                return true;
+            }
+            for (int i = 0; i < tree.getChildCount(); i++) {
+                if (treeReferencesComponent(tree.getChild(i))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static boolean isIntegerType(Type t) {
+        if (t instanceof Type.Frozen f) {
+            t = f.of();
+        }
+        return t == Type.BYTE || t == Type.SHORT || t == Type.INT || t == Type.LONG;
+    }
+
+    private static boolean isRecordType(Type t) {
+        if (t == null) {
+            return false;
+        }
+        Type unwrapped = TypeAlgebra.unwrapFrozen(Type.withoutNull(t));
+        return unwrapped instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS;
+    }
+
+    private static boolean isRecordFieldAccess(Type recvType, String fieldName) {
+        if (recvType == null || fieldName == null) {
+            return false;
+        }
+        Type unwrapped = TypeAlgebra.unwrapFrozen(Type.withoutNull(recvType));
+        if (unwrapped instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+            TypeNode.Member m = inst.node().members.get(fieldName);
+            return m != null && !m.isMethod() && !m.hasFunction;
+        }
+        return false;
+    }
+
+    private static boolean alwaysExitsBlock(BabbleParser.BlockContext block) {
+        if (block == null || block.expression().isEmpty()) {
+            return false;
+        }
+        for (BabbleParser.ExpressionContext stmt : block.expression()) {
+            BabbleParser.ExpressionContext u = EffectBodyWalker.unwrapParens(stmt);
+            if (u instanceof BabbleParser.ReturnExpressionContext) {
+                return true;
+            }
+            if (u instanceof BabbleParser.IfExpressionContext ie) {
+                BabbleParser.IfExprContext ifCtx = ie.ifExpr();
+                if (ifCtx.elseBlock != null && alwaysExitsBlock(ifCtx.thenBlock) && alwaysExitsBlock(ifCtx.elseBlock)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static Long evalIntConst(BabbleParser.ExpressionContext raw) {
+        BabbleParser.ExpressionContext e = EffectBodyWalker.unwrapParens(raw);
+        if (e instanceof BabbleParser.NegateContext neg) {
+            Long sub = evalIntConst(neg.operand);
+            return sub != null && sub != Long.MIN_VALUE ? -sub : null;
+        }
+        if (e instanceof BabbleParser.IntegerContext ic) {
+            try {
+                return Long.parseLong(ic.getText());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        if (e instanceof BabbleParser.LongLiteralContext lc) {
+            try {
+                String txt = lc.getText();
+                return Long.parseLong(txt.substring(0, txt.length() - 1));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static String negateComparisonOp(String op) {
+        return switch (op) {
+            case "<" -> ">=";
+            case "<=" -> ">";
+            case ">" -> "<=";
+            case ">=" -> "<";
+            case "==" -> "!=";
+            case "!=", "<>" -> "==";
+            default -> null;
+        };
+    }
+
+    private static String flipComparisonOp(String op) {
+        return switch (op) {
+            case "<" -> ">";
+            case "<=" -> ">=";
+            case ">" -> "<";
+            case ">=" -> "<=";
+            case "==", "!=", "<>" -> op;
+            default -> null;
+        };
+    }
 }

@@ -73,9 +73,18 @@ final class EffectBodyWalker {
     final Set<Object> frameReadOwners = Collections.newSetFromMap(new IdentityHashMap<>());
     final Set<Object> frameWriteOwners = Collections.newSetFromMap(new IdentityHashMap<>());
 
+    static final class ActiveForLoop {
+        final Reachability.Origin iterableOrigin;
+        boolean mutated;
+
+        ActiveForLoop(Reachability.Origin iterableOrigin) {
+            this.iterableOrigin = iterableOrigin;
+        }
+    }
+
     Map<ParserRuleContext, Reachability.Origin> env = new IdentityHashMap<>();
     final Set<String> reportedMessages = new HashSet<>();
-    final List<Reachability.Origin> activeForIterables = new ArrayList<>();
+    final List<ActiveForLoop> activeForIterables = new ArrayList<>();
     final Deque<Reachability.Origin[]> loopBreakOrigins = new ArrayDeque<>();
     final Set<Integer> forwardedParams;
     /**
@@ -117,7 +126,7 @@ final class EffectBodyWalker {
         this.declaredPrefix = declaredPrefix;
         this.frameChain = frameChain;
         this.emitDiagnostics = emitDiagnostics;
-        this.terminating = !ec.cyclicCallables.contains(owner);
+        this.terminating = !ec.cyclicCallables.contains(owner) || ec.scpTerminatingCallables.contains(owner);
         this.forwardedParams = owner instanceof BabbleParser.FunctionLiteralContext fn
                 ? EffectModifiers.resolveForwardedParamIndices(fn) : Set.of();
         this.trackSymbolic = !emitDiagnostics
@@ -321,7 +330,6 @@ final class EffectBodyWalker {
                 || stmt instanceof BabbleParser.AssignExpressionContext
                 || stmt instanceof BabbleParser.ReturnExpressionContext
                 || stmt instanceof BabbleParser.WhileExpressionContext
-                || stmt instanceof BabbleParser.ForExpressionContext
                 || stmt instanceof BabbleParser.BreakExpressionContext
                 || stmt instanceof BabbleParser.ContinueExpressionContext) {
             eval(stmt);
@@ -333,10 +341,12 @@ final class EffectBodyWalker {
         }
         boolean prevHermetic = hermetic;
         boolean prevNothrow = nothrow;
+        boolean prevTerminating = terminating;
         boolean prevSideEffect = stmtHasSideEffect;
         boolean prevError = stmtHasError;
         hermetic = true;
         nothrow = true;
+        terminating = true;
         stmtHasSideEffect = false;
         stmtHasError = false;
         ParserRuleContext prevDiscarded = discardedExpr;
@@ -348,12 +358,14 @@ final class EffectBodyWalker {
         }
         boolean stmtPure = hermetic && !stmtHasSideEffect;
         boolean stmtNothrow = nothrow;
+        boolean stmtTerminating = terminating;
         boolean hadError = stmtHasError;
         hermetic = prevHermetic && hermetic;
         nothrow = prevNothrow && nothrow;
+        terminating = prevTerminating && terminating;
         stmtHasSideEffect = prevSideEffect || stmtHasSideEffect || !stmtPure;
         stmtHasError = prevError || hadError;
-        if (stmtPure && stmtNothrow && !hadError && !hasPriorDiagnostic(stmt)) {
+        if (stmtPure && stmtNothrow && stmtTerminating && !hadError && !hasPriorDiagnostic(stmt)) {
             Type stmtType = ec.checker.rawTypeOf(stmt);
             if (stmtType != Type.ERROR) {
                 reportOnce("Unused pure expression", stmt);
@@ -423,7 +435,9 @@ final class EffectBodyWalker {
             return Reachability.Origin.ofThis(Reachability.THIS_KEY, ec.javaResolver.isDeeplyImmutable(thisType));
         }
         if (ctx instanceof BabbleParser.RecurseContext) {
-            terminating = false;
+            if (!ec.scpTerminatingCallables.contains(owner)) {
+                terminating = false;
+            }
             return Reachability.Origin.IMMUTABLE;
         }
         if (ctx instanceof BabbleParser.FunctionLiteralContext lit) {
@@ -843,12 +857,19 @@ final class EffectBodyWalker {
         if (targetExpr instanceof BabbleParser.ExpressionContext expr && effectiveType(expr) == Type.ERROR) {
             return;
         }
-        if (!activeForIterables.isEmpty() && isConstrainedPureOrHermetic() && !target.directKeys.isEmpty()) {
-            for (Reachability.Origin iterOrig : activeForIterables) {
-                for (Object k : target.directKeys) {
-                    if (iterOrig.directKeys.contains(k)) {
-                        reportOnce("Cannot mutate collection while iterating over it", at);
-                        break;
+        if (!activeForIterables.isEmpty()) {
+            boolean reported = false;
+            for (ActiveForLoop loop : activeForIterables) {
+                if (mayOverlapIteratedCollection(loop.iterableOrigin, target)) {
+                    loop.mutated = true;
+                }
+                if (!reported && isConstrainedPureOrHermetic() && !target.directKeys.isEmpty()) {
+                    for (Object k : target.directKeys) {
+                        if (loop.iterableOrigin.directKeys.contains(k)) {
+                            reportOnce("Cannot mutate collection while iterating over it", at);
+                            reported = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -1145,12 +1166,32 @@ final class EffectBodyWalker {
         return breakAcc[0] != null ? bodyOrig.join(breakAcc[0]) : bodyOrig;
     }
 
+    private static boolean mayOverlapIteratedCollection(Reachability.Origin iterOrig, Reachability.Origin target) {
+        if (iterOrig == null || target == null) {
+            return false;
+        }
+        for (Object k : target.directKeys) {
+            if (iterOrig.directKeys.contains(k)) {
+                return true;
+            }
+        }
+        if (target.owned() && !target.external && target.params.isEmpty() && !target.aliasesThis) {
+            return false;
+        }
+        if (iterOrig.owned() && !iterOrig.external && iterOrig.params.isEmpty() && !iterOrig.aliasesThis) {
+            return false;
+        }
+        return iterOrig.params.intersects(target.params)
+                || (iterOrig.aliasesThis && target.aliasesThis)
+                || (iterOrig.external && target.external);
+    }
+
     Reachability.Origin evalFor(BabbleParser.ForExpressionContext ctx) {
-        stmtHasSideEffect = true;
         Reachability.Origin iterOrig = eval(ctx.iterable);
         Type iterType = effectiveType(ctx.iterable);
         TypeChecker.ForIterableInfo info = ec.checker.forIterableInfo(ctx);
         boolean trackConcurrentMut = false;
+        boolean curatedFinite = false;
         if (info != null) {
             recordTargetRead(iterOrig, iterType);
             switch (info.kind()) {
@@ -1158,8 +1199,7 @@ final class EffectBodyWalker {
                     // Indexed array loop : @HERMETIC @NOTHROW, terminates; mutable read recorded above.
                 }
                 case JAVA_ITERABLE -> {
-                    terminating = false;
-                    nothrow = false;
+                    boolean curatedNothrow = false;
                     Type unwrapped = iterType instanceof Type.Frozen f ? f.of() : iterType;
                     if (unwrapped instanceof Type.JavaInstance ji) {
                         EffectChecker.JavaCallProfile iterProf = ec.javaResolver.resolveJavaMethodProfile(ji.type(), "iterator", JavaEffectResolver.lookupPublicMethod(ji.type(), "iterator"));
@@ -1169,7 +1209,17 @@ final class EffectBodyWalker {
                         }
                         if (iterProf.view()) {
                             trackConcurrentMut = true;
+                            if (iterProf.effects().isHermetic() && iterProf.effects().terminating()) {
+                                curatedFinite = true;
+                                curatedNothrow = iterProf.effects().isNothrow();
+                            }
                         }
+                    }
+                    if (!curatedFinite) {
+                        terminating = false;
+                    }
+                    if (!curatedNothrow) {
+                        nothrow = false;
                     }
                 }
                 case JAVA_ITERATOR -> {
@@ -1234,9 +1284,12 @@ final class EffectBodyWalker {
         }
         Reachability.Origin[] breakAcc = new Reachability.Origin[1];
         loopBreakOrigins.push(breakAcc);
-        if (trackConcurrentMut && !iterOrig.directKeys.isEmpty()) {
-            activeForIterables.add(iterOrig);
+        ActiveForLoop activeLoop = trackConcurrentMut ? new ActiveForLoop(iterOrig) : null;
+        if (activeLoop != null) {
+            activeForIterables.add(activeLoop);
         }
+        boolean outerHermetic = hermetic;
+        hermetic = true;
         Reachability.Origin bodyOrig = Reachability.Origin.IMMUTABLE;
         try {
             int iter = 0;
@@ -1254,8 +1307,14 @@ final class EffectBodyWalker {
                 env = merged;
             }
         } finally {
-            if (trackConcurrentMut && !iterOrig.directKeys.isEmpty()) {
+            boolean bodyHermetic = hermetic;
+            hermetic = outerHermetic && bodyHermetic;
+            if (activeLoop != null) {
                 activeForIterables.remove(activeForIterables.size() - 1);
+                if (curatedFinite && (activeLoop.mutated || !bodyHermetic)) {
+                    terminating = false;
+                    nothrow = false;
+                }
             }
             loopBreakOrigins.pop();
         }

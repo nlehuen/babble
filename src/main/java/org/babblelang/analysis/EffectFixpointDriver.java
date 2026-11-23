@@ -103,6 +103,24 @@ final class EffectFixpointDriver {
         return cyclic;
     }
 
+    /** Collects all nodes in a single WTO {@link Component} in traversal order. */
+    static <N> List<N> componentNodes(Component<N> comp) {
+        List<N> out = new ArrayList<>();
+        collectComponentNodesList(comp, out);
+        return out;
+    }
+
+    private static <N> void collectComponentNodesList(Component<N> comp, List<N> out) {
+        out.add(comp.head());
+        for (WtoElement<N> child : comp.body()) {
+            if (child instanceof Vertex<N> v) {
+                out.add(v.node());
+            } else if (child instanceof Component<N> inner) {
+                collectComponentNodesList(inner, out);
+            }
+        }
+    }
+
     private static <N> void collectComponentNodes(Component<N> comp, Set<N> out) {
         out.add(comp.head());
         for (WtoElement<N> child : comp.body()) {
