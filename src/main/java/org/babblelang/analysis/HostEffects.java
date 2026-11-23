@@ -3,183 +3,36 @@ package org.babblelang.analysis;
 import org.babblelang.effects.Effect;
 
 import java.lang.reflect.Method;
-import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 /**
- * Per-engine host effect policy and Java target overrides (BIP007 §3.1, §6.2 ; BIP016-D8).
+ * Per-engine host effect policy (BIP007 §3.1, §6.2 ; BIP016-D8).
  *
- * <p>Also captures target keys shared by file-level, module-exported, and REPL-session
- * {@code axiom} / {@code io} tables.
+ * <p>The assumptions a host registers on {@code BabbleScriptEngine} ({@code assumeEffects},
+ * {@code assumeConstructorEffects}, {@code markIO}) are lowered by {@link Registry} into an
+ * {@link AxiomData.AxiomTable}, the same table {@code axiom X.m: fn ...} declarations build
+ * ({@code BIP027-D6}) : a method assumption is a named member axiom applying to the method's
+ * overrides, a constructor assumption is a {@code new} axiom, and a class assumption is an
+ * {@code exact} wildcard ({@code def *}) on the class itself.
  */
 public final class HostEffects {
 
-    /** Kind of Java target addressed by an {@code axiom}, {@code io}, or host registration. */
-    public enum TargetKind {
-        METHOD,
-        CONSTRUCTOR,
-        CLASS
-    }
-
-    /** Canonical key for a Java class, constructor family, or named method family. */
-    public record JavaTarget(Class<?> owner, TargetKind kind, String methodName) {
-        public JavaTarget {
-            Objects.requireNonNull(owner, "owner");
-            Objects.requireNonNull(kind, "kind");
-            if (kind == TargetKind.METHOD) {
-                Objects.requireNonNull(methodName, "methodName");
-            } else {
-                methodName = null;
-            }
-        }
-
-        public static JavaTarget ofClass(Class<?> owner) {
-            return new JavaTarget(owner, TargetKind.CLASS, null);
-        }
-
-        public static JavaTarget ofConstructor(Class<?> owner) {
-            return new JavaTarget(owner, TargetKind.CONSTRUCTOR, null);
-        }
-
-        public static JavaTarget ofMethod(Class<?> owner, String methodName) {
-            return new JavaTarget(owner, TargetKind.METHOD, methodName);
-        }
-    }
-
-    /** Resolved override entry for a {@link JavaTarget}. */
-    public record OverrideEntry(Set<Effect> effects,
-                                boolean mutReceiver,
-                                boolean borrowReceiver,
-                                boolean uniqueResult,
-                                boolean io,
-                                boolean volatileEffect) {
-        public OverrideEntry(Set<Effect> effects, boolean mutReceiver, boolean borrowReceiver, boolean io) {
-            this(effects, mutReceiver, borrowReceiver, false, io, false);
-        }
-
-        public OverrideEntry(Set<Effect> effects, boolean mutReceiver, boolean borrowReceiver, boolean uniqueResult, boolean io) {
-            this(effects, mutReceiver, borrowReceiver, uniqueResult, io, false);
-        }
-
-        public OverrideEntry {
-            EnumSet<Effect> copy = effects.isEmpty() ? EnumSet.noneOf(Effect.class) : EnumSet.copyOf(effects);
-            copy.remove(Effect.MUT);
-            copy.remove(Effect.BORROW);
-            copy.remove(Effect.SHARED);
-            copy.remove(Effect.UNIQUE);
-            copy.remove(Effect.VOLATILE);
-            copy.remove(Effect.IO);
-            if (io) {
-                copy.clear();
-                mutReceiver = false;
-                borrowReceiver = false;
-                uniqueResult = false;
-                volatileEffect = false;
-            } else {
-                if (copy.contains(Effect.PURE)) {
-                    copy.add(Effect.HERMETIC);
-                }
-                if (volatileEffect) {
-                    copy.add(Effect.HERMETIC);
-                    copy.remove(Effect.DETERMINISTIC);
-                }
-                if (mutReceiver) {
-                    copy.remove(Effect.PURE);
-                }
-            }
-            effects = Collections.unmodifiableSet(copy);
-        }
-
-        public static OverrideEntry ioEntry() {
-            return new OverrideEntry(EnumSet.noneOf(Effect.class), false, false, false, true, false);
-        }
-
-        public static OverrideEntry fromEffects(TargetKind kind, Effect... rawEffects) {
-            Objects.requireNonNull(rawEffects, "effects");
-            if (rawEffects.length == 0) {
-                throw new IllegalArgumentException("Expected at least one Effect");
-            }
-            EnumSet<Effect> set = EnumSet.noneOf(Effect.class);
-            for (Effect e : rawEffects) {
-                Objects.requireNonNull(e, "effect");
-                set.add(e);
-            }
-            if (set.contains(Effect.IO)) {
-                if (set.size() > 1) {
-                    throw new IllegalArgumentException("Effect.IO cannot be combined with positive effects");
-                }
-                return ioEntry();
-            }
-            if (set.contains(Effect.PURE) && set.contains(Effect.MUT)) {
-                throw new IllegalArgumentException("Effect.PURE and Effect.MUT are mutually exclusive : use Effect.MUT (or Effect.VOLATILE, Effect.MUT)");
-            }
-            if (set.contains(Effect.PURE) && set.contains(Effect.VOLATILE)) {
-                throw new IllegalArgumentException("Effect.PURE and Effect.VOLATILE are mutually exclusive");
-            }
-            if (set.contains(Effect.BORROW) && set.contains(Effect.SHARED)) {
-                throw new IllegalArgumentException("Effect.BORROW and Effect.SHARED are mutually exclusive");
-            }
-            if (kind == TargetKind.CONSTRUCTOR && set.contains(Effect.MUT)) {
-                throw new IllegalArgumentException("Constructors cannot declare Effect.MUT");
-            }
-            if (kind == TargetKind.CLASS && set.contains(Effect.MUT)) {
-                throw new IllegalArgumentException("Bare class overrides cannot declare Effect.MUT : register per method instead");
-            }
-            boolean mutReceiver = set.remove(Effect.MUT);
-            boolean explicitShared = set.remove(Effect.SHARED);
-            set.remove(Effect.BORROW);
-            boolean uniqueResult = set.remove(Effect.UNIQUE);
-            boolean volatileEffect = set.remove(Effect.VOLATILE);
-            if (set.contains(Effect.PURE)) {
-                set.add(Effect.HERMETIC);
-                set.add(Effect.DETERMINISTIC);
-            } else if (volatileEffect) {
-                set.add(Effect.HERMETIC);
-                set.remove(Effect.DETERMINISTIC);
-                if (!mutReceiver) {
-                    set.add(Effect.PURE);
-                }
-            } else if (mutReceiver && !set.contains(Effect.HERMETIC)) {
-                set.add(Effect.HERMETIC);
-                set.add(Effect.DETERMINISTIC);
-            }
-            boolean borrowReceiver = !explicitShared;
-            return new OverrideEntry(set, mutReceiver, borrowReceiver, uniqueResult, false, volatileEffect);
-        }
-
-        public EffectSet toEffectSet(boolean axiomatic) {
-            if (io) {
-                return EffectSet.IO_DECLARED;
-            }
-            return EffectSet.ofDeclared(effects, mutReceiver, borrowReceiver, !borrowReceiver, uniqueResult,
-                    false, volatileEffect, axiomatic);
-        }
-    }
-
-    public static final HostEffects DEFAULT = new HostEffects(true, true, Map.of(), BuiltinAxioms.standard());
+    public static final HostEffects DEFAULT = new HostEffects(true, true, AxiomData.AxiomTable.EMPTY, BuiltinAxioms.standard());
 
     private final boolean allowAxioms;
     private final boolean bytecodeEffectAnalysis;
-    private final Map<JavaTarget, OverrideEntry> overrides;
+    private final AxiomData.AxiomTable hostAxioms;
     private final BuiltinAxioms builtinAxioms;
 
-    public HostEffects(boolean allowAxioms, Map<JavaTarget, OverrideEntry> overrides) {
-        this(allowAxioms, true, overrides, BuiltinAxioms.standard());
-    }
-
-    public HostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, Map<JavaTarget, OverrideEntry> overrides) {
-        this(allowAxioms, bytecodeEffectAnalysis, overrides, BuiltinAxioms.standard());
-    }
-
-    public HostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, Map<JavaTarget, OverrideEntry> overrides,
-                       BuiltinAxioms builtinAxioms) {
+    HostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, AxiomData.AxiomTable hostAxioms,
+                BuiltinAxioms builtinAxioms) {
         this.allowAxioms = allowAxioms;
         this.bytecodeEffectAnalysis = bytecodeEffectAnalysis;
-        this.overrides = overrides.isEmpty() ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(overrides));
+        this.hostAxioms = hostAxioms != null ? hostAxioms : AxiomData.AxiomTable.EMPTY;
         this.builtinAxioms = builtinAxioms != null ? builtinAxioms : BuiltinAxioms.standard();
     }
 
@@ -191,16 +44,13 @@ public final class HostEffects {
         return bytecodeEffectAnalysis;
     }
 
-    public Map<JavaTarget, OverrideEntry> overrides() {
-        return overrides;
-    }
-
     public BuiltinAxioms builtinAxioms() {
         return builtinAxioms;
     }
 
-    public OverrideEntry lookup(JavaTarget target) {
-        return overrides.get(target);
+    /** The host's assumptions, as axioms. */
+    AxiomData.AxiomTable hostAxioms() {
+        return hostAxioms;
     }
 
     public static boolean hasMethodNamed(Class<?> owner, String methodName) {
@@ -217,5 +67,154 @@ public final class HostEffects {
             }
         }
         return false;
+    }
+
+    /**
+     * An engine's host registrations, the last one about a target replacing the previous one.
+     * Not thread-safe : the engine guards it.
+     */
+    public static final class Registry {
+        private record Key(Class<?> owner, String member) {
+        }
+
+        private final Map<Key, List<AxiomData.MemberAxiom>> entries = new LinkedHashMap<>();
+
+        public boolean isEmpty() {
+            return entries.isEmpty();
+        }
+
+        /** All methods and constructors of {@code target}. */
+        public void assumeClass(Class<?> target, Effect... effects) {
+            Objects.requireNonNull(target, "target");
+            Lowered lowered = lower(Kind.CLASS, effects);
+            putClass(target, lowered);
+        }
+
+        /** All overloads of {@code methodName} on {@code owner} and their overrides. */
+        public void assumeMethod(Class<?> owner, String methodName, Effect... effects) {
+            Objects.requireNonNull(owner, "owner");
+            Objects.requireNonNull(methodName, "methodName");
+            Lowered lowered = lower(Kind.METHOD, effects);
+            entries.put(new Key(owner, methodName),
+                    List.of(member(owner, methodName, AxiomData.MemberKind.ANY, false, lowered)));
+        }
+
+        /** The constructors of {@code target}. */
+        public void assumeConstructor(Class<?> target, Effect... effects) {
+            Objects.requireNonNull(target, "target");
+            Lowered lowered = lower(Kind.CONSTRUCTOR, effects);
+            entries.put(new Key(target, "new"),
+                    List.of(member(target, "new", AxiomData.MemberKind.STATIC, false, lowered)));
+        }
+
+        /** All methods and constructors of {@code target} perform I/O. */
+        public void markIO(Class<?> target) {
+            Objects.requireNonNull(target, "target");
+            putClass(target, Lowered.IO);
+        }
+
+        /** The methods named {@code methodName} on {@code owner} perform I/O. */
+        public void markIO(Class<?> owner, String methodName) {
+            Objects.requireNonNull(owner, "owner");
+            Objects.requireNonNull(methodName, "methodName");
+            entries.put(new Key(owner, methodName),
+                    List.of(member(owner, methodName, AxiomData.MemberKind.ANY, false, Lowered.IO)));
+        }
+
+        /** The engine's policy with these registrations. */
+        public HostEffects toHostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, BuiltinAxioms builtinAxioms) {
+            if (allowAxioms && bytecodeEffectAnalysis && entries.isEmpty() && builtinAxioms == BuiltinAxioms.standard()) {
+                return DEFAULT;
+            }
+            AxiomData.Builder builder = new AxiomData.Builder();
+            for (List<AxiomData.MemberAxiom> members : entries.values()) {
+                for (AxiomData.MemberAxiom m : members) {
+                    builder.addMemberAxiom(m);
+                }
+            }
+            return new HostEffects(allowAxioms, bytecodeEffectAnalysis, builder.build(), builtinAxioms);
+        }
+
+        private void putClass(Class<?> target, Lowered lowered) {
+            // An exact wildcard on the class itself : the instance one for its methods, the static
+            // one for its static methods and constructors.
+            entries.put(new Key(target, "*"), List.of(
+                    member(target, "*", AxiomData.MemberKind.INSTANCE, true, lowered),
+                    member(target, "*", AxiomData.MemberKind.STATIC, true, lowered)));
+        }
+
+        private static AxiomData.MemberAxiom member(Class<?> owner, String name, AxiomData.MemberKind kind,
+                                                    boolean exact, Lowered lowered) {
+            return AxiomData.MemberAxiom.host(owner, name, kind, exact, lowered.effects(),
+                    lowered.mutReceiver(), lowered.sharedReceiver(), lowered.nothrow());
+        }
+    }
+
+    private enum Kind {
+        METHOD,
+        CONSTRUCTOR,
+        CLASS
+    }
+
+    /** A host registration's {@link Effect}s, normalized into the effect set its axiom states. */
+    private record Lowered(EffectSet effects, boolean mutReceiver, boolean sharedReceiver, boolean nothrow) {
+        static final Lowered IO = new Lowered(EffectSet.IO_DECLARED, false, false, false);
+    }
+
+    private static Lowered lower(Kind kind, Effect... rawEffects) {
+        Objects.requireNonNull(rawEffects, "effects");
+        if (rawEffects.length == 0) {
+            throw new IllegalArgumentException("Expected at least one Effect");
+        }
+        EnumSet<Effect> set = EnumSet.noneOf(Effect.class);
+        for (Effect e : rawEffects) {
+            Objects.requireNonNull(e, "effect");
+            set.add(e);
+        }
+        if (set.contains(Effect.IO)) {
+            if (set.size() > 1) {
+                throw new IllegalArgumentException("Effect.IO cannot be combined with positive effects");
+            }
+            return Lowered.IO;
+        }
+        if (set.contains(Effect.PURE) && set.contains(Effect.MUT)) {
+            throw new IllegalArgumentException("Effect.PURE and Effect.MUT are mutually exclusive : use Effect.MUT (or Effect.VOLATILE, Effect.MUT)");
+        }
+        if (set.contains(Effect.PURE) && set.contains(Effect.VOLATILE)) {
+            throw new IllegalArgumentException("Effect.PURE and Effect.VOLATILE are mutually exclusive");
+        }
+        if (set.contains(Effect.BORROW) && set.contains(Effect.SHARED)) {
+            throw new IllegalArgumentException("Effect.BORROW and Effect.SHARED are mutually exclusive");
+        }
+        if (kind == Kind.CONSTRUCTOR && set.contains(Effect.MUT)) {
+            throw new IllegalArgumentException("Constructors cannot declare Effect.MUT");
+        }
+        if (kind == Kind.CLASS && set.contains(Effect.MUT)) {
+            throw new IllegalArgumentException("Bare class overrides cannot declare Effect.MUT : register per method instead");
+        }
+        boolean mutReceiver = set.remove(Effect.MUT);
+        boolean sharedReceiver = set.remove(Effect.SHARED);
+        set.remove(Effect.BORROW);
+        boolean uniqueResult = set.remove(Effect.UNIQUE);
+        boolean volatileEffect = set.remove(Effect.VOLATILE);
+        if (set.contains(Effect.PURE)) {
+            set.add(Effect.HERMETIC);
+            set.add(Effect.DETERMINISTIC);
+        } else if (volatileEffect) {
+            set.add(Effect.HERMETIC);
+            set.remove(Effect.DETERMINISTIC);
+            if (!mutReceiver) {
+                set.add(Effect.PURE);
+            }
+        } else if (mutReceiver && !set.contains(Effect.HERMETIC)) {
+            set.add(Effect.HERMETIC);
+            set.add(Effect.DETERMINISTIC);
+        }
+        if (mutReceiver) {
+            set.remove(Effect.PURE);
+        }
+        EffectSet effects = EffectSet.ofDeclared(set, mutReceiver, !sharedReceiver, sharedReceiver, uniqueResult,
+                false, volatileEffect, true);
+        return new Lowered(effects, mutReceiver, sharedReceiver, set.contains(Effect.NOTHROW));
     }
 }

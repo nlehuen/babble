@@ -9,8 +9,6 @@ import org.babblelang.format.Formatter;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import javax.script.SimpleScriptContext;
-import java.io.StringWriter;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -168,21 +166,6 @@ public class AxiomsTestCase {
         }
         Assertions.assertEquals(List.of(), new ArrayList<>(missingQuestionable),
                 "QUESTIONABLE axioms missing from axioms/README.md");
-    }
-
-    @Test
-    public void testDeprecatedAxiomOnEmitsWarning() throws Exception {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        SimpleScriptContext ctx = new SimpleScriptContext();
-        StringWriter err = new StringWriter();
-        ctx.setErrorWriter(err);
-        Object res = engine.eval("""
-                axiom pure nothrow on java.lang.System.nanoTime
-                def f = fn nothrow (): long -> (java.lang.System.nanoTime())
-                f() >= 0
-                """, ctx);
-        Assertions.assertEquals(true, res);
-        Assertions.assertTrue(err.toString().contains("Deprecated syntax : 'axiom ... on ...' is deprecated"), err.toString());
     }
 
     @Test

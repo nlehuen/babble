@@ -36,7 +36,6 @@ final class StaticRefs {
         }
         BabbleParser.ExpressionContext current = expr;
         while (current instanceof BabbleParser.BlockExpressionContext blockExpr
-                && blockExpr.block().effectDeclaration().isEmpty()
                 && blockExpr.block().expression().size() == 1
                 && !pass.analysis.opensScope(blockExpr.block())) {
             current = blockExpr.block().expression(0);

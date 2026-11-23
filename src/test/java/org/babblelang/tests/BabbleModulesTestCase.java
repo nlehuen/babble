@@ -639,11 +639,11 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     public void rm002ExportAxiomAndImpurePropagation() throws Exception {
         // `export axiom` propagates Java effect assumptions to importers; non-exported `axiom` stays module-private!
         file("pub_axioms.ba", """
-                export axiom pure nothrow on java.lang.System.lineSeparator
+                export axiom java.lang.System.lineSeparator: fn pure nothrow
                 export def sep = fn (): string -> (java.lang.System.lineSeparator())
                 """);
         file("priv_axioms.ba", """
-                axiom pure nothrow on java.lang.System.lineSeparator
+                axiom java.lang.System.lineSeparator: fn pure nothrow
                 export def sep = fn (): string -> (java.lang.System.lineSeparator())
                 """);
 

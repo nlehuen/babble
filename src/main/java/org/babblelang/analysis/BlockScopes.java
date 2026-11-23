@@ -56,9 +56,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     record Occurrence(ParserRuleContext ctx, String name, ScopeNode scope) {
     }
 
-    record PendingEffectDecl(BabbleParser.EffectDeclarationContext ctx, ScopeNode scope) {
-    }
-
     record PendingAxiomExpr(BabbleParser.AxiomExpressionContext ctx, ScopeNode scope) {
     }
 
@@ -72,7 +69,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final Map<ParserRuleContext, ScopeNode> scopeNodes = new HashMap<>();
     final List<Occurrence> occurrences = new ArrayList<>();
     final List<PendingImport> imports = new ArrayList<>();
-    final List<PendingEffectDecl> effectDeclarations = new ArrayList<>();
     final List<PendingAxiomExpr> axiomExpressions = new ArrayList<>();
     /** The interfaces of the files imported statically, by import call. */
     final Map<BabbleParser.CallContext, ModuleInterface> modules = new LinkedHashMap<>();
@@ -492,9 +488,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         TypeNode type = newType(ctx, ClassShape.Kind.INTERFACE, typeName(ctx, "interface"), ctx.typeList());
         inReturnTarget(ReturnTarget.CLASS_BODY, () -> {
             inScope(ScopeNode.Kind.INTERFACE_BODY, ctx, type, () -> {
-                if (!ctx.interfaceBlock.effectDeclaration().isEmpty()) {
-                    throw error("An interface can only declare members", ctx.interfaceBlock.effectDeclaration().get(0));
-                }
                 for (BabbleParser.ExpressionContext statement : ctx.interfaceBlock.expression()) {
                     if (!(statement instanceof BabbleParser.DefExpressionContext)) {
                         throw error("An interface can only declare members", statement);
@@ -516,19 +509,6 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitBlock(BabbleParser.BlockContext ctx) {
         inScope(ScopeNode.Kind.BLOCK, ctx, null, () -> visitChildren(ctx));
-        return null;
-    }
-
-    @Override
-    public Void visitEffectDeclaration(BabbleParser.EffectDeclarationContext ctx) {
-        ScopeNode scope = current();
-        if (scope.whileTests > 0) {
-            throw error("Effect declaration in a while test", ctx);
-        }
-        if (ctx.EXPORT() != null && scope.kind != ScopeNode.Kind.FILE) {
-            throw error("export only applies to the top-level definitions of a file", ctx.EXPORT().getSymbol());
-        }
-        effectDeclarations.add(new PendingEffectDecl(ctx, scope));
         return null;
     }
 

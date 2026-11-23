@@ -369,10 +369,10 @@ public class EffectsTestCase {
                 def f = fn nothrow (x: any): int -> (x as int)
                 """, "nothrow");
 
-        // Verified pure functions reject nested `axiom` / `io on` declarations:
+        // Verified pure functions reject nested `axiom` declarations:
         assertHasError("""
                 def f = fn (): int -> (
-                    axiom pure on java.lang.System.nanoTime
+                    axiom java.lang.System.nanoTime: fn pure
                     1
                 )
                 """, "not allowed inside a verified constrained function");
@@ -761,7 +761,7 @@ public class EffectsTestCase {
         assertClean("""
                 def UH = import("org.babblelang.tests").EffectsTestCase.UnassumedHelper
                 def f = fn (): int -> (UH.compute(10))
-                axiom pure on import("org.babblelang.tests").EffectsTestCase.UnassumedHelper.compute
+                axiom org.babblelang.tests.EffectsTestCase.UnassumedHelper.compute: fn pure
                 """);
 
         // Runtime @Pure, @Volatile, @Mut, @Shared, @IO, class-level @Pure, and Java SAM callback propagation:
@@ -840,31 +840,31 @@ public class EffectsTestCase {
                 """));
 
         // §6.1 Priority order:
-        // - Tier 1 (file method `io on`) > Tier 3 (`@Pure` method annotation)
-        // - Tier 2 (`engine.markIO` method) > Tier 3 (`@Pure` method) & Tier 4 (bare-class `axiom pure`)
-        // - Tier 1 (file method `axiom pure`) > Tier 2 (`engine.markIO` method) when `allowAxioms(true)`
+        // - Tier 1 (file method `axiom ...: fn io`) > Tier 3 (`@Pure` method annotation)
+        // - Tier 2 (`engine.markIO` method) > Tier 3 (`@Pure` method) & Tier 4 (`engine.assumeEffects` class)
+        // - Tier 1 (file method `axiom ...: fn pure`) > Tier 2 (`engine.markIO` method) when `allowAxioms(true)`
         assertEngineFails(engine, """
                 def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
-                io on import("org.babblelang.tests").EffectsTestCase.HostFixtures.pureCalc
+                axiom org.babblelang.tests.EffectsTestCase.HostFixtures.pureCalc: fn io
                 def f = fn (x: int): int -> (HF.pureCalc(x))
                 f(1)
                 """, "violates pure guarantee");
 
         engine.markIO(HostFixtures.class, "pureCalc");
+        engine.assumeEffects(HostFixtures.class, Effect.PURE);
         assertEngineFails(engine, """
                 def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
-                axiom pure on import("org.babblelang.tests").EffectsTestCase.HostFixtures
                 def f = fn (x: int): int -> (HF.pureCalc(x))
                 f(1)
                 """, "violates pure guarantee");
         Assertions.assertEquals(3, eval(engine, """
                 def HF = import("org.babblelang.tests").EffectsTestCase.HostFixtures
-                axiom pure on import("org.babblelang.tests").EffectsTestCase.HostFixtures.pureCalc
+                axiom org.babblelang.tests.EffectsTestCase.HostFixtures.pureCalc: fn pure
                 def f = fn (x: int): int -> (HF.pureCalc(x))
                 f(1)
                 """));
 
-        // `allowAxioms(false)` disables Babble `axiom` and `io on` while keeping engine assumptions & @Pure annotations active!
+        // `allowAxioms(false)` disables Babble `axiom` declarations while keeping engine assumptions & @Pure annotations active!
         BabbleScriptEngine locked = newEngine();
         locked.allowAxioms(false);
         Assertions.assertFalse(locked.allowsAxioms());
@@ -875,13 +875,13 @@ public class EffectsTestCase {
                 f(20)
                 """));
         assertEngineFails(locked, """
-                axiom pure on java.lang.Math
+                axiom java.lang.Math: class () static (def *: fn pure)
                 1
                 """, "axiom declarations are disabled on this engine");
         assertEngineFails(locked, """
-                io on java.lang.System.nanoTime
+                axiom java.lang.System.nanoTime: fn io
                 1
-                """, "io declarations are disabled on this engine");
+                """, "axiom declarations are disabled on this engine");
     }
 
     @Test

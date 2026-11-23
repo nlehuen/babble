@@ -17,7 +17,6 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -84,6 +83,11 @@ final class EffectChecker {
             this(effects, mutParams, borrowParams, uniqueParams, frameReadOwners, frameWriteOwners, deepMutThis,
                     EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS,
                     new boolean[mutParams.length], false);
+        }
+
+        /** Where this callable sits on the purity lattice it shares with Java call profiles (BIP027-P5). */
+        Purity purity() {
+            return Purity.of(effects, mutParams);
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
@@ -174,6 +178,11 @@ final class EffectChecker {
                     false, false, false, true, allTrue(mutParams.length));
         }
 
+        /** Where this Java callee sits on the purity lattice it shares with Babble callable summaries (BIP027-P5). */
+        Purity purity() {
+            return Purity.of(effects, mutParams);
+        }
+
         private static boolean[] allTrue(int n) {
             boolean[] arr = new boolean[n];
             Arrays.fill(arr, true);
@@ -190,12 +199,6 @@ final class EffectChecker {
     final JavaEffectResolver javaResolver;
     final AlgebraicVerifier algebraic;
 
-    /** File, session, and imported-module Java target overrides (tier 1 / tier 4). */
-    final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> localJavaEffects = new LinkedHashMap<>();
-    /** Top-level Java overrides committed when this input belongs to a REPL session. */
-    final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> committedJavaEffects = new LinkedHashMap<>();
-    /** Exported Java overrides published on {@link ModuleInterface}. */
-    final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects = new LinkedHashMap<>();
     /** BIP019 structured axioms from imports, session, and this file (tier 1). */
     AxiomData.AxiomTable localAxioms = AxiomData.AxiomTable.EMPTY;
     /** Top-level BIP019 axioms committed when this input belongs to a REPL session. */
@@ -204,8 +207,6 @@ final class EffectChecker {
     AxiomData.AxiomTable exportedAxioms = AxiomData.AxiomTable.EMPTY;
     /** Diagnostics recorded while pre-parsing {@code axiomExpressions} before inference. */
     final List<PendingAxiomDiag> pendingAxiomDiags = new ArrayList<>();
-    /** Defs that carry {@code = axiom ...} or {@code = impure ...} on non-function-literal values. */
-    final Map<BabbleParser.DefExpressionContext, ParsedPrefix> defPrefixes = new IdentityHashMap<>();
 
     final Map<BabbleParser.FunctionLiteralContext, ParsedPrefix> fnPrefixes = new IdentityHashMap<>();
     final Map<ParserRuleContext, ParamMods> paramModsMap = new IdentityHashMap<>();
@@ -230,15 +231,13 @@ final class EffectChecker {
         this.pass = pass;
         this.checker = checker;
         this.modifiers = new EffectModifiers(this);
-        this.javaResolver = new JavaEffectResolver(pass.hostEffects, checker, () -> this.localAxioms, localJavaEffects,
+        this.javaResolver = new JavaEffectResolver(pass.hostEffects, checker, () -> this.localAxioms,
                 m -> m.function != null ? summaries.get(m.function) : null);
         this.algebraic = new AlgebraicVerifier(this);
         for (ModuleInterface module : pass.modules.values()) {
-            localJavaEffects.putAll(module.exportedJavaEffects());
             localAxioms = localAxioms.mergeOver(module.exportedAxioms());
         }
         if (pass.session != null) {
-            localJavaEffects.putAll(pass.session.javaEffects);
             localAxioms = localAxioms.mergeOver(pass.session.axioms);
             visibleSummaries.putAll(pass.session.callableSummaries);
         }
@@ -271,14 +270,6 @@ final class EffectChecker {
 
     boolean isCompletelyUntyped(BabbleParser.FunctionLiteralContext fn) {
         return modifiers.isCompletelyUntyped(fn);
-    }
-
-    Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
-        return exportedJavaEffects.isEmpty() ? Map.of() : Collections.unmodifiableMap(exportedJavaEffects);
-    }
-
-    Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> committedJavaEffects() {
-        return committedJavaEffects.isEmpty() ? Map.of() : Collections.unmodifiableMap(committedJavaEffects);
     }
 
     Map<ParserRuleContext, CallableSummary> committedCallableSummaries() {
@@ -432,11 +423,6 @@ final class EffectChecker {
             }
         }
         return checker.remoteConstructorSummary(node);
-    }
-
-    EffectSet defOverrideEffects(BabbleParser.DefExpressionContext def) {
-        ParsedPrefix prefix = defPrefixes.get(def);
-        return prefix != null ? prefix.toEffectSet() : null;
     }
 
 
@@ -911,9 +897,8 @@ final class EffectChecker {
             return raw;
         }
         EnumSet<Effect> effs = EffectSet.copySet(raw.effects().effects());
-        boolean anyMutParam = anyTrue(raw.mutParams());
         boolean mutThis = raw.effects().mutThis();
-        if (effs.contains(Effect.HERMETIC) && !mutThis && !anyMutParam) {
+        if (raw.purity().mutatesNothing() && !mutThis) {
             effs.add(Effect.PURE);
         } else {
             effs.remove(Effect.PURE);
@@ -1020,15 +1005,6 @@ final class EffectChecker {
     // ================================================================ 8. Verification Pass
 
     void verify(BabbleParser.FileContext file) {
-        // 0. Warn on deprecated `axiom ... on ...` / `io on ...` syntax (BIP019 §3.2).
-        for (BlockScopes.PendingEffectDecl pending : pass.effectDeclarations) {
-            BabbleParser.EffectDeclarationContext ctx = pending.ctx();
-            boolean isIo = ctx.effectClause() != null && ctx.effectClause().IO() != null;
-            checker.effectWarning(isIo
-                    ? "Deprecated syntax : 'io on ...' is deprecated, use 'axiom Target: fn io' instead"
-                    : "Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead", ctx);
-        }
-
         // 1. Validate algebraic modifier applicability across all FunctionTypeContext nodes in file.
         modifiers.validateAllFunctionTypes(file);
 
@@ -1149,7 +1125,7 @@ final class EffectChecker {
         String axiomLabel = "axiom " + contract.ownerClass().getName() + "." + contract.name();
         String prefixMsg = "Function " + methodName;
         if (required.isPure()) {
-            if (!actual.isPure() || actual.mutThis() || anyTrue(verified.mutParams()) || !actual.isHermetic()) {
+            if (!actual.isPure() || actual.mutThis() || !verified.purity().mutatesNothing()) {
                 checker.effectDiagnostic(prefixMsg + " violates pure guarantee of " + axiomLabel, fn);
                 return;
             }

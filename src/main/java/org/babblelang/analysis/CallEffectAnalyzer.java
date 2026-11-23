@@ -211,7 +211,7 @@ final class CallEffectAnalyzer {
                     boolean borrowed = pIdx >= 0 && pIdx < cs.borrowParams().length && cs.borrowParams()[pIdx];
                     boolean uniqueP = pIdx >= 0 && pIdx < cs.uniqueParams().length && cs.uniqueParams()[pIdx];
                     if ((storedInSelf || !borrowed) && !uniqueP && !w.isUnattachedUniqueOrImmutable(argOrigins[i], w.effectiveType(argExprs[i]))) {
-                        if ((argOrigins[i].unique || argOrigins[i].localFresh) && argOrigins[i].uniqueOwner != null) {
+                        if (argOrigins[i].owned() && argOrigins[i].uniqueOwner != null) {
                             w.demoteUniqueOwner(argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
                         }
                         if (ctorHermetic && !imm) {
@@ -520,9 +520,9 @@ final class CallEffectAnalyzer {
                 if (ec.javaResolver.isDeeplyImmutable(resType)) {
                     yield Reachability.Origin.IMMUTABLE;
                 }
-                Reachability.Origin flat = recvOrig.hasElementTaint() ? recvOrig.flattenElements() : recvOrig;
-                yield new Reachability.Origin(flat.params, flat.aliasesThis, flat.external, false, false, false, null,
-                        Reachability.Origin.EMPTY_BITS, false, false, Set.of(call), new Reachability.PathKey(call, List.of()));
+                Reachability.Origin flat = recvOrig.flattenElements();
+                yield new Reachability.Origin(flat.params, flat.aliasesThis, flat.external, false, null, false, null,
+                        Set.of(call), new Reachability.PathKey(call, List.of()));
             }
             case "set" -> {
                 w.nothrow = false;
@@ -544,7 +544,7 @@ final class CallEffectAnalyzer {
                     Reachability.Origin valOrig = argOrigins[valIdx];
                     Type valType = w.effectiveType(argExprs[valIdx]);
                     if (!ec.javaResolver.isDeeplyImmutable(valType)) {
-                        if ((valOrig.unique || valOrig.localFresh) && valOrig.uniqueOwner != null) {
+                        if (valOrig.owned() && valOrig.uniqueOwner != null) {
                             w.demoteUniqueOwner(valOrig.uniqueOwner, Reachability.Origin.IMMUTABLE);
                         }
                         w.markStoredIntoTarget(recvOrig, valOrig, valType, "element", argExprs[valIdx]);
@@ -689,9 +689,9 @@ final class CallEffectAnalyzer {
             w.recordTargetMutation(recvOrig, receiverExpr, "mut Java method " + calleeExpr.getText(), call, profile.shallow());
         }
         boolean recvCanEscape = !profile.borrowReceiver() && !profile.effects().isPure()
-                && !(profile.effects().isHermetic() && !EffectChecker.anyTrue(profile.mutParams()) && ec.javaResolver.isDeeplyImmutable(resType));
+                && !(profile.purity().mutatesNothing() && ec.javaResolver.isDeeplyImmutable(resType));
         if (receiverExpr != null && recvCanEscape) {
-            if ((recvOrig.unique || recvOrig.localFresh) && recvOrig.uniqueOwner != null) {
+            if (recvOrig.owned() && recvOrig.uniqueOwner != null) {
                 w.demoteUniqueOwner(recvOrig.uniqueOwner, Reachability.Origin.IMMUTABLE);
             }
             w.markStoredOrigin(recvOrig, "Java method call", call);
@@ -738,10 +738,10 @@ final class CallEffectAnalyzer {
             }
             if (!borrowP) {
                 // Storing a non-unique, non-immutable arg into a unique/localFresh receiver keeps container localFresh while dropping unique (BIP016-D9)!
-                if ((recvOrig.unique || recvOrig.localFresh) && effectiveMutRecv && !w.isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
+                if (recvOrig.owned() && effectiveMutRecv && !w.isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
                     w.absorbElementIntoLocalContainer(recvOrig.uniqueOwner, argOrigins[i]);
                 }
-                if (!uniqueP && (argOrigins[i].unique || argOrigins[i].localFresh) && argOrigins[i].uniqueOwner != null) {
+                if (!uniqueP && argOrigins[i].owned() && argOrigins[i].uniqueOwner != null) {
                     w.demoteUniqueOwner(argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
                 }
                 w.markStoredOrigin(argOrigins[i], "Java call argument", argExprs[i]);
@@ -800,12 +800,12 @@ final class CallEffectAnalyzer {
         if (deterministicCall) {
             Reachability.Origin out = Reachability.Origin.IMMUTABLE;
             if (receiverExpr != null && recvOrig != Reachability.Origin.IMMUTABLE) {
-                Reachability.Origin flatRecv = recvOrig.hasElementTaint() ? recvOrig.flattenElements() : recvOrig;
+                Reachability.Origin flatRecv = recvOrig.flattenElements();
                 out = flatRecv.stripDirectIdentity(false);
             }
             for (int i = 0; i < argOrigins.length; i++) {
                 if (argOrigins[i] != Reachability.Origin.IMMUTABLE) {
-                    Reachability.Origin flatArg = argOrigins[i].hasElementTaint() ? argOrigins[i].flattenElements() : argOrigins[i];
+                    Reachability.Origin flatArg = argOrigins[i].flattenElements();
                     Reachability.Origin stripped = flatArg.stripDirectIdentity(false);
                     out = out == Reachability.Origin.IMMUTABLE ? stripped : out.join(stripped);
                 }
@@ -813,7 +813,7 @@ final class CallEffectAnalyzer {
             if (out == Reachability.Origin.IMMUTABLE) {
                 return Reachability.Origin.ofUnique(call, null, false);
             }
-            if (out.unique || out.localFresh) {
+            if (out.owned()) {
                 out = out.withoutUnique();
             }
             return out;
@@ -901,7 +901,7 @@ final class CallEffectAnalyzer {
         Reachability.Origin effectiveRecvOrig = (calleeExpr instanceof BabbleParser.SelectorContext s && s.expression() instanceof BabbleParser.SuperExpressionContext)
                 ? Reachability.Origin.ofThis(Reachability.THIS_KEY, false) : recvOrig;
         boolean effectiveBorrowRecv = !isMethodCall || summary.effects().borrowThis()
-                || (summary.effects().isHermetic() && !EffectChecker.anyTrue(summary.mutParams()) && ec.javaResolver.isDeeplyImmutable(resType));
+                || (summary.purity().mutatesNothing() && ec.javaResolver.isDeeplyImmutable(resType));
         if (isMethodCall && summary.readsThis()) {
             Type rType = receiverExpr != null ? w.effectiveType(receiverExpr) : Type.ANY;
             w.recordTargetRead(effectiveRecvOrig, rType);
@@ -1312,14 +1312,14 @@ final class CallEffectAnalyzer {
                     "mut method " + calleeExpr.getText(), call, !deepMutRecv);
         }
         if (!borrowRecv) {
-            if ((recvOrig.unique || recvOrig.localFresh) && recvOrig.uniqueOwner != null) {
+            if (recvOrig.owned() && recvOrig.uniqueOwner != null) {
                 w.demoteUniqueOwner(recvOrig.uniqueOwner, Reachability.Origin.IMMUTABLE);
             }
             w.markStoredOrigin(recvOrig, "method call " + calleeExpr.getText(), call);
         }
 
         boolean localFreshRecvOnly = calleeHermetic && effectiveMutRecv
-                && (recvOrig.unique || recvOrig.localFresh)
+                && recvOrig.owned()
                 && !recvOrig.external && recvOrig.params.isEmpty() && !recvOrig.aliasesThis
                 && !EffectChecker.anyTrue(calleeMut);
         boolean[] argIsExclusive = new boolean[args.size()];
@@ -1375,13 +1375,13 @@ final class CallEffectAnalyzer {
                         "mut parameter " + calleeParams.get(pIdx).name(), argExprs[i], false);
             }
             if (!borrowP) {
-                if ((recvOrig.unique || recvOrig.localFresh) && effectiveMutRecv && !w.isUnattachedUniqueOrImmutable(effectiveArgOrig, argType)) {
+                if (recvOrig.owned() && effectiveMutRecv && !w.isUnattachedUniqueOrImmutable(effectiveArgOrig, argType)) {
                     w.absorbElementIntoLocalContainer(recvOrig.uniqueOwner, effectiveArgOrig);
                 }
-                if (!uniqueP && (effectiveArgOrig.unique || effectiveArgOrig.localFresh) && effectiveArgOrig.uniqueOwner != null) {
+                if (!uniqueP && effectiveArgOrig.owned() && effectiveArgOrig.uniqueOwner != null) {
                     w.demoteUniqueOwner(effectiveArgOrig.uniqueOwner, Reachability.Origin.IMMUTABLE);
                 }
-                if (mutCopiedSpread && (argOrigins[i].unique || argOrigins[i].localFresh) && argOrigins[i].uniqueOwner != null) {
+                if (mutCopiedSpread && argOrigins[i].owned() && argOrigins[i].uniqueOwner != null) {
                     w.demoteUniqueOwner(argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
                 }
                 if (!localFreshRecvOnly) {
@@ -1414,10 +1414,10 @@ final class CallEffectAnalyzer {
         Reachability.Origin out = includeExternal ? Reachability.Origin.ofExternal(null, false) : Reachability.Origin.IMMUTABLE;
         boolean includeRecv = isMethodCall && (!known || summary.returnThis() || !summary.effects().borrowThis());
         if (includeRecv && recvOrig != Reachability.Origin.IMMUTABLE) {
-            if (!resultDiscarded && (recvOrig.unique || recvOrig.localFresh) && recvOrig.uniqueOwner != null) {
+            if (!resultDiscarded && recvOrig.owned() && recvOrig.uniqueOwner != null) {
                 w.demoteUniqueOwner(recvOrig.uniqueOwner, Reachability.Origin.IMMUTABLE);
             }
-            Reachability.Origin flatRecv = recvOrig.hasElementTaint() ? recvOrig.flattenElements() : recvOrig;
+            Reachability.Origin flatRecv = recvOrig.flattenElements();
             out = out == Reachability.Origin.IMMUTABLE ? flatRecv : out.join(flatRecv);
         }
         boolean[] calleeBorrow = summary.borrowParams();
@@ -1426,32 +1426,30 @@ final class CallEffectAnalyzer {
             boolean borrowP = pIdx >= 0 && pIdx < calleeBorrow.length && calleeBorrow[pIdx];
             boolean returnedP = !known || (pIdx >= 0 && summary.returnParams().get(pIdx)) || !borrowP;
             if (returnedP && argOrigins[i] != Reachability.Origin.IMMUTABLE) {
-                if (!resultDiscarded && (argOrigins[i].unique || argOrigins[i].localFresh) && argOrigins[i].uniqueOwner != null) {
+                if (!resultDiscarded && argOrigins[i].owned() && argOrigins[i].uniqueOwner != null) {
                     w.demoteUniqueOwner(argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
                 }
                 if (!resultDiscarded && mutableCopiedSpread != null && i < mutableCopiedSpread.length
                         && mutableCopiedSpread[i]
-                        && (rawArgOrigins[i].unique || rawArgOrigins[i].localFresh)
+                        && rawArgOrigins[i].owned()
                         && rawArgOrigins[i].uniqueOwner != null) {
                     w.demoteUniqueOwner(rawArgOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
                 }
-                Reachability.Origin flatArg = argOrigins[i].hasElementTaint() ? argOrigins[i].flattenElements() : argOrigins[i];
+                Reachability.Origin flatArg = argOrigins[i].flattenElements();
                 out = out == Reachability.Origin.IMMUTABLE ? flatArg : out.join(flatArg);
             }
         }
         if (out == Reachability.Origin.IMMUTABLE) {
             return Reachability.Origin.ofUnique(call, null, false);
         }
-        if (known && summary.effects().isHermetic() && summary.effects().isDeterministic()
-                && !EffectChecker.anyTrue(summary.mutParams()) && !(isMethodCall && summary.effects().mutThis())
+        if (known && summary.purity() == Purity.PURE && !(isMethodCall && summary.effects().mutThis())
                 && summary.frameWriteOwners().isEmpty()
-                && out.localFresh && out.uniqueOwner == null
+                && out.localFresh() && out.uniqueOwner == null
                 && out.params.isEmpty() && !out.aliasesThis && !out.external) {
-            return new Reachability.Origin(new BitSet(0), false, false, false, true, false, null,
-                    (BitSet) out.elementParams.clone(), out.elementThis, out.elementExternal,
+            return new Reachability.Origin(new BitSet(0), false, false, false, out.elements(), false, null,
                     Set.of(), null);
         }
-        if (out.unique || out.localFresh) {
+        if (out.owned()) {
             out = out.withoutUnique();
         }
         return out;

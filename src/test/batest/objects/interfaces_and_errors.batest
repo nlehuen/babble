@@ -133,7 +133,7 @@ An interface can only declare members
 
 {{{{{
 def I = interface (
-    axiom pure on java.lang.Math.abs
+    axiom java.lang.Math.abs: fn pure
 )
 }}}}}
 An interface can only declare members

@@ -41,8 +41,6 @@ public final class AnalysisSession {
     final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
     /** Frozen inferred member and static types from earlier inputs (§6, Q5). */
     final Map<ParserRuleContext, Type> memberTypes = new HashMap<>();
-    /** Committed top-level {@code axiom} and {@code impure} Java overrides from earlier inputs. */
-    final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> javaEffects = new HashMap<>();
     /** Committed BIP019 {@code axiom X: ...} tables from earlier inputs. */
     AxiomData.AxiomTable axioms = AxiomData.AxiomTable.EMPTY;
     /** Converged caller-visible summaries of functions and constructors from earlier inputs. */
@@ -86,7 +84,6 @@ public final class AnalysisSession {
                 staticSingletons.putAll(input.staticSingletons());
                 declarationTypes.putAll(input.declarationTypes());
                 memberTypes.putAll(input.memberTypes());
-                javaEffects.putAll(input.javaEffects());
                 if (input.axioms() != null && !input.axioms().isEmpty()) {
                     axioms = axioms.mergeOver(input.axioms());
                 }

@@ -75,72 +75,8 @@ assert(java.lang.Math.abs(-3) == 3)
 }}}}}
 
 {{{{{
-;; Deprecated syntax : export axiom inside non-top-level block
-def BadPlace = ( export axiom pure on java.lang.Math.abs ; 1 )
+;; export axiom inside a non-top-level block
+def BadPlace = ( export axiom java.lang.Math.abs: fn pure ; 1 )
 }}}}}
 export only applies to the top-level definitions of a file
 
-{{{{{
-;; Deprecated syntax : shadowed import in effect target
-(
-    def import = 1
-    axiom pure on import("java.lang").Math
-)
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Invalid target : shadowed import
-
-{{{{{
-;; Deprecated syntax : non-import call in effect target
-axiom pure on foo("java.lang").Math
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Invalid target : expected import("...") or Java class path
-
-{{{{{
-;; Deprecated syntax : package-only effect target
-axiom pure on java.lang
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Invalid effect declaration target : expected a Java class, constructor, or method
-
-{{{{{
-;; Deprecated syntax : Babble object field is not a valid effect target
-def p = object ( def a = 1 )
-axiom pure on p.a
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Invalid effect declaration target : p.a
-
-{{{{{
-;; Deprecated syntax : def-level axiom on Java field
-def badAxiom = axiom pure on java.lang.String.CASE_INSENSITIVE_ORDER
-}}}}}
-Invalid axiom target : expected a Java class, Java method, or function
-
-{{{{{
-;; Deprecated syntax : constructor, class, inner interface, and inner enum targets
-axiom pure on java.lang.StringBuilder()
-axiom pure on java.lang.Math
-axiom pure on java.util.Map.Entry
-axiom pure on java.lang.Thread.State
-def sb = java.lang.StringBuilder()
-assert(sb.toString() == "")
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-
-{{{{{
-;; Deprecated syntax : method overrides (mut, shared, and overrides on @Pure/@Mut methods)
-axiom mut on java.lang.Math.abs
-axiom shared on java.lang.StringBuilder.append
-axiom pure on tests.EffectsTestCase.HostFixtures.pureCalc
-axiom pure on tests.EffectsTestCase.MutableHolder.bump
-assert(HF.pureCalc(3) == 7)
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead

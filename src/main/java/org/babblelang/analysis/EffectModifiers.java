@@ -14,14 +14,13 @@ import java.util.Set;
 
 /**
  * ANTLR syntax adapter for effect prefixes, parameter modifiers, {@code calling(...)} clauses,
- * and {@code axiom} / {@code io} declarations extracted from {@link EffectChecker} ({@code BIP027-I3}).
+ * and {@code axiom} function words extracted from {@link EffectChecker} ({@code BIP027-I3}).
  */
 final class EffectModifiers {
     enum ParseContext {
         FUNCTION_LITERAL,
         FUNCTION_TYPE,
-        INTERFACE_METHOD,
-        JAVA_TARGET
+        INTERFACE_METHOD
     }
 
     private final EffectChecker ec;
@@ -133,19 +132,6 @@ final class EffectModifiers {
         return prefix.effectWord().stream().map(ParserRuleContext::getStart).toList();
     }
 
-    private static List<Token> effectClauseTokens(BabbleParser.EffectClauseContext clause) {
-        List<Token> words = new ArrayList<>();
-        for (int i = 0; i < clause.getChildCount(); i++) {
-            ParseTree child = clause.getChild(i);
-            if (child instanceof ParserRuleContext prc) {
-                words.add(prc.getStart());
-            } else if (child instanceof org.antlr.v4.runtime.tree.TerminalNode tn) {
-                words.add(tn.getSymbol());
-            }
-        }
-        return words;
-    }
-
     EffectChecker.ParsedPrefix parseFunctionTypePrefix(BabbleParser.FunctionTypeContext ctx, boolean reportErrors) {
         return parseFunctionTypePrefix(ctx, false, reportErrors);
     }
@@ -231,7 +217,6 @@ final class EffectModifiers {
                                     ParserRuleContext owner,
                                     boolean reportErrors) {
         boolean inFunctionType = kind == ParseContext.FUNCTION_TYPE || kind == ParseContext.INTERFACE_METHOD;
-        boolean isJavaTarget = kind == ParseContext.JAVA_TARGET;
         EnumSet<Effect> explicitEffects = EnumSet.noneOf(Effect.class);
         boolean explicitPure = false;
         boolean explicitVolatile = false;
@@ -293,8 +278,6 @@ final class EffectModifiers {
             }
             if (axiom && io) {
                 ec.checker.effectDiagnostic("axiom and io cannot be combined", owner);
-            } else if (isJavaTarget && io && (explicitPure || explicitVolatile || !explicitEffects.isEmpty() || mutThis || explicitSharedThis || uniqueReturn)) {
-                ec.checker.effectDiagnostic("io cannot be combined with effect modifiers on a Java target", owner);
             }
             if (io && explicitVolatile) {
                 ec.checker.effectDiagnostic("io already implies volatile : use io alone", owner);
@@ -317,27 +300,6 @@ final class EffectModifiers {
         EnumSet<Effect> effects = EnumSet.copyOf(explicitEffects);
         boolean anyMut = mutThis || hasMutParam;
         boolean hasExplicitWords = !tokens.isEmpty() || hasUniqueReturnType;
-        if (isJavaTarget) {
-            if (io) {
-                return new EffectChecker.ParsedPrefix(EnumSet.noneOf(Effect.class), false, false, false, false, false, true, false, true);
-            }
-            if (explicitPure && !anyMut) {
-                effects.add(Effect.PURE);
-                effects.add(Effect.HERMETIC);
-                effects.add(Effect.DETERMINISTIC);
-            } else if (explicitVolatile) {
-                effects.add(Effect.HERMETIC);
-                if (!anyMut) {
-                    effects.add(Effect.PURE);
-                }
-            } else if (mutThis) {
-                effects.add(Effect.HERMETIC);
-                effects.add(Effect.DETERMINISTIC);
-            }
-            boolean borrowThis = hasThis && !explicitSharedThis;
-            return new EffectChecker.ParsedPrefix(effects, mutThis, borrowThis, explicitSharedThis, uniqueReturn, axiom, false, explicitVolatile, true);
-        }
-
         if (axiom) {
             if (explicitPure && !anyMut) {
                 effects.add(Effect.PURE);
@@ -521,200 +483,27 @@ final class EffectModifiers {
         for (EffectChecker.PendingAxiomDiag diag : ec.pendingAxiomDiags) {
             ec.checker.effectDiagnostic(diag.message(), diag.at());
         }
-
-        // 1. Standalone effectDeclarations recorded by BlockScopes.
-        for (BlockScopes.PendingEffectDecl pending : ec.pass.effectDeclarations) {
-            BabbleParser.EffectDeclarationContext ctx = pending.ctx();
-            ScopeNode scope = pending.scope();
-            List<Token> words = effectClauseTokens(ctx.effectClause());
-            boolean isCtor = ctx.ctorOpen != null;
-            EffectChecker.ParsedPrefix prefix = parseTargetPrefix(words, isCtor, ctx);
-            if (!ec.pass.hostEffects.allowAxioms()) {
-                ec.checker.effectDiagnostic((prefix.io() ? "io" : "axiom") + " declarations are disabled on this engine", ctx);
-                continue;
+        // 1. An axiom cannot vouch for what a verified function it is nested in calls.
+        if (ec.pass.hostEffects.allowAxioms()) {
+            for (BlockScopes.PendingAxiomExpr pending : ec.pass.axiomExpressions) {
+                checkDeclarationPlacement(pending.scope(), pending.ctx());
             }
-            checkDeclarationPlacement(scope, prefix.io() ? "io" : "axiom", ctx);
-            HostEffects.JavaTarget target = resolveEffectTarget(ctx.effectTarget(), isCtor, scope, ctx);
-            if (target == null) {
-                continue;
-            }
-            validateJavaTargetPrefix(target, prefix, ctx);
-            HostEffects.OverrideEntry entry = toOverrideEntry(prefix);
-            ec.localJavaEffects.put(target, entry);
-            if (scope.kind == ScopeNode.Kind.FILE) {
-                ec.committedJavaEffects.put(target, entry);
-            }
-            if (ctx.EXPORT() != null) {
-                ec.exportedJavaEffects.put(target, entry);
-            }
-        }
-
-        // 2. DefExpressions with effectClause (e.g. def mkdirs = axiom idempotent on Files.createDirectories).
-        collectDefAxioms(file);
-    }
-
-    private void collectDefAxioms(ParseTree tree) {
-        if (tree instanceof BabbleParser.DefExpressionContext def && def.effectClause() != null) {
-            List<Token> words = effectClauseTokens(def.effectClause());
-            EffectChecker.ParsedPrefix prefix = parseTargetPrefix(words, false, def);
-            ec.defPrefixes.put(def, prefix);
-            ScopeNode scope = ec.pass.definitionScopes.get(def);
-            if (!ec.pass.hostEffects.allowAxioms()) {
-                ec.checker.effectDiagnostic((prefix.io() ? "io" : "axiom") + " declarations are disabled on this engine", def);
-            } else {
-                if (scope != null) {
-                    checkDeclarationPlacement(scope, prefix.io() ? "io" : "axiom", def);
-                }
-                Type valType = def.value != null ? ec.checker.rawTypeOf(def.value) : null;
-                HostEffects.JavaTarget target = null;
-                if (valType instanceof Type.JavaMethod jm) {
-                    target = HostEffects.JavaTarget.ofMethod(jm.owner(), jm.name());
-                } else if (valType instanceof Type.JavaClassValue jcv) {
-                    target = HostEffects.JavaTarget.ofClass(jcv.type());
-                } else if (valType != null && !(valType instanceof Type.Function) && valType != Type.ERROR) {
-                    ec.checker.effectDiagnostic("Invalid " + (prefix.io() ? "io" : "axiom")
-                            + " target : expected a Java class, Java method, or function", def);
-                }
-                if (target != null) {
-                    validateJavaTargetPrefix(target, prefix, def);
-                    HostEffects.OverrideEntry entry = toOverrideEntry(prefix);
-                    ec.localJavaEffects.put(target, entry);
-                    if (scope != null && scope.kind == ScopeNode.Kind.FILE) {
-                        ec.committedJavaEffects.put(target, entry);
-                    }
-                    if (ec.checker.isExportedDef(def)) {
-                        ec.exportedJavaEffects.put(target, entry);
-                    }
-                }
-            }
-        }
-        for (int i = 0; i < tree.getChildCount(); i++) {
-            collectDefAxioms(tree.getChild(i));
         }
     }
 
-    private EffectChecker.ParsedPrefix parseTargetPrefix(List<Token> words, boolean isCtor, ParserRuleContext ctx) {
-        return parseWords(words, ParseContext.JAVA_TARGET, !isCtor, false, false, false, ctx, true);
-    }
-
-    private void checkDeclarationPlacement(ScopeNode scope, String keyword, ParserRuleContext ctx) {
+    private void checkDeclarationPlacement(ScopeNode scope, ParserRuleContext ctx) {
         for (ScopeNode s = scope; s != null; s = s.parent) {
             if (s.kind == ScopeNode.Kind.FUNCTION && s.owner instanceof BabbleParser.FunctionLiteralContext fn) {
                 EffectChecker.ParsedPrefix p = parseFunctionPrefix(fn, false);
                 if (!p.axiom() && !p.io() && (p.effects().contains(Effect.PURE)
                         || p.effects().contains(Effect.HERMETIC)
                         || p.effects().contains(Effect.DETERMINISTIC))) {
-                    ec.checker.effectDiagnostic(keyword + " declaration is not allowed inside a verified constrained function", ctx);
+                    ec.checker.effectDiagnostic("axiom declaration is not allowed inside a verified constrained function", ctx);
                     return;
                 }
             }
         }
     }
-
-    private HostEffects.JavaTarget resolveEffectTarget(BabbleParser.EffectTargetContext targetCtx,
-                                                       boolean isCtor,
-                                                       ScopeNode scope,
-                                                       ParserRuleContext reportAt) {
-        String first = ScopeAnalysis.effectTargetRoot(targetCtx);
-        List<String> members = ScopeAnalysis.effectTargetMembers(targetCtx);
-        Type current;
-        if (targetCtx.STRING() != null) {
-            if (!"import".equals(first) && !"importe".equals(first)) {
-                ec.checker.effectDiagnostic("Invalid target : expected import(\"...\") or Java class path", reportAt);
-                return null;
-            }
-            if (TypeChecks.resolveName(first, scope) != null) {
-                ec.checker.effectDiagnostic("Invalid target : shadowed " + first, reportAt);
-                return null;
-            }
-            String pkg = org.babblelang.parser.StringLiterals.decode(targetCtx.STRING().getSymbol());
-            if (pkg.endsWith(".ba")) {
-                ec.checker.effectDiagnostic("Java effect target cannot be a .ba module : " + pkg, reportAt);
-                return null;
-            }
-            Class<?> directClass = ec.checker.findJavaClass(pkg);
-            current = directClass != null ? new Type.JavaClassValue(directClass) : new Type.JavaPackage(pkg);
-        } else {
-            Object resolved = ec.checker.resolveNameForEffects(first, scope);
-            if (resolved instanceof ParserRuleContext decl) {
-                current = ec.checker.typeOfDeclarationForEffects(decl);
-            } else {
-                current = ec.checker.implicitTypeForEffects(first);
-                if (current == null) {
-                    ec.checker.effectDiagnostic("Unknown identifier in effect declaration : " + first, reportAt);
-                    return null;
-                }
-            }
-        }
-
-        for (int idx = 0; idx < members.size(); idx++) {
-            String step = members.get(idx);
-            boolean last = (idx == members.size() - 1);
-            if (current instanceof Type.JavaPackage jp) {
-                String qualified = jp.name() + "." + step;
-                Class<?> cls = ec.checker.findJavaClass(qualified);
-                current = cls != null ? new Type.JavaClassValue(cls) : new Type.JavaPackage(qualified);
-            } else if (current instanceof Type.JavaClassValue jcv) {
-                Class<?> memberCls = ec.checker.findMemberJavaClass(jcv.type(), step);
-                if (memberCls != null && (!last || isCtor)) {
-                    current = new Type.JavaClassValue(memberCls);
-                } else if (last && !isCtor) {
-                    if (!HostEffects.hasMethodNamed(jcv.type(), step)) {
-                        if (memberCls != null) {
-                            return HostEffects.JavaTarget.ofClass(memberCls);
-                        }
-                        ec.checker.effectDiagnostic("No such Java method : " + step + " on " + jcv.type().getName(), reportAt);
-                        return null;
-                    }
-                    return HostEffects.JavaTarget.ofMethod(jcv.type(), step);
-                } else {
-                    ec.checker.effectDiagnostic("Unknown Java member class : " + step + " on " + jcv.type().getName(), reportAt);
-                    return null;
-                }
-            } else if (current instanceof Type.Module mod) {
-                current = ec.checker.moduleMemberTypeForEffects(mod.module(), step);
-                if (current == null) {
-                    ec.checker.effectDiagnostic("Unknown export : " + step + " in " + mod.module().name(), reportAt);
-                    return null;
-                }
-            } else {
-                ec.checker.effectDiagnostic("Invalid effect declaration target : " + targetCtx.getText(), reportAt);
-                return null;
-            }
-        }
-
-        if (current instanceof Type.JavaClassValue jcv) {
-            return isCtor
-                    ? HostEffects.JavaTarget.ofConstructor(jcv.type())
-                    : HostEffects.JavaTarget.ofClass(jcv.type());
-        }
-        if (current instanceof Type.JavaMethod jm && !isCtor) {
-            return HostEffects.JavaTarget.ofMethod(jm.owner(), jm.name());
-        }
-        ec.checker.effectDiagnostic("Invalid effect declaration target : expected a Java class, constructor, or method", reportAt);
-        return null;
-    }
-
-    private void validateJavaTargetPrefix(HostEffects.JavaTarget target, EffectChecker.ParsedPrefix prefix, ParserRuleContext at) {
-        if (prefix.io()) {
-            return;
-        }
-        if (target.kind() == HostEffects.TargetKind.CLASS && prefix.mutThis()) {
-            ec.checker.effectDiagnostic("Bare class axiom cannot declare mut : declare mut on specific methods instead", at);
-        }
-        if (target.kind() == HostEffects.TargetKind.CONSTRUCTOR && prefix.mutThis()) {
-            ec.checker.effectDiagnostic("Constructor axiom cannot declare mut", at);
-        }
-    }
-
-    private static HostEffects.OverrideEntry toOverrideEntry(EffectChecker.ParsedPrefix prefix) {
-        if (prefix.io()) {
-            return HostEffects.OverrideEntry.ioEntry();
-        }
-        return new HostEffects.OverrideEntry(prefix.effects(), prefix.mutThis(), !prefix.explicitSharedThis(),
-                prefix.uniqueReturn(), false, prefix.explicitVolatile());
-    }
-
 
     void validateAllFunctionTypes(ParseTree tree) {
         if (tree instanceof BabbleParser.AxiomExpressionContext) {

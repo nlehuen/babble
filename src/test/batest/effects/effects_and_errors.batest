@@ -4,7 +4,7 @@
 ========== eff_mod.ba ==========
 export axiom java.lang.Math.abs: fn pure nothrow
 export axiom java.util.List.add: fn mut
-export def abs2 = axiom pure nothrow on java.lang.Math.abs
+export def abs2 = java.lang.Math.abs
 ==========
 
 def Box = class (def v : int) (
@@ -13,36 +13,13 @@ def Box = class (def v : int) (
 
 {{{{{
 def em = import("eff_mod.ba")
-def myAbs = axiom pure nothrow on java.lang.Math.abs
-def ext = io on java.lang.Integer.bitCount
+axiom java.lang.Integer.bitCount: fn io
+def myAbs = java.lang.Math.abs
+def ext = java.lang.Integer.bitCount
 def compute = fn (x : int) : int -> ( em.abs2(x) + myAbs(-1) )
 assert(compute(-5) == 6)
 assert(ext(7) == 3)
 }}}}}
-
-{{{{{
-;; Deprecated syntax : import("pkg") and package-binding targets
-def jmathPkg = import("java.lang")
-axiom pure nothrow on import("java.lang").Math.max
-axiom pure nothrow on jmathPkg.StrictMath.min
-def compute = fn (x : int, y : int) : int -> (
-    java.lang.Math.max(x, jmathPkg.StrictMath.min(x, y))
-)
-assert(compute(-5, 3) == -5)
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-
-{{{{{
-;; Deprecated syntax : Java inner class axiom
-axiom pure on java.util.AbstractMap.SimpleEntry
-def mk = fn (x : int, y : int) : bool -> (
-    def p : java.util.AbstractMap.SimpleEntry of (int, int) = java.util.AbstractMap.SimpleEntry(x, y)
-    p.getKey() != null
-)
-assert(mk(-5, 3))
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 
 {{{{{
 def f = fn pure () : int -> ( 1 )
@@ -120,62 +97,12 @@ def C = class () (
 pure and mut are mutually exclusive : use mut (or volatile mut)
 
 {{{{{
-;; Deprecated syntax : .ba module is not a Java effect target
-axiom pure on import("eff_mod.ba").abs2
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Java effect target cannot be a .ba module : eff_mod.ba
-
-{{{{{
-;; Deprecated syntax : unknown root identifier in effect target
-axiom pure on unknownPkg.Foo
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Unknown identifier in effect declaration : unknownPkg
-
-{{{{{
-;; Deprecated syntax : missing Java method
-axiom pure on java.lang.Math.noSuchMethod
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-No such Java method : noSuchMethod on java.lang.Math
-
-{{{{{
-;; Deprecated syntax : missing Java member class
-axiom pure on java.lang.Math.NoInner.foo
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Unknown Java member class : NoInner on java.lang.Math
-
-{{{{{
-;; Deprecated syntax : missing export on imported module
-def em = import("eff_mod.ba")
-axiom pure on em.missing
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Unknown export : missing in eff_mod.ba
-
-{{{{{
-;; Deprecated syntax : bare class axiom with mut
-def bad = axiom mut on java.lang.StringBuilder
-}}}}}
-Bare class axiom cannot declare mut : declare mut on specific methods instead
-
-{{{{{
-;; Deprecated syntax : constructor axiom with mut
-axiom mut on java.lang.StringBuilder()
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-Constructor axiom cannot declare mut
-
-{{{{{
-;; Deprecated syntax : axiom inside verified constrained function
+;; axiom inside a verified constrained function
 def f = fn () : int -> (
-    axiom pure on java.lang.Math.abs
+    axiom java.lang.Math.abs: fn pure
     1
 )
 }}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 axiom declaration is not allowed inside a verified constrained function
 
 {{{{{

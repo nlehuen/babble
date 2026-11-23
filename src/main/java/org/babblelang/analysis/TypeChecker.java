@@ -238,7 +238,7 @@ final class TypeChecker {
 
         @Override
         public boolean isDeeplyImmutable(Type type) {
-            return TypeChecker.this.isDeeplyImmutable(type, Collections.newSetFromMap(new IdentityHashMap<>()));
+            return TypeChecker.this.isDeeplyImmutable(type);
         }
 
         @Override
@@ -250,62 +250,19 @@ final class TypeChecker {
         }
     });
 
+    /** Deep immutability, by mode crossing (BIP027-P5) : what the effect checker also asks. */
+    private final ModalKindTable modalKinds = new ModalKindTable(
+            cls -> effectChecker != null
+                    ? effectChecker.isJavaClassDeeplyImmutable(cls)
+                    : BuiltinAxioms.current().isDeeplyImmutable(cls),
+            this);
+
     boolean isDeeplyImmutable(Type type) {
-        return isDeeplyImmutable(type, Collections.newSetFromMap(new IdentityHashMap<>()));
+        return modalKinds.isDeeplyImmutable(type);
     }
 
-    private boolean isDeeplyImmutable(Type type, Set<TypeNode> visiting) {
-        if (type == null || Type.isCoreScalar(type) || type == Type.NULL || type instanceof Type.Frozen) {
-            return true;
-        }
-        if (type instanceof Type.Union u) {
-            return u.members().stream().allMatch(m -> isDeeplyImmutable(m, visiting));
-        }
-        if (type instanceof Type.JavaInstance ji) {
-            boolean axiomaticImmutable = effectChecker != null
-                    ? effectChecker.isJavaClassDeeplyImmutable(ji.type())
-                    : BuiltinAxioms.current().isDeeplyImmutable(ji.type());
-            if (axiomaticImmutable) {
-                if (ji.type().getTypeParameters().length > 0 && ji.typeArguments().isEmpty()) {
-                    return false;
-                }
-                return ji.typeArguments().isEmpty()
-                        || ji.typeArguments().stream().allMatch(a -> isDeeplyImmutable(a, visiting));
-            }
-        }
-        if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.OBJECT) {
-            for (TypeNode.Member member : inst.node().members.values()) {
-                if (!member.isMethod() && !member.hasFunction) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
-            if (!visiting.add(inst.node())) {
-                return true;
-            }
-            try {
-                Map<Type.TypeVar, Type> env = algebra.instanceEnv(inst);
-                for (TypeNode.Member member : inst.node().members.values()) {
-                    if (member.isMethod() || member.hasFunction) {
-                        continue;
-                    }
-                    Type mt = memberType(inst.node(), member);
-                    if (mt == Type.ERROR) {
-                        return false;
-                    }
-                    mt = algebra.substitute(mt, env);
-                    if (!isDeeplyImmutable(mt, visiting)) {
-                        return false;
-                    }
-                }
-                return true;
-            } finally {
-                visiting.remove(inst.node());
-            }
-        }
-        return false;
+    ModalKindTable modalKinds() {
+        return modalKinds;
     }
 
     TypeChecker(BlockScopes pass) {
@@ -502,7 +459,10 @@ final class TypeChecker {
             }
             slots.rank(file);
             slots.converge(file);
+            // Fields have settled : record kinds can be cached while effects are inferred.
+            modalKinds.setCaching(true);
             effectChecker.inferAll(file);
+            modalKinds.setCaching(false);
             // The function types the slots hold now carry their inferred effects.
             slots.converge(file);
             this.checkingEffects = true;
@@ -521,7 +481,9 @@ final class TypeChecker {
             }
             members.checkInterfaces();
             checkMissingTypes(file);
+            modalKinds.setCaching(true);
             effectChecker.verify(file);
+            modalKinds.setCaching(false);
             diagnostics.addAll(effectDiagnostics);
             for (Diagnostic warning : warnings) {
                 pass.analysis.warn(warning.message(), warning.line(), warning.column());
@@ -1118,12 +1080,6 @@ final class TypeChecker {
                         return recursiveSignature(literal);
                     }
                     Type valueType = synth(def.value);
-                    if (def.effectClause() != null && effectChecker != null && valueType instanceof Type.Function fn) {
-                        EffectSet override = effectChecker.defOverrideEffects(def);
-                        if (override != null) {
-                            valueType = fn.withEffects(override, fn.parameters());
-                        }
-                    }
                     type = inferred(valueType);
                 }
             } else if (ScopeAnalysis.isParamDecl(declaration) && ScopeAnalysis.paramDefault(declaration) != null) {
@@ -2303,12 +2259,6 @@ final class TypeChecker {
             }
             Type declared = ctx.type() != null ? annotator.declaredType(ctx) : null;
             Type value = ctx.value != null ? check(ctx.value, declared) : Type.NULL;
-            if (ctx.effectClause() != null && effectChecker != null && value instanceof Type.Function fn) {
-                EffectSet override = effectChecker.defOverrideEffects(ctx);
-                if (override != null) {
-                    value = fn.withEffects(override, fn.parameters());
-                }
-            }
             ParserRuleContext errorSite = ctx.value != null ? ctx.value : ctx;
             if (declared != null) {
                 if (kind == LoweringTargets.DefKind.DEFAULT && declared != Type.ERROR
@@ -3375,10 +3325,6 @@ final class TypeChecker {
 
     boolean isReassigned(ParserRuleContext decl) {
         return reassigned.contains(decl);
-    }
-
-    Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
-        return effectChecker != null ? effectChecker.exportedJavaEffects() : Map.of();
     }
 
     AxiomData.AxiomTable exportedAxioms() {

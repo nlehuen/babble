@@ -469,14 +469,12 @@ public class FormatterTestCase {
     @Test
     public void testRm002EffectsAndAxioms() throws Exception {
         assertFormats("""
-                axiom pure nothrow on java.lang.Math
-                axiom mut on java.util.List.add
-                axiom pure on java.awt.Point()
-                axiom volatile on java.nio.file.Files.readString
-                export axiom pure on import("java.time")
-                io on java.lang.System.nanoTime
-                def m = axiom pure on java.lang.Math
-                def r = io on java.lang.Math.random
+                axiom java.lang.Math.abs: fn pure nothrow
+                axiom java.util.List.add: fn mut
+                axiom java.awt.Point: class () static (def new: fn pure)
+                axiom java.nio.file.Files.readString: fn volatile
+                export axiom java.time.Instant.now: fn volatile
+                axiom java.lang.System.nanoTime: fn io
                 def add: fn nothrow (a: int, b: int): int = fn nothrow (a: int, b: int): int -> (
                     a + b
                 )
@@ -488,14 +486,12 @@ public class FormatterTestCase {
                 def unnamed: fn (int, int): int = fn (a: int, b: int): int -> (a + b)
                 unnamed(1, 2)
                 """, """
-                axiom   pure   nothrow  on  java . lang . Math
-                axiom mut on java.util.List.add
-                axiom pure on java.awt.Point ( )
-                axiom   volatile  on  java.nio.file.Files.readString
-                export   axiom  pure  on  import ( "java.time" )
-                io   on  java.lang.System.nanoTime
-                def m = axiom   pure  on  java.lang.Math
-                def r = io   on  java.lang.Math.random
+                axiom   java . lang . Math . abs :  fn   pure   nothrow
+                axiom java.util.List.add : fn mut
+                axiom java.awt.Point : class ( ) static ( def new : fn pure )
+                axiom   java.nio.file.Files.readString  :  fn  volatile
+                export   axiom  java.time.Instant.now : fn  volatile
+                axiom   java.lang.System.nanoTime : fn   io
                 def add : fn  nothrow ( a : int , b : int ) : int = fn  nothrow ( a : int , b : int ) : int -> (
                 a+b
                 )
@@ -533,14 +529,14 @@ public class FormatterTestCase {
     @Test
     public void testBip007OwnershipSyntax() throws Exception {
         assertFormats("""
-                axiom pure unique on java.util.ArrayList()
+                axiom java.util.ArrayList: class () static (def new: fn pure unique)
                 def f = fn (unique b: Box, shared c: Box): unique Box -> (
                     def x: frozen list of int = freeze(list(1, 2))
                     discard(x)
                     move(b)
                 )
                 """, """
-                axiom pure unique on java . util . ArrayList ( )
+                axiom java . util . ArrayList : class ( ) static ( def new : fn pure unique )
                 def f = fn ( unique b : Box , shared c : Box ) : unique Box -> (
                   def x : frozen list of int = freeze ( list ( 1 , 2 ) )
                   discard ( x )

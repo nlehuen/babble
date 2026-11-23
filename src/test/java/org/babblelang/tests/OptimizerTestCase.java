@@ -98,7 +98,7 @@ public class OptimizerTestCase {
     @Test
     public void testConstFoldArithmeticStringsBranchesAndWhitelistedJdk() throws Exception {
         String src = ""
-                + "axiom pure nothrow on java.lang.Math.sqrt\n"
+                + "axiom java.lang.Math.sqrt: fn pure nothrow\n"
                 + "def arith = fn () : int -> ( def k = 10 ; k * k + 2 * 3 )\n"
                 + "def str = fn () : string -> ( \"  hi \" + \"there  \" )\n"
                 + "def trimmed = fn () : string -> ( \"  babble  \".trim() )\n"
@@ -133,7 +133,7 @@ public class OptimizerTestCase {
     @Test
     public void testAlgebraicIdentitiesReassociationAndIdempotentCollapse() throws Exception {
         String src = ""
-                + "axiom pure nothrow on java.lang.Math.abs\n"
+                + "axiom java.lang.Math.abs: fn pure nothrow\n"
                 + "def clamp = fn axiom pure nothrow idempotent (x : int) : int -> ( if x < 0 then ( 0 ) else ( x ) )\n"
                 + "def f = fn (x : int, b : bool, s : string) : string -> (\n"
                 + "  def a = (x + 0) * 1 + (x * 0) + (x - x)\n"
@@ -323,8 +323,8 @@ public class OptimizerTestCase {
     @Test
     public void testLicmHoistsPureNothrowInvariantCallsOutOfWhileAndForLoops() throws Exception {
         String src = ""
-                + "axiom pure nothrow on java.lang.Math.sin\n"
-                + "axiom pure nothrow on java.lang.Math.cos\n"
+                + "axiom java.lang.Math.sin: fn pure nothrow\n"
+                + "axiom java.lang.Math.cos: fn pure nothrow\n"
                 + "def heavy = fn (x : double) : double -> ( java.lang.Math.sin(x) * java.lang.Math.cos(x) )\n"
                 + "def loopWhile = fn (n : int, a : double) : double -> (\n"
                 + "  def i = 0\n"
